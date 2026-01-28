@@ -1,5 +1,5 @@
-#ifndef LEXER_LIBS_REGEX_INCLUDE_SET_HPP
-#define LEXER_LIBS_REGEX_INCLUDE_SET_HPP
+#ifndef LEXER_LIBS_REGEX_INCLUDE_LEXER_REGEX_SET_HPP
+#define LEXER_LIBS_REGEX_INCLUDE_LEXER_REGEX_SET_HPP
 
 #include <initializer_list>
 #include <unordered_set>
@@ -82,13 +82,13 @@ public:
     static Set digits();
 
     /**
-     * @brief Creates a set of alphabetic characters (A-Z, a-z, and underscore).
+     * @brief Creates a set of alphabetic characters (A-Z, a-z).
      * @return The created set.
      */
     static Set alpha();
 
     /**
-     * @brief Creates a set of alphanumeric characters (A-Z, a-z, 0-9, and underscore).
+     * @brief Creates a set of alphanumeric characters (A-Z, a-z, 0-9).
      * @return The created set.
      */
     static Set alphanum();
@@ -197,4 +197,4 @@ private:
 
 } // namespace lexer::regex
 
-#endif // LEXER_LIBS_REGEX_INCLUDE_SET_HPP
+#endif // LEXER_LIBS_REGEX_INCLUDE_LEXER_REGEX_SET_HPP

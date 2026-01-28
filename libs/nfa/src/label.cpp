@@ -9,6 +9,11 @@ bool Epsilon::operator==(const Epsilon&) const noexcept
     return true;
 }
 
+std::size_t Epsilon::Hash::operator()(const Epsilon&) const noexcept
+{
+    return 0;
+}
+
 Label::Label(const Epsilon e) noexcept : variant_{e}
 {}
 
@@ -43,6 +48,22 @@ const Label::Variant_t& Label::variant() const noexcept
 bool Label::operator==(const Label& other) const noexcept
 {
     return variant_ == other.variant_;
+}
+
+std::size_t Label::Hash::operator()(const Label& label) const noexcept
+{
+    return std::visit(
+            []<typename T>(const T& arg) {
+                if constexpr (std::is_same_v<T, Epsilon>)
+                {
+                    return Epsilon::Hash{}(arg);
+                }
+                else
+                {
+                    return std::hash<T>{}(arg);
+                }
+            },
+            label.variant());
 }
 
 } // namespace lexer::nfa

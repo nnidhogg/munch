@@ -10,7 +10,7 @@ namespace lexer::nfa
 std::size_t Nfa::Hash::operator()(const Key_t& key) const noexcept
 {
     std::size_t seed{};
-    return boost::hash_combine(seed, key.first), boost::hash_combine(seed, std::hash<Label>{}(key.second)), seed;
+    return boost::hash_combine(seed, key.first), boost::hash_combine(seed, Label::Hash{}(key.second)), seed;
 }
 
 Nfa::Nfa(const State_t init_state, Transitions_t transitions, Accept_states_t accept_states)

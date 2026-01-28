@@ -101,9 +101,6 @@ public:
     Repeat(const Repeat&) = delete;
     Repeat& operator=(const Repeat&) = delete;
 
-    Repeat(Repeat&&) = delete;
-    Repeat& operator=(Repeat&&) = delete;
-
     /**
      * @brief Converts this regex node to an NFA builder.
      * @return NFA builder representing this regex.

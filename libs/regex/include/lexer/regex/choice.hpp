@@ -31,9 +31,6 @@ public:
     Choice(const Choice&) = delete;
     Choice& operator=(const Choice&) = delete;
 
-    Choice(Choice&&) = delete;
-    Choice& operator=(Choice&&) = delete;
-
     /**
      * @brief Converts this regex node to an NFA builder.
      * @return NFA builder representing this regex.

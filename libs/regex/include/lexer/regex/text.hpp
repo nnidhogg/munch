@@ -31,9 +31,6 @@ public:
     Text(const Text&) = delete;
     Text& operator=(const Text&) = delete;
 
-    Text(Text&&) = delete;
-    Text& operator=(Text&&) = delete;
-
     /**
      * @brief Converts this regex node to an NFA builder.
      * @return NFA builder representing this regex.

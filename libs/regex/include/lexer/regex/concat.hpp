@@ -31,9 +31,6 @@ public:
     Concat(const Concat&) = delete;
     Concat& operator=(const Concat&) = delete;
 
-    Concat(Concat&&) = delete;
-    Concat& operator=(Concat&&) = delete;
-
     /**
      * @brief Converts this regex node to an NFA builder.
      * @return NFA builder representing this regex.

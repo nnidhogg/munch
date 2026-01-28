@@ -1,6 +1,7 @@
 #ifndef LEXER_LIBS_DFA_INCLUDE_LEXER_DFA_LABEL_HPP
 #define LEXER_LIBS_DFA_INCLUDE_LEXER_DFA_LABEL_HPP
 
+#include <cstddef>
 #include <functional>
 
 namespace lexer::dfa
@@ -37,22 +38,18 @@ public:
      */
     bool operator==(const Label& other) const noexcept;
 
+    /**
+     * @brief Hash functor for Label, suitable for use in unordered containers.
+     */
+    struct Hash
+    {
+        std::size_t operator()(const Label& label) const noexcept;
+    };
+
 private:
     Symbol_t symbol_;
 };
 
 } // namespace lexer::dfa
-
-/**
- * @brief Hash specialization for lexer::dfa::Label to allow use in hash-based containers.
- */
-template <>
-struct std::hash<lexer::dfa::Label>
-{
-    std::size_t operator()(const lexer::dfa::Label& label) const noexcept
-    {
-        return std::hash<decltype(label.symbol())>{}(label.symbol());
-    }
-};
 
 #endif // LEXER_LIBS_DFA_INCLUDE_LEXER_DFA_LABEL_HPP

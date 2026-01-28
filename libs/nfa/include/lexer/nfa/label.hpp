@@ -1,6 +1,8 @@
 #ifndef LEXER_LIBS_NFA_INCLUDE_LEXER_NFA_LABEL_HPP
 #define LEXER_LIBS_NFA_INCLUDE_LEXER_NFA_LABEL_HPP
 
+#include <cstddef>
+#include <functional>
 #include <variant>
 
 namespace lexer::nfa
@@ -16,6 +18,14 @@ public:
      * @return True if both are epsilon labels.
      */
     bool operator==(const Epsilon&) const noexcept;
+
+    /**
+     * @brief Hash functor for Epsilon, suitable for use in unordered containers.
+     */
+    struct Hash
+    {
+        std::size_t operator()(const Epsilon&) const noexcept;
+    };
 };
 
 /**
@@ -80,6 +90,14 @@ public:
      */
     bool operator==(const Label& other) const noexcept;
 
+    /**
+     * @brief Hash functor for Label, suitable for use in unordered containers.
+     */
+    struct Hash
+    {
+        std::size_t operator()(const Label& label) const noexcept;
+    };
+
 private:
     explicit Label(Epsilon e) noexcept;
 
@@ -87,26 +105,5 @@ private:
 };
 
 } // namespace lexer::nfa
-
-/**
- * @brief Hash specialization for lexer::nfa::Epsilon to allow use in hash-based containers.
- */
-template <>
-struct std::hash<lexer::nfa::Epsilon>
-{
-    std::size_t operator()(const lexer::nfa::Epsilon&) const noexcept { return 0; }
-};
-
-/**
- * @brief Hash specialization for lexer::nfa::Label to allow use in hash-based containers.
- */
-template <>
-struct std::hash<lexer::nfa::Label>
-{
-    std::size_t operator()(const lexer::nfa::Label& label) const noexcept
-    {
-        return std::visit([]<typename T>(const T& arg) { return std::hash<std::decay_t<T>>{}(arg); }, label.variant());
-    }
-};
 
 #endif // LEXER_LIBS_NFA_INCLUDE_LEXER_NFA_LABEL_HPP

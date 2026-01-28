@@ -7,6 +7,12 @@ namespace lexer::dfa
 {
 /**
  * @brief Represents a token in the DFA, identified by a unique ID.
+ *
+ * Unlike NFA tokens, DFA tokens do not store priority information. This is by design:
+ * priority resolution happens during subset construction (NFA → DFA conversion) when
+ * multiple NFA accept states with different priorities are merged into a single DFA state.
+ * At that point, the highest-priority (lowest priority value) token is selected, and only
+ * its ID is preserved in the resulting DFA accept state.
  */
 class Token
 {

@@ -1,5 +1,5 @@
-#ifndef LEXER_LIBS_REGEX_INCLUDE_ANY_HPP
-#define LEXER_LIBS_REGEX_INCLUDE_ANY_HPP
+#ifndef LEXER_LIBS_REGEX_INCLUDE_LEXER_REGEX_ANY_OF_HPP
+#define LEXER_LIBS_REGEX_INCLUDE_LEXER_REGEX_ANY_OF_HPP
 
 #include <memory>
 
@@ -31,9 +31,6 @@ public:
     Any_of(const Any_of&) = delete;
     Any_of& operator=(const Any_of&) = delete;
 
-    Any_of(Any_of&&) = delete;
-    Any_of& operator=(Any_of&&) = delete;
-
     /**
      * @brief Converts this regex node to an NFA builder.
      * @return NFA builder representing this regex.
@@ -62,4 +59,4 @@ std::shared_ptr<const Regex> any_of(T&& chars)
 
 } // namespace lexer::regex
 
-#endif // LEXER_LIBS_REGEX_INCLUDE_ANY_HPP
+#endif // LEXER_LIBS_REGEX_INCLUDE_LEXER_REGEX_ANY_OF_HPP
