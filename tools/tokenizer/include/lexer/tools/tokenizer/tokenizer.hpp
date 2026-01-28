@@ -16,6 +16,14 @@ namespace lexer::tools::tokenizer
  * @brief Wrapper that turns core::Lexer into a sequential token stream.
  *
  * Returns tokens in order as matched by the lexer without additional processing.
+ *
+ * @warning This class is not thread-safe. Concurrent calls to next() or load() on the same instance
+ *          will result in undefined behavior.
+ *
+ * @warning The Token objects returned by next() contain a std::string_view that references the internal
+ *          input buffer. These views become invalid if load() is called or if the Tokenizer is destroyed.
+ *          If tokens need to outlive the Tokenizer or persist across load() calls, copy the lexeme to a
+ *          std::string.
  */
 class Tokenizer
 {
@@ -57,6 +65,15 @@ public:
      * @brief Reset the reading position to the beginning of the current input.
      */
     void reset() noexcept { offset_ = 0; }
+
+    /**
+     * @brief Return the current byte offset in the input.
+     *
+     * Useful for error reporting and tracking tokenization progress.
+     *
+     * @return The current byte position in the input buffer.
+     */
+    [[nodiscard]] std::size_t offset() const noexcept { return offset_; }
 
     /**
      * @brief Return the next token.

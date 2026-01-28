@@ -219,3 +219,59 @@ TEST_F(Tokenizer_test, Unknown_character)
     EXPECT_EQ(error.position(), 0u);
     EXPECT_FALSE(error.message().empty());
 }
+
+TEST_F(Tokenizer_test, Offset_tracking)
+{
+    const std::string input{"boolean x 123"};
+
+    const auto lexer{build_lexer()};
+
+    Tokenizer tokenizer{lexer, input};
+
+    // Initial offset should be 0
+    EXPECT_EQ(tokenizer.offset(), 0u);
+
+    // After "boolean" (7 chars)
+    auto result = tokenizer.next<Token_kind>();
+    ASSERT_TRUE(result.has_value() && result.value().has_value());
+    EXPECT_EQ(result.value()->kind(), Token_kind::Boolean);
+    EXPECT_EQ(tokenizer.offset(), 7u);
+
+    // After " " (1 char)
+    result = tokenizer.next<Token_kind>();
+    ASSERT_TRUE(result.has_value() && result.value().has_value());
+    EXPECT_EQ(result.value()->kind(), Token_kind::Whitespace);
+    EXPECT_EQ(tokenizer.offset(), 8u);
+
+    // After "x" (1 char)
+    result = tokenizer.next<Token_kind>();
+    ASSERT_TRUE(result.has_value() && result.value().has_value());
+    EXPECT_EQ(result.value()->kind(), Token_kind::Identifier);
+    EXPECT_EQ(tokenizer.offset(), 9u);
+
+    // After " " (1 char)
+    result = tokenizer.next<Token_kind>();
+    ASSERT_TRUE(result.has_value() && result.value().has_value());
+    EXPECT_EQ(result.value()->kind(), Token_kind::Whitespace);
+    EXPECT_EQ(tokenizer.offset(), 10u);
+
+    // After "123" (3 chars)
+    result = tokenizer.next<Token_kind>();
+    ASSERT_TRUE(result.has_value() && result.value().has_value());
+    EXPECT_EQ(result.value()->kind(), Token_kind::Integer_literal);
+    EXPECT_EQ(tokenizer.offset(), 13u);
+
+    // EOF - offset should stay at end
+    result = tokenizer.next<Token_kind>();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result.value().has_value());
+    EXPECT_EQ(tokenizer.offset(), 13u);
+
+    // After reset, offset should be 0
+    tokenizer.reset();
+    EXPECT_EQ(tokenizer.offset(), 0u);
+
+    // After load with new input, offset should be 0
+    tokenizer.load("char");
+    EXPECT_EQ(tokenizer.offset(), 0u);
+}
