@@ -6,10 +6,19 @@ if (NOT CMAKE_BUILD_TYPE)
 endif ()
 
 set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -Wunused -Wextra -pthread")
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Compiler-specific warning flags
+if (MSVC)
+    add_compile_options(/W4 /WX)
+else ()
+    add_compile_options(-Wall -Werror -Wunused -Wextra -pthread)
+endif ()
+
 add_compile_options(
-        $<$<CONFIG:Debug>:-g>
-        $<$<CONFIG:Release>:-O2>
+        $<$<CONFIG:Debug>:$<IF:$<CXX_COMPILER_ID:MSVC>,/Od,-g>>
+        $<$<CONFIG:Release>:$<IF:$<CXX_COMPILER_ID:MSVC>,/O2,-O2>>
 )
 
 option(LEXER_BUILD_TESTS "Build tests for lexer" ON)
