@@ -35,6 +35,38 @@ auto build_symbol_table(const lexer::nfa::Nfa& nfa)
     return result;
 }
 
+lexer::nfa::Builder to_nfa(const lexer::dfa::Dfa& dfa, const lexer::nfa::Token& token)
+{
+    lexer::nfa::Builder result;
+
+    // The DFA state identifiers are not reused as-is, as the NFA builder owns the allocation of its own states.
+    std::unordered_map<lexer::dfa::Dfa::State_t, lexer::nfa::Nfa::State_t> dfa_nfa_map{
+            {dfa.init_state(), result.init_state()}};
+
+    const auto state{[&result, &dfa_nfa_map](const auto dfa_state) {
+        const auto iterator{dfa_nfa_map.find(dfa_state)};
+
+        return iterator != dfa_nfa_map.cend() ? iterator->second
+                                              : dfa_nfa_map.emplace(dfa_state, result.next_state()).first->second;
+    }};
+
+    for (const auto& [key, to] : dfa.transitions())
+    {
+        const auto& [from, label]{key};
+
+        result.add_transition(state(from), lexer::nfa::Label{label.symbol()}, state(to));
+    }
+
+    // The DFA token carries no priority, so the token the pattern was registered with is restored instead.
+    const auto add_accept_state{[&result, &state, &token](const auto accept_state) {
+        result.add_accept_state(state(accept_state), token);
+    }};
+
+    std::ranges::for_each(std::views::keys(dfa.accept_states()), add_accept_state);
+
+    return result;
+}
+
 } // namespace
 
 namespace lexer::core
@@ -46,7 +78,7 @@ Lexer Builder::build() const
 
 nfa::Nfa Builder::nfa() const
 {
-    return nfa_.build();
+    return thompson_construction().build();
 }
 
 dfa::Dfa Builder::dfa() const
@@ -56,7 +88,16 @@ dfa::Dfa Builder::dfa() const
 
 void Builder::add_token(const std::shared_ptr<const regex::Regex>& regex, const nfa::Token& token)
 {
-    nfa_ = nfa_.merge(regex->to_nfa().set_accept_token(token));
+    patterns_.push_back({regex->to_nfa().set_accept_token(token), token});
+}
+
+nfa::Builder Builder::thompson_construction() const
+{
+    const auto merge{[](const auto& nfa, const auto& pattern) {
+        return nfa.merge(to_nfa(subset_construction(pattern.nfa.build()), pattern.token));
+    }};
+
+    return std::accumulate(patterns_.cbegin(), patterns_.cend(), nfa::Builder{}, merge);
 }
 
 dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)
