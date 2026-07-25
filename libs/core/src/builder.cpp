@@ -134,12 +134,22 @@ dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)
         std::ranges::for_each(view, [&](const auto symbol) {
             const auto next_states{nfa::Nfa::advance(nfa, nfa_states, symbol)};
 
-            if (!next_states.empty() && nfa_dfa_map.emplace(next_states, dfa.next_state()).second)
+            if (next_states.empty())
             {
+                return;
+            }
+
+            auto iterator{nfa_dfa_map.find(next_states)};
+
+            // A state identifier is only allocated when the state set is new, keeping the identifiers dense.
+            if (iterator == nfa_dfa_map.cend())
+            {
+                iterator = nfa_dfa_map.emplace(next_states, dfa.next_state()).first;
+
                 nfa_queue.push(next_states);
             }
 
-            dfa.add_transition(dfa_state, dfa::Label{symbol}, nfa_dfa_map.at(next_states));
+            dfa.add_transition(dfa_state, dfa::Label{symbol}, iterator->second);
         });
     }
 
