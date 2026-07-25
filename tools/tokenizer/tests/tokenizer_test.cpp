@@ -3,11 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "lexer/core/builder.hpp"
-#include "lexer/regex/any_of.hpp"
-#include "lexer/regex/choice.hpp"
-#include "lexer/regex/concat.hpp"
-#include "lexer/regex/repeat.hpp"
-#include "lexer/regex/text.hpp"
+#include "lexer/regex/regex.hpp"
 
 using namespace lexer;
 using namespace lexer::core;

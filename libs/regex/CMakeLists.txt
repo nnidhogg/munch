@@ -6,6 +6,7 @@ add_library(${PROJECT_NAME}
         src/any_of.cpp
         src/choice.cpp
         src/concat.cpp
+        src/regex.cpp
         src/repeat.cpp
         src/set.cpp
         src/text.cpp

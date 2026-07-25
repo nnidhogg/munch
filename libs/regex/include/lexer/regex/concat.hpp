@@ -1,62 +1,26 @@
 #ifndef LEXER_LIBS_REGEX_INCLUDE_LEXER_REGEX_CONCAT_HPP
 #define LEXER_LIBS_REGEX_INCLUDE_LEXER_REGEX_CONCAT_HPP
 
-#include <memory>
 #include <vector>
-
-#include "lexer/regex/regex.hpp"
 
 namespace lexer::regex
 {
+struct Regex;
+
 /**
  * @brief Regex node that matches a sequence of regexes (concatenation).
  *
- * Use the static create() method or the concat() helper to construct.
+ * Use the concat() combinator to construct.
  */
-class Concat final : public Regex
+struct Concat
 {
-public:
     /**
-     * @brief Creates a Concat regex node from one or more regexes.
-     * @tparam Args Types convertible to shared_ptr<const Regex>.
-     * @param args The regexes to match in sequence.
-     * @return Shared pointer to the created Concat node.
+     * @brief The regexes matched in sequence. Must hold at least one element.
+     *
+     * A vector is used because Regex is incomplete here, being the type this node is an alternative of.
      */
-    template <typename... Args>
-    static std::shared_ptr<Concat> create(Args&&... args)
-    {
-        return std::shared_ptr<Concat>(new Concat(std::forward<Args>(args)...));
-    }
-
-    Concat(const Concat&) = delete;
-    Concat& operator=(const Concat&) = delete;
-
-    /**
-     * @brief Converts this regex node to an NFA builder.
-     * @return NFA builder representing this regex.
-     */
-    [[nodiscard]] nfa::Builder to_nfa() const override;
-
-private:
-    template <typename... Args>
-        requires(sizeof...(Args) > 0)
-    explicit Concat(Args&&... args) : regexes_{std::forward<Args>(args)...}
-    {}
-
-    std::vector<std::shared_ptr<const Regex>> regexes_;
+    std::vector<Regex> regexes;
 };
-
-/**
- * @brief Helper function to create a Concat regex node from one or more regexes.
- * @tparam Args Types convertible to shared_ptr<const Regex>.
- * @param args The regexes to match in sequence.
- * @return Shared pointer to the created Regex node.
- */
-template <typename... Args>
-std::shared_ptr<const Regex> concat(Args&&... args)
-{
-    return Concat::create(std::forward<Args>(args)...);
-}
 
 } // namespace lexer::regex
 

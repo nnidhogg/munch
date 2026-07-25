@@ -1,4 +1,4 @@
-#include "lexer/regex/repeat.hpp"
+#include "lexer/regex/regex.hpp"
 
 #include <gtest/gtest.h>
 
@@ -6,7 +6,6 @@
 
 #include "lexer/nfa/simulator.hpp"
 #include "lexer/nfa/tools/graphviz.hpp"
-#include "lexer/regex/text.hpp"
 
 using namespace lexer::nfa;
 using namespace lexer::nfa::tools;
@@ -34,7 +33,7 @@ TEST_F(Repeat_test, Kleene_star)
 
     const Token token{1, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -64,7 +63,7 @@ TEST_F(Repeat_test, Plus)
 
     const Token token{2, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -94,7 +93,7 @@ TEST_F(Repeat_test, Optional)
 
     const Token token{3, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -116,7 +115,7 @@ TEST_F(Repeat_test, Exact_repetition)
 
     const Token token{4, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -142,7 +141,7 @@ TEST_F(Repeat_test, At_least_repetition)
 
     const Token token{5, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -169,7 +168,7 @@ TEST_F(Repeat_test, Range_repetition)
 
     const Token token{6, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 

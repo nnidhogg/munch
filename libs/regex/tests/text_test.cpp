@@ -1,4 +1,4 @@
-#include "lexer/regex/text.hpp"
+#include "lexer/regex/regex.hpp"
 
 #include <gtest/gtest.h>
 
@@ -32,7 +32,7 @@ TEST_F(Text_test, Simple_text)
 
     const Token token{1, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -51,7 +51,7 @@ TEST_F(Text_test, Special_characters)
 
     const Token token{2, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -69,7 +69,7 @@ TEST_F(Text_test, More_special_characters)
 
     const Token token{3, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -87,7 +87,7 @@ TEST_F(Text_test, Empty_text)
 
     const Token token{4, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 

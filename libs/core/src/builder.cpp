@@ -86,9 +86,9 @@ dfa::Dfa Builder::dfa() const
     return subset_construction(nfa());
 }
 
-void Builder::add_token(const std::shared_ptr<const regex::Regex>& regex, const nfa::Token& token)
+void Builder::add_token(const regex::Regex& regex, const nfa::Token& token)
 {
-    patterns_.push_back({regex->to_nfa().set_accept_token(token), token});
+    patterns_.push_back({regex::to_nfa(regex).set_accept_token(token), token});
 }
 
 nfa::Builder Builder::thompson_construction() const

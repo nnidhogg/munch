@@ -6,11 +6,7 @@
 #include "lexer/core/builder.hpp"
 #include "lexer/dfa/tools/graphviz.hpp"
 #include "lexer/nfa/tools/graphviz.hpp"
-#include "lexer/regex/any_of.hpp"
-#include "lexer/regex/choice.hpp"
-#include "lexer/regex/concat.hpp"
-#include "lexer/regex/repeat.hpp"
-#include "lexer/regex/text.hpp"
+#include "lexer/regex/regex.hpp"
 
 using namespace lexer;
 using namespace lexer::core;
@@ -139,9 +135,7 @@ private:
 
 TEST_F(Lexer_test, Test_empty)
 {
-    Builder builder;
-
-    EXPECT_THROW(builder.add_token<int>(nullptr, 1, 1), std::runtime_error);
+    const Builder builder;
 
     const auto lexer{builder.build()};
 

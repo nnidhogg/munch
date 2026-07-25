@@ -1,7 +1,6 @@
 #ifndef LEXER_LIBS_CORE_INCLUDE_LEXER_CORE_BUILDER_HPP
 #define LEXER_LIBS_CORE_INCLUDE_LEXER_CORE_BUILDER_HPP
 
-#include <memory>
 #include <vector>
 
 #include "lexer/core/lexer.hpp"
@@ -31,17 +30,11 @@ public:
      * @param regex The regex pattern for the token.
      * @param token The token value (enum or integer).
      * @param priority The priority for resolving conflicts (lower is higher priority).
-     * @throws std::runtime_error if the regex pointer is invalid.
      */
     template <typename T>
         requires(std::is_enum_v<T> || std::is_integral_v<T>)
-    void add_token(const std::shared_ptr<const regex::Regex>& regex, const T token, const std::size_t priority)
+    void add_token(const regex::Regex& regex, const T token, const std::size_t priority)
     {
-        if (!regex)
-        {
-            throw std::runtime_error("Invalid regex pointer");
-        }
-
         add_token(regex, {static_cast<std::size_t>(token), priority});
     }
 
@@ -86,7 +79,7 @@ private:
      * @param regex The regex pattern.
      * @param token The NFA token.
      */
-    void add_token(const std::shared_ptr<const regex::Regex>& regex, const nfa::Token& token);
+    void add_token(const regex::Regex& regex, const nfa::Token& token);
 
     /**
      * @brief Merges the determinized patterns into a single NFA using Thompson construction.
