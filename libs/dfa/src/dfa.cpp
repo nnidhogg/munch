@@ -33,12 +33,16 @@ std::optional<Dfa::State_t> Dfa::advance(const Dfa& dfa, const State_t state, co
 {
     const std::pair key{state, Label{symbol}};
 
-    return dfa.transitions().contains(key) ? std::optional{dfa.transitions().at(key)} : std::nullopt;
+    const auto iterator{dfa.transitions_.find(key)};
+
+    return iterator != dfa.transitions_.cend() ? std::optional{iterator->second} : std::nullopt;
 }
 
 std::optional<Token> Dfa::has_accept_token(const Dfa& dfa, const State_t state)
 {
-    return dfa.accept_states().contains(state) ? std::optional{dfa.accept_states().at(state)} : std::nullopt;
+    const auto iterator{dfa.accept_states_.find(state)};
+
+    return iterator != dfa.accept_states_.cend() ? std::optional{iterator->second} : std::nullopt;
 }
 
 } // namespace lexer::dfa
