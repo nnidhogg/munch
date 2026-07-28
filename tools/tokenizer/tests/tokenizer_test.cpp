@@ -264,3 +264,36 @@ TEST_F(Tokenizer_test, Offset_tracking)
     tokenizer.load("char");
     EXPECT_EQ(tokenizer.offset(), 0u);
 }
+
+TEST_F(Tokenizer_test, Seek)
+{
+    const std::string input{"boolean x"};
+
+    const auto lexer{build_lexer()};
+
+    Tokenizer tokenizer{lexer, input};
+
+    // Consume "boolean", then rewind and read it again
+    ASSERT_TRUE(tokenizer.next<Token_kind>().has_token());
+    EXPECT_EQ(tokenizer.offset(), 7u);
+
+    tokenizer.seek(0);
+    EXPECT_EQ(tokenizer.offset(), 0u);
+
+    auto result{tokenizer.next<Token_kind>()};
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Boolean);
+
+    // Jump over the whitespace, as a driver does after scanning a token by hand
+    tokenizer.seek(8);
+
+    result = tokenizer.next<Token_kind>();
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Identifier);
+    EXPECT_EQ(result.token().lexeme(), "x");
+
+    // Seeking past the end clamps to it
+    tokenizer.seek(100);
+    EXPECT_EQ(tokenizer.offset(), input.size());
+    EXPECT_TRUE(tokenizer.next<Token_kind>().end_of_input());
+}

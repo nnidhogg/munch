@@ -1,6 +1,7 @@
 #ifndef LEXER_TOOLS_TOKENIZER_INCLUDE_LEXER_TOOLS_TOKENIZER_TOKENIZER_HPP
 #define LEXER_TOOLS_TOKENIZER_INCLUDE_LEXER_TOOLS_TOKENIZER_TOKENIZER_HPP
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 
@@ -62,6 +63,14 @@ public:
      * @brief Reset the reading position to the beginning of the current input.
      */
     void reset() noexcept { offset_ = 0; }
+
+    /**
+     * @brief Move the reading position to the given byte offset, clamped to the end of the input.
+     *
+     * The escape hatch for tokens no automaton can recognize, such as C++ raw string literals: a driver reads the
+     * prefix token, scans the remainder by hand, and seeks past it before reading on.
+     */
+    void seek(const std::size_t offset) noexcept { offset_ = std::min(offset, input_.size()); }
 
     /**
      * @brief Return the current byte offset in the input.
