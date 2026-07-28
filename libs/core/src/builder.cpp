@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "lexer/dfa/builder.hpp"
+#include "lexer/dfa/minimize.hpp"
 
 namespace
 {
@@ -83,7 +84,7 @@ nfa::Nfa Builder::nfa() const
 
 dfa::Dfa Builder::dfa() const
 {
-    return subset_construction(nfa());
+    return dfa::minimize(subset_construction(nfa()));
 }
 
 void Builder::add_token(const regex::Regex& regex, const nfa::Token& token)
@@ -94,7 +95,7 @@ void Builder::add_token(const regex::Regex& regex, const nfa::Token& token)
 nfa::Builder Builder::thompson_construction() const
 {
     const auto merge{[](const auto& nfa, const auto& pattern) {
-        return nfa.merge(to_nfa(subset_construction(pattern.nfa.build()), pattern.token));
+        return nfa.merge(to_nfa(dfa::minimize(subset_construction(pattern.nfa.build())), pattern.token));
     }};
 
     return std::accumulate(patterns_.cbegin(), patterns_.cend(), nfa::Builder{}, merge);

@@ -6,6 +6,7 @@ add_library(${PROJECT_NAME}
         src/builder.cpp
         src/dfa.cpp
         src/label.cpp
+        src/minimize.cpp
         src/simulator.cpp
         src/token.cpp
 )
@@ -40,6 +41,7 @@ target_link_libraries(${PROJECT_NAME}_tools
 if (LEXER_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/dfa_test.cpp
+            tests/minimize_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests

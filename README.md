@@ -172,9 +172,9 @@ Finalizes the builder and constructs a `lexer::core::Lexer`.
 During this step:
 
 - each registered pattern is converted into a Non-deterministic Finite Automaton (NFA),
-- subset construction is applied per pattern, producing a Deterministic Finite Automaton (DFA) for each of them,
+- subset construction is applied per pattern, producing a minimized Deterministic Finite Automaton (DFA) for each of them,
 - Thompson construction recombines the per-pattern DFAs into a single NFA,
-- subset construction is applied once more to produce the final DFA.
+- subset construction is applied once more, and the result is minimized to produce the final DFA.
 
 After calling `build()`:
 
