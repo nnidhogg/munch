@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0097 NEW)
-project(lexer_common)
+project(munch_common)
 
 add_library(${PROJECT_NAME}
         INTERFACE

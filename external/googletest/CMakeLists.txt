@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(lexer_googletest)
+project(munch_googletest)
 
 option(USE_SYSTEM_GTEST "Use system-installed Googletest" OFF)
 

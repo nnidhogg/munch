@@ -1,9 +1,9 @@
-#include "lexer/regex/set.hpp"
+#include "munch/regex/set.hpp"
 
 #include <algorithm>
 #include <ranges>
 
-namespace lexer::regex
+namespace munch::regex
 {
 Set::Set(const std::initializer_list<Symbol_t> symbols) : symbols_{symbols}
 {}
@@ -141,4 +141,4 @@ Set operator+(const Set::Symbol_t s, Set rhs)
     return rhs;
 }
 
-} // namespace lexer::regex
+} // namespace munch::regex

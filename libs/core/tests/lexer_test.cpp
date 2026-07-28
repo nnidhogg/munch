@@ -3,14 +3,14 @@
 #include <filesystem>
 #include <fstream>
 
-#include "lexer/core/builder.hpp"
-#include "lexer/dfa/tools/graphviz.hpp"
-#include "lexer/nfa/tools/graphviz.hpp"
-#include "lexer/regex/regex.hpp"
+#include "munch/core/builder.hpp"
+#include "munch/dfa/tools/graphviz.hpp"
+#include "munch/nfa/tools/graphviz.hpp"
+#include "munch/regex/regex.hpp"
 
-using namespace lexer;
-using namespace lexer::core;
-using namespace lexer::regex;
+using namespace munch;
+using namespace munch::core;
+using namespace munch::regex;
 
 namespace
 {

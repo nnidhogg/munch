@@ -1,11 +1,11 @@
-#include "lexer/nfa/nfa.hpp"
+#include "munch/nfa/nfa.hpp"
 
 #include <algorithm>
 #include <boost/container_hash/hash.hpp>
 #include <queue>
 #include <ranges>
 
-namespace lexer::nfa
+namespace munch::nfa
 {
 std::size_t Nfa::Hash::operator()(const Key_t& key) const noexcept
 {
@@ -99,4 +99,4 @@ std::optional<Token> Nfa::has_accept_token(const Nfa& nfa, const States_t& state
     return std::nullopt;
 }
 
-} // namespace lexer::nfa
+} // namespace munch::nfa

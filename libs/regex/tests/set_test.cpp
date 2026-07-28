@@ -1,14 +1,14 @@
-#include "lexer/regex/set.hpp"
+#include "munch/regex/set.hpp"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
 
-#include "lexer/nfa/tools/graphviz.hpp"
+#include "munch/nfa/tools/graphviz.hpp"
 
-using namespace lexer;
-using namespace lexer::regex;
-using namespace lexer::nfa::tools;
+using namespace munch;
+using namespace munch::regex;
+using namespace munch::nfa::tools;
 
 class Set_test : public testing::Test
 {

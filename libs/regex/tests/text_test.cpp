@@ -1,16 +1,16 @@
-#include "lexer/regex/regex.hpp"
+#include "munch/regex/regex.hpp"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
 
-#include "lexer/nfa/nfa.hpp"
-#include "lexer/nfa/simulator.hpp"
-#include "lexer/nfa/tools/graphviz.hpp"
+#include "munch/nfa/nfa.hpp"
+#include "munch/nfa/simulator.hpp"
+#include "munch/nfa/tools/graphviz.hpp"
 
-using namespace lexer::nfa;
-using namespace lexer::nfa::tools;
-using namespace lexer::regex;
+using namespace munch::nfa;
+using namespace munch::nfa::tools;
+using namespace munch::regex;
 
 class Text_test : public testing::Test
 {

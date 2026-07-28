@@ -1,14 +1,14 @@
-#include "lexer/dfa/minimize.hpp"
+#include "munch/dfa/minimize.hpp"
 
 #include <gtest/gtest.h>
 
 #include <ranges>
 #include <unordered_set>
 
-#include "lexer/dfa/builder.hpp"
-#include "lexer/dfa/simulator.hpp"
+#include "munch/dfa/builder.hpp"
+#include "munch/dfa/simulator.hpp"
 
-using namespace lexer::dfa;
+using namespace munch::dfa;
 
 namespace
 {

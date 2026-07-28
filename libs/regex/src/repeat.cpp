@@ -2,9 +2,9 @@
 #include <ranges>
 #include <stdexcept>
 
-#include "lexer/regex/regex.hpp"
+#include "munch/regex/regex.hpp"
 
-namespace lexer::regex
+namespace munch::regex
 {
 namespace
 {
@@ -236,4 +236,4 @@ Regex range(Regex regex, const std::size_t min, const std::size_t max)
     return {.node = Repeat{.kind = Range{.min = min, .max = max}, .regex = single(std::move(regex))}};
 }
 
-} // namespace lexer::regex
+} // namespace munch::regex

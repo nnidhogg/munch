@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(lexer_boost)
+project(munch_boost)
 
 option(USE_SYSTEM_BOOST "Use system-installed Boost" OFF)
 

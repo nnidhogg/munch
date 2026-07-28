@@ -1,4 +1,4 @@
-#include "lexer/dfa/tools/graphviz.hpp"
+#include "munch/dfa/tools/graphviz.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -7,7 +7,7 @@
 #include <ranges>
 #include <stdexcept>
 
-namespace lexer::dfa::tools
+namespace munch::dfa::tools
 {
 void Graphviz::to_file(const Dfa& dfa, const std::filesystem::path& path)
 {
@@ -94,4 +94,4 @@ std::string Graphviz::create_label(const Label& label)
     return oss.str();
 }
 
-} // namespace lexer::dfa::tools
+} // namespace munch::dfa::tools

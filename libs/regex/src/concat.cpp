@@ -1,9 +1,9 @@
 #include <algorithm>
 #include <ranges>
 
-#include "lexer/regex/regex.hpp"
+#include "munch/regex/regex.hpp"
 
-namespace lexer::regex
+namespace munch::regex
 {
 nfa::Builder to_nfa(const Concat& concat)
 {
@@ -20,4 +20,4 @@ nfa::Builder to_nfa(const Concat& concat)
     return nfa;
 }
 
-} // namespace lexer::regex
+} // namespace munch::regex

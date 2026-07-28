@@ -1,16 +1,16 @@
-#include "lexer/tools/tokenizer/raw_string.hpp"
+#include "munch/tools/tokenizer/raw_string.hpp"
 
 #include <gtest/gtest.h>
 
 #include <string>
 
-#include "lexer/core/builder.hpp"
-#include "lexer/regex/regex.hpp"
-#include "lexer/tools/tokenizer/tokenizer.hpp"
+#include "munch/core/builder.hpp"
+#include "munch/regex/regex.hpp"
+#include "munch/tools/tokenizer/tokenizer.hpp"
 
-using namespace lexer;
-using namespace lexer::regex;
-using namespace lexer::tools::tokenizer;
+using namespace munch;
+using namespace munch::regex;
+using namespace munch::tools::tokenizer;
 
 TEST(Raw_string_test, Scans_empty_delimiter)
 {

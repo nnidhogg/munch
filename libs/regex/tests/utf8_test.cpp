@@ -1,15 +1,15 @@
-#include "lexer/regex/utf8.hpp"
+#include "munch/regex/utf8.hpp"
 
 #include <gtest/gtest.h>
 
 #include <stdexcept>
 #include <string>
 
-#include "lexer/nfa/simulator.hpp"
+#include "munch/nfa/simulator.hpp"
 
-using namespace lexer;
-using namespace lexer::nfa;
-using namespace lexer::regex;
+using namespace munch;
+using namespace munch::nfa;
+using namespace munch::regex;
 
 namespace
 {

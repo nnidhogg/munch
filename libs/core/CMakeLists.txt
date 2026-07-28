@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0097 NEW)
-project(lexer_core)
+project(munch_core)
 
 add_library(${PROJECT_NAME}
         src/builder.cpp
@@ -13,15 +13,15 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
-        lexer_boost
+        munch_boost
         PUBLIC
-        lexer_common
-        lexer_regex
-        lexer_dfa
-        lexer_nfa
+        munch_common
+        munch_regex
+        munch_dfa
+        munch_nfa
 )
 
-if (LEXER_BUILD_TESTS)
+if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/lexer_test.cpp
             tests/property_test.cpp
@@ -30,8 +30,8 @@ if (LEXER_BUILD_TESTS)
     target_link_libraries(${PROJECT_NAME}_tests
             PRIVATE
             ${PROJECT_NAME}
-            lexer_dfa_tools
-            lexer_nfa_tools
+            munch_dfa_tools
+            munch_nfa_tools
             gtest_main
     )
 

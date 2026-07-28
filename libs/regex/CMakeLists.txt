@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0097 NEW)
-project(lexer_regex)
+project(munch_regex)
 
 add_library(${PROJECT_NAME}
         src/any_of.cpp
@@ -20,10 +20,10 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
-        lexer_nfa
+        munch_nfa
 )
 
-if (LEXER_BUILD_TESTS)
+if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/any_of_test.cpp
             tests/choice_test.cpp
@@ -37,7 +37,7 @@ if (LEXER_BUILD_TESTS)
     target_link_libraries(${PROJECT_NAME}_tests
             PRIVATE
             ${PROJECT_NAME}
-            lexer_nfa_tools
+            munch_nfa_tools
             gtest_main
     )
 

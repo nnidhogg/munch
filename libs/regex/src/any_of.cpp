@@ -1,8 +1,8 @@
 #include <algorithm>
 
-#include "lexer/regex/regex.hpp"
+#include "munch/regex/regex.hpp"
 
-namespace lexer::regex
+namespace munch::regex
 {
 nfa::Builder to_nfa(const Any_of& any_of)
 {
@@ -27,4 +27,4 @@ nfa::Builder to_nfa(const Any_of& any_of)
     return nfa;
 }
 
-} // namespace lexer::regex
+} // namespace munch::regex

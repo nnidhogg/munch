@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0097 NEW)
-project(lexer_benchmark)
+project(munch_benchmark)
 
 add_executable(${PROJECT_NAME}
         src/main.cpp
@@ -8,7 +8,7 @@ add_executable(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
-        lexer_core
-        lexer_regex
-        lexer_tokenizer
+        munch_core
+        munch_regex
+        munch_tokenizer
 )

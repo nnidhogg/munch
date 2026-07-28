@@ -1,4 +1,4 @@
-#include "lexer/nfa/tools/graphviz.hpp"
+#include "munch/nfa/tools/graphviz.hpp"
 
 #include <gtest/gtest.h>
 
@@ -6,12 +6,12 @@
 #include <fstream>
 #include <sstream>
 
-#include "lexer/nfa/builder.hpp"
-#include "lexer/nfa/nfa.hpp"
+#include "munch/nfa/builder.hpp"
+#include "munch/nfa/nfa.hpp"
 
-using namespace lexer;
-using namespace lexer::nfa;
-using namespace lexer::nfa::tools;
+using namespace munch;
+using namespace munch::nfa;
+using namespace munch::nfa::tools;
 
 using Graphviz_test = testing::Test;
 

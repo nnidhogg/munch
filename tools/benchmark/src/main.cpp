@@ -7,10 +7,10 @@
 #include <span>
 #include <string>
 
-#include "lexer/core/builder.hpp"
-#include "lexer/regex/regex.hpp"
-#include "lexer/regex/utf8.hpp"
-#include "lexer/tools/tokenizer/tokenizer.hpp"
+#include "munch/core/builder.hpp"
+#include "munch/regex/regex.hpp"
+#include "munch/regex/utf8.hpp"
+#include "munch/tools/tokenizer/tokenizer.hpp"
 
 namespace
 {
@@ -31,15 +31,15 @@ enum class Token : std::size_t
  * @brief Builds a lexer for a small C-like language, exercising every regex combinator kind.
  * @param greek_identifiers Whether identifiers may also contain Greek letters, encoded as UTF-8.
  */
-lexer::core::Lexer build_lexer(const bool greek_identifiers)
+munch::core::Lexer build_lexer(const bool greek_identifiers)
 {
-    using namespace lexer::regex;
+    using namespace munch::regex;
 
     const auto letter{[greek_identifiers](Regex ascii) {
         return greek_identifiers ? choice(std::move(ascii), utf8::range(U'Α', U'ω')) : std::move(ascii);
     }};
 
-    lexer::core::Builder builder;
+    munch::core::Builder builder;
 
     builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 2);
 
@@ -103,7 +103,7 @@ std::string generate_input(const std::size_t size, const std::span<const char* c
  * @param input The input to tokenize.
  * @return The number of tokens matched, or 0 if the input was rejected.
  */
-std::size_t tokenize(const lexer::core::Lexer& lexer, const std::string& input)
+std::size_t tokenize(const munch::core::Lexer& lexer, const std::string& input)
 {
     std::size_t offset{0};
 
@@ -133,7 +133,7 @@ std::size_t tokenize(const lexer::core::Lexer& lexer, const std::string& input)
  * @param tokenizer The tokenizer to run, rewound before the pass.
  * @return The number of tokens matched, or 0 if the input was rejected.
  */
-std::size_t tokenize(lexer::tools::tokenizer::Tokenizer& tokenizer)
+std::size_t tokenize(munch::tools::tokenizer::Tokenizer& tokenizer)
 {
     tokenizer.reset();
 
@@ -237,7 +237,7 @@ int main(const int argc, const char** argv)
 
     const auto greek_input{generate_input(mebibytes << 20U, greek_identifiers)};
 
-    lexer::tools::tokenizer::Tokenizer tokenizer{ascii_lexer, ascii_input};
+    munch::tools::tokenizer::Tokenizer tokenizer{ascii_lexer, ascii_input};
 
     auto ok{measure("lexer/ascii", ascii_input.size(), passes,
                     [&ascii_lexer, &ascii_input] { return tokenize(ascii_lexer, ascii_input); })};

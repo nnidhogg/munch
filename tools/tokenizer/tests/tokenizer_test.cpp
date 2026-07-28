@@ -1,14 +1,14 @@
-#include "lexer/tools/tokenizer/tokenizer.hpp"
+#include "munch/tools/tokenizer/tokenizer.hpp"
 
 #include <gtest/gtest.h>
 
-#include "lexer/core/builder.hpp"
-#include "lexer/regex/regex.hpp"
+#include "munch/core/builder.hpp"
+#include "munch/regex/regex.hpp"
 
-using namespace lexer;
-using namespace lexer::core;
-using namespace lexer::regex;
-using namespace lexer::tools::tokenizer;
+using namespace munch;
+using namespace munch::core;
+using namespace munch::regex;
+using namespace munch::tools::tokenizer;
 
 namespace
 {

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(lexer)
+project(munch)
 
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
@@ -21,8 +21,8 @@ add_compile_options(
         $<$<CONFIG:Release>:$<IF:$<CXX_COMPILER_ID:MSVC>,/O2,-O2>>
 )
 
-option(LEXER_BUILD_TESTS "Build tests for lexer" ON)
-if (LEXER_BUILD_TESTS)
+option(MUNCH_BUILD_TESTS "Build tests for lexer" ON)
+if (MUNCH_BUILD_TESTS)
     enable_testing()
 endif ()
 
@@ -36,6 +36,6 @@ add_library(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
         INTERFACE
-        lexer_core
-        lexer_tokenizer
+        munch_core
+        munch_tokenizer
 )

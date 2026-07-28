@@ -1,11 +1,11 @@
-#include "lexer/regex/utf8.hpp"
+#include "munch/regex/utf8.hpp"
 
 #include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <vector>
 
-namespace lexer::regex::utf8
+namespace munch::regex::utf8
 {
 namespace
 {
@@ -181,4 +181,4 @@ Regex range(const char32_t first, const char32_t last)
     return parts.size() == 1 ? std::move(parts.front()) : Regex{.node = Choice{.regexes = std::move(parts)}};
 }
 
-} // namespace lexer::regex::utf8
+} // namespace munch::regex::utf8

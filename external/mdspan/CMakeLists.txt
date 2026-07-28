@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(lexer_mdspan)
+project(munch_mdspan)
 
 add_library(${PROJECT_NAME} INTERFACE)
 

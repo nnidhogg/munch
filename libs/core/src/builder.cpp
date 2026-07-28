@@ -1,4 +1,4 @@
-#include "lexer/core/builder.hpp"
+#include "munch/core/builder.hpp"
 
 #include <algorithm>
 #include <boost/container_hash/hash.hpp>
@@ -8,14 +8,14 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "lexer/dfa/builder.hpp"
-#include "lexer/dfa/minimize.hpp"
+#include "munch/dfa/builder.hpp"
+#include "munch/dfa/minimize.hpp"
 
 namespace
 {
 struct Hash
 {
-    std::size_t operator()(const lexer::nfa::Nfa::States_t& states) const noexcept
+    std::size_t operator()(const munch::nfa::Nfa::States_t& states) const noexcept
     {
         const auto hash{[](auto seed, const auto element) { return boost::hash_combine(seed, element), seed; }};
 
@@ -23,9 +23,9 @@ struct Hash
     }
 };
 
-auto build_symbol_table(const lexer::nfa::Nfa& nfa)
+auto build_symbol_table(const munch::nfa::Nfa& nfa)
 {
-    std::unordered_map<size_t, std::unordered_set<lexer::nfa::Label::Symbol_t>> result;
+    std::unordered_map<size_t, std::unordered_set<munch::nfa::Label::Symbol_t>> result;
 
     const auto filter{[](const auto& pair) { return pair.second.is_symbol(); }};
 
@@ -36,12 +36,12 @@ auto build_symbol_table(const lexer::nfa::Nfa& nfa)
     return result;
 }
 
-lexer::nfa::Builder to_nfa(const lexer::dfa::Dfa& dfa, const lexer::nfa::Token& token)
+munch::nfa::Builder to_nfa(const munch::dfa::Dfa& dfa, const munch::nfa::Token& token)
 {
-    lexer::nfa::Builder result;
+    munch::nfa::Builder result;
 
     // The DFA state identifiers are not reused as-is, as the NFA builder owns the allocation of its own states.
-    std::unordered_map<lexer::dfa::Dfa::State_t, lexer::nfa::Nfa::State_t> dfa_nfa_map{
+    std::unordered_map<munch::dfa::Dfa::State_t, munch::nfa::Nfa::State_t> dfa_nfa_map{
             {dfa.init_state(), result.init_state()}};
 
     const auto state{[&result, &dfa_nfa_map](const auto dfa_state) {
@@ -55,7 +55,7 @@ lexer::nfa::Builder to_nfa(const lexer::dfa::Dfa& dfa, const lexer::nfa::Token& 
     {
         const auto& [from, label]{key};
 
-        result.add_transition(state(from), lexer::nfa::Label{label.symbol()}, state(to));
+        result.add_transition(state(from), munch::nfa::Label{label.symbol()}, state(to));
     }
 
     // The DFA token carries no priority, so the token the pattern was registered with is restored instead.
@@ -70,7 +70,7 @@ lexer::nfa::Builder to_nfa(const lexer::dfa::Dfa& dfa, const lexer::nfa::Token& 
 
 } // namespace
 
-namespace lexer::core
+namespace munch::core
 {
 Lexer Builder::build() const
 {
@@ -157,4 +157,4 @@ dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)
     return dfa.build();
 }
 
-} // namespace lexer::core
+} // namespace munch::core

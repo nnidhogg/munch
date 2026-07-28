@@ -1,9 +1,9 @@
-#include "lexer/nfa/builder.hpp"
+#include "munch/nfa/builder.hpp"
 
 #include <algorithm>
 #include <ranges>
 
-namespace lexer::nfa
+namespace munch::nfa
 {
 Builder::Builder() : init_state_{0}, next_state_{1}
 {}
@@ -145,4 +145,4 @@ Nfa Builder::build() const
     return {init_state_, transitions_, accept_states_};
 }
 
-} // namespace lexer::nfa
+} // namespace munch::nfa

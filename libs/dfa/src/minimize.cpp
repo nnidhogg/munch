@@ -1,4 +1,4 @@
-#include "lexer/dfa/minimize.hpp"
+#include "munch/dfa/minimize.hpp"
 
 #include <algorithm>
 #include <map>
@@ -6,9 +6,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "lexer/dfa/builder.hpp"
+#include "munch/dfa/builder.hpp"
 
-namespace lexer::dfa
+namespace munch::dfa
 {
 namespace
 {
@@ -138,4 +138,4 @@ Dfa minimize(const Dfa& dfa)
     return builder.build();
 }
 
-} // namespace lexer::dfa
+} // namespace munch::dfa

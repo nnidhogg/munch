@@ -16,7 +16,7 @@ mode switching policy) belongs in the driver layer, never in the engine.
 cmake -S . -B build                  # configure (fetches boost, googletest, mdspan)
 cmake --build build -j 8             # build
 cd build && ctest --output-on-failure # run all test suites
-./build/tools/benchmark/lexer_benchmark [MiB] [passes]  # throughput benchmark, three scenarios
+./build/tools/benchmark/munch_benchmark [MiB] [passes]  # throughput benchmark, three scenarios
 ```
 
 Run the full test suite after every change. For performance-relevant changes, run the benchmark before and after and
@@ -59,7 +59,7 @@ Example: `Compress transition table columns into symbol equivalence classes`.
 
 ## Testing conventions
 
-Each library has its own test executable (`lexer_<lib>_tests`). Regex-layer tests verify through nfa::Simulator;
+Each library has its own test executable (`munch_<lib>_tests`). Regex-layer tests verify through nfa::Simulator;
 dfa-layer tests build automata by hand via dfa::Builder and verify through the dfa Simulator; driver tests exercise
 the Tokenizer end to end. New behavior needs tests at the layer that owns it, including negative and boundary cases.
 

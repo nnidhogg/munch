@@ -4,16 +4,16 @@
 
 <div style="text-align: center; margin-bottom: 1rem;">
   <img src="https://img.shields.io/badge/C%2B%2B-23-blue.svg" alt="C++23">
-  <img src="https://github.com/nnidhogg/lexer/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://github.com/nnidhogg/lexer/actions/workflows/codeql.yml/badge.svg" alt="CodeQL">
-  <img src="https://codecov.io/gh/nnidhogg/lexer/branch/master/graph/badge.svg" alt="Coverage">
-  <img src="https://img.shields.io/github/license/nnidhogg/lexer" alt="License">
-  <img src="https://img.shields.io/github/v/release/nnidhogg/lexer?include_prereleases&sort=semver" alt="Release">
+  <img src="https://github.com/nnidhogg/munch/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <img src="https://github.com/nnidhogg/munch/actions/workflows/codeql.yml/badge.svg" alt="CodeQL">
+  <img src="https://codecov.io/gh/nnidhogg/munch/branch/master/graph/badge.svg" alt="Coverage">
+  <img src="https://img.shields.io/github/license/nnidhogg/munch" alt="License">
+  <img src="https://img.shields.io/github/v/release/nnidhogg/munch?include_prereleases&sort=semver" alt="Release">
 </div>
 
-# **Lexer Library**
+# **Munch**
 
-`lexer` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
+`munch` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
 regex-like combinator DSL, compiled through Thompson construction, subset construction, and DFA minimization by Moore
 partition refinement, then executed by a cache-optimized table simulator. There are no predefined tokens or grammars.
 You describe the language, and the library builds the automaton.
@@ -59,7 +59,7 @@ You describe the language, and the library builds the automaton.
 - **Lightweight to Integrate**
 
   Builds as a set of static libraries with `FetchContent`-managed dependencies; add it with `add_subdirectory` and
-  link `lexer`.
+  link `munch`.
 
 ## **How It Works**
 
@@ -118,8 +118,8 @@ Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2) over generated p
 
 ```
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-$ cmake --build build -j 8 --target lexer_benchmark
-$ ./build/tools/benchmark/lexer_benchmark 16 15
+$ cmake --build build -j 8 --target munch_benchmark
+$ ./build/tools/benchmark/munch_benchmark 16 15
 lexer/ascii      16.0 MiB, 9144476 tokens, best of 15 passes: 520.4 MiB/s
 tokenizer/ascii  16.0 MiB, 9144476 tokens, best of 15 passes: 465.6 MiB/s
 lexer/utf8       16.0 MiB, 8320312 tokens, best of 15 passes: 506.1 MiB/s
@@ -134,13 +134,13 @@ own hardware and language before citing them.
 
 | Module                       | Responsibility                                                                                       |
 |-------------------------------|-------------------------------------------------------------------------------------------------------|
-| `lexer::regex`                | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...) and `Regex` → NFA lowering.  |
-| `lexer::nfa`                  | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
-| `lexer::dfa`                  | `Dfa` / `dfa::Builder`: DFA representation; `minimize()` (Moore partition refinement); `Simulator`.   |
-| `lexer::core`                 | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
-| `lexer::tools::tokenizer`     | `Tokenizer`: streaming driver over `core::Lexer` with modes, offsets, seek, and a raw string scanner. |
-| `lexer::nfa::tools` / `lexer::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.               |
-| `lexer::common`                | Shared concepts (`Iterator`, `Iterable`) used across the other modules.                               |
+| `munch::regex`                | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...) and `Regex` → NFA lowering.  |
+| `munch::nfa`                  | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
+| `munch::dfa`                  | `Dfa` / `dfa::Builder`: DFA representation; `minimize()` (Moore partition refinement); `Simulator`.   |
+| `munch::core`                 | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
+| `munch::tools::tokenizer`     | `Tokenizer`: streaming driver over `core::Lexer` with modes, offsets, seek, and a raw string scanner. |
+| `munch::nfa::tools` / `munch::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.               |
+| `munch::common`                | Shared concepts (`Iterator`, `Iterable`) used across the other modules.                               |
 
 ## **Usage Overview**
 
@@ -224,7 +224,7 @@ encodings is rejected by construction.
 ##### **Example**
 
 ```cpp
-using namespace lexer::regex;
+using namespace munch::regex;
 
 // Identifier: [A-Za-z_][A-Za-z0-9_]*
 const auto identifier = concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_')));
@@ -232,7 +232,7 @@ const auto identifier = concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::al
 
 #### **2. Builder Methods**
 
-The `lexer::core::Builder` is responsible for collecting token definitions and producing a deterministic lexer. It
+The `munch::core::Builder` is responsible for collecting token definitions and producing a deterministic lexer. It
 represents the *construction phase* of the lexer pipeline described in [How It Works](#how-it-works).
 
 Once `build()` is called, the resulting `Lexer` is immutable and safe to reuse across multiple inputs.
@@ -264,7 +264,7 @@ This mechanism allows keyword tokens to override more general patterns such as i
 const auto lexer{builder.build()};
 ```
 
-Finalizes the builder and constructs a `lexer::core::Lexer`, running the pipeline in [How It Works](#how-it-works):
+Finalizes the builder and constructs a `munch::core::Lexer`, running the pipeline in [How It Works](#how-it-works):
 per-pattern NFA construction and determinization, recombination via Thompson union, and a final subset construction
 and minimization producing the DFA the returned `Lexer` simulates.
 
@@ -277,9 +277,9 @@ After calling `build()`:
 ### Example
 
 ```cpp
-using namespace lexer;
-using namespace lexer::core;
-using namespace lexer::regex;
+using namespace munch;
+using namespace munch::core;
+using namespace munch::regex;
 
 Builder builder;
 
@@ -311,18 +311,18 @@ convenient incremental processing.
 
 The library provides two complementary ways to perform tokenization:
 
-1. **Low-level, one-shot API** via `lexer::core::Lexer`
-2. **High-level, streaming API** via `lexer::tools::tokenizer::Tokenizer`
+1. **Low-level, one-shot API** via `munch::core::Lexer`
+2. **High-level, streaming API** via `munch::tools::tokenizer::Tokenizer`
 
-#### **1. Core API (`lexer::core::Lexer`)**
+#### **1. Core API (`munch::core::Lexer`)**
 
 The core lexer performs direct tokenization on containers or iterators. It returns a pair containing the recognized
 token kind and the number of characters consumed.
 
 ```cpp
-using namespace lexer;
-using namespace lexer::core;
-using namespace lexer::regex;
+using namespace munch;
+using namespace munch::core;
+using namespace munch::regex;
 
 int main()
 {
@@ -381,16 +381,16 @@ In both cases, the lexer returns:
 
 This API is efficient and lightweight, suitable for use in parsers or compiler front ends.
 
-#### **2. Tokenizer API (`lexer::tools::tokenizer::Tokenizer`)**
+#### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
 The Tokenizer builds on the core lexer to provide a streaming-based interface. It repeatedly calls the underlying
 `core::Lexer`, handling offsets, EOF detection, and error propagation automatically.
 
 ```cpp
-using namespace lexer;
-using namespace lexer::core;
-using namespace lexer::regex;
-using namespace lexer::tools::tokenizer;
+using namespace munch;
+using namespace munch::core;
+using namespace munch::regex;
+using namespace munch::tools::tokenizer;
 
 const std::string input = "boolean x 1234";
 
@@ -468,7 +468,7 @@ cd build
 ctest --output-on-failure
 ```
 
-Pass `-DLEXER_BUILD_TESTS=OFF` to `cmake` when configuring to skip building tests entirely, e.g. when consuming the
+Pass `-DMUNCH_BUILD_TESTS=OFF` to `cmake` when configuring to skip building tests entirely, e.g. when consuming the
 library as a dependency.
 
 Beyond the per-layer unit tests, the `dfa` and `core` suites include fixed-seed property tests: random DFAs check the
@@ -481,7 +481,7 @@ sets check the whole pipeline against direct NFA simulation.
 docs/                     SVG diagrams and project logos.
 libs/
   common/                 Shared concepts (Iterator, Iterable) used across the other libraries.
-  regex/                  The combinator DSL: Regex nodes and their lowering to lexer::nfa::Builder.
+  regex/                  The combinator DSL: Regex nodes and their lowering to munch::nfa::Builder.
   nfa/                    NFA representation and builder (Thompson construction, epsilon closure, merge/append).
     tools/                Graphviz DOT export for NFAs.
   dfa/                    DFA representation, minimize() (Moore partition refinement), and the table-compiling Simulator.
@@ -494,7 +494,7 @@ tools/
 
 ## **Example CMake Integration**
 
-Here's a sample `CMakeLists.txt` for integrating the `lexer` library:
+Here's a sample `CMakeLists.txt` for integrating the `munch` library:
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
@@ -503,17 +503,17 @@ project(MyProject VERSION 1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Add the lexer library
-add_subdirectory(lexer)
+# Add the munch library
+add_subdirectory(munch)
 
-# Link the lexer library to your target
+# Link the munch library to your target
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE lexer)
+target_link_libraries(my_app PRIVATE munch)
 ```
 
-The `lexer` target is an interface umbrella over `lexer_core` and `lexer_tokenizer`, which pull in `lexer_regex`,
-`lexer_nfa`, `lexer_dfa`, and `lexer_common` transitively. The Graphviz debugging helpers described below are not
-part of the umbrella target; link `lexer_nfa_tools` and/or `lexer_dfa_tools` directly to use them.
+The `munch` target is an interface umbrella over `munch_core` and `munch_tokenizer`, which pull in `munch_regex`,
+`munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers described below are not
+part of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools` directly to use them.
 
 ## **Debugging and Visualization**
 

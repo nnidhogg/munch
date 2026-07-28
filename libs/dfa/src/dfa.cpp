@@ -1,8 +1,8 @@
-#include "lexer/dfa/dfa.hpp"
+#include "munch/dfa/dfa.hpp"
 
 #include <boost/container_hash/hash.hpp>
 
-namespace lexer::dfa
+namespace munch::dfa
 {
 std::size_t Dfa::Hash::operator()(const Key_t& key) const noexcept
 {
@@ -43,4 +43,4 @@ std::optional<Token> Dfa::has_accept_token(const Dfa& dfa, const State_t state)
     return iterator != dfa.accept_states_.cend() ? std::optional{iterator->second} : std::nullopt;
 }
 
-} // namespace lexer::dfa
+} // namespace munch::dfa

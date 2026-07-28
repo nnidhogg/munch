@@ -1,11 +1,11 @@
-#include "lexer/dfa/simulator.hpp"
+#include "munch/dfa/simulator.hpp"
 
 #include <algorithm>
 #include <map>
 #include <ranges>
 #include <stdexcept>
 
-namespace lexer::dfa
+namespace munch::dfa
 {
 namespace
 {
@@ -96,4 +96,4 @@ Simulator::Classes_t Simulator::classify(const Dfa& dfa)
     return result;
 }
 
-} // namespace lexer::dfa
+} // namespace munch::dfa

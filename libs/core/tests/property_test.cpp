@@ -4,13 +4,13 @@
 #include <string>
 #include <vector>
 
-#include "lexer/core/builder.hpp"
-#include "lexer/nfa/simulator.hpp"
-#include "lexer/regex/regex.hpp"
-#include "lexer/regex/utf8.hpp"
+#include "munch/core/builder.hpp"
+#include "munch/nfa/simulator.hpp"
+#include "munch/regex/regex.hpp"
+#include "munch/regex/utf8.hpp"
 
-using namespace lexer;
-using namespace lexer::regex;
+using namespace munch;
+using namespace munch::regex;
 
 namespace
 {

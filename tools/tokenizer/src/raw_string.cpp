@@ -1,8 +1,8 @@
-#include "lexer/tools/tokenizer/raw_string.hpp"
+#include "munch/tools/tokenizer/raw_string.hpp"
 
 #include <string>
 
-namespace lexer::tools::tokenizer
+namespace munch::tools::tokenizer
 {
 namespace
 {
@@ -66,4 +66,4 @@ std::expected<std::size_t, Error> scan_raw_string(const std::string_view input, 
     return end + closing.size() - offset;
 }
 
-} // namespace lexer::tools::tokenizer
+} // namespace munch::tools::tokenizer

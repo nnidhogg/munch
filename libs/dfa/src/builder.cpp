@@ -1,8 +1,8 @@
-#include "lexer/dfa/builder.hpp"
+#include "munch/dfa/builder.hpp"
 
 #include <algorithm>
 
-namespace lexer::dfa
+namespace munch::dfa
 {
 Builder::Builder() noexcept : init_state_{0}, next_state_{1}
 {}
@@ -36,4 +36,4 @@ Dfa Builder::build() const
     return {init_state_, transitions_, accept_states_};
 }
 
-} // namespace lexer::dfa
+} // namespace munch::dfa
