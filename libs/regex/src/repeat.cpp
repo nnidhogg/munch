@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <ranges>
+#include <stdexcept>
 
 #include "lexer/regex/regex.hpp"
 
@@ -101,7 +102,15 @@ std::vector<Regex> single(Regex regex)
      *                 / <-----ε----- \
      *                /                \
      * (S) --ε--> ... ((regex n)) --ε-->
+     *
+     * At least zero occurrences is the Kleene star; branching keeps the iota below well-formed, as its bound may not
+     * lie before its start.
      */
+    if (min == 0)
+    {
+        return to_kleene(regex);
+    }
+
     nfa::Builder S;
 
     S.add_accept_state(S.init_state());
@@ -219,6 +228,11 @@ Regex at_least(Regex regex, const std::size_t min)
 
 Regex range(Regex regex, const std::size_t min, const std::size_t max)
 {
+    if (max < min)
+    {
+        throw std::invalid_argument("A repetition range may not end before it starts");
+    }
+
     return {.node = Repeat{.kind = Range{.min = min, .max = max}, .regex = single(std::move(regex))}};
 }
 
