@@ -297,3 +297,64 @@ TEST_F(Tokenizer_test, Seek)
     EXPECT_EQ(tokenizer.offset(), input.size());
     EXPECT_TRUE(tokenizer.next<Token_kind>().end_of_input());
 }
+
+TEST_F(Tokenizer_test, Modes)
+{
+    enum class Mode_token : std::size_t
+    {
+        Whitespace = 1,
+        Word,
+        Include,
+        Header_name
+    };
+
+    enum class Mode : std::size_t
+    {
+        Code,
+        Header
+    };
+
+    // In code mode `<stdio.h>` is unrecognizable; only the header mode's lexer knows header-names.
+    Builder code;
+
+    code.add_token(plus(any_of(Set::whitespace())), Mode_token::Whitespace, 1);
+    code.add_token(text("#include"), Mode_token::Include, 0);
+    code.add_token(plus(any_of(Set::alpha())), Mode_token::Word, 1);
+
+    Builder header;
+
+    header.add_token(plus(any_of(Set::whitespace())), Mode_token::Whitespace, 1);
+    header.add_token(concat(text("<"), plus(any_of(Set::alpha() + '.')), text(">")), Mode_token::Header_name, 0);
+
+    Tokenizer tokenizer{{code.build(), header.build()}, "#include <stdio.h> done"};
+
+    EXPECT_EQ(tokenizer.mode(), 0u);
+
+    auto result{tokenizer.next<Mode_token>()};
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Mode_token::Include);
+
+    ASSERT_TRUE(tokenizer.next<Mode_token>().has_token());
+
+    // The driver saw #include and switches to the header-name mode, then back.
+    tokenizer.set_mode(Mode::Header);
+    EXPECT_EQ(tokenizer.mode(), 1u);
+
+    result = tokenizer.next<Mode_token>();
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Mode_token::Header_name);
+    EXPECT_EQ(result.token().lexeme(), "<stdio.h>");
+
+    tokenizer.set_mode(Mode::Code);
+
+    ASSERT_TRUE(tokenizer.next<Mode_token>().has_token());
+
+    result = tokenizer.next<Mode_token>();
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Mode_token::Word);
+    EXPECT_EQ(result.token().lexeme(), "done");
+
+    EXPECT_TRUE(tokenizer.next<Mode_token>().end_of_input());
+
+    EXPECT_THROW(tokenizer.set_mode(5), std::out_of_range);
+}
