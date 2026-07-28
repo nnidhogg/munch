@@ -13,8 +13,19 @@
 
 namespace
 {
+/**
+ * @brief Hasher for a set of NFA states, used to key the memo table in subset construction.
+ *
+ * Combines the hashes of the individual state identifiers in ascending order, since munch::nfa::Nfa::States_t is a
+ * std::set and therefore iterates in a fixed, insertion-order-independent sequence for a given set of members.
+ */
 struct Hash
 {
+    /**
+     * @brief Computes the combined hash of a set of NFA states.
+     * @param states The set of NFA states to hash.
+     * @return The combined hash value.
+     */
     std::size_t operator()(const munch::nfa::Nfa::States_t& states) const noexcept
     {
         const auto hash{[](auto seed, const auto element) { return boost::hash_combine(seed, element), seed; }};
@@ -23,6 +34,11 @@ struct Hash
     }
 };
 
+/**
+ * @brief Builds a lookup table from each NFA state to the set of input symbols it has an outgoing transition on.
+ * @param nfa The NFA to index.
+ * @return A map from state identifier to the set of symbols with an outgoing transition from that state.
+ */
 auto build_symbol_table(const munch::nfa::Nfa& nfa)
 {
     std::unordered_map<size_t, std::unordered_set<munch::nfa::Label::Symbol_t>> result;
@@ -36,6 +52,12 @@ auto build_symbol_table(const munch::nfa::Nfa& nfa)
     return result;
 }
 
+/**
+ * @brief Converts a DFA into an equivalent NFA builder, restoring the token the DFA's pattern was registered with.
+ * @param dfa The DFA to convert.
+ * @param token The token to mark the resulting NFA's accept states with.
+ * @return An NFA builder recognizing the same language as dfa, accepting with token.
+ */
 munch::nfa::Builder to_nfa(const munch::dfa::Dfa& dfa, const munch::nfa::Token& token)
 {
     munch::nfa::Builder result;
@@ -107,7 +129,7 @@ dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)
 
     const auto symbol_table{build_symbol_table(nfa)};
 
-    const auto initial_states{nfa::Nfa::epsilon_closure(nfa, {nfa.init_state()})};
+    const auto initial_states{nfa.epsilon_closure({nfa.init_state()})};
 
     std::unordered_map<nfa::Nfa::States_t, dfa::Dfa::State_t, Hash> nfa_dfa_map{{initial_states, dfa.init_state()}};
 
@@ -121,7 +143,7 @@ dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)
 
         const auto dfa_state{nfa_dfa_map.at(nfa_states)};
 
-        if (const auto token = nfa::Nfa::has_accept_token(nfa, nfa_states); token)
+        if (const auto token = nfa.has_accept_token(nfa_states); token)
         {
             dfa.add_accept_state(dfa_state, dfa::Token{token->id()});
         }
@@ -133,7 +155,7 @@ dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)
         auto view{nfa_states | std::views::filter(filter) | std::views::transform(transform) | std::views::join};
 
         std::ranges::for_each(view, [&](const auto symbol) {
-            const auto next_states{nfa::Nfa::advance(nfa, nfa_states, symbol)};
+            const auto next_states{nfa.advance(nfa_states, symbol)};
 
             if (next_states.empty())
             {

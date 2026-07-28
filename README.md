@@ -213,7 +213,7 @@ classes: `Set::digits()`, `Set::alpha()`, `Set::alphanum()`, `Set::printable()`,
 `Set::whitespace()`, `Set::all()`, or `Set::range(start, end)`. Sets combine with `+`/`+=` (union) and `-`/`-=`
 (difference), including against single characters.
 
-For Unicode input, `utf8::range(first, last)` from `lexer/regex/utf8.hpp` matches one code point from an inclusive
+For Unicode input, `utf8::range(first, last)` from `munch/regex/utf8.hpp` matches one code point from an inclusive
 range, expanded into its UTF-8 byte sequences. Surrogates are excluded, and ill-formed input such as overlong
 encodings is rejected by construction.
 

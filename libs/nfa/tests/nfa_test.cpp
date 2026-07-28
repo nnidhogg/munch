@@ -39,6 +39,25 @@ TEST_F(Nfa_test, Test_empty)
     EXPECT_EQ(Simulator::run(result, input), Result_t(std::nullopt, 0));
 }
 
+TEST_F(Nfa_test, Empty_input_accepting_nfa)
+{
+    nfa::Builder nfa;
+
+    const auto q0{nfa.init_state()};
+
+    const Token token{1, 1};
+
+    nfa.add_accept_state(q0, token);
+
+    const auto result{nfa.build()};
+
+    const std::vector<char> input;
+
+    using Result_t = Simulator::Result_t;
+
+    EXPECT_EQ(Simulator::run(result, input), Result_t(token, 0));
+}
+
 TEST_F(Nfa_test, Any_of)
 {
     nfa::Builder nfa;
@@ -370,4 +389,35 @@ TEST_F(Nfa_test, Loop_plus_a)
 
     EXPECT_EQ(Simulator::run(result, ""), Result_t(std::nullopt, 0));
     EXPECT_EQ(Simulator::run(result, "b"), Result_t(std::nullopt, 0));
+}
+
+TEST_F(Nfa_test, Token_operator_less_ties_break_on_id)
+{
+    const Token lower_id{1, 5};
+    const Token higher_id{2, 5};
+
+    EXPECT_LT(lower_id, higher_id);
+    EXPECT_FALSE(higher_id < lower_id);
+}
+
+TEST_F(Nfa_test, Equal_priority_accept_states_prefer_lower_id)
+{
+    nfa::Builder nfa;
+
+    const auto q0{nfa.init_state()};
+    const auto q1{nfa.next_state()};
+
+    const Token higher_id{2, 1};
+    const Token lower_id{1, 1};
+
+    nfa.add_accept_state(q0, higher_id);
+    nfa.add_accept_state(q1, lower_id);
+
+    nfa.add_transition(q0, nfa::Label::epsilon(), q1);
+
+    const auto result{nfa.build()};
+
+    using Result_t = Simulator::Result_t;
+
+    EXPECT_EQ(Simulator::run(result, ""), Result_t(lower_id, 0));
 }

@@ -117,15 +117,26 @@ public:
     [[nodiscard]] Nfa build() const;
 
 private:
+    /**
+     * @brief Constructs a Builder from explicit state, transition, and accept-state data.
+     * @param init_state The initial state of the NFA.
+     * @param next_state The next state identifier to hand out.
+     * @param transitions The transition table.
+     * @param accept_states The accept states and their associated tokens.
+     */
     Builder(Nfa::State_t init_state, Nfa::State_t next_state, Nfa::Transitions_t transitions,
             Nfa::Accept_states_t accept_states);
 
+    /// The initial state of the NFA.
     Nfa::State_t init_state_;
 
+    /// The next unused state identifier.
     Nfa::State_t next_state_;
 
+    /// The transition table under construction.
     Nfa::Transitions_t transitions_;
 
+    /// The accept states and their associated tokens under construction.
     Nfa::Accept_states_t accept_states_;
 };
 

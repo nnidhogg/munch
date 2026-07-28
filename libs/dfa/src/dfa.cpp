@@ -29,18 +29,18 @@ const Dfa::Accept_states_t& Dfa::accept_states() const noexcept
     return accept_states_;
 }
 
-std::optional<Dfa::State_t> Dfa::advance(const Dfa& dfa, const State_t state, const char symbol)
+std::optional<Dfa::State_t> Dfa::advance(const State_t state, const char symbol) const
 {
-    const auto iterator{dfa.transitions_.find({state, Label{symbol}})};
+    const auto iterator{transitions_.find({state, Label{symbol}})};
 
-    return iterator != dfa.transitions_.cend() ? std::optional{iterator->second} : std::nullopt;
+    return iterator != transitions_.cend() ? std::optional{iterator->second} : std::nullopt;
 }
 
-std::optional<Token> Dfa::has_accept_token(const Dfa& dfa, const State_t state)
+std::optional<Token> Dfa::has_accept_token(const State_t state) const
 {
-    const auto iterator{dfa.accept_states_.find(state)};
+    const auto iterator{accept_states_.find(state)};
 
-    return iterator != dfa.accept_states_.cend() ? std::optional{iterator->second} : std::nullopt;
+    return iterator != accept_states_.cend() ? std::optional{iterator->second} : std::nullopt;
 }
 
 } // namespace munch::dfa

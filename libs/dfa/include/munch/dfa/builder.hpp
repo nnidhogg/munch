@@ -51,9 +51,12 @@ public:
 
     /**
      * @brief Builds and returns the constructed DFA.
+     *
+     * Moves the accumulated transitions and accept states out of the Builder, so the Builder should not be reused
+     * afterwards; construct a new one for further building.
      * @return The constructed DFA object.
      */
-    [[nodiscard]] Dfa build() const;
+    [[nodiscard]] Dfa build();
 
 private:
     Dfa::State_t init_state_;

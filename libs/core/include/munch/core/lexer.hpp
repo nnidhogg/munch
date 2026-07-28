@@ -1,5 +1,5 @@
-#ifndef MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_MUNCH_HPP
-#define MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_MUNCH_HPP
+#ifndef MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_LEXER_HPP
+#define MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_LEXER_HPP
 
 #include <optional>
 
@@ -13,6 +13,8 @@ namespace munch::core
  * @brief The main Lexer class for tokenizing input using a DFA.
  *
  * Provides methods to tokenize input from iterators or containers, returning the matched token and length.
+ * Instances are only constructible through Builder::build(), which is the sole supported path from patterns to a
+ * working Lexer.
  */
 class Lexer
 {
@@ -23,12 +25,6 @@ public:
      */
     template <typename T>
     using Result_t = std::pair<std::optional<T>, std::size_t>;
-
-    /**
-     * @brief Constructs a Lexer from a DFA.
-     * @param dfa The DFA to use for tokenization.
-     */
-    explicit Lexer(const dfa::Dfa& dfa) : simulator_{dfa} {}
 
     /**
      * @brief Tokenizes input from a pair of iterators.
@@ -62,6 +58,14 @@ public:
     }
 
 private:
+    friend class Builder;
+
+    /**
+     * @brief Constructs a Lexer from a DFA.
+     * @param dfa The DFA to use for tokenization.
+     */
+    explicit Lexer(const dfa::Dfa& dfa) : simulator_{dfa} {}
+
     /**
      * @brief The simulator running the DFA the Lexer was constructed from.
      */
@@ -70,4 +74,4 @@ private:
 
 } // namespace munch::core
 
-#endif // MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_MUNCH_HPP
+#endif // MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_LEXER_HPP

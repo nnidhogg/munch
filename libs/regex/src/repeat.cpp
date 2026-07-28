@@ -20,6 +20,11 @@ std::vector<Regex> single(Regex regex)
     return result;
 }
 
+/**
+ * @brief Builds the NFA for a Kleene star (zero or more) repetition.
+ * @param regex The sub-pattern to repeat.
+ * @return NFA builder representing the repetition.
+ */
 [[nodiscard]] nfa::Builder to_kleene(const Regex& regex)
 {
     /**
@@ -41,6 +46,11 @@ std::vector<Regex> single(Regex regex)
     return S;
 }
 
+/**
+ * @brief Builds the NFA for a Kleene plus (one or more) repetition.
+ * @param regex The sub-pattern to repeat.
+ * @return NFA builder representing the repetition.
+ */
 [[nodiscard]] nfa::Builder to_plus(const Regex& regex)
 {
     /**
@@ -60,6 +70,11 @@ std::vector<Regex> single(Regex regex)
     return S;
 }
 
+/**
+ * @brief Builds the NFA for an optional (zero or one) repetition.
+ * @param regex The sub-pattern to make optional.
+ * @return NFA builder representing the repetition.
+ */
 [[nodiscard]] nfa::Builder to_optional(const Regex& regex)
 {
     /**
@@ -76,6 +91,12 @@ std::vector<Regex> single(Regex regex)
     return S;
 }
 
+/**
+ * @brief Builds the NFA for an exact repetition.
+ * @param regex The sub-pattern to repeat.
+ * @param count The exact number of repetitions.
+ * @return NFA builder representing the repetition.
+ */
 [[nodiscard]] nfa::Builder to_exact(const Regex& regex, const std::size_t count)
 {
     /**
@@ -94,6 +115,12 @@ std::vector<Regex> single(Regex regex)
     return S;
 }
 
+/**
+ * @brief Builds the NFA for a lower-bound repetition.
+ * @param regex The sub-pattern to repeat.
+ * @param min The minimum number of repetitions.
+ * @return NFA builder representing the repetition.
+ */
 [[nodiscard]] nfa::Builder to_at_least(const Regex& regex, const std::size_t min)
 {
     /**
@@ -127,6 +154,13 @@ std::vector<Regex> single(Regex regex)
     return S.append(F);
 }
 
+/**
+ * @brief Builds the NFA for a bounded repetition.
+ * @param regex The sub-pattern to repeat.
+ * @param min The minimum number of repetitions.
+ * @param max The maximum number of repetitions.
+ * @return NFA builder representing the repetition.
+ */
 [[nodiscard]] nfa::Builder to_range(const Regex& regex, const std::size_t min, const std::size_t max)
 {
     /**
@@ -165,7 +199,12 @@ std::vector<Regex> single(Regex regex)
 
 nfa::Builder to_nfa(const Repeat& repeat)
 {
-    const auto& regex{repeat.regex.front()};
+    if (repeat.regexes.empty())
+    {
+        throw std::invalid_argument("Repeat must hold exactly one regex");
+    }
+
+    const auto& regex{repeat.regexes.front()};
 
     return std::visit(
             [&regex]<typename T>(const T& kind) {
@@ -203,27 +242,27 @@ nfa::Builder to_nfa(const Repeat& repeat)
 
 Regex kleene(Regex regex)
 {
-    return {.node = Repeat{.kind = Kleene{}, .regex = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Kleene{}, .regexes = single(std::move(regex))}};
 }
 
 Regex plus(Regex regex)
 {
-    return {.node = Repeat{.kind = Plus{}, .regex = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Plus{}, .regexes = single(std::move(regex))}};
 }
 
 Regex optional(Regex regex)
 {
-    return {.node = Repeat{.kind = Optional{}, .regex = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Optional{}, .regexes = single(std::move(regex))}};
 }
 
 Regex exact(Regex regex, const std::size_t count)
 {
-    return {.node = Repeat{.kind = Exact{.count = count}, .regex = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Exact{.count = count}, .regexes = single(std::move(regex))}};
 }
 
 Regex at_least(Regex regex, const std::size_t min)
 {
-    return {.node = Repeat{.kind = At_least{.min = min}, .regex = single(std::move(regex))}};
+    return {.node = Repeat{.kind = At_least{.min = min}, .regexes = single(std::move(regex))}};
 }
 
 Regex range(Regex regex, const std::size_t min, const std::size_t max)
@@ -233,7 +272,7 @@ Regex range(Regex regex, const std::size_t min, const std::size_t max)
         throw std::invalid_argument("A repetition range may not end before it starts");
     }
 
-    return {.node = Repeat{.kind = Range{.min = min, .max = max}, .regex = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Range{.min = min, .max = max}, .regexes = single(std::move(regex))}};
 }
 
 } // namespace munch::regex

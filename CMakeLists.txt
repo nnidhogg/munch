@@ -21,7 +21,7 @@ add_compile_options(
         $<$<CONFIG:Release>:$<IF:$<CXX_COMPILER_ID:MSVC>,/O2,-O2>>
 )
 
-option(MUNCH_BUILD_TESTS "Build tests for lexer" ON)
+option(MUNCH_BUILD_TESTS "Build tests for munch" ON)
 if (MUNCH_BUILD_TESTS)
     enable_testing()
 endif ()

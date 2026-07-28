@@ -1,10 +1,12 @@
 #include "munch/dfa/tools/graphviz.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <ranges>
+#include <sstream>
 #include <stdexcept>
 
 namespace munch::dfa::tools
@@ -78,7 +80,7 @@ std::string Graphviz::create_label(const Label& label)
         oss << "\\t";
         break;
     default:
-        if (isprint(symbol))
+        if (isprint(static_cast<unsigned char>(symbol)))
         {
             oss << symbol;
         }

@@ -38,6 +38,11 @@ public:
      */
     struct Hash
     {
+        /**
+         * @brief Computes the hash of a transition key.
+         * @param key The transition key to hash.
+         * @return The hash value.
+         */
         std::size_t operator()(const Key_t& key) const noexcept;
     };
 
@@ -83,20 +88,18 @@ public:
 
     /**
      * @brief Advances the DFA from a given state on an input symbol.
-     * @param dfa The DFA to advance.
      * @param state The current state.
      * @param symbol The input symbol.
      * @return The next state if a transition exists, otherwise std::nullopt.
      */
-    [[nodiscard]] static std::optional<State_t> advance(const Dfa& dfa, State_t state, char symbol);
+    [[nodiscard]] std::optional<State_t> advance(State_t state, char symbol) const;
 
     /**
      * @brief Checks if a state is an accept state and returns its token if so.
-     * @param dfa The DFA to check.
      * @param state The state to check.
      * @return The associated token if the state is accepting, otherwise std::nullopt.
      */
-    [[nodiscard]] static std::optional<Token> has_accept_token(const Dfa& dfa, State_t state);
+    [[nodiscard]] std::optional<Token> has_accept_token(State_t state) const;
 
 private:
     State_t init_state_;

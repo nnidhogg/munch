@@ -43,6 +43,8 @@ constexpr std::array<Block, 5> blocks{{
 
 /**
  * @brief Returns the UTF-8 encoding length of a code point in bytes.
+ * @param code_point The code point to measure.
+ * @return The number of bytes its UTF-8 encoding occupies, from 1 to 4.
  */
 std::size_t length(const char32_t code_point)
 {
@@ -84,39 +86,27 @@ Bytes_t encode(const char32_t code_point)
 }
 
 /**
- * @brief Creates a regex matching one byte from an inclusive range.
- *
- * The set is built over unsigned values, as Symbol_t is signed and bytes at or above 0x80 would otherwise wrap.
- */
-Regex byte_range(const unsigned first, const unsigned last)
-{
-    Set::Symbols_t symbols;
-
-    for (auto value{first}; value <= last; ++value)
-    {
-        symbols.insert(static_cast<Set::Symbol_t>(value));
-    }
-
-    return any_of(Set{std::move(symbols)});
-}
-
-/**
  * @brief Creates a regex matching the encodings from `first` to `last`, both of the given length, from `index` on.
  *
  * Bytes equal in both bounds are matched literally. At the first byte where the bounds diverge, the range splits
  * into three: encodings keeping the lower bound's byte, encodings keeping the upper bound's byte, and the bytes
  * between them followed by unconstrained continuation bytes.
+ * @param first The bytes of the encoding at the start of the range.
+ * @param last The bytes of the encoding at the end of the range.
+ * @param index The byte position, from 0, to start matching from.
+ * @param length The shared encoding length of `first` and `last`, in bytes.
+ * @return The created regex.
  */
 Regex sequence(const Bytes_t& first, const Bytes_t& last, const std::size_t index, const std::size_t length)
 {
     if (index + 1 == length)
     {
-        return byte_range(first[index], last[index]);
+        return any_of(Set::range(first[index], last[index]));
     }
 
     if (first[index] == last[index])
     {
-        return concat(byte_range(first[index], first[index]), sequence(first, last, index + 1, length));
+        return concat(any_of(Set::range(first[index], first[index])), sequence(first, last, index + 1, length));
     }
 
     constexpr unsigned char continuation_first{0x80};
@@ -130,23 +120,25 @@ Regex sequence(const Bytes_t& first, const Bytes_t& last, const std::size_t inde
 
     std::vector<Regex> parts;
 
-    parts.push_back(concat(byte_range(first[index], first[index]), sequence(first, highest, index + 1, length)));
+    parts.push_back(
+            concat(any_of(Set::range(first[index], first[index])), sequence(first, highest, index + 1, length)));
 
     if (first[index] + 1U <= last[index] - 1U)
     {
         std::vector<Regex> middle;
 
-        middle.push_back(byte_range(first[index] + 1U, last[index] - 1U));
+        middle.push_back(any_of(Set::range(first[index] + 1U, last[index] - 1U)));
 
         for (auto position{index + 1}; position < length; ++position)
         {
-            middle.push_back(byte_range(continuation_first, continuation_last));
+            middle.push_back(any_of(Set::range(continuation_first, continuation_last)));
         }
 
         parts.push_back({.node = Concat{.regexes = std::move(middle)}});
     }
 
-    parts.push_back(concat(byte_range(last[index], last[index]), sequence(lowest, last, index + 1, length)));
+    parts.push_back(
+            concat(any_of(Set::range(last[index], last[index])), sequence(lowest, last, index + 1, length)));
 
     return {.node = Choice{.regexes = std::move(parts)}};
 }

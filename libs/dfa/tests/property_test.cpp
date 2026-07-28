@@ -83,18 +83,13 @@ std::string random_input(Random& random)
  */
 Simulator::Result_t reference_run(const Dfa& dfa, const std::string& input)
 {
-    if (input.empty())
-    {
-        return {std::nullopt, 0};
-    }
-
     auto state{dfa.init_state()};
 
-    Simulator::Result_t result{Dfa::has_accept_token(dfa, state), 0};
+    Simulator::Result_t result{dfa.has_accept_token(state), 0};
 
     for (std::size_t index{0}; index < input.size(); ++index)
     {
-        const auto next{Dfa::advance(dfa, state, input[index])};
+        const auto next{dfa.advance(state, input[index])};
 
         if (!next)
         {
@@ -103,7 +98,7 @@ Simulator::Result_t reference_run(const Dfa& dfa, const std::string& input)
 
         state = *next;
 
-        if (const auto token{Dfa::has_accept_token(dfa, state)}; token)
+        if (const auto token{dfa.has_accept_token(state)}; token)
         {
             result = {token, index + 1};
         }

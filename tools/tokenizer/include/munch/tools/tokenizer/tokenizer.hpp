@@ -1,10 +1,11 @@
 #ifndef MUNCH_TOOLS_TOKENIZER_INCLUDE_MUNCH_TOOLS_TOKENIZER_TOKENIZER_HPP
 #define MUNCH_TOOLS_TOKENIZER_INCLUDE_MUNCH_TOOLS_TOKENIZER_TOKENIZER_HPP
 
-#include <algorithm>
+#include <concepts>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "munch/core/lexer.hpp"
@@ -44,30 +45,21 @@ public:
      * @brief Construct a tokenizer from a lexer.
      * @param lexer Lexer used to recognize tokens.
      */
-    explicit Tokenizer(core::Lexer lexer) : mode_{0}, offset_{0} { lexers_.push_back(std::move(lexer)); }
+    explicit Tokenizer(core::Lexer lexer);
 
     /**
      * @brief Construct a tokenizer from a lexer and an input string held in memory.
      * @param lexer Lexer used to recognize tokens.
      * @param input Input text to tokenize.
      */
-    explicit Tokenizer(core::Lexer lexer, std::string input) : mode_{0}, input_{std::move(input)}, offset_{0}
-    {
-        lexers_.push_back(std::move(lexer));
-    }
+    explicit Tokenizer(core::Lexer lexer, std::string input);
 
     /**
      * @brief Construct a tokenizer from one lexer per mode.
      * @param lexers The lexers, indexed by mode; mode 0 starts active.
      * @throws std::invalid_argument If no lexer is given.
      */
-    explicit Tokenizer(std::vector<core::Lexer> lexers) : mode_{0}, offset_{0}, lexers_{std::move(lexers)}
-    {
-        if (lexers_.empty())
-        {
-            throw std::invalid_argument("A tokenizer needs at least one lexer");
-        }
-    }
+    explicit Tokenizer(std::vector<core::Lexer> lexers);
 
     /**
      * @brief Construct a tokenizer from one lexer per mode and an input string held in memory.
@@ -75,25 +67,17 @@ public:
      * @param input Input text to tokenize.
      * @throws std::invalid_argument If no lexer is given.
      */
-    explicit Tokenizer(std::vector<core::Lexer> lexers, std::string input) : Tokenizer{std::move(lexers)}
-    {
-        input_ = std::move(input);
-    }
+    explicit Tokenizer(std::vector<core::Lexer> lexers, std::string input);
 
     /**
      * @brief Replace the input text and reset tokenization state. The active mode is kept.
      */
-    void load(std::string input)
-    {
-        input_ = std::move(input);
-
-        offset_ = 0;
-    }
+    void load(std::string input);
 
     /**
      * @brief Reset the reading position to the beginning of the current input.
      */
-    void reset() noexcept { offset_ = 0; }
+    void reset() noexcept;
 
     /**
      * @brief Move the reading position to the given byte offset, clamped to the end of the input.
@@ -101,7 +85,7 @@ public:
      * The escape hatch for tokens no automaton can recognize, such as C++ raw string literals: a driver reads the
      * prefix token, scans the remainder by hand, and seeks past it before reading on.
      */
-    void seek(const std::size_t offset) noexcept { offset_ = std::min(offset, input_.size()); }
+    void seek(std::size_t offset) noexcept;
 
     /**
      * @brief Make the lexer of the given mode recognize the following tokens.
@@ -127,7 +111,7 @@ public:
      * @brief Return the active mode.
      * @return The mode whose lexer recognizes the following tokens.
      */
-    [[nodiscard]] std::size_t mode() const noexcept { return mode_; }
+    [[nodiscard]] std::size_t mode() const noexcept;
 
     /**
      * @brief Return the current byte offset in the input.
@@ -136,7 +120,7 @@ public:
      *
      * @return The current byte position in the input buffer.
      */
-    [[nodiscard]] std::size_t offset() const noexcept { return offset_; }
+    [[nodiscard]] std::size_t offset() const noexcept;
 
     /**
      * @brief Return the input text being tokenized.
@@ -145,7 +129,7 @@ public:
      *
      * @return View of the input buffer, invalidated by load() and destruction.
      */
-    [[nodiscard]] std::string_view input() const noexcept { return input_; }
+    [[nodiscard]] std::string_view input() const noexcept;
 
     /**
      * @brief Return the next token, recognized by the active mode's lexer.
@@ -166,9 +150,14 @@ public:
 
         const auto [token, consumed]{lexers_[mode_].tokenize<T>(view)};
 
-        if (!token || consumed == 0)
+        if (!token)
         {
             return Error{"Unrecognized character at position " + std::to_string(offset_), offset_};
+        }
+
+        if (consumed == 0)
+        {
+            return Error{"Zero-width match at position " + std::to_string(offset_), offset_};
         }
 
         const auto lexeme{std::string_view{input_}.substr(offset_, consumed)};

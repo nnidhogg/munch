@@ -95,7 +95,7 @@ public:
     {
         if (begin == end)
         {
-            return {std::nullopt, 0};
+            return {accept_table_[init_state_], 0};
         }
 
         auto state{init_state_};
@@ -103,6 +103,8 @@ public:
         // The tables only hold valid states: init_state_ indexes a column, and every entry is either a column index
         // or no_state_. The loop therefore needs no bounds checks.
         Result_t result{accept_table_[state], 0};
+
+        std::size_t consumed{0};
 
         for (Iterator current{begin}; current != end; ++current)
         {
@@ -115,9 +117,11 @@ public:
 
             state = entry;
 
+            ++consumed;
+
             if (const auto& token = accept_table_[state]; token)
             {
-                result = {token, static_cast<std::size_t>(std::distance(begin, current)) + 1};
+                result = {token, consumed};
             }
         }
 

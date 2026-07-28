@@ -32,23 +32,18 @@ public:
     template <common::concepts::Iterator Iterator>
     [[nodiscard]] static Result_t run(const Nfa& nfa, Iterator begin, Iterator end)
     {
-        if (begin == end)
-        {
-            return {std::nullopt, 0};
-        }
+        auto states{nfa.epsilon_closure({nfa.init_state()})};
 
-        auto states{Nfa::epsilon_closure(nfa, {nfa.init_state()})};
-
-        Result_t result{Nfa::has_accept_token(nfa, states), 0};
+        Result_t result{nfa.has_accept_token(states), 0};
 
         for (Iterator current = begin; current != end && !states.empty(); ++current)
         {
-            if (states = Nfa::advance(nfa, states, *current); states.empty())
+            if (states = nfa.advance(states, *current); states.empty())
             {
                 continue;
             }
 
-            if (const auto token = Nfa::has_accept_token(nfa, states); token)
+            if (const auto token = nfa.has_accept_token(states); token)
             {
                 result = {token, std::distance(begin, current) + 1};
             }

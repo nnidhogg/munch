@@ -11,6 +11,8 @@ namespace
 {
 /**
  * @brief Returns the number of table columns the DFA needs, i.e. one past its highest state identifier.
+ * @param dfa The DFA whose states are counted.
+ * @return One past the highest state identifier used by the DFA.
  */
 std::size_t count_states(const Dfa& dfa)
 {

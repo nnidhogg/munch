@@ -89,34 +89,34 @@ public:
 
     /**
      * @brief Computes the epsilon closure of a set of states in the NFA.
-     * @param nfa The NFA to operate on.
      * @param states The set of states to compute the closure for.
      * @return The set of states reachable via epsilon transitions.
      */
-    [[nodiscard]] static States_t epsilon_closure(const Nfa& nfa, const States_t& states);
+    [[nodiscard]] States_t epsilon_closure(const States_t& states) const;
 
     /**
      * @brief Advances the NFA from a set of states on an input symbol.
-     * @param nfa The NFA to advance.
      * @param states The current set of states.
      * @param symbol The input symbol.
      * @return The set of next states reachable on the symbol.
      */
-    [[nodiscard]] static States_t advance(const Nfa& nfa, const States_t& states, char symbol);
+    [[nodiscard]] States_t advance(const States_t& states, char symbol) const;
 
     /**
      * @brief Checks if any state in the set is an accept state and returns its token if so.
-     * @param nfa The NFA to check.
      * @param states The set of states to check.
      * @return The associated token if any state is accepting, otherwise std::nullopt.
      */
-    [[nodiscard]] static std::optional<Token> has_accept_token(const Nfa& nfa, const States_t& states);
+    [[nodiscard]] std::optional<Token> has_accept_token(const States_t& states) const;
 
 private:
+    /// The initial state of the NFA.
     State_t init_state_;
 
+    /// The transition table mapping `(state, label)` pairs to destination state sets.
     Transitions_t transitions_;
 
+    /// The accept states and their associated tokens.
     Accept_states_t accept_states_;
 };
 

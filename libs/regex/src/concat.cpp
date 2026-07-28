@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <ranges>
+#include <stdexcept>
 
 #include "munch/regex/regex.hpp"
 
@@ -7,6 +8,11 @@ namespace munch::regex
 {
 nfa::Builder to_nfa(const Concat& concat)
 {
+    if (concat.regexes.empty())
+    {
+        throw std::invalid_argument("Concat must hold at least one regex");
+    }
+
     /**
      * Concatenate all NFAs with ε transitions in sequence.
      *

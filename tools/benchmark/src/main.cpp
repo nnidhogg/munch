@@ -215,7 +215,7 @@ bool measure(const char* name, const std::size_t bytes, const int passes, Pass&&
  *
  * Reports the Lexer on ASCII input, the Tokenizer driver on the same input, and the Lexer on input with Greek
  * identifiers matched through UTF-8 byte expansion.
- * Usage: lexer_benchmark [input size in MiB] [passes]
+ * Usage: munch_benchmark [input size in MiB] [passes]
  */
 int main(const int argc, const char** argv)
 {

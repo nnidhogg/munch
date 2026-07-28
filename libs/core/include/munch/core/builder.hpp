@@ -1,6 +1,7 @@
 #ifndef MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_BUILDER_HPP
 #define MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_BUILDER_HPP
 
+#include <concepts>
 #include <vector>
 
 #include "munch/core/lexer.hpp"
@@ -48,7 +49,7 @@ public:
      * @param priority The priority for resolving conflicts (lower is higher priority).
      */
     template <typename T>
-        requires(std::is_enum_v<T> || std::is_integral_v<T>)
+        requires(std::integral<T> || std::is_enum_v<T>)
     void add_token(const regex::Regex& regex, const T token, const std::size_t priority)
     {
         add_token(regex, {static_cast<std::size_t>(token), priority});

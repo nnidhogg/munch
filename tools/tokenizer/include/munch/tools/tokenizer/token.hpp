@@ -36,8 +36,14 @@ public:
     [[nodiscard]] std::string_view lexeme() const noexcept { return lexeme_; }
 
 private:
+    /**
+     * @brief Semantic kind/value of the token.
+     */
     T kind_;
 
+    /**
+     * @brief View into the original input corresponding to the token text.
+     */
     std::string_view lexeme_;
 };
 

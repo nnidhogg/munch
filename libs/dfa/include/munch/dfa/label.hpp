@@ -43,6 +43,11 @@ public:
      */
     struct Hash
     {
+        /**
+         * @brief Computes the hash of a label.
+         * @param label The label to hash.
+         * @return The hash value.
+         */
         std::size_t operator()(const Label& label) const noexcept;
     };
 

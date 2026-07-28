@@ -99,8 +99,13 @@ public:
     };
 
 private:
+    /**
+     * @brief Constructs an epsilon label.
+     * @param e The epsilon marker.
+     */
     explicit Label(Epsilon e) noexcept;
 
+    /// The underlying symbol-or-epsilon value.
     Variant_t variant_;
 };
 

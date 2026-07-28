@@ -96,6 +96,7 @@ template <typename T>
  * @return The created regex.
  */
 template <typename T>
+    requires requires(T&& arg) { std::string{std::forward<T>(arg)}; }
 [[nodiscard]] Regex text(T&& arg)
 {
     return {.node = Text{.text = std::string{std::forward<T>(arg)}}};

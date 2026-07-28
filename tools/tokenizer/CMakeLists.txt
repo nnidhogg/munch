@@ -3,7 +3,9 @@ cmake_policy(SET CMP0097 NEW)
 project(munch_tokenizer)
 
 add_library(${PROJECT_NAME}
+        src/error.cpp
         src/raw_string.cpp
+        src/tokenizer.cpp
 )
 
 target_include_directories(${PROJECT_NAME}

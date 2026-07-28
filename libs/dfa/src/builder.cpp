@@ -1,6 +1,7 @@
 #include "munch/dfa/builder.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace munch::dfa
 {
@@ -26,14 +27,14 @@ Builder& Builder::add_transition(const Dfa::State_t from, const Label& label, co
 
 Builder& Builder::add_accept_state(const Dfa::State_t accept_state, const Token& token)
 {
-    accept_states_.emplace(accept_state, token);
+    accept_states_.insert_or_assign(accept_state, token);
 
     return *this;
 }
 
-Dfa Builder::build() const
+Dfa Builder::build()
 {
-    return {init_state_, transitions_, accept_states_};
+    return {init_state_, std::move(transitions_), std::move(accept_states_)};
 }
 
 } // namespace munch::dfa

@@ -45,8 +45,10 @@ public:
     bool operator==(const Token& other) const noexcept;
 
 private:
+    /// The unique identifier of the token.
     std::size_t id_;
 
+    /// The priority of the token (lower means higher priority).
     std::size_t priority_;
 };
 

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <stdexcept>
 
 #include "munch/regex/regex.hpp"
 
@@ -6,6 +7,11 @@ namespace munch::regex
 {
 nfa::Builder to_nfa(const Choice& choice)
 {
+    if (choice.regexes.empty())
+    {
+        throw std::invalid_argument("Choice must hold at least one regex");
+    }
+
     /**
      * Connect all NFAs with ε transitions into a default constructed empty NFA.
      *

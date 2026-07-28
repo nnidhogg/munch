@@ -77,7 +77,7 @@ struct Repeat
      *
      * A vector is used because Regex is incomplete here, being the type this node is an alternative of.
      */
-    std::vector<Regex> regex;
+    std::vector<Regex> regexes;
 };
 
 } // namespace munch::regex

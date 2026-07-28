@@ -32,7 +32,9 @@ Set Set::from(std::initializer_list<Symbol_t> symbols)
 Set Set::range(const Symbol_t start, const Symbol_t end)
 {
     const auto range{
-            std::views::iota(static_cast<unsigned>(start), static_cast<unsigned>(end) + 1) |
+            std::views::iota(
+                    static_cast<unsigned>(static_cast<unsigned char>(start)),
+                    static_cast<unsigned>(static_cast<unsigned char>(end)) + 1) |
             std::views::transform([](const auto i) { return static_cast<Symbol_t>(i); })};
 
     return Set({range.begin(), range.end()});
@@ -75,7 +77,7 @@ Set Set::whitespace()
 
 Set Set::all()
 {
-    return range(0, 127);
+    return range(0, static_cast<Symbol_t>(0xFF));
 }
 
 Set& Set::operator+=(const Set& other)

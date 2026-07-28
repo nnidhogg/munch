@@ -17,21 +17,27 @@ public:
      * @param message Human-readable description of the error.
      * @param position Byte offset in the input where the error occurred.
      */
-    Error(std::string message, const std::size_t position) : message_{std::move(message)}, position_{position} {}
+    Error(std::string message, std::size_t position);
 
     /**
      * @brief Return the error message.
      */
-    [[nodiscard]] const std::string& message() const noexcept { return message_; }
+    [[nodiscard]] const std::string& message() const noexcept;
 
     /**
      * @brief Return the error position (byte offset) in the input.
      */
-    [[nodiscard]] std::size_t position() const noexcept { return position_; }
+    [[nodiscard]] std::size_t position() const noexcept;
 
 private:
+    /**
+     * @brief Human-readable description of the error.
+     */
     std::string message_;
 
+    /**
+     * @brief Byte offset in the input where the error occurred.
+     */
     std::size_t position_;
 };
 

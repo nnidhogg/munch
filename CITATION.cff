@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "munch"
+abstract: >-
+  A C++23 lexing library built as a layered pipeline: a regex combinator AST, Thompson construction into an NFA,
+  subset construction and minimization into a DFA, and a Builder/Lexer orchestration layer on top.
+authors:
+  - family-names: "Nidhögg"
+    given-names: "Nicklas"
+repository-code: "https://github.com/nnidhogg/munch"
+url: "https://github.com/nnidhogg/munch"
+license: MIT
+version: 0.1.0
+date-released: "2026-07-28"

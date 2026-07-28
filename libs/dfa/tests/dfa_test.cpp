@@ -28,7 +28,7 @@ private:
 
 TEST_F(Dfa_test, Test_empty)
 {
-    const dfa::Builder dfa;
+    dfa::Builder dfa;
 
     const auto result{dfa.build()};
 
@@ -39,6 +39,27 @@ TEST_F(Dfa_test, Test_empty)
     using Result_t = Simulator::Result_t;
 
     EXPECT_EQ(simulator.run(input), Result_t(std::nullopt, 0));
+}
+
+TEST_F(Dfa_test, Empty_input_accepting_dfa)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+
+    const Token token{1};
+
+    dfa.add_accept_state(q0, token);
+
+    const auto result{dfa.build()};
+
+    const Simulator simulator{result};
+
+    const std::vector<char> input;
+
+    using Result_t = Simulator::Result_t;
+
+    EXPECT_EQ(simulator.run(input), Result_t(token, 0));
 }
 
 TEST_F(Dfa_test, Any_of)
@@ -304,7 +325,7 @@ TEST_F(Dfa_test, Numeric_branch)
     const auto q5{dfa.next_state()};
 
     const Token token_123{1};
-    const Token token_45{1};
+    const Token token_45{2};
 
     dfa.add_accept_state(q3, token_123);
     dfa.add_accept_state(q5, token_45);
