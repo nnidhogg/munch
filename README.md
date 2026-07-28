@@ -13,49 +13,129 @@
 
 # **Lexer Library**
 
-`lexer` is a **modern C++23 library** for building fast, flexible lexical analyzers. It provides a **builder-based API**
-with composable, regex-like expressions for expressive and customizable token definitions. Inspired by automata theory,
-it uses **subset construction** to transform a Non-deterministic Finite Automaton (NFA) into an equivalent Deterministic
-Finite Automaton (DFA), ensuring efficient and deterministic tokenization.
+`lexer` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
+regex-like combinator DSL, compiled through Thompson construction, subset construction and Hopcroft-style DFA
+minimization, and executed by a cache-optimized table simulator. There are no predefined tokens or grammars — you
+describe the language, the library builds the automaton.
 
 ## **Features**
 
-- **Highly Flexible Token Definition**
+- **Fully User-Defined Tokens**
 
-  No predefined tokens, users can manually define tokens by specifying patterns and priorities, making the library
-  adaptable to any language or custom syntax.
+  No built-in keyword or literal set. Every token is a pattern plus a priority you register yourself, so the library
+  adapts to any language or custom syntax without forking it.
 
-- **Modern C++23 Syntax**
+- **Regex-like Combinators, Not a Regex String**
 
-  Leverages C++23 features such as concise lambdas, enhanced template support, and ranges, improving both readability
-  and maintainability.
+  Token patterns are built from composable, typed combinator functions (`concat`, `choice`, `plus`, `kleene`,
+  `optional`, `exact`, `at_least`, `range`, `any_of`, `text`) instead of a parsed regex string — patterns are checked
+  by the compiler and can be built, stored, and reused as ordinary C++ values.
 
-- **Lightweight and Easy Integration**
+- **A Real Automata Pipeline, Not a Backtracking Matcher**
 
-  Designed to be **linked into other projects** as a dependency, making it an excellent choice for parsers, compilers,
-  and any project requiring lexical analysis.
+  Each pattern becomes an NFA (Thompson construction), is determinized (subset construction) and minimized on its own,
+  then all patterns are recombined and the whole lexer is determinized and minimized once more. Matching an input is
+  always a single deterministic pass with no backtracking.
 
-- **Regex-like Combinators**
+- **A Simulator Built for Throughput**
 
-  Provides combinator functions (`concat`, `choice`, `plus`, `kleene`, `optional`, `exact`, `at_least`, `range`, etc.)
-  to create complex token patterns in an expressive and composable manner.
+  The minimized DFA is compiled into flat transition tables with input symbols grouped into equivalence classes, so
+  advancing the automaton on a character is one table read rather than a hash lookup or a graph walk. See
+  [Performance](#performance).
 
-- **Graphviz Integration for Debugging**
+- **Two Tokenization Layers**
 
-  Optional DOT export for NFAs and DFAs to help debug and visualize automata.
+  A low-level `core::Lexer` for single-shot, longest-match tokenization over an iterator range or container, and a
+  `tools::tokenizer::Tokenizer` on top of it that streams a whole input into a sequence of tokens with position
+  tracking and structured errors.
+
+- **Graphviz Export for Debugging**
+
+  Any NFA or DFA the library builds can be dumped to Graphviz DOT and rendered to SVG, which is how the diagrams in
+  this README were produced.
+
+- **Lightweight to Integrate**
+
+  Builds as a set of static libraries with `FetchContent`-managed dependencies; add it with `add_subdirectory` and
+  link `lexer`.
+
+## **How It Works**
+
+Building a lexer is a pipeline from combinators down to a flat table, run once by `Builder::build()`:
+
+```
+regex combinators ──▶ NFA (Thompson construction)
+                          │  per pattern
+                          ▼
+                    subset construction ──▶ per-pattern DFA ──▶ minimize
+                          │
+                          ▼  convert back to NFA, union all patterns (ε-transitions)
+                    merged NFA
+                          │
+                          ▼
+                    subset construction ──▶ DFA ──▶ minimize ──▶ final DFA
+                          │
+                          ▼
+                    Simulator (flat tables, symbol equivalence classes)
+```
+
+1. **Regex → NFA.** Each combinator (`concat`, `choice`, `kleene`, ...) knows how to lower itself to an
+   `nfa::Builder` fragment; composing combinators composes NFA fragments.
+2. **Per-pattern determinization.** Every registered pattern's NFA is independently turned into a DFA by subset
+   construction and minimized. This resolves the non-determinism a single pattern's own combinators introduce (e.g.
+   the branching in `choice` or the loop in `kleene`) before patterns ever interact.
+3. **Recombination.** Each minimized per-pattern DFA is converted back into an NFA fragment carrying its token, and
+   all fragments are unioned into one NFA via an ε-transition from a shared start state (Thompson-style union) —
+   this is what lets multiple tokens share a lexer.
+4. **Final determinization.** The merged NFA is determinized and minimized once more. This is the step that resolves
+   *cross-pattern* ambiguity — shared prefixes between an identifier and a keyword, for instance — using each
+   token's priority (lower value wins) to pick a winner when several patterns accept the same input.
+5. **Compilation to tables.** `core::Lexer` wraps the final DFA in a `dfa::Simulator`, which compiles it into
+   flat `(class, state) → state` and `state → token` tables (see [Performance](#performance)) instead of running the
+   DFA against the maps it was built from.
+
+Because determinization and minimization run twice — once per pattern, once for the whole lexer — the final DFA is
+never larger than it needs to be, and adding a token only re-triggers the second pass, not the first.
+
+## **Performance**
+
+`core::Lexer::tokenize` advances the DFA through `dfa::Simulator::run`, which turns matching a character into one
+table read on the hot path:
+
+- **Symbol equivalence classes.** Two input bytes that the automaton never tells apart (e.g. two digits, in a lexer
+  with no per-digit tokens) share one row of the transition table, so the table doesn't need one row per possible
+  `char` value — only one per class the automaton actually distinguishes.
+- **A flat `(class, state)` table**, viewed as a 2D `mdspan`, replaces the `unordered_map<(state, Label), state>`
+  the DFA itself is built and inspected through. The class of the next symbol is known before the current state is,
+  so the row offset is computed off the state-to-state dependency chain that would otherwise limit how fast `run()`
+  can advance.
+- **Narrow table entries** (`uint32_t` state indices, `uint8_t` class indices) keep more of the table resident in
+  cache than the `size_t`-keyed hash map would.
+
+Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2) tokenizing generated C-like source:
+
+```
+$ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+$ cmake --build build -j 8 --target lexer_benchmark
+$ ./build/tools/benchmark/lexer_benchmark 16 15
+input: 16.0 MiB, tokens: 9144476, best of 15 passes: 495.6 MiB/s
+```
+
+Numbers depend on the machine and the token set — rerun the benchmark on your own hardware and language before
+citing it. `tools/benchmark/src/main.cpp` builds a small C-like lexer exercising every combinator kind and generates
+a fixed-seed, deterministic input so runs are comparable across changes.
 
 ## **Architecture Overview**
 
-- **`lexer::core`**
-    - `Builder`: constructs the underlying NFA/DFA from regex combinators.
-    - `Lexer`: runtime matcher built from a `Builder`.
-- **`lexer::regex`**
-    - A small combinator Domain-Specific Language (DSL) for describing token patterns.
-- **`lexer::tools::tokenizer`**
-    - `Tokenizer`: a streaming wrapper that repeatedly calls `Lexer` and:
-        - yields tokens in order,
-        - supports string-based input,
-        - errors are reported when no registered token matches the current input position.
+| Module                       | Responsibility                                                                                       |
+|-------------------------------|-------------------------------------------------------------------------------------------------------|
+| `lexer::regex`                | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...) and `Regex` → NFA lowering.  |
+| `lexer::nfa`                  | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
+| `lexer::dfa`                  | `Dfa` / `dfa::Builder`: DFA representation; `minimize()` (Moore partition refinement); `Simulator`.   |
+| `lexer::core`                 | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
+| `lexer::tools::tokenizer`     | `Tokenizer`: streaming wrapper over `core::Lexer` with offsets, EOF, and structured errors.           |
+| `lexer::nfa::tools` / `lexer::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.               |
+| `lexer::common`                | Shared concepts (`Iterator`, `Iterable`) used across the other modules.                               |
 
 ## **Usage Overview**
 
@@ -125,6 +205,13 @@ Patterns are immutable, lightweight value objects and can be reused across multi
 - `at_least(p, min)`: Matches `min` or more repetitions of `p`.
 - `range(p, min, max)`: Matches between `min` and `max` repetitions of `p`.
 
+##### **Character Sets**
+
+`any_of` takes a `regex::Set`, built from an initializer list, an explicit range, or one of the predefined character
+classes: `Set::digits()`, `Set::alpha()`, `Set::alphanum()`, `Set::printable()`, `Set::escape()`, `Set::newline()`,
+`Set::whitespace()`, `Set::all()`, or `Set::range(start, end)`. Sets combine with `+`/`+=` (union) and `-`/`-=`
+(difference), including against single characters.
+
 ##### **Example**
 
 ```cpp
@@ -137,7 +224,7 @@ const auto identifier = concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::al
 #### **2. Builder Methods**
 
 The `lexer::core::Builder` is responsible for collecting token definitions and producing a deterministic lexer. It
-represents the *construction phase* of the lexer pipeline.
+represents the *construction phase* of the lexer pipeline described in [How It Works](#how-it-works).
 
 Once `build()` is called, the resulting `Lexer` is immutable and safe to reuse across multiple inputs.
 
@@ -157,24 +244,20 @@ builder.add_token(pattern, Token_kind::Identifier, 4);
 
 - Lower priority values are matched first.
 - If multiple token patterns match the same input prefix, the token with the *lowest* priority value is selected.
-- Priority resolution is deterministic and performed during DFA construction.
+- Priority resolution is deterministic and performed during the final DFA construction, once all patterns share a
+  single automaton.
 
 This mechanism allows keyword tokens to override more general patterns such as identifiers.
 
 ### build()
 
 ```cpp
-const auto lexer = builder.build();
+const auto lexer{builder.build()};
 ```
 
-Finalizes the builder and constructs a `lexer::core::Lexer`.
-
-During this step:
-
-- each registered pattern is converted into a Non-deterministic Finite Automaton (NFA),
-- subset construction is applied per pattern, producing a minimized Deterministic Finite Automaton (DFA) for each of them,
-- Thompson construction recombines the per-pattern DFAs into a single NFA,
-- subset construction is applied once more, and the result is minimized to produce the final DFA.
+Finalizes the builder and constructs a `lexer::core::Lexer`, running the pipeline in [How It Works](#how-it-works):
+per-pattern NFA construction and determinization, recombination via Thompson union, and a final subset construction
+and minimization producing the DFA the returned `Lexer` simulates.
 
 After calling `build()`:
 
@@ -334,41 +417,64 @@ The tokenizer API uses an expected-like result type:
 Together, these two layers let you choose between fine-grained control (`core::Lexer`) and convenient streaming-based
 processing (`tools::tokenizer::Tokenizer`).
 
+> **Note:** `Tokenizer` is not thread-safe, and `Token::lexeme()` is a `string_view` into the `Tokenizer`'s internal
+> input buffer — it is invalidated by `load()` or by the `Tokenizer` being destroyed. Copy the lexeme to a
+> `std::string` if a token needs to outlive either.
+
 ## **Getting Started**
+
+### **Requirements**
+
+- A C++23 compiler. Developed against GCC 13.3; GCC 13 has no native `<mdspan>`, which `external/mdspan` (the Kokkos
+  reference implementation) supplies via `FetchContent`.
+- CMake 3.20+.
+- Everything else (`boost.config`/`describe`/`mp11`/`container_hash`, `mdspan`, `googletest`) is fetched by CMake at
+  configure time; there is nothing to install manually. Pass `-DUSE_SYSTEM_BOOST=ON` / `-DUSE_SYSTEM_GTEST=ON` to use
+  system packages instead.
 
 ### **Building the Project**
 
-To build the project, ensure you have a C++23-compatible compiler and CMake installed. Run the following commands:
-
 ```bash
-mkdir build
-cd build
-cmake ..
-make
+cmake -S . -B build
+cmake --build build -j 8
 ```
+
+Build in `Release` for anything performance-sensitive — the default `CMAKE_BUILD_TYPE` is `Release` when unset, but an
+existing `build/` directory keeps whatever type it was first configured with.
 
 ## **Testing**
 
-The project includes unit tests located in the `tests/` directory in the respective library. To run the tests:
+Every library and tool under `libs/` and `tools/` has its own GoogleTest suite in a `tests/` subdirectory, registered
+with CTest. To run them all:
 
 ```bash
 cd build
-ctest
+ctest --output-on-failure
 ```
 
-Ensure all tests pass to verify the library's functionality.
+Pass `-DLEXER_BUILD_TESTS=OFF` to `cmake` when configuring to skip building tests entirely, e.g. when consuming the
+library as a dependency.
 
 ## **Directory Structure**
 
-- `docs/`: SVG diagrams and project logos.
-- `libs/core/`: Core lexer implementation including the `Builder` and `Lexer`.
-- `libs/regex/`: Regex combinators for defining token patterns (`concat`, `choice`, `kleene`, etc.).
-- `libs/dfa/` and `libs/nfa/`: Internal automata modules powering the lexer engine.
-- `tools/tokenizer/`: High-level streaming-based tokenization interface.
+```
+docs/                     SVG diagrams and project logos.
+libs/
+  common/                 Shared concepts (Iterator, Iterable) used across the other libraries.
+  regex/                  The combinator DSL: Regex nodes and their lowering to lexer::nfa::Builder.
+  nfa/                    NFA representation and builder (Thompson construction, epsilon closure, merge/append).
+    tools/                Graphviz DOT export for NFAs.
+  dfa/                    DFA representation, minimize() (Moore partition refinement), and the table-compiling Simulator.
+    tools/                Graphviz DOT export for DFAs.
+  core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
+tools/
+  tokenizer/              Tokenizer: streaming wrapper over core::Lexer with offsets and structured errors.
+  benchmark/               Throughput benchmark for core::Lexer::tokenize (see Performance).
+```
 
 ## **Example CMake Integration**
 
-Here’s a sample `CMakeLists.txt` for integrating the `lexer` library:
+Here's a sample `CMakeLists.txt` for integrating the `lexer` library:
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
@@ -384,6 +490,10 @@ add_subdirectory(lexer)
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE lexer)
 ```
+
+The `lexer` target is an interface umbrella over `lexer_core` and `lexer_tokenizer`, which pull in `lexer_regex`,
+`lexer_nfa`, `lexer_dfa`, and `lexer_common` transitively. To use the Graphviz debugging helpers described below, link
+`lexer_nfa_tools` and/or `lexer_dfa_tools` directly — they are not part of the `lexer` umbrella target.
 
 ## **Debugging and Visualization**
 

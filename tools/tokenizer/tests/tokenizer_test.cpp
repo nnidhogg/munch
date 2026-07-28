@@ -148,13 +148,10 @@ TEST_F(Tokenizer_test, Tokenize_from_string_stream)
     Tokenizer tokenizer{lexer, input};
 
     const auto advance = [&tokenizer](const Token_kind expect_kind, const std::string_view expect_lexeme) {
-        const auto expected{tokenizer.next<Token_kind>()};
-        ASSERT_TRUE(expected.has_value());
+        const auto result{tokenizer.next<Token_kind>()};
+        ASSERT_TRUE(result.has_token());
 
-        const auto optional{expected.value()};
-        ASSERT_TRUE(optional.has_value());
-
-        const auto token{optional.value()};
+        const auto& token{result.token()};
         EXPECT_EQ(token.kind(), expect_kind);
         EXPECT_EQ(token.lexeme(), expect_lexeme);
     };
@@ -181,10 +178,7 @@ TEST_F(Tokenizer_test, Tokenize_from_string_stream)
         advance(Token_kind::Multi_line_comment, "/* block */");
 
         const auto eof{tokenizer.next<Token_kind>()};
-        ASSERT_TRUE(eof.has_value());
-
-        const auto optional{eof.value()};
-        EXPECT_FALSE(optional.has_value());
+        EXPECT_TRUE(eof.end_of_input());
     };
 
     evaluate();
@@ -208,10 +202,10 @@ TEST_F(Tokenizer_test, Unknown_character)
 
     tokenizer.load(input);
 
-    const auto expected{tokenizer.next<Token_kind>()};
-    ASSERT_FALSE(expected.has_value());
+    const auto result{tokenizer.next<Token_kind>()};
+    ASSERT_TRUE(result.has_error());
 
-    const auto& error{expected.error()};
+    const auto& error{result.error()};
     EXPECT_EQ(error.position(), 0u);
     EXPECT_FALSE(error.message().empty());
 }
@@ -229,38 +223,37 @@ TEST_F(Tokenizer_test, Offset_tracking)
 
     // After "boolean" (7 chars)
     auto result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Boolean);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Boolean);
     EXPECT_EQ(tokenizer.offset(), 7u);
 
     // After " " (1 char)
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Whitespace);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Whitespace);
     EXPECT_EQ(tokenizer.offset(), 8u);
 
     // After "x" (1 char)
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Identifier);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Identifier);
     EXPECT_EQ(tokenizer.offset(), 9u);
 
     // After " " (1 char)
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Whitespace);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Whitespace);
     EXPECT_EQ(tokenizer.offset(), 10u);
 
     // After "123" (3 chars)
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Integer_literal);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Integer_literal);
     EXPECT_EQ(tokenizer.offset(), 13u);
 
     // EOF - offset should stay at end
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_FALSE(result.value().has_value());
+    EXPECT_TRUE(result.end_of_input());
     EXPECT_EQ(tokenizer.offset(), 13u);
 
     // After reset, offset should be 0

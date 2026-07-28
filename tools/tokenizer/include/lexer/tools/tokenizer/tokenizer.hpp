@@ -1,14 +1,11 @@
 #ifndef LEXER_TOOLS_TOKENIZER_INCLUDE_LEXER_TOOLS_TOKENIZER_TOKENIZER_HPP
 #define LEXER_TOOLS_TOKENIZER_INCLUDE_LEXER_TOOLS_TOKENIZER_TOKENIZER_HPP
 
-#include <expected>
-#include <optional>
 #include <string>
 #include <string_view>
 
 #include "lexer/core/lexer.hpp"
-#include "lexer/tools/tokenizer/error.hpp"
-#include "lexer/tools/tokenizer/token.hpp"
+#include "lexer/tools/tokenizer/result.hpp"
 
 namespace lexer::tools::tokenizer
 {
@@ -31,10 +28,10 @@ public:
     /**
      * @brief Standard tokenizer result type.
      *
-     * Holds a `Token<T>` on success, `std::nullopt` on end of input, or an `Error` on failure.
+     * Holds a `Token<T>` on success, `End_of_input` when the input is exhausted, or an `Error` on failure.
      */
     template <typename T>
-    using Result_t = std::expected<std::optional<Token<T>>, Error>;
+    using Result_t = Result<T>;
 
     /**
      * @brief Construct a tokenizer from a lexer.
@@ -78,7 +75,7 @@ public:
     /**
      * @brief Return the next token.
      *
-     * On success, returns a Token<T> wrapped in std::optional where std::nullopt indicates end of input.
+     * On success, returns a Token<T>; End_of_input indicates the input is exhausted.
      * On failure, returns an Error describing the lexical error at the current position.
      */
     template <typename T>
@@ -87,7 +84,7 @@ public:
     {
         if (offset_ >= input_.size())
         {
-            return std::nullopt;
+            return End_of_input{};
         }
 
         const auto view{std::string_view{input_}.substr(offset_)};
@@ -96,7 +93,7 @@ public:
 
         if (!token || consumed == 0)
         {
-            return std::unexpected(Error{"Unrecognized character at position " + std::to_string(offset_), offset_});
+            return Error{"Unrecognized character at position " + std::to_string(offset_), offset_};
         }
 
         const auto lexeme{std::string_view{input_}.substr(offset_, consumed)};
