@@ -14,9 +14,9 @@
 # **Lexer Library**
 
 `lexer` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
-regex-like combinator DSL, compiled through Thompson construction, subset construction and Hopcroft-style DFA
-minimization, and executed by a cache-optimized table simulator. There are no predefined tokens or grammars — you
-describe the language, the library builds the automaton.
+regex-like combinator DSL, compiled through Thompson construction, subset construction, and DFA minimization by Moore
+partition refinement, then executed by a cache-optimized table simulator. There are no predefined tokens or grammars.
+You describe the language, and the library builds the automaton.
 
 ## **Features**
 
@@ -28,8 +28,9 @@ describe the language, the library builds the automaton.
 - **Regex-like Combinators, Not a Regex String**
 
   Token patterns are built from composable, typed combinator functions (`concat`, `choice`, `plus`, `kleene`,
-  `optional`, `exact`, `at_least`, `range`, `any_of`, `text`) instead of a parsed regex string — patterns are checked
-  by the compiler and can be built, stored, and reused as ordinary C++ values.
+  `optional`, `exact`, `at_least`, `range`, `any_of`, `text`) instead of a parsed regex string. Patterns are checked
+  by the compiler and can be built, stored, and reused as ordinary C++ values. `utf8::range` matches Unicode code
+  point ranges by expanding them into byte sequences, so the engine itself stays byte-oriented.
 
 - **A Real Automata Pipeline, Not a Backtracking Matcher**
 
@@ -47,7 +48,8 @@ describe the language, the library builds the automaton.
 
   A low-level `core::Lexer` for single-shot, longest-match tokenization over an iterator range or container, and a
   `tools::tokenizer::Tokenizer` on top of it that streams a whole input into a sequence of tokens with position
-  tracking and structured errors.
+  tracking and structured errors. The tokenizer also carries the primitives real languages need: several lexers as
+  modes over one input, a seek escape hatch for hand-scanned tokens, and a scanner for C++ raw string literals.
 
 - **Graphviz Export for Debugging**
 
@@ -85,17 +87,17 @@ regex combinators ──▶ NFA (Thompson construction)
    construction and minimized. This resolves the non-determinism a single pattern's own combinators introduce (e.g.
    the branching in `choice` or the loop in `kleene`) before patterns ever interact.
 3. **Recombination.** Each minimized per-pattern DFA is converted back into an NFA fragment carrying its token, and
-   all fragments are unioned into one NFA via an ε-transition from a shared start state (Thompson-style union) —
-   this is what lets multiple tokens share a lexer.
+   all fragments are unioned into one NFA via an ε-transition from a shared start state (Thompson-style union). This
+   union is what lets multiple tokens share a lexer.
 4. **Final determinization.** The merged NFA is determinized and minimized once more. This is the step that resolves
-   *cross-pattern* ambiguity — shared prefixes between an identifier and a keyword, for instance — using each
-   token's priority (lower value wins) to pick a winner when several patterns accept the same input.
+   *cross-pattern* ambiguity, such as shared prefixes between an identifier and a keyword, using each token's
+   priority (lower value wins) to pick a winner when several patterns accept the same input.
 5. **Compilation to tables.** `core::Lexer` wraps the final DFA in a `dfa::Simulator`, which compiles it into
    flat `(class, state) → state` and `state → token` tables (see [Performance](#performance)) instead of running the
    DFA against the maps it was built from.
 
-Because determinization and minimization run twice — once per pattern, once for the whole lexer — the final DFA is
-never larger than it needs to be, and adding a token only re-triggers the second pass, not the first.
+Determinization and minimization run twice, once per pattern and once for the whole lexer, so the final DFA is never
+larger than it needs to be. Adding a token only re-triggers the second pass, not the first.
 
 ## **Performance**
 
@@ -103,8 +105,8 @@ never larger than it needs to be, and adding a token only re-triggers the second
 table read on the hot path:
 
 - **Symbol equivalence classes.** Two input bytes that the automaton never tells apart (e.g. two digits, in a lexer
-  with no per-digit tokens) share one row of the transition table, so the table doesn't need one row per possible
-  `char` value — only one per class the automaton actually distinguishes.
+  with no per-digit tokens) share one row of the transition table. The table therefore needs one row per class the
+  automaton actually distinguishes rather than one per possible `char` value.
 - **A flat `(class, state)` table**, viewed as a 2D `mdspan`, replaces the `unordered_map<(state, Label), state>`
   the DFA itself is built and inspected through. The class of the next symbol is known before the current state is,
   so the row offset is computed off the state-to-state dependency chain that would otherwise limit how fast `run()`
@@ -112,18 +114,21 @@ table read on the hot path:
 - **Narrow table entries** (`uint32_t` state indices, `uint8_t` class indices) keep more of the table resident in
   cache than the `size_t`-keyed hash map would.
 
-Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2) tokenizing generated C-like source:
+Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2) over generated pseudo-code:
 
 ```
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target lexer_benchmark
 $ ./build/tools/benchmark/lexer_benchmark 16 15
-input: 16.0 MiB, tokens: 9144476, best of 15 passes: 495.6 MiB/s
+lexer/ascii      16.0 MiB, 9144476 tokens, best of 15 passes: 520.4 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, best of 15 passes: 465.6 MiB/s
+lexer/utf8       16.0 MiB, 8320312 tokens, best of 15 passes: 506.1 MiB/s
 ```
 
-Numbers depend on the machine and the token set — rerun the benchmark on your own hardware and language before
-citing it. `tools/benchmark/src/main.cpp` builds a small C-like lexer exercising every combinator kind and generates
-a fixed-seed, deterministic input so runs are comparable across changes.
+The three scenarios measure the core lexer on C-like source, the same input through the `Tokenizer` driver, and
+identifiers containing UTF-8 code points matched through byte expansion. Inputs are fixed-seed and deterministic, so
+runs are comparable across changes. Numbers depend on the machine and the token set, so rerun the benchmark on your
+own hardware and language before citing them.
 
 ## **Architecture Overview**
 
@@ -133,7 +138,7 @@ a fixed-seed, deterministic input so runs are comparable across changes.
 | `lexer::nfa`                  | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
 | `lexer::dfa`                  | `Dfa` / `dfa::Builder`: DFA representation; `minimize()` (Moore partition refinement); `Simulator`.   |
 | `lexer::core`                 | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
-| `lexer::tools::tokenizer`     | `Tokenizer`: streaming wrapper over `core::Lexer` with offsets, EOF, and structured errors.           |
+| `lexer::tools::tokenizer`     | `Tokenizer`: streaming driver over `core::Lexer` with modes, offsets, seek, and a raw string scanner. |
 | `lexer::nfa::tools` / `lexer::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.               |
 | `lexer::common`                | Shared concepts (`Iterator`, `Iterable`) used across the other modules.                               |
 
@@ -211,6 +216,10 @@ Patterns are immutable, lightweight value objects and can be reused across multi
 classes: `Set::digits()`, `Set::alpha()`, `Set::alphanum()`, `Set::printable()`, `Set::escape()`, `Set::newline()`,
 `Set::whitespace()`, `Set::all()`, or `Set::range(start, end)`. Sets combine with `+`/`+=` (union) and `-`/`-=`
 (difference), including against single characters.
+
+For Unicode input, `utf8::range(first, last)` from `lexer/regex/utf8.hpp` matches one code point from an inclusive
+range, expanded into its UTF-8 byte sequences. Surrogates are excluded, and ill-formed input such as overlong
+encodings is rejected by construction.
 
 ##### **Example**
 
@@ -389,36 +398,43 @@ Tokenizer tokenizer{lexer, input};
 
 for (;;)
 {
-    const std::expected<std::optional<Token<Token_kind>>, Error> expected = tokenizer.next<Token_kind>();
-    if (!expected.has_value())
+    const auto result{tokenizer.next<Token_kind>()};
+
+    if (result.end_of_input())
     {
-        // Invalid input or unrecognized symbol
-        std::cerr << expected.error().message() << '\n';
         break;
     }
 
-    const std::optional<Token<Token_kind>> optional = expected.value();
-    if (!optional.has_value())
+    if (result.has_error())
     {
-        break; // End of input
+        // Invalid input or unrecognized symbol
+        std::cerr << result.error().message() << '\n';
+        break;
     }
 
-    const Token<Token_kind> token = optional.value();
+    const auto& token{result.token()};
     std::cout << "Token kind=" << static_cast<int>(token.kind()) << " lexeme=\"" << token.lexeme() << "\"\n";
 }
 ```
 
-The tokenizer API uses an expected-like result type:
+`next()` returns a flat, three-state `Result<Token_kind>`:
 
-- **Success**: Returns a value containing `std::optional<Token<Token_kind>>` with either the recognized token or EOF (
-  `std::nullopt`).
-- **Failure**: Returns an error object with position and textual description.
+- **Token**: `has_token()` is true and `token()` returns the matched token with its kind and lexeme.
+- **End of input**: `end_of_input()` is true once the input is exhausted.
+- **Error**: `has_error()` is true and `error()` carries the position and a textual description.
+
+The three states are alternatives of one sum type, so they can also be handled exhaustively with `visit()`.
+
+For context-dependent languages, a `Tokenizer` can hold several lexers as modes over the same input and switch between
+them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no automaton can express, such
+as C++ raw string literals, the driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`,
+and continues past the literal with `seek()`.
 
 Together, these two layers let you choose between fine-grained control (`core::Lexer`) and convenient streaming-based
 processing (`tools::tokenizer::Tokenizer`).
 
 > **Note:** `Tokenizer` is not thread-safe, and `Token::lexeme()` is a `string_view` into the `Tokenizer`'s internal
-> input buffer — it is invalidated by `load()` or by the `Tokenizer` being destroyed. Copy the lexeme to a
+> input buffer. The view is invalidated by `load()` or by the `Tokenizer` being destroyed, so copy the lexeme to a
 > `std::string` if a token needs to outlive either.
 
 ## **Getting Started**
@@ -439,7 +455,7 @@ cmake -S . -B build
 cmake --build build -j 8
 ```
 
-Build in `Release` for anything performance-sensitive — the default `CMAKE_BUILD_TYPE` is `Release` when unset, but an
+Build in `Release` for anything performance-sensitive. The default `CMAKE_BUILD_TYPE` is `Release` when unset, but an
 existing `build/` directory keeps whatever type it was first configured with.
 
 ## **Testing**
@@ -455,6 +471,10 @@ ctest --output-on-failure
 Pass `-DLEXER_BUILD_TESTS=OFF` to `cmake` when configuring to skip building tests entirely, e.g. when consuming the
 library as a dependency.
 
+Beyond the per-layer unit tests, the `dfa` and `core` suites include fixed-seed property tests: random DFAs check the
+compiled simulator against the definition maps and minimization against the original language, and random pattern
+sets check the whole pipeline against direct NFA simulation.
+
 ## **Directory Structure**
 
 ```
@@ -468,8 +488,8 @@ libs/
     tools/                Graphviz DOT export for DFAs.
   core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
 tools/
-  tokenizer/              Tokenizer: streaming wrapper over core::Lexer with offsets and structured errors.
-  benchmark/               Throughput benchmark for core::Lexer::tokenize (see Performance).
+  tokenizer/              Tokenizer: streaming driver over core::Lexer with modes, seek, and a raw string scanner.
+  benchmark/              Throughput benchmark: core lexer, tokenizer driver, and UTF-8 scenarios (see Performance).
 ```
 
 ## **Example CMake Integration**
@@ -492,8 +512,8 @@ target_link_libraries(my_app PRIVATE lexer)
 ```
 
 The `lexer` target is an interface umbrella over `lexer_core` and `lexer_tokenizer`, which pull in `lexer_regex`,
-`lexer_nfa`, `lexer_dfa`, and `lexer_common` transitively. To use the Graphviz debugging helpers described below, link
-`lexer_nfa_tools` and/or `lexer_dfa_tools` directly — they are not part of the `lexer` umbrella target.
+`lexer_nfa`, `lexer_dfa`, and `lexer_common` transitively. The Graphviz debugging helpers described below are not
+part of the umbrella target; link `lexer_nfa_tools` and/or `lexer_dfa_tools` directly to use them.
 
 ## **Debugging and Visualization**
 
