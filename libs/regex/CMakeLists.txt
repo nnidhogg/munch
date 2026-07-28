@@ -10,6 +10,7 @@ add_library(${PROJECT_NAME}
         src/repeat.cpp
         src/set.cpp
         src/text.cpp
+        src/utf8.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -30,6 +31,7 @@ if (LEXER_BUILD_TESTS)
             tests/repeat_test.cpp
             tests/set_test.cpp
             tests/text_test.cpp
+            tests/utf8_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests
