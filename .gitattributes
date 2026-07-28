@@ -1,0 +1,5 @@
+# Normalize all text files to LF in the repository and the working tree.
+* text=auto eol=lf
+
+# Binary files are left untouched.
+*.png binary

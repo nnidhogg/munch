@@ -27,9 +27,8 @@ namespace `std` via `<experimental/mdspan>`.
 
 ## Line endings
 
-C++ sources and headers are stored with CRLF in git; CMakeLists.txt and workflow files are LF. There is no
-.gitattributes and autocrlf is unset, so files written by tools come out LF and bloat diffs. After editing C++ files,
-normalize: `sed -i -e 's/\r$//' -e 's/$/\r/' <file>`.
+LF everywhere, enforced by .gitattributes (`* text=auto eol=lf`). No manual normalization is needed; never introduce
+CRLF.
 
 ## Code conventions
 
