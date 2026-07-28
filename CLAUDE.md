@@ -62,3 +62,8 @@ Example: `Compress transition table columns into symbol equivalence classes`.
 Each library has its own test executable (`lexer_<lib>_tests`). Regex-layer tests verify through nfa::Simulator;
 dfa-layer tests build automata by hand via dfa::Builder and verify through the dfa Simulator; driver tests exercise
 the Tokenizer end to end. New behavior needs tests at the layer that owns it, including negative and boundary cases.
+
+Property tests (`property_test.cpp` in dfa and core) use fixed-seed linear congruential generators — never
+std::random_device or platform-dependent distributions — so failures reproduce exactly. The pipeline differential
+test compares the full DFA pipeline against direct NFA simulation; when generating random regexes, bound the total
+expanded length, as an unbounded repetition followed by a long fixed tail makes subset construction exponential.

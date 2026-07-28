@@ -42,6 +42,7 @@ if (LEXER_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/dfa_test.cpp
             tests/minimize_test.cpp
+            tests/property_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests
