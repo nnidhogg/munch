@@ -23,6 +23,22 @@ namespace lexer::core
  */
 class Builder
 {
+    /**
+     * @brief A registered token pattern.
+     */
+    struct Pattern
+    {
+        /**
+         * @brief The NFA recognizing the pattern.
+         */
+        nfa::Builder nfa;
+
+        /**
+         * @brief The token accepted by the pattern.
+         */
+        nfa::Token token;
+    };
+
 public:
     /**
      * @brief Registers a token with a regex pattern and priority.
@@ -58,22 +74,6 @@ protected:
     [[nodiscard]] dfa::Dfa dfa() const;
 
 private:
-    /**
-     * @brief A registered token pattern.
-     */
-    struct Pattern
-    {
-        /**
-         * @brief The NFA recognizing the pattern.
-         */
-        nfa::Builder nfa;
-
-        /**
-         * @brief The token accepted by the pattern.
-         */
-        nfa::Token token;
-    };
-
     /**
      * @brief Internal method to register a token with a regex and NFA token.
      * @param regex The regex pattern.

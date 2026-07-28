@@ -10,7 +10,7 @@ namespace lexer::dfa
 namespace
 {
 /**
- * @brief Returns the number of table rows the DFA needs, i.e. one past its highest state identifier.
+ * @brief Returns the number of table columns the DFA needs, i.e. one past its highest state identifier.
  */
 std::size_t count_states(const Dfa& dfa)
 {
@@ -30,34 +30,6 @@ std::size_t count_states(const Dfa& dfa)
 }
 
 } // namespace
-
-Simulator::Classes_t Simulator::classify(const Dfa& dfa)
-{
-    // The signature of a symbol is the sorted set of transitions it labels. Symbols with equal signatures would have
-    // identical table columns, which is exactly when they may share a class.
-    using Signature_t = std::vector<std::pair<Dfa::State_t, Dfa::State_t>>;
-
-    std::array<Signature_t, symbol_count_> signatures;
-
-    for (const auto& [key, to] : dfa.transitions())
-    {
-        signatures[static_cast<unsigned char>(key.second.symbol())].emplace_back(key.first, to);
-    }
-
-    std::map<Signature_t, Class_t> classes;
-
-    Classes_t result{};
-
-    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-    {
-        std::ranges::sort(signatures[symbol]);
-
-        result[symbol] =
-                classes.try_emplace(std::move(signatures[symbol]), static_cast<Class_t>(classes.size())).first->second;
-    }
-
-    return result;
-}
 
 Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
 {
@@ -94,6 +66,34 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
     {
         accept_table_[state] = token;
     }
+}
+
+Simulator::Classes_t Simulator::classify(const Dfa& dfa)
+{
+    // The signature of a symbol is the sorted set of transitions it labels. Symbols with equal signatures would have
+    // identical table rows, which is exactly when they may share a class.
+    using Signature_t = std::vector<std::pair<Dfa::State_t, Dfa::State_t>>;
+
+    std::array<Signature_t, symbol_count_> signatures;
+
+    for (const auto& [key, to] : dfa.transitions())
+    {
+        signatures[static_cast<unsigned char>(key.second.symbol())].emplace_back(key.first, to);
+    }
+
+    std::map<Signature_t, Class_t> classes;
+
+    Classes_t result{};
+
+    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    {
+        std::ranges::sort(signatures[symbol]);
+
+        result[symbol] =
+                classes.try_emplace(std::move(signatures[symbol]), static_cast<Class_t>(classes.size())).first->second;
+    }
+
+    return result;
 }
 
 } // namespace lexer::dfa

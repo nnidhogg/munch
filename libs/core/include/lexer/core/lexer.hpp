@@ -18,17 +18,17 @@ class Lexer
 {
 public:
     /**
-     * @brief Constructs a Lexer from a DFA.
-     * @param dfa The DFA to use for tokenization.
-     */
-    explicit Lexer(const dfa::Dfa& dfa) : simulator_{dfa} {}
-
-    /**
      * @brief The result type: a pair of the matched token (if any) and the length of the match.
      * @tparam T The token type (enum or integral).
      */
     template <typename T>
     using Result_t = std::pair<std::optional<T>, std::size_t>;
+
+    /**
+     * @brief Constructs a Lexer from a DFA.
+     * @param dfa The DFA to use for tokenization.
+     */
+    explicit Lexer(const dfa::Dfa& dfa) : simulator_{dfa} {}
 
     /**
      * @brief Tokenizes input from a pair of iterators.

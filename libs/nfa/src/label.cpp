@@ -14,10 +14,10 @@ std::size_t Epsilon::Hash::operator()(const Epsilon&) const noexcept
     return 0;
 }
 
-Label::Label(const Epsilon e) noexcept : variant_{e}
+Label::Label(const Symbol_t s) noexcept : variant_{s}
 {}
 
-Label::Label(const Symbol_t s) noexcept : variant_{s}
+Label::Label(const Epsilon e) noexcept : variant_{e}
 {}
 
 Label Label::epsilon() noexcept

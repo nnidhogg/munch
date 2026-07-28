@@ -20,13 +20,56 @@ namespace lexer::dfa
  *
  * Compiles the DFA it is constructed from into flat tables indexed by state and input symbol, so that advancing on an
  * input character is a single table read instead of a hash lookup. Symbols the automaton never distinguishes share a
- * table column: each input character is first mapped to its equivalence class, shrinking the table from one column
- * per symbol value to one per class, which keeps far more of it in cache. The tables assume states are numbered
- * densely from zero, as the subset construction numbers them; a sparsely numbered DFA still works but wastes a table
- * row per unused identifier.
+ * table row: each input character is first mapped to its equivalence class, shrinking the table from one row per
+ * symbol value to one per class, which keeps far more of it in cache. The tables assume states are numbered densely
+ * from zero, as the subset construction numbers them; a sparsely numbered DFA still works but wastes a table column
+ * per unused identifier.
  */
 class Simulator
 {
+    /**
+     * @brief Type of a symbol equivalence class, i.e. a row index of the transition table.
+     *
+     * There are at most symbol_count_ classes, so the widest index fits.
+     */
+    using Class_t = std::uint8_t;
+
+    /**
+     * @brief Type of a transition table entry.
+     *
+     * Narrower than Dfa::State_t, as the table is read once per input character and halving it keeps twice as much
+     * of it in cache. This bounds the number of states a DFA can have, which the constructor checks.
+     */
+    using Entry_t = std::uint32_t;
+
+    /**
+     * @brief Table entry marking the absence of a transition.
+     */
+    static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
+
+    /**
+     * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables.
+     */
+    static constexpr std::size_t symbol_count_{1U << (sizeof(Label::Symbol_t) * 8U)};
+
+    /**
+     * @brief The equivalence class of each symbol value.
+     *
+     * Declared after the constants it depends on, out of size order.
+     */
+    using Classes_t = std::array<Class_t, symbol_count_>;
+
+    /**
+     * @brief Two-dimensional `(class, state)` view over a transition table.
+     *
+     * Rows are per class rather than per state, so the row offset of a lookup depends only on the input character,
+     * which is known before the state it is consumed in: the offset computation stays off the state-to-state
+     * dependency chain that limits how fast the run() loop can advance.
+     * @tparam Entry The viewed entry type, const-qualified for reading.
+     */
+    template <typename Entry>
+    using Table_view_t = std::mdspan<Entry, std::dextents<std::size_t, 2>>;
+
 public:
     /**
      * @brief The result type: a pair of the matched token (if any) and the length of the match.
@@ -95,58 +138,19 @@ public:
 
 private:
     /**
-     * @brief Type of a transition table entry.
+     * @brief Groups the symbols of the DFA into equivalence classes.
      *
-     * Narrower than Dfa::State_t, as the table is read once per input character and halving it keeps twice as much
-     * of it in cache. This bounds the number of states a DFA can have, which the constructor checks.
+     * Two symbols are equivalent when every state either moves on both to the same state or on neither, i.e. when
+     * their transition table rows would be identical.
+     * @param dfa The DFA whose symbols are classified.
+     * @return The class of each symbol value, numbered densely from zero.
      */
-    using Entry_t = std::uint32_t;
-
-    /**
-     * @brief Number of distinct symbol values a transition can be labelled with, i.e. the width of a table row.
-     */
-    static constexpr std::size_t symbol_count_{1U << (sizeof(Label::Symbol_t) * 8U)};
-
-    /**
-     * @brief Table entry marking the absence of a transition.
-     */
-    static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
-
-    /**
-     * @brief Type of a symbol equivalence class, i.e. a column index of the transition table.
-     *
-     * There are at most symbol_count_ classes, so the widest index fits.
-     */
-    using Class_t = std::uint8_t;
-
-    /**
-     * @brief The class of each symbol value.
-     */
-    using Classes_t = std::array<Class_t, symbol_count_>;
-
-    /**
-     * @brief Two-dimensional `(class, state)` view over a transition table.
-     *
-     * Rows are per class rather than per state, so the row-offset multiplication depends only on the input
-     * character, which is known before the state it is consumed in: the multiplication stays off the
-     * state-to-state dependency chain that limits how fast the run() loop can advance.
-     * @tparam Entry The viewed entry type, const-qualified for reading.
-     */
-    template <typename Entry>
-    using Table_view_t = std::mdspan<Entry, std::dextents<std::size_t, 2>>;
+    [[nodiscard]] static Classes_t classify(const Dfa& dfa);
 
     /**
      * @brief The state a simulation starts in.
      */
     Dfa::State_t init_state_;
-
-    /**
-     * @brief The table offset of the class row of each symbol value.
-     *
-     * Holds `class * states` rather than the class itself, so looking a transition up is an addition and a read with
-     * no multiplication left on the run() loop's critical path.
-     */
-    std::array<std::size_t, symbol_count_> row_offsets_;
 
     /**
      * @brief Transitions as one row per symbol class and one column per state, holding no_state_ where there is none.
@@ -159,14 +163,12 @@ private:
     std::vector<std::optional<Token>> accept_table_;
 
     /**
-     * @brief Groups the symbols of the DFA into equivalence classes.
+     * @brief The table offset of the class row of each symbol value.
      *
-     * Two symbols are equivalent when every state either moves on both to the same state or on neither, i.e. when
-     * their transition table columns would be identical.
-     * @param dfa The DFA whose symbols are classified.
-     * @return The class of each symbol value, numbered densely from zero.
+     * Holds `class * states` rather than the class itself, so looking a transition up is an addition and a read with
+     * no multiplication left on the run() loop's critical path.
      */
-    [[nodiscard]] static Classes_t classify(const Dfa& dfa);
+    std::array<std::size_t, symbol_count_> row_offsets_;
 };
 
 } // namespace lexer::dfa
