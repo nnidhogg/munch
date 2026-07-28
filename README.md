@@ -1,7 +1,3 @@
-<div style="text-align: center; padding: 20px 0;">
-  <img src="docs/logo_wide.svg" alt="Logo" style="max-width: 60%; height: auto;">
-</div>
-
 <div style="text-align: center; margin-bottom: 1rem;">
   <img src="https://img.shields.io/badge/C%2B%2B-23-blue.svg" alt="C++23">
   <img src="https://github.com/nnidhogg/munch/actions/workflows/ci.yml/badge.svg" alt="CI">
@@ -478,7 +474,7 @@ sets check the whole pipeline against direct NFA simulation.
 ## **Directory Structure**
 
 ```
-docs/                     SVG diagrams and project logos.
+docs/                     SVG diagrams of example automata.
 libs/
   common/                 Shared concepts (Iterator, Iterable) used across the other libraries.
   regex/                  The combinator DSL: Regex nodes and their lowering to munch::nfa::Builder.
