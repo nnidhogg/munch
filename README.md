@@ -542,30 +542,33 @@ Below are examples of how an NFA and its corresponding DFA might look:
 
 ![NFA Example](docs/identifier_nfa.svg)
 
-This image represents the NFA for recognizing identifiers. It shows the states and transitions based on the input
-characters. NFAs are useful for understanding the non-deterministic paths that the lexer can take when matching
-patterns.
+This is the NFA exactly as Thompson construction emits it for `concat(any_of(alpha), kleene(any_of(alphanum)))`,
+before any determinization. The ε-transitions wiring the `kleene` loop are the non-determinism: from one state,
+several paths can be taken without consuming input.
 
 #### **Identifier DFA Example**
 
 ![DFA Example](docs/identifier_dfa.svg)
 
-This image illustrates the DFA derived from the NFA above. DFAs are deterministic and optimized for fast tokenization,
-showcasing the subset construction process and the deterministic transitions.
+The same pattern after the full pipeline: subset construction removes the ε-transitions and the non-determinism, and
+minimization removes redundant states, leaving one state per distinguishable situation and exactly one successor per
+input character.
 
 #### **Floating Point Literal NFA Example**
 
 ![Floating Point Literal NFA](docs/floating_point_literal_nfa.svg)
 
-This NFA visualizes the recognition of floating point literals, demonstrating the complexity of matching numeric
-patterns with optional decimal points and exponents.
+The Thompson NFA for a floating point literal with an optional sign and exponent. Every combinator contributes its
+own small fragment glued together with ε-transitions, which is why the raw automaton sprawls: over thirty states,
+most of them connected by ε-edges rather than input.
 
 #### **Floating Point Literal DFA Example**
 
 ![Floating Point Literal DFA](docs/floating_point_literal_dfa.svg)
 
-This DFA is constructed from the floating point literal NFA and shows the deterministic state transitions required to
-efficiently recognize floating point numbers.
+The same literal after determinization and minimization: the thirty-state ε-riddled NFA collapses into a handful of
+states with purely deterministic transitions. This collapse is what the pipeline buys, and the flat tables the
+simulator compiles from it are what make matching fast.
 
 #### **DFA Minimization Example**
 
