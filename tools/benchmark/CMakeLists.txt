@@ -10,4 +10,5 @@ target_link_libraries(${PROJECT_NAME}
         PRIVATE
         lexer_core
         lexer_regex
+        lexer_tokenizer
 )
