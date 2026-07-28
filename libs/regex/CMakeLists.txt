@@ -6,6 +6,7 @@ add_library(${PROJECT_NAME}
         src/any_of.cpp
         src/choice.cpp
         src/concat.cpp
+        src/patterns.cpp
         src/regex.cpp
         src/repeat.cpp
         src/set.cpp
@@ -28,6 +29,7 @@ if (MUNCH_BUILD_TESTS)
             tests/any_of_test.cpp
             tests/choice_test.cpp
             tests/concat_test.cpp
+            tests/patterns_test.cpp
             tests/repeat_test.cpp
             tests/set_test.cpp
             tests/text_test.cpp
