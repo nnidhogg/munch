@@ -3,21 +3,22 @@ cmake_policy(SET CMP0097 NEW)
 project(lexer_tokenizer)
 
 add_library(${PROJECT_NAME}
-        INTERFACE
+        src/raw_string.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
-        INTERFACE
+        PUBLIC
         include
 )
 
 target_link_libraries(${PROJECT_NAME}
-        INTERFACE
+        PUBLIC
         lexer_core
 )
 
 if (LEXER_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
+            tests/raw_string_test.cpp
             tests/tokenizer_test.cpp
     )
 

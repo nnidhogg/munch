@@ -139,6 +139,15 @@ public:
     [[nodiscard]] std::size_t offset() const noexcept { return offset_; }
 
     /**
+     * @brief Return the input text being tokenized.
+     *
+     * Lets a driver scan tokens by hand next to the automaton; see seek().
+     *
+     * @return View of the input buffer, invalidated by load() and destruction.
+     */
+    [[nodiscard]] std::string_view input() const noexcept { return input_; }
+
+    /**
      * @brief Return the next token, recognized by the active mode's lexer.
      *
      * On success, returns a Token<T>; End_of_input indicates the input is exhausted.
