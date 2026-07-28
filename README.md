@@ -538,21 +538,22 @@ dot -Tsvg <name>.dot -o <name>.svg
 
 Below are examples of how an NFA and its corresponding DFA might look:
 
-#### **Identifier NFA Example**
+#### **Keyword Alternation NFA Example**
 
-![NFA Example](docs/identifier_nfa.svg)
+![Keyword NFA](docs/keyword_nfa.svg)
 
-This is the NFA exactly as Thompson construction emits it for `concat(any_of(alpha), kleene(any_of(alphanum)))`,
-before any determinization. The ε-transitions wiring the `kleene` loop are the non-determinism: from one state,
-several paths can be taken without consuming input.
+The NFA exactly as Thompson construction emits it for `choice(text("int"), text("if"), text("in"))`: three separate
+branches fanned out by ε-transitions, each spelling its keyword independently. The non-determinism is visible at the
+start, where three different states are reachable on the same `i`.
 
-#### **Identifier DFA Example**
+#### **Keyword Alternation DFA Example**
 
-![DFA Example](docs/identifier_dfa.svg)
+![Keyword DFA](docs/keyword_dfa.svg)
 
-The same pattern after the full pipeline: subset construction removes the ε-transitions and the non-determinism, and
-minimization removes redundant states, leaving one state per distinguishable situation and exactly one successor per
-input character.
+The same pattern after the full pipeline. Subset construction shares the prefixes the branches spell in parallel,
+collapsing the three `i` edges into one spine, and minimization merges the interchangeable accept states of `if` and
+`int`. The state reached by `in` is worth a look: it is accepting yet still has an outgoing `t`, which is exactly how
+the simulator implements longest-match, recording the accept and reading on.
 
 #### **Floating Point Literal NFA Example**
 
