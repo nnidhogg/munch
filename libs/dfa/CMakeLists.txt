@@ -6,6 +6,7 @@ add_library(${PROJECT_NAME}
         src/builder.cpp
         src/dfa.cpp
         src/label.cpp
+        src/simulator.cpp
         src/token.cpp
 )
 
@@ -15,6 +16,9 @@ target_include_directories(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
+        PUBLIC
+        lexer_common
+        lexer_mdspan
         PRIVATE
         lexer_boost
 )

@@ -21,7 +21,7 @@ public:
      * @brief Constructs a Lexer from a DFA.
      * @param dfa The DFA to use for tokenization.
      */
-    explicit Lexer(dfa::Dfa dfa) : dfa_{std::move(dfa)} {}
+    explicit Lexer(const dfa::Dfa& dfa) : simulator_{dfa} {}
 
     /**
      * @brief The result type: a pair of the matched token (if any) and the length of the match.
@@ -42,7 +42,7 @@ public:
         requires(std::integral<T> || std::is_enum_v<T>)
     [[nodiscard]] Result_t<T> tokenize(Iterator begin, Iterator end) const
     {
-        const auto [token, offset]{dfa::Simulator::run(dfa_, begin, end)};
+        const auto [token, offset]{simulator_.run(begin, end)};
 
         return {token ? std::optional<T>{static_cast<T>(token->id())} : std::nullopt, offset};
     }
@@ -63,9 +63,9 @@ public:
 
 private:
     /**
-     * @brief The DFA used for tokenization.
+     * @brief The simulator running the DFA the Lexer was constructed from.
      */
-    dfa::Dfa dfa_;
+    dfa::Simulator simulator_;
 };
 
 } // namespace lexer::core

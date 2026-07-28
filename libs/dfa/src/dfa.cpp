@@ -31,9 +31,7 @@ const Dfa::Accept_states_t& Dfa::accept_states() const noexcept
 
 std::optional<Dfa::State_t> Dfa::advance(const Dfa& dfa, const State_t state, const char symbol)
 {
-    const std::pair key{state, Label{symbol}};
-
-    const auto iterator{dfa.transitions_.find(key)};
+    const auto iterator{dfa.transitions_.find({state, Label{symbol}})};
 
     return iterator != dfa.transitions_.cend() ? std::optional{iterator->second} : std::nullopt;
 }

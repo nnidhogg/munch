@@ -32,11 +32,13 @@ TEST_F(Dfa_test, Test_empty)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     constexpr std::vector<char> input;
 
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, input), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run(input), Result_t(std::nullopt, 0));
 }
 
 TEST_F(Dfa_test, Any_of)
@@ -56,20 +58,22 @@ TEST_F(Dfa_test, Any_of)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, "b"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(result, "ab"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(result, "ba"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(result, "aab"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(result, "baa"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(result, "aaab"), Result_t(token, 4));
-    EXPECT_EQ(Simulator::run(result, "baaa"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("b"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("ab"), Result_t(token, 2));
+    EXPECT_EQ(simulator.run("ba"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("aab"), Result_t(token, 3));
+    EXPECT_EQ(simulator.run("baa"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("aaab"), Result_t(token, 4));
+    EXPECT_EQ(simulator.run("baaa"), Result_t(token, 1));
 
-    EXPECT_EQ(Simulator::run(result, "a"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "aa"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "aaa"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "aaaa"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("a"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("aa"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("aaa"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("aaaa"), Result_t(std::nullopt, 0));
 }
 
 TEST_F(Dfa_test, Single_character)
@@ -87,13 +91,15 @@ TEST_F(Dfa_test, Single_character)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, "a"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(result, "aa"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("a"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("aa"), Result_t(token, 1));
 
-    EXPECT_EQ(Simulator::run(result, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "b"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run(""), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("b"), Result_t(std::nullopt, 0));
 }
 
 TEST_F(Dfa_test, Optional_character)
@@ -113,14 +119,16 @@ TEST_F(Dfa_test, Optional_character)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, ""), Result_t(token_empty, 0));
-    EXPECT_EQ(Simulator::run(result, "a"), Result_t(token_a, 1));
-    EXPECT_EQ(Simulator::run(result, "aa"), Result_t(token_a, 1));
+    EXPECT_EQ(simulator.run(""), Result_t(token_empty, 0));
+    EXPECT_EQ(simulator.run("a"), Result_t(token_a, 1));
+    EXPECT_EQ(simulator.run("aa"), Result_t(token_a, 1));
 
-    EXPECT_EQ(Simulator::run(result, "b"), Result_t(token_empty, 0));
-    EXPECT_EQ(Simulator::run(result, "ba"), Result_t(token_empty, 0));
+    EXPECT_EQ(simulator.run("b"), Result_t(token_empty, 0));
+    EXPECT_EQ(simulator.run("ba"), Result_t(token_empty, 0));
 }
 
 TEST_F(Dfa_test, Sequence_ab)
@@ -141,13 +149,15 @@ TEST_F(Dfa_test, Sequence_ab)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, "ab"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(result, "abc"), Result_t(token, 2));
+    EXPECT_EQ(simulator.run("ab"), Result_t(token, 2));
+    EXPECT_EQ(simulator.run("abc"), Result_t(token, 2));
 
-    EXPECT_EQ(Simulator::run(result, "a"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "b"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("a"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("b"), Result_t(std::nullopt, 0));
 }
 
 TEST_F(Dfa_test, Kleene_star_a)
@@ -164,18 +174,20 @@ TEST_F(Dfa_test, Kleene_star_a)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, ""), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(result, "a"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(result, "aa"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(result, "aaa"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(result, "aaab"), Result_t(token, 3));
+    EXPECT_EQ(simulator.run(""), Result_t(token, 0));
+    EXPECT_EQ(simulator.run("a"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("aa"), Result_t(token, 2));
+    EXPECT_EQ(simulator.run("aaa"), Result_t(token, 3));
+    EXPECT_EQ(simulator.run("aaab"), Result_t(token, 3));
 
-    EXPECT_EQ(Simulator::run(result, "b"), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(result, "ba"), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(result, "baa"), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(result, "baaa"), Result_t(token, 0));
+    EXPECT_EQ(simulator.run("b"), Result_t(token, 0));
+    EXPECT_EQ(simulator.run("ba"), Result_t(token, 0));
+    EXPECT_EQ(simulator.run("baa"), Result_t(token, 0));
+    EXPECT_EQ(simulator.run("baaa"), Result_t(token, 0));
 }
 
 TEST_F(Dfa_test, Branch_ab)
@@ -198,17 +210,19 @@ TEST_F(Dfa_test, Branch_ab)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, "a"), Result_t(token_a, 1));
-    EXPECT_EQ(Simulator::run(result, "b"), Result_t(token_b, 1));
-    EXPECT_EQ(Simulator::run(result, "ab"), Result_t(token_a, 1));
-    EXPECT_EQ(Simulator::run(result, "aa"), Result_t(token_a, 1));
+    EXPECT_EQ(simulator.run("a"), Result_t(token_a, 1));
+    EXPECT_EQ(simulator.run("b"), Result_t(token_b, 1));
+    EXPECT_EQ(simulator.run("ab"), Result_t(token_a, 1));
+    EXPECT_EQ(simulator.run("aa"), Result_t(token_a, 1));
 
-    EXPECT_EQ(Simulator::run(result, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "c"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "ca"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "cb"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run(""), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("c"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("ca"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("cb"), Result_t(std::nullopt, 0));
 }
 
 TEST_F(Dfa_test, Repeat_abc)
@@ -234,16 +248,18 @@ TEST_F(Dfa_test, Repeat_abc)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, "abc"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(result, "abca"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(result, "abcabc"), Result_t(token, 6));
-    EXPECT_EQ(Simulator::run(result, "abcabcabc"), Result_t(token, 9));
+    EXPECT_EQ(simulator.run("abc"), Result_t(token, 3));
+    EXPECT_EQ(simulator.run("abca"), Result_t(token, 3));
+    EXPECT_EQ(simulator.run("abcabc"), Result_t(token, 6));
+    EXPECT_EQ(simulator.run("abcabcabc"), Result_t(token, 9));
 
-    EXPECT_EQ(Simulator::run(result, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "a"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "ab"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run(""), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("a"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("ab"), Result_t(std::nullopt, 0));
 }
 
 TEST_F(Dfa_test, Contain_ab)
@@ -266,12 +282,14 @@ TEST_F(Dfa_test, Contain_ab)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, "ab"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(result, "xxab"), Result_t(token, 4));
+    EXPECT_EQ(simulator.run("ab"), Result_t(token, 2));
+    EXPECT_EQ(simulator.run("xxab"), Result_t(token, 4));
 
-    EXPECT_EQ(Simulator::run(result, "ax"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("ax"), Result_t(std::nullopt, 0));
 }
 
 TEST_F(Dfa_test, Numeric_branch)
@@ -300,15 +318,17 @@ TEST_F(Dfa_test, Numeric_branch)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, "45"), Result_t(token_45, 2));
-    EXPECT_EQ(Simulator::run(result, "123"), Result_t(token_123, 3));
-    EXPECT_EQ(Simulator::run(result, "1234"), Result_t(token_123, 3));
+    EXPECT_EQ(simulator.run("45"), Result_t(token_45, 2));
+    EXPECT_EQ(simulator.run("123"), Result_t(token_123, 3));
+    EXPECT_EQ(simulator.run("1234"), Result_t(token_123, 3));
 
-    EXPECT_EQ(Simulator::run(result, "12"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "124"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "467"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("12"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("124"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("467"), Result_t(std::nullopt, 0));
 }
 
 TEST_F(Dfa_test, Loop_plus_a)
@@ -328,13 +348,15 @@ TEST_F(Dfa_test, Loop_plus_a)
 
     const auto result{dfa.build()};
 
+    const Simulator simulator{result};
+
     using Result_t = Simulator::Result_t;
 
-    EXPECT_EQ(Simulator::run(result, "a"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(result, "aa"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(result, "aaa"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(result, "aaaa"), Result_t(token, 4));
+    EXPECT_EQ(simulator.run("a"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("aa"), Result_t(token, 2));
+    EXPECT_EQ(simulator.run("aaa"), Result_t(token, 3));
+    EXPECT_EQ(simulator.run("aaaa"), Result_t(token, 4));
 
-    EXPECT_EQ(Simulator::run(result, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(result, "b"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run(""), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("b"), Result_t(std::nullopt, 0));
 }

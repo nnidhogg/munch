@@ -1,8 +1,10 @@
 #ifndef LEXER_LIBS_DFA_INCLUDE_LEXER_DFA_DFA_HPP
 #define LEXER_LIBS_DFA_INCLUDE_LEXER_DFA_DFA_HPP
 
+#include <cstddef>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 
 #include "lexer/dfa/label.hpp"
 #include "lexer/dfa/token.hpp"
@@ -12,7 +14,9 @@ namespace lexer::dfa
 /**
  * @brief Represents a deterministic finite automaton (DFA).
  *
- * Provides methods for querying states, transitions, and accept states, as well as advancing the DFA.
+ * Holds the definition of the automaton: its initial state, transitions, and accept states, kept as the maps the DFA
+ * was constructed from so they stay available for inspection and further construction steps. Running a DFA over input
+ * is the responsibility of the Simulator, which compiles the definition into a form optimized for execution.
  */
 class Dfa
 {
