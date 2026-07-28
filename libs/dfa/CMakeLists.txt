@@ -1,11 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0097 NEW)
-project(lexer_dfa)
+project(munch_dfa)
 
 add_library(${PROJECT_NAME}
         src/builder.cpp
         src/dfa.cpp
         src/label.cpp
+        src/minimize.cpp
+        src/simulator.cpp
         src/token.cpp
 )
 
@@ -15,8 +17,11 @@ target_include_directories(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
+        PUBLIC
+        munch_common
+        munch_mdspan
         PRIVATE
-        lexer_boost
+        munch_boost
 )
 
 add_library(${PROJECT_NAME}_tools
@@ -30,12 +35,14 @@ target_include_directories(${PROJECT_NAME}_tools
 
 target_link_libraries(${PROJECT_NAME}_tools
         ${PROJECT_NAME}
-        lexer_common
+        munch_common
 )
 
-if (LEXER_BUILD_TESTS)
+if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/dfa_test.cpp
+            tests/minimize_test.cpp
+            tests/property_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests

@@ -1,16 +1,18 @@
-#include "lexer/nfa/nfa.hpp"
+#include "munch/nfa/nfa.hpp"
 
 #include <algorithm>
 #include <boost/container_hash/hash.hpp>
 #include <queue>
 #include <ranges>
 
-namespace lexer::nfa
+namespace munch::nfa
 {
 std::size_t Nfa::Hash::operator()(const Key_t& key) const noexcept
 {
     std::size_t seed{};
-    return boost::hash_combine(seed, key.first), boost::hash_combine(seed, Label::Hash{}(key.second)), seed;
+    boost::hash_combine(seed, key.first);
+    boost::hash_combine(seed, Label::Hash{}(key.second));
+    return seed;
 }
 
 Nfa::Nfa(const State_t init_state, Transitions_t transitions, Accept_states_t accept_states)
@@ -32,7 +34,7 @@ const Nfa::Accept_states_t& Nfa::accept_states() const noexcept
     return accept_states_;
 }
 
-Nfa::States_t Nfa::epsilon_closure(const Nfa& nfa, const States_t& states)
+Nfa::States_t Nfa::epsilon_closure(const States_t& states) const
 {
     auto result{states};
 
@@ -44,47 +46,42 @@ Nfa::States_t Nfa::epsilon_closure(const Nfa& nfa, const States_t& states)
 
         queue.pop();
 
-        const auto filter{[&nfa](const auto key) { return nfa.transitions().contains(key); }};
-
-        const auto transform{[&nfa](const auto key) { return nfa.transitions().at(key); }};
-
-        auto view{
-                std::views::single(transition) | std::views::filter(filter) | std::views::transform(transform) |
-                std::views::join};
-
-        std::ranges::for_each(view, [&result, &queue](const auto state) {
-            if (result.insert(state).second)
-            {
-                queue.push(state);
-            }
-        });
+        if (const auto iterator = transitions_.find(transition); iterator != transitions_.end())
+        {
+            std::ranges::for_each(iterator->second, [&result, &queue](const auto state) {
+                if (result.insert(state).second)
+                {
+                    queue.push(state);
+                }
+            });
+        }
     }
 
     return result;
 }
 
-Nfa::States_t Nfa::advance(const Nfa& nfa, const States_t& states, const char symbol)
+Nfa::States_t Nfa::advance(const States_t& states, const char symbol) const
 {
-    const auto filter{[&nfa, symbol](const auto& state) { return nfa.transitions().contains({state, Label{symbol}}); }};
-
-    const auto transform{[&nfa, symbol](const auto& state) { return nfa.transitions().at({state, Label{symbol}}); }};
-
     States_t result;
 
-    const auto insert{[&result](const auto& elements) { result.insert(elements.begin(), elements.end()); }};
+    for (const auto& state : states)
+    {
+        if (const auto iterator = transitions_.find({state, Label{symbol}}); iterator != transitions_.end())
+        {
+            result.insert(iterator->second.begin(), iterator->second.end());
+        }
+    }
 
-    std::ranges::for_each(states | std::views::filter(filter) | std::views::transform(transform), insert);
-
-    return epsilon_closure(nfa, result);
+    return epsilon_closure(result);
 }
 
-std::optional<Token> Nfa::has_accept_token(const Nfa& nfa, const States_t& states)
+std::optional<Token> Nfa::has_accept_token(const States_t& states) const
 {
-    const auto has_state{[&nfa](const auto state) { return nfa.accept_states().contains(state); }};
+    const auto has_state{[this](const auto state) { return accept_states_.contains(state); }};
 
-    const auto has_token{[&nfa](const auto state) { return nfa.accept_states().at(state).has_value(); }};
+    const auto has_token{[this](const auto state) { return accept_states_.at(state).has_value(); }};
 
-    const auto get_token{[&nfa](const auto state) { return nfa.accept_states().at(state).value(); }};
+    const auto get_token{[this](const auto state) { return accept_states_.at(state).value(); }};
 
     auto view{
             states | std::views::filter(has_state) | std::views::filter(has_token) | std::views::transform(get_token)};
@@ -99,4 +96,4 @@ std::optional<Token> Nfa::has_accept_token(const Nfa& nfa, const States_t& state
     return std::nullopt;
 }
 
-} // namespace lexer::nfa
+} // namespace munch::nfa

@@ -1,11 +1,17 @@
-#include "lexer/regex/choice.hpp"
-
 #include <algorithm>
+#include <stdexcept>
 
-namespace lexer::regex
+#include "munch/regex/regex.hpp"
+
+namespace munch::regex
 {
-nfa::Builder Choice::to_nfa() const
+nfa::Builder to_nfa(const Choice& choice)
 {
+    if (choice.regexes.empty())
+    {
+        throw std::invalid_argument("Choice must hold at least one regex");
+    }
+
     /**
      * Connect all NFAs with ε transitions into a default constructed empty NFA.
      *
@@ -15,9 +21,9 @@ nfa::Builder Choice::to_nfa() const
      */
     nfa::Builder nfa;
 
-    std::ranges::for_each(regexes_, [&nfa](const auto& regex) { nfa = nfa.merge(regex->to_nfa()); });
+    std::ranges::for_each(choice.regexes, [&nfa](const auto& regex) { nfa = nfa.merge(to_nfa(regex)); });
 
     return nfa;
 }
 
-} // namespace lexer::regex
+} // namespace munch::regex

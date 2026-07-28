@@ -1,23 +1,29 @@
-#include "lexer/regex/concat.hpp"
-
 #include <algorithm>
 #include <ranges>
+#include <stdexcept>
 
-namespace lexer::regex
+#include "munch/regex/regex.hpp"
+
+namespace munch::regex
 {
-nfa::Builder Concat::to_nfa() const
+nfa::Builder to_nfa(const Concat& concat)
 {
+    if (concat.regexes.empty())
+    {
+        throw std::invalid_argument("Concat must hold at least one regex");
+    }
+
     /**
      * Concatenate all NFAs with ε transitions in sequence.
      *
      * (q0) --ε--> (q1) --ε--> (q2) --ε--> (q3)
      */
-    nfa::Builder nfa{regexes_.front()->to_nfa()};
+    nfa::Builder nfa{to_nfa(concat.regexes.front())};
 
     std::ranges::for_each(
-            regexes_ | std::views::drop(1), [&nfa](const auto& regex) { nfa = nfa.append(regex->to_nfa()); });
+            concat.regexes | std::views::drop(1), [&nfa](const auto& regex) { nfa = nfa.append(to_nfa(regex)); });
 
     return nfa;
 }
 
-} // namespace lexer::regex
+} // namespace munch::regex

@@ -1,16 +1,16 @@
-#include "lexer/regex/choice.hpp"
+#include "munch/regex/regex.hpp"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <stdexcept>
 
-#include "lexer/nfa/simulator.hpp"
-#include "lexer/nfa/tools/graphviz.hpp"
-#include "lexer/regex/text.hpp"
+#include "munch/nfa/simulator.hpp"
+#include "munch/nfa/tools/graphviz.hpp"
 
-using namespace lexer::nfa;
-using namespace lexer::nfa::tools;
-using namespace lexer::regex;
+using namespace munch::nfa;
+using namespace munch::nfa::tools;
+using namespace munch::regex;
 
 class Choice_test : public testing::Test
 {
@@ -35,7 +35,7 @@ TEST_F(Choice_test, Single_character)
 
     const Token token{1, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -59,7 +59,7 @@ TEST_F(Choice_test, Multiple_characters)
 
     const Token token{2, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -70,4 +70,9 @@ TEST_F(Choice_test, Multiple_characters)
     EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
     EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(std::nullopt, 0));
     EXPECT_EQ(Simulator::run(nfa, "de"), Result_t(std::nullopt, 0));
+}
+
+TEST_F(Choice_test, Empty_regexes_throws)
+{
+    EXPECT_THROW(to_nfa(Choice{.regexes = {}}), std::invalid_argument);
 }

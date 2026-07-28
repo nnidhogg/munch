@@ -1,16 +1,16 @@
-#include "lexer/regex/text.hpp"
+#include "munch/regex/regex.hpp"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
 
-#include "lexer/nfa/nfa.hpp"
-#include "lexer/nfa/simulator.hpp"
-#include "lexer/nfa/tools/graphviz.hpp"
+#include "munch/nfa/nfa.hpp"
+#include "munch/nfa/simulator.hpp"
+#include "munch/nfa/tools/graphviz.hpp"
 
-using namespace lexer::nfa;
-using namespace lexer::nfa::tools;
-using namespace lexer::regex;
+using namespace munch::nfa;
+using namespace munch::nfa::tools;
+using namespace munch::regex;
 
 class Text_test : public testing::Test
 {
@@ -32,7 +32,7 @@ TEST_F(Text_test, Simple_text)
 
     const Token token{1, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -51,7 +51,7 @@ TEST_F(Text_test, Special_characters)
 
     const Token token{2, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -69,7 +69,7 @@ TEST_F(Text_test, More_special_characters)
 
     const Token token{3, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -87,7 +87,7 @@ TEST_F(Text_test, Empty_text)
 
     const Token token{4, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 

@@ -1,18 +1,14 @@
-#include "lexer/tools/tokenizer/tokenizer.hpp"
+#include "munch/tools/tokenizer/tokenizer.hpp"
 
 #include <gtest/gtest.h>
 
-#include "lexer/core/builder.hpp"
-#include "lexer/regex/any_of.hpp"
-#include "lexer/regex/choice.hpp"
-#include "lexer/regex/concat.hpp"
-#include "lexer/regex/repeat.hpp"
-#include "lexer/regex/text.hpp"
+#include "munch/core/builder.hpp"
+#include "munch/regex/regex.hpp"
 
-using namespace lexer;
-using namespace lexer::core;
-using namespace lexer::regex;
-using namespace lexer::tools::tokenizer;
+using namespace munch;
+using namespace munch::core;
+using namespace munch::regex;
+using namespace munch::tools::tokenizer;
 
 namespace
 {
@@ -152,13 +148,10 @@ TEST_F(Tokenizer_test, Tokenize_from_string_stream)
     Tokenizer tokenizer{lexer, input};
 
     const auto advance = [&tokenizer](const Token_kind expect_kind, const std::string_view expect_lexeme) {
-        const auto expected{tokenizer.next<Token_kind>()};
-        ASSERT_TRUE(expected.has_value());
+        const auto result{tokenizer.next<Token_kind>()};
+        ASSERT_TRUE(result.has_token());
 
-        const auto optional{expected.value()};
-        ASSERT_TRUE(optional.has_value());
-
-        const auto token{optional.value()};
+        const auto& token{result.token()};
         EXPECT_EQ(token.kind(), expect_kind);
         EXPECT_EQ(token.lexeme(), expect_lexeme);
     };
@@ -185,10 +178,7 @@ TEST_F(Tokenizer_test, Tokenize_from_string_stream)
         advance(Token_kind::Multi_line_comment, "/* block */");
 
         const auto eof{tokenizer.next<Token_kind>()};
-        ASSERT_TRUE(eof.has_value());
-
-        const auto optional{eof.value()};
-        EXPECT_FALSE(optional.has_value());
+        EXPECT_TRUE(eof.end_of_input());
     };
 
     evaluate();
@@ -212,10 +202,10 @@ TEST_F(Tokenizer_test, Unknown_character)
 
     tokenizer.load(input);
 
-    const auto expected{tokenizer.next<Token_kind>()};
-    ASSERT_FALSE(expected.has_value());
+    const auto result{tokenizer.next<Token_kind>()};
+    ASSERT_TRUE(result.has_error());
 
-    const auto& error{expected.error()};
+    const auto& error{result.error()};
     EXPECT_EQ(error.position(), 0u);
     EXPECT_FALSE(error.message().empty());
 }
@@ -233,38 +223,37 @@ TEST_F(Tokenizer_test, Offset_tracking)
 
     // After "boolean" (7 chars)
     auto result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Boolean);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Boolean);
     EXPECT_EQ(tokenizer.offset(), 7u);
 
     // After " " (1 char)
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Whitespace);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Whitespace);
     EXPECT_EQ(tokenizer.offset(), 8u);
 
     // After "x" (1 char)
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Identifier);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Identifier);
     EXPECT_EQ(tokenizer.offset(), 9u);
 
     // After " " (1 char)
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Whitespace);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Whitespace);
     EXPECT_EQ(tokenizer.offset(), 10u);
 
     // After "123" (3 chars)
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value() && result.value().has_value());
-    EXPECT_EQ(result.value()->kind(), Token_kind::Integer_literal);
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Integer_literal);
     EXPECT_EQ(tokenizer.offset(), 13u);
 
     // EOF - offset should stay at end
     result = tokenizer.next<Token_kind>();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_FALSE(result.value().has_value());
+    EXPECT_TRUE(result.end_of_input());
     EXPECT_EQ(tokenizer.offset(), 13u);
 
     // After reset, offset should be 0
@@ -274,4 +263,98 @@ TEST_F(Tokenizer_test, Offset_tracking)
     // After load with new input, offset should be 0
     tokenizer.load("char");
     EXPECT_EQ(tokenizer.offset(), 0u);
+}
+
+TEST_F(Tokenizer_test, Seek)
+{
+    const std::string input{"boolean x"};
+
+    const auto lexer{build_lexer()};
+
+    Tokenizer tokenizer{lexer, input};
+
+    // Consume "boolean", then rewind and read it again
+    ASSERT_TRUE(tokenizer.next<Token_kind>().has_token());
+    EXPECT_EQ(tokenizer.offset(), 7u);
+
+    tokenizer.seek(0);
+    EXPECT_EQ(tokenizer.offset(), 0u);
+
+    auto result{tokenizer.next<Token_kind>()};
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Boolean);
+
+    // Jump over the whitespace, as a driver does after scanning a token by hand
+    tokenizer.seek(8);
+
+    result = tokenizer.next<Token_kind>();
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Identifier);
+    EXPECT_EQ(result.token().lexeme(), "x");
+
+    // Seeking past the end clamps to it
+    tokenizer.seek(100);
+    EXPECT_EQ(tokenizer.offset(), input.size());
+    EXPECT_TRUE(tokenizer.next<Token_kind>().end_of_input());
+}
+
+TEST_F(Tokenizer_test, Modes)
+{
+    enum class Mode_token : std::size_t
+    {
+        Whitespace = 1,
+        Word,
+        Include,
+        Header_name
+    };
+
+    enum class Mode : std::size_t
+    {
+        Code,
+        Header
+    };
+
+    // In code mode `<stdio.h>` is unrecognizable; only the header mode's lexer knows header-names.
+    Builder code;
+
+    code.add_token(plus(any_of(Set::whitespace())), Mode_token::Whitespace, 1);
+    code.add_token(text("#include"), Mode_token::Include, 0);
+    code.add_token(plus(any_of(Set::alpha())), Mode_token::Word, 1);
+
+    Builder header;
+
+    header.add_token(plus(any_of(Set::whitespace())), Mode_token::Whitespace, 1);
+    header.add_token(concat(text("<"), plus(any_of(Set::alpha() + '.')), text(">")), Mode_token::Header_name, 0);
+
+    Tokenizer tokenizer{{code.build(), header.build()}, "#include <stdio.h> done"};
+
+    EXPECT_EQ(tokenizer.mode(), 0u);
+
+    auto result{tokenizer.next<Mode_token>()};
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Mode_token::Include);
+
+    ASSERT_TRUE(tokenizer.next<Mode_token>().has_token());
+
+    // The driver saw #include and switches to the header-name mode, then back.
+    tokenizer.set_mode(Mode::Header);
+    EXPECT_EQ(tokenizer.mode(), 1u);
+
+    result = tokenizer.next<Mode_token>();
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Mode_token::Header_name);
+    EXPECT_EQ(result.token().lexeme(), "<stdio.h>");
+
+    tokenizer.set_mode(Mode::Code);
+
+    ASSERT_TRUE(tokenizer.next<Mode_token>().has_token());
+
+    result = tokenizer.next<Mode_token>();
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Mode_token::Word);
+    EXPECT_EQ(result.token().lexeme(), "done");
+
+    EXPECT_TRUE(tokenizer.next<Mode_token>().end_of_input());
+
+    EXPECT_THROW(tokenizer.set_mode(5), std::out_of_range);
 }

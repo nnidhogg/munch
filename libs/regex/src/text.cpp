@@ -1,10 +1,10 @@
-#include "lexer/regex/text.hpp"
-
 #include <algorithm>
 
-namespace lexer::regex
+#include "munch/regex/regex.hpp"
+
+namespace munch::regex
 {
-nfa::Builder Text::to_nfa() const
+nfa::Builder to_nfa(const Text& text)
 {
     /**
      * Creates a sequence of transitions for each symbol in text.
@@ -13,15 +13,16 @@ nfa::Builder Text::to_nfa() const
      */
     nfa::Builder nfa;
 
-    const auto accept_state{std::ranges::fold_left(text_, nfa.init_state(), [&nfa](const auto from, const char symbol) {
-        const auto to{nfa.next_state()};
-        nfa.add_transition(from, nfa::Label{symbol}, to);
-        return to;
-    })};
+    const auto accept_state{
+            std::ranges::fold_left(text.text, nfa.init_state(), [&nfa](const auto from, const char symbol) {
+                const auto to{nfa.next_state()};
+                nfa.add_transition(from, nfa::Label{symbol}, to);
+                return to;
+            })};
 
     nfa.add_accept_state(accept_state);
 
     return nfa;
 }
 
-} // namespace lexer::regex
+} // namespace munch::regex

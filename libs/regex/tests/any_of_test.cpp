@@ -1,18 +1,18 @@
-#include "lexer/regex/any_of.hpp"
+#include "munch/regex/regex.hpp"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <filesystem>
 
-#include "lexer/nfa/simulator.hpp"
-#include "lexer/nfa/tools/graphviz.hpp"
-#include "lexer/regex/set.hpp"
+#include "munch/nfa/simulator.hpp"
+#include "munch/nfa/tools/graphviz.hpp"
+#include "munch/regex/set.hpp"
 
-using namespace lexer;
-using namespace lexer::nfa;
-using namespace lexer::nfa::tools;
-using namespace lexer::regex;
+using namespace munch;
+using namespace munch::nfa;
+using namespace munch::nfa::tools;
+using namespace munch::regex;
 
 class Any_of_test : public testing::Test
 {
@@ -36,7 +36,7 @@ TEST_F(Any_of_test, Single_char)
 
     const Token token{1, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -65,7 +65,7 @@ TEST_F(Any_of_test, Multiple_chars)
 
     const auto regex{any_of(multiple_chars)};
 
-    const auto builder{regex->to_nfa()};
+    const auto builder{to_nfa(regex)};
 
     EXPECT_EQ(builder.init_state(), 0);
 
@@ -93,7 +93,7 @@ TEST_F(Any_of_test, Simulate_multiple_char)
 
     const Token token{2, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -125,7 +125,7 @@ TEST_F(Any_of_test, Alpha_chars)
 
     const auto regex{any_of(alpha_chars)};
 
-    const auto builder{regex->to_nfa()};
+    const auto builder{to_nfa(regex)};
 
     EXPECT_EQ(builder.init_state(), 0);
 
@@ -150,7 +150,7 @@ TEST_F(Any_of_test, Simulate_alpha_chars)
 
     const Token token{3, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -182,7 +182,7 @@ TEST_F(Any_of_test, Digit_chars)
 
     const auto regex{any_of(digit_chars)};
 
-    const auto builder{regex->to_nfa()};
+    const auto builder{to_nfa(regex)};
 
     EXPECT_EQ(builder.init_state(), 0);
 
@@ -207,7 +207,7 @@ TEST_F(Any_of_test, Simulate_digit_chars)
 
     const Token token{4, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -239,7 +239,7 @@ TEST_F(Any_of_test, Alphanum_chars)
 
     const auto regex{any_of(alphanum_chars)};
 
-    const auto builder{regex->to_nfa()};
+    const auto builder{to_nfa(regex)};
 
     EXPECT_EQ(builder.init_state(), 0);
 
@@ -264,7 +264,7 @@ TEST_F(Any_of_test, Simulate_alphanum_chars)
 
     const Token token{5, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -296,7 +296,7 @@ TEST_F(Any_of_test, Printable_chars)
 
     const auto regex{any_of(printable_chars)};
 
-    const auto builder{regex->to_nfa()};
+    const auto builder{to_nfa(regex)};
 
     EXPECT_EQ(builder.init_state(), 0);
 
@@ -321,7 +321,7 @@ TEST_F(Any_of_test, Simulate_printable_chars)
 
     const Token token{6, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -353,7 +353,7 @@ TEST_F(Any_of_test, All_chars)
 
     const auto regex{any_of(all_chars)};
 
-    const auto builder{regex->to_nfa()};
+    const auto builder{to_nfa(regex)};
 
     EXPECT_EQ(builder.init_state(), 0);
 
@@ -378,7 +378,7 @@ TEST_F(Any_of_test, Simulate_all_chars)
 
     const Token token{7, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -406,7 +406,7 @@ TEST_F(Any_of_test, Empty_set)
 
     const Token token{7, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 

@@ -1,16 +1,16 @@
-#include "lexer/regex/repeat.hpp"
+#include "munch/regex/regex.hpp"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <stdexcept>
 
-#include "lexer/nfa/simulator.hpp"
-#include "lexer/nfa/tools/graphviz.hpp"
-#include "lexer/regex/text.hpp"
+#include "munch/nfa/simulator.hpp"
+#include "munch/nfa/tools/graphviz.hpp"
 
-using namespace lexer::nfa;
-using namespace lexer::nfa::tools;
-using namespace lexer::regex;
+using namespace munch::nfa;
+using namespace munch::nfa::tools;
+using namespace munch::regex;
 
 class Repeat_test : public testing::Test
 {
@@ -34,7 +34,7 @@ TEST_F(Repeat_test, Kleene_star)
 
     const Token token{1, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -64,7 +64,7 @@ TEST_F(Repeat_test, Plus)
 
     const Token token{2, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -94,7 +94,7 @@ TEST_F(Repeat_test, Optional)
 
     const Token token{3, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -116,7 +116,7 @@ TEST_F(Repeat_test, Exact_repetition)
 
     const Token token{4, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -142,7 +142,7 @@ TEST_F(Repeat_test, At_least_repetition)
 
     const Token token{5, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -159,6 +159,33 @@ TEST_F(Repeat_test, At_least_repetition)
     EXPECT_EQ(Simulator::run(nfa, "baaa"), Result_t(std::nullopt, 0));
 }
 
+TEST_F(Repeat_test, At_least_zero_repetitions_is_the_kleene_star)
+{
+    using namespace testing;
+
+    const auto a{text('a')};
+
+    const auto regex{at_least(a, 0)};
+
+    const Token token{5, 1};
+
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
+
+    using Result_t = Simulator::Result_t;
+
+    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), Result_t(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), Result_t(token, 3));
+
+    EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), Result_t(token, 0));
+}
+
+TEST_F(Repeat_test, Range_ending_before_it_starts_throws)
+{
+    EXPECT_THROW((void)range(text('a'), 3, 2), std::invalid_argument);
+}
+
 TEST_F(Repeat_test, Range_repetition)
 {
     using namespace testing;
@@ -169,7 +196,7 @@ TEST_F(Repeat_test, Range_repetition)
 
     const Token token{6, 1};
 
-    const auto nfa{regex->to_nfa().set_accept_token(token).build()};
+    const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
     using Result_t = Simulator::Result_t;
 
@@ -185,4 +212,9 @@ TEST_F(Repeat_test, Range_repetition)
     EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(std::nullopt, 0));
     EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(std::nullopt, 0));
     EXPECT_EQ(Simulator::run(nfa, "baaa"), Result_t(std::nullopt, 0));
+}
+
+TEST_F(Repeat_test, Empty_regexes_throws)
+{
+    EXPECT_THROW(to_nfa(Repeat{.kind = Kleene{}, .regexes = {}}), std::invalid_argument);
 }

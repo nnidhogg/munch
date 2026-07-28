@@ -1,10 +1,10 @@
-#include "lexer/regex/any_of.hpp"
-
 #include <algorithm>
 
-namespace lexer::regex
+#include "munch/regex/regex.hpp"
+
+namespace munch::regex
 {
-nfa::Builder Any_of::to_nfa() const
+nfa::Builder to_nfa(const Any_of& any_of)
 {
     /**
      * Creates a transition for all symbols in set to the same accept state.
@@ -18,7 +18,7 @@ nfa::Builder Any_of::to_nfa() const
 
     const auto accept_state{nfa.next_state()};
 
-    std::ranges::for_each(set_.symbols(), [&nfa, accept_state](const char symbol) {
+    std::ranges::for_each(any_of.set.symbols(), [&nfa, accept_state](const char symbol) {
         nfa.add_transition(nfa.init_state(), nfa::Label{symbol}, accept_state);
     });
 
@@ -27,4 +27,4 @@ nfa::Builder Any_of::to_nfa() const
     return nfa;
 }
 
-} // namespace lexer::regex
+} // namespace munch::regex

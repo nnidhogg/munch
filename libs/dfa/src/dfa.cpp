@@ -1,8 +1,8 @@
-#include "lexer/dfa/dfa.hpp"
+#include "munch/dfa/dfa.hpp"
 
 #include <boost/container_hash/hash.hpp>
 
-namespace lexer::dfa
+namespace munch::dfa
 {
 std::size_t Dfa::Hash::operator()(const Key_t& key) const noexcept
 {
@@ -29,16 +29,18 @@ const Dfa::Accept_states_t& Dfa::accept_states() const noexcept
     return accept_states_;
 }
 
-std::optional<Dfa::State_t> Dfa::advance(const Dfa& dfa, const State_t state, const char symbol)
+std::optional<Dfa::State_t> Dfa::advance(const State_t state, const char symbol) const
 {
-    const std::pair key{state, Label{symbol}};
+    const auto iterator{transitions_.find({state, Label{symbol}})};
 
-    return dfa.transitions().contains(key) ? std::optional{dfa.transitions().at(key)} : std::nullopt;
+    return iterator != transitions_.cend() ? std::optional{iterator->second} : std::nullopt;
 }
 
-std::optional<Token> Dfa::has_accept_token(const Dfa& dfa, const State_t state)
+std::optional<Token> Dfa::has_accept_token(const State_t state) const
 {
-    return dfa.accept_states().contains(state) ? std::optional{dfa.accept_states().at(state)} : std::nullopt;
+    const auto iterator{accept_states_.find(state)};
+
+    return iterator != accept_states_.cend() ? std::optional{iterator->second} : std::nullopt;
 }
 
-} // namespace lexer::dfa
+} // namespace munch::dfa

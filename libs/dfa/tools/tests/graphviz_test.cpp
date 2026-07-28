@@ -1,4 +1,4 @@
-#include "lexer/dfa/tools/graphviz.hpp"
+#include "munch/dfa/tools/graphviz.hpp"
 
 #include <gtest/gtest.h>
 
@@ -6,12 +6,12 @@
 #include <fstream>
 #include <sstream>
 
-#include "lexer/dfa/builder.hpp"
-#include "lexer/dfa/dfa.hpp"
+#include "munch/dfa/builder.hpp"
+#include "munch/dfa/dfa.hpp"
 
-using namespace lexer;
-using namespace lexer::dfa;
-using namespace lexer::dfa::tools;
+using namespace munch;
+using namespace munch::dfa;
+using namespace munch::dfa::tools;
 
 using Graphviz_test = testing::Test;
 

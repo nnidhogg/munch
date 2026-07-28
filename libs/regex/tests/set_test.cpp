@@ -1,14 +1,14 @@
-#include "lexer/regex/set.hpp"
+#include "munch/regex/set.hpp"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
 
-#include "lexer/nfa/tools/graphviz.hpp"
+#include "munch/nfa/tools/graphviz.hpp"
 
-using namespace lexer;
-using namespace lexer::regex;
-using namespace lexer::nfa::tools;
+using namespace munch;
+using namespace munch::regex;
+using namespace munch::nfa::tools;
 
 class Set_test : public testing::Test
 {
@@ -73,6 +73,28 @@ TEST_F(Set_test, From_range)
     EXPECT_TRUE(s.symbols().contains('c'));
 }
 
+TEST_F(Set_test, Range_crossing_high_bit)
+{
+    const auto low = static_cast<char>(static_cast<unsigned char>(0x7E));
+    const auto high = static_cast<char>(static_cast<unsigned char>(0x81));
+    const Set s = Set::range(low, high);
+    EXPECT_EQ(s.symbols().size(), 4);
+    for (unsigned i = 0x7E; i <= 0x81; ++i)
+    {
+        EXPECT_TRUE(s.symbols().contains(static_cast<char>(static_cast<unsigned char>(i))));
+    }
+}
+
+TEST_F(Set_test, Range_ending_at_max_byte)
+{
+    const auto low = static_cast<char>(static_cast<unsigned char>(0xFE));
+    const auto high = static_cast<char>(static_cast<unsigned char>(0xFF));
+    const Set s = Set::range(low, high);
+    EXPECT_EQ(s.symbols().size(), 2);
+    EXPECT_TRUE(s.symbols().contains(static_cast<char>(static_cast<unsigned char>(0xFE))));
+    EXPECT_TRUE(s.symbols().contains(static_cast<char>(static_cast<unsigned char>(0xFF))));
+}
+
 TEST_F(Set_test, Digits)
 {
     EXPECT_EQ(digits_set.symbols().size(), 10);
@@ -125,10 +147,10 @@ TEST_F(Set_test, Printable)
 TEST_F(Set_test, All)
 {
     const Set s = Set::all();
-    EXPECT_EQ(s.symbols().size(), 128);
-    for (int i = 0; i <= 127; ++i)
+    EXPECT_EQ(s.symbols().size(), 256);
+    for (int i = 0; i <= 255; ++i)
     {
-        EXPECT_TRUE(s.symbols().contains(static_cast<char>(i)));
+        EXPECT_TRUE(s.symbols().contains(static_cast<char>(static_cast<unsigned char>(i))));
     }
 }
 
@@ -263,9 +285,9 @@ TEST_F(Set_test, Operator_minus_all_elements)
 TEST_F(Set_test, Large_set)
 {
     Set s = Set::all();
-    EXPECT_EQ(s.symbols().size(), 128);
+    EXPECT_EQ(s.symbols().size(), 256);
     s -= Set::printable();
-    EXPECT_EQ(s.symbols().size(), 33); // 128 - 95 = 33
+    EXPECT_EQ(s.symbols().size(), 161); // 256 - 95 = 161
 }
 
 TEST_F(Set_test, Copy_constructor)

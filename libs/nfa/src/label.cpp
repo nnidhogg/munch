@@ -1,8 +1,8 @@
-#include "lexer/nfa/label.hpp"
+#include "munch/nfa/label.hpp"
 
 #include <stdexcept>
 
-namespace lexer::nfa
+namespace munch::nfa
 {
 bool Epsilon::operator==(const Epsilon&) const noexcept
 {
@@ -14,10 +14,10 @@ std::size_t Epsilon::Hash::operator()(const Epsilon&) const noexcept
     return 0;
 }
 
-Label::Label(const Epsilon e) noexcept : variant_{e}
+Label::Label(const Symbol_t s) noexcept : variant_{s}
 {}
 
-Label::Label(const Symbol_t s) noexcept : variant_{s}
+Label::Label(const Epsilon e) noexcept : variant_{e}
 {}
 
 Label Label::epsilon() noexcept
@@ -66,4 +66,4 @@ std::size_t Label::Hash::operator()(const Label& label) const noexcept
             label.variant());
 }
 
-} // namespace lexer::nfa
+} // namespace munch::nfa
