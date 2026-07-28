@@ -551,6 +551,24 @@ patterns with optional decimal points and exponents.
 This DFA is constructed from the floating point literal NFA and shows the deterministic state transitions required to
 efficiently recognize floating point numbers.
 
+#### **DFA Minimization Example**
+
+Subset construction builds the DFA for `choice(text("let"), text("set"))` with a separate branch per alternative:
+
+![DFA before minimization](docs/minimization_before.svg)
+
+Subset construction cannot merge these branches itself: it identifies states reached by the same input prefixes, and
+these alternatives share none. Their redundancy lies in the shared suffix, i.e. in their futures, which is exactly
+what minimization examines: it merges every pair of states no remaining input can distinguish. The two accept states
+are interchangeable, and so are the interior states of the two branches pair by pair, collapsing the automaton into a
+single shared chain:
+
+![DFA after minimization](docs/minimization_after.svg)
+
+States accepting different tokens are never merged, so tokenization is unchanged. The builder minimizes after each
+subset construction, so every DFA it produces is minimal; smaller automata also shrink the transition tables the
+simulator compiles, keeping more of them in cache.
+
 ## **License**
 
 This project is licensed under the terms of the MIT License. See the [LICENSE](LICENSE) file for details.
