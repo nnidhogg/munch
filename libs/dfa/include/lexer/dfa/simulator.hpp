@@ -1,6 +1,7 @@
 #ifndef LEXER_LIBS_DFA_INCLUDE_LEXER_DFA_SIMULATOR_HPP
 #define LEXER_LIBS_DFA_INCLUDE_LEXER_DFA_SIMULATOR_HPP
 
+#include <array>
 #include <cstdint>
 #include <experimental/mdspan>
 #include <iterator>
@@ -18,9 +19,11 @@ namespace lexer::dfa
  * @brief Runs a DFA over input sequences.
  *
  * Compiles the DFA it is constructed from into flat tables indexed by state and input symbol, so that advancing on an
- * input character is a single table read instead of a hash lookup. The tables assume states are numbered densely from
- * zero, as the subset construction numbers them; a sparsely numbered DFA still works but wastes a table row per
- * unused identifier.
+ * input character is a single table read instead of a hash lookup. Symbols the automaton never distinguishes share a
+ * table column: each input character is first mapped to its equivalence class, shrinking the table from one column
+ * per symbol value to one per class, which keeps far more of it in cache. The tables assume states are numbered
+ * densely from zero, as the subset construction numbers them; a sparsely numbered DFA still works but wastes a table
+ * row per unused identifier.
  */
 class Simulator
 {
@@ -52,17 +55,15 @@ public:
             return {std::nullopt, 0};
         }
 
-        const auto transitions{transitions_view()};
-
         auto state{init_state_};
 
-        // The tables only hold valid states: init_state_ indexes a row, and every entry is either a row index or
-        // no_state_. The loop therefore needs no bounds checks.
+        // The tables only hold valid states: init_state_ indexes a column, and every entry is either a column index
+        // or no_state_. The loop therefore needs no bounds checks.
         Result_t result{accept_table_[state], 0};
 
         for (Iterator current{begin}; current != end; ++current)
         {
-            const auto entry{transitions[state, static_cast<unsigned char>(*current)]};
+            const auto entry{table_[row_offsets_[static_cast<unsigned char>(*current)] + state]};
 
             if (entry == no_state_)
             {
@@ -112,11 +113,27 @@ private:
     static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
 
     /**
-     * @brief Two-dimensional `(state, symbol)` view over a transition table.
+     * @brief Type of a symbol equivalence class, i.e. a column index of the transition table.
+     *
+     * There are at most symbol_count_ classes, so the widest index fits.
+     */
+    using Class_t = std::uint8_t;
+
+    /**
+     * @brief The class of each symbol value.
+     */
+    using Classes_t = std::array<Class_t, symbol_count_>;
+
+    /**
+     * @brief Two-dimensional `(class, state)` view over a transition table.
+     *
+     * Rows are per class rather than per state, so the row-offset multiplication depends only on the input
+     * character, which is known before the state it is consumed in: the multiplication stays off the
+     * state-to-state dependency chain that limits how fast the run() loop can advance.
      * @tparam Entry The viewed entry type, const-qualified for reading.
      */
     template <typename Entry>
-    using Table_view_t = std::mdspan<Entry, std::extents<std::size_t, std::dynamic_extent, symbol_count_>>;
+    using Table_view_t = std::mdspan<Entry, std::dextents<std::size_t, 2>>;
 
     /**
      * @brief The state a simulation starts in.
@@ -124,7 +141,15 @@ private:
     Dfa::State_t init_state_;
 
     /**
-     * @brief Transitions as one row of symbol_count_ entries per state, holding no_state_ where there is none.
+     * @brief The table offset of the class row of each symbol value.
+     *
+     * Holds `class * states` rather than the class itself, so looking a transition up is an addition and a read with
+     * no multiplication left on the run() loop's critical path.
+     */
+    std::array<std::size_t, symbol_count_> row_offsets_;
+
+    /**
+     * @brief Transitions as one row per symbol class and one column per state, holding no_state_ where there is none.
      */
     std::vector<Entry_t> table_;
 
@@ -134,12 +159,14 @@ private:
     std::vector<std::optional<Token>> accept_table_;
 
     /**
-     * @brief Returns the transition table as a `(state, symbol)` view.
+     * @brief Groups the symbols of the DFA into equivalence classes.
+     *
+     * Two symbols are equivalent when every state either moves on both to the same state or on neither, i.e. when
+     * their transition table columns would be identical.
+     * @param dfa The DFA whose symbols are classified.
+     * @return The class of each symbol value, numbered densely from zero.
      */
-    [[nodiscard]] Table_view_t<const Entry_t> transitions_view() const noexcept
-    {
-        return Table_view_t<const Entry_t>{table_.data(), accept_table_.size()};
-    }
+    [[nodiscard]] static Classes_t classify(const Dfa& dfa);
 };
 
 } // namespace lexer::dfa

@@ -1,6 +1,7 @@
 #include "lexer/dfa/simulator.hpp"
 
 #include <algorithm>
+#include <map>
 #include <ranges>
 #include <stdexcept>
 
@@ -30,6 +31,34 @@ std::size_t count_states(const Dfa& dfa)
 
 } // namespace
 
+Simulator::Classes_t Simulator::classify(const Dfa& dfa)
+{
+    // The signature of a symbol is the sorted set of transitions it labels. Symbols with equal signatures would have
+    // identical table columns, which is exactly when they may share a class.
+    using Signature_t = std::vector<std::pair<Dfa::State_t, Dfa::State_t>>;
+
+    std::array<Signature_t, symbol_count_> signatures;
+
+    for (const auto& [key, to] : dfa.transitions())
+    {
+        signatures[static_cast<unsigned char>(key.second.symbol())].emplace_back(key.first, to);
+    }
+
+    std::map<Signature_t, Class_t> classes;
+
+    Classes_t result{};
+
+    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    {
+        std::ranges::sort(signatures[symbol]);
+
+        result[symbol] =
+                classes.try_emplace(std::move(signatures[symbol]), static_cast<Class_t>(classes.size())).first->second;
+    }
+
+    return result;
+}
+
 Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
 {
     const auto states{count_states(dfa)};
@@ -39,17 +68,26 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
         throw std::runtime_error("DFA has too many states to be indexed by a transition table entry");
     }
 
-    table_.assign(states * symbol_count_, no_state_);
+    const auto classes{classify(dfa)};
+
+    const auto class_count{static_cast<std::size_t>(std::ranges::max(classes)) + 1};
+
+    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    {
+        row_offsets_[symbol] = classes[symbol] * states;
+    }
+
+    table_.assign(states * class_count, no_state_);
 
     accept_table_.assign(states, std::nullopt);
 
-    const Table_view_t<Entry_t> transitions{table_.data(), states};
+    const Table_view_t<Entry_t> transitions{table_.data(), class_count, states};
 
     for (const auto& [key, to] : dfa.transitions())
     {
         const auto& [from, label]{key};
 
-        transitions[from, static_cast<unsigned char>(label.symbol())] = static_cast<Entry_t>(to);
+        transitions[classes[static_cast<unsigned char>(label.symbol())], from] = static_cast<Entry_t>(to);
     }
 
     for (const auto& [state, token] : dfa.accept_states())
