@@ -16,13 +16,25 @@ add_library(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME}
         PUBLIC
-        include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+
+target_compile_features(${PROJECT_NAME}
+        PUBLIC
+        cxx_std_23
 )
 
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
         munch_nfa
 )
+
+if (MUNCH_INSTALL)
+    install(TARGETS ${PROJECT_NAME} EXPORT munch_targets)
+
+    install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif ()
 
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests

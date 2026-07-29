@@ -13,15 +13,22 @@ add_library(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME}
         PUBLIC
-        include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+
+target_compile_features(${PROJECT_NAME}
+        PUBLIC
+        cxx_std_23
 )
 
 target_link_libraries(${PROJECT_NAME}
         PUBLIC
         munch_common
-        munch_mdspan
         PRIVATE
-        munch_boost
+        # Build-interface only: header-only build dependencies a consumer of the installed package never needs.
+        $<BUILD_INTERFACE:munch_mdspan>
+        $<BUILD_INTERFACE:munch_boost>
 )
 
 add_library(${PROJECT_NAME}_tools
@@ -30,13 +37,20 @@ add_library(${PROJECT_NAME}_tools
 
 target_include_directories(${PROJECT_NAME}_tools
         PUBLIC
-        tools/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tools/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(${PROJECT_NAME}_tools
         ${PROJECT_NAME}
         munch_common
 )
+
+if (MUNCH_INSTALL)
+    install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_tools EXPORT munch_targets)
+
+    install(DIRECTORY include/ tools/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif ()
 
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests

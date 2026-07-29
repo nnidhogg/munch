@@ -13,6 +13,9 @@ if (USE_SYSTEM_GTEST)
 else ()
     include(FetchContent)
 
+    # A test-only dependency; its install rules do not belong in a munch install.
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+
     FetchContent_Declare(
             googletest
             URL https://github.com/google/googletest/archive/release-1.12.1.zip

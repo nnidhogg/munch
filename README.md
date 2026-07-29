@@ -58,8 +58,9 @@ as in the maximal munch rule every lexer lives by, is the pun.
 
 - **Lightweight to Integrate**
 
-  Builds as a set of static libraries with `FetchContent`-managed dependencies; add it with `add_subdirectory` and link
-  `munch`.
+  Builds as a set of static libraries with `FetchContent`-managed dependencies. Add it with `add_subdirectory`, or
+  install it and `find_package(munch)`; either way, link `munch::munch`. The installed package is self-contained,
+  with no third-party dependencies in its public headers.
 
 ## **How It Works**
 
@@ -512,8 +513,10 @@ hatches for constructs beyond regular languages.
 
 ### **Requirements**
 
-- A C++23 compiler; GCC on Linux is the only toolchain built and tested (GCC 13.3 in CI). GCC 13 has no native
-  `<mdspan>`, which `external/mdspan` (the Kokkos reference implementation) supplies via `FetchContent`.
+- A C++23 compiler; GCC and Clang on Linux are the toolchains built and tested (GCC 13.3 and Clang 19 in CI). Clang 18
+  and older cannot compile the tokenizer: libstdc++'s `<expected>` requires `__cpp_concepts >= 202002L`, which Clang
+  first reports in 19. GCC 13 has no native `<mdspan>`, which `external/mdspan` (the Kokkos reference implementation)
+  supplies via `FetchContent`.
 - CMake 3.20+.
 - Everything else (`boost.config`/`describe`/`mp11`/`container_hash`, `mdspan`, `googletest`) is fetched by CMake at
   configure time; there is nothing to install manually. Pass `-DUSE_SYSTEM_BOOST=ON` / `-DUSE_SYSTEM_GTEST=ON` to use
@@ -566,26 +569,45 @@ tools/
 
 ## **Example CMake Integration**
 
-Here's a sample `CMakeLists.txt` for integrating the `munch` library:
+munch can be consumed two ways. As a subdirectory, vendored or fetched:
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
 project(MyProject VERSION 1.0 LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add the munch library
 add_subdirectory(munch)
 
 # Link the munch library to your target
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE munch)
+target_link_libraries(my_app PRIVATE munch::munch)
 ```
 
-The `munch` target is an interface umbrella over `munch_core` and `munch_tokenizer`, which pull in `munch_regex`,
-`munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers described below are not part
-of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools` directly to use them.
+Or as an installed package:
+
+```bash
+cmake -S munch -B munch/build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_TESTS=OFF -DMUNCH_BUILD_BENCHMARK=OFF
+cmake --build munch/build -j 8
+cmake --install munch/build --prefix /your/prefix
+```
+
+```cmake
+find_package(munch 0.2 CONFIG REQUIRED)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE munch::munch)
+```
+
+The installed package is self-contained: the build-time header-only dependencies (Boost utilities, mdspan) never
+appear in munch's public headers, so nothing else needs to be installed or found, and the exported targets carry the
+C++23 requirement themselves. Do not install from a `MUNCH_BENCHMARK_COMPARE` build, whose comparison engines insist
+on installing alongside. Install rules are generated only when munch is the top-level project, or when
+`MUNCH_INSTALL=ON` is passed explicitly.
+
+The `munch::munch` target is an interface umbrella over `munch_core` and `munch_tokenizer`, which pull in
+`munch_regex`, `munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers described
+below are not part of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools` (installed as
+`munch::munch_nfa_tools` / `munch::munch_dfa_tools`) directly to use them.
 
 ## **Debugging and Visualization**
 

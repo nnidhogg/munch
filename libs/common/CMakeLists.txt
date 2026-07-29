@@ -8,5 +8,17 @@ add_library(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME}
         INTERFACE
-        include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+
+target_compile_features(${PROJECT_NAME}
+        INTERFACE
+        cxx_std_23
+)
+
+if (MUNCH_INSTALL)
+    install(TARGETS ${PROJECT_NAME} EXPORT munch_targets)
+
+    install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif ()

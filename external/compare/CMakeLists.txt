@@ -17,11 +17,14 @@ FetchContent_Declare(
         GIT_SHALLOW TRUE
 )
 
+# Header-only and consumed by include path, like Boost.Regex below; skipping its build also keeps its
+# unconditional install rules out of a munch install.
 FetchContent_Declare(
         ctre
         GIT_REPOSITORY https://github.com/hanickadot/compile-time-regular-expressions.git
         GIT_TAG v3.9.0
         GIT_SHALLOW TRUE
+        SOURCE_SUBDIR unused
 )
 
 set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
@@ -62,6 +65,7 @@ add_library(${PROJECT_NAME} INTERFACE)
 target_include_directories(${PROJECT_NAME}
         SYSTEM INTERFACE
         ${boost_regex_SOURCE_DIR}/include
+        ${ctre_SOURCE_DIR}/include
 )
 
 target_compile_definitions(${PROJECT_NAME}
@@ -72,6 +76,5 @@ target_compile_definitions(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
         INTERFACE
         pcre2-8-static
-        ctre::ctre
         re2::re2
 )

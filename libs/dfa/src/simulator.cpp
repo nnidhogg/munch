@@ -1,6 +1,7 @@
 #include "munch/dfa/simulator.hpp"
 
 #include <algorithm>
+#include <experimental/mdspan>
 #include <map>
 #include <ranges>
 #include <stdexcept>
@@ -9,6 +10,17 @@ namespace munch::dfa
 {
 namespace
 {
+/**
+ * @brief Two-dimensional `(class, state)` view over a transition table.
+ *
+ * Rows are per class rather than per state, so the row offset of a lookup depends only on the input character,
+ * which is known before the state it is consumed in: the offset computation stays off the state-to-state
+ * dependency chain that limits how fast the run() loop can advance.
+ * @tparam Entry The viewed entry type, const-qualified for reading.
+ */
+template <typename Entry>
+using Table_view_t = std::mdspan<Entry, std::dextents<std::size_t, 2>>;
+
 /**
  * @brief Returns the number of table columns the DFA needs, i.e. one past its highest state identifier.
  * @param dfa The DFA whose states are counted.

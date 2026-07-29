@@ -5,11 +5,14 @@ add_library(${PROJECT_NAME} INTERFACE)
 
 include(FetchContent)
 
+# Only the sources are fetched: munch compiles against the include directory, and skipping the mdspan build keeps
+# its unconditional install rules out of a munch install.
 FetchContent_Declare(
         mdspan
         GIT_REPOSITORY https://github.com/kokkos/mdspan.git
         GIT_TAG stable
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SOURCE_SUBDIR unused
 )
 
 FetchContent_MakeAvailable(mdspan)
