@@ -69,9 +69,16 @@ std::string generate_input(const std::size_t size, const std::span<const char* c
 std::string generate_source_input(const std::size_t size)
 {
     constexpr const char* identifiers[]{
-            "configuration_manager", "total_element_count", "process_next_request", "buffer_capacity",
-            "initialize_state_machine", "compute_partial_checksum", "validation_result", "iterator_position",
-            "acc", "idx"};
+            "configuration_manager",
+            "total_element_count",
+            "process_next_request",
+            "buffer_capacity",
+            "initialize_state_machine",
+            "compute_partial_checksum",
+            "validation_result",
+            "iterator_position",
+            "acc",
+            "idx"};
 
     std::string input;
 
