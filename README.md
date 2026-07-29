@@ -116,7 +116,8 @@ read on the hot path:
   than the `size_t`-keyed hash map would.
 
 The design rationale, i.e. why a library this small outruns engines orders of magnitude larger, is written up in
-[docs/performance.md](docs/performance.md).
+[docs/performance.md](docs/performance.md); the architectural decisions behind it are collected in
+[docs/design.md](docs/design.md).
 
 Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2) over generated pseudo-code:
 
@@ -552,8 +553,9 @@ check the whole pipeline against direct NFA simulation.
 ## **Directory Structure**
 
 ```
-docs/                     SVG diagrams of example automata, performance.md (the design rationale for the speed), and
-                          limits.md (the library's scope, guarantees, and escape hatches).
+docs/                     SVG diagrams of example automata, performance.md (the design rationale for the speed),
+                          design.md (the architectural decisions behind it), and limits.md (the library's scope,
+                          guarantees, and escape hatches).
 libs/
   common/                 Shared concepts (Iterator, Iterable) used across the other libraries.
   regex/                  The combinator DSL: Regex nodes and their lowering to munch::nfa::Builder.
