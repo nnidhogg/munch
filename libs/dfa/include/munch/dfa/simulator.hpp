@@ -3,7 +3,6 @@
 
 #include <array>
 #include <cstdint>
-#include <experimental/mdspan>
 #include <iterator>
 #include <limits>
 #include <optional>
@@ -68,17 +67,6 @@ class Simulator
      */
     using Classes_t = std::array<Class_t, symbol_count_>;
 
-    /**
-     * @brief Two-dimensional `(class, state)` view over a transition table.
-     *
-     * Rows are per class rather than per state, so the row offset of a lookup depends only on the input character,
-     * which is known before the state it is consumed in: the offset computation stays off the state-to-state
-     * dependency chain that limits how fast the run() loop can advance.
-     * @tparam Entry The viewed entry type, const-qualified for reading.
-     */
-    template <typename Entry>
-    using Table_view_t = std::mdspan<Entry, std::dextents<std::size_t, 2>>;
-
 public:
     /**
      * @brief The result type: a pair of the matched token (if any) and the length of the match.
@@ -140,8 +128,8 @@ public:
             }
         }
 
-        return accept_state != no_state_ ? Result_t{accept_table_[accept_state], accept_consumed}
-                                         : Result_t{std::nullopt, 0};
+        return accept_state != no_state_ ? Result_t{accept_table_[accept_state], accept_consumed} :
+                                           Result_t{std::nullopt, 0};
     }
 
     /**
@@ -154,6 +142,82 @@ public:
     [[nodiscard]] Result_t run(const Container& container) const
     {
         return run(std::begin(container), std::end(container));
+    }
+
+    /**
+     * @brief Tokenizes a whole input in one pass, invoking the sink once per matched token.
+     *
+     * Equivalent to calling run() repeatedly at each token boundary, but the scan state stays live across tokens,
+     * amortizing the per-call overhead. Random access is required because longest match may read past the last
+     * accepting position and must resume from it. A zero-width match stops the scan rather than looping in place.
+     * @tparam Iterator Random access iterator type.
+     * @tparam Sink Callable receiving each matched token and its length.
+     * @param begin Iterator to the beginning of the input.
+     * @param end Iterator to the end of the input.
+     * @param sink Invoked as sink(token, length) for every matched token, in input order. A sink returning a value
+     *        convertible to bool stops the scan by returning false; the stopping token still counts as tokenized.
+     * @return The number of input elements tokenized; anything short of the input's size means no token matched at
+     *         the returned offset, unless the sink stopped the scan.
+     */
+    template <std::random_access_iterator Iterator, std::invocable<const Token&, std::size_t> Sink>
+    std::size_t run_all(Iterator begin, Iterator end, Sink sink) const
+    {
+        const auto size{static_cast<std::size_t>(end - begin)};
+
+        std::size_t offset{0};
+
+        while (offset < size)
+        {
+            auto state{static_cast<Entry_t>(init_state_)};
+
+            auto accept_state{(flags_[state] & accept_flag_) != 0 ? state : no_state_};
+
+            std::size_t accept_consumed{0};
+
+            std::size_t consumed{0};
+
+            for (auto current{begin + static_cast<std::ptrdiff_t>(offset)}; current != end; ++current)
+            {
+                const auto entry{table_[row_offsets_[static_cast<unsigned char>(*current)] + state]};
+
+                if (entry == no_state_)
+                {
+                    break;
+                }
+
+                state = entry;
+
+                ++consumed;
+
+                if (flags_[state] & accept_flag_)
+                {
+                    accept_state = state;
+
+                    accept_consumed = consumed;
+                }
+            }
+
+            if (accept_state == no_state_ || accept_consumed == 0)
+            {
+                return offset;
+            }
+
+            offset += accept_consumed;
+
+            if constexpr (std::convertible_to<std::invoke_result_t<Sink&, const Token&, std::size_t>, bool>)
+            {
+                if (!sink(*accept_table_[accept_state], accept_consumed))
+                {
+                    return offset;
+                }
+            }
+            else
+            {
+                sink(*accept_table_[accept_state], accept_consumed);
+            }
+        }
+
+        return offset;
     }
 
 private:

@@ -74,6 +74,28 @@ std::size_t tokenize(const munch::core::Lexer& lexer, const std::string& input)
     }
 }
 
+/**
+ * @brief Tokenizes the whole input once through Lexer::tokenize_all, the batch entry point.
+ * @param lexer The lexer to run.
+ * @param input The input to tokenize.
+ * @return The number of tokens matched, or 0 if the input was rejected.
+ */
+std::size_t tokenize_all(const munch::core::Lexer& lexer, const std::string& input)
+{
+    std::size_t tokens{0};
+
+    const auto consumed{lexer.tokenize_all<Token>(input, [&tokens](const Token, const std::size_t) { ++tokens; })};
+
+    if (consumed != input.size())
+    {
+        std::printf("input rejected at offset %zu\n", consumed);
+
+        return 0;
+    }
+
+    return tokens;
+}
+
 } // namespace
 
 /**
@@ -107,10 +129,15 @@ int main(const int argc, const char** argv)
         return tokenize(ascii_lexer, ascii_input);
     })};
 
+    ok = measure("lexer_all/ascii", ascii_input.size(), passes, [&ascii_lexer, &ascii_input] {
+             return tokenize_all(ascii_lexer, ascii_input);
+         }) &&
+         ok;
+
     ok = measure("tokenizer/ascii", ascii_input.size(), passes, [&tokenizer] { return tokenize(tokenizer); }) && ok;
 
-    ok = measure("lexer/utf8", greek_input.size(), passes,
-                 [&greek_lexer, &greek_input] { return tokenize(greek_lexer, greek_input); }) &&
+    ok = measure("lexer_all/utf8", greek_input.size(), passes,
+                 [&greek_lexer, &greek_input] { return tokenize_all(greek_lexer, greek_input); }) &&
          ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;

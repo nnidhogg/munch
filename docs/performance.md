@@ -51,9 +51,11 @@ latency does not take back what branch elimination won.
 
 ## **What Beats It, and What That Buys**
 
-Lexer-specialized code generators beat this design. logos, the Rust lexer generator, was measured against munch on a
-bit-identical port of the README's benchmark corpus, validated to produce the same token stream to the token, and ran
-about 1.4 times faster on the same machine; re2c occupies the same class for C. They win by escaping the one cost the
+Lexer-specialized code generators beat this design, though by less than they used to. logos, the Rust lexer
+generator, was measured against munch on a bit-identical port of the README's benchmark corpus, validated to produce
+the same token stream to the token: it ran about 1.4 times faster than per-token tokenize() calls, and within ten
+to twenty percent of the whole-input tokenize_all() entry point, whose single scan keeps state live across token
+boundaries and thereby removed a quarter to a third of the per-token cost; re2c occupies the same class for C. They win by escaping the one cost the
 table model cannot shed: a table walk performs one dependent load per input byte, a serial chain of L1 latencies,
 while generated code fuses multi-byte consumption into the matcher, comparing whole keywords at once and eating
 identifier runs without a per-byte state step.

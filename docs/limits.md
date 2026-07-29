@@ -19,6 +19,9 @@ model excludes, deliberately and permanently:
 - **Shortest or first match.** Longest match is not configurable. `--` lexes as one token when a `--` pattern exists,
   never as two `-` tokens, which is exactly the maximal-munch rule real languages specify.
 
+The batch entry point `tokenize_all()` additionally requires random access to the input, because longest match may
+read past the last accepting position and must resume from it; single-pass input works through the per-token API.
+
 ## **Byte-Oriented, With UTF-8 by Expansion**
 
 The engine reads bytes, never code points. `regex::Set` holds byte values, and `utf8::range` admits Unicode by expanding

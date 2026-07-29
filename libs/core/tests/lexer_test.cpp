@@ -2,6 +2,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "munch/core/builder.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
@@ -572,4 +575,106 @@ TEST_F(Lexer_test, Test_combined)
 
     EXPECT_EQ(lexer.tokenize<Token_kind>("// a comment"), Result_t(Token_kind::Single_line_comment, 12));
     EXPECT_EQ(lexer.tokenize<Token_kind>("/* a comment */"), Result_t(Token_kind::Multi_line_comment, 15));
+}
+
+TEST_F(Lexer_test, Tokenize_all_matches_sequential_tokenization)
+{
+    enum class Token_kind : uint8_t
+    {
+        Keyword,
+        Identifier,
+        Integer_literal,
+        Whitespace,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(text("boolean"), Token_kind::Keyword, 1);
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 4);
+    builder.add_token(integer_literal_regex(), Token_kind::Integer_literal, 2);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 2);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"boolean x 1234 boolean_ish  42 y7"};
+
+    using Match_t = std::pair<Token_kind, std::size_t>;
+
+    std::vector<Match_t> batch;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input, [&batch](const Token_kind token, const std::size_t length) { batch.emplace_back(token, length); })};
+
+    EXPECT_EQ(consumed, input.size());
+
+    std::vector<Match_t> sequential;
+
+    for (std::size_t offset{0}; offset < input.size();)
+    {
+        const auto [token, length]{lexer.tokenize<Token_kind>(input.cbegin() + offset, input.cend())};
+
+        ASSERT_TRUE(token.has_value());
+        ASSERT_GT(length, 0u);
+
+        sequential.emplace_back(*token, length);
+
+        offset += length;
+    }
+
+    EXPECT_EQ(batch, sequential);
+}
+
+TEST_F(Lexer_test, Tokenize_all_stops_at_unmatched_input)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"abc def @rest"};
+
+    std::size_t tokens{0};
+
+    const auto consumed{
+            lexer.tokenize_all<Token_kind>(input, [&tokens](const Token_kind, const std::size_t) { ++tokens; })};
+
+    EXPECT_EQ(consumed, 8u);
+    EXPECT_EQ(tokens, 4u);
+
+    EXPECT_EQ(lexer.tokenize_all<Token_kind>(std::string{}, [](const Token_kind, const std::size_t) {}), 0u);
+}
+
+TEST_F(Lexer_test, Tokenize_all_stops_when_the_sink_returns_false)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"one two three"};
+
+    std::size_t tokens{0};
+
+    // Stop after the second token; the stopping token still counts as tokenized.
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input, [&tokens](const Token_kind, const std::size_t) { return ++tokens < 2; })};
+
+    EXPECT_EQ(tokens, 2u);
+    EXPECT_EQ(consumed, 4u);
 }

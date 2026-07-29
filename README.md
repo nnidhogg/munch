@@ -123,13 +123,15 @@ Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2) over generated p
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target munch_benchmark
 $ ./build/tools/benchmark/munch_benchmark 16 15
-lexer/ascii      16.0 MiB, 9144476 tokens, best of 15 passes: 504.5 MiB/s
-tokenizer/ascii  16.0 MiB, 9144476 tokens, best of 15 passes: 418.3 MiB/s
-lexer/utf8       16.0 MiB, 8320312 tokens, best of 15 passes: 484.1 MiB/s
+lexer/ascii      16.0 MiB, 9144476 tokens, best of 15 passes: 490.8 MiB/s
+lexer_all/ascii  16.0 MiB, 9144476 tokens, best of 15 passes: 579.2 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, best of 15 passes: 470.2 MiB/s
+lexer_all/utf8   16.0 MiB, 8320312 tokens, best of 15 passes: 546.4 MiB/s
 ```
 
-The three scenarios measure the core lexer on C-like source, the same input through the `Tokenizer` driver, and
-identifiers containing UTF-8 code points matched through byte expansion. Inputs are fixed-seed and deterministic, so
+The four scenarios measure the core lexer called once per token on C-like source, the same input through the batch
+`tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver, and
+identifiers containing UTF-8 code points matched through byte expansion, also through the batch entry point. Inputs are fixed-seed and deterministic, so
 runs are comparable across changes. Numbers depend on the machine and the token set, so rerun the benchmark on your own
 hardware and language before citing them.
 
@@ -145,27 +147,27 @@ The option is off by default because it fetches the engines as additional depend
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BENCHMARK_COMPARE=ON
 $ cmake --build build -j 8 --target munch_benchmark_compare
 $ ./build/tools/benchmark/munch_benchmark_compare 16 15
-munch            16.0 MiB, 9144476 tokens, best of 15 passes: 492.5 MiB/s
-ctre             16.0 MiB, 9144476 tokens, best of 15 passes: 422.1 MiB/s
-pcre2-jit        16.0 MiB, 9144476 tokens, best of 15 passes: 75.5 MiB/s
-re2              16.0 MiB, 9144476 tokens, best of 15 passes: 12.7 MiB/s
-boost-regex      16.0 MiB, 9144476 tokens, best of 15 passes: 16.4 MiB/s
-std-regex        16.0 MiB, 9144476 tokens, best of 15 passes: 12.4 MiB/s
+munch            16.0 MiB, 9144476 tokens, best of 15 passes: 590.5 MiB/s
+ctre             16.0 MiB, 9144476 tokens, best of 15 passes: 425.6 MiB/s
+pcre2-jit        16.0 MiB, 9144476 tokens, best of 15 passes: 75.7 MiB/s
+re2              16.0 MiB, 9144476 tokens, best of 15 passes: 13.2 MiB/s
+boost-regex      16.0 MiB, 9144476 tokens, best of 15 passes: 16.7 MiB/s
+std-regex        16.0 MiB, 9144476 tokens, best of 15 passes: 12.7 MiB/s
 ```
 
 | Engine       | Version        | Matching approach                       | Throughput |
 |--------------|----------------|-----------------------------------------|-----------:|
-| `munch`      | this repo      | table-compiled minimal DFA, single pass |  492 MiB/s |
-| CTRE         | 3.9.0          | matcher generated at C++ compile time   |  422 MiB/s |
-| PCRE2        | 10.44          | backtracking, JIT-compiled              |   75 MiB/s |
-| Boost.Regex  | 1.86.0         | backtracking                            |   16 MiB/s |
+| `munch`      | this repo      | table-compiled minimal DFA, single pass |  590 MiB/s |
+| CTRE         | 3.9.0          | matcher generated at C++ compile time   |  426 MiB/s |
+| PCRE2        | 10.44          | backtracking, JIT-compiled              |   76 MiB/s |
+| Boost.Regex  | 1.86.0         | backtracking                            |   17 MiB/s |
 | RE2          | 2024-07-02     | Thompson NFA when extracting captures   |   13 MiB/s |
-| `std::regex` | libstdc++ 13.3 | backtracking                            |   12 MiB/s |
+| `std::regex` | libstdc++ 13.3 | backtracking                            |   13 MiB/s |
 
 Read the numbers for what they measure. The corpus averages under two bytes per token, so per-token overhead dominates:
-munch and CTRE compile the token set into a matcher ahead of time and inline into the scan loop, while the
-general-purpose engines re-enter a full match API for every token (PCRE2 through its dedicated JIT entry point,
-`pcre2_jit_match`). RE2 must answer capture-group queries through its NFA rather than its faster DFA, and both RE2 and
+munch tokenizes the whole input through `tokenize_all()`, CTRE compiles the token set into a matcher at C++ compile
+time, and the general-purpose engines re-enter a full match API for every token (PCRE2 through its dedicated JIT entry
+point, `pcre2_jit_match`). RE2 must answer capture-group queries through its NFA rather than its faster DFA, and both RE2 and
 PCRE2 are designed for searching long texts, not for anchored matches every couple of bytes. The comparison pattern
 orders keywords before identifiers and multi-character operators before their prefixes, so the engines with first-match
 alternation semantics produce exactly munch's longest-match, priority-resolved tokenization.
@@ -430,6 +432,21 @@ In both cases, the lexer returns:
 - the **length**, the number of characters consumed during the match.
 
 This API is efficient and lightweight, suitable for use in parsers or compiler front ends.
+
+To tokenize a whole input at once, `tokenize_all` scans in a single pass and invokes a sink per matched token,
+keeping the scan state live across token boundaries; it is the fastest way to tokenize a complete input. It requires
+random access to the input (a `std::string` or `std::vector` qualifies) and returns the number of characters
+tokenized, so a result short of the input's size names the first offset where no token matched:
+
+```cpp
+std::vector<std::pair<Token_kind, std::size_t>> tokens;
+
+const auto consumed = lexer.tokenize_all<Token_kind>(input, [&tokens](const Token_kind kind, const std::size_t length) {
+    tokens.emplace_back(kind, length);
+});
+
+// consumed == input.size() exactly when the whole input tokenized.
+```
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 

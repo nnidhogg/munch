@@ -52,31 +52,19 @@ struct Tally
 };
 
 /**
- * @brief Tokenizes the whole input once through the munch Lexer, providing the reference tally.
+ * @brief Tokenizes the whole input once through the munch Lexer's batch entry point, providing the reference tally.
  */
 Tally run_munch(const munch::core::Lexer& lexer, const std::string& input)
 {
     Tally tally{};
 
-    std::size_t offset{0};
-
-    while (offset < input.size())
-    {
-        const auto [token, length]{lexer.tokenize<Token>(input.cbegin() + offset, input.cend())};
-
-        if (!token || length == 0)
-        {
-            return {};
-        }
-
-        tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(*token);
+    const auto consumed{lexer.tokenize_all<Token>(input, [&tally](const Token token, const std::size_t) {
+        tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(token);
 
         ++tally.tokens;
+    })};
 
-        offset += length;
-    }
-
-    return tally;
+    return consumed == input.size() ? tally : Tally{};
 }
 
 /**
