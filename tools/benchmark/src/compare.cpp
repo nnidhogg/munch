@@ -5,6 +5,8 @@
 #include <regex>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <vector>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
@@ -68,6 +70,116 @@ Tally run_munch(const munch::core::Lexer& lexer, const std::string& input)
     })};
 
     return consumed == input.size() ? tally : Tally{};
+}
+
+/**
+ * @brief Finds chunk boundaries at the certified safe split points nearest the equal-division offsets.
+ */
+std::vector<std::size_t> chunk_boundaries(
+        const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
+{
+    std::vector<std::size_t> boundaries{0};
+
+    for (std::size_t index{1}; index < chunks; ++index)
+    {
+        auto offset{index * input.size() / chunks};
+
+        while (offset < input.size() && !lexer.is_split_point(input[offset]))
+        {
+            ++offset;
+        }
+
+        if (offset > boundaries.back() && offset < input.size())
+        {
+            boundaries.push_back(offset);
+        }
+    }
+
+    boundaries.push_back(input.size());
+
+    return boundaries;
+}
+
+/**
+ * @brief Raises 31 to the given power with wraparound, for splicing per-chunk checksums in stream order.
+ */
+std::size_t pow31(std::size_t exponent)
+{
+    std::size_t result{1};
+
+    std::size_t base{31};
+
+    for (; exponent != 0; exponent >>= 1U)
+    {
+        if ((exponent & 1U) != 0)
+        {
+            result *= base;
+        }
+
+        base *= base;
+    }
+
+    return result;
+}
+
+/**
+ * @brief Tokenizes the input in chunks split at certified safe split points, one thread per chunk.
+ *
+ * The per-chunk checksums are spliced in stream order, so the tally equals the serial scan's exactly when the
+ * chunked token stream is identical, and the validation against the reference stays as strict as for every other
+ * scenario.
+ */
+Tally run_munch_threaded(const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
+{
+    const auto boundaries{chunk_boundaries(lexer, input, chunks)};
+
+    std::vector<Tally> tallies(boundaries.size() - 1);
+
+    std::vector<std::size_t> consumed(tallies.size(), 0);
+
+    {
+        std::vector<std::jthread> workers;
+
+        workers.reserve(tallies.size());
+
+        for (std::size_t index{0}; index < tallies.size(); ++index)
+        {
+            workers.emplace_back([&lexer, &input, &boundaries, &tallies, &consumed, index] {
+                // Accumulated locally and stored once: per-token writes to the shared vectors would false-share
+                // their cache lines across the worker threads.
+                Tally tally{};
+
+                const auto scanned{lexer.tokenize_all<Token>(
+                        input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index]),
+                        input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index + 1]),
+                        [&tally](const Token token, const std::size_t) {
+                            tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(token);
+
+                            ++tally.tokens;
+                        })};
+
+                tallies[index] = tally;
+
+                consumed[index] = scanned;
+            });
+        }
+    }
+
+    Tally total{};
+
+    for (std::size_t index{0}; index < tallies.size(); ++index)
+    {
+        if (consumed[index] != boundaries[index + 1] - boundaries[index])
+        {
+            return {};
+        }
+
+        total.checksum = total.checksum * pow31(tallies[index].tokens) + tallies[index].checksum;
+
+        total.tokens += tallies[index].tokens;
+    }
+
+    return total;
 }
 
 /**
@@ -383,6 +495,8 @@ int main(const int argc, const char** argv)
 
     const Scenario scenarios[]{
             {.name = "munch", .run = [&](const std::string& input) { return run_munch(lexer, input); }},
+            {.name = "munch-mt4", .run = [&](const std::string& input) { return run_munch_threaded(lexer, input, 4); }},
+            {.name = "munch-mt8", .run = [&](const std::string& input) { return run_munch_threaded(lexer, input, 8); }},
             {.name = "lexertl", .run = [&](const std::string& input) { return run_lexertl(lexertl_sm, input); }},
             {.name = "ctre", .run = [&](const std::string& input) { return run_ctre(input); }},
             {.name = "pcre2-jit", .run = [&](const std::string& input) { return pcre2.run(input); }},

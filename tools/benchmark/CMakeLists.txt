@@ -38,5 +38,6 @@ if (MUNCH_BENCHMARK_COMPARE)
             munch_core
             munch_regex
             munch_compare
+            Threads::Threads
     )
 endif ()

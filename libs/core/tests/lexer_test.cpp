@@ -731,8 +731,9 @@ TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)
 
     const auto lexer{builder.build()};
 
-    const std::string input{std::string(30, ' ') + "an_identifier_well_past_the_probe_distance " +
-                            std::string(25, '7') + " x 9 " + std::string(18, 'y')};
+    const std::string input{
+            std::string(30, ' ') + "an_identifier_well_past_the_probe_distance " + std::string(25, '7') + " x 9 " +
+            std::string(18, 'y')};
 
     std::vector<std::pair<Token_kind, std::size_t>> batch;
 

@@ -535,9 +535,9 @@ TEST_F(Dfa_test, Accelerated_runs_preserve_longest_match)
 
     std::vector<std::pair<std::size_t, std::size_t>> tokens;
 
-    auto consumed{simulator.run_all(run_with_b.cbegin(), run_with_b.cend(), [&tokens](const Token& token, const std::size_t length) {
-        tokens.emplace_back(token.id(), length);
-    })};
+    auto consumed{simulator.run_all(
+            run_with_b.cbegin(), run_with_b.cend(),
+            [&tokens](const Token& token, const std::size_t length) { tokens.emplace_back(token.id(), length); })};
 
     EXPECT_EQ(consumed, run_with_b.size());
     ASSERT_EQ(tokens.size(), 1U);
@@ -549,10 +549,9 @@ TEST_F(Dfa_test, Accelerated_runs_preserve_longest_match)
 
     tokens.clear();
 
-    consumed = simulator.run_all(run_without_b.cbegin(), run_without_b.cend(),
-                                 [&tokens](const Token& token, const std::size_t length) {
-                                     tokens.emplace_back(token.id(), length);
-                                 });
+    consumed = simulator.run_all(
+            run_without_b.cbegin(), run_without_b.cend(),
+            [&tokens](const Token& token, const std::size_t length) { tokens.emplace_back(token.id(), length); });
 
     EXPECT_EQ(consumed, run_without_b.size());
     EXPECT_EQ(tokens.size(), 40U);
@@ -586,10 +585,9 @@ TEST_F(Dfa_test, Accelerated_runs_extend_accepting_tokens)
 
         std::vector<std::size_t> lengths;
 
-        const auto consumed{simulator.run_all(input.cbegin(), input.cend(),
-                                              [&lengths](const Token&, const std::size_t matched) {
-                                                  lengths.push_back(matched);
-                                              })};
+        const auto consumed{simulator.run_all(
+                input.cbegin(), input.cend(),
+                [&lengths](const Token&, const std::size_t matched) { lengths.push_back(matched); })};
 
         EXPECT_EQ(consumed, length);
         ASSERT_EQ(lengths.size(), 1U);

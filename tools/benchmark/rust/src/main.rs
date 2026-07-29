@@ -179,6 +179,88 @@ fn run_logos(input: &str) -> Tally {
     tally
 }
 
+/// The bytes this token set may be split at, established by manual analysis: each one is consumed only as the
+/// first byte of a token, so a chunk boundary placed immediately before it cannot change the tokenization. munch
+/// certifies the identical set automatically from its compiled transition table; logos offers no certification,
+/// so the safety argument for this steelman lives in this comment instead ('=' is absent because it is the second
+/// byte of ==, <=, >= and !=).
+fn is_split_point(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'(' | b')' | b'{' | b'}' | b';' | b',' | b'+' | b'-' | b'*' | b'/' | b'<' | b'>' | b'!'
+    )
+}
+
+/// Mirrors compare.cpp chunk_boundaries(): the split point nearest each equal-division offset.
+fn chunk_boundaries(input: &[u8], chunks: usize) -> Vec<usize> {
+    let mut boundaries = vec![0];
+
+    for index in 1..chunks {
+        let mut offset = index * input.len() / chunks;
+
+        while offset < input.len() && !is_split_point(input[offset]) {
+            offset += 1;
+        }
+
+        if offset > *boundaries.last().unwrap() && offset < input.len() {
+            boundaries.push(offset);
+        }
+    }
+
+    boundaries.push(input.len());
+    boundaries
+}
+
+/// Raises 31 to the given power with wraparound, for splicing per-chunk checksums in stream order.
+fn pow31(mut exponent: usize) -> usize {
+    let mut result: usize = 1;
+    let mut base: usize = 31;
+
+    while exponent != 0 {
+        if exponent & 1 != 0 {
+            result = result.wrapping_mul(base);
+        }
+
+        base = base.wrapping_mul(base);
+        exponent >>= 1;
+    }
+
+    result
+}
+
+/// Tokenizes the input in chunks split at the hand-verified split points, one thread per chunk, splicing the
+/// per-chunk checksums in stream order so the tally validates against the serial scan exactly.
+fn run_logos_threaded(input: &str, chunks: usize) -> Tally {
+    let boundaries = chunk_boundaries(input.as_bytes(), chunks);
+    let mut tallies = vec![Tally::default(); boundaries.len() - 1];
+
+    std::thread::scope(|scope| {
+        for (index, tally) in tallies.iter_mut().enumerate() {
+            let chunk = &input[boundaries[index]..boundaries[index + 1]];
+
+            scope.spawn(move || {
+                *tally = run_logos(chunk);
+            });
+        }
+    });
+
+    let mut total = Tally::default();
+
+    for tally in &tallies {
+        if tally.tokens == 0 {
+            return Tally::default();
+        }
+
+        total.checksum = total
+            .checksum
+            .wrapping_mul(pow31(tally.tokens))
+            .wrapping_add(tally.checksum);
+        total.tokens += tally.tokens;
+    }
+
+    total
+}
+
 fn run_regex_automata(dfa: &dense::DFA<Vec<u32>>, input: &str) -> Tally {
     let haystack = input.as_bytes();
     let mut tally = Tally::default();
@@ -322,6 +404,8 @@ fn main() {
         }
 
         for (name, tally) in [
+            ("logos-mt4", run_logos_threaded(input, 4)),
+            ("logos-mt8", run_logos_threaded(input, 8)),
             ("regex-automata", run_regex_automata(&dfa, input)),
             ("regex-automata-raw", run_regex_automata_raw(&dfa, start, input)),
         ] {
@@ -340,6 +424,10 @@ fn main() {
         );
 
         ok &= measure("logos", input.len(), passes, || run_logos(input));
+
+        ok &= measure("logos-mt4", input.len(), passes, || run_logos_threaded(input, 4));
+
+        ok &= measure("logos-mt8", input.len(), passes, || run_logos_threaded(input, 8));
 
         ok &= measure("regex-automata", input.len(), passes, || {
             run_regex_automata(&dfa, input)

@@ -12,9 +12,12 @@
 `munch` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
 regex-like combinator DSL, compiled through Thompson construction, subset construction, and DFA minimization by Moore
 partition refinement, then executed by a cache-optimized table simulator. There are no predefined tokens or grammars.
-You describe the language, and the library builds the automaton. On the [comparison below](#comparison-with-other-engines),
-that automaton measures as the fastest lexer constructed at run time in either measured language, on both benchmark
-corpora; only compile-time code generation measures ahead.
+You describe the language, and the library builds the automaton. On
+the [comparison below](#comparison-with-other-engines), that automaton measures as the fastest lexer constructed at run
+time in either measured language, on both benchmark corpora; only compile-time code generation measures ahead. The
+compiled table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned in
+parallel with near-linear scaling and a provably identical token stream, a guarantee the code-generating lexers cannot
+give about their own token sets.
 
 The name is pronounced /mʊŋk/, like "munk", after the
 painter [Edvard Munch](https://en.wikipedia.org/wiki/Edvard_Munch); that it also reads as the English *munch* /mʌntʃ/,
@@ -61,8 +64,8 @@ as in the maximal munch rule every lexer lives by, is the pun.
 - **Lightweight to Integrate**
 
   Builds as a set of static libraries with `FetchContent`-managed dependencies. Add it with `add_subdirectory`, or
-  install it and `find_package(munch)`; either way, link `munch::munch`. The installed package is self-contained,
-  with no third-party dependencies in its public headers.
+  install it and `find_package(munch)`; either way, link `munch::munch`. The installed package is self-contained, with
+  no third-party dependencies in its public headers.
 
 ## **How It Works**
 
@@ -135,18 +138,18 @@ lexer_all/utf8   16.0 MiB, 8320312 tokens, best of 15 passes: 546.4 MiB/s
 
 The four scenarios measure the core lexer called once per token on C-like source, the same input through the batch
 `tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver, and
-identifiers containing UTF-8 code points matched through byte expansion, also through the batch entry point. Inputs are fixed-seed and deterministic, so
-runs are comparable across changes. Numbers depend on the machine and the token set, so rerun the benchmark on your own
-hardware and language before citing them.
+identifiers containing UTF-8 code points matched through byte expansion, also through the batch entry point. Inputs are
+fixed-seed and deterministic, so runs are comparable across changes. Numbers depend on the machine and the token set, so
+rerun the benchmark on your own hardware and language before citing them.
 
 ### **Comparison with Other Engines**
 
 Configuring with `-DMUNCH_BENCHMARK_COMPARE=ON` additionally builds `munch_benchmark_compare`, which runs the same
-tokenization job through six engines: lexertl, munch's nearest relative, a lexer likewise built at run time from
-rules and compiled to a DFA, and five widely used regex engines, used the way one uses a regex engine to write a
-lexer: one pattern with an alternation per token kind, matched anchored at the current offset, extracting every
-token's kind and length. Each engine's full tokenization is validated to agree with munch's, token for token, before
-anything is timed. The option is off by default because it fetches the engines as additional dependencies.
+tokenization job through six engines: lexertl, munch's nearest relative, a lexer likewise built at run time from rules
+and compiled to a DFA, and five widely used regex engines, used the way one uses a regex engine to write a lexer: one
+pattern with an alternation per token kind, matched anchored at the current offset, extracting every token's kind and
+length. Each engine's full tokenization is validated to agree with munch's, token for token, before anything is timed.
+The option is off by default because it fetches the engines as additional dependencies.
 
 Two corpus shapes keep the conclusions honest: `dense`, averaging under two bytes per token, magnifies per-token
 overhead, and `source`, shaped like real code with long identifiers and indentation, amortizes it.
@@ -156,62 +159,110 @@ $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BENCHMARK_COMPARE=ON
 $ cmake --build build -j 8 --target munch_benchmark_compare
 $ ./build/tools/benchmark/munch_benchmark_compare 16 15
 corpus dense: 1.83 bytes per token
-munch            16.0 MiB, 9144476 tokens, best of 15 passes: 615.3 MiB/s
-lexertl          16.0 MiB, 9144476 tokens, best of 15 passes: 187.2 MiB/s
-ctre             16.0 MiB, 9144476 tokens, best of 15 passes: 489.1 MiB/s
-pcre2-jit        16.0 MiB, 9144476 tokens, best of 15 passes: 80.9 MiB/s
-re2              16.0 MiB, 9144476 tokens, best of 15 passes: 13.0 MiB/s
+munch            16.0 MiB, 9144476 tokens, best of 15 passes: 624.2 MiB/s
+munch-mt4        16.0 MiB, 9144476 tokens, best of 15 passes: 2302.0 MiB/s
+munch-mt8        16.0 MiB, 9144476 tokens, best of 15 passes: 3284.5 MiB/s
+lexertl          16.0 MiB, 9144476 tokens, best of 15 passes: 187.8 MiB/s
+ctre             16.0 MiB, 9144476 tokens, best of 15 passes: 449.1 MiB/s
+pcre2-jit        16.0 MiB, 9144476 tokens, best of 15 passes: 83.5 MiB/s
+re2              16.0 MiB, 9144476 tokens, best of 15 passes: 11.7 MiB/s
 boost-regex      16.0 MiB, 9144476 tokens, best of 15 passes: 16.7 MiB/s
-std-regex        16.0 MiB, 9144476 tokens, best of 15 passes: 11.6 MiB/s
+std-regex        16.0 MiB, 9144476 tokens, best of 15 passes: 11.7 MiB/s
 corpus source: 3.53 bytes per token
-munch            16.0 MiB, 4755600 tokens, best of 15 passes: 614.1 MiB/s
-lexertl          16.0 MiB, 4755600 tokens, best of 15 passes: 235.4 MiB/s
-ctre             16.0 MiB, 4755600 tokens, best of 15 passes: 682.0 MiB/s
-pcre2-jit        16.0 MiB, 4755600 tokens, best of 15 passes: 148.8 MiB/s
-re2              16.0 MiB, 4755600 tokens, best of 15 passes: 22.5 MiB/s
-boost-regex      16.0 MiB, 4755600 tokens, best of 15 passes: 30.6 MiB/s
-std-regex        16.0 MiB, 4755600 tokens, best of 15 passes: 18.8 MiB/s
+munch            16.0 MiB, 4755600 tokens, best of 15 passes: 604.5 MiB/s
+munch-mt4        16.0 MiB, 4755600 tokens, best of 15 passes: 2342.3 MiB/s
+munch-mt8        16.0 MiB, 4755600 tokens, best of 15 passes: 3792.9 MiB/s
+lexertl          16.0 MiB, 4755600 tokens, best of 15 passes: 237.4 MiB/s
+ctre             16.0 MiB, 4755600 tokens, best of 15 passes: 634.3 MiB/s
+pcre2-jit        16.0 MiB, 4755600 tokens, best of 15 passes: 151.0 MiB/s
+re2              16.0 MiB, 4755600 tokens, best of 15 passes: 20.2 MiB/s
+boost-regex      16.0 MiB, 4755600 tokens, best of 15 passes: 30.7 MiB/s
+std-regex        16.0 MiB, 4755600 tokens, best of 15 passes: 17.8 MiB/s
 ```
 
-The same job runs through Rust's lexer class in `tools/benchmark/rust`, whose corpus generators are byte-identical
-ports and whose tally matches the one above, so the numbers are comparable across the two binaries. It measures
-logos, the code-generating lexer, and the dense DFAs of regex-automata, the nearest Rust relative of munch's
-runtime-construction class, both through its search API and steelmanned through its low-level automaton walk:
+The same job runs through Rust's lexer class in `tools/benchmark/rust`, whose corpus generators are byte-identical ports
+and whose tally matches the one above, so the numbers are comparable across the two binaries. It measures logos, the
+code-generating lexer, and the dense DFAs of regex-automata, the nearest Rust relative of munch's runtime-construction
+class, both through its search API and steelmanned through its low-level automaton walk:
 
 ```
 $ cd tools/benchmark/rust && cargo run --release -- 16 15
 corpus dense: 1.83 bytes per token
-logos            16.0 MiB, 9144476 tokens, best of 15 passes: 679.2 MiB/s
-regex-automata   16.0 MiB, 9144476 tokens, best of 15 passes: 171.4 MiB/s
-regex-automata-raw 16.0 MiB, 9144476 tokens, best of 15 passes: 349.6 MiB/s
+logos            16.0 MiB, 9144476 tokens, best of 15 passes: 680.2 MiB/s
+logos-mt4        16.0 MiB, 9144476 tokens, best of 15 passes: 2576.9 MiB/s
+logos-mt8        16.0 MiB, 9144476 tokens, best of 15 passes: 4594.0 MiB/s
+regex-automata   16.0 MiB, 9144476 tokens, best of 15 passes: 171.2 MiB/s
+regex-automata-raw 16.0 MiB, 9144476 tokens, best of 15 passes: 351.1 MiB/s
 corpus source: 3.53 bytes per token
-logos            16.0 MiB, 4755600 tokens, best of 15 passes: 783.2 MiB/s
-regex-automata   16.0 MiB, 4755600 tokens, best of 15 passes: 220.8 MiB/s
-regex-automata-raw 16.0 MiB, 4755600 tokens, best of 15 passes: 397.1 MiB/s
+logos            16.0 MiB, 4755600 tokens, best of 15 passes: 844.4 MiB/s
+logos-mt4        16.0 MiB, 4755600 tokens, best of 15 passes: 3253.8 MiB/s
+logos-mt8        16.0 MiB, 4755600 tokens, best of 15 passes: 5628.6 MiB/s
+regex-automata   16.0 MiB, 4755600 tokens, best of 15 passes: 227.2 MiB/s
+regex-automata-raw 16.0 MiB, 4755600 tokens, best of 15 passes: 400.9 MiB/s
 ```
 
-| Engine                 | Version        | Built at     | Matching approach                       | dense | source |
-|------------------------|----------------|--------------|-----------------------------------------|------:|-------:|
-| logos                  | 0.15.1         | compile time | matcher generated by a derive macro     |   679 |    783 |
-| `munch`                | this repo      | run time     | table-compiled minimal DFA, single pass |   615 |    614 |
-| CTRE                   | 3.9.0          | compile time | matcher generated from the regex        |   489 |    682 |
-| `regex-automata` (raw) | 0.4            | run time     | dense DFA walked at the automaton level |   350 |    397 |
-| lexertl                | 652435f        | run time     | rules compiled to a DFA                 |   187 |    235 |
-| `regex-automata`       | 0.4            | run time     | dense DFA through its search API        |   171 |    221 |
-| PCRE2                  | 10.44          | run time     | backtracking, JIT-compiled              |    81 |    149 |
-| Boost.Regex            | 1.86.0         | run time     | backtracking                            |    17 |     31 |
-| RE2                    | 2024-07-02     | run time     | Thompson NFA when extracting captures   |    13 |     23 |
-| `std::regex`           | libstdc++ 13.3 | run time     | backtracking                            |    12 |     19 |
+The engines fall into three groups, and each group is in the comparison to answer a different question.
+
+**The same class: lexers constructed at run time.** These share munch's contract, a token set supplied as data while
+the program runs, so they are the alternatives munch directly competes with, and the group the claim of fastest in
+its class is measured against. regex-automata appears twice deliberately: once through its search API as a user
+would call it, and once steelmanned through its low-level automaton walk, so the claim holds against the best the
+library can do rather than its friendliest entry point.
+
+| Engine                 | Version   | Matching approach                       | dense | source |
+|------------------------|-----------|-----------------------------------------|------:|-------:|
+| `munch`                | this repo | table-compiled minimal DFA, single pass |   624 |    605 |
+| `regex-automata` (raw) | 0.4       | dense DFA walked at the automaton level |   351 |    401 |
+| lexertl                | 652435f   | rules compiled to a DFA                 |   188 |    237 |
+| `regex-automata`       | 0.4       | dense DFA through its search API        |   171 |    227 |
+
+**The class above: compile-time code generation.** These freeze the token set at build time and emit code shaped
+like it, the one advantage a runtime-built table cannot take, so this group does not measure a competition munch can
+enter; it measures the price of munch's flexibility. Eight percent on dense input and under thirty on source-shaped
+input is what keeping the token set an ordinary runtime value costs. Membership in this class is not sufficient to
+win, though: munch outruns CTRE outright on the dense corpus, because CTRE compiles the regex structure into code
+and still resolves the alternation between token kinds per token, while munch's determinized table erased the
+alternation before the first byte arrived. Only when longer tokens let generated code consume multi-byte runs does
+CTRE pull ahead.
+
+| Engine  | Version   | Matching approach                       | dense | source |
+|---------|-----------|-----------------------------------------|------:|-------:|
+| logos   | 0.15.1    | matcher generated by a derive macro     |   680 |    844 |
+| `munch` | this repo | table-compiled minimal DFA, single pass |   624 |    605 |
+| CTRE    | 3.9.0     | matcher generated from the regex        |   449 |    634 |
+
+**The industry defaults: general-purpose regex engines.** This is what a codebase typically reaches for when it
+needs a tokenizer without adopting a lexer library, so the group measures what that convenience costs. The gap is
+not a defect in these engines: they solve a far broader problem, searching, captures, backreferences, and they pay
+for that generality on a workload of anchored matches every couple of bytes.
+
+| Engine       | Version        | Matching approach                       | dense | source |
+|--------------|----------------|-----------------------------------------|------:|-------:|
+| `munch`      | this repo      | table-compiled minimal DFA, single pass |   624 |    605 |
+| PCRE2        | 10.44          | backtracking, JIT-compiled              |    84 |    151 |
+| Boost.Regex  | 1.86.0         | backtracking                            |    17 |     31 |
+| RE2          | 2024-07-02     | Thompson NFA when extracting captures   |    12 |     20 |
+| `std::regex` | libstdc++ 13.3 | backtracking                            |    12 |     18 |
+
+With the input chunked at safe split points and scanned with one thread per chunk, for the two lexer classes fast enough
+for threading to matter:
+
+| Engine  | Threads | dense | source |
+|---------|--------:|------:|-------:|
+| logos   |       8 |  4594 |   5629 |
+| `munch` |       8 |  3285 |   3793 |
+| logos   |       4 |  2577 |   3254 |
+| `munch` |       4 |  2302 |   2342 |
 
 Throughputs in MiB/s.
 
 Read the numbers for what they measure. The corpus averages under two bytes per token, so per-token overhead dominates:
 munch tokenizes the whole input through `tokenize_all()`, CTRE compiles the token set into a matcher at C++ compile
 time, and the general-purpose engines re-enter a full match API for every token (PCRE2 through its dedicated JIT entry
-point, `pcre2_jit_match`). RE2 must answer capture-group queries through its NFA rather than its faster DFA, and both RE2 and
-PCRE2 are designed for searching long texts, not for anchored matches every couple of bytes. The comparison pattern
-orders keywords before identifiers and multi-character operators before their prefixes, so the engines with first-match
-alternation semantics produce exactly munch's longest-match, priority-resolved tokenization.
+point, `pcre2_jit_match`). RE2 must answer capture-group queries through its NFA rather than its faster DFA, and both
+RE2 and PCRE2 are designed for searching long texts, not for anchored matches every couple of bytes. The comparison
+pattern orders keywords before identifiers and multi-character operators before their prefixes, so the engines with
+first-match alternation semantics produce exactly munch's longest-match, priority-resolved tokenization.
 
 Read as classes, the two corpora say one thing together. munch is the fastest lexer constructed at run time on both,
 between one and a half and three times ahead of its nearest relatives even with regex-automata steelmanned through its
@@ -219,6 +270,14 @@ low-level walk. The compile-time code generators own the overall lead as tokens 
 CTRE on source, because generated code consumes multi-byte runs where a table walk pays one dependent load per byte,
 which is also why munch's own throughput is nearly identical on both corpus shapes.
 [docs/performance.md](docs/performance.md) explains why that boundary is where it is.
+
+Threading multiplies the class verdict rather than reordering it: both lexer classes scale near linearly, so the serial
+ranking carries over at every width. What the threaded rows actually compare is how each side knows its chunk boundaries
+are safe. munch certifies them from the compiled transition table, for whatever token set was built, through
+`is_split_point()`; the logos rows rest on a hand-written analysis of this one token set, documented in the Rust driver,
+which logos itself can neither produce nor check. On a token set where no byte is safe, such as one with string
+literals, munch reports that no split points exist, while a hand analysis has to notice by itself that the trick is no
+longer sound.
 
 ## **Architecture Overview**
 
@@ -481,10 +540,10 @@ In both cases, the lexer returns:
 
 This API is efficient and lightweight, suitable for use in parsers or compiler front ends.
 
-To tokenize a whole input at once, `tokenize_all` scans in a single pass and invokes a sink per matched token,
-keeping the scan state live across token boundaries; it is the fastest way to tokenize a complete input. It requires
-random access to the input (a `std::string` or `std::vector` qualifies) and returns the number of characters
-tokenized, so a result short of the input's size names the first offset where no token matched:
+To tokenize a whole input at once, `tokenize_all` scans in a single pass and invokes a sink per matched token, keeping
+the scan state live across token boundaries; it is the fastest way to tokenize a complete input. It requires random
+access to the input (a `std::string` or `std::vector` qualifies) and returns the number of characters tokenized, so a
+result short of the input's size names the first offset where no token matched:
 
 ```cpp
 std::vector<std::pair<Token_kind, std::size_t>> tokens;
@@ -497,11 +556,11 @@ const auto consumed = lexer.tokenize_all<Token_kind>(input, [&tokens](const Toke
 ```
 
 `is_split_point(symbol)` reports whether a symbol is a certified safe chunk boundary: input split immediately before it
-tokenizes identically to the unsplit input. The property is computed from the compiled transition table, so it
-reflects the actual token set rather than a heuristic; a newline-run token, for example, correctly disqualifies
-newline, where a split-at-newline rule would silently corrupt the token stream. Chunking one large input at
-certified points and scanning the chunks on threads is demonstrated in the benchmark, where four threads reach 3.5×
-the serial throughput with a token stream proven identical; see [docs/performance.md](docs/performance.md).
+tokenizes identically to the unsplit input. The property is computed from the compiled transition table, so it reflects
+the actual token set rather than a heuristic; a newline-run token, for example, correctly disqualifies newline, where a
+split-at-newline rule would silently corrupt the token stream. Chunking one large input at certified points and scanning
+the chunks on threads is demonstrated in the benchmark, where four threads reach 3.5× the serial throughput with a token
+stream proven identical; see [docs/performance.md](docs/performance.md).
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
@@ -653,15 +712,15 @@ add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE munch::munch)
 ```
 
-The installed package is self-contained: the build-time header-only dependencies (Boost utilities, mdspan) never
-appear in munch's public headers, so nothing else needs to be installed or found, and the exported targets carry the
-C++23 requirement themselves. Do not install from a `MUNCH_BENCHMARK_COMPARE` build, whose comparison engines insist
-on installing alongside. Install rules are generated only when munch is the top-level project, or when
+The installed package is self-contained: the build-time header-only dependencies (Boost utilities, mdspan) never appear
+in munch's public headers, so nothing else needs to be installed or found, and the exported targets carry the C++23
+requirement themselves. Do not install from a `MUNCH_BENCHMARK_COMPARE` build, whose comparison engines insist on
+installing alongside. Install rules are generated only when munch is the top-level project, or when
 `MUNCH_INSTALL=ON` is passed explicitly.
 
 The `munch::munch` target is an interface umbrella over `munch_core` and `munch_tokenizer`, which pull in
-`munch_regex`, `munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers described
-below are not part of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools` (installed as
+`munch_regex`, `munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers described below
+are not part of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools` (installed as
 `munch::munch_nfa_tools` / `munch::munch_dfa_tools`) directly to use them.
 
 ## **Debugging and Visualization**

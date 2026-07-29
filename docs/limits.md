@@ -19,8 +19,8 @@ model excludes, deliberately and permanently:
 - **Shortest or first match.** Longest match is not configurable. `--` lexes as one token when a `--` pattern exists,
   never as two `-` tokens, which is exactly the maximal-munch rule real languages specify.
 
-The batch entry point `tokenize_all()` additionally requires random access to the input, because longest match may
-read past the last accepting position and must resume from it; single-pass input works through the per-token API.
+The batch entry point `tokenize_all()` additionally requires random access to the input, because longest match may read
+past the last accepting position and must resume from it; single-pass input works through the per-token API.
 
 ## **Byte-Oriented, With UTF-8 by Expansion**
 
@@ -42,8 +42,8 @@ rejected by construction). The consequences:
   as an error rather than looping forever at one offset.
 - A `Tokenizer` holds the entire input in memory as one string; there is no chunked or incremental feeding, so inputs
   are bounded by memory. Where that matters, the way out is the layer below: `core::Lexer` matches over any iterator
-  range without owning it, so a driver can do its own buffering and drive the lexer directly, provided each buffer
-  ends on a token boundary.
+  range without owning it, so a driver can do its own buffering and drive the lexer directly, provided each buffer ends
+  on a token boundary.
 
 ## **Concurrency and Lifetimes**
 
