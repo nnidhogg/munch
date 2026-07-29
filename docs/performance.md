@@ -51,11 +51,15 @@ latency does not take back what branch elimination won.
 
 ## **What Beats It, and What That Buys**
 
-Lexer-specialized code generators beat this design, though by less than they used to. logos, the Rust lexer
-generator, was measured against munch on a bit-identical port of the README's benchmark corpus, validated to produce
-the same token stream to the token: it ran about 1.4 times faster than per-token tokenize() calls, and within ten
-to twenty percent of the whole-input tokenize_all() entry point, whose single scan keeps state live across token
-boundaries and thereby removed a quarter to a third of the per-token cost; re2c occupies the same class for C. They win by escaping the one cost the
+Lexer-specialized code generators beat this design, and the margin grows with token length. logos, the Rust lexer
+generator, is measured in tools/benchmark/rust on byte-identical ports of the README's two benchmark corpora,
+validated to produce the same token stream to the token: it runs ten to thirty percent ahead of the whole-input
+tokenize_all() entry point, and CTRE overtakes on the source-shaped corpus as well; re2c occupies the same class
+for C. munch's own throughput is nearly identical on both corpus shapes, which is the table model's signature: it
+pays per byte, so token length neither helps nor hurts it, while generated code consumes multi-byte runs. Within
+munch's own class the lead survives falsification: even with regex-automata steelmanned through its low-level
+automaton walk rather than its search API, munch measures one and a half to nearly two times ahead, and further
+ahead of lexertl. They win by escaping the one cost the
 table model cannot shed: a table walk performs one dependent load per input byte, a serial chain of L1 latencies,
 while generated code fuses multi-byte consumption into the matcher, comparing whole keywords at once and eating
 identifier runs without a per-byte state step.

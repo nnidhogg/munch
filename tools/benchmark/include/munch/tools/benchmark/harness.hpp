@@ -40,6 +40,14 @@ core::Lexer build_lexer(bool greek_identifiers);
 std::string generate_input(std::size_t size, std::span<const char* const> identifiers);
 
 /**
+ * @brief Generates deterministic pseudo-code shaped like real source: long identifiers, indentation, and larger
+ * numbers, averaging several bytes per token where generate_input() averages under two.
+ * @param size The minimum size of the input in bytes.
+ * @return The generated input.
+ */
+std::string generate_source_input(std::size_t size);
+
+/**
  * @brief Measures the best throughput of a tokenization pass over a number of runs.
  *
  * The first pass warms caches and provides the token count the timed passes are validated against. The minimum is

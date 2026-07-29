@@ -8,3 +8,4 @@
 
 # Ignore generated files from application
 /debug
+/tools/benchmark/rust/target

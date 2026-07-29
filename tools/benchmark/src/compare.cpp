@@ -12,6 +12,9 @@
 
 #include <boost/regex.hpp>
 #include <ctre.hpp>
+#include <lexertl/generator.hpp>
+#include <lexertl/lookup.hpp>
+#include <lexertl/state_machine.hpp>
 
 #include "munch/tools/benchmark/harness.hpp"
 
@@ -65,6 +68,62 @@ Tally run_munch(const munch::core::Lexer& lexer, const std::string& input)
     })};
 
     return consumed == input.size() ? tally : Tally{};
+}
+
+/**
+ * @brief Builds the lexertl state machine for the shared token set.
+ *
+ * lexertl is munch's nearest relative in the comparison: a lexer built at run time from rules and compiled to a
+ * DFA. Rule identifiers are the harness Token values, so its tally is directly comparable, and keywords precede
+ * the identifier rule because lexertl breaks equal-length matches by rule order where munch uses priorities.
+ */
+lexertl::state_machine build_lexertl()
+{
+    lexertl::rules rules;
+
+    rules.push("[ \t\n]+", 1);
+    rules.push("if|else|while|return|int", 4);
+    rules.push("[A-Za-z_][A-Za-z0-9_]*", 2);
+    rules.push("[0-9]+", 3);
+    rules.push("==|!=|<=|>=|[-+*/=<>]", 5);
+    rules.push("[(){};,]", 6);
+
+    lexertl::state_machine sm;
+
+    lexertl::generator::build(rules, sm);
+
+    sm.minimise();
+
+    return sm;
+}
+
+/**
+ * @brief Tokenizes the whole input once through a lexertl state machine.
+ */
+Tally run_lexertl(const lexertl::state_machine& sm, const std::string& input)
+{
+    Tally tally{};
+
+    lexertl::match_results<std::string::const_iterator> results(input.cbegin(), input.cend());
+
+    for (;;)
+    {
+        lexertl::lookup(sm, results);
+
+        if (results.id == 0)
+        {
+            return tally;
+        }
+
+        if (results.id == results.npos() || results.first == results.second)
+        {
+            return {};
+        }
+
+        tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(results.id);
+
+        ++tally.tokens;
+    }
 }
 
 /**
@@ -284,9 +343,21 @@ int main(const int argc, const char** argv)
     // whole. The tally validation below fails loudly if this constraint is broken.
     constexpr const char* identifiers[]{"foo", "bar_baz", "counter", "x1", "value2", "tmp"};
 
-    const auto input{generate_input(mebibytes << 20U, identifiers)};
+    // Two corpus shapes falsify each other's conclusions: dense punishes per-token overhead, source shows how
+    // the gaps change once realistic token lengths amortize it.
+    const struct
+    {
+        const char* name;
+
+        std::string input;
+    } corpora[]{
+            {.name = "dense", .input = generate_input(mebibytes << 20U, identifiers)},
+            {.name = "source", .input = generate_source_input(mebibytes << 20U)},
+    };
 
     const auto lexer{build_lexer(false)};
+
+    const auto lexertl_sm{build_lexertl()};
 
     const std::regex std_regex{pattern, std::regex::optimize};
 
@@ -307,59 +378,69 @@ int main(const int argc, const char** argv)
     {
         const char* name;
 
-        std::function<Tally()> run;
+        std::function<Tally(const std::string&)> run;
     };
 
     const Scenario scenarios[]{
-            {.name = "munch", .run = [&] { return run_munch(lexer, input); }},
-            {.name = "ctre", .run = [&] { return run_ctre(input); }},
-            {.name = "pcre2-jit", .run = [&] { return pcre2.run(input); }},
-            {.name = "re2", .run = [&] { return run_re2(re2, input); }},
+            {.name = "munch", .run = [&](const std::string& input) { return run_munch(lexer, input); }},
+            {.name = "lexertl", .run = [&](const std::string& input) { return run_lexertl(lexertl_sm, input); }},
+            {.name = "ctre", .run = [&](const std::string& input) { return run_ctre(input); }},
+            {.name = "pcre2-jit", .run = [&](const std::string& input) { return pcre2.run(input); }},
+            {.name = "re2", .run = [&](const std::string& input) { return run_re2(re2, input); }},
             {.name = "boost-regex",
              .run =
-                     [&] {
+                     [&](const std::string& input) {
                          return run_backtracker<boost::regex, boost::smatch, boost::regex_constants::match_continuous>(
                                  boost_regex, input);
                      }},
             {.name = "std-regex",
              .run =
-                     [&] {
+                     [&](const std::string& input) {
                          return run_backtracker<std::regex, std::smatch, std::regex_constants::match_continuous>(
                                  std_regex, input);
                      }},
     };
 
-    const auto reference{run_munch(lexer, input)};
-
-    if (reference.tokens == 0)
-    {
-        std::printf("munch rejected the generated input\n");
-
-        return EXIT_FAILURE;
-    }
-
     bool ok{true};
 
-    for (const auto& scenario : scenarios)
+    for (const auto& [corpus, input] : corpora)
     {
-        if (const auto tally{scenario.run()}; !(tally == reference))
+        const auto reference{run_munch(lexer, input)};
+
+        if (reference.tokens == 0)
         {
-            std::printf(
-                    "%s: tokenization disagrees with munch (%zu tokens, checksum %zu; expected %zu, %zu)\n",
-                    scenario.name, tally.tokens, tally.checksum, reference.tokens, reference.checksum);
+            std::printf("munch rejected the %s corpus\n", corpus);
 
-            ok = false;
+            return EXIT_FAILURE;
         }
-    }
 
-    if (!ok)
-    {
-        return EXIT_FAILURE;
-    }
+        for (const auto& scenario : scenarios)
+        {
+            if (const auto tally{scenario.run(input)}; !(tally == reference))
+            {
+                std::printf(
+                        "%s/%s: tokenization disagrees with munch (%zu tokens, checksum %zu; expected %zu, %zu)\n",
+                        scenario.name, corpus, tally.tokens, tally.checksum, reference.tokens, reference.checksum);
 
-    for (const auto& scenario : scenarios)
-    {
-        ok = measure(scenario.name, input.size(), passes, [&scenario] { return scenario.run().tokens; }) && ok;
+                ok = false;
+            }
+        }
+
+        if (!ok)
+        {
+            return EXIT_FAILURE;
+        }
+
+        std::printf(
+                "corpus %s: %.2f bytes per token\n", corpus,
+                static_cast<double>(input.size()) / static_cast<double>(reference.tokens));
+
+        for (const auto& scenario : scenarios)
+        {
+            ok = measure(scenario.name, input.size(), passes,
+                         [&scenario, &input] { return scenario.run(input).tokens; }) &&
+                 ok;
+        }
     }
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;

@@ -27,6 +27,15 @@ FetchContent_Declare(
         SOURCE_SUBDIR unused
 )
 
+# Header-only and consumed by include path; munch's nearest relative in the comparison, a lexer built at run time
+# from rules and compiled to a DFA.
+FetchContent_Declare(
+        lexertl
+        GIT_REPOSITORY https://github.com/BenHanson/lexertl17.git
+        GIT_TAG 652435f97f887df44bb6521deeff88dd8e949f6f
+        SOURCE_SUBDIR unused
+)
+
 set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
 
 # RE2's install export references Abseil targets, which only exist in an export set when Abseil installs too.
@@ -58,7 +67,7 @@ FetchContent_Declare(
         SOURCE_SUBDIR unused
 )
 
-FetchContent_MakeAvailable(pcre2 ctre abseil re2 boost_regex)
+FetchContent_MakeAvailable(pcre2 ctre lexertl abseil re2 boost_regex)
 
 add_library(${PROJECT_NAME} INTERFACE)
 
@@ -66,6 +75,7 @@ target_include_directories(${PROJECT_NAME}
         SYSTEM INTERFACE
         ${boost_regex_SOURCE_DIR}/include
         ${ctre_SOURCE_DIR}/include
+        ${lexertl_SOURCE_DIR}/include
 )
 
 target_compile_definitions(${PROJECT_NAME}

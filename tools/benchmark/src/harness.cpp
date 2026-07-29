@@ -66,4 +66,48 @@ std::string generate_input(const std::size_t size, const std::span<const char* c
     return input;
 }
 
+std::string generate_source_input(const std::size_t size)
+{
+    constexpr const char* identifiers[]{
+            "configuration_manager", "total_element_count", "process_next_request", "buffer_capacity",
+            "initialize_state_machine", "compute_partial_checksum", "validation_result", "iterator_position",
+            "acc", "idx"};
+
+    std::string input;
+
+    input.reserve(size + 256);
+
+    // The same fixed-seed generator as generate_input(), so ports stay byte-identical.
+    unsigned seed{12345};
+
+    const auto random{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
+
+    const auto identifier{[&] { return identifiers[random() % std::size(identifiers)]; }};
+
+    while (input.size() < size)
+    {
+        input += "while (";
+        input += identifier();
+        input += " <= ";
+        input += std::to_string(random() % 10000000);
+        input += ") {\n    ";
+        input += identifier();
+        input += " = ";
+        input += identifier();
+        input += " * ";
+        input += identifier();
+        input += " + ";
+        input += std::to_string(random() % 100000);
+        input += ";\n    if (";
+        input += identifier();
+        input += " != ";
+        input += std::to_string(random() % 997);
+        input += ") { return ";
+        input += identifier();
+        input += "; }\n}\n";
+    }
+
+    return input;
+}
+
 } // namespace munch::tools::benchmark
