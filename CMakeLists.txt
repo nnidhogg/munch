@@ -24,6 +24,8 @@ endif ()
 
 option(MUNCH_BUILD_BENCHMARK "Build the throughput benchmark for munch" ON)
 
+option(MUNCH_BENCHMARK_COMPARE "Build the benchmark comparing munch against other engines" OFF)
+
 add_subdirectory(external)
 add_subdirectory(libs)
 add_subdirectory(tools)

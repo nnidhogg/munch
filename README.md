@@ -1,18 +1,22 @@
 # **Munch**
 
-<div style="text-align: center; margin-bottom: 1rem;">
+<p align="center">
   <img src="https://img.shields.io/badge/C%2B%2B-23-blue.svg" alt="C++23">
   <img src="https://github.com/nnidhogg/munch/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://github.com/nnidhogg/munch/actions/workflows/codeql.yml/badge.svg" alt="CodeQL">
   <img src="https://codecov.io/gh/nnidhogg/munch/branch/master/graph/badge.svg" alt="Coverage">
   <img src="https://img.shields.io/github/license/nnidhogg/munch" alt="License">
   <img src="https://img.shields.io/github/v/release/nnidhogg/munch?include_prereleases&sort=semver" alt="Release">
-</div>
+</p>
 
 `munch` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
 regex-like combinator DSL, compiled through Thompson construction, subset construction, and DFA minimization by Moore
 partition refinement, then executed by a cache-optimized table simulator. There are no predefined tokens or grammars.
 You describe the language, and the library builds the automaton.
+
+The name is pronounced /mʊŋk/, like "munk", after the
+painter [Edvard Munch](https://en.wikipedia.org/wiki/Edvard_Munch); that it also reads as the English *munch* /mʌntʃ/,
+as in the maximal munch rule every lexer lives by, is the pun.
 
 ## **Features**
 
@@ -24,9 +28,9 @@ You describe the language, and the library builds the automaton.
 - **Regex-like Combinators, Not a Regex String**
 
   Token patterns are built from composable, typed combinator functions (`concat`, `choice`, `plus`, `kleene`,
-  `optional`, `exact`, `at_least`, `range`, `any_of`, `text`) instead of a parsed regex string. Patterns are checked
-  by the compiler and can be built, stored, and reused as ordinary C++ values. `utf8::range` matches Unicode code
-  point ranges by expanding them into byte sequences, so the engine itself stays byte-oriented.
+  `optional`, `exact`, `at_least`, `range`, `any_of`, `text`) instead of a parsed regex string. Patterns are checked by
+  the compiler and can be built, stored, and reused as ordinary C++ values. `utf8::range` matches Unicode code point
+  ranges by expanding them into byte sequences, so the engine itself stays byte-oriented.
 
 - **A Real Automata Pipeline, Not a Backtracking Matcher**
 
@@ -43,19 +47,19 @@ You describe the language, and the library builds the automaton.
 - **Two Tokenization Layers**
 
   A low-level `core::Lexer` for single-shot, longest-match tokenization over an iterator range or container, and a
-  `tools::tokenizer::Tokenizer` on top of it that streams a whole input into a sequence of tokens with position
-  tracking and structured errors. The tokenizer also carries the primitives real languages need: several lexers as
-  modes over one input, a seek escape hatch for hand-scanned tokens, and a scanner for C++ raw string literals.
+  `tools::tokenizer::Tokenizer` on top of it that streams a whole input into a sequence of tokens with position tracking
+  and structured errors. The tokenizer also carries the primitives real languages need: several lexers as modes over one
+  input, a seek escape hatch for hand-scanned tokens, and a scanner for C++ raw string literals.
 
 - **Graphviz Export for Debugging**
 
-  Any NFA or DFA the library builds can be dumped to Graphviz DOT and rendered to SVG, which is how the diagrams in
-  this README were produced.
+  Any NFA or DFA the library builds can be dumped to Graphviz DOT and rendered to SVG, which is how the diagrams in this
+  README were produced.
 
 - **Lightweight to Integrate**
 
-  Builds as a set of static libraries with `FetchContent`-managed dependencies; add it with `add_subdirectory` and
-  link `munch`.
+  Builds as a set of static libraries with `FetchContent`-managed dependencies; add it with `add_subdirectory` and link
+  `munch`.
 
 ## **How It Works**
 
@@ -80,35 +84,38 @@ regex combinators ──▶ NFA (Thompson construction)
 1. **Regex → NFA.** Each combinator (`concat`, `choice`, `kleene`, ...) knows how to lower itself to an
    `nfa::Builder` fragment; composing combinators composes NFA fragments.
 2. **Per-pattern determinization.** Every registered pattern's NFA is independently turned into a DFA by subset
-   construction and minimized. This resolves the non-determinism a single pattern's own combinators introduce (e.g.
-   the branching in `choice` or the loop in `kleene`) before patterns ever interact.
-3. **Recombination.** Each minimized per-pattern DFA is converted back into an NFA fragment carrying its token, and
-   all fragments are unioned into one NFA via an ε-transition from a shared start state (Thompson-style union). This
-   union is what lets multiple tokens share a lexer.
+   construction and minimized. This resolves the non-determinism a single pattern's own combinators introduce (e.g. the
+   branching in `choice` or the loop in `kleene`) before patterns ever interact.
+3. **Recombination.** Each minimized per-pattern DFA is converted back into an NFA fragment carrying its token, and the
+   fragments are folded into one NFA by pairwise Thompson unions, each adding a fresh start state ε-linked to its two
+   operands. This union is what lets multiple tokens share a lexer.
 4. **Final determinization.** The merged NFA is determinized and minimized once more. This is the step that resolves
-   *cross-pattern* ambiguity, such as shared prefixes between an identifier and a keyword, using each token's
-   priority (lower value wins) to pick a winner when several patterns accept the same input.
-5. **Compilation to tables.** `core::Lexer` wraps the final DFA in a `dfa::Simulator`, which compiles it into
-   flat `(class, state) → state` and `state → token` tables (see [Performance](#performance)) instead of running the
-   DFA against the maps it was built from.
+   *cross-pattern* ambiguity, such as shared prefixes between an identifier and a keyword, using each token's priority
+   (lower value wins) to pick a winner when several patterns accept the same input.
+5. **Compilation to tables.** `core::Lexer` wraps the final DFA in a `dfa::Simulator`, which compiles it into flat
+   `(class, state) → state` and `state → token` tables (see [Performance](#performance)) instead of running the DFA
+   against the maps it was built from.
 
 Determinization and minimization run twice, once per pattern and once for the whole lexer, so the final DFA is never
 larger than it needs to be. Adding a token only re-triggers the second pass, not the first.
 
 ## **Performance**
 
-`core::Lexer::tokenize` advances the DFA through `dfa::Simulator::run`, which turns matching a character into one
-table read on the hot path:
+`core::Lexer::tokenize` advances the DFA through `dfa::Simulator::run`, which turns matching a character into one table
+read on the hot path:
 
-- **Symbol equivalence classes.** Two input bytes that the automaton never tells apart (e.g. two digits, in a lexer
-  with no per-digit tokens) share one row of the transition table. The table therefore needs one row per class the
-  automaton actually distinguishes rather than one per possible `char` value.
+- **Symbol equivalence classes.** Two input bytes that the automaton never tells apart (e.g. two digits, in a lexer with
+  no per-digit tokens) share one row of the transition table. The table therefore needs one row per class the automaton
+  actually distinguishes rather than one per possible `char` value.
 - **A flat `(class, state)` table**, viewed as a 2D `mdspan`, replaces the `unordered_map<(state, Label), state>`
-  the DFA itself is built and inspected through. The class of the next symbol is known before the current state is,
-  so the row offset is computed off the state-to-state dependency chain that would otherwise limit how fast `run()`
+  the DFA itself is built and inspected through. The class of the next symbol is known before the current state is, so
+  the row offset is computed off the state-to-state dependency chain that would otherwise limit how fast `run()`
   can advance.
-- **Narrow table entries** (`uint32_t` state indices, `uint8_t` class indices) keep more of the table resident in
-  cache than the `size_t`-keyed hash map would.
+- **Narrow table entries** (`uint32_t` state indices, `uint8_t` class indices) keep more of the table resident in cache
+  than the `size_t`-keyed hash map would.
+
+The design rationale, i.e. why a library this small outruns engines orders of magnitude larger, is written up in
+[docs/performance.md](docs/performance.md).
 
 Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2) over generated pseudo-code:
 
@@ -116,27 +123,64 @@ Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2) over generated p
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target munch_benchmark
 $ ./build/tools/benchmark/munch_benchmark 16 15
-lexer/ascii      16.0 MiB, 9144476 tokens, best of 15 passes: 520.4 MiB/s
-tokenizer/ascii  16.0 MiB, 9144476 tokens, best of 15 passes: 465.6 MiB/s
-lexer/utf8       16.0 MiB, 8320312 tokens, best of 15 passes: 506.1 MiB/s
+lexer/ascii      16.0 MiB, 9144476 tokens, best of 15 passes: 504.5 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, best of 15 passes: 418.3 MiB/s
+lexer/utf8       16.0 MiB, 8320312 tokens, best of 15 passes: 484.1 MiB/s
 ```
 
 The three scenarios measure the core lexer on C-like source, the same input through the `Tokenizer` driver, and
 identifiers containing UTF-8 code points matched through byte expansion. Inputs are fixed-seed and deterministic, so
-runs are comparable across changes. Numbers depend on the machine and the token set, so rerun the benchmark on your
-own hardware and language before citing them.
+runs are comparable across changes. Numbers depend on the machine and the token set, so rerun the benchmark on your own
+hardware and language before citing them.
+
+### **Comparison with Other Engines**
+
+Configuring with `-DMUNCH_BENCHMARK_COMPARE=ON` additionally builds `munch_benchmark_compare`, which runs the same
+tokenization job through five widely used regex engines, used the way one uses a regex engine to write a lexer: one
+pattern with an alternation per token kind, matched anchored at the current offset, extracting every token's kind and
+length. Each engine's full tokenization is validated to agree with munch's, token for token, before anything is timed.
+The option is off by default because it fetches the engines as additional dependencies.
+
+```
+$ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BENCHMARK_COMPARE=ON
+$ cmake --build build -j 8 --target munch_benchmark_compare
+$ ./build/tools/benchmark/munch_benchmark_compare 16 15
+munch            16.0 MiB, 9144476 tokens, best of 15 passes: 492.5 MiB/s
+ctre             16.0 MiB, 9144476 tokens, best of 15 passes: 422.1 MiB/s
+pcre2-jit        16.0 MiB, 9144476 tokens, best of 15 passes: 75.5 MiB/s
+re2              16.0 MiB, 9144476 tokens, best of 15 passes: 12.7 MiB/s
+boost-regex      16.0 MiB, 9144476 tokens, best of 15 passes: 16.4 MiB/s
+std-regex        16.0 MiB, 9144476 tokens, best of 15 passes: 12.4 MiB/s
+```
+
+| Engine       | Version        | Matching approach                       | Throughput |
+|--------------|----------------|-----------------------------------------|-----------:|
+| `munch`      | this repo      | table-compiled minimal DFA, single pass |  492 MiB/s |
+| CTRE         | 3.9.0          | matcher generated at C++ compile time   |  422 MiB/s |
+| PCRE2        | 10.44          | backtracking, JIT-compiled              |   75 MiB/s |
+| Boost.Regex  | 1.86.0         | backtracking                            |   16 MiB/s |
+| RE2          | 2024-07-02     | Thompson NFA when extracting captures   |   13 MiB/s |
+| `std::regex` | libstdc++ 13.3 | backtracking                            |   12 MiB/s |
+
+Read the numbers for what they measure. The corpus averages under two bytes per token, so per-token overhead dominates:
+munch and CTRE compile the token set into a matcher ahead of time and inline into the scan loop, while the
+general-purpose engines re-enter a full match API for every token (PCRE2 through its dedicated JIT entry point,
+`pcre2_jit_match`). RE2 must answer capture-group queries through its NFA rather than its faster DFA, and both RE2 and
+PCRE2 are designed for searching long texts, not for anchored matches every couple of bytes. The comparison pattern
+orders keywords before identifiers and multi-character operators before their prefixes, so the engines with first-match
+alternation semantics produce exactly munch's longest-match, priority-resolved tokenization.
 
 ## **Architecture Overview**
 
-| Module                       | Responsibility                                                                                       |
-|-------------------------------|-------------------------------------------------------------------------------------------------------|
-| `munch::regex`                | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...) and `Regex` → NFA lowering.  |
-| `munch::nfa`                  | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
-| `munch::dfa`                  | `Dfa` / `dfa::Builder`: DFA representation; `minimize()` (Moore partition refinement); `Simulator`.   |
-| `munch::core`                 | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
-| `munch::tools::tokenizer`     | `Tokenizer`: streaming driver over `core::Lexer` with modes, offsets, seek, and a raw string scanner. |
-| `munch::nfa::tools` / `munch::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.               |
-| `munch::common`                | Shared concepts (`Iterator`, `Iterable`) used across the other modules.                               |
+| Module                                    | Responsibility                                                                                        |
+|-------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| `munch::regex`                            | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...) and `Regex` → NFA lowering.  |
+| `munch::nfa`                              | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
+| `munch::dfa`                              | `Dfa` / `dfa::Builder`: DFA representation; `minimize()` (Moore partition refinement); `Simulator`.   |
+| `munch::core`                             | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
+| `munch::tools::tokenizer`                 | `Tokenizer`: streaming driver over `core::Lexer` with modes, offsets, seek, and a raw string scanner. |
+| `munch::nfa::tools` / `munch::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.                          |
+| `munch::common`                           | Shared concepts (`Iterator`, `Iterable`) used across the other modules.                               |
 
 ## **Usage Overview**
 
@@ -195,7 +239,8 @@ Patterns are immutable, lightweight value objects and can be reused across multi
 ##### **Structural Combinators**
 
 - `concat(p1, p2, ...)`: Matches patterns sequentially from left to right.
-- `choice(p1, p2, ...)`: Matches the first successful alternative among the provided patterns.
+- `choice(p1, p2, ...)`: Matches any of the provided alternatives. The alternatives form one automaton, so there is no
+  ordering or preference among them; the lexer always takes the longest match overall.
 
 ##### **Repetition Combinators**
 
@@ -214,8 +259,8 @@ classes: `Set::digits()`, `Set::alpha()`, `Set::alphanum()`, `Set::printable()`,
 (difference), including against single characters.
 
 For Unicode input, `utf8::range(first, last)` from `munch/regex/utf8.hpp` matches one code point from an inclusive
-range, expanded into its UTF-8 byte sequences. Surrogates are excluded, and ill-formed input such as overlong
-encodings is rejected by construction.
+range, expanded into its UTF-8 byte sequences. Surrogates are excluded, and ill-formed input such as overlong encodings
+is rejected by construction.
 
 ##### **Example**
 
@@ -233,7 +278,7 @@ represents the *construction phase* of the lexer pipeline described in [How It W
 
 Once `build()` is called, the resulting `Lexer` is immutable and safe to reuse across multiple inputs.
 
-### add_token(pattern, kind, priority)
+##### **add_token (pattern, kind, priority)**
 
 Registers a token definition composed of:
 
@@ -245,32 +290,32 @@ Registers a token definition composed of:
 builder.add_token(pattern, Token_kind::Identifier, 4);
 ```
 
-#### Priority Semantics
+##### **Priority Semantics**
 
-- Lower priority values are matched first.
-- If multiple token patterns match the same input prefix, the token with the *lowest* priority value is selected.
-- Priority resolution is deterministic and performed during the final DFA construction, once all patterns share a
-  single automaton.
+- Matching is always longest-match first; priorities never shorten or reorder a match.
+- When several token patterns accept the same longest match, the token with the *lowest* priority value is selected.
+- Priority resolution is deterministic and performed during the final DFA construction, once all patterns share a single
+  automaton.
 
 This mechanism allows keyword tokens to override more general patterns such as identifiers.
 
-### build()
+##### **build ()**
 
 ```cpp
 const auto lexer{builder.build()};
 ```
 
 Finalizes the builder and constructs a `munch::core::Lexer`, running the pipeline in [How It Works](#how-it-works):
-per-pattern NFA construction and determinization, recombination via Thompson union, and a final subset construction
-and minimization producing the DFA the returned `Lexer` simulates.
+per-pattern NFA construction and determinization, recombination via Thompson union, and a final subset construction and
+minimization producing the DFA the returned `Lexer` simulates.
 
 After calling `build()`:
 
 - the builder should be treated as immutable,
 - the returned lexer can be reused safely and efficiently,
-- no further tokens can be added to the same lexer instance.
+- lexers already built are unaffected by later changes to the builder.
 
-### Example
+##### **Example**
 
 ```cpp
 using namespace munch;
@@ -296,16 +341,13 @@ const auto lexer{builder.build()};
 
 - **Token Patterns**: Patterns can represent fixed strings (e.g., keywords) or complex regex-like expressions (e.g.
   identifiers, literals).
-- **Priority**: Lower priority numbers are matched first, enabling conflict resolution for overlapping token patterns
-  and ensuring the correct token is selected when multiple patterns match.
+- **Priority**: When several patterns accept the same longest match, the lowest priority number wins, ensuring the
+  correct token is selected for overlapping patterns such as keywords and identifiers.
 
 ### **Tokenization**
 
-Tokenization is performed either **directly through the core lexer** or via a **high-level tokenizer wrapper** that adds
-streaming-based input support. This flexibility allows you to choose between performance-focused, one-shot matching or
-convenient incremental processing.
-
-The library provides two complementary ways to perform tokenization:
+The library provides two complementary ways to tokenize, so you can choose between performance-focused, one-shot
+matching and convenient incremental processing:
 
 1. **Low-level, one-shot API** via `munch::core::Lexer`
 2. **High-level, streaming API** via `munch::tools::tokenizer::Tokenizer`
@@ -316,6 +358,13 @@ The core lexer performs direct tokenization on containers or iterators. It retur
 token kind and the number of characters consumed.
 
 ```cpp
+#include <cstdint>
+#include <iostream>
+#include <string>
+
+#include <munch/core/builder.hpp>
+#include <munch/regex/regex.hpp>
+
 using namespace munch;
 using namespace munch::core;
 using namespace munch::regex;
@@ -327,6 +376,8 @@ int main()
         Boolean,
         Char,
         Identifier,
+        Integer_literal,
+        Whitespace,
     };
 
     Builder builder;
@@ -337,6 +388,9 @@ int main()
 
     const auto identifier{concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_')))};
     builder.add_token(identifier, Token_kind::Identifier, 4);
+
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Integer_literal, 2);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
 
     const auto lexer{builder.build()};
 
@@ -373,7 +427,7 @@ const auto [token, consumed] = lexer.tokenize<Token_kind>(input.begin(), input.e
 In both cases, the lexer returns:
 
 - the **token kind** (`std::optional<Token_kind>`), which is empty if no valid token was matched, and
-- the **offset**, representing the number of characters consumed during the match.
+- the **length**, the number of characters consumed during the match.
 
 This API is efficient and lightweight, suitable for use in parsers or compiler front ends.
 
@@ -422,9 +476,9 @@ for (;;)
 The three states are alternatives of one sum type, so they can also be handled exhaustively with `visit()`.
 
 For context-dependent languages, a `Tokenizer` can hold several lexers as modes over the same input and switch between
-them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no automaton can express, such
-as C++ raw string literals, the driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`,
-and continues past the literal with `seek()`.
+them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no automaton can express, such as
+C++ raw string literals, the driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`, and
+continues past the literal with `seek()`.
 
 Together, these two layers let you choose between fine-grained control (`core::Lexer`) and convenient streaming-based
 processing (`tools::tokenizer::Tokenizer`).
@@ -432,6 +486,10 @@ processing (`tools::tokenizer::Tokenizer`).
 > **Note:** `Tokenizer` is not thread-safe, and `Token::lexeme()` is a `string_view` into the `Tokenizer`'s internal
 > input buffer. The view is invalidated by `load()` or by the `Tokenizer` being destroyed, so copy the lexeme to a
 > `std::string` if a token needs to outlive either.
+
+[docs/limits.md](docs/limits.md) collects the full contract in one place: the matching model and what it excludes,
+byte-orientation and UTF-8 handling, hard bounds, concurrency and lifetime guarantees, construction cost, and the escape
+hatches for constructs beyond regular languages.
 
 ## **Getting Started**
 
@@ -465,16 +523,17 @@ ctest --output-on-failure
 ```
 
 Pass `-DMUNCH_BUILD_TESTS=OFF` to `cmake` when configuring to skip building tests entirely, e.g. when consuming the
-library as a dependency.
+library as a dependency; `-DMUNCH_BUILD_BENCHMARK=OFF` likewise skips the benchmark tool.
 
 Beyond the per-layer unit tests, the `dfa` and `core` suites include fixed-seed property tests: random DFAs check the
-compiled simulator against the definition maps and minimization against the original language, and random pattern
-sets check the whole pipeline against direct NFA simulation.
+compiled simulator against the definition maps and minimization against the original language, and random pattern sets
+check the whole pipeline against direct NFA simulation.
 
 ## **Directory Structure**
 
 ```
-docs/                     SVG diagrams of example automata.
+docs/                     SVG diagrams of example automata, performance.md (the design rationale for the speed), and
+                          limits.md (the library's scope, guarantees, and escape hatches).
 libs/
   common/                 Shared concepts (Iterator, Iterable) used across the other libraries.
   regex/                  The combinator DSL: Regex nodes and their lowering to munch::nfa::Builder.
@@ -485,7 +544,7 @@ libs/
   core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
 tools/
   tokenizer/              Tokenizer: streaming driver over core::Lexer with modes, seek, and a raw string scanner.
-  benchmark/              Throughput benchmark: core lexer, tokenizer driver, and UTF-8 scenarios (see Performance).
+  benchmark/              Throughput benchmarks: core lexer, tokenizer driver, UTF-8, and other engines (see Performance).
 ```
 
 ## **Example CMake Integration**
@@ -508,8 +567,8 @@ target_link_libraries(my_app PRIVATE munch)
 ```
 
 The `munch` target is an interface umbrella over `munch_core` and `munch_tokenizer`, which pull in `munch_regex`,
-`munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers described below are not
-part of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools` directly to use them.
+`munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers described below are not part
+of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools` directly to use them.
 
 ## **Debugging and Visualization**
 
@@ -531,7 +590,7 @@ Use the `dot` command-line tool from Graphviz to convert `.dot` files to `.svg`:
 dot -Tsvg <name>.dot -o <name>.svg
 ```
 
-> **Note**: Ensure Graphviz is installed on your system before running these commands. You can download it
+> **Note:** Ensure Graphviz is installed on your system before running these commands. You can download it
 > from [Graphviz.org](https://graphviz.org/download/).
 
 ### **Visualizing NFAs and DFAs**
@@ -560,17 +619,17 @@ the simulator implements longest-match, recording the accept and reading on.
 
 ![Floating Point Literal NFA](docs/floating_point_literal_nfa.svg)
 
-The Thompson NFA for a floating point literal with an optional sign and exponent. Every combinator contributes its
-own small fragment glued together with ε-transitions, which is why the raw automaton sprawls: nearly thirty states,
-most of them connected by ε-edges rather than input.
+The Thompson NFA for a floating point literal with an optional sign and exponent. Every combinator contributes its own
+small fragment glued together with ε-transitions, which is why the raw automaton sprawls: nearly thirty states, most of
+them connected by ε-edges rather than input.
 
 #### **Floating Point Literal DFA Example**
 
 ![Floating Point Literal DFA](docs/floating_point_literal_dfa.svg)
 
-The same literal after determinization and minimization: the ε-riddled NFA collapses into a handful of
-states with purely deterministic transitions. This collapse is what the pipeline buys, and the flat tables the
-simulator compiles from it are what make matching fast.
+The same literal after determinization and minimization: the ε-riddled NFA collapses into a handful of states with
+purely deterministic transitions. This collapse is what the pipeline buys, and the flat tables the simulator compiles
+from it are what make matching fast.
 
 #### **DFA Minimization Example**
 
@@ -579,10 +638,10 @@ Subset construction builds the DFA for `choice(text("let"), text("set"))` with a
 ![DFA before minimization](docs/minimization_before.svg)
 
 Subset construction cannot merge these branches itself: it identifies states reached by the same input prefixes, and
-these alternatives share none. Their redundancy lies in the shared suffix, i.e. in their futures, which is exactly
-what minimization examines: it merges every pair of states no remaining input can distinguish. The two accept states
-are interchangeable, and so are the interior states of the two branches pair by pair, collapsing the automaton into a
-single shared chain:
+these alternatives share none. Their redundancy lies in the shared suffix, i.e. in their futures, which is exactly what
+minimization examines: it merges every pair of states no remaining input can distinguish. The two accept states are
+interchangeable, and so are the interior states of the two branches pair by pair, collapsing the automaton into a single
+shared chain:
 
 ![DFA after minimization](docs/minimization_after.svg)
 

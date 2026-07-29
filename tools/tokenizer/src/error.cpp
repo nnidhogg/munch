@@ -2,7 +2,8 @@
 
 namespace munch::tools::tokenizer
 {
-Error::Error(std::string message, const std::size_t position) : message_{std::move(message)}, position_{position} {}
+Error::Error(std::string message, const std::size_t position) : message_{std::move(message)}, position_{position}
+{}
 
 const std::string& Error::message() const noexcept
 {
