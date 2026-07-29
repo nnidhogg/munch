@@ -93,10 +93,7 @@ public:
      * symbols mark chunk boundaries at which one large input may be processed in independent pieces. The property
      * is certified from the compiled transition table; see dfa::Simulator::is_split_point().
      */
-    [[nodiscard]] bool is_split_point(const char symbol) const noexcept
-    {
-        return simulator_.is_split_point(symbol);
-    }
+    [[nodiscard]] bool is_split_point(const char symbol) const noexcept { return simulator_.is_split_point(symbol); }
 
     /**
      * @brief Tokenizes a whole container in one pass, invoking the sink once per matched token.

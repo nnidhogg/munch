@@ -87,9 +87,20 @@ every occurrence is a safe split point, computable by one pass over the transiti
 or comments can contain any byte certifies no safe points, and the right behavior is to refuse and scan
 sequentially rather than speculate, in keeping with [limits.md](limits.md). The certification is built:
 Lexer::is_split_point() reports the certified bytes of a compiled token set, computed by that one pass in the
-simulator's constructor. The parallel scan on top of it is not built; it is recorded here because it is the one
-identified improvement that does not fight the serial chain, and because the decision it depends on belongs, like
-every other decision in this library, at build time.
+simulator's constructor.
+
+The threaded chunking is measured, and the prediction registered here before the experiment held. The benchmark
+splits the input at the certified points nearest the equal-division offsets, runs one whole-input scan per chunk on
+its own thread, and first proves the chunked token stream identical to the serial one through an order-sensitive
+checksum. On the benchmark token set, chunking scales the serial 651.7 MiB/s to 1161.8 MiB/s on two threads,
+2292.9 MiB/s on four, and 3834.7 MiB/s on eight, with the source-shaped corpus within a few percent of the dense one
+at every width (`cmake -B build-perf -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON && cmake --build
+build-perf && ./build-perf/tools/benchmark/munch_benchmark 16 15`). That is 88% per-core efficiency at four threads
+against the 70% bar this section committed to in advance, and the shape confirms the diagnosis: the chains overlap
+almost perfectly because each thread's working set is a cache-resident table plus a streamed slice of input. The
+chunking lives in the benchmark as a demonstration on the public is_split_point() and tokenize_all() surface; the
+library itself takes no threading dependency. The single-core interleaved-cursor variant remains unbuilt, and the
+serial number stays the honest per-core figure.
 
 ## **The Theory Is Old; the Discipline Is the Feature**
 

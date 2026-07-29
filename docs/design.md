@@ -48,8 +48,8 @@ The pattern across every measured change in this repository: attempts to make th
 because the loop's cost is a single dependent table load that nothing scalar can remove, while every win came from
 relocating work across a structural boundary. The pipeline moves work from run time to build time. The table
 compile moves it from lookup time to construction time. The whole-input entry point moves it from per-token call
-overhead into one live scan. Even the remaining headroom follows the principle: parallel scanning waits on split
-points the automaton can certify at build time, not on a faster loop. In an architecture-dominated system,
+overhead into one live scan. Even the parallel headroom follows the principle: threaded chunking scales because
+the automaton certifies safe split points at build time, not because the loop got faster. In an architecture-dominated system,
 performance improves by moving work between seams, not by doing the same work harder, and munch is deliberately
 such a system.
 

@@ -499,7 +499,9 @@ const auto consumed = lexer.tokenize_all<Token_kind>(input, [&tokens](const Toke
 `is_split_point(symbol)` reports whether a symbol is a certified safe chunk boundary: input split immediately before it
 tokenizes identically to the unsplit input. The property is computed from the compiled transition table, so it
 reflects the actual token set rather than a heuristic; a newline-run token, for example, correctly disqualifies
-newline, where a split-at-newline rule would silently corrupt the token stream.
+newline, where a split-at-newline rule would silently corrupt the token stream. Chunking one large input at
+certified points and scanning the chunks on threads is demonstrated in the benchmark, where four threads reach 3.5×
+the serial throughput with a token stream proven identical; see [docs/performance.md](docs/performance.md).
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
