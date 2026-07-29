@@ -5,7 +5,9 @@
 #include <cstddef>
 #include <iterator>
 #include <optional>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include "munch/common/concepts.hpp"
 #include "munch/dfa/dfa.hpp"
@@ -110,6 +112,118 @@ public:
     std::size_t tokenize_all(const Container& container, Sink sink) const
     {
         return tokenize_all<T>(std::begin(container), std::end(container), std::move(sink));
+    }
+
+    /**
+     * @brief Computes chunk boundaries for parallel tokenization at certified safe split points.
+     *
+     * Each interior boundary is the first certified split point at or after its equal-division target offset, so
+     * every chunk starts at a symbol that can only begin a token and chunk-local tokenization equals whole-input
+     * tokenization. When the token set certifies no usable points, the result is one chunk spanning the whole
+     * input, so parallel scanning degenerates to the serial scan rather than splitting unsafely.
+     * @tparam Iterator Random access iterator type.
+     * @param begin Iterator to the beginning of the input.
+     * @param end Iterator to the end of the input.
+     * @param chunks The number of chunks aimed for; fewer result when certified points are scarce.
+     * @return Offsets from 0 to the input size inclusive; adjacent pairs delimit the chunks.
+     */
+    template <std::random_access_iterator Iterator>
+    [[nodiscard]] std::vector<std::size_t> chunk_boundaries(
+            Iterator begin, Iterator end, const std::size_t chunks) const
+    {
+        const auto size{static_cast<std::size_t>(end - begin)};
+
+        std::vector<std::size_t> boundaries{0};
+
+        for (std::size_t index{1}; index < chunks; ++index)
+        {
+            auto offset{index * size / chunks};
+
+            while (offset < size && !is_split_point(static_cast<char>(begin[static_cast<std::ptrdiff_t>(offset)])))
+            {
+                ++offset;
+            }
+
+            if (offset > boundaries.back() && offset < size)
+            {
+                boundaries.push_back(offset);
+            }
+        }
+
+        boundaries.push_back(size);
+
+        return boundaries;
+    }
+
+    /**
+     * @brief Computes chunk boundaries for parallel tokenization of a whole container.
+     */
+    template <common::concepts::Iterable Container>
+    [[nodiscard]] std::vector<std::size_t> chunk_boundaries(const Container& container, const std::size_t chunks) const
+    {
+        return chunk_boundaries(std::begin(container), std::end(container), chunks);
+    }
+
+    /**
+     * @brief Tokenizes one input as concurrent chunks split at certified safe split points.
+     *
+     * The input is divided by chunk_boundaries() and each chunk is scanned by tokenize_all() on its own thread,
+     * the last on the calling thread; certification guarantees the concatenated per-chunk token streams are
+     * identical to the serial scan's. Within a chunk the sink is invoked in input order. Across chunks it is
+     * invoked concurrently, so it must be safe to call from different threads for different chunk indices, which
+     * per-chunk state indexed by the chunk achieves without locking; give hot per-chunk accumulators their own
+     * cache lines, as adjacent counters false-share and cost real scaling. There is no early-stop form.
+     * @tparam T The token type (enum or integral).
+     * @tparam Iterator Random access iterator type.
+     * @tparam Sink Callable receiving the chunk index, each matched token, and its length.
+     * @param begin Iterator to the beginning of the input.
+     * @param end Iterator to the end of the input.
+     * @param chunks The number of chunks aimed for; fewer are scanned when certified points are scarce.
+     * @param sink Invoked as sink(chunk, token, length) for every matched token.
+     * @return The number of input elements tokenized per chunk, aligned with chunk_boundaries(begin, end,
+     *         chunks); an entry short of its chunk's size means no token matched at that offset of the chunk.
+     */
+    template <typename T, std::random_access_iterator Iterator, std::invocable<std::size_t, T, std::size_t> Sink>
+        requires(std::integral<T> || std::is_enum_v<T>)
+    std::vector<std::size_t> tokenize_all_parallel(
+            Iterator begin, Iterator end, const std::size_t chunks, Sink sink) const
+    {
+        const auto boundaries{chunk_boundaries(begin, end, chunks)};
+
+        std::vector<std::size_t> consumed(boundaries.size() - 1, 0);
+
+        const auto scan{[this, &boundaries, &consumed, begin, &sink](const std::size_t chunk) {
+            consumed[chunk] = tokenize_all<T>(
+                    begin + static_cast<std::ptrdiff_t>(boundaries[chunk]),
+                    begin + static_cast<std::ptrdiff_t>(boundaries[chunk + 1]),
+                    [&sink, chunk](const T token, const std::size_t length) { sink(chunk, token, length); });
+        }};
+
+        {
+            std::vector<std::jthread> workers;
+
+            workers.reserve(consumed.size() - 1);
+
+            for (std::size_t chunk{0}; chunk + 1 < consumed.size(); ++chunk)
+            {
+                workers.emplace_back(scan, chunk);
+            }
+
+            scan(consumed.size() - 1);
+        }
+
+        return consumed;
+    }
+
+    /**
+     * @brief Tokenizes a whole container as concurrent chunks split at certified safe split points.
+     */
+    template <typename T, common::concepts::Iterable Container, std::invocable<std::size_t, T, std::size_t> Sink>
+        requires(std::integral<T> || std::is_enum_v<T>)
+    std::vector<std::size_t> tokenize_all_parallel(
+            const Container& container, const std::size_t chunks, Sink sink) const
+    {
+        return tokenize_all_parallel<T>(std::begin(container), std::end(container), chunks, std::move(sink));
     }
 
 private:

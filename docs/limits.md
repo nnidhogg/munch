@@ -49,6 +49,11 @@ rejected by construction). The consequences:
 
 - A `core::Lexer` is immutable after `Builder::build()` and safe to share across threads; `tokenize()` is `const`
   and touches no shared mutable state.
+- `tokenize_all_parallel()` spawns one thread per chunk and joins them all before returning. The sink is invoked in
+  input order within a chunk but concurrently across chunks, so it must tolerate concurrent calls for different
+  chunk indices; per-chunk state indexed by the chunk achieves that without locking, and hot per-chunk accumulators
+  belong on their own cache lines. There is no early-stop form, and a token set that certifies no split points
+  yields a single chunk, i.e. the serial scan on the calling thread.
 - A `Tokenizer` is a stateful cursor and is not thread-safe. Use one per thread, or one per input.
 - `Token::lexeme()` is a `string_view` into the owning `Tokenizer`'s buffer, invalidated by `load()` or by the
   `Tokenizer`'s destruction. Copy it to a `std::string` if the token outlives either.

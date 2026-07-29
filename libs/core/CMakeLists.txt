@@ -17,6 +17,9 @@ target_compile_features(${PROJECT_NAME}
         cxx_std_23
 )
 
+# The parallel tokenization entry point spawns std::jthread workers from a public header.
+find_package(Threads REQUIRED)
+
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
         # Build-interface only: a header-only build dependency a consumer of the installed package never needs.
@@ -26,6 +29,7 @@ target_link_libraries(${PROJECT_NAME}
         munch_regex
         munch_dfa
         munch_nfa
+        Threads::Threads
 )
 
 if (MUNCH_INSTALL)

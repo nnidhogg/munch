@@ -112,8 +112,10 @@ and 3834.7 MiB/s on eight, with the source-shaped corpus within a few percent of
 build-perf && ./build-perf/tools/benchmark/munch_benchmark 16 15`). That is 88% per-core efficiency at four threads
 against the 70% bar this section committed to in advance, and the shape confirms the diagnosis: the chains overlap
 almost perfectly because each thread's working set is a cache-resident table plus a streamed slice of input. The
-chunking lives in the benchmark as a demonstration on the public is_split_point () and tokenize_all () surface; the library
-itself takes no threading dependency.
+chunking has since been promoted into the library: chunk_boundaries() computes the certified plan and
+tokenize_all_parallel() runs it, one thread per chunk with the last on the calling thread, and the benchmark now
+routes through that entry point. The plan computation stays pure, so a caller owning its own thread pool can take
+the boundaries and leave the library's threads unused.
 
 The single-core variant was then built, measured, and reverted, and its failure taught more than the threaded success.
 The experiment flattened the scan into a per-byte state machine and stepped several lanes per loop iteration, each lane

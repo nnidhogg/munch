@@ -12,14 +12,11 @@ target_include_directories(${PROJECT_NAME}
         include
 )
 
-find_package(Threads REQUIRED)
-
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
         munch_core
         munch_regex
         munch_tokenizer
-        Threads::Threads
 )
 
 if (MUNCH_BENCHMARK_COMPARE)
@@ -38,6 +35,5 @@ if (MUNCH_BENCHMARK_COMPARE)
             munch_core
             munch_regex
             munch_compare
-            Threads::Threads
     )
 endif ()

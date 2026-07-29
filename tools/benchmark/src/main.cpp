@@ -1,9 +1,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <numeric>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "munch/tools/benchmark/harness.hpp"
@@ -101,42 +99,7 @@ std::size_t tokenize_all(const munch::core::Lexer& lexer, const std::string& inp
 }
 
 /**
- * @brief Finds chunk boundaries at the certified safe split points nearest the equal-division offsets.
- *
- * Each boundary is the first split point at or after its target offset, so every chunk starts at a byte the
- * automaton certifies can only begin a token and chunk-local tokenization equals whole-input tokenization.
- * @param lexer The lexer whose certification is consulted.
- * @param input The input to divide.
- * @param chunks The number of chunks requested; fewer are returned when no split point separates two targets.
- * @return The boundaries, from 0 to input.size() inclusive.
- */
-std::vector<std::size_t> chunk_boundaries(
-        const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
-{
-    std::vector<std::size_t> boundaries{0};
-
-    for (std::size_t index{1}; index < chunks; ++index)
-    {
-        auto offset{index * input.size() / chunks};
-
-        while (offset < input.size() && !lexer.is_split_point(input[offset]))
-        {
-            ++offset;
-        }
-
-        if (offset > boundaries.back() && offset < input.size())
-        {
-            boundaries.push_back(offset);
-        }
-    }
-
-    boundaries.push_back(input.size());
-
-    return boundaries;
-}
-
-/**
- * @brief Tokenizes the input in chunks split at certified safe split points, one thread per chunk.
+ * @brief Tokenizes the input in parallel chunks through the library's tokenize_all_parallel entry point.
  * @param lexer The lexer to run.
  * @param input The input to tokenize.
  * @param chunks The number of chunks to divide the input into.
@@ -144,45 +107,36 @@ std::vector<std::size_t> chunk_boundaries(
  */
 std::size_t tokenize_chunked(const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
 {
-    const auto boundaries{chunk_boundaries(lexer, input, chunks)};
-
-    std::vector<std::size_t> counts(boundaries.size() - 1, 0);
-
-    std::vector<std::size_t> consumed(counts.size(), 0);
-
+    // One counter per cache line, as the entry point's contract asks: adjacent per-chunk counters would
+    // false-share across the worker threads.
+    struct alignas(64) Count
     {
-        std::vector<std::jthread> workers;
+        std::size_t tokens{0};
+    };
 
-        workers.reserve(counts.size());
+    std::vector<Count> counts(chunks);
 
-        for (std::size_t index{0}; index < counts.size(); ++index)
-        {
-            workers.emplace_back([&lexer, &input, &boundaries, &counts, &consumed, index] {
-                const auto begin{input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index])};
+    const auto consumed{lexer.tokenize_all_parallel<Token>(
+            input, chunks,
+            [&counts](const std::size_t chunk, const Token, const std::size_t) { ++counts[chunk].tokens; })};
 
-                const auto end{input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index + 1])};
+    const auto boundaries{lexer.chunk_boundaries(input, chunks)};
 
-                std::size_t tokens{0};
+    std::size_t total{0};
 
-                consumed[index] =
-                        lexer.tokenize_all<Token>(begin, end, [&tokens](const Token, const std::size_t) { ++tokens; });
-
-                counts[index] = tokens;
-            });
-        }
-    }
-
-    for (std::size_t index{0}; index < counts.size(); ++index)
+    for (std::size_t chunk{0}; chunk < consumed.size(); ++chunk)
     {
-        if (consumed[index] != boundaries[index + 1] - boundaries[index])
+        if (consumed[chunk] != boundaries[chunk + 1] - boundaries[chunk])
         {
-            std::printf("chunk %zu rejected at offset %zu\n", index, boundaries[index] + consumed[index]);
+            std::printf("chunk %zu rejected at offset %zu\n", chunk, boundaries[chunk] + consumed[chunk]);
 
             return 0;
         }
+
+        total += counts[chunk].tokens;
     }
 
-    return std::accumulate(counts.cbegin(), counts.cend(), std::size_t{0});
+    return total;
 }
 
 /**
@@ -210,7 +164,7 @@ bool validate_chunked(const munch::core::Lexer& lexer, const std::string& input,
         return false;
     }
 
-    const auto boundaries{chunk_boundaries(lexer, input, chunks)};
+    const auto boundaries{lexer.chunk_boundaries(input, chunks)};
 
     std::uint64_t chunked{0};
 

@@ -5,7 +5,6 @@
 #include <regex>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <vector>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
@@ -73,34 +72,6 @@ Tally run_munch(const munch::core::Lexer& lexer, const std::string& input)
 }
 
 /**
- * @brief Finds chunk boundaries at the certified safe split points nearest the equal-division offsets.
- */
-std::vector<std::size_t> chunk_boundaries(
-        const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
-{
-    std::vector<std::size_t> boundaries{0};
-
-    for (std::size_t index{1}; index < chunks; ++index)
-    {
-        auto offset{index * input.size() / chunks};
-
-        while (offset < input.size() && !lexer.is_split_point(input[offset]))
-        {
-            ++offset;
-        }
-
-        if (offset > boundaries.back() && offset < input.size())
-        {
-            boundaries.push_back(offset);
-        }
-    }
-
-    boundaries.push_back(input.size());
-
-    return boundaries;
-}
-
-/**
  * @brief Raises 31 to the given power with wraparound, for splicing per-chunk checksums in stream order.
  */
 std::size_t pow31(std::size_t exponent)
@@ -123,7 +94,7 @@ std::size_t pow31(std::size_t exponent)
 }
 
 /**
- * @brief Tokenizes the input in chunks split at certified safe split points, one thread per chunk.
+ * @brief Tokenizes the input in parallel chunks through the library's tokenize_all_parallel entry point.
  *
  * The per-chunk checksums are spliced in stream order, so the tally equals the serial scan's exactly when the
  * chunked token stream is identical, and the validation against the reference stays as strict as for every other
@@ -131,52 +102,38 @@ std::size_t pow31(std::size_t exponent)
  */
 Tally run_munch_threaded(const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
 {
-    const auto boundaries{chunk_boundaries(lexer, input, chunks)};
-
-    std::vector<Tally> tallies(boundaries.size() - 1);
-
-    std::vector<std::size_t> consumed(tallies.size(), 0);
-
+    // One tally per cache line, as the entry point's contract asks: adjacent per-chunk tallies would false-share
+    // across the worker threads.
+    struct alignas(64) Padded
     {
-        std::vector<std::jthread> workers;
+        Tally tally;
+    };
 
-        workers.reserve(tallies.size());
+    std::vector<Padded> tallies(chunks);
 
-        for (std::size_t index{0}; index < tallies.size(); ++index)
-        {
-            workers.emplace_back([&lexer, &input, &boundaries, &tallies, &consumed, index] {
-                // Accumulated locally and stored once: per-token writes to the shared vectors would false-share
-                // their cache lines across the worker threads.
-                Tally tally{};
+    const auto consumed{lexer.tokenize_all_parallel<Token>(
+            input, chunks, [&tallies](const std::size_t chunk, const Token token, const std::size_t) {
+                auto& tally{tallies[chunk].tally};
 
-                const auto scanned{lexer.tokenize_all<Token>(
-                        input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index]),
-                        input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index + 1]),
-                        [&tally](const Token token, const std::size_t) {
-                            tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(token);
+                tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(token);
 
-                            ++tally.tokens;
-                        })};
+                ++tally.tokens;
+            })};
 
-                tallies[index] = tally;
-
-                consumed[index] = scanned;
-            });
-        }
-    }
+    const auto boundaries{lexer.chunk_boundaries(input, chunks)};
 
     Tally total{};
 
-    for (std::size_t index{0}; index < tallies.size(); ++index)
+    for (std::size_t chunk{0}; chunk < consumed.size(); ++chunk)
     {
-        if (consumed[index] != boundaries[index + 1] - boundaries[index])
+        if (consumed[chunk] != boundaries[chunk + 1] - boundaries[chunk])
         {
             return {};
         }
 
-        total.checksum = total.checksum * pow31(tallies[index].tokens) + tallies[index].checksum;
+        total.checksum = total.checksum * pow31(tallies[chunk].tally.tokens) + tallies[chunk].tally.checksum;
 
-        total.tokens += tallies[index].tokens;
+        total.tokens += tallies[chunk].tally.tokens;
     }
 
     return total;

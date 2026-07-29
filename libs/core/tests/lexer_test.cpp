@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -757,4 +758,170 @@ TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)
     }
 
     EXPECT_EQ(batch, single);
+}
+
+TEST_F(Lexer_test, Chunk_boundaries_land_on_certified_split_points)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+        Semicolon,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+    builder.add_token(text(";"), Token_kind::Semicolon, 1);
+
+    const auto lexer{builder.build()};
+
+    std::string input;
+
+    for (int index{0}; index < 64; ++index)
+    {
+        input += "alpha beta; gamma delta; ";
+    }
+
+    const auto boundaries{lexer.chunk_boundaries(input, 4)};
+
+    ASSERT_EQ(boundaries.size(), 5U);
+    EXPECT_EQ(boundaries.front(), 0U);
+    EXPECT_EQ(boundaries.back(), input.size());
+
+    for (std::size_t index{1}; index + 1 < boundaries.size(); ++index)
+    {
+        EXPECT_GT(boundaries[index], boundaries[index - 1]);
+        EXPECT_TRUE(lexer.is_split_point(input[boundaries[index]]));
+    }
+}
+
+TEST_F(Lexer_test, Chunk_boundaries_degenerate_when_nothing_certifies)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+    };
+
+    // Identifier characters continue identifiers and whitespace continues runs, so no byte certifies and the
+    // plan is one chunk: the serial scan.
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"alpha beta gamma delta epsilon zeta eta theta"};
+
+    const auto boundaries{lexer.chunk_boundaries(input, 4)};
+
+    ASSERT_EQ(boundaries.size(), 2U);
+    EXPECT_EQ(boundaries.front(), 0U);
+    EXPECT_EQ(boundaries.back(), input.size());
+}
+
+TEST_F(Lexer_test, Parallel_tokenization_matches_the_serial_stream)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+        Semicolon,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+    builder.add_token(text(";"), Token_kind::Semicolon, 1);
+
+    const auto lexer{builder.build()};
+
+    std::string input;
+
+    for (int index{0}; index < 64; ++index)
+    {
+        input += "alpha beta; gamma delta; ";
+    }
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    ASSERT_EQ(
+            lexer.tokenize_all<Token_kind>(
+                    input,
+                    [&serial](const Token_kind token, const std::size_t length) {
+                        serial.emplace_back(token, length);
+                    }),
+            input.size());
+
+    constexpr std::size_t chunks{4};
+
+    std::array<std::vector<std::pair<Token_kind, std::size_t>>, chunks> streams;
+
+    const auto consumed{lexer.tokenize_all_parallel<Token_kind>(
+            input, chunks, [&streams](const std::size_t chunk, const Token_kind token, const std::size_t length) {
+                streams[chunk].emplace_back(token, length);
+            })};
+
+    const auto boundaries{lexer.chunk_boundaries(input, chunks)};
+
+    ASSERT_EQ(consumed.size(), boundaries.size() - 1);
+
+    std::vector<std::pair<Token_kind, std::size_t>> spliced;
+
+    for (std::size_t chunk{0}; chunk < consumed.size(); ++chunk)
+    {
+        EXPECT_EQ(consumed[chunk], boundaries[chunk + 1] - boundaries[chunk]);
+
+        spliced.insert(spliced.end(), streams[chunk].cbegin(), streams[chunk].cend());
+    }
+
+    EXPECT_EQ(spliced, serial);
+}
+
+TEST_F(Lexer_test, Parallel_tokenization_reports_a_rejected_chunk)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+        Semicolon,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+    builder.add_token(text(";"), Token_kind::Semicolon, 1);
+
+    const auto lexer{builder.build()};
+
+    std::string input;
+
+    for (int index{0}; index < 64; ++index)
+    {
+        input += "alpha beta; gamma delta; ";
+    }
+
+    // A byte no token accepts, planted in the last quarter: only that chunk stops short, at exactly its offset.
+    const auto poison{(input.size() * 7) / 8};
+
+    input[poison] = '@';
+
+    const auto consumed{lexer.tokenize_all_parallel<Token_kind>(
+            input, 4, [](const std::size_t, const Token_kind, const std::size_t) {})};
+
+    const auto boundaries{lexer.chunk_boundaries(input, 4)};
+
+    ASSERT_EQ(consumed.size(), boundaries.size() - 1);
+
+    for (std::size_t chunk{0}; chunk + 1 < consumed.size(); ++chunk)
+    {
+        EXPECT_EQ(consumed[chunk], boundaries[chunk + 1] - boundaries[chunk]);
+    }
+
+    EXPECT_EQ(boundaries[consumed.size() - 1] + consumed.back(), poison);
 }
