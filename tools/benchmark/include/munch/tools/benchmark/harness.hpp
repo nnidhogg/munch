@@ -1,5 +1,5 @@
-#ifndef MUNCH_TOOLS_BENCHMARK_SRC_HARNESS_HPP
-#define MUNCH_TOOLS_BENCHMARK_SRC_HARNESS_HPP
+#ifndef MUNCH_TOOLS_BENCHMARK_INCLUDE_MUNCH_TOOLS_BENCHMARK_HARNESS_HPP
+#define MUNCH_TOOLS_BENCHMARK_INCLUDE_MUNCH_TOOLS_BENCHMARK_HARNESS_HPP
 
 #include <algorithm>
 #include <chrono>
@@ -91,4 +91,4 @@ bool measure(const char* name, const std::size_t bytes, const int passes, Pass&&
 
 } // namespace munch::tools::benchmark
 
-#endif // MUNCH_TOOLS_BENCHMARK_SRC_HARNESS_HPP
+#endif // MUNCH_TOOLS_BENCHMARK_INCLUDE_MUNCH_TOOLS_BENCHMARK_HARNESS_HPP

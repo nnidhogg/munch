@@ -1,4 +1,4 @@
-#include "harness.hpp"
+#include "munch/tools/benchmark/harness.hpp"
 
 #include "munch/core/builder.hpp"
 #include "munch/regex/regex.hpp"

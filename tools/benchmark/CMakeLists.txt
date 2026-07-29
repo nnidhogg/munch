@@ -7,6 +7,11 @@ add_executable(${PROJECT_NAME}
         src/main.cpp
 )
 
+target_include_directories(${PROJECT_NAME}
+        PRIVATE
+        include
+)
+
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
         munch_core
@@ -18,6 +23,11 @@ if (MUNCH_BENCHMARK_COMPARE)
     add_executable(${PROJECT_NAME}_compare
             src/compare.cpp
             src/harness.cpp
+    )
+
+    target_include_directories(${PROJECT_NAME}_compare
+            PRIVATE
+            include
     )
 
     target_link_libraries(${PROJECT_NAME}_compare

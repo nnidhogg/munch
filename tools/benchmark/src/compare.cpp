@@ -13,7 +13,7 @@
 #include <boost/regex.hpp>
 #include <ctre.hpp>
 
-#include "harness.hpp"
+#include "munch/tools/benchmark/harness.hpp"
 
 namespace
 {

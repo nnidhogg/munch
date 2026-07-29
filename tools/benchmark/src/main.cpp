@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <string>
 
-#include "harness.hpp"
+#include "munch/tools/benchmark/harness.hpp"
 #include "munch/tools/tokenizer/tokenizer.hpp"
 
 namespace
