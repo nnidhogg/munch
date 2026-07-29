@@ -72,6 +72,23 @@ code-generating backend, and both trade away the property this design exists for
 token set at compile time, while munch builds lexers at run time from ordinary values, which is what lets a driver
 hold several lexers as modes, and lets a language be defined by data rather than by a build step.
 
+## **The Remaining Headroom Is Parallel**
+
+The two-corpus comparison measured the bound precisely: munch's throughput is the same at under two bytes per token
+and at three and a half, because the cost is one dependent table load per byte, a single serial chain of L1
+latencies that nothing inside the loop may touch. The chain cannot be shortened; what remains open is running more
+than one. Several cursors stepping independent chunks of one large input in a single interleaved loop would overlap
+their latency chains on one core, and threads would scale the same chunking across cores for batch work; the input
+is read far below memory bandwidth today, so the ceiling is genuinely unclaimed.
+
+Chunks must begin at real token boundaries, and in this design that is not a heuristic but a property the automaton
+can certify at build time: a byte that no state except the start state consumes can only ever begin a token, so
+every occurrence is a safe split point, computable by one pass over the transition table. A token set whose strings
+or comments can contain any byte certifies no safe points, and the right behavior is to refuse and scan
+sequentially rather than speculate, in keeping with [limits.md](limits.md). None of this is built; it is recorded
+here because it is the one identified improvement that does not fight the serial chain, and because the decision it
+depends on belongs, like every other decision in this library, at build time.
+
 ## **The Theory Is Old; the Discipline Is the Feature**
 
 None of this is novel. Determinization is Rabin and Scott (1959), the NFA construction is Thompson (1968), and "a
