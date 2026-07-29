@@ -391,6 +391,23 @@ TEST_F(Nfa_test, Loop_plus_a)
     EXPECT_EQ(Simulator::run(result, "b"), Result_t(std::nullopt, 0));
 }
 
+TEST_F(Nfa_test, Token_accessors)
+{
+    const Token token{7, 3};
+
+    EXPECT_EQ(token.id(), 7);
+    EXPECT_EQ(token.priority(), 3);
+}
+
+TEST_F(Nfa_test, Token_equality)
+{
+    const Token token{1, 5};
+
+    EXPECT_EQ(token, Token(1, 5));
+    EXPECT_NE(token, Token(2, 5)); // Differing id short-circuits before comparing priority.
+    EXPECT_NE(token, Token(1, 6)); // Equal id forces the priority comparison to run.
+}
+
 TEST_F(Nfa_test, Token_operator_less_ties_break_on_id)
 {
     const Token lower_id{1, 5};

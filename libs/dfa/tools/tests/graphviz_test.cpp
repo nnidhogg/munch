@@ -123,6 +123,43 @@ TEST_F(Graphviz_test, Graphviz_to_file_exceptions)
     EXPECT_EQ(buffer.str(), expected_output);
 }
 
+TEST_F(Graphviz_test, Graphviz_to_file_throws_when_the_target_path_is_a_directory)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+
+    const Token token{1};
+
+    dfa.add_accept_state(q1, token);
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+
+    const auto result{dfa.build()};
+
+    std::filesystem::create_directories("./graphviz_dir_target");
+    EXPECT_THROW(Graphviz::to_file(result, "./graphviz_dir_target"), std::runtime_error);
+}
+
+TEST_F(Graphviz_test, Graphviz_to_file_throws_when_writing_fails)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+
+    const Token token{1};
+
+    dfa.add_accept_state(q1, token);
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+
+    const auto result{dfa.build()};
+
+    // /dev/full opens successfully but fails every write with ENOSPC, exercising the "unable to write data"
+    // branch, which is otherwise unreachable through ordinary filesystem failures.
+    EXPECT_THROW(Graphviz::to_file(result, "/dev/full"), std::runtime_error);
+}
+
 TEST_F(Graphviz_test, Graphviz_to_dot_special_characters)
 {
     dfa::Builder dfa;

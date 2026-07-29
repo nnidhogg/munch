@@ -41,7 +41,8 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage -fprofile-abs-path"
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage -fprofile-abs-path" \
+                -DMUNCH_BUILD_BENCHMARK=OFF
 
       - name: Build with CMake
         run: |
@@ -56,19 +57,21 @@ jobs:
       - name: Generate code coverage report
         run: |
           cd build
-          gcovr --root .. --gcov-executable gcov --xml-pretty --output coverage.xml \
-                --exclude '.*/external/.*' \
-                --exclude '.*/googletest/.*' \
-                --exclude '.*/tests/.*'
-          gcovr --root .. --gcov-executable gcov --html --html-details --output coverage.html \
-                --exclude '.*/external/.*' \
-                --exclude '.*/googletest/.*' \
-                --exclude '.*/tests/.*'
-          gcovr --root .. --gcov-executable gcov --txt-metric branch \
-                --exclude '.*/external/.*' \
-                --exclude '.*/googletest/.*' \
-                --exclude '.*/tests/.*' \
-                --print-summary
+
+          # Each pattern is unanchored on both ends: gcovr matches --exclude against a path that may or may not
+          # have a leading directory component (e.g. "_deps/..." from one root, "build/_deps/..." from another),
+          # so a pattern requiring a literal leading "/" silently fails to match the no-prefix case.
+          EXCLUDES=(
+            --exclude '(.*/)?external/.*'
+            --exclude '(.*/)?_deps/.*'
+            --exclude '(.*/)?tests/.*'
+            --exclude '(.*/)?tools/benchmark/.*'
+            --exclude '(.*/)?CMakeFiles/.*'
+          )
+
+          gcovr --root .. --gcov-executable gcov --xml-pretty --output coverage.xml "${EXCLUDES[@]}"
+          gcovr --root .. --gcov-executable gcov --html --html-details --output coverage.html "${EXCLUDES[@]}"
+          gcovr --root .. --gcov-executable gcov --txt-metric branch --print-summary "${EXCLUDES[@]}"
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5

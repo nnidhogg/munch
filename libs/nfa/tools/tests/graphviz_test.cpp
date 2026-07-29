@@ -45,6 +45,23 @@ TEST_F(Graphviz_test, Graphviz_to_dot)
     EXPECT_EQ(dot_output, expected_output);
 }
 
+TEST_F(Graphviz_test, Graphviz_to_dot_accept_state_without_a_token)
+{
+    // add_accept_state(state) with no token marks an intermediate accept state (e.g. inside kleene()/optional()'s
+    // construction), rendered as "n/a" rather than a token id.
+    nfa::Builder nfa;
+
+    const auto q0{nfa.init_state()};
+
+    nfa.add_accept_state(q0);
+
+    const auto result{nfa.build()};
+
+    const auto dot_output{Graphviz::to_dot(result)};
+
+    EXPECT_NE(dot_output.find("0 [shape = doublecircle, label=\"0 (n/a)\"]"), std::string::npos);
+}
+
 TEST_F(Graphviz_test, Graphviz_to_file)
 {
     nfa::Builder nfa;
@@ -121,6 +138,62 @@ TEST_F(Graphviz_test, Graphviz_to_file_exceptions)
             "}\n"};
 
     EXPECT_EQ(buffer.str(), expected_output);
+}
+
+TEST_F(Graphviz_test, Graphviz_to_file_throws_when_the_target_path_is_a_directory)
+{
+    nfa::Builder nfa;
+
+    const auto q0{nfa.init_state()};
+    const auto q1{nfa.next_state()};
+
+    const Token token{1, 1};
+
+    nfa.add_accept_state(q1, token);
+    nfa.add_transition(q0, nfa::Label('a'), q1);
+
+    const auto result{nfa.build()};
+
+    std::filesystem::create_directories("./graphviz_dir_target");
+    EXPECT_THROW(Graphviz::to_file(result, "./graphviz_dir_target"), std::runtime_error);
+}
+
+TEST_F(Graphviz_test, Graphviz_to_file_throws_when_writing_fails)
+{
+    nfa::Builder nfa;
+
+    const auto q0{nfa.init_state()};
+    const auto q1{nfa.next_state()};
+
+    const Token token{1, 1};
+
+    nfa.add_accept_state(q1, token);
+    nfa.add_transition(q0, nfa::Label('a'), q1);
+
+    const auto result{nfa.build()};
+
+    // /dev/full opens successfully but fails every write with ENOSPC, exercising the "unable to write data"
+    // branch, which is otherwise unreachable through ordinary filesystem failures.
+    EXPECT_THROW(Graphviz::to_file(result, "/dev/full"), std::runtime_error);
+}
+
+TEST_F(Graphviz_test, Graphviz_to_dot_epsilon_transition)
+{
+    nfa::Builder nfa;
+
+    const auto q0{nfa.init_state()};
+    const auto q1{nfa.next_state()};
+
+    const Token token{1, 1};
+
+    nfa.add_accept_state(q1, token);
+    nfa.add_transition(q0, nfa::Label::epsilon(), q1);
+
+    const auto result{nfa.build()};
+
+    const auto dot_output{Graphviz::to_dot(result)};
+
+    EXPECT_NE(dot_output.find("0 -> 1 [label = \"ε\"]"), std::string::npos);
 }
 
 TEST_F(Graphviz_test, Graphviz_to_dot_special_characters)

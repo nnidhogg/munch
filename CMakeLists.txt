@@ -9,22 +9,20 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Compiler-specific warning flags
-if (MSVC)
-    add_compile_options(/W4 /WX)
-else ()
-    add_compile_options(-Wall -Werror -Wunused -Wextra -pthread)
-endif ()
+# GCC-style flags; GCC on Linux is the only toolchain CI builds and tests against (see .github/workflows/ci.yml).
+add_compile_options(-Wall -Werror -Wunused -Wextra -pthread)
 
 add_compile_options(
-        $<$<CONFIG:Debug>:$<IF:$<CXX_COMPILER_ID:MSVC>,/Od,-g>>
-        $<$<CONFIG:Release>:$<IF:$<CXX_COMPILER_ID:MSVC>,/O2,-O2>>
+        $<$<CONFIG:Debug>:-g>
+        $<$<CONFIG:Release>:-O2>
 )
 
 option(MUNCH_BUILD_TESTS "Build tests for munch" ON)
 if (MUNCH_BUILD_TESTS)
     enable_testing()
 endif ()
+
+option(MUNCH_BUILD_BENCHMARK "Build the throughput benchmark for munch" ON)
 
 add_subdirectory(external)
 add_subdirectory(libs)

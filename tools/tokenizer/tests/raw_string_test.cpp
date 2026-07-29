@@ -77,6 +77,14 @@ TEST(Raw_string_test, Rejects_invalid_delimiter)
     EXPECT_FALSE(scan_raw_string(overlong, 0).has_value());
 }
 
+TEST(Raw_string_test, Rejects_delimiter_characters_the_standard_forbids)
+{
+    EXPECT_FALSE(scan_raw_string("R\")(\"", 0).has_value());        // ')' in the delimiter
+    EXPECT_FALSE(scan_raw_string("R\"\\(\"", 0).has_value());       // '\' in the delimiter
+    EXPECT_FALSE(scan_raw_string("R\"\t(\"", 0).has_value());       // A control character in the delimiter
+    EXPECT_FALSE(scan_raw_string("R\"\x7F(\"", 0).has_value());     // DEL in the delimiter
+}
+
 TEST(Raw_string_test, Rejects_other_input)
 {
     EXPECT_FALSE(scan_raw_string("Q\"(x)\"", 0).has_value());

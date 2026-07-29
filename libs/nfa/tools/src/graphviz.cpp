@@ -24,7 +24,7 @@ void Graphviz::to_file(const Nfa& nfa, const std::filesystem::path& path)
         throw std::runtime_error("Unable to create file " + path.string() + "; " + std::strerror(errno));
     }
 
-    if (file << to_dot(nfa); !file)
+    if (file << to_dot(nfa); !file.flush())
     {
         throw std::runtime_error("Unable to write data to file " + path.string() + "; " + std::strerror(errno));
     }

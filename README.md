@@ -437,8 +437,8 @@ processing (`tools::tokenizer::Tokenizer`).
 
 ### **Requirements**
 
-- A C++23 compiler. Developed against GCC 13.3; GCC 13 has no native `<mdspan>`, which `external/mdspan` (the Kokkos
-  reference implementation) supplies via `FetchContent`.
+- A C++23 compiler; GCC on Linux is the only toolchain built and tested (GCC 13.3 in CI). GCC 13 has no native
+  `<mdspan>`, which `external/mdspan` (the Kokkos reference implementation) supplies via `FetchContent`.
 - CMake 3.20+.
 - Everything else (`boost.config`/`describe`/`mp11`/`container_hash`, `mdspan`, `googletest`) is fetched by CMake at
   configure time; there is nothing to install manually. Pass `-DUSE_SYSTEM_BOOST=ON` / `-DUSE_SYSTEM_GTEST=ON` to use

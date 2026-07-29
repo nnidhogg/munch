@@ -48,6 +48,14 @@ TEST_F(Set_test, Constructor_initializer_list)
     EXPECT_TRUE(s.symbols().contains('c'));
 }
 
+TEST_F(Set_test, Constructor_from_existing_symbols)
+{
+    const Set::Symbols_t symbols{'a', 'b', 'c'};
+    const Set s{symbols};
+
+    EXPECT_EQ(s.symbols(), symbols);
+}
+
 TEST_F(Set_test, From_char)
 {
     const Set s = Set::from('x');

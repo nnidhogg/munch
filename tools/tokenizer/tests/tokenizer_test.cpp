@@ -192,6 +192,31 @@ TEST_F(Tokenizer_test, Tokenize_from_string_stream)
     evaluate();
 }
 
+TEST_F(Tokenizer_test, Throws_on_empty_lexer_list)
+{
+    EXPECT_THROW(Tokenizer(std::vector<Lexer>{}), std::invalid_argument);
+}
+
+TEST_F(Tokenizer_test, Zero_width_match)
+{
+    enum class Digits_kind : uint8_t
+    {
+        Digits,
+    };
+
+    Builder builder;
+    builder.add_token(kleene(any_of(Set::digits())), Digits_kind::Digits, 1);
+
+    Tokenizer tokenizer{builder.build(), std::string{"a"}};
+
+    const auto result{tokenizer.next<Digits_kind>()};
+    ASSERT_TRUE(result.has_error());
+
+    const auto& error{result.error()};
+    EXPECT_EQ(error.position(), 0u);
+    EXPECT_FALSE(error.message().empty());
+}
+
 TEST_F(Tokenizer_test, Unknown_character)
 {
     const std::string input{"$boolean"}; // '$' not recognized

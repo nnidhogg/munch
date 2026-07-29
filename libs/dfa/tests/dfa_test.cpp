@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <string>
 
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/simulator.hpp"
@@ -39,6 +40,51 @@ TEST_F(Dfa_test, Test_empty)
     using Result_t = Simulator::Result_t;
 
     EXPECT_EQ(simulator.run(input), Result_t(std::nullopt, 0));
+}
+
+TEST_F(Dfa_test, Empty_and_non_empty_string_container)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+
+    const Token token{1};
+
+    dfa.add_accept_state(q1, token);
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+
+    const auto result{dfa.build()};
+
+    const Simulator simulator{result};
+
+    using Result_t = Simulator::Result_t;
+
+    EXPECT_EQ(simulator.run(std::string{}), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run(std::string{"a"}), Result_t(token, 1));
+}
+
+TEST_F(Dfa_test, Non_empty_vector_container)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+
+    const Token token{1};
+
+    dfa.add_accept_state(q1, token);
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+
+    const auto result{dfa.build()};
+
+    const Simulator simulator{result};
+
+    const std::vector<char> input{'a'};
+
+    using Result_t = Simulator::Result_t;
+
+    EXPECT_EQ(simulator.run(input), Result_t(token, 1));
 }
 
 TEST_F(Dfa_test, Empty_input_accepting_dfa)
