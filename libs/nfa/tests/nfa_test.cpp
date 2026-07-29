@@ -391,6 +391,39 @@ TEST_F(Nfa_test, Loop_plus_a)
     EXPECT_EQ(Simulator::run(result, "b"), Result_t(std::nullopt, 0));
 }
 
+TEST_F(Nfa_test, Merge_is_a_union_even_when_an_operand_loops_back_to_its_initial_state)
+{
+    nfa::Builder a_star;
+
+    const auto a0{a_star.init_state()};
+    const auto a1{a_star.next_state()};
+
+    const Token token_a{1, 1};
+    const Token token_b{2, 1};
+
+    a_star.add_transition(a0, nfa::Label('a'), a1);
+    a_star.add_epsilon_transition(a1, a0);
+    a_star.add_accept_state(a0, token_a);
+    a_star.add_accept_state(a1, token_a);
+
+    nfa::Builder b;
+
+    const auto b1{b.next_state()};
+
+    b.add_transition(b.init_state(), nfa::Label('b'), b1);
+    b.add_accept_state(b1, token_b);
+
+    const auto result{a_star.merge(b).build()};
+
+    using Result_t = Simulator::Result_t;
+
+    EXPECT_EQ(Simulator::run(result, ""), Result_t(token_a, 0));
+    EXPECT_EQ(Simulator::run(result, "aa"), Result_t(token_a, 2));
+    EXPECT_EQ(Simulator::run(result, "b"), Result_t(token_b, 1));
+
+    EXPECT_EQ(Simulator::run(result, "ab"), Result_t(token_a, 1));
+}
+
 TEST_F(Nfa_test, Token_accessors)
 {
     const Token token{7, 3};

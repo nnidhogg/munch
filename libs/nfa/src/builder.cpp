@@ -128,10 +128,12 @@ Builder Builder::merge(const Builder& other) const
 {
     const auto offset_nfa{other.offset(next_state_)};
 
-    Builder nfa{init_state_, offset_nfa.next_state_, transitions_, accept_states_};
+    const auto init_state{offset_nfa.next_state_};
 
-    // Add ε transition between the initial states.
-    nfa.add_epsilon_transition(nfa.init_state_, offset_nfa.init_state_);
+    Builder nfa{init_state, init_state + 1, transitions_, accept_states_};
+
+    nfa.add_epsilon_transition(init_state, init_state_);
+    nfa.add_epsilon_transition(init_state, offset_nfa.init_state_);
 
     nfa.transitions_.insert(offset_nfa.transitions_.begin(), offset_nfa.transitions_.end());
 

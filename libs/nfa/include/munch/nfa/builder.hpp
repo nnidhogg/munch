@@ -104,7 +104,11 @@ public:
     [[nodiscard]] Builder append(const Builder& other) const;
 
     /**
-     * @brief Returns a new Builder by merging another Builder's NFA.
+     * @brief Returns a new Builder recognizing the union of this and another Builder's NFA.
+     *
+     * A fresh start state is created with ε-transitions to both operands' initial states (Thompson union), so the
+     * union stays correct even when an operand's initial state has incoming transitions. Both operands' accept
+     * states are kept.
      * @param other The Builder to merge.
      * @return A new Builder representing the merged NFA.
      */
