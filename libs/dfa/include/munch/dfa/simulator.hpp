@@ -145,6 +145,23 @@ public:
     }
 
     /**
+     * @brief Returns whether the given symbol is a certified safe split point.
+     *
+     * A symbol is a safe split point when no state other than the initial state consumes it, so every occurrence
+     * in any input can only be the first byte of a token: a scan reaching it mid-token finds no transition and
+     * must have ended its token earlier, and a token can only contain it by starting with it. Input split
+     * immediately before such a symbol therefore tokenizes identically to the unsplit input, which is what makes
+     * chunked processing of one large input safe. A symbol no state consumes is vacuously safe: input holding it
+     * fails at it either way. Token sets whose runs or literals may contain any byte certify no split points.
+     */
+    [[nodiscard]] bool is_split_point(const char symbol) const noexcept
+    {
+        const auto value{static_cast<unsigned char>(symbol)};
+
+        return ((split_points_[value >> 6U] >> (value & 63U)) & 1U) != 0;
+    }
+
+    /**
      * @brief Tokenizes a whole input in one pass, invoking the sink once per matched token.
      *
      * Equivalent to calling run() repeatedly at each token boundary, but the scan state stays live across tokens,
@@ -250,6 +267,11 @@ private:
      * @brief The flag byte of each state, read during the scan in place of the wide accept entries.
      */
     std::vector<std::uint8_t> flags_;
+
+    /**
+     * @brief The certified safe split points, as a 256-bit mask indexed by symbol value.
+     */
+    std::array<std::uint64_t, 4> split_points_{};
 
     /**
      * @brief The table offset of the class row of each symbol value.

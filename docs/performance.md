@@ -85,9 +85,11 @@ Chunks must begin at real token boundaries, and in this design that is not a heu
 can certify at build time: a byte that no state except the start state consumes can only ever begin a token, so
 every occurrence is a safe split point, computable by one pass over the transition table. A token set whose strings
 or comments can contain any byte certifies no safe points, and the right behavior is to refuse and scan
-sequentially rather than speculate, in keeping with [limits.md](limits.md). None of this is built; it is recorded
-here because it is the one identified improvement that does not fight the serial chain, and because the decision it
-depends on belongs, like every other decision in this library, at build time.
+sequentially rather than speculate, in keeping with [limits.md](limits.md). The certification is built:
+Lexer::is_split_point() reports the certified bytes of a compiled token set, computed by that one pass in the
+simulator's constructor. The parallel scan on top of it is not built; it is recorded here because it is the one
+identified improvement that does not fight the serial chain, and because the decision it depends on belongs, like
+every other decision in this library, at build time.
 
 ## **The Theory Is Old; the Discipline Is the Feature**
 

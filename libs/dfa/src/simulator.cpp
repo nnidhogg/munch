@@ -84,6 +84,22 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
 
         transitions[classes[static_cast<unsigned char>(label.symbol())], from] = static_cast<Entry_t>(to);
     }
+
+    // A symbol only the initial state consumes can only begin a token; see is_split_point().
+    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    {
+        auto safe{true};
+
+        for (std::size_t state{0}; safe && state < states; ++state)
+        {
+            safe = state == init_state_ || table_[row_offsets_[symbol] + state] == no_state_;
+        }
+
+        if (safe)
+        {
+            split_points_[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
+        }
+    }
 }
 
 Simulator::Classes_t Simulator::classify(const Dfa& dfa)

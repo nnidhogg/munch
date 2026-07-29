@@ -478,3 +478,30 @@ TEST_F(Dfa_test, Loop_plus_a)
     EXPECT_EQ(simulator.run(""), Result_t(std::nullopt, 0));
     EXPECT_EQ(simulator.run("b"), Result_t(std::nullopt, 0));
 }
+
+TEST_F(Dfa_test, Split_points)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+
+    const Token token_a{1};
+    const Token token_b{2};
+
+    // 'a' continues its own run (q1 loops), so it is not a split point; 'b' is consumed only from the initial
+    // state, so it can only begin a token; 'c' is consumed nowhere and is vacuously safe.
+    dfa.add_accept_state(q1, token_a);
+    dfa.add_accept_state(q2, token_b);
+
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+    dfa.add_transition(q1, dfa::Label('a'), q1);
+    dfa.add_transition(q0, dfa::Label('b'), q2);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_FALSE(simulator.is_split_point('a'));
+    EXPECT_TRUE(simulator.is_split_point('b'));
+    EXPECT_TRUE(simulator.is_split_point('c'));
+}

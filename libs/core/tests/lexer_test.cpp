@@ -678,3 +678,38 @@ TEST_F(Lexer_test, Tokenize_all_stops_when_the_sink_returns_false)
     EXPECT_EQ(tokens, 2u);
     EXPECT_EQ(consumed, 4u);
 }
+
+TEST_F(Lexer_test, Split_points_depend_on_the_token_set)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+        Newline,
+    };
+
+    // A single-character newline token: '\n' is consumed only at a token start, so it certifies as a split point.
+    Builder_dbg single;
+
+    single.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    single.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+    single.add_token(text("\n"), Token_kind::Newline, 1);
+
+    const auto single_lexer{single.build()};
+
+    EXPECT_TRUE(single_lexer.is_split_point('\n'));
+    EXPECT_FALSE(single_lexer.is_split_point('a'));
+    EXPECT_FALSE(single_lexer.is_split_point(' '));
+
+    // A newline-run token: "\n\n" is one token, so splitting at the second '\n' would change the tokenization,
+    // and the analysis correctly refuses what a split-at-newline heuristic would wrongly allow.
+    Builder_dbg run;
+
+    run.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    run.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+    run.add_token(plus(any_of(Set::newline())), Token_kind::Newline, 1);
+
+    const auto run_lexer{run.build()};
+
+    EXPECT_FALSE(run_lexer.is_split_point('\n'));
+}

@@ -87,6 +87,18 @@ public:
     }
 
     /**
+     * @brief Returns whether the given symbol is a certified safe split point of this lexer's token set.
+     *
+     * Input split immediately before a safe split point tokenizes identically to the unsplit input, so such
+     * symbols mark chunk boundaries at which one large input may be processed in independent pieces. The property
+     * is certified from the compiled transition table; see dfa::Simulator::is_split_point().
+     */
+    [[nodiscard]] bool is_split_point(const char symbol) const noexcept
+    {
+        return simulator_.is_split_point(symbol);
+    }
+
+    /**
      * @brief Tokenizes a whole container in one pass, invoking the sink once per matched token.
      * @tparam T The token type (enum or integral).
      * @tparam Container The input container type (must offer random access).
