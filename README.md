@@ -542,9 +542,10 @@ Below are examples of how an NFA and its corresponding DFA might look:
 
 ![Keyword NFA](docs/keyword_nfa.svg)
 
-The NFA exactly as Thompson construction emits it for `choice(text("int"), text("if"), text("in"))`: three separate
-branches fanned out by ε-transitions, each spelling its keyword independently. The non-determinism is visible at the
-start, where three different states are reachable on the same `i`.
+The NFA exactly as Thompson construction emits it for `choice(text("int"), text("if"), text("in"))`: the alternatives
+are joined by pairwise unions, each contributing a start state that ε-fans out to its two operands, and each branch
+spells its keyword independently. The non-determinism is visible from the start state, whose ε-closure reaches three
+different states on the same `i`.
 
 #### **Keyword Alternation DFA Example**
 
@@ -560,14 +561,14 @@ the simulator implements longest-match, recording the accept and reading on.
 ![Floating Point Literal NFA](docs/floating_point_literal_nfa.svg)
 
 The Thompson NFA for a floating point literal with an optional sign and exponent. Every combinator contributes its
-own small fragment glued together with ε-transitions, which is why the raw automaton sprawls: over thirty states,
+own small fragment glued together with ε-transitions, which is why the raw automaton sprawls: nearly thirty states,
 most of them connected by ε-edges rather than input.
 
 #### **Floating Point Literal DFA Example**
 
 ![Floating Point Literal DFA](docs/floating_point_literal_dfa.svg)
 
-The same literal after determinization and minimization: the thirty-state ε-riddled NFA collapses into a handful of
+The same literal after determinization and minimization: the ε-riddled NFA collapses into a handful of
 states with purely deterministic transitions. This collapse is what the pipeline buys, and the flat tables the
 simulator compiles from it are what make matching fast.
 

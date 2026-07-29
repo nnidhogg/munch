@@ -34,9 +34,7 @@ std::vector<Regex> single(Regex regex)
      *      /                      \
      * ((S)) --ε--> ((regex)) --ε-->
      */
-    nfa::Builder S;
-
-    S = S.merge(to_nfa(regex));
+    auto S{to_nfa(regex).prepend_init_state()};
 
     std::ranges::for_each(
             S.accept_states(), [&S](const auto& pair) { S.add_epsilon_transition(pair.first, S.init_state()); });
@@ -60,9 +58,7 @@ std::vector<Regex> single(Regex regex)
      *    /                      \
      * (S) --ε--> ((regex)) --ε-->
      */
-    nfa::Builder S;
-
-    S = S.merge(to_nfa(regex));
+    auto S{to_nfa(regex).prepend_init_state()};
 
     std::ranges::for_each(
             S.accept_states(), [&S](const auto& pair) { S.add_epsilon_transition(pair.first, S.init_state()); });
@@ -82,9 +78,7 @@ std::vector<Regex> single(Regex regex)
      *
      * ((S)) --ε--> ((regex))
      */
-    nfa::Builder S;
-
-    S = S.merge(to_nfa(regex));
+    auto S{to_nfa(regex).prepend_init_state()};
 
     S.add_accept_state(S.init_state());
 

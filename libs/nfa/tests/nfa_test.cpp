@@ -391,6 +391,30 @@ TEST_F(Nfa_test, Loop_plus_a)
     EXPECT_EQ(Simulator::run(result, "b"), Result_t(std::nullopt, 0));
 }
 
+TEST_F(Nfa_test, Prepend_init_state_preserves_the_language)
+{
+    nfa::Builder nfa;
+
+    const auto q0{nfa.init_state()};
+    const auto q1{nfa.next_state()};
+
+    const Token token{1, 1};
+
+    nfa.add_transition(q0, nfa::Label('a'), q1);
+    nfa.add_accept_state(q1, token);
+
+    const auto prepended{nfa.prepend_init_state()};
+
+    EXPECT_NE(prepended.init_state(), q0);
+
+    const auto result{prepended.build()};
+
+    using Result_t = Simulator::Result_t;
+
+    EXPECT_EQ(Simulator::run(result, "a"), Result_t(token, 1));
+    EXPECT_EQ(Simulator::run(result, ""), Result_t(std::nullopt, 0));
+}
+
 TEST_F(Nfa_test, Merge_is_a_union_even_when_an_operand_loops_back_to_its_initial_state)
 {
     nfa::Builder a_star;

@@ -75,6 +75,13 @@ protected:
      */
     [[nodiscard]] dfa::Dfa dfa() const;
 
+    /**
+     * @brief Converts an NFA to a DFA using subset construction.
+     * @param nfa The NFA to convert.
+     * @return The constructed DFA.
+     */
+    [[nodiscard]] static dfa::Dfa subset_construction(const nfa::Nfa& nfa);
+
 private:
     /**
      * @brief Internal method to register a token with a regex and NFA token.
@@ -88,13 +95,6 @@ private:
      * @return The NFA builder representing all registered patterns.
      */
     [[nodiscard]] nfa::Builder thompson_construction() const;
-
-    /**
-     * @brief Converts an NFA to a DFA using subset construction.
-     * @param nfa The NFA to convert.
-     * @return The constructed DFA.
-     */
-    [[nodiscard]] static dfa::Dfa subset_construction(const nfa::Nfa& nfa);
 
     /**
      * @brief Internal patterns registered through add_token.

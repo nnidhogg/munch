@@ -116,11 +116,20 @@ void Builder::add_token(const regex::Regex& regex, const nfa::Token& token)
 
 nfa::Builder Builder::thompson_construction() const
 {
-    const auto merge{[](const auto& nfa, const auto& pattern) {
-        return nfa.merge(to_nfa(dfa::minimize(subset_construction(pattern.nfa.build())), pattern.token));
+    if (patterns_.empty())
+    {
+        return {};
+    }
+
+    const auto lower{[](const auto& pattern) {
+        return to_nfa(dfa::minimize(subset_construction(pattern.nfa.build())), pattern.token);
     }};
 
-    return std::accumulate(patterns_.cbegin(), patterns_.cend(), nfa::Builder{}, merge);
+    const auto merge{[&lower](const auto& nfa, const auto& pattern) { return nfa.merge(lower(pattern)); }};
+
+    // Seeding the union from the first pattern rather than an empty NFA keeps a dead state out of the merged
+    // automaton; merge() makes this safe regardless of the seed's shape.
+    return std::accumulate(std::next(patterns_.cbegin()), patterns_.cend(), lower(patterns_.front()), merge);
 }
 
 dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)

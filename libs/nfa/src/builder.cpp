@@ -105,6 +105,15 @@ Builder Builder::offset(const std::size_t offset) const
     return {init_state_ + offset, next_state_ + offset, std::move(transitions), std::move(accept_states)};
 }
 
+Builder Builder::prepend_init_state() const
+{
+    Builder nfa{next_state_, next_state_ + 1, transitions_, accept_states_};
+
+    nfa.add_epsilon_transition(next_state_, init_state_);
+
+    return nfa;
+}
+
 Builder Builder::append(const Builder& other) const
 {
     const auto offset_nfa{other.offset(next_state_)};

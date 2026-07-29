@@ -97,6 +97,15 @@ public:
     [[nodiscard]] Builder offset(Nfa::State_t offset) const;
 
     /**
+     * @brief Returns a new Builder with a new initial state ε-linked to the previous initial state.
+     *
+     * The prepended state has no incoming transitions, giving repetition constructions a loop-back target that is
+     * distinct from any state of the enclosed NFA.
+     * @return A new Builder with the prepended initial state.
+     */
+    [[nodiscard]] Builder prepend_init_state() const;
+
+    /**
      * @brief Returns a new Builder by appending another Builder's NFA.
      * @param other The Builder to append.
      * @return A new Builder representing the appended NFA.
