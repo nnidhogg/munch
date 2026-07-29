@@ -24,6 +24,10 @@ namespace munch::dfa
  * symbol value to one per class, which keeps far more of it in cache. The tables assume states are numbered densely
  * from zero, as the subset construction numbers them; a sparsely numbered DFA still works but wastes a table column
  * per unused identifier.
+ *
+ * Acceptance is tracked during the scan through a per-state flag byte rather than the accept tokens themselves:
+ * the flag load depends on the new state but feeds nothing, so it stays off the state-to-state dependency chain,
+ * and the matched Token is resolved exactly once after the scan.
  */
 class Simulator
 {
@@ -46,6 +50,11 @@ class Simulator
      * @brief Table entry marking the absence of a transition.
      */
     static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
+
+    /**
+     * @brief Per-state flag marking an accepting state.
+     */
+    static constexpr std::uint8_t accept_flag_{1};
 
     /**
      * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables.
@@ -98,15 +107,19 @@ public:
             return {accept_table_[init_state_], 0};
         }
 
-        auto state{init_state_};
+        auto state{static_cast<Entry_t>(init_state_)};
 
-        // The tables only hold valid states: init_state_ indexes a column, and every entry is either a column index
-        // or no_state_. The loop therefore needs no bounds checks.
-        Result_t result{accept_table_[state], 0};
+        // The last accepting state seen and the length of input it had consumed. The Token itself is resolved once
+        // after the scan, keeping its load off the per-byte dependency chain.
+        auto accept_state{accept_table_[state] ? state : no_state_};
+
+        std::size_t accept_consumed{0};
 
         std::size_t consumed{0};
 
-        for (Iterator current{begin}; current != end; ++current)
+        // The tables only hold valid states: init_state_ indexes a column, and every entry is either a column index
+        // or no_state_. The loop therefore needs no bounds checks.
+        for (auto current{begin}; current != end; ++current)
         {
             const auto entry{table_[row_offsets_[static_cast<unsigned char>(*current)] + state]};
 
@@ -119,13 +132,16 @@ public:
 
             ++consumed;
 
-            if (const auto& token = accept_table_[state]; token)
+            if (flags_[state] & accept_flag_)
             {
-                result = {token, consumed};
+                accept_state = state;
+
+                accept_consumed = consumed;
             }
         }
 
-        return result;
+        return accept_state != no_state_ ? Result_t{accept_table_[accept_state], accept_consumed}
+                                         : Result_t{std::nullopt, 0};
     }
 
     /**
@@ -165,6 +181,11 @@ private:
      * @brief Accept tokens as one entry per state, holding nullopt where the state does not accept.
      */
     std::vector<std::optional<Token>> accept_table_;
+
+    /**
+     * @brief The flag byte of each state, read during the scan in place of the wide accept entries.
+     */
+    std::vector<std::uint8_t> flags_;
 
     /**
      * @brief The table offset of the class row of each symbol value.

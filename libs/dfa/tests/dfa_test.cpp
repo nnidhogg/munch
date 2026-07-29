@@ -87,6 +87,57 @@ TEST_F(Dfa_test, Non_empty_vector_container)
     EXPECT_EQ(simulator.run(input), Result_t(token, 1));
 }
 
+TEST_F(Dfa_test, Long_self_loop_run)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+
+    const Token token{1};
+
+    dfa.add_accept_state(q0, token);
+    dfa.add_transition(q0, dfa::Label('a'), q0);
+
+    const auto result{dfa.build()};
+
+    const Simulator simulator{result};
+
+    using Result_t = Simulator::Result_t;
+
+    const std::string run(5000, 'a');
+
+    EXPECT_EQ(simulator.run(run), Result_t(token, 5000));
+    EXPECT_EQ(simulator.run(run + "b"), Result_t(token, 5000));
+    EXPECT_EQ(simulator.run("b" + run), Result_t(token, 0));
+}
+
+TEST_F(Dfa_test, Self_loop_over_high_symbol_values)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+
+    const Token token{1};
+
+    dfa.add_accept_state(q0, token);
+
+    // Symbols across the full byte range, including values that are negative as plain char.
+    for (const char symbol : {'\x3F', '\x40', '\x7F', '\x80', '\xBF', '\xC0', '\xFF'})
+    {
+        dfa.add_transition(q0, dfa::Label(symbol), q0);
+    }
+
+    const auto result{dfa.build()};
+
+    const Simulator simulator{result};
+
+    using Result_t = Simulator::Result_t;
+
+    const std::string input{"\x3F\x40\x7F\x80\xBF\xC0\xFF"};
+
+    EXPECT_EQ(simulator.run(input), Result_t(token, 7));
+}
+
 TEST_F(Dfa_test, Empty_input_accepting_dfa)
 {
     dfa::Builder dfa;

@@ -51,9 +51,18 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
         row_offsets_[symbol] = classes[symbol] * states;
     }
 
-    table_.assign(states * class_count, no_state_);
-
     accept_table_.assign(states, std::nullopt);
+
+    flags_.assign(states, 0);
+
+    for (const auto& [state, token] : dfa.accept_states())
+    {
+        accept_table_[state] = token;
+
+        flags_[state] |= accept_flag_;
+    }
+
+    table_.assign(states * class_count, no_state_);
 
     const Table_view_t<Entry_t> transitions{table_.data(), class_count, states};
 
@@ -62,11 +71,6 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
         const auto& [from, label]{key};
 
         transitions[classes[static_cast<unsigned char>(label.symbol())], from] = static_cast<Entry_t>(to);
-    }
-
-    for (const auto& [state, token] : dfa.accept_states())
-    {
-        accept_table_[state] = token;
     }
 }
 

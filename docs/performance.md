@@ -36,7 +36,8 @@ dependent table reads. Everything else in the simulator is arranged to stay off 
   state is. The CPU computes the offset in parallel with the previous transition instead of after it.
 - **Narrow table entries** (`uint32_t` states, `uint8_t` classes) double what fits in each cache level.
 
-Per input byte, the work is one 256-entry offset read, one transition read, one accept-table probe, and two compares. No
+Per input byte, the work is one 256-entry offset read, one transition read, a one-byte accept-flag probe, and two
+compares; the matched token itself is resolved once after the scan. No
 allocation, no dispatch, no interpretation, and no data-dependent branching beyond the dead-state exit and the accept
 check.
 
@@ -47,6 +48,23 @@ CTRE, the closest competitor in the README's benchmark, also compiles the token 
 alternative matched must be discovered per token. Determinization erases the alternation entirely. A data-driven table
 walk has no alternation branches to mispredict, and the equivalence classes keep the table small enough that memory
 latency does not take back what branch elimination won.
+
+## **What Beats It, and What That Buys**
+
+Lexer-specialized code generators beat this design. logos, the Rust lexer generator, was measured against munch on a
+bit-identical port of the README's benchmark corpus, validated to produce the same token stream to the token, and ran
+about 1.4 times faster on the same machine; re2c occupies the same class for C. They win by escaping the one cost the
+table model cannot shed: a table walk performs one dependent load per input byte, a serial chain of L1 latencies,
+while generated code fuses multi-byte consumption into the matcher, comparing whole keywords at once and eating
+identifier runs without a per-byte state step.
+
+That chain is untouchable from inside the loop, and this was measured rather than assumed: packing the accept flag
+into the transition entry put one extra mask on the chain and lost about ten percent, and consuming self-loop runs
+against a per-state bitmask lost far more, because realistic runs are a few bytes long and every run ended in a
+mispredicted exit branch. Closing the gap for real would take SIMD classification inside the run consumer or a
+code-generating backend, and both trade away the property this design exists for: the code generators freeze the
+token set at compile time, while munch builds lexers at run time from ordinary values, which is what lets a driver
+hold several lexers as modes, and lets a language be defined by data rather than by a build step.
 
 ## **The Theory Is Old; the Discipline Is the Feature**
 
