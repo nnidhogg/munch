@@ -1,4 +1,4 @@
-#include "munch/regex/regex.hpp"
+#include "munch/regex/choice.hpp"
 
 #include <gtest/gtest.h>
 
@@ -7,6 +7,7 @@
 
 #include "munch/nfa/simulator.hpp"
 #include "munch/nfa/tools/graphviz.hpp"
+#include "munch/regex/regex.hpp"
 
 using namespace munch::nfa;
 using namespace munch::nfa::tools;
@@ -74,5 +75,5 @@ TEST_F(Choice_test, Multiple_characters)
 
 TEST_F(Choice_test, Empty_regexes_throws)
 {
-    EXPECT_THROW(to_nfa(Choice{.regexes = {}}), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(to_nfa(Choice{.regexes = {}})), std::invalid_argument);
 }

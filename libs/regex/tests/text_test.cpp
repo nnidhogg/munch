@@ -1,4 +1,4 @@
-#include "munch/regex/regex.hpp"
+#include "munch/regex/text.hpp"
 
 #include <gtest/gtest.h>
 
@@ -7,6 +7,7 @@
 #include "munch/nfa/nfa.hpp"
 #include "munch/nfa/simulator.hpp"
 #include "munch/nfa/tools/graphviz.hpp"
+#include "munch/regex/regex.hpp"
 
 using namespace munch::nfa;
 using namespace munch::nfa::tools;

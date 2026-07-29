@@ -129,9 +129,8 @@ int main(const int argc, const char** argv)
         return tokenize(ascii_lexer, ascii_input);
     })};
 
-    ok = measure("lexer_all/ascii", ascii_input.size(), passes, [&ascii_lexer, &ascii_input] {
-             return tokenize_all(ascii_lexer, ascii_input);
-         }) &&
+    ok = measure("lexer_all/ascii", ascii_input.size(), passes,
+                 [&ascii_lexer, &ascii_input] { return tokenize_all(ascii_lexer, ascii_input); }) &&
          ok;
 
     ok = measure("tokenizer/ascii", ascii_input.size(), passes, [&tokenizer] { return tokenize(tokenizer); }) && ok;

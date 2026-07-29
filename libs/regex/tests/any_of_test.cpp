@@ -1,4 +1,4 @@
-#include "munch/regex/regex.hpp"
+#include "munch/regex/any_of.hpp"
 
 #include <gtest/gtest.h>
 
@@ -7,6 +7,7 @@
 
 #include "munch/nfa/simulator.hpp"
 #include "munch/nfa/tools/graphviz.hpp"
+#include "munch/regex/regex.hpp"
 #include "munch/regex/set.hpp"
 
 using namespace munch;

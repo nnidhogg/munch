@@ -1,4 +1,4 @@
-#include "munch/regex/regex.hpp"
+#include "munch/regex/repeat.hpp"
 
 #include <gtest/gtest.h>
 
@@ -7,6 +7,7 @@
 
 #include "munch/nfa/simulator.hpp"
 #include "munch/nfa/tools/graphviz.hpp"
+#include "munch/regex/regex.hpp"
 
 using namespace munch::nfa;
 using namespace munch::nfa::tools;
@@ -216,5 +217,5 @@ TEST_F(Repeat_test, Range_repetition)
 
 TEST_F(Repeat_test, Empty_regexes_throws)
 {
-    EXPECT_THROW(to_nfa(Repeat{.kind = Kleene{}, .regexes = {}}), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(to_nfa(Repeat{.kind = Kleene{}, .regexes = {}})), std::invalid_argument);
 }

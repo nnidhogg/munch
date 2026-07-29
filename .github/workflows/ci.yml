@@ -7,6 +7,64 @@ on:
     branches: [ "master" ]
 
 jobs:
+  format-check:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          # Pinned to the major version the tree is formatted with; formatting output differs across majors.
+          sudo apt-get install -y clang-format-19
+
+      - name: Check formatting
+        run: git ls-files '*.cpp' '*.hpp' | xargs clang-format-19 --dry-run --Werror
+
+  build-and-test-clang:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          # Clang 18, the distribution default, still reports __cpp_concepts as 201907L, which libstdc++'s
+          # <expected> requires at 202002L; Clang 19 is the first version that can compile the tokenizer.
+          sudo apt-get install -y clang-19 ninja-build
+
+      - name: Check Clang version
+        run: clang++-19 --version
+
+      - name: Configure build with CMake
+        env:
+          CC: clang-19
+          CXX: clang++-19
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build with CMake
+        run: |
+          cd build
+          cmake --build .
+
+      - name: Run tests with CTest
+        run: |
+          cd build
+          ctest --output-on-failure
+
   build-and-test:
     runs-on: ubuntu-24.04
 
