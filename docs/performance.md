@@ -67,10 +67,28 @@ identifier runs without a per-byte state step.
 That chain is untouchable from inside the loop, and this was measured rather than assumed: packing the accept flag
 into the transition entry put one extra mask on the chain and lost about ten percent, and consuming self-loop runs
 against a per-state bitmask lost far more, because realistic runs are a few bytes long and every run ended in a
-mispredicted exit branch. Closing the gap for real would take SIMD classification inside the run consumer or a
-code-generating backend, and both trade away the property this design exists for: the code generators freeze the
-token set at compile time, while munch builds lexers at run time from ordinary values, which is what lets a driver
-hold several lexers as modes, and lets a language be defined by data rather than by a build step.
+mispredicted exit branch.
+
+The SIMD form of that run consumer was then built, measured, and reverted as well. The build certified at
+construction time every state whose self-loop bytes form at most four contiguous ranges, probed ahead of the cursor
+to filter out short runs, and classified sixteen bytes per vector compare to find each run's end, with the token
+stream proven identical by the test suite. It lost on both corpora however the attempt was triggered: fired on
+every byte of an accelerated state it measured 202.4 MiB/s dense and 366.2 source against 651.7 and 629.0 serial,
+and fired once per run entry it recovered only to 241.6 and 398.2. The arithmetic behind the failure is structural
+rather than a tuning miss: on input averaging under two bytes per token, roughly seventy percent of tokens enter an
+accelerable state, so the attempt runs about four times per ten bytes, and any trigger that reads data before
+deciding, whether the acceleration entry or a probe byte, hangs a late-resolving data-dependent branch on nearly
+every token. The mispredictions cost more than the skipped table steps return. Hyperscan and regex-automata ship
+exactly this acceleration, but certify it only for states whose loop sets span nearly the whole byte alphabet,
+string literal and comment bodies, where every run is structurally long and the short-run gamble cannot arise; a
+lexical token set of identifiers, numbers, and whitespace contains no such state. The conclusion is the same one
+the interleaving experiment reached from the other side: the table model wins by making no data-dependent bets, and
+every acceleration is a bet.
+
+What could still close the gap is a code-generating backend, and that trades away the property this design exists
+for: the code generators freeze the token set at compile time, while munch builds lexers at run time from ordinary
+values, which is what lets a driver hold several lexers as modes, and lets a language be defined by data rather
+than by a build step.
 
 ## **The Remaining Headroom Is Parallel**
 
@@ -99,8 +117,22 @@ build-perf && ./build-perf/tools/benchmark/munch_benchmark 16 15`). That is 88% 
 against the 70% bar this section committed to in advance, and the shape confirms the diagnosis: the chains overlap
 almost perfectly because each thread's working set is a cache-resident table plus a streamed slice of input. The
 chunking lives in the benchmark as a demonstration on the public is_split_point() and tokenize_all() surface; the
-library itself takes no threading dependency. The single-core interleaved-cursor variant remains unbuilt, and the
-serial number stays the honest per-core figure.
+library itself takes no threading dependency.
+
+The single-core variant was then built, measured, and reverted, and its failure taught more than the threaded
+success. The experiment flattened the scan into a per-byte state machine and stepped several lanes per loop
+iteration, each lane a chunk of the same input at the same certified boundaries, predicting that the lanes'
+per-byte load chains would overlap in one core's pipeline. Measured on the source corpus against a 623.1 MiB/s
+serial scan, one lane ran at 373.7 MiB/s, two lanes at 372.8, four at 193.5, and the dense corpus fared worse
+still, so the code was removed under the two-times-or-revert criterion this section registered in advance. The
+control at one lane is the first lesson: the serial loop is fast because token-end handling sits outside the byte
+loop, and flattening it into per-byte checks costs forty percent before any interleaving begins. The flat lane
+count curve is the second and larger one: the prediction modeled the scan as one long dependency chain, but the
+scan resets its state to a constant at every token start, which cuts the chain, so on inputs averaging a few bytes
+per token the out-of-order window already overlaps several tokens' chains in the plain serial loop. The
+instruction-level parallelism the lanes were meant to create was already being harvested, and paying structure,
+register pressure, and branch-history interference to recreate it can only lose. Threads scale where lanes could
+not because each core brings its own registers and its own branch predictor, not just its own execution ports.
 
 ## **The Theory Is Old; the Discipline Is the Feature**
 

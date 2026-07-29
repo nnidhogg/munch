@@ -713,3 +713,47 @@ TEST_F(Lexer_test, Split_points_depend_on_the_token_set)
 
     EXPECT_FALSE(run_lexer.is_split_point('\n'));
 }
+
+TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+        Number,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Number, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{std::string(30, ' ') + "an_identifier_well_past_the_probe_distance " +
+                            std::string(25, '7') + " x 9 " + std::string(18, 'y')};
+
+    std::vector<std::pair<Token_kind, std::size_t>> batch;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input, [&batch](const Token_kind token, const std::size_t length) { batch.emplace_back(token, length); })};
+
+    EXPECT_EQ(consumed, input.size());
+
+    std::vector<std::pair<Token_kind, std::size_t>> single;
+
+    for (std::size_t offset{0}; offset < input.size();)
+    {
+        const auto [token, length]{lexer.tokenize<Token_kind>(input.cbegin() + offset, input.cend())};
+
+        ASSERT_TRUE(token.has_value());
+        ASSERT_GT(length, 0U);
+
+        single.emplace_back(*token, length);
+
+        offset += length;
+    }
+
+    EXPECT_EQ(batch, single);
+}

@@ -505,3 +505,94 @@ TEST_F(Dfa_test, Split_points)
     EXPECT_TRUE(simulator.is_split_point('b'));
     EXPECT_TRUE(simulator.is_split_point('c'));
 }
+
+TEST_F(Dfa_test, Accelerated_runs_preserve_longest_match)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+
+    const Token token_a{1};
+    const Token token_ab{2};
+
+    // Tokens "a" and "a+b": q2 self-loops on 'a' without accepting, so a long all-'a' input walks deep into q2
+    // and must still resolve to the one-character token seen before the run.
+    dfa.add_accept_state(q1, token_a);
+    dfa.add_accept_state(q3, token_ab);
+
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+    dfa.add_transition(q1, dfa::Label('a'), q2);
+    dfa.add_transition(q2, dfa::Label('a'), q2);
+    dfa.add_transition(q1, dfa::Label('b'), q3);
+    dfa.add_transition(q2, dfa::Label('b'), q3);
+
+    const Simulator simulator{dfa.build()};
+
+    const std::string run_with_b{std::string(40, 'a') + 'b'};
+
+    std::vector<std::pair<std::size_t, std::size_t>> tokens;
+
+    auto consumed{simulator.run_all(run_with_b.cbegin(), run_with_b.cend(), [&tokens](const Token& token, const std::size_t length) {
+        tokens.emplace_back(token.id(), length);
+    })};
+
+    EXPECT_EQ(consumed, run_with_b.size());
+    ASSERT_EQ(tokens.size(), 1U);
+    EXPECT_EQ(tokens.front(), (std::pair<std::size_t, std::size_t>{token_ab.id(), 41U}));
+
+    // Without the 'b', the longest match fails and every rescan must fall back to the length-one token, so the
+    // accept position recorded before the run must survive the walk through it.
+    const std::string run_without_b(40, 'a');
+
+    tokens.clear();
+
+    consumed = simulator.run_all(run_without_b.cbegin(), run_without_b.cend(),
+                                 [&tokens](const Token& token, const std::size_t length) {
+                                     tokens.emplace_back(token.id(), length);
+                                 });
+
+    EXPECT_EQ(consumed, run_without_b.size());
+    EXPECT_EQ(tokens.size(), 40U);
+
+    for (const auto& token : tokens)
+    {
+        EXPECT_EQ(token, (std::pair<std::size_t, std::size_t>{token_a.id(), 1U}));
+    }
+}
+
+TEST_F(Dfa_test, Accelerated_runs_extend_accepting_tokens)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+
+    const Token token_run{1};
+
+    // A plus-style run token: q1 accepts and self-loops, so the accept position must advance to the run's end.
+    dfa.add_accept_state(q1, token_run);
+
+    dfa.add_transition(q0, dfa::Label(' '), q1);
+    dfa.add_transition(q1, dfa::Label(' '), q1);
+
+    const Simulator simulator{dfa.build()};
+
+    for (const std::size_t length : {1U, 7U, 15U, 16U, 17U, 100U})
+    {
+        const std::string input(length, ' ');
+
+        std::vector<std::size_t> lengths;
+
+        const auto consumed{simulator.run_all(input.cbegin(), input.cend(),
+                                              [&lengths](const Token&, const std::size_t matched) {
+                                                  lengths.push_back(matched);
+                                              })};
+
+        EXPECT_EQ(consumed, length);
+        ASSERT_EQ(lengths.size(), 1U);
+        EXPECT_EQ(lengths.front(), length);
+    }
+}
