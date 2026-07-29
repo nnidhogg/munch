@@ -84,17 +84,20 @@ Regex random_regex(Random& random, const int depth, int& budget)
         return plus(random_regex(random, depth - 1, budget));
     case 4:
         return optional(random_regex(random, depth - 1, budget));
-    case 5: {
+    case 5:
+    {
         const auto count{random.next(3)};
 
         return exact(repeated(count), count);
     }
-    case 6: {
+    case 6:
+    {
         const auto min{random.next(2)};
 
         return at_least(repeated(min + 1), min);
     }
-    default: {
+    default:
+    {
         const auto min{random.next(2)};
 
         const auto max{min + random.next(2)};
@@ -242,8 +245,8 @@ TEST(Pipeline_property_test, Utf8_range_matches_exactly_the_encodable_code_point
     }
 
     // Sequences no UTF-8 encoder produces: stray continuations, overlong encodings, and lead bytes past U+10FFFF.
-    for (const std::string invalid : {"\x80", "\xC0\xAF", "\xC1\xBF", "\xE0\x80\x80", "\xF0\x80\x80\x80",
-                                      "\xF5\x80\x80\x80", "\xFF"})
+    for (const std::string invalid :
+         {"\x80", "\xC0\xAF", "\xC1\xBF", "\xE0\x80\x80", "\xF0\x80\x80\x80", "\xF5\x80\x80\x80", "\xFF"})
     {
         EXPECT_EQ(lexer.tokenize<std::size_t>(invalid).first, std::nullopt);
     }

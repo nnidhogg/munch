@@ -137,8 +137,7 @@ Regex sequence(const Bytes_t& first, const Bytes_t& last, const std::size_t inde
         parts.push_back({.node = Concat{.regexes = std::move(middle)}});
     }
 
-    parts.push_back(
-            concat(any_of(Set::range(last[index], last[index])), sequence(lowest, last, index + 1, length)));
+    parts.push_back(concat(any_of(Set::range(last[index], last[index])), sequence(lowest, last, index + 1, length)));
 
     return {.node = Choice{.regexes = std::move(parts)}};
 }

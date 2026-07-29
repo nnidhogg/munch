@@ -7,6 +7,7 @@
 #include <ranges>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/minimize.hpp"
@@ -69,8 +70,8 @@ munch::nfa::Builder to_nfa(const munch::dfa::Dfa& dfa, const munch::nfa::Token& 
     const auto state{[&result, &dfa_nfa_map](const auto dfa_state) {
         const auto iterator{dfa_nfa_map.find(dfa_state)};
 
-        return iterator != dfa_nfa_map.cend() ? iterator->second
-                                              : dfa_nfa_map.emplace(dfa_state, result.next_state()).first->second;
+        return iterator != dfa_nfa_map.cend() ? iterator->second :
+                                                dfa_nfa_map.emplace(dfa_state, result.next_state()).first->second;
     }};
 
     for (const auto& [key, to] : dfa.transitions())
@@ -80,7 +81,6 @@ munch::nfa::Builder to_nfa(const munch::dfa::Dfa& dfa, const munch::nfa::Token& 
         result.add_transition(state(from), munch::nfa::Label{label.symbol()}, state(to));
     }
 
-    // The DFA token carries no priority, so the token the pattern was registered with is restored instead.
     const auto add_accept_state{[&result, &state, &token](const auto accept_state) {
         result.add_accept_state(state(accept_state), token);
     }};
@@ -127,8 +127,6 @@ nfa::Builder Builder::thompson_construction() const
 
     const auto merge{[&lower](const auto& nfa, const auto& pattern) { return nfa.merge(lower(pattern)); }};
 
-    // Seeding the union from the first pattern rather than an empty NFA keeps a dead state out of the merged
-    // automaton; merge() makes this safe regardless of the seed's shape.
     return std::accumulate(std::next(patterns_.cbegin()), patterns_.cend(), lower(patterns_.front()), merge);
 }
 
@@ -185,7 +183,7 @@ dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)
         });
     }
 
-    return dfa.build();
+    return std::move(dfa).build();
 }
 
 } // namespace munch::core

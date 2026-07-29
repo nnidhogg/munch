@@ -75,8 +75,8 @@ TEST(Utf8_test, Encoding_length_boundaries)
 {
     const auto nfa{make_nfa(utf8::range(0x0, 0x10FFFF))};
 
-    for (const char32_t code_point : {0x0U, 0x7FU, 0x80U, 0x7FFU, 0x800U, 0xD7FFU, 0xE000U, 0xFFFFU, 0x10000U,
-                                      0x10FFFFU})
+    for (const char32_t code_point :
+         {0x0U, 0x7FU, 0x80U, 0x7FFU, 0x800U, 0xD7FFU, 0xE000U, 0xFFFFU, 0x10000U, 0x10FFFFU})
     {
         EXPECT_TRUE(matches(nfa, encode(code_point))) << "U+" << std::hex << static_cast<unsigned>(code_point);
     }

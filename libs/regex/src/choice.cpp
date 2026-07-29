@@ -25,9 +25,8 @@ nfa::Builder to_nfa(const Choice& choice)
      */
     auto nfa{to_nfa(choice.regexes.front())};
 
-    std::ranges::for_each(choice.regexes | std::views::drop(1), [&nfa](const auto& regex) {
-        nfa = nfa.merge(to_nfa(regex));
-    });
+    std::ranges::for_each(
+            choice.regexes | std::views::drop(1), [&nfa](const auto& regex) { nfa = nfa.merge(to_nfa(regex)); });
 
     return nfa;
 }

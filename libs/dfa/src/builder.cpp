@@ -32,7 +32,12 @@ Builder& Builder::add_accept_state(const Dfa::State_t accept_state, const Token&
     return *this;
 }
 
-Dfa Builder::build()
+Dfa Builder::build() const&
+{
+    return {init_state_, transitions_, accept_states_};
+}
+
+Dfa Builder::build() &&
 {
     return {init_state_, std::move(transitions_), std::move(accept_states_)};
 }

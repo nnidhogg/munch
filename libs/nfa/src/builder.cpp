@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <utility>
 
 namespace munch::nfa
 {
@@ -151,9 +152,14 @@ Builder Builder::merge(const Builder& other) const
     return nfa;
 }
 
-Nfa Builder::build() const
+Nfa Builder::build() const&
 {
     return {init_state_, transitions_, accept_states_};
+}
+
+Nfa Builder::build() &&
+{
+    return {init_state_, std::move(transitions_), std::move(accept_states_)};
 }
 
 } // namespace munch::nfa

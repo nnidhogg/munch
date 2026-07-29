@@ -50,13 +50,16 @@ public:
     Builder& add_accept_state(Dfa::State_t accept_state, const Token& token);
 
     /**
-     * @brief Builds and returns the constructed DFA.
-     *
-     * Moves the accumulated transitions and accept states out of the Builder, so the Builder should not be reused
-     * afterwards; construct a new one for further building.
+     * @brief Builds and returns the constructed DFA, leaving the Builder intact.
      * @return The constructed DFA object.
      */
-    [[nodiscard]] Dfa build();
+    [[nodiscard]] Dfa build() const&;
+
+    /**
+     * @brief Builds and returns the constructed DFA from an expiring Builder, moving its contents into the result.
+     * @return The constructed DFA object.
+     */
+    [[nodiscard]] Dfa build() &&;
 
 private:
     Dfa::State_t init_state_;

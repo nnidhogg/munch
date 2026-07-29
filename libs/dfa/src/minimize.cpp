@@ -4,6 +4,7 @@
 #include <map>
 #include <ranges>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "munch/dfa/builder.hpp"
@@ -40,9 +41,9 @@ std::unordered_map<Dfa::State_t, Group_t> partition_by_token(const Dfa& dfa)
     const auto state_group{[&dfa, &token_group](const Dfa::State_t state) {
         const auto iterator{dfa.accept_states().find(state)};
 
-        return iterator != dfa.accept_states().cend()
-                       ? token_group.try_emplace(iterator->second.id(), token_group.size() + 1).first->second
-                       : 0;
+        return iterator != dfa.accept_states().cend() ?
+                       token_group.try_emplace(iterator->second.id(), token_group.size() + 1).first->second :
+                       0;
     }};
 
     group.emplace(dfa.init_state(), state_group(dfa.init_state()));
@@ -121,8 +122,8 @@ Dfa minimize(const Dfa& dfa)
     const auto state{[&builder, &group, &state_of](const Dfa::State_t old_state) {
         const auto iterator{state_of.find(group.at(old_state))};
 
-        return iterator != state_of.cend() ? iterator->second
-                                           : state_of.emplace(group.at(old_state), builder.next_state()).first->second;
+        return iterator != state_of.cend() ? iterator->second :
+                                             state_of.emplace(group.at(old_state), builder.next_state()).first->second;
     }};
 
     for (const auto& [key, to] : dfa.transitions())
@@ -135,7 +136,7 @@ Dfa minimize(const Dfa& dfa)
         builder.add_accept_state(state(accept_state), token);
     }
 
-    return builder.build();
+    return std::move(builder).build();
 }
 
 } // namespace munch::dfa

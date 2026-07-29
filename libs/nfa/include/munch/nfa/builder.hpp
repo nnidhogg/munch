@@ -124,10 +124,16 @@ public:
     [[nodiscard]] Builder merge(const Builder& other) const;
 
     /**
-     * @brief Builds and returns the constructed NFA.
+     * @brief Builds and returns the constructed NFA, leaving the Builder intact.
      * @return The constructed NFA object.
      */
-    [[nodiscard]] Nfa build() const;
+    [[nodiscard]] Nfa build() const&;
+
+    /**
+     * @brief Builds and returns the constructed NFA from an expiring Builder, moving its contents into the result.
+     * @return The constructed NFA object.
+     */
+    [[nodiscard]] Nfa build() &&;
 
 private:
     /**
