@@ -678,8 +678,9 @@ cd build
 ctest --output-on-failure
 ```
 
-Pass `-DMUNCH_BUILD_TESTS=OFF` to `cmake` when configuring to skip building tests entirely, e.g. when consuming the
-library as a dependency; `-DMUNCH_BUILD_BENCHMARK=OFF` likewise skips the benchmark tool.
+Tests, the benchmark tool, and warnings-as-errors are enabled by default only when munch is the top-level project;
+a build consuming munch through `add_subdirectory` gets none of them unless it opts in with `-DMUNCH_BUILD_TESTS=ON`,
+`-DMUNCH_BUILD_BENCHMARK=ON`, or `-DMUNCH_WERROR=ON`.
 
 Beyond the per-layer unit tests, the `dfa` and `core` suites include fixed-seed property tests: random DFAs check the
 compiled simulator against the definition maps and minimization against the original language, and random pattern sets

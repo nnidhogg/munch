@@ -9,30 +9,40 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# GCC-style flags; CI builds and tests against GCC and Clang on Linux (see .github/workflows/ci.yml).
-add_compile_options(-Wall -Werror -Wunused -Wextra -pthread)
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(MUNCH_IS_TOP_LEVEL ON)
+else ()
+    set(MUNCH_IS_TOP_LEVEL OFF)
+endif ()
+
+# GCC-style flags; CI builds and tests against GCC and Clang on Linux (see .github/workflows/ci.yml). Threading
+# is carried by Threads::Threads on the targets that need it, not by a global flag.
+add_compile_options(-Wall -Wunused -Wextra)
+
+# Warnings are errors for munch's own development; a consumer's newer compiler must not break their build over a
+# warning munch has not seen yet.
+option(MUNCH_WERROR "Treat warnings as errors" ${MUNCH_IS_TOP_LEVEL})
+if (MUNCH_WERROR)
+    add_compile_options(-Werror)
+endif ()
 
 add_compile_options(
         $<$<CONFIG:Debug>:-g>
         $<$<CONFIG:Release>:-O2>
 )
 
-option(MUNCH_BUILD_TESTS "Build tests for munch" ON)
+# Developer-only targets stay out of consumer builds: when munch is a subdirectory of a larger project, tests and
+# the benchmark build only on request.
+option(MUNCH_BUILD_TESTS "Build tests for munch" ${MUNCH_IS_TOP_LEVEL})
 if (MUNCH_BUILD_TESTS)
     enable_testing()
 endif ()
 
-option(MUNCH_BUILD_BENCHMARK "Build the throughput benchmark for munch" ON)
+option(MUNCH_BUILD_BENCHMARK "Build the throughput benchmark for munch" ${MUNCH_IS_TOP_LEVEL})
 
 option(MUNCH_BENCHMARK_COMPARE "Build the benchmark comparing munch against other engines" OFF)
 
 include(GNUInstallDirs)
-
-if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    set(MUNCH_IS_TOP_LEVEL ON)
-else ()
-    set(MUNCH_IS_TOP_LEVEL OFF)
-endif ()
 
 option(MUNCH_INSTALL "Generate install rules for munch" ${MUNCH_IS_TOP_LEVEL})
 
