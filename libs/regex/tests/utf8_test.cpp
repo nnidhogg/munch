@@ -230,4 +230,11 @@ TEST(Utf8_test, Ranges_rejects_empty_unsorted_and_overlapping_input)
             {{.first = 0x41, .last = 0x5A}, {.first = 0x50, .last = 0x60}}};
 
     EXPECT_THROW((void)utf8::ranges(overlapping), std::invalid_argument);
+
+    // A surrogate-only range is invalid even when adjacent to a valid one: merging first would silently absorb
+    // it into a neighbor whose expansion excises the surrogate gap.
+    constexpr std::array<utf8::Code_point_range, 2> surrogates{
+            {{.first = 0xD7FF, .last = 0xD7FF}, {.first = 0xD800, .last = 0xDFFF}}};
+
+    EXPECT_THROW((void)utf8::ranges(surrogates), std::invalid_argument);
 }

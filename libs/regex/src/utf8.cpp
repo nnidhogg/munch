@@ -180,6 +180,16 @@ Regex ranges(const std::span<const Code_point_range> ranges)
         throw std::invalid_argument("UTF-8 code point ranges are empty");
     }
 
+    // Each range is validated before adjacency merging: a surrogate-only range must be rejected, not silently
+    // absorbed into a neighbor whose expansion then excises the surrogate gap.
+    for (const auto& range : ranges)
+    {
+        if (range.first > range.last || range.last > 0x10FFFF || (range.first >= 0xD800 && range.last <= 0xDFFF))
+        {
+            throw std::invalid_argument("Invalid UTF-8 code point range");
+        }
+    }
+
     std::vector<Regex> parts;
 
     parts.reserve(ranges.size());
