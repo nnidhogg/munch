@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(munch VERSION 0.2.0)
+project(munch VERSION 0.3.0)
 
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
