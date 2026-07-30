@@ -158,12 +158,12 @@ visible run-to-run spread, so rerun the benchmark on your own hardware and langu
 ### **Comparison with Other Engines**
 
 Configuring with `-DMUNCH_BENCHMARK_COMPARE=ON` additionally builds `munch_benchmark_compare`, which runs the same
-tokenization job through six engines: lexertl, munch's nearest relative, a lexer likewise built at run time from rules
-and compiled to a DFA, and five widely used regex engines, used the way one uses a regex engine to write a lexer: one
-pattern with an alternation per token kind, matched anchored at the current offset. Each engine's full tokenization,
-every token's kind and length, is validated to agree with munch's before anything is timed; the timed passes then run
-a lightweight recognition tally of token count and kinds.
-The option is off by default because it fetches the engines as additional dependencies.
+tokenization job through six engines: lexertl17 (the C++17 line of lexertl), munch's nearest relative, a lexer likewise
+built at run time from rules and compiled to a DFA, and five widely used regex engines, used the way one uses a regex
+engine to write a lexer: one pattern with an alternation per token kind, matched anchored at the current offset. Each
+engine's full tokenization, every token's kind and length, is validated to agree with munch's before anything is timed;
+the timed passes then run a lightweight recognition tally of token count and kinds. The option is off by default because
+it fetches the engines as additional dependencies.
 
 Two corpus shapes keep the conclusions honest: `dense`, averaging under two bytes per token, magnifies per-token
 overhead, and `source`, shaped like real code with long identifiers and indentation, amortizes it.
@@ -227,18 +227,18 @@ than its friendliest entry point.
 |------------------------|-----------|-----------------------------------------|------:|-------:|
 | `munch`                | this repo | table-compiled minimal DFA, single pass |   577 |    564 |
 | `regex-automata` (raw) | 0.4       | dense DFA walked at the automaton level |   349 |    399 |
-| lexertl                | 652435f   | rules compiled to a DFA                 |   176 |    224 |
+| lexertl17              | 652435f   | rules compiled to a DFA                 |   176 |    224 |
 | `regex-automata`       | 0.4       | dense DFA through its search API        |   168 |    222 |
 
 **The class above: compile-time code generation.** These freeze the token set at build time and emit code shaped like
 it, the one advantage a runtime-built table cannot take, so this group does not measure a competition munch can enter;
-it measures the price of munch's flexibility. On this machine that price has ranged across measurement sessions from
-under ten percent to roughly a quarter against logos on dense input, and from forty to sixty percent on source-shaped
-input: gaps between separately built binaries move with machine state, which the best-to-worst spread in the raw output
-makes visible. Membership in this class is not sufficient to win, though: munch outruns CTRE outright on the dense
-corpus, because CTRE compiles the regex structure into code and still resolves the alternation between token kinds per
-token, while munch's determinized table erased the alternation before the first byte arrived. Only when longer tokens
-let generated code consume multi-byte runs does CTRE pull ahead.
+it measures the price of munch's flexibility. Across measurement sessions on the reference machine, that price has
+ranged from under ten percent to roughly a quarter against logos on dense input, and from forty to sixty percent on
+source-shaped input: gaps between separately built binaries move with machine state, which the best-to-worst spread in
+the raw output makes visible. Membership in this class is not sufficient to win, though: munch outruns CTRE outright on
+the dense corpus, because CTRE compiles the regex structure into code and still resolves the alternation between token
+kinds per token, while munch's determinized table erased the alternation before the first byte arrived. Only when longer
+tokens let generated code consume multi-byte runs does CTRE pull ahead.
 
 | Engine  | Version   | Matching approach                       | dense | source |
 |---------|-----------|-----------------------------------------|------:|-------:|
@@ -269,8 +269,8 @@ for threading to matter:
 | logos   |       4 |  2708 |   3462 |
 | `munch` |       4 |  2035 |   2076 |
 
-Best-pass throughputs in MiB/s; the raw blocks above carry the medians and the spread, and the medians tell the
-same story throughout.
+Best-pass throughputs in MiB/s; the raw blocks above carry the medians and the spread, and the medians tell the same
+story throughout.
 
 Read the numbers for what they measure. The corpus averages under two bytes per token, so per-token overhead dominates:
 munch tokenizes the whole input through `tokenize_all()`, CTRE compiles the token set into a matcher at C++ compile
@@ -281,16 +281,17 @@ pattern orders keywords before identifiers and multi-character operators before 
 first-match alternation semantics produce exactly munch's longest-match, priority-resolved tokenization.
 
 Read as classes, the two corpora say one thing together. munch is the fastest lexer constructed at run time on both,
-roughly 1.4 to 3.3 times ahead of its nearest relatives even with regex-automata steelmanned through its low-level
-walk, the narrow end being that steelman on the source-shaped corpus. The compile-time code generators own the overall lead as tokens grow longer: logos on both corpora and
-CTRE on source, because generated code consumes multi-byte runs where a table walk pays one dependent load per byte,
-which is also why munch's own throughput is nearly identical on both corpus shapes.
+roughly 1.4 to 3.3 times ahead of its nearest relatives even with regex-automata steelmanned through its low-level walk,
+the narrow end being that steelman on the source-shaped corpus. The compile-time code generators own the overall lead as
+tokens grow longer: logos on both corpora and CTRE on source, because generated code consumes multi-byte runs where a
+table walk pays one dependent load per byte, which is also why munch's own throughput is nearly identical on both corpus
+shapes.
 [docs/performance.md](docs/performance.md) explains why that boundary is where it is.
 
-Threading multiplies the class verdict rather than reordering it: both lexer classes scale strongly, close to linear
-at four threads and sublinearly at eight, so the serial
-ranking carries over at every width. What the threaded rows actually compare is how each side knows its chunk boundaries
-are safe. munch certifies them from the compiled transition table, for whatever token set was built, through
+Threading multiplies the class verdict rather than reordering it: both lexer classes scale strongly, close to linear at
+four threads and sublinearly at eight, so the serial ranking carries over at every width. What the threaded rows
+actually compare is how each side knows its chunk boundaries are safe. munch certifies them from the compiled transition
+table, for whatever token set was built, through
 `is_split_point()`; the logos rows rest on a hand-written analysis of this one token set, documented in the Rust driver,
 which logos itself can neither produce nor check. On a token set where no byte is safe, such as one with string
 literals, munch reports that no split points exist, while a hand analysis has to notice by itself that the trick is no
@@ -425,7 +426,7 @@ builder.add_token(pattern, Token_kind::Identifier, 4);
 
 This mechanism allows keyword tokens to override more general patterns such as identifiers.
 
-##### **build ()**
+##### **build()**
 
 ```cpp
 const auto lexer{builder.build()};
@@ -441,7 +442,7 @@ After calling `build()`:
 - the returned lexer can be reused safely and efficiently,
 - lexers already built are unaffected by later changes to the builder.
 
-##### **diagnose ()**
+##### **diagnose()**
 
 ```cpp
 const auto diagnostics{builder.diagnose()};
