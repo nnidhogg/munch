@@ -87,6 +87,21 @@ the code generators freeze the token set at compile time, while munch builds lex
 which is what lets a driver hold several lexers as modes, and lets a language be defined by data rather than by a build
 step.
 
+## **Construction at Unicode Scale**
+
+The runtime loop never paid for Unicode, but construction did, and the XID identifier classes made it measurable:
+an identifier pattern over the two generated property tables expands to an NFA of roughly 55,000 transitions, and
+determinizing it took 230 seconds. Two structural faults in subset construction carried almost all of it. The walk
+advanced once per state-symbol *pair* rather than per distinct symbol, and the states of a byte-expanded class share
+their symbols almost entirely, so the same transition was recomputed thousands of times per set; epsilon closures
+were recomputed from scratch inside every advance. Deduplicating symbols and memoizing per-state closures brought
+230 s to 34 s. The remaining cost was the set representation itself: reachable sets hold over a thousand members,
+and node-based sets pay an allocation and a hash per element. Rebuilding the construction over dense bit sets, with
+closures stored as member lists and set identity as a hash of words, brought 34 s to 0.6 s, 372 times faster than
+the starting point. The keyword-scale build fell from 33 ms to 27 ms as a side effect, and the compiled XID grammar
+lands at 477 DFA states, small enough that the runtime story is unchanged. The construction figures are tracked by
+`build/xid` in the benchmark alongside `build/keywords`.
+
 ## **The Remaining Headroom Is Parallel**
 
 The two-corpus comparison measured the bound precisely: munch's throughput is the same at under two bytes per token and

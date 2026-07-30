@@ -387,7 +387,11 @@ classes: `Set::digits()`, `Set::alpha()`, `Set::alphanum()`, `Set::printable()`,
 
 For Unicode input, `utf8::range(first, last)` from `munch/regex/utf8.hpp` matches one code point from an inclusive
 range, expanded into its UTF-8 byte sequences. Surrogates are excluded, and ill-formed input such as overlong encodings
-is rejected by construction.
+is rejected by construction. `utf8::ranges()` matches one code point from a sorted list of disjoint ranges, and
+`munch/regex/unicode.hpp` provides `unicode::xid_start()` and `unicode::xid_continue()`, the UAX #31 identifier
+properties generated from the Unicode Character Database (`unicode::version()` names the pinned version). A C-style
+identifier is then `concat(choice(text('_'), unicode::xid_start()), kleene(choice(text('_'), unicode::xid_continue())))`;
+the properties themselves are matched exactly, with profile choices such as the leading underscore left to the caller.
 
 ##### **Example**
 
@@ -846,7 +850,8 @@ simulator compiles, keeping more of them in cache.
 ## **Versioning and Stability**
 
 munch follows semantic versioning. The stable surface is what this README documents: the regex combinators with
-`Set` and `utf8::range`, `core::Builder` with `add_token()`, `build()`, `diagnose()`, and `set_state_limit()`,
+`Set`, `utf8::range`, `utf8::ranges`, and the `unicode` XID classes, `core::Builder` with `add_token()`, `build()`,
+`diagnose()`, and `set_state_limit()`,
 `core::Lexer` with `Match`, `tokenize()`, `tokenize_all()`, `is_split_point()`, `chunk_boundaries()`, and
 `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
 arrive in minor versions.
@@ -854,8 +859,8 @@ arrive in minor versions.
 The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
 not for stability. The benchmark tools and the prose in `docs/` carry no compatibility promise, and performance numbers
-are measurements, not contracts. Planned additions such as Unicode XID identifier classes extend the combinator
-vocabulary without changing what exists (see [docs/limits.md](docs/limits.md)).
+are measurements, not contracts. Additions like the Unicode XID identifier classes arrive as new combinators without
+changing what exists (see [docs/limits.md](docs/limits.md)).
 
 ## **License**
 

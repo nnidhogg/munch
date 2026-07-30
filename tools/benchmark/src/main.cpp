@@ -6,6 +6,7 @@
 #include <munch/core/builder.hpp>
 #include <munch/regex/patterns.hpp>
 #include <munch/regex/regex.hpp>
+#include <munch/regex/unicode.hpp>
 #include <set>
 #include <string>
 #include <vector>
@@ -303,6 +304,62 @@ void measure_build(const int passes)
             states.size(), passes, milliseconds.front(), median, milliseconds.back());
 }
 
+/**
+ * @brief Measures the construction cost of a Unicode identifier grammar over the XID properties.
+ *
+ * The identifier pattern expands the two XID property tables, 1497 code point ranges, into byte alternatives:
+ * the construction stress case a generated property class poses. Registration cost is excluded, as in the
+ * keyword-scale measurement.
+ */
+void measure_xid_build(const int passes)
+{
+    using namespace munch::regex;
+
+    Staged_builder builder;
+
+    builder.add_token(
+            concat(choice(text('_'), unicode::xid_start()), kleene(choice(text('_'), unicode::xid_continue()))),
+            Token::identifier, 2);
+
+    builder.add_token(patterns::decimal_integer(), Token::number, 1);
+
+    builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 1);
+
+    std::vector<double> milliseconds;
+
+    milliseconds.reserve(static_cast<std::size_t>(passes));
+
+    for (int index{0}; index < passes; ++index)
+    {
+        const auto start{std::chrono::steady_clock::now()};
+
+        static_cast<void>(builder.build());
+
+        const std::chrono::duration<double, std::milli> elapsed{std::chrono::steady_clock::now() - start};
+
+        milliseconds.push_back(elapsed.count());
+    }
+
+    std::sort(milliseconds.begin(), milliseconds.end());
+
+    const auto dfa{builder.dfa()};
+
+    std::set<std::size_t> states{dfa.init_state()};
+
+    for (const auto& [key, to] : dfa.transitions())
+    {
+        states.insert(key.first);
+
+        states.insert(to);
+    }
+
+    const auto median{(milliseconds[(milliseconds.size() - 1) / 2] + milliseconds[milliseconds.size() / 2]) / 2.0};
+
+    std::printf(
+            "build/xid        3 patterns, %zu states, %d passes: best %.1f, median %.1f, worst %.1f ms\n",
+            states.size(), passes, milliseconds.front(), median, milliseconds.back());
+}
+
 } // namespace
 
 /**
@@ -358,6 +415,8 @@ int main(const int argc, const char** argv)
     ok = validate_chunked(ascii_lexer, ascii_input, 8) && validate_chunked(ascii_lexer, source_input, 8) && ok;
 
     measure_build(passes);
+
+    measure_xid_build(passes);
 
     ok = measure("lexer_all/source", source_input.size(), passes,
                  [&ascii_lexer, &source_input] { return tokenize_all(ascii_lexer, source_input); }) &&

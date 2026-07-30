@@ -11,6 +11,7 @@ add_library(${PROJECT_NAME}
         src/repeat.cpp
         src/set.cpp
         src/text.cpp
+        src/unicode.cpp
         src/utf8.cpp
 )
 
@@ -46,6 +47,7 @@ if (MUNCH_BUILD_TESTS)
             tests/repeat_test.cpp
             tests/set_test.cpp
             tests/text_test.cpp
+        tests/unicode_test.cpp
             tests/utf8_test.cpp
     )
 

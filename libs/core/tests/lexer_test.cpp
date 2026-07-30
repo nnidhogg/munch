@@ -11,6 +11,7 @@
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/nfa/tools/graphviz.hpp"
 #include "munch/regex/regex.hpp"
+#include "munch/regex/unicode.hpp"
 
 using namespace munch;
 using namespace munch::core;
@@ -1209,4 +1210,43 @@ TEST_F(Lexer_test, State_limit_leaves_reasonable_grammars_untouched)
 
     EXPECT_EQ(token, Token_kind::Identifier);
     EXPECT_EQ(length, 9U);
+}
+
+TEST_F(Lexer_test, Unicode_identifiers_tokenize_through_xid_properties)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Number,
+        Space,
+    };
+
+    Builder_dbg builder;
+
+    // The C-style profile on top of the exact properties: underscore may lead, which XID_Start alone excludes.
+    builder.add_token(
+            concat(choice(text('_'), unicode::xid_start()), kleene(choice(text('_'), unicode::xid_continue()))),
+            Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Number, 1);
+    builder.add_token(plus(any_of(Set{' '})), Token_kind::Space, 1);
+
+    const auto lexer{builder.build()};
+
+    // Greek, Han with a combining-free ASCII tail, an underscore head, and a number: "αβ 漢字_2 _x9 42".
+    const std::string input{"\xCE\xB1\xCE\xB2 \xE6\xBC\xA2\xE5\xAD\x97_2 _x9 42"};
+
+    std::vector<std::pair<Token_kind, std::size_t>> stream;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input,
+            [&stream](const Token_kind token, const std::size_t length) { stream.emplace_back(token, length); })};
+
+    EXPECT_EQ(consumed, input.size());
+
+    const std::vector<std::pair<Token_kind, std::size_t>> expected{
+            {Token_kind::Identifier, 4}, {Token_kind::Space, 1}, {Token_kind::Identifier, 8}, {Token_kind::Space, 1},
+            {Token_kind::Identifier, 3}, {Token_kind::Space, 1}, {Token_kind::Number, 2},
+    };
+
+    EXPECT_EQ(stream, expected);
 }

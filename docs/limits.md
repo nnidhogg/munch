@@ -30,12 +30,15 @@ rejected by construction). The consequences:
 
 - There are no Unicode properties, no case folding, and no normalization. A case-insensitive keyword is spelled out
   (`choice(text("if"), text("IF"))` or a `Set` per position), and input is matched as the bytes it is.
-- Standards-accurate Unicode identifiers (the XID_Start and XID_Continue properties) are a planned addition: helpers
-  generated from the Unicode tables, expanding to `utf8::range` unions the way everything Unicode already does here.
-  They extend the combinator vocabulary without changing anything that exists, so they are deliberately not gating 1.0;
-  until they land, identifier classes beyond ASCII are spelled with `utf8::range` directly.
-- Ill-formed UTF-8 in the input is not an error the engine detects; it is simply bytes no pattern matches, which the
-  `Tokenizer` reports as an unrecognized character at that position.
+- Standards-accurate Unicode identifier classes exist: `unicode::xid_start()` and `unicode::xid_continue()` match
+  the XID_Start and XID_Continue properties, generated from the Unicode Character Database pinned at the version
+  `unicode::version()` reports and expanding through `utf8::ranges` the way everything Unicode does here. They are
+  lexical property matching, nothing more: no normalization, no case folding, no mixed-script or confusable
+  detection, and no language profile — underscore, for instance, is a profile choice spelled
+  `choice(text('_'), unicode::xid_start())` by the caller. Those concerns belong above the lexer, per UAX #31.
+- `utf8::range` never accepts ill-formed UTF-8. The engine itself does not validate input as UTF-8, though: a
+  grammar's other byte-oriented patterns may accept arbitrary bytes, and ill-formed sequences no pattern accepts
+  simply fail to match, which the `Tokenizer` reports as an unrecognized character at that position.
 
 ## **Hard Bounds**
 
