@@ -758,7 +758,7 @@ cmake --install munch/build --prefix /your/prefix
 ```
 
 ```cmake
-find_package(munch 0.2 CONFIG REQUIRED)
+find_package(munch CONFIG REQUIRED)
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE munch::munch)
@@ -861,6 +861,11 @@ munch follows semantic versioning. The stable surface is what this README docume
 `core::Lexer` with `Match`, `tokenize()`, `tokenize_all()`, `is_split_point()`, `chunk_boundaries()`, and
 `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
 arrive in minor versions.
+
+The supported platform is Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests, sanitizes,
+and fuzzes; other platforms may work but carry no promise. Semantic versioning covers source compatibility only. munch
+builds as static libraries meant to be compiled by the consumer, so no ABI stability is promised between any two
+versions.
 
 The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
