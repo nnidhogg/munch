@@ -1145,3 +1145,56 @@ TEST_F(Lexer_test, Split_points_refuse_reentry_through_a_cycle)
     EXPECT_FALSE(lexer.is_split_point('c'));
     EXPECT_FALSE(lexer.is_split_point('a'));
 }
+
+TEST_F(Lexer_test, State_limit_stops_an_exploding_construction)
+{
+    enum class Token_kind : uint8_t
+    {
+        Needle,
+    };
+
+    // The classic exponential case: (a|b)* a (a|b)^12 needs a state per remembered 12-symbol suffix, around 2^12
+    // of them, which is exactly the pathology a caller accepting untrusted token sets must be able to cap.
+    Builder_dbg builder;
+
+    builder.add_token(
+            concat(kleene(any_of(Set{'a', 'b'})), text("a"), exact(any_of(Set{'a', 'b'}), 12)), Token_kind::Needle, 1);
+
+    builder.set_state_limit(256);
+
+    EXPECT_THROW(static_cast<void>(builder.build()), std::runtime_error);
+    EXPECT_THROW(static_cast<void>(builder.diagnose()), std::runtime_error);
+
+    // The same grammar builds once the cap allows its true size.
+    builder.set_state_limit(0);
+
+    const auto lexer{builder.build()};
+
+    const auto [token, length]{lexer.tokenize<Token_kind>(std::string{"a"} + std::string(12, 'b'))};
+
+    ASSERT_TRUE(token.has_value());
+    EXPECT_EQ(length, 13U);
+}
+
+TEST_F(Lexer_test, State_limit_leaves_reasonable_grammars_untouched)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Number,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Number, 1);
+
+    builder.set_state_limit(64);
+
+    const auto lexer{builder.build()};
+
+    const auto [token, length]{lexer.tokenize<Token_kind>(std::string{"counter42"})};
+
+    EXPECT_EQ(token, Token_kind::Identifier);
+    EXPECT_EQ(length, 9U);
+}

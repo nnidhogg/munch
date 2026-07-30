@@ -108,7 +108,7 @@ nfa::Nfa Builder::nfa() const
 
 dfa::Dfa Builder::dfa() const
 {
-    return dfa::minimize(subset_construction(nfa()));
+    return dfa::minimize(subset_construction(nfa(), state_limit_));
 }
 
 Builder::Diagnostics Builder::diagnose() const
@@ -185,6 +185,11 @@ Builder::Diagnostics Builder::diagnose() const
 
             if (!next_states.empty() && visited.insert(next_states).second)
             {
+                if (state_limit_ != 0 && visited.size() > state_limit_)
+                {
+                    throw std::runtime_error{"Determinization exceeded the configured state limit"};
+                }
+
                 nfa_queue.push(next_states);
             }
         });
@@ -219,8 +224,8 @@ nfa::Builder Builder::thompson_construction() const
         return {};
     }
 
-    const auto lower{[](const auto& pattern) {
-        return to_nfa(dfa::minimize(subset_construction(pattern.nfa.build())), pattern.token);
+    const auto lower{[this](const auto& pattern) {
+        return to_nfa(dfa::minimize(subset_construction(pattern.nfa.build(), state_limit_)), pattern.token);
     }};
 
     const auto merge{[&lower](const auto& nfa, const auto& pattern) { return nfa.merge(lower(pattern)); }};
@@ -228,7 +233,7 @@ nfa::Builder Builder::thompson_construction() const
     return std::accumulate(std::next(patterns_.cbegin()), patterns_.cend(), lower(patterns_.front()), merge);
 }
 
-dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)
+dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa, const std::size_t state_limit)
 {
     dfa::Builder dfa;
 
@@ -272,6 +277,11 @@ dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa)
             // A state identifier is only allocated when the state set is new, keeping the identifiers dense.
             if (iterator == nfa_dfa_map.cend())
             {
+                if (state_limit != 0 && nfa_dfa_map.size() >= state_limit)
+                {
+                    throw std::runtime_error{"Determinization exceeded the configured state limit"};
+                }
+
                 iterator = nfa_dfa_map.emplace(next_states, dfa.next_state()).first;
 
                 nfa_queue.push(next_states);

@@ -72,6 +72,16 @@ public:
     [[nodiscard]] Lexer build() const;
 
     /**
+     * @brief Caps how many DFA states determinization may discover before build() and diagnose() throw.
+     *
+     * Subset construction has exponential worst cases, so a caller accepting untrusted token sets needs
+     * construction to fail fast instead of exhausting memory; matching itself needs no such guard, as a compiled
+     * table always runs in linear time. Zero, the default, means unlimited. The compiled table's memory is
+     * bounded by the cap times the number of symbol classes times four bytes per entry.
+     */
+    void set_state_limit(const std::size_t limit) noexcept { state_limit_ = limit; }
+
+    /**
      * @brief Diagnoses the registered grammar; see Diagnostics.
      *
      * Walks the merged automaton once and leaves the builder untouched, so it can be called before build(), after
@@ -95,9 +105,11 @@ protected:
     /**
      * @brief Converts an NFA to a DFA using subset construction.
      * @param nfa The NFA to convert.
+     * @param state_limit The largest number of DFA states to discover before throwing; zero means unlimited.
      * @return The constructed DFA.
+     * @throws std::runtime_error If the state limit is exceeded.
      */
-    [[nodiscard]] static dfa::Dfa subset_construction(const nfa::Nfa& nfa);
+    [[nodiscard]] static dfa::Dfa subset_construction(const nfa::Nfa& nfa, std::size_t state_limit = 0);
 
 private:
     /**
@@ -133,6 +145,11 @@ private:
      * @brief Internal patterns registered through add_token.
      */
     std::vector<Pattern> patterns_;
+
+    /**
+     * @brief The determinization cap set_state_limit() installed; zero means unlimited.
+     */
+    std::size_t state_limit_{0};
 };
 
 } // namespace munch::core

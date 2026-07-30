@@ -38,6 +38,11 @@ rejected by construction). The consequences:
 - The compiled `Simulator` indexes states with `uint32_t`, so a lexer is limited to just under 2^32 DFA states. The
   constructor throws rather than truncate. No realistic token set approaches this; the bound exists so the transition
   table stays cache-resident, which is where the throughput comes from.
+- Determinization has exponential worst cases, and a caller accepting untrusted token sets should cap it:
+  `Builder::set_state_limit()` makes `build()` and `diagnose()` throw once subset construction discovers more states
+  than allowed, so a hostile pattern set fails fast instead of exhausting memory. The default is unlimited. This is
+  the build-time mirror of a guarantee the scan side gives for free: a compiled table cannot be made to backtrack,
+  so no input, however crafted, can slow matching beyond its linear pace.
 - A pattern matching the empty string is legal to build but useless to run: the `Tokenizer` reports a zero-width match
   as an error rather than looping forever at one offset.
 - A `Tokenizer` holds the entire input in memory as one string; there is no chunked or incremental feeding, so inputs
