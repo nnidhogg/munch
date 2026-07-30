@@ -758,7 +758,7 @@ cmake --install munch/build --prefix /your/prefix
 ```
 
 ```cmake
-find_package(munch CONFIG REQUIRED)
+find_package(munch 1.0 CONFIG REQUIRED)
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE munch::munch)
