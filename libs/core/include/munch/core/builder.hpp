@@ -116,6 +116,20 @@ protected:
 
 private:
     /**
+     * @brief Collects the accepting candidates of every reachable determinization subset.
+     *
+     * The traversal is subset_construction()'s own, so diagnose() judges exactly the subsets the build discovers
+     * rather than mirroring the walk with a second implementation. One entry per reachable subset holding at
+     * least one accepting state, in discovery order.
+     * @param nfa The NFA to walk.
+     * @param state_limit The largest number of subsets to discover before throwing; zero means unlimited.
+     * @return The accepting candidate tokens, one list per accepting subset.
+     * @throws State_limit_error If the state limit is exceeded.
+     */
+    [[nodiscard]] static std::vector<std::vector<nfa::Token>> reachable_candidates(
+            const nfa::Nfa& nfa, std::size_t state_limit);
+
+    /**
      * @brief A registered token pattern.
      */
     struct Pattern

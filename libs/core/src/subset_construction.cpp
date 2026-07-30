@@ -3,6 +3,7 @@
 #include <bit>
 #include <boost/container_hash/hash.hpp>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <queue>
 #include <ranges>
@@ -86,9 +87,29 @@ public:
 
     /**
      * @brief Runs the construction and returns the built DFA.
-     * @throws std::runtime_error If a non-zero state limit is exceeded.
+     * @throws munch::core::State_limit_error If a non-zero state limit is exceeded.
      */
-    [[nodiscard]] munch::dfa::Dfa run()
+    [[nodiscard]] munch::dfa::Dfa run() { return walk(false); }
+
+    /**
+     * @brief Runs the construction and returns the accepting candidates of every reachable subset instead.
+     *
+     * The single traversal serves both construction and diagnostics, so diagnostics see exactly the subsets the
+     * build discovers by definition rather than by a mirrored reimplementation; the DFA built along the way is
+     * simply not kept.
+     */
+    [[nodiscard]] std::vector<std::vector<munch::nfa::Token>> candidates()
+    {
+        walk(true);
+
+        return std::move(candidates_);
+    }
+
+private:
+    /**
+     * @brief Runs the subset walk, building the DFA and, when collecting, the candidates of accepting subsets.
+     */
+    munch::dfa::Dfa walk(const bool collect)
     {
         munch::dfa::Builder dfa;
 
@@ -133,6 +154,24 @@ public:
             if (const auto token{accept_of(members)}; token)
             {
                 dfa.add_accept_state(dfa_state, munch::dfa::Token{token->id()});
+            }
+
+            if (collect)
+            {
+                std::vector<munch::nfa::Token> candidates;
+
+                for (const auto member : members)
+                {
+                    if (accepts_[member])
+                    {
+                        candidates.push_back(*accepts_[member]);
+                    }
+                }
+
+                if (!candidates.empty())
+                {
+                    candidates_.push_back(std::move(candidates));
+                }
             }
 
             symbols.clear();
@@ -195,7 +234,6 @@ public:
         return std::move(dfa).build();
     }
 
-private:
     /**
      * @brief A set of NFA states as one bit per dense state index.
      */
@@ -211,8 +249,14 @@ private:
      */
     struct Move
     {
+        /**
+         * @brief The consumed symbol, as a table row index.
+         */
         unsigned char symbol;
 
+        /**
+         * @brief The states the symbol leads to.
+         */
         Members_t targets;
     };
 
@@ -294,19 +338,45 @@ private:
         return best;
     }
 
+    /**
+     * @brief The determinization cap; zero means unlimited.
+     */
     std::size_t state_limit_;
 
+    /**
+     * @brief The number of 64-bit words a state set occupies.
+     */
     std::size_t words_;
 
+    /**
+     * @brief The NFA's initial state as a dense index.
+     */
     std::uint32_t init_;
 
+    /**
+     * @brief The symbol transitions of each state.
+     */
     std::vector<std::vector<Move>> moves_;
 
+    /**
+     * @brief The epsilon targets of each state.
+     */
     std::vector<Members_t> epsilon_;
 
+    /**
+     * @brief The memoized epsilon closures; see closure_of().
+     */
     std::vector<Members_t> closures_;
 
+    /**
+     * @brief The accepting token of each state, if any.
+     */
     std::vector<std::optional<munch::nfa::Token>> accepts_;
+
+    /**
+     * @brief The accepting candidates collected per subset when walking for candidates().
+     */
+    std::vector<std::vector<munch::nfa::Token>> candidates_;
 };
 
 } // namespace
@@ -316,6 +386,11 @@ namespace munch::core
 dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa, const std::size_t state_limit)
 {
     return Determinizer{nfa, state_limit}.run();
+}
+
+std::vector<std::vector<nfa::Token>> Builder::reachable_candidates(const nfa::Nfa& nfa, const std::size_t state_limit)
+{
+    return Determinizer{nfa, state_limit}.candidates();
 }
 
 } // namespace munch::core
