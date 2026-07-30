@@ -1,19 +1,20 @@
 cmake_minimum_required(VERSION 3.20)
 project(munch VERSION 0.3.1)
 
-if (NOT CMAKE_BUILD_TYPE)
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(MUNCH_IS_TOP_LEVEL ON)
+else ()
+    set(MUNCH_IS_TOP_LEVEL OFF)
+endif ()
+
+# Defaulting the build type is a top-level convenience only; a parent project's choice is its own.
+if (MUNCH_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif ()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    set(MUNCH_IS_TOP_LEVEL ON)
-else ()
-    set(MUNCH_IS_TOP_LEVEL OFF)
-endif ()
 
 # GCC-style flags; CI builds and tests against GCC and Clang on Linux (see .github/workflows/ci.yml). Threading
 # is carried by Threads::Threads on the targets that need it, not by a global flag.
