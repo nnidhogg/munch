@@ -5,9 +5,11 @@
 #include <numeric>
 #include <queue>
 #include <ranges>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/minimize.hpp"
@@ -107,6 +109,102 @@ nfa::Nfa Builder::nfa() const
 dfa::Dfa Builder::dfa() const
 {
     return dfa::minimize(subset_construction(nfa()));
+}
+
+Builder::Diagnostics Builder::diagnose() const
+{
+    const auto merged{nfa()};
+
+    const auto symbol_table{build_symbol_table(merged)};
+
+    const auto initial_states{merged.epsilon_closure({merged.init_state()})};
+
+    std::unordered_set<nfa::Nfa::States_t, Hash> visited{initial_states};
+
+    std::queue<nfa::Nfa::States_t> nfa_queue{{initial_states}};
+
+    std::set<std::size_t> winners;
+
+    std::set<std::pair<std::size_t, std::size_t>> ties;
+
+    // The walk mirrors subset_construction(): it visits exactly the reachable state sets, which is what makes
+    // absence a proof. A token no reachable set awards is dead for every input there is.
+    while (!nfa_queue.empty())
+    {
+        const auto nfa_states{nfa_queue.front()};
+
+        nfa_queue.pop();
+
+        std::vector<nfa::Token> candidates;
+
+        for (const auto state : nfa_states)
+        {
+            const auto iterator{merged.accept_states().find(state)};
+
+            if (iterator != merged.accept_states().cend() && iterator->second)
+            {
+                candidates.push_back(*iterator->second);
+            }
+        }
+
+        if (!candidates.empty())
+        {
+            const auto winner{std::ranges::min(candidates, [](const auto& lhs, const auto& rhs) { return lhs < rhs; })};
+
+            winners.insert(winner.id());
+
+            // Every distinct identifier sharing the winner's priority ties with it: the scan still picks one
+            // deterministically, but by registered value rather than by anything the grammar said.
+            std::set<std::size_t> minimal_ids;
+
+            for (const auto& candidate : candidates)
+            {
+                if (candidate.priority() == winner.priority())
+                {
+                    minimal_ids.insert(candidate.id());
+                }
+            }
+
+            for (auto first{minimal_ids.cbegin()}; first != minimal_ids.cend(); ++first)
+            {
+                for (auto second{std::next(first)}; second != minimal_ids.cend(); ++second)
+                {
+                    ties.emplace(*first, *second);
+                }
+            }
+        }
+
+        const auto filter{[&symbol_table](const auto state) { return symbol_table.contains(state); }};
+
+        const auto transform{[&symbol_table](const auto state) { return symbol_table.at(state); }};
+
+        auto view{nfa_states | std::views::filter(filter) | std::views::transform(transform) | std::views::join};
+
+        std::ranges::for_each(view, [&](const auto symbol) {
+            const auto next_states{merged.advance(nfa_states, symbol)};
+
+            if (!next_states.empty() && visited.insert(next_states).second)
+            {
+                nfa_queue.push(next_states);
+            }
+        });
+    }
+
+    Diagnostics result;
+
+    for (const auto& pattern : patterns_)
+    {
+        const auto id{pattern.token.id()};
+
+        if (!winners.contains(id) && !std::ranges::contains(result.dead_tokens, id))
+        {
+            result.dead_tokens.push_back(id);
+        }
+    }
+
+    result.equal_priority_ties.assign(ties.cbegin(), ties.cend());
+
+    return result;
 }
 
 void Builder::add_token(const regex::Regex& regex, const nfa::Token& token)

@@ -925,3 +925,180 @@ TEST_F(Lexer_test, Parallel_tokenization_reports_a_rejected_chunk)
 
     EXPECT_EQ(boundaries[consumed.size() - 1] + consumed.back(), poison);
 }
+
+TEST_F(Lexer_test, Diagnose_reports_shadowed_keywords_as_dead)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Keyword_if,
+        Whitespace,
+    };
+
+    Builder_dbg builder;
+
+    // The identifier pattern outranks the keyword, so "if" always tokenizes as an identifier and the keyword can
+    // never win any input.
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(text("if"), Token_kind::Keyword_if, 2);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_EQ(diagnostics.dead_tokens, (std::vector<std::size_t>{static_cast<std::size_t>(Token_kind::Keyword_if)}));
+    EXPECT_TRUE(diagnostics.equal_priority_ties.empty());
+}
+
+TEST_F(Lexer_test, Diagnose_passes_a_healthy_grammar)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Keyword_if,
+        Number,
+        Whitespace,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(text("if"), Token_kind::Keyword_if, 1);
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Number, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_TRUE(diagnostics.dead_tokens.empty());
+    EXPECT_TRUE(diagnostics.equal_priority_ties.empty());
+}
+
+TEST_F(Lexer_test, Diagnose_reports_equal_priority_ties)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Keyword_if,
+    };
+
+    Builder_dbg builder;
+
+    // Both accept the spelling "if" at the same priority, so the build breaks the tie by registered value: the
+    // identifier wins, which also leaves the keyword dead.
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(text("if"), Token_kind::Keyword_if, 1);
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_EQ(
+            diagnostics.equal_priority_ties, (std::vector<std::pair<std::size_t, std::size_t>>{
+                                                     {static_cast<std::size_t>(Token_kind::Identifier),
+                                                      static_cast<std::size_t>(Token_kind::Keyword_if)}}));
+    EXPECT_EQ(diagnostics.dead_tokens, (std::vector<std::size_t>{static_cast<std::size_t>(Token_kind::Keyword_if)}));
+}
+
+TEST_F(Lexer_test, Diagnose_reports_a_tie_that_leaves_both_tokens_alive)
+{
+    enum class Token_kind : uint8_t
+    {
+        Keyword_if,
+        Identifier,
+    };
+
+    Builder_dbg builder;
+
+    // Reversed registered values: the keyword wins its own spelling by the tie break, every other identifier
+    // spelling still belongs to the identifier, so both stay alive but the tie is still an accident to report.
+    builder.add_token(text("if"), Token_kind::Keyword_if, 1);
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_EQ(
+            diagnostics.equal_priority_ties, (std::vector<std::pair<std::size_t, std::size_t>>{
+                                                     {static_cast<std::size_t>(Token_kind::Keyword_if),
+                                                      static_cast<std::size_t>(Token_kind::Identifier)}}));
+    EXPECT_TRUE(diagnostics.dead_tokens.empty());
+}
+
+TEST_F(Lexer_test, Diagnose_ignores_equal_priorities_over_disjoint_languages)
+{
+    enum class Token_kind : uint8_t
+    {
+        Number,
+        Semicolon,
+    };
+
+    Builder_dbg builder;
+
+    // Equal priorities are only a problem when some input could go either way; disjoint token languages never
+    // meet in an accepting state set.
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Number, 1);
+    builder.add_token(text(";"), Token_kind::Semicolon, 1);
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_TRUE(diagnostics.dead_tokens.empty());
+    EXPECT_TRUE(diagnostics.equal_priority_ties.empty());
+}
+
+TEST_F(Lexer_test, Diagnose_accepts_an_empty_builder)
+{
+    const Builder_dbg builder;
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_TRUE(diagnostics.dead_tokens.empty());
+    EXPECT_TRUE(diagnostics.equal_priority_ties.empty());
+}
+
+TEST_F(Lexer_test, Diagnose_treats_liveness_per_token_not_per_pattern)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Keyword,
+    };
+
+    Builder_dbg builder;
+
+    // The keyword is registered twice: the "if" pattern is fully shadowed by the identifier, the ";" pattern is
+    // not. Liveness belongs to the token value, so one winning pattern keeps the token alive.
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(text("if"), Token_kind::Keyword, 2);
+    builder.add_token(text(";"), Token_kind::Keyword, 2);
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_TRUE(diagnostics.dead_tokens.empty());
+    EXPECT_TRUE(diagnostics.equal_priority_ties.empty());
+}
+
+TEST_F(Lexer_test, Diagnose_reports_every_pair_of_a_three_way_tie)
+{
+    enum class Token_kind : uint8_t
+    {
+        First,
+        Second,
+        Third,
+    };
+
+    Builder_dbg builder;
+
+    // All three accept exactly ";" at the same priority, so every pair of the three collides.
+    builder.add_token(text(";"), Token_kind::First, 1);
+    builder.add_token(text(";"), Token_kind::Second, 1);
+    builder.add_token(text(";"), Token_kind::Third, 1);
+
+    const auto diagnostics{builder.diagnose()};
+
+    const std::vector<std::pair<std::size_t, std::size_t>> expected{
+            {static_cast<std::size_t>(Token_kind::First), static_cast<std::size_t>(Token_kind::Second)},
+            {static_cast<std::size_t>(Token_kind::First), static_cast<std::size_t>(Token_kind::Third)},
+            {static_cast<std::size_t>(Token_kind::Second), static_cast<std::size_t>(Token_kind::Third)}};
+
+    EXPECT_EQ(diagnostics.equal_priority_ties, expected);
+    EXPECT_EQ(
+            diagnostics.dead_tokens,
+            (std::vector<std::size_t>{
+                    static_cast<std::size_t>(Token_kind::Second), static_cast<std::size_t>(Token_kind::Third)}));
+}

@@ -424,6 +424,25 @@ After calling `build()`:
 - the returned lexer can be reused safely and efficiently,
 - lexers already built are unaffected by later changes to the builder.
 
+##### **diagnose ()**
+
+```cpp
+const auto diagnostics{builder.diagnose()};
+```
+
+Certifies the health of the registered grammar from the merged automaton, without building a lexer. Two findings are
+reported, both as registered token values:
+
+- `dead_tokens`: tokens that never win any input. The classic cause is a keyword registered at a worse priority than
+  the identifier pattern, which then owns the keyword's own spelling; every input still tokenizes, so nothing else
+  ever reveals the mistake.
+- `equal_priority_ties`: pairs of distinct tokens that accept the same input at the same priority. The build resolves
+  such ties deterministically but arbitrarily, by the lower registered value, so a tie usually marks a priority the
+  grammar author never actually decided.
+
+Like `is_split_point()`, these are properties certified from the automaton rather than heuristics: a token reported
+dead is provably dead for every input there is.
+
 ##### **Example**
 
 ```cpp

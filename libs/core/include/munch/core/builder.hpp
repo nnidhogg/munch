@@ -2,7 +2,9 @@
 #define MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_BUILDER_HPP
 
 #include <concepts>
+#include <cstddef>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "munch/core/lexer.hpp"
@@ -25,23 +27,30 @@ namespace munch::core
  */
 class Builder
 {
+public:
     /**
-     * @brief A registered token pattern.
+     * @brief Certified grammar diagnostics, computed from the merged automaton without building a Lexer.
+     *
+     * Subset construction only discovers reachable inputs, so a registered token missing from every accepting
+     * state set is dead: no input ever tokenizes as it. The classic cause is a keyword registered at a worse
+     * priority than the identifier pattern, which then wins the keyword's own spelling. A tie is two distinct
+     * tokens accepting the same input at the same priority; the build resolves it deterministically but
+     * arbitrarily, by the lower registered value, so a tie usually marks a priority the grammar author never
+     * decided.
      */
-    struct Pattern
+    struct Diagnostics
     {
         /**
-         * @brief The NFA recognizing the pattern.
+         * @brief Registered token values that never win any input, in registration order.
          */
-        nfa::Builder nfa;
+        std::vector<std::size_t> dead_tokens;
 
         /**
-         * @brief The token accepted by the pattern.
+         * @brief Pairs of token values accepting the same input at the same priority, each pair ascending.
          */
-        nfa::Token token;
+        std::vector<std::pair<std::size_t, std::size_t>> equal_priority_ties;
     };
 
-public:
     /**
      * @brief Registers a token with a regex pattern and priority.
      * @tparam T The token type (enum or integral).
@@ -61,6 +70,14 @@ public:
      * @return The constructed Lexer object.
      */
     [[nodiscard]] Lexer build() const;
+
+    /**
+     * @brief Diagnoses the registered grammar; see Diagnostics.
+     *
+     * Walks the merged automaton once and leaves the builder untouched, so it can be called before build(), after
+     * it, or not at all.
+     */
+    [[nodiscard]] Diagnostics diagnose() const;
 
 protected:
     /**
@@ -83,6 +100,22 @@ protected:
     [[nodiscard]] static dfa::Dfa subset_construction(const nfa::Nfa& nfa);
 
 private:
+    /**
+     * @brief A registered token pattern.
+     */
+    struct Pattern
+    {
+        /**
+         * @brief The NFA recognizing the pattern.
+         */
+        nfa::Builder nfa;
+
+        /**
+         * @brief The token accepted by the pattern.
+         */
+        nfa::Token token;
+    };
+
     /**
      * @brief Internal method to register a token with a regex and NFA token.
      * @param regex The regex pattern.
