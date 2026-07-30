@@ -176,6 +176,85 @@ jobs:
       - name: Verify the checked-in tables match
         run: git diff --exit-code libs/regex/src/xid_ranges.inc
 
+  install-consumer:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Build and install munch
+        run: |
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_TESTS=OFF \
+                -DMUNCH_BUILD_BENCHMARK=OFF
+          cmake --build build
+          cmake --install build --prefix "$PWD/prefix"
+
+      # The consumer lives outside the source tree and sees only the installed package, which is what proves the
+      # export set, the config files, and header self-containment.
+      - name: Compile and run a consumer of the installed package
+        run: |
+          mkdir -p consumer
+          cat > consumer/CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.20)
+          project(consumer CXX)
+
+          set(CMAKE_CXX_STANDARD 23)
+          set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+          find_package(munch CONFIG REQUIRED)
+
+          add_executable(consumer main.cpp)
+
+          target_link_libraries(consumer PRIVATE munch::munch)
+          EOF
+          cat > consumer/main.cpp <<'EOF'
+          #include <cstddef>
+          #include <string>
+
+          #include <munch/core/builder.hpp>
+          #include <munch/regex/regex.hpp>
+          #include <munch/regex/set.hpp>
+          #include <munch/regex/unicode.hpp>
+
+          int main()
+          {
+              using namespace munch::regex;
+
+              enum class Token : std::size_t
+              {
+                  Word,
+                  Space,
+              };
+
+              munch::core::Builder builder;
+
+              builder.add_token(concat(unicode::xid_start(), kleene(unicode::xid_continue())), Token::Word, 1);
+              builder.add_token(plus(any_of(Set{' '})), Token::Space, 1);
+
+              const auto lexer{builder.build()};
+
+              const std::string input{"hello \xCE\xBB world"};
+
+              std::size_t count{0};
+
+              const auto consumed{lexer.tokenize_all<Token>(input, [&count](Token, std::size_t) { ++count; })};
+
+              return consumed == input.size() && count == 5 ? 0 : 1;
+          }
+          EOF
+          cmake -G Ninja -S consumer -B consumer/build -DCMAKE_PREFIX_PATH="$PWD/prefix"
+          cmake --build consumer/build
+          ./consumer/build/consumer
+
   build-and-test:
     runs-on: ubuntu-24.04
 
