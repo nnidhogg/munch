@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -1278,5 +1279,137 @@ TEST_F(Lexer_test, Xid_identifiers_compete_with_keywords_and_reject_ill_formed_i
 
         EXPECT_FALSE(token.has_value()) << input;
         EXPECT_EQ(length, 0U) << input;
+    }
+}
+
+TEST_F(Lexer_test, Xid_membership_matches_the_generated_tables_at_every_boundary)
+{
+    enum class Token_kind : uint8_t
+    {
+        Point,
+    };
+
+    struct Range
+    {
+        char32_t first;
+        char32_t last;
+    };
+
+    // The checked-in tables are the oracle: every interval edge and its outside neighbors go through the full
+    // pipeline, covering exactly the points where membership can flip in unioning, UTF-8 expansion, lowering,
+    // determinization, or minimization.
+    const auto load{[](const std::string& name) {
+        std::ifstream file{std::string{SOURCE_DIR} + "/libs/regex/src/xid_ranges.inc"};
+
+        std::vector<Range> ranges;
+
+        std::string line;
+
+        bool inside{false};
+
+        while (std::getline(file, line))
+        {
+            if (!inside)
+            {
+                inside = line.find(name) != std::string::npos;
+
+                continue;
+            }
+
+            unsigned long first{};
+
+            unsigned long last{};
+
+            if (std::sscanf(line.c_str(), " {.first = 0x%lX, .last = 0x%lX}", &first, &last) == 2)
+            {
+                ranges.push_back({static_cast<char32_t>(first), static_cast<char32_t>(last)});
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return ranges;
+    }};
+
+    const auto member{[](const std::vector<Range>& ranges, const char32_t point) {
+        for (const auto& range : ranges)
+        {
+            if (point >= range.first && point <= range.last)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }};
+
+    const auto encode{[](const char32_t code_point) {
+        std::string bytes;
+
+        if (code_point <= 0x7F)
+        {
+            bytes += static_cast<char>(code_point);
+        }
+        else if (code_point <= 0x7FF)
+        {
+            bytes += static_cast<char>(0xC0 | (code_point >> 6U));
+            bytes += static_cast<char>(0x80 | (code_point & 0x3FU));
+        }
+        else if (code_point <= 0xFFFF)
+        {
+            bytes += static_cast<char>(0xE0 | (code_point >> 12U));
+            bytes += static_cast<char>(0x80 | ((code_point >> 6U) & 0x3FU));
+            bytes += static_cast<char>(0x80 | (code_point & 0x3FU));
+        }
+        else
+        {
+            bytes += static_cast<char>(0xF0 | (code_point >> 18U));
+            bytes += static_cast<char>(0x80 | ((code_point >> 12U) & 0x3FU));
+            bytes += static_cast<char>(0x80 | ((code_point >> 6U) & 0x3FU));
+            bytes += static_cast<char>(0x80 | (code_point & 0x3FU));
+        }
+
+        return bytes;
+    }};
+
+    const std::pair<const char*, regex::Regex (*)()> properties[]{
+            {"xid_start_ranges", &unicode::xid_start},
+            {"xid_continue_ranges", &unicode::xid_continue},
+    };
+
+    for (const auto& [name, property] : properties)
+    {
+        const auto ranges{load(name)};
+
+        ASSERT_GT(ranges.size(), 500U) << name;
+
+        Builder_dbg builder;
+
+        builder.add_token(property(), Token_kind::Point, 1);
+
+        const auto lexer{builder.build()};
+
+        for (const auto& range : ranges)
+        {
+            for (const auto probe :
+                 {range.first, range.last, static_cast<char32_t>(range.first - 1),
+                  static_cast<char32_t>(range.last + 1)})
+            {
+                if (probe > 0x10FFFF || (probe >= 0xD800 && probe <= 0xDFFF))
+                {
+                    continue;
+                }
+
+                const auto bytes{encode(probe)};
+
+                const auto [token, length]{lexer.tokenize<Token_kind>(bytes)};
+
+                const auto matched{token.has_value() && length == bytes.size()};
+
+                EXPECT_EQ(matched, member(ranges, probe)) << name << " U+" << std::hex << static_cast<unsigned>(probe);
+            }
+        }
     }
 }
