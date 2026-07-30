@@ -320,8 +320,7 @@ munch::core::Lexer build_xid_lexer()
     builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 2);
 
     builder.add_token(
-            concat(choice(text('_'), unicode::xid_start()), kleene(choice(text('_'), unicode::xid_continue()))),
-            Token::identifier, 2);
+            concat(choice(text('_'), unicode::xid_start()), kleene(unicode::xid_continue())), Token::identifier, 2);
 
     builder.add_token(plus(any_of(Set::digits())), Token::number, 2);
 
@@ -351,8 +350,7 @@ void measure_xid_build(const int passes)
     Staged_builder builder;
 
     builder.add_token(
-            concat(choice(text('_'), unicode::xid_start()), kleene(choice(text('_'), unicode::xid_continue()))),
-            Token::identifier, 2);
+            concat(choice(text('_'), unicode::xid_start()), kleene(unicode::xid_continue())), Token::identifier, 2);
 
     builder.add_token(patterns::decimal_integer(), Token::number, 1);
 

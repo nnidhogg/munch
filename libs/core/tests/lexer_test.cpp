@@ -1225,8 +1225,8 @@ TEST_F(Lexer_test, Unicode_identifiers_tokenize_through_xid_properties)
 
     // The C-style profile on top of the exact properties: underscore may lead, which XID_Start alone excludes.
     builder.add_token(
-            concat(choice(text('_'), unicode::xid_start()), kleene(choice(text('_'), unicode::xid_continue()))),
-            Token_kind::Identifier, 1);
+            concat(choice(text('_'), unicode::xid_start()), kleene(unicode::xid_continue())), Token_kind::Identifier,
+            1);
     builder.add_token(plus(any_of(Set::digits())), Token_kind::Number, 1);
     builder.add_token(plus(any_of(Set{' '})), Token_kind::Space, 1);
 
@@ -1249,4 +1249,34 @@ TEST_F(Lexer_test, Unicode_identifiers_tokenize_through_xid_properties)
     };
 
     EXPECT_EQ(stream, expected);
+}
+
+TEST_F(Lexer_test, Xid_identifiers_compete_with_keywords_and_reject_ill_formed_input)
+{
+    enum class Token_kind : uint8_t
+    {
+        Keyword,
+        Identifier,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(text("if"), Token_kind::Keyword, 1);
+    builder.add_token(concat(unicode::xid_start(), kleene(unicode::xid_continue())), Token_kind::Identifier, 2);
+
+    const auto lexer{builder.build()};
+
+    // The keyword's own spelling wins on priority; one more code point and the identifier takes over.
+    EXPECT_EQ(lexer.tokenize<Token_kind>(std::string{"if"}).token, Token_kind::Keyword);
+    EXPECT_EQ(lexer.tokenize<Token_kind>(std::string{"if\xCE\xBB"}).token, Token_kind::Identifier);
+
+    // Ill-formed UTF-8 never matches an XID class: a stray continuation byte, an overlong encoding, and a
+    // truncated sequence all fail at offset zero rather than tokenize as identifiers.
+    for (const std::string input : {"\x80", "\xC0\xAF", "\xE6\xBC"})
+    {
+        const auto [token, length]{lexer.tokenize<Token_kind>(input)};
+
+        EXPECT_FALSE(token.has_value()) << input;
+        EXPECT_EQ(length, 0U) << input;
+    }
 }
