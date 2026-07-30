@@ -74,10 +74,12 @@ public:
     /**
      * @brief Caps how many DFA states determinization may discover before build() and diagnose() throw.
      *
-     * Subset construction has exponential worst cases, so a caller accepting untrusted token sets needs
-     * construction to fail fast instead of exhausting memory; matching itself needs no such guard, as a compiled
-     * table always runs in linear time. Zero, the default, means unlimited. The compiled table's memory is
-     * bounded by the cap times the number of symbol classes times four bytes per entry.
+     * Subset construction has exponential worst cases, so a caller accepting untrusted token sets should cap the
+     * states it may discover; matching itself needs no such guard, as a compiled table always runs in linear
+     * time. Zero, the default, means unlimited. This caps determinization only: regex tree size, NFA expansion
+     * from large repetition counts, and the number of registered patterns are the caller's to bound. The dominant
+     * allocation, the transition table, stays within the cap times the number of symbol classes times four bytes
+     * per entry.
      */
     void set_state_limit(const std::size_t limit) noexcept { state_limit_ = limit; }
 

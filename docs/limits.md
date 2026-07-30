@@ -30,6 +30,10 @@ rejected by construction). The consequences:
 
 - There are no Unicode properties, no case folding, and no normalization. A case-insensitive keyword is spelled out
   (`choice(text("if"), text("IF"))` or a `Set` per position), and input is matched as the bytes it is.
+- Standards-accurate Unicode identifiers (the XID_Start and XID_Continue properties) are a planned addition: helpers
+  generated from the Unicode tables, expanding to `utf8::range` unions the way everything Unicode already does here.
+  They extend the combinator vocabulary without changing anything that exists, so they are deliberately not gating 1.0;
+  until they land, identifier classes beyond ASCII are spelled with `utf8::range` directly.
 - Ill-formed UTF-8 in the input is not an error the engine detects; it is simply bytes no pattern matches, which the
   `Tokenizer` reports as an unrecognized character at that position.
 
@@ -40,9 +44,11 @@ rejected by construction). The consequences:
   table stays cache-resident, which is where the throughput comes from.
 - Determinization has exponential worst cases, and a caller accepting untrusted token sets should cap it:
   `Builder::set_state_limit()` makes `build()` and `diagnose()` throw once subset construction discovers more states
-  than allowed, so a hostile pattern set fails fast instead of exhausting memory. The default is unlimited. This is
-  the build-time mirror of a guarantee the scan side gives for free: a compiled table cannot be made to backtrack,
-  so no input, however crafted, can slow matching beyond its linear pace.
+  than allowed. It is specifically a DFA state cap, not a complete construction sandbox: regex tree size, NFA expansion
+  (a huge `exact()` count builds its NFA before any limit is consulted), and the number of registered patterns are not
+  bounded by it, and the transition table it indirectly bounds is the dominant but not the only allocation. The default
+  is unlimited. Matching itself needs no such guard: a compiled table cannot be made to backtrack, so no input, however
+  crafted, can slow scanning beyond its linear pace.
 - A pattern matching the empty string is legal to build but useless to run: the `Tokenizer` reports a zero-width match
   as an error rather than looping forever at one offset.
 - A `Tokenizer` holds the entire input in memory as one string; there is no chunked or incremental feeding, so inputs
@@ -55,10 +61,10 @@ rejected by construction). The consequences:
 - A `core::Lexer` is immutable after `Builder::build()` and safe to share across threads; `tokenize()` is `const`
   and touches no shared mutable state.
 - `tokenize_all_parallel()` spawns one thread per chunk and joins them all before returning. The sink is invoked in
-  input order within a chunk but concurrently across chunks, so it must tolerate concurrent calls for different
-  chunk indices; per-chunk state indexed by the chunk achieves that without locking, and hot per-chunk accumulators
-  belong on their own cache lines. There is no early-stop form, and a token set that certifies no split points
-  yields a single chunk, i.e. the serial scan on the calling thread.
+  input order within a chunk but concurrently across chunks, so it must tolerate concurrent calls for different chunk
+  indices; per-chunk state indexed by the chunk achieves that without locking, and hot per-chunk accumulators belong on
+  their own cache lines. There is no early-stop form, and a token set that certifies no split points yields a single
+  chunk, i.e. the serial scan on the calling thread.
 - A `Tokenizer` is a stateful cursor and is not thread-safe. Use one per thread, or one per input.
 - `Token::lexeme()` is a `string_view` into the owning `Tokenizer`'s buffer, invalidated by `load()` or by the
   `Tokenizer`'s destruction. Copy it to a `std::string` if the token outlives either.
@@ -68,13 +74,13 @@ rejected by construction). The consequences:
 ## **Construction Cost**
 
 `Builder::build()` runs the whole pipeline, so it is milliseconds where matching is nanoseconds: the benchmark's
-keyword-scale token set, 143 patterns covering 100 keywords with identifier, literal, operator, and punctuation
-forms, builds in about 34 ms into a 251-state minimal DFA on the README's reference machine
+keyword-scale token set, 143 patterns covering 100 keywords with identifier, literal, operator, and punctuation forms,
+builds in about 34 ms into a 251-state minimal DFA on the README's reference machine
 (`./build/tools/benchmark/munch_benchmark` reports it as `build/keywords`), roughly doubling when identifiers admit
-every non-ASCII code point through `utf8::range`. Compiling the tables out of the finished DFA contributes less
-than a tenth of a millisecond of that; the cost is determinization, not the Simulator. It is a one-time cost. Build
-the lexer once and reuse it across inputs and threads; building per input or per request is a design mistake the
-library does not try to make cheap.
+every non-ASCII code point through `utf8::range`. Compiling the tables out of the finished DFA contributes less than a
+tenth of a millisecond of that; the cost is determinization, not the Simulator. It is a one-time cost. Build the lexer
+once and reuse it across inputs and threads; building per input or per request is a design mistake the library does not
+try to make cheap.
 
 ## **The Escape Hatches**
 

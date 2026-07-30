@@ -125,9 +125,10 @@ The design rationale, i.e. why a library this small outruns engines orders of ma
 [docs/performance.md](docs/performance.md); the architectural decisions behind it are collected in
 [docs/design.md](docs/design.md).
 
-Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2 on an Intel i9-12900K) over generated pseudo-code.
-Every scenario reports its best, median, and worst pass: the best estimates the least-interrupted cost of the work,
-and the spread to the worst is the interference the machine added.
+Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2 on an Intel i9-12900K) over generated pseudo-code. Every
+scenario reports its best, median, and worst pass: the best estimates the least-interrupted cost of the work, and the
+spread to the worst is the run-to-run variability, system interference plus, for the threaded scenarios, thread creation
+and scheduling.
 
 ```
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -149,10 +150,10 @@ chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3865.1, median 3392.1
 
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
 `tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver,
-identifiers containing UTF-8 code points matched through byte expansion, the keyword-scale construction cost, and
-the parallel chunked scans at certified split points on two, four, and eight threads. Inputs are fixed-seed and
-deterministic, so runs are comparable across changes. Numbers depend on the machine and the token set, and WSL2
-adds visible run-to-run spread, so rerun the benchmark on your own hardware and language before citing them.
+identifiers containing UTF-8 code points matched through byte expansion, the keyword-scale construction cost, and the
+parallel chunked scans at certified split points on two, four, and eight threads. Inputs are fixed-seed and
+deterministic, so runs are comparable across changes. Numbers depend on the machine and the token set, and WSL2 adds
+visible run-to-run spread, so rerun the benchmark on your own hardware and language before citing them.
 
 ### **Comparison with Other Engines**
 
@@ -215,11 +216,11 @@ regex-automata-raw 16.0 MiB, 4755600 tokens, 15 passes: best 399.1, median 392.8
 
 The engines fall into three groups, and each group is in the comparison to answer a different question.
 
-**The same class: lexers constructed at run time.** These share munch's contract, a token set supplied as data while
-the program runs, so they are the alternatives munch directly competes with, and the group the claim of fastest in
-its class is measured against. regex-automata appears twice deliberately: once through its search API as a user
-would call it, and once steelmanned through its low-level automaton walk, so the claim holds against the best the
-library can do rather than its friendliest entry point.
+**The same class: lexers constructed at run time.** These share munch's contract, a token set supplied as data while the
+program runs, so they are the alternatives munch directly competes with, and the group the claim of fastest in its class
+is measured against. regex-automata appears twice deliberately: once through its search API as a user would call it, and
+once steelmanned through its low-level automaton walk, so the claim holds against the best the library can do rather
+than its friendliest entry point.
 
 | Engine                 | Version   | Matching approach                       | dense | source |
 |------------------------|-----------|-----------------------------------------|------:|-------:|
@@ -228,16 +229,15 @@ library can do rather than its friendliest entry point.
 | lexertl                | 652435f   | rules compiled to a DFA                 |   176 |    224 |
 | `regex-automata`       | 0.4       | dense DFA through its search API        |   168 |    222 |
 
-**The class above: compile-time code generation.** These freeze the token set at build time and emit code shaped
-like it, the one advantage a runtime-built table cannot take, so this group does not measure a competition munch can
-enter; it measures the price of munch's flexibility. On this machine that price has ranged across measurement
-sessions from under ten percent to roughly a quarter against logos on dense input, and from forty to sixty percent
-on source-shaped input: gaps between separately built binaries move with machine state, which the best-to-worst
-spread in the raw output makes visible. Membership in this class is not sufficient to
-win, though: munch outruns CTRE outright on the dense corpus, because CTRE compiles the regex structure into code
-and still resolves the alternation between token kinds per token, while munch's determinized table erased the
-alternation before the first byte arrived. Only when longer tokens let generated code consume multi-byte runs does
-CTRE pull ahead.
+**The class above: compile-time code generation.** These freeze the token set at build time and emit code shaped like
+it, the one advantage a runtime-built table cannot take, so this group does not measure a competition munch can enter;
+it measures the price of munch's flexibility. On this machine that price has ranged across measurement sessions from
+under ten percent to roughly a quarter against logos on dense input, and from forty to sixty percent on source-shaped
+input: gaps between separately built binaries move with machine state, which the best-to-worst spread in the raw output
+makes visible. Membership in this class is not sufficient to win, though: munch outruns CTRE outright on the dense
+corpus, because CTRE compiles the regex structure into code and still resolves the alternation between token kinds per
+token, while munch's determinized table erased the alternation before the first byte arrived. Only when longer tokens
+let generated code consume multi-byte runs does CTRE pull ahead.
 
 | Engine  | Version   | Matching approach                       | dense | source |
 |---------|-----------|-----------------------------------------|------:|-------:|
@@ -245,10 +245,10 @@ CTRE pull ahead.
 | `munch` | this repo | table-compiled minimal DFA, single pass |   577 |    564 |
 | CTRE    | 3.9.0     | matcher generated from the regex        |   421 |    575 |
 
-**The industry defaults: general-purpose regex engines.** This is what a codebase typically reaches for when it
-needs a tokenizer without adopting a lexer library, so the group measures what that convenience costs. The gap is
-not a defect in these engines: they solve a far broader problem, searching, captures, backreferences, and they pay
-for that generality on a workload of anchored matches every couple of bytes.
+**The industry defaults: general-purpose regex engines.** This is what a codebase typically reaches for when it needs a
+tokenizer without adopting a lexer library, so the group measures what that convenience costs. The gap is not a defect
+in these engines: they solve a far broader problem, searching, captures, backreferences, and they pay for that
+generality on a workload of anchored matches every couple of bytes.
 
 | Engine       | Version        | Matching approach                       | dense | source |
 |--------------|----------------|-----------------------------------------|------:|-------:|
@@ -447,15 +447,15 @@ const auto diagnostics{builder.diagnose()};
 Certifies the health of the registered grammar from the merged automaton, without building a lexer. Two findings are
 reported, both as registered token values:
 
-- `dead_tokens`: tokens that never win any input. The classic cause is a keyword registered at a worse priority than
-  the identifier pattern, which then owns the keyword's own spelling; every input still tokenizes, so nothing else
-  ever reveals the mistake.
+- `dead_tokens`: tokens that never win any input. The classic cause is a keyword registered at a worse priority than the
+  identifier pattern, which then owns the keyword's own spelling; every input still tokenizes, so nothing else ever
+  reveals the mistake.
 - `equal_priority_ties`: pairs of distinct tokens that accept the same input at the same priority. The build resolves
   such ties deterministically but arbitrarily, by the lower registered value, so a tie usually marks a priority the
   grammar author never actually decided.
 
-Like `is_split_point()`, these are properties certified from the automaton rather than heuristics: a token reported
-dead is provably dead for every input there is.
+Like `is_split_point()`, these are properties certified from the automaton rather than heuristics: a token reported dead
+is provably dead for every input there is.
 
 ##### **Example**
 
@@ -691,8 +691,8 @@ cd build
 ctest --output-on-failure
 ```
 
-Tests, the benchmark tool, and warnings-as-errors are enabled by default only when munch is the top-level project;
-a build consuming munch through `add_subdirectory` gets none of them unless it opts in with `-DMUNCH_BUILD_TESTS=ON`,
+Tests, the benchmark tool, and warnings-as-errors are enabled by default only when munch is the top-level project; a
+build consuming munch through `add_subdirectory` gets none of them unless it opts in with `-DMUNCH_BUILD_TESTS=ON`,
 `-DMUNCH_BUILD_BENCHMARK=ON`, or `-DMUNCH_WERROR=ON`.
 
 Beyond the per-layer unit tests, the `dfa` and `core` suites include fixed-seed property tests: random DFAs check the
@@ -838,6 +838,20 @@ shared chain:
 States accepting different tokens are never merged, so tokenization is unchanged. The builder minimizes after each
 subset construction, so every DFA it produces is minimal; smaller automata also shrink the transition tables the
 simulator compiles, keeping more of them in cache.
+
+## **Versioning and Stability**
+
+munch follows semantic versioning. The stable surface is what this README documents: the regex combinators with
+`Set` and `utf8::range`, `core::Builder` with `add_token()`, `build()`, `diagnose()`, and `set_state_limit()`,
+`core::Lexer` with `Match`, `tokenize()`, `tokenize_all()`, `is_split_point()`, `chunk_boundaries()`, and
+`tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
+arrive in minor versions.
+
+The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
+and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
+not for stability. The benchmark tools and the prose in `docs/` carry no compatibility promise, and performance numbers
+are measurements, not contracts. Planned additions such as Unicode XID identifier classes extend the combinator
+vocabulary without changing what exists (see [docs/limits.md](docs/limits.md)).
 
 ## **License**
 
