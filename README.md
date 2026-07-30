@@ -103,7 +103,8 @@ regex combinators ──▶ NFA (Thompson construction)
    against the maps it was built from.
 
 Determinization and minimization run twice, once per pattern and once for the whole lexer, so the final DFA is never
-larger than it needs to be. Adding a token only re-triggers the second pass, not the first.
+larger than it needs to be. The first pass depends only on its own pattern, so adding a token changes nothing in what
+the other patterns lower to; `build()` runs both passes each time it is called.
 
 ## **Performance**
 

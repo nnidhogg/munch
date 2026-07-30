@@ -62,11 +62,14 @@ rejected by construction). The consequences:
 
 ## **Construction Cost**
 
-`Builder::build()` runs the whole pipeline, so it is milliseconds where matching is nanoseconds: a full C++-scale token
-set (every keyword, operator, and literal form) builds in tens of milliseconds on the README's reference machine,
-roughly doubling when identifiers admit every non-ASCII code point through `utf8::range`. It is a one-time cost. Build
-the lexer once and reuse it across inputs and threads; building per input or per request is a design mistake the library
-does not try to make cheap.
+`Builder::build()` runs the whole pipeline, so it is milliseconds where matching is nanoseconds: the benchmark's
+keyword-scale token set, 143 patterns covering 100 keywords with identifier, literal, operator, and punctuation
+forms, builds in about 34 ms into a 251-state minimal DFA on the README's reference machine
+(`./build/tools/benchmark/munch_benchmark` reports it as `build/keywords`), roughly doubling when identifiers admit
+every non-ASCII code point through `utf8::range`. Compiling the tables out of the finished DFA contributes less
+than a tenth of a millisecond of that; the cost is determinization, not the Simulator. It is a one-time cost. Build
+the lexer once and reuse it across inputs and threads; building per input or per request is a design mistake the
+library does not try to make cheap.
 
 ## **The Escape Hatches**
 

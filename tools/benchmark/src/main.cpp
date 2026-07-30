@@ -1,6 +1,11 @@
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <munch/core/builder.hpp>
+#include <munch/regex/patterns.hpp>
+#include <munch/regex/regex.hpp>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -190,6 +195,104 @@ bool validate_chunked(const munch::core::Lexer& lexer, const std::string& input,
     return true;
 }
 
+/**
+ * @brief A Builder exposing its protected pipeline output, so the compiled automaton's size can be reported.
+ */
+struct Staged_builder : munch::core::Builder
+{
+    using Builder::dfa;
+};
+
+/**
+ * @brief Builds a keyword-scale token set: 100 keywords plus identifier, literal, operator, and punctuation
+ * patterns, approximating a real language front end.
+ */
+Staged_builder keyword_scale_builder()
+{
+    using namespace munch::regex;
+
+    // Roughly the C++ keyword set plus common fixed-width type names: 100 entries.
+    static constexpr const char* keywords[]{
+            "alignas",     "alignof",   "and",        "and_eq",    "asm",      "auto",         "bitand",
+            "bitor",       "bool",      "break",      "case",      "catch",    "char",         "char8_t",
+            "char16_t",    "char32_t",  "class",      "compl",     "concept",  "const",        "consteval",
+            "constexpr",   "constinit", "const_cast", "continue",  "co_await", "co_return",    "co_yield",
+            "decltype",    "default",   "delete",     "do",        "double",   "dynamic_cast", "else",
+            "enum",        "explicit",  "export",     "extern",    "false",    "float",        "for",
+            "friend",      "goto",      "if",         "inline",    "int",      "long",         "mutable",
+            "namespace",   "new",       "noexcept",   "not",       "not_eq",   "nullptr",      "operator",
+            "or",          "or_eq",     "private",    "protected", "public",   "register",     "reinterpret_cast",
+            "requires",    "return",    "short",      "signed",    "sizeof",   "static",       "static_assert",
+            "static_cast", "struct",    "switch",     "template",  "this",     "thread_local", "throw",
+            "true",        "try",       "typedef",    "typeid",    "typename", "union",        "unsigned",
+            "using",       "virtual",   "void",       "volatile",  "wchar_t",  "while",        "xor",
+            "xor_eq",      "final",     "override",   "import",    "module",   "int8_t",       "int16_t",
+            "int32_t",     "int64_t"};
+
+    Staged_builder builder;
+
+    for (const auto* keyword : keywords)
+    {
+        builder.add_token(text(keyword), Token::keyword, 1);
+    }
+
+    builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::identifier, 2);
+
+    builder.add_token(patterns::decimal_float(), Token::number, 1);
+
+    builder.add_token(patterns::decimal_integer(), Token::number, 1);
+
+    builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 1);
+
+    for (const auto* op : {"==", "!=", "<=", ">=", "<<", ">>", "&&", "||", "++", "--", "->", "+=", "-=", "*=",
+                           "/=", "+",  "-",  "*",  "/",  "%",  "=",  "<",  ">",  "!",  "~",  "&",  "|",  "^"})
+    {
+        builder.add_token(text(op), Token::operator_, 2);
+    }
+
+    for (const auto* punct : {"(", ")", "{", "}", "[", "]", ";", ",", ".", ":", "?"})
+    {
+        builder.add_token(text(punct), Token::punctuation, 2);
+    }
+
+    return builder;
+}
+
+/**
+ * @brief Measures the construction cost of the keyword-scale token set, reported in milliseconds rather than
+ * throughput, together with the compiled automaton's size.
+ */
+void measure_build(const int passes)
+{
+    const auto builder{keyword_scale_builder()};
+
+    auto best{1e300};
+
+    for (int index{0}; index < passes; ++index)
+    {
+        const auto start{std::chrono::steady_clock::now()};
+
+        static_cast<void>(builder.build());
+
+        const std::chrono::duration<double, std::milli> elapsed{std::chrono::steady_clock::now() - start};
+
+        best = std::min(best, elapsed.count());
+    }
+
+    const auto dfa{builder.dfa()};
+
+    std::set<std::size_t> states{dfa.init_state()};
+
+    for (const auto& [key, to] : dfa.transitions())
+    {
+        states.insert(key.first);
+
+        states.insert(to);
+    }
+
+    std::printf("build/keywords   143 patterns, %zu states, best of %d passes: %.1f ms\n", states.size(), passes, best);
+}
+
 } // namespace
 
 /**
@@ -236,6 +339,8 @@ int main(const int argc, const char** argv)
     const auto source_input{generate_source_input(mebibytes << 20U)};
 
     ok = validate_chunked(ascii_lexer, ascii_input, 8) && validate_chunked(ascii_lexer, source_input, 8) && ok;
+
+    measure_build(passes);
 
     ok = measure("lexer_all/source", source_input.size(), passes,
                  [&ascii_lexer, &source_input] { return tokenize_all(ascii_lexer, source_input); }) &&
