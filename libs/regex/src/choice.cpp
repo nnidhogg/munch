@@ -1,6 +1,5 @@
-#include <algorithm>
-#include <ranges>
 #include <stdexcept>
+#include <vector>
 
 #include "munch/regex/regex.hpp"
 
@@ -13,22 +12,32 @@ nfa::Builder to_nfa(const Choice& choice)
         throw std::invalid_argument("Choice must hold at least one regex");
     }
 
+    // A single alternative is no union at all; lowering it directly keeps the extra start state out.
+    if (choice.regexes.size() == 1)
+    {
+        return to_nfa(choice.regexes.front());
+    }
+
     /**
-     * Fold the alternatives into a union, each merge contributing a fresh start state:
+     * Union the alternatives under one fresh start state:
      *
      *      / --ε--> (q1)
-     * (q0)
-     *      \ --ε--> (q2)
+     * (q0) - --ε--> (q2)
+     *      \ --ε--> (q3)
      *
-     * Seeding from the first alternative rather than an empty NFA keeps a dead state out of the union; merge()
-     * makes this safe regardless of the seed's shape.
+     * merge_all() renumbers each alternative once; folding merge() instead would copy the accumulated union per
+     * alternative, quadratic work on the generated Unicode classes' hundreds of alternatives.
      */
-    auto nfa{to_nfa(choice.regexes.front())};
+    std::vector<nfa::Builder> alternatives;
 
-    std::ranges::for_each(
-            choice.regexes | std::views::drop(1), [&nfa](const auto& regex) { nfa = nfa.merge(to_nfa(regex)); });
+    alternatives.reserve(choice.regexes.size());
 
-    return nfa;
+    for (const auto& regex : choice.regexes)
+    {
+        alternatives.push_back(to_nfa(regex));
+    }
+
+    return nfa::Builder::merge_all(alternatives);
 }
 
 } // namespace munch::regex

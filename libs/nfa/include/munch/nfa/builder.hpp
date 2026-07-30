@@ -1,6 +1,8 @@
 #ifndef MUNCH_LIBS_NFA_INCLUDE_MUNCH_NFA_BUILDER_HPP
 #define MUNCH_LIBS_NFA_INCLUDE_MUNCH_NFA_BUILDER_HPP
 
+#include <span>
+
 #include "munch/nfa/label.hpp"
 #include "munch/nfa/nfa.hpp"
 
@@ -122,6 +124,17 @@ public:
      * @return A new Builder representing the merged NFA.
      */
     [[nodiscard]] Builder merge(const Builder& other) const;
+
+    /**
+     * @brief Merges the builders into one union: a fresh initial state epsilon-branches to every alternative.
+     *
+     * The n-ary counterpart of merge(). A fold over merge() copies the accumulated union once per alternative
+     * and chains one extra initial state each, quadratic work that dominates lowering the generated Unicode
+     * classes; this single pass renumbers every alternative once and adds one initial state in total.
+     * @param builders The builders to merge; their contents are consumed.
+     * @return The merged Builder.
+     */
+    [[nodiscard]] static Builder merge_all(std::span<Builder> builders);
 
     /**
      * @brief Builds and returns the constructed NFA, leaving the Builder intact.

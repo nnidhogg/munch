@@ -495,3 +495,39 @@ TEST_F(Nfa_test, Equal_priority_accept_states_prefer_lower_id)
 
     EXPECT_EQ(Simulator::run(result, ""), Match(lower_id, 0));
 }
+
+TEST_F(Nfa_test, Merge_all_unions_under_one_initial_state)
+{
+    std::vector<Builder> alternatives;
+
+    for (const char symbol : {'a', 'b', 'c'})
+    {
+        Builder builder;
+
+        const auto accept{builder.next_state()};
+
+        builder.add_transition(builder.init_state(), Label{symbol}, accept);
+
+        builder.add_accept_state(accept, Token{1, 1});
+
+        alternatives.push_back(std::move(builder));
+    }
+
+    const auto nfa{Builder::merge_all(alternatives).build()};
+
+    for (const std::string input : {"a", "b", "c"})
+    {
+        const auto [token, length]{Simulator::run(nfa, input)};
+
+        EXPECT_TRUE(token.has_value()) << input;
+        EXPECT_EQ(length, 1U) << input;
+    }
+
+    const auto [token, length]{Simulator::run(nfa, std::string{"d"})};
+
+    EXPECT_FALSE(token.has_value());
+
+    // One key holds the root's three epsilon edges and each alternative adds one symbol key: four entries,
+    // with no chain of pairwise union roots.
+    EXPECT_EQ(nfa.transitions().size(), 4U);
+}

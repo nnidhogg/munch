@@ -152,6 +152,27 @@ Builder Builder::merge(const Builder& other) const
     return nfa;
 }
 
+Builder Builder::merge_all(const std::span<Builder> builders)
+{
+    Builder nfa;
+
+    for (auto& builder : builders)
+    {
+        auto offset_nfa{builder.offset(nfa.next_state_)};
+
+        nfa.next_state_ = offset_nfa.next_state_;
+
+        nfa.add_epsilon_transition(nfa.init_state_, offset_nfa.init_state_);
+
+        // The renumbered states are disjoint from everything merged so far, so the nodes splice without clashes.
+        nfa.transitions_.merge(offset_nfa.transitions_);
+
+        nfa.accept_states_.merge(offset_nfa.accept_states_);
+    }
+
+    return nfa;
+}
+
 Nfa Builder::build() const&
 {
     return {init_state_, transitions_, accept_states_};

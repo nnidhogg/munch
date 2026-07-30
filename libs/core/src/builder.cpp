@@ -312,9 +312,16 @@ nfa::Builder Builder::thompson_construction() const
         return to_nfa(dfa::minimize(subset_construction(pattern.nfa.build(), state_limit_)), pattern.token);
     }};
 
-    const auto merge{[&lower](const auto& nfa, const auto& pattern) { return nfa.merge(lower(pattern)); }};
+    std::vector<nfa::Builder> lowered;
 
-    return std::accumulate(std::next(patterns_.cbegin()), patterns_.cend(), lower(patterns_.front()), merge);
+    lowered.reserve(patterns_.size());
+
+    for (const auto& pattern : patterns_)
+    {
+        lowered.push_back(lower(pattern));
+    }
+
+    return nfa::Builder::merge_all(lowered);
 }
 
 } // namespace munch::core
