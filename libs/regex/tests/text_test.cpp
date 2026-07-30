@@ -35,13 +35,13 @@ TEST_F(Text_test, Simple_text)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, "hello"), Result_t(token, 5));
-    EXPECT_EQ(Simulator::run(nfa, "hello!"), Result_t(token, 5));
+    EXPECT_EQ(Simulator::run(nfa, "hello"), Match(token, 5));
+    EXPECT_EQ(Simulator::run(nfa, "hello!"), Match(token, 5));
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "hell"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "hell"), Match(std::nullopt, 0));
 }
 
 TEST_F(Text_test, Special_characters)
@@ -54,12 +54,12 @@ TEST_F(Text_test, Special_characters)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, "a*b+c?"), Result_t(token, 6));
+    EXPECT_EQ(Simulator::run(nfa, "a*b+c?"), Match(token, 6));
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), Match(std::nullopt, 0));
 }
 
 TEST_F(Text_test, More_special_characters)
@@ -72,12 +72,12 @@ TEST_F(Text_test, More_special_characters)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, ".*+?^${}()|[]\\"), Result_t(token, 14));
+    EXPECT_EQ(Simulator::run(nfa, ".*+?^${}()|[]\\"), Match(token, 14));
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, ".*+?^${}()|[]"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ".*+?^${}()|[]"), Match(std::nullopt, 0));
 }
 
 TEST_F(Text_test, Empty_text)
@@ -90,9 +90,9 @@ TEST_F(Text_test, Empty_text)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(nfa, " "), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, " "), Match(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(token, 0));
 }

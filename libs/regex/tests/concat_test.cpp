@@ -35,14 +35,14 @@ TEST_F(Concat_test, Two_characters)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, "ab"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), Result_t(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), Match(token, 2));
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "b"), Match(std::nullopt, 0));
 }
 
 TEST_F(Concat_test, Multiple_characters)
@@ -55,16 +55,16 @@ TEST_F(Concat_test, Multiple_characters)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, "abcd"), Result_t(token, 4));
-    EXPECT_EQ(Simulator::run(nfa, "abcde"), Result_t(token, 4));
-    EXPECT_EQ(Simulator::run(nfa, "abcd!"), Result_t(token, 4));
+    EXPECT_EQ(Simulator::run(nfa, "abcd"), Match(token, 4));
+    EXPECT_EQ(Simulator::run(nfa, "abcde"), Match(token, 4));
+    EXPECT_EQ(Simulator::run(nfa, "abcd!"), Match(token, 4));
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), Match(std::nullopt, 0));
 }
 
 TEST_F(Concat_test, Empty_regexes_throws)

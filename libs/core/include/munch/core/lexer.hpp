@@ -26,11 +26,18 @@ class Lexer
 {
 public:
     /**
-     * @brief The result type: a pair of the matched token (if any) and the length of the match.
+     * @brief The result of one match attempt: the matched token, if any, and the length of the match.
      * @tparam T The token type (enum or integral).
      */
     template <typename T>
-    using Result_t = std::pair<std::optional<T>, std::size_t>;
+    struct Match
+    {
+        std::optional<T> token;
+
+        std::size_t length;
+
+        bool operator==(const Match&) const = default;
+    };
 
     /**
      * @brief Tokenizes input from a pair of iterators.
@@ -38,11 +45,11 @@ public:
      * @tparam Iterator The input iterator type.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @return A pair containing the matched token (if any) and the length of the match.
+     * @return The match: the token, if any, and the length it consumed.
      */
     template <typename T, common::concepts::Iterator Iterator>
         requires(std::integral<T> || std::is_enum_v<T>)
-    [[nodiscard]] Result_t<T> tokenize(Iterator begin, Iterator end) const
+    [[nodiscard]] Match<T> tokenize(Iterator begin, Iterator end) const
     {
         const auto [token, offset]{simulator_.run(begin, end)};
 
@@ -54,11 +61,11 @@ public:
      * @tparam T The token type (enum or integral).
      * @tparam Container The input container type (must be iterable).
      * @param container The input container.
-     * @return A pair containing the matched token (if any) and the length of the match.
+     * @return The match: the token, if any, and the length it consumed.
      */
     template <typename T, common::concepts::Iterable Container>
         requires(std::integral<T> || std::is_enum_v<T>)
-    [[nodiscard]] Result_t<T> tokenize(const Container& container) const
+    [[nodiscard]] Match<T> tokenize(const Container& container) const
     {
         return tokenize<T>(std::begin(container), std::end(container));
     }

@@ -248,6 +248,6 @@ TEST(Pipeline_property_test, Utf8_range_matches_exactly_the_encodable_code_point
     for (const std::string invalid :
          {"\x80", "\xC0\xAF", "\xC1\xBF", "\xE0\x80\x80", "\xF0\x80\x80\x80", "\xF5\x80\x80\x80", "\xFF"})
     {
-        EXPECT_EQ(lexer.tokenize<std::size_t>(invalid).first, std::nullopt);
+        EXPECT_EQ(lexer.tokenize<std::size_t>(invalid).token, std::nullopt);
     }
 }

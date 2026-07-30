@@ -81,11 +81,11 @@ std::string random_input(Random& random)
 /**
  * @brief Reference simulation stepping the DFA definition maps directly, mirroring Simulator::run.
  */
-Simulator::Result_t reference_run(const Dfa& dfa, const std::string& input)
+Simulator::Match reference_run(const Dfa& dfa, const std::string& input)
 {
     auto state{dfa.init_state()};
 
-    Simulator::Result_t result{dfa.has_accept_token(state), 0};
+    Simulator::Match result{dfa.has_accept_token(state), 0};
 
     for (std::size_t index{0}; index < input.size(); ++index)
     {

@@ -66,13 +66,13 @@ TEST(Minimize_test, Merges_states_accepting_the_same_token)
 
     const Simulator simulator{result};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(simulator.run("a"), Result_t(token, 1));
-    EXPECT_EQ(simulator.run("b"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("a"), Match(token, 1));
+    EXPECT_EQ(simulator.run("b"), Match(token, 1));
 
-    EXPECT_EQ(simulator.run("c"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(simulator.run(""), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("c"), Match(std::nullopt, 0));
+    EXPECT_EQ(simulator.run(""), Match(std::nullopt, 0));
 }
 
 TEST(Minimize_test, Keeps_states_accepting_different_tokens)
@@ -98,10 +98,10 @@ TEST(Minimize_test, Keeps_states_accepting_different_tokens)
 
     const Simulator simulator{result};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(simulator.run("a"), Result_t(token_a, 1));
-    EXPECT_EQ(simulator.run("b"), Result_t(token_b, 1));
+    EXPECT_EQ(simulator.run("a"), Match(token_a, 1));
+    EXPECT_EQ(simulator.run("b"), Match(token_b, 1));
 }
 
 TEST(Minimize_test, Merges_equivalent_interior_states)
@@ -132,13 +132,13 @@ TEST(Minimize_test, Merges_equivalent_interior_states)
 
     const Simulator simulator{result};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(simulator.run("ab"), Result_t(token, 2));
-    EXPECT_EQ(simulator.run("cb"), Result_t(token, 2));
+    EXPECT_EQ(simulator.run("ab"), Match(token, 2));
+    EXPECT_EQ(simulator.run("cb"), Match(token, 2));
 
-    EXPECT_EQ(simulator.run("a"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(simulator.run("cc"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("a"), Match(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("cc"), Match(std::nullopt, 0));
 }
 
 TEST(Minimize_test, Keeps_states_with_different_symbol_sets)
@@ -168,8 +168,8 @@ TEST(Minimize_test, Keeps_states_with_different_symbol_sets)
 
     const Simulator simulator{result};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(simulator.run("ab"), Result_t(token, 2));
-    EXPECT_EQ(simulator.run("cb"), Result_t(token, 1));
+    EXPECT_EQ(simulator.run("ab"), Match(token, 2));
+    EXPECT_EQ(simulator.run("cb"), Match(token, 1));
 }

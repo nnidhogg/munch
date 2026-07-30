@@ -37,22 +37,22 @@ TEST_F(Repeat_test, Kleene_star)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "aab"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Result_t(token, 4));
-    EXPECT_EQ(Simulator::run(nfa, "aaab"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "ababa"), Result_t(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), Match(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "aab"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Match(token, 4));
+    EXPECT_EQ(Simulator::run(nfa, "aaab"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "ababa"), Match(token, 1));
 
-    EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(nfa, "baa"), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(nfa, "baaa"), Result_t(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "b"), Match(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), Match(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "baa"), Match(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "baaa"), Match(token, 0));
 }
 
 TEST_F(Repeat_test, Plus)
@@ -67,22 +67,22 @@ TEST_F(Repeat_test, Plus)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "aab"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Result_t(token, 4));
-    EXPECT_EQ(Simulator::run(nfa, "aaab"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "ababa"), Result_t(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), Match(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "aab"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Match(token, 4));
+    EXPECT_EQ(Simulator::run(nfa, "aaab"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "ababa"), Match(token, 1));
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "baa"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "baaa"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "b"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "baa"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "baaa"), Match(std::nullopt, 0));
 }
 
 TEST_F(Repeat_test, Optional)
@@ -97,14 +97,14 @@ TEST_F(Repeat_test, Optional)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), Result_t(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "b"), Match(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), Match(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), Match(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), Match(token, 0));
 }
 
 TEST_F(Repeat_test, Exact_repetition)
@@ -119,18 +119,18 @@ TEST_F(Repeat_test, Exact_repetition)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "aaab"), Result_t(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "aaab"), Match(token, 3));
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "baaa"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "b"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "baaa"), Match(std::nullopt, 0));
 }
 
 TEST_F(Repeat_test, At_least_repetition)
@@ -145,19 +145,19 @@ TEST_F(Repeat_test, At_least_repetition)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Result_t(token, 4));
-    EXPECT_EQ(Simulator::run(nfa, "aaaaa"), Result_t(token, 5));
-    EXPECT_EQ(Simulator::run(nfa, "aaaaaa"), Result_t(token, 6));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Match(token, 4));
+    EXPECT_EQ(Simulator::run(nfa, "aaaaa"), Match(token, 5));
+    EXPECT_EQ(Simulator::run(nfa, "aaaaaa"), Match(token, 6));
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "aab"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "baaa"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "b"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "aab"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "baaa"), Match(std::nullopt, 0));
 }
 
 TEST_F(Repeat_test, At_least_zero_repetitions_is_the_kleene_star)
@@ -172,14 +172,14 @@ TEST_F(Repeat_test, At_least_zero_repetitions_is_the_kleene_star)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), Result_t(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(token, 1));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), Match(token, 3));
 
-    EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(token, 0));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), Result_t(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "b"), Match(token, 0));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), Match(token, 0));
 }
 
 TEST_F(Repeat_test, Range_ending_before_it_starts_throws)
@@ -199,20 +199,20 @@ TEST_F(Repeat_test, Range_repetition)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Result_t = Simulator::Result_t;
+    using Match = Simulator::Match;
 
-    EXPECT_EQ(Simulator::run(nfa, "aa"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "aab"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "aab"), Result_t(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Result_t(token, 4));
-    EXPECT_EQ(Simulator::run(nfa, "aaab"), Result_t(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "aaaaa"), Result_t(token, 4));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "aab"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "aab"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), Match(token, 4));
+    EXPECT_EQ(Simulator::run(nfa, "aaab"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "aaaaa"), Match(token, 4));
 
-    EXPECT_EQ(Simulator::run(nfa, ""), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "b"), Result_t(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "baaa"), Result_t(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "a"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "b"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "baaa"), Match(std::nullopt, 0));
 }
 
 TEST_F(Repeat_test, Empty_regexes_throws)

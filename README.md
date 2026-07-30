@@ -496,7 +496,7 @@ matching and convenient incremental processing:
 
 #### **1. Core API (`munch::core::Lexer`)**
 
-The core lexer performs direct tokenization on containers or iterators. It returns a pair containing the recognized
+The core lexer performs direct tokenization on containers or iterators. It returns a `Match` holding the recognized
 token kind and the number of characters consumed.
 
 ```cpp

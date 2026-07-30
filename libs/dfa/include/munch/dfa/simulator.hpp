@@ -69,9 +69,16 @@ class Simulator
 
 public:
     /**
-     * @brief The result type: a pair of the matched token (if any) and the length of the match.
+     * @brief The result of one match attempt: the matched token, if any, and the length of the match.
      */
-    using Result_t = std::pair<std::optional<Token>, std::size_t>;
+    struct Match
+    {
+        std::optional<Token> token;
+
+        std::size_t length;
+
+        bool operator==(const Match&) const = default;
+    };
 
     /**
      * @brief Compiles the given DFA into transition and accept tables.
@@ -85,10 +92,10 @@ public:
      * @tparam Iterator Input iterator type.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @return A pair containing the matched token (if any) and the length of the match.
+     * @return The match: the token, if any, and the length it consumed.
      */
     template <common::concepts::Iterator Iterator>
-    [[nodiscard]] Result_t run(Iterator begin, Iterator end) const
+    [[nodiscard]] Match run(Iterator begin, Iterator end) const
     {
         if (begin == end)
         {
@@ -128,18 +135,17 @@ public:
             }
         }
 
-        return accept_state != no_state_ ? Result_t{accept_table_[accept_state], accept_consumed} :
-                                           Result_t{std::nullopt, 0};
+        return accept_state != no_state_ ? Match{accept_table_[accept_state], accept_consumed} : Match{std::nullopt, 0};
     }
 
     /**
      * @brief Runs the DFA over a container.
      * @tparam Container The container type (must be iterable).
      * @param container The input container.
-     * @return A pair containing the matched token (if any) and the length of the match.
+     * @return The match: the token, if any, and the length it consumed.
      */
     template <common::concepts::Iterable Container>
-    [[nodiscard]] Result_t run(const Container& container) const
+    [[nodiscard]] Match run(const Container& container) const
     {
         return run(std::begin(container), std::end(container));
     }
