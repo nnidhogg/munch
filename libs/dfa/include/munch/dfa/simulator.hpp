@@ -102,11 +102,12 @@ public:
             return {accept_table_[init_state_], 0};
         }
 
-        auto state{static_cast<Entry_t>(init_state_)};
+        // A 64-bit state spares the dependency chain a zero-extension per byte when indexing the tables.
+        std::size_t state{init_state_};
 
         // The last accepting state seen and the length of input it had consumed. The Token itself is resolved once
         // after the scan, keeping its load off the per-byte dependency chain.
-        auto accept_state{accept_table_[state] ? state : no_state_};
+        std::size_t accept_state{accept_table_[state] ? state : no_state_};
 
         std::size_t accept_consumed{0};
 
@@ -129,6 +130,13 @@ public:
 
             if (flags_[state] & accept_flag_)
             {
+                // The empty asm blocks if-conversion: as conditional moves these updates make the accepted length
+                // data-dependent on every state load of the token, and the next token's loads cannot start until
+                // that chain resolves. As a predicted branch the updates cost nothing and consecutive tokens
+                // overlap in the out-of-order window; Clang 19 converts without this and loses half its
+                // throughput, measured in docs/performance.md.
+                asm("");
+
                 accept_state = state;
 
                 accept_consumed = consumed;
@@ -193,9 +201,10 @@ public:
 
         while (offset < size)
         {
-            auto state{static_cast<Entry_t>(init_state_)};
+            // A 64-bit state spares the dependency chain a zero-extension per byte when indexing the tables.
+            std::size_t state{init_state_};
 
-            auto accept_state{(flags_[state] & accept_flag_) != 0 ? state : no_state_};
+            std::size_t accept_state{(flags_[state] & accept_flag_) != 0 ? state : no_state_};
 
             std::size_t accept_consumed{0};
 
@@ -216,6 +225,9 @@ public:
 
                 if (flags_[state] & accept_flag_)
                 {
+                    // The empty asm blocks if-conversion; see run() for the mechanism and the measured cost.
+                    asm("");
+
                     accept_state = state;
 
                     accept_consumed = consumed;

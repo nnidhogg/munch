@@ -87,6 +87,23 @@ the code generators freeze the token set at compile time, while munch builds lex
 which is what lets a driver hold several lexers as modes, and lets a language be defined by data rather than by a build
 step.
 
+## **Branches, Not Conditional Moves, on the Accept Path**
+
+Clang 19 used to build this loop at less than half of GCC's throughput, and the deficit had a telling shape: a
+constant four nanoseconds per token, indifferent to token length. The disassembly showed why. Clang if-converted
+the accept bookkeeping — the two updates recording the last accepting state — into conditional moves, making the
+accepted length data-dependent on every state load of the token. The next token cannot start until its
+predecessor's length resolves, so under conditional moves that start waited out the full load chain of the prior
+token; as a predicted branch the same bookkeeping costs nothing, mispredicts rarely on real token structure, and
+lets speculation overlap consecutive tokens in the out-of-order window. This is the same mechanism the lane
+interleaving post-mortem identified — the reset to the start state cuts the serial chain at each token boundary
+and the processor overlaps the chains itself — except here the compiler had quietly welded the chains back
+together. An empty asm statement in the branch body now blocks the conversion, with a comment carrying the
+reasoning; alongside a 64-bit scan state that spares a per-byte zero-extension, Clang went from 211 to 475 MiB/s
+in the isolating experiment and from 236 to 498 MiB/s in the benchmark, within ten percent of GCC, which itself
+moved nowhere. The compilers now agree closely enough that the published numbers describe the library rather
+than the toolchain.
+
 ## **Construction at Unicode Scale**
 
 The runtime loop never paid for Unicode, but construction did, and the XID identifier classes made it measurable:
