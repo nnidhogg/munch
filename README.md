@@ -93,8 +93,8 @@ regex combinators ──▶ NFA (Thompson construction)
    construction and minimized. This resolves the non-determinism a single pattern's own combinators introduce (e.g. the
    branching in `choice` or the loop in `kleene`) before patterns ever interact.
 3. **Recombination.** Each minimized per-pattern DFA is converted back into an NFA fragment carrying its token, and the
-   fragments are united into one NFA under a single fresh start state that ε-links to every fragment. This union is
-   what lets multiple tokens share a lexer.
+   fragments are united into one NFA under a single fresh start state that ε-links to every fragment. This union is what
+   lets multiple tokens share a lexer.
 4. **Final determinization.** The merged NFA is determinized and minimized once more. This is the step that resolves
    *cross-pattern* ambiguity, such as shared prefixes between an identifier and a keyword, using each token's priority
    (lower value wins) to pick a winner when several patterns accept the same input.
@@ -155,14 +155,13 @@ chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3294.3, median 3066.8
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
 `tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver,
 identifiers containing UTF-8 code points matched through byte expansion, the same input through the full Unicode XID
-identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the class size is paid at construction,
-never per byte), the keyword-scale build cost, the XID construction cost split into registration, finalization,
-and their total, and the parallel chunked scans at certified split
-points on two, four, and eight threads. Inputs are fixed-seed and deterministic, so runs are comparable across
-changes. Numbers depend on the machine, the token set, and the compiler: these are GCC 13 builds, and Clang 19
-measures within about ten percent since the accept path was pinned to a branch (see
-[docs/performance.md](docs/performance.md)). WSL2 adds visible run-to-run spread, so rerun the benchmark on your
-own hardware and language before citing them.
+identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the class size is paid at construction, never
+per byte), the keyword-scale build cost, the XID construction cost split into registration, finalization, and their
+total, and the parallel chunked scans at certified split points on two, four, and eight threads. Inputs are fixed-seed
+and deterministic, so runs are comparable across changes. Numbers depend on the machine, the token set, and the
+compiler: these are GCC 13 builds, and Clang 19 measures within about ten percent since the accept path was pinned to a
+branch (see [docs/performance.md](docs/performance.md)). WSL2 adds visible run-to-run spread, so rerun the benchmark on
+your own hardware and language before citing them.
 
 ### **Comparison with Other Engines**
 
@@ -365,8 +364,8 @@ enum class Token_kind : uint8_t
 Token patterns are built using a small, composable DSL inspired by regular expressions. Each combinator produces a
 *pattern object* that can be freely combined with other patterns and later registered with the `Builder`.
 
-Patterns are ordinary value objects and can be reused across multiple token definitions; copies are deep, so
-prefer moving large generated patterns such as the XID classes.
+Patterns are ordinary value objects and can be reused across multiple token definitions; copies are deep, so prefer
+moving large generated patterns such as the XID classes.
 
 ##### **Primitive Combinators**
 
@@ -810,8 +809,8 @@ Below are examples of how an NFA and its corresponding DFA might look:
 ![Keyword NFA](docs/keyword_nfa.svg)
 
 The NFA exactly as Thompson construction emits it for `choice(text("int"), text("if"), text("in"))`: one fresh start
-state ε-fans out to every alternative, and each branch spells its keyword independently. The non-determinism is
-visible from the start state, whose ε-closure reaches three different states on the same `i`.
+state ε-fans out to every alternative, and each branch spells its keyword independently. The non-determinism is visible
+from the start state, whose ε-closure reaches three different states on the same `i`.
 
 #### **Keyword Alternation DFA Example**
 
@@ -827,8 +826,8 @@ the simulator implements longest-match, recording the accept and reading on.
 ![Floating Point Literal NFA](docs/floating_point_literal_nfa.svg)
 
 The Thompson NFA for a floating point literal with an optional sign and exponent. Every combinator contributes its own
-small fragment glued together with ε-transitions, which is why the raw automaton sprawls: nearly seventy states, most
-of them connected by ε-edges rather than input.
+small fragment glued together with ε-transitions, which is why the raw automaton sprawls: nearly seventy states, most of
+them connected by ε-edges rather than input.
 
 #### **Floating Point Literal DFA Example**
 
@@ -872,17 +871,16 @@ versions.
 
 The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
-not for stability. The regex node types are likewise inspectable, but constructing them directly rather than through
-the combinators is outside the stable surface. The benchmark tools and the prose in `docs/` carry no compatibility promise, and performance numbers
-are measurements, not contracts. Additions like the Unicode XID identifier classes arrive as new combinators without
-changing what exists (see [docs/limits.md](docs/limits.md)).
+not for stability. The regex node types are likewise inspectable, but constructing them directly rather than through the
+combinators is outside the stable surface. The benchmark tools and the prose in `docs/` carry no compatibility promise,
+and performance numbers are measurements, not contracts. Additions like the Unicode XID identifier classes arrive as new
+combinators without changing what exists (see [docs/limits.md](docs/limits.md)).
 
 ## **License**
 
 The source code is licensed under the terms of the MIT License. See the [LICENSE](LICENSE) file for details. The
-generated Unicode identifier tables derive from the Unicode Character Database and are used under the Unicode
-License v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), installed alongside the
-package.
+generated Unicode identifier tables derive from the Unicode Character Database and are used under the Unicode License
+v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), installed alongside the package.
 
 ## **Author**
 
