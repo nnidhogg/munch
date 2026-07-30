@@ -98,7 +98,9 @@ bandwidth today, so the ceiling is genuinely unclaimed.
 
 Chunks must begin at real token boundaries, and in this design that is not a heuristic but a property the automaton can
 certify at build time: a byte that no state except the start state consumes can only ever begin a token, so every
-occurrence is a safe split point, computable by one pass over the transition table. A token set whose strings or
+occurrence is a safe split point, computable by one pass over the transition table. The start state's exemption
+holds only while no transition re-enters it, which a nullable pattern's self-looping start state does; such token
+sets certify nothing. A token set whose strings or
 comments can contain any byte certifies no safe points, and the right behavior is to refuse and scan sequentially rather
 than speculate, in keeping with [limits.md](limits.md). The certification is built:
 Lexer::is_split_point () reports the certified bytes of a compiled token set, computed by that one pass in the simulator's

@@ -1102,3 +1102,27 @@ TEST_F(Lexer_test, Diagnose_reports_every_pair_of_a_three_way_tie)
             (std::vector<std::size_t>{
                     static_cast<std::size_t>(Token_kind::Second), static_cast<std::size_t>(Token_kind::Third)}));
 }
+
+TEST_F(Lexer_test, Split_points_refuse_a_reentrant_start_state)
+{
+    enum class Token_kind : uint8_t
+    {
+        Run,
+    };
+
+    // kleene minimizes to an accepting start state with a self-loop, so the start state is reachable again after
+    // consuming input: 'a' can continue a token mid-scan even though only the start state consumes it, and
+    // splitting "aa" would turn one length-two token into two length-one tokens.
+    Builder_dbg builder;
+
+    builder.add_token(kleene(text("a")), Token_kind::Run, 1);
+
+    const auto lexer{builder.build()};
+
+    EXPECT_FALSE(lexer.is_split_point('a'));
+
+    const auto boundaries{lexer.chunk_boundaries(std::string{"aa"}, 2)};
+
+    ASSERT_EQ(boundaries.size(), 2U);
+    EXPECT_EQ(boundaries.back(), 2U);
+}

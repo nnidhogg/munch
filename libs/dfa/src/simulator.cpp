@@ -85,14 +85,23 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
         transitions[classes[static_cast<unsigned char>(label.symbol())], from] = static_cast<Entry_t>(to);
     }
 
-    // A symbol only the initial state consumes can only begin a token; see is_split_point().
+    // A symbol only the initial state consumes can only begin a token, but the exemption is valid only while the
+    // initial state cannot be reached again after consuming input: a nullable pattern such as kleene minimizes to
+    // an accepting start state with a self-loop, where the "first byte of a token" reasoning no longer holds.
+    auto init_reentrant{false};
+
+    for (const auto entry : table_)
+    {
+        init_reentrant = init_reentrant || entry == static_cast<Entry_t>(init_state_);
+    }
+
     for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
     {
         auto safe{true};
 
         for (std::size_t state{0}; safe && state < states; ++state)
         {
-            safe = state == init_state_ || table_[row_offsets_[symbol] + state] == no_state_;
+            safe = (state == init_state_ && !init_reentrant) || table_[row_offsets_[symbol] + state] == no_state_;
         }
 
         if (safe)
