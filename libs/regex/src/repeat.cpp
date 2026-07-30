@@ -11,15 +11,6 @@ namespace
 /**
  * @brief Wraps a single regex in the vector a Repeat node stores its sub-pattern in.
  */
-std::vector<Regex> single(Regex regex)
-{
-    std::vector<Regex> result;
-
-    result.push_back(std::move(regex));
-
-    return result;
-}
-
 /**
  * @brief Builds the NFA for a Kleene star (zero or more) repetition.
  * @param regex The sub-pattern to repeat.
@@ -193,12 +184,8 @@ std::vector<Regex> single(Regex regex)
 
 nfa::Builder to_nfa(const Repeat& repeat)
 {
-    if (repeat.regexes.empty())
-    {
-        throw std::invalid_argument("Repeat must hold at least one regex");
-    }
-
-    const auto& regex{repeat.regexes.front()};
+    // The child needs no emptiness check: a Box always holds exactly one value.
+    const auto& regex{*repeat.regex};
 
     return std::visit(
             [&regex]<typename T>(const T& kind) {
@@ -236,27 +223,27 @@ nfa::Builder to_nfa(const Repeat& repeat)
 
 Regex kleene(Regex regex)
 {
-    return {.node = Repeat{.kind = Kleene{}, .regexes = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Kleene{}, .regex = Box{std::move(regex)}}};
 }
 
 Regex plus(Regex regex)
 {
-    return {.node = Repeat{.kind = Plus{}, .regexes = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Plus{}, .regex = Box{std::move(regex)}}};
 }
 
 Regex optional(Regex regex)
 {
-    return {.node = Repeat{.kind = Optional{}, .regexes = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Optional{}, .regex = Box{std::move(regex)}}};
 }
 
 Regex exact(Regex regex, const std::size_t count)
 {
-    return {.node = Repeat{.kind = Exact{.count = count}, .regexes = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Exact{.count = count}, .regex = Box{std::move(regex)}}};
 }
 
 Regex at_least(Regex regex, const std::size_t min)
 {
-    return {.node = Repeat{.kind = At_least{.min = min}, .regexes = single(std::move(regex))}};
+    return {.node = Repeat{.kind = At_least{.min = min}, .regex = Box{std::move(regex)}}};
 }
 
 Regex range(Regex regex, const std::size_t min, const std::size_t max)
@@ -266,7 +253,7 @@ Regex range(Regex regex, const std::size_t min, const std::size_t max)
         throw std::invalid_argument("A repetition range may not end before it starts");
     }
 
-    return {.node = Repeat{.kind = Range{.min = min, .max = max}, .regexes = single(std::move(regex))}};
+    return {.node = Repeat{.kind = Range{.min = min, .max = max}, .regex = Box{std::move(regex)}}};
 }
 
 } // namespace munch::regex

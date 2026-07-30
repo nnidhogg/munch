@@ -215,7 +215,22 @@ TEST_F(Repeat_test, Range_repetition)
     EXPECT_EQ(Simulator::run(nfa, "baaa"), Match(std::nullopt, 0));
 }
 
-TEST_F(Repeat_test, Empty_regexes_throws)
+TEST_F(Repeat_test, Copies_are_independent_values)
 {
-    EXPECT_THROW(static_cast<void>(to_nfa(Repeat{.kind = Kleene{}, .regexes = {}})), std::invalid_argument);
+    // The Box gives Repeat value semantics: copying a pattern deep-copies its child, so both the original and the
+    // copy lower to working automata, and an empty Repeat is no longer representable at all.
+    const auto original{plus(text("ab"))};
+
+    const auto copy{original};
+
+    const Token token{1, 1};
+
+    const auto original_nfa{to_nfa(original).set_accept_token(token).build()};
+
+    const auto copied_nfa{to_nfa(copy).set_accept_token(token).build()};
+
+    using Match = Simulator::Match;
+
+    EXPECT_EQ(Simulator::run(original_nfa, "abab"), Match(token, 4));
+    EXPECT_EQ(Simulator::run(copied_nfa, "abab"), Match(token, 4));
 }

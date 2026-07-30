@@ -3,7 +3,8 @@
 
 #include <cstddef>
 #include <variant>
-#include <vector>
+
+#include "munch/regex/box.hpp"
 
 namespace munch::regex
 {
@@ -73,11 +74,9 @@ struct Repeat
     Kind_t kind;
 
     /**
-     * @brief The repeated sub-pattern. Holds exactly one element.
-     *
-     * A vector is used because Regex is incomplete here, being the type this node is an alternative of.
+     * @brief The repeated sub-pattern.
      */
-    std::vector<Regex> regexes;
+    Box<Regex> regex;
 };
 
 } // namespace munch::regex
