@@ -362,7 +362,8 @@ enum class Token_kind : uint8_t
 Token patterns are built using a small, composable DSL inspired by regular expressions. Each combinator produces a
 *pattern object* that can be freely combined with other patterns and later registered with the `Builder`.
 
-Patterns are immutable, lightweight value objects and can be reused across multiple token definitions.
+Patterns are ordinary value objects and can be reused across multiple token definitions; copies are deep, so
+prefer moving large generated patterns such as the XID classes.
 
 ##### **Primitive Combinators**
 
@@ -396,8 +397,8 @@ range, expanded into its UTF-8 byte sequences. Surrogates are excluded, and ill-
 is rejected by construction. `utf8::ranges()` matches one code point from a sorted list of disjoint ranges, and
 `munch/regex/unicode.hpp` provides `unicode::xid_start()` and `unicode::xid_continue()`, the UAX #31 identifier
 properties generated from the Unicode Character Database (`unicode::version()` names the pinned version). A C-style
-identifier is then `concat(choice(text('_'), unicode::xid_start()), kleene(choice(text('_'), unicode::xid_continue())))`;
-the properties themselves are matched exactly, with profile choices such as the leading underscore left to the caller.
+identifier is then `concat(choice(text('_'), unicode::xid_start()), kleene(unicode::xid_continue()))` — underscore
+already holds XID_Continue, so only the head needs the profile choice; the properties themselves are matched exactly.
 
 ##### **Example**
 

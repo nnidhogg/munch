@@ -28,7 +28,8 @@ The engine reads bytes, never code points. `regex::Set` holds byte values, and `
 a code point range into its UTF-8 byte sequences at pattern-build time (surrogates excluded, ill-formed sequences
 rejected by construction). The consequences:
 
-- There are no Unicode properties, no case folding, and no normalization. A case-insensitive keyword is spelled out
+- There is no general Unicode property API, no case folding, and no normalization; XID_Start and
+  XID_Continue below are the two properties currently supplied. A case-insensitive keyword is spelled out
   (`choice(text("if"), text("IF"))` or a `Set` per position), and input is matched as the bytes it is.
 - Standards-accurate Unicode identifier classes exist: `unicode::xid_start()` and `unicode::xid_continue()` match the
   XID_Start and XID_Continue properties, generated from the Unicode Character Database pinned at the version
