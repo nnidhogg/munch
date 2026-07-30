@@ -68,3 +68,20 @@ TEST(Indirect_test, Move_assignment_transfers_the_value)
 
     EXPECT_EQ(*target, 1);
 }
+
+TEST(Indirect_test, Copies_a_moved_from_value_as_valueless)
+{
+    Indirect<int> source{1};
+
+    const Indirect<int> stolen{std::move(source)};
+
+    // Copying a valueless Indirect must yield another valueless one rather than dereference nothing.
+    Indirect<int> copy{source};
+
+    copy = source;
+
+    copy = Indirect<int>{2};
+
+    EXPECT_EQ(*stolen, 1);
+    EXPECT_EQ(*copy, 2);
+}

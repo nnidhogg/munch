@@ -11,7 +11,8 @@ namespace munch::regex
  *
  * Regex is incomplete inside its own node types, so a node cannot hold a child by value; Indirect holds it through
  * one owning pointer while copying like a value: unlike std::unique_ptr, copying an Indirect copies the child.
- * There is no empty state to represent or check for; a moved-from Indirect may only be assigned to or destroyed.
+ * There is no empty state to represent or check for in normal use; a moved-from Indirect is valueless and may be
+ * assigned to, copied (yielding another valueless value), or destroyed, but not dereferenced.
  * This is the shape of C++26's std::indirect, and it is meant to be replaced by the standard type once the
  * toolchain baseline provides it.
  */
@@ -24,13 +25,13 @@ public:
      */
     explicit Indirect(T value) : value_{std::make_unique<T>(std::move(value))} {}
 
-    Indirect(const Indirect& other) : value_{std::make_unique<T>(*other.value_)} {}
+    Indirect(const Indirect& other) : value_{other.value_ ? std::make_unique<T>(*other.value_) : nullptr} {}
 
     Indirect(Indirect&& other) noexcept = default;
 
     Indirect& operator=(const Indirect& other)
     {
-        value_ = std::make_unique<T>(*other.value_);
+        value_ = other.value_ ? std::make_unique<T>(*other.value_) : nullptr;
 
         return *this;
     }
