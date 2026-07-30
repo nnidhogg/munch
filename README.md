@@ -93,8 +93,8 @@ regex combinators ──▶ NFA (Thompson construction)
    construction and minimized. This resolves the non-determinism a single pattern's own combinators introduce (e.g. the
    branching in `choice` or the loop in `kleene`) before patterns ever interact.
 3. **Recombination.** Each minimized per-pattern DFA is converted back into an NFA fragment carrying its token, and the
-   fragments are folded into one NFA by pairwise Thompson unions, each adding a fresh start state ε-linked to its two
-   operands. This union is what lets multiple tokens share a lexer.
+   fragments are united into one NFA under a single fresh start state that ε-links to every fragment. This union is
+   what lets multiple tokens share a lexer.
 4. **Final determinization.** The merged NFA is determinized and minimized once more. This is the step that resolves
    *cross-pattern* ambiguity, such as shared prefixes between an identifier and a keyword, using each token's priority
    (lower value wins) to pick a winner when several patterns accept the same input.
@@ -806,10 +806,9 @@ Below are examples of how an NFA and its corresponding DFA might look:
 
 ![Keyword NFA](docs/keyword_nfa.svg)
 
-The NFA exactly as Thompson construction emits it for `choice(text("int"), text("if"), text("in"))`: the alternatives
-are joined by pairwise unions, each contributing a start state that ε-fans out to its two operands, and each branch
-spells its keyword independently. The non-determinism is visible from the start state, whose ε-closure reaches three
-different states on the same `i`.
+The NFA exactly as Thompson construction emits it for `choice(text("int"), text("if"), text("in"))`: one fresh start
+state ε-fans out to every alternative, and each branch spells its keyword independently. The non-determinism is
+visible from the start state, whose ε-closure reaches three different states on the same `i`.
 
 #### **Keyword Alternation DFA Example**
 
@@ -825,8 +824,8 @@ the simulator implements longest-match, recording the accept and reading on.
 ![Floating Point Literal NFA](docs/floating_point_literal_nfa.svg)
 
 The Thompson NFA for a floating point literal with an optional sign and exponent. Every combinator contributes its own
-small fragment glued together with ε-transitions, which is why the raw automaton sprawls: nearly thirty states, most of
-them connected by ε-edges rather than input.
+small fragment glued together with ε-transitions, which is why the raw automaton sprawls: nearly seventy states, most
+of them connected by ε-edges rather than input.
 
 #### **Floating Point Literal DFA Example**
 
