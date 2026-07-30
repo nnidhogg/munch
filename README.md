@@ -134,20 +134,20 @@ and scheduling.
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target munch_benchmark
 $ ./build/tools/benchmark/munch_benchmark 16 15
-lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 499.5, median 489.2, worst 474.1 MiB/s
-lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 570.0, median 553.6, worst 540.5 MiB/s
-tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 465.8, median 455.5, worst 435.4 MiB/s
-lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 541.8, median 523.8, worst 491.7 MiB/s
-lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 536.0, median 515.8, worst 506.7 MiB/s
-build/keywords   143 patterns, 251 states, 15 passes: best 26.6, median 28.0, worst 32.5 ms
-build/xid        3 patterns, 477 states, 15 passes: best 509.4, median 533.9, worst 544.4 ms
-lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 593.0, median 571.9, worst 541.4 MiB/s
-chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1108.6, median 1076.3, worst 1055.1 MiB/s
-chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1087.0, median 1057.7, worst 1040.0 MiB/s
-chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 2186.7, median 2119.0, worst 2085.8 MiB/s
-chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 2128.3, median 2098.7, worst 1574.0 MiB/s
-chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 3900.2, median 3058.9, worst 2454.6 MiB/s
-chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 4092.9, median 3967.6, worst 3224.9 MiB/s
+lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 495.1, median 481.5, worst 460.1 MiB/s
+lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 558.9, median 547.3, worst 534.2 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 469.8, median 454.6, worst 435.4 MiB/s
+lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 531.3, median 517.6, worst 495.0 MiB/s
+lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 523.3, median 510.8, worst 482.9 MiB/s
+build/keywords   143 patterns, 251 states, 15 passes: best 21.1, median 21.9, worst 23.5 ms
+build/xid        3 patterns, 477 states, 15 passes: best 409.3, median 418.9, worst 442.1 ms
+lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 563.7, median 545.0, worst 506.4 MiB/s
+chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1052.8, median 1029.0, worst 969.2 MiB/s
+chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1009.8, median 988.3, worst 876.2 MiB/s
+chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 2013.9, median 1960.0, worst 1721.2 MiB/s
+chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 1955.4, median 1916.3, worst 1719.9 MiB/s
+chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 3838.1, median 3661.1, worst 3218.0 MiB/s
+chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3776.8, median 3417.7, worst 3117.5 MiB/s
 ```
 
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
