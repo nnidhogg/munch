@@ -464,6 +464,11 @@ fn main() {
     let mib: usize = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(15);
     let passes: usize = std::env::args().nth(2).and_then(|s| s.parse().ok()).unwrap_or(15);
 
+    if mib == 0 || passes == 0 {
+        println!("usage: munch_benchmark_rust [input size in MiB > 0] [passes > 0]");
+        std::process::exit(1);
+    }
+
     let corpora = [
         ("dense", generate(mib << 20)),
         ("source", generate_source(mib << 20)),

@@ -465,6 +465,13 @@ int main(const int argc, const char** argv)
 
     const int passes{argc > 2 ? std::atoi(argv[2]) : 15};
 
+    if (mebibytes == 0 || passes <= 0)
+    {
+        std::printf("usage: munch_benchmark_compare [input size in MiB > 0] [passes > 0]\n");
+
+        return EXIT_FAILURE;
+    }
+
     // None of these may start with a keyword: the pattern above lists keywords before identifiers, so an entry like
     // "integer" would tokenize as "int" + "eger" under first-match alternation while munch's longest match keeps it
     // whole. The tally validation below fails loudly if this constraint is broken.
@@ -635,8 +642,9 @@ int main(const int argc, const char** argv)
 
         for (const auto& scenario : scenarios)
         {
-            ok = measure(scenario.name, input.size(), passes,
-                         [&scenario, &input] { return scenario.run(input).tokens; }) &&
+            ok = measure(
+                         scenario.name, input.size(), passes, [&scenario, &input] { return scenario.run(input); },
+                         [](const Tally& tally) { return tally.tokens; }) &&
                  ok;
         }
     }

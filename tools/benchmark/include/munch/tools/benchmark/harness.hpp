@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "munch/core/lexer.hpp"
@@ -54,18 +55,21 @@ std::string generate_source_input(std::size_t size);
  * are reported: the best pass estimates the least-interrupted cost of the work itself, the median shows the
  * typical run, and the worst bounds the interference the machine added, so the spread is visible instead of only
  * the most favorable pass.
+ * Every timed pass must reproduce the warmup pass's full result, not merely its token count, so a pass that
+ * drifted in content rather than length still fails loudly.
  * @param name The scenario name to report.
  * @param bytes The input size the pass consumes.
  * @param passes The number of timed passes.
- * @param pass The pass to measure, returning its token count.
+ * @param pass The pass to measure, returning an equality-comparable result.
+ * @param count_of Projects the token count to display out of a result.
  * @return True if every pass tokenized the input completely and consistently.
  */
-template <typename Pass>
-bool measure(const char* name, const std::size_t bytes, const int passes, Pass&& pass)
+template <typename Pass, typename Count>
+bool measure(const char* name, const std::size_t bytes, const int passes, Pass&& pass, Count&& count_of)
 {
     const auto expected{pass()};
 
-    if (expected == 0)
+    if (count_of(expected) == 0)
     {
         return false;
     }
@@ -78,13 +82,13 @@ bool measure(const char* name, const std::size_t bytes, const int passes, Pass&&
     {
         const auto start{std::chrono::steady_clock::now()};
 
-        const auto tokens{pass()};
+        const auto result{pass()};
 
         const std::chrono::duration<double> elapsed{std::chrono::steady_clock::now() - start};
 
-        if (tokens != expected)
+        if (result != expected)
         {
-            std::printf("%s: token count changed between passes\n", name);
+            std::printf("%s: the result changed between passes\n", name);
 
             return false;
         }
@@ -99,10 +103,19 @@ bool measure(const char* name, const std::size_t bytes, const int passes, Pass&&
     const auto median{(seconds[(seconds.size() - 1) / 2] + seconds[seconds.size() / 2]) / 2.0};
 
     std::printf(
-            "%-16s %.1f MiB, %zu tokens, %d passes: best %.1f, median %.1f, worst %.1f MiB/s\n", name, mib, expected,
-            passes, mib / seconds.front(), mib / median, mib / seconds.back());
+            "%-16s %.1f MiB, %zu tokens, %d passes: best %.1f, median %.1f, worst %.1f MiB/s\n", name, mib,
+            count_of(expected), passes, mib / seconds.front(), mib / median, mib / seconds.back());
 
     return true;
+}
+
+/**
+ * @brief Measures a pass whose result is its own token count.
+ */
+template <typename Pass>
+bool measure(const char* name, const std::size_t bytes, const int passes, Pass&& pass)
+{
+    return measure(name, bytes, passes, std::forward<Pass>(pass), [](const std::size_t count) { return count; });
 }
 
 } // namespace munch::tools::benchmark

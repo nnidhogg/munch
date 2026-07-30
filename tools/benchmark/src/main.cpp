@@ -146,10 +146,11 @@ std::size_t tokenize_chunked(const munch::core::Lexer& lexer, const std::string&
 }
 
 /**
- * @brief Verifies that chunked tokenization is identical to the whole-input scan, not merely equal in count.
+ * @brief Verifies that chunked tokenization is identical to the whole-input scan, token for token.
  *
- * Folds an order-sensitive checksum over the serial token stream and over the chunk-local streams in order; the
- * two agree exactly when every token kind appears in the same sequence.
+ * Collects the exact (kind, length) stream of the serial scan and of the chunk-local scans spliced in order; the
+ * two agree exactly when every token's kind and boundary match, so identical kinds split at different boundaries
+ * cannot slip through the way a kind-only checksum would allow.
  * @param lexer The lexer to run.
  * @param input The input to tokenize.
  * @param chunks The number of chunks to divide the input into.
@@ -157,22 +158,22 @@ std::size_t tokenize_chunked(const munch::core::Lexer& lexer, const std::string&
  */
 bool validate_chunked(const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
 {
-    const auto fold{[](std::uint64_t& checksum) {
-        return [&checksum](const Token token, const std::size_t) {
-            checksum = checksum * 31U + static_cast<std::uint64_t>(token);
-        };
+    using Stream_t = std::vector<std::pair<Token, std::size_t>>;
+
+    const auto collect{[](Stream_t& stream) {
+        return [&stream](const Token token, const std::size_t length) { stream.emplace_back(token, length); };
     }};
 
-    std::uint64_t serial{0};
+    Stream_t serial;
 
-    if (lexer.tokenize_all<Token>(input, fold(serial)) != input.size())
+    if (lexer.tokenize_all<Token>(input, collect(serial)) != input.size())
     {
         return false;
     }
 
     const auto boundaries{lexer.chunk_boundaries(input, chunks)};
 
-    std::uint64_t chunked{0};
+    Stream_t chunked;
 
     for (std::size_t index{0}; index + 1 < boundaries.size(); ++index)
     {
@@ -180,13 +181,13 @@ bool validate_chunked(const munch::core::Lexer& lexer, const std::string& input,
 
         const auto end{input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index + 1])};
 
-        if (lexer.tokenize_all<Token>(begin, end, fold(chunked)) != static_cast<std::size_t>(end - begin))
+        if (lexer.tokenize_all<Token>(begin, end, collect(chunked)) != static_cast<std::size_t>(end - begin))
         {
             return false;
         }
     }
 
-    if (serial != chunked)
+    if (chunked != serial)
     {
         std::printf("chunked token stream diverged from the serial scan\n");
 
@@ -316,6 +317,13 @@ int main(const int argc, const char** argv)
     const std::size_t mebibytes{argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 8};
 
     const int passes{argc > 2 ? std::atoi(argv[2]) : 15};
+
+    if (mebibytes == 0 || passes <= 0)
+    {
+        std::printf("usage: munch_benchmark [input size in MiB > 0] [passes > 0]\n");
+
+        return EXIT_FAILURE;
+    }
 
     constexpr const char* ascii_identifiers[]{"foo", "bar_baz", "counter", "x1", "value2", "tmp"};
 
