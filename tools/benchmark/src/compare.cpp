@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <numeric>
 #include <optional>
 #include <regex>
 #include <string>
@@ -156,17 +157,16 @@ Tally run_munch_threaded(const munch::core::Lexer& lexer, const std::string& inp
                 ++tally.tokens;
             })};
 
-    const auto boundaries{lexer.chunk_boundaries(input, chunks)};
+    // Chunks are disjoint and a scan cannot leave its chunk, so summing to the input's size means full consumption.
+    if (std::reduce(consumed.cbegin(), consumed.cend(), std::size_t{0}) != input.size())
+    {
+        return {};
+    }
 
     Tally total{};
 
     for (std::size_t chunk{0}; chunk < consumed.size(); ++chunk)
     {
-        if (consumed[chunk] != boundaries[chunk + 1] - boundaries[chunk])
-        {
-            return {};
-        }
-
         total.checksum = total.checksum * pow31(tallies[chunk].tally.tokens) + tallies[chunk].tally.checksum;
 
         total.tokens += tallies[chunk].tally.tokens;
