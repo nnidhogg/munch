@@ -152,6 +152,30 @@ jobs:
           ./build/tools/fuzz/munch_builder_fuzzer corpus -max_total_time=60 -timeout=10 -rss_limit_mb=4096 \
                 -print_new_funcs=0
 
+  xid-data:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Fetch the pinned Unicode database
+        run: |
+          curl -sSf -o DerivedCoreProperties.txt \
+                https://www.unicode.org/Public/17.0.0/ucd/DerivedCoreProperties.txt
+          echo "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08  DerivedCoreProperties.txt" \
+                | sha256sum -c -
+
+      - name: Regenerate the XID tables
+        run: python3 tools/unicode/generate_xid.py DerivedCoreProperties.txt
+
+      # The checked-in tables must be exactly what the pinned database generates.
+      - name: Verify the checked-in tables match
+        run: git diff --exit-code libs/regex/src/xid_ranges.inc
+
   build-and-test:
     runs-on: ubuntu-24.04
 
