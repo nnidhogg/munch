@@ -176,15 +176,23 @@ fn scan_logos(input: &str, mut sink: impl FnMut(usize, usize)) -> bool {
     true
 }
 
+/// The timed loop keeps its own body: routing it through scan_logos() would compute each token's span for a
+/// sink that ignores it, which measured about ten percent on the dense corpus.
 fn run_logos(input: &str) -> Tally {
+    let mut lexer = Token::lexer(input);
     let mut tally = Tally::default();
 
-    let ok = scan_logos(input, |kind, _| {
-        tally.checksum = tally.checksum.wrapping_mul(31).wrapping_add(kind);
-        tally.tokens += 1;
-    });
+    while let Some(result) = lexer.next() {
+        match result {
+            Ok(token) => {
+                tally.checksum = tally.checksum.wrapping_mul(31).wrapping_add(kind(token));
+                tally.tokens += 1;
+            }
+            Err(_) => return Tally::default(),
+        }
+    }
 
-    if ok { tally } else { Tally::default() }
+    tally
 }
 
 /// Collects the exact (kind, length) token stream, or None when logos rejected the input.
@@ -414,7 +422,8 @@ fn stream_regex_automata_raw(
     }
 }
 
-/// Mirrors tools/benchmark/src/harness.hpp measure(): a warmup pass, then the best of the timed passes.
+/// Mirrors tools/benchmark/src/harness.hpp measure(): a warmup pass, then best, median, and worst of the timed
+/// passes, so the spread is visible instead of only the most favorable run.
 fn measure(name: &str, bytes: usize, passes: usize, run: impl Fn() -> Tally) -> bool {
     let expected = run();
 
@@ -423,7 +432,7 @@ fn measure(name: &str, bytes: usize, passes: usize, run: impl Fn() -> Tally) -> 
         return false;
     }
 
-    let mut best = f64::INFINITY;
+    let mut seconds = Vec::with_capacity(passes);
 
     for _ in 0..passes {
         let start = Instant::now();
@@ -432,17 +441,20 @@ fn measure(name: &str, bytes: usize, passes: usize, run: impl Fn() -> Tally) -> 
 
         assert_eq!(tally, expected);
 
-        if elapsed < best {
-            best = elapsed;
-        }
+        seconds.push(elapsed);
     }
 
+    seconds.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
     let mib = bytes as f64 / (1024.0 * 1024.0);
+    let median = (seconds[(seconds.len() - 1) / 2] + seconds[seconds.len() / 2]) / 2.0;
 
     println!(
-        "{name:<16} {mib:.1} MiB, {} tokens, best of {passes} passes: {:.1} MiB/s",
+        "{name:<16} {mib:.1} MiB, {} tokens, {passes} passes: best {:.1}, median {:.1}, worst {:.1} MiB/s",
         expected.tokens,
-        mib / best
+        mib / seconds[0],
+        mib / median,
+        mib / seconds[seconds.len() - 1]
     );
 
     true

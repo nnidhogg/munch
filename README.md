@@ -125,23 +125,34 @@ The design rationale, i.e. why a library this small outruns engines orders of ma
 [docs/performance.md](docs/performance.md); the architectural decisions behind it are collected in
 [docs/design.md](docs/design.md).
 
-Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2) over generated pseudo-code:
+Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2 on an Intel i9-12900K) over generated pseudo-code.
+Every scenario reports its best, median, and worst pass: the best estimates the least-interrupted cost of the work,
+and the spread to the worst is the interference the machine added.
 
 ```
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target munch_benchmark
 $ ./build/tools/benchmark/munch_benchmark 16 15
-lexer/ascii      16.0 MiB, 9144476 tokens, best of 15 passes: 490.8 MiB/s
-lexer_all/ascii  16.0 MiB, 9144476 tokens, best of 15 passes: 579.2 MiB/s
-tokenizer/ascii  16.0 MiB, 9144476 tokens, best of 15 passes: 470.2 MiB/s
-lexer_all/utf8   16.0 MiB, 8320312 tokens, best of 15 passes: 546.4 MiB/s
+lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 486.8, median 478.4, worst 467.7 MiB/s
+lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 598.9, median 591.3, worst 571.3 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 451.5, median 443.3, worst 434.3 MiB/s
+lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 572.2, median 559.2, worst 548.7 MiB/s
+build/keywords   143 patterns, 251 states, 15 passes: best 33.3, median 33.9, worst 34.4 ms
+lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 577.3, median 570.3, worst 561.2 MiB/s
+chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1002.9, median 989.4, worst 945.4 MiB/s
+chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1060.4, median 1043.6, worst 1014.8 MiB/s
+chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1976.0, median 1911.9, worst 1611.3 MiB/s
+chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 2064.5, median 2016.9, worst 1987.6 MiB/s
+chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 3664.4, median 3196.3, worst 2380.7 MiB/s
+chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3865.1, median 3392.1, worst 3150.3 MiB/s
 ```
 
-The four scenarios measure the core lexer called once per token on C-like source, the same input through the batch
-`tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver, and
-identifiers containing UTF-8 code points matched through byte expansion, also through the batch entry point. Inputs are
-fixed-seed and deterministic, so runs are comparable across changes. Numbers depend on the machine and the token set, so
-rerun the benchmark on your own hardware and language before citing them.
+The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
+`tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver,
+identifiers containing UTF-8 code points matched through byte expansion, the keyword-scale construction cost, and
+the parallel chunked scans at certified split points on two, four, and eight threads. Inputs are fixed-seed and
+deterministic, so runs are comparable across changes. Numbers depend on the machine and the token set, and WSL2
+adds visible run-to-run spread, so rerun the benchmark on your own hardware and language before citing them.
 
 ### **Comparison with Other Engines**
 
@@ -160,25 +171,25 @@ $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BENCHMARK_COMPARE=ON
 $ cmake --build build -j 8 --target munch_benchmark_compare
 $ ./build/tools/benchmark/munch_benchmark_compare 16 15
 corpus dense: 1.83 bytes per token
-munch            16.0 MiB, 9144476 tokens, best of 15 passes: 624.2 MiB/s
-munch-mt4        16.0 MiB, 9144476 tokens, best of 15 passes: 2302.0 MiB/s
-munch-mt8        16.0 MiB, 9144476 tokens, best of 15 passes: 3284.5 MiB/s
-lexertl          16.0 MiB, 9144476 tokens, best of 15 passes: 187.8 MiB/s
-ctre             16.0 MiB, 9144476 tokens, best of 15 passes: 449.1 MiB/s
-pcre2-jit        16.0 MiB, 9144476 tokens, best of 15 passes: 83.5 MiB/s
-re2              16.0 MiB, 9144476 tokens, best of 15 passes: 11.7 MiB/s
-boost-regex      16.0 MiB, 9144476 tokens, best of 15 passes: 16.7 MiB/s
-std-regex        16.0 MiB, 9144476 tokens, best of 15 passes: 11.7 MiB/s
+munch            16.0 MiB, 9144476 tokens, 15 passes: best 577.0, median 563.6, worst 555.1 MiB/s
+munch-mt4        16.0 MiB, 9144476 tokens, 15 passes: best 2035.0, median 1973.4, worst 1474.1 MiB/s
+munch-mt8        16.0 MiB, 9144476 tokens, 15 passes: best 3755.4, median 3410.3, worst 2445.8 MiB/s
+lexertl          16.0 MiB, 9144476 tokens, 15 passes: best 175.7, median 173.2, worst 168.6 MiB/s
+ctre             16.0 MiB, 9144476 tokens, 15 passes: best 421.4, median 414.6, worst 374.9 MiB/s
+pcre2-jit        16.0 MiB, 9144476 tokens, 15 passes: best 79.9, median 78.2, worst 77.3 MiB/s
+re2              16.0 MiB, 9144476 tokens, 15 passes: best 11.2, median 11.0, worst 10.8 MiB/s
+boost-regex      16.0 MiB, 9144476 tokens, 15 passes: best 15.5, median 15.3, worst 15.0 MiB/s
+std-regex        16.0 MiB, 9144476 tokens, 15 passes: best 10.9, median 10.9, worst 10.8 MiB/s
 corpus source: 3.53 bytes per token
-munch            16.0 MiB, 4755600 tokens, best of 15 passes: 604.5 MiB/s
-munch-mt4        16.0 MiB, 4755600 tokens, best of 15 passes: 2342.3 MiB/s
-munch-mt8        16.0 MiB, 4755600 tokens, best of 15 passes: 3792.9 MiB/s
-lexertl          16.0 MiB, 4755600 tokens, best of 15 passes: 237.4 MiB/s
-ctre             16.0 MiB, 4755600 tokens, best of 15 passes: 634.3 MiB/s
-pcre2-jit        16.0 MiB, 4755600 tokens, best of 15 passes: 151.0 MiB/s
-re2              16.0 MiB, 4755600 tokens, best of 15 passes: 20.2 MiB/s
-boost-regex      16.0 MiB, 4755600 tokens, best of 15 passes: 30.7 MiB/s
-std-regex        16.0 MiB, 4755600 tokens, best of 15 passes: 17.8 MiB/s
+munch            16.0 MiB, 4755600 tokens, 15 passes: best 563.8, median 547.6, worst 529.0 MiB/s
+munch-mt4        16.0 MiB, 4755600 tokens, 15 passes: best 2075.6, median 2018.1, worst 1868.8 MiB/s
+munch-mt8        16.0 MiB, 4755600 tokens, 15 passes: best 3873.3, median 3444.5, worst 2997.5 MiB/s
+lexertl          16.0 MiB, 4755600 tokens, 15 passes: best 223.6, median 220.5, worst 218.4 MiB/s
+ctre             16.0 MiB, 4755600 tokens, 15 passes: best 575.3, median 564.8, worst 544.6 MiB/s
+pcre2-jit        16.0 MiB, 4755600 tokens, 15 passes: best 139.8, median 137.1, worst 133.6 MiB/s
+re2              16.0 MiB, 4755600 tokens, 15 passes: best 19.1, median 18.9, worst 18.7 MiB/s
+boost-regex      16.0 MiB, 4755600 tokens, 15 passes: best 28.4, median 28.1, worst 27.8 MiB/s
+std-regex        16.0 MiB, 4755600 tokens, 15 passes: best 16.4, median 16.2, worst 16.1 MiB/s
 ```
 
 The same job runs through Rust's lexer class in `tools/benchmark/rust`, whose corpus generators are byte-identical ports
@@ -189,17 +200,17 @@ class, both through its search API and steelmanned through its low-level automat
 ```
 $ cd tools/benchmark/rust && cargo run --release -- 16 15
 corpus dense: 1.83 bytes per token
-logos            16.0 MiB, 9144476 tokens, best of 15 passes: 680.2 MiB/s
-logos-mt4        16.0 MiB, 9144476 tokens, best of 15 passes: 2576.9 MiB/s
-logos-mt8        16.0 MiB, 9144476 tokens, best of 15 passes: 4594.0 MiB/s
-regex-automata   16.0 MiB, 9144476 tokens, best of 15 passes: 171.2 MiB/s
-regex-automata-raw 16.0 MiB, 9144476 tokens, best of 15 passes: 351.1 MiB/s
+logos            16.0 MiB, 9144476 tokens, 15 passes: best 728.0, median 691.5, worst 665.3 MiB/s
+logos-mt4        16.0 MiB, 9144476 tokens, 15 passes: best 2708.0, median 2640.2, worst 2307.8 MiB/s
+logos-mt8        16.0 MiB, 9144476 tokens, 15 passes: best 5148.9, median 4742.7, worst 3283.3 MiB/s
+regex-automata   16.0 MiB, 9144476 tokens, 15 passes: best 168.2, median 166.5, worst 155.2 MiB/s
+regex-automata-raw 16.0 MiB, 9144476 tokens, 15 passes: best 349.1, median 346.9, worst 340.9 MiB/s
 corpus source: 3.53 bytes per token
-logos            16.0 MiB, 4755600 tokens, best of 15 passes: 844.4 MiB/s
-logos-mt4        16.0 MiB, 4755600 tokens, best of 15 passes: 3253.8 MiB/s
-logos-mt8        16.0 MiB, 4755600 tokens, best of 15 passes: 5628.6 MiB/s
-regex-automata   16.0 MiB, 4755600 tokens, best of 15 passes: 227.2 MiB/s
-regex-automata-raw 16.0 MiB, 4755600 tokens, best of 15 passes: 400.9 MiB/s
+logos            16.0 MiB, 4755600 tokens, 15 passes: best 891.1, median 858.8, worst 833.5 MiB/s
+logos-mt4        16.0 MiB, 4755600 tokens, 15 passes: best 3462.0, median 3290.0, worst 2854.9 MiB/s
+logos-mt8        16.0 MiB, 4755600 tokens, 15 passes: best 6141.5, median 5487.2, worst 4131.6 MiB/s
+regex-automata   16.0 MiB, 4755600 tokens, 15 passes: best 222.3, median 219.7, worst 215.8 MiB/s
+regex-automata-raw 16.0 MiB, 4755600 tokens, 15 passes: best 399.1, median 392.8, worst 352.4 MiB/s
 ```
 
 The engines fall into three groups, and each group is in the comparison to answer a different question.
@@ -212,15 +223,17 @@ library can do rather than its friendliest entry point.
 
 | Engine                 | Version   | Matching approach                       | dense | source |
 |------------------------|-----------|-----------------------------------------|------:|-------:|
-| `munch`                | this repo | table-compiled minimal DFA, single pass |   624 |    605 |
-| `regex-automata` (raw) | 0.4       | dense DFA walked at the automaton level |   351 |    401 |
-| lexertl                | 652435f   | rules compiled to a DFA                 |   188 |    237 |
-| `regex-automata`       | 0.4       | dense DFA through its search API        |   171 |    227 |
+| `munch`                | this repo | table-compiled minimal DFA, single pass |   577 |    564 |
+| `regex-automata` (raw) | 0.4       | dense DFA walked at the automaton level |   349 |    399 |
+| lexertl                | 652435f   | rules compiled to a DFA                 |   176 |    224 |
+| `regex-automata`       | 0.4       | dense DFA through its search API        |   168 |    222 |
 
 **The class above: compile-time code generation.** These freeze the token set at build time and emit code shaped
 like it, the one advantage a runtime-built table cannot take, so this group does not measure a competition munch can
-enter; it measures the price of munch's flexibility. Eight percent on dense input and under thirty on source-shaped
-input is what keeping the token set an ordinary runtime value costs. Membership in this class is not sufficient to
+enter; it measures the price of munch's flexibility. On this machine that price has ranged across measurement
+sessions from under ten percent to roughly a quarter against logos on dense input, and from forty to sixty percent
+on source-shaped input: gaps between separately built binaries move with machine state, which the best-to-worst
+spread in the raw output makes visible. Membership in this class is not sufficient to
 win, though: munch outruns CTRE outright on the dense corpus, because CTRE compiles the regex structure into code
 and still resolves the alternation between token kinds per token, while munch's determinized table erased the
 alternation before the first byte arrived. Only when longer tokens let generated code consume multi-byte runs does
@@ -228,9 +241,9 @@ CTRE pull ahead.
 
 | Engine  | Version   | Matching approach                       | dense | source |
 |---------|-----------|-----------------------------------------|------:|-------:|
-| logos   | 0.15.1    | matcher generated by a derive macro     |   680 |    844 |
-| `munch` | this repo | table-compiled minimal DFA, single pass |   624 |    605 |
-| CTRE    | 3.9.0     | matcher generated from the regex        |   449 |    634 |
+| logos   | 0.15.1    | matcher generated by a derive macro     |   728 |    891 |
+| `munch` | this repo | table-compiled minimal DFA, single pass |   577 |    564 |
+| CTRE    | 3.9.0     | matcher generated from the regex        |   421 |    575 |
 
 **The industry defaults: general-purpose regex engines.** This is what a codebase typically reaches for when it
 needs a tokenizer without adopting a lexer library, so the group measures what that convenience costs. The gap is
@@ -239,21 +252,21 @@ for that generality on a workload of anchored matches every couple of bytes.
 
 | Engine       | Version        | Matching approach                       | dense | source |
 |--------------|----------------|-----------------------------------------|------:|-------:|
-| `munch`      | this repo      | table-compiled minimal DFA, single pass |   624 |    605 |
-| PCRE2        | 10.44          | backtracking, JIT-compiled              |    84 |    151 |
-| Boost.Regex  | 1.86.0         | backtracking                            |    17 |     31 |
-| RE2          | 2024-07-02     | Thompson NFA when extracting captures   |    12 |     20 |
-| `std::regex` | libstdc++ 13.3 | backtracking                            |    12 |     18 |
+| `munch`      | this repo      | table-compiled minimal DFA, single pass |   577 |    564 |
+| PCRE2        | 10.44          | backtracking, JIT-compiled              |    80 |    140 |
+| Boost.Regex  | 1.86.0         | backtracking                            |    16 |     28 |
+| RE2          | 2024-07-02     | Thompson NFA when extracting captures   |    11 |     19 |
+| `std::regex` | libstdc++ 13.3 | backtracking                            |    11 |     16 |
 
 With the input chunked at safe split points and scanned with one thread per chunk, for the two lexer classes fast enough
 for threading to matter:
 
 | Engine  | Threads | dense | source |
 |---------|--------:|------:|-------:|
-| logos   |       8 |  4594 |   5629 |
-| `munch` |       8 |  3285 |   3793 |
-| logos   |       4 |  2577 |   3254 |
-| `munch` |       4 |  2302 |   2342 |
+| logos   |       8 |  5149 |   6142 |
+| `munch` |       8 |  3755 |   3873 |
+| logos   |       4 |  2708 |   3462 |
+| `munch` |       4 |  2035 |   2076 |
 
 Throughputs in MiB/s.
 

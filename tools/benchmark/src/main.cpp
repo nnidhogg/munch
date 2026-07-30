@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -266,7 +267,9 @@ void measure_build(const int passes)
 {
     const auto builder{keyword_scale_builder()};
 
-    auto best{1e300};
+    std::vector<double> milliseconds;
+
+    milliseconds.reserve(static_cast<std::size_t>(passes));
 
     for (int index{0}; index < passes; ++index)
     {
@@ -276,8 +279,10 @@ void measure_build(const int passes)
 
         const std::chrono::duration<double, std::milli> elapsed{std::chrono::steady_clock::now() - start};
 
-        best = std::min(best, elapsed.count());
+        milliseconds.push_back(elapsed.count());
     }
+
+    std::sort(milliseconds.begin(), milliseconds.end());
 
     const auto dfa{builder.dfa()};
 
@@ -290,7 +295,11 @@ void measure_build(const int passes)
         states.insert(to);
     }
 
-    std::printf("build/keywords   143 patterns, %zu states, best of %d passes: %.1f ms\n", states.size(), passes, best);
+    const auto median{(milliseconds[(milliseconds.size() - 1) / 2] + milliseconds[milliseconds.size() / 2]) / 2.0};
+
+    std::printf(
+            "build/keywords   143 patterns, %zu states, %d passes: best %.1f, median %.1f, worst %.1f ms\n",
+            states.size(), passes, milliseconds.front(), median, milliseconds.back());
 }
 
 } // namespace

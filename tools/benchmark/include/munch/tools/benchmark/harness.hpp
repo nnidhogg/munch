@@ -4,9 +4,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
-#include <limits>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "munch/core/lexer.hpp"
 
@@ -48,10 +48,12 @@ std::string generate_input(std::size_t size, std::span<const char* const> identi
 std::string generate_source_input(std::size_t size);
 
 /**
- * @brief Measures the best throughput of a tokenization pass over a number of runs.
+ * @brief Measures the throughput of a tokenization pass over a number of runs.
  *
- * The first pass warms caches and provides the token count the timed passes are validated against. The minimum is
- * reported, as it is the least noisy estimate of the cost of the work itself.
+ * The first pass warms caches and provides the token count the timed passes are validated against. Three figures
+ * are reported: the best pass estimates the least-interrupted cost of the work itself, the median shows the
+ * typical run, and the worst bounds the interference the machine added, so the spread is visible instead of only
+ * the most favorable pass.
  * @param name The scenario name to report.
  * @param bytes The input size the pass consumes.
  * @param passes The number of timed passes.
@@ -68,7 +70,9 @@ bool measure(const char* name, const std::size_t bytes, const int passes, Pass&&
         return false;
     }
 
-    double best_seconds{std::numeric_limits<double>::infinity()};
+    std::vector<double> seconds;
+
+    seconds.reserve(static_cast<std::size_t>(passes));
 
     for (int index{0}; index < passes; ++index)
     {
@@ -85,14 +89,18 @@ bool measure(const char* name, const std::size_t bytes, const int passes, Pass&&
             return false;
         }
 
-        best_seconds = std::min(best_seconds, elapsed.count());
+        seconds.push_back(elapsed.count());
     }
+
+    std::sort(seconds.begin(), seconds.end());
 
     const auto mib{static_cast<double>(bytes) / (1024.0 * 1024.0)};
 
+    const auto median{(seconds[(seconds.size() - 1) / 2] + seconds[seconds.size() / 2]) / 2.0};
+
     std::printf(
-            "%-16s %.1f MiB, %zu tokens, best of %d passes: %.1f MiB/s\n", name, mib, expected, passes,
-            mib / best_seconds);
+            "%-16s %.1f MiB, %zu tokens, %d passes: best %.1f, median %.1f, worst %.1f MiB/s\n", name, mib, expected,
+            passes, mib / seconds.front(), mib / median, mib / seconds.back());
 
     return true;
 }
