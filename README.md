@@ -872,7 +872,8 @@ versions.
 
 The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
-not for stability. The benchmark tools and the prose in `docs/` carry no compatibility promise, and performance numbers
+not for stability. The regex node types are likewise inspectable, but constructing them directly rather than through
+the combinators is outside the stable surface. The benchmark tools and the prose in `docs/` carry no compatibility promise, and performance numbers
 are measurements, not contracts. Additions like the Unicode XID identifier classes arrive as new combinators without
 changing what exists (see [docs/limits.md](docs/limits.md)).
 
