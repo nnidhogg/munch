@@ -108,7 +108,7 @@ simulator's constructor.
 
 The threaded chunking is measured, and the prediction registered here before the experiment held. The benchmark splits
 the input at the certified points nearest the equal-division offsets, runs one whole-input scan per chunk on its own
-thread, and first proves the chunked token stream identical to the serial one through an order-sensitive checksum. On
+thread, and first proves the chunked token stream identical to the serial one by an exact (kind, length) stream comparison before timing, keeping only a light tally as a consistency signal in the timed passes. On
 the benchmark token set, chunking scales the serial 651.7 MiB/s to 1161.8 MiB/s on two threads, 2292.9 MiB/s on four,
 and 3834.7 MiB/s on eight, with the source-shaped corpus within a few percent of the dense one at every width
 (`cmake -B build-perf -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON && cmake --build build-perf && ./build-perf/tools/benchmark/munch_benchmark 16 15`).
