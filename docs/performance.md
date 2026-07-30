@@ -115,14 +115,14 @@ s. The remaining cost was the set representation itself: reachable sets hold ove
 sets pay an allocation and a hash per element. Rebuilding the construction over dense bit sets, with closures stored as
 member lists and set identity as a hash of words, brought 34 s to 0.6 s, 372 times faster than the starting point. The
 keyword-scale build fell from 33 ms to 27 ms as a side effect, and the compiled XID grammar lands at 477 DFA states,
-small enough that the runtime story is unchanged. Registration had its own quadratic:
-lowering a choice folded pairwise unions, copying the accumulated automaton once per alternative and chaining one extra
-start state each; an n-ary union under a single fresh start state (`merge_all`) registers the XID identifier pattern in
-72 ms where the fold took over a second, and the shorter epsilon chains cut determinization further, 0.6 s to 0.45 s.
-The construction figures are tracked by
-`build/xid` in the benchmark alongside `build/keywords`, and `lexer_all/xid` runs the Greek-identifier input through the
-XID grammar: it tracks the hand-rolled `lexer_all/utf8` scenario within noise (515.8 against 523.8 MiB/s median in one
-same-session pair), confirming that the class size is paid during construction and never per input byte.
+small enough that the runtime story is unchanged. Registration had its own quadratic: lowering a choice folded pairwise
+unions, copying the accumulated automaton once per alternative and chaining one extra start state each; an n-ary union
+under a single fresh start state (`merge_all`) registers the XID identifier pattern in 72 ms where the fold took over a
+second, and the shorter epsilon chains cut determinization further, 0.6 s to 0.45 s. The construction figures are
+tracked by `register/xid`, `build/xid`, and `total/xid` in the benchmark alongside `build/keywords`, and `lexer_all/xid`
+runs the Greek-identifier input through the XID grammar: it tracks the hand-rolled `lexer_all/utf8` scenario within
+noise (515.8 against 523.8 MiB/s median in one same-session pair), confirming that the class size is paid during
+construction and never per input byte.
 
 ## **The Remaining Headroom Is Parallel**
 

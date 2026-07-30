@@ -134,27 +134,30 @@ and scheduling.
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target munch_benchmark
 $ ./build/tools/benchmark/munch_benchmark 16 15
-lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 495.1, median 481.5, worst 460.1 MiB/s
-lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 558.9, median 547.3, worst 534.2 MiB/s
-tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 469.8, median 454.6, worst 435.4 MiB/s
-lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 531.3, median 517.6, worst 495.0 MiB/s
-lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 523.3, median 510.8, worst 482.9 MiB/s
-build/keywords   143 patterns, 251 states, 15 passes: best 21.1, median 21.9, worst 23.5 ms
-build/xid        3 patterns, 477 states, 15 passes: best 409.3, median 418.9, worst 442.1 ms
-lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 563.7, median 545.0, worst 506.4 MiB/s
-chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1052.8, median 1029.0, worst 969.2 MiB/s
-chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1009.8, median 988.3, worst 876.2 MiB/s
-chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 2013.9, median 1960.0, worst 1721.2 MiB/s
-chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 1955.4, median 1916.3, worst 1719.9 MiB/s
-chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 3838.1, median 3661.1, worst 3218.0 MiB/s
-chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3776.8, median 3417.7, worst 3117.5 MiB/s
+lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 508.6, median 497.1, worst 471.1 MiB/s
+lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 584.6, median 572.2, worst 555.7 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 447.2, median 440.5, worst 427.9 MiB/s
+lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 567.3, median 564.0, worst 546.4 MiB/s
+lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 568.3, median 554.0, worst 523.2 MiB/s
+build/keywords   143 patterns, 251 states, 15 passes: best 21.8, median 22.7, worst 24.9 ms
+register/xid     3 patterns, 477 states, 15 passes: best 59.2, median 64.1, worst 75.5 ms
+build/xid        3 patterns, 477 states, 15 passes: best 432.3, median 459.2, worst 534.1 ms
+total/xid        3 patterns, 477 states, 15 passes: best 495.2, median 522.4, worst 602.1 ms
+lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 581.4, median 569.0, worst 514.1 MiB/s
+chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1035.0, median 1003.6, worst 946.7 MiB/s
+chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 987.9, median 971.2, worst 903.4 MiB/s
+chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1987.8, median 1928.5, worst 1817.1 MiB/s
+chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 1934.3, median 1887.1, worst 1626.7 MiB/s
+chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 3008.9, median 2797.6, worst 2506.3 MiB/s
+chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3294.3, median 3066.8, worst 2805.0 MiB/s
 ```
 
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
 `tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver,
 identifiers containing UTF-8 code points matched through byte expansion, the same input through the full Unicode XID
 identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the class size is paid at construction,
-never per byte), the keyword-scale and XID construction costs, and the parallel chunked scans at certified split
+never per byte), the keyword-scale build cost, the XID construction cost split into registration, finalization,
+and their total, and the parallel chunked scans at certified split
 points on two, four, and eight threads. Inputs are fixed-seed and deterministic, so runs are comparable across
 changes. Numbers depend on the machine, the token set, and the compiler: these are GCC 13 builds, and Clang 19
 measures within about ten percent since the accept path was pinned to a branch (see

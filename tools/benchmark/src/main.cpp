@@ -340,55 +340,88 @@ munch::core::Lexer build_xid_lexer()
  * @brief Measures the construction cost of a Unicode identifier grammar over the XID properties.
  *
  * The identifier pattern expands the two XID property tables, 1497 code point ranges, into byte alternatives:
- * the construction stress case a generated property class poses. Registration cost is excluded, as in the
- * keyword-scale measurement.
+ * the construction stress case a generated property class poses. Three figures make the whole story visible:
+ * register/xid covers expanding the properties into patterns and registering them, build/xid covers finalization
+ * through build() as in the keyword-scale measurement, and total/xid is one pass through both.
  */
 void measure_xid_build(const int passes)
 {
     using namespace munch::regex;
 
-    Staged_builder builder;
+    std::vector<double> registration;
 
-    builder.add_token(
-            concat(choice(text('_'), unicode::xid_start()), kleene(unicode::xid_continue())), Token::identifier, 2);
+    std::vector<double> finalization;
 
-    builder.add_token(patterns::decimal_integer(), Token::number, 1);
+    registration.reserve(static_cast<std::size_t>(passes));
 
-    builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 1);
+    finalization.reserve(static_cast<std::size_t>(passes));
 
-    std::vector<double> milliseconds;
-
-    milliseconds.reserve(static_cast<std::size_t>(passes));
+    std::size_t state_count{0};
 
     for (int index{0}; index < passes; ++index)
     {
         const auto start{std::chrono::steady_clock::now()};
 
+        Staged_builder builder;
+
+        builder.add_token(
+                concat(choice(text('_'), unicode::xid_start()), kleene(unicode::xid_continue())), Token::identifier, 2);
+
+        builder.add_token(patterns::decimal_integer(), Token::number, 1);
+
+        builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 1);
+
+        const auto registered{std::chrono::steady_clock::now()};
+
         static_cast<void>(builder.build());
 
-        const std::chrono::duration<double, std::milli> elapsed{std::chrono::steady_clock::now() - start};
+        const auto built{std::chrono::steady_clock::now()};
 
-        milliseconds.push_back(elapsed.count());
+        registration.push_back(std::chrono::duration<double, std::milli>{registered - start}.count());
+
+        finalization.push_back(std::chrono::duration<double, std::milli>{built - registered}.count());
+
+        if (index == 0)
+        {
+            const auto dfa{builder.dfa()};
+
+            std::set<std::size_t> states{dfa.init_state()};
+
+            for (const auto& [key, to] : dfa.transitions())
+            {
+                states.insert(key.first);
+
+                states.insert(to);
+            }
+
+            state_count = states.size();
+        }
     }
 
-    std::sort(milliseconds.begin(), milliseconds.end());
+    const auto report{[passes, state_count](const char* const name, std::vector<double> milliseconds) {
+        std::sort(milliseconds.begin(), milliseconds.end());
 
-    const auto dfa{builder.dfa()};
+        const auto median{(milliseconds[(milliseconds.size() - 1) / 2] + milliseconds[milliseconds.size() / 2]) / 2.0};
 
-    std::set<std::size_t> states{dfa.init_state()};
+        std::printf(
+                "%s     3 patterns, %zu states, %d passes: best %.1f, median %.1f, worst %.1f ms\n", name, state_count,
+                passes, milliseconds.front(), median, milliseconds.back());
+    }};
 
-    for (const auto& [key, to] : dfa.transitions())
+    std::vector<double> total;
+
+    total.reserve(registration.size());
+
+    for (std::size_t index{0}; index < registration.size(); ++index)
     {
-        states.insert(key.first);
-
-        states.insert(to);
+        total.push_back(registration[index] + finalization[index]);
     }
 
-    const auto median{(milliseconds[(milliseconds.size() - 1) / 2] + milliseconds[milliseconds.size() / 2]) / 2.0};
+    report("register/xid", std::move(registration));
 
-    std::printf(
-            "build/xid        3 patterns, %zu states, %d passes: best %.1f, median %.1f, worst %.1f ms\n",
-            states.size(), passes, milliseconds.front(), median, milliseconds.back());
+    report("build/xid   ", std::move(finalization));
+
+    report("total/xid   ", std::move(total));
 }
 
 } // namespace
