@@ -113,6 +113,45 @@ jobs:
           cd build
           ctest --output-on-failure
 
+  fuzz:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-19 ninja-build
+
+      - name: Configure build with CMake
+        env:
+          CC: clang-19
+          CXX: clang++-19
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_FUZZER=ON \
+                -DMUNCH_BUILD_TESTS=OFF -DMUNCH_BUILD_BENCHMARK=OFF
+
+      - name: Build with CMake
+        run: |
+          cd build
+          cmake --build .
+
+      # A bounded smoke run each push; crashes and invariant violations reproduce from the printed input.
+      - name: Fuzz the builder and scan invariants
+        run: |
+          mkdir corpus
+          # print_new_funcs=0: symbolizing each newly covered function costs a symbolizer spawn per function and
+          # adds nothing here; crash reports are still symbolized.
+          ./build/tools/fuzz/munch_builder_fuzzer corpus -max_total_time=60 -timeout=10 -rss_limit_mb=4096 \
+                -print_new_funcs=0
+
   build-and-test:
     runs-on: ubuntu-24.04
 

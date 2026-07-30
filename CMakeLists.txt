@@ -42,6 +42,14 @@ option(MUNCH_BUILD_BENCHMARK "Build the throughput benchmark for munch" ${MUNCH_
 
 option(MUNCH_BENCHMARK_COMPARE "Build the benchmark comparing munch against other engines" OFF)
 
+# Requires Clang, which carries libFuzzer. The whole tree is instrumented, not just the harness: the fuzzer's
+# coverage feedback and the sanitizers must see library code, so a fuzzer build is its own dedicated build tree.
+option(MUNCH_BUILD_FUZZER "Build the libFuzzer harness for munch (requires Clang)" OFF)
+if (MUNCH_BUILD_FUZZER)
+    add_compile_options(-fsanitize=address,undefined,fuzzer-no-link -fno-sanitize-recover=all)
+    add_link_options(-fsanitize=address,undefined)
+endif ()
+
 include(GNUInstallDirs)
 
 option(MUNCH_INSTALL "Generate install rules for munch" ${MUNCH_IS_TOP_LEVEL})
