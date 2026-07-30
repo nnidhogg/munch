@@ -68,7 +68,7 @@ if (MUNCH_BUILD_TESTS)
 
     add_test(NAME ${PROJECT_NAME}_tests COMMAND ${PROJECT_NAME}_tests)
 
-    target_compile_definitions(${PROJECT_NAME}_tests PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(${PROJECT_NAME}_tests PRIVATE SOURCE_DIR="${MUNCH_SOURCE_DIR}")
 
     add_executable(${PROJECT_NAME}_tools_tests
             tools/tests/graphviz_test.cpp
@@ -83,5 +83,5 @@ if (MUNCH_BUILD_TESTS)
 
     add_test(NAME ${PROJECT_NAME}_tools_tests COMMAND ${PROJECT_NAME}_tools_tests)
 
-    target_compile_definitions(${PROJECT_NAME}_tools_tests PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(${PROJECT_NAME}_tools_tests PRIVATE SOURCE_DIR="${MUNCH_SOURCE_DIR}")
 endif ()
