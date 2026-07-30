@@ -4,6 +4,7 @@ project(munch_core)
 
 add_library(${PROJECT_NAME}
         src/builder.cpp
+        src/subset_construction.cpp
 )
 
 target_include_directories(${PROJECT_NAME}

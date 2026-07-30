@@ -6,12 +6,12 @@
 #include <queue>
 #include <ranges>
 #include <set>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include "munch/dfa/builder.hpp"
 #include "munch/dfa/minimize.hpp"
 
 namespace
@@ -36,6 +36,92 @@ struct Hash
         return std::accumulate(states.cbegin(), states.cend(), static_cast<std::size_t>(0), hash);
     }
 };
+
+/**
+ * @brief Advances NFA state sets by symbol, memoizing the epsilon closure of each state.
+ *
+ * Epsilon closure is transitive: a state's closure contains the closures of every state in it, so the closure of
+ * a set is the union of its members' closures and a member already present contributes nothing new. Memoizing per
+ * state turns the closure work of a determinization from repeated graph walks into set unions.
+ */
+class Advancer
+{
+public:
+    explicit Advancer(const munch::nfa::Nfa& nfa) : nfa_{nfa} {}
+
+    /**
+     * @brief The epsilon closure of the states reachable from the set on the symbol.
+     */
+    [[nodiscard]] munch::nfa::Nfa::States_t advance(
+            const munch::nfa::Nfa::States_t& states, const munch::nfa::Label::Symbol_t symbol)
+    {
+        munch::nfa::Nfa::States_t result;
+
+        for (const auto state : states)
+        {
+            const auto iterator{nfa_.transitions().find({state, munch::nfa::Label{symbol}})};
+
+            if (iterator == nfa_.transitions().cend())
+            {
+                continue;
+            }
+
+            for (const auto target : iterator->second)
+            {
+                if (!result.contains(target))
+                {
+                    const auto& closure{closure_of(target)};
+
+                    result.insert(closure.cbegin(), closure.cend());
+                }
+            }
+        }
+
+        return result;
+    }
+
+private:
+    /**
+     * @brief The memoized epsilon closure of one state.
+     */
+    const munch::nfa::Nfa::States_t& closure_of(const munch::nfa::Nfa::State_t state)
+    {
+        const auto iterator{closures_.find(state)};
+
+        return iterator != closures_.cend() ? iterator->second :
+                                              closures_.emplace(state, nfa_.epsilon_closure({state})).first->second;
+    }
+
+    const munch::nfa::Nfa& nfa_;
+
+    std::unordered_map<munch::nfa::Nfa::State_t, munch::nfa::Nfa::States_t> closures_;
+};
+
+/**
+ * @brief Collects the distinct symbols any state in the set has an outgoing transition on.
+ *
+ * States of a byte-expanded Unicode class share their symbols almost entirely, so advancing once per state-symbol
+ * pair instead of once per distinct symbol repeats the same transition thousands of times per set.
+ * @param states The set of NFA states to collect from.
+ * @param symbol_table The per-state symbol index built by build_symbol_table().
+ * @return The distinct symbols, in deterministic order.
+ */
+template <typename Table>
+std::set<munch::nfa::Label::Symbol_t> distinct_symbols(
+        const munch::nfa::Nfa::States_t& states, const Table& symbol_table)
+{
+    std::set<munch::nfa::Label::Symbol_t> result;
+
+    for (const auto state : states)
+    {
+        if (const auto iterator{symbol_table.find(state)}; iterator != symbol_table.cend())
+        {
+            result.insert(iterator->second.cbegin(), iterator->second.cend());
+        }
+    }
+
+    return result;
+}
 
 /**
  * @brief Builds a lookup table from each NFA state to the set of input symbols it has an outgoing transition on.
@@ -119,6 +205,8 @@ Builder::Diagnostics Builder::diagnose() const
 
     const auto initial_states{merged.epsilon_closure({merged.init_state()})};
 
+    Advancer advancer{merged};
+
     std::unordered_set<nfa::Nfa::States_t, Hash> visited{initial_states};
 
     std::queue<nfa::Nfa::States_t> nfa_queue{{initial_states}};
@@ -174,14 +262,9 @@ Builder::Diagnostics Builder::diagnose() const
             }
         }
 
-        const auto filter{[&symbol_table](const auto state) { return symbol_table.contains(state); }};
-
-        const auto transform{[&symbol_table](const auto state) { return symbol_table.at(state); }};
-
-        auto view{nfa_states | std::views::filter(filter) | std::views::transform(transform) | std::views::join};
-
-        std::ranges::for_each(view, [&](const auto symbol) {
-            const auto next_states{merged.advance(nfa_states, symbol)};
+        for (const auto symbol : distinct_symbols(nfa_states, symbol_table))
+        {
+            const auto next_states{advancer.advance(nfa_states, symbol)};
 
             if (!next_states.empty() && visited.insert(next_states).second)
             {
@@ -192,7 +275,7 @@ Builder::Diagnostics Builder::diagnose() const
 
                 nfa_queue.push(next_states);
             }
-        });
+        }
     }
 
     Diagnostics result;
@@ -231,67 +314,6 @@ nfa::Builder Builder::thompson_construction() const
     const auto merge{[&lower](const auto& nfa, const auto& pattern) { return nfa.merge(lower(pattern)); }};
 
     return std::accumulate(std::next(patterns_.cbegin()), patterns_.cend(), lower(patterns_.front()), merge);
-}
-
-dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa, const std::size_t state_limit)
-{
-    dfa::Builder dfa;
-
-    const auto symbol_table{build_symbol_table(nfa)};
-
-    const auto initial_states{nfa.epsilon_closure({nfa.init_state()})};
-
-    std::unordered_map<nfa::Nfa::States_t, dfa::Dfa::State_t, Hash> nfa_dfa_map{{initial_states, dfa.init_state()}};
-
-    std::queue<nfa::Nfa::States_t> nfa_queue{{initial_states}};
-
-    while (!nfa_queue.empty())
-    {
-        const auto nfa_states{nfa_queue.front()};
-
-        nfa_queue.pop();
-
-        const auto dfa_state{nfa_dfa_map.at(nfa_states)};
-
-        if (const auto token = nfa.has_accept_token(nfa_states); token)
-        {
-            dfa.add_accept_state(dfa_state, dfa::Token{token->id()});
-        }
-
-        const auto filter{[&symbol_table](const auto state) { return symbol_table.contains(state); }};
-
-        const auto transform{[&symbol_table](const auto state) { return symbol_table.at(state); }};
-
-        auto view{nfa_states | std::views::filter(filter) | std::views::transform(transform) | std::views::join};
-
-        std::ranges::for_each(view, [&](const auto symbol) {
-            const auto next_states{nfa.advance(nfa_states, symbol)};
-
-            if (next_states.empty())
-            {
-                return;
-            }
-
-            auto iterator{nfa_dfa_map.find(next_states)};
-
-            // A state identifier is only allocated when the state set is new, keeping the identifiers dense.
-            if (iterator == nfa_dfa_map.cend())
-            {
-                if (state_limit != 0 && nfa_dfa_map.size() >= state_limit)
-                {
-                    throw std::runtime_error{"Determinization exceeded the configured state limit"};
-                }
-
-                iterator = nfa_dfa_map.emplace(next_states, dfa.next_state()).first;
-
-                nfa_queue.push(next_states);
-            }
-
-            dfa.add_transition(dfa_state, dfa::Label{symbol}, iterator->second);
-        });
-    }
-
-    return std::move(dfa).build();
 }
 
 } // namespace munch::core
