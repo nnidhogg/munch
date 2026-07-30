@@ -16,7 +16,7 @@ simply do not exist here. In the README's comparison, where the corpus averages 
 gap to the general-purpose engines is *them paying for generality*, re-entering a full match API at every token
 boundary.
 
-## **Every Decision Is Made Once, in build ()**
+## **Every Decision Is Made Once, in build()**
 
 The pipeline (Thompson construction, subset construction, minimization, run per pattern and then once more for the
 combined lexer) is where alternation, ambiguity, and priority get dissolved rather than deferred. After the final
@@ -52,7 +52,7 @@ latency does not take back what branch elimination won.
 
 Lexer-specialized code generators beat this design, and the margin grows with token length. logos, the Rust lexer
 generator, is measured in tools/benchmark/rust on byte-identical ports of the README's two benchmark corpora, validated
-to produce the same token stream to the token: it runs ten to thirty percent ahead of the whole-input tokenize_all ()
+to produce the same token stream to the token: it runs ten to thirty percent ahead of the whole-input tokenize_all()
 entry point, and CTRE overtakes on the source-shaped corpus as well; re2c occupies the same class for C. munch's own
 throughput is nearly identical on both corpus shapes, which is the table model's signature: it pays per byte, so token
 length neither helps nor hurts it, while generated code consumes multi-byte runs. Within munch's own class the lead
@@ -98,26 +98,26 @@ bandwidth today, so the ceiling is genuinely unclaimed.
 
 Chunks must begin at real token boundaries, and in this design that is not a heuristic but a property the automaton can
 certify at build time: a byte that no state except the start state consumes can only ever begin a token, so every
-occurrence is a safe split point, computable by one pass over the transition table. The start state's exemption
-holds only while no transition re-enters it, which a nullable pattern's self-looping start state does; the
-exemption then certifies nothing, and only bytes no state consumes remain vacuously safe. A token set whose strings or
-comments can contain any byte certifies no safe points, and the right behavior is to refuse and scan sequentially rather
-than speculate, in keeping with [limits.md](limits.md). The certification is built:
-Lexer::is_split_point () reports the certified bytes of a compiled token set, computed by that one pass in the simulator's
-constructor.
+occurrence is a safe split point, computable by one pass over the transition table. The start state's exemption holds
+only while no transition re-enters it, which a nullable pattern's self-looping start state does; the exemption then
+certifies nothing, and only bytes no state consumes remain vacuously safe. A token set whose strings or comments can
+contain any byte certifies no safe points, and the right behavior is to refuse and scan sequentially rather than
+speculate, in keeping with [limits.md](limits.md). The certification is built:
+Lexer::is_split_point() reports the certified bytes of a compiled token set, computed by that one pass in the
+simulator's constructor.
 
 The threaded chunking is measured, and the prediction registered here before the experiment held. The benchmark splits
 the input at the certified points nearest the equal-division offsets, runs one whole-input scan per chunk on its own
 thread, and first proves the chunked token stream identical to the serial one through an order-sensitive checksum. On
 the benchmark token set, chunking scales the serial 651.7 MiB/s to 1161.8 MiB/s on two threads, 2292.9 MiB/s on four,
-and 3834.7 MiB/s on eight, with the source-shaped corpus within a few percent of the dense one at every width (`cmake -B build-perf -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON && cmake --build
-build-perf && ./build-perf/tools/benchmark/munch_benchmark 16 15`). That is 88% per-core efficiency at four threads
-against the 70% bar this section committed to in advance, and the shape confirms the diagnosis: the chains overlap
-almost perfectly because each thread's working set is a cache-resident table plus a streamed slice of input. The
-chunking has since been promoted into the library: chunk_boundaries() computes the certified plan and
-tokenize_all_parallel() runs it, one thread per chunk with the last on the calling thread, and the benchmark now
-routes through that entry point. The plan computation stays pure, so a caller owning its own thread pool can take
-the boundaries and leave the library's threads unused.
+and 3834.7 MiB/s on eight, with the source-shaped corpus within a few percent of the dense one at every width
+(`cmake -B build-perf -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON && cmake --build build-perf && ./build-perf/tools/benchmark/munch_benchmark 16 15`).
+That is 88% per-core efficiency at four threads against the 70% bar this section committed to in advance, and the shape
+confirms the diagnosis: the chains overlap almost perfectly because each thread's working set is a cache-resident table
+plus a streamed slice of input. The chunking has since been promoted into the library: chunk_boundaries() computes the
+certified plan and tokenize_all_parallel() runs it, one thread per chunk with the last on the calling thread, and the
+benchmark now routes through that entry point. The plan computation stays pure, so a caller owning its own thread pool
+can take the boundaries and leave the library's threads unused.
 
 The single-core variant was then built, measured, and reverted, and its failure taught more than the threaded success.
 The experiment flattened the scan into a per-byte state machine and stepped several lanes per loop iteration, each lane
@@ -138,11 +138,11 @@ The engine comparison confirms the threaded picture across implementations rathe
 lexer classes chunked the same way and validated token for token against their serial scans (`munch_benchmark_compare`
 and the Rust driver, 16 MiB, best of fifteen), munch goes from 624.2 MiB/s serial to 2302.0 on four threads and 3284.5
 on eight on the dense corpus, and from 604.5 to 2342.3 and 3792.9 on the source corpus, while logos goes from 680.2 to
-2576.9 and 4594.0, and from 844.4 to 3253.8 and 5628.6. Both classes scale near linearly, so threading multiplies the
-serial verdict instead of reordering it, and the meaningful difference between the rows is epistemic: munch's chunk
-boundaries are certified by is_split_point () from the compiled table for whatever token set was built, while the logos
-rows rest on a hand-written safety analysis of this one token set that the generated lexer can neither produce nor
-check.
+2576.9 and 4594.0, and from 844.4 to 3253.8 and 5628.6. Both classes scale strongly, close to linear at four threads and
+sublinearly at eight, so threading multiplies the serial verdict instead of reordering it, and the meaningful difference
+between the rows is epistemic: munch's chunk boundaries are certified by is_split_point() from the compiled table for
+whatever token set was built, while the logos rows rest on a hand-written safety analysis of this one token set that the
+generated lexer can neither produce nor check.
 
 Measuring this added one mechanism worth recording. The first version of the threaded comparison scenario let each
 worker update its slot in a shared array of sixteen-byte tallies once per token, which put four workers' write targets

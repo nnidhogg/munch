@@ -131,7 +131,8 @@ public:
      * @tparam Iterator Random access iterator type.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @param chunks The number of chunks aimed for; fewer result when certified points are scarce.
+     * @param chunks The number of chunks aimed for; fewer result when certified points are scarce, and zero
+     *        behaves as one, the whole input as a single chunk.
      * @return Offsets from 0 to the input size inclusive; adjacent pairs delimit the chunks.
      */
     template <std::random_access_iterator Iterator>
@@ -185,7 +186,8 @@ public:
      * @tparam Sink Callable receiving the chunk index, each matched token, and its length.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @param chunks The number of chunks aimed for; fewer are scanned when certified points are scarce.
+     * @param chunks The number of chunks aimed for; fewer are scanned when certified points are scarce, and zero
+     *        behaves as one, the serial scan on the calling thread.
      * @param sink Invoked as sink(chunk, token, length) for every matched token.
      * @return The number of input elements tokenized per chunk, aligned with chunk_boundaries(begin, end,
      *         chunks); an entry short of its chunk's size means no token matched at that offset of the chunk.

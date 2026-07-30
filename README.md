@@ -16,8 +16,8 @@ You describe the language, and the library builds the automaton. On
 the [comparison below](#comparison-with-other-engines), that automaton measures as the fastest lexer constructed at run
 time in either measured language, on both benchmark corpora; only compile-time code generation measures ahead. The
 compiled table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned in
-parallel with near-linear scaling and a provably identical token stream, a guarantee the code-generating lexers cannot
-give about their own token sets.
+parallel with strong scaling and a provably identical token stream, a guarantee the code-generating lexers cannot give
+about their own token sets.
 
 The name is pronounced /mʊŋk/, like "munk", after the
 painter [Edvard Munch](https://en.wikipedia.org/wiki/Edvard_Munch); that it also reads as the English *munch* /mʌntʃ/,
@@ -279,13 +279,14 @@ pattern orders keywords before identifiers and multi-character operators before 
 first-match alternation semantics produce exactly munch's longest-match, priority-resolved tokenization.
 
 Read as classes, the two corpora say one thing together. munch is the fastest lexer constructed at run time on both,
-between one and a half and three times ahead of its nearest relatives even with regex-automata steelmanned through its
-low-level walk. The compile-time code generators own the overall lead as tokens grow longer: logos on both corpora and
+roughly 1.4 to 3.3 times ahead of its nearest relatives even with regex-automata steelmanned through its low-level
+walk, the narrow end being that steelman on the source-shaped corpus. The compile-time code generators own the overall lead as tokens grow longer: logos on both corpora and
 CTRE on source, because generated code consumes multi-byte runs where a table walk pays one dependent load per byte,
 which is also why munch's own throughput is nearly identical on both corpus shapes.
 [docs/performance.md](docs/performance.md) explains why that boundary is where it is.
 
-Threading multiplies the class verdict rather than reordering it: both lexer classes scale near linearly, so the serial
+Threading multiplies the class verdict rather than reordering it: both lexer classes scale strongly, close to linear
+at four threads and sublinearly at eight, so the serial
 ranking carries over at every width. What the threaded rows actually compare is how each side knows its chunk boundaries
 are safe. munch certifies them from the compiled transition table, for whatever token set was built, through
 `is_split_point()`; the logos rows rest on a hand-written analysis of this one token set, documented in the Rust driver,
