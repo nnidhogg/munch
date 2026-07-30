@@ -1,10 +1,10 @@
 //! Runs the engine comparison's tokenization job through Rust's lexer class: logos, the code-generating lexer, and
 //! the dense DFAs of regex-automata, munch's nearest relative in the runtime-construction class.
 //!
-//! The corpus generator is a byte-identical port of tools/benchmark/src/harness.cpp, and the tally (token count and
-//! order-sensitive kind checksum, over the same kind values) matches tools/benchmark/src/compare.cpp, so results
-//! are comparable across the two binaries: identical inputs, identical extracted information, validated the same
-//! way. Usage: cargo run --release -- [input size in MiB] [passes]
+//! The corpus generator is a byte-identical port of tools/benchmark/src/harness.cpp, and the validation matches
+//! tools/benchmark/src/compare.cpp: every driver's exact (kind, length) token stream is compared before timing,
+//! so results are comparable across the two binaries: identical inputs, identical extracted information,
+//! identical proof of agreement. Usage: cargo run --release -- [input size in MiB] [passes]
 
 use logos::Logos;
 use regex_automata::dfa::{dense, Automaton, StartKind};
@@ -162,21 +162,40 @@ fn generate_source(size: usize) -> String {
     input
 }
 
-fn run_logos(input: &str) -> Tally {
+/// Walks the input with logos, feeding each token's kind and length to the sink; false on rejection.
+fn scan_logos(input: &str, mut sink: impl FnMut(usize, usize)) -> bool {
     let mut lexer = Token::lexer(input);
-    let mut tally = Tally::default();
 
     while let Some(result) = lexer.next() {
         match result {
-            Ok(token) => {
-                tally.checksum = tally.checksum.wrapping_mul(31).wrapping_add(kind(token));
-                tally.tokens += 1;
-            }
-            Err(_) => return Tally::default(),
+            Ok(token) => sink(kind(token), lexer.span().len()),
+            Err(_) => return false,
         }
     }
 
-    tally
+    true
+}
+
+fn run_logos(input: &str) -> Tally {
+    let mut tally = Tally::default();
+
+    let ok = scan_logos(input, |kind, _| {
+        tally.checksum = tally.checksum.wrapping_mul(31).wrapping_add(kind);
+        tally.tokens += 1;
+    });
+
+    if ok { tally } else { Tally::default() }
+}
+
+/// Collects the exact (kind, length) token stream, or None when logos rejected the input.
+fn stream_logos(input: &str) -> Option<Vec<(usize, usize)>> {
+    let mut stream = Vec::new();
+
+    if scan_logos(input, |kind, length| stream.push((kind, length))) {
+        Some(stream)
+    } else {
+        None
+    }
 }
 
 /// The bytes this token set may be split at, established by manual analysis: each one is consumed only as the
@@ -230,6 +249,19 @@ fn pow31(mut exponent: usize) -> usize {
 
 /// Tokenizes the input in chunks split at the hand-verified split points, one thread per chunk, splicing the
 /// per-chunk checksums in stream order so the tally validates against the serial scan exactly.
+/// Collects the threaded scan's exact token stream, chunks spliced in input order.
+fn stream_logos_threaded(input: &str, chunks: usize) -> Option<Vec<(usize, usize)>> {
+    let boundaries = chunk_boundaries(input.as_bytes(), chunks);
+
+    let mut total = Vec::new();
+
+    for index in 0..boundaries.len() - 1 {
+        total.extend(stream_logos(&input[boundaries[index]..boundaries[index + 1]])?);
+    }
+
+    Some(total)
+}
+
 fn run_logos_threaded(input: &str, chunks: usize) -> Tally {
     let boundaries = chunk_boundaries(input.as_bytes(), chunks);
     let mut tallies = vec![Tally::default(); boundaries.len() - 1];
@@ -261,9 +293,9 @@ fn run_logos_threaded(input: &str, chunks: usize) -> Tally {
     total
 }
 
-fn run_regex_automata(dfa: &dense::DFA<Vec<u32>>, input: &str) -> Tally {
+/// Walks the input through the search API, feeding each token's kind and length to the sink; false on rejection.
+fn scan_regex_automata(dfa: &dense::DFA<Vec<u32>>, input: &str, mut sink: impl FnMut(usize, usize)) -> bool {
     let haystack = input.as_bytes();
-    let mut tally = Tally::default();
     let mut offset = 0usize;
 
     while offset < haystack.len() {
@@ -271,28 +303,49 @@ fn run_regex_automata(dfa: &dense::DFA<Vec<u32>>, input: &str) -> Tally {
 
         let m = match dfa.try_search_fwd(&search) {
             Ok(Some(m)) if m.offset() > offset => m,
-            _ => return Tally::default(),
+            _ => return false,
         };
 
-        tally.checksum = tally
-            .checksum
-            .wrapping_mul(31)
-            .wrapping_add(KIND_OF_PATTERN[m.pattern().as_usize()]);
-        tally.tokens += 1;
+        sink(KIND_OF_PATTERN[m.pattern().as_usize()], m.offset() - offset);
 
         offset = m.offset();
     }
 
-    tally
+    true
+}
+
+fn run_regex_automata(dfa: &dense::DFA<Vec<u32>>, input: &str) -> Tally {
+    let mut tally = Tally::default();
+
+    let ok = scan_regex_automata(dfa, input, |kind, _| {
+        tally.checksum = tally.checksum.wrapping_mul(31).wrapping_add(kind);
+        tally.tokens += 1;
+    });
+
+    if ok { tally } else { Tally::default() }
+}
+
+fn stream_regex_automata(dfa: &dense::DFA<Vec<u32>>, input: &str) -> Option<Vec<(usize, usize)>> {
+    let mut stream = Vec::new();
+
+    if scan_regex_automata(dfa, input, |kind, length| stream.push((kind, length))) {
+        Some(stream)
+    } else {
+        None
+    }
 }
 
 /// Tokenizes through the raw automaton walk from the Automaton trait's documentation: the start state resolved
 /// once (valid here, as no pattern is context-sensitive), manual next_state() stepping, and the DFA's
 /// delayed-by-one match reporting handled explicitly. This is the steelman driver: it strips the per-token search
 /// API entry that run_regex_automata() pays.
-fn run_regex_automata_raw(dfa: &dense::DFA<Vec<u32>>, start: StateID, input: &str) -> Tally {
+fn scan_regex_automata_raw(
+    dfa: &dense::DFA<Vec<u32>>,
+    start: StateID,
+    input: &str,
+    mut sink: impl FnMut(usize, usize),
+) -> bool {
     let haystack = input.as_bytes();
-    let mut tally = Tally::default();
     let mut offset = 0usize;
 
     while offset < haystack.len() {
@@ -325,19 +378,40 @@ fn run_regex_automata_raw(dfa: &dense::DFA<Vec<u32>>, start: StateID, input: &st
         }
 
         if last_pattern == usize::MAX || last_end == offset {
-            return Tally::default();
+            return false;
         }
 
-        tally.checksum = tally
-            .checksum
-            .wrapping_mul(31)
-            .wrapping_add(KIND_OF_PATTERN[last_pattern]);
-        tally.tokens += 1;
+        sink(KIND_OF_PATTERN[last_pattern], last_end - offset);
 
         offset = last_end;
     }
 
-    tally
+    true
+}
+
+fn run_regex_automata_raw(dfa: &dense::DFA<Vec<u32>>, start: StateID, input: &str) -> Tally {
+    let mut tally = Tally::default();
+
+    let ok = scan_regex_automata_raw(dfa, start, input, |kind, _| {
+        tally.checksum = tally.checksum.wrapping_mul(31).wrapping_add(kind);
+        tally.tokens += 1;
+    });
+
+    if ok { tally } else { Tally::default() }
+}
+
+fn stream_regex_automata_raw(
+    dfa: &dense::DFA<Vec<u32>>,
+    start: StateID,
+    input: &str,
+) -> Option<Vec<(usize, usize)>> {
+    let mut stream = Vec::new();
+
+    if scan_regex_automata_raw(dfa, start, input, |kind, length| stream.push((kind, length))) {
+        Some(stream)
+    } else {
+        None
+    }
 }
 
 /// Mirrors tools/benchmark/src/harness.hpp measure(): a warmup pass, then the best of the timed passes.
@@ -395,32 +469,48 @@ fn main() {
     let mut ok = true;
 
     for (corpus, input) in &corpora {
-        // logos provides the reference tally; the other drivers must agree on every token's kind and boundary.
-        let reference = run_logos(input);
-
-        if reference.tokens == 0 {
-            println!("logos rejected the {corpus} corpus");
-            std::process::exit(1);
-        }
-
-        for (name, tally) in [
-            ("logos-mt4", run_logos_threaded(input, 4)),
-            ("logos-mt8", run_logos_threaded(input, 8)),
-            ("regex-automata", run_regex_automata(&dfa, input)),
-            ("regex-automata-raw", run_regex_automata_raw(&dfa, start, input)),
-        ] {
-            if tally != reference {
-                println!(
-                    "{name}/{corpus}: tokenization disagrees with logos ({} tokens, checksum {}; expected {}, {})",
-                    tally.tokens, tally.checksum, reference.tokens, reference.checksum
-                );
+        // The exact comparison runs once per corpus, before timing: every driver must reproduce logos's token
+        // stream to the kind and the length. The timed loops keep only the light count-and-kind tally as a
+        // per-pass sanity signal.
+        let reference = match stream_logos(input) {
+            Some(stream) if !stream.is_empty() => stream,
+            _ => {
+                println!("logos rejected the {corpus} corpus");
                 std::process::exit(1);
+            }
+        };
+
+        for (name, stream) in [
+            ("logos-mt4", stream_logos_threaded(input, 4)),
+            ("logos-mt8", stream_logos_threaded(input, 8)),
+            ("regex-automata", stream_regex_automata(&dfa, input)),
+            ("regex-automata-raw", stream_regex_automata_raw(&dfa, start, input)),
+        ] {
+            match stream {
+                None => {
+                    println!("{name}/{corpus}: rejected the input");
+                    std::process::exit(1);
+                }
+                Some(stream) if stream != reference => {
+                    let index = stream
+                        .iter()
+                        .zip(reference.iter())
+                        .take_while(|(a, b)| a == b)
+                        .count();
+                    println!(
+                        "{name}/{corpus}: token stream diverges from logos at token {index} ({} tokens vs {})",
+                        stream.len(),
+                        reference.len()
+                    );
+                    std::process::exit(1);
+                }
+                _ => {}
             }
         }
 
         println!(
             "corpus {corpus}: {:.2} bytes per token",
-            input.len() as f64 / reference.tokens as f64
+            input.len() as f64 / reference.len() as f64
         );
 
         ok &= measure("logos", input.len(), passes, || run_logos(input));

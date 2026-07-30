@@ -2,9 +2,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <optional>
 #include <regex>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
@@ -43,8 +45,8 @@ constexpr std::array token_of_group{Token::whitespace, Token::keyword,   Token::
 /**
  * @brief The outcome of tokenizing the whole input once, zeroed if the input was rejected.
  *
- * The checksum folds the matched token kinds in order, so two engines agree on every token's kind and boundary
- * exactly when their tallies compare equal; a mere permutation of the same kinds does not collide.
+ * The checksum folds the matched token kinds in order, a per-pass sanity signal inside the timed loops; the proof
+ * that engines agree token for token is the exact kind-and-length stream comparison run once before timing.
  */
 struct Tally
 {
@@ -56,19 +58,53 @@ struct Tally
 };
 
 /**
- * @brief Tokenizes the whole input once through the munch Lexer's batch entry point, providing the reference tally.
+ * @brief One engine's full tokenization as (kind, length) pairs, collected once per corpus for exact validation.
  */
-Tally run_munch(const munch::core::Lexer& lexer, const std::string& input)
+using Stream_t = std::vector<std::pair<std::size_t, std::size_t>>;
+
+/**
+ * @brief Runs a scan with the tally-folding sink every timed scenario measures.
+ * @param scan Callable invoking its sink as sink(kind, length) per token and returning false on rejection.
+ */
+template <typename Scan>
+Tally tally_of(Scan&& scan)
 {
     Tally tally{};
 
-    const auto consumed{lexer.tokenize_all<Token>(input, [&tally](const Token token, const std::size_t) {
-        tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(token);
+    const auto ok{scan([&tally](const std::size_t kind, const std::size_t) {
+        tally.checksum = tally.checksum * 31 + kind;
 
         ++tally.tokens;
     })};
 
-    return consumed == input.size() ? tally : Tally{};
+    return ok ? tally : Tally{};
+}
+
+/**
+ * @brief Runs a scan collecting the exact token stream, or nullopt when the engine rejected the input.
+ */
+template <typename Scan>
+std::optional<Stream_t> stream_of(Scan&& scan)
+{
+    Stream_t stream;
+
+    const auto ok{
+            scan([&stream](const std::size_t kind, const std::size_t length) { stream.emplace_back(kind, length); })};
+
+    return ok ? std::optional<Stream_t>{std::move(stream)} : std::nullopt;
+}
+
+/**
+ * @brief Tokenizes the whole input once through the munch Lexer's batch entry point, providing the reference.
+ */
+template <typename Sink>
+bool scan_munch(const munch::core::Lexer& lexer, const std::string& input, Sink&& sink)
+{
+    const auto consumed{lexer.tokenize_all<Token>(input, [&sink](const Token token, const std::size_t length) {
+        sink(static_cast<std::size_t>(token), length);
+    })};
+
+    return consumed == input.size();
 }
 
 /**
@@ -140,6 +176,36 @@ Tally run_munch_threaded(const munch::core::Lexer& lexer, const std::string& inp
 }
 
 /**
+ * @brief Collects the parallel scan's exact token stream, chunks spliced in input order.
+ */
+std::optional<Stream_t> stream_munch_threaded(
+        const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
+{
+    std::vector<Stream_t> streams(chunks);
+
+    const auto consumed{lexer.tokenize_all_parallel<Token>(
+            input, chunks, [&streams](const std::size_t chunk, const Token token, const std::size_t length) {
+                streams[chunk].emplace_back(static_cast<std::size_t>(token), length);
+            })};
+
+    const auto boundaries{lexer.chunk_boundaries(input, chunks)};
+
+    Stream_t total;
+
+    for (std::size_t chunk{0}; chunk < consumed.size(); ++chunk)
+    {
+        if (consumed[chunk] != boundaries[chunk + 1] - boundaries[chunk])
+        {
+            return std::nullopt;
+        }
+
+        total.insert(total.end(), streams[chunk].cbegin(), streams[chunk].cend());
+    }
+
+    return total;
+}
+
+/**
  * @brief Builds the lexertl state machine for the shared token set.
  *
  * lexertl is munch's nearest relative in the comparison: a lexer built at run time from rules and compiled to a
@@ -169,10 +235,9 @@ lexertl::state_machine build_lexertl()
 /**
  * @brief Tokenizes the whole input once through a lexertl state machine.
  */
-Tally run_lexertl(const lexertl::state_machine& sm, const std::string& input)
+template <typename Sink>
+bool scan_lexertl(const lexertl::state_machine& sm, const std::string& input, Sink&& sink)
 {
-    Tally tally{};
-
     lexertl::match_results<std::string::const_iterator> results(input.cbegin(), input.cend());
 
     for (;;)
@@ -181,28 +246,25 @@ Tally run_lexertl(const lexertl::state_machine& sm, const std::string& input)
 
         if (results.id == 0)
         {
-            return tally;
+            return true;
         }
 
         if (results.id == results.npos() || results.first == results.second)
         {
-            return {};
+            return false;
         }
 
-        tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(results.id);
-
-        ++tally.tokens;
+        sink(static_cast<std::size_t>(results.id), static_cast<std::size_t>(results.second - results.first));
     }
 }
 
 /**
  * @brief Tokenizes the whole input once through a CTRE pattern compiled from the shared alternation.
  */
-Tally run_ctre(const std::string& input)
+template <typename Sink>
+bool scan_ctre(const std::string& input, Sink&& sink)
 {
     static constexpr auto matcher{ctre::starts_with<ctll::fixed_string{pattern}>};
-
-    Tally tally{};
 
     std::string_view remaining{input};
 
@@ -212,7 +274,7 @@ Tally run_ctre(const std::string& input)
 
         if (!match || match.to_view().empty())
         {
-            return {};
+            return false;
         }
 
         const auto kind{[&match] {
@@ -229,23 +291,20 @@ Tally run_ctre(const std::string& input)
             return Token::punctuation;
         }};
 
-        tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(kind());
-
-        ++tally.tokens;
+        sink(static_cast<std::size_t>(kind()), match.to_view().size());
 
         remaining.remove_prefix(match.to_view().size());
     }
 
-    return tally;
+    return true;
 }
 
 /**
  * @brief Tokenizes the whole input once through RE2, consuming anchored matches with one capture per kind.
  */
-Tally run_re2(const RE2& regex, const std::string& input)
+template <typename Sink>
+bool scan_re2(const RE2& regex, const std::string& input, Sink&& sink)
 {
-    Tally tally{};
-
     absl::string_view remaining{input};
 
     std::array<absl::string_view, token_of_group.size()> groups{};
@@ -257,34 +316,34 @@ Tally run_re2(const RE2& regex, const std::string& input)
         if (!RE2::Consume(&remaining, regex, &groups[0], &groups[1], &groups[2], &groups[3], &groups[4], &groups[5]) ||
             remaining.size() == before)
         {
-            return {};
+            return false;
         }
+
+        std::size_t kind{0};
 
         for (std::size_t group{0}; group < groups.size(); ++group)
         {
             // A group that did not participate in the match is reset to a null view.
             if (groups[group].data() != nullptr)
             {
-                tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(token_of_group[group]);
+                kind = static_cast<std::size_t>(token_of_group[group]);
 
                 break;
             }
         }
 
-        ++tally.tokens;
+        sink(kind, before - remaining.size());
     }
 
-    return tally;
+    return true;
 }
 
 /**
  * @brief Tokenizes the whole input once through a std::regex or boost::regex, which share one API shape.
  */
-template <typename Regex, typename Match, auto continuous>
-Tally run_backtracker(const Regex& regex, const std::string& input)
+template <typename Regex, typename Match, auto continuous, typename Sink>
+bool scan_backtracker(const Regex& regex, const std::string& input, Sink&& sink)
 {
-    Tally tally{};
-
     Match match;
 
     auto it{input.cbegin()};
@@ -293,25 +352,27 @@ Tally run_backtracker(const Regex& regex, const std::string& input)
     {
         if (!regex_search(it, input.cend(), match, regex, continuous) || match.length(0) == 0)
         {
-            return {};
+            return false;
         }
+
+        std::size_t kind{0};
 
         for (std::size_t group{1}; group <= token_of_group.size(); ++group)
         {
             if (match[group].matched)
             {
-                tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(token_of_group[group - 1]);
+                kind = static_cast<std::size_t>(token_of_group[group - 1]);
 
                 break;
             }
         }
 
-        ++tally.tokens;
+        sink(kind, static_cast<std::size_t>(match.length(0)));
 
         it += match.length(0);
     }
 
-    return tally;
+    return true;
 }
 
 /**
@@ -352,10 +413,9 @@ public:
     /**
      * @brief Tokenizes the whole input once, matching anchored at the current offset.
      */
-    Tally run(const std::string& input) const
+    template <typename Sink>
+    bool scan(const std::string& input, Sink&& sink) const
     {
-        Tally tally{};
-
         std::size_t offset{0};
 
         const auto* subject{reinterpret_cast<PCRE2_SPTR>(input.data())};
@@ -371,19 +431,17 @@ public:
             // The alternatives are exclusive, so the highest captured group is the one that matched.
             if (rc < 2 || ovector[1] == ovector[0])
             {
-                return {};
+                return false;
             }
 
             const auto group{static_cast<std::size_t>(rc) - 2};
 
-            tally.checksum = tally.checksum * 31 + static_cast<std::size_t>(token_of_group[group]);
-
-            ++tally.tokens;
+            sink(static_cast<std::size_t>(token_of_group[group]), ovector[1] - ovector[0]);
 
             offset += ovector[1] - ovector[0];
         }
 
-        return tally;
+        return true;
     }
 
 private:
@@ -448,37 +506,88 @@ int main(const int argc, const char** argv)
         const char* name;
 
         std::function<Tally(const std::string&)> run;
+
+        std::function<std::optional<Stream_t>(const std::string&)> stream;
     };
 
+    const auto scan_boost{[&](const std::string& input, auto&& sink) {
+        return scan_backtracker<boost::regex, boost::smatch, boost::regex_constants::match_continuous>(
+                boost_regex, input, sink);
+    }};
+
+    const auto scan_std{[&](const std::string& input, auto&& sink) {
+        return scan_backtracker<std::regex, std::smatch, std::regex_constants::match_continuous>(
+                std_regex, input, sink);
+    }};
+
     const Scenario scenarios[]{
-            {.name = "munch", .run = [&](const std::string& input) { return run_munch(lexer, input); }},
-            {.name = "munch-mt4", .run = [&](const std::string& input) { return run_munch_threaded(lexer, input, 4); }},
-            {.name = "munch-mt8", .run = [&](const std::string& input) { return run_munch_threaded(lexer, input, 8); }},
-            {.name = "lexertl", .run = [&](const std::string& input) { return run_lexertl(lexertl_sm, input); }},
-            {.name = "ctre", .run = [&](const std::string& input) { return run_ctre(input); }},
-            {.name = "pcre2-jit", .run = [&](const std::string& input) { return pcre2.run(input); }},
-            {.name = "re2", .run = [&](const std::string& input) { return run_re2(re2, input); }},
-            {.name = "boost-regex",
+            {.name = "munch",
              .run =
                      [&](const std::string& input) {
-                         return run_backtracker<boost::regex, boost::smatch, boost::regex_constants::match_continuous>(
-                                 boost_regex, input);
+                         return tally_of([&](auto&& s) { return scan_munch(lexer, input, s); });
+                     },
+             .stream =
+                     [&](const std::string& input) {
+                         return stream_of([&](auto&& s) { return scan_munch(lexer, input, s); });
+                     }},
+            {.name = "munch-mt4",
+             .run = [&](const std::string& input) { return run_munch_threaded(lexer, input, 4); },
+             .stream = [&](const std::string& input) { return stream_munch_threaded(lexer, input, 4); }},
+            {.name = "munch-mt8",
+             .run = [&](const std::string& input) { return run_munch_threaded(lexer, input, 8); },
+             .stream = [&](const std::string& input) { return stream_munch_threaded(lexer, input, 8); }},
+            {.name = "lexertl",
+             .run =
+                     [&](const std::string& input) {
+                         return tally_of([&](auto&& s) { return scan_lexertl(lexertl_sm, input, s); });
+                     },
+             .stream =
+                     [&](const std::string& input) {
+                         return stream_of([&](auto&& s) { return scan_lexertl(lexertl_sm, input, s); });
+                     }},
+            {.name = "ctre",
+             .run = [&](const std::string& input) { return tally_of([&](auto&& s) { return scan_ctre(input, s); }); },
+             .stream =
+                     [&](const std::string& input) {
+                         return stream_of([&](auto&& s) { return scan_ctre(input, s); });
+                     }},
+            {.name = "pcre2-jit",
+             .run = [&](const std::string& input) { return tally_of([&](auto&& s) { return pcre2.scan(input, s); }); },
+             .stream =
+                     [&](const std::string& input) {
+                         return stream_of([&](auto&& s) { return pcre2.scan(input, s); });
+                     }},
+            {.name = "re2",
+             .run =
+                     [&](const std::string& input) {
+                         return tally_of([&](auto&& s) { return scan_re2(re2, input, s); });
+                     },
+             .stream =
+                     [&](const std::string& input) {
+                         return stream_of([&](auto&& s) { return scan_re2(re2, input, s); });
+                     }},
+            {.name = "boost-regex",
+             .run = [&](const std::string& input) { return tally_of([&](auto&& s) { return scan_boost(input, s); }); },
+             .stream =
+                     [&](const std::string& input) {
+                         return stream_of([&](auto&& s) { return scan_boost(input, s); });
                      }},
             {.name = "std-regex",
-             .run =
-                     [&](const std::string& input) {
-                         return run_backtracker<std::regex, std::smatch, std::regex_constants::match_continuous>(
-                                 std_regex, input);
-                     }},
+             .run = [&](const std::string& input) { return tally_of([&](auto&& s) { return scan_std(input, s); }); },
+             .stream =
+                     [&](const std::string& input) { return stream_of([&](auto&& s) { return scan_std(input, s); }); }},
     };
 
     bool ok{true};
 
     for (const auto& [corpus, input] : corpora)
     {
-        const auto reference{run_munch(lexer, input)};
+        // The exact comparison runs once per corpus, before timing: every engine must reproduce munch's token
+        // stream to the kind and the length, which is what licenses comparing their throughputs at all. The timed
+        // loops keep only the light count-and-kind tally as a per-pass sanity signal.
+        const auto reference{stream_of([&](auto&& s) { return scan_munch(lexer, input, s); })};
 
-        if (reference.tokens == 0)
+        if (!reference || reference->empty())
         {
             std::printf("munch rejected the %s corpus\n", corpus);
 
@@ -487,11 +596,29 @@ int main(const int argc, const char** argv)
 
         for (const auto& scenario : scenarios)
         {
-            if (const auto tally{scenario.run(input)}; !(tally == reference))
+            const auto stream{scenario.stream(input)};
+
+            if (!stream)
             {
+                std::printf("%s/%s: rejected the input\n", scenario.name, corpus);
+
+                ok = false;
+
+                continue;
+            }
+
+            if (*stream != *reference)
+            {
+                std::size_t index{0};
+
+                while (index < stream->size() && index < reference->size() && (*stream)[index] == (*reference)[index])
+                {
+                    ++index;
+                }
+
                 std::printf(
-                        "%s/%s: tokenization disagrees with munch (%zu tokens, checksum %zu; expected %zu, %zu)\n",
-                        scenario.name, corpus, tally.tokens, tally.checksum, reference.tokens, reference.checksum);
+                        "%s/%s: token stream diverges from munch at token %zu (%zu tokens vs %zu)\n", scenario.name,
+                        corpus, index, stream->size(), reference->size());
 
                 ok = false;
             }
@@ -504,7 +631,7 @@ int main(const int argc, const char** argv)
 
         std::printf(
                 "corpus %s: %.2f bytes per token\n", corpus,
-                static_cast<double>(input.size()) / static_cast<double>(reference.tokens));
+                static_cast<double>(input.size()) / static_cast<double>(reference->size()));
 
         for (const auto& scenario : scenarios)
         {
