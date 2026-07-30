@@ -1126,3 +1126,23 @@ TEST_F(Lexer_test, Split_points_refuse_a_reentrant_start_state)
     ASSERT_EQ(boundaries.size(), 2U);
     EXPECT_EQ(boundaries.back(), 2U);
 }
+
+TEST_F(Lexer_test, Split_points_refuse_reentry_through_a_cycle)
+{
+    enum class Token_kind : uint8_t
+    {
+        Item,
+    };
+
+    // (ab)*c returns to the start state after every "ab": minimization merges the post-"ab" state with the start
+    // state, so the re-entry is a cycle rather than a self-loop, and 'c' must not certify even though only the
+    // start state consumes it. Splitting "abc" before the 'c' would orphan an unmatchable "ab" chunk.
+    Builder_dbg builder;
+
+    builder.add_token(concat(kleene(text("ab")), text("c")), Token_kind::Item, 1);
+
+    const auto lexer{builder.build()};
+
+    EXPECT_FALSE(lexer.is_split_point('c'));
+    EXPECT_FALSE(lexer.is_split_point('a'));
+}
