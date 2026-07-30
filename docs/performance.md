@@ -121,8 +121,9 @@ under a single fresh start state (`merge_all`) registers the XID identifier patt
 second, and the shorter epsilon chains cut determinization further, 0.6 s to 0.45 s. The construction figures are
 tracked by `register/xid`, `build/xid`, and `total/xid` in the benchmark alongside `build/keywords`, and `lexer_all/xid`
 runs the Greek-identifier input through the XID grammar: it tracks the hand-rolled `lexer_all/utf8` scenario within
-noise (515.8 against 523.8 MiB/s median in one same-session pair), confirming that the class size is paid during
-construction and never per input byte.
+noise (515.8 against 523.8 MiB/s median in one same-session pair): the property adds no Unicode-specific per-byte
+work, and its runtime impact is limited to the resulting DFA and table size, which for these grammars stay
+cache-resident.
 
 ## **The Remaining Headroom Is Parallel**
 

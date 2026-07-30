@@ -155,13 +155,13 @@ chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3294.3, median 3066.8
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
 `tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver,
 identifiers containing UTF-8 code points matched through byte expansion, the same input through the full Unicode XID
-identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the class size is paid at construction, never
-per byte), the keyword-scale build cost, the XID construction cost split into registration, finalization, and their
-total, and the parallel chunked scans at certified split points on two, four, and eight threads. Inputs are fixed-seed
-and deterministic, so runs are comparable across changes. Numbers depend on the machine, the token set, and the
-compiler: these are GCC 13 builds, and Clang 19 measures within about ten percent since the accept path was pinned to a
-branch (see [docs/performance.md](docs/performance.md)). WSL2 adds visible run-to-run spread, so rerun the benchmark on
-your own hardware and language before citing them.
+identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the property adds no Unicode-specific per-byte
+work, and its runtime impact is limited to the resulting DFA and table size), the keyword-scale build cost, the XID
+construction cost split into registration, finalization, and their total, and the parallel chunked scans at certified
+split points on two, four, and eight threads. Inputs are fixed-seed and deterministic, so runs are comparable across
+changes. Numbers depend on the machine, the token set, and the compiler: these are GCC 13 builds, and Clang 19 measures
+within about ten percent since the accept path was pinned to a branch (see [docs/performance.md](docs/performance.md)).
+WSL2 adds visible run-to-run spread, so rerun the benchmark on your own hardware and language before citing them.
 
 ### **Comparison with Other Engines**
 
