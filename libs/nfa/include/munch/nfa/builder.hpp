@@ -131,10 +131,10 @@ public:
      * The n-ary counterpart of merge(). A fold over merge() copies the accumulated union once per alternative
      * and chains one extra initial state each, quadratic work that dominates lowering the generated Unicode
      * classes; this single pass renumbers every alternative once and adds one initial state in total.
-     * @param builders The builders to merge; their contents are consumed.
+     * @param builders The builders to merge; read, not consumed.
      * @return The merged Builder.
      */
-    [[nodiscard]] static Builder merge_all(std::span<Builder> builders);
+    [[nodiscard]] static Builder merge_all(std::span<const Builder> builders);
 
     /**
      * @brief Builds and returns the constructed NFA, leaving the Builder intact.

@@ -152,11 +152,11 @@ Builder Builder::merge(const Builder& other) const
     return nfa;
 }
 
-Builder Builder::merge_all(const std::span<Builder> builders)
+Builder Builder::merge_all(const std::span<const Builder> builders)
 {
     Builder nfa;
 
-    for (auto& builder : builders)
+    for (const auto& builder : builders)
     {
         auto offset_nfa{builder.offset(nfa.next_state_)};
 
