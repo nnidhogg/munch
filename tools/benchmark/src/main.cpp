@@ -305,6 +305,39 @@ void measure_build(const int passes)
 }
 
 /**
+ * @brief Builds the benchmark lexer with the identifier class drawn from the XID properties.
+ *
+ * The same grammar as the UTF-8 lexer with the hand-rolled Greek range replaced by the full Unicode identifier
+ * definition, so both scenarios tokenize the Greek input to the identical stream and the throughput difference
+ * isolates the class size.
+ */
+munch::core::Lexer build_xid_lexer()
+{
+    using namespace munch::regex;
+
+    munch::core::Builder builder;
+
+    builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 2);
+
+    builder.add_token(
+            concat(choice(text('_'), unicode::xid_start()), kleene(choice(text('_'), unicode::xid_continue()))),
+            Token::identifier, 2);
+
+    builder.add_token(plus(any_of(Set::digits())), Token::number, 2);
+
+    builder.add_token(choice(text("if"), text("else"), text("while"), text("return"), text("int")), Token::keyword, 1);
+
+    builder.add_token(
+            choice(text("=="), text("!="), text("<="), text(">="), text("+"), text("-"), text("*"), text("/"),
+                   text("="), text("<"), text(">")),
+            Token::operator_, 2);
+
+    builder.add_token(any_of(Set{'(', ')', '{', '}', ';', ','}), Token::punctuation, 2);
+
+    return builder.build();
+}
+
+/**
  * @brief Measures the construction cost of a Unicode identifier grammar over the XID properties.
  *
  * The identifier pattern expands the two XID property tables, 1497 code point ranges, into byte alternatives:
@@ -408,6 +441,12 @@ int main(const int argc, const char** argv)
 
     ok = measure("lexer_all/utf8", greek_input.size(), passes,
                  [&greek_lexer, &greek_input] { return tokenize_all(greek_lexer, greek_input); }) &&
+         ok;
+
+    const auto xid_lexer{build_xid_lexer()};
+
+    ok = measure("lexer_all/xid", greek_input.size(), passes,
+                 [&xid_lexer, &greek_input] { return tokenize_all(xid_lexer, greek_input); }) &&
          ok;
 
     const auto source_input{generate_source_input(mebibytes << 20U)};

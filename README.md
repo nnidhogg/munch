@@ -134,26 +134,31 @@ and scheduling.
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target munch_benchmark
 $ ./build/tools/benchmark/munch_benchmark 16 15
-lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 486.8, median 478.4, worst 467.7 MiB/s
-lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 598.9, median 591.3, worst 571.3 MiB/s
-tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 451.5, median 443.3, worst 434.3 MiB/s
-lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 572.2, median 559.2, worst 548.7 MiB/s
-build/keywords   143 patterns, 251 states, 15 passes: best 33.3, median 33.9, worst 34.4 ms
-lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 577.3, median 570.3, worst 561.2 MiB/s
-chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1002.9, median 989.4, worst 945.4 MiB/s
-chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1060.4, median 1043.6, worst 1014.8 MiB/s
-chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1976.0, median 1911.9, worst 1611.3 MiB/s
-chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 2064.5, median 2016.9, worst 1987.6 MiB/s
-chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 3664.4, median 3196.3, worst 2380.7 MiB/s
-chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3865.1, median 3392.1, worst 3150.3 MiB/s
+lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 499.5, median 489.2, worst 474.1 MiB/s
+lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 570.0, median 553.6, worst 540.5 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 465.8, median 455.5, worst 435.4 MiB/s
+lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 541.8, median 523.8, worst 491.7 MiB/s
+lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 536.0, median 515.8, worst 506.7 MiB/s
+build/keywords   143 patterns, 251 states, 15 passes: best 26.6, median 28.0, worst 32.5 ms
+build/xid        3 patterns, 477 states, 15 passes: best 509.4, median 533.9, worst 544.4 ms
+lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 593.0, median 571.9, worst 541.4 MiB/s
+chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1108.6, median 1076.3, worst 1055.1 MiB/s
+chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1087.0, median 1057.7, worst 1040.0 MiB/s
+chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 2186.7, median 2119.0, worst 2085.8 MiB/s
+chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 2128.3, median 2098.7, worst 1574.0 MiB/s
+chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 3900.2, median 3058.9, worst 2454.6 MiB/s
+chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 4092.9, median 3967.6, worst 3224.9 MiB/s
 ```
 
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
 `tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver,
-identifiers containing UTF-8 code points matched through byte expansion, the keyword-scale construction cost, and the
-parallel chunked scans at certified split points on two, four, and eight threads. Inputs are fixed-seed and
-deterministic, so runs are comparable across changes. Numbers depend on the machine and the token set, and WSL2 adds
-visible run-to-run spread, so rerun the benchmark on your own hardware and language before citing them.
+identifiers containing UTF-8 code points matched through byte expansion, the same input through the full Unicode XID
+identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the class size is paid at construction,
+never per byte), the keyword-scale and XID construction costs, and the parallel chunked scans at certified split
+points on two, four, and eight threads. Inputs are fixed-seed and deterministic, so runs are comparable across
+changes. Numbers depend on the machine, the token set, and the compiler — these are GCC 13 builds, and Clang 19
+currently compiles the hot loop to roughly half this throughput on the reference machine — and WSL2 adds visible
+run-to-run spread, so rerun the benchmark on your own hardware and language before citing them.
 
 ### **Comparison with Other Engines**
 

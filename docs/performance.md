@@ -100,7 +100,9 @@ sets pay an allocation and a hash per element. Rebuilding the construction over 
 member lists and set identity as a hash of words, brought 34 s to 0.6 s, 372 times faster than the starting point. The
 keyword-scale build fell from 33 ms to 27 ms as a side effect, and the compiled XID grammar lands at 477 DFA states,
 small enough that the runtime story is unchanged. The construction figures are tracked by
-`build/xid` in the benchmark alongside `build/keywords`.
+`build/xid` in the benchmark alongside `build/keywords`, and `lexer_all/xid` runs the Greek-identifier input through
+the XID grammar: it tracks the hand-rolled `lexer_all/utf8` scenario within noise (515.8 against 523.8 MiB/s median
+in one same-session pair), confirming that the class size is paid during construction and never per input byte.
 
 ## **The Remaining Headroom Is Parallel**
 
