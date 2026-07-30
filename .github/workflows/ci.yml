@@ -65,6 +65,54 @@ jobs:
           cd build
           ctest --output-on-failure
 
+  sanitize:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Address and undefined-behavior sanitizers watch the table arithmetic; the thread sanitizer watches
+          # the parallel scan.
+          - name: address-undefined
+            flags: -fsanitize=address,undefined -fno-sanitize-recover=all
+          - name: thread
+            flags: -fsanitize=thread
+
+    name: sanitize (${{ matrix.name }})
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-19 ninja-build
+
+      - name: Configure build with CMake
+        env:
+          CC: clang-19
+          CXX: clang++-19
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="${{ matrix.flags }}" \
+                -DMUNCH_BUILD_BENCHMARK=OFF
+
+      - name: Build with CMake
+        run: |
+          cd build
+          cmake --build .
+
+      - name: Run tests with CTest
+        run: |
+          cd build
+          ctest --output-on-failure
+
   build-and-test:
     runs-on: ubuntu-24.04
 
