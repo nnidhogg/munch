@@ -32,9 +32,9 @@ public:
     template <typename T>
     struct Match
     {
-        std::optional<T> token;
+        std::optional<T> token{};
 
-        std::size_t length;
+        std::size_t length{};
 
         bool operator==(const Match&) const = default;
     };

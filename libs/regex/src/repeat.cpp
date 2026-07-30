@@ -184,7 +184,7 @@ namespace
 
 nfa::Builder to_nfa(const Repeat& repeat)
 {
-    // The child needs no emptiness check: a Box always holds exactly one value.
+    // The child needs no emptiness check: a Indirect always holds exactly one value.
     const auto& regex{*repeat.regex};
 
     return std::visit(
@@ -223,27 +223,27 @@ nfa::Builder to_nfa(const Repeat& repeat)
 
 Regex kleene(Regex regex)
 {
-    return {.node = Repeat{.kind = Kleene{}, .regex = Box{std::move(regex)}}};
+    return {.node = Repeat{.kind = Kleene{}, .regex = Indirect{std::move(regex)}}};
 }
 
 Regex plus(Regex regex)
 {
-    return {.node = Repeat{.kind = Plus{}, .regex = Box{std::move(regex)}}};
+    return {.node = Repeat{.kind = Plus{}, .regex = Indirect{std::move(regex)}}};
 }
 
 Regex optional(Regex regex)
 {
-    return {.node = Repeat{.kind = Optional{}, .regex = Box{std::move(regex)}}};
+    return {.node = Repeat{.kind = Optional{}, .regex = Indirect{std::move(regex)}}};
 }
 
 Regex exact(Regex regex, const std::size_t count)
 {
-    return {.node = Repeat{.kind = Exact{.count = count}, .regex = Box{std::move(regex)}}};
+    return {.node = Repeat{.kind = Exact{.count = count}, .regex = Indirect{std::move(regex)}}};
 }
 
 Regex at_least(Regex regex, const std::size_t min)
 {
-    return {.node = Repeat{.kind = At_least{.min = min}, .regex = Box{std::move(regex)}}};
+    return {.node = Repeat{.kind = At_least{.min = min}, .regex = Indirect{std::move(regex)}}};
 }
 
 Regex range(Regex regex, const std::size_t min, const std::size_t max)
@@ -253,7 +253,7 @@ Regex range(Regex regex, const std::size_t min, const std::size_t max)
         throw std::invalid_argument("A repetition range may not end before it starts");
     }
 
-    return {.node = Repeat{.kind = Range{.min = min, .max = max}, .regex = Box{std::move(regex)}}};
+    return {.node = Repeat{.kind = Range{.min = min, .max = max}, .regex = Indirect{std::move(regex)}}};
 }
 
 } // namespace munch::regex

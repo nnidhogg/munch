@@ -21,9 +21,9 @@ public:
      */
     struct Match
     {
-        std::optional<Token> token;
+        std::optional<Token> token{};
 
-        std::size_t length;
+        std::size_t length{};
 
         bool operator==(const Match&) const = default;
     };

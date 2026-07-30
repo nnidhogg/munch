@@ -217,7 +217,7 @@ TEST_F(Repeat_test, Range_repetition)
 
 TEST_F(Repeat_test, Copies_are_independent_values)
 {
-    // The Box gives Repeat value semantics: copying a pattern deep-copies its child, so both the original and the
+    // The Indirect gives Repeat value semantics: copying a pattern deep-copies its child, so both the original and the
     // copy lower to working automata, and an empty Repeat is no longer representable at all.
     const auto original{plus(text("ab"))};
 

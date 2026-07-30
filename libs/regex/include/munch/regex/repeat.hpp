@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <variant>
 
-#include "munch/regex/box.hpp"
+#include "munch/regex/indirect.hpp"
 
 namespace munch::regex
 {
@@ -76,7 +76,7 @@ struct Repeat
     /**
      * @brief The repeated sub-pattern.
      */
-    Box<Regex> regex;
+    Indirect<Regex> regex;
 };
 
 } // namespace munch::regex

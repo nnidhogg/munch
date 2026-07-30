@@ -39,6 +39,7 @@ endif ()
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/any_of_test.cpp
+            tests/indirect_test.cpp
             tests/choice_test.cpp
             tests/concat_test.cpp
             tests/patterns_test.cpp
