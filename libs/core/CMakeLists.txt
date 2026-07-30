@@ -5,6 +5,7 @@ project(munch_core)
 add_library(${PROJECT_NAME}
         src/builder.cpp
         src/subset_construction.cpp
+        src/exceptions/state_limit_error.cpp
 )
 
 target_include_directories(${PROJECT_NAME}

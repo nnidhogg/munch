@@ -6,12 +6,12 @@
 #include <optional>
 #include <queue>
 #include <ranges>
-#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "munch/core/builder.hpp"
+#include "munch/core/exceptions/state_limit_error.hpp"
 #include "munch/dfa/builder.hpp"
 
 namespace
@@ -180,7 +180,7 @@ public:
                 {
                     if (state_limit_ != 0 && ids.size() >= state_limit_)
                     {
-                        throw std::runtime_error{"Determinization exceeded the configured state limit"};
+                        throw munch::core::State_limit_error{state_limit_};
                     }
 
                     iterator = ids.emplace(scratch, dfa.next_state()).first;

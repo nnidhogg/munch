@@ -1162,8 +1162,20 @@ TEST_F(Lexer_test, State_limit_stops_an_exploding_construction)
 
     builder.set_state_limit(256);
 
-    EXPECT_THROW(static_cast<void>(builder.build()), std::runtime_error);
-    EXPECT_THROW(static_cast<void>(builder.diagnose()), std::runtime_error);
+    EXPECT_THROW(static_cast<void>(builder.build()), State_limit_error);
+    EXPECT_THROW(static_cast<void>(builder.diagnose()), State_limit_error);
+
+    // The error carries the limit and stays catchable as std::runtime_error for existing call sites.
+    try
+    {
+        static_cast<void>(builder.build());
+
+        FAIL() << "build() must throw";
+    }
+    catch (const std::runtime_error& error)
+    {
+        EXPECT_EQ(dynamic_cast<const State_limit_error&>(error).limit(), 256U);
+    }
 
     // The same grammar builds once the cap allows its true size.
     builder.set_state_limit(0);

@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "munch/core/exceptions/state_limit_error.hpp"
 #include "munch/dfa/minimize.hpp"
 
 namespace
@@ -270,7 +271,7 @@ Builder::Diagnostics Builder::diagnose() const
             {
                 if (state_limit_ != 0 && visited.size() > state_limit_)
                 {
-                    throw std::runtime_error{"Determinization exceeded the configured state limit"};
+                    throw State_limit_error{state_limit_};
                 }
 
                 nfa_queue.push(next_states);

@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "munch/core/exceptions/state_limit_error.hpp"
 #include "munch/core/lexer.hpp"
 #include "munch/dfa/dfa.hpp"
 #include "munch/nfa/builder.hpp"
@@ -75,11 +76,11 @@ public:
      * @brief Caps how many DFA states determinization may discover before build() and diagnose() throw.
      *
      * Subset construction has exponential worst cases, so a caller accepting untrusted token sets should cap the
-     * states it may discover; matching itself needs no such guard, as a compiled table always runs in linear
-     * time. Zero, the default, means unlimited. This caps determinization only: regex tree size, NFA expansion
-     * from large repetition counts, and the number of registered patterns are the caller's to bound. The dominant
-     * allocation, the transition table, stays within the cap times the number of symbol classes times four bytes
-     * per entry.
+     * states it may discover; build() and diagnose() then throw State_limit_error when a grammar runs into the
+     * cap. Matching itself needs no such guard, as a compiled table always runs in linear time. Zero, the default,
+     * means unlimited. This caps determinization only: regex tree size, NFA expansion from large repetition counts, and
+     * the number of registered patterns are the caller's to bound. The dominant allocation, the transition table, stays
+     * within the cap times the number of symbol classes times four bytes per entry.
      */
     void set_state_limit(const std::size_t limit) noexcept { state_limit_ = limit; }
 
@@ -109,7 +110,7 @@ protected:
      * @param nfa The NFA to convert.
      * @param state_limit The largest number of DFA states to discover before throwing; zero means unlimited.
      * @return The constructed DFA.
-     * @throws std::runtime_error If the state limit is exceeded.
+     * @throws State_limit_error If the state limit is exceeded.
      */
     [[nodiscard]] static dfa::Dfa subset_construction(const nfa::Nfa& nfa, std::size_t state_limit = 0);
 

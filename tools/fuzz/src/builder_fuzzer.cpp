@@ -1,11 +1,11 @@
 #include <cstddef>
 #include <cstdint>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "munch/core/builder.hpp"
+#include "munch/core/exceptions/state_limit_error.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/set.hpp"
 
@@ -196,9 +196,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* const data, const std:
             require(sum == input.size());
         }
     }
-    catch (const std::runtime_error&)
+    catch (const munch::core::State_limit_error&)
     {
-        // The state limit fired; rejecting the grammar is the documented behavior for untrusted token sets.
+        // The state limit fired; rejecting the grammar is the documented behavior for untrusted token sets. Any
+        // other exception escapes and counts as a finding.
     }
 
     return 0;
