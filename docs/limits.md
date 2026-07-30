@@ -28,14 +28,14 @@ The engine reads bytes, never code points. `regex::Set` holds byte values, and `
 a code point range into its UTF-8 byte sequences at pattern-build time (surrogates excluded, ill-formed sequences
 rejected by construction). The consequences:
 
-- There is no general Unicode property API, no case folding, and no normalization; XID_Start and
-  XID_Continue below are the two properties currently supplied. A case-insensitive keyword is spelled out
-  (`choice(text("if"), text("IF"))` or a `Set` per position), and input is matched as the bytes it is.
+- There is no general Unicode property API, no case folding, and no normalization; XID_Start and XID_Continue below are
+  the two properties currently supplied. A case-insensitive keyword is spelled out (`choice(text("if"), text("IF"))` or
+  a `Set` per position), and input is matched as the bytes it is.
 - Standards-accurate Unicode identifier classes exist: `unicode::xid_start()` and `unicode::xid_continue()` match the
   XID_Start and XID_Continue properties, generated from the Unicode Character Database pinned at the version
   `unicode::version()` reports and expanding through `utf8::ranges` the way everything Unicode does here. They are
   lexical property matching, nothing more: no normalization, no case folding, no mixed-script or confusable detection,
-  and no language profile — underscore, for instance, is a profile choice spelled
+  and no language profile. Underscore, for instance, is a profile choice spelled
   `choice(text('_'), unicode::xid_start())` by the caller. Those concerns belong above the lexer, per UAX #31.
 - `utf8::range` never accepts ill-formed UTF-8. The engine itself does not validate input as UTF-8, though: a grammar's
   other byte-oriented patterns may accept arbitrary bytes, and ill-formed sequences no pattern accepts simply fail to

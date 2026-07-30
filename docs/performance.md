@@ -89,20 +89,19 @@ step.
 
 ## **Branches, Not Conditional Moves, on the Accept Path**
 
-Clang 19 used to build this loop at less than half of GCC's throughput, and the deficit had a telling shape: a
-constant four nanoseconds per token, indifferent to token length. The disassembly showed why. Clang if-converted
-the accept bookkeeping — the two updates recording the last accepting state — into conditional moves, making the
-accepted length data-dependent on every state load of the token. The next token cannot start until its
-predecessor's length resolves, so under conditional moves that start waited out the full load chain of the prior
-token; as a predicted branch the same bookkeeping costs nothing, mispredicts rarely on real token structure, and
-lets speculation overlap consecutive tokens in the out-of-order window. This is the same mechanism the lane
-interleaving post-mortem identified — the reset to the start state cuts the serial chain at each token boundary
-and the processor overlaps the chains itself — except here the compiler had quietly welded the chains back
-together. An empty asm statement in the branch body now blocks the conversion, with a comment carrying the
-reasoning; alongside a 64-bit scan state that spares a per-byte zero-extension, Clang went from 211 to 475 MiB/s
-in the isolating experiment and from 236 to 498 MiB/s in the benchmark, within ten percent of GCC, which itself
-moved nowhere. The compilers now agree closely enough that the published numbers describe the library rather
-than the toolchain.
+Clang 19 used to build this loop at less than half of GCC's throughput, and the deficit had a telling shape: a constant
+four nanoseconds per token, indifferent to token length. The disassembly showed why. Clang if-converted the accept
+bookkeeping, the two updates recording the last accepting state, into conditional moves, making the accepted length
+data-dependent on every state load of the token. The next token cannot start until its predecessor's length resolves, so
+under conditional moves that start waited out the full load chain of the prior token; as a predicted branch the same
+bookkeeping costs nothing, mispredicts rarely on real token structure, and lets speculation overlap consecutive tokens
+in the out-of-order window. This is the same mechanism the lane interleaving post-mortem identified: the reset to the
+start state cuts the serial chain at each token boundary and the processor overlaps the chains itself. Here the compiler
+had quietly welded the chains back together. An empty asm statement in the branch body now blocks the conversion, with a
+comment carrying the reasoning; alongside a 64-bit scan state that spares a per-byte zero-extension, Clang went from 211
+to 475 MiB/s in the isolating experiment and from 236 to 498 MiB/s in the benchmark, within ten percent of GCC, which
+itself moved nowhere. The compilers now agree closely enough that the published numbers describe the library rather than
+the toolchain.
 
 ## **Construction at Unicode Scale**
 
@@ -117,13 +116,13 @@ sets pay an allocation and a hash per element. Rebuilding the construction over 
 member lists and set identity as a hash of words, brought 34 s to 0.6 s, 372 times faster than the starting point. The
 keyword-scale build fell from 33 ms to 27 ms as a side effect, and the compiled XID grammar lands at 477 DFA states,
 small enough that the runtime story is unchanged. Registration had its own quadratic:
-lowering a choice folded pairwise unions, copying the accumulated automaton once per alternative and chaining one
-extra start state each; an n-ary union under a single fresh start state (`merge_all`) registers the XID identifier
-pattern in 72 ms where the fold took over a second, and the shorter epsilon chains cut determinization further,
-0.6 s to 0.45 s. The construction figures are tracked by
-`build/xid` in the benchmark alongside `build/keywords`, and `lexer_all/xid` runs the Greek-identifier input through
-the XID grammar: it tracks the hand-rolled `lexer_all/utf8` scenario within noise (515.8 against 523.8 MiB/s median
-in one same-session pair), confirming that the class size is paid during construction and never per input byte.
+lowering a choice folded pairwise unions, copying the accumulated automaton once per alternative and chaining one extra
+start state each; an n-ary union under a single fresh start state (`merge_all`) registers the XID identifier pattern in
+72 ms where the fold took over a second, and the shorter epsilon chains cut determinization further, 0.6 s to 0.45 s.
+The construction figures are tracked by
+`build/xid` in the benchmark alongside `build/keywords`, and `lexer_all/xid` runs the Greek-identifier input through the
+XID grammar: it tracks the hand-rolled `lexer_all/utf8` scenario within noise (515.8 against 523.8 MiB/s median in one
+same-session pair), confirming that the class size is paid during construction and never per input byte.
 
 ## **The Remaining Headroom Is Parallel**
 

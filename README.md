@@ -156,10 +156,10 @@ identifiers containing UTF-8 code points matched through byte expansion, the sam
 identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the class size is paid at construction,
 never per byte), the keyword-scale and XID construction costs, and the parallel chunked scans at certified split
 points on two, four, and eight threads. Inputs are fixed-seed and deterministic, so runs are comparable across
-changes. Numbers depend on the machine, the token set, and the compiler — these are GCC 13 builds; Clang 19 measures
-within about ten percent since the accept path was pinned to a branch (see
-[docs/performance.md](docs/performance.md)) — and WSL2 adds visible run-to-run spread, so rerun the benchmark on
-your own hardware and language before citing them.
+changes. Numbers depend on the machine, the token set, and the compiler: these are GCC 13 builds, and Clang 19
+measures within about ten percent since the accept path was pinned to a branch (see
+[docs/performance.md](docs/performance.md)). WSL2 adds visible run-to-run spread, so rerun the benchmark on your
+own hardware and language before citing them.
 
 ### **Comparison with Other Engines**
 
@@ -397,8 +397,8 @@ range, expanded into its UTF-8 byte sequences. Surrogates are excluded, and ill-
 is rejected by construction. `utf8::ranges()` matches one code point from a sorted list of disjoint ranges, and
 `munch/regex/unicode.hpp` provides `unicode::xid_start()` and `unicode::xid_continue()`, the UAX #31 identifier
 properties generated from the Unicode Character Database (`unicode::version()` names the pinned version). A C-style
-identifier is then `concat(choice(text('_'), unicode::xid_start()), kleene(unicode::xid_continue()))` — underscore
-already holds XID_Continue, so only the head needs the profile choice; the properties themselves are matched exactly.
+identifier is then `concat(choice(text('_'), unicode::xid_start()), kleene(unicode::xid_continue()))`; underscore
+already holds XID_Continue, so only the head needs the profile choice. The properties themselves are matched exactly.
 
 ##### **Example**
 
