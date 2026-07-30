@@ -2,8 +2,12 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "munch/nfa/simulator.hpp"
 
@@ -127,4 +131,103 @@ TEST(Utf8_test, Rejects_invalid_ranges)
     EXPECT_THROW((void)utf8::range(0x20, 0x10), std::invalid_argument);
     EXPECT_THROW((void)utf8::range(0x0, 0x110000), std::invalid_argument);
     EXPECT_THROW((void)utf8::range(0xD800, 0xDFFF), std::invalid_argument);
+}
+
+TEST(Utf8_test, Random_subranges_match_exactly_their_contents)
+{
+    // A deterministic 64-bit LCG draws arbitrary interval bounds, attacking the recursive lower/middle/upper
+    // decomposition at boundaries the block-aligned tests never produce; each range is probed at its edges, just
+    // outside them, and at random candidates.
+    std::uint64_t state{12345};
+
+    const auto draw{[&state] {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+
+        return static_cast<char32_t>((state >> 32U) % 0x110000);
+    }};
+
+    const auto surrogate{[](const char32_t code_point) { return code_point >= 0xD800 && code_point <= 0xDFFF; }};
+
+    for (int round{0}; round < 100; ++round)
+    {
+        auto first{draw()};
+
+        auto last{draw()};
+
+        if (first > last)
+        {
+            std::swap(first, last);
+        }
+
+        if (first >= 0xD800 && last <= 0xDFFF)
+        {
+            continue;
+        }
+
+        const auto nfa{make_nfa(utf8::range(first, last))};
+
+        std::vector<char32_t> candidates{first, last};
+
+        if (first > 0)
+        {
+            candidates.push_back(first - 1);
+        }
+
+        if (last < 0x10FFFF)
+        {
+            candidates.push_back(last + 1);
+        }
+
+        for (int probe{0}; probe < 25; ++probe)
+        {
+            candidates.push_back(draw());
+        }
+
+        for (const auto candidate : candidates)
+        {
+            if (surrogate(candidate))
+            {
+                continue;
+            }
+
+            const auto expected{candidate >= first && candidate <= last};
+
+            EXPECT_EQ(matches(nfa, encode(candidate)), expected)
+                    << std::hex << "U+" << static_cast<unsigned>(candidate) << " against U+"
+                    << static_cast<unsigned>(first) << "..U+" << static_cast<unsigned>(last);
+        }
+    }
+}
+
+TEST(Utf8_test, Ranges_merges_adjacent_and_matches_the_union)
+{
+    constexpr std::array<utf8::Code_point_range, 3> list{{
+            {.first = 0x41, .last = 0x5A},
+            {.first = 0x5B, .last = 0x60},
+            {.first = 0x100, .last = 0x200},
+    }};
+
+    const auto nfa{make_nfa(utf8::ranges(list))};
+
+    EXPECT_TRUE(matches(nfa, encode(0x41)));
+    EXPECT_TRUE(matches(nfa, encode(0x60)));
+    EXPECT_TRUE(matches(nfa, encode(0x150)));
+    EXPECT_FALSE(matches(nfa, encode(0x61)));
+    EXPECT_FALSE(matches(nfa, encode(0xFF)));
+    EXPECT_FALSE(matches(nfa, encode(0x201)));
+}
+
+TEST(Utf8_test, Ranges_rejects_empty_unsorted_and_overlapping_input)
+{
+    EXPECT_THROW((void)utf8::ranges({}), std::invalid_argument);
+
+    constexpr std::array<utf8::Code_point_range, 2> unsorted{
+            {{.first = 0x100, .last = 0x200}, {.first = 0x41, .last = 0x5A}}};
+
+    EXPECT_THROW((void)utf8::ranges(unsorted), std::invalid_argument);
+
+    constexpr std::array<utf8::Code_point_range, 2> overlapping{
+            {{.first = 0x41, .last = 0x5A}, {.first = 0x50, .last = 0x60}}};
+
+    EXPECT_THROW((void)utf8::ranges(overlapping), std::invalid_argument);
 }

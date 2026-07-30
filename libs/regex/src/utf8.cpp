@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -168,6 +169,45 @@ Regex range(const char32_t first, const char32_t last)
     {
         throw std::invalid_argument("UTF-8 code point range holds only surrogates");
     }
+
+    return parts.size() == 1 ? std::move(parts.front()) : Regex{.node = Choice{.regexes = std::move(parts)}};
+}
+
+Regex ranges(const std::span<const Code_point_range> ranges)
+{
+    if (ranges.empty())
+    {
+        throw std::invalid_argument("UTF-8 code point ranges are empty");
+    }
+
+    std::vector<Regex> parts;
+
+    parts.reserve(ranges.size());
+
+    auto current{ranges.front()};
+
+    const auto flush{[&parts, &current] { parts.push_back(range(current.first, current.last)); }};
+
+    for (const auto& next : ranges.subspan(1))
+    {
+        if (next.first <= current.last)
+        {
+            throw std::invalid_argument("UTF-8 code point ranges are unsorted or overlapping");
+        }
+
+        if (next.first == current.last + 1)
+        {
+            current.last = next.last;
+        }
+        else
+        {
+            flush();
+
+            current = next;
+        }
+    }
+
+    flush();
 
     return parts.size() == 1 ? std::move(parts.front()) : Regex{.node = Choice{.regexes = std::move(parts)}};
 }
