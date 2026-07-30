@@ -160,8 +160,9 @@ visible run-to-run spread, so rerun the benchmark on your own hardware and langu
 Configuring with `-DMUNCH_BENCHMARK_COMPARE=ON` additionally builds `munch_benchmark_compare`, which runs the same
 tokenization job through six engines: lexertl, munch's nearest relative, a lexer likewise built at run time from rules
 and compiled to a DFA, and five widely used regex engines, used the way one uses a regex engine to write a lexer: one
-pattern with an alternation per token kind, matched anchored at the current offset, extracting every token's kind and
-length. Each engine's full tokenization is validated to agree with munch's, token for token, before anything is timed.
+pattern with an alternation per token kind, matched anchored at the current offset. Each engine's full tokenization,
+every token's kind and length, is validated to agree with munch's before anything is timed; the timed passes then run
+a lightweight recognition tally of token count and kinds.
 The option is off by default because it fetches the engines as additional dependencies.
 
 Two corpus shapes keep the conclusions honest: `dense`, averaging under two bytes per token, magnifies per-token
@@ -268,7 +269,8 @@ for threading to matter:
 | logos   |       4 |  2708 |   3462 |
 | `munch` |       4 |  2035 |   2076 |
 
-Throughputs in MiB/s.
+Best-pass throughputs in MiB/s; the raw blocks above carry the medians and the spread, and the medians tell the
+same story throughout.
 
 Read the numbers for what they measure. The corpus averages under two bytes per token, so per-token overhead dominates:
 munch tokenizes the whole input through `tokenize_all()`, CTRE compiles the token set into a matcher at C++ compile
