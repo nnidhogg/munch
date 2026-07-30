@@ -430,7 +430,7 @@ builder.add_token(pattern, Token_kind::Identifier, 4);
 
 This mechanism allows keyword tokens to override more general patterns such as identifiers.
 
-##### **build()**
+##### **`build()`**
 
 ```cpp
 const auto lexer{builder.build()};
@@ -446,7 +446,7 @@ After calling `build()`:
 - the returned lexer can be reused safely and efficiently,
 - lexers already built are unaffected by later changes to the builder.
 
-##### **diagnose()**
+##### **`diagnose()`**
 
 ```cpp
 const auto diagnostics{builder.diagnose()};

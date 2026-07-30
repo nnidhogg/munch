@@ -16,7 +16,7 @@ simply do not exist here. In the README's comparison, where the corpus averages 
 gap to the general-purpose engines is *them paying for generality*, re-entering a full match API at every token
 boundary.
 
-## **Every Decision Is Made Once, in build()**
+## **Every Decision Is Made Once, in `build()`**
 
 The pipeline (Thompson construction, subset construction, minimization, run per pattern and then once more for the
 combined lexer) is where alternation, ambiguity, and priority get dissolved rather than deferred. After the final
@@ -52,7 +52,7 @@ latency does not take back what branch elimination won.
 
 Lexer-specialized code generators beat this design, and the margin grows with token length. logos, the Rust lexer
 generator, is measured in tools/benchmark/rust on byte-identical ports of the README's two benchmark corpora, validated
-to produce the same token stream to the token: it runs ten to thirty percent ahead of the whole-input tokenize_all()
+to produce the same token stream to the token: it runs ten to thirty percent ahead of the whole-input `tokenize_all()`
 entry point, and CTRE overtakes on the source-shaped corpus as well; re2c occupies the same class for C. munch's own
 throughput is nearly identical on both corpus shapes, which is the table model's signature: it pays per byte, so token
 length neither helps nor hurts it, while generated code consumes multi-byte runs. Within munch's own class the lead
@@ -93,13 +93,13 @@ The runtime loop never paid for Unicode, but construction did, and the XID ident
 an identifier pattern over the two generated property tables expands to an NFA of roughly 55,000 transitions, and
 determinizing it took 230 seconds. Two structural faults in subset construction carried almost all of it. The walk
 advanced once per state-symbol *pair* rather than per distinct symbol, and the states of a byte-expanded class share
-their symbols almost entirely, so the same transition was recomputed thousands of times per set; epsilon closures
-were recomputed from scratch inside every advance. Deduplicating symbols and memoizing per-state closures brought
-230 s to 34 s. The remaining cost was the set representation itself: reachable sets hold over a thousand members,
-and node-based sets pay an allocation and a hash per element. Rebuilding the construction over dense bit sets, with
-closures stored as member lists and set identity as a hash of words, brought 34 s to 0.6 s, 372 times faster than
-the starting point. The keyword-scale build fell from 33 ms to 27 ms as a side effect, and the compiled XID grammar
-lands at 477 DFA states, small enough that the runtime story is unchanged. The construction figures are tracked by
+their symbols almost entirely, so the same transition was recomputed thousands of times per set; epsilon closures were
+recomputed from scratch inside every advance. Deduplicating symbols and memoizing per-state closures brought 230 s to 34
+s. The remaining cost was the set representation itself: reachable sets hold over a thousand members, and node-based
+sets pay an allocation and a hash per element. Rebuilding the construction over dense bit sets, with closures stored as
+member lists and set identity as a hash of words, brought 34 s to 0.6 s, 372 times faster than the starting point. The
+keyword-scale build fell from 33 ms to 27 ms as a side effect, and the compiled XID grammar lands at 477 DFA states,
+small enough that the runtime story is unchanged. The construction figures are tracked by
 `build/xid` in the benchmark alongside `build/keywords`.
 
 ## **The Remaining Headroom Is Parallel**
@@ -118,19 +118,20 @@ only while no transition re-enters it, which a nullable pattern's self-looping s
 certifies nothing, and only bytes no state consumes remain vacuously safe. A token set whose strings or comments can
 contain any byte certifies no safe points, and the right behavior is to refuse and scan sequentially rather than
 speculate, in keeping with [limits.md](limits.md). The certification is built:
-Lexer::is_split_point() reports the certified bytes of a compiled token set, computed by that one pass in the
+`Lexer::is_split_point()` reports the certified bytes of a compiled token set, computed by that one pass in the
 simulator's constructor.
 
 The threaded chunking is measured, and the prediction registered here before the experiment held. The benchmark splits
 the input at the certified points nearest the equal-division offsets, runs one whole-input scan per chunk on its own
-thread, and first proves the chunked token stream identical to the serial one by an exact (kind, length) stream comparison before timing, keeping only a light tally as a consistency signal in the timed passes. On
-the benchmark token set, chunking scales the serial 651.7 MiB/s to 1161.8 MiB/s on two threads, 2292.9 MiB/s on four,
-and 3834.7 MiB/s on eight, with the source-shaped corpus within a few percent of the dense one at every width
+thread, and first proves the chunked token stream identical to the serial one by an exact (kind, length) stream
+comparison before timing, keeping only a light tally as a consistency signal in the timed passes. On the benchmark token
+set, chunking scales the serial 651.7 MiB/s to 1161.8 MiB/s on two threads, 2292.9 MiB/s on four, and 3834.7 MiB/s on
+eight, with the source-shaped corpus within a few percent of the dense one at every width
 (`cmake -B build-perf -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON && cmake --build build-perf && ./build-perf/tools/benchmark/munch_benchmark 16 15`).
 That is 88% per-core efficiency at four threads against the 70% bar this section committed to in advance, and the shape
 confirms the diagnosis: the chains overlap almost perfectly because each thread's working set is a cache-resident table
-plus a streamed slice of input. The chunking has since been promoted into the library: chunk_boundaries() computes the
-certified plan and tokenize_all_parallel() runs it, one thread per chunk with the last on the calling thread, and the
+plus a streamed slice of input. The chunking has since been promoted into the library: `chunk_boundaries()` computes the
+certified plan and `tokenize_all_parallel()` runs it, one thread per chunk with the last on the calling thread, and the
 benchmark now routes through that entry point. The plan computation stays pure, so a caller owning its own thread pool
 can take the boundaries and leave the library's threads unused.
 
@@ -155,7 +156,7 @@ and the Rust driver, 16 MiB, best of fifteen), munch goes from 624.2 MiB/s seria
 on eight on the dense corpus, and from 604.5 to 2342.3 and 3792.9 on the source corpus, while logos goes from 680.2 to
 2576.9 and 4594.0, and from 844.4 to 3253.8 and 5628.6. Both classes scale strongly, close to linear at four threads and
 sublinearly at eight, so threading multiplies the serial verdict instead of reordering it, and the meaningful difference
-between the rows is epistemic: munch's chunk boundaries are certified by is_split_point() from the compiled table for
+between the rows is epistemic: munch's chunk boundaries are certified by `is_split_point()` from the compiled table for
 whatever token set was built, while the logos rows rest on a hand-written safety analysis of this one token set that the
 generated lexer can neither produce nor check.
 
