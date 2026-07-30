@@ -74,6 +74,9 @@ target_link_libraries(${PROJECT_NAME}
 if (MUNCH_INSTALL)
     install(TARGETS ${PROJECT_NAME} EXPORT munch_targets)
 
+    # The Unicode License v3 requires its complete notice to accompany copies of the generated identifier tables.
+    install(FILES LICENSE THIRD_PARTY_NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/munch)
+
     install(EXPORT munch_targets
             FILE munch-targets.cmake
             NAMESPACE munch::

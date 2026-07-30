@@ -86,7 +86,7 @@ def main() -> None:
         f"// Source: https://www.unicode.org/Public/{version}/ucd/DerivedCoreProperties.txt\n"
         f"// Source SHA-256: {hashlib.sha256(raw).hexdigest()}\n"
         "// The ranges derive from the Unicode Character Database, (c) Unicode, Inc., used under the Unicode\n"
-        "// License v3 (https://www.unicode.org/license.txt).\n"
+        "// License v3; the complete notice is in THIRD_PARTY_NOTICES.md at the repository root.\n"
         "\n"
         f'constexpr std::string_view unicode_version{{"{version}"}};\n'
         "\n"

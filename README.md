@@ -875,7 +875,10 @@ changing what exists (see [docs/limits.md](docs/limits.md)).
 
 ## **License**
 
-This project is licensed under the terms of the MIT License. See the [LICENSE](LICENSE) file for details.
+The source code is licensed under the terms of the MIT License. See the [LICENSE](LICENSE) file for details. The
+generated Unicode identifier tables derive from the Unicode Character Database and are used under the Unicode
+License v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), installed alongside the
+package.
 
 ## **Author**
 

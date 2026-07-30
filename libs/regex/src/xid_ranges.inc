@@ -2,7 +2,7 @@
 // Source: https://www.unicode.org/Public/17.0.0/ucd/DerivedCoreProperties.txt
 // Source SHA-256: 24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08
 // The ranges derive from the Unicode Character Database, (c) Unicode, Inc., used under the Unicode
-// License v3 (https://www.unicode.org/license.txt).
+// License v3; the complete notice is in THIRD_PARTY_NOTICES.md at the repository root.
 
 constexpr std::string_view unicode_version{"17.0.0"};
 
