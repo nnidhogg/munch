@@ -79,6 +79,17 @@ observation that real automata converge quickly. Correctness is recovered throug
 re-execution; what remains uncertain is how much redundant work the recovery costs, and with it the speedup.
 Reduced-interface automata~\cite{borsotti2024ridfa} shrink the set of entry states worth retaining.
 
+\paragraph{Split at a language's delimiters.} Parallel lexers have long been built by choosing, per language, a
+byte that cannot occur inside a token, and cutting there~\cite{barenghi2015parallel}. The choice is made by hand and
+is sound only for languages that cooperate: newline works for JSON, and fails for Lua, whose strings and comments
+span lines~\cite{li2021plex}. That observation is exactly what the certificate below mechanizes.
+
+\paragraph{Prescan for context.} Plex~\cite{li2021plex} removes the need for delimiters entirely. It derives a
+prescanning automaton from the lexer's own DFA, embedding backtracking cases into it, and runs that automaton over
+the input to compute a transfer function per chunk; composing the transfer functions yields each chunk's true entry
+state, after which chunks scan in parallel with no language-specific analysis. The price is a pass over the input;
+the benefit is that it applies to grammars that certify nothing here.
+
 \paragraph{Restrict the automaton.} Holub and \v{S}tekr's parallel run~\cite{holub2009parallel} is exact and
 efficient for $k$-local automata, in which any $k$ consecutive symbols force a unique state regardless of the
 starting state. The property is uniform over the whole automaton, and most lexical grammars do not have it.
@@ -247,7 +258,9 @@ with no entry-state uncertainty.}
 
 The certificate asks the grammar for cooperation, and the interesting question is how much real token sets give.
 Table~\ref{tab:applicability} was produced by compiling each token set and reading the predicate for all 256 byte
-values; ``useful'' excludes the vacuously certified bytes of Proposition~\ref{prop:vacuous}.
+values. The predicate alone cannot separate useful certificates from the vacuous ones of
+Proposition~\ref{prop:vacuous}, since both report true; bytes outside every token's alphabet were excluded by
+inspecting each grammar.
 
 \begin{table}[t]
 \centering
@@ -298,25 +311,36 @@ to the serial one by an exact (kind, length) comparison.
 
 \subsection{Scaling}
 
-Table~\ref{tab:scaling} reports median throughput. At four chunks the dense corpus reaches $3.61\times$ the serial
-scan, or 90\% per-core efficiency, and the source-shaped corpus $3.51\times$, or 88\%. Efficiency declines at eight
-chunks, where thread creation, scheduler contention, system activity, and memory-system effects all become more
-visible; the present experiment does not isolate which dominates, and a sweep with pinned threads would be needed to
-attribute it.
+Table~\ref{tab:scaling} reports median throughput. Two baselines matter and they answer different questions. A user
+choosing between the serial and parallel entry points compares against the plain scan, and gains $3.33\times$ at four
+chunks. The parallelism itself is better measured against the same API driven with a single chunk, which plans, uses
+the per-chunk sink, and spawns nothing: that row costs 14\% relative to the plain scan before any parallelism exists,
+and against it the certified splitting reaches $1.98\times$, $3.89\times$, and $6.51\times$, or 99\%, 97\%, and 81\%
+per-core. Conflating the two, as an end-to-end table alone would, charges parallelization for the sink.
 
 \begin{table}[t]
 \centering
-\begin{tabular}{lrrrr}
+\begin{tabular}{lrrrrr}
 \toprule
-Corpus & serial & 2 chunks & 4 chunks & 8 chunks \\
+Corpus & plain scan & 1 chunk & 2 chunks & 4 chunks & 8 chunks \\
 \midrule
-dense (1.83 B/token)  & 599.8 & 1084.0 & 2164.9 & 3496.0 \\
-source (3.53 B/token) & 589.0 & 1060.6 & 2067.2 & 3650.0 \\
+dense (1.83 B/token)  & 632.1 & 541.9 & 1071.5 & 2107.8 & 3528.9 \\
+source (3.53 B/token) & 620.3 & 553.4 & 1085.9 & 2091.5 & 3679.4 \\
 \bottomrule
 \end{tabular}
-\caption{Median throughput in MiB/s. Speedups at four chunks are $3.61\times$ and $3.51\times$.}
+\caption{Median throughput in MiB/s. The one-chunk column is the parallel API without parallelism, and is the
+baseline the per-core efficiencies use.}
 \label{tab:scaling}
 \end{table}
+
+The residual overhead is small and now attributable. Against the one-chunk baseline the parallel scan costs an extra
+0.17\,ms at two chunks, 0.21\,ms at four, and 0.84\,ms at eight, on a scan of roughly 29.5\,ms. Spawning and joining
+the threads, measured on its own with empty bodies, accounts for 0.04, 0.09, and 0.19\,ms of that, or between a fifth
+and two fifths; boundary planning contributes 0.2\,$\mu$s, five orders of magnitude below the scan, and is
+therefore negligible. What remains, and what grows at eight chunks, is neither planning nor coordination but the
+scanning itself: chunk imbalance and contention for shared execution and memory resources. Attributing that
+precisely would need a sweep with pinned threads across physical cores, sibling threads, and efficiency cores, which
+this experiment does not perform.
 
 \subsection{Planning cost}
 \label{sec:planning}
@@ -378,15 +402,21 @@ synchronizing word maps \emph{every} state to one common state; a certified symb
 mid-token state may consume at all, so the surrounding longest-match loop must already have finished its token and
 returned to $q_0$ before the symbol arrives. The reset comes from the token loop, not from the transition structure.
 
-Certified split points differ from simultaneous automata in requiring no per-state simulation and no composition,
-from speculation in requiring no guess and no repair, from $k$-locality in being a per-symbol property derived from
-the token loop's reset rather than a uniform property of the automaton, from overlap verification in using no
-overlap, and from delimiter folklore in deriving the safe set from the compiled token set rather than assuming it
-per format. The derivation also correctly refuses the grammars for which the folklore is unsound. To our knowledge
-the specific formulation, a per-symbol certificate extracted from the compiled automaton of a longest-match token
-set together with the re-entrancy condition, has not been published, though its components, synchronization,
-delimiter splitting, and chunked scanning, are all classical. Parallel lexing on GPUs~\cite{voetter2021gpu} explores
-an orthogonal execution model for the same underlying problem.
+Certified split points differ from simultaneous automata in requiring no per-state simulation and no composition, from
+speculation in requiring no guess and no repair, from $k$-locality in being a per-symbol property derived from the
+token loop's reset rather than a uniform property of the automaton, from overlap verification in using no overlap, and
+from delimiter folklore in deriving the safe set from the compiled token set rather than assuming it per format. The
+derivation also correctly refuses the grammars for which the folklore is unsound. The contribution is therefore narrow
+and specific. Splitting at a delimiter is classical, and the observation that it works for JSON but not for Lua is
+stated in the literature; what appears to be missing is a mechanical answer to the question those choices leave
+implicit, namely whether a given byte is a sound delimiter for a given token set. The certificate answers it from the
+compiled automaton, with no hand analysis and no pass over the input, and the survey of
+Section~\ref{sec:applicability} turns the same machinery into a statement about which token sets admit such bytes at
+all. We are not aware of prior work stating this condition, in particular the re-entrancy requirement, as a static
+per-symbol property of the token DFA, though its components are all classical, and the adjacent literature on parallel
+and streaming tokenization is active enough that this positioning deserves a fuller survey before it is claimed more
+strongly.
+Parallel lexing on GPUs~\cite{voetter2021gpu} explores an orthogonal execution model for the same underlying problem.
 
 \bibliographystyle{plain}
 \bibliography{refs}

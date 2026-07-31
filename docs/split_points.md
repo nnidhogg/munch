@@ -49,6 +49,15 @@ Published solutions accept the unknown-state problem and manage it:
   that real automata converge quickly. Correctness is recovered through enumeration, validation, or re-execution;
   what remains uncertain is how much redundant work the recovery costs, and with it the speedup. Reduced-interface
   DFAs (Borsotti et al.) shrink the set of entry states worth retaining.
+- **Split at a language's delimiters.** Parallel lexers have long been built by choosing, per language, a byte that
+  cannot occur inside a token, and cutting there (Barenghi et al., Science of Computer Programming 2015). The choice is
+  made by hand and is sound only for languages that cooperate: newline works for JSON and fails for Lua, whose strings
+  and comments span lines. That observation is exactly what the certificate below mechanizes.
+- **Prescan for context.** Plex (Li et al., IPDPS 2021) removes the need for delimiters entirely. It derives a
+  prescanning automaton from the lexer's own DFA, embedding the backtracking cases into it, and runs that automaton over
+  the input to compute a transfer function per chunk; composing those functions yields each chunk's true entry state,
+  after which the chunks scan in parallel with no language-specific analysis. The price is a pass over the input; the
+  benefit is that it applies to grammars that certify nothing here.
 - **Restrict the automaton.** Holub and Štekr's parallel DFA run is exact and efficient for *k-local* automata,
   where any k consecutive symbols force a unique state regardless of the start. The property is uniform over the
   whole automaton and most lexical grammars do not have it.
@@ -208,9 +217,16 @@ Certified split points differ from simultaneous automata (no per-state simulatio
 guess, no re-run, exact by construction), from k-locality (the property is per-symbol and derived from the token loop's
 reset, not uniform over the automaton), from overlap verification (no overlap), and from delimiter folklore (the safe
 set is derived from the compiled token set rather than assumed per format, and the derivation correctly refuses grammars
-where the folklore is unsound). To our knowledge the specific formulation, a per-symbol certificate extracted from the
-compiled automaton of a longest-match token set, with the re-entrant-initial-state condition, has not been published,
-though the components (synchronization, delimiter splitting, chunked scanning) are all classical.
+where the folklore is unsound).
+
+The contribution is therefore narrow and specific. Splitting at a delimiter is classical, and the observation that it
+works for JSON but not for Lua is stated in the literature; what appears to be missing is a mechanical answer to the
+question those choices leave implicit, namely whether a given byte is a sound delimiter for a given token set. The
+certificate answers it from the compiled automaton, with no hand analysis and no pass over the input, and the survey in
+Section 5 turns the same machinery into a statement about which token sets admit such bytes at all. To our knowledge
+this condition, in particular the re-entrancy requirement, has not been published as a static per-symbol property of the
+token DFA, though its components (synchronization, delimiter splitting, chunked scanning) are all classical, and the
+adjacent literature is active enough that the positioning deserves a fuller survey before it is claimed more strongly.
 
 ## References
 
@@ -220,6 +236,9 @@ though the components (synchronization, delimiter splitting, chunked scanning) a
 - P. Jiang, G. Agrawal. *Combining SIMD and Many/Multi-core Parallelism for Finite State Machines with
   Enumerative Speculation.*
   PPoPP 2017.
+- A. Barenghi, S. Crespi Reghizzi, D. Mandrioli, F. Panella, M. Pradella. *Parallel parsing made practical.* Science of
+  Computer Programming 112:195-226, 2015.
+- L. Li, S. Sato, Q. Liu, K. Taura. *Plex: Scaling Parallel Lexing with Backtrack-Free Prescanning.* IPDPS 2021.
 - J. Holub, Š. Štekr. *On Parallel Implementations of Deterministic Finite Automata.* CIAA 2009.
 - C. Ge, Y. Li, et al. *Speculative Distributed CSV Data Parsing for Big Data Analytics.* SIGMOD 2019.
 - E. Stehle, H.-A. Jacobsen. *ParPaRaw: Massively Parallel Parsing of Delimiter-Separated Raw Data.* VLDB 2020.

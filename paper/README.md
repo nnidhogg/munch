@@ -21,7 +21,7 @@ machine, compiler, and command recorded in its header. The paper quotes that fil
 so ordinary benchmark refreshes cannot silently change what the paper claims. Reproduce it with:
 
 ```
-git worktree add /tmp/munch-paper 7f8e2b90bf44e12f6bdbdf41b7731cb63c8ea072
+git worktree add /tmp/munch-paper 1aca0cd13837cd40ab90a32222012eabdfc6018b
 cd /tmp/munch-paper
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON
 cmake --build build
