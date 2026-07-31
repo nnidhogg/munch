@@ -605,13 +605,14 @@ const auto consumed = lexer.tokenize_all<Token_kind>(input, [&tokens](const Toke
 // consumed == input.size() exactly when the whole input tokenized.
 ```
 
-`is_split_point(symbol)` reports whether a symbol is a certified safe chunk boundary: input split immediately before it
-tokenizes identically to the unsplit input. The property is computed from the compiled transition table, so it reflects
+`is_split_point(symbol)` reports whether a symbol is a certified safe chunk boundary: for input that tokenizes
+completely, splitting immediately before it produces the identical token stream. The property is computed from the compiled transition table, so it reflects
 the actual token set rather than a heuristic; a newline-run token, for example, correctly disqualifies newline, where a
 split-at-newline rule would silently corrupt the token stream. `chunk_boundaries(input, chunks)` turns the certified
 points into a chunk plan, and `tokenize_all_parallel<T>(input, chunks, sink)` scans the chunks concurrently, one thread
-per chunk, reaching around 3.5× the serial throughput on four threads with a token stream guaranteed identical to the
-serial scan's; a token set that certifies no split points degenerates to one chunk and the serial scan. The sink
+per chunk, reaching around 3.5× the serial throughput on four threads; for input that tokenizes completely, the token
+stream is guaranteed identical to the serial scan's, and on a failure the per-chunk consumed lengths expose it. A
+token set that certifies no split points degenerates to one chunk and the serial scan. The sink
 receives `(chunk, token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the
 contract and [docs/performance.md](docs/performance.md) for the measurements.
 [docs/split_points.md](docs/split_points.md) states the certificate formally, relates it to the parallel-automata

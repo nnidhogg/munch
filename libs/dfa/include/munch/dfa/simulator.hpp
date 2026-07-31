@@ -164,11 +164,12 @@ public:
      * A symbol is a safe split point when no state reachable after consuming input consumes it, so every
      * occurrence in any input can only be the first byte of a token: a scan reaching it mid-token finds no
      * transition and must have ended its token earlier, and a token can only contain it by starting with it.
-     * Input split immediately before such a symbol therefore tokenizes identically to the unsplit input, which is
-     * what makes chunked processing of one large input safe. The initial state is exempt only while no transition
-     * re-enters it; a nullable pattern such as a kleene token minimizes to an accepting, self-looping start state,
-     * and its symbols certify nothing. A symbol no state consumes is vacuously safe: input holding it fails at it
-     * either way. Token sets whose runs or literals may contain any byte certify no split points.
+     * For input that tokenizes completely, splitting immediately before such a symbol therefore produces the
+     * identical token stream, which is what makes chunked processing of one large input safe. The initial state is
+     * exempt only while no transition re-enters it; a nullable pattern such as a kleene token minimizes to an
+     * accepting, self-looping start state, and its symbols certify nothing. A symbol no state consumes is vacuously
+     * safe: input holding it fails at it either way. Token sets whose runs or literals may contain any byte certify no
+     * split points.
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept
     {
