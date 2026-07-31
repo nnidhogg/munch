@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <stdexcept>
 
 #include "munch/nfa/tools/graphviz.hpp"
 
@@ -91,6 +92,23 @@ TEST_F(Set_test, Range_crossing_high_bit)
     {
         EXPECT_TRUE(s.symbols().contains(static_cast<char>(static_cast<unsigned char>(i))));
     }
+}
+
+TEST_F(Set_test, Range_rejects_a_reversed_range)
+{
+    // A single-symbol range is the boundary and must still be accepted.
+    EXPECT_EQ(Set::range('a', 'a').symbols().size(), 1);
+
+    // One past it in the wrong direction is an error rather than an empty set: views::iota would be undefined here,
+    // and a silently empty result would hide the typo.
+    EXPECT_THROW((void)Set::range('9', '0'), std::invalid_argument);
+    EXPECT_THROW((void)Set::range('b', 'a'), std::invalid_argument);
+
+    // Ordering is by unsigned byte, so a high-bit symbol orders after an ASCII one rather than before it.
+    const auto high{static_cast<char>(static_cast<unsigned char>(0x80))};
+
+    EXPECT_NO_THROW((void)Set::range('a', high));
+    EXPECT_THROW((void)Set::range(high, 'a'), std::invalid_argument);
 }
 
 TEST_F(Set_test, Range_ending_at_max_byte)

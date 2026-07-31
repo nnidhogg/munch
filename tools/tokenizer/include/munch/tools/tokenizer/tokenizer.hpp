@@ -136,6 +136,10 @@ public:
      *
      * On success, returns a Token<T>; End_of_input indicates the input is exhausted.
      * On failure, returns an Error describing the lexical error at the current position.
+     *
+     * An error does not advance the reading position, because no automaton-derived answer says how far to skip and
+     * guessing would invent tokens. Recovery is therefore the driver's: stop, or seek() past the offending bytes
+     * before calling again. A loop that only tests end_of_input() and ignores has_error() will not terminate.
      */
     template <typename T>
         requires(std::integral<T> || std::is_enum_v<T>)

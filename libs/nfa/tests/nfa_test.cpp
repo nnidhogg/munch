@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 
 #include "munch/nfa/builder.hpp"
@@ -89,6 +90,40 @@ TEST_F(Nfa_test, Any_of)
     EXPECT_EQ(Simulator::run(result, "baaa"), Match(token, 1));
 
     EXPECT_EQ(Simulator::run(result, "a"), Match(std::nullopt, 0));
+}
+
+TEST_F(Nfa_test, Run_accepts_a_single_pass_iterator)
+{
+    nfa::Builder nfa;
+
+    const auto q0{nfa.init_state()};
+    const auto q1{nfa.next_state()};
+    const auto q2{nfa.next_state()};
+
+    const Token token{1, 1};
+
+    nfa.add_transition(q0, nfa::Label('a'), q0);
+    nfa.add_transition(q0, nfa::Label('b'), q1);
+    nfa.add_transition(q1, nfa::Label::epsilon(), q2);
+
+    nfa.add_accept_state(q2, token);
+
+    const auto result{nfa.build()};
+
+    using Match = Simulator::Match;
+
+    // istreambuf_iterator is genuinely single-pass: once the loop advances, the begin iterator can no longer be used
+    // to measure how far it has come. The overload is constrained on input_iterator, so this has to work, and the
+    // reported length has to agree with what the same input gives over a string.
+    std::istringstream stream{"aab"};
+
+    const std::istreambuf_iterator<char> begin{stream};
+
+    const std::istreambuf_iterator<char> end{};
+
+    EXPECT_EQ(Simulator::run(result, begin, end), Match(token, 3));
+
+    EXPECT_EQ(Simulator::run(result, "aab"), Match(token, 3));
 }
 
 TEST_F(Nfa_test, Single_character)

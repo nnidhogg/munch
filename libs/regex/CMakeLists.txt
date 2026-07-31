@@ -27,7 +27,10 @@ target_compile_features(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
-        PRIVATE
+        # Public because regex.hpp includes munch/nfa/builder.hpp and to_nfa() returns nfa::Builder by value, so a
+        # consumer of this target needs the nfa headers to compile against it. In-tree builds hide that today by
+        # reaching munch_nfa through munch_core's public edge; an installed consumer linking only munch_regex does not.
+        PUBLIC
         munch_nfa
 )
 

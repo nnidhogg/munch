@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <stdexcept>
 
 namespace munch::regex
 {
@@ -31,6 +32,13 @@ Set Set::from(std::initializer_list<Symbol_t> symbols)
 
 Set Set::range(const Symbol_t start, const Symbol_t end)
 {
+    // views::iota requires its bound to order at or after its value, so a reversed range would be undefined rather
+    // than empty. Symbols are ordered as unsigned bytes here, matching how the rest of the library indexes them.
+    if (static_cast<unsigned char>(end) < static_cast<unsigned char>(start))
+    {
+        throw std::invalid_argument("A symbol range may not end before it starts");
+    }
+
     const auto range{
             std::views::iota(
                     static_cast<unsigned>(static_cast<unsigned char>(start)),

@@ -43,8 +43,13 @@ public:
 
         Match result{nfa.has_accept_token(states), 0};
 
+        // Counted, not measured: std::distance would need begin, which a single-pass iterator invalidates.
+        std::size_t consumed{0};
+
         for (Iterator current = begin; current != end && !states.empty(); ++current)
         {
+            ++consumed;
+
             if (states = nfa.advance(states, *current); states.empty())
             {
                 continue;
@@ -52,7 +57,7 @@ public:
 
             if (const auto token = nfa.has_accept_token(states); token)
             {
-                result = {token, static_cast<std::size_t>(std::distance(begin, current) + 1)};
+                result = {token, consumed};
             }
         }
 

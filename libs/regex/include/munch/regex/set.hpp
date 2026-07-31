@@ -69,9 +69,13 @@ public:
 
     /**
      * @brief Creates a set containing all symbols in the range [start, end].
+     *
+     * Symbols are ordered as unsigned bytes, so the range is over byte values rather than over char, which may be
+     * signed.
      * @param start The starting symbol.
      * @param end The ending symbol.
      * @return The created set.
+     * @throws std::invalid_argument If end orders before start.
      */
     static Set range(Symbol_t start, Symbol_t end);
 
