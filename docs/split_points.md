@@ -16,12 +16,12 @@ mispredictions (speculation), or overlap chunks and verify convergence. This rep
 implemented in munch: derive, from the compiled automaton of the token set itself, a set of *certified split symbols*,
 bytes at which, on a completely tokenizable input, every occurrence begins a token. Splitting immediately before such a
 byte preserves the token stream exactly, by construction, with no speculation, no overlap, no merge phase, and no
-speculative or duplicate tokenization when the property does not hold: the plan degenerates to a serial scan. We state
-the certificate and its one subtlety (a re-entrant initial state invalidates the exemption that makes it usable), show
-that deriving it is a linear-time analysis of the compiled table, measure near-linear scaling to four threads on a 16
-MiB corpus, and survey which grammars certify usable symbols. The survey grounds a piece of folklore: for conventional
-tokenizations, line-based splitting of source text is sound when no token can span a line, and one token kind that can,
-the block comment, is alone sufficient to destroy every useful certificate in the surveyed C-like grammar.
+duplicate tokenization when the property does not hold: the plan degenerates to a serial scan. We state the certificate
+and its one subtlety (a re-entrant initial state invalidates the exemption that makes it usable), show that deriving it
+is a linear-time analysis of the compiled table, measure near-linear scaling to four threads on a 16 MiB corpus, and
+survey which grammars certify usable symbols. The survey grounds a piece of folklore: for conventional tokenizations,
+line-based splitting of source text is sound when no token can span a line, and one token kind that can, the block
+comment, is alone sufficient to destroy every useful certificate in the surveyed C-like grammar.
 
 ## 1 The problem
 
@@ -44,8 +44,8 @@ Published solutions accept the unknown-state problem and manage it:
   possible state, producing a state-to-state function per chunk; the functions compose associatively, so chunks
   combine in a parallel-prefix step. General, but the per-chunk work multiplies with the state count and a merge
   phase remains.
-- **Speculate and patch.** Data-parallel FSMs (Mytkowicz et al., ASPLOS 2014) and enumerative speculation (Qiu et
-  al., PPoPP 2017; SimdFSM) start each chunk from one or a few guessed states, exploiting the empirical observation
+- **Speculate and patch.** Data-parallel FSMs (Mytkowicz et al., ASPLOS 2014) and enumerative speculation (Jiang and
+  Agrawal, PPoPP 2017; SimdFSM) start each chunk from one or a few guessed states, exploiting the empirical observation
   that real automata converge quickly. Correctness is recovered through enumeration, validation, or re-execution;
   what remains uncertain is how much redundant work the recovery costs, and with it the speedup. Reduced-interface
   DFAs (Borsotti et al.) shrink the set of entry states worth retaining.
@@ -56,9 +56,9 @@ Published solutions accept the unknown-state problem and manage it:
   with overlap regions and verifies that adjacent chunks agree inside the overlap.
 - **Folklore delimiters.** Data systems split logs and CSV at newlines because "records do not contain newlines",
   adjusting the cut to the next delimiter (the widow/orphan pattern). The assumption is per-format, informal, and
-  famously unsound for CSV with quoted newlines, which is why speculative CSV parsing exists as a research topic
-  (Ge et al., SIGMOD 2019). Format-specific structural scans (simdjson, Mison, Parabix) hand-derive comparable
-  facts per format.
+  famously unsound for CSV with quoted newlines, which is why speculative CSV parsing exists as a research topic (Ge et
+  al., SIGMOD 2019); massively parallel delimiter parsing (Stehle and Jacobsen, PVLDB 2020) attacks the same context
+  problem on GPUs. Format-specific structural scans (simdjson, Mison, Parabix) hand-derive comparable facts per format.
 
 What none of these do is ask the token set's own automaton *which bytes are safe*.
 
@@ -83,8 +83,12 @@ boundary of the serial scan. Then b is consumed after a nonempty prefix of some 
 immediately before consuming b. Since q consumes b and b is certified, q can only be the initial state, and that
 exemption is available only while the initial state is non-re-entrant. But q was reached after a nonempty prefix, so the
 initial state would be re-entrant, a contradiction; and a non-initial q consuming b contradicts certification directly.
-So every occurrence of b begins a token, the serial scan is in the initial state exactly at i, and that is precisely the
-entry condition of the chunk that starts there. Induction over the chunks gives stream equality. ∎
+So every occurrence of b begins a token, and the serial scan is in the initial state exactly at i.  The same argument
+bounds the longest-match lookahead, which is what lets a chunk end where the serial scan does not. While matching the
+last token before a boundary, the serial scanner may read past the accepting position hunting for a longer match; to
+read past the boundary it would have to consume the certified byte after a nonempty prefix, which the paragraph above
+just ruled out. Both scans therefore stop reading at the boundary with the same recorded accepting position, so the
+chunk that starts there sees exactly what the serial scan saw. Induction over the chunks gives stream equality. ∎
 
 **Corollary (malformed input).** If the serial scan fails at some offset, every chunk before the failing one is fully
 consumed with an identical stream, and the failing chunk stops at the same relative offset; the concatenated parallel
@@ -103,7 +107,7 @@ re-entry case. The condition is not a refinement for completeness; without it th
 **Vacuous certificates.** A byte no state consumes at all is certified vacuously: no completely tokenizable input can
 contain it, so the theorem's implication holds trivially. On malformed input, both the serial scan and the chunk
 beginning at such a byte fail there, while later chunks may still emit tokens exactly as the malformed-input corollary
-describes. Vacuous symbols are counted by the implementation but useless for planning; the useful certified set is the
+describes. Vacuous symbols are useless for planning; the useful certified set is the
 intersection with bytes that can actually appear in valid input.
 
 ## 4 Deriving and using it
@@ -180,7 +184,7 @@ Correctness is enforced at three levels. The benchmark proves the chunked token 
 exact (kind, length) comparison before any timing. The unit suite carries the certification counterexamples, including
 the re-entrant-initial-state case. And the fuzzer generates arbitrary grammars and inputs, checks every planned boundary
 against `is_split_point`, and compares the concatenated parallel stream with the serial stream on every execution;
-roughly half a million generated cases have run without a violation.
+several hundred thousand generated cases have run without a violation.
 
 ## 7 Limitations and future work
 
@@ -213,7 +217,8 @@ though the components (synchronization, delimiter splitting, chunked scanning) a
 - R. Sin'ya, K. Matsuzaki, M. Sassa. *Simultaneous Finite Automata: An Efficient Data-Parallel Model for Regular
   Expression Matching.* ICPP 2013. arXiv:1405.0562.
 - T. Mytkowicz, M. Musuvathi, W. Schulte. *Data-Parallel Finite-State Machines.* ASPLOS 2014.
-- J. Qiu et al. *Combining SIMD and Many/Multi-core Parallelism for Finite State Machines with Enumerative Speculation.*
+- P. Jiang, G. Agrawal. *Combining SIMD and Many/Multi-core Parallelism for Finite State Machines with
+  Enumerative Speculation.*
   PPoPP 2017.
 - J. Holub, Š. Štekr. *On Parallel Implementations of Deterministic Finite Automata.* CIAA 2009.
 - C. Ge, Y. Li, et al. *Speculative Distributed CSV Data Parsing for Big Data Analytics.* SIGMOD 2019.

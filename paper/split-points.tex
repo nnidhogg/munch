@@ -88,7 +88,8 @@ splits at fixed offsets with overlap regions and verifies that adjacent chunks a
 
 \paragraph{Assume a delimiter.} Data systems split logs and CSV at newlines because ``records do not contain
 newlines'', adjusting each cut to the next delimiter. The assumption is per-format and informal, and it is famously
-unsound for CSV with quoted newlines, which is why speculative CSV parsing is a research topic~\cite{ge2019csv}.
+unsound for CSV with quoted newlines, which is why speculative CSV parsing is a research topic~\cite{ge2019csv};
+massively parallel delimiter parsing~\cite{stehle2020parparaw} attacks the same context problem on GPUs.
 Format-specific structural scans~\cite{li2017mison,langdale2019simdjson,cameron2008parabix} hand-derive comparable
 facts per format.
 
@@ -163,19 +164,20 @@ where $\cdot$ denotes concatenation of token sequences and $w_{[a,b)}$ the corre
 
 \begin{proof}
 By Lemma~\ref{lem:boundary} every interior $c_j$ is a token boundary of $w$, and $c_0$ and $c_m$ are boundaries
-trivially. The scanner is deterministic and enters each token in state $q_0$ with no state carried across
-boundaries, so the tokens the global scan emits between $c_j$ and $c_{j+1}$ are exactly those the scanner emits when
-started at $c_j$ on the slice ending at $c_{j+1}$. Induction over $j$ gives the claim.
+trivially. Two facts are then needed. First, the scanner is deterministic and enters each token in state $q_0$ with
+no state carried across boundaries, so a scan started at $c_j$ begins exactly as the global scan does there. Second,
+the global scan cannot read beyond $c_{j+1}$ while matching the last token of the chunk: longest match may read past
+an accepting position, but to pass $c_{j+1}$ it would consume the certified symbol there after a nonempty prefix,
+which the proof of Lemma~\ref{lem:boundary} rules out. Both scans therefore stop reading at $c_{j+1}$ with the same
+recorded accepting position, so the tokens emitted between $c_j$ and $c_{j+1}$ coincide. Induction over $j$ gives the
+claim.
 \end{proof}
 
-\begin{corollary}[Malformed input]
-\label{cor:malformed}
-If $\mathrm{con}(w) < |w|$, let $c_j$ be the chunk containing the first failure. Every chunk before $c_j$ is fully
-consumed and contributes exactly the tokens the serial scan emits there, and the chunk containing the failure halts
-at the same offset. The serial stream is therefore a prefix of the concatenation, but chunks after the failure may
-emit tokens the serial scan never reaches. A caller must check every chunk's consumed length before treating the
-concatenation as a successful tokenization.
-\end{corollary}
+\begin{corollary}[Malformed input] \label{cor:malformed} If $\mathrm{con}(w) < |w|$, let $[c_j, c_{j+1})$ be the chunk
+containing the first failure. Every chunk before $c_j$ is fully consumed and contributes exactly the tokens the serial
+scan emits there, and the chunk containing the failure halts at the same offset. The serial stream is therefore a
+prefix of the concatenation, but chunks after the failure may emit tokens the serial scan never reaches. A caller must
+check every chunk's consumed length before treating the concatenation as a successful tokenization. \end{corollary}
 
 \begin{proposition}[Vacuous certificates]
 \label{prop:vacuous}
@@ -228,10 +230,10 @@ Section~\ref{sec:planning} measures the range.
 \begin{verbatim}
       serial scan:  [ tok ][ tok ][ tok ][ tok ][ tok ][ tok ][ tok ]
       input bytes:  i n t   x = 4 2 ;\n i f   ( x ) ...
-                                        ^
-                                        certified byte: no mid-token
-                                        state consumes it, so the serial
-                                        scan is in q0 exactly here
+                                     ^
+                                     certified byte: no mid-token state
+                                     consumes it, so the serial scan is
+                                     in q0 exactly here
       chunk 0:      [ tok ][ tok ][ tok ]|
       chunk 1:                           |[ tok ][ tok ][ tok ][ tok ]
 \end{verbatim}
