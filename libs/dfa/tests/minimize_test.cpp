@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <ranges>
 #include <unordered_set>
 
@@ -139,6 +140,79 @@ TEST(Minimize_test, Merges_equivalent_interior_states)
 
     EXPECT_EQ(simulator.run("a"), Match(std::nullopt, 0));
     EXPECT_EQ(simulator.run("cc"), Match(std::nullopt, 0));
+}
+
+// The contract's two documented non-minimal cases, one per direction of trimness. Both are characterizations: they
+// pin behaviour the header promises rather than behaviour a fix introduced, so that a future change to the
+// refinement cannot quietly turn the documented weakness into something stronger or weaker without saying so.
+
+TEST(Minimize_test, Keeps_a_reachable_chain_with_empty_right_language)
+{
+    Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+
+    const Token token{1};
+
+    dfa.add_transition(q0, Label{'a'}, q1);
+    dfa.add_accept_state(q1, token);
+
+    // A dead branch of the shape choice(text("a"), concat(text("b"), any_of(Set{}))) compiles to: reachable, but no
+    // continuation from q2 or q3 ever accepts. Myhill-Nerode makes q2 and q3 equivalent, since both have empty right
+    // language; refinement over a partial transition function does not, because q2 has a 'c' transition and q3 has
+    // none, and the scanner needs that distinction to know how far a failing longest match reads.
+    dfa.add_transition(q0, Label{'b'}, q2);
+    dfa.add_transition(q2, Label{'c'}, q3);
+
+    const auto result{minimize(dfa.build())};
+
+    EXPECT_EQ(count_states(result), 4);
+
+    const Simulator simulator{result};
+
+    using Match = Simulator::Match;
+
+    // The recognized language is exactly "a" regardless, so keeping the chain costs states and not correctness.
+    EXPECT_EQ(simulator.run("a"), Match(token, 1));
+    EXPECT_EQ(simulator.run("b"), Match(std::nullopt, 0));
+    EXPECT_EQ(simulator.run("bc"), Match(std::nullopt, 0));
+}
+
+TEST(Minimize_test, Keeps_an_island_the_initial_state_cannot_reach)
+{
+    Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+
+    const Token reachable{1};
+    const Token island{2};
+
+    dfa.add_transition(q0, Label{'a'}, q1);
+    dfa.add_accept_state(q1, reachable);
+
+    // No transition leads into q2, so no input can arrive there. Refinement merges equivalent states but never drops
+    // one, so both island states survive; a trim automaton for the same language needs two states, not four.
+    dfa.add_transition(q2, Label{'b'}, q3);
+    dfa.add_accept_state(q3, island);
+
+    const auto result{minimize(dfa.build())};
+
+    EXPECT_EQ(count_states(result), 4);
+
+    const Simulator simulator{result};
+
+    using Match = Simulator::Match;
+
+    EXPECT_EQ(simulator.run("a"), Match(reachable, 1));
+
+    // The island is unreachable, so its token can never be emitted no matter what the automaton still carries.
+    EXPECT_EQ(simulator.run("b"), Match(std::nullopt, 0));
 }
 
 TEST(Minimize_test, Keeps_states_with_different_symbol_sets)
