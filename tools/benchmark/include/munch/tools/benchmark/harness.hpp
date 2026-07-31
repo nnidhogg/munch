@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <functional>
 #include <span>
 #include <string>
 #include <utility>
@@ -117,6 +118,35 @@ bool measure(const char* name, const std::size_t bytes, const int passes, Pass&&
 {
     return measure(name, bytes, passes, std::forward<Pass>(pass), [](const std::size_t count) { return count; });
 }
+
+/**
+ * @brief One named scenario in an interleaved measurement.
+ */
+struct Scenario
+{
+    const char* name;
+    std::size_t bytes;
+    std::function<std::size_t()> pass;
+};
+
+/**
+ * @brief Measures several scenarios in interleaved rounds rather than one scenario at a time.
+ *
+ * Running a scenario's passes consecutively lets thermal, turbo, scheduler, and host-load drift land on one
+ * scenario and not its neighbours, which biases the ratios between them in a direction the measurement cannot
+ * recover. Here each round runs every scenario once, in an order reshuffled per round from a fixed seed, so drift
+ * spreads across all of them and the run stays reproducible.
+ *
+ * Every observation is written to a CSV rather than only the best, median, and worst, so the reported summary can
+ * be checked against the distribution it came from.
+ * @param scenarios The scenarios to measure, reported in the order given.
+ * @param passes The number of rounds; each round runs every scenario once.
+ * @param input_mebibytes The corpus size to record beside each observation.
+ * @param observations_path The CSV to append every observation to, or nullptr to write none.
+ * @return True if every scenario reproduced its warmup result on every round.
+ */
+bool measure_interleaved(
+        std::span<const Scenario> scenarios, int passes, std::size_t input_mebibytes, const char* observations_path);
 
 } // namespace munch::tools::benchmark
 

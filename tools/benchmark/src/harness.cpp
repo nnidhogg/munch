@@ -1,5 +1,9 @@
 #include "munch/tools/benchmark/harness.hpp"
 
+#include <fstream>
+#include <numeric>
+#include <random>
+
 #include "munch/core/builder.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/utf8.hpp"
@@ -115,6 +119,130 @@ std::string generate_source_input(const std::size_t size)
     }
 
     return input;
+}
+
+namespace
+{
+/**
+ * @brief One timed pass of one scenario.
+ */
+struct Observation
+{
+    std::size_t scenario;
+    int round;
+    double seconds;
+};
+} // namespace
+
+bool measure_interleaved(
+        const std::span<const Scenario> scenarios, const int passes, const std::size_t input_mebibytes,
+        const char* const observations_path)
+{
+    std::vector<std::size_t> expected;
+
+    expected.reserve(scenarios.size());
+
+    // The warmup pass also fixes the result every timed pass must reproduce, so a scenario that drifts in content
+    // rather than in timing still fails loudly.
+    for (const auto& scenario : scenarios)
+    {
+        expected.push_back(scenario.pass());
+
+        if (expected.back() == 0)
+        {
+            return false;
+        }
+    }
+
+    std::vector<std::vector<double>> seconds(scenarios.size());
+
+    std::vector<std::size_t> order(scenarios.size());
+
+    std::iota(order.begin(), order.end(), std::size_t{0});
+
+    // Seeded rather than random: the order must vary between rounds to spread drift, and repeat exactly between
+    // runs so a measurement can be reproduced.
+    std::mt19937 sequence{0x5eedU};
+
+    std::vector<Observation> observations;
+
+    observations.reserve(scenarios.size() * static_cast<std::size_t>(passes));
+
+    for (int round{0}; round < passes; ++round)
+    {
+        std::shuffle(order.begin(), order.end(), sequence);
+
+        for (const auto index : order)
+        {
+            const auto start{std::chrono::steady_clock::now()};
+
+            const auto result{scenarios[index].pass()};
+
+            const std::chrono::duration<double> elapsed{std::chrono::steady_clock::now() - start};
+
+            if (result != expected[index])
+            {
+                std::printf("%s: the result changed between passes\n", scenarios[index].name);
+
+                return false;
+            }
+
+            seconds[index].push_back(elapsed.count());
+
+            observations.push_back(Observation{.scenario = index, .round = round, .seconds = elapsed.count()});
+        }
+    }
+
+    for (std::size_t index{0}; index < scenarios.size(); ++index)
+    {
+        auto samples{seconds[index]};
+
+        std::sort(samples.begin(), samples.end());
+
+        const auto mib{static_cast<double>(scenarios[index].bytes) / (1024.0 * 1024.0)};
+
+        const auto median{(samples[(samples.size() - 1) / 2] + samples[samples.size() / 2]) / 2.0};
+
+        std::printf(
+                "%-16s %.1f MiB, %zu tokens, %d passes: best %.1f, median %.1f, worst %.1f MiB/s\n",
+                scenarios[index].name, mib, expected[index], passes, mib / samples.front(), mib / median,
+                mib / samples.back());
+    }
+
+    if (observations_path == nullptr)
+    {
+        return true;
+    }
+
+    // The CSV is appended to, and rounds restart at zero in every call, so without this the rows of separate runs
+    // are separable only by position. One identifier per process keeps them apart.
+    static const auto run{std::chrono::system_clock::now().time_since_epoch() / std::chrono::seconds{1}};
+
+    const bool fresh{!std::ifstream{observations_path}.good()};
+
+    std::ofstream csv{observations_path, std::ios::app};
+
+    if (!csv)
+    {
+        std::printf("unable to write observations to %s\n", observations_path);
+
+        return false;
+    }
+
+    if (fresh)
+    {
+        csv << "run,scenario,input_mib,round,seconds,mib_per_s\n";
+    }
+
+    for (const auto& observation : observations)
+    {
+        const auto mib{static_cast<double>(scenarios[observation.scenario].bytes) / (1024.0 * 1024.0)};
+
+        csv << run << ',' << scenarios[observation.scenario].name << ',' << input_mebibytes << ',' << observation.round
+            << ',' << observation.seconds << ',' << mib / observation.seconds << '\n';
+    }
+
+    return csv.flush().good();
 }
 
 } // namespace munch::tools::benchmark

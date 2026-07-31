@@ -9,6 +9,7 @@
 #include <munch/regex/unicode.hpp>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "munch/tools/benchmark/harness.hpp"
@@ -424,6 +425,177 @@ void measure_xid_build(const int passes)
     report("total/xid   ", std::move(total));
 }
 
+/**
+ * @brief Measures the cost of planning chunk boundaries as certified symbols grow scarce.
+ *
+ * chunk_boundaries() slides each interior boundary forward from its equal-division target to the next certified
+ * byte, so its cost depends on how far it has to look. Four densities bound the range: a certified byte on almost
+ * every line, one every megabyte, a certificate whose byte never occurs in the input at all, and a token set that
+ * certifies nothing, which the planner answers without scanning. The planned input is never tokenized here; only
+ * the plan is timed, and each pass repeats the plan until the sample is long enough to divide by, so the cheap
+ * densities measure planning rather than the clock.
+ */
+void measure_planning(const int passes)
+{
+    using namespace munch::regex;
+
+    enum class Kind : std::size_t
+    {
+        Line,
+        Newline,
+    };
+
+    // Newline as its own token certifies it; the line body cannot contain one, which is what makes the split safe.
+    const auto certifying{[] {
+        munch::core::Builder builder;
+
+        builder.add_token(plus(any_of(Set::all() - '\n')), Kind::Line, 2);
+
+        builder.add_token(text("\n"), Kind::Newline, 1);
+
+        return builder.build();
+    }()};
+
+    // A line body that may contain any byte certifies nothing: every byte is consumable mid-token.
+    const auto certifying_nothing{[] {
+        munch::core::Builder builder;
+
+        builder.add_token(plus(any_of(Set::all())), Kind::Line, 1);
+
+        return builder.build();
+    }()};
+
+    // The certified bytes sit half a period ahead of every equal-division target, so each search scans half a
+    // period rather than landing on a boundary by coincidence.
+    const auto input{[](const std::size_t size, const std::size_t period) {
+        std::string result(size, 'x');
+
+        for (std::size_t offset{period / 2}; period != 0 && offset < size; offset += period)
+        {
+            result[offset] = '\n';
+        }
+
+        return result;
+    }};
+
+    constexpr std::size_t size{16U << 20U};
+
+    constexpr std::size_t chunks{8};
+
+    const auto frequent{input(size, 40)};
+
+    const auto rare{input(size, 1U << 20U)};
+
+    const auto absent{input(size, 0)};
+
+    const auto plan{[passes](const char* const name, const munch::core::Lexer& lexer, const std::string& text) {
+        std::vector<double> microseconds;
+
+        microseconds.reserve(static_cast<std::size_t>(passes));
+
+        std::size_t planned{0};
+
+        for (int index{0}; index < passes; ++index)
+        {
+            // A plan over a dense certificate costs a fraction of a microsecond, which one clock reading cannot
+            // resolve, so each pass repeats the plan until the sample outlasts the timer and divides. A plan that
+            // scans the whole input passes the floor on its first call.
+            constexpr std::chrono::milliseconds floor{2};
+
+            std::size_t iterations{0};
+
+            const auto start{std::chrono::steady_clock::now()};
+
+            std::chrono::steady_clock::duration elapsed{};
+
+            do
+            {
+                planned = lexer.chunk_boundaries(text, chunks).size();
+
+                ++iterations;
+
+                elapsed = std::chrono::steady_clock::now() - start;
+            } while (elapsed < floor);
+
+            microseconds.push_back(
+                    std::chrono::duration<double, std::micro>{elapsed}.count() / static_cast<double>(iterations));
+        }
+
+        std::sort(microseconds.begin(), microseconds.end());
+
+        const auto median{(microseconds[(microseconds.size() - 1) / 2] + microseconds[microseconds.size() / 2]) / 2.0};
+
+        std::printf(
+                "%s %zu of %zu chunks, %d passes: best %.1f, median %.1f, worst %.1f us\n", name, planned - 1, chunks,
+                passes, microseconds.front(), median, microseconds.back());
+    }};
+
+    plan("plan/frequent  ", certifying, frequent);
+
+    plan("plan/rare      ", certifying, rare);
+
+    plan("plan/absent    ", certifying, absent);
+
+    plan("plan/uncertified", certifying_nothing, frequent);
+}
+
+/**
+ * @brief Measures the thread coordination the parallel scan pays, separately from the scanning it overlaps.
+ *
+ * tokenize_all_parallel() spawns one jthread per chunk beyond the last and joins them when the scope closes,
+ * exactly as timed here with empty bodies. Reporting that cost on its own lets the chunked throughput rows be
+ * read as scan time plus a known constant, rather than as an undivided end-to-end number.
+ */
+void measure_threads(const int passes)
+{
+    for (const std::size_t threads : {1U, 2U, 4U, 8U})
+    {
+        std::vector<double> microseconds;
+
+        microseconds.reserve(static_cast<std::size_t>(passes));
+
+        for (int index{0}; index < passes; ++index)
+        {
+            constexpr std::chrono::milliseconds floor{2};
+
+            std::size_t iterations{0};
+
+            const auto start{std::chrono::steady_clock::now()};
+
+            std::chrono::steady_clock::duration elapsed{};
+
+            do
+            {
+                {
+                    std::vector<std::jthread> workers;
+
+                    workers.reserve(threads - 1);
+
+                    for (std::size_t worker{0}; worker + 1 < threads; ++worker)
+                    {
+                        workers.emplace_back([] {});
+                    }
+                }
+
+                ++iterations;
+
+                elapsed = std::chrono::steady_clock::now() - start;
+            } while (elapsed < floor);
+
+            microseconds.push_back(
+                    std::chrono::duration<double, std::micro>{elapsed}.count() / static_cast<double>(iterations));
+        }
+
+        std::sort(microseconds.begin(), microseconds.end());
+
+        const auto median{(microseconds[(microseconds.size() - 1) / 2] + microseconds[microseconds.size() / 2]) / 2.0};
+
+        std::printf(
+                "threads/%zu        spawn and join, %d passes: best %.1f, median %.1f, worst %.1f us\n", threads,
+                passes, microseconds.front(), median, microseconds.back());
+    }
+}
+
 } // namespace
 
 /**
@@ -433,18 +605,38 @@ void measure_xid_build(const int passes)
  * identifiers matched through UTF-8 byte expansion, and chunked scans split at certified safe split points.
  * Usage: munch_benchmark [input size in MiB] [passes]
  */
+// Two serial rows plus four chunk counts on two corpora; the names are generated, so they need storage that
+// outlives the scenario list pointing at them.
+constexpr std::size_t kScalingRows{10};
+
+constexpr std::size_t kLabelWidth{24};
+
 int main(const int argc, const char** argv)
 {
-    const std::size_t mebibytes{argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 8};
+    // A comma-separated list sweeps input sizes, so one run can cross the last-level cache: "1,16,256".
+    std::vector<std::size_t> sizes;
+
+    for (const char* cursor{argc > 1 ? argv[1] : "8"}; *cursor != '\0';)
+    {
+        char* end{nullptr};
+
+        sizes.push_back(std::strtoull(cursor, &end, 10));
+
+        cursor = *end == ',' ? end + 1 : end;
+    }
 
     const int passes{argc > 2 ? std::atoi(argv[2]) : 15};
 
-    if (mebibytes == 0 || passes <= 0)
+    const char* const observations{argc > 3 ? argv[3] : nullptr};
+
+    if (sizes.empty() || std::find(sizes.begin(), sizes.end(), std::size_t{0}) != sizes.end() || passes <= 0)
     {
-        std::printf("usage: munch_benchmark [input size in MiB > 0] [passes > 0]\n");
+        std::printf("usage: munch_benchmark [input MiB > 0, comma separated] [passes > 0] [observations.csv]\n");
 
         return EXIT_FAILURE;
     }
+
+    const auto mebibytes{sizes.front()};
 
     constexpr const char* ascii_identifiers[]{"foo", "bar_baz", "counter", "x1", "value2", "tmp"};
 
@@ -464,10 +656,6 @@ int main(const int argc, const char** argv)
         return tokenize(ascii_lexer, ascii_input);
     })};
 
-    ok = measure("lexer_all/ascii", ascii_input.size(), passes,
-                 [&ascii_lexer, &ascii_input] { return tokenize_all(ascii_lexer, ascii_input); }) &&
-         ok;
-
     ok = measure("tokenizer/ascii", ascii_input.size(), passes, [&tokenizer] { return tokenize(tokenizer); }) && ok;
 
     ok = measure("lexer_all/utf8", greek_input.size(), passes,
@@ -482,35 +670,71 @@ int main(const int argc, const char** argv)
 
     const auto source_input{generate_source_input(mebibytes << 20U)};
 
-    ok = validate_chunked(ascii_lexer, ascii_input, 8) && validate_chunked(ascii_lexer, source_input, 8) && ok;
-
     measure_build(passes);
 
     measure_xid_build(passes);
 
-    ok = measure("lexer_all/source", source_input.size(), passes,
-                 [&ascii_lexer, &source_input] { return tokenize_all(ascii_lexer, source_input); }) &&
-         ok;
+    measure_planning(passes);
 
-    for (const std::size_t threads : {2, 4, 8})
+    measure_threads(passes);
+
+    // The scaling scenarios are the ones whose ratios carry the result, so they run interleaved rather than one
+    // after another, and they sweep the requested sizes: 16 MiB fits this machine's last-level cache, a larger
+    // size does not, and the difference is what says when parallel execution starts paying.
+    for (const auto size : sizes)
     {
-        char name[32];
+        const auto dense{size == mebibytes ? ascii_input : generate_input(size << 20U, ascii_identifiers)};
 
-        std::snprintf(name, sizeof(name), "chunked%zu/ascii", threads);
+        const auto source{size == mebibytes ? source_input : generate_source_input(size << 20U)};
 
-        ok = measure(name, ascii_input.size(), passes,
-                     [&ascii_lexer, &ascii_input, threads] {
-                         return tokenize_chunked(ascii_lexer, ascii_input, threads);
-                     }) &&
-             ok;
+        ok = validate_chunked(ascii_lexer, dense, 8) && validate_chunked(ascii_lexer, source, 8) && ok;
 
-        std::snprintf(name, sizeof(name), "chunked%zu/source", threads);
+        std::vector<char> labels(kScalingRows * kLabelWidth);
 
-        ok = measure(name, source_input.size(), passes,
-                     [&ascii_lexer, &source_input, threads] {
-                         return tokenize_chunked(ascii_lexer, source_input, threads);
-                     }) &&
-             ok;
+        std::vector<Scenario> scenarios;
+
+        const auto label{[&labels](const std::size_t row) { return labels.data() + row * kLabelWidth; }};
+
+        std::snprintf(label(0), kLabelWidth, "lexer_all/ascii");
+
+        scenarios.push_back(Scenario{.name = label(0), .bytes = dense.size(), .pass = [&ascii_lexer, &dense] {
+                                         return tokenize_all(ascii_lexer, dense);
+                                     }});
+
+        std::snprintf(label(1), kLabelWidth, "lexer_all/source");
+
+        scenarios.push_back(Scenario{.name = label(1), .bytes = source.size(), .pass = [&ascii_lexer, &source] {
+                                         return tokenize_all(ascii_lexer, source);
+                                     }});
+
+        std::size_t row{2};
+
+        // The single-chunk row runs the parallel API without spawning anything, so it separates the cost of that
+        // API and its per-chunk sink from the parallelism the other rows add.
+        for (const std::size_t threads : {1, 2, 4, 8})
+        {
+            std::snprintf(label(row), kLabelWidth, "chunked%zu/ascii", threads);
+
+            scenarios.push_back(
+                    Scenario{.name = label(row), .bytes = dense.size(), .pass = [&ascii_lexer, &dense, threads] {
+                                 return tokenize_chunked(ascii_lexer, dense, threads);
+                             }});
+
+            ++row;
+
+            std::snprintf(label(row), kLabelWidth, "chunked%zu/source", threads);
+
+            scenarios.push_back(
+                    Scenario{.name = label(row), .bytes = source.size(), .pass = [&ascii_lexer, &source, threads] {
+                                 return tokenize_chunked(ascii_lexer, source, threads);
+                             }});
+
+            ++row;
+        }
+
+        std::printf("\nscaling at %zu MiB, %d interleaved rounds\n", size, passes);
+
+        ok = measure_interleaved(scenarios, passes, size, observations) && ok;
     }
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
