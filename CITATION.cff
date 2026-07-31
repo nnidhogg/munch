@@ -2,13 +2,24 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "munch"
 abstract: >-
-  A C++23 lexing library built as a layered pipeline: a regex combinator AST, Thompson construction into an NFA,
-  subset construction and minimization into a DFA, and a Builder/Lexer orchestration layer on top.
+  A C++23 lexing library that builds a lexer at runtime from regex combinators: a combinator AST, Thompson
+  construction into an NFA, subset construction and minimization into a DFA, and a Builder/Lexer orchestration layer
+  on top. It also derives certified split symbols from the compiled automaton, bytes at which every occurrence in a
+  completely tokenizable input begins a token, so an input can be divided and scanned in parallel with the token
+  stream preserved exactly, without speculation or a merge phase. The condition is necessary as well as sufficient
+  once transitions that can never reach acceptance are excluded.
+keywords:
+  - lexical analysis
+  - tokenization
+  - deterministic finite automata
+  - maximal munch
+  - parallel lexing
+  - C++
 authors:
   - family-names: "Nidhögg"
     given-names: "Nicklas"
 repository-code: "https://github.com/nnidhogg/munch"
 url: "https://github.com/nnidhogg/munch"
 license: MIT
-version: 1.0.0
-date-released: "2026-07-30"
+version: 1.1.0
+date-released: "2026-07-31"
