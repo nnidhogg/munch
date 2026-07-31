@@ -289,7 +289,10 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage -fprofile-abs-path" \
+          # tokenize_all_parallel() runs the scan on several threads, and gcov's counters are not atomic by
+          # default, so concurrent updates corrupt them into negative branch counts (GCC bug 68080).
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Debug \
+                -DCMAKE_CXX_FLAGS="--coverage -fprofile-abs-path -fprofile-update=atomic" \
                 -DMUNCH_BUILD_BENCHMARK=OFF
 
       - name: Build with CMake
