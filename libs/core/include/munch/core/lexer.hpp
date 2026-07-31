@@ -145,7 +145,21 @@ public:
 
         std::vector<std::size_t> boundaries{0};
 
-        for (std::size_t index{1}; index < chunks; ++index)
+        // A token set that certifies nothing yields the single whole-input chunk without scanning the input for
+        // boundaries that cannot exist.
+        const auto any_certified{[this] {
+            for (int symbol{0}; symbol < 256; ++symbol)
+            {
+                if (is_split_point(static_cast<char>(symbol)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }()};
+
+        for (std::size_t index{1}; any_certified && index < chunks; ++index)
         {
             auto offset{index * size / chunks};
 
