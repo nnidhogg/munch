@@ -99,7 +99,7 @@ public:
     {
         if (begin == end)
         {
-            return {accept_table_[init_state_], 0};
+            return {.token = accept_table_[init_state_], .length = 0};
         }
 
         // A 64-bit state spares the dependency chain a zero-extension per byte when indexing the tables.
@@ -138,7 +138,8 @@ public:
             }
         }
 
-        return accept_state != no_state_ ? Match{accept_table_[accept_state], accept_consumed} : Match{std::nullopt, 0};
+        return accept_state != no_state_ ? Match{.token = accept_table_[accept_state], .length = accept_consumed} :
+                                           Match{.token = std::nullopt, .length = 0};
     }
 
     /**

@@ -1322,7 +1322,7 @@ TEST_F(Lexer_test, Xid_membership_matches_the_generated_tables_at_every_boundary
 
             if (std::sscanf(line.c_str(), " {.first = 0x%lX, .last = 0x%lX}", &first, &last) == 2)
             {
-                ranges.push_back({static_cast<char32_t>(first), static_cast<char32_t>(last)});
+                ranges.push_back({.first = static_cast<char32_t>(first), .last = static_cast<char32_t>(last)});
             }
             else
             {

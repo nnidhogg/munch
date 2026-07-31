@@ -53,7 +53,7 @@ public:
     {
         const auto [token, offset]{simulator_.run(begin, end)};
 
-        return {token ? std::optional<T>{static_cast<T>(token->id())} : std::nullopt, offset};
+        return {.token = token ? std::optional<T>{static_cast<T>(token->id())} : std::nullopt, .length = offset};
     }
 
     /**
