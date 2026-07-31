@@ -67,6 +67,13 @@ dirty=$(test -n "$(git -C "$root" status --porcelain 2>/dev/null)" && echo yes |
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 
+# The benchmark appends to the CSV, so a second run into the same directory silently interleaves two datasets that
+# only the run column can separate, while summary.txt and environment.txt describe the last run alone. Refuse
+# instead: a fresh directory per run keeps the three files describing the same measurement.
+if [ -e "$out/observations.csv" ]; then
+    fail "$out already holds observations.csv from an earlier run; use a new output directory"
+fi
+
 echo "munch benchmark collection"
 echo "  repository: $root"
 echo "  sizes:      $sizes MiB"
@@ -147,7 +154,14 @@ echo "built"
     uptime
 } >> "$out/environment.txt"
 
+# Packed as one file on purpose: the summary, the per-pass CSV, and the environment only mean anything together,
+# and sending them loose invites a stray file from another run being read alongside them.
+archive="$out.tar.gz"
+
+tar czf "$archive" -C "$(dirname "$out")" "$(basename "$out")"
+
 echo
-echo "done. Send back the whole directory, which is only a few kilobytes: $out"
+echo "done. Send back this one file: $archive"
 ls -1 "$out" | sed 's/^/  /'
 echo "  $(wc -l < "$out/observations.csv") CSV rows, $(wc -l < "$out/summary.txt") summary lines"
+echo "  archive $(du -h "$archive" | cut -f1)"
