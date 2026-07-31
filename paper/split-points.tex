@@ -1,0 +1,392 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+
+\theoremstyle{plain}
+\newtheorem{lemma}{Lemma}
+\newtheorem{theorem}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newtheorem{proposition}{Proposition}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{Certified Split Points:\\Parallel Lexing Without Speculation}
+\author{Nicklas Nidh\"ogg}
+\date{July 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Scanning with a deterministic finite automaton is serial by construction: each transition depends on the state the
+previous byte produced, so a single input admits no shortcut past roughly one load latency per byte. The standard
+escape is to split the input into chunks and scan them concurrently, but a chunk's first byte arrives with the
+automaton state unknown. Existing approaches manage that uncertainty: they simulate from every state and compose,
+guess an entry state and repair mispredictions, restrict the automaton to a uniform locality property, or overlap
+chunks and verify agreement. We describe a fourth approach, implemented in the munch lexer
+library~\cite{munch}: derive from the compiled automaton of the token set a set of \emph{certified split symbols},
+bytes at which, on any completely tokenizable input, every occurrence begins a token. Splitting immediately before
+such a byte preserves the token stream exactly, by construction, with no speculation, no overlap, no merge phase,
+and no duplicate tokenization when the property fails to hold. We state the certificate and the one subtlety that
+makes it sound, a re-entrant initial state, show that deriving it is a linear-time analysis of the compiled
+transition table, and evaluate both the resulting scaling (90\% per-core efficiency at four threads) and the cost of
+planning boundaries as certified bytes grow scarce. A survey of token sets shows where the property holds and where
+it collapses, and grounds a piece of folklore: for conventional tokenizations, line-based splitting of source text
+is sound when no token can span a line, and one token kind that can, the block comment, is alone sufficient to
+destroy every useful certificate.
+\end{abstract}
+
+\section{Introduction}
+
+A table-compiled scanner executes, per input byte, one transition of the form
+\code{state = table[row(byte) + state]}. The load producing the next state cannot begin before the previous state is
+known, so the scan is a serial dependency chain whose throughput is bounded by the load-to-use latency of the cache
+holding the table. Once an implementation reaches that floor, further speedup on a single input must come from
+scanning several regions of it at once.
+
+Splitting is the obstacle. A scanner dropped at an arbitrary offset does not know the automaton state there: the
+offset may fall inside a string literal, halfway through an identifier, or in the middle of a multi-byte operator.
+A tokenization computed from a wrong entry state is wrong until the scanner happens to resynchronize, and whether
+and when it resynchronizes depends on both the automaton and the input.
+
+This report describes a property that removes the uncertainty for a useful class of token sets, rather than managing
+it. The property is a per-symbol certificate, extracted from the compiled automaton at construction time, that
+identifies bytes which cannot occur strictly inside a token. Chunk boundaries placed immediately before such bytes
+need no speculation and no reconciliation: the concatenated per-chunk token streams are exactly the serial stream.
+
+\section{Prior approaches}
+\label{sec:prior}
+
+Published solutions accept the unknown-state problem and manage it.
+
+\paragraph{Simulate from all states and compose.} Simultaneous finite automata~\cite{sinya2013sfa} run each chunk
+from every possible state, producing a state-to-state function per chunk; the functions compose associatively, so
+chunks combine in a parallel-prefix step. The technique is general, but per-chunk work multiplies with the state
+count and a merge phase remains.
+
+\paragraph{Speculate and repair.} Data-parallel finite-state machines~\cite{mytkowicz2014dpfsm} and enumerative
+speculation~\cite{jiang2017enumerative} start each chunk from one or a few guessed states, exploiting the empirical
+observation that real automata converge quickly. Correctness is recovered through enumeration, validation, or
+re-execution; what remains uncertain is how much redundant work the recovery costs, and with it the speedup.
+Reduced-interface automata~\cite{borsotti2024ridfa} shrink the set of entry states worth retaining.
+
+\paragraph{Restrict the automaton.} Holub and \v{S}tekr's parallel run~\cite{holub2009parallel} is exact and
+efficient for $k$-local automata, in which any $k$ consecutive symbols force a unique state regardless of the
+starting state. The property is uniform over the whole automaton, and most lexical grammars do not have it.
+
+\paragraph{Overlap and verify.} Lossless parallel tokenization for language-model vocabularies~\cite{shao2025lopt}
+splits at fixed offsets with overlap regions and verifies that adjacent chunks agree inside the overlap.
+
+\paragraph{Assume a delimiter.} Data systems split logs and CSV at newlines because ``records do not contain
+newlines'', adjusting each cut to the next delimiter. The assumption is per-format and informal, and it is famously
+unsound for CSV with quoted newlines, which is why speculative CSV parsing is a research topic~\cite{ge2019csv}.
+Format-specific structural scans~\cite{li2017mison,langdale2019simdjson,cameron2008parabix} hand-derive comparable
+facts per format.
+
+None of these asks the token set's own automaton which bytes are safe.
+
+\section{Preliminaries}
+\label{sec:prelim}
+
+Let $\Sigma$ be the byte alphabet. A compiled token set is a deterministic automaton
+$A = (Q, \Sigma, \delta, q_0, \tau)$ with a partial transition function $\delta : Q \times \Sigma \rightharpoonup Q$,
+an initial state $q_0 \in Q$, and a partial accepting map $\tau : Q \rightharpoonup T$ assigning a token to accepting
+states. We write $\delta^*(q, u)$ for the state reached from $q$ on $u \in \Sigma^*$ when every transition along the
+way is defined, and say $\delta^*(q,u)$ is undefined otherwise.
+
+The scanner is the usual longest-match loop. At offset $i$ of an input $w \in \Sigma^*$ it starts in $q_0$, consumes
+bytes while transitions are defined, remembers the last position at which $\tau$ was defined, emits the token found
+there, and restarts at that position in $q_0$. If no accepting position is reached, the scan halts at $i$. The
+composite system is therefore not a single automaton run: it is a run that \emph{resets to $q_0$ at every token
+boundary}, and the certificate exploits exactly that reset.
+
+Write $\mathrm{tok}(w)$ for the sequence of (token, length) pairs the scanner emits on $w$, and $\mathrm{con}(w)$ for
+the number of bytes it consumes. Call $w$ \emph{completely tokenizable} when $\mathrm{con}(w) = |w|$, and call an
+offset $i$ a \emph{token boundary} of $w$ when the scanner starts a token at $i$ (with $|w|$ itself a boundary).
+
+\section{The certificate}
+\label{sec:certificate}
+
+\begin{definition}[Re-entrant initial state]
+\label{def:reentrant}
+$q_0$ is \emph{re-entrant} if $\delta^*(q_0, u) = q_0$ for some $u \in \Sigma^+$.
+\end{definition}
+
+Because every state of a compiled automaton is reachable, Definition~\ref{def:reentrant} is equivalent to $q_0$
+having an incoming transition in the table, which is how an implementation tests it.
+
+\begin{definition}[Certified split symbol]
+\label{def:certified}
+A symbol $b \in \Sigma$ is \emph{certified} if every $q \in Q$ with $\delta(q, b)$ defined satisfies $q = q_0$, and
+if $\delta(q_0, b)$ is defined then $q_0$ is not re-entrant.
+\end{definition}
+
+The exemption for $q_0$ is what makes the definition useful rather than vacuous: a token may legitimately begin with
+$b$. The exemption is sound only while no input can return the automaton to $q_0$ mid-scan, which is precisely the
+re-entrancy condition. Section~\ref{sec:subtlety} shows that dropping it makes the certificate false.
+
+\begin{lemma}[Occurrences begin tokens]
+\label{lem:boundary}
+Let $b$ be certified and let $w$ be completely tokenizable. Then every offset of $w$ holding $b$ is a token boundary
+of $w$.
+\end{lemma}
+
+\begin{proof}
+Let $w_i = b$ and suppose $i$ is not a token boundary. Since $w$ is completely tokenizable, every offset is either a
+token boundary or lies strictly inside some emitted token, so $i$ lies strictly inside a token that starts at some
+$s < i$. Let $u = w_s \cdots w_{i-1}$, which is nonempty, and let $q = \delta^*(q_0, u)$, the state immediately
+before $b$ is consumed. The token's match path continues through offset $i$, so $\delta(q, b)$ is defined. By
+Definition~\ref{def:certified}, $q = q_0$, hence $\delta^*(q_0, u) = q_0$ with $u$ nonempty, so $q_0$ is re-entrant
+by Definition~\ref{def:reentrant}. But $\delta(q_0, b) = \delta(q, b)$ is defined, so Definition~\ref{def:certified}
+also requires $q_0$ not to be re-entrant, a contradiction.
+\end{proof}
+
+\begin{theorem}[Split invariance]
+\label{thm:main}
+Let $w$ be completely tokenizable and let $0 = c_0 < c_1 < \cdots < c_m = |w|$ be offsets such that each interior
+$c_j$ holds a certified symbol. Then
+\[
+  \mathrm{tok}(w) \;=\; \mathrm{tok}(w_{[c_0,c_1)}) \cdot \mathrm{tok}(w_{[c_1,c_2)}) \cdots
+  \mathrm{tok}(w_{[c_{m-1},c_m)}),
+\]
+where $\cdot$ denotes concatenation of token sequences and $w_{[a,b)}$ the corresponding slice.
+\end{theorem}
+
+\begin{proof}
+By Lemma~\ref{lem:boundary} every interior $c_j$ is a token boundary of $w$, and $c_0$ and $c_m$ are boundaries
+trivially. The scanner is deterministic and enters each token in state $q_0$ with no state carried across
+boundaries, so the tokens the global scan emits between $c_j$ and $c_{j+1}$ are exactly those the scanner emits when
+started at $c_j$ on the slice ending at $c_{j+1}$. Induction over $j$ gives the claim.
+\end{proof}
+
+\begin{corollary}[Malformed input]
+\label{cor:malformed}
+If $\mathrm{con}(w) < |w|$, let $c_j$ be the chunk containing the first failure. Every chunk before $c_j$ is fully
+consumed and contributes exactly the tokens the serial scan emits there, and the chunk containing the failure halts
+at the same offset. The serial stream is therefore a prefix of the concatenation, but chunks after the failure may
+emit tokens the serial scan never reaches. A caller must check every chunk's consumed length before treating the
+concatenation as a successful tokenization.
+\end{corollary}
+
+\begin{proposition}[Vacuous certificates]
+\label{prop:vacuous}
+If no $q \in Q$ has $\delta(q,b)$ defined, then $b$ is certified, and no completely tokenizable input contains $b$.
+\end{proposition}
+
+\begin{proof}
+The first claim holds because Definition~\ref{def:certified} quantifies over an empty set. For the second, a
+completely tokenizable $w$ containing $b$ would have $b$ consumed by some emitted token, so some state would consume
+$b$.
+\end{proof}
+
+Such symbols are certified but useless for planning: they cannot appear in valid input. An implementation should
+count them separately from the certified bytes that can.
+
+\subsection{The subtlety}
+\label{sec:subtlety}
+
+Dropping the re-entrancy condition from Definition~\ref{def:certified} does not merely weaken the result, it makes
+it false. Consider the token set consisting of the single nullable pattern $a^*$. Minimization yields an automaton
+whose initial state is accepting and carries a self-loop on $a$; the only state consuming $a$ is $q_0$, so the
+naive certificate admits $a$. Splitting the input $aa$ between its two bytes then yields two tokens where the serial
+scan, by longest match, yields one. The condition is therefore not a refinement for completeness but a soundness
+requirement. This case was found by adversarial review of a shipped implementation, and both it and a cyclic variant
+$(ab)^*c$ are carried as regression tests.
+
+\section{Deriving and using the certificate}
+\label{sec:derivation}
+
+The certificate is derived by a linear-time analysis of the compiled transition table at construction time. One scan
+detects whether any entry targets $q_0$, establishing re-entrancy; a sweep over the $|\Sigma| \times |Q|$ table then
+records, for each byte, whether any non-exempt state consumes it. The result is a $|\Sigma|$-bit set. The cost is
+$O(|Q|\,|\Sigma|)$ once, amortized into a construction that already did strictly more work to produce the table, and
+the scanner's inner loop is untouched.
+
+Three operations expose the property. A predicate reports whether a byte is certified. A planner divides an input
+into chunks by sliding each interior boundary forward from its equal-division target to the next certified byte, and
+returns a single chunk spanning the whole input when the certificate is empty. An executor runs the plan, one thread
+per chunk, and by Theorem~\ref{thm:main} the concatenated per-chunk streams equal the serial stream for completely
+tokenizable input, with Corollary~\ref{cor:malformed} governing the rest. There is no speculation to retry, no
+overlap to verify, and no merge beyond concatenation.
+
+For $k$ requested chunks the planner performs at most $k-1$ forward searches, so its worst case is $O(kN)$ over an
+input of $N$ bytes when certified occurrences are rare; $k$ is normally a small hardware-thread count, and the
+searches start at equally spaced offsets. A one-pass planner would reduce the worst case to $O(N + k)$.
+Section~\ref{sec:planning} measures the range.
+
+\begin{figure}[t]
+\centering
+\begin{verbatim}
+      serial scan:  [ tok ][ tok ][ tok ][ tok ][ tok ][ tok ][ tok ]
+      input bytes:  i n t   x = 4 2 ;\n i f   ( x ) ...
+                                        ^
+                                        certified byte: no mid-token
+                                        state consumes it, so the serial
+                                        scan is in q0 exactly here
+      chunk 0:      [ tok ][ tok ][ tok ]|
+      chunk 1:                           |[ tok ][ tok ][ tok ][ tok ]
+\end{verbatim}
+\caption{A certified byte is a point where the serial scan is provably between tokens, so a chunk may start there
+with no entry-state uncertainty.}
+\label{fig:split}
+\end{figure}
+
+\section{Applicability}
+\label{sec:applicability}
+
+The certificate asks the grammar for cooperation, and the interesting question is how much real token sets give.
+Table~\ref{tab:applicability} was produced by compiling each token set and reading the predicate for all 256 byte
+values; ``useful'' excludes the vacuously certified bytes of Proposition~\ref{prop:vacuous}.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{lp{6.2cm}}
+\toprule
+Token set & Useful certified bytes \\
+\midrule
+C-like: identifiers, numbers, whitespace runs, operators, punctuation & all operator and punctuation bytes \\
+the same plus string literals (no raw newline inside) & none \\
+the same plus \code{//} line comments & none \\
+the same plus \code{/*~*/} block comments & none \\
+JSON (ASCII strings, whitespace runs) & none \\
+log lines (\code{[\^{}\textbackslash n]+} and \code{\textbackslash n}) & \code{\textbackslash n} \\
+C-like, split-friendly tokenization (see text) & \code{\textbackslash n} \\
+the same plus block comments & none \\
+\bottomrule
+\end{tabular}
+\caption{Certified bytes by token set. Two mechanisms explain the collapses: free-content tokens absorb the
+alphabet, and run-style trivia de-certifies its own bytes.}
+\label{tab:applicability}
+\end{table}
+
+Two mechanisms explain the collapses. First, \emph{free-content tokens absorb the alphabet}: a string literal that
+may contain \code{(} makes \code{(} a mid-token byte and de-certifies it everywhere, so one token kind with a
+near-total interior alphabet removes almost every candidate. Second, \emph{run tokens de-certify their own bytes}:
+with whitespace tokenized as \code{[\ \textbackslash t\textbackslash n]+}, the second newline of a blank line is
+consumed by the run's continuation state, so newline itself becomes mid-token-consumable. The byte's own token kills
+it, which is easy to miss.
+
+Both mechanisms point at the same design lever: certification is a property of the \emph{tokenization}, not of the
+recognized language, and the tokenization can be refactored without changing what is recognized. The split-friendly
+row of Table~\ref{tab:applicability} keeps the identical C-like language but tokenizes newline as its own
+single-byte token, leaves spaces and tabs as whitespace runs, and keeps strings and line comments line-bounded. Then
+newline certifies, and the folklore rule follows as a practical corollary: for conventional tokenizations in which
+newline is its own token, line-based splitting is sound when no other token can contain a newline. The
+automaton-level statement remains the exact one; ``no token spans a line'' is sufficient here but not necessary in
+general, since a token that merely \emph{begins} with newline leaves the certificate intact. Adding block comments,
+the one C token that spans lines, destroys the certificate again, which is the formal shape of both ``you cannot
+chunk C by lines'' and the quoted-newline problem that pushed CSV parsing into speculation.
+
+\section{Evaluation}
+\label{sec:evaluation}
+
+All figures were measured on an Intel Core i9-12900K running Ubuntu 24.04 under WSL2, with GCC 13.3.0 at \code{-O2},
+over 16\,MiB fixed-seed corpora, reporting best, median, and worst of 15 passes. The raw output is archived with
+this report as \code{data/benchmark.txt}. Before any timing, the benchmark proves the chunked token stream identical
+to the serial one by an exact (kind, length) comparison.
+
+\subsection{Scaling}
+
+Table~\ref{tab:scaling} reports median throughput. At four chunks the dense corpus reaches $3.61\times$ the serial
+scan, or 90\% per-core efficiency, and the source-shaped corpus $3.51\times$, or 88\%. Efficiency declines at eight
+chunks, where thread creation, scheduler contention, system activity, and memory-system effects all become more
+visible; the present experiment does not isolate which dominates, and a sweep with pinned threads would be needed to
+attribute it.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Corpus & serial & 2 chunks & 4 chunks & 8 chunks \\
+\midrule
+dense (1.83 B/token)  & 599.8 & 1084.0 & 2164.9 & 3496.0 \\
+source (3.53 B/token) & 589.0 & 1060.6 & 2067.2 & 3650.0 \\
+\bottomrule
+\end{tabular}
+\caption{Median throughput in MiB/s. Speedups at four chunks are $3.61\times$ and $3.51\times$.}
+\label{tab:scaling}
+\end{table}
+
+\subsection{Planning cost}
+\label{sec:planning}
+
+Table~\ref{tab:planning} measures the planner alone, over a 16\,MiB input divided into eight chunks, as certified
+bytes grow scarce. The certified byte is newline; the inputs place newlines every 40 bytes, every 1\,MiB, and never,
+and the last row uses a token set that certifies nothing at all.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Certificate density & chunks planned & median & bytes scanned \\
+\midrule
+newline every 40 bytes    & 8 & 0.2\,\textmu s     & $<$ 1\,KiB \\
+newline every 1\,MiB      & 8 & 1880.3\,\textmu s  & 3.5\,MiB \\
+certified byte absent     & 1 & 30627.0\,\textmu s & 56\,MiB \\
+nothing certified         & 1 & 0.2\,\textmu s     & 0 \\
+\bottomrule
+\end{tabular}
+\caption{Boundary planning for $k=8$ over 16\,MiB. The two scanning rows show similar effective scan rates, 1.82 and
+1.79\,GiB/s, consistent with the $O(kN)$ bound; the last row is the empty-certificate fast path. Each pass repeats
+the plan until the sample outlasts the clock, so the sub-microsecond rows measure planning rather than timer
+resolution.}
+\label{tab:planning}
+\end{table}
+
+The two middle rows cross-check each other: 3.5\,MiB scanned in 1.88\,ms and 56\,MiB in 30.6\,ms give similar
+effective scan rates, which is consistent with the $O(kN)$ bound and indicates that the planner's cost is dominated by
+the forward searches rather than by anything else it does. Even its worst case, a certificate whose byte never occurs
+in a 16\,MiB input, costs 31\,ms once, against a serial scan of the same input costing about 27\,ms; a caller planning
+a much smaller chunk count, or planning once and scanning repeatedly, pays proportionally less. The empty-certificate
+case is answered without touching the input.
+
+\subsection{Correctness}
+
+Three levels of evidence support the implementation. The benchmark compares the chunked and serial token streams
+exactly before timing. The unit suite carries the counterexamples of Section~\ref{sec:subtlety}, including the
+nullable and cyclic re-entry cases. A fuzzer generates arbitrary token sets and inputs, checks every planned
+boundary against the predicate, and compares the concatenated parallel stream against the serial one on every
+execution; several hundred thousand generated cases have run without a violation.
+
+\section{Limitations and future work}
+
+The approach trades generality for certainty. When the grammar does not cooperate it offers no usable split points,
+by design, and the composition and speculation families of Section~\ref{sec:prior} remain the only options. Several
+extensions look natural. A \emph{conditional} certificate over symbol pairs or short windows, for instance ``\code{)}
+followed by newline'', would recover splitting for grammars where no single byte certifies. A hybrid plan could
+split at certified bytes where they exist and fall back to speculative entry elsewhere, keeping the guarantee where
+it is free and paying for it only where it is not. The grammar-refactoring lever of Section~\ref{sec:applicability}
+could be automated: given a token set, propose the minimal trivia re-tokenization that makes a chosen byte certify.
+Finally, the evaluation rests on one machine and one microarchitecture; a second architecture would strengthen the
+scaling claims, though not the correctness ones.
+
+\section{Related work}
+
+A certified split symbol is not a synchronizing word in the classical sense~\cite{volkov2008synchronizing}. A
+synchronizing word maps \emph{every} state to one common state; a certified symbol is one that no reachable
+mid-token state may consume at all, so the surrounding longest-match loop must already have finished its token and
+returned to $q_0$ before the symbol arrives. The reset comes from the token loop, not from the transition structure.
+
+Certified split points differ from simultaneous automata in requiring no per-state simulation and no composition,
+from speculation in requiring no guess and no repair, from $k$-locality in being a per-symbol property derived from
+the token loop's reset rather than a uniform property of the automaton, from overlap verification in using no
+overlap, and from delimiter folklore in deriving the safe set from the compiled token set rather than assuming it
+per format. The derivation also correctly refuses the grammars for which the folklore is unsound. To our knowledge
+the specific formulation, a per-symbol certificate extracted from the compiled automaton of a longest-match token
+set together with the re-entrancy condition, has not been published, though its components, synchronization,
+delimiter splitting, and chunked scanning, are all classical. Parallel lexing on GPUs~\cite{voetter2021gpu} explores
+an orthogonal execution model for the same underlying problem.
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}

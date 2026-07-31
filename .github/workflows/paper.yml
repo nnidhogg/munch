@@ -1,0 +1,38 @@
+name: Paper
+
+# Only when the report changes: installing a TeX toolchain is slower than the whole test matrix, and the paper
+# cannot be broken by a change that does not touch it.
+on:
+  push:
+    branches: [ "master" ]
+    paths: [ "paper/**", ".github/workflows/paper.yml" ]
+  pull_request:
+    branches: [ "master" ]
+    paths: [ "paper/**", ".github/workflows/paper.yml" ]
+
+jobs:
+  build-paper:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install a LaTeX toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y texlive-latex-recommended texlive-fonts-recommended texlive-latex-extra latexmk
+
+      # latexmk resolves the bibliography and reruns until references settle; -halt-on-error makes a missing
+      # citation or an undefined command fail the job instead of producing a quietly broken PDF.
+      - name: Build the report
+        run: make -C paper
+
+      - name: Upload the report
+        uses: actions/upload-artifact@v4
+        with:
+          name: split-points
+          path: paper/split-points.pdf

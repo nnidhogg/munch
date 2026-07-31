@@ -1,0 +1,29 @@
+munch certified split points: benchmark artifact
+
+tree:      the commit that adds this file; find it with
+           git log -1 --format=%H -- paper/data/benchmark.txt
+machine:   Intel Core i9-12900K, Ubuntu 24.04 under WSL2
+compiler:  GCC 13.3.0, -O2 (CMAKE_BUILD_TYPE=Release)
+command:   ./build/tools/benchmark/munch_benchmark 16 15
+corpora:   16 MiB fixed-seed, dense (1.83 B/token) and source-shaped (3.53 B/token)
+
+lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 534.7, median 511.3, worst 503.4 MiB/s
+lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 610.0, median 599.8, worst 572.7 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 505.6, median 497.5, worst 485.9 MiB/s
+lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 572.0, median 563.6, worst 544.1 MiB/s
+lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 584.7, median 563.1, worst 553.1 MiB/s
+build/keywords   143 patterns, 251 states, 15 passes: best 19.0, median 19.5, worst 20.1 ms
+register/xid     3 patterns, 477 states, 15 passes: best 52.8, median 53.6, worst 60.9 ms
+build/xid        3 patterns, 477 states, 15 passes: best 374.1, median 391.4, worst 410.2 ms
+total/xid        3 patterns, 477 states, 15 passes: best 427.6, median 445.0, worst 463.7 ms
+plan/frequent   8 of 8 chunks, 15 passes: best 0.1, median 0.2, worst 0.2 us
+plan/rare       8 of 8 chunks, 15 passes: best 1851.4, median 1880.3, worst 1981.5 us
+plan/absent     1 of 8 chunks, 15 passes: best 29820.1, median 30627.0, worst 31669.8 us
+plan/uncertified 1 of 8 chunks, 15 passes: best 0.2, median 0.2, worst 0.2 us
+lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 594.5, median 589.0, worst 577.3 MiB/s
+chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1107.2, median 1084.0, worst 1032.4 MiB/s
+chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1075.3, median 1060.6, worst 1040.7 MiB/s
+chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 2185.8, median 2164.9, worst 2013.3 MiB/s
+chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 2116.7, median 2067.2, worst 1989.1 MiB/s
+chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 4138.7, median 3496.0, worst 3033.6 MiB/s
+chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 4091.1, median 3650.0, worst 3347.1 MiB/s
