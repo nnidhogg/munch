@@ -256,10 +256,10 @@ Token set & Useful certified bytes \\
 C-like: identifiers, numbers, whitespace runs, operators, punctuation & all operator and punctuation bytes \\
 the same plus string literals (no raw newline inside) & none \\
 the same plus \code{//} line comments & none \\
-the same plus \code{/*~*/} block comments & none \\
+the same plus block comments & none \\
 JSON (ASCII strings, whitespace runs) & none \\
-log lines (\code{[\^{}\textbackslash n]+} and \code{\textbackslash n}) & \code{\textbackslash n} \\
-C-like, split-friendly tokenization (see text) & \code{\textbackslash n} \\
+log lines: a run of non-newline bytes, and newline & newline \\
+C-like, split-friendly tokenization (see text) & newline \\
 the same plus block comments & none \\
 \bottomrule
 \end{tabular}
@@ -271,7 +271,7 @@ alphabet, and run-style trivia de-certifies its own bytes.}
 Two mechanisms explain the collapses. First, \emph{free-content tokens absorb the alphabet}: a string literal that
 may contain \code{(} makes \code{(} a mid-token byte and de-certifies it everywhere, so one token kind with a
 near-total interior alphabet removes almost every candidate. Second, \emph{run tokens de-certify their own bytes}:
-with whitespace tokenized as \code{[\ \textbackslash t\textbackslash n]+}, the second newline of a blank line is
+with whitespace tokenized as a run over space, tab, and newline, the second newline of a blank line is
 consumed by the run's continuation state, so newline itself becomes mid-token-consumable. The byte's own token kills
 it, which is easy to miss.
 
@@ -329,10 +329,10 @@ and the last row uses a token set that certifies nothing at all.
 \toprule
 Certificate density & chunks planned & median & bytes scanned \\
 \midrule
-newline every 40 bytes    & 8 & 0.2\,\textmu s     & $<$ 1\,KiB \\
-newline every 1\,MiB      & 8 & 1880.3\,\textmu s  & 3.5\,MiB \\
-certified byte absent     & 1 & 30627.0\,\textmu s & 56\,MiB \\
-nothing certified         & 1 & 0.2\,\textmu s     & 0 \\
+newline every 40 bytes    & 8 & 0.2\,$\mu$s     & $<$ 1\,KiB \\
+newline every 1\,MiB      & 8 & 1880.3\,$\mu$s  & 3.5\,MiB \\
+certified byte absent     & 1 & 30627.0\,$\mu$s & 56\,MiB \\
+nothing certified         & 1 & 0.2\,$\mu$s     & 0 \\
 \bottomrule
 \end{tabular}
 \caption{Boundary planning for $k=8$ over 16\,MiB. The two scanning rows show similar effective scan rates, 1.82 and
