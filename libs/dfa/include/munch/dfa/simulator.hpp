@@ -130,12 +130,7 @@ public:
 
             if (flags_[state] & accept_flag_)
             {
-                // The empty asm blocks if-conversion: as conditional moves these updates make the accepted length
-                // data-dependent on every state load of the token, and the next token's loads cannot start until
-                // that chain resolves. As a predicted branch the updates cost nothing and consecutive tokens
-                // overlap in the out-of-order window; Clang 19 converts without this and loses half its
-                // throughput, measured in docs/performance.md.
-                asm("");
+                prevent_if_conversion();
 
                 accept_state = state;
 
@@ -226,8 +221,7 @@ public:
 
                 if (flags_[state] & accept_flag_)
                 {
-                    // The empty asm blocks if-conversion; see run() for the mechanism and the measured cost.
-                    asm("");
+                    prevent_if_conversion();
 
                     accept_state = state;
 
@@ -259,6 +253,21 @@ public:
     }
 
 private:
+    /**
+     * @brief Keeps the accepting-state updates on a branch rather than conditional moves.
+     *
+     * As conditional moves the updates make the accepted length data-dependent on every state load of the token,
+     * so the next token's loads cannot start until that chain resolves; as a branch, consecutive tokens overlap in
+     * the out-of-order window. An empty asm statement carries implicit volatile semantics, so it cannot be hoisted
+     * out of the branch, while having no operands and no clobbers keeps it from emitting an instruction or
+     * touching the dependency chain. Deliberately not a memory barrier. Clang 19 converts without it and loses
+     * half its throughput; GCC 13 is unaffected either way. Deliberately not always_inline: both compilers inline
+     * this at -O2 regardless, and the attribute makes gcov emit negative branch counts in coverage builds, which
+     * fails the coverage report (GCC bug 68080). This is a measured workaround, not an invariant: recheck it when
+     * the toolchain moves, and see docs/performance.md for the numbers.
+     */
+    static void prevent_if_conversion() noexcept { asm(""); }
+
     /**
      * @brief Groups the symbols of the DFA into equivalence classes.
      *

@@ -93,15 +93,15 @@ Clang 19 used to build this loop at less than half of GCC's throughput, and the 
 four nanoseconds per token, indifferent to token length. The disassembly showed why. Clang if-converted the accept
 bookkeeping, the two updates recording the last accepting state, into conditional moves, making the accepted length
 data-dependent on every state load of the token. The next token cannot start until its predecessor's length resolves, so
-under conditional moves that start waited out the full load chain of the prior token; as a predicted branch the same
-bookkeeping costs nothing, mispredicts rarely on real token structure, and lets speculation overlap consecutive tokens
-in the out-of-order window. This is the same mechanism the lane interleaving post-mortem identified: the reset to the
-start state cuts the serial chain at each token boundary and the processor overlaps the chains itself. Here the compiler
-had quietly welded the chains back together. An empty asm statement in the branch body now blocks the conversion, with a
-comment carrying the reasoning; alongside a 64-bit scan state that spares a per-byte zero-extension, Clang went from 211
-to 475 MiB/s in the isolating experiment and from 236 to 498 MiB/s in the benchmark, within ten percent of GCC, which
-itself moved nowhere. The compilers now agree closely enough that the published numbers describe the library rather than
-the toolchain.
+under conditional moves that start waited out the full load chain of the prior token; as a correctly predicted branch
+the same bookkeeping avoids extending the dependency chain, mispredicts rarely on real token structure, and lets
+speculation overlap consecutive tokens in the out-of-order window. This is the same mechanism the lane interleaving
+post-mortem identified: the reset to the start state cuts the serial chain at each token boundary and the processor
+overlaps the chains itself. Here the compiler had quietly welded the chains back together. An empty asm statement in the
+branch body now blocks the conversion, with a comment carrying the reasoning; alongside a 64-bit scan state that spares
+a per-byte zero-extension, Clang went from 211 to 475 MiB/s in the isolating experiment and from 236 to 498 MiB/s in the
+benchmark, within ten percent of GCC, which itself moved nowhere. The compilers now agree closely enough that the
+published numbers describe the library rather than the toolchain.
 
 ## **Construction at Unicode Scale**
 
@@ -149,14 +149,15 @@ the input at the certified points nearest the equal-division offsets, runs one w
 thread, and first proves the chunked token stream identical to the serial one by an exact (kind, length) stream
 comparison before timing, keeping only a light tally as a consistency signal in the timed passes. On the benchmark token
 set, chunking scales the serial 651.7 MiB/s to 1161.8 MiB/s on two threads, 2292.9 MiB/s on four, and 3834.7 MiB/s on
-eight, with the source-shaped corpus within a few percent of the dense one at every width
-(`cmake -B build-perf -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON && cmake --build build-perf && ./build-perf/tools/benchmark/munch_benchmark 16 15`).
-That is 88% per-core efficiency at four threads against the 70% bar this section committed to in advance, and the shape
-confirms the diagnosis: the chains overlap almost perfectly because each thread's working set is a cache-resident table
-plus a streamed slice of input. The chunking has since been promoted into the library: `chunk_boundaries()` computes the
-certified plan and `tokenize_all_parallel()` runs it, one thread per chunk with the last on the calling thread, and the
-benchmark now routes through that entry point. The plan computation stays pure, so a caller owning its own thread pool
-can take the boundaries and leave the library's threads unused.
+eight, with the source-shaped corpus within a few percent of the dense one at every width (`cmake -B build-perf
+-DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON && cmake --build build-perf &&
+./build-perf/tools/benchmark/munch_benchmark 16 15`). That is 88% per-core efficiency at four threads against the 70%
+bar this section committed to in advance, and the shape confirms the diagnosis: the chains overlap almost perfectly
+because each thread's working set is a cache-resident table plus a streamed slice of input. The chunking has since been
+promoted into the library: `chunk_boundaries()` computes the certified plan and `tokenize_all_parallel()` runs it, one
+thread per chunk with the last on the calling thread, and the benchmark now routes through that entry point. The plan
+computation stays pure, so a caller owning its own thread pool can take the boundaries and leave the library's threads
+unused.
 
 The single-core variant was then built, measured, and reverted, and its failure taught more than the threaded success.
 The experiment flattened the scan into a per-byte state machine and stepped several lanes per loop iteration, each lane
