@@ -614,6 +614,8 @@ per chunk, reaching around 3.5× the serial throughput on four threads with a to
 serial scan's; a token set that certifies no split points degenerates to one chunk and the serial scan. The sink
 receives `(chunk, token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the
 contract and [docs/performance.md](docs/performance.md) for the measurements.
+[docs/split_points.md](docs/split_points.md) states the certificate formally, relates it to the parallel-automata
+literature, and surveys which grammars certify usable split symbols.
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
