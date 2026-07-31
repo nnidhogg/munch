@@ -1,7 +1,6 @@
 munch certified split points: benchmark artifact
 
-tree:      the latest commit touching this file or the benchmark source; find it with
-           git log -1 --format=%H -- paper/data/benchmark.txt tools/benchmark/src/main.cpp
+tree:      7f8e2b90bf44e12f6bdbdf41b7731cb63c8ea072
 machine:   Intel Core i9-12900K, Ubuntu 24.04 under WSL2
 compiler:  GCC 13.3.0, -O2 (CMAKE_BUILD_TYPE=Release)
 command:   ./build/tools/benchmark/munch_benchmark 16 15
