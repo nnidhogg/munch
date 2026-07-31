@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "munch/core/builder.hpp"
@@ -123,6 +124,32 @@ std::string random_input(Random& random)
 }
 
 /**
+ * @brief Generates a run over 'a' to 'c' that the lexer tokenizes completely, or an empty run if it finds none.
+ *
+ * The splicing guarantee is stated for input that tokenizes completely, so the input has to be built from pieces
+ * known to tokenize rather than from arbitrary bytes.
+ */
+std::string tokenizable_run(Random& random, const core::Lexer& lexer)
+{
+    for (int attempt{0}; attempt < 8; ++attempt)
+    {
+        std::string candidate;
+
+        for (auto length{1U + random.next(5)}; length > 0; --length)
+        {
+            candidate += static_cast<char>('a' + random.next(3));
+        }
+
+        if (lexer.tokenize_all<std::size_t>(candidate, [](std::size_t, std::size_t) {}) == candidate.size())
+        {
+            return candidate;
+        }
+    }
+
+    return {};
+}
+
+/**
  * @brief Encodes a code point as UTF-8.
  */
 std::string encode(const char32_t code_point)
@@ -215,6 +242,106 @@ TEST(Pipeline_property_test, Lexer_agrees_with_direct_nfa_simulation)
             ASSERT_EQ(length, best_length) << "round " << round << ", input " << input;
         }
     }
+}
+
+TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
+{
+    using Emitted = std::pair<std::size_t, std::size_t>;
+
+    Random random{0x5b1cU};
+
+    std::size_t certified{0};
+    std::size_t compared{0};
+    std::size_t genuinely_split{0};
+
+    for (int round{0}; round < 60; ++round)
+    {
+        core::Builder builder;
+
+        const auto count{1U + random.next(4)};
+
+        for (std::size_t index{0}; index < count; ++index)
+        {
+            int budget{12};
+
+            builder.add_token(random_regex(random, 3, budget), index + 1, index);
+        }
+
+        // 's' occurs in no generated pattern, so the initial state alone consumes it. That gives the certificate
+        // something to find and keeps the comparison below from degenerating into a second serial scan.
+        builder.add_token(text("s"), count + 1, count);
+
+        const auto lexer{builder.build()};
+
+        // A nullable generated pattern minimizes to an accepting, self-looping initial state, which de-certifies
+        // every byte including this one. There is nothing to splice then.
+        if (!lexer.is_split_point('s'))
+        {
+            continue;
+        }
+
+        ++certified;
+
+        std::string input;
+
+        for (auto segments{4U + random.next(9)}; segments > 0; --segments)
+        {
+            input += tokenizable_run(random, lexer);
+
+            input += 's';
+        }
+
+        std::vector<Emitted> serial;
+
+        const auto consumed{lexer.tokenize_all<std::size_t>(
+                input,
+                [&serial](const std::size_t token, const std::size_t length) { serial.emplace_back(token, length); })};
+
+        ASSERT_EQ(consumed, input.size()) << "round " << round << ", input " << input;
+
+        for (const auto chunks : {2U, 3U, 5U, 8U})
+        {
+            const auto boundaries{lexer.chunk_boundaries(input, chunks)};
+
+            // Sized before the scan and never resized, so each worker writes only its own vector.
+            std::vector<std::vector<Emitted>> parts(chunks);
+
+            const auto lengths{lexer.tokenize_all_parallel<std::size_t>(
+                    input, chunks,
+                    [&parts](const std::size_t chunk, const std::size_t token, const std::size_t length) {
+                        parts[chunk].emplace_back(token, length);
+                    })};
+
+            ASSERT_EQ(lengths.size() + 1, boundaries.size()) << "round " << round << ", chunks " << chunks;
+
+            std::vector<Emitted> spliced;
+
+            for (std::size_t chunk{0}; chunk < lengths.size(); ++chunk)
+            {
+                // Every chunk begins at a certified byte, so every chunk must tokenize to its own end. A short count
+                // would mean a cut landed inside a token even if the concatenated stream happened to still match.
+                ASSERT_EQ(lengths[chunk], boundaries[chunk + 1] - boundaries[chunk])
+                        << "round " << round << ", chunks " << chunks << ", chunk " << chunk << ", input " << input;
+
+                spliced.insert(spliced.end(), parts[chunk].begin(), parts[chunk].end());
+            }
+
+            ASSERT_EQ(spliced, serial) << "round " << round << ", chunks " << chunks << ", input " << input;
+
+            if (lengths.size() > 1)
+            {
+                ++genuinely_split;
+            }
+        }
+
+        ++compared;
+    }
+
+    // Guards against the test going quietly vacuous. Without them it would still pass if every grammar certified
+    // nothing, or if every plan collapsed to a single chunk, having compared the serial scan only against itself.
+    EXPECT_GT(certified, 40u);
+    EXPECT_GT(compared, 40u);
+    EXPECT_GT(genuinely_split, 100u);
 }
 
 TEST(Pipeline_property_test, Utf8_range_matches_exactly_the_encodable_code_points)
