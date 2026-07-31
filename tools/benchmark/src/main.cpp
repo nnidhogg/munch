@@ -9,6 +9,7 @@
 #include <munch/regex/unicode.hpp>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "munch/tools/benchmark/harness.hpp"
@@ -538,6 +539,63 @@ void measure_planning(const int passes)
     plan("plan/uncertified", certifying_nothing, frequent);
 }
 
+/**
+ * @brief Measures the thread coordination the parallel scan pays, separately from the scanning it overlaps.
+ *
+ * tokenize_all_parallel() spawns one jthread per chunk beyond the last and joins them when the scope closes,
+ * exactly as timed here with empty bodies. Reporting that cost on its own lets the chunked throughput rows be
+ * read as scan time plus a known constant, rather than as an undivided end-to-end number.
+ */
+void measure_threads(const int passes)
+{
+    for (const std::size_t threads : {1U, 2U, 4U, 8U})
+    {
+        std::vector<double> microseconds;
+
+        microseconds.reserve(static_cast<std::size_t>(passes));
+
+        for (int index{0}; index < passes; ++index)
+        {
+            constexpr std::chrono::milliseconds floor{2};
+
+            std::size_t iterations{0};
+
+            const auto start{std::chrono::steady_clock::now()};
+
+            std::chrono::steady_clock::duration elapsed{};
+
+            do
+            {
+                {
+                    std::vector<std::jthread> workers;
+
+                    workers.reserve(threads - 1);
+
+                    for (std::size_t worker{0}; worker + 1 < threads; ++worker)
+                    {
+                        workers.emplace_back([] {});
+                    }
+                }
+
+                ++iterations;
+
+                elapsed = std::chrono::steady_clock::now() - start;
+            } while (elapsed < floor);
+
+            microseconds.push_back(
+                    std::chrono::duration<double, std::micro>{elapsed}.count() / static_cast<double>(iterations));
+        }
+
+        std::sort(microseconds.begin(), microseconds.end());
+
+        const auto median{(microseconds[(microseconds.size() - 1) / 2] + microseconds[microseconds.size() / 2]) / 2.0};
+
+        std::printf(
+                "threads/%zu        spawn and join, %d passes: best %.1f, median %.1f, worst %.1f us\n", threads,
+                passes, microseconds.front(), median, microseconds.back());
+    }
+}
+
 } // namespace
 
 /**
@@ -604,11 +662,15 @@ int main(const int argc, const char** argv)
 
     measure_planning(passes);
 
+    measure_threads(passes);
+
     ok = measure("lexer_all/source", source_input.size(), passes,
                  [&ascii_lexer, &source_input] { return tokenize_all(ascii_lexer, source_input); }) &&
          ok;
 
-    for (const std::size_t threads : {2, 4, 8})
+    // The single-chunk row runs the parallel API without spawning anything, so it separates the cost of that
+    // API and its per-chunk sink from the parallelism the other rows add.
+    for (const std::size_t threads : {1, 2, 4, 8})
     {
         char name[32];
 
