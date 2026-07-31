@@ -5,6 +5,7 @@
 #include <map>
 #include <ranges>
 #include <stdexcept>
+#include <vector>
 
 namespace munch::dfa
 {
@@ -85,6 +86,54 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
         transitions[classes[static_cast<unsigned char>(label.symbol())], from] = static_cast<Entry_t>(to);
     }
 
+    // Only transitions that can still end in acceptance can lie on an emitted token. A pattern denoting the empty
+    // language, such as any_of() over an empty set, leaves reachable states behind from which no accepting state
+    // is reachable; a scan entering one always fails, so the bytes it consumes are consumed by no token and must
+    // not be allowed to de-certify anything. Mark the states from which acceptance is still reachable.
+    std::vector<std::vector<Entry_t>> predecessors(states);
+
+    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    {
+        for (std::size_t state{0}; state < states; ++state)
+        {
+            if (const auto to{table_[row_offsets_[symbol] + state]}; to != no_state_)
+            {
+                predecessors[to].push_back(static_cast<Entry_t>(state));
+            }
+        }
+    }
+
+    std::vector<bool> co_accessible(states, false);
+
+    std::vector<Entry_t> pending;
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if ((flags_[state] & accept_flag_) != 0)
+        {
+            co_accessible[state] = true;
+
+            pending.push_back(static_cast<Entry_t>(state));
+        }
+    }
+
+    while (!pending.empty())
+    {
+        const auto state{pending.back()};
+
+        pending.pop_back();
+
+        for (const auto from : predecessors[state])
+        {
+            if (!co_accessible[from])
+            {
+                co_accessible[from] = true;
+
+                pending.push_back(from);
+            }
+        }
+    }
+
     // A symbol only the initial state consumes can only begin a token, but the exemption is valid only while the
     // initial state cannot be reached again after consuming input: a nullable pattern such as kleene minimizes to
     // an accepting start state with a self-loop, where the "first byte of a token" reasoning no longer holds.
@@ -95,16 +144,26 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
         init_reentrant = init_reentrant || entry == static_cast<Entry_t>(init_state_);
     }
 
+    const auto consumes{[this, &co_accessible](const std::size_t symbol, const std::size_t state) {
+        const auto to{table_[row_offsets_[symbol] + state]};
+
+        return to != no_state_ && co_accessible[to];
+    }};
+
     for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
     {
         auto safe{true};
 
         for (std::size_t state{0}; safe && state < states; ++state)
         {
-            safe = (state == init_state_ && !init_reentrant) || table_[row_offsets_[symbol] + state] == no_state_;
+            safe = (state == init_state_ && !init_reentrant) || !consumes(symbol, state);
         }
 
-        if (safe)
+        // A symbol no live state consumes is certified vacuously: no input this lexer accepts can contain it, so it is
+        // useless to a caller and searching for one scans to the end of the input for nothing. Since a certified
+        // symbol is consumed only by the initial state, it can occur in valid input exactly when the initial state
+        // consumes it into a state that can still accept, and only those are reported.
+        if (safe && consumes(symbol, init_state_))
         {
             split_points_[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
         }

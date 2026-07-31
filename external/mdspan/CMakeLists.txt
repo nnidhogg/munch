@@ -10,7 +10,7 @@ include(FetchContent)
 FetchContent_Declare(
         mdspan
         GIT_REPOSITORY https://github.com/kokkos/mdspan.git
-        GIT_TAG stable
+        GIT_TAG 884f17a24301955d47cbb22318f06b8d8bee7ca3
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
         SOURCE_SUBDIR unused
 )

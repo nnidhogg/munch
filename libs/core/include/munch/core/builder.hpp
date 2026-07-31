@@ -77,7 +77,8 @@ public:
      *
      * Subset construction has exponential worst cases, so a caller accepting untrusted token sets should cap the
      * states it may discover; build() and diagnose() then throw State_limit_error when a grammar runs into the
-     * cap. Matching itself needs no such guard, as a compiled table always runs in linear time. Zero, the default,
+     * cap. Matching needs no guard against the automaton, which cannot backtrack the way a regex engine can, though
+     * longest match re-reads after a failed longer match; see docs/limits.md. Zero, the default,
      * means unlimited. This caps determinization only: regex tree size, NFA expansion from large repetition counts, and
      * the number of registered patterns are the caller's to bound. The dominant allocation, the transition table, stays
      * within the cap times the number of symbol classes times four bytes per entry.

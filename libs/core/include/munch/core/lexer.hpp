@@ -53,7 +53,7 @@ public:
     {
         const auto [token, offset]{simulator_.run(begin, end)};
 
-        return {token ? std::optional<T>{static_cast<T>(token->id())} : std::nullopt, offset};
+        return {.token = token ? std::optional<T>{static_cast<T>(token->id())} : std::nullopt, .length = offset};
     }
 
     /**
@@ -98,9 +98,10 @@ public:
     /**
      * @brief Returns whether the given symbol is a certified safe split point of this lexer's token set.
      *
-     * Input split immediately before a safe split point tokenizes identically to the unsplit input, so such
-     * symbols mark chunk boundaries at which one large input may be processed in independent pieces. The property
-     * is certified from the compiled transition table; see dfa::Simulator::is_split_point().
+     * For input the serial scan tokenizes completely, splitting immediately before a safe split point produces
+     * the identical token stream, so such symbols mark chunk boundaries at which one large input may be processed
+     * in independent pieces; on malformed input see tokenize_all_parallel() for the weaker prefix guarantee. The
+     * property is certified from the compiled transition table; see dfa::Simulator::is_split_point().
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept { return simulator_.is_split_point(symbol); }
 
@@ -125,9 +126,10 @@ public:
      * @brief Computes chunk boundaries for parallel tokenization at certified safe split points.
      *
      * Each interior boundary is the first certified split point at or after its equal-division target offset, so
-     * every chunk starts at a symbol that can only begin a token and chunk-local tokenization equals whole-input
-     * tokenization. When the token set certifies no usable points, the result is one chunk spanning the whole
-     * input, so parallel scanning degenerates to the serial scan rather than splitting unsafely.
+     * every chunk starts at a symbol that can only begin a token; for completely tokenizable input, concatenating
+     * the chunk-local streams reproduces the whole-input token stream. When the token set certifies no usable points,
+     * the result is one chunk spanning the whole input, so parallel scanning degenerates to the serial scan rather than
+     * splitting unsafely.
      * @tparam Iterator Random access iterator type.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
@@ -143,7 +145,12 @@ public:
 
         std::vector<std::size_t> boundaries{0};
 
-        for (std::size_t index{1}; index < chunks; ++index)
+        // A token set with no certified symbol that can occur in valid input yields the single whole-input chunk
+        // without scanning. The test is the useful set, not the full certificate: symbols no live state consumes
+        // certify vacuously, and searching for one scans to the end of the input and finds nothing.
+        const auto any_certified{simulator_.has_split_points()};
+
+        for (std::size_t index{1}; any_certified && index < chunks; ++index)
         {
             auto offset{index * size / chunks};
 
@@ -176,11 +183,14 @@ public:
      * @brief Tokenizes one input as concurrent chunks split at certified safe split points.
      *
      * The input is divided by chunk_boundaries() and each chunk is scanned by tokenize_all() on its own thread,
-     * the last on the calling thread; certification guarantees the concatenated per-chunk token streams are
-     * identical to the serial scan's. Within a chunk the sink is invoked in input order. Across chunks it is
-     * invoked concurrently, so it must be safe to call from different threads for different chunk indices, which
-     * per-chunk state indexed by the chunk achieves without locking; give hot per-chunk accumulators their own
-     * cache lines, as adjacent counters false-share and cost real scaling. There is no early-stop form.
+     * the last on the calling thread; for input the serial scan tokenizes completely, certification guarantees the
+     * concatenated per-chunk token streams are identical to the serial scan's. When no token matches somewhere,
+     * the serial stream is a prefix of the concatenation and chunks past the failure still scan independently, so
+     * treat the output as a successful tokenization only after checking every returned consumed length. Within a chunk
+     * the sink is invoked in input order. Across chunks it is invoked concurrently, so it must be safe to call from
+     * different threads for different chunk indices, which per-chunk state indexed by the chunk achieves without
+     * locking; give hot per-chunk accumulators their own cache lines, as adjacent counters false-share and cost real
+     * scaling. There is no early-stop form.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator Random access iterator type.
      * @tparam Sink Callable receiving the chunk index, each matched token, and its length.

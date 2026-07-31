@@ -491,7 +491,8 @@ TEST_F(Dfa_test, Split_points)
     const Token token_b{2};
 
     // 'a' continues its own run (q1 loops), so it is not a split point; 'b' is consumed only from the initial
-    // state, so it can only begin a token; 'c' is consumed nowhere and is vacuously safe.
+    // state, so it can only begin a token; 'c' is consumed nowhere, so it is safe only vacuously and is not
+    // reported, since no input this automaton accepts can contain it.
     dfa.add_accept_state(q1, token_a);
     dfa.add_accept_state(q2, token_b);
 
@@ -503,7 +504,8 @@ TEST_F(Dfa_test, Split_points)
 
     EXPECT_FALSE(simulator.is_split_point('a'));
     EXPECT_TRUE(simulator.is_split_point('b'));
-    EXPECT_TRUE(simulator.is_split_point('c'));
+    EXPECT_FALSE(simulator.is_split_point('c'));
+    EXPECT_TRUE(simulator.has_split_points());
 }
 
 TEST_F(Dfa_test, Accelerated_runs_preserve_longest_match)

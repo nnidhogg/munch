@@ -111,7 +111,7 @@ Dfa minimize(const Dfa& dfa)
 
     refine(dfa, group);
 
-    // Each group collapses into one state of the minimal DFA; the group of the initial state becomes its initial
+    // Each group collapses into one state of the refined DFA; the group of the initial state becomes its initial
     // state. Merged states agree on their transitions and token by construction, so duplicates are identical.
     Builder builder;
 

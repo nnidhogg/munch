@@ -824,6 +824,107 @@ TEST_F(Lexer_test, Chunk_boundaries_degenerate_when_nothing_certifies)
     EXPECT_EQ(boundaries.back(), input.size());
 }
 
+TEST_F(Lexer_test, Dead_branches_do_not_decertify)
+{
+    enum class Token_kind : uint8_t
+    {
+        Never,
+        Letter,
+    };
+
+    // any_of over an empty set denotes the empty language, so "ab" followed by it matches nothing. The states
+    // leading there stay reachable, and one of them consumes 'b'. That transition can never lie on an emitted
+    // token, so it must not de-certify 'b': every 'b' in an input this lexer accepts is a whole token.
+    Builder_dbg builder;
+
+    builder.add_token(concat(text("ab"), any_of(Set{})), Token_kind::Never, 1);
+    builder.add_token(text("b"), Token_kind::Letter, 1);
+
+    const auto lexer{builder.build()};
+
+    EXPECT_TRUE(lexer.is_split_point('b'));
+
+    // 'a' is consumed only into the dead branch, so no valid input contains it and it is not a usable split point.
+    EXPECT_FALSE(lexer.is_split_point('a'));
+
+    const std::string input{"bbbbbbbb"};
+
+    const auto boundaries{lexer.chunk_boundaries(input, 4)};
+
+    ASSERT_EQ(boundaries.size(), 5U);
+
+    for (std::size_t index{1}; index + 1 < boundaries.size(); ++index)
+    {
+        EXPECT_EQ(input[boundaries[index]], 'b');
+    }
+}
+
+TEST_F(Lexer_test, Planning_ignores_vacuously_certified_symbols)
+{
+    enum class Token_kind : uint8_t
+    {
+        Letters,
+    };
+
+    // Only 'a' appears in any token, so every other byte certifies vacuously: no input this lexer accepts can
+    // contain one. The plan must recognize that the useful certificate is empty and return the whole input as one
+    // chunk, rather than scanning for bytes that cannot occur.
+    Builder_dbg builder;
+
+    builder.add_token(plus(any_of(Set{'a'})), Token_kind::Letters, 1);
+
+    const auto lexer{builder.build()};
+
+    // 'a' continues a token, and every other byte certifies only vacuously, so nothing is reported.
+    EXPECT_FALSE(lexer.is_split_point('a'));
+    EXPECT_FALSE(lexer.is_split_point('z'));
+
+    const std::string input(4096, 'a');
+
+    const auto boundaries{lexer.chunk_boundaries(input, 4)};
+
+    ASSERT_EQ(boundaries.size(), 2U);
+    EXPECT_EQ(boundaries.front(), 0U);
+    EXPECT_EQ(boundaries.back(), input.size());
+}
+
+TEST_F(Lexer_test, Useful_certificates_are_those_the_initial_state_consumes)
+{
+    enum class Token_kind : uint8_t
+    {
+        Letters,
+        Semicolon,
+    };
+
+    // ';' is certified and the initial state consumes it, so it is useful and planning may search for it.
+    Builder_dbg builder;
+
+    builder.add_token(plus(any_of(Set{'a'})), Token_kind::Letters, 1);
+    builder.add_token(text(";"), Token_kind::Semicolon, 1);
+
+    const auto lexer{builder.build()};
+
+    // ';' is certified and the initial state consumes it; 'z' certifies only vacuously and is not reported.
+    EXPECT_TRUE(lexer.is_split_point(';'));
+    EXPECT_FALSE(lexer.is_split_point('z'));
+
+    std::string input;
+
+    for (std::size_t index{0}; index < 512; ++index)
+    {
+        input += "aaa;";
+    }
+
+    const auto boundaries{lexer.chunk_boundaries(input, 4)};
+
+    ASSERT_EQ(boundaries.size(), 5U);
+
+    for (std::size_t index{1}; index + 1 < boundaries.size(); ++index)
+    {
+        EXPECT_EQ(input[boundaries[index]], ';');
+    }
+}
+
 TEST_F(Lexer_test, Parallel_tokenization_matches_the_serial_stream)
 {
     enum class Token_kind : uint8_t
@@ -1322,7 +1423,7 @@ TEST_F(Lexer_test, Xid_membership_matches_the_generated_tables_at_every_boundary
 
             if (std::sscanf(line.c_str(), " {.first = 0x%lX, .last = 0x%lX}", &first, &last) == 2)
             {
-                ranges.push_back({static_cast<char32_t>(first), static_cast<char32_t>(last)});
+                ranges.push_back({.first = static_cast<char32_t>(first), .last = static_cast<char32_t>(last)});
             }
             else
             {

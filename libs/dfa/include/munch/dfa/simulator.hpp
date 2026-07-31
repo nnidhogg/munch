@@ -88,6 +88,40 @@ public:
     explicit Simulator(const Dfa& dfa);
 
     /**
+     * @brief Returns whether the given symbol is a certified safe split point.
+     *
+     * A symbol is a safe split point when no state reachable after consuming input consumes it into a state that can
+     * still accept, so on any completely tokenizable input every occurrence can only be the first byte of a token: a
+     * scan reaching it mid-token finds no transition and must have ended its token earlier, and a token can only
+     * contain it by starting with it. Input the token set does not accept carries no such promise, since it has no
+     * tokens to speak of; see tokenize_all_parallel() for what survives there.
+     * For input that tokenizes completely, splitting immediately before such a symbol therefore produces the
+     * identical token stream, which is what makes chunked processing of one large input safe. The initial state is
+     * exempt only while no transition re-enters it; a nullable pattern such as a kleene token minimizes to an
+     * accepting, self-looping start state, and its symbols certify nothing. A symbol no live state consumes is safe
+     * only vacuously, since no input this lexer accepts contains it, and is deliberately not reported: a caller cannot
+     * use it, and searching for one scans the whole input for nothing. Transitions into states that can never accept
+     * are ignored throughout, since no emitted token can traverse one; a pattern denoting the empty language leaves
+     * exactly such states behind. Token sets whose runs or literals may
+     * contain any byte certify no split points.
+     */
+    [[nodiscard]] bool is_split_point(const char symbol) const noexcept
+    {
+        const auto value{static_cast<unsigned char>(symbol)};
+
+        return ((split_points_[value >> 6U] >> (value & 63U)) & 1U) != 0;
+    }
+
+    /**
+     * @brief Reports whether the token set certifies any usable split point.
+     * @return True if at least one symbol is a split point.
+     */
+    [[nodiscard]] bool has_split_points() const noexcept
+    {
+        return (split_points_[0] | split_points_[1] | split_points_[2] | split_points_[3]) != 0;
+    }
+
+    /**
      * @brief Runs the DFA over a range defined by iterators.
      * @tparam Iterator Input iterator type.
      * @param begin Iterator to the beginning of the input.
@@ -99,7 +133,7 @@ public:
     {
         if (begin == end)
         {
-            return {accept_table_[init_state_], 0};
+            return {.token = accept_table_[init_state_], .length = 0};
         }
 
         // A 64-bit state spares the dependency chain a zero-extension per byte when indexing the tables.
@@ -130,12 +164,7 @@ public:
 
             if (flags_[state] & accept_flag_)
             {
-                // The empty asm blocks if-conversion: as conditional moves these updates make the accepted length
-                // data-dependent on every state load of the token, and the next token's loads cannot start until
-                // that chain resolves. As a predicted branch the updates cost nothing and consecutive tokens
-                // overlap in the out-of-order window; Clang 19 converts without this and loses half its
-                // throughput, measured in docs/performance.md.
-                asm("");
+                prevent_if_conversion();
 
                 accept_state = state;
 
@@ -143,7 +172,8 @@ public:
             }
         }
 
-        return accept_state != no_state_ ? Match{accept_table_[accept_state], accept_consumed} : Match{std::nullopt, 0};
+        return accept_state != no_state_ ? Match{.token = accept_table_[accept_state], .length = accept_consumed} :
+                                           Match{.token = std::nullopt, .length = 0};
     }
 
     /**
@@ -156,25 +186,6 @@ public:
     [[nodiscard]] Match run(const Container& container) const
     {
         return run(std::begin(container), std::end(container));
-    }
-
-    /**
-     * @brief Returns whether the given symbol is a certified safe split point.
-     *
-     * A symbol is a safe split point when no state reachable after consuming input consumes it, so every
-     * occurrence in any input can only be the first byte of a token: a scan reaching it mid-token finds no
-     * transition and must have ended its token earlier, and a token can only contain it by starting with it.
-     * Input split immediately before such a symbol therefore tokenizes identically to the unsplit input, which is
-     * what makes chunked processing of one large input safe. The initial state is exempt only while no transition
-     * re-enters it; a nullable pattern such as a kleene token minimizes to an accepting, self-looping start state,
-     * and its symbols certify nothing. A symbol no state consumes is vacuously safe: input holding it fails at it
-     * either way. Token sets whose runs or literals may contain any byte certify no split points.
-     */
-    [[nodiscard]] bool is_split_point(const char symbol) const noexcept
-    {
-        const auto value{static_cast<unsigned char>(symbol)};
-
-        return ((split_points_[value >> 6U] >> (value & 63U)) & 1U) != 0;
     }
 
     /**
@@ -225,8 +236,7 @@ public:
 
                 if (flags_[state] & accept_flag_)
                 {
-                    // The empty asm blocks if-conversion; see run() for the mechanism and the measured cost.
-                    asm("");
+                    prevent_if_conversion();
 
                     accept_state = state;
 
@@ -258,6 +268,21 @@ public:
     }
 
 private:
+    /**
+     * @brief Keeps the accepting-state updates on a branch rather than conditional moves.
+     *
+     * As conditional moves the updates make the accepted length data-dependent on every state load of the token,
+     * so the next token's loads cannot start until that chain resolves; as a branch, consecutive tokens overlap in
+     * the out-of-order window. An empty asm statement carries implicit volatile semantics, so it cannot be hoisted
+     * out of the branch, while having no operands and no clobbers keeps it from emitting an instruction or
+     * touching the dependency chain. Deliberately not a memory barrier. Clang 19 converts without it and loses
+     * half its throughput; GCC 13 is unaffected either way. Deliberately not always_inline: both compilers inline
+     * this at -O2 regardless, and the attribute makes gcov emit negative branch counts in coverage builds, which
+     * fails the coverage report (GCC bug 68080). This is a measured workaround, not an invariant: recheck it when
+     * the toolchain moves, and see docs/performance.md for the numbers.
+     */
+    static void prevent_if_conversion() noexcept { asm(""); }
+
     /**
      * @brief Groups the symbols of the DFA into equivalence classes.
      *
