@@ -8,7 +8,8 @@
 # Produces, in the output directory:
 #   environment.txt   what the machine and toolchain were
 #   summary.txt       the human-readable scenario table
-#   observations.csv  every individual timed pass, not just best/median/worst
+#   observations.csv  every timed pass of the scaling scenarios, not just best/median/worst; the construction,
+#                     planning and thread-launch rows appear in summary.txt only
 #
 # Send the whole directory back. Nothing in it is machine-specific beyond what it deliberately records.
 #

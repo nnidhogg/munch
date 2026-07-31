@@ -53,11 +53,17 @@ c++ -std=c++23 -I libs/common/include -I libs/core/include -I libs/dfa/include -
 
 ## Evaluation data
 
-`data/benchmark.txt` is the summarized benchmark output the evaluation section cites, holding the best, median, and
-worst of each scenario rather than the individual observations, with the measured commit, machine, compiler, and command
-recorded in its header. That commit is the tree whose benchmark produced these rows: it has the one-chunk baseline the
-evaluation reports and predates the interleaved harness. The paper quotes that file rather than the README's table, so
-ordinary benchmark refreshes cannot silently change what the paper claims. Reproduce it with:
+The evaluation section cites three archives, described in full by `data/README.md`. Its primary source is
+`data/bare-metal-pinned/`, a run on an AMD Ryzen 9 9950X3D confined to one L3 domain, with `data/bare-metal-unpinned/`
+the same measurement free to use every logical processor; both carry the machine, the topology, the summary, and every
+pass of the scaling scenarios individually.
+
+`data/benchmark.txt` is the earlier virtualized run, retained because the paper draws a result from the contrast between
+the two environments. It holds the best, median, and worst of each scenario rather than the individual observations,
+with the measured commit, machine, compiler, and command recorded in its header. That commit is the tree whose benchmark
+produced these rows: it has the one-chunk baseline the evaluation reports and predates the interleaved harness. The
+paper quotes that file rather than the README's table, so ordinary benchmark refreshes cannot silently change what the
+paper claims. Reproduce it with:
 
 ```
 git worktree add /tmp/munch-paper c0e2fb62b17d4e4553fd02cc44a4059351fd1ff1
@@ -86,7 +92,7 @@ To take a *new* measurement rather than reproduce the archived one, use
 ./tools/benchmark/collect.sh ~/munch-run 1,16,128 15
 ```
 
-It builds the current benchmark, records the machine it ran on, and writes every individual timed pass to
+It builds the current benchmark, records the machine it ran on, and writes every timed pass of the scaling scenarios to
 `observations.csv` rather than only the best, median, and worst. The current harness runs the scaling scenarios in
 interleaved rounds and sweeps input sizes, neither of which the archived run did, so its output is not comparable to
 `data/benchmark.txt` scenario by scenario and should be archived as its own artifact.

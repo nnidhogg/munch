@@ -537,6 +537,70 @@ void measure_planning(const int passes)
     plan("plan/absent    ", certifying, absent);
 
     plan("plan/uncertified", certifying_nothing, frequent);
+
+    // Planning and scanning timed over the same grammar and the same input, which is what makes the two comparable.
+    // The plan-only rows above measure the planner in isolation; adding them to a scan of the C-like corpus would
+    // compare different lexers over different inputs, so the end-to-end question needs its own scenario.
+    const auto end_to_end{[passes](
+                                  const char* const name, const munch::core::Lexer& lexer, const std::string& text,
+                                  const bool parallel) {
+        std::vector<double> milliseconds;
+
+        milliseconds.reserve(static_cast<std::size_t>(passes));
+
+        // One counter per chunk, each on its own cache line: a shared counter would be a data race, and an unpadded
+        // array would put the workers' increments on the same line and charge the parallel case for false sharing.
+        struct alignas(64) Counter
+        {
+            std::size_t value{0};
+        };
+
+        std::size_t tokens{0};
+
+        for (int index{0}; index < passes; ++index)
+        {
+            std::vector<Counter> counters(chunks);
+
+            const auto start{std::chrono::steady_clock::now()};
+
+            if (parallel)
+            {
+                // The whole cost a caller pays for choosing the parallel entry point: planning, then scanning.
+                lexer.tokenize_all_parallel<Kind>(
+                        text, chunks,
+                        [&counters](const std::size_t chunk, Kind, std::size_t) { ++counters[chunk].value; });
+            }
+            else
+            {
+                lexer.tokenize_all<Kind>(text, [&counters](Kind, std::size_t) { ++counters[0].value; });
+            }
+
+            const auto elapsed{std::chrono::steady_clock::now() - start};
+
+            milliseconds.push_back(std::chrono::duration<double, std::milli>{elapsed}.count());
+
+            tokens = 0;
+
+            for (const auto& counter : counters)
+            {
+                tokens += counter.value;
+            }
+        }
+
+        std::sort(milliseconds.begin(), milliseconds.end());
+
+        const auto median{(milliseconds[(milliseconds.size() - 1) / 2] + milliseconds[milliseconds.size() / 2]) / 2.0};
+
+        std::printf(
+                "%s %zu tokens, %d passes: best %.1f, median %.1f, worst %.1f ms\n", name, tokens, passes,
+                milliseconds.front(), median, milliseconds.back());
+    }};
+
+    end_to_end("total/serial-frequent  ", certifying, frequent, false);
+    end_to_end("total/parallel-frequent", certifying, frequent, true);
+
+    end_to_end("total/serial-absent    ", certifying, absent, false);
+    end_to_end("total/parallel-absent  ", certifying, absent, true);
 }
 
 /**

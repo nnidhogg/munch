@@ -1,6 +1,6 @@
 # Certified Split Points: Parallel Lexing Without Speculation
 
-**Nicklas Nidhögg**, July 2026. Describes munch v1.1.0.
+**Nicklas Nidhögg**, August 2026. Describes munch at commit `7d067c2`, after the v1.1.1 release.
 
 *A technical report on the mechanism behind `Lexer::is_split_point()`, `chunk_boundaries()`, and
 `tokenize_all_parallel()`. The implementation, tests, and benchmarks live in this repository; this document states the
@@ -20,10 +20,11 @@ occurrence begins a token. Splitting immediately before such a byte preserves th
 with no speculation, no overlap, no merge beyond ordered concatenation, and no duplicate tokenization when the property
 does not hold: the plan degenerates to a serial scan. We state the certificate and its one subtlety (a re-entrant
 initial state invalidates the exemption that makes it usable), show that deriving it is a linear-time analysis of the
-compiled table, measure near-linear scaling to four threads on a 16 MiB corpus, and survey which grammars certify usable
-symbols. The survey grounds a piece of folklore: for conventional tokenizations, line-based splitting of source text is
-sound when no token can span a line, and one token kind that can, the block comment, is alone sufficient to destroy
-every useful certificate in the surveyed C-like grammar.
+compiled table, prove the condition necessary as well as sufficient, measure 93% parallel efficiency at eight threads on
+a 512 MiB corpus that does not fit in cache, and survey which grammars certify usable symbols. The survey grounds a
+piece of folklore: for conventional tokenizations, line-based splitting of source text is sound when no token can span a
+line, and one token kind that can, the block comment, is alone sufficient to destroy every useful certificate in the
+surveyed C-like grammar.
 
 ## 1 The problem
 
@@ -304,42 +305,61 @@ modulo ignored kinds.
 
 ## 6 Evaluation
 
-The following figures come from `paper/data/benchmark.txt`, an archived run whose header records the measured commit,
-machine, compiler, and command: GCC 13.3 at -O2 on Ubuntu 24.04 under WSL2, Intel i9-12900K, over 16 MiB fixed-seed
-corpora, reporting best, median, and worst of 15 passes. Citing the archive rather than the README's table keeps an
-ordinary benchmark refresh from silently changing what this report claims.
+The figures below come from `paper/data/bare-metal-pinned/`, a full run on an AMD Ryzen 9 9950X3D under Ubuntu 26.04
+with GCC 15.2 at -O2, whose `environment.txt` records the measured commit and a clean tree. The `performance` governor
+was fixed, the topology is archived beside it as `lscpu -e`, scenarios ran in interleaved rounds, corpora swept 1 to 512
+MiB, and every pass of the ten scaling scenarios is recorded individually rather than summarized; the construction,
+planning and thread-launch rows are summaries only. That run confines the process to the eight physical cores of one L3
+domain, which excludes the SMT siblings and the other domain from the set the scheduler may use, so eight threads have
+eight distinct physical cores available; that constrains placement rather than fixing it, since threads may still
+migrate within those cores. `paper/data/bare-metal-unpinned/` is the same measurement free to use all 32 logical
+processors. Citing an archive rather than the README's table keeps an ordinary benchmark refresh from silently changing
+what this report claims.
 
-Read the parallel figures as a description of this environment, not of the technique. The guest sees a flattened
-topology, so a performance core cannot be told from an efficiency core and no thread is pinned; no `cpufreq` interface
-is exposed, so turbo residency falls as cores get busy; and the machine carried an ordinary desktop load rather than
-being quiesced. No directional conclusion follows from that: the scenarios run at different points within a single pass
-rather than interleaved, so drift can bias a given ratio either way. The corpora are also cache-resident, 16 MiB against
-a 30 MB last-level cache, rescanned after a warm-up, so these are warm-cache figures that isolate the scanner rather
-than sustained scanning of an input larger than cache.
+A third archive, `paper/data/benchmark.txt`, holds an earlier run on an Intel i9-12900K under WSL2 with GCC 13.3, over
+16 MiB cache-resident corpora in a fixed scenario order. It is kept because the contrast is a result in its own right,
+below. Its environment bounds what it can establish and the report states those bounds rather than adjusting for them:
+the guest sees a flattened topology, so a performance core cannot be told from an efficiency core and no thread is
+pinned; no `cpufreq` interface is exposed, so turbo residency falls as cores get busy; the machine carried an ordinary
+desktop load rather than being quiesced; and 16 MiB against a 30 MB last-level cache makes those warm-cache figures
+throughout.
 
 Two baselines answer different questions, and only one of them measures parallelism. A caller choosing between the
-serial and parallel entry points compares against the plain scan: 632.1 MiB/s median on the dense corpus against 2107.8
-on four threads, a gain of 3.33x. But that comparison charges parallelization for the parallel API's own cost. Driving
-the same API with a single chunk, which plans and uses the per-chunk sink but spawns nothing, reaches 541.9 MiB/s, so
-the API costs 14% before any parallelism exists. Against that baseline the certified chunked scan reaches 1071.5 MiB/s
-on two threads, 2107.8 on four, and 3528.9 on eight, which is 99%, 97%, and 81% parallel efficiency. The source-shaped
-corpus behaves comparably (537.2 on one chunk, then 1069.1, 2132.7, and 3419.7). The certificate behind every one of
-these plans costs a linear-time table analysis at build time and one boundary search per requested interior boundary at
-scan time.
+serial and parallel entry points compares against the plain scan: 715.9 MiB/s median on the dense corpus against 2822.3
+on four threads, a gain of 3.94x. But that comparison charges parallelization for the parallel API's own cost. Driving
+the same API with a single chunk, which plans and uses the per-chunk sink but spawns nothing, reaches 757.9 MiB/s.
+Against that baseline the certified chunked scan reaches 1441.6 MiB/s on two threads, 2822.3 on four, and 5613.4 on
+eight, which is 95%, 93%, and 93% parallel efficiency, on a 512 MiB corpus four times the machine's last-level cache.
+The certificate behind every one of these plans costs a linear-time table analysis at build time and one boundary search
+per requested interior boundary at scan time.
 
-The eight-thread figures are much noisier than the rest: the dense corpus spans 2996.0 to 4137.2 MiB/s across its
-fifteen passes, a best-to-worst ratio of 1.38. Four threads is the solid claim here; eight shows that scaling continues,
-not how well.
+Two results from having both machines are worth stating on their own. On the first, the one-chunk row measured 14%
+*below* the plain scan, which the earlier version of this report attributed to the API; on the second it costs nothing
+measurable, so that 14% was virtualized scheduling overhead and the efficiencies quoted against it were inflated. And
+scaling does not depend on the corpus fitting in cache: eight-chunk efficiency at 512 MiB is the highest of the four
+sizes, not the lowest. At 1 MiB it falls to 77%, because spawning eight threads costs about 40 us against a scan of
+roughly 1.4 ms, which is the practical lower bound on when splitting pays.
+
+One dispersion is left unexplained rather than explained away. The plain scan is markedly noisier than every other
+scenario and the gap widens with input size, spanning 4.7% of its median at 1 MiB but 16.6% at 128 MiB, while the
+one-chunk scenario doing near-identical single-threaded work stays within 2-5%. Confining the process to a single L3
+domain does not remove it (16.6% pinned against 17.0% unpinned), so migration between domains is not the cause. It
+affects the plain-scan baseline only; the efficiency figures are computed against the one-chunk baseline and are not
+affected.
 
 The planner's own cost is measured across certificate densities in the same archive: 0.1 microseconds when certified
-bytes are common, 1.87 ms when they are a megabyte apart, and 30.6 ms in the worst case of a certified byte absent from
-a 16 MiB input, the two scanning cases agreeing on about 1.8 GiB/s, which is consistent with the O(kN) bound.
+bytes are common, 1.02 ms when they are a megabyte apart, and 16.0 ms in the worst case of a certified byte absent from
+a 16 MiB input, the two scanning cases agreeing on about 3.4 GiB/s, which is consistent with the O(kN) bound. Those
+three come from `summary.txt` rather than the CSV, which records only the scaling scenarios.
 
-That worst case deserves stating end to end. With the certified byte absent, the planner spends 31 ms discovering it,
-returns one chunk, and the executor scans that chunk serially for another 25 ms: about 56 ms against 25 ms for just
-calling the serial API. That is a property of this planner, which is deliberately simple; the one-pass O(N + k)
-formulation reduces that to a single pass over the input, about 9 ms here, rather than eliminating it. The distinction
-worth keeping is that deciding the certificate touches no input, while locating its occurrences is a runtime scan.
+That worst case is paid before any scanning begins, and on such an input the planner returns one chunk, so what follows
+is the serial scan. No combined figure is quoted here: the planning scenarios use their own two-token grammar over a
+synthetic 16 MiB input while the scaling scenarios use the C-like grammar over generated source, and the benchmark never
+times executing the planning workload, so adding the two would compare different lexers over different inputs. The
+planner's own cost is what the measurement supports, and it is a property of this planner, which is deliberately simple;
+the one-pass O(N + k) formulation reduces it to a single pass over the input, under 5 ms here, rather than eliminating
+it. The distinction worth keeping is that deciding the certificate touches no input, while locating its occurrences is a
+runtime scan.
 
 Correctness is enforced at three levels. The benchmark checks that the chunked token stream is identical to the serial
 one by exact (kind, length) comparison before any timing. The unit suite carries the certification counterexamples,

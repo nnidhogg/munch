@@ -18,6 +18,7 @@ keywords:
 authors:
   - family-names: "Nidhögg"
     given-names: "Nicklas"
+    orcid: "https://orcid.org/0009-0006-6161-6150"
 repository-code: "https://github.com/nnidhogg/munch"
 url: "https://github.com/nnidhogg/munch"
 license: MIT

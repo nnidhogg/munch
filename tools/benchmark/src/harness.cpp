@@ -1,6 +1,7 @@
 #include "munch/tools/benchmark/harness.hpp"
 
 #include <fstream>
+#include <limits>
 #include <numeric>
 #include <random>
 
@@ -228,6 +229,10 @@ bool measure_interleaved(
 
         return false;
     }
+
+    // Round-trip precision: the default six significant digits round each pass before it reaches the file, so a
+    // statistic recomputed from the CSV can differ from the one the summary computed over the timings in memory.
+    csv.precision(std::numeric_limits<double>::max_digits10);
 
     if (fresh)
     {
