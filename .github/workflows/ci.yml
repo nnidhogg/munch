@@ -152,6 +152,14 @@ jobs:
           ./build/tools/fuzz/munch_builder_fuzzer corpus -max_total_time=60 -timeout=10 -rss_limit_mb=4096 \
                 -print_new_funcs=0
 
+      # The raw string scanner is the one hand-written pointer walk over untrusted input in the tree, so it gets its
+      # own target rather than sharing the builder's corpus, whose inputs decode as grammars and not as literals.
+      - name: Fuzz the raw string scanner
+        run: |
+          mkdir raw-string-corpus
+          ./build/tools/fuzz/munch_raw_string_fuzzer raw-string-corpus -max_total_time=60 -timeout=10 \
+                -rss_limit_mb=4096 -print_new_funcs=0
+
   xid-data:
     runs-on: ubuntu-24.04
 
