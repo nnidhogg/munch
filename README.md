@@ -134,22 +134,26 @@ and scheduling.
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target munch_benchmark
 $ ./build/tools/benchmark/munch_benchmark 16 15
-lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 508.6, median 497.1, worst 471.1 MiB/s
-lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 584.6, median 572.2, worst 555.7 MiB/s
-tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 447.2, median 440.5, worst 427.9 MiB/s
-lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 567.3, median 564.0, worst 546.4 MiB/s
-lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 568.3, median 554.0, worst 523.2 MiB/s
-build/keywords   143 patterns, 251 states, 15 passes: best 21.8, median 22.7, worst 24.9 ms
-register/xid     3 patterns, 477 states, 15 passes: best 59.2, median 64.1, worst 75.5 ms
-build/xid        3 patterns, 477 states, 15 passes: best 432.3, median 459.2, worst 534.1 ms
-total/xid        3 patterns, 477 states, 15 passes: best 495.2, median 522.4, worst 602.1 ms
-lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 581.4, median 569.0, worst 514.1 MiB/s
-chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1035.0, median 1003.6, worst 946.7 MiB/s
-chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 987.9, median 971.2, worst 903.4 MiB/s
-chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1987.8, median 1928.5, worst 1817.1 MiB/s
-chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 1934.3, median 1887.1, worst 1626.7 MiB/s
-chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 3008.9, median 2797.6, worst 2506.3 MiB/s
-chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3294.3, median 3066.8, worst 2805.0 MiB/s
+lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 534.7, median 511.3, worst 503.4 MiB/s
+lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 610.0, median 599.8, worst 572.7 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 505.6, median 497.5, worst 485.9 MiB/s
+lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 572.0, median 563.6, worst 544.1 MiB/s
+lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 584.7, median 563.1, worst 553.1 MiB/s
+build/keywords   143 patterns, 251 states, 15 passes: best 19.0, median 19.5, worst 20.1 ms
+register/xid     3 patterns, 477 states, 15 passes: best 52.8, median 53.6, worst 60.9 ms
+build/xid        3 patterns, 477 states, 15 passes: best 374.1, median 391.4, worst 410.2 ms
+total/xid        3 patterns, 477 states, 15 passes: best 427.6, median 445.0, worst 463.7 ms
+plan/frequent   8 of 8 chunks, 15 passes: best 0.1, median 0.2, worst 0.2 us
+plan/rare       8 of 8 chunks, 15 passes: best 1851.4, median 1880.3, worst 1981.5 us
+plan/absent     1 of 8 chunks, 15 passes: best 29820.1, median 30627.0, worst 31669.8 us
+plan/uncertified 1 of 8 chunks, 15 passes: best 0.2, median 0.2, worst 0.2 us
+lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 594.5, median 589.0, worst 577.3 MiB/s
+chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1107.2, median 1084.0, worst 1032.4 MiB/s
+chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1075.3, median 1060.6, worst 1040.7 MiB/s
+chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 2185.8, median 2164.9, worst 2013.3 MiB/s
+chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 2116.7, median 2067.2, worst 1989.1 MiB/s
+chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 4138.7, median 3496.0, worst 3033.6 MiB/s
+chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 4091.1, median 3650.0, worst 3347.1 MiB/s
 ```
 
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
@@ -157,8 +161,9 @@ The scenarios measure the core lexer called once per token on C-like source, the
 identifiers containing UTF-8 code points matched through byte expansion, the same input through the full Unicode XID
 identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the property adds no Unicode-specific per-byte
 work, and its runtime impact is limited to the resulting DFA and table size), the keyword-scale build cost, the XID
-construction cost split into registration, finalization, and their total, and the parallel chunked scans at certified
-split points on two, four, and eight threads. Inputs are fixed-seed and deterministic, so runs are comparable across
+construction cost split into registration, finalization, and their total, the cost of planning chunk boundaries as
+certified bytes grow scarce, and the parallel chunked scans at certified split points on two, four, and eight threads.
+Inputs are fixed-seed and deterministic, so runs are comparable across
 changes. Numbers depend on the machine, the token set, and the compiler: these are GCC 13 builds, and Clang 19 measures
 within about ten percent since the accept path was pinned to a branch (see [docs/performance.md](docs/performance.md)).
 WSL2 adds visible run-to-run spread, so rerun the benchmark on your own hardware and language before citing them.
@@ -606,17 +611,18 @@ const auto consumed = lexer.tokenize_all<Token_kind>(input, [&tokens](const Toke
 ```
 
 `is_split_point(symbol)` reports whether a symbol is a certified safe chunk boundary: for input that tokenizes
-completely, splitting immediately before it produces the identical token stream. The property is computed from the compiled transition table, so it reflects
-the actual token set rather than a heuristic; a newline-run token, for example, correctly disqualifies newline, where a
-split-at-newline rule would silently corrupt the token stream. `chunk_boundaries(input, chunks)` turns the certified
-points into a chunk plan, and `tokenize_all_parallel<T>(input, chunks, sink)` scans the chunks concurrently, one thread
-per chunk, reaching around 3.5× the serial throughput on four threads; for input that tokenizes completely, the token
-stream is guaranteed identical to the serial scan's, and on a failure the per-chunk consumed lengths expose it. A
-token set that certifies no split points degenerates to one chunk and the serial scan. The sink
-receives `(chunk, token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the
-contract and [docs/performance.md](docs/performance.md) for the measurements.
-[docs/split_points.md](docs/split_points.md) states the certificate formally, relates it to the parallel-automata
-literature, and surveys which grammars certify usable split symbols.
+completely, splitting immediately before it produces the identical token stream. The property is computed from the
+compiled transition table, so it reflects the actual token set rather than a heuristic; a newline-run token, for
+example, correctly disqualifies newline, where a split-at-newline rule would silently corrupt the token stream.
+`chunk_boundaries(input, chunks)` turns the certified points into a chunk plan, and `tokenize_all_parallel<T>(input,
+chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching around 3.5× the serial throughput on four
+threads; for input that tokenizes completely, the token stream is guaranteed identical to the serial scan's, and on a
+failure the per-chunk consumed lengths expose it. A token set that certifies no split points degenerates to one chunk
+and the serial scan. The sink receives `(chunk, token, length)` and runs concurrently across chunks; see
+[docs/limits.md](docs/limits.md) for the contract and [docs/performance.md](docs/performance.md) for the measurements.
+The technical report *Certified Split Points: Parallel Lexing Without Speculation* states the certificate formally,
+relates it to the parallel-automata literature, and surveys which grammars certify usable split symbols: read it as
+[docs/split_points.md](docs/split_points.md), or build the formal version from [paper/](paper/).
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 

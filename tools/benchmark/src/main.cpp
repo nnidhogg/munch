@@ -424,6 +424,120 @@ void measure_xid_build(const int passes)
     report("total/xid   ", std::move(total));
 }
 
+/**
+ * @brief Measures the cost of planning chunk boundaries as certified symbols grow scarce.
+ *
+ * chunk_boundaries() slides each interior boundary forward from its equal-division target to the next certified
+ * byte, so its cost depends on how far it has to look. Four densities bound the range: a certified byte on almost
+ * every line, one every megabyte, a certificate whose byte never occurs in the input at all, and a token set that
+ * certifies nothing, which the planner answers without scanning. The planned input is never tokenized here; only
+ * the plan is timed, and each pass repeats the plan until the sample is long enough to divide by, so the cheap
+ * densities measure planning rather than the clock.
+ */
+void measure_planning(const int passes)
+{
+    using namespace munch::regex;
+
+    enum class Kind : std::size_t
+    {
+        Line,
+        Newline,
+    };
+
+    // Newline as its own token certifies it; the line body cannot contain one, which is what makes the split safe.
+    const auto certifying{[] {
+        munch::core::Builder builder;
+
+        builder.add_token(plus(any_of(Set::all() - '\n')), Kind::Line, 2);
+
+        builder.add_token(text("\n"), Kind::Newline, 1);
+
+        return builder.build();
+    }()};
+
+    // A line body that may contain any byte certifies nothing: every byte is consumable mid-token.
+    const auto certifying_nothing{[] {
+        munch::core::Builder builder;
+
+        builder.add_token(plus(any_of(Set::all())), Kind::Line, 1);
+
+        return builder.build();
+    }()};
+
+    // The certified bytes sit half a period ahead of every equal-division target, so each search scans half a
+    // period rather than landing on a boundary by coincidence.
+    const auto input{[](const std::size_t size, const std::size_t period) {
+        std::string result(size, 'x');
+
+        for (std::size_t offset{period / 2}; period != 0 && offset < size; offset += period)
+        {
+            result[offset] = '\n';
+        }
+
+        return result;
+    }};
+
+    constexpr std::size_t size{16U << 20U};
+
+    constexpr std::size_t chunks{8};
+
+    const auto frequent{input(size, 40)};
+
+    const auto rare{input(size, 1U << 20U)};
+
+    const auto absent{input(size, 0)};
+
+    const auto plan{[passes](const char* const name, const munch::core::Lexer& lexer, const std::string& text) {
+        std::vector<double> microseconds;
+
+        microseconds.reserve(static_cast<std::size_t>(passes));
+
+        std::size_t planned{0};
+
+        for (int index{0}; index < passes; ++index)
+        {
+            // A plan over a dense certificate costs a fraction of a microsecond, which one clock reading cannot
+            // resolve, so each pass repeats the plan until the sample outlasts the timer and divides. A plan that
+            // scans the whole input passes the floor on its first call.
+            constexpr std::chrono::milliseconds floor{2};
+
+            std::size_t iterations{0};
+
+            const auto start{std::chrono::steady_clock::now()};
+
+            std::chrono::steady_clock::duration elapsed{};
+
+            do
+            {
+                planned = lexer.chunk_boundaries(text, chunks).size();
+
+                ++iterations;
+
+                elapsed = std::chrono::steady_clock::now() - start;
+            } while (elapsed < floor);
+
+            microseconds.push_back(
+                    std::chrono::duration<double, std::micro>{elapsed}.count() / static_cast<double>(iterations));
+        }
+
+        std::sort(microseconds.begin(), microseconds.end());
+
+        const auto median{(microseconds[(microseconds.size() - 1) / 2] + microseconds[microseconds.size() / 2]) / 2.0};
+
+        std::printf(
+                "%s %zu of %zu chunks, %d passes: best %.1f, median %.1f, worst %.1f us\n", name, planned - 1, chunks,
+                passes, microseconds.front(), median, microseconds.back());
+    }};
+
+    plan("plan/frequent  ", certifying, frequent);
+
+    plan("plan/rare      ", certifying, rare);
+
+    plan("plan/absent    ", certifying, absent);
+
+    plan("plan/uncertified", certifying_nothing, frequent);
+}
+
 } // namespace
 
 /**
@@ -487,6 +601,8 @@ int main(const int argc, const char** argv)
     measure_build(passes);
 
     measure_xid_build(passes);
+
+    measure_planning(passes);
 
     ok = measure("lexer_all/source", source_input.size(), passes,
                  [&ascii_lexer, &source_input] { return tokenize_all(ascii_lexer, source_input); }) &&
