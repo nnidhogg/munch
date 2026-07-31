@@ -12,16 +12,16 @@
 `munch` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
 regex-like combinator DSL, compiled through Thompson construction, subset construction, and DFA minimization by Moore
 partition refinement, then executed by a cache-optimized table simulator. There are no predefined tokens or grammars.
-You describe the language, and the library builds the automaton. On
-the [comparison below](#comparison-with-other-engines), that automaton measures as the fastest lexer constructed at run
-time in either measured language, on both benchmark corpora; only compile-time code generation measures ahead. The
-compiled table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned in
-parallel with strong scaling and a provably identical token stream, a guarantee the code-generating lexers cannot give
-about their own token sets.
+You describe the language, and the library builds the automaton. On the
+[comparison below](#comparison-with-other-engines), that automaton measures as the fastest lexer constructed at run time
+in either measured language, on both benchmark corpora; only compile-time code generation measures ahead. The compiled
+table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned in parallel with
+strong scaling and a provably identical token stream, a guarantee none of the code-generating lexers measured here
+derives or checks for its own token sets.
 
-The name is pronounced /mʊŋk/, like "munk", after the
-painter [Edvard Munch](https://en.wikipedia.org/wiki/Edvard_Munch); that it also reads as the English *munch* /mʌntʃ/,
-as in the maximal munch rule every lexer lives by, is the pun.
+The name is pronounced /mʊŋk/, like "munk", after the painter
+[Edvard Munch](https://en.wikipedia.org/wiki/Edvard_Munch); that it also reads as the English *munch* /mʌntʃ/, as in the
+maximal munch rule every lexer lives by, is the pun.
 
 ## **Features**
 
@@ -87,8 +87,8 @@ regex combinators ──▶ NFA (Thompson construction)
                     Simulator (flat tables, symbol equivalence classes)
 ```
 
-1. **Regex → NFA.** Each combinator (`concat`, `choice`, `kleene`, ...) knows how to lower itself to an
-   `nfa::Builder` fragment; composing combinators composes NFA fragments.
+1. **Regex → NFA.** Each combinator (`concat`, `choice`, `kleene`, ...) knows how to lower itself to an `nfa::Builder`
+   fragment; composing combinators composes NFA fragments.
 2. **Per-pattern determinization.** Every registered pattern's NFA is independently turned into a DFA by subset
    construction and minimized. This resolves the non-determinism a single pattern's own combinators introduce (e.g. the
    branching in `choice` or the loop in `kleene`) before patterns ever interact.
@@ -114,10 +114,10 @@ read on the hot path:
 - **Symbol equivalence classes.** Two input bytes that the automaton never tells apart (e.g. two digits, in a lexer with
   no per-digit tokens) share one row of the transition table. The table therefore needs one row per class the automaton
   actually distinguishes rather than one per possible `char` value.
-- **A flat `(class, state)` table**, viewed as a 2D `mdspan`, replaces the `unordered_map<(state, Label), state>`
-  the DFA itself is built and inspected through. The class of the next symbol is known before the current state is, so
-  the row offset is computed off the state-to-state dependency chain that would otherwise limit how fast `run()`
-  can advance.
+- **A flat `(class, state)` table**, viewed as a 2D `mdspan`, replaces the `unordered_map<(state, Label), state>` the
+  DFA itself is built and inspected through. The class of the next symbol is known before the current state is, so the
+  row offset is computed off the state-to-state dependency chain that would otherwise limit how fast `run()` can
+  advance.
 - **Narrow table entries** (`uint32_t` state indices, `uint8_t` class indices) keep more of the table resident in cache
   than the `size_t`-keyed hash map would.
 
@@ -130,26 +130,55 @@ scenario reports its best, median, and worst pass: the best estimates the least-
 spread to the worst is the run-to-run variability, system interference plus, for the threaded scenarios, thread creation
 and scheduling.
 
+The scaling scenarios, the whole-input scans and the chunked rows, run in interleaved rounds rather than one scenario at
+a time, so drift in clock or host load spreads across them instead of biasing the ratios between them. The size argument
+accepts a comma-separated list to sweep input sizes (`16,128` crosses a typical last-level cache), and an optional third
+argument writes every individual observation to a CSV instead of keeping only the three summary figures. The transcript
+below predates the interleaving change and is the run archived as `paper/data/benchmark.txt`.
+
+To reproduce a run somewhere else, `tools/benchmark/collect.sh` builds the benchmark and records the result together
+with the machine it ran on, which is what makes a number quotable later:
+
+```bash
+$ ./tools/benchmark/collect.sh ~/munch-run 1,16,128 15
+```
+
+It writes `environment.txt` (CPU, visible topology, governor, memory, kernel, toolchain, and whether a hypervisor is
+present), `summary.txt`, and `observations.csv` with every individual timed pass. It checks its own prerequisites first:
+CMake 3.20+, a C++23 compiler (GCC 13+ or Clang 19+), and git with network access on the first configure, since four
+header-only Boost libraries and mdspan are cloned at pinned revisions. `-DUSE_SYSTEM_BOOST=ON` skips the Boost clones
+but not mdspan, so a fully offline configure is not supported.
+
 ```
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target munch_benchmark
 $ ./build/tools/benchmark/munch_benchmark 16 15
-lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 508.6, median 497.1, worst 471.1 MiB/s
-lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 584.6, median 572.2, worst 555.7 MiB/s
-tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 447.2, median 440.5, worst 427.9 MiB/s
-lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 567.3, median 564.0, worst 546.4 MiB/s
-lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 568.3, median 554.0, worst 523.2 MiB/s
-build/keywords   143 patterns, 251 states, 15 passes: best 21.8, median 22.7, worst 24.9 ms
-register/xid     3 patterns, 477 states, 15 passes: best 59.2, median 64.1, worst 75.5 ms
-build/xid        3 patterns, 477 states, 15 passes: best 432.3, median 459.2, worst 534.1 ms
-total/xid        3 patterns, 477 states, 15 passes: best 495.2, median 522.4, worst 602.1 ms
-lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 581.4, median 569.0, worst 514.1 MiB/s
-chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1035.0, median 1003.6, worst 946.7 MiB/s
-chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 987.9, median 971.2, worst 903.4 MiB/s
-chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1987.8, median 1928.5, worst 1817.1 MiB/s
-chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 1934.3, median 1887.1, worst 1626.7 MiB/s
-chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 3008.9, median 2797.6, worst 2506.3 MiB/s
-chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 3294.3, median 3066.8, worst 2805.0 MiB/s
+lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 492.5, median 482.3, worst 464.3 MiB/s
+lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 640.5, median 632.1, worst 582.4 MiB/s
+tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 484.1, median 477.9, worst 467.0 MiB/s
+lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 609.2, median 596.3, worst 577.1 MiB/s
+lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 600.0, median 587.0, worst 548.8 MiB/s
+build/keywords   143 patterns, 251 states, 15 passes: best 20.4, median 20.9, worst 21.5 ms
+register/xid     3 patterns, 477 states, 15 passes: best 53.4, median 56.4, worst 65.5 ms
+build/xid        3 patterns, 477 states, 15 passes: best 411.2, median 421.3, worst 442.7 ms
+total/xid        3 patterns, 477 states, 15 passes: best 469.4, median 477.1, worst 501.5 ms
+plan/frequent   8 of 8 chunks, 15 passes: best 0.1, median 0.1, worst 0.2 us
+plan/rare       8 of 8 chunks, 15 passes: best 1851.1, median 1870.1, worst 1908.9 us
+plan/absent     1 of 8 chunks, 15 passes: best 30098.5, median 30606.9, worst 34747.3 us
+plan/uncertified 1 of 8 chunks, 15 passes: best 0.2, median 0.2, worst 0.2 us
+threads/1        spawn and join, 15 passes: best 0.0, median 0.0, worst 0.0 us
+threads/2        spawn and join, 15 passes: best 35.9, median 39.6, worst 57.3 us
+threads/4        spawn and join, 15 passes: best 80.4, median 84.8, worst 177.8 us
+threads/8        spawn and join, 15 passes: best 173.2, median 188.1, worst 218.7 us
+lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 613.6, median 600.1, worst 594.1 MiB/s
+chunked1/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 548.1, median 541.9, worst 522.8 MiB/s
+chunked1/source  16.0 MiB, 4755600 tokens, 15 passes: best 552.7, median 537.2, worst 532.3 MiB/s
+chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1085.4, median 1071.5, worst 1029.2 MiB/s
+chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1080.9, median 1069.1, worst 1028.1 MiB/s
+chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 2182.7, median 2107.8, worst 1697.2 MiB/s
+chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 2159.3, median 2132.7, worst 1993.7 MiB/s
+chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 4137.2, median 3528.9, worst 2996.0 MiB/s
+chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 4076.4, median 3419.7, worst 3136.6 MiB/s
 ```
 
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
@@ -157,11 +186,12 @@ The scenarios measure the core lexer called once per token on C-like source, the
 identifiers containing UTF-8 code points matched through byte expansion, the same input through the full Unicode XID
 identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the property adds no Unicode-specific per-byte
 work, and its runtime impact is limited to the resulting DFA and table size), the keyword-scale build cost, the XID
-construction cost split into registration, finalization, and their total, and the parallel chunked scans at certified
-split points on two, four, and eight threads. Inputs are fixed-seed and deterministic, so runs are comparable across
-changes. Numbers depend on the machine, the token set, and the compiler: these are GCC 13 builds, and Clang 19 measures
-within about ten percent since the accept path was pinned to a branch (see [docs/performance.md](docs/performance.md)).
-WSL2 adds visible run-to-run spread, so rerun the benchmark on your own hardware and language before citing them.
+construction cost split into registration, finalization, and their total, the cost of planning chunk boundaries as
+certified bytes grow scarce, and the parallel chunked scans at certified split points on two, four, and eight threads.
+Inputs are fixed-seed and deterministic, so runs are comparable across changes. Numbers depend on the machine, the token
+set, and the compiler: these are GCC 13 builds, and Clang 19 measures within about ten percent since the accept path was
+pinned to a branch (see [docs/performance.md](docs/performance.md)). WSL2 adds visible run-to-run spread, so rerun the
+benchmark on your own hardware and language before citing them.
 
 ### **Comparison with Other Engines**
 
@@ -233,7 +263,7 @@ than its friendliest entry point.
 
 | Engine                 | Version   | Matching approach                       | dense | source |
 |------------------------|-----------|-----------------------------------------|------:|-------:|
-| `munch`                | this repo | table-compiled minimal DFA, single pass |   577 |    564 |
+| `munch`                | this repo | table-compiled minimized DFA, single pass |   577 |    564 |
 | `regex-automata` (raw) | 0.4       | dense DFA walked at the automaton level |   349 |    399 |
 | lexertl17              | 652435f   | rules compiled to a DFA                 |   176 |    224 |
 | `regex-automata`       | 0.4       | dense DFA through its search API        |   168 |    222 |
@@ -251,7 +281,7 @@ tokens let generated code consume multi-byte runs does CTRE pull ahead.
 | Engine  | Version   | Matching approach                       | dense | source |
 |---------|-----------|-----------------------------------------|------:|-------:|
 | logos   | 0.15.1    | matcher generated by a derive macro     |   728 |    891 |
-| `munch` | this repo | table-compiled minimal DFA, single pass |   577 |    564 |
+| `munch` | this repo | table-compiled minimized DFA, single pass |   577 |    564 |
 | CTRE    | 3.9.0     | matcher generated from the regex        |   421 |    575 |
 
 **The industry defaults: general-purpose regex engines.** This is what a codebase typically reaches for when it needs a
@@ -261,7 +291,7 @@ generality on a workload of anchored matches every couple of bytes.
 
 | Engine       | Version        | Matching approach                       | dense | source |
 |--------------|----------------|-----------------------------------------|------:|-------:|
-| `munch`      | this repo      | table-compiled minimal DFA, single pass |   577 |    564 |
+| `munch`      | this repo      | table-compiled minimized DFA, single pass |   577 |    564 |
 | PCRE2        | 10.44          | backtracking, JIT-compiled              |    80 |    140 |
 | Boost.Regex  | 1.86.0         | backtracking                            |    16 |     28 |
 | RE2          | 2024-07-02     | Thompson NFA when extracting captures   |    11 |     19 |
@@ -293,17 +323,15 @@ roughly 1.4 to 3.3 times ahead of its nearest relatives even with regex-automata
 the narrow end being that steelman on the source-shaped corpus. The compile-time code generators own the overall lead as
 tokens grow longer: logos on both corpora and CTRE on source, because generated code consumes multi-byte runs where a
 table walk pays one dependent load per byte, which is also why munch's own throughput is nearly identical on both corpus
-shapes.
-[docs/performance.md](docs/performance.md) explains why that boundary is where it is.
+shapes. [docs/performance.md](docs/performance.md) explains why that boundary is where it is.
 
 Threading multiplies the class verdict rather than reordering it: both lexer classes scale strongly, close to linear at
 four threads and sublinearly at eight, so the serial ranking carries over at every width. What the threaded rows
 actually compare is how each side knows its chunk boundaries are safe. munch certifies them from the compiled transition
-table, for whatever token set was built, through
-`is_split_point()`; the logos rows rest on a hand-written analysis of this one token set, documented in the Rust driver,
-which logos itself can neither produce nor check. On a token set where no byte is safe, such as one with string
-literals, munch reports that no split points exist, while a hand analysis has to notice by itself that the trick is no
-longer sound.
+table, for whatever token set was built, through `is_split_point()`; the logos rows rest on a hand-written analysis of
+this one token set, documented in the Rust driver, which logos itself can neither produce nor check. On a token set
+where no byte is safe, such as one with string literals, munch reports that no split points exist, while a hand analysis
+has to notice by itself that the trick is no longer sound.
 
 ## **Architecture Overview**
 
@@ -605,15 +633,20 @@ const auto consumed = lexer.tokenize_all<Token_kind>(input, [&tokens](const Toke
 // consumed == input.size() exactly when the whole input tokenized.
 ```
 
-`is_split_point(symbol)` reports whether a symbol is a certified safe chunk boundary: input split immediately before it
-tokenizes identically to the unsplit input. The property is computed from the compiled transition table, so it reflects
-the actual token set rather than a heuristic; a newline-run token, for example, correctly disqualifies newline, where a
-split-at-newline rule would silently corrupt the token stream. `chunk_boundaries(input, chunks)` turns the certified
-points into a chunk plan, and `tokenize_all_parallel<T>(input, chunks, sink)` scans the chunks concurrently, one thread
-per chunk, reaching around 3.5× the serial throughput on four threads with a token stream guaranteed identical to the
-serial scan's; a token set that certifies no split points degenerates to one chunk and the serial scan. The sink
-receives `(chunk, token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the
-contract and [docs/performance.md](docs/performance.md) for the measurements.
+`is_split_point(symbol)` reports whether a symbol is a certified safe chunk boundary: for input that tokenizes
+completely, splitting immediately before it produces the identical token stream. The property is computed from the
+compiled transition table, so it reflects the actual token set rather than a heuristic; a newline-run token, for
+example, correctly disqualifies newline, where a split-at-newline rule would silently corrupt the token stream.
+`chunk_boundaries(input, chunks)` turns the certified points into a chunk plan, and `tokenize_all_parallel<T>(input,
+chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 3.33× the serial throughput on four threads
+on the dense corpus of the archived 16 MiB warm-cache run described in [docs/performance.md](docs/performance.md); for
+input that tokenizes completely, the token stream is guaranteed identical to the serial scan's, and on a failure the
+per-chunk consumed lengths expose it. A token set that certifies no split points degenerates to one chunk and the serial
+scan. The sink receives `(chunk, token, length)` and runs concurrently across chunks; see
+[docs/limits.md](docs/limits.md) for the contract and [docs/performance.md](docs/performance.md) for the measurements.
+The technical report *Certified Split Points: Parallel Lexing Without Speculation* states the certificate formally,
+relates it to the parallel-automata literature, and surveys which grammars certify usable split symbols: read it as
+[docs/split_points.md](docs/split_points.md), or build the formal version from [paper/](paper/).
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
@@ -769,13 +802,13 @@ target_link_libraries(my_app PRIVATE munch::munch)
 The installed package is self-contained: the build-time header-only dependencies (Boost utilities, mdspan) never appear
 in munch's public headers, so nothing else needs to be installed or found, and the exported targets carry the C++23
 requirement themselves. Do not install from a `MUNCH_BENCHMARK_COMPARE` build, whose comparison engines insist on
-installing alongside. Install rules are generated only when munch is the top-level project, or when
-`MUNCH_INSTALL=ON` is passed explicitly.
+installing alongside. Install rules are generated only when munch is the top-level project, or when `MUNCH_INSTALL=ON`
+is passed explicitly.
 
-The `munch::munch` target is an interface umbrella over `munch_core` and `munch_tokenizer`, which pull in
-`munch_regex`, `munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers described below
-are not part of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools` (installed as
-`munch::munch_nfa_tools` / `munch::munch_dfa_tools`) directly to use them.
+The `munch::munch` target is an interface umbrella over `munch_core` and `munch_tokenizer`, which pull in `munch_regex`,
+`munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers described below are not part
+of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools` (installed as `munch::munch_nfa_tools` /
+`munch::munch_dfa_tools`) directly to use them.
 
 ## **Debugging and Visualization**
 
@@ -852,17 +885,18 @@ shared chain:
 ![DFA after minimization](docs/minimization_after.svg)
 
 States accepting different tokens are never merged, so tokenization is unchanged. The builder minimizes after each
-subset construction, so every DFA it produces is minimal; smaller automata also shrink the transition tables the
-simulator compiles, keeping more of them in cache.
+subset construction, so every DFA it produces is minimized; smaller automata also shrink the transition tables the
+simulator compiles, keeping more of them in cache. The result is minimal in the usual sense when the input automaton is
+trim; a subexpression denoting the empty language can leave states no input can reach acceptance from, so that case is
+an exception; see [docs/limits.md](docs/limits.md).
 
 ## **Versioning and Stability**
 
-munch follows semantic versioning. The stable surface is what this README documents: the regex combinators with
-`Set`, `utf8::range`, `utf8::ranges`, and the `unicode` XID classes, `core::Builder` with `add_token()`, `build()`,
-`diagnose()`, and `set_state_limit()`,
-`core::Lexer` with `Match`, `tokenize()`, `tokenize_all()`, `is_split_point()`, `chunk_boundaries()`, and
-`tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
-arrive in minor versions.
+munch follows semantic versioning. The stable surface is what this README documents: the regex combinators with `Set`,
+`utf8::range`, `utf8::ranges`, and the `unicode` XID classes, `core::Builder` with `add_token()`, `build()`,
+`diagnose()`, and `set_state_limit()`, `core::Lexer` with `Match`, `tokenize()`, `tokenize_all()`, `is_split_point()`,
+`chunk_boundaries()`, and `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the
+major version; additions arrive in minor versions.
 
 The supported platform is Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests, sanitizes,
 and fuzzes; other platforms may work but carry no promise. Semantic versioning covers source compatibility only. munch
@@ -884,5 +918,4 @@ v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), 
 
 ## **Author**
 
-Developed and maintained by **Nicklas Nidhögg**  
-GitHub: [nnidhogg](https://github.com/nnidhogg)
+Developed and maintained by **Nicklas Nidhögg** GitHub: [nnidhogg](https://github.com/nnidhogg)

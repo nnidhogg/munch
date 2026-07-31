@@ -62,6 +62,11 @@ add_subdirectory(external)
 add_subdirectory(libs)
 add_subdirectory(tools)
 
+# The paper's applicability table asserts itself against the shipped predicate, so it is a test rather than a figure.
+if (MUNCH_BUILD_TESTS)
+    add_subdirectory(paper/figures)
+endif ()
+
 add_library(${PROJECT_NAME}
         INTERFACE
 )

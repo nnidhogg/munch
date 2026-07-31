@@ -102,8 +102,9 @@ public:
      * only vacuously, since no input this lexer accepts contains it, and is deliberately not reported: a caller cannot
      * use it, and searching for one scans the whole input for nothing. Transitions into states that can never accept
      * are ignored throughout, since no emitted token can traverse one; a pattern denoting the empty language leaves
-     * exactly such states behind. Token sets whose runs or literals may
-     * contain any byte certify no split points.
+     * exactly such states behind. States the initial state cannot reach are ignored on the same grounds, since no scan
+     * can arrive in one; a Dfa built by subset construction has none, but one assembled by hand may. Token sets whose
+     * runs or literals may contain any byte certify no split points.
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept
     {

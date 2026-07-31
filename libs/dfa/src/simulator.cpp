@@ -134,14 +134,45 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
         }
     }
 
+    // Symmetrically, only states a scan can actually arrive in may de-certify a symbol. A Dfa handed to the
+    // Simulator directly can number states no input reaches, and an unreachable live island, or an unreachable
+    // transition back into the initial state, would otherwise cost certificates that no scan can ever contradict.
+    // Builder's subset construction supplies reachability on its own, so this only matters for a hand-built Dfa.
+    std::vector<bool> reachable(states, false);
+
+    reachable[init_state_] = true;
+
+    pending.assign(1, static_cast<Entry_t>(init_state_));
+
+    while (!pending.empty())
+    {
+        const auto state{pending.back()};
+
+        pending.pop_back();
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            if (const auto to{table_[row_offsets_[symbol] + state]}; to != no_state_ && !reachable[to])
+            {
+                reachable[to] = true;
+
+                pending.push_back(to);
+            }
+        }
+    }
+
     // A symbol only the initial state consumes can only begin a token, but the exemption is valid only while the
     // initial state cannot be reached again after consuming input: a nullable pattern such as kleene minimizes to
     // an accepting start state with a self-loop, where the "first byte of a token" reasoning no longer holds.
     auto init_reentrant{false};
 
-    for (const auto entry : table_)
+    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
     {
-        init_reentrant = init_reentrant || entry == static_cast<Entry_t>(init_state_);
+        for (std::size_t state{0}; state < states; ++state)
+        {
+            init_reentrant = init_reentrant || (reachable[state] && table_[row_offsets_[symbol] + state] ==
+                                                                            static_cast<Entry_t>(init_state_));
+        }
     }
 
     const auto consumes{[this, &co_accessible](const std::size_t symbol, const std::size_t state) {
@@ -156,7 +187,7 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
 
         for (std::size_t state{0}; safe && state < states; ++state)
         {
-            safe = (state == init_state_ && !init_reentrant) || !consumes(symbol, state);
+            safe = !reachable[state] || (state == init_state_ && !init_reentrant) || !consumes(symbol, state);
         }
 
         // A symbol no live state consumes is certified vacuously: no input this lexer accepts can contain it, so it is

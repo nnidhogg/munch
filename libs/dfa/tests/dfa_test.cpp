@@ -508,6 +508,55 @@ TEST_F(Dfa_test, Split_points)
     EXPECT_TRUE(simulator.has_split_points());
 }
 
+TEST_F(Dfa_test, Unreachable_states_do_not_decertify)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+
+    const Token token_a{1};
+    const Token token_b{2};
+
+    dfa.add_accept_state(q1, token_a);
+    dfa.add_accept_state(q3, token_b);
+
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+
+    // A live island no input reaches: q2 accepts by way of q3, so it survives the co-accessibility sweep, and it
+    // consumes 'a' mid-token. No scan can ever be in it, so it must not cost 'a' its certificate.
+    dfa.add_transition(q2, dfa::Label('a'), q3);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_TRUE(simulator.is_split_point('a'));
+}
+
+TEST_F(Dfa_test, Unreachable_transitions_do_not_make_the_initial_state_reentrant)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+
+    const Token token_a{1};
+
+    dfa.add_accept_state(q1, token_a);
+
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+
+    // q2 is unreachable, so its transition back into the initial state is not a way for a scan to return there and
+    // must not defeat the "can only begin a token" reasoning that certifies 'a'.
+    dfa.add_transition(q2, dfa::Label('b'), q0);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_TRUE(simulator.is_split_point('a'));
+}
+
 TEST_F(Dfa_test, Accelerated_runs_preserve_longest_match)
 {
     dfa::Builder dfa;

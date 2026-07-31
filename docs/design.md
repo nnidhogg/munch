@@ -30,9 +30,9 @@ freely rewritable: nothing above it can observe anything but its results.
 ## **Bytes at Run Time, Unicode at Build Time**
 
 The engine reads bytes, never code points, which keeps the alphabet at 256, which is what makes symbol equivalence
-classes possible, which is what keeps the transition table cache-resident, which is where the throughput lives.
-`utf8::range` expands code point ranges into byte sequences while patterns are being built, so Unicode is handled by the
-same decision as everything else: earlier.
+classes possible, which is what keeps a realistic transition table small enough to stay resident in cache, where the
+throughput lives. `utf8::range` expands code point ranges into byte sequences while patterns are being built, so Unicode
+is handled by the same decision as everything else: earlier.
 
 ## **Layers That Can Be Tested Alone**
 

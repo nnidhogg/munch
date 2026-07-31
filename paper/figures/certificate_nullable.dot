@@ -1,0 +1,9 @@
+digraph DFA {
+    rankdir=LR;
+    ratio=1.0;
+    node [shape = circle];
+    0 [shape = doublecircle, label="0 (0)"];
+    __start__ [shape = none, label=""];
+    __start__ -> 0;
+    0 -> 0 [label = "a"];
+}

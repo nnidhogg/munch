@@ -9,3 +9,14 @@
 # Ignore generated files from application
 /debug
 /tools/benchmark/rust/target
+
+# Generated files from the paper build; the figure PDFs under paper/figures are checked in on purpose
+/paper/split-points.pdf
+/paper/*.aux
+/paper/*.bbl
+/paper/*.blg
+/paper/*.fdb_latexmk
+/paper/*.fls
+/paper/*.log
+/paper/*.out
+/paper/*.toc

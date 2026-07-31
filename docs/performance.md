@@ -93,20 +93,20 @@ Clang 19 used to build this loop at less than half of GCC's throughput, and the 
 four nanoseconds per token, indifferent to token length. The disassembly showed why. Clang if-converted the accept
 bookkeeping, the two updates recording the last accepting state, into conditional moves, making the accepted length
 data-dependent on every state load of the token. The next token cannot start until its predecessor's length resolves, so
-under conditional moves that start waited out the full load chain of the prior token; as a predicted branch the same
-bookkeeping costs nothing, mispredicts rarely on real token structure, and lets speculation overlap consecutive tokens
-in the out-of-order window. This is the same mechanism the lane interleaving post-mortem identified: the reset to the
-start state cuts the serial chain at each token boundary and the processor overlaps the chains itself. Here the compiler
-had quietly welded the chains back together. An empty asm statement in the branch body now blocks the conversion, with a
-comment carrying the reasoning; alongside a 64-bit scan state that spares a per-byte zero-extension, Clang went from 211
-to 475 MiB/s in the isolating experiment and from 236 to 498 MiB/s in the benchmark, within ten percent of GCC, which
-itself moved nowhere. The compilers now agree closely enough that the published numbers describe the library rather than
-the toolchain.
+under conditional moves that start waited out the full load chain of the prior token; as a correctly predicted branch
+the same bookkeeping avoids extending the dependency chain, mispredicts rarely on real token structure, and lets
+speculation overlap consecutive tokens in the out-of-order window. This is the same mechanism the lane interleaving
+post-mortem identified: the reset to the start state cuts the serial chain at each token boundary and the processor
+overlaps the chains itself. Here the compiler had quietly welded the chains back together. An empty asm statement in the
+branch body now blocks the conversion, with a comment carrying the reasoning; alongside a 64-bit scan state that spares
+a per-byte zero-extension, Clang went from 211 to 475 MiB/s in the isolating experiment and from 236 to 498 MiB/s in the
+benchmark, within ten percent of GCC, which itself moved nowhere. The compilers now agree closely enough that the
+published numbers describe the library rather than the toolchain.
 
 ## **Construction at Unicode Scale**
 
-The runtime loop never paid for Unicode, but construction did, and the XID identifier classes made it measurable:
-an identifier pattern over the two generated property tables expands to an NFA of roughly 55,000 transitions, and
+The runtime loop never paid for Unicode, but construction did, and the XID identifier classes made it measurable: an
+identifier pattern over the two generated property tables expands to an NFA of roughly 55,000 transitions, and
 determinizing it took 230 seconds. Two structural faults in subset construction carried almost all of it. The walk
 advanced once per state-symbol *pair* rather than per distinct symbol, and the states of a byte-expanded class share
 their symbols almost entirely, so the same transition was recomputed thousands of times per set; epsilon closures were
@@ -121,9 +121,8 @@ under a single fresh start state (`merge_all`) registers the XID identifier patt
 second, and the shorter epsilon chains cut determinization further, 0.6 s to 0.45 s. The construction figures are
 tracked by `register/xid`, `build/xid`, and `total/xid` in the benchmark alongside `build/keywords`, and `lexer_all/xid`
 runs the Greek-identifier input through the XID grammar: it tracks the hand-rolled `lexer_all/utf8` scenario within
-noise (515.8 against 523.8 MiB/s median in one same-session pair): the property adds no Unicode-specific per-byte
-work, and its runtime impact is limited to the resulting DFA and table size, which for these grammars stay
-cache-resident.
+noise (515.8 against 523.8 MiB/s median in one same-session pair): the property adds no Unicode-specific per-byte work,
+and its runtime impact is limited to the resulting DFA and table size, which for these grammars stay cache-resident.
 
 ## **The Remaining Headroom Is Parallel**
 
@@ -135,28 +134,32 @@ on one core, and threads would scale the same chunking across cores for batch wo
 bandwidth today, so the ceiling is genuinely unclaimed.
 
 Chunks must begin at real token boundaries, and in this design that is not a heuristic but a property the automaton can
-certify at build time: a byte that no state except the start state consumes can only ever begin a token, so every
-occurrence is a safe split point, computable by one pass over the transition table. The start state's exemption holds
-only while no transition re-enters it, which a nullable pattern's self-looping start state does; the exemption then
-certifies nothing, and only bytes no state consumes remain vacuously safe. A token set whose strings or comments can
-contain any byte certifies no safe points, and the right behavior is to refuse and scan sequentially rather than
-speculate, in keeping with [limits.md](limits.md). The certification is built:
-`Lexer::is_split_point()` reports the certified bytes of a compiled token set, computed by that one pass in the
-simulator's constructor.
+certify at build time. Only transitions that can still end in acceptance matter, since no emitted token traverses any
+other; call those live. A byte that no live state consumes live, except possibly the start state, can only ever begin a
+token, so on any completely tokenizable input every occurrence is a safe split point. Computing it takes a reverse pass
+marking the live states and one sweep over the transition table. The start state's exemption holds only while no live
+transition re-enters it, which a nullable pattern's self-looping start state does; the exemption then certifies nothing,
+and only bytes no live state consumes remain vacuously safe. A token set whose strings or comments can contain any byte
+certifies no safe points, and the right behavior is to refuse and scan sequentially rather than speculate, in keeping
+with [limits.md](limits.md). The certification is built: `Lexer::is_split_point()` reports the certified bytes of a
+compiled token set, computed by those two passes in the simulator's constructor.
 
 The threaded chunking is measured, and the prediction registered here before the experiment held. The benchmark splits
 the input at the certified points nearest the equal-division offsets, runs one whole-input scan per chunk on its own
 thread, and first proves the chunked token stream identical to the serial one by an exact (kind, length) stream
 comparison before timing, keeping only a light tally as a consistency signal in the timed passes. On the benchmark token
-set, chunking scales the serial 651.7 MiB/s to 1161.8 MiB/s on two threads, 2292.9 MiB/s on four, and 3834.7 MiB/s on
-eight, with the source-shaped corpus within a few percent of the dense one at every width
-(`cmake -B build-perf -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON && cmake --build build-perf && ./build-perf/tools/benchmark/munch_benchmark 16 15`).
-That is 88% per-core efficiency at four threads against the 70% bar this section committed to in advance, and the shape
-confirms the diagnosis: the chains overlap almost perfectly because each thread's working set is a cache-resident table
-plus a streamed slice of input. The chunking has since been promoted into the library: `chunk_boundaries()` computes the
-certified plan and `tokenize_all_parallel()` runs it, one thread per chunk with the last on the calling thread, and the
-benchmark now routes through that entry point. The plan computation stays pure, so a caller owning its own thread pool
-can take the boundaries and leave the library's threads unused.
+set, chunking scales the serial 632.1 MiB/s to 1071.5 MiB/s on two threads, 2107.8 MiB/s on four, and 3528.9 MiB/s on
+eight, with the source-shaped corpus within a few percent of the dense one at every width. Those numbers are the
+archived run in `paper/data/benchmark.txt`, taken with the fixed-order harness at the commit the
+`benchmark/split-points-2026-07` tag preserves; `paper/README.md` gives the worktree recipe that rebuilds that exact
+program. Running the benchmark on current `master` will not reproduce them scenario by scenario, because the harness now
+interleaves the scaling scenarios and sweeps input sizes. That is a 3.33x end-to-end gain at four threads on the dense
+corpus, or 97% parallel efficiency measured against the same API driven with one chunk, either way clearing the 70% bar
+this section committed to in advance, and the shape confirms the diagnosis: the chains overlap almost perfectly because
+each thread's working set is a cache-resident table plus a streamed slice of input. The chunking has since been promoted
+into the library: `chunk_boundaries()` computes the certified plan and `tokenize_all_parallel()` runs it, one thread per
+chunk with the last on the calling thread, and the benchmark now routes through that entry point. The plan computation
+stays pure, so a caller owning its own thread pool can take the boundaries and leave the library's threads unused.
 
 The single-core variant was then built, measured, and reverted, and its failure taught more than the threaded success.
 The experiment flattened the scan into a per-byte state machine and stepped several lanes per loop iteration, each lane
@@ -193,10 +196,13 @@ to separate.
 ## **The Theory Is Old; the Discipline Is the Feature**
 
 None of this is novel. Determinization is Rabin and Scott (1959), the NFA construction is Thompson (1968), and "a
-minimal DFA is the optimal single-pass recognizer for a regular language" is textbook. What this library does is
-implement the sixty-year-old right answer without compromise, which is only possible by refusing every feature that
-would break the model: no captures, no backreferences, no unanchored search. Where a real language genuinely exceeds
-regular power, such as C++ raw string literals, the answer is a hand-written scanner beside the automaton (the
-tokenizer's `seek()` escape hatch and `scan_raw_string()`), never a compromise inside the engine. That refusal is the
-performance. The full inventory of what the library refuses, guarantees, and provides escape hatches for is in
+minimal DFA is the optimal single-pass recognizer for a regular language" is textbook. The minimizer here refines over a
+partial transition function, so it is minimal in that setting rather than in the Myhill-Nerode sense; the difference
+shows only where a subexpression denotes the empty language, leaving states no input can reach acceptance from. See
+[limits.md](limits.md). What this library does is implement the sixty-year-old right answer without compromise, which is
+only possible by refusing every feature that would break the model: no captures, no backreferences, no unanchored
+search. Where a construct is impractical for a single table, such as C++ raw string literals, whose bounded delimiter is
+regular in principle but ruinous to encode, the answer is a hand-written scanner beside the automaton (the tokenizer's
+`seek()` escape hatch and `scan_raw_string()`), never a compromise inside the engine. That refusal is the performance.
+The full inventory of what the library refuses, guarantees, and provides escape hatches for is in
 [limits.md](limits.md).
