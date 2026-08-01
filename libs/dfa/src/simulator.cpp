@@ -4,6 +4,7 @@
 #include <experimental/mdspan>
 #include <map>
 #include <ranges>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -46,7 +47,10 @@ std::size_t count_states(const Dfa& dfa)
 
 } // namespace
 
-Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
+Simulator::Simulator(const Dfa& dfa) : Simulator{dfa, {}}
+{}
+
+Simulator::Simulator(const Dfa& dfa, const std::span<const std::size_t> ignored) : init_state_{dfa.init_state()}
 {
     const auto states{count_states(dfa)};
 
@@ -92,11 +96,16 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
     // not be allowed to de-certify anything. Mark the states from which acceptance is still reachable.
     std::vector<std::vector<Entry_t>> predecessors(states);
 
-    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    // Once per class row, not once per symbol value. The table is compressed by symbol equivalence class, so walking
+    // all 256 values would push the same edge once per symbol sharing a class and leave the index larger than the
+    // table it indexes.
+    const std::set<std::size_t> rows{row_offsets_.begin(), row_offsets_.end()};
+
+    for (const auto row : rows)
     {
         for (std::size_t state{0}; state < states; ++state)
         {
-            if (const auto to{table_[row_offsets_[symbol] + state]}; to != no_state_)
+            if (const auto to{table_[row + state]}; to != no_state_)
             {
                 predecessors[to].push_back(static_cast<Entry_t>(state));
             }
@@ -197,6 +206,94 @@ Simulator::Simulator(const Dfa& dfa) : init_state_{dfa.init_state()}
         if (safe && consumes(symbol, init_state_))
         {
             split_points_[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
+        }
+    }
+
+    derive_split_points_ignoring(ignored, reachable, co_accessible, predecessors, init_reentrant);
+}
+
+// Condition three of the weaker certificate asks whether every token still reachable from a state is discarded. That
+// needs no per-state set of token IDs: it is the complement of "some kept token is still reachable", which one
+// backward closure settles for every state at once.
+//
+// Two details keep this linear in the table. The closure walks the reverse index the constructor already built for
+// co-accessibility, rather than rescanning every symbol and source state for each state it reaches, which would be
+// quadratic in the state count. And whether a state accepts a discarded token is resolved once per state, rather
+// than searching the ignored list from inside the symbol loop.
+void Simulator::derive_split_points_ignoring(
+        const std::span<const std::size_t> ignored, const std::vector<bool>& reachable,
+        const std::vector<bool>& co_accessible, const std::vector<std::vector<Entry_t>>& predecessors,
+        const bool init_reentrant)
+{
+    const auto states{accept_table_.size()};
+
+    const std::set<std::size_t> discarded{ignored.begin(), ignored.end()};
+
+    std::vector<bool> accepts_discarded(states, false);
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        accepts_discarded[state] = accept_table_[state] && discarded.contains(accept_table_[state]->id());
+    }
+
+    std::vector<bool> reaches_kept(states, false);
+
+    std::vector<std::size_t> work;
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (accept_table_[state] && !accepts_discarded[state])
+        {
+            reaches_kept[state] = true;
+
+            work.push_back(state);
+        }
+    }
+
+    while (!work.empty())
+    {
+        const auto to{work.back()};
+
+        work.pop_back();
+
+        for (const auto from : predecessors[to])
+        {
+            if (!reaches_kept[from])
+            {
+                reaches_kept[from] = true;
+
+                work.push_back(from);
+            }
+        }
+    }
+
+    const auto consumes{[this, &co_accessible](const std::size_t symbol, const std::size_t state) {
+        const auto to{table_[row_offsets_[symbol] + state]};
+
+        return to != no_state_ && co_accessible[to];
+    }};
+
+    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    {
+        auto safe{true};
+
+        for (std::size_t state{0}; safe && state < states; ++state)
+        {
+            if (!reachable[state] || !consumes(symbol, state) || (state == init_state_ && !init_reentrant))
+            {
+                continue;
+            }
+
+            // The left chunk must end on a complete token the caller discards, every token the severed one could
+            // still become must be discarded too, and the restart must land where the interrupted scan already is.
+            safe = accepts_discarded[state] && !reaches_kept[state] &&
+                   table_[row_offsets_[symbol] + state] == table_[row_offsets_[symbol] + init_state_];
+        }
+
+        // Vacuity is judged as for the exact map: a symbol no live state consumes is useless to a caller.
+        if (safe && consumes(symbol, init_state_))
+        {
+            split_points_ignoring_[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
         }
     }
 }

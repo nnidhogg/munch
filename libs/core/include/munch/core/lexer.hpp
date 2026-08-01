@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -104,6 +105,20 @@ public:
      * property is certified from the compiled transition table; see dfa::Simulator::is_split_point().
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept { return simulator_.is_split_point(symbol); }
+
+    /**
+     * @brief Reports whether the symbol is a safe split point once the discarded tokens are deleted.
+     *
+     * Never smaller than is_split_point(), and equal to it unless the builder was told which tokens are discarded.
+     * Chunks cut here reproduce the serial stream only after tokens of those kinds are removed from both, so a
+     * caller that keeps them must use is_split_point(). See dfa::Simulator::is_split_point_ignoring().
+     * @param symbol The symbol to test.
+     * @return True if every occurrence is safe under that weaker equivalence.
+     */
+    [[nodiscard]] bool is_split_point_ignoring(const char symbol) const noexcept
+    {
+        return simulator_.is_split_point_ignoring(symbol);
+    }
 
     /**
      * @brief Tokenizes a whole container in one pass, invoking the sink once per matched token.
@@ -253,6 +268,13 @@ private:
      * @param dfa The DFA to use for tokenization.
      */
     explicit Lexer(const dfa::Dfa& dfa) : simulator_{dfa} {}
+
+    /**
+     * @brief Constructs a lexer that also certifies split points modulo the tokens the caller discards.
+     * @param dfa The compiled DFA.
+     * @param ignored The IDs of tokens the caller deletes before using the stream.
+     */
+    Lexer(const dfa::Dfa& dfa, const std::span<const std::size_t> ignored) : simulator_{dfa, ignored} {}
 
     /**
      * @brief The simulator running the DFA the Lexer was constructed from.

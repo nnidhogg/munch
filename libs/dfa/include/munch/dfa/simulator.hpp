@@ -6,6 +6,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -88,6 +89,14 @@ public:
     explicit Simulator(const Dfa& dfa);
 
     /**
+     * @brief Compiles the given DFA, additionally certifying split points modulo a set of discarded tokens.
+     * @param dfa The DFA to simulate.
+     * @param ignored The IDs of tokens the caller discards before the stream is used.
+     * @throws std::runtime_error If the DFA has more states than a table entry can index.
+     */
+    Simulator(const Dfa& dfa, std::span<const std::size_t> ignored);
+
+    /**
      * @brief Returns whether the given symbol is a certified safe split point.
      *
      * A symbol is a safe split point when no state reachable after consuming input consumes it into a state that can
@@ -111,6 +120,28 @@ public:
         const auto value{static_cast<unsigned char>(symbol)};
 
         return ((split_points_[value >> 6U] >> (value & 63U)) & 1U) != 0;
+    }
+
+    /**
+     * @brief Reports whether the symbol is a safe split point once discarded tokens are deleted from the stream.
+     *
+     * Weaker than is_split_point(), and never stronger: every certified symbol satisfies this too, and with an empty
+     * ignored set the two coincide. A state may consume the symbol into a state that can still accept, provided the
+     * token the cut would sever vanishes from both streams. That holds when the state accepts an ignored token, when
+     * every token still reachable from it is ignored, and when advancing on the symbol from it and from the initial
+     * state reach the same state, so the restarted scan rejoins the interrupted one at once and only the one token
+     * containing the cut is disturbed.
+     *
+     * The guarantee is correspondingly weaker: chunks cut here reproduce the serial stream only after tokens of the
+     * ignored kinds are deleted from both. A caller that keeps them must use is_split_point() instead.
+     * @param symbol The symbol to test.
+     * @return True if every occurrence is a safe split point under that weaker equivalence.
+     */
+    [[nodiscard]] bool is_split_point_ignoring(const char symbol) const noexcept
+    {
+        const auto value{static_cast<unsigned char>(symbol)};
+
+        return ((split_points_ignoring_[value >> 6U] >> (value & 63U)) & 1U) != 0;
     }
 
     /**
@@ -318,6 +349,27 @@ private:
      * @brief The certified safe split points, as a 256-bit mask indexed by symbol value.
      */
     std::array<std::uint64_t, 4> split_points_{};
+
+    /**
+     * @brief The same bitmap under the weaker equivalence, indexed identically.
+     *
+     * A separate map rather than a mode on the first one: the two guarantees differ, so a caller that asks for one
+     * must not silently receive the other. With an empty ignored set they hold the same bits.
+     */
+    std::array<std::uint64_t, 4> split_points_ignoring_{};
+
+    /**
+     * @brief Fills split_points_ignoring_ from the tables the constructor has already built.
+     * @param ignored The token IDs the caller discards.
+     * @param reachable Which states a scan can arrive in.
+     * @param co_accessible Which states can still reach acceptance.
+     * @param predecessors The reverse index the constructor built for co-accessibility, reused here.
+     * @param init_reentrant Whether a reachable state re-enters the initial state, as the exact map judges it.
+     */
+    void derive_split_points_ignoring(
+            std::span<const std::size_t> ignored, const std::vector<bool>& reachable,
+            const std::vector<bool>& co_accessible, const std::vector<std::vector<Entry_t>>& predecessors,
+            bool init_reentrant);
 
     /**
      * @brief The table offset of the class row of each symbol value.

@@ -3,6 +3,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <initializer_list>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -65,6 +66,32 @@ public:
     {
         add_token(regex, {static_cast<std::size_t>(token), priority});
     }
+
+    /**
+     * @brief Declares the tokens the caller discards before using the stream.
+     *
+     * Only affects Lexer::is_split_point_ignoring(), which certifies split points under the weaker equivalence that
+     * deletes these tokens from both streams before comparing. The exact certificate is unaffected, so declaring a
+     * set never weakens a guarantee a caller was already relying on; it only makes the relaxed one available.
+     * @tparam T The token type used with add_token().
+     * @param tokens The tokens to treat as discarded.
+     */
+    template <typename T>
+    void set_ignored_tokens(const std::initializer_list<T> tokens)
+    {
+        ignored_.clear();
+
+        for (const auto token : tokens)
+        {
+            ignored_.push_back(static_cast<std::size_t>(token));
+        }
+    }
+
+    /**
+     * @brief Declares the discarded tokens by ID, for callers holding them as values rather than as enumerators.
+     * @param tokens The token IDs to treat as discarded.
+     */
+    void set_ignored_tokens(std::vector<std::size_t> tokens) { ignored_ = std::move(tokens); }
 
     /**
      * @brief Builds and returns the constructed Lexer.
@@ -168,6 +195,12 @@ private:
      * @brief The determinization cap set_state_limit() installed; zero means unlimited.
      */
     std::size_t state_limit_{0};
+
+    /**
+     * @brief The token IDs set_ignored_tokens() declared, passed to the Lexer so it can certify the weaker split
+     *        points. Empty by default, in which case the two certificates coincide.
+     */
+    std::vector<std::size_t> ignored_;
 };
 
 } // namespace munch::core
