@@ -41,7 +41,7 @@ public:
     {
         auto states{nfa.epsilon_closure({nfa.init_state()})};
 
-        Match result{nfa.has_accept_token(states), 0};
+        Match result{.token = nfa.has_accept_token(states), .length = 0};
 
         // Counted, not measured: std::distance would need begin, which a single-pass iterator invalidates.
         std::size_t consumed{0};
@@ -57,7 +57,7 @@ public:
 
             if (const auto token = nfa.has_accept_token(states); token)
             {
-                result = {token, consumed};
+                result = {.token = token, .length = consumed};
             }
         }
 

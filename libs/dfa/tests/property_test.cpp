@@ -68,7 +68,8 @@ Dfa random_dfa(Random& random)
 }
 
 /**
- * @brief Builds a random DFA containing a self-looping run, the shape a trivia-modulo split point lives in.
+ * @brief Builds a random DFA containing a self-looping run, the shape a split point modulo discarded tokens
+ * lives in.
  *
  * random_dfa() wires transitions densely, so nearly every symbol is consumed from nearly every state and almost
  * nothing certifies. That makes it a good adversarial generator and a poor source of positive cases. This one
@@ -193,7 +194,7 @@ Simulator::Match reference_run(const Dfa& dfa, const std::string& input)
 {
     auto state{dfa.init_state()};
 
-    Simulator::Match result{dfa.has_accept_token(state), 0};
+    Simulator::Match result{.token = dfa.has_accept_token(state), .length = 0};
 
     for (std::size_t index{0}; index < input.size(); ++index)
     {
@@ -208,7 +209,7 @@ Simulator::Match reference_run(const Dfa& dfa, const std::string& input)
 
         if (const auto token{dfa.has_accept_token(state)}; token)
         {
-            result = {token, index + 1};
+            result = {.token = token, .length = index + 1};
         }
     }
 
