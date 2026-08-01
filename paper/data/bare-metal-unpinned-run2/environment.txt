@@ -1,0 +1,46 @@
+collected:  2026-07-31 23:19:41 UTC
+commit:     141b12e1bb6ca8cf66afb2ba07915ead4772d11d
+dirty:      no
+sizes:      1,16,128,512 MiB
+passes:     15
+
+== cpu ==
+Architecture:                            x86_64
+CPU(s):                                  32
+Vendor ID:                               AuthenticAMD
+Model name:                              AMD Ryzen 9 9950X3D 16-Core Processor
+Thread(s) per core:                      2
+Core(s) per socket:                      16
+Socket(s):                               1
+CPU(s) scaling MHz:                      35%
+CPU max MHz:                             5756.4521
+CPU min MHz:                             624.1940
+L1d cache:                               768 KiB (16 instances)
+L2 cache:                                16 MiB (16 instances)
+L3 cache:                                128 MiB (2 instances)
+
+== topology visible to the process ==
+nproc:      32
+governor:   performance
+boost:      1
+
+== memory ==
+               total        used        free      shared  buff/cache   available
+Mem:            59Gi        12Gi        33Gi       882Mi        14Gi        46Gi
+Swap:          8.0Gi          0B       8.0Gi
+
+== os ==
+Linux rick 7.0.0-28-generic #28-Ubuntu SMP PREEMPT_DYNAMIC Sun Jun 21 01:01:36 UTC 2026 x86_64 GNU/Linux
+distro:     Ubuntu 26.04 LTS
+container:  none detected
+wsl:        no
+
+== toolchain ==
+c++ (Ubuntu 15.2.0-16ubuntu1) 15.2.0
+cmake version 4.2.3
+
+== load at start ==
+ 01:19:41 up 15:13,  3 users,  load average: 0.55, 0.54, 0.52
+
+== load at end ==
+ 01:21:34 up 15:15,  3 users,  load average: 1.83, 1.07, 0.72

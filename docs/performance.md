@@ -148,18 +148,18 @@ The threaded chunking is measured, and the prediction registered here before the
 the input at the certified points nearest the equal-division offsets, runs one whole-input scan per chunk on its own
 thread, and first proves the chunked token stream identical to the serial one by an exact (kind, length) stream
 comparison before timing, keeping only a light tally as a consistency signal in the timed passes. On the benchmark token
-set, chunking scales the serial 632.1 MiB/s to 1071.5 MiB/s on two threads, 2107.8 MiB/s on four, and 3528.9 MiB/s on
-eight, with the source-shaped corpus within a few percent of the dense one at every width. Those numbers are the
-archived run in `paper/data/benchmark.txt`, taken with the fixed-order harness at the commit the
-`benchmark/split-points-2026-07` tag preserves; `paper/README.md` gives the worktree recipe that rebuilds that exact
-program. Running the benchmark on current `master` will not reproduce them scenario by scenario, because the harness now
-interleaves the scaling scenarios and sweeps input sizes. That is a 3.33x end-to-end gain at four threads on the dense
-corpus, or 97% parallel efficiency measured against the same API driven with one chunk, either way clearing the 70% bar
-this section committed to in advance, and the shape confirms the diagnosis: the chains overlap almost perfectly because
-each thread's working set is a cache-resident table plus a streamed slice of input. The chunking has since been promoted
-into the library: `chunk_boundaries()` computes the certified plan and `tokenize_all_parallel()` runs it, one thread per
-chunk with the last on the calling thread, and the benchmark now routes through that entry point. The plan computation
-stays pure, so a caller owning its own thread pool can take the boundaries and leave the library's threads unused.
+set, chunking scales the one-chunk 730.1 MiB/s to 1434.2 MiB/s on two threads, 2828.0 MiB/s on four, and 5568.3 MiB/s on
+eight, with the source-shaped corpus within a few percent of the dense one at every width. Those numbers are the pinned
+bare-metal run in `paper/data/bare-metal-pinned-run2/`, on a 512 MiB corpus four times the machine's last-level cache,
+taken at the commit its `environment.txt` records. `paper/data/benchmark.txt` holds the older virtualized run, and
+`paper/data/README.md` explains what separates them. That is 93-95% parallel efficiency at eight threads measured
+against the same API driven with one chunk, and 3.5-3.9x end to end at four threads, both across two benchmark revisions
+on one machine, either way clearing the 70% bar this section committed to in advance, and the shape confirms the
+diagnosis: the chains overlap almost perfectly because each thread's working set is a cache-resident table plus a
+streamed slice of input. The chunking has since been promoted into the library: `chunk_boundaries()` computes the
+certified plan and `tokenize_all_parallel()` runs it, one thread per chunk with the last on the calling thread, and the
+benchmark now routes through that entry point. The plan computation stays pure, so a caller owning its own thread pool
+can take the boundaries and leave the library's threads unused.
 
 The single-core variant was then built, measured, and reverted, and its failure taught more than the threaded success.
 The experiment flattened the scan into a per-byte state machine and stepped several lanes per loop iteration, each lane

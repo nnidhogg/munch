@@ -1,0 +1,68 @@
+lexer/ascii      1.0 MiB, 571472 tokens, 15 passes: best 661.5, median 652.4, worst 581.5 MiB/s
+tokenizer/ascii  1.0 MiB, 571472 tokens, 15 passes: best 623.3, median 620.3, worst 611.1 MiB/s
+lexer_all/utf8   1.0 MiB, 520212 tokens, 15 passes: best 740.2, median 728.5, worst 719.0 MiB/s
+lexer_all/xid    1.0 MiB, 520212 tokens, 15 passes: best 718.5, median 717.3, worst 707.5 MiB/s
+build/keywords   143 patterns, 251 states, 15 passes: best 16.0, median 16.1, worst 16.1 ms
+register/xid     3 patterns, 477 states, 15 passes: best 43.8, median 44.3, worst 45.3 ms
+build/xid        3 patterns, 477 states, 15 passes: best 295.1, median 296.6, worst 305.2 ms
+total/xid        3 patterns, 477 states, 15 passes: best 339.4, median 341.0, worst 349.0 ms
+plan/frequent   8 of 8 chunks, 15 passes: best 0.1, median 0.1, worst 0.1 us
+plan/rare       8 of 8 chunks, 15 passes: best 1020.6, median 1021.0, worst 1024.0 us
+plan/absent     1 of 8 chunks, 15 passes: best 16352.0, median 16365.5, worst 17104.6 us
+plan/uncertified 1 of 8 chunks, 15 passes: best 0.0, median 0.0, worst 0.0 us
+total/serial-frequent   838861 tokens, 15 passes: best 12.4, median 12.4, worst 12.4 ms
+total/parallel-frequent 838861 tokens, 15 passes: best 1.7, median 1.7, worst 2.1 ms
+total/serial-absent     1 tokens, 15 passes: best 18.1, median 18.2, worst 18.2 ms
+total/parallel-absent   1 tokens, 15 passes: best 34.1, median 34.5, worst 35.1 ms
+threads/1        spawn and join, 15 passes: best 0.0, median 0.0, worst 0.0 us
+threads/2        spawn and join, 15 passes: best 6.4, median 6.9, worst 7.9 us
+threads/4        spawn and join, 15 passes: best 14.2, median 14.8, worst 24.7 us
+threads/8        spawn and join, 15 passes: best 36.4, median 39.7, worst 48.4 us
+
+scaling at 1 MiB, 15 interleaved rounds
+lexer_all/ascii  1.0 MiB, 571472 tokens, 15 passes: best 796.7, median 767.5, worst 753.9 MiB/s
+lexer_all/source 1.0 MiB, 297264 tokens, 15 passes: best 733.5, median 719.1, worst 713.8 MiB/s
+chunked1/ascii   1.0 MiB, 571472 tokens, 15 passes: best 750.9, median 728.5, worst 668.6 MiB/s
+chunked1/source  1.0 MiB, 297264 tokens, 15 passes: best 715.4, median 699.8, worst 673.6 MiB/s
+chunked2/ascii   1.0 MiB, 571472 tokens, 15 passes: best 1457.6, median 1436.1, worst 1426.0 MiB/s
+chunked2/source  1.0 MiB, 297264 tokens, 15 passes: best 1399.2, median 1391.7, worst 1372.6 MiB/s
+chunked4/ascii   1.0 MiB, 571472 tokens, 15 passes: best 2841.0, median 2780.4, worst 2732.1 MiB/s
+chunked4/source  1.0 MiB, 297264 tokens, 15 passes: best 2726.0, median 2661.6, worst 2535.5 MiB/s
+chunked8/ascii   1.0 MiB, 571472 tokens, 15 passes: best 4723.7, median 4685.9, worst 4056.9 MiB/s
+chunked8/source  1.0 MiB, 297264 tokens, 15 passes: best 4607.5, median 4499.7, worst 4210.8 MiB/s
+
+scaling at 16 MiB, 15 interleaved rounds
+lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 788.5, median 771.5, worst 767.0 MiB/s
+lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 745.0, median 733.3, worst 730.3 MiB/s
+chunked1/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 735.2, median 686.9, worst 680.8 MiB/s
+chunked1/source  16.0 MiB, 4755600 tokens, 15 passes: best 713.4, median 688.5, worst 683.1 MiB/s
+chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1455.4, median 1374.3, worst 1326.5 MiB/s
+chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1404.1, median 1374.3, worst 1322.5 MiB/s
+chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 2748.1, median 2679.5, worst 2563.2 MiB/s
+chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 2761.9, median 2671.7, worst 2561.2 MiB/s
+chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 5721.2, median 5074.6, worst 4863.4 MiB/s
+chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 5302.8, median 4898.3, worst 3209.2 MiB/s
+
+scaling at 128 MiB, 15 interleaved rounds
+lexer_all/ascii  128.0 MiB, 73162100 tokens, 15 passes: best 821.3, median 788.4, worst 733.7 MiB/s
+lexer_all/source 128.0 MiB, 38037840 tokens, 15 passes: best 759.6, median 738.5, worst 715.7 MiB/s
+chunked1/ascii   128.0 MiB, 73162100 tokens, 15 passes: best 752.8, median 722.8, worst 671.0 MiB/s
+chunked1/source  128.0 MiB, 38037840 tokens, 15 passes: best 716.4, median 709.3, worst 679.1 MiB/s
+chunked2/ascii   128.0 MiB, 73162100 tokens, 15 passes: best 1464.8, median 1432.1, worst 1334.0 MiB/s
+chunked2/source  128.0 MiB, 38037840 tokens, 15 passes: best 1432.6, median 1403.8, worst 1351.5 MiB/s
+chunked4/ascii   128.0 MiB, 73162100 tokens, 15 passes: best 2898.2, median 2782.3, worst 2638.8 MiB/s
+chunked4/source  128.0 MiB, 38037840 tokens, 15 passes: best 2804.3, median 2735.4, worst 2656.3 MiB/s
+chunked8/ascii   128.0 MiB, 73162100 tokens, 15 passes: best 5660.8, median 5420.4, worst 3769.0 MiB/s
+chunked8/source  128.0 MiB, 38037840 tokens, 15 passes: best 5585.8, median 5450.2, worst 3367.4 MiB/s
+
+scaling at 512 MiB, 15 interleaved rounds
+lexer_all/ascii  512.0 MiB, 292637972 tokens, 15 passes: best 820.6, median 818.0, worst 751.2 MiB/s
+lexer_all/source 512.0 MiB, 152160096 tokens, 15 passes: best 759.3, median 757.5, worst 736.0 MiB/s
+chunked1/ascii   512.0 MiB, 292637972 tokens, 15 passes: best 754.1, median 730.1, worst 688.6 MiB/s
+chunked1/source  512.0 MiB, 152160096 tokens, 15 passes: best 714.5, median 711.1, worst 693.0 MiB/s
+chunked2/ascii   512.0 MiB, 292637972 tokens, 15 passes: best 1474.0, median 1434.2, worst 1341.8 MiB/s
+chunked2/source  512.0 MiB, 152160096 tokens, 15 passes: best 1428.9, median 1415.0, worst 1368.7 MiB/s
+chunked4/ascii   512.0 MiB, 292637972 tokens, 15 passes: best 2872.8, median 2828.0, worst 2645.4 MiB/s
+chunked4/source  512.0 MiB, 152160096 tokens, 15 passes: best 2805.6, median 2763.0, worst 2666.3 MiB/s
+chunked8/ascii   512.0 MiB, 292637972 tokens, 15 passes: best 5723.9, median 5568.3, worst 5233.0 MiB/s
+chunked8/source  512.0 MiB, 152160096 tokens, 15 passes: best 5591.5, median 5500.5, worst 4791.7 MiB/s

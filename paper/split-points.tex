@@ -33,7 +33,7 @@
 
 \title{Certified Split Points:\\Parallel Lexing Without Speculation}
 \author{Nicklas Nidh\"ogg\\[0.4em] \normalsize Independent Researcher\\ \normalsize
-\texttt{nicklas.nidhogg@gmail.com}}
+\texttt{nicklas.nidhogg@gmail.com}\\ \normalsize ORCID: 0009-0006-6161-6150}
 \date{July 2026}
 
 \begin{document}
@@ -51,8 +51,9 @@ begins a token, so chunks starting there reproduce the serial sequence of token 
 concatenation, with no speculation, no overlap, and no merge beyond it. The condition is necessary as well as
 sufficient, so a token set certifying nothing admits no single-byte split symbol at all. Deriving it costs
 $O(|Q|\,|\Sigma|)$ once and leaves the scan loop untouched. Implemented in the munch lexer library~\cite{munch}, it
-reaches a $3.33\times$ end-to-end speedup at four threads on the dense corpus of the archived 16\,MiB warm-cache run
-described in Section~\ref{sec:evaluation}. The method is deliberately partial, since one string,
+reaches 93--95\% parallel efficiency at eight threads on a 512\,MiB corpus four times the last-level cache, and a
+$3.5$--$3.9\times$ end-to-end speedup at four threads, both across two benchmark revisions on one machine. The method
+is deliberately partial, since one string,
 comment, or run token can eliminate every useful certificate; it turns delimiter-based parallel lexing from a
 language-specific assumption into a property a compiler checks.
 \end{abstract}
@@ -108,21 +109,31 @@ Published solutions accept the unknown-state problem and manage it.
 state of the extended automaton to be a mapping from entry state to exit state, so one ordinary pass over a chunk
 yields that chunk's whole transfer function; the mappings compose associatively and chunks combine in a parallel
 reduction. The per-state simulation is therefore paid at construction rather than at scan time, and the authors
-report almost no runtime overhead. What it costs is the size of the constructed automaton, exponential in general
-though about quadratic for the expressions they survey, and the reduction step remains. Composition can also be applied
-directly instead of compiled in, and in that form it is the oldest answer of all: Hillis and
-Steele~\cite{hillis1986dataparallel} treat each character as a unary function on states, observe that the induced
-composition is associative, and recover the state after every character with one parallel-prefix operation. Their
-worked example is lexing program text. A GPU lexer applies the same scan to recover the complete state stream, the
-state after every input position rather than only each chunk's entry state~\cite{voetter2021gpu}. Holding one function
-table per input position costs $O(|Q|n)$ space, so that work precomputes the reachable compositions and identifies each
-by an integer, reducing composition to a two-dimensional lookup. The trade is the same one the simultaneous construction makes, paid in a table rather than in states.
+report almost no runtime overhead. What it costs is the size of the constructed automaton: a state is a map on states,
+so the worst case is $n^n$ from a DFA with $n$ states and $2^{n^2}$ from an NFA, though for the expressions they
+survey it is usually far smaller: of the more than 20,000 SNORT expressions they measure, 98.6\% give a D-SFA no
+larger than the square of the minimal DFA, 279 exceed it and six exceed its cube. The reduction step also remains.
+Composition can also be applied directly instead of compiled in, and in that form it is the oldest answer of all:
+Hillis and Steele~\cite{hillis1986dataparallel} treat each character as a unary function on states, observe that the
+induced composition is associative, and recover the state after every character with one parallel-prefix operation.
+Their worked example is lexing program text. Data-parallel finite-state machines~\cite{mytkowicz2014dpfsm} take the
+same route on SIMD and multicore hardware, enumerating transitions from every possible start state so that the
+enumeration is exactly the transition function, and citing Hillis and Steele as the basis for doing so; the correct
+computation is selected afterwards, so nothing is guessed and nothing needs repair. The cost is a factor of $|Q|$ in
+work, which convergence reduces in practice, though the authors report that convergence to a single state is rare. A
+GPU lexer applies the same scan to recover the complete state stream, the state after every input position rather than
+only each chunk's entry state~\cite{voetter2021gpu}. Holding one function table per input position costs $O(|Q|n)$
+space, so that work precomputes the reachable compositions and identifies each by an integer, reducing composition to
+a two-dimensional lookup. The trade is the same one the simultaneous construction makes, paid in a table rather than
+in states.
 
-\paragraph{Speculate and repair.} Data-parallel finite-state machines~\cite{mytkowicz2014dpfsm} and enumerative
-speculation~\cite{jiang2017enumerative} start each chunk from one or a few guessed states, exploiting the empirical
-observation that real automata converge quickly. Correctness is recovered through enumeration, validation, or
-re-execution; what remains uncertain is how much redundant work the recovery costs, and with it the speedup.
-Reduced-interface automata~\cite{borsotti2025ridfa} shrink the set of entry states worth retaining.
+\paragraph{Carry fewer entry states.} Composition is exact but pays for every state. A second family attacks that cost
+by shrinking the set a chunk must carry. Enumerative speculation sits deliberately between the extremes: rather than
+speculating on a single state or enumerating all of them, it speculates transitions from several states chosen by a
+lookback over the preceding input~\cite{jiang2017enumerative}. Reduced-interface DFAs~\cite{borsotti2025ridfa} attack
+the same overhead from the automaton side, cutting the number of starting states a chunk automaton must carry by
+combining an NFA's state reduction with deterministic transitions. What remains uncertain in this family is how much
+redundant work is left when a speculation misses, and with it the speedup.
 
 \paragraph{Relocate cuts to a language's separators.} Parallel lexers have long been built by cutting near equal
 divisions and sliding each cut to a language-specific separator~\cite{barenghi2015parallel}. The separator and the
@@ -132,10 +143,13 @@ each worker carrying one computation per alternative and up to four at once in t
 case~\cite{barenghi2015parallel}. The technique is therefore separator relocation combined with state enumeration, not a
 proof that the separator is safe. Its worked cases are the direct antecedent of
 Section~\ref{sec:applicability}: newline preserves JSON's non-trivia token stream, since no non-trivia lexeme admits
-it, yet it is
-rejected in practice because generated JSON may contain none, and Lua defeats local inspection because strings and
-comments span lines~\cite{barenghi2015parallel}, an assessment Plex restates~\cite{li2021plex}. What is missing is
-any way to decide, from the token set alone, whether a proposed separator is sound.
+it, yet it is rejected in practice because generated JSON may contain none. Lua fails for a stronger reason than any
+certificate could address: its long-bracket delimiters \code{[=$^n$[} and \code{]=$^n$]} must agree on $n$, so the
+lexical grammar is not regular, the set of possible delimiters is unbounded, and with it the set of possible entry
+states; no fixed lookahead can decide which delimiter, if any, encloses a chunk~\cite{barenghi2015parallel}. Barenghi
+et al. recover a workable schema only by constraining the language, admitting just \code{[[} and \code{]]} for strings
+and requiring multi-line comments to end at a newline, after which newline does serve as their split point. What is
+missing is any way to decide, from the token set alone, whether a proposed separator is sound.
 
 \paragraph{Prescan for context.} Plex~\cite{li2021plex} removes the need for delimiters entirely. It derives a
 prescanning automaton from the lexer's own DFA, embedding backtracking cases into it, and runs that automaton over
@@ -152,9 +166,10 @@ as future work there. The two analyses are complementary: StreamTok bounds the c
 the certificate identifies positions where no preceding context is needed at all.
 
 \paragraph{Recover a restart point after an edit.} Incremental lexers face the mirror of this
-question~\cite{wagner1997incremental}: after an edit, how far back must re-lexing begin for the result to equal a
-full re-scan. They answer it dynamically and per edit, from lookahead recorded with each token as the input was
-last scanned. The certificate answers a static question instead, once per token set and before any input exists,
+question~\cite{wagner1997lexing}: after an edit, how far back must re-lexing begin for the result to equal a full
+re-scan. They answer it dynamically and per edit, saving the batch machine's state with each token as it is created
+so analysis can restart at any token boundary, and tracking lookahead dependencies as they arise rather than bounding
+them in advance. The certificate answers a static question instead, once per token set and before any input exists,
 and the two are complementary: a restart point is a fact about one input and its history, a certified byte is a
 fact about the grammar. An incremental divide-and-conquer lexer~\cite{hugo2015incremental} takes the other route
 open to it, storing a result for every possible entry state of a fragment and composing the resulting transition
@@ -162,10 +177,13 @@ maps, which places it with the all-state family rather than with boundary certif
 
 \paragraph{Restrict the automaton.} Holub and \v{S}tekr's parallel run~\cite{holub2009parallel} is exact and
 efficient for $k$-local automata, in which any $k$ consecutive symbols force a unique state regardless of the
-starting state. The property is uniform over the whole automaton, and most lexical grammars do not have it.
+starting state. The property is uniform over the whole automaton rather than per symbol, and a lexical grammar need
+not have it.
 
-\paragraph{Overlap and verify.} Lossless parallel tokenization for language-model vocabularies~\cite{shao2025lopt}
-splits at fixed offsets with overlap regions and verifies that adjacent chunks agree inside the overlap.
+\paragraph{Realign after the fact.} Parallel tokenization for language-model vocabularies faces the same boundary
+problem, and the overlap-based answer to it, extending chunks so neighbours share a region and merging inside it, does
+not guarantee the sequential result. LoPT~\cite{shao2026lopt} instead matches on character positions and adjusts chunk
+lengths dynamically to realign the segments, and proves the merged output identical to sequential tokenization.
 
 \paragraph{Assume a delimiter.} Data systems split logs and CSV at newlines because ``records do not contain
 newlines'', adjusting each cut to the next delimiter. The assumption is per-format and informal, and it is famously
@@ -438,10 +456,10 @@ together give the trim subautomaton the results are stated over; subset construc
 the analysis is exposed on a simulator that accepts any transition table, and an unreachable state left by a
 hand-assembled one would otherwise produce false negatives. One scan then detects whether any reachable entry targets
 $q_0$, establishing re-entrancy, and a sweep over the $|\Sigma| \times |Q|$ table records, for each byte, whether any
-non-exempt reachable live state consumes it into $Q^+$. The result is a $|\Sigma|$-bit set. Every pass visits each table entry a constant number of
-times, so the cost stays $O(|Q|\,|\Sigma|)$, with the same bound in auxiliary space for the predecessor list; it is paid
-once, amortized into a construction that already did strictly more work to produce the table, and the scanner's inner
-loop is untouched.
+non-exempt reachable live state consumes it into $Q^+$. The result is a $|\Sigma|$-bit set. Every pass visits each
+table entry a constant number of times, so the cost stays $O(|Q|\,|\Sigma|)$, with the same bound in auxiliary space
+for the predecessor list; it is paid once, amortized into a construction that already did strictly more work to
+produce the table, and the scanner's inner loop is untouched.
 
 Three operations expose the property. A predicate reports whether a byte is a useful certified split symbol, the set of
 Corollary~\ref{cor:useful}. A planner divides an input into chunks by sliding each interior boundary forward from its
@@ -544,15 +562,16 @@ grammar, \code{keyword\_scale\_builder()} in \code{tools/benchmark/src/main.cpp}
 including \code{++}, \code{==} and \code{->} and admits a decimal point inside a number. Every byte occurring after
 the first position of some operator therefore has a live mid-token state on it, and seven candidates fall that way:
 \code{= < > \& | + -}. The decimal point falls independently, not as an operator continuation but because
-\code{decimal\_float()} admits it inside a number, bringing the total to eight. The scaling grammar, \code{build\_lexer(false)} in
-\code{tools/benchmark/src/harness.cpp}, has a smaller operator set in which every multi-byte operator has \code{=} as
-its only continuation byte, so only \code{=} is lost and thirteen of its fourteen candidates certify. Both collapses are partial. What they show is
-that ``operators certify'' is a claim about the particular literals a grammar registers, so the grammar has to be named
-rather than described: these two C-like benchmark grammars recognize different operator and number languages, and they
-certify different sets. The sharper claim, that certification depends on the tokenization and not on the recognized
-language, needs a pair recognizing the same language, and the conventional and split-friendly rows below are that
-pair: identical token kinds and identical accepted input, differing only in whether newline is folded into the
-whitespace run, and certifying nothing versus certifying newline.
+\code{decimal\_float()} admits it inside a number, bringing the total to eight. The scaling grammar,
+\code{build\_lexer(false)} in \code{tools/benchmark/src/harness.cpp}, has a smaller operator set in which every
+multi-byte operator has \code{=} as its only continuation byte, so only \code{=} is lost and thirteen of its fourteen
+candidates certify. Both collapses are partial. What they show is that ``operators certify'' is a claim about the
+particular literals a grammar registers, so the grammar has to be named rather than described: these two C-like
+benchmark grammars recognize different operator and number languages, and they certify different sets. The sharper
+claim, that certification depends on the tokenization and not on the recognized language, needs a pair recognizing the
+same language, and the conventional and split-friendly rows below are that pair: identical token kinds and identical
+accepted input, differing only in whether newline is folded into the whitespace run, and certifying nothing versus
+certifying newline.
 
 All three mechanisms point at the same design lever: certification is a property of the \emph{tokenization} rather
 than an intrinsic one, and a tokenization can sometimes be refactored without changing what is recognized at all. The
@@ -577,7 +596,8 @@ lengths, and under that semantics a newline inside a maximal whitespace token is
 surveyed here follows the RFC 8259 lexical forms~\cite{bray2017json} over byte input, with the full string escapes,
 signed numbers with fraction and exponent, the three literal names, and whitespace runs emitted as tokens, so it is
 refused exactly as it should be. It is a lexer over bytes rather than a conforming JSON processor: string interiors
-admit any byte from \code{0x20} up except quote and backslash, so UTF-8 well-formedness, which RFC 8259 requires, is
+admit any byte from \code{0x20} up except quote and backslash, so UTF-8 well-formedness, which RFC 8259 requires of
+JSON exchanged outside a closed ecosystem, is
 assumed of the input rather than checked here. That is orthogonal to certification, since validating it would only
 remove bytes from string interiors and so could not de-certify anything that certifies now. The two results do not
 conflict; they quantify over different streams. A scanner that discards trivia can therefore split safely at newline
@@ -589,78 +609,131 @@ kinds.
 \section{Evaluation}
 \label{sec:evaluation}
 
-All figures were measured on an Intel Core i9-12900K, a hybrid part with eight performance cores carrying two-way
-SMT and eight efficiency cores, so sixteen physical cores and 24 logical processors, on an ASUS ROG Maximus Z690
-Hero with 32\,GiB of memory. The host is Windows 11 build 26200 with virtualization-based security enabled; the
-measurements ran under WSL 2.7.11 on kernel 6.18.33.2-microsoft-standard-WSL2, Ubuntu 24.04.4 LTS, glibc 2.39, with
-all 24 logical processors and 15\,GiB of memory visible to the guest. The library and the benchmark were compiled
-by GCC 13.3.0 at \code{-O2} (\code{CMAKE\_BUILD\_TYPE=Release}). Corpora are 16\,MiB and fixed-seed, and each
-measurement reports the best, median, and worst of 15 passes. The summarized output is archived with this report as
-\code{data/benchmark.txt}. Before any timing, the benchmark checks that the chunked token stream is identical to the
+The evaluation reports two machines. The first is the one the method was developed on and is retained because the
+contrast with the second is itself a result: a figure that looks like a property of the API on one does not hold its
+value, or even its sign, across environments and benchmark revisions.
+
+\paragraph{Environment A, virtualized.} An Intel Core i9-12900K, a hybrid part with eight performance cores carrying
+two-way SMT and eight efficiency cores, so sixteen physical cores and 24 logical processors, on an ASUS ROG Maximus
+Z690 Hero with 32\,GiB of memory. The host is Windows 11 build 26200 with virtualization-based security enabled;
+the measurements ran under WSL 2.7.11 on kernel 6.18.33.2-microsoft-standard-WSL2, Ubuntu 24.04.4 LTS, glibc 2.39,
+with all 24 logical processors and 15\,GiB of memory visible to the guest. Compiled by GCC 13.3.0 at \code{-O2}.
+Corpora are 16\,MiB and fixed-seed, scenarios run in a fixed order, and the archive holds summaries only
+(\code{data/benchmark.txt}).
+
+Four properties of this environment bound what its figures establish, and we state them rather than adjust for them.
+The guest does not see the host's hybrid topology: it reports twelve cores of two threads each, so a performance core
+is indistinguishable from an efficiency core from inside the measurement. Threads are not pinned, and could not
+usefully be while that holds. The guest is given no \code{cpufreq} interface, so the clock is neither fixed nor
+observable. And the machine was not quiesced. The corpora are also cache-resident, 16\,MiB against a 30\,MB
+last-level cache, so these are warm-cache figures throughout.
+
+\paragraph{Environment B, bare metal.} An AMD Ryzen 9 9950X3D, sixteen physical cores with two-way SMT across two L3
+domains of eight cores each, 128\,MiB of L3 in total, 59\,GiB of memory, Ubuntu 26.04 on kernel 7.0.0-28-generic,
+compiled by GCC 15.2.0 at \code{-O2}. The \code{performance} governor was set, which biases the clock toward its
+maximum but does not fix it: boost remains enabled, and the archived \code{lscpu -e} of the pinned run reported in
+Table~\ref{tab:scaling} shows 22 distinct frequencies between 624 and 5711\,MHz across the 32 processors at the
+instant it was taken. The clock is therefore observable
+here, unlike in Environment A, but not controlled. The topology is visible and archived; scenarios run in interleaved
+rounds reshuffled per round from a fixed seed; and corpora sweep 1, 16, 128 and 512\,MiB. Every pass of the ten
+scaling scenarios is recorded individually in \code{data/bare-metal-unpinned-run2/} and
+\code{data/bare-metal-pinned-run2/}; the construction, planning and thread-launch figures below are summaries over 15
+passes, not per-pass records.
+
+This environment is measured in two placements, each run twice, giving four archives. The unpinned runs may place
+threads on any of the 32 logical processors. The
+pinned run confines the process to the eight physical cores of a single L3 domain (\code{taskset -c 0-7}), which
+excludes the SMT siblings and the other L3 domain from the set the scheduler may use, so eight threads have eight
+distinct physical cores available to them. It constrains placement rather than fixing it: threads remain free to
+migrate within those eight cores, and nothing prevents two from sharing one. It
+was not quiesced either: three login sessions were present, with load averages of 0.55 and 1.83 before the unpinned
+and pinned runs of Tables~\ref{tab:scaling} and~\ref{tab:planning}. The second figure is largely the first run's own
+residue, the two having started two minutes apart, which is itself the point: the machine was busy with the previous
+measurement.
+
+The 512\,MiB corpus is four times the machine's aggregate last-level cache, and the pinned process is confined to
+one of the two L3 domains, so it exceeds whatever share is actually reachable by a comfortable margin. The archive
+does not record the two domains' capacities separately, so the sweep is read conservatively: 512\,MiB is out of cache
+under any split of the 128\,MiB aggregate.
+Before any timing, and in both environments, the benchmark checks that the chunked token stream is identical to the
 serial one by an exact (kind, length) comparison.
-
-Four properties of this environment bound what the parallel figures can establish, and we state them rather than adjust
-for them. First, the guest does not see the host's hybrid topology: it reports twelve cores of two threads each, so a
-performance core is indistinguishable from an efficiency core from inside the measurement. Second, threads are not
-pinned, and could not usefully be while the first point holds: a $k$-thread run may be scheduled onto any mixture of
-core types, and the efficiency cores are materially slower. Third, the guest is given no \code{cpufreq} interface, so
-the clock is neither fixed nor observable from inside the measurement; turbo residency falls as more cores become busy,
-which depresses measured parallel efficiency independently of the algorithm. Fourth, the machine was not quiesced: it
-carried an ordinary interactive desktop load while the figures were taken, which competes for cores at the higher thread
-counts. Reporting the best, median, and worst of 15 passes exposes the resulting spread rather than averaging it away.
-
-These factors make absolute throughput and higher-thread-count scaling sensitive to thread placement, clock behaviour,
-and host activity. We draw no directional conclusion from them: the scenarios are measured at different points within a
-run rather than interleaved, so drift in any of these can bias a particular ratio either way, not only downward. The
-results therefore characterize this environment, and do not establish an architecture-independent scaling bound. A
-pinned sweep across core types, on a quiesced system whose topology is visible and whose clock can be fixed, with the
-serial and chunked scenarios interleaved rather than run in a fixed order, is the obvious next measurement and is not
-attempted here.
-
-The corpora are also small enough to be cache-resident: 16\,MiB against this machine's 30\,MB last-level cache, and each
-scenario scans the same buffer repeatedly after a warm-up pass. These are therefore warm-cache scanning figures, which
-isolate the scanner from memory-subsystem effects but do not characterize sustained scanning of an input larger than the
-cache. A sweep over input sizes, including one beyond the last-level cache, would establish both that behaviour and the
-input size at which parallel execution begins to pay.
 
 \subsection{Scaling}
 
-Table~\ref{tab:scaling} reports median throughput. Two baselines matter and they answer different questions. A user
-choosing between the serial and parallel entry points compares against the plain scan, and gains $3.33\times$ at four
-chunks. The parallelism itself is better measured against the same API driven with a single chunk, which plans, uses the
-per-chunk sink, and spawns nothing: that row costs 14\% relative to the plain scan before any parallelism exists, and
-against it the certified splitting reaches $1.98\times$, $3.89\times$, and $6.51\times$, or 99\%, 97\%, and 81\%
-parallel efficiency. Conflating the two, as an end-to-end table alone would, charges parallelization for the sink.
+Table~\ref{tab:scaling} reports median throughput on Environment B, pinned, which is the most constrained
+configuration measured:
+visible topology, eight physical CPUs of one L3 domain with the SMT siblings excluded, a clock biased to maximum, and
+a corpus sweep that leaves the cache. Two baselines matter, they answer different questions, and only one of them turns
+out to hold still between collections. The parallelism itself is measured against the same API driven with a single
+chunk, which
+plans, uses the per-chunk sink, and spawns nothing: against it the certified splitting reaches $1.96\times$,
+$3.87\times$, and $7.63\times$ on the 512\,MiB dense corpus, or 98\%, 97\% and 95\% parallel efficiency; the other
+collection of the same placement gives 95\%, 93\% and 93\%. A user
+choosing between the serial and parallel entry points compares instead against the plain scan, and gains
+$3.46\times$ at four chunks in this collection and $3.94\times$ in the other collection with the same placement.
+Conflating the two,
+as an end-to-end table alone would, charges parallelization for the sink and inherits an unstable denominator.
 
 \begin{table}[t]
 \centering
-\begin{tabular}{lrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
-Corpus & plain scan & 1 chunk & 2 chunks & 4 chunks & 8 chunks \\
+Corpus & size & plain scan & 1 chunk & 2 chunks & 4 chunks & 8 chunks \\
 \midrule
-dense (1.83 B/token)  & 632.1 & 541.9 & 1071.5 & 2107.8 & 3528.9 \\
-source (3.53 B/token) & 600.1 & 537.2 & 1069.1 & 2132.7 & 3419.7 \\
+dense (1.83 B/token)  & 1\,MiB    & 767.5 & 728.5 & 1436.1 & 2780.4 & 4685.9 \\
+                      & 16\,MiB   & 771.5 & 686.9 & 1374.3 & 2679.5 & 5074.6 \\
+                      & 128\,MiB  & 788.4 & 722.8 & 1432.1 & 2782.3 & 5420.4 \\
+                      & 512\,MiB  & 818.0 & 730.1 & 1434.2 & 2828.0 & 5568.3 \\
+\midrule
+source (3.53 B/token) & 512\,MiB  & 757.5 & 711.1 & 1415.0 & 2763.0 & 5500.5 \\
 \bottomrule
 \end{tabular}
-\caption{Median throughput in MiB/s. The one-chunk column is the parallel API without parallelism, and is the
-baseline the parallel efficiencies use.}
+\caption{Median throughput in MiB/s on Environment B with the process pinned to one L3 domain, second run. The
+one-chunk column is the parallel API without parallelism, and is the baseline the parallel efficiencies use; the
+plain-scan column does not hold still between collections and is discussed below.}
 \label{tab:scaling}
 \end{table}
 
-The residual overhead is small and partly attributable. Against the one-chunk baseline the parallel scan costs an extra
-0.17\,ms at two chunks, 0.21\,ms at four, and 0.84\,ms at eight, on a scan of roughly 29.5\,ms. Spawning and joining the
-threads, measured on its own with empty bodies, accounts for 0.04, 0.09, and 0.19\,ms of that, or between a fifth and
-two fifths; boundary planning contributes 0.1\,$\mu$s, five orders of magnitude below the scan, and is therefore
-negligible. What remains, and what grows at eight chunks, is neither planning nor thread creation, but these
-measurements do not isolate it further: the residue covers scan-side contention, chunk imbalance, allocation, and
-per-chunk sink handling together. Separating those would need a sweep with pinned threads across physical cores, sibling
-threads, and efficiency cores, which this experiment does not perform.
+Scaling does not depend on the corpus fitting in cache. The 512\,MiB corpus is four times the machine's 128\,MiB of
+last-level cache, and its eight-chunk efficiency, 95.3\%, is the highest of the four sizes rather than the lowest: the
+figures are 80.4\%, 92.3\%, 93.7\% and 95.3\% at 1, 16, 128 and 512\,MiB, so efficiency rises with input size and
+keeps rising across the cache boundary rather than stepping down at it. The sweep does not locate a break-even input
+size, because it never reaches one: even at the smallest size measured, eight chunks are $6.43\times$ the one-chunk
+API. What it shows is where fixed overhead becomes visible, at 1\,MiB, where efficiency falls to 80.4\% because
+spawning and joining eight threads costs about 40\,$\mu$s against a scan of roughly 1.4\,ms.
 
-The eight-chunk figures are considerably noisier than the rest and should be read as such. On the dense corpus the
-fifteen passes span 2996.0 to 4137.2\,MiB/s, a best-to-worst ratio of 1.38, and the source corpus spans 3136.6 to
-4076.4; even the four-chunk dense case has a worst pass 19\% below its median. Eight threads on sixteen physical cores
-of two kinds, unpinned, is exactly where the environment above bites hardest. The four-thread results are the solid
-claim here; the eight-thread ones show that the technique continues to scale, not how well.
+\paragraph{What placement costs.} Running the same measurement unpinned, free to use all 32 logical processors, lowers
+eight-chunk efficiency from 95\% to 93\% at 512\,MiB and from 80\% to 68\% at 1\,MiB, the gap falling from twelve
+points at 1\,MiB to about three at 512. The two- and four-chunk figures move by two points or less at 128 and 512\,MiB
+and by more at the smaller sizes. One hypothesis is SMT: with eight threads free on 32 logical processors, some pairs
+share a physical core. We do not claim it, and cannot from this data. For each benchmark revision there is one run per
+placement, taken at different times rather than as replicated interleaved conditions, and a gap also appears at two
+chunks where collisions should be rare. Attributing it would need paired repeated runs, or per-thread CPU residence
+recorded during the scan. What the two runs support is narrower: on these runs the restricted CPU set performed better
+at eight chunks, and certified splitting delivered most of its benefit in both.
+
+\paragraph{The two collections are not a controlled repeat.} Environment B was collected twice in each placement, but
+the two collections were taken at different commits: between them the benchmark began writing round-trip-safe CSV
+values and gained the four plan-and-execute scenarios that now run before the scaling sweep. The scaling code itself is
+unchanged, but the executable, its layout, and what executes before the measurement are not. These are therefore two
+benchmark revisions on one machine rather than repeated runs of one experiment, and the difference between them cannot
+be attributed to the machine.
+
+The largest differences are in the single-threaded rows, and their direction is the same under both placements. At
+512\,MiB on the dense corpus the plain scan rose 14.3\% pinned and 17.4\% unpinned, while the one-chunk row fell
+3.7\% and 3.8\% respectively. At that size the multi-chunk rows move much less: at most 0.8\% on the dense corpus
+pinned and 1.4\% on the source corpus, 1.1\% and 0.6\% unpinned. That stability is specific to 512\,MiB and does
+not hold across the sweep, where multi-chunk rows move by as much as 5.9\% pinned and 6.3\% unpinned, both at
+16\,MiB. A single-threaded shift that lands within 0.1 points under two different affinities looks more like a
+property of the revision than of the scheduler, though nothing here isolates which.
+
+The comparison between the plain scan and the one-chunk row is the quantity this moves. It has now taken three values:
+14\% \emph{below} on Environment A, 5.9\% \emph{above} in the first Environment B collection at 512\,MiB, winning 13 of
+15 same-round pairs, and 10.7\% below in the second, reported in Table~\ref{tab:scaling}, winning none of 15. We report
+that rather than explain it. The consequence for the figures above is that efficiencies measured against the one-chunk
+baseline moved by two to four points between the collections, 93\% to 95\% at eight chunks, while the end-to-end ratio,
+which divides by the plain scan, moved by 12\%. That is why the first is quoted as a range of a few points and the
+second as a range of nearly half a turn.
 
 \subsection{Planning cost}
 \label{sec:planning}
@@ -678,31 +751,36 @@ splitting~\cite{barenghi2015parallel,li2021plex}.
 Certificate density & chunks planned & median & bytes scanned \\
 \midrule
 newline every 40 bytes    & 8 & 0.1\,$\mu$s     & $<$ 1\,KiB \\
-newline every 1\,MiB      & 8 & 1870.1\,$\mu$s  & 3.5\,MiB \\
-certified byte absent     & 1 & 30606.9\,$\mu$s & 56\,MiB \\
-nothing certified         & 1 & 0.2\,$\mu$s     & 0 \\
+newline every 1\,MiB      & 8 & 1021.0\,$\mu$s  & 3.5\,MiB \\
+certified byte absent     & 1 & 16365.5\,$\mu$s & 56\,MiB \\
+nothing certified         & 1 & 0.0\,$\mu$s     & 0 \\
 \bottomrule
 \end{tabular}
-\caption{Boundary planning for $k=8$ over 16\,MiB. The two scanning rows show similar effective scan rates, 1.82 and
-1.79\,GiB/s, consistent with the $O(kN)$ bound; the last row is the empty-certificate fast path. Each pass repeats
+\caption{Boundary planning for $k=8$ over 16\,MiB on Environment B, pinned. The two scanning rows show similar
+effective scan rates, 3.35 and 3.34\,GiB/s, consistent with the $O(kN)$ bound; the last row is the empty-certificate
+fast path. Each pass repeats
 the plan until the sample outlasts the clock, so the sub-microsecond rows measure planning rather than timer
 resolution.}
 \label{tab:planning}
 \end{table}
 
-The two middle rows cross-check each other: 3.5\,MiB scanned in 1.87\,ms and 56\,MiB in 30.6\,ms give similar effective
+The two middle rows cross-check each other: 3.5\,MiB scanned in 1.02\,ms and 56\,MiB in 16.4\,ms give similar effective
 scan rates, which is consistent with the $O(kN)$ bound and indicates that the planner's cost is dominated by the forward
 searches rather than by anything else it does. Even its worst case, a certificate whose byte never occurs in a 16\,MiB
-input, costs 31\,ms once, against a serial scan of the same input costing about 25\,ms; a caller planning a much smaller
-chunk count, or planning once and scanning repeatedly, pays proportionally less. The empty-certificate case is answered
+input, costs 16.4\,ms once; a caller planning a much smaller chunk count, or planning once and scanning repeatedly,
+pays proportionally less. The empty-certificate case is answered
 without touching the input.
 
-It is worth stating that worst case end to end rather than only by component. When the certified byte is absent, the
-planner spends 31\,ms discovering it, returns a single chunk, and the executor then scans that chunk serially for a
-further 25\,ms: roughly 56\,ms in total, against 25\,ms for simply calling the serial entry point. Choosing the
-parallel API on such an input therefore costs more than twice the serial scan. This is a property of the planner as
+That worst case is a cost the caller pays before any scanning begins, and on such an input the planner returns a
+single chunk, so the scan that follows is the serial one. Stating it end to end needs planning and scanning timed on
+one grammar over one input, which the earlier planning rows do not provide: they use a two-token grammar over a
+synthetic input while the scaling rows use the C-like grammar over generated source, and adding those would compare
+different lexers over different inputs. A separate scenario therefore times both phases together on the planning
+workload. With the certified byte absent, the parallel entry point takes 34.5\,ms against 18.2\,ms for the serial
+one, so choosing it costs $1.90\times$; with certified bytes every 40 bytes it takes 1.7\,ms against 12.4\,ms, a
+gain of $7.3\times$. Both emit 838861 tokens, or one, identically. The penalty is a property of the planner as
 implemented, not of the certificate. The planner here is deliberately simple, one forward search per boundary, and
-the one-pass $O(N + k)$ formulation above reduces that worst case to a single pass over the input, roughly 9\,ms
+the one-pass $O(N + k)$ formulation above reduces that worst case to a single pass over the input, under 5\,ms
 here, rather than eliminating it; the distinction it draws attention to is that
 \emph{deciding} the certificate needs no input at all, while \emph{locating} its occurrences is a runtime scan whose
 cost depends on how often the byte actually appears.
@@ -733,10 +811,14 @@ and paying for it only where it is not. The grammar-refactoring lever of Section
 automated: given a token set, propose the minimal trivia re-tokenization that makes a chosen byte certify. The
 certificate is also orthogonal to a separate cost of longest-match scanning: after a failed longer match the scan
 resumes at the last accepting position, so a token set whose long patterns repeatedly fail back to short ones is
-quadratic in the input, and splitting into chunks reduces the constant without changing the shape. Making maximal munch
-backtrack-free needs per-position precomputation, classically by Reps' linear-time tokenizer~\cite{reps1998maximal} and
-recently by the uniform-tokenization algorithms~\cite{li2025uniform}. Finally, the evaluation rests on one machine and
-one microarchitecture; a second architecture would strengthen the scaling claims, though not the correctness ones.
+quadratic in the input, and splitting into chunks reduces the constant without changing the shape. The quadratic
+pathology can be removed with per-position information, obtained either during the scan or before it: Reps keeps the
+backtracking loop but tabulates the state and position pairs that have already failed, so no doomed transition is
+repeated~\cite{reps1998maximal}, while the uniform-tokenization algorithms precompute what each suffix admits in an
+initial right-to-left pass~\cite{li2025uniform}. Finally, the evaluation rests on two x86-64 machines,
+one Alder Lake under virtualization and one Zen 5 on bare metal, with threads constrained only to a CPU set rather
+than pinned individually; a non-x86 architecture, and per-thread placement, would strengthen the scaling claims,
+though not the correctness ones.
 
 \section{Related work}
 
@@ -748,26 +830,27 @@ structure.
 
 Certified split points differ from simultaneous automata in requiring no enlarged automaton and no composition, from
 speculation in requiring no guess and no repair, from $k$-locality in being a per-symbol property derived from the token
-loop's reset rather than a uniform property of the automaton, from overlap verification in using no overlap, and from
+loop's reset rather than a uniform property of the automaton, from realignment after the fact in merging nothing, and
+from
 delimiter folklore in deriving the safe set from the compiled token set rather than assuming it per format. The
 derivation also correctly refuses the grammars for which the folklore is unsound. The contribution is therefore narrow
-and specific. Relocating cuts to a separator is classical, and the observation that it works for JSON but not for Lua is
-stated in the literature; what appears to be missing is the automatic certification step those choices leave implicit,
-namely a sound grammar-only test of whether a given byte is a safe separator for a given token set. The certificate
-supplies that test from the compiled automaton, with no hand analysis and no input-dependent context-recovery pass, and
-the survey of Section~\ref{sec:applicability} turns the same machinery into a statement about which token sets admit
-such bytes at all. The analysis is not merely sound. Theorem~\ref{thm:necessity} shows the condition is also necessary
-once the analysis is restricted to $A^+$, which is what the derivation of Section~\ref{sec:necessity} does, so on a
-compiled token set the test rejects a byte exactly when a witness input exists that places it inside a token. That
-matters for reading Section~\ref{sec:applicability}: a row saying nothing certifies is a fact about the tokenization,
-not a limit of the analysis.
+and specific. Relocating cuts to a separator is classical, and the observation that it works for JSON but needs Lua's
+grammar constrained first is stated in the literature; what appears to be missing is the automatic certification step
+those choices leave implicit, namely a sound grammar-only test of whether a given byte is a safe separator for a given
+token set. The certificate supplies that test from the compiled automaton, with no hand analysis and no
+input-dependent context-recovery pass, and the survey of Section~\ref{sec:applicability} turns the same machinery into
+a statement about which token sets admit such bytes at all. The analysis is not merely sound.
+Theorem~\ref{thm:necessity} shows the condition is also necessary once the analysis is restricted to $A^+$, which is
+what the derivation of Section~\ref{sec:necessity} does, so on a compiled token set the test rejects a byte exactly
+when a witness input exists that places it inside a token. That matters for reading Section~\ref{sec:applicability}: a
+row saying nothing certifies is a fact about the tokenization, not a limit of the analysis.
 
 We are not aware of prior work stating this condition, in particular the re-entrancy requirement, as a static per-symbol
 property of the token DFA, though its components are all classical. We checked that claim against the parallel lexing
 and parallel finite-automata literature, the theory of synchronizing automata, incremental lexical analysis, and the
 recent work on sequential~\cite{reps1998maximal,li2025uniform} and streaming~\cite{li2026streaming} tokenization. Each
 answers a neighbouring question: where to restart after an edit, how to reset every state at once, how to avoid
-backtracking in one pass, how to recover a chunk's entry state after the fact~\cite{voetter2021gpu}. None asks which
+repeated rescanning, how to recover a chunk's entry state after the fact~\cite{voetter2021gpu}. None asks which
 single bytes the token set makes safe in advance.
 
 \section{Conclusion}
@@ -785,10 +868,11 @@ defeating the test. Deriving the certificate is a linear-time sweep of the trans
 the same sweep decides which certified bytes can occur in valid input at all. That makes the applicability question
 mechanical, and the answer is often negative: a single token kind with a near-total interior alphabet, such as a block
 comment, removes every useful certificate from an otherwise cooperative C-like grammar. Where the certificate is
-non-empty the measured gain is a $3.33\times$ end-to-end speedup at four threads on the dense corpus, or 97\%
-efficiency against the same API driven with one chunk, measured on a 16\,MiB cache-resident corpus under WSL 2 on an
-unpinned, unquiesced desktop;
-Section~\ref{sec:evaluation} states what that environment does and does not establish.
+non-empty the measured gain is 93--95\% parallel efficiency at eight threads against the same API driven with one
+chunk, on a 512\,MiB corpus that does not fit in cache, and $3.5$--$3.9\times$ end to end at four threads. Both are
+ranges across two benchmark revisions on one machine. The wider end-to-end range comes from the serial baseline used
+as its denominator: at 512\,MiB the multi-chunk rows move far less between the revisions than that baseline does;
+Section~\ref{sec:evaluation} reports that separately.
 
 The contribution is therefore narrow and exactly bounded: not another way to lex in parallel, but the automaton-derived
 certification step that prior delimiter-based systems have handled through language-specific reasoning.

@@ -435,7 +435,7 @@ void measure_xid_build(const int passes)
  * the plan is timed, and each pass repeats the plan until the sample is long enough to divide by, so the cheap
  * densities measure planning rather than the clock.
  */
-void measure_planning(const int passes)
+bool measure_planning(const int passes)
 {
     using namespace munch::regex;
 
@@ -537,6 +537,125 @@ void measure_planning(const int passes)
     plan("plan/absent    ", certifying, absent);
 
     plan("plan/uncertified", certifying_nothing, frequent);
+
+    // Planning and scanning timed over the same grammar and the same input, which is what makes the two comparable.
+    // The plan-only rows above measure the planner in isolation; adding them to a scan of the C-like corpus would
+    // compare different lexers over different inputs, so the end-to-end question needs its own scenario.
+    const auto end_to_end{
+            [passes](
+                    const char* const name, const munch::core::Lexer& lexer, const std::string& text,
+                    const bool parallel) -> bool {
+                std::vector<double> milliseconds;
+
+                milliseconds.reserve(static_cast<std::size_t>(passes));
+
+                // One counter per chunk, each on its own cache line: a shared counter would be a data race, and an
+                // unpadded array would put the workers' increments on the same line and charge the parallel case for
+                // false sharing.
+                struct alignas(64) Counter
+                {
+                    std::size_t value{0};
+                };
+
+                std::size_t tokens{0};
+
+                // A pass that stopped early would still produce a plausible, and faster, timing row. Every pass is
+                // therefore checked to have consumed its whole span and emitted the same count as the first.
+                const auto boundaries{lexer.chunk_boundaries(text, chunks)};
+
+                for (int index{0}; index < passes; ++index)
+                {
+                    std::vector<Counter> counters(chunks);
+
+                    std::size_t serial_consumed{0};
+
+                    std::vector<std::size_t> chunk_consumed;
+
+                    const auto start{std::chrono::steady_clock::now()};
+
+                    if (parallel)
+                    {
+                        // The whole cost a caller pays for choosing the parallel entry point: planning, then scanning.
+                        chunk_consumed = lexer.tokenize_all_parallel<Kind>(
+                                text, chunks,
+                                [&counters](const std::size_t chunk, Kind, std::size_t) { ++counters[chunk].value; });
+                    }
+                    else
+                    {
+                        serial_consumed =
+                                lexer.tokenize_all<Kind>(text, [&counters](Kind, std::size_t) { ++counters[0].value; });
+                    }
+
+                    const auto elapsed{std::chrono::steady_clock::now() - start};
+
+                    milliseconds.push_back(std::chrono::duration<double, std::milli>{elapsed}.count());
+
+                    std::size_t counted{0};
+
+                    for (const auto& counter : counters)
+                    {
+                        counted += counter.value;
+                    }
+
+                    if (parallel && chunk_consumed.size() + 1 != boundaries.size())
+                    {
+                        std::printf(
+                                "%s planned %zu chunks but scanned %zu\n", name, boundaries.size() - 1,
+                                chunk_consumed.size());
+
+                        return false;
+                    }
+
+                    for (std::size_t chunk{0}; parallel && chunk < chunk_consumed.size(); ++chunk)
+                    {
+                        if (const auto span{boundaries[chunk + 1] - boundaries[chunk]}; chunk_consumed[chunk] != span)
+                        {
+                            std::printf(
+                                    "%s chunk %zu tokenized %zu of %zu bytes\n", name, chunk, chunk_consumed[chunk],
+                                    span);
+
+                            return false;
+                        }
+                    }
+
+                    if (!parallel && serial_consumed != text.size())
+                    {
+                        std::printf("%s tokenized %zu of %zu bytes\n", name, serial_consumed, text.size());
+
+                        return false;
+                    }
+
+                    if (index != 0 && counted != tokens)
+                    {
+                        std::printf("%s emitted %zu tokens, expected %zu\n", name, counted, tokens);
+
+                        return false;
+                    }
+
+                    tokens = counted;
+                }
+
+                std::sort(milliseconds.begin(), milliseconds.end());
+
+                const auto median{
+                        (milliseconds[(milliseconds.size() - 1) / 2] + milliseconds[milliseconds.size() / 2]) / 2.0};
+
+                std::printf(
+                        "%s %zu tokens, %d passes: best %.1f, median %.1f, worst %.1f ms\n", name, tokens, passes,
+                        milliseconds.front(), median, milliseconds.back());
+
+                return true;
+            }};
+
+    auto ok{end_to_end("total/serial-frequent  ", certifying, frequent, false)};
+
+    ok = end_to_end("total/parallel-frequent", certifying, frequent, true) && ok;
+
+    ok = end_to_end("total/serial-absent    ", certifying, absent, false) && ok;
+
+    ok = end_to_end("total/parallel-absent  ", certifying, absent, true) && ok;
+
+    return ok;
 }
 
 /**
@@ -674,7 +793,7 @@ int main(const int argc, const char** argv)
 
     measure_xid_build(passes);
 
-    measure_planning(passes);
+    ok = measure_planning(passes) && ok;
 
     measure_threads(passes);
 

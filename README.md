@@ -125,16 +125,17 @@ The design rationale, i.e. why a library this small outruns engines orders of ma
 [docs/performance.md](docs/performance.md); the architectural decisions behind it are collected in
 [docs/design.md](docs/design.md).
 
-Measured with `tools/benchmark` (Release build, GCC 13.3, WSL2 on an Intel i9-12900K) over generated pseudo-code. Every
-scenario reports its best, median, and worst pass: the best estimates the least-interrupted cost of the work, and the
-spread to the worst is the run-to-run variability, system interference plus, for the threaded scenarios, thread creation
-and scheduling.
+Measured with `tools/benchmark` (Release build, GCC 15.2 on an AMD Ryzen 9 9950X3D, Ubuntu 26.04) over generated
+pseudo-code. Every scenario reports its best, median, and worst pass: the best estimates the least-interrupted cost of
+the work, and the spread to the worst is the run-to-run variability, system interference plus, for the threaded
+scenarios, thread creation and scheduling.
 
 The scaling scenarios, the whole-input scans and the chunked rows, run in interleaved rounds rather than one scenario at
 a time, so drift in clock or host load spreads across them instead of biasing the ratios between them. The size argument
 accepts a comma-separated list to sweep input sizes (`16,128` crosses a typical last-level cache), and an optional third
-argument writes every individual observation to a CSV instead of keeping only the three summary figures. The transcript
-below predates the interleaving change and is the run archived as `paper/data/benchmark.txt`.
+argument writes every observation of the scaling scenarios to a CSV instead of keeping only the three summary figures.
+The transcript below is abridged from the run archived as `paper/data/bare-metal-pinned-run2/`, which confined the
+process to one L3 domain; `paper/data/README.md` describes all five measurements and what each can support.
 
 To reproduce a run somewhere else, `tools/benchmark/collect.sh` builds the benchmark and records the result together
 with the machine it ran on, which is what makes a number quotable later:
@@ -144,41 +145,36 @@ $ ./tools/benchmark/collect.sh ~/munch-run 1,16,128 15
 ```
 
 It writes `environment.txt` (CPU, visible topology, governor, memory, kernel, toolchain, and whether a hypervisor is
-present), `summary.txt`, and `observations.csv` with every individual timed pass. It checks its own prerequisites first:
-CMake 3.20+, a C++23 compiler (GCC 13+ or Clang 19+), and git with network access on the first configure, since four
-header-only Boost libraries and mdspan are cloned at pinned revisions. `-DUSE_SYSTEM_BOOST=ON` skips the Boost clones
-but not mdspan, so a fully offline configure is not supported.
+present), `summary.txt`, and `observations.csv` with every timed pass of the scaling scenarios; the construction,
+planning and thread-launch rows appear in the summary only. It checks its own prerequisites first: CMake 3.20+, a C++23
+compiler (GCC 13+ or Clang 19+), and git with network access on the first configure, since four header-only Boost
+libraries and mdspan are cloned at pinned revisions. `-DUSE_SYSTEM_BOOST=ON` skips the Boost clones but not mdspan, so a
+fully offline configure is not supported.
 
 ```
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 $ cmake --build build -j 8 --target munch_benchmark
-$ ./build/tools/benchmark/munch_benchmark 16 15
-lexer/ascii      16.0 MiB, 9144476 tokens, 15 passes: best 492.5, median 482.3, worst 464.3 MiB/s
-lexer_all/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 640.5, median 632.1, worst 582.4 MiB/s
-tokenizer/ascii  16.0 MiB, 9144476 tokens, 15 passes: best 484.1, median 477.9, worst 467.0 MiB/s
-lexer_all/utf8   16.0 MiB, 8320312 tokens, 15 passes: best 609.2, median 596.3, worst 577.1 MiB/s
-lexer_all/xid    16.0 MiB, 8320312 tokens, 15 passes: best 600.0, median 587.0, worst 548.8 MiB/s
-build/keywords   143 patterns, 251 states, 15 passes: best 20.4, median 20.9, worst 21.5 ms
-register/xid     3 patterns, 477 states, 15 passes: best 53.4, median 56.4, worst 65.5 ms
-build/xid        3 patterns, 477 states, 15 passes: best 411.2, median 421.3, worst 442.7 ms
-total/xid        3 patterns, 477 states, 15 passes: best 469.4, median 477.1, worst 501.5 ms
-plan/frequent   8 of 8 chunks, 15 passes: best 0.1, median 0.1, worst 0.2 us
-plan/rare       8 of 8 chunks, 15 passes: best 1851.1, median 1870.1, worst 1908.9 us
-plan/absent     1 of 8 chunks, 15 passes: best 30098.5, median 30606.9, worst 34747.3 us
-plan/uncertified 1 of 8 chunks, 15 passes: best 0.2, median 0.2, worst 0.2 us
-threads/1        spawn and join, 15 passes: best 0.0, median 0.0, worst 0.0 us
-threads/2        spawn and join, 15 passes: best 35.9, median 39.6, worst 57.3 us
-threads/4        spawn and join, 15 passes: best 80.4, median 84.8, worst 177.8 us
-threads/8        spawn and join, 15 passes: best 173.2, median 188.1, worst 218.7 us
-lexer_all/source 16.0 MiB, 4755600 tokens, 15 passes: best 613.6, median 600.1, worst 594.1 MiB/s
-chunked1/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 548.1, median 541.9, worst 522.8 MiB/s
-chunked1/source  16.0 MiB, 4755600 tokens, 15 passes: best 552.7, median 537.2, worst 532.3 MiB/s
-chunked2/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 1085.4, median 1071.5, worst 1029.2 MiB/s
-chunked2/source  16.0 MiB, 4755600 tokens, 15 passes: best 1080.9, median 1069.1, worst 1028.1 MiB/s
-chunked4/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 2182.7, median 2107.8, worst 1697.2 MiB/s
-chunked4/source  16.0 MiB, 4755600 tokens, 15 passes: best 2159.3, median 2132.7, worst 1993.7 MiB/s
-chunked8/ascii   16.0 MiB, 9144476 tokens, 15 passes: best 4137.2, median 3528.9, worst 2996.0 MiB/s
-chunked8/source  16.0 MiB, 4755600 tokens, 15 passes: best 4076.4, median 3419.7, worst 3136.6 MiB/s
+$ ./build/tools/benchmark/munch_benchmark 1,16,128,512 15
+lexer/ascii      1.0 MiB, 571472 tokens, 15 passes: best 661.5, median 652.4, worst 581.5 MiB/s
+tokenizer/ascii  1.0 MiB, 571472 tokens, 15 passes: best 623.3, median 620.3, worst 611.1 MiB/s
+build/keywords   143 patterns, 251 states, 15 passes: best 16.0, median 16.1, worst 16.1 ms
+plan/frequent   8 of 8 chunks, 15 passes: best 0.1, median 0.1, worst 0.1 us
+plan/rare       8 of 8 chunks, 15 passes: best 1020.6, median 1021.0, worst 1024.0 us
+plan/absent     1 of 8 chunks, 15 passes: best 16352.0, median 16365.5, worst 17104.6 us
+threads/8        spawn and join, 15 passes: best 36.4, median 39.7, worst 48.4 us
+lexer_all/ascii  1.0 MiB, 571472 tokens, 15 passes: best 796.7, median 767.5, worst 753.9 MiB/s
+...
+scaling at 512 MiB, 15 interleaved rounds
+lexer_all/ascii  512.0 MiB, 292637972 tokens, 15 passes: best 820.6, median 818.0, worst 751.2 MiB/s
+lexer_all/source 512.0 MiB, 152160096 tokens, 15 passes: best 759.3, median 757.5, worst 736.0 MiB/s
+chunked1/ascii   512.0 MiB, 292637972 tokens, 15 passes: best 754.1, median 730.1, worst 688.6 MiB/s
+chunked1/source  512.0 MiB, 152160096 tokens, 15 passes: best 714.5, median 711.1, worst 693.0 MiB/s
+chunked2/ascii   512.0 MiB, 292637972 tokens, 15 passes: best 1474.0, median 1434.2, worst 1341.8 MiB/s
+chunked2/source  512.0 MiB, 152160096 tokens, 15 passes: best 1428.9, median 1415.0, worst 1368.7 MiB/s
+chunked4/ascii   512.0 MiB, 292637972 tokens, 15 passes: best 2872.8, median 2828.0, worst 2645.4 MiB/s
+chunked4/source  512.0 MiB, 152160096 tokens, 15 passes: best 2805.6, median 2763.0, worst 2666.3 MiB/s
+chunked8/ascii   512.0 MiB, 292637972 tokens, 15 passes: best 5723.9, median 5568.3, worst 5233.0 MiB/s
+chunked8/source  512.0 MiB, 152160096 tokens, 15 passes: best 5591.5, median 5500.5, worst 4791.7 MiB/s
 ```
 
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
@@ -188,10 +184,12 @@ identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the pr
 work, and its runtime impact is limited to the resulting DFA and table size), the keyword-scale build cost, the XID
 construction cost split into registration, finalization, and their total, the cost of planning chunk boundaries as
 certified bytes grow scarce, and the parallel chunked scans at certified split points on two, four, and eight threads.
-Inputs are fixed-seed and deterministic, so runs are comparable across changes. Numbers depend on the machine, the token
-set, and the compiler: these are GCC 13 builds, and Clang 19 measures within about ten percent since the accept path was
-pinned to a branch (see [docs/performance.md](docs/performance.md)). WSL2 adds visible run-to-run spread, so rerun the
-benchmark on your own hardware and language before citing them.
+Inputs are fixed-seed and deterministic, so the bytes measured are identical across changes; that does not make timings
+comparable across a changed executable. Numbers depend on the machine, the token set, and the compiler: Clang 19
+measures within about ten percent of GCC since the accept path was pinned to a branch (see
+[docs/performance.md](docs/performance.md)). Two collections on the same bare-metal machine, at two benchmark revisions,
+disagreed by 14% on the plain serial scan and inverted its comparison with the one-chunk path, for reasons the report
+does not isolate. Rerun the benchmark on your own hardware and language before citing these numbers.
 
 ### **Comparison with Other Engines**
 
@@ -205,6 +203,10 @@ it fetches the engines as additional dependencies.
 
 Two corpus shapes keep the conclusions honest: `dense`, averaging under two bytes per token, magnifies per-token
 overhead, and `source`, shaped like real code with long identifiers and indentation, amortizes it.
+
+Unlike the transcript above, these comparison figures were not re-measured on the bare-metal machine: they are the older
+run on an Intel i9-12900K under WSL2 with GCC 13.3, and only the ratios between engines on one machine are meaningful.
+Rebuild and rerun before quoting any absolute number here.
 
 ```
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BENCHMARK_COMPARE=ON
@@ -638,15 +640,16 @@ completely, splitting immediately before it produces the identical token stream.
 compiled transition table, so it reflects the actual token set rather than a heuristic; a newline-run token, for
 example, correctly disqualifies newline, where a split-at-newline rule would silently corrupt the token stream.
 `chunk_boundaries(input, chunks)` turns the certified points into a chunk plan, and `tokenize_all_parallel<T>(input,
-chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 3.33× the serial throughput on four threads
-on the dense corpus of the archived 16 MiB warm-cache run described in [docs/performance.md](docs/performance.md); for
-input that tokenizes completely, the token stream is guaranteed identical to the serial scan's, and on a failure the
-per-chunk consumed lengths expose it. A token set that certifies no split points degenerates to one chunk and the serial
-scan. The sink receives `(chunk, token, length)` and runs concurrently across chunks; see
-[docs/limits.md](docs/limits.md) for the contract and [docs/performance.md](docs/performance.md) for the measurements.
-The technical report *Certified Split Points: Parallel Lexing Without Speculation* states the certificate formally,
-relates it to the parallel-automata literature, and surveys which grammars certify usable split symbols: read it as
-[docs/split_points.md](docs/split_points.md), or build the formal version from [paper/](paper/).
+chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 93-95% parallel efficiency on eight threads
+over a 512 MiB corpus that does not fit in cache, and 3.5-3.9× the serial throughput on four, both across two benchmark
+revisions on one machine; see [docs/performance.md](docs/performance.md); for input that tokenizes completely, the token
+stream is guaranteed identical to the serial scan's, and on a failure the per-chunk consumed lengths expose it. A token
+set that certifies no split points degenerates to one chunk and the serial scan. The sink receives `(chunk, token,
+length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the contract and
+[docs/performance.md](docs/performance.md) for the measurements. The technical report *Certified Split Points: Parallel
+Lexing Without Speculation* states the certificate formally, relates it to the parallel-automata literature, and surveys
+which grammars certify usable split symbols: read it as [docs/split_points.md](docs/split_points.md), or build the
+formal version from [paper/](paper/).
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
@@ -693,9 +696,10 @@ for (;;)
 The three states are alternatives of one sum type, so they can also be handled exhaustively with `visit()`.
 
 For context-dependent languages, a `Tokenizer` can hold several lexers as modes over the same input and switch between
-them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no automaton can express, such as
-C++ raw string literals, the driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`, and
-continues past the literal with `seek()`.
+them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no practical automaton covers,
+such as C++ raw string literals, whose bounded delimiter makes them regular in principle but not worth a table, the
+driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`, and continues past the literal with
+`seek()`.
 
 Together, these two layers let you choose between fine-grained control (`core::Lexer`) and convenient streaming-based
 processing (`tools::tokenizer::Tokenizer`).

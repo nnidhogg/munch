@@ -161,7 +161,8 @@ void scaling_grammar(munch::core::Builder& builder)
 // control bytes, numbers carry sign, fraction and exponent, the three literal names are present, and each structural
 // character is its own token. This row is stated as a real JSON lexer because the surrounding text reconciles it with
 // published results about splitting JSON at newline.
-// This is a lexer over bytes, not a conforming JSON processor: UTF-8 well-formedness, which RFC 8259 requires, is
+// This is a lexer over bytes, not a conforming JSON processor: UTF-8 well-formedness, which RFC 8259 requires of
+// JSON exchanged outside a closed ecosystem, is
 // assumed of the input rather than checked. Validating it could only remove bytes from string interiors, so it cannot
 // de-certify anything that certifies without it, and the row's result is unaffected.
 void json(munch::core::Builder& builder)
