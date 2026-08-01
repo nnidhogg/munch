@@ -13,3 +13,25 @@ target_link_libraries(munch_applicability
 )
 
 add_test(NAME munch_applicability COMMAND munch_applicability)
+
+# The composition comparison in paper/split-points.tex quotes how many states a prefix scan over line boundaries
+# must carry. That is the whole of its argument, so it is computed from the automaton rather than counted by hand.
+add_executable(munch_composition composition.cpp)
+
+target_link_libraries(munch_composition
+        PRIVATE
+        munch_core
+)
+
+add_test(NAME munch_composition COMMAND munch_composition)
+
+# The soundness and conservatism figures of paper/split-points.tex. The sweep is exhaustive over a small alphabet
+# rather than sampled, because a sampled corpus reports a symbol as safe whenever it never exercised it.
+add_executable(munch_validation validation.cpp)
+
+target_link_libraries(munch_validation
+        PRIVATE
+        munch_core
+)
+
+add_test(NAME munch_validation COMMAND munch_validation)

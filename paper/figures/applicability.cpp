@@ -12,192 +12,22 @@
 
 #include <cstddef>
 #include <iostream>
+#include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "grammars.hpp"
 #include "munch/core/builder.hpp"
-#include "munch/regex/patterns.hpp"
+#include "munch/dfa/dfa.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/set.hpp"
 
 namespace
 {
 using namespace munch::regex;
-
-enum class Token : std::size_t
-{
-    Identifier,
-    Number,
-    Whitespace,
-    Operator,
-    Punctuation,
-    String,
-    LineComment,
-    BlockComment,
-    Newline,
-    LogLine,
-    Keyword,
-    Literal,
-};
-
-// The operator and punctuation bytes the C-like rows use, kept in one place so the expected column can name them.
-const Set& operators()
-{
-    static const Set set{'+', '-', '*', '/', '<', '>', '=', '!', '&', '|', '^', '%', '~'};
-
-    return set;
-}
-
-const Set& punctuation()
-{
-    static const Set set{'(', ')', '[', ']', '{', '}', ';', ',', '.', ':', '?'};
-
-    return set;
-}
-
-// A string literal whose interior admits any byte except the quote and a raw newline.
-Regex string_literal()
-{
-    return concat(text("\""), kleene(any_of(Set::all() - Set{'"'} - Set{'\n'})), text("\""));
-}
-
-// /* ( [^*] | *+ [^*/] )* *+ /, as docs/split_points.md states it.
-Regex block_comment()
-{
-    const auto not_star{any_of(Set::all() - Set{'*'})};
-
-    const auto stars_then_other{concat(plus(any_of(Set{'*'})), any_of(Set::all() - Set{'*'} - Set{'/'}))};
-
-    return concat(text("/*"), kleene(choice(not_star, stars_then_other)), plus(any_of(Set{'*'})), text("/"));
-}
-
-void c_like(munch::core::Builder& builder, const bool split_friendly)
-{
-    builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::Identifier, 2);
-    builder.add_token(plus(any_of(Set::digits())), Token::Number, 2);
-    builder.add_token(any_of(operators()), Token::Operator, 2);
-    builder.add_token(any_of(punctuation()), Token::Punctuation, 2);
-
-    if (split_friendly)
-    {
-        // Newline is its own token and the whitespace run cannot contain one, which is the whole difference.
-        builder.add_token(text("\n"), Token::Newline, 2);
-        builder.add_token(plus(any_of(Set{' ', '\t'})), Token::Whitespace, 2);
-    }
-    else
-    {
-        builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::Whitespace, 2);
-    }
-}
-
-// An exact duplicate of keyword_scale_builder() in tools/benchmark/src/main.cpp, which the evaluation uses for
-// construction cost: the keyword list, the operator and punctuation literals, and the priorities are copied verbatim.
-// That function returns a Staged_builder, which only exposes Builder's protected pipeline output for size reporting and
-// so compiles the same automaton as the plain Builder used here. The grammar differs from the surveyed C-like row above
-// in two ways that both cost certificates: operators are multi-byte literals, and numbers admit a decimal point.
-void keyword_scale_grammar(munch::core::Builder& builder)
-{
-    // Roughly the C++ keyword set plus common fixed-width type names: 100 entries.
-    static constexpr const char* keywords[]{
-            "alignas",     "alignof",   "and",        "and_eq",    "asm",      "auto",         "bitand",
-            "bitor",       "bool",      "break",      "case",      "catch",    "char",         "char8_t",
-            "char16_t",    "char32_t",  "class",      "compl",     "concept",  "const",        "consteval",
-            "constexpr",   "constinit", "const_cast", "continue",  "co_await", "co_return",    "co_yield",
-            "decltype",    "default",   "delete",     "do",        "double",   "dynamic_cast", "else",
-            "enum",        "explicit",  "export",     "extern",    "false",    "float",        "for",
-            "friend",      "goto",      "if",         "inline",    "int",      "long",         "mutable",
-            "namespace",   "new",       "noexcept",   "not",       "not_eq",   "nullptr",      "operator",
-            "or",          "or_eq",     "private",    "protected", "public",   "register",     "reinterpret_cast",
-            "requires",    "return",    "short",      "signed",    "sizeof",   "static",       "static_assert",
-            "static_cast", "struct",    "switch",     "template",  "this",     "thread_local", "throw",
-            "true",        "try",       "typedef",    "typeid",    "typename", "union",        "unsigned",
-            "using",       "virtual",   "void",       "volatile",  "wchar_t",  "while",        "xor",
-            "xor_eq",      "final",     "override",   "import",    "module",   "int8_t",       "int16_t",
-            "int32_t",     "int64_t"};
-
-    for (const auto* keyword : keywords)
-    {
-        builder.add_token(text(keyword), Token::Keyword, 1);
-    }
-
-    builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::Identifier, 2);
-    builder.add_token(patterns::decimal_float(), Token::Number, 1);
-    builder.add_token(patterns::decimal_integer(), Token::Number, 1);
-    builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::Whitespace, 1);
-
-    for (const auto* op : {"==", "!=", "<=", ">=", "<<", ">>", "&&", "||", "++", "--", "->", "+=", "-=", "*=",
-                           "/=", "+",  "-",  "*",  "/",  "%",  "=",  "<",  ">",  "!",  "~",  "&",  "|",  "^"})
-    {
-        builder.add_token(text(op), Token::Operator, 2);
-    }
-
-    for (const auto* punct : {"(", ")", "{", "}", "[", "]", ";", ",", ".", ":", "?"})
-    {
-        builder.add_token(text(punct), Token::Punctuation, 2);
-    }
-}
-
-// The grammar of build_lexer(false) in tools/benchmark/src/harness.cpp, which produces the scaling table. Its operators
-// are also multi-byte literals, but every one of them has '=' as its only continuation byte, so '=' is the only
-// candidate lost.
-void scaling_grammar(munch::core::Builder& builder)
-{
-    builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::Whitespace, 2);
-    builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::Identifier, 2);
-    builder.add_token(plus(any_of(Set::digits())), Token::Number, 2);
-    builder.add_token(choice(text("if"), text("else"), text("while"), text("return"), text("int")), Token::Keyword, 1);
-
-    builder.add_token(
-            choice(text("=="), text("!="), text("<="), text(">="), text("+"), text("-"), text("*"), text("/"),
-                   text("="), text("<"), text(">")),
-            Token::Operator, 2);
-
-    builder.add_token(any_of(Set{'(', ')', '{', '}', ';', ','}), Token::Punctuation, 2);
-}
-
-// The RFC 8259 lexical forms over byte input, not a JSON-like stand-in: strings carry the full escape and \uXXXX forms
-// and exclude raw
-// control bytes, numbers carry sign, fraction and exponent, the three literal names are present, and each structural
-// character is its own token. This row is stated as a real JSON lexer because the surrounding text reconciles it with
-// published results about splitting JSON at newline.
-// This is a lexer over bytes, not a conforming JSON processor: UTF-8 well-formedness, which RFC 8259 requires of
-// JSON exchanged outside a closed ecosystem, is
-// assumed of the input rather than checked. Validating it could only remove bytes from string interiors, so it cannot
-// de-certify anything that certifies without it, and the row's result is unaffected.
-void json(munch::core::Builder& builder)
-{
-    const auto hex{any_of(Set::digits() + Set{'a', 'b', 'c', 'd', 'e', 'f', 'A', 'B', 'C', 'D', 'E', 'F'})};
-
-    const auto escape{concat(
-            text("\\"),
-            choice(any_of(Set{'"', '\\', '/', 'b', 'f', 'n', 'r', 't'}), concat(text("u"), hex, hex, hex, hex)))};
-
-    // Any byte from 0x20 up except quote and backslash, so UTF-8 continuation bytes pass through unexamined.
-    auto unescaped{Set::all() - Set{'"'} - Set{'\\'}};
-
-    for (int value{0}; value < 0x20; ++value)
-    {
-        unescaped = unescaped - Set{static_cast<char>(value)};
-    }
-
-    builder.add_token(concat(text("\""), kleene(choice(any_of(unescaped), escape)), text("\"")), Token::String, 2);
-
-    const auto digits{plus(any_of(Set::digits()))};
-    const auto integer{choice(text("0"), concat(any_of(Set::digits() - Set{'0'}), kleene(any_of(Set::digits()))))};
-    const auto fraction{concat(text("."), digits)};
-    const auto exponent{concat(any_of(Set{'e', 'E'}), optional(any_of(Set{'+', '-'})), digits)};
-
-    builder.add_token(concat(optional(text("-")), integer, optional(fraction), optional(exponent)), Token::Number, 2);
-    builder.add_token(choice(text("true"), text("false"), text("null")), Token::Literal, 1);
-    builder.add_token(any_of(Set{'{', '}', '[', ']', ':', ','}), Token::Punctuation, 2);
-    builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), Token::Whitespace, 2);
-}
-
-Regex line_comment()
-{
-    return concat(text("//"), kleene(any_of(Set::all() - Set{'\n'})));
-}
+using namespace figures;
 
 // The two benchmark rows publish their cells as "N of its own M" rather than as a byte list, and a miscounted M is
 // exactly the kind of error the byte-list assertion cannot see. So those rows assert both numbers: M is the distinct
@@ -270,6 +100,279 @@ std::string certified(const munch::core::Lexer& lexer)
     return rendered;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// A brute-force oracle for the relaxed column. The report claims the condition is not merely sound on these token
+// sets but agrees with splitting on every candidate byte, so the claim is checked by splitting rather than by
+// trusting the rule. Every declared candidate must also be exercised, or the agreement would be vacuous.
+//
+// The corpus is built by substituting every candidate byte into every container template. Sampling instead reports
+// a byte as safe whenever no input happens to place it inside a string or a comment, which is indistinguishable
+// from the byte genuinely being safe; that produced two wrong readings while this was being developed.
+// ---------------------------------------------------------------------------------------------------------------
+
+using Kinds = std::set<std::size_t>;
+
+using Stream = std::vector<std::pair<std::size_t, std::size_t>>;
+
+// The relaxed set as a byte list. The table renderer below says "the same" relationally, which reads well in a
+// cell but cannot be compared against the brute-force oracle's output; this is what the cross-check uses.
+std::string certified_modulo_bytes(const munch::core::Lexer& lexer)
+{
+    std::string rendered;
+
+    for (int value{0}; value < 256; ++value)
+    {
+        const auto byte{static_cast<char>(value)};
+
+        if (!lexer.is_split_point_ignoring(byte))
+        {
+            continue;
+        }
+
+        rendered += rendered.empty() ? "" : " ";
+        rendered += byte == '\n' ? "\\n" :
+                    byte == '\t' ? "\\t" :
+                    byte == '\r' ? "\\r" :
+                    byte == ' '  ? "SP" :
+                                   std::string(1, byte);
+    }
+
+    return rendered.empty() ? "none" : rendered;
+}
+
+// Renders the relaxed column of the table. Where the relaxed set is the exact one plus the whitespace bytes, it
+// says so relationally rather than repeating a long byte list, so the printed cell and the asserted string are the
+// same text and the table cannot drift from the assertion.
+std::string certified_modulo(const munch::core::Lexer& lexer)
+{
+    std::set<char> exact, relaxed;
+
+    for (int value{0}; value < 256; ++value)
+    {
+        const auto byte{static_cast<char>(value)};
+
+        if (lexer.is_split_point(byte))
+        {
+            exact.insert(byte);
+        }
+
+        if (lexer.is_split_point_ignoring(byte))
+        {
+            relaxed.insert(byte);
+        }
+    }
+
+    if (relaxed == exact)
+    {
+        return "the same";
+    }
+
+    auto with_whitespace{exact};
+
+    for (const auto byte : {' ', '\t', '\n'})
+    {
+        with_whitespace.insert(byte);
+    }
+
+    if (relaxed == with_whitespace)
+    {
+        return "the same, plus space, tab and newline";
+    }
+
+    std::string rendered;
+
+    for (const auto byte : relaxed)
+    {
+        rendered += rendered.empty() ? "" : " ";
+        rendered += byte == '\n' ? "\\n" :
+                    byte == '\t' ? "\\t" :
+                    byte == '\r' ? "\\r" :
+                    byte == ' '  ? "SP" :
+                                   std::string(1, byte);
+    }
+
+    return rendered.empty() ? "none" : rendered;
+}
+
+Stream scan(const munch::core::Lexer& lexer, const std::string& text, std::size_t& consumed)
+{
+    Stream stream;
+
+    consumed = lexer.tokenize_all<std::size_t>(
+            text, [&stream](const std::size_t kind, const std::size_t length) { stream.emplace_back(kind, length); });
+
+    return stream;
+}
+
+Stream without(const Stream& stream, const Kinds& ignored)
+{
+    Stream kept;
+
+    for (const auto& token : stream)
+    {
+        if (!ignored.contains(token.first))
+        {
+            kept.push_back(token);
+        }
+    }
+
+    return kept;
+}
+
+std::vector<std::string> expand(const std::vector<std::string>& templates, const std::string& fillers)
+{
+    std::vector<std::string> pieces;
+
+    for (const auto& form : templates)
+    {
+        if (form.find('@') == std::string::npos)
+        {
+            pieces.push_back(form);
+
+            continue;
+        }
+
+        for (const auto filler : fillers)
+        {
+            std::string piece;
+
+            for (const auto symbol : form)
+            {
+                symbol == '@' ? piece += filler : piece += symbol;
+            }
+
+            pieces.push_back(piece);
+        }
+    }
+
+    return pieces;
+}
+
+// Deterministic, so a disagreement this reports can be reproduced exactly.
+std::vector<std::string> documents(const std::vector<std::string>& pieces, const std::size_t count)
+{
+    std::vector<std::string> corpus;
+
+    auto seed{20260801U};
+
+    const auto next{[&seed](const unsigned bound) {
+        seed = seed * 1664525U + 1013904223U;
+
+        return (seed >> 8U) % bound;
+    }};
+
+    // Every piece gets a document of its own before any sampling. Random selection alone left candidates
+    // unexercised, which reads exactly like a candidate the condition rejects.
+    for (const auto& piece : pieces)
+    {
+        corpus.push_back(piece + piece);
+    }
+
+    for (std::size_t index{0}; index < count; ++index)
+    {
+        std::string text;
+
+        for (auto parts{4U + next(10)}; parts > 0; --parts)
+        {
+            text += pieces[next(static_cast<unsigned>(pieces.size()))];
+        }
+
+        corpus.push_back(text);
+    }
+
+    return corpus;
+}
+
+// The bytes worth asking about: whitespace, plus the operator and punctuation bytes a C-like or JSON row uses.
+const std::string& oracle_candidates()
+{
+    static const std::string candidates{" \t\n\r+;(),:[]{}-t"};
+
+    return candidates;
+}
+
+// Splits every document at every occurrence of every candidate byte and reports the set that survives modulo the
+// ignored kinds, rendered the same way certified_modulo() renders its verdict.
+std::string surviving_modulo(
+        const munch::core::Lexer& lexer, const Kinds& ignored, const std::vector<std::string>& corpus,
+        std::string& unexercised)
+{
+    std::string rendered;
+
+    for (const auto candidate : oracle_candidates())
+    {
+        auto exercised{false}, survives{true};
+
+        for (const auto& text : corpus)
+        {
+            std::size_t consumed{0};
+
+            const auto serial{scan(lexer, text, consumed)};
+
+            if (consumed != text.size())
+            {
+                continue; // the guarantee is stated only for input that tokenizes completely
+            }
+
+            // exempted the cut before the final byte from every check.
+            for (std::size_t at{1}; at < text.size(); ++at)
+            {
+                if (text[at] != candidate)
+                {
+                    continue;
+                }
+
+                exercised = true;
+
+                std::size_t left_used{0}, right_used{0};
+
+                const auto left{scan(lexer, text.substr(0, at), left_used)};
+
+                const auto right{scan(lexer, text.substr(at), right_used)};
+
+                if (left_used != at || right_used != text.size() - at)
+                {
+                    survives = false;
+
+                    continue;
+                }
+
+                Stream spliced{left};
+
+                spliced.insert(spliced.end(), right.begin(), right.end());
+
+                survives = survives && without(spliced, ignored) == without(serial, ignored);
+            }
+        }
+
+        if (!exercised)
+        {
+            // Reported rather than skipped: a candidate the corpus never placed inside a token would otherwise be
+            // indistinguishable from one the condition genuinely rejects.
+            unexercised += unexercised.empty() ? "" : " ";
+            unexercised += candidate == '\n' ? "\\n" :
+                           candidate == '\t' ? "\\t" :
+                           candidate == '\r' ? "\\r" :
+                                               std::string(1, candidate);
+
+            continue;
+        }
+
+        if (!survives)
+        {
+            continue;
+        }
+
+        rendered += rendered.empty() ? "" : " ";
+        rendered += candidate == '\n' ? "\\n" :
+                    candidate == '\t' ? "\\t" :
+                    candidate == '\r' ? "\\r" :
+                                        std::string(1, candidate);
+    }
+
+    return rendered.empty() ? "none" : rendered;
+}
+
 } // namespace
 
 int main()
@@ -282,14 +385,28 @@ int main()
     const std::string keyword_scale_candidates{"=!<>&|+-*/%~^(){}[];,.:?"};
     const std::string scaling_candidates{"=!<>+-*/(){};,"};
 
-    const auto check{[&failures](const std::string& name, const std::string& expected, munch::core::Builder& b) {
-        const auto actual{certified(b.build())};
+    // Every row asserts both published columns: what the exact certificate admits, and what it admits once the
+    // caller's discarded tokens are deleted. The relaxed column is read from the shipped predicate, which needs no
+    // corpus; the four rows with corpora below additionally confirm it by splitting.
+    const auto check{[&failures](
+                             const std::string& name, const std::string& exact, const std::string& relaxed,
+                             const Kinds& ignored, munch::core::Builder& b) {
+        b.set_ignored_tokens(std::vector<std::size_t>{ignored.begin(), ignored.end()});
 
-        std::cout << (actual == expected ? "  ok   " : "  FAIL ") << name << '\n';
+        const auto lexer{b.build()};
 
-        if (actual != expected)
+        const auto actual_exact{certified(lexer)};
+
+        const auto actual_relaxed{certified_modulo(lexer)};
+
+        const auto agrees{actual_exact == exact && actual_relaxed == relaxed};
+
+        std::cout << (agrees ? "  ok   " : "  FAIL ") << name << '\n';
+
+        if (!agrees)
         {
-            std::cout << "         expected: " << expected << "\n         actual:   " << actual << '\n';
+            std::cout << "         certified: " << actual_exact << ", cell says " << exact
+                      << "\n         modulo:    " << actual_relaxed << ", cell says " << relaxed << '\n';
 
             ++failures;
         }
@@ -316,7 +433,8 @@ int main()
     {
         munch::core::Builder b;
         c_like(b, false);
-        check("C-like: identifiers, numbers, ws runs, operators, punct", "all operator and punctuation bytes", b);
+        check("C-like: identifiers, numbers, ws runs, operators, punct", "all operator and punctuation bytes",
+              "the same, plus space, tab and newline", ignoring({Token::Whitespace}), b);
     }
     // Each of the next three adds exactly one token kind to that same base, so each collapse is attributable to the
     // token kind named rather than to an accumulation of them.
@@ -324,30 +442,33 @@ int main()
         munch::core::Builder b;
         c_like(b, false);
         b.add_token(string_literal(), Token::String, 2);
-        check("the first row plus strings, alone (no raw newline inside)", "none", b);
+        check("the first row plus strings, alone (no raw newline inside)", "none", "\\n", ignoring({Token::Whitespace}),
+              b);
     }
     {
         munch::core::Builder b;
         c_like(b, false);
         b.add_token(line_comment(), Token::LineComment, 1);
-        check("the first row plus // line comments, alone", "none", b);
+        check("the first row plus // line comments, alone", "none", "\\n",
+              ignoring({Token::Whitespace, Token::LineComment}), b);
     }
     {
         munch::core::Builder b;
         c_like(b, false);
         b.add_token(block_comment(), Token::BlockComment, 1);
-        check("the first row plus block comments, alone", "none", b);
+        check("the first row plus block comments, alone", "none", "the same",
+              ignoring({Token::Whitespace, Token::BlockComment}), b);
     }
     {
         munch::core::Builder b;
         json(b);
-        check("JSON, the RFC 8259 lexical forms over bytes", "none", b);
+        check("JSON, the RFC 8259 lexical forms over bytes", "none", "\\t \\n \\r", ignoring({Token::Whitespace}), b);
     }
     {
         munch::core::Builder b;
         b.add_token(plus(any_of(Set::all() - Set{'\n'})), Token::LogLine, 2);
         b.add_token(text("\n"), Token::Newline, 2);
-        check("log lines ([^\\n]+ and \\n)", "\\n", b);
+        check("log lines ([^\\n]+ and \\n)", "\\n", "the same", ignoring({}), b);
     }
     // The next two recognize exactly the same byte language and differ only in how it is cut into tokens: the
     // conventional one folds newline into the whitespace run, the split-friendly one gives newline its own token and
@@ -358,14 +479,16 @@ int main()
         c_like(b, false);
         b.add_token(string_literal(), Token::String, 2);
         b.add_token(line_comment(), Token::LineComment, 1);
-        check("C-like, conventional tokenization (whitespace runs include newline)", "none", b);
+        check("C-like, conventional tokenization (whitespace runs include newline)", "none", "\\n",
+              ignoring({Token::Whitespace, Token::LineComment}), b);
     }
     {
         munch::core::Builder b;
         c_like(b, true);
         b.add_token(string_literal(), Token::String, 2);
         b.add_token(line_comment(), Token::LineComment, 1);
-        check("the same language, split-friendly tokenization", "\\n", b);
+        check("the same language, split-friendly tokenization", "\\n", "the same",
+              ignoring({Token::Whitespace, Token::Newline, Token::LineComment}), b);
     }
     {
         munch::core::Builder b;
@@ -375,19 +498,171 @@ int main()
         b.add_token(string_literal(), Token::String, 2);
         b.add_token(line_comment(), Token::LineComment, 1);
         b.add_token(block_comment(), Token::BlockComment, 1);
-        check("the same plus block comments", "none", b);
+        check("the same plus block comments", "none", "the same",
+              ignoring({Token::Whitespace, Token::Newline, Token::LineComment, Token::BlockComment}), b);
     }
     {
         munch::core::Builder b;
         keyword_scale_grammar(b);
-        check("keyword_scale_builder() grammar (construction cost)", "! % ( ) * , / : ; ? [ ] ^ { } ~", b);
+        check("keyword_scale_builder() grammar (construction cost)", "! % ( ) * , / : ; ? [ ] ^ { } ~",
+              "the same, plus space, tab and newline", ignoring({Token::Whitespace}), b);
         ratio("keyword_scale_builder() published as 16 of its own 24", keyword_scale_candidates, 24, 16, b);
     }
     {
         munch::core::Builder b;
         scaling_grammar(b);
-        check("build_lexer(false) grammar (scaling table)", "! ( ) * + , - / ; < > { }", b);
+        check("build_lexer(false) grammar (scaling table)", "! ( ) * + , - / ; < > { }",
+              "the same, plus space, tab and newline", ignoring({Token::Whitespace}), b);
         ratio("build_lexer(false) published as 13 of its own 14", scaling_candidates, 14, 13, b);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------
+    // The four rows the report cross-checks by splitting as well as by reading the predicate. Each asserts three
+    // things: what the shipped predicate certifies, what the relaxed condition certifies, and that splitting really
+    // does survive at exactly the relaxed set over every declared candidate byte. That is weaker than exactness on
+    // these token sets, since only the declared candidates are tried, and the report says so.
+    // ---------------------------------------------------------------------------------------------------------
+
+    std::cout << '\n';
+
+    // The report states how many candidate bytes the oracle tries, so the count is asserted rather than counted by
+    // hand; it was published as fifteen while the set held sixteen.
+    {
+        const std::set<char> distinct{oracle_candidates().begin(), oracle_candidates().end()};
+
+        const auto agrees{distinct.size() == 16};
+
+        std::cout << (agrees ? "  ok   " : "  FAIL ") << "oracle candidate bytes: " << distinct.size() << '\n';
+
+        if (!agrees)
+        {
+            std::cout << "         the report says sixteen\n";
+
+            ++failures;
+        }
+    }
+
+    const auto modulo{[&failures](
+                              const std::string& name, const std::string& exact, const std::string& relaxed,
+                              const Kinds& ignored, const std::vector<std::string>& corpus, munch::core::Builder& b) {
+        b.set_ignored_tokens(std::vector<std::size_t>{ignored.begin(), ignored.end()});
+
+        const auto lexer{b.build()};
+
+        const auto actual_exact{certified(lexer)};
+
+        const auto actual_relaxed{certified_modulo_bytes(lexer)};
+
+        std::string unexercised;
+
+        const auto actual_survives{surviving_modulo(lexer, ignored, corpus, unexercised)};
+
+        const auto agrees{
+                actual_exact == exact && actual_relaxed == relaxed && actual_survives == relaxed &&
+                unexercised.empty()};
+
+        std::cout << (agrees ? "  ok   " : "  FAIL ") << name << '\n';
+
+        if (!agrees)
+        {
+            std::cout << "         certified:      " << actual_exact << ", cell says " << exact
+                      << "\n         modulo ignored: " << actual_relaxed << ", cell says " << relaxed
+                      << "\n         survives split: " << actual_survives << ", cell says " << relaxed << '\n';
+
+            if (!unexercised.empty())
+            {
+                std::cout << "         NEVER EXERCISED by the corpus: " << unexercised << '\n';
+            }
+
+            ++failures;
+        }
+    }};
+
+    // Containers carrying an '@' hole have every candidate byte substituted into them, so no byte is judged safe
+    // merely because the corpus never placed it inside a token.
+    const auto c_like_corpus{documents(
+            expand({"ab", "+", "(", ";", "12", "@", "@@", "a@b", "\"x@y\"", "//c@d\n", "@\n@"}, oracle_candidates()),
+            200)};
+
+    const auto block_corpus{documents(
+            expand({"ab", "+", ";", "12", "@", "@@", "a@b", "\"x@y\"", "//c@d\n", "/*a@b*/", "/*a@b@c*/", "@\n@"},
+                   oracle_candidates()),
+            200)};
+
+    const auto json_corpus{documents(
+            expand({"{", "}", "[", "]", ":", ",", "42", "true", "-1.5e3", "\"k\"", "@", "@@", "\"a@b\"", "\"a\\nb\""},
+                   oracle_candidates()),
+            200)};
+
+    {
+        munch::core::Builder b;
+        c_like(b, false);
+        b.add_token(string_literal(), Token::String, 2);
+        b.add_token(line_comment(), Token::LineComment, 1);
+        modulo("C-like conventional: none, and newline modulo whitespace and comments", "none", "\\n",
+               ignoring({Token::Whitespace, Token::LineComment}), c_like_corpus, b);
+    }
+    {
+        munch::core::Builder b;
+        c_like(b, true);
+        b.add_token(string_literal(), Token::String, 2);
+        b.add_token(line_comment(), Token::LineComment, 1);
+        modulo("the same language, split-friendly: newline either way", "\\n", "\\n",
+               ignoring({Token::Whitespace, Token::Newline, Token::LineComment}), c_like_corpus, b);
+    }
+    {
+        // Cumulative on the split-friendly row above, exactly as the exact-column row of the same name is.
+        munch::core::Builder b;
+        c_like(b, true);
+        b.add_token(string_literal(), Token::String, 2);
+        b.add_token(line_comment(), Token::LineComment, 1);
+        b.add_token(block_comment(), Token::BlockComment, 1);
+        modulo("the same plus block comments: none either way", "none", "none",
+               ignoring({Token::Whitespace, Token::Newline, Token::LineComment, Token::BlockComment}), block_corpus, b);
+    }
+    {
+        munch::core::Builder b;
+        json(b);
+        modulo("JSON: none, and tab, newline and carriage return modulo whitespace", "none", "\\t \\n \\r",
+               ignoring({Token::Whitespace}), json_corpus, b);
+    }
+
+    // The framing construction: a byte no token admits in its interior, given a rule of its own, is certified
+    // outright by the shipped predicate even for the token set that certifies nothing. 0x1E is ASCII RECORD
+    // SEPARATOR, reserved for exactly this.
+    {
+        munch::core::Builder b;
+
+        const auto interior{Set::all() - Set{'\x1E'}};
+
+        c_like(b, false);
+
+        b.add_token(concat(text("\""), kleene(any_of(interior - Set{'"'} - Set{'\n'})), text("\"")), Token::String, 2);
+
+        b.add_token(concat(text("//"), kleene(any_of(interior - Set{'\n'}))), Token::LineComment, 1);
+
+        b.add_token(
+                concat(text("/*"),
+                       kleene(
+                               choice(any_of(interior - Set{'*'}),
+                                      concat(plus(any_of(Set{'*'})), any_of(interior - Set{'*'} - Set{'/'})))),
+                       plus(any_of(Set{'*'})), text("/")),
+                Token::BlockComment, 1);
+
+        b.add_token(text("\x1E"), Token::Separator, 1);
+
+        const auto actual{certified(b.build())};
+
+        const auto agrees{actual == "\x1E"};
+
+        std::cout << (agrees ? "  ok   " : "  FAIL ") << "block comments, reserving 0x1E as a separator: certified\n";
+
+        if (!agrees)
+        {
+            std::cout << "         expected 0x1E certified, got: " << actual << '\n';
+
+            ++failures;
+        }
     }
 
     std::cout << (failures == 0 ? "\nall rows reproduce the table\n" : "\nrows disagreeing with the table\n");
