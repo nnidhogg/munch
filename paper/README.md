@@ -1,10 +1,11 @@
-# Certified Split Points: the technical report in LaTeX
+# Certified Split Points for Parallel Lexing: the technical report in LaTeX
 
 `split-points.tex` is the formal version of [docs/split_points.md](../docs/split_points.md): the same argument stated
 over the live subautomaton, with numbered definitions, the split-invariance theorem and its malformed-input corollary,
-the characterization theorem that makes the condition necessary as well as sufficient, and a bibliography. The markdown
-report is the accessible form, linked from the README and kept next to the implementation it describes; it carries the
-same claims but not every formal qualification, so where the two differ this directory is authoritative.
+the characterization theorem that makes the condition necessary as well as sufficient, the weaker certificate modulo the
+tokens a caller discards with its own soundness and strict-extension results, and a bibliography. The markdown report is
+the accessible form, linked from the README and kept next to the implementation it describes; it carries the same claims
+but not every formal qualification, so where the two differ this directory is authoritative.
 
 ## Building
 
