@@ -25,7 +25,7 @@ namespace munch::dfa
  * leaves a chain of states with empty right language that Myhill-Nerode would collapse. The pattern as a whole
  * need not be empty for the latter: choice(text("a"), concat(text("b"), any_of(Set{}))) matches only "a" and still
  * keeps a reachable dead b branch. Subset construction supplies reachability, so a DFA arriving from
- * Builder::subset_construction() needs only co-accessibility; a hand-built DFA may satisfy neither.
+ * core::determinize() needs only co-accessibility; a hand-built DFA may satisfy neither.
  * @param dfa The DFA to minimize.
  * @return An equivalent DFA with no two states interchangeable.
  */

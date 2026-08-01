@@ -133,20 +133,11 @@ protected:
      */
     [[nodiscard]] dfa::Dfa dfa() const;
 
-    /**
-     * @brief Converts an NFA to a DFA using subset construction.
-     * @param nfa The NFA to convert.
-     * @param state_limit The largest number of DFA states to discover before throwing; zero means unlimited.
-     * @return The constructed DFA.
-     * @throws State_limit_error If the state limit is exceeded.
-     */
-    [[nodiscard]] static dfa::Dfa subset_construction(const nfa::Nfa& nfa, std::size_t state_limit = 0);
-
 private:
     /**
      * @brief Collects the accepting candidates of every reachable determinization subset.
      *
-     * The traversal is subset_construction()'s own, so diagnose() judges exactly the subsets the build discovers
+     * The traversal is determinize()'s own, so diagnose() judges exactly the subsets the build discovers
      * rather than mirroring the walk with a second implementation. One entry per reachable subset holding at
      * least one accepting state, in discovery order.
      * @param nfa The NFA to walk.
@@ -184,7 +175,7 @@ private:
      * @brief Merges the determinized patterns into a single NFA using Thompson construction.
      * @return The NFA builder representing all registered patterns.
      */
-    [[nodiscard]] nfa::Builder thompson_construction() const;
+    [[nodiscard]] nfa::Builder merged_nfa() const;
 
     /**
      * @brief Internal patterns registered through add_token.

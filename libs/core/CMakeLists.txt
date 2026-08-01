@@ -4,7 +4,7 @@ project(munch_core)
 
 add_library(${PROJECT_NAME}
         src/builder.cpp
-        src/subset_construction.cpp
+        src/determinize.cpp
         src/exceptions/state_limit_error.cpp
 )
 

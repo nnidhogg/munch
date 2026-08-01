@@ -1,3 +1,5 @@
+#include "munch/core/determinize.hpp"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -383,7 +385,7 @@ private:
 
 namespace munch::core
 {
-dfa::Dfa Builder::subset_construction(const nfa::Nfa& nfa, const std::size_t state_limit)
+dfa::Dfa determinize(const nfa::Nfa& nfa, const std::size_t state_limit)
 {
     return Determinizer{nfa, state_limit}.run();
 }

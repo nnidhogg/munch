@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "munch/core/determinize.hpp"
 #include "munch/core/exceptions/state_limit_error.hpp"
 #include "munch/dfa/minimize.hpp"
 
@@ -60,12 +61,12 @@ Lexer Builder::build() const
 
 nfa::Nfa Builder::nfa() const
 {
-    return thompson_construction().build();
+    return merged_nfa().build();
 }
 
 dfa::Dfa Builder::dfa() const
 {
-    return dfa::minimize(subset_construction(nfa(), state_limit_));
+    return dfa::minimize(determinize(nfa(), state_limit_));
 }
 
 Builder::Diagnostics Builder::diagnose() const
@@ -76,7 +77,7 @@ Builder::Diagnostics Builder::diagnose() const
 
     std::set<std::pair<std::size_t, std::size_t>> ties;
 
-    // The walk is subset_construction()'s own traversal, so it visits exactly the reachable state sets, which is
+    // The walk is determinize()'s own traversal, so it visits exactly the reachable state sets, which is
     // what makes absence a proof: a token no reachable set awards is dead for every input there is.
     for (const auto& candidates : reachable_candidates(merged, state_limit_))
     {
@@ -127,7 +128,7 @@ void Builder::add_token(const regex::Regex& regex, const nfa::Token& token)
     patterns_.push_back({.nfa = regex::to_nfa(regex).set_accept_token(token), .token = token});
 }
 
-nfa::Builder Builder::thompson_construction() const
+nfa::Builder Builder::merged_nfa() const
 {
     if (patterns_.empty())
     {
@@ -135,7 +136,7 @@ nfa::Builder Builder::thompson_construction() const
     }
 
     const auto lower{[this](const auto& pattern) {
-        return to_nfa(dfa::minimize(subset_construction(pattern.nfa.build(), state_limit_)), pattern.token);
+        return to_nfa(dfa::minimize(determinize(pattern.nfa.build(), state_limit_)), pattern.token);
     }};
 
     std::vector<nfa::Builder> lowered;
