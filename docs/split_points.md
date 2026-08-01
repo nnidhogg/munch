@@ -1,4 +1,4 @@
-# Certified Split Points: Parallel Lexing Without Speculation
+# Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens
 
 **Nicklas Nidhögg**, August 2026. Describes munch at commit `141b12e`, after the v1.1.1 release; that is the tree the
 primary measurements were taken on, preserved by the `benchmark/split-points-2026-08` tag.
@@ -21,11 +21,16 @@ occurrence begins a token. Splitting immediately before such a byte preserves th
 with no speculation, no overlap, no merge beyond ordered concatenation, and no duplicate tokenization when the property
 does not hold: the plan degenerates to a serial scan. We state the certificate and its one subtlety (a re-entrant
 initial state invalidates the exemption that makes it usable), show that deriving it is a linear-time analysis of the
-compiled table, prove the condition necessary as well as sufficient, measure 93-95% parallel efficiency at eight threads
-on a 512 MiB corpus that does not fit in cache, and survey which grammars certify usable symbols. The survey grounds a
-piece of folklore: for conventional tokenizations, line-based splitting of source text is sound when no token can span a
-line, and one token kind that can, the block comment, is alone sufficient to destroy every useful certificate in the
-surveyed C-like grammar.
+compiled table, prove the condition necessary as well as sufficient, and measure 93-95% parallel efficiency at eight
+threads on a 512 MiB corpus that does not fit in cache. That certificate is exact and, for the same reason, fragile: one
+string literal, comment, or whitespace run whose interior admits the candidate byte is enough to leave a conventional
+token set certifying nothing, and the tokens responsible are usually the ones a parser discards. So we give a second
+condition, weakening the guarantee to equality after those tokens are deleted from both streams. It is sound and
+strictly more permissive, but conservative rather than exact, and it is decided from the same tables at the same cost.
+We then survey which grammars certify usable symbols under each. The survey grounds a piece of folklore: for
+conventional tokenizations, line-based splitting of source text is sound when no token can span a line, and one token
+kind that can, the block comment, is alone sufficient to destroy every useful certificate in the surveyed C-like
+grammar, under both conditions.
 
 ## 1 The problem
 
@@ -77,15 +82,14 @@ Published solutions accept the unknown-state problem and manage it:
   problem: the accompanying parallel lexical analysis enumerates the possible start states of a chunk rather than
   deducing one, each worker carrying one computation per alternative and up to four at once in the worst case. So the
   technique is separator relocation plus state enumeration, not a proof that the separator is safe. Its worked cases are
-  the direct antecedent of Section 5: newline is a sound separator for JSON, since no non-trivia lexeme admits it, yet
-  it is rejected in practice because generated JSON may contain none. Lua fails for a stronger reason than any
-  certificate could address: its long brackets open with `[`, then n equals signs, then `[`, and close with the matching
-  `]`, n equals signs, `]`. The two must agree on n, so the lexical grammar is not regular, the set of possible
-  delimiters is unbounded, and with it the set of possible entry states; no fixed lookahead can decide which delimiter,
-  if any, encloses a chunk. Barenghi et al. recover a workable schema only by constraining the language, admitting just
-  `[[` and `]]` for strings and requiring multi-line comments to end at a newline, after which newline does serve as
-  their split point. What is missing is any way to decide, from the token set alone, whether a proposed separator is
-  sound.
+  the direct antecedent of Section 6: newline is a sound separator for JSON, since no surviving lexeme admits it, yet it
+  is rejected in practice because generated JSON may contain none. Lua fails for a stronger reason than any certificate
+  could address: its long brackets open with `[`, then n equals signs, then `[`, and close with the matching `]`, n
+  equals signs, `]`. The two must agree on n, so the lexical grammar is not regular, the set of possible delimiters is
+  unbounded, and with it the set of possible entry states; no fixed lookahead can decide which delimiter, if any,
+  encloses a chunk. Barenghi et al. recover a workable schema only by constraining the language, admitting just `[[` and
+  `]]` for strings and requiring multi-line comments to end at a newline, after which newline does serve as their split
+  point. What is missing is any way to decide, from the token set alone, whether a proposed separator is sound.
 - **Prescan for context.** Plex (Li et al., IPDPS 2021) removes the need for delimiters entirely. It derives a
   prescanning automaton from the lexer's own DFA, embedding the backtracking cases into it, and runs that automaton over
   the input to compute a transfer function per chunk; composing those functions yields each chunk's true entry state,
@@ -216,10 +220,10 @@ on `a` exists and `a` is reported vacuous rather than usable.
 The reachability half of trimness is enforced the same way, and for the same reason. Necessity is stated for a trim
 automaton, so the implementation restricts to states the initial state can reach as well as to live transitions: a state
 no scan can arrive in cannot place a symbol inside a token, so letting it de-certify one would be a false negative. A
-DFA from `Builder::subset_construction()` never has such a state, because subset construction only ever emits states it
-reaches; `dfa::Simulator` accepts any `Dfa`, including one assembled by hand, so it computes reachability rather than
-assuming it. An unreachable transition back into the initial state is covered too, and would otherwise make the initial
-state look re-entrant and defeat every certificate at once.
+DFA from `core::determinize()` never has such a state, because subset construction only ever emits states it reaches;
+`dfa::Simulator` accepts any `Dfa`, including one assembled by hand, so it computes reachability rather than assuming
+it. An unreachable transition back into the initial state is covered too, and would otherwise make the initial state
+look re-entrant and defeat every certificate at once.
 
 ## 4 Deriving and using it
 
@@ -243,7 +247,60 @@ small hardware-thread count and the searches start at equally spaced offsets. Wh
 the planner returns the single whole-input chunk without scanning. A one-pass planner would reduce the worst case to
 `O(N + k)`.
 
-## 5 What certifies in practice
+## 5 Certification modulo discarded tokens
+
+The certificate above is exact, and that is what makes it fragile. One token whose interior admits the candidate byte
+disqualifies it, and a string literal, a comment, or a whitespace run that includes newline is enough. The token sets in
+Section 6 that certify nothing fail for exactly that reason.
+
+The observation this section develops is that the offending tokens are usually the ones the caller throws away. A parser
+does not see whitespace or comments. When a chunk boundary falls inside a whitespace run, the serial scan emits one
+whitespace token and the chunked scan emits two, and no consumer that discards whitespace can tell the difference. The
+exact guarantee is therefore stronger than such a caller needs.
+
+Fix a set *I* of discarded tokens, declared through `Builder::set_ignored_tokens()`, and compare token streams only
+after deleting every token whose kind lies in *I*. Being discarded is not by itself enough: cutting the line comment
+`//ab` between its last two bytes leaves `//a`, a comment and discarded, and `b`, an identifier and kept. What is needed
+is that both halves of the severed token are discarded, and that the restarted scan rejoins the one it interrupted. A
+byte *b* is **certified modulo *I*** when every live state that consumes it either is the initial state or satisfies all
+three of:
+
+1. it accepts, and its token lies in *I*, so the left chunk stops on a complete discarded token rather than mid-token;
+2. every token still reachable from it lies in *I*, so whatever the severed remainder becomes is discarded too;
+3. advancing on *b* from it and from the initial state reach the **same state**, so after consuming *b* the restarted
+   scan sits exactly where the interrupted one does and every later byte is scanned alike.
+
+The third condition is the load-bearing one. It confines the disturbance to the single token containing the cut, and it
+is what keeps this a local test on the transition table rather than a question about language inclusion.
+
+Splitting at such a byte preserves the token stream after discarded tokens are deleted from both sides. The guarantee is
+weaker than Section 3's, and it must be kept distinct:
+
+| | exact certificate | modulo *I* |
+| --- | --- | --- |
+| preserves | the full stream of kinds and lengths | the stream after discarded tokens are deleted |
+| status | **necessary and sufficient** | **sound and strictly more permissive, but conservative** |
+| query | `is_split_point()` | `is_split_point_ignoring()` |
+
+Every symbol the exact certificate admits is admitted modulo *I* for every *I*, and with *I* empty the two coincide. The
+converse fails, and not merely for want of a better proof: take the discarded tokens `ab*` and `b+` with any kept token
+beside them. Splitting at a `b` inside an `ab*` token is always safe modulo *I*, since the left piece is a shorter `ab*`
+and the right a `b+`, both discarded, yet condition 3 refuses it because advancing on `b` from inside `ab*` reaches a
+state accepting `ab*` while advancing from the initial state reaches one accepting `b+`, and those accept different
+tokens, so minimization keeps them apart. That is the price of insisting the two scans reconverge at once.
+
+Deciding it costs no more than the exact condition. Condition 2 needs no per-state set of tokens: because *I* is fixed
+when the automaton is compiled, "every reachable token is discarded" is the complement of "some kept token is still
+reachable", which one backward closure settles for every state at once, walking the reverse index that determining
+co-accessibility already builds. The result packs into a second 256-bit map, so answering `is_split_point_ignoring()`
+while scanning is the same single bit test.
+
+Soundness was checked as well as proved. Over 400 randomly generated token sets on a three-symbol alphabet, every string
+up to length eight was tokenized, split at every interior offset, and the filtered streams compared: no symbol the
+condition admits ever failed, and no symbol the exact certificate admits was ever lost. The same properties run against
+randomly generated automata in `libs/dfa/tests/property_test.cpp`.
+
+## 6 What certifies in practice
 
 The certificate asks the grammar for cooperation, and the interesting question is how much real grammars give. The
 following table was produced by compiling each token set with munch and reading `is_split_point` for all 256 bytes (the
@@ -253,19 +310,19 @@ and split-friendly rows recognize exactly the same byte language and differ only
 block-comment row directly after them adds one token kind to the split-friendly grammar, so those three are read
 together. The predicate already excludes vacuously certified bytes, so the column needs no further filtering.
 
-| Token set                                               | Useful certified bytes             |
-|---------------------------------------------------------|------------------------------------|
-| C-like: identifiers, numbers, ws runs, operators, punct | all operator and punctuation bytes |
-| the first row plus strings alone (no raw newline)       | none                               |
-| the first row plus `//` line comments alone             | none                               |
-| the first row plus `/* */` block comments alone         | none                               |
-| JSON, the RFC 8259 lexical forms over bytes             | none                               |
-| log lines (`[^\n]+` and `\n`)                           | `\n`                               |
-| C-like, conventional: strings, `//`, ws runs with `\n`  | none                               |
-| the same language, split-friendly tokenization          | `\n`                               |
-| the same plus block comments                            | none                               |
-| `keyword_scale_builder()`, construction-cost grammar    | 16 of those 24 bytes               |
-| `build_lexer(false)`, the scaling grammar               | 13 of its own 14                   |
+| Token set                                               | Useful certified                   | Useful modulo *I*            |
+| ------------------------------------------------------- | ---------------------------------- | ---------------------------- |
+| C-like: identifiers, numbers, ws runs, operators, punct | all operator and punctuation bytes | the same, plus space, tab and newline |
+| the first row plus strings alone (no raw newline)       | none                               | `\n`                         |
+| the first row plus `//` line comments alone             | none                               | `\n`                         |
+| the first row plus `/* */` block comments alone         | none                               | the same                     |
+| JSON, the RFC 8259 lexical forms over bytes             | none                               | `\t`, `\n`, `\r`            |
+| log lines (`[^\n]+` and `\n`)                           | `\n`                               | the same                     |
+| C-like, conventional: strings, `//`, ws runs with `\n`  | none                               | `\n`                         |
+| the same language, split-friendly tokenization          | `\n`                               | the same                     |
+| the same plus block comments                            | none                               | the same                     |
+| `keyword_scale_builder()`, construction-cost grammar    | 16 of those 24 bytes               | the same, plus space, tab and newline |
+| `build_lexer(false)`, the scaling grammar               | 13 of its own 14                   | the same, plus space, tab and newline |
 
 Three mechanisms explain the collapses:
 
@@ -306,22 +363,26 @@ speculation.
 
 The JSON row above appears to contradict the literature, and the reconciliation is about the equivalence each result
 preserves rather than about the automaton. Prior claims that JSON may be divided at newline (Barenghi et al. 2015,
-restated by Plex) treat whitespace as unobservable trivia. Such a division can split one maximal whitespace match into
-two ignored matches whose lengths sum to the original, leaving the observable non-trivia stream unchanged. The theorem
-here preserves something stronger, the complete sequence of emitted kinds and lengths, and under that semantics a
-newline inside a maximal whitespace token is not a certified boundary. The grammar surveyed here follows the RFC 8259
-lexical forms over byte input, with the full string escapes, signed numbers with fraction and exponent, the three
-literal names, and whitespace runs emitted as tokens, so it is refused exactly as it should be. It is a lexer over bytes
-rather than a conforming JSON processor: string interiors admit any byte from `0x20` up except quote and backslash, so
-UTF-8 well-formedness, which RFC 8259 requires of JSON exchanged outside a closed ecosystem, is assumed of the input
-rather than checked here. That is orthogonal to certification, since validating it would only remove bytes from string
-interiors and so could not de-certify anything that certifies now. The two results do not conflict; they quantify over
-different streams. A scanner that discards trivia can therefore split safely at newline under the weaker
-observable-stream equivalence, but the definition still rejects newline: the whitespace continuation state consumes it
-either way. Recovering certification itself needs the tokenization changed, for instance by making newline its own token
-as in Section 5, or the theorem extended to reason modulo ignored kinds.
+restated by Plex) rest on a weaker one. Barenghi et al.'s scanner accumulates no whitespace character it reads outside a
+string or a comment, so whitespace is unobservable in its output; Plex restates the claim on the different ground that
+newline occurs in no lexeme, which holds only once whitespace runs are not themselves counted as lexemes. Either way the
+division can split one maximal whitespace match into two discarded matches whose lengths sum to the original, leaving
+the surviving stream unchanged. The theorem here preserves something stronger, the complete sequence of emitted kinds
+and lengths, and under that semantics a newline inside a maximal whitespace token is not a certified boundary. The
+grammar surveyed here follows the RFC 8259 lexical forms over byte input, with the full string escapes, signed numbers
+with fraction and exponent, the three literal names, and whitespace runs emitted as tokens, so it is refused exactly as
+it should be. It is a lexer over bytes rather than a conforming JSON processor: string interiors admit any byte from
+`0x20` up except quote and backslash, so UTF-8 well-formedness, which RFC 8259 requires of JSON exchanged outside a
+closed ecosystem, is assumed of the input rather than checked here. That is orthogonal to certification, since
+validating it would only remove bytes from string interiors and so could not de-certify anything that certifies now. The
+two results do not conflict; they quantify over different streams. A scanner that discards those tokens can therefore
+split safely at newline under the weaker observable-stream equivalence, but the definition still rejects newline: the
+whitespace continuation state consumes it either way. Recovering certification itself needs the tokenization changed,
+for instance by making newline its own token as in Section 6, and Section 5 supplies the other half: the relaxed
+certificate accepts newline for JSON once whitespace is declared discarded, which is what the right column of the table
+records.
 
-## 6 Evaluation
+## 7 Evaluation
 
 The figures below come from `paper/data/bare-metal-pinned-run2/`, a full run on an AMD Ryzen 9 9950X3D under Ubuntu
 26.04 with GCC 15.2 at -O2, whose `environment.txt` records the measured commit and a clean tree. The `performance`
@@ -400,23 +461,23 @@ including the re-entrant-initial-state case. And the fuzzer generates arbitrary 
 planned boundary against `is_split_point`, and compares the concatenated parallel stream with the serial stream on every
 execution; local extended fuzzing and a bounded fuzzing job on every CI run have found no violation.
 
-## 7 Limitations and future work
+## 8 Limitations and future work
 
 The approach trades generality for certainty: when the grammar does not cooperate, it offers no usable split points, by
 design, and the speculation and composition families remain the only options. Several extensions look natural. A
 *conditional* certificate over symbol pairs or short windows ("`)` followed by `\n`") would recover splitting for
 grammars where no single byte certifies. A hybrid plan could split at certified bytes where they exist and fall back to
 speculative entry elsewhere, keeping the guarantee where it is free and paying for it only where it is not. Finally, the
-grammar-refactoring lever of Section 5 could be automated: given a token set, propose the minimal trivia re-tokenization
-that makes a chosen byte certify.
+grammar-refactoring lever of Section 6 could be automated: given a token set, propose the minimal re-tokenization that
+makes a chosen byte certify.
 
-## 8 Related-work summary
+## 9 Related-work summary
 
-A certified split symbol is not a synchronizing word in the classical sense (Volkov's survey covers that theory): a
-synchronizing word maps every state to one common state, whereas a certified symbol is one that no reachable mid-token
-state may consume into a state from which acceptance remains reachable, so the surrounding longest-match loop must
-already have finished its token and returned to the initial state before the symbol arrives. The reset comes from the
-token loop, not from the automaton's transition structure.
+A certified split symbol is not a reset word in the classical sense (Volkov's survey covers that theory, and the wider
+literature also calls such a word a synchronizing word): a reset word maps every state to one common state, whereas a
+certified symbol is one that no reachable mid-token state may consume into a state from which acceptance remains
+reachable, so the surrounding longest-match loop must already have finished its token and returned to the initial state
+before the symbol arrives. The reset comes from the token loop, not from the automaton's transition structure.
 
 Certified split points differ from simultaneous automata (no enlarged automaton, no composition), from speculation (no
 guess, no re-run, exact by construction), from k-locality (the property is per-symbol and derived from the token loop's
@@ -428,7 +489,7 @@ The contribution is therefore narrow and specific. Splitting at a delimiter is c
 works for JSON but needs Lua's grammar constrained first is stated in the literature; what appears to be missing is the
 automatic certification step those choices leave implicit, namely a sound grammar-only test of whether a given byte is a
 safe separator. The certificate supplies that test from the compiled automaton, with no hand analysis and no
-input-dependent context-recovery pass, and the survey in Section 5 turns the same machinery into a statement about which
+input-dependent context-recovery pass, and the survey in Section 6 turns the same machinery into a statement about which
 token sets admit such bytes at all. The analysis is not only sound: restricted to the states from which acceptance is
 still reachable, the condition is necessary too, so a rejected byte always admits an input placing it inside a token. To
 our knowledge this condition, in particular the re-entrancy requirement, has not been published as a static per-symbol
@@ -473,7 +534,7 @@ after the fact. None asks which single bytes the token set makes safe in advance
 
 ## Appendix: the applicability probe
 
-The table in Section 5 is produced by `paper/figures/applicability.cpp`, which uses only the public API: it builds each
+The table in Section 6 is produced by `paper/figures/applicability.cpp`, which uses only the public API: it builds each
 token set with `core::Builder`, reads `Lexer::is_split_point()` for every byte value, and asserts the result against the
 published row, exiting non-zero if any row disagrees. The grammars are those listed, with `Set::all()`-derived interiors
 carrying the exclusions the source shows: a string admits any byte but `"` and newline, a line comment any byte but

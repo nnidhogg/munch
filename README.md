@@ -641,15 +641,35 @@ compiled transition table, so it reflects the actual token set rather than a heu
 example, correctly disqualifies newline, where a split-at-newline rule would silently corrupt the token stream.
 `chunk_boundaries(input, chunks)` turns the certified points into a chunk plan, and `tokenize_all_parallel<T>(input,
 chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 93-95% parallel efficiency on eight threads
-over a 512 MiB corpus that does not fit in cache, and 3.5-3.9× the serial throughput on four, both across two benchmark
-revisions on one machine; see [docs/performance.md](docs/performance.md); for input that tokenizes completely, the token
-stream is guaranteed identical to the serial scan's, and on a failure the per-chunk consumed lengths expose it. A token
-set that certifies no split points degenerates to one chunk and the serial scan. The sink receives `(chunk, token,
-length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the contract and
-[docs/performance.md](docs/performance.md) for the measurements. The technical report *Certified Split Points: Parallel
-Lexing Without Speculation* states the certificate formally, relates it to the parallel-automata literature, and surveys
-which grammars certify usable split symbols: read it as [docs/split_points.md](docs/split_points.md), or build the
-formal version from [paper/](paper/).
+over a 512 MiB corpus that does not fit in cache, and 3.46-3.94× the serial throughput on four, both across two
+benchmark revisions on one machine; see [docs/performance.md](docs/performance.md); for input that tokenizes completely,
+the token stream is guaranteed identical to the serial scan's, and on a failure the per-chunk consumed lengths expose
+it. A token set that certifies no split points degenerates to one chunk and the serial scan. The sink receives `(chunk,
+token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the contract and
+[docs/performance.md](docs/performance.md) for the measurements.
+
+That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
+interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
+nothing. Since the tokens responsible are usually the ones a parser throws away, `set_ignored_tokens()` lets a builder
+declare them, and `is_split_point_ignoring(symbol)` then answers a weaker question: is splitting here safe once those
+tokens are deleted from both streams? It is sound and never admits less than `is_split_point()`, but it is conservative
+rather than exact, and the guarantee it carries is correspondingly weaker, so a caller that keeps those tokens must use
+`is_split_point()` instead. It recovers newline for a conventional C-like token set and newline, tab and carriage return
+for a JSON lexer, in both cases without changing the token definitions:
+
+```cpp
+builder.set_ignored_tokens({Token::Whitespace, Token::LineComment});
+
+const auto lexer{builder.build()};
+
+lexer.is_split_point('\n');           // false: a whitespace run can contain it
+lexer.is_split_point_ignoring('\n');  // true: both halves of the split run are discarded
+```
+
+The technical report *Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens* states both
+certificates formally, relates them to the parallel-automata literature, and surveys which grammars certify usable split
+symbols under each: read it as [docs/split_points.md](docs/split_points.md), or build the formal version from
+[paper/](paper/).
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
@@ -898,9 +918,10 @@ an exception; see [docs/limits.md](docs/limits.md).
 
 munch follows semantic versioning. The stable surface is what this README documents: the regex combinators with `Set`,
 `utf8::range`, `utf8::ranges`, and the `unicode` XID classes, `core::Builder` with `add_token()`, `build()`,
-`diagnose()`, and `set_state_limit()`, `core::Lexer` with `Match`, `tokenize()`, `tokenize_all()`, `is_split_point()`,
-`chunk_boundaries()`, and `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the
-major version; additions arrive in minor versions.
+`diagnose()`, `set_state_limit()`, and `set_ignored_tokens()`, `core::determinize()`, `core::Lexer` with `Match`,
+`tokenize()`, `tokenize_all()`, `is_split_point()`, `is_split_point_ignoring()`, `chunk_boundaries()`, and
+`tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
+arrive in minor versions.
 
 The supported platform is Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests, sanitizes,
 and fuzzes; other platforms may work but carry no promise. Semantic versioning covers source compatibility only. munch
