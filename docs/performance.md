@@ -52,15 +52,17 @@ latency does not take back what branch elimination won.
 
 Lexer-specialized code generators beat this design, and the margin grows with token length. logos, the Rust lexer
 generator, is measured in tools/benchmark/rust on byte-identical ports of the README's two benchmark corpora, validated
-to produce the same token stream to the token: it runs ten to thirty percent ahead of the whole-input `tokenize_all()`
-entry point, and CTRE overtakes on the source-shaped corpus as well; re2c occupies the same class for C. munch's own
-throughput is nearly identical on both corpus shapes, which is the table model's signature: it pays per byte, so token
-length neither helps nor hurts it, while generated code consumes multi-byte runs. Within munch's own class the lead
-survives falsification: even with regex-automata steelmanned through its low-level automaton walk rather than its search
-API, munch measures one and a half to nearly two times ahead, and further ahead of lexertl. They win by escaping the one
-cost the table model cannot shed: a table walk performs one dependent load per input byte, a serial chain of L1
-latencies, while generated code fuses multi-byte consumption into the matcher, comparing whole keywords at once and
-eating identifier runs without a per-byte state step.
+to produce the same token stream to the token: across measurement sessions it runs from under ten percent to roughly a
+quarter ahead of the whole-input `tokenize_all()` entry point on dense input and forty to sixty percent ahead on
+source-shaped input, and CTRE overtakes on the source-shaped corpus as well; re2c occupies the same class for C. munch's
+own throughput is nearly identical on both corpus shapes, which is the table model's signature: it pays per byte, so
+token length neither helps nor hurts it, while generated code consumes multi-byte runs. Within munch's own class the
+lead survives falsification: even with regex-automata steelmanned through its low-level automaton walk rather than its
+search API, munch measures about one and a half times ahead on the dense corpus and forty percent on the source one in
+the archived session, and further ahead of lexertl. They win by escaping the one cost the table model cannot shed: a
+table walk performs one dependent load per input byte, a serial chain of L1 latencies, while generated code fuses
+multi-byte consumption into the matcher, comparing whole keywords at once and eating identifier runs without a per-byte
+state step.
 
 That chain is untouchable from inside the loop, and this was measured rather than assumed: packing the accept flag into
 the transition entry put one extra mask on the chain and lost about ten percent, and consuming self-loop runs against a
@@ -144,29 +146,31 @@ certifies no safe points, and the right behavior is to refuse and scan sequentia
 with [limits.md](limits.md). The certification is built: `Lexer::is_split_point()` reports the certified bytes of a
 compiled token set, computed by those two passes in the simulator's constructor.
 
-The threaded chunking is measured, and the prediction registered here before the experiment held. The benchmark splits
-the input at the certified points nearest the equal-division offsets, runs one whole-input scan per chunk on its own
-thread, and first proves the chunked token stream identical to the serial one by an exact (kind, length) stream
-comparison before timing, keeping only a light tally as a consistency signal in the timed passes. On the benchmark token
-set, chunking scales the one-chunk 730.1 MiB/s to 1434.2 MiB/s on two threads, 2828.0 MiB/s on four, and 5568.3 MiB/s on
-eight, with the source-shaped corpus within a few percent of the dense one at every width. Those numbers are the pinned
-bare-metal run in `paper/data/bare-metal-pinned-run2/`, on a 512 MiB corpus four times the machine's last-level cache,
-taken at the commit its `environment.txt` records. `paper/data/benchmark.txt` holds the older virtualized run, and
-`paper/data/README.md` explains what separates them. That is 93-95% parallel efficiency at eight threads measured
-against the same API driven with one chunk, and 3.5-3.9x end to end at four threads, both across two benchmark revisions
-on one machine, either way clearing the 70% bar this section committed to in advance, and the shape confirms the
-diagnosis: the chains overlap almost perfectly because each thread's working set is a cache-resident table plus a
-streamed slice of input. The chunking has since been promoted into the library: `chunk_boundaries()` computes the
-certified plan and `tokenize_all_parallel()` runs it, one thread per chunk with the last on the calling thread, and the
-benchmark now routes through that entry point. The plan computation stays pure, so a caller owning its own thread pool
-can take the boundaries and leave the library's threads unused.
+The threaded chunking is measured, and the prediction stated here held. The benchmark splits the input at the first
+certified point at or after each equal-division offset, runs one whole-input scan per chunk on its own thread, and first
+proves the eight-chunk token stream on each corpus and size identical to the serial one by an exact (kind, length)
+stream comparison before the scaling rows. The timed passes keep a lighter check, each chunk's consumed length against a
+recomputed plan plus a token tally, so every chunked row plans twice per pass; planning at bytes this frequent costs a
+fraction of a microsecond against tens of milliseconds of scanning. On the benchmark token set, chunking scales the
+one-chunk 730.1 MiB/s to 1434.2 MiB/s on two threads, 2828.0 MiB/s on four, and 5568.3 MiB/s on eight, with the
+source-shaped corpus within a few percent of the dense one at every width. Those numbers are the pinned bare-metal run
+in `paper/data/bare-metal-pinned-run2/`, on a 512 MiB corpus four times the machine's last-level cache, taken at the
+commit its `environment.txt` records. `paper/data/benchmark.txt` holds the older virtualized run, and
+`paper/data/README.md` explains what separates them. That is 92.6-95.3% parallel efficiency at eight threads on the
+dense corpus, measured against the same API driven with one chunk, and 3.46-3.94x end to end at four threads, both
+across two benchmark revisions on one machine, either way clearing the 70% bar this section treats as the threshold, and
+the shape is consistent with the diagnosis that the chains overlap because each thread's working set is a table that
+stays in cache plus a streamed slice of input. The chunking has since been promoted into the library:
+`chunk_boundaries()` computes the certified plan and `tokenize_all_parallel()` runs it, one thread per chunk with the
+last on the calling thread, and the benchmark now routes through that entry point. The plan computation stays pure, so a
+caller owning its own thread pool can take the boundaries and leave the library's threads unused.
 
 The single-core variant was then built, measured, and reverted, and its failure taught more than the threaded success.
 The experiment flattened the scan into a per-byte state machine and stepped several lanes per loop iteration, each lane
 a chunk of the same input at the same certified boundaries, predicting that the lanes' per-byte load chains would
 overlap in one core's pipeline. Measured on the source corpus against a 623.1 MiB/s serial scan, one lane ran at 373.7
 MiB/s, two lanes at 372.8, four at 193.5, and the dense corpus fared worse still, so the code was removed under the
-two-times-or-revert criterion this section registered in advance. The control at one lane is the first lesson: the
+two-times-or-revert criterion applied to it. The control at one lane is the first lesson: the
 serial loop is fast because token-end handling sits outside the byte loop, and flattening it into per-byte checks costs
 forty percent before any interleaving begins. The flat lane count curve is the second and larger one: the prediction
 modeled the scan as one long dependency chain, but the scan resets its state to a constant at every token start, which
@@ -178,13 +182,13 @@ its own execution ports.
 
 The engine comparison confirms the threaded picture across implementations rather than just within munch. With both
 lexer classes chunked the same way and validated token for token against their serial scans (`munch_benchmark_compare`
-and the Rust driver, 16 MiB, best of fifteen), munch goes from 624.2 MiB/s serial to 2302.0 on four threads and 3284.5
-on eight on the dense corpus, and from 604.5 to 2342.3 and 3792.9 on the source corpus, while logos goes from 680.2 to
-2576.9 and 4594.0, and from 844.4 to 3253.8 and 5628.6. Both classes scale strongly, close to linear at four threads and
-sublinearly at eight, so threading multiplies the serial verdict instead of reordering it, and the meaningful difference
-between the rows is epistemic: munch's chunk boundaries are certified by `is_split_point()` from the compiled table for
-whatever token set was built, while the logos rows rest on a hand-written safety analysis of this one token set that the
-generated lexer can neither produce nor check.
+and the Rust driver, 16 MiB, best of fifteen, the README's archived transcript), munch goes from 577.0 MiB/s serial to
+2035.0 on four threads and 3755.4 on eight on the dense corpus, and from 563.8 to 2075.6 and 3873.3 on the source
+corpus, while logos goes from 728.0 to 2708.0 and 5148.9, and from 891.1 to 3462.0 and 6141.5. Both classes scale
+strongly, close to linear at four threads and sublinearly at eight, so threading multiplies the serial verdict instead
+of reordering it, and the meaningful difference between the rows is epistemic: munch's chunk boundaries are certified by
+`is_split_point()` from the compiled table for whatever token set was built, while the logos rows rest on a hand-written
+safety analysis of this one token set that the generated lexer can neither produce nor check.
 
 Measuring this added one mechanism worth recording. The first version of the threaded comparison scenario let each
 worker update its slot in a shared array of sixteen-byte tallies once per token, which put four workers' write targets

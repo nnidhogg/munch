@@ -12,9 +12,9 @@
 `munch` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
 regex-like combinator DSL, compiled through Thompson construction, subset construction, and DFA minimization by Moore
 partition refinement, then executed by a cache-optimized table simulator. There are no predefined tokens or grammars.
-You describe the language, and the library builds the automaton. On the
-[comparison below](#comparison-with-other-engines), that automaton measures as the fastest lexer constructed at run time
-in either measured language, on both benchmark corpora; only compile-time code generation measures ahead. The compiled
+You describe the language, and the library builds the automaton. On the [comparison
+below](#comparison-with-other-engines), that automaton measures as the fastest of the run-time-built lexers measured
+there, in both languages and on both benchmark corpora; only compile-time code generation measures ahead. The compiled
 table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned in parallel with
 strong scaling and a provably identical token stream, a guarantee none of the code-generating lexers measured here
 derives or checks for its own token sets.
@@ -63,7 +63,7 @@ maximal munch rule every lexer lives by, is the pun.
 
 - **Lightweight to Integrate**
 
-  Builds as a set of static libraries with `FetchContent`-managed dependencies. Add it with `add_subdirectory`, or
+  Builds as static libraries by default (`BUILD_SHARED_LIBS` is honored) with `FetchContent`-managed dependencies. Add it with `add_subdirectory`, or
   install it and `find_package(munch)`; either way, link `munch::munch`. The installed package is self-contained, with
   no third-party dependencies in its public headers.
 
@@ -102,9 +102,11 @@ regex combinators ──▶ NFA (Thompson construction)
    `(class, state) → state` and `state → token` tables (see [Performance](#performance)) instead of running the DFA
    against the maps it was built from.
 
-Determinization and minimization run twice, once per pattern and once for the whole lexer, so the final DFA is never
-larger than it needs to be. The first pass depends only on its own pattern, so adding a token changes nothing in what
-the other patterns lower to; `build()` runs both passes each time it is called.
+Determinization and minimization run twice, once per pattern and once for the whole lexer, so redundant states are
+collapsed at both levels. The refinement keeps states apart when they differ in accepted token or in having a missing
+transition, which a lexer needs, so the result can retain more states than a language-minimal DFA would. The first pass
+depends only on its own pattern, so adding a token changes nothing in what the other patterns lower to; `build()` runs
+both passes each time it is called.
 
 ## **Performance**
 
@@ -141,7 +143,7 @@ To reproduce a run somewhere else, `tools/benchmark/collect.sh` builds the bench
 with the machine it ran on, which is what makes a number quotable later:
 
 ```bash
-$ ./tools/benchmark/collect.sh ~/munch-run 1,16,128 15
+$ ./tools/benchmark/collect.sh ~/munch-run 1,16,128,512 15
 ```
 
 It writes `environment.txt` (CPU, visible topology, governor, memory, kernel, toolchain, and whether a hypervisor is
@@ -197,16 +199,21 @@ Configuring with `-DMUNCH_BENCHMARK_COMPARE=ON` additionally builds `munch_bench
 tokenization job through six engines: lexertl17 (the C++17 line of lexertl), munch's nearest relative, a lexer likewise
 built at run time from rules and compiled to a DFA, and five widely used regex engines, used the way one uses a regex
 engine to write a lexer: one pattern with an alternation per token kind, matched anchored at the current offset. Each
-engine's full tokenization, every token's kind and length, is validated to agree with munch's before anything is timed;
-the timed passes then run a lightweight recognition tally of token count and kinds. The option is off by default because
-it fetches the engines as additional dependencies.
+engine's full tokenization, every token's kind and length, is validated to agree with munch's before anything is timed.
+That agreement is a property of these corpora, not of the semantics: first-match alternation can stop before the longest
+match in general, as a token pair like `if`/`ifx` shows, so the validation is what licenses the comparison; the timed
+passes then run a lightweight recognition tally of token count and kinds. The option is off by default because it
+fetches the engines as additional dependencies.
 
 Two corpus shapes keep the conclusions honest: `dense`, averaging under two bytes per token, magnifies per-token
 overhead, and `source`, shaped like real code with long identifiers and indentation, amortizes it.
 
 Unlike the transcript above, these comparison figures were not re-measured on the bare-metal machine: they are the older
 run on an Intel i9-12900K under WSL2 with GCC 13.3, and only the ratios between engines on one machine are meaningful.
-Rebuild and rerun before quoting any absolute number here.
+Rebuild and rerun before quoting any absolute number here. The Rust dependencies are pinned by the committed
+`Cargo.lock`, but the Rust compiler version behind this transcript was not recorded and no shared environment transcript
+covers the C++ and Rust binaries together, so the cross-language comparison is looser evidence than the split-point
+measurements, whose raw runs are archived under `paper/data/`.
 
 ```
 $ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BENCHMARK_COMPARE=ON
@@ -260,8 +267,12 @@ The engines fall into three groups, and each group is in the comparison to answe
 **The same class: lexers constructed at run time.** These share munch's contract, a token set supplied as data while the
 program runs, so they are the alternatives munch directly competes with, and the group the claim of fastest in its class
 is measured against. regex-automata appears twice deliberately: once through its search API as a user would call it, and
-once steelmanned through its low-level automaton walk, so the claim holds against the best the library can do rather
-than its friendliest entry point.
+once steelmanned through its low-level automaton walk, so the claim holds against the best configuration measured here
+rather than its friendliest entry point.
+
+Every cell in the four tables below is the **best** of 15 passes, the statistic the transcripts above report first;
+the raw blocks carry the medians and the spread beside it. The paper's scaling tables quote **medians** instead, so
+a figure from here and a figure from there are not the same statistic and should not be set side by side.
 
 | Engine                 | Version   | Matching approach                       | dense | source |
 |------------------------|-----------|-----------------------------------------|------:|-------:|
@@ -296,7 +307,7 @@ generality on a workload of anchored matches every couple of bytes.
 | `munch`      | this repo      | table-compiled minimized DFA, single pass |   577 |    564 |
 | PCRE2        | 10.44          | backtracking, JIT-compiled              |    80 |    140 |
 | Boost.Regex  | 1.86.0         | backtracking                            |    16 |     28 |
-| RE2          | 2024-07-02     | Thompson NFA when extracting captures   |    11 |     19 |
+| RE2          | 2024-07-02     | leaves the DFA to extract captures      |    11 |     19 |
 | `std::regex` | libstdc++ 13.3 | backtracking                            |    11 |     16 |
 
 With the input chunked at safe split points and scanned with one thread per chunk, for the two lexer classes fast enough
@@ -309,18 +320,24 @@ for threading to matter:
 | logos   |       4 |  2708 |   3462 |
 | `munch` |       4 |  2035 |   2076 |
 
-Best-pass throughputs in MiB/s; the raw blocks above carry the medians and the spread, and the medians tell the same
-story throughout.
+Throughputs in MiB/s. The medians tell the same story throughout: no ranking above changes if the median is
+substituted for the best pass.
 
 Read the numbers for what they measure. The corpus averages under two bytes per token, so per-token overhead dominates:
 munch tokenizes the whole input through `tokenize_all()`, CTRE compiles the token set into a matcher at C++ compile
 time, and the general-purpose engines re-enter a full match API for every token (PCRE2 through its dedicated JIT entry
-point, `pcre2_jit_match`). RE2 must answer capture-group queries through its NFA rather than its faster DFA, and both
-RE2 and PCRE2 are designed for searching long texts, not for anchored matches every couple of bytes. The comparison
-pattern orders keywords before identifiers and multi-character operators before their prefixes, so the engines with
-first-match alternation semantics produce exactly munch's longest-match, priority-resolved tokenization.
+point, `pcre2_jit_match`). RE2 does not use its DFA to report capture positions at all: it picks among three submatch
+engines, `SearchOnePass` when the program is one-pass and the match is anchored, `SearchBitState` for small enough
+subtexts, and `SearchNFA` otherwise. These matches are anchored, so the cost here is leaving the DFA path rather than
+falling all the way to the NFA. Both RE2 and PCRE2 are also designed for searching long texts, not for anchored
+matches every couple of bytes. The comparison
+pattern orders keywords before identifiers and multi-character operators before their prefixes, and the full-stream
+validation confirms that on these corpora the engines with first-match alternation semantics produce exactly munch's
+longest-match, priority-resolved tokenization. Ordering alone does not guarantee that in general: with `if` ordered
+ahead of identifiers, first match splits `ifx` where longest match does not.
 
-Read as classes, the two corpora say one thing together. munch is the fastest lexer constructed at run time on both,
+Read as classes, the two corpora say one thing together. munch is the fastest among the run-time-built lexers
+measured here, on both,
 roughly 1.4 to 3.3 times ahead of its nearest relatives even with regex-automata steelmanned through its low-level walk,
 the narrow end being that steelman on the source-shaped corpus. The compile-time code generators own the overall lead as
 tokens grow longer: logos on both corpora and CTRE on source, because generated code consumes multi-byte runs where a
@@ -640,13 +657,13 @@ completely, splitting immediately before it produces the identical token stream.
 compiled transition table, so it reflects the actual token set rather than a heuristic; a newline-run token, for
 example, correctly disqualifies newline, where a split-at-newline rule would silently corrupt the token stream.
 `chunk_boundaries(input, chunks)` turns the certified points into a chunk plan, and `tokenize_all_parallel<T>(input,
-chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 93-95% parallel efficiency on eight threads
-over a 512 MiB corpus that does not fit in cache, and 3.46-3.94× the serial throughput on four, both across two
-benchmark revisions on one machine; see [docs/performance.md](docs/performance.md); for input that tokenizes completely,
-the token stream is guaranteed identical to the serial scan's, and on a failure the per-chunk consumed lengths expose
-it. A token set that certifies no split points degenerates to one chunk and the serial scan. The sink receives `(chunk,
-token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the contract and
-[docs/performance.md](docs/performance.md) for the measurements.
+chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 92.6-95.3% parallel efficiency on eight
+threads over a 512 MiB dense corpus that does not fit in cache, and 3.46-3.94× the serial throughput on four, both
+across two benchmark revisions on one machine; see [docs/performance.md](docs/performance.md); for input that tokenizes
+completely, the token stream is guaranteed identical to the serial scan's, and on a failure the per-chunk consumed
+lengths expose it. A token set that certifies no split points degenerates to one chunk and the serial scan. The sink
+receives `(chunk, token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the
+contract and [docs/performance.md](docs/performance.md) for the measurements.
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
@@ -925,8 +942,8 @@ arrive in minor versions.
 
 The supported platform is Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests, sanitizes,
 and fuzzes; other platforms may work but carry no promise. Semantic versioning covers source compatibility only. munch
-builds as static libraries meant to be compiled by the consumer, so no ABI stability is promised between any two
-versions.
+builds as static libraries by default and honours `BUILD_SHARED_LIBS`; either way the result is meant to be compiled
+by the consumer, so no ABI stability is promised between any two versions.
 
 The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
@@ -940,6 +957,13 @@ combinators without changing what exists (see [docs/limits.md](docs/limits.md)).
 The source code is licensed under the terms of the MIT License. See the [LICENSE](LICENSE) file for details. The
 generated Unicode identifier tables derive from the Unicode Character Database and are used under the Unicode License
 v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), installed alongside the package.
+
+The technical report and its figures, `paper/split-points.tex` and `paper/figures/*.pdf`, are licensed under
+[Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0), matching
+the licence the report carries on arXiv. The benchmark archives under `paper/data/` are released under
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): they are measurements rather than authorship, and
+attribution on a throughput table serves no one. The programs that generate the figures are source code and are MIT
+like the rest of the tree.
 
 ## **Author**
 
