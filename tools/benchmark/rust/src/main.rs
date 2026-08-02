@@ -218,7 +218,7 @@ fn is_split_point(byte: u8) -> bool {
     )
 }
 
-/// Mirrors compare.cpp chunk_boundaries(): the split point nearest each equal-division offset.
+/// Mirrors compare.cpp chunk_boundaries(): the first split point at or after each equal-division offset.
 fn chunk_boundaries(input: &[u8], chunks: usize) -> Vec<usize> {
     let mut boundaries = vec![0];
 

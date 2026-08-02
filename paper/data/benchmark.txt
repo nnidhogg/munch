@@ -1,6 +1,7 @@
 munch certified split points: benchmark artifact (summaries, not individual observations)
 
-commit:    c0e2fb62b17d4e4553fd02cc44a4059351fd1ff1
+tree:      1aca0cd13837cd40ab90a32222012eabdfc6018b
+archived:  c0e2fb62b17d4e4553fd02cc44a4059351fd1ff1 (documentation-only child; program sources identical)
 machine:   Intel Core i9-12900K, Ubuntu 24.04 under WSL2
 compiler:  GCC 13.3.0, -O2 (CMAKE_BUILD_TYPE=Release)
 command:   ./build/tools/benchmark/munch_benchmark 16 15

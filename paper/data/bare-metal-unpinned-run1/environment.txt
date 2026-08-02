@@ -30,7 +30,7 @@ Mem:            59Gi        12Gi        34Gi       882Mi        14Gi        47Gi
 Swap:          8.0Gi          0B       8.0Gi
 
 == os ==
-Linux rick 7.0.0-28-generic #28-Ubuntu SMP PREEMPT_DYNAMIC Sun Jun 21 01:01:36 UTC 2026 x86_64 GNU/Linux
+Linux <redacted> 7.0.0-28-generic #28-Ubuntu SMP PREEMPT_DYNAMIC Sun Jun 21 01:01:36 UTC 2026 x86_64 GNU/Linux
 distro:     Ubuntu 26.04 LTS
 container:  none detected
 wsl:        no
@@ -40,7 +40,7 @@ c++ (Ubuntu 15.2.0-16ubuntu1) 15.2.0
 cmake version 4.2.3
 
 == load at start ==
- 00:04:46 up 13:58,  3 users,  load average: 0.48, 0.54, 0.55
+ 00:04:46 up 13:58,  <redacted> users,  load average: 0.48, 0.54, 0.55
 
 == load at end ==
- 00:06:39 up 14:00,  3 users,  load average: 1.95, 1.14, 0.78
+ 00:06:39 up 14:00,  <redacted> users,  load average: 1.95, 1.14, 0.78

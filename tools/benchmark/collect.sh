@@ -3,7 +3,7 @@
 # Collects one benchmark run together with the environment it ran in, so the numbers can be cited later.
 #
 # Usage:  tools/benchmark/collect.sh [output directory] [sizes in MiB] [passes]
-# Example: tools/benchmark/collect.sh /tmp/munch-run 1,16,128 15
+# Example: tools/benchmark/collect.sh /tmp/munch-run 1,16,128,512 15
 #
 # Produces, in the output directory:
 #   environment.txt   what the machine and toolchain were
@@ -11,7 +11,8 @@
 #   observations.csv  every timed pass of the scaling scenarios, not just best/median/worst; the construction,
 #                     planning and thread-launch rows appear in summary.txt only
 #
-# Send the whole directory back. Nothing in it is machine-specific beyond what it deliberately records.
+# Send back the tarball it produces. It deliberately avoids identifying the machine or its users: uname omits the
+# hostname and the uptime line is printed without its count of logged-in users.
 #
 # Requirements:
 #   cmake 3.20 or newer
@@ -54,8 +55,15 @@ if ! "${CXX:-c++}" -std=c++23 "$probe/probe.cpp" -o "$probe/probe" 2>"$probe/err
 fi
 rm -rf "$probe"
 
+# uptime carries the load averages the non-quiescence discussion needs, on the same line as a count of logged-in
+# users that nothing published rests on. Print the line without the count, so the machine's owner is not asked to
+# trust a redaction after the fact.
+load_line() {
+    LC_ALL=C uptime | sed -E 's/,[[:space:]]*[0-9]+[[:space:]]+users?,/,/'
+}
+
 out=${1:-benchmark-run}
-sizes=${2:-1,16,128}
+sizes=${2:-1,16,128,512}
 passes=${3:-15}
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -102,7 +110,8 @@ echo
     free -h 2>/dev/null || true
     echo
     echo "== os =="
-    uname -a
+    # -a would print the hostname; the kernel, architecture and OS are what matter here.
+    uname -srmo
     (. /etc/os-release 2>/dev/null && echo "distro:     $PRETTY_NAME") || true
     echo "container:  $(test -f /.dockerenv && echo yes || echo 'none detected')"
     echo "wsl:        $(grep -qi microsoft /proc/version 2>/dev/null && echo yes || echo no)"
@@ -112,7 +121,7 @@ echo
     cmake --version 2>/dev/null | head -1
     echo
     echo "== load at start =="
-    uptime
+    load_line
 } > "$out/environment.txt"
 
 echo "recorded environment"
@@ -146,20 +155,26 @@ fi
 
 echo "built"
 
-# The benchmark validates the chunked stream against the serial one before timing, so a wrong result fails loudly.
+# The benchmark validates the eight-chunk stream against the serial one before the scaling rows, so a wrong result
+# fails loudly.
 "$build/tools/benchmark/munch_benchmark" "$sizes" "$passes" "$out/observations.csv" | tee "$out/summary.txt"
 
 {
     echo
     echo "== load at end =="
-    uptime
+    load_line
 } >> "$out/environment.txt"
 
 # Packed as one file on purpose: the summary, the per-pass CSV, and the environment only mean anything together,
-# and sending them loose invites a stray file from another run being read alongside them.
+# and sending them loose invites a stray file from another run being read alongside them. The configure and build
+# logs stay out of the archive: compiler diagnostics quote absolute source paths, which name the account that ran
+# this, and the header promises the output identifies neither the machine nor its users. They are kept on disk
+# beside the archive for the volunteer to inspect or send separately if a build problem needs them.
 archive="$out.tar.gz"
 
-tar czf "$archive" -C "$(dirname "$out")" "$(basename "$out")"
+tar czf "$archive" -C "$(dirname "$out")" \
+    --exclude="$(basename "$out")/configure.log" --exclude="$(basename "$out")/build.log" \
+    "$(basename "$out")"
 
 echo
 echo "done. Send back this one file: $archive"
