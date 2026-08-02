@@ -4,7 +4,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 #include "munch/dfa/builder.hpp"
@@ -644,4 +646,13 @@ TEST_F(Dfa_test, Accelerated_runs_extend_accepting_tokens)
         ASSERT_EQ(lengths.size(), 1U);
         EXPECT_EQ(lengths.front(), length);
     }
+}
+
+TEST_F(Dfa_test, Oversized_state_identifier_throws_before_the_count_wraps)
+{
+    // A hand-built DFA may number states sparsely; the largest possible identifier used to wrap the state count to
+    // zero and slip past the size guard into out-of-bounds table writes instead of the promised exception.
+    const Dfa dfa{std::numeric_limits<std::size_t>::max(), {}, {}};
+
+    EXPECT_THROW((Simulator{dfa}), std::runtime_error);
 }

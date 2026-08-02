@@ -6,6 +6,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <utility>
 #include <vector>
@@ -101,19 +102,21 @@ public:
      *
      * A symbol is a safe split point when no state reachable after consuming input consumes it into a state that can
      * still accept, so on any completely tokenizable input every occurrence can only be the first byte of a token: a
-     * scan reaching it mid-token finds no transition and must have ended its token earlier, and a token can only
-     * contain it by starting with it. Input the token set does not accept carries no such promise, since it has no
-     * tokens to speak of; see tokenize_all_parallel() for what survives there.
-     * For input that tokenizes completely, splitting immediately before such a symbol therefore produces the
-     * identical token stream, which is what makes chunked processing of one large input safe. The initial state is
-     * exempt only while no transition re-enters it; a nullable pattern such as a kleene token minimizes to an
-     * accepting, self-looping start state, and its symbols certify nothing. A symbol no live state consumes is safe
-     * only vacuously, since no input this lexer accepts contains it, and is deliberately not reported: a caller cannot
-     * use it, and searching for one scans the whole input for nothing. Transitions into states that can never accept
-     * are ignored throughout, since no emitted token can traverse one; a pattern denoting the empty language leaves
-     * exactly such states behind. States the initial state cannot reach are ignored on the same grounds, since no scan
-     * can arrive in one; a Dfa built by subset construction has none, but one assembled by hand may. Token sets whose
-     * runs or literals may contain any byte certify no split points.
+     * scan reaching it mid-token either finds no transition or enters a state from which acceptance is unreachable,
+     * so it may read farther but records no further accepting position and its token ended at an earlier one, and a
+     * token can only contain it by starting with it. Input the serial scan cannot tokenize completely carries the
+     * promise only up to the offset where that scan first fails, even though a valid prefix of tokens may be emitted
+     * before it; see core::Lexer::tokenize_all_parallel() for what survives there. For input that tokenizes
+     * completely, splitting immediately before such a symbol therefore produces the identical token stream, which is
+     * what makes chunked processing of one large input safe. The initial state is exempt only while no transition
+     * re-enters it; a nullable pattern such as a kleene token minimizes to an accepting, self-looping start state, and
+     * its symbols certify nothing. A symbol no live state consumes is safe only vacuously, since no input this lexer
+     * accepts contains it, and is deliberately not reported: a caller cannot use it, and searching for one scans the
+     * whole input for nothing. Transitions into states that can never accept are ignored throughout, since no emitted
+     * token can traverse one; a pattern denoting the empty language leaves exactly such states behind. States the
+     * initial state cannot reach are ignored on the same grounds, since no scan can arrive in one; a Dfa built by
+     * subset construction has none, but one assembled by hand may. Token sets whose runs or literals may contain any
+     * byte certify no split points.
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept
     {
@@ -132,10 +135,16 @@ public:
      * state reach the same state, so the restarted scan rejoins the interrupted one at once and only the one token
      * containing the cut is disturbed.
      *
-     * The guarantee is correspondingly weaker: chunks cut here reproduce the serial stream only after tokens of the
-     * ignored kinds are deleted from both. A caller that keeps them must use is_split_point() instead.
+     * The guarantee is correspondingly weaker in two independent ways. Chunks cut here reproduce the serial stream
+     * only after tokens of the ignored kinds are deleted from both, so a caller that keeps them must use
+     * is_split_point() instead. And it holds only for input the serial scan tokenizes completely: past the offset
+     * where that scan first fails, a chunk cut here can run on and emit kept tokens the serial scan never reaches,
+     * so a boundary must lie before that offset to be covered at all.
+     * Like is_split_point(), this reports the useful subset: a symbol no live state consumes satisfies the condition
+     * only vacuously, and both maps deliberately answer false for it.
      * @param symbol The symbol to test.
-     * @return True if every occurrence is a safe split point under that weaker equivalence.
+     * @return True if the symbol can begin a token and every occurrence is a safe split point under that weaker
+     *         equivalence; false for symbols that satisfy the condition only vacuously.
      */
     [[nodiscard]] bool is_split_point_ignoring(const char symbol) const noexcept
     {
@@ -151,6 +160,20 @@ public:
     [[nodiscard]] bool has_split_points() const noexcept
     {
         return (split_points_[0] | split_points_[1] | split_points_[2] | split_points_[3]) != 0;
+    }
+
+    /**
+     * @brief Reports whether the token set certifies any usable split point once discarded tokens are deleted.
+     *
+     * Never false when has_split_points() is true, since the relaxed map contains the exact one. A caller planning
+     * boundaries from is_split_point_ignoring() wants this test rather than has_split_points(), which would report
+     * nothing to search for on precisely the token sets the relaxation exists to rescue.
+     * @return True if at least one symbol is a split point modulo the discarded tokens.
+     */
+    [[nodiscard]] bool has_split_points_ignoring() const noexcept
+    {
+        return (split_points_ignoring_[0] | split_points_ignoring_[1] | split_points_ignoring_[2] |
+                split_points_ignoring_[3]) != 0;
     }
 
     /**
@@ -217,7 +240,7 @@ public:
     template <common::concepts::Iterable Container>
     [[nodiscard]] Match run(const Container& container) const
     {
-        return run(std::begin(container), std::end(container));
+        return run(std::ranges::begin(container), std::ranges::end(container));
     }
 
     /**

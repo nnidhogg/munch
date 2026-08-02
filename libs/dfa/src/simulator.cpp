@@ -24,25 +24,29 @@ template <typename Entry>
 using Table_view_t = std::mdspan<Entry, std::dextents<std::size_t, 2>>;
 
 /**
- * @brief Returns the number of table columns the DFA needs, i.e. one past its highest state identifier.
- * @param dfa The DFA whose states are counted.
- * @return One past the highest state identifier used by the DFA.
+ * @brief Returns the highest state identifier the DFA uses.
+ *
+ * The caller derives the table column count as one past this value; returning the identifier itself, rather than the
+ * count, lets the caller reject an oversized DFA before the increment, which would wrap for a hand-built DFA whose
+ * highest state is the largest std::size_t.
+ * @param dfa The DFA whose states are inspected.
+ * @return The highest state identifier used by the DFA.
  */
-std::size_t count_states(const Dfa& dfa)
+std::size_t highest_state(const Dfa& dfa)
 {
-    auto highest_state{dfa.init_state()};
+    auto highest{dfa.init_state()};
 
     for (const auto& [key, to] : dfa.transitions())
     {
-        highest_state = std::max({highest_state, key.first, to});
+        highest = std::max({highest, key.first, to});
     }
 
     for (const auto& state : dfa.accept_states() | std::views::keys)
     {
-        highest_state = std::max(highest_state, state);
+        highest = std::max(highest, state);
     }
 
-    return highest_state + 1;
+    return highest;
 }
 
 } // namespace
@@ -52,12 +56,14 @@ Simulator::Simulator(const Dfa& dfa) : Simulator{dfa, {}}
 
 Simulator::Simulator(const Dfa& dfa, const std::span<const std::size_t> ignored) : init_state_{dfa.init_state()}
 {
-    const auto states{count_states(dfa)};
+    const auto highest{highest_state(dfa)};
 
-    if (states >= no_state_)
+    if (highest >= no_state_ - 1)
     {
         throw std::runtime_error("DFA has too many states to be indexed by a transition table entry");
     }
+
+    const auto states{highest + 1};
 
     const auto classes{classify(dfa)};
 

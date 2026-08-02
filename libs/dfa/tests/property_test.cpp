@@ -366,6 +366,58 @@ TEST(Dfa_property_test, Minimization_is_idempotent)
     }
 }
 
+// The specification and the implementation disagreed here once: the report rejected any candidate the re-entrant
+// initial state consumes, while the predicate exempts only a NON-re-entrant initial state and otherwise lets q0 earn
+// its place on the same three conditions as any other state. Random property tests could not see it, because they
+// check behaviour against an oracle rather than correspondence to an independently written rule. These two cases pin
+// the boundary: identical automata, differing only in whether the token is discarded.
+TEST(Dfa_property_test, Re_entrant_initial_state_is_admitted_only_when_its_token_is_discarded)
+{
+    Builder builder;
+
+    const auto start{builder.init_state()};
+
+    builder.add_transition(start, Label{'a'}, start);
+
+    builder.add_accept_state(start, Token{1});
+
+    const auto dfa{minimize(builder.build())};
+
+    // Kept: splitting "aa" turns one length-2 token into two length-1 tokens, which a caller can see.
+    ASSERT_FALSE(Simulator(dfa, std::vector<std::size_t>{}).is_split_point_ignoring('a'));
+
+    // Discarded: the same split replaces one deleted token with two, and both vanish under the projection.
+    ASSERT_TRUE(Simulator(dfa, std::vector<std::size_t>{1}).is_split_point_ignoring('a'));
+
+    // The exact certificate refuses it either way, since the initial state is re-entrant.
+    ASSERT_FALSE(Simulator{dfa}.is_split_point('a'));
+}
+
+// Both certificates quantify over states that are reachable AND co-accessible. Only a hand-built automaton separates
+// the two halves: subset construction discovers reachable subsets only, and minimization would drop the detached
+// state before a test could see it. So this one is assembled directly, and it pins the reachable half, which a state
+// no input enters must not be able to override.
+TEST(Dfa_property_test, Unreachable_states_do_not_de_certify_a_symbol)
+{
+    // q0 -b-> q1 accepting, beside a detached q2 -b-> q3 accepting that no input can enter.
+    const Dfa detached{0, {{{0, Label{'b'}}, 1}, {{2, Label{'b'}}, 3}}, {{1, Token{1}}, {3, Token{1}}}};
+
+    ASSERT_TRUE(Simulator{detached}.is_split_point('b'));
+
+    ASSERT_TRUE(Simulator(detached, std::vector<std::size_t>{1}).is_split_point_ignoring('b'));
+
+    // The same shape with q2 reachable through 'a'. It is now a live non-initial state consuming b into a state that
+    // can still accept, so b is a byte that occurs inside a token and neither certificate may admit it.
+    const Dfa reachable{
+            0,
+            {{{0, Label{'b'}}, 1}, {{0, Label{'a'}}, 2}, {{2, Label{'b'}}, 3}},
+            {{1, Token{1}}, {3, Token{1}}}};
+
+    ASSERT_FALSE(Simulator{reachable}.is_split_point('b'));
+
+    ASSERT_FALSE(Simulator(reachable, std::vector<std::size_t>{1}).is_split_point_ignoring('b'));
+}
+
 TEST(Dfa_property_test, Trivia_modulo_certificate_survives_every_split_it_admits)
 {
     Random random{4};

@@ -2,6 +2,7 @@
 #define MUNCH_LIBS_NFA_INCLUDE_MUNCH_NFA_SIMULATOR_HPP
 
 #include <optional>
+#include <ranges>
 
 #include "munch/common/concepts.hpp"
 #include "munch/nfa/nfa.hpp"
@@ -74,7 +75,7 @@ public:
     template <common::concepts::Iterable Container>
     [[nodiscard]] static auto run(const Nfa& nfa, const Container& container)
     {
-        return run(nfa, std::begin(container), std::end(container));
+        return run(nfa, std::ranges::begin(container), std::ranges::end(container));
     }
 };
 

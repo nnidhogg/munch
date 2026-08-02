@@ -4,10 +4,16 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <limits>
+#include <ranges>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "munch/common/concepts.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/nfa/tools/graphviz.hpp"
@@ -1513,4 +1519,195 @@ TEST_F(Lexer_test, Xid_membership_matches_the_generated_tables_at_every_boundary
             }
         }
     }
+}
+
+// Two ideal offsets can walk forward onto the same certified byte. Resuming the next search from the ideal offset
+// rediscovers it, drops it as a duplicate, and never reaches the certified byte after it, silently costing a chunk
+// the input can support.
+TEST_F(Lexer_test, Chunk_boundaries_finds_adjacent_certified_bytes)
+{
+    enum class Token_kind : uint8_t
+    {
+        Run,
+        Semicolon,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(plus(any_of(Set{'a'})), Token_kind::Run, 1);
+    builder.add_token(text(";"), Token_kind::Semicolon, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"aaaaaaa;;a"};
+
+    ASSERT_TRUE(lexer.is_split_point(';'));
+
+    EXPECT_EQ(lexer.chunk_boundaries(input, 4), (std::vector<std::size_t>{0, 7, 8, 10}));
+
+    EXPECT_EQ(lexer.chunk_boundaries(input, 2), (std::vector<std::size_t>{0, 7, 10}));
+}
+
+// A chunk needs a byte, so a request far larger than the input must neither iterate once per requested chunk nor
+// overflow the ideal-offset arithmetic. The answer is capped by what the input can actually support.
+TEST_F(Lexer_test, Chunk_boundaries_caps_a_request_larger_than_the_input)
+{
+    enum class Token_kind : uint8_t
+    {
+        Run,
+        Semicolon,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(plus(any_of(Set{'a'})), Token_kind::Run, 1);
+    builder.add_token(text(";"), Token_kind::Semicolon, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"aaaaaaa;;a"};
+
+    const auto capped{lexer.chunk_boundaries(input, std::numeric_limits<std::size_t>::max())};
+
+    EXPECT_EQ(capped, (std::vector<std::size_t>{0, 7, 8, 10}));
+
+    EXPECT_EQ(
+            lexer.chunk_boundaries(std::string{}, std::numeric_limits<std::size_t>::max()),
+            (std::vector<std::size_t>{0, 0}));
+}
+
+// The ideal offsets must be exactly size * index / chunks. Computing them that way overflows for a large input cut
+// very finely, so the planner accumulates instead; this pins the accumulation against the closed form it replaces.
+// Every byte certifies here, so no boundary walks forward and the offsets are the division itself. The sizes and
+// chunk counts are deliberately coprime, which is what makes the carry fire on most iterations.
+TEST_F(Lexer_test, Chunk_boundaries_divide_the_input_exactly)
+{
+    enum class Token_kind : uint8_t
+    {
+        Any,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(any_of(Set::all()), Token_kind::Any, 1);
+
+    const auto lexer{builder.build()};
+
+    for (const auto size : {std::size_t{100}, std::size_t{997}, std::size_t{1024}})
+    {
+        const std::string input(size, 'x');
+
+        ASSERT_TRUE(lexer.is_split_point('x'));
+
+        for (const auto chunks : {std::size_t{3}, std::size_t{7}, std::size_t{64}})
+        {
+            std::vector<std::size_t> expected{0};
+
+            for (std::size_t index{1}; index < chunks; ++index)
+            {
+                expected.push_back(size * index / chunks);
+            }
+
+            expected.push_back(size);
+
+            EXPECT_EQ(lexer.chunk_boundaries(input, chunks), expected) << "size " << size << ", chunks " << chunks;
+        }
+    }
+}
+
+// An exception escaping a jthread's callable calls std::terminate. A throwing sink must reach the caller instead,
+// and must do so identically whether it throws on a worker chunk or on the one the caller scans itself.
+TEST_F(Lexer_test, Parallel_tokenization_propagates_a_throwing_sink)
+{
+    enum class Token_kind : uint8_t
+    {
+        Run,
+        Semicolon,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(plus(any_of(Set{'a'})), Token_kind::Run, 1);
+    builder.add_token(text(";"), Token_kind::Semicolon, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"aaa;aaa;aaa;aaa"};
+
+    ASSERT_GT(lexer.chunk_boundaries(input, 4).size(), 2U);
+
+    const auto scan{[&lexer, &input](const std::size_t throwing_chunk) {
+        return lexer.tokenize_all_parallel<Token_kind>(
+                input, 4, [throwing_chunk](const std::size_t chunk, Token_kind, std::size_t) {
+                    if (chunk == throwing_chunk)
+                    {
+                        throw std::runtime_error{"sink"};
+                    }
+                });
+    }};
+
+    EXPECT_THROW(scan(0), std::runtime_error);
+
+    EXPECT_THROW(scan(lexer.chunk_boundaries(input, 4).size() - 2), std::runtime_error);
+}
+
+TEST_F(Lexer_test, Test_container_concepts_require_common_const_ranges)
+{
+    using munch::common::concepts::Iterable;
+    using munch::common::concepts::Random_access_iterable;
+
+    static_assert(Random_access_iterable<std::string>);
+    static_assert(Random_access_iterable<std::string_view>);
+    static_assert(Random_access_iterable<std::vector<char>>);
+    static_assert(Random_access_iterable<std::array<char, 4>>);
+    static_assert(Random_access_iterable<char[4]>);
+
+    // A counted iterator paired with the default sentinel is random access but not a common range, and a begin/end
+    // pair of different types cannot instantiate the single-iterator entry points, so the concept must reject it at
+    // the interface instead of failing inside the body.
+    using Counted = std::ranges::subrange<std::counted_iterator<const char*>, std::default_sentinel_t>;
+
+    static_assert(std::ranges::random_access_range<Counted>);
+    static_assert(!Random_access_iterable<Counted>);
+    static_assert(!Iterable<Counted>);
+
+    // A filter view iterates only mutably, and every container overload takes a const reference.
+    using Filtered = decltype(std::declval<std::string&>() | std::views::filter([](char) { return true; }));
+
+    static_assert(std::ranges::range<Filtered>);
+    static_assert(!Iterable<Filtered>);
+
+    // views::common is the caller's one-line repair, and over a sized random access range it keeps random access.
+    const Builder builder;
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"abab"};
+
+    const auto common{
+            std::ranges::subrange{std::counted_iterator{input.data(), 4}, std::default_sentinel} | std::views::common};
+
+    static_assert(Random_access_iterable<decltype(common)>);
+
+    EXPECT_EQ(lexer.tokenize<int>(common), Lexer::Match<int>(std::nullopt, 0));
+
+    EXPECT_EQ(lexer.chunk_boundaries(common, 2), (std::vector<std::size_t>{0, 4}));
+}
+
+TEST_F(Lexer_test, Test_ignored_tokens_reject_non_integral_initializers)
+{
+    // A floating-point initializer used to deduce the list's element type and truncate silently; the constrained
+    // overload now leaves only the vector overload, where the narrowing conversion is ill-formed.
+    static_assert(requires(Builder builder) { builder.set_ignored_tokens({1, 2}); });
+
+    enum class Kind : std::size_t
+    {
+        comment = 7
+    };
+
+    static_assert(requires(Builder builder) { builder.set_ignored_tokens({Kind::comment}); });
+
+    // set_ignored_tokens({1.9}) is now ill-formed outright: the constrained overload no longer deduces a double
+    // list, and the vector overload rejects the narrowing conversion. That is a hard error inside the braced list,
+    // not a substitution failure, so it cannot be asserted here with a negative requires-expression.
 }

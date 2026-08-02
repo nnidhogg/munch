@@ -1,10 +1,14 @@
 #ifndef MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_LEXER_HPP
 #define MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_LEXER_HPP
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
+#include <exception>
 #include <iterator>
+#include <mutex>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <thread>
 #include <utility>
@@ -68,7 +72,7 @@ public:
         requires(std::integral<T> || std::is_enum_v<T>)
     [[nodiscard]] Match<T> tokenize(const Container& container) const
     {
-        return tokenize<T>(std::begin(container), std::end(container));
+        return tokenize<T>(std::ranges::begin(container), std::ranges::end(container));
     }
 
     /**
@@ -101,7 +105,8 @@ public:
      *
      * For input the serial scan tokenizes completely, splitting immediately before a safe split point produces
      * the identical token stream, so such symbols mark chunk boundaries at which one large input may be processed
-     * in independent pieces; on malformed input see tokenize_all_parallel() for the weaker prefix guarantee. The
+     * in independent pieces; on malformed input see tokenize_all_parallel() for the weaker prefix guarantee. Only
+     * the useful subset is reported: a symbol no live state consumes is safe merely vacuously and answers false. The
      * property is certified from the compiled transition table; see dfa::Simulator::is_split_point().
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept { return simulator_.is_split_point(symbol); }
@@ -110,10 +115,15 @@ public:
      * @brief Reports whether the symbol is a safe split point once the discarded tokens are deleted.
      *
      * Never smaller than is_split_point(), and equal to it unless the builder was told which tokens are discarded.
-     * Chunks cut here reproduce the serial stream only after tokens of those kinds are removed from both, so a
-     * caller that keeps them must use is_split_point(). See dfa::Simulator::is_split_point_ignoring().
+     * For input the serial scan tokenizes completely, chunks cut here reproduce the serial stream once tokens of
+     * those kinds are removed from both, so a caller that keeps them must use is_split_point(). The completeness
+     * condition is not decoration: past the offset where the serial scan first fails, a chunk cut here can emit
+     * kept tokens that scan never reaches. Note also that chunk_boundaries() and tokenize_all_parallel() plan with
+     * the exact certificate, so acting on this answer means planning boundaries yourself. See
+     * dfa::Simulator::is_split_point_ignoring().
      * @param symbol The symbol to test.
-     * @return True if every occurrence is safe under that weaker equivalence.
+     * @return True if the symbol can begin a token and every occurrence is safe under that weaker equivalence;
+     *         symbols satisfying the condition only vacuously report false.
      */
     [[nodiscard]] bool is_split_point_ignoring(const char symbol) const noexcept
     {
@@ -130,11 +140,11 @@ public:
      * @return The number of input elements tokenized; anything short of the container's size means no token matched
      *         at the returned offset.
      */
-    template <typename T, common::concepts::Iterable Container, std::invocable<T, std::size_t> Sink>
+    template <typename T, common::concepts::Random_access_iterable Container, std::invocable<T, std::size_t> Sink>
         requires(std::integral<T> || std::is_enum_v<T>)
     std::size_t tokenize_all(const Container& container, Sink sink) const
     {
-        return tokenize_all<T>(std::begin(container), std::end(container), std::move(sink));
+        return tokenize_all<T>(std::ranges::begin(container), std::ranges::end(container), std::move(sink));
     }
 
     /**
@@ -165,16 +175,45 @@ public:
         // certify vacuously, and searching for one scans to the end of the input and finds nothing.
         const auto any_certified{simulator_.has_split_points()};
 
-        for (std::size_t index{1}; any_certified && index < chunks; ++index)
+        // A chunk needs at least one byte, so asking for more chunks than bytes only adds iterations that can find
+        // nothing.
+        const auto usable{std::min(chunks, size)};
+
+        // The ideal offsets are size * index / usable, but that product overflows for a large input divided very
+        // finely, and so does any form that multiplies the remainder by the index: both are bounded below by
+        // (usable - 1) squared. Accumulating instead multiplies nothing. Adding the quotient each step and carrying
+        // the remainder when it fills a whole divisor yields exactly the same offsets, with target never exceeding
+        // size and carry never reaching usable, so no intermediate can leave the range the input already occupies.
+        const auto step{usable == 0 ? std::size_t{0} : size / usable};
+
+        const auto step_remainder{usable == 0 ? std::size_t{0} : size % usable};
+
+        std::size_t target{0};
+
+        std::size_t carry{0};
+
+        for (std::size_t index{1}; any_certified && index < usable; ++index)
         {
-            auto offset{index * size / chunks};
+            target += step;
+
+            if (carry += step_remainder; carry >= usable)
+            {
+                ++target;
+
+                carry -= usable;
+            }
+
+            // Start strictly after the previous boundary, not at the ideal offset. Two ideal offsets can walk
+            // forward onto the same certified byte; resuming from the ideal offset would rediscover it, drop it as
+            // a duplicate, and lose the next certified byte along with the chunk it would have opened.
+            auto offset{std::max(target, boundaries.back() + 1)};
 
             while (offset < size && !is_split_point(static_cast<char>(begin[static_cast<std::ptrdiff_t>(offset)])))
             {
                 ++offset;
             }
 
-            if (offset > boundaries.back() && offset < size)
+            if (offset < size)
             {
                 boundaries.push_back(offset);
             }
@@ -188,10 +227,10 @@ public:
     /**
      * @brief Computes chunk boundaries for parallel tokenization of a whole container.
      */
-    template <common::concepts::Iterable Container>
+    template <common::concepts::Random_access_iterable Container>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries(const Container& container, const std::size_t chunks) const
     {
-        return chunk_boundaries(std::begin(container), std::end(container), chunks);
+        return chunk_boundaries(std::ranges::begin(container), std::ranges::end(container), chunks);
     }
 
     /**
@@ -226,11 +265,31 @@ public:
 
         std::vector<std::size_t> consumed(boundaries.size() - 1, 0);
 
-        const auto scan{[this, &boundaries, &consumed, begin, &sink](const std::size_t chunk) {
-            consumed[chunk] = tokenize_all<T>(
-                    begin + static_cast<std::ptrdiff_t>(boundaries[chunk]),
-                    begin + static_cast<std::ptrdiff_t>(boundaries[chunk + 1]),
-                    [&sink, chunk](const T token, const std::size_t length) { sink(chunk, token, length); });
+        std::mutex failure_mutex;
+
+        std::exception_ptr failure;
+
+        // An exception escaping a jthread's callable calls std::terminate, so a throwing sink would abort the
+        // process on a worker while the caller's own chunk merely propagated. Keep the first one and rethrow it
+        // after every worker has joined, so both paths behave alike and no thread outlives the throw.
+        const auto scan{[this, &boundaries, &consumed, begin, &sink, &failure_mutex,
+                         &failure](const std::size_t chunk) {
+            try
+            {
+                consumed[chunk] = tokenize_all<T>(
+                        begin + static_cast<std::ptrdiff_t>(boundaries[chunk]),
+                        begin + static_cast<std::ptrdiff_t>(boundaries[chunk + 1]),
+                        [&sink, chunk](const T token, const std::size_t length) { sink(chunk, token, length); });
+            }
+            catch (...)
+            {
+                const std::scoped_lock lock{failure_mutex};
+
+                if (!failure)
+                {
+                    failure = std::current_exception();
+                }
+            }
         }};
 
         {
@@ -246,18 +305,26 @@ public:
             scan(consumed.size() - 1);
         }
 
+        if (failure)
+        {
+            std::rethrow_exception(failure);
+        }
+
         return consumed;
     }
 
     /**
      * @brief Tokenizes a whole container as concurrent chunks split at certified safe split points.
      */
-    template <typename T, common::concepts::Iterable Container, std::invocable<std::size_t, T, std::size_t> Sink>
+    template <
+            typename T, common::concepts::Random_access_iterable Container,
+            std::invocable<std::size_t, T, std::size_t> Sink>
         requires(std::integral<T> || std::is_enum_v<T>)
     std::vector<std::size_t> tokenize_all_parallel(
             const Container& container, const std::size_t chunks, Sink sink) const
     {
-        return tokenize_all_parallel<T>(std::begin(container), std::end(container), chunks, std::move(sink));
+        return tokenize_all_parallel<T>(
+                std::ranges::begin(container), std::ranges::end(container), chunks, std::move(sink));
     }
 
 private:

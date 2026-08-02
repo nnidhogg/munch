@@ -77,6 +77,7 @@ public:
      * @param tokens The tokens to treat as discarded.
      */
     template <typename T>
+        requires(std::integral<T> || std::is_enum_v<T>)
     void set_ignored_tokens(const std::initializer_list<T> tokens)
     {
         ignored_.clear();
