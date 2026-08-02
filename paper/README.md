@@ -46,7 +46,8 @@ and exits non-zero on any disagreement:
 
 ```
 c++ -std=c++23 -I libs/common/include -I libs/core/include -I libs/dfa/include -I libs/nfa/include \
-    -I libs/regex/include paper/figures/applicability.cpp -o /tmp/applicability \
+    -I libs/regex/include -I tools/benchmark/include \
+    paper/figures/applicability.cpp tools/benchmark/src/harness.cpp -o /tmp/applicability \
     -L build/libs/core -L build/libs/dfa -L build/libs/nfa -L build/libs/regex \
     -lmunch_core -lmunch_dfa -lmunch_nfa -lmunch_regex -lpthread
 /tmp/applicability
@@ -58,19 +59,20 @@ The evaluation section cites five measurements, described in full by `data/READM
 `data/bare-metal-pinned-run2/`, a run on an AMD Ryzen 9 9950X3D confined to one L3 domain, with
 `data/bare-metal-unpinned-run2/` the same measurement free to use every logical processor; both carry the machine, the
 topology, the summary, and every pass of the scaling scenarios individually. The `-run1` pair is an earlier collection
-of the same two placements at an earlier commit, kept because the paper reports what changed between them. Both measured
-trees are preserved by annotated tags: `benchmark/split-points-2026-07`, `benchmark/split-points-2026-08-run1` and
-`benchmark/split-points-2026-08`.
+of the same two placements at an earlier commit, kept because the paper reports what changed between them. The
+bare-metal trees are preserved by the `benchmark/split-points-2026-08-run1` and `benchmark/split-points-2026-08` tags;
+`benchmark/split-points-2026-07` preserves the Intel run's code-identical archival tree, as described below.
 
 `data/benchmark.txt` is the earlier virtualized run, retained because the paper draws a result from the contrast between
 the two environments. It holds the best, median, and worst of each scenario rather than the individual observations,
-with the measured commit, machine, compiler, and command recorded in its header. That commit is the tree whose benchmark
-produced these rows: it has the one-chunk baseline the evaluation reports and predates the interleaved harness. The
-paper quotes that file rather than the README's table, so ordinary benchmark refreshes cannot silently change what the
-paper claims. Reproduce it with:
+with the measured checkout, machine, compiler, and command recorded in its header. The header's `tree` is the checkout
+whose benchmark produced these rows: it has the one-chunk baseline the evaluation reports and predates the interleaved
+harness. The `benchmark/split-points-2026-07` tag points at its direct child `c0e2fb6`, which changes only paper and
+documentation files, so the tagged tree builds the identical program. The paper quotes that file rather than the
+README's table, so ordinary benchmark refreshes cannot silently change what the paper claims. Reproduce it with:
 
 ```
-git worktree add /tmp/munch-paper c0e2fb62b17d4e4553fd02cc44a4059351fd1ff1
+git worktree add /tmp/munch-paper 1aca0cd13837cd40ab90a32222012eabdfc6018b
 cd /tmp/munch-paper
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=ON
 cmake --build build
@@ -93,7 +95,7 @@ To take a *new* measurement rather than reproduce the archived one, use
 [`tools/benchmark/collect.sh`](../tools/benchmark/collect.sh) from the repository root:
 
 ```
-./tools/benchmark/collect.sh ~/munch-run 1,16,128 15
+./tools/benchmark/collect.sh ~/munch-run 1,16,128,512 15
 ```
 
 It builds the current benchmark, records the machine it ran on, and writes every timed pass of the scaling scenarios to
