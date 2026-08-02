@@ -32,19 +32,31 @@ public:
     using Builder::dfa;
 };
 
-// Reports what the shipped predicate says, so the figure's captions are checked rather than asserted.
-void report(const Builder_dbg& builder, const std::string& name, const std::string& bytes)
+// Asserts what the shipped predicate says about each candidate byte, so the figure's caption cannot drift from the
+// automaton it describes. `expected` carries one character per byte: 'c' for certified, 'r' for rejected.
+bool report(const Builder_dbg& builder, const std::string& name, const std::string& bytes, const std::string& expected)
 {
     const auto lexer{builder.build()};
 
+    auto agrees{true};
+
     std::cout << name << ": ";
 
-    for (const auto byte : bytes)
+    for (std::size_t i{0}; i < bytes.size(); ++i)
     {
-        std::cout << '\'' << byte << "' " << (lexer.is_split_point(byte) ? "certified" : "rejected") << "  ";
+        const auto certified{lexer.is_split_point(bytes[i])};
+
+        const auto wanted{expected[i] == 'c'};
+
+        std::cout << '\'' << bytes[i] << "' " << (certified ? "certified" : "rejected")
+                  << (certified == wanted ? "" : " <- CAPTION SAYS OTHERWISE") << "  ";
+
+        agrees = agrees && certified == wanted;
     }
 
     std::cout << '\n';
+
+    return agrees;
 }
 
 using munch::regex::any_of;
@@ -55,7 +67,7 @@ using munch::regex::Set;
 using munch::regex::text;
 
 // a+ and ';'. The only state consuming ';' is the initial one, which nothing re-enters, so ';' is certified.
-void write_sound(const std::filesystem::path& dir)
+bool write_sound(const std::filesystem::path& dir)
 {
     Builder_dbg builder;
 
@@ -64,12 +76,12 @@ void write_sound(const std::filesystem::path& dir)
 
     munch::dfa::tools::Graphviz::to_file(builder.dfa(), dir / "certificate_sound.dot");
 
-    report(builder, "sound    (a+ and ';')", "a;");
+    return report(builder, "sound    (a+ and ';')", "a;", "rc");
 }
 
 // a* alone. The initial state accepts and carries a self-loop, so it is the only state consuming 'a' and the
 // re-entrancy condition is the only thing that keeps 'a' out of the certificate.
-void write_nullable(const std::filesystem::path& dir)
+bool write_nullable(const std::filesystem::path& dir)
 {
     Builder_dbg builder;
 
@@ -77,12 +89,12 @@ void write_nullable(const std::filesystem::path& dir)
 
     munch::dfa::tools::Graphviz::to_file(builder.dfa(), dir / "certificate_nullable.dot");
 
-    report(builder, "nullable (a*)        ", "a");
+    return report(builder, "nullable (a*)        ", "a", "r");
 }
 
 // (ab)*c. The initial state is re-entered through a cycle rather than a self-loop, which is why the condition is
 // stated as an incoming transition and not as a self-loop.
-void write_cyclic(const std::filesystem::path& dir)
+bool write_cyclic(const std::filesystem::path& dir)
 {
     Builder_dbg builder;
 
@@ -90,7 +102,7 @@ void write_cyclic(const std::filesystem::path& dir)
 
     munch::dfa::tools::Graphviz::to_file(builder.dfa(), dir / "certificate_cyclic.dot");
 
-    report(builder, "cyclic   ((ab)*c)    ", "abc");
+    return report(builder, "cyclic   ((ab)*c)    ", "abc", "rrr");
 }
 } // namespace
 
@@ -98,11 +110,20 @@ int main(int argc, char** argv)
 {
     const std::filesystem::path dir{argc > 1 ? argv[1] : "."};
 
-    write_sound(dir);
-    write_nullable(dir);
-    write_cyclic(dir);
+    const auto sound{write_sound(dir)};
+
+    const auto nullable{write_nullable(dir)};
+
+    const auto cyclic{write_cyclic(dir)};
 
     std::cout << "wrote three dot files to " << dir << '\n';
+
+    if (!(sound && nullable && cyclic))
+    {
+        std::cout << "a predicate verdict disagrees with the caption of Figure 1\n";
+
+        return 1;
+    }
 
     return 0;
 }

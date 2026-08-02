@@ -9,12 +9,12 @@ project(munch_paper_figures)
 # actually runs, rather than against itself. It defines no main(), which is why the compare target links it the same way.
 add_executable(munch_applicability
         applicability.cpp
-        ${CMAKE_SOURCE_DIR}/tools/benchmark/src/harness.cpp
+        ${MUNCH_SOURCE_DIR}/tools/benchmark/src/harness.cpp
 )
 
 target_include_directories(munch_applicability
         PRIVATE
-        ${CMAKE_SOURCE_DIR}/tools/benchmark/include
+        ${MUNCH_SOURCE_DIR}/tools/benchmark/include
 )
 
 target_link_libraries(munch_applicability
