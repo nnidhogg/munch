@@ -7,6 +7,9 @@
   <img src="https://codecov.io/gh/nnidhogg/munch/branch/master/graph/badge.svg" alt="Coverage">
   <img src="https://img.shields.io/github/license/nnidhogg/munch" alt="License">
   <img src="https://img.shields.io/github/v/release/nnidhogg/munch?include_prereleases&sort=semver" alt="Release">
+  <a href="https://doi.org/10.5281/zenodo.21752996">
+    <img src="https://zenodo.org/badge/915800531.svg" alt="DOI">
+  </a>
 </p>
 
 `munch` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
