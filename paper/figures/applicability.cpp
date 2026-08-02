@@ -4,7 +4,8 @@
  *
  * Build and run from the repository root against an existing build tree:
  *   c++ -std=c++23 -I libs/common/include -I libs/core/include -I libs/dfa/include -I libs/nfa/include \
- *       -I libs/regex/include paper/figures/applicability.cpp -o /tmp/applicability \
+ *       -I libs/regex/include -I tools/benchmark/include \
+ *       paper/figures/applicability.cpp tools/benchmark/src/harness.cpp -o /tmp/applicability \
  *       -L build/libs/core -L build/libs/dfa -L build/libs/nfa -L build/libs/regex \
  *       -lmunch_core -lmunch_dfa -lmunch_nfa -lmunch_regex -lpthread
  *   /tmp/applicability
@@ -23,6 +24,7 @@
 #include "munch/dfa/dfa.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/set.hpp"
+#include "munch/tools/benchmark/harness.hpp"
 
 namespace
 {
@@ -373,6 +375,61 @@ std::string surviving_modulo(
     return rendered.empty() ? "none" : rendered;
 }
 
+// The two rows above restate grammars that live in the benchmark tool. A copy that agrees today can drift silently
+// while every assertion here still passes, because the assertions compare the copy with itself. This binds the one
+// copy whose original is reachable: harness.cpp compiles standalone, so the real build_lexer() can be built here and
+// compared against grammars.hpp's transcription of it. Agreement on all 256 certified bits and on the exact token
+// lengths of a corpus is far stronger than reading the two side by side.
+//
+// keyword_scale_builder() has no equivalent check: it is defined in tools/benchmark/src/main.cpp next to main(), so
+// it cannot be linked here without restructuring the benchmark target. That copy is still verified by eye only.
+bool scaling_grammar_matches_the_benchmark()
+{
+    munch::core::Builder transcribed;
+
+    scaling_grammar(transcribed);
+
+    const auto copy{transcribed.build()};
+
+    const auto original{munch::tools::benchmark::build_lexer(false)};
+
+    for (int byte{0}; byte < 256; ++byte)
+    {
+        const auto symbol{static_cast<char>(byte)};
+
+        if (copy.is_split_point(symbol) != original.is_split_point(symbol))
+        {
+            std::cout << "         certified sets differ at byte " << byte << '\n';
+
+            return false;
+        }
+    }
+
+    // Certified sets alone would miss a change that moves a token boundary without moving a certificate, so compare
+    // what the two scanners actually emit. Kinds cannot be compared directly, the two enumerations differ.
+    const std::string corpus{
+            "while (counter <= 4711) { x1 = bar_baz + 97; if (x1 != 42) { return counter; } }\n\tint value2 = 0;\n"};
+
+    std::vector<std::size_t> copy_lengths, original_lengths;
+
+    const auto copy_consumed{copy.tokenize_all<std::size_t>(
+            corpus, [&copy_lengths](std::size_t, const std::size_t length) { copy_lengths.push_back(length); })};
+
+    const auto original_consumed{original.tokenize_all<std::size_t>(
+            corpus,
+            [&original_lengths](std::size_t, const std::size_t length) { original_lengths.push_back(length); })};
+
+    if (copy_consumed != original_consumed || copy_lengths != original_lengths)
+    {
+        std::cout << "         token streams differ: consumed " << copy_consumed << " against " << original_consumed
+                  << '\n';
+
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -388,7 +445,11 @@ int main()
     // Every row asserts both published columns: what the exact certificate admits, and what it admits once the
     // caller's discarded tokens are deleted. The relaxed column is read from the shipped predicate, which needs no
     // corpus; the four rows with corpora below additionally confirm it by splitting.
-    const auto check{[&failures](
+    // The report states how many rows the relaxation moves. Counting it here rather than trusting prose is the
+    // point: an earlier text-parsing check miscounted by reading "the same, plus ..." as unchanged.
+    int changed{0};
+
+    const auto check{[&failures, &changed](
                              const std::string& name, const std::string& exact, const std::string& relaxed,
                              const Kinds& ignored, munch::core::Builder& b) {
         b.set_ignored_tokens(std::vector<std::size_t>{ignored.begin(), ignored.end()});
@@ -398,6 +459,8 @@ int main()
         const auto actual_exact{certified(lexer)};
 
         const auto actual_relaxed{certified_modulo(lexer)};
+
+        changed += actual_relaxed == "the same" ? 0 : 1;
 
         const auto agrees{actual_exact == exact && actual_relaxed == relaxed};
 
@@ -661,6 +724,31 @@ int main()
         {
             std::cout << "         expected 0x1E certified, got: " << actual << '\n';
 
+            ++failures;
+        }
+    }
+
+    {
+        const auto agrees{changed == 7};
+
+        std::cout << (agrees ? "\n  ok   " : "\n  FAIL ") << "rows the relaxation moves: " << changed << '\n';
+
+        if (!agrees)
+        {
+            std::cout << "         the report says seven\n";
+
+            ++failures;
+        }
+    }
+
+    {
+        const auto bound{scaling_grammar_matches_the_benchmark()};
+
+        std::cout << (bound ? "\n  ok   " : "\n  FAIL ")
+                  << "the transcribed scaling grammar still matches build_lexer(false)\n";
+
+        if (!bound)
+        {
             ++failures;
         }
     }

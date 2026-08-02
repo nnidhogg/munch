@@ -1,12 +1,10 @@
 // Draws the automata behind the re-entrancy condition, using munch's own Graphviz export.
 //
-// Build and run from the repository root against an existing build tree, then render:
-//   c++ -std=c++23 -I libs/core/include -I libs/dfa/include -I libs/dfa/tools/include -I libs/nfa/include \
-//       -I libs/regex/include paper/figures/certificates.cpp -o certificates \
-//       -L cmake-build-debug/libs/core -L cmake-build-debug/libs/dfa -L cmake-build-debug/libs/nfa \
-//       -L cmake-build-debug/libs/regex \
-//       -lmunch_core -lmunch_dfa_tools -lmunch_dfa -lmunch_nfa -lmunch_regex
-//   ./certificates paper/figures
+// Built as munch_certificates by this directory's CMakeLists.txt, and run under CTest into the build tree, where
+// the emitted DOT files are compared byte for byte against the committed ones, so the committed figures cannot
+// drift from the automata. To refresh the committed figures after a deliberate change, run it with this directory
+// as the argument and re-render:
+//   ./build/paper/figures/munch_certificates paper/figures
 //   for f in paper/figures/*.dot; do dot -Tpdf "$f" -o "${f%.dot}.pdf"; done
 
 #include <cstddef>
