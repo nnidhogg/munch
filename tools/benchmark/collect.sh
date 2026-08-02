@@ -172,7 +172,9 @@ echo "built"
 # beside the archive for the volunteer to inspect or send separately if a build problem needs them.
 archive="$out.tar.gz"
 
-tar czf "$archive" -C "$(dirname "$out")" \
+# --owner/--group/--numeric-owner keep the volunteer's account out of the tar headers; the archive promises anonymity
+# and the file contents are already scrubbed, so the metadata must be too.
+tar czf "$archive" --owner=0 --group=0 --numeric-owner -C "$(dirname "$out")" \
     --exclude="$(basename "$out")/configure.log" --exclude="$(basename "$out")/build.log" \
     "$(basename "$out")"
 

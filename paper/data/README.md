@@ -17,9 +17,10 @@ parent, reachable from the same tag. `paper/README.md` gives the worktree recipe
 ## The four bare-metal directories
 
 A selected archive of `tools/benchmark/collect.sh` output on an AMD Ryzen 9 9950X3D running Ubuntu 26.04, `performance`
-governor, over 1, 16, 128 and 512 MiB corpora, each with a clean tree. The collector's `environment.txt`, `summary.txt`
-and `observations.csv` are kept as written; its `configure.log` and `build.log` were not archived, and `topology.txt` is
-not a collector output but a separate `lscpu -e` capture from the same session.
+governor, over 1, 16, 128 and 512 MiB corpora, each with a clean tree. The collector's `summary.txt` and
+`observations.csv` are kept as written and `environment.txt` as written apart from the two redactions described below;
+its `configure.log` and `build.log` were not archived, and `topology.txt` is not a collector output but a separate
+`lscpu -e` capture from the same session.
 
 | Directory | Placement | Commit |
 |----------------------------|---------------------------------|-----------|

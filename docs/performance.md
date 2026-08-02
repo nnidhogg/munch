@@ -136,15 +136,16 @@ on one core, and threads would scale the same chunking across cores for batch wo
 bandwidth today, so the ceiling is genuinely unclaimed.
 
 Chunks must begin at real token boundaries, and in this design that is not a heuristic but a property the automaton can
-certify at build time. Only transitions that can still end in acceptance matter, since no emitted token traverses any
-other; call those live. A byte that no live state consumes live, except possibly the start state, can only ever begin a
-token, so on any completely tokenizable input every occurrence is a safe split point. Computing it takes a reverse pass
-marking the live states and one sweep over the transition table. The start state's exemption holds only while no live
+certify at build time. A state matters only if some input can reach it and some continuation from it still accepts,
+since no emitted token traverses any other; call those live. A byte that no live state consumes live, except possibly
+the start state, can only ever begin a token, so on any completely tokenizable input every occurrence is a safe split
+point. Computing it takes a forward pass from the start state marking what input can reach, a reverse pass marking
+what can still accept, and one sweep over the transition table. The start state's exemption holds only while no live
 transition re-enters it, which a nullable pattern's self-looping start state does; the exemption then certifies nothing,
 and only bytes no live state consumes remain vacuously safe. A token set whose strings or comments can contain any byte
 certifies no safe points, and the right behavior is to refuse and scan sequentially rather than speculate, in keeping
 with [limits.md](limits.md). The certification is built: `Lexer::is_split_point()` reports the certified bytes of a
-compiled token set, computed by those two passes in the simulator's constructor.
+compiled token set, computed by those passes in the simulator's constructor.
 
 The threaded chunking is measured, and the prediction stated here held. The benchmark splits the input at the first
 certified point at or after each equal-division offset, runs one whole-input scan per chunk on its own thread, and first
