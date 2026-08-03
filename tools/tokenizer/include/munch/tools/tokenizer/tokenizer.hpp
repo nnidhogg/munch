@@ -88,15 +88,21 @@ public:
     explicit Tokenizer(core::Mode_lexer lexer, std::string input);
 
     /**
-     * @brief Replace the input text and reset tokenization state. The active mode is kept.
+     * @brief Replace the input text and start over.
      *
-     * Any saved mode frames are discarded, because they describe nesting in input that is being replaced: carrying
-     * a half-open string literal into a new buffer would pop into a mode the new input never entered.
+     * Where a mode lexer drives the mode, it is scan state and returns to zero with the saved frames, since both
+     * describe nesting in input that is being replaced: keeping either would scan a fresh buffer inside a half open
+     * string literal it never entered. That holds however the current mode was reached, set_mode() included, since
+     * nothing records which of the two chose it. Where the caller drives the mode with several lexers instead, it is
+     * the caller's and is kept.
      */
     void load(std::string input);
 
     /**
-     * @brief Reset the reading position to the beginning of the current input.
+     * @brief Reset the reading position to the beginning of the current input, and the mode with it.
+     *
+     * The mode a driven scan ended in belongs to the text it read, so rewinding the position rewinds the mode too,
+     * including a mode set_mode() forced. Call set_mode() again after reset() to re-enter one deliberately.
      */
     void reset() noexcept;
 

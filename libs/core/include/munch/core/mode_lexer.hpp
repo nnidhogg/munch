@@ -21,7 +21,10 @@ namespace munch::core
  * @brief A lexer whose token set depends on the scan's own history.
  *
  * One compiled Lexer per mode, selected by a Mode_stack the caller owns. This is what a front end needs for
- * string literals with escapes, interpolation and nested comments, none of which a single flat token set expresses.
+ * separately tokenizing the interior of a string literal, string interpolation, and comments that nest. Be precise
+ * about which of those a flat token set is DENIED: an ordinary escaped string literal is regular and a flat grammar
+ * matches it whole, so modes buy the interior tokens rather than the literal. Arbitrarily nested comments are the
+ * genuinely non-regular case, since counting to an unbounded depth is what one finite automaton cannot do.
  * A construct whose terminator is chosen per occurrence, such as a heredoc naming its own delimiter, is outside
  * this: a mode's token set is fixed at build time, so that needs the Tokenizer's hand-scanning hatch. Instances are
  * only constructible through Mode_builder::build().
@@ -77,8 +80,9 @@ public:
             return {};
         }
 
-        // A zero-width match leaves the mode alone. The batch driver stops without reporting one, so applying an
-        // action here would let the same token change the mode through one entry point and not the other.
+        // A zero-width match leaves the mode alone. The batch driver stops without reporting one at all, so the two
+        // drivers differ on whether the token appears, and applying its action here would make them differ on the
+        // mode as well. See docs/limits.md.
         if (length == 0)
         {
             return {.token = static_cast<T>(*token), .length = 0};
@@ -102,8 +106,9 @@ public:
     /**
      * @brief Tokenizes the whole input, driving its own mode stack.
      *
-     * Stays inside one mode's batch scan for as long as the mode does not change, rather than re-entering the
-     * scanner once per token. Lexer::tokenize_all()'s sink may halt the scan by returning false, so a mode-changing
+     * Stays inside one mode's batch scan until a token carries any non-stay action, rather than re-entering the
+     * scanner once per token. Any such action ends the pass, including a push whose target is the mode already
+     * being scanned. Lexer::tokenize_all()'s sink may halt the scan by returning false, so a mode-changing
      * token ends the inner pass and the outer loop resumes in the new mode. Most tokens leave the mode alone, so
      * most of the input is scanned in the tight loop; driving one token at a time costs 12 to 18 percent even for a
      * plain Lexer, and this recovers it.
@@ -117,7 +122,7 @@ public:
      *         the returned offset, or a pop found nothing saved there.
      */
     template <typename T, std::random_access_iterator Iterator, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink, T, std::size_t, std::size_t>
+        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, T, std::size_t, std::size_t>
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink) const
     {
         Mode_stack stack;
@@ -135,7 +140,7 @@ public:
      * @param stack Receives the mode and saved frames at the stopping point; its incoming value starts the scan.
      */
     template <typename T, std::random_access_iterator Iterator, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink, T, std::size_t, std::size_t>
+        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, T, std::size_t, std::size_t>
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink, Mode_stack& stack) const
     {
         verify(stack);
@@ -213,7 +218,7 @@ public:
      * @brief Tokenizes a container, driving its own mode stack.
      */
     template <typename T, common::concepts::Random_access_iterable Container, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink, T, std::size_t, std::size_t>
+        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, T, std::size_t, std::size_t>
     std::size_t tokenize_all(const Container& container, Sink sink) const
     {
         return tokenize_all<T>(std::ranges::begin(container), std::ranges::end(container), std::move(sink));
@@ -223,7 +228,7 @@ public:
      * @brief Tokenizes a container, reporting the mode and nesting depth the scan ended in.
      */
     template <typename T, common::concepts::Random_access_iterable Container, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink, T, std::size_t, std::size_t>
+        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, T, std::size_t, std::size_t>
     std::size_t tokenize_all(const Container& container, Sink sink, Mode_stack& stack) const
     {
         return tokenize_all<T>(std::ranges::begin(container), std::ranges::end(container), std::move(sink), stack);

@@ -88,3 +88,14 @@ contains observations, but the column is the check that does not depend on remem
 These archives are released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). They are
 measurements, not authorship, and requiring attribution to quote a throughput number would help nobody. The report
 that reads them is CC BY 4.0 and the code that produced them is MIT; see the repository README.
+
+## `modes-2026-08`
+
+Two runs of `munch_benchmark_compare 16 15` on an Intel machine under WSL 2, taken at `20897e5` on a clean tree, both
+appended to one `observations.csv` and separated by its `run` column. Backs the two mode tables in the top-level
+README. The benchmark records the commit and whether the tree was dirty on every CSV row, so a row detached from this
+directory still says which tree produced it.
+
+Kept because the README quotes ratios from it. The per-token comparison between the modal and flat grammars is
+deliberately not quoted anywhere: across these and earlier runs its sign changes, since the flat row alone swings
+from 734 to 861 MiB/s while the modal rows stay within 3 percent.

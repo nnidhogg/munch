@@ -121,8 +121,8 @@ public:
      * @brief Builds the mode lexer.
      * @return The constructed Mode_lexer.
      * @throws State_limit_error If any mode's determinization exceeds the cap.
-     * @throws std::invalid_argument If no token was registered, a mode index was skipped, or an action targets a
-     *         mode that does not exist.
+     * @throws std::invalid_argument If no token was registered, a mode index was skipped, an action targets a mode
+     *         that does not exist, or a token matching the empty string carries an action.
      */
     [[nodiscard]] Mode_lexer build() const;
 

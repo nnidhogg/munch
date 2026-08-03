@@ -86,8 +86,11 @@ public:
      * @tparam Sink Callable receiving each matched token and its length.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @param sink Invoked as sink(token, length) for every matched token, in input order. A sink returning a value
-     *        convertible to bool stops the scan by returning false; the stopping token still counts as tokenized.
+     * @param sink Invoked as sink(token, length) for every matched token, in input order, or as
+     *        sink(token, length, payload) where the sink accepts that and the payload is what
+     *        Builder::set_token_payload() attached. A sink accepting both is called with two, which is what it
+     *        received before payloads existed. A sink returning a value convertible to bool stops the scan by
+     *        returning false; the stopping token still counts as tokenized.
      * @return The number of input elements tokenized; anything short of the input's size means no token matched at
      *         the returned offset, unless the sink stopped the scan.
      */
@@ -97,16 +100,17 @@ public:
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink) const
     {
         // The payload is always delivered and dropped here for sinks that do not want it, so the scan itself has
-        // one sink shape rather than one per arity.
+        // one sink shape rather than one per arity. A sink accepting BOTH arities, which a generic or variadic one
+        // does, is called with two: that is what it received before the payload existed.
         return simulator_.run_all(
                 begin, end, [&sink](const dfa::Token& token, const std::size_t length, const std::uint64_t payload) {
-                    if constexpr (std::invocable<Sink&, T, std::size_t, std::uint64_t>)
+                    if constexpr (std::invocable<Sink&, T, std::size_t>)
                     {
-                        return sink(static_cast<T>(token.id()), length, payload);
+                        return sink(static_cast<T>(token.id()), length);
                     }
                     else
                     {
-                        return sink(static_cast<T>(token.id()), length);
+                        return sink(static_cast<T>(token.id()), length, payload);
                     }
                 });
     }

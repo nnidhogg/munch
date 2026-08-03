@@ -1711,3 +1711,27 @@ TEST_F(Lexer_test, Test_ignored_tokens_reject_non_integral_initializers)
     // list, and the vector overload rejects the narrowing conversion. That is a hard error inside the braced list,
     // not a substitution failure, so it cannot be asserted here with a negative requires-expression.
 }
+
+TEST_F(Lexer_test, A_sink_taking_either_arity_is_called_with_two_arguments)
+{
+    // The accepting-state payload arrived after this entry point shipped, so a sink accepting both arities keeps
+    // receiving what it received before the payload existed. A generic or variadic sink accepts both silently.
+    enum class Kind : std::size_t
+    {
+        word = 1
+    };
+
+    Builder builder;
+
+    builder.add_token(plus(any_of(Set::alpha())), Kind::word, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"abc"};
+
+    std::size_t arity{0};
+
+    std::ignore = lexer.tokenize_all<Kind>(input, [&arity](auto&&... arguments) { arity = sizeof...(arguments); });
+
+    EXPECT_EQ(arity, 2u);
+}

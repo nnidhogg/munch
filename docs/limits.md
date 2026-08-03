@@ -7,7 +7,9 @@ for each. Read it when deciding whether munch fits a language, not after.
 ## **Modes: What a Flat Token Set Cannot Say**
 
 `Lexer` matches one flat token set at every position. Real front ends need more than that: inside a string literal a
-quote terminates rather than opens, and a comment that nests needs to know how deep it is. `Mode_lexer`, built by
+quote terminates rather than opens, and a comment that nests needs to know how deep it is. An ordinary escaped string
+literal is regular, so a flat grammar matches it whole; what modes buy there is its interior as separate tokens.
+Arbitrary nesting is the case no flat token set reaches at all. `Mode_lexer`, built by
 `Mode_builder`, supplies it. Each mode is its own token set compiled through the ordinary `Builder`, and each token
 carries an action on a mode stack the caller owns: `stay`, `go_to`, `push`, `pop`. Nesting comes from the stack, so
 nested comments need no counter in user code.
@@ -26,18 +28,22 @@ the parallel path; where it does not, `Mode_lexer` scans serially and honestly.
 
 **Modes are an expressiveness feature, not a performance one.** Where a flat token set can express the language it is
 faster, because a mode grammar scans string interiors and so emits more tokens for the same bytes. The
-`munch_benchmark_compare` mode section measures both on one corpus with the scenarios interleaved: modes cost 12 to
-14 percent there, and nearly all of that is the extra tokens a mode grammar emits for the same bytes rather than
-slower tokens, whose cost is now 1 to 2 percent. Whether the gap widens as the input carries fewer string literals
-is untested, since no flat grammar is measured beside the modal one at each density. The intuition that several
-small automata beat one large one does not hold either, because only the states a scan actually visits are hot and
-splitting them across modes does not shrink that working set. Use `Lexer` where the
+`munch_benchmark_compare` mode section measures both on one corpus with the scenarios interleaved, and what modes
+cost there is not resolvable from the runs archived in `paper/data/modes-2026-08`: the mode grammar emits 11.1% more
+tokens for the same bytes, and the elapsed difference has measured anywhere from 6 to 18 percent across runs because
+the flat row alone swings by that much. The extra tokens are the stable part; the per-token difference changes sign
+between runs and is not quoted. Whether the gap widens as the input carries fewer string literals is untested, since
+no flat grammar is measured beside the modal one at each density. The intuition that several small automata beat one
+large one does not hold either, because only the states a scan actually visits are hot and splitting them across
+modes does not shrink that working set. Use `Lexer` where the
 grammar allows it, both for the throughput and for the parallel path; use `Mode_lexer` where the language genuinely
 needs a mode stack.
 
-Within `Mode_lexer`, scanning stays inside one mode's batch pass until a token changes the mode, rather than
-re-entering the scanner once per token. That is worth roughly twice the throughput and is pinned by a test, since
-nothing else would notice if it were undone.
+Within `Mode_lexer`, scanning stays inside one mode's batch pass until a token carries any non-stay action, rather
+than re-entering the scanner once per token. Any such action ends the pass, including a push whose target is the
+mode already being scanned, which is what a comment nesting inside itself does. It is worth roughly 1.7x, which the
+`per-token` and `batched` rows of `munch_benchmark_modes` measure. A test pins only that the two drivers agree on the
+token stream, since a wall-clock bound in a unit test varies with the machine, the compiler and the sanitizers.
 
 The rest of this note describes the model each individual mode obeys.
 
@@ -112,7 +118,11 @@ rejected by construction). The consequences:
   `tokenize_all()` and `tokenize_all_parallel()` treat a zero-length acceptance as no match and stop there, so the
   returned consumed count falls short of the input. `Lexer::tokenize()` returns the match as it is, with length zero, so
   a caller driving it in a loop must reject that or spin at one offset. The `Tokenizer` does exactly that, reporting a
-  zero-width match as an error.
+  zero-width match as an error. `Mode_lexer` inherits the same split, and its two drivers therefore report a nullable
+  token differently: the per-token entry point returns it with length zero, while the batch one stops without
+  reporting it at all. The mode is the same either way, because `Mode_builder::build()` rejects a nullable token
+  carrying an action outright: an action only one entry point would apply is not something a caller can act on. A
+  nullable token without an action still builds, and still reports differently between the two.
 - A `Tokenizer` holds the entire input in memory as one string; there is no chunked or incremental feeding, so inputs
   are bounded by memory. Where that matters, the way out is the layer below: `core::Lexer` matches over any iterator
   range without owning it, so a driver can do its own buffering and drive the lexer directly, provided each buffer ends

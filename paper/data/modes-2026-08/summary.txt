@@ -1,0 +1,76 @@
+engine comparison
+  commit      20897e5
+  collected   2026-08-03 13:03:18 UTC
+  passes      15
+  hardware    24 threads visible
+  compiler    13.3.0
+  system      Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
+  observations a2.csv
+
+corpus dense: 1.83 bytes per token
+munch            16.0 MiB, 9144476 tokens, 15 passes: best 590.5, median 582.2, worst 569.1 MiB/s
+munch-mt4        16.0 MiB, 9144476 tokens, 15 passes: best 2155.9, median 2089.5, worst 1751.7 MiB/s
+munch-mt8        16.0 MiB, 9144476 tokens, 15 passes: best 4024.6, median 3584.6, worst 2811.4 MiB/s
+lexertl          16.0 MiB, 9144476 tokens, 15 passes: best 186.4, median 183.2, worst 179.5 MiB/s
+ctre             16.0 MiB, 9144476 tokens, 15 passes: best 448.7, median 441.5, worst 433.3 MiB/s
+pcre2-jit        16.0 MiB, 9144476 tokens, 15 passes: best 82.8, median 81.3, worst 80.3 MiB/s
+re2              16.0 MiB, 9144476 tokens, 15 passes: best 12.0, median 11.8, worst 11.7 MiB/s
+boost-regex      16.0 MiB, 9144476 tokens, 15 passes: best 16.5, median 16.3, worst 16.1 MiB/s
+std-regex        16.0 MiB, 9144476 tokens, 15 passes: best 11.8, median 11.6, worst 11.5 MiB/s
+corpus source: 3.53 bytes per token
+munch            16.0 MiB, 4755600 tokens, 15 passes: best 576.7, median 569.9, worst 546.2 MiB/s
+munch-mt4        16.0 MiB, 4755600 tokens, 15 passes: best 2244.3, median 2166.3, worst 1935.0 MiB/s
+munch-mt8        16.0 MiB, 4755600 tokens, 15 passes: best 4291.4, median 3676.5, worst 3128.6 MiB/s
+lexertl          16.0 MiB, 4755600 tokens, 15 passes: best 241.3, median 234.9, worst 227.3 MiB/s
+ctre             16.0 MiB, 4755600 tokens, 15 passes: best 648.1, median 628.1, worst 601.2 MiB/s
+pcre2-jit        16.0 MiB, 4755600 tokens, 15 passes: best 146.1, median 144.4, worst 138.0 MiB/s
+re2              16.0 MiB, 4755600 tokens, 15 passes: best 20.6, median 20.5, worst 20.0 MiB/s
+boost-regex      16.0 MiB, 4755600 tokens, 15 passes: best 30.4, median 30.3, worst 30.0 MiB/s
+std-regex        16.0 MiB, 4755600 tokens, 15 passes: best 17.7, median 17.6, worst 17.5 MiB/s
+
+corpus modes: 3.28 bytes per token, string interiors scanned by both
+munch-flat       16.0 MiB, 4609117 tokens, 15 passes: best 887.8, median 855.4, worst 826.6 MiB/s
+munch-modes      16.0 MiB, 5121241 tokens, 15 passes: best 756.4, median 733.8, worst 708.3 MiB/s
+lexertl-modes    16.0 MiB, 5121241 tokens, 15 passes: best 247.3, median 240.9, worst 236.3 MiB/s
+
+corpus nested: 3.45 bytes per token, comments nesting to depth 4, which the grammars count rather than bound
+munch-nested     16.0 MiB, 4859619 tokens, 15 passes: best 645.4, median 622.8, worst 607.5 MiB/s
+lexertl-nested   16.0 MiB, 4859619 tokens, 15 passes: best 229.2, median 223.7, worst 215.9 MiB/s
+engine comparison
+  commit      20897e5
+  collected   2026-08-03 13:05:16 UTC
+  passes      15
+  hardware    24 threads visible
+  compiler    13.3.0
+  system      Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
+  observations a2.csv
+
+corpus dense: 1.83 bytes per token
+munch            16.0 MiB, 9144476 tokens, 15 passes: best 604.5, median 583.1, worst 553.9 MiB/s
+munch-mt4        16.0 MiB, 9144476 tokens, 15 passes: best 2174.5, median 2145.8, worst 1850.5 MiB/s
+munch-mt8        16.0 MiB, 9144476 tokens, 15 passes: best 4065.8, median 3535.6, worst 3121.7 MiB/s
+lexertl          16.0 MiB, 9144476 tokens, 15 passes: best 187.9, median 184.8, worst 181.2 MiB/s
+ctre             16.0 MiB, 9144476 tokens, 15 passes: best 447.4, median 438.0, worst 424.9 MiB/s
+pcre2-jit        16.0 MiB, 9144476 tokens, 15 passes: best 83.7, median 82.2, worst 80.8 MiB/s
+re2              16.0 MiB, 9144476 tokens, 15 passes: best 12.0, median 12.0, worst 11.8 MiB/s
+boost-regex      16.0 MiB, 9144476 tokens, 15 passes: best 16.7, median 16.6, worst 16.5 MiB/s
+std-regex        16.0 MiB, 9144476 tokens, 15 passes: best 11.8, median 11.7, worst 11.6 MiB/s
+corpus source: 3.53 bytes per token
+munch            16.0 MiB, 4755600 tokens, 15 passes: best 583.1, median 571.5, worst 552.1 MiB/s
+munch-mt4        16.0 MiB, 4755600 tokens, 15 passes: best 2218.5, median 2174.1, worst 1766.4 MiB/s
+munch-mt8        16.0 MiB, 4755600 tokens, 15 passes: best 4304.4, median 3998.6, worst 3159.9 MiB/s
+lexertl          16.0 MiB, 4755600 tokens, 15 passes: best 240.7, median 235.7, worst 230.1 MiB/s
+ctre             16.0 MiB, 4755600 tokens, 15 passes: best 632.7, median 625.9, worst 608.2 MiB/s
+pcre2-jit        16.0 MiB, 4755600 tokens, 15 passes: best 141.9, median 139.2, worst 137.1 MiB/s
+re2              16.0 MiB, 4755600 tokens, 15 passes: best 20.6, median 20.4, worst 20.3 MiB/s
+boost-regex      16.0 MiB, 4755600 tokens, 15 passes: best 30.6, median 30.3, worst 30.1 MiB/s
+std-regex        16.0 MiB, 4755600 tokens, 15 passes: best 17.8, median 17.7, worst 17.5 MiB/s
+
+corpus modes: 3.28 bytes per token, string interiors scanned by both
+munch-flat       16.0 MiB, 4609117 tokens, 15 passes: best 896.8, median 861.0, worst 811.1 MiB/s
+munch-modes      16.0 MiB, 5121241 tokens, 15 passes: best 769.4, median 728.1, worst 693.1 MiB/s
+lexertl-modes    16.0 MiB, 5121241 tokens, 15 passes: best 246.0, median 243.5, worst 235.9 MiB/s
+
+corpus nested: 3.45 bytes per token, comments nesting to depth 4, which the grammars count rather than bound
+munch-nested     16.0 MiB, 4859619 tokens, 15 passes: best 645.2, median 634.1, worst 615.4 MiB/s
+lexertl-nested   16.0 MiB, 4859619 tokens, 15 passes: best 229.0, median 226.1, worst 221.8 MiB/s

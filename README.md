@@ -813,41 +813,45 @@ express, and input it cannot.
 
 **Where modes are optional.** A string literal can be one token, so a flat grammar tokenizes this corpus too.
 
-| Engine       | Mode mechanism                                             | MiB/s |
-|--------------|------------------------------------------------------------|------:|
-| `munch`      | grammar-carried actions on a mode stack                    |   689 |
-| lexertl17    | start states with a next-state per rule, pushed and popped |   235 |
-| `munch` flat | no modes at all, a string literal as one token             |   734 |
+| Engine       | Mode mechanism                                             |    MiB/s |
+|--------------|------------------------------------------------------------|---------:|
+| `munch`      | grammar-carried actions on a mode stack                    | 734, 728 |
+| lexertl17    | start states with a next-state per rule                    | 241, 244 |
+| `munch` flat | no modes at all, a string literal as one token             | 855, 861 |
 
-**Where modes are required.** Block comments that nest have to be counted, and counting to an unbounded depth is
-what one finite automaton cannot do, so no flat grammar tokenizes this corpus at any depth. There is no flat row
-because there can be none.
+Neither engine pushes on this corpus: the string mode is entered and left by a plain next-state transition, so this
+table prices carrying a mode at all rather than the stack.
 
-| Engine    | Mode mechanism                                             | MiB/s |
-|-----------|------------------------------------------------------------|------:|
-| `munch`   | grammar-carried actions on a mode stack                    |   606 |
-| lexertl17 | start states with a next-state per rule, pushed and popped |   226 |
+**Where the grammar counts.** Block comments nest here, and both engines push and pop to track the depth.
 
-Medians of 15 passes on 16 MiB corpora, from the `munch_benchmark_compare 16 15` invocation shown above, with each
-corpus's scenarios interleaved rather than run one after another, measured at commit `2c983ae`. The harness
-validates that the engines agree on every token before timing either, so the 5,121,241 tokens of the first corpus
-and the 4,859,619 of the second are the same tokens in both. Medians are reported rather than each row's best,
-since picking each engine's best pass independently compares two different passes. A repeat gave 684, 237, 727,
-598 and 221.
+| Engine    | Mode mechanism                                             |    MiB/s |
+|-----------|------------------------------------------------------------|---------:|
+| `munch`   | grammar-carried actions on a mode stack                    | 623, 634 |
+| lexertl17 | start states pushed and popped                             | 224, 226 |
 
-**The ratio narrows as the grammar asks for more: 3.24x on dense flat input, 2.91x where modes are optional, 2.69x
-where they are required.** Read the ratio rather than the absolutes, which moved about 15% between this session and
-the one that produced the engine tables above, which is why those are not set beside these.
+Be precise about the theory this does not demonstrate. The language of ARBITRARILY nested comments is not regular,
+since counting to an unbounded depth is what one finite automaton cannot do. This corpus nests only to depth four,
+and a bounded depth is regular, so a flat grammar could unroll four levels and tokenize it. There is no flat row
+because that would be a different grammar answering a different question, not because none could exist.
 
-Modes cost about 6 percent against a flat grammar on the corpus where both run, for 11.1% more tokens, so the
-per-token cost is within a couple of percent of zero in either direction across runs and the extra tokens are the
-whole of it. That was not always so: on the same corpus at `c0abab5`, before the action moved onto accepting states,
-the per-token cost was about 16 percent, and
-adaptive dispatch and the move to carrying actions on accepting states are what closed it.
+Both figures in each cell are medians of 15 passes from two runs of `munch_benchmark_compare 16 15`, with each
+corpus's scenarios interleaved, measured at commit `20897e5` on a clean tree. The full transcript, every timed pass
+and the machine are archived in [paper/data/modes-2026-08](paper/data/modes-2026-08). The harness validates that the
+engines agree on every token before timing either, so the 5,121,241 tokens of the first corpus and the 4,859,619 of
+the second are the same tokens in both.
 
-**A grammar that does not need modes pays nothing for their existence.** `Lexer` is untouched by mode support, and
-only the flat path has a parallel entry point, so stepping up to modes is also stepping out of
-`tokenize_all_parallel`.
+**Ratios, as ranges rather than a point: 2.99 to 3.05 where modes are optional, 2.78 to 2.80 where the grammar
+counts.** Those are the spreads within one session. Across sessions they move further, about 5 percent, so a ratio
+quoted from a different day is not comparable either. Read them as observations, not as a trend: the two corpora
+differ in token density, grammar and mechanism at once, so the difference between them is not attributable to any
+one of those.
+
+**What modes cost against a flat grammar is not resolvable from these runs.** Modes emit 11.1% more tokens for the
+same bytes. The elapsed difference measured 16.6% and 18.3% here, giving a per-token cost of about +5%, while
+earlier runs on the same corpora measured 6.5% and 6.3% elapsed, giving about -4% per token. The sign flips because
+the flat row alone swings from 734 to 861 MiB/s across runs while the modal rows stay within 3 percent. The extra
+tokens are the part that is stable; the per-token difference is inside the noise of the flat measurement and is not
+reported here as a figure.
 
 These are separate tables rather than rows in the ones above because a mode grammar emits more tokens than a flat
 one for the same bytes, so the two are not doing the same work and are not compared.
@@ -1062,6 +1066,12 @@ munch follows semantic versioning. The stable surface is what this README docume
 `tokenize()`, `tokenize_all()`, `is_split_point()`, `is_split_point_ignoring()`, `chunk_boundaries()`, and
 `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
 arrive in minor versions.
+
+The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
+`Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did
+`Builder::set_token_payload()` and the three-argument `tokenize_all()` sink that delivers what it attaches. A sink
+accepting both arities is called with two, which is what it was called with before the payload existed, so an
+existing sink keeps its behaviour.
 
 The supported platform is Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests, sanitizes,
 and fuzzes; other platforms may work but carry no promise. Semantic versioning covers source compatibility only. munch

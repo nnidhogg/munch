@@ -1,5 +1,6 @@
-// Scenario matrix for the modal driver: action frequency, run length between actions, go_to against push/pop, and
-// mode-stack depth. Mode_lexer picks its action lookup per mode, so one corpus cannot say which path an edit moved.
+// Scenario matrix for the modal driver: action frequency, run length between actions, go_to against push/pop,
+// mode-stack depth, and the batch entry point against the per-token one. The batch driver reads each action from the
+// matched token's payload while the per-token driver searches for it, and no single corpus says which an edit moved.
 // Interleaved, because run consecutively the first scenario absorbs the machine's drift.
 //
 // Usage: munch_benchmark_modes [input size in MiB] [passes] [observations CSV]
@@ -39,7 +40,7 @@ constexpr std::size_t kString{1};
 constexpr std::size_t kComment{2};
 
 /**
- * @brief How many of mode zero's tokens carry an action, which is what selects the driver's lookup.
+ * @brief How many of mode zero's tokens carry an action, which is what the rows vary.
  */
 enum class Acting
 {
@@ -51,7 +52,7 @@ enum class Acting
 /**
  * @brief A C-like modal grammar.
  * @param stack Whether entering and leaving a string pushes and pops, or merely goes to.
- * @param acting How many tokens change the mode, which picks the no-action, single-comparison, or masked lookup.
+ * @param acting How many tokens change the mode; none of them leaves the mode on the driver's action-free path.
  */
 munch::core::Mode_lexer build(const bool stack, const Acting acting)
 {
@@ -64,7 +65,7 @@ munch::core::Mode_lexer build(const bool stack, const Acting acting)
     builder.add_token(kCode, plus(any_of(Set::digits())), Mode_token::number, 2);
     builder.add_token(kCode, any_of(Set{'(', ')', '{', '}', ';', ',', '='}), Mode_token::punctuation, 2);
 
-    // Every variant registers the same kCode patterns, so the rows differ in the lookup and not in the DFA.
+    // Every variant registers the same kCode patterns, so the rows differ in their actions and not in the DFA.
     if (acting == Acting::none)
     {
         builder.add_token(kCode, text("\""), Mode_token::quote, 1);
@@ -86,7 +87,7 @@ munch::core::Mode_lexer build(const bool stack, const Acting acting)
     builder.add_token(kString, text("\""), Mode_token::quote, 1, back);
     builder.add_token(kString, plus(any_of(Set::all() - '"')), Mode_token::body, 2);
 
-    // Leaving the comment opener inert keeps mode zero on the single-comparison lookup rather than the masked one.
+    // Leaving the comment opener inert gives mode zero one action token rather than two.
     if (acting == Acting::one)
     {
         builder.add_token(kCode, text("/*"), Mode_token::open_comment, 1);
@@ -98,7 +99,7 @@ munch::core::Mode_lexer build(const bool stack, const Acting acting)
                 {.kind = munch::core::Mode_action_kind::push, .target = kComment});
     }
 
-    // Registered either way, so the two grammars hold the same number of modes and differ only in mode zero's lookup.
+    // Registered either way, so the two grammars hold the same modes and differ only in mode zero's action count.
     builder.add_token(
             kComment, text("/*"), Mode_token::open_comment, 1,
             {.kind = munch::core::Mode_action_kind::push, .target = kComment});
@@ -198,11 +199,17 @@ int main(const int argc, const char** argv)
         const munch::core::Mode_lexer* lexer;
 
         std::string input;
+
+        // Whether the row drives tokenize_all() or the per-token entry point, which searches for each action rather
+        // than reading it from the matched token's payload. The pair of rows prices that difference.
+        bool batched{true};
     };
 
     std::vector<Row> rows;
 
-    rows.push_back({.name = "table-never-fires", .lexer = &acting, .input = generate(bytes, 0, 16, 0)});
+    rows.push_back({.name = "action-never-fires", .lexer = &acting, .input = generate(bytes, 0, 16, 0)});
+    rows.push_back({.name = "per-token", .lexer = &acting, .input = generate(bytes, 40, 32, 0), .batched = false});
+    rows.push_back({.name = "batched", .lexer = &acting, .input = generate(bytes, 40, 32, 0)});
     rows.push_back({.name = "no-actions-declared", .lexer = &inert, .input = generate(bytes, 0, 16, 0)});
     rows.push_back({.name = "one-action-never-fires", .lexer = &single, .input = generate(bytes, 0, 16, 0)});
 
@@ -249,6 +256,31 @@ int main(const int argc, const char** argv)
     {
         scenarios.push_back({.name = row.name, .bytes = row.input.size(), .pass = [&row] {
                                  std::size_t tokens{0};
+
+                                 if (!row.batched)
+                                 {
+                                     munch::core::Mode_stack stack;
+
+                                     std::size_t offset{0};
+
+                                     while (offset < row.input.size())
+                                     {
+                                         const auto match{row.lexer->tokenize<Mode_token>(
+                                                 row.input.cbegin() + static_cast<std::ptrdiff_t>(offset),
+                                                 row.input.cend(), stack)};
+
+                                         if (!match.token || match.length == 0)
+                                         {
+                                             break;
+                                         }
+
+                                         offset += match.length;
+
+                                         ++tokens;
+                                     }
+
+                                     return offset == row.input.size() ? tokens : 0;
+                                 }
 
                                  const auto consumed{row.lexer->tokenize_all<Mode_token>(
                                          row.input, [&tokens](Mode_token, std::size_t, std::size_t) { ++tokens; })};

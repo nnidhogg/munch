@@ -482,7 +482,7 @@ TEST(Tokenizer_modes, Depth_reports_nesting_and_survives_to_the_stopping_point)
     EXPECT_EQ(tokenizer.depth(), 2U);
 }
 
-TEST(Tokenizer_modes, Load_discards_saved_frames_but_keeps_the_mode)
+TEST(Tokenizer_modes, Load_rewinds_the_driven_mode_with_the_frames)
 {
     munch::tools::tokenizer::Tokenizer tokenizer{contextual(), R"("unterminated)"};
 
@@ -492,11 +492,47 @@ TEST(Tokenizer_modes, Load_discards_saved_frames_but_keeps_the_mode)
 
     ASSERT_EQ(tokenizer.depth(), 1U);
 
+    ASSERT_NE(tokenizer.mode(), 0U);
+
     tokenizer.load("ab");
 
-    // The frames described nesting in input that is gone; popping into it would enter a mode the new input never
-    // opened.
+    // Both described nesting in input that is gone. Keeping the mode would scan the new buffer inside a string
+    // literal it never opened, and keeping the frames would pop into a mode it never entered.
     EXPECT_EQ(tokenizer.depth(), 0U);
+
+    EXPECT_EQ(tokenizer.mode(), 0U);
+}
+
+TEST(Tokenizer_modes, Reset_rewinds_the_driven_mode_with_the_position)
+{
+    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), R"("unterminated)"};
+
+    while (!tokenizer.next<Ctx_token>().end_of_input())
+    {
+    }
+
+    ASSERT_NE(tokenizer.mode(), 0U);
+
+    tokenizer.reset();
+
+    // The mode belongs to the text just rewound past, so rewinding the position rewinds it too.
+    EXPECT_EQ(tokenizer.mode(), 0U);
+
+    EXPECT_EQ(tokenizer.depth(), 0U);
+}
+
+TEST(Tokenizer_modes, Reset_rewinds_a_mode_that_set_mode_forced)
+{
+    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), "ab"};
+
+    tokenizer.set_mode(std::size_t{1});
+
+    ASSERT_EQ(tokenizer.mode(), 1U);
+
+    tokenizer.reset();
+
+    // Nothing records whether the driver or the caller chose the mode, so a driven reset returns to zero either way.
+    EXPECT_EQ(tokenizer.mode(), 0U);
 }
 
 TEST(Tokenizer_modes, Set_mode_still_forces_a_mode_when_the_grammar_drives_them)

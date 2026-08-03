@@ -1,0 +1,40 @@
+collected:  2026-08-03 13:07:48 UTC
+commit:     20897e5
+dirty:      no
+invocation: munch_benchmark_compare 16 15, twice into one CSV
+
+== cpu ==
+Architecture:                            x86_64
+CPU(s):                                  24
+Vendor ID:                               GenuineIntel
+Model name:                              12th Gen Intel(R) Core(TM) i9-12900K
+Thread(s) per core:                      2
+Core(s) per socket:                      12
+Socket(s):                               1
+Virtualization:                          VT-x
+Hypervisor vendor:                       Microsoft
+Virtualization type:                     full
+L1d cache:                               576 KiB (12 instances)
+L2 cache:                                15 MiB (12 instances)
+L3 cache:                                30 MiB (1 instance)
+
+== topology visible to the process ==
+nproc:      24
+governor:   not exposed
+
+== memory ==
+               total        used        free      shared  buff/cache   available
+Mem:            15Gi       1.2Gi        13Gi        34Mi       1.3Gi        14Gi
+Swap:          4.0Gi          0B       4.0Gi
+
+== os ==
+Linux 6.18.33.2-microsoft-standard-WSL2 x86_64 GNU/Linux
+distro:     Ubuntu 24.04.4 LTS
+wsl:        yes
+
+== toolchain ==
+g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+cmake version 3.28.3
+
+== load ==
+ 14:42:05 up  5:31,  load average: 0.72, 1.15, 1.30

@@ -205,83 +205,50 @@ TEST(Mode, Per_mode_lexers_remain_inspectable)
     EXPECT_FALSE(lexer.mode(static_cast<std::size_t>(Mode::string)).is_split_point(' '));
 }
 
-TEST(Mode, The_batch_driver_outruns_driving_the_same_lexer_per_token)
+TEST(Mode, The_two_drivers_agree_on_the_token_stream)
 {
-    // tokenize_all() stays inside one mode's batch scan until the mode changes, rather than re-entering the scanner
-    // once per token. That is worth roughly 2x, and nothing else here would notice if it were undone, so this pins
-    // it. The comparison is a ratio measured in one process against the SAME lexer driven through its own per-token
-    // entry point, so it does not depend on the machine: only on the driver still batching.
+    // tokenize_all() stays inside one mode's batch scan until an action fires, rather than re-entering the scanner
+    // once per token, and it reads each action from the matched token's payload where the per-token entry point
+    // searches for it. Two different paths, so they are pinned to the same stream. Their throughput ratio is a
+    // benchmark row, munch_benchmark_modes, not an assertion here: a wall-clock bound in a unit test varies with the
+    // machine, the compiler and the sanitizers.
     const auto lexer{build()};
 
     std::string input;
 
-    while (input.size() < (4U << 20))
+    while (input.size() < (1U << 16))
     {
         input += "ab \"cd ef\" gh /* x */ ij ";
     }
 
-    const auto batch{[&lexer, &input] {
-        std::size_t tokens{0};
+    std::vector<std::pair<Tok, std::size_t>> batch;
 
-        lexer.tokenize_all<Tok>(input, [&tokens](Tok, std::size_t, std::size_t) { ++tokens; });
+    lexer.tokenize_all<Tok>(input, [&batch](const Tok token, const std::size_t length, std::size_t) {
+        batch.emplace_back(token, length);
+    });
 
-        return tokens;
-    }};
+    std::vector<std::pair<Tok, std::size_t>> per_token;
 
-    const auto per_token{[&lexer, &input] {
-        Mode_stack stack;
+    Mode_stack stack;
 
-        std::size_t tokens{0};
+    for (std::size_t offset{0}; offset < input.size();)
+    {
+        const auto match{
+                lexer.tokenize<Tok>(input.cbegin() + static_cast<std::ptrdiff_t>(offset), input.cend(), stack)};
 
-        std::size_t offset{0};
-
-        while (offset < input.size())
+        if (!match.token || match.length == 0)
         {
-            const auto match{
-                    lexer.tokenize<Tok>(input.cbegin() + static_cast<std::ptrdiff_t>(offset), input.cend(), stack)};
-
-            if (!match.token || match.length == 0)
-            {
-                break;
-            }
-
-            offset += match.length;
-
-            ++tokens;
+            break;
         }
 
-        return tokens;
-    }};
+        per_token.emplace_back(*match.token, match.length);
 
-    EXPECT_EQ(batch(), per_token()) << "the two drivers must agree on the token stream before their speed is compared";
+        offset += match.length;
+    }
 
-    const auto fastest{[](const auto& run) {
-        auto best{std::chrono::steady_clock::duration::max()};
+    EXPECT_FALSE(batch.empty());
 
-        for (int pass{0}; pass < 5; ++pass)
-        {
-            const auto start{std::chrono::steady_clock::now()};
-
-            const auto tokens{run()};
-
-            EXPECT_GT(tokens, 0U);
-
-            best = std::min(best, std::chrono::steady_clock::now() - start);
-        }
-
-        return best;
-    }};
-
-    const auto batched{fastest(batch)};
-
-    const auto single{fastest(per_token)};
-
-    // Measured around 2x on the development machine. The bound is deliberately slack: it separates a batching driver
-    // from a per-token one, which differ by far more than scheduling noise, without pinning a throughput figure.
-    EXPECT_LT(batched.count(), single.count()) << "the batch driver stopped batching";
-
-    EXPECT_LT(static_cast<double>(batched.count()), 0.9 * static_cast<double>(single.count()))
-            << "batching advantage shrank below 10 percent, which it should never do";
+    EXPECT_EQ(batch, per_token);
 }
 
 TEST(Mode, A_stopped_scan_reports_the_mode_and_depth_it_stopped_in)
@@ -620,6 +587,50 @@ TEST(Mode, A_caller_supplied_stack_naming_a_missing_mode_is_rejected)
     EXPECT_THROW(std::ignore = lexer.tokenize<Tok>(closing.cbegin() + 1, closing.cend(), per_token), std::out_of_range);
 }
 
+TEST(Mode, A_pop_escapes_only_a_mode_something_pushes_into)
+{
+    Mode_builder builder;
+
+    builder.add_token(Mode::code, plus(any_of(Set::alpha())), Tok::identifier, 2);
+
+    // Entered by go_to, so nothing ever saves a frame for its pop to return to. The pop can fire only on a frame the
+    // caller supplied, which the grammar does not establish, so the mode is inescapable by this grammar alone.
+    builder.add_token(
+            Mode::code, any_of(Set{'"'}), Tok::quote, 1,
+            {.kind = Mode_action_kind::go_to, .target = static_cast<std::size_t>(Mode::string)});
+
+    builder.add_token(Mode::string, any_of(Set::all()), Tok::text, 2);
+    builder.add_token(Mode::string, any_of(Set{'"'}), Tok::quote, 1, {.kind = Mode_action_kind::pop});
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_EQ(diagnostics.inescapable_modes, std::vector<std::size_t>{static_cast<std::size_t>(Mode::string)});
+}
+
+TEST(Mode, A_go_to_carries_the_frame_that_a_later_pop_returns_to)
+{
+    Mode_builder builder;
+
+    // 0 pushes into 1, 1 goes to 2, 2 pops. The scan succeeds, because go_to keeps the frame the push left, so
+    // mode 2 escapes even though nothing pushes into it directly.
+    builder.add_token(Mode::code, plus(any_of(Set::alpha())), Tok::identifier, 2);
+    builder.add_token(
+            Mode::code, any_of(Set{'"'}), Tok::quote, 1,
+            {.kind = Mode_action_kind::push, .target = static_cast<std::size_t>(Mode::string)});
+
+    builder.add_token(
+            Mode::string, any_of(Set{'#'}), Tok::escape, 1,
+            {.kind = Mode_action_kind::go_to, .target = static_cast<std::size_t>(Mode::comment)});
+    builder.add_token(Mode::string, any_of(Set::all()), Tok::text, 2);
+
+    builder.add_token(Mode::comment, any_of(Set{'!'}), Tok::comment_close, 1, {.kind = Mode_action_kind::pop});
+    builder.add_token(Mode::comment, any_of(Set::all()), Tok::comment_text, 2);
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_TRUE(diagnostics.inescapable_modes.empty());
+}
+
 TEST(Mode, A_go_to_onto_its_own_mode_is_a_stay)
 {
     Mode_builder builder;
@@ -670,15 +681,26 @@ TEST(Mode, A_go_to_onto_its_own_mode_is_a_stay)
     EXPECT_EQ(walking.current, stack.current);
 }
 
-TEST(Mode, A_zero_width_match_leaves_the_mode_alone_in_both_drivers)
+TEST(Mode, A_nullable_token_carrying_an_action_is_rejected)
 {
     Mode_builder builder;
 
-    // A pattern accepting the empty string, carrying an action the drivers must agree not to apply.
+    // Matches the empty string, so the batch driver would stop without reporting it while the per-token driver
+    // returns it with length zero. An action neither applies is not something a caller can rely on.
     builder.add_token(
             Mode::code, kleene(any_of(Set{'a'})), Tok::identifier, 1,
             {.kind = Mode_action_kind::go_to, .target = static_cast<std::size_t>(Mode::string)});
     builder.add_token(Mode::string, any_of(Set::all()), Tok::text, 2);
+
+    EXPECT_THROW(std::ignore = builder.build(), std::invalid_argument);
+}
+
+TEST(Mode, A_nullable_token_without_an_action_still_builds)
+{
+    Mode_builder builder;
+
+    // Legal, and the two drivers still report it differently: only the action is refused, not the pattern.
+    builder.add_token(Mode::code, kleene(any_of(Set{'a'})), Tok::identifier, 1);
 
     const auto lexer{builder.build()};
 
@@ -697,8 +719,6 @@ TEST(Mode, A_zero_width_match_leaves_the_mode_alone_in_both_drivers)
     EXPECT_EQ(lexer.tokenize_all<Tok>(input, [](Tok, std::size_t, std::size_t) {}, batch), 0U);
 
     EXPECT_EQ(per_token.current, batch.current);
-
-    EXPECT_EQ(per_token.current, static_cast<std::size_t>(Mode::code));
 }
 
 TEST(Mode, An_action_kind_outside_the_enumeration_is_rejected)

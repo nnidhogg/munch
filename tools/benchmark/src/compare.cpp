@@ -500,10 +500,12 @@ bool scan_lexertl_nested(const lexertl::state_machine& sm, const std::string& in
 }
 
 /**
- * @brief Code carrying block comments that nest, which no flat token set can tokenize.
+ * @brief Code carrying block comments that nest, which the measured grammars count rather than bound.
  *
- * A nesting comment has to be counted, and counting to an unbounded depth is exactly what one finite automaton
- * cannot do, so this corpus separates engines by reach rather than by speed.
+ * The LANGUAGE of arbitrarily nested comments is not regular, since counting to an unbounded depth is what one
+ * finite automaton cannot do. This corpus nests only to depth four, and a bounded depth IS regular: a flat grammar
+ * could unroll four levels into distinct states and tokenize it. What the corpus measures is therefore the cost of
+ * the stack both engines actually use, not a reach a flat grammar is denied here.
  * @param size The minimum size of the input in bytes.
  */
 std::string generate_nested_input(const std::size_t size)
@@ -712,8 +714,9 @@ std::string generate_mode_input(const std::size_t size)
 /**
  * @brief Measures the two engines that carry mode transitions in the grammar on input requiring a mode stack.
  *
- * Kept apart from compare_modes(): that corpus is expressible flat, so it prices modes, while this one cannot be
- * tokenized by any flat grammar at all and so reports which engines reach it. There is deliberately no flat row.
+ * Kept apart from compare_modes(): that corpus needs no stack, while here both engines push and pop one. No flat
+ * row, because the grammar under test is the counting one; a flat grammar unrolling the corpus's four levels would
+ * be a different grammar answering a different question.
  */
 bool compare_nested(const std::size_t mebibytes, const int passes, const char* const observations)
 {
@@ -752,7 +755,8 @@ bool compare_nested(const std::size_t mebibytes, const int passes, const char* c
     }
 
     std::printf(
-            "\ncorpus nested: %.2f bytes per token, comments nesting to depth 4, no flat grammar can tokenize it\n",
+            "\ncorpus nested: %.2f bytes per token, comments nesting to depth 4, which the grammars count rather "
+            "than bound\n",
             static_cast<double>(input.size()) / static_cast<double>(munch_stream->size()));
 
     const Scenario_t scenarios[]{

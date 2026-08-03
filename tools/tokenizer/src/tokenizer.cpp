@@ -41,14 +41,23 @@ void Tokenizer::load(std::string input)
 {
     input_ = std::move(input);
 
-    offset_ = 0;
-
-    stack_.saved.clear();
+    reset();
 }
 
 void Tokenizer::reset() noexcept
 {
     offset_ = 0;
+
+    // A mode the mode lexer chose describes the text just rewound past, so it is rewound too. A mode the caller
+    // chose with set_mode() is theirs and survives.
+    if (automatic_)
+    {
+        stack_.current = 0;
+
+        stack_.saved.clear();
+
+        mode_ = 0;
+    }
 }
 
 void Tokenizer::seek(const std::size_t offset) noexcept

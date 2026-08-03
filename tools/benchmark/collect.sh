@@ -78,6 +78,16 @@ dirty=$(test -n "$(git -C "$root" status --porcelain 2>/dev/null)" && echo yes |
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 
+# The benchmark stamps every CSV row with the commit and whether the tree was dirty, regenerated when it is built,
+# which is after this directory exists. An output directory inside the repository therefore makes that stamp read
+# dirty while environment.txt above reads clean. Say so rather than ship two records that disagree.
+case "$out/" in
+    "$root"/*)
+        echo "warning: $out is inside the repository, so observations.csv will record the tree as dirty" >&2
+        echo "         while environment.txt records it as clean. Use a directory outside the checkout." >&2
+        ;;
+esac
+
 # The benchmark appends to the CSV, so a second run into the same directory silently interleaves two datasets that
 # only the run column can separate, while summary.txt and environment.txt describe the last run alone. Refuse
 # instead: a fresh directory per run keeps the three files describing the same measurement.
