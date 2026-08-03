@@ -59,6 +59,29 @@ include(GNUInstallDirs)
 
 option(MUNCH_INSTALL "Generate install rules for munch" ${MUNCH_IS_TOP_LEVEL})
 
+# The commit each benchmark reports, regenerated every build so it cannot go stale. Defined here rather than under
+# tools/benchmark because paper/figures compiles the same harness without the benchmark being built at all. Once at
+# configure time so the header exists for the first compile, then again on every build to refresh it.
+set(MUNCH_PROVENANCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+
+set(MUNCH_PROVENANCE_HEADER ${MUNCH_PROVENANCE_DIR}/munch/tools/benchmark/provenance.hpp)
+
+execute_process(COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DTEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/tools/benchmark/provenance.hpp.in
+        -DOUTPUT=${MUNCH_PROVENANCE_HEADER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/benchmark/provenance.cmake)
+
+add_custom_target(munch_provenance
+        BYPRODUCTS ${MUNCH_PROVENANCE_HEADER}
+        COMMAND ${CMAKE_COMMAND}
+                -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DTEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/tools/benchmark/provenance.hpp.in
+                -DOUTPUT=${MUNCH_PROVENANCE_HEADER}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/benchmark/provenance.cmake
+        COMMENT "Recording the commit the benchmarks are built from"
+        VERBATIM)
+
 add_subdirectory(external)
 add_subdirectory(libs)
 add_subdirectory(tools)

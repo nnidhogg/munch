@@ -21,8 +21,10 @@ namespace munch::core
  * @brief A lexer whose token set depends on the scan's own history.
  *
  * One compiled Lexer per mode, selected by a Mode_stack the caller owns. This is what a front end needs for
- * string literals with escapes, interpolation, heredocs and nested comments, none of which a single flat token set
- * expresses. Instances are only constructible through Mode_builder::build().
+ * string literals with escapes, interpolation and nested comments, none of which a single flat token set expresses.
+ * A construct whose terminator is chosen per occurrence, such as a heredoc naming its own delimiter, is outside
+ * this: a mode's token set is fixed at build time, so that needs the Tokenizer's hand-scanning hatch. Instances are
+ * only constructible through Mode_builder::build().
  *
  * @par Why there is no parallel entry point
  * Lexer certifies split points: bytes safe to cut at whatever precedes them, which is what lets a worker start
@@ -279,7 +281,7 @@ private:
      * @param actions Each mode's mode-changing tokens and their actions.
      */
     Mode_lexer(std::vector<Lexer> lexers, std::vector<Registered> actions, std::vector<bool> acting)
-        : lexers_{std::move(lexers)}, actions_{std::move(actions)}, acting_{std::move(acting)}
+        : acting_{std::move(acting)}, lexers_{std::move(lexers)}, actions_{std::move(actions)}
     {}
 
     /**
@@ -289,6 +291,12 @@ private:
      * Defined out of line to keep its loop out of callers that inline aggressively, which cost the Tokenizer 10%.
      */
     [[nodiscard]] Mode_action action_of(std::size_t mode, std::size_t token) const noexcept;
+
+    /**
+     * @brief Whether each mode has any such token, tested once per mode change and so held apart from the lists
+     *        themselves, which reaching through cost 17% on mode-change-heavy input.
+     */
+    std::vector<bool> acting_;
 
     /**
      * @brief One compiled Lexer per mode, each carrying its tokens' actions as accepting-state payloads.
@@ -302,12 +310,6 @@ private:
      * and holding them per mode cost 17% on mode-change-heavy input for data the batch driver never reads.
      */
     std::vector<Registered> actions_;
-
-    /**
-     * @brief Whether each mode has any such token, tested once per mode change and so held apart from the lists
-     *        themselves, which reaching through cost 17% on mode-change-heavy input.
-     */
-    std::vector<bool> acting_;
 };
 
 } // namespace munch::core

@@ -799,34 +799,57 @@ follows the stack, `depth()` reports the nesting, and `set_mode()` still forces 
 
 Among the other measured engines, only lexertl17 carries mode transitions in the grammar itself. It is munch's
 nearest relative, a lexer built at run time from rules, and it has had start states with a next-state per rule for
-years. logos reaches the same end from the caller's side rather than the grammar's: `Lexer::morph` turns a lexer for
+years, with a stack behind them: `enums.hpp` carries `push_dfa` and `pop_dfa` bits and `lookup.hpp` pushes and pops
+start states, underflow included. **Its mode support is therefore the same expressive class as munch's, not a
+weaker one, and nesting is as available there as here.** The difference the table below reports is throughput, not
+reach. logos reaches the same end from the caller's side rather than the grammar's: `Lexer::morph` turns a lexer for
 one token type into a lexer for another over the same input, which is context-dependent lexing driven by user code
 rather than by a per-rule transition. The general-purpose regex engines have no mode concept at all, so a caller
 would switch patterns by hand, which measures their per-match cost rather than their mode support and is what the
 tables above already report.
 
-| Engine    | Mode mechanism                          | MiB/s |
-|-----------|-----------------------------------------|------:|
-| `munch`   | grammar-carried actions on a mode stack |   731 |
-| lexertl17 | start states with a next-state per rule |   241 |
+Mode support is an extension the grammar opts into, so the comparison comes in layers: input a flat token set can
+express, and input it cannot.
 
-Median of 15 passes on a 16 MiB corpus averaging 3.28 bytes per token, from the `munch_benchmark_compare 16 15`
-invocation shown above, with the three scenarios interleaved rather than run one after another. Both engines scan
-string interiors, and the harness validates that they agree on every token before timing either, so the 5,121,241
-tokens are the same tokens. Measured at commit `e375934`; the modal driver has changed enough this year that figures
-from an older tree are not comparable, so re-run rather than quote across commits.
+**Where modes are optional.** A string literal can be one token, so a flat grammar tokenizes this corpus too.
 
-The medians are reported rather than the best of each row, since picking each engine's best pass independently
-compares two different passes. A repeat of the same invocation gave 732 and 241. **The ratio is 3.03x in both runs,
-on medians and on bests alike.** Read the ratio.
+| Engine       | Mode mechanism                                             | MiB/s |
+|--------------|------------------------------------------------------------|------:|
+| `munch`      | grammar-carried actions on a mode stack                    |   689 |
+| lexertl17    | start states with a next-state per rule, pushed and popped |   235 |
+| `munch` flat | no modes at all, a string literal as one token             |   734 |
 
-The same runs put a flat munch grammar, which treats a string literal as one token, at 818 and 832 MiB/s over
-4,609,117 tokens. That is the price of modes on this corpus, 12 to 14 percent, and the extra tokens are nearly all
-of it: the mode grammar emits 11.1% more tokens, so per-token cost rises only about 1 to 2 percent. That was not
-true earlier: on the same corpus at `c1c9030` the per-token cost was about 16 percent, and adaptive dispatch and
-the move to carrying actions on accepting states are what closed it.
+**Where modes are required.** Block comments that nest have to be counted, and counting to an unbounded depth is
+what one finite automaton cannot do, so no flat grammar tokenizes this corpus at any depth. There is no flat row
+because there can be none.
 
-This is a separate table rather than a row in the ones above because a mode grammar emits more tokens than a flat
+| Engine    | Mode mechanism                                             | MiB/s |
+|-----------|------------------------------------------------------------|------:|
+| `munch`   | grammar-carried actions on a mode stack                    |   606 |
+| lexertl17 | start states with a next-state per rule, pushed and popped |   226 |
+
+Medians of 15 passes on 16 MiB corpora, from the `munch_benchmark_compare 16 15` invocation shown above, with each
+corpus's scenarios interleaved rather than run one after another, measured at commit `2c983ae`. The harness
+validates that the engines agree on every token before timing either, so the 5,121,241 tokens of the first corpus
+and the 4,859,619 of the second are the same tokens in both. Medians are reported rather than each row's best,
+since picking each engine's best pass independently compares two different passes. A repeat gave 684, 237, 727,
+598 and 221.
+
+**The ratio narrows as the grammar asks for more: 3.24x on dense flat input, 2.91x where modes are optional, 2.69x
+where they are required.** Read the ratio rather than the absolutes, which moved about 15% between this session and
+the one that produced the engine tables above, which is why those are not set beside these.
+
+Modes cost about 6 percent against a flat grammar on the corpus where both run, for 11.1% more tokens, so the
+per-token cost is within a couple of percent of zero in either direction across runs and the extra tokens are the
+whole of it. That was not always so: on the same corpus at `c0abab5`, before the action moved onto accepting states,
+the per-token cost was about 16 percent, and
+adaptive dispatch and the move to carrying actions on accepting states are what closed it.
+
+**A grammar that does not need modes pays nothing for their existence.** `Lexer` is untouched by mode support, and
+only the flat path has a parallel entry point, so stepping up to modes is also stepping out of
+`tokenize_all_parallel`.
+
+These are separate tables rather than rows in the ones above because a mode grammar emits more tokens than a flat
 one for the same bytes, so the two are not doing the same work and are not compared.
 
 The `Mode_stack` overload reports where a scan stopped and what it was doing there: `stack.current` names the mode and

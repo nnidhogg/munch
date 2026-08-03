@@ -213,13 +213,9 @@ private:
     std::vector<Builder> modes_;
 
     /**
-     * @brief Every registered token and its normalized action, per mode.
-     *
-     * A list of what was actually registered rather than a row indexed by token ID: the row had to be sized to the
-     * largest ID, so a grammar numbering a token 70000 allocated a megabyte of empty entries at construction. It
-     * also answers whether a token was declared at all, which a table of non-stay actions cannot.
+     * @brief The per-mode determinization cap; zero means unlimited.
      */
-    std::vector<std::vector<std::pair<std::size_t, Mode_action>>> registered_;
+    std::size_t state_limit_{0};
 
     /**
      * @brief Whether each mode index received at least one token, so build() can reject a skipped mode rather
@@ -228,9 +224,13 @@ private:
     std::vector<bool> populated_;
 
     /**
-     * @brief The per-mode determinization cap; zero means unlimited.
+     * @brief Every registered token and its normalized action, per mode.
+     *
+     * A list of what was actually registered rather than a row indexed by token ID: the row had to be sized to the
+     * largest ID, so a grammar numbering a token 70000 allocated a megabyte of empty entries at construction. It
+     * also answers whether a token was declared at all, which a table of non-stay actions cannot.
      */
-    std::size_t state_limit_{0};
+    std::vector<std::vector<std::pair<std::size_t, Mode_action>>> registered_;
 };
 
 } // namespace munch::core

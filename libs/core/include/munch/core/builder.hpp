@@ -196,14 +196,14 @@ private:
     [[nodiscard]] nfa::Builder merged_nfa() const;
 
     /**
-     * @brief Internal patterns registered through add_token.
-     */
-    std::vector<Pattern> patterns_;
-
-    /**
      * @brief The determinization cap set_state_limit() installed; zero means unlimited.
      */
     std::size_t state_limit_{0};
+
+    /**
+     * @brief Internal patterns registered through add_token.
+     */
+    std::vector<Pattern> patterns_;
 
     /**
      * @brief The token IDs set_ignored_tokens() declared, passed to the Lexer so it can certify the weaker split

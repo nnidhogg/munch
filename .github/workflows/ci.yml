@@ -26,6 +26,23 @@ jobs:
       - name: Check formatting
         run: git ls-files '*.cpp' '*.hpp' | xargs clang-format-19 --dry-run --Werror
 
+  doc-commit-check:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        # Full history and tags: the check resolves the commits the documentation cites, and a shallow clone has
+        # neither. This is the check that a force push has not left a published figure pointing at nothing.
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the commits the documentation names
+        run: tools/check_doc_commits.sh
+
   build-and-test-clang:
     runs-on: ubuntu-24.04
 

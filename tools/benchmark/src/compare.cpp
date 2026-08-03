@@ -464,8 +464,150 @@ enum class Mode_token : std::size_t
     op,
     punctuation,
     quote,
-    text
+    text,
+    comment_open,
+    comment_close,
+    comment_text
 };
+
+/**
+ * @brief Drives lexertl over a machine whose rules push and pop start states.
+ *
+ * recursive_match_results rather than match_results: the stack the pushes use lives on that type, and lookup()
+ * dereferences it whether or not the plain type has one.
+ */
+template <typename Sink>
+bool scan_lexertl_nested(const lexertl::state_machine& sm, const std::string& input, Sink&& sink)
+{
+    lexertl::recursive_match_results<std::string::const_iterator> results(input.cbegin(), input.cend());
+
+    for (;;)
+    {
+        lexertl::lookup(sm, results);
+
+        if (results.id == 0)
+        {
+            return true;
+        }
+
+        if (results.id == results.npos() || results.first == results.second)
+        {
+            return false;
+        }
+
+        sink(static_cast<std::size_t>(results.id), static_cast<std::size_t>(results.second - results.first));
+    }
+}
+
+/**
+ * @brief Code carrying block comments that nest, which no flat token set can tokenize.
+ *
+ * A nesting comment has to be counted, and counting to an unbounded depth is exactly what one finite automaton
+ * cannot do, so this corpus separates engines by reach rather than by speed.
+ * @param size The minimum size of the input in bytes.
+ */
+std::string generate_nested_input(const std::size_t size)
+{
+    std::string input;
+
+    input.reserve(size + 256);
+
+    unsigned seed{12345};
+
+    const auto random{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
+
+    while (input.size() < size)
+    {
+        input += "  name";
+        input += std::to_string(random() % 100);
+        input += " = value";
+        input += std::to_string(random() % 100);
+        input += ";\n";
+
+        // Depths one to four, so the stack is exercised rather than merely entered.
+        const auto depth{random() % 4 + 1};
+
+        for (std::size_t level{0}; level < depth; ++level)
+        {
+            input += "/* outer ";
+        }
+
+        input += "note ";
+        input += std::to_string(random() % 1000);
+
+        for (std::size_t level{0}; level < depth; ++level)
+        {
+            input += " */";
+        }
+
+        input += "\n";
+    }
+
+    return input;
+}
+
+/**
+ * @brief The nesting grammar in munch, where an inner opener pushes and a closer pops.
+ */
+munch::core::Mode_lexer build_nested_lexer()
+{
+    using namespace munch::regex;
+
+    constexpr std::size_t code{0};
+
+    constexpr std::size_t comment{1};
+
+    munch::core::Mode_builder builder;
+
+    builder.add_token(code, plus(any_of(Set{' ', '\t', '\n'})), Mode_token::whitespace, 2);
+    builder.add_token(
+            code, concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Mode_token::identifier, 2);
+    builder.add_token(code, plus(any_of(Set::digits())), Mode_token::number, 2);
+    builder.add_token(code, choice(text("=="), text("+"), text("-"), text("=")), Mode_token::op, 2);
+    builder.add_token(code, any_of(Set{'(', ')', '{', '}', ';', ','}), Mode_token::punctuation, 2);
+    builder.add_token(
+            code, text("/*"), Mode_token::comment_open, 1,
+            {.kind = munch::core::Mode_action_kind::push, .target = comment});
+
+    builder.add_token(
+            comment, text("/*"), Mode_token::comment_open, 1,
+            {.kind = munch::core::Mode_action_kind::push, .target = comment});
+    builder.add_token(comment, text("*/"), Mode_token::comment_close, 1, {.kind = munch::core::Mode_action_kind::pop});
+    builder.add_token(comment, plus(any_of(Set::all() - '*' - '/')), Mode_token::comment_text, 2);
+    builder.add_token(comment, any_of(Set{'*', '/'}), Mode_token::comment_text, 3);
+
+    return builder.build();
+}
+
+/**
+ * @brief The same nesting grammar in lexertl, whose start states push with ">" and pop with "<".
+ */
+lexertl::state_machine build_lexertl_nested()
+{
+    lexertl::rules rules;
+
+    rules.push_state("COMMENT");
+
+    rules.push("INITIAL", "[ \t\n]+", static_cast<std::size_t>(Mode_token::whitespace), ".");
+    rules.push("INITIAL", "[A-Za-z_][A-Za-z0-9_]*", static_cast<std::size_t>(Mode_token::identifier), ".");
+    rules.push("INITIAL", "[0-9]+", static_cast<std::size_t>(Mode_token::number), ".");
+    rules.push("INITIAL", "==|[-+=]", static_cast<std::size_t>(Mode_token::op), ".");
+    rules.push("INITIAL", "[(){};,]", static_cast<std::size_t>(Mode_token::punctuation), ".");
+    rules.push("INITIAL", "\\/\\*", static_cast<std::size_t>(Mode_token::comment_open), ">COMMENT");
+
+    rules.push("COMMENT", "\\/\\*", static_cast<std::size_t>(Mode_token::comment_open), ">COMMENT");
+    rules.push("COMMENT", "\\*\\/", static_cast<std::size_t>(Mode_token::comment_close), "<");
+    rules.push("COMMENT", "[^*/]+", static_cast<std::size_t>(Mode_token::comment_text), ".");
+    rules.push("COMMENT", "[*/]", static_cast<std::size_t>(Mode_token::comment_text), ".");
+
+    lexertl::state_machine machine;
+
+    lexertl::generator::build(rules, machine);
+
+    machine.minimise();
+
+    return machine;
+}
 
 /**
  * @brief A grammar whose string interiors are scanned in a second mode, built with munch's mode support.
@@ -567,6 +709,79 @@ std::string generate_mode_input(const std::size_t size)
  * other instead.
  * @return True if both engines tokenized the corpus completely and agreed on every token.
  */
+/**
+ * @brief Measures the two engines that carry mode transitions in the grammar on input requiring a mode stack.
+ *
+ * Kept apart from compare_modes(): that corpus is expressible flat, so it prices modes, while this one cannot be
+ * tokenized by any flat grammar at all and so reports which engines reach it. There is deliberately no flat row.
+ */
+bool compare_nested(const std::size_t mebibytes, const int passes, const char* const observations)
+{
+    using Scenario_t = munch::tools::benchmark::Scenario;
+
+    const auto input{generate_nested_input(mebibytes << 20U)};
+
+    const auto lexer{build_nested_lexer()};
+
+    const auto machine{build_lexertl_nested()};
+
+    const auto munch_stream{stream_of([&](auto&& sink) {
+        const auto consumed{lexer.tokenize_all<Mode_token>(
+                input, [&sink](const Mode_token token, const std::size_t length, const std::size_t) {
+                    sink(static_cast<std::size_t>(token), length);
+                })};
+
+        return consumed == input.size();
+    })};
+
+    const auto lexertl_stream{stream_of([&](auto&& sink) { return scan_lexertl_nested(machine, input, sink); })};
+
+    if (!munch_stream || !lexertl_stream)
+    {
+        std::printf("nested: an engine rejected the input\n");
+
+        return false;
+    }
+
+    if (*munch_stream != *lexertl_stream)
+    {
+        std::printf(
+                "nested: the two engines disagree (%zu tokens vs %zu)\n", munch_stream->size(), lexertl_stream->size());
+
+        return false;
+    }
+
+    std::printf(
+            "\ncorpus nested: %.2f bytes per token, comments nesting to depth 4, no flat grammar can tokenize it\n",
+            static_cast<double>(input.size()) / static_cast<double>(munch_stream->size()));
+
+    const Scenario_t scenarios[]{
+            {.name = "munch-nested",
+             .bytes = input.size(),
+             .pass =
+                     [&] {
+                         return tally_of([&](auto&& sink) {
+                                    const auto consumed{lexer.tokenize_all<Mode_token>(
+                                            input, [&sink](const Mode_token token, const std::size_t length,
+                                                           const std::size_t) {
+                                                sink(static_cast<std::size_t>(token), length);
+                                            })};
+
+                                    return consumed == input.size();
+                                })
+                                 .tokens;
+                     }},
+            {.name = "lexertl-nested",
+             .bytes = input.size(),
+             .pass =
+                     [&] {
+                         return tally_of([&](auto&& sink) { return scan_lexertl_nested(machine, input, sink); }).tokens;
+                     }},
+    };
+
+    return measure_interleaved(scenarios, passes, mebibytes, observations);
+}
+
 bool compare_modes(const std::size_t mebibytes, const int passes, const char* const observations)
 {
     using Scenario_t = munch::tools::benchmark::Scenario;
@@ -867,6 +1082,8 @@ int main(const int argc, const char** argv)
     }
 
     ok = compare_modes(mebibytes, passes, observations) && ok;
+
+    ok = compare_nested(mebibytes, passes, observations) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
