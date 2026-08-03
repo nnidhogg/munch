@@ -20,6 +20,7 @@
 #include <lexertl/lookup.hpp>
 #include <lexertl/state_machine.hpp>
 
+#include "munch/core/mode_builder.hpp"
 #include "munch/tools/benchmark/harness.hpp"
 
 namespace
@@ -453,6 +454,218 @@ private:
 } // namespace
 
 /**
+ * @brief The token kinds of the mode comparison, shared by both engines so their streams are comparable.
+ */
+enum class Mode_token : std::size_t
+{
+    whitespace = 1,
+    identifier,
+    number,
+    op,
+    punctuation,
+    quote,
+    text
+};
+
+/**
+ * @brief A grammar whose string interiors are scanned in a second mode, built with munch's mode support.
+ */
+munch::core::Mode_lexer build_mode_lexer()
+{
+    using namespace munch::regex;
+
+    constexpr std::size_t code{0};
+
+    constexpr std::size_t string{1};
+
+    munch::core::Mode_builder builder;
+
+    builder.add_token(code, plus(any_of(Set{' ', '\t', '\n'})), Mode_token::whitespace, 2);
+    builder.add_token(
+            code, concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Mode_token::identifier, 2);
+    builder.add_token(code, plus(any_of(Set::digits())), Mode_token::number, 2);
+    builder.add_token(code, choice(text("=="), text("+"), text("-"), text("=")), Mode_token::op, 2);
+    builder.add_token(code, any_of(Set{'(', ')', '{', '}', ';', ','}), Mode_token::punctuation, 2);
+    builder.add_token(
+            code, text("\""), Mode_token::quote, 1, {.kind = munch::core::Mode_action_kind::go_to, .target = string});
+
+    builder.add_token(
+            string, text("\""), Mode_token::quote, 1, {.kind = munch::core::Mode_action_kind::go_to, .target = code});
+    builder.add_token(string, plus(any_of(Set::all() - '"')), Mode_token::text, 2);
+
+    return builder.build();
+}
+
+/**
+ * @brief The same language as build_mode_lexer(), expressed with lexertl's start states.
+ *
+ * lexertl is the only engine in this comparison with the feature: a lexer built at run time from rules, with start
+ * states and a next-state per rule. The general-purpose regex engines have no mode concept at all, so a caller
+ * would switch patterns by hand, which measures their per-match cost rather than their mode support and is already
+ * what the tables above report.
+ */
+lexertl::state_machine build_lexertl_modes()
+{
+    lexertl::rules rules;
+
+    rules.push_state("STR");
+
+    rules.push("INITIAL", "[ \t\n]+", static_cast<std::size_t>(Mode_token::whitespace), ".");
+    rules.push("INITIAL", "[A-Za-z_][A-Za-z0-9_]*", static_cast<std::size_t>(Mode_token::identifier), ".");
+    rules.push("INITIAL", "[0-9]+", static_cast<std::size_t>(Mode_token::number), ".");
+    rules.push("INITIAL", "==|[-+=]", static_cast<std::size_t>(Mode_token::op), ".");
+    rules.push("INITIAL", "[(){};,]", static_cast<std::size_t>(Mode_token::punctuation), ".");
+    rules.push("INITIAL", "\\\"", static_cast<std::size_t>(Mode_token::quote), "STR");
+
+    rules.push("STR", "\\\"", static_cast<std::size_t>(Mode_token::quote), "INITIAL");
+    rules.push("STR", "[^\\\"]+", static_cast<std::size_t>(Mode_token::text), ".");
+
+    lexertl::state_machine machine;
+
+    lexertl::generator::build(rules, machine);
+
+    machine.minimise();
+
+    return machine;
+}
+
+/**
+ * @brief Generates code carrying string literals with bodies, the construct the modes exist for.
+ */
+std::string generate_mode_input(const std::size_t size)
+{
+    std::string input;
+
+    input.reserve(size + 256);
+
+    unsigned seed{12345};
+
+    const auto random{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
+
+    while (input.size() < size)
+    {
+        input += "  name";
+        input += std::to_string(random() % 100);
+        input += " = value";
+        input += std::to_string(random() % 100);
+        input += " + ";
+        input += std::to_string(random() % 100000);
+        input += ";\n  label = \"text body ";
+        input += std::to_string(random() % 1000);
+        input += " with words\";\n";
+    }
+
+    return input;
+}
+
+/**
+ * @brief Compares munch's modes against lexertl's start states on a language that needs them.
+ *
+ * Kept apart from the tables above rather than folded in, because the streams are deliberately different: a mode
+ * grammar scans string interiors and so emits more tokens than a flat grammar that treats a literal as one token.
+ * Validating against munch's flat stream would fail by construction, so the two mode engines validate against each
+ * other instead.
+ * @return True if both engines tokenized the corpus completely and agreed on every token.
+ */
+bool compare_modes(const std::size_t mebibytes, const int passes)
+{
+    using Scenario_t = munch::tools::benchmark::Scenario;
+
+    const auto input{generate_mode_input(mebibytes << 20U)};
+
+    const auto lexer{build_mode_lexer()};
+
+    const auto machine{build_lexertl_modes()};
+
+    const auto munch_stream{stream_of([&](auto&& sink) {
+        const auto consumed{lexer.tokenize_all<Mode_token>(
+                input, [&sink](const Mode_token token, const std::size_t length, const std::size_t) {
+                    sink(static_cast<std::size_t>(token), length);
+                })};
+
+        return consumed == input.size();
+    })};
+
+    const auto lexertl_stream{stream_of([&](auto&& sink) { return scan_lexertl(machine, input, sink); })};
+
+    if (!munch_stream || !lexertl_stream)
+    {
+        std::printf("modes: an engine rejected the input\n");
+
+        return false;
+    }
+
+    if (*munch_stream != *lexertl_stream)
+    {
+        std::printf(
+                "modes: the two engines disagree (%zu tokens vs %zu)\n", munch_stream->size(), lexertl_stream->size());
+
+        return false;
+    }
+
+    std::printf(
+            "\ncorpus modes: %.2f bytes per token, string interiors scanned by both\n",
+            static_cast<double>(input.size()) / static_cast<double>(munch_stream->size()));
+
+    // The same language expressed WITHOUT modes, as a flat grammar treating a string literal as one token. Its
+    // stream is deliberately different, so it is validated only for completeness rather than against the two mode
+    // engines; the point of the row is the price of modes, which docs/limits.md quotes.
+    using namespace munch::regex;
+
+    munch::core::Builder flat;
+
+    flat.add_token(plus(any_of(Set{' ', '\t', '\n'})), Mode_token::whitespace, 2);
+    flat.add_token(
+            concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Mode_token::identifier, 2);
+    flat.add_token(plus(any_of(Set::digits())), Mode_token::number, 2);
+    flat.add_token(choice(text("=="), text("+"), text("-"), text("=")), Mode_token::op, 2);
+    flat.add_token(any_of(Set{'(', ')', '{', '}', ';', ','}), Mode_token::punctuation, 2);
+    flat.add_token(concat(text("\""), concat(kleene(any_of(Set::all() - '"')), text("\""))), Mode_token::text, 2);
+
+    const auto flat_lexer{flat.build()};
+
+    // Interleaved rather than one engine's passes then the next: flat and modal differ by only a percent or two on
+    // this corpus, which is well inside the drift a sequential ordering lets accumulate on one of them. The lexertl
+    // gap is large enough not to care, but it rides along for free.
+    const Scenario_t scenarios[]{
+            {.name = "munch-flat",
+             .bytes = input.size(),
+             .pass =
+                     [&] {
+                         return tally_of([&](auto&& sink) {
+                                    const auto consumed{flat_lexer.tokenize_all<Mode_token>(
+                                            input, [&sink](const Mode_token token, const std::size_t length) {
+                                                sink(static_cast<std::size_t>(token), length);
+                                            })};
+
+                                    return consumed == input.size();
+                                })
+                                 .tokens;
+                     }},
+            {.name = "munch-modes",
+             .bytes = input.size(),
+             .pass =
+                     [&] {
+                         return tally_of([&](auto&& sink) {
+                                    const auto consumed{lexer.tokenize_all<Mode_token>(
+                                            input, [&sink](const Mode_token token, const std::size_t length,
+                                                           const std::size_t) {
+                                                sink(static_cast<std::size_t>(token), length);
+                                            })};
+
+                                    return consumed == input.size();
+                                })
+                                 .tokens;
+                     }},
+            {.name = "lexertl-modes",
+             .bytes = input.size(),
+             .pass = [&] { return tally_of([&](auto&& sink) { return scan_lexertl(machine, input, sink); }).tokens; }},
+    };
+
+    return measure_interleaved(scenarios, passes, mebibytes, nullptr);
+}
+
+/**
  * @brief Measures tokenization throughput of munch against common regex engines on identical generated pseudo-code.
  *
  * Every engine extracts the same information per token, its kind and length, and every engine's full tokenization
@@ -648,6 +861,8 @@ int main(const int argc, const char** argv)
                  ok;
         }
     }
+
+    ok = compare_modes(mebibytes, passes) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

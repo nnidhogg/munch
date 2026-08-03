@@ -30,11 +30,20 @@ Tokenizer::Tokenizer(std::vector<core::Lexer> lexers, std::string input) : Token
     input_ = std::move(input);
 }
 
+Tokenizer::Tokenizer(core::Mode_lexer lexer) : mode_{0}, offset_{0}, automatic_{std::move(lexer)}
+{}
+
+Tokenizer::Tokenizer(core::Mode_lexer lexer, std::string input)
+    : mode_{0}, input_{std::move(input)}, offset_{0}, automatic_{std::move(lexer)}
+{}
+
 void Tokenizer::load(std::string input)
 {
     input_ = std::move(input);
 
     offset_ = 0;
+
+    stack_.saved.clear();
 }
 
 void Tokenizer::reset() noexcept
@@ -50,6 +59,11 @@ void Tokenizer::seek(const std::size_t offset) noexcept
 std::size_t Tokenizer::mode() const noexcept
 {
     return mode_;
+}
+
+std::size_t Tokenizer::depth() const noexcept
+{
+    return stack_.saved.size();
 }
 
 std::size_t Tokenizer::offset() const noexcept

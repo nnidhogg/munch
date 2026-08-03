@@ -4,6 +4,43 @@
 the model the library commits to, the guarantees that commitment buys, the boundaries you can hit, and the escape hatch
 for each. Read it when deciding whether munch fits a language, not after.
 
+## **Modes: What a Flat Token Set Cannot Say**
+
+`Lexer` matches one flat token set at every position. Real front ends need more than that: inside a string literal a
+quote terminates rather than opens, and a comment that nests needs to know how deep it is. `Mode_lexer`, built by
+`Mode_builder`, supplies it. Each mode is its own token set compiled through the ordinary `Builder`, and each token
+carries an action on a mode stack the caller owns: `stay`, `go_to`, `push`, `pop`. Nesting comes from the stack, so
+nested comments need no counter in user code.
+
+**A `Mode_lexer` has no parallel entry point.** `Lexer` can be split because a certified byte recovers the whole scan
+state: a worker starting there knows it is between tokens. With modes it would also have to recover the mode and every
+saved frame, and no byte carries that. The same byte is a quote in code and a terminator in a string, and the depth a
+nested comment reached is unbounded, so no finite per-byte certificate can name it. What is proved unavailable is
+narrower than "never". What is proved is that a SINGLE BYTE cannot identify which mode the scan is in when two or more
+modes admit every byte. Identifying the mode is sufficient for a safe cut but not necessary, since two modes might emit
+the same tokens from that point on, so this is an obstruction rather than an impossibility. A multi-byte window, a
+checkpoint left by an earlier pass, an independently recorded stack, or a mode set restricted to stackless `go_to` are
+all outside that result. Restricting to `go_to` alone bounds the state space and makes the question askable again, which
+is a genuine open direction rather than a shipped feature. Where a grammar admits a flat token set, use `Lexer` and get
+the parallel path; where it does not, `Mode_lexer` scans serially and honestly.
+
+**Modes are an expressiveness feature, not a performance one.** Where a flat token set can express the language it is
+faster, because a mode grammar scans string interiors and so emits more tokens for the same bytes. The
+`munch_benchmark_compare` mode section measures both on one corpus with the scenarios interleaved: modes cost about
+a quarter there, and most of that is the extra tokens a mode grammar emits for the same bytes rather than slower
+tokens. The gap widens as the input carries fewer string literals and those extra tokens stop paying for
+themselves. The
+intuition that several small automata beat one large one does not hold either, because only the states a scan
+actually visits are hot and splitting them across modes does not shrink that working set. Use `Lexer` where the
+grammar allows it, both for the throughput and for the parallel path; use `Mode_lexer` where the language genuinely
+needs a mode stack.
+
+Within `Mode_lexer`, scanning stays inside one mode's batch pass until a token changes the mode, rather than
+re-entering the scanner once per token. That is worth roughly twice the throughput and is pinned by a test, since
+nothing else would notice if it were undone.
+
+The rest of this note describes the model each individual mode obeys.
+
 ## **The Model: Regular Languages, Longest Match, Anchored**
 
 munch recognizes exactly the regular languages its combinators can express, always by longest match from the current

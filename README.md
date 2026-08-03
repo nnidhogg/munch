@@ -198,6 +198,16 @@ does not isolate. Rerun the benchmark on your own hardware and language before c
 
 ### **Comparison with Other Engines**
 
+`munch_benchmark_modes` measures the modal driver across the axes that separate its lookup paths: an action table
+that never fires against a grammar with no actions at all, how often an action token occurs, how long the
+free-content runs between actions are, `go_to` against `push`/`pop`, and mode-stack depth. Run it when the action
+lookup changes; a single corpus hides which path an edit helped, and one edit measured +11% on one row and -13% on
+another.
+
+```console
+$ ./build/tools/benchmark/munch_benchmark_modes 4 15
+```
+
 Configuring with `-DMUNCH_BENCHMARK_COMPARE=ON` additionally builds `munch_benchmark_compare`, which runs the same
 tokenization job through six engines: lexertl17 (the C++17 line of lexertl), munch's nearest relative, a lexer likewise
 built at run time from rules and compiled to a DFA, and five widely used regex engines, used the way one uses a regex
@@ -787,31 +797,44 @@ const auto consumed{lexer.tokenize_all<Token>(
 `Tokenizer` accepts a `Mode_lexer` too, so a streaming driver gets the same grammar-carried transitions: `mode()`
 follows the stack, `depth()` reports the nesting, and `set_mode()` still forces a mode as an error-recovery hatch.
 
-Only one engine in the comparison below has the feature at all. lexertl17 is munch's nearest relative, a lexer built
+Among the other measured engines, only lexertl17 also provides modes. It is munch's nearest relative, a lexer built
 at run time from rules, and it has had start states with a next-state per rule for years. The general-purpose regex
 engines have no mode concept, so a caller would switch patterns by hand, which measures their per-match cost rather
 than their mode support and is what the tables above already report.
 
-| Engine    | Mode mechanism                          | modes |
+| Engine    | Mode mechanism                          | MiB/s |
 |-----------|-----------------------------------------|------:|
-| `munch`   | grammar-carried actions on a mode stack |   598 |
-| lexertl17 | start states with a next-state per rule |   240 |
+| `munch`   | grammar-carried actions on a mode stack |   642 |
+| lexertl17 | start states with a next-state per rule |   237 |
 
-Best of 15 passes on an 8 MiB corpus averaging 3.28 bytes per token, measured on the machine and in the run that
-produced the tables above. Both engines scan string interiors, and `munch_benchmark_compare` validates that they
-agree on every token before timing either, so the 2,560,581 tokens are the same tokens. This is a separate table
-rather than a row in the ones above because a mode grammar emits more tokens than a flat one that treats a string
-literal as a single token: the two are not doing the same work, so they are not compared.
+Best of 15 passes on a 16 MiB corpus averaging 3.28 bytes per token, from the `munch_benchmark_compare 16 15`
+invocation shown above, with the three scenarios interleaved rather than run one after another. That matters here:
+measured sequentially the flat row read 611 MiB/s, and interleaved it reads 828, because whichever engine goes first
+absorbs the drift. Both engines scan string interiors, and the harness validates that they agree on every token
+before timing either, so the 5,121,241 tokens are the same tokens.
+
+A repeat of the same invocation gave 885, 658 and 245. The absolute figures move about 7% between runs on this
+machine; the ratio does not, staying at 2.7x. Read the ratio.
+
+The same run puts a flat munch grammar, which treats a string literal as one token, at 828 MiB/s over 4,609,117
+tokens. That is the price of modes on this corpus, about a quarter, and most of it is the extra tokens rather than
+slower tokens.
+
+This is a separate table rather than a row in the ones above because a mode grammar emits more tokens than a flat
+one for the same bytes, so the two are not doing the same work and are not compared.
 
 The `Mode_stack` overload reports where a scan stopped and what it was doing there: `stack.current` names the mode and
 `stack.saved.size()` the nesting depth, which is what distinguishes an unterminated string from an unrecognized byte
 in code. `Mode_builder::diagnose()` reports each mode's dead tokens and priority ties, plus the two faults only a
 modal grammar has: modes nothing can enter, and modes nothing can leave.
 
-**Two things to know before reaching for it.** A `Mode_lexer` has no parallel entry point and never will, because a
-worker cutting blind cannot recover the mode and saved stack from the bytes at the cut. And modes are an
-expressiveness feature rather than a performance one: where a flat token set can express the language it is faster,
-by roughly 7 to 27 percent depending on how much of the input sits inside the context-dependent constructs.
+**Two things to know before reaching for it.** A `Mode_lexer` has no parallel entry point, because a worker cutting
+blind cannot recover the mode and saved stack from the bytes at the cut. That is an obstruction rather than an
+impossibility: what is proved is that a single byte cannot identify the mode when two or more admit every byte, which is
+sufficient for a safe cut but not necessary. No scheme is ruled out: a multi-byte window, a checkpoint recorded by an
+earlier pass, or a mode set restricted to stackless `go_to` are all outside what has been ruled out. And modes are an
+expressiveness feature rather than a performance one: where a flat token set can express the language it is faster, by
+roughly 7 to 27 percent depending on how much of the input sits inside the context-dependent constructs.
 [docs/limits.md](docs/limits.md) gives the reasoning for both.
 
 [docs/limits.md](docs/limits.md) collects the full contract in one place: the matching model and what it excludes,

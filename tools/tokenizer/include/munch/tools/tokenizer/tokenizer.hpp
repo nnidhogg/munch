@@ -2,6 +2,7 @@
 #define MUNCH_TOOLS_TOKENIZER_INCLUDE_MUNCH_TOOLS_TOKENIZER_TOKENIZER_HPP
 
 #include <concepts>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include "munch/core/lexer.hpp"
+#include "munch/core/mode_lexer.hpp"
 #include "munch/tools/tokenizer/result.hpp"
 
 namespace munch::tools::tokenizer
@@ -19,8 +21,11 @@ namespace munch::tools::tokenizer
  * Returns tokens in order as matched by the lexer without additional processing.
  *
  * A tokenizer may hold several lexers as modes over the same input, for languages whose tokenization is
- * context-dependent, such as header-names after `#include`. The driver switches modes explicitly with set_mode();
- * the tokenizer never switches on its own.
+ * context-dependent, such as header-names after `#include`. Constructed from lexers, the driver switches modes
+ * explicitly with set_mode() and the tokenizer never switches on its own, which suits a parser that knows what is
+ * coming. Constructed from a core::Mode_lexer, the grammar carries the switches instead: each token declares its
+ * effect on a mode stack, so nested comments and string escapes need no bookkeeping from the driver. set_mode() and
+ * mode() keep working either way, and depth() reports the nesting a stack has reached.
  *
  * @warning This class is not thread-safe. Concurrent calls to next() or load() on the same instance
  *          will result in undefined behavior.
@@ -70,7 +75,23 @@ public:
     explicit Tokenizer(std::vector<core::Lexer> lexers, std::string input);
 
     /**
+     * @brief Construct a tokenizer whose grammar carries its own mode transitions.
+     * @param lexer The mode lexer; its mode 0 starts active with an empty stack.
+     */
+    explicit Tokenizer(core::Mode_lexer lexer);
+
+    /**
+     * @brief Construct a tokenizer from a mode lexer and an input string held in memory.
+     * @param lexer The mode lexer; its mode 0 starts active with an empty stack.
+     * @param input Input text to tokenize.
+     */
+    explicit Tokenizer(core::Mode_lexer lexer, std::string input);
+
+    /**
      * @brief Replace the input text and reset tokenization state. The active mode is kept.
+     *
+     * Any saved mode frames are discarded, because they describe nesting in input that is being replaced: carrying
+     * a half-open string literal into a new buffer would pop into a mode the new input never entered.
      */
     void load(std::string input);
 
@@ -99,13 +120,28 @@ public:
     {
         const auto index{static_cast<std::size_t>(mode)};
 
-        if (index >= lexers_.size())
+        const auto available{automatic_ ? automatic_->modes() : lexers_.size()};
+
+        if (index >= available)
         {
             throw std::out_of_range("No lexer was given for mode " + std::to_string(index));
         }
 
+        // Forcing a mode is still allowed when the grammar drives them, and is the recovery hatch after an error:
+        // the saved frames are left alone, since the driver may well intend to return through them.
+        stack_.current = index;
+
         mode_ = index;
     }
+
+    /**
+     * @brief Return the number of saved mode frames, i.e. how deeply nested the scan is.
+     *
+     * Always zero unless the tokenizer was constructed from a core::Mode_lexer, since only a grammar-carried
+     * transition pushes. Together with mode() this says what a stopped scan was doing, which is what distinguishes
+     * an unterminated string from an unrecognized byte in code.
+     */
+    [[nodiscard]] std::size_t depth() const noexcept;
 
     /**
      * @brief Return the active mode.
@@ -152,7 +188,19 @@ public:
 
         const auto view{std::string_view{input_}.substr(offset_)};
 
-        const auto [token, consumed]{lexers_[mode_].tokenize<T>(view)};
+        // The modal path advances the stack, so mode() follows it.
+        const auto [token, consumed]{[&]() -> core::Lexer::Match<T> {
+            if (automatic_)
+            {
+                const auto [matched, length]{automatic_->template tokenize<T>(view.cbegin(), view.cend(), stack_)};
+
+                mode_ = stack_.current;
+
+                return {.token = matched, .length = length};
+            }
+
+            return lexers_[mode_].template tokenize<T>(view);
+        }()};
 
         if (!token)
         {
@@ -188,9 +236,19 @@ private:
     std::size_t offset_;
 
     /**
-     * @brief The lexers, one per mode.
+     * @brief The lexers, one per mode, when the driver switches modes itself. Empty otherwise.
      */
     std::vector<core::Lexer> lexers_;
+
+    /**
+     * @brief The mode lexer, when the grammar carries the transitions. Empty otherwise.
+     */
+    std::optional<core::Mode_lexer> automatic_;
+
+    /**
+     * @brief The mode and saved frames, advanced by each token's declared action.
+     */
+    core::Mode_stack stack_;
 };
 
 } // namespace munch::tools::tokenizer

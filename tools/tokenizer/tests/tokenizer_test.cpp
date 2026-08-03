@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "munch/core/builder.hpp"
+#include "munch/core/mode_builder.hpp"
 #include "munch/regex/regex.hpp"
 
 using namespace munch;
@@ -382,4 +383,129 @@ TEST_F(Tokenizer_test, Modes)
     EXPECT_TRUE(tokenizer.next<Mode_token>().end_of_input());
 
     EXPECT_THROW(tokenizer.set_mode(5), std::out_of_range);
+}
+
+namespace
+{
+enum class Ctx : std::size_t
+{
+    code,
+    string,
+    comment
+};
+
+enum class Ctx_token : std::size_t
+{
+    identifier,
+    quote,
+    text,
+    open_comment,
+    close_comment,
+    space
+};
+
+/**
+ * @brief A grammar whose mode transitions live in the grammar rather than in the driver.
+ */
+munch::core::Mode_lexer contextual()
+{
+    using namespace munch::regex;
+
+    munch::core::Mode_builder builder;
+
+    builder.add_token(Ctx::code, plus(any_of(Set::alpha())), Ctx_token::identifier, 2);
+    builder.add_token(Ctx::code, any_of(Set{' '}), Ctx_token::space, 2);
+    builder.add_token(
+            Ctx::code, text("\""), Ctx_token::quote, 1,
+            {.kind = munch::core::Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::string)});
+    builder.add_token(
+            Ctx::code, text("/*"), Ctx_token::open_comment, 1,
+            {.kind = munch::core::Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::comment)});
+
+    builder.add_token(Ctx::string, text("\""), Ctx_token::quote, 1, {.kind = munch::core::Mode_action_kind::pop});
+    builder.add_token(Ctx::string, plus(any_of(Set::all() - '"')), Ctx_token::text, 2);
+
+    builder.add_token(
+            Ctx::comment, text("/*"), Ctx_token::open_comment, 1,
+            {.kind = munch::core::Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::comment)});
+    builder.add_token(
+            Ctx::comment, text("*/"), Ctx_token::close_comment, 1, {.kind = munch::core::Mode_action_kind::pop});
+    builder.add_token(Ctx::comment, any_of(Set::all()), Ctx_token::text, 2);
+
+    return builder.build();
+}
+} // namespace
+
+TEST(Tokenizer_modes, The_grammar_switches_modes_without_the_driver_asking)
+{
+    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), R"(ab "cd" ef)"};
+
+    std::vector<std::pair<Ctx_token, std::size_t>> seen;
+
+    for (;;)
+    {
+        const auto result{tokenizer.next<Ctx_token>()};
+
+        if (result.end_of_input())
+        {
+            break;
+        }
+
+        ASSERT_FALSE(result.has_error()) << "at offset " << tokenizer.offset();
+
+        seen.emplace_back(result.token().kind(), tokenizer.mode());
+    }
+
+    // The quote pushes into string mode and the closing quote pops back out, with no set_mode() call anywhere.
+    ASSERT_EQ(seen.size(), 7U);
+
+    EXPECT_EQ(seen[0].second, static_cast<std::size_t>(Ctx::code));
+
+    EXPECT_EQ(seen[2].second, static_cast<std::size_t>(Ctx::string));
+
+    EXPECT_EQ(seen[3].second, static_cast<std::size_t>(Ctx::string));
+
+    EXPECT_EQ(seen.back().second, static_cast<std::size_t>(Ctx::code));
+}
+
+TEST(Tokenizer_modes, Depth_reports_nesting_and_survives_to_the_stopping_point)
+{
+    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), "a /* x /* y"};
+
+    while (!tokenizer.next<Ctx_token>().end_of_input())
+    {
+    }
+
+    // Two opens, no closes: the scan ends inside a doubly nested comment, and says so.
+    EXPECT_EQ(tokenizer.mode(), static_cast<std::size_t>(Ctx::comment));
+
+    EXPECT_EQ(tokenizer.depth(), 2U);
+}
+
+TEST(Tokenizer_modes, Load_discards_saved_frames_but_keeps_the_mode)
+{
+    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), R"("unterminated)"};
+
+    while (!tokenizer.next<Ctx_token>().end_of_input())
+    {
+    }
+
+    ASSERT_EQ(tokenizer.depth(), 1U);
+
+    tokenizer.load("ab");
+
+    // The frames described nesting in input that is gone; popping into it would enter a mode the new input never
+    // opened.
+    EXPECT_EQ(tokenizer.depth(), 0U);
+}
+
+TEST(Tokenizer_modes, Set_mode_still_forces_a_mode_when_the_grammar_drives_them)
+{
+    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), "abc"};
+
+    tokenizer.set_mode(Ctx::comment);
+
+    EXPECT_EQ(tokenizer.mode(), static_cast<std::size_t>(Ctx::comment));
+
+    EXPECT_THROW(tokenizer.set_mode(std::size_t{9}), std::out_of_range);
 }

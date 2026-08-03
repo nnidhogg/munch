@@ -4,6 +4,7 @@ project(munch_core)
 
 add_library(${PROJECT_NAME}
         src/builder.cpp
+        src/mode_builder.cpp
         src/determinize.cpp
         src/exceptions/state_limit_error.cpp
 )
@@ -43,6 +44,7 @@ endif ()
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/lexer_test.cpp
+            tests/mode_test.cpp
             tests/property_test.cpp
     )
 
