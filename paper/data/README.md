@@ -91,15 +91,20 @@ that reads them is CC BY 4.0 and the code that produced them is MIT; see the rep
 
 ## `modes-2026-08`
 
-Two runs of `munch_benchmark_compare 16 15` on an Intel machine under WSL 2, taken at `7fe4a60` on a clean tree, both
+Two runs of `munch_benchmark_compare 16 15` on an Intel machine under WSL 2, taken at `00aa889` on a clean tree, both
 appended to one `observations.csv` and separated by its `run` column. Backs the two mode tables in the top-level
 README. The benchmark records the commit and whether the tree was dirty on every CSV row, so a row detached from this
 directory still says which tree produced it.
 
-Kept because the README quotes its ratios and its per-token comparison. That comparison is reported as a property of
-this archive and not of the library: here the mode grammar costs about 6.5 percent less per token, while an earlier
-archive on the same machine gave about 5 percent more, the flat row having moved by 11 percent between them against
-1 percent for the modal rows. The two were also taken at different commits.
+Kept because the README quotes its ratios and its per-token comparison. That comparison is a property of this archive
+and not of the library. Three archives are reachable from the current history, each recording in its own `summary.txt`
+the tree it measured: the one carried by commit `0e83ce6`, the one carried by `00aa889`, and this one, measured at
+`00aa889`. The two trees those earlier archives measured were rewritten when the history was squashed, which is
+why the archives are identified here by the commit that carries them. Their per-token figures disagree in sign: 4.9
+and 6.4 percent more per token for the modal grammar in the first, 6.6 and 6.4 percent less in the second, 4.0 and
+2.9 percent more here. Over all six run
+medians the flat row spans 754.5 to 865.0 MiB/s, about 15 percent, and the modal rows 725.8 to 750.1, about 3 percent,
+so the flat measurement is what moves and no per-token figure survives across generations.
 
 `observations.csv` holds every timed pass of the five scenarios behind the two mode tables, which are the rows the
 README quotes. The other engine rows in `summary.txt` are summaries only.

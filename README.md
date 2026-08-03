@@ -810,26 +810,27 @@ rather than by a per-rule transition. The general-purpose regex engines have no 
 would switch patterns by hand, which measures their per-match cost rather than their mode support and is what the
 tables above already report.
 
-Mode support is an extension the grammar opts into, so the comparison comes in layers: input a flat token set can
-express, and input it cannot.
+Mode support is an extension the grammar opts into, so the comparison comes in layers: input where modes are
+optional, and input where the tested grammar uses a stack to count nesting.
 
 **Where modes are optional.** A string literal can be one token, so a flat grammar tokenizes this corpus too.
 
-| Engine       | Mode mechanism                                             |    MiB/s |
-|--------------|------------------------------------------------------------|---------:|
-| `munch`      | grammar-carried actions on a mode stack                    | 732, 726 |
-| lexertl17    | start states with a next-state per rule                    | 243, 242 |
-| `munch` flat | no modes at all, a string literal as one token             | 760, 755 |
+| Engine       | Mode mechanism                                             |        MiB/s |
+|--------------|------------------------------------------------------------|-------------:|
+| `munch`      | grammar-carried actions on a mode stack                    | 748.9, 750.1 |
+| lexertl17    | start states with a next-state per rule                    | 245.5, 248.6 |
+| `munch` flat | no modes at all, a string literal as one token             | 865.0, 857.4 |
 
 Neither engine pushes on this corpus: the string mode is entered and left by a plain next-state transition, so this
 table prices carrying a mode at all rather than the stack.
 
-**Where the grammar counts.** Block comments nest here, and both engines push and pop to track the depth.
+**Where the tested grammar uses a stack to count nesting.** Block comments nest here, and both engines push and pop to
+track the depth.
 
-| Engine    | Mode mechanism                                             |    MiB/s |
-|-----------|------------------------------------------------------------|---------:|
-| `munch`   | grammar-carried actions on a mode stack                    | 614, 615 |
-| lexertl17 | start states pushed and popped                             | 231, 231 |
+| Engine    | Mode mechanism                                             |        MiB/s |
+|-----------|------------------------------------------------------------|-------------:|
+| `munch`   | grammar-carried actions on a mode stack                    | 627.9, 621.6 |
+| lexertl17 | start states pushed and popped                             | 232.9, 236.8 |
 
 Be precise about the theory this does not demonstrate. The language of ARBITRARILY nested comments is not regular,
 since counting to an unbounded depth is what one finite automaton cannot do. This corpus nests only to depth four,
@@ -837,27 +838,28 @@ and a bounded depth is regular, so a flat grammar could unroll four levels and t
 because that would be a different grammar answering a different question, not because none could exist.
 
 Both figures in each cell are medians of 15 passes from two runs of `munch_benchmark_compare 16 15`, with each
-corpus's scenarios interleaved, measured at commit `7fe4a60` on a clean tree. The full transcript, every timed pass
-and the machine are archived in [paper/data/modes-2026-08](paper/data/modes-2026-08). The harness validates that the
-engines agree on every token before timing either, so the 5,121,241 tokens of the first corpus and the 4,859,619 of
-the second are the same tokens in both.
+corpus's scenarios interleaved, measured at commit `00aa889` on a clean tree. The full transcript, every timed pass of
+the five scenarios behind these tables, and the machine are archived in
+[paper/data/modes-2026-08](paper/data/modes-2026-08). The harness validates that the engines agree on every token
+before timing either, so the 5,121,241 tokens of the first corpus and the 4,859,619 of the second are the same tokens
+in both.
 
-**Ratios, as ranges rather than a point: 2.99 to 3.01 where modes are optional, 2.66 to 2.67 where the grammar
-counts.** Those are the spreads within one session. Across sessions they move further, about 5 percent, so a ratio
-quoted from a different day is not comparable either. Read them as observations, not as a trend: the two corpora
-differ in token density, grammar and mechanism at once, so the difference between them is not attributable to any
-one of those.
+**Ratios, as ranges rather than a point: 3.02 to 3.05 where modes are optional, 2.62 to 2.70 where the tested grammar
+uses a stack to count nesting.** Those are the spreads within one session. Across three archive generations measured
+at different commits, the optional-mode ratio spans about 2 percent and the nested ratio about 7 percent; those
+movements conflate executable changes with environmental variation. Read them as observations, not as a trend: the two
+corpora differ in token density, grammar and mechanism at once, so the difference between them is not attributable to
+any one of those.
 
 **What modes cost against a flat grammar, in this archive.** The mode grammar emits 11.1% more tokens for the same
-bytes and takes 3.8% and 4.0% longer, so its cost per token is about 6.5% LOWER: the extra tokens more than account
-for the elapsed difference. Those figures describe this binary on this machine in this session and nothing wider.
-An archive taken hours earlier on the same machine gave the opposite sign, about 5% higher per token, because the
-flat row alone moved from 842 to 759 MiB/s while the modal rows stayed between 726 and 733. The two archives are
-also at different commits, and comparing timings across changed executables is what this README tells you not to do,
-so no per-token figure is carried forward as a property of the library.
+bytes and takes 15.5% and 14.3% longer, so its cost per token is 3 to 4 percent HIGHER. Read that as a fact about this
+archive and nothing wider, because the sign does not remain stable across archive generations: across the three
+archives this history reaches, the same figure runs from 6.6 percent lower to 6.4 percent higher. It is dominated by
+the flat row, which ranged from 754.5 to 865.0 MiB/s, about 15 percent, while the modal rows stayed between 725.8 and
+750.1, about 3 percent. That is why no per-token figure is carried forward as a property of the library.
 
 These are separate tables rather than rows in the ones above because a mode grammar emits more tokens than a flat
-one for the same bytes, so the two are not doing the same work and are not compared.
+one for the same bytes, so the two are not doing the same work and are not treated as equal-work engine rows.
 
 The `Mode_stack` overload reports where a scan stopped and what it was doing there: `stack.current` names the mode and
 `stack.saved.size()` the nesting depth, which is what distinguishes an unterminated string from an unrecognized byte
@@ -866,14 +868,14 @@ modal grammar has: modes nothing can enter, and modes nothing can leave.
 
 **Two things to know before reaching for it.** A `Mode_lexer` has no parallel entry point, because a worker cutting
 blind cannot recover the mode and saved stack from the bytes at the cut. That is an obstruction rather than an
-impossibility: what is proved is that a single byte cannot identify the mode when two or more admit every byte, which is
-sufficient for a safe cut but not necessary. No scheme is ruled out: a multi-byte window, a checkpoint recorded by an
-earlier pass, or a mode set restricted to stackless `go_to` are all outside what has been ruled out. And modes are an
-expressiveness feature rather than a performance one: where a flat token set can express the language it is faster, by
-12 to 14 percent on the one corpus where both grammars have been measured against each other, almost all of it the
-extra tokens a mode grammar emits. How that varies with the share of input sitting inside context-dependent constructs
-is not measured, since the scenario matrix varies the modal workload without a flat grammar beside it at each density.
-[docs/limits.md](docs/limits.md) gives the reasoning for both.
+impossibility: what is proved is that a single byte cannot identify the mode when two or more admit every byte, which
+is sufficient for a safe cut but not necessary. No scheme is ruled out: a multi-byte window, a checkpoint recorded by
+an earlier pass, or a mode set restricted to stackless `go_to` are all outside what has been ruled out. And modes are
+an expressiveness feature rather than a performance one. On the one corpus measured both ways the mode grammar took
+14.3 to 15.5 percent longer while emitting 11.1 percent more tokens, most of the difference being those extra tokens.
+Whether that holds for other grammars is not measured, and neither is how it varies with the share of input sitting
+inside context-dependent constructs, since the scenario matrix varies the modal workload without a flat grammar beside
+it at each density. [docs/limits.md](docs/limits.md) gives the reasoning for both.
 
 [docs/limits.md](docs/limits.md) collects the full contract in one place: the matching model and what it excludes,
 byte-orientation and UTF-8 handling, hard bounds, concurrency and lifetime guarantees, construction cost, and the escape

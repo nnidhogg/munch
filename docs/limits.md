@@ -26,19 +26,19 @@ all outside that result. Restricting to `go_to` alone bounds the state space and
 is a genuine open direction rather than a shipped feature. Where a grammar admits a flat token set, use `Lexer` and get
 the parallel path; where it does not, `Mode_lexer` scans serially and honestly.
 
-**Modes are an expressiveness feature, not a performance one.** Where a flat token set can express the language it is
-faster, because a mode grammar scans string interiors and so emits more tokens for the same bytes. The
-`munch_benchmark_compare` mode section measures both on one corpus with the scenarios interleaved. In the archive at
-`paper/data/modes-2026-08` the mode grammar emits 11.1% more tokens for the same bytes and takes about 4% longer, so
-its per-token cost is around 6.5% lower there: the extra tokens are more than the whole of the difference. That
-describes one session. An earlier archive on the same machine gave the opposite sign, because the flat row alone
-moved by 11% between them while the modal rows moved by 1%, so no per-token figure is carried as a property of the
-library. Whether the gap widens as the input carries fewer string literals is untested, since no flat grammar is
-measured beside the modal one at each density. The intuition that several small automata beat one large one does
-not hold either, because only the states a scan actually visits are hot and splitting them across modes does not
-shrink that working set. Use `Lexer` where the
-grammar allows it, both for the throughput and for the parallel path; use `Mode_lexer` where the language genuinely
-needs a mode stack.
+**Modes are an expressiveness feature, not a performance one.** On the one corpus measured both ways the mode grammar
+took 14.3 to 15.5 percent longer and emitted 11.1 percent more tokens, scanning string interiors and so emitting more
+of them for the same bytes. Whether that holds for other grammars is not measured. The `munch_benchmark_compare` mode
+section measures both on one corpus with the scenarios interleaved. In the archive at `paper/data/modes-2026-08` the
+mode grammar emits 11.1% more tokens for the same bytes and takes about 15% longer, so its per-token cost is 3 to 4
+percent higher there. That describes one session and the sign does not hold: across the three archives this history
+reaches, the figure runs from 6.6 percent lower to 6.4 percent higher, tracking a flat row that varies by about 15
+percent against about 3 percent for the modal rows. No per-token figure is carried as a property of the library.
+Whether the gap widens as the input carries fewer string literals is untested, since no flat grammar is measured
+beside the modal one at each density. The intuition that several small automata beat one large one does not hold
+either, because only the states a scan actually visits are hot and splitting them across modes does not shrink that
+working set. Use `Lexer` where the grammar allows it, both for the throughput and for the parallel path; use
+`Mode_lexer` where the language genuinely needs a mode stack.
 
 Within `Mode_lexer`, scanning stays inside one mode's batch pass until a token carries any non-stay action, rather
 than re-entering the scanner once per token. Any such action ends the pass, including a push whose target is the
