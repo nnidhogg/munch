@@ -78,9 +78,10 @@
 // Acceptance gating alone does not terminate, since a grammar like a+ accepts after every byte and accumulates
 // origins without bound. The search therefore deduplicates on a finite quotient rather than on the cloud: which
 // states carry the pre-window origin, and how many in-window origins each state carries, saturated at two. Two
-// clouds sharing a key have identical futures, so exploring one of them loses nothing and the walk decides this
-// model exactly. What exhaustion does not give is semantic non-existence: the model itself refuses windows a
-// greedy scanner would allow.
+// clouds sharing a key have identical futures FOR CERTIFICATION, which is all the walk asks of them, so exploring
+// one of them loses nothing and the walk decides this model exactly. The walk also carries a subset budget, and a
+// search that exhausts it is reported inconclusive rather than negative. What exhaustion does not give is semantic
+// non-existence: the model itself refuses windows a greedy scanner would allow.
 //
 // The single-byte certificate answers "which bytes always begin a token". Six rows of the applicability table answer
 // none, which is the published result's sharpest limitation. A window generalizes the question: a byte string after
@@ -104,8 +105,8 @@
 // seeded when the accepting position justifying it was crossed. That is the proof's step for a byte beginning a
 // token, and it is why the failure restart had to go rather than be repaired. backup_disagreements() is therefore
 // a check on the implementation rather than evidence for the model, and it asserts the scanner never disagrees. Its
-// prefixes cover (state, distance past the last accepting position) pairs, each optionally preceded by a completed
-// token so the last boundary sits at varying distances before the window, which is what decides where a rewind lands.
+// prefixes cover (state, distance past the last accepting position) pairs, each optionally preceded by an accepted
+// word so the last boundary sits at varying distances before the window, which is what decides where a rewind lands.
 // The prefix count is reported per row, since a coverage widening that widens nothing looks exactly like one that
 // works.
 //
@@ -166,7 +167,7 @@ using States_t = std::set<Dfa::State_t>;
 constexpr std::size_t kBefore{static_cast<std::size_t>(-1)};
 
 /**
- * @brief One possible scan: a state, and the offset at which its current token began.
+ * @brief One final-token-prefix hypothesis: a state, and the offset at which its current token began.
  */
 using Trajectory_t = std::pair<Dfa::State_t, std::size_t>;
 
@@ -319,7 +320,8 @@ std::optional<Cloud_t> step(
  *
  * Acceptance gating seeds an origin wherever the automaton accepts, so `a+` alone accumulates origins without bound
  * and renaming them to rank order no longer bounds the space. Saturating at two is exact for the question asked,
- * since two origins meeting in one deterministic state follow identical futures and can never separate again, and
+ * since two origins meeting in one deterministic state follow identical futures under this quotient and can never
+ * separate again, and
  * Summing counts across predecessors is exact rather than an over-approximation: an internal origin is seeded once
  * into one state and thereafter occupies exactly one state, since the step is deterministic, so origins arriving
  * from different predecessors are necessarily distinct and cannot be double counted. The pre-window origin is held
@@ -584,7 +586,9 @@ std::size_t backup_disagreements(
 
     // One prefix per state is not enough. What decides how far a rewind travels is the distance the scan has run
     // PAST its last accepting position, so the prefix set covers (state, distance) pairs rather than states. A
-    // grammar that rewinds seven bytes needs a prefix that is seven bytes past an accepting position to exercise it.
+    // grammar that rewinds seven bytes needs a prefix that is seven bytes past an accepting position to exercise
+    // it. Coverage is therefore over the reachable live (state, distance) pairs with distance at most kMaxDistance,
+    // not over every input the grammar admits.
     constexpr std::size_t kMaxDistance{9};
 
     std::map<std::pair<Dfa::State_t, std::size_t>, std::string> prefix;
@@ -920,7 +924,7 @@ struct Row
      * opener rewinds onto the accepted slash. Where a rewind IS expected the check must be shown to exercise one,
      * or its agreement proves nothing about backup.
      */
-    bool rewinds_possible;
+    bool rewinds_expected;
 };
 
 /**
@@ -1015,7 +1019,7 @@ bool run(const Row& row, Builder_dbg& builder)
     const auto backup{backup_disagreements(dfa, lexer, live, windows, exercised, prefixes)};
 
     // Agreement over inputs that never rewind says nothing about backup, so the row's declaration is asserted too.
-    const auto covered{row.rewinds_possible == (exercised > 0)};
+    const auto covered{row.rewinds_expected == (exercised > 0)};
 
     // Reporting "no window" counts only when the search exhausted the quotient space rather than hitting the
     // budget, which would be inconclusive. Even exhausted it means none under this conservative model, never none
@@ -1046,19 +1050,19 @@ int main()
         Builder_dbg b;
         c_like(b, false);
         b.add_token(string_literal(), Token::String, 2);
-        ok = run({.name = "C-like + string literals", .shortest = 2, .rewinds_possible = false}, b) && ok;
+        ok = run({.name = "C-like + string literals", .shortest = 2, .rewinds_expected = false}, b) && ok;
     }
     {
         Builder_dbg b;
         c_like(b, false);
         b.add_token(line_comment(), Token::LineComment, 1);
-        ok = run({.name = "C-like + // line comments", .shortest = 2, .rewinds_possible = false}, b) && ok;
+        ok = run({.name = "C-like + // line comments", .shortest = 2, .rewinds_expected = false}, b) && ok;
     }
     {
         Builder_dbg b;
         c_like(b, false);
         b.add_token(block_comment(), Token::BlockComment, 1);
-        ok = run({.name = "C-like + block comments", .shortest = 4, .rewinds_possible = false}, b) && ok;
+        ok = run({.name = "C-like + block comments", .shortest = 4, .rewinds_expected = false}, b) && ok;
     }
     {
         Builder_dbg b;
@@ -1066,7 +1070,7 @@ int main()
         b.add_token(string_literal(), Token::String, 2);
         b.add_token(line_comment(), Token::LineComment, 1);
         b.add_token(block_comment(), Token::BlockComment, 1);
-        ok = run({.name = "C-like conventional", .shortest = 4, .rewinds_possible = false}, b) && ok;
+        ok = run({.name = "C-like conventional", .shortest = 4, .rewinds_expected = false}, b) && ok;
     }
     {
         Builder_dbg b;
@@ -1074,7 +1078,7 @@ int main()
         // JSON rewinds readily in general, but not on the inputs this check builds: its certified windows end their
         // tokens cleanly, so no prefix reaching a trim state produces one. The backup evidence comes from the seven
         // rows below that do exercise one.
-        ok = run({.name = "JSON, RFC 8259", .shortest = 2, .rewinds_possible = false}, b) && ok;
+        ok = run({.name = "JSON, RFC 8259", .shortest = 2, .rewinds_expected = false}, b) && ok;
     }
     {
         // The rows above produce no rewind over the windows this search reports, which is a fact about those inputs
@@ -1089,7 +1093,7 @@ int main()
         b.add_token(text("b"), Token::Number, 2);
         b.add_token(text("d"), Token::Operator, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind stress: a | abc | b | d", .shortest = 1, .rewinds_possible = true}, b) && ok;
+        ok = run({.name = "rewind stress: a | abc | b | d", .shortest = 1, .rewinds_expected = true}, b) && ok;
     }
     {
         // The grammar that exposed the gap in the model this program used to run. Scanning "abx", the old step
@@ -1107,7 +1111,7 @@ int main()
         b.add_token(text("bx"), Token::Number, 1);
         b.add_token(text("x"), Token::Operator, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "proof-gap witness grammar", .shortest = 1, .rewinds_possible = true}, b) && ok;
+        ok = run({.name = "proof-gap witness grammar", .shortest = 1, .rewinds_expected = true}, b) && ok;
 
         // The search stops at one byte here, so the three-byte window that exposed the defect has to be named.
         ok = named_window_agrees("proof-gap witness abx", "abx", 1, b) && ok;
@@ -1125,7 +1129,7 @@ int main()
                 concat(plus(any_of(Set::digits())), concat(text("e"), plus(any_of(Set::digits())))), Token::Literal, 1);
         b.add_token(any_of(Set::alpha()), Token::Identifier, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: digits | digits e digits", .shortest = 1, .rewinds_possible = true}, b) && ok;
+        ok = run({.name = "rewind: digits | digits e digits", .shortest = 1, .rewinds_expected = true}, b) && ok;
     }
     {
         // A float whose dot may instead begin a range operator: "1..2" accepts "1" and rewinds off the dot.
@@ -1137,7 +1141,7 @@ int main()
                 concat(plus(any_of(Set::digits())), concat(text("."), plus(any_of(Set::digits())))), Token::Literal, 1);
         b.add_token(text(".."), Token::Operator, 1);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: float vs range operator", .shortest = 2, .rewinds_possible = true}, b) && ok;
+        ok = run({.name = "rewind: float vs range operator", .shortest = 2, .rewinds_expected = true}, b) && ok;
     }
     {
         // An operator ladder with a gap in the middle: "<<x" accepts "<" and rewinds, since "<<" accepts nothing.
@@ -1148,7 +1152,7 @@ int main()
         b.add_token(text("<<="), Token::Punctuation, 1);
         b.add_token(any_of(Set::alpha()), Token::Identifier, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: < | <<=", .shortest = 1, .rewinds_possible = true}, b) && ok;
+        ok = run({.name = "rewind: < | <<=", .shortest = 1, .rewinds_expected = true}, b) && ok;
     }
     {
         // A keyword strictly extending a shorter token: "fox" accepts "f" and rewinds, since "fo" accepts nothing.
@@ -1159,7 +1163,7 @@ int main()
         b.add_token(text("for"), Token::Keyword, 1);
         b.add_token(any_of(Set::alpha()), Token::Separator, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: f | for", .shortest = 1, .rewinds_possible = true}, b) && ok;
+        ok = run({.name = "rewind: f | for", .shortest = 1, .rewinds_expected = true}, b) && ok;
     }
     {
         // A deep rewind: seven bytes are scanned past the accepting position before the token dies.
@@ -1170,7 +1174,7 @@ int main()
         b.add_token(text("abcdefgh"), Token::Keyword, 1);
         b.add_token(any_of(Set::alpha()), Token::Separator, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: a | abcdefgh (depth 7)", .shortest = 1, .rewinds_possible = true}, b) && ok;
+        ok = run({.name = "rewind: a | abcdefgh (depth 7)", .shortest = 1, .rewinds_expected = true}, b) && ok;
     }
     {
         // One token that repeats. Every byte continues the run as readily as it starts one, so no window pins a
@@ -1181,7 +1185,7 @@ int main()
 
         Builder_dbg b;
         b.add_token(plus(text("a")), Token::Identifier, 1);
-        ok = run({.name = "a+: no window found", .shortest = 0, .rewinds_possible = false}, b) && ok;
+        ok = run({.name = "a+: no window found", .shortest = 0, .rewinds_expected = false}, b) && ok;
     }
 
     std::size_t usable{0};
