@@ -567,7 +567,7 @@ std::string generate_mode_input(const std::size_t size)
  * other instead.
  * @return True if both engines tokenized the corpus completely and agreed on every token.
  */
-bool compare_modes(const std::size_t mebibytes, const int passes)
+bool compare_modes(const std::size_t mebibytes, const int passes, const char* const observations)
 {
     using Scenario_t = munch::tools::benchmark::Scenario;
 
@@ -662,7 +662,7 @@ bool compare_modes(const std::size_t mebibytes, const int passes)
              .pass = [&] { return tally_of([&](auto&& sink) { return scan_lexertl(machine, input, sink); }).tokens; }},
     };
 
-    return measure_interleaved(scenarios, passes, mebibytes, nullptr);
+    return measure_interleaved(scenarios, passes, mebibytes, observations);
 }
 
 /**
@@ -670,7 +670,7 @@ bool compare_modes(const std::size_t mebibytes, const int passes)
  *
  * Every engine extracts the same information per token, its kind and length, and every engine's full tokenization
  * is validated against munch's before anything is timed.
- * Usage: munch_benchmark_compare [input size in MiB] [passes]
+ * Usage: munch_benchmark_compare [input size in MiB] [passes] [observations CSV]
  */
 int main(const int argc, const char** argv)
 {
@@ -678,12 +678,16 @@ int main(const int argc, const char** argv)
 
     const int passes{argc > 2 ? std::atoi(argv[2]) : 15};
 
+    const char* const observations{argc > 3 ? argv[3] : nullptr};
+
     if (mebibytes == 0 || passes <= 0)
     {
-        std::printf("usage: munch_benchmark_compare [input size in MiB > 0] [passes > 0]\n");
+        std::printf("usage: munch_benchmark_compare [input size in MiB > 0] [passes > 0] [observations CSV]\n");
 
         return EXIT_FAILURE;
     }
+
+    print_provenance("engine comparison", passes, observations);
 
     // None of these may start with a keyword: the pattern above lists keywords before identifiers, so an entry like
     // "integer" would tokenize as "int" + "eger" under first-match alternation while munch's longest match keeps it
@@ -862,7 +866,7 @@ int main(const int argc, const char** argv)
         }
     }
 
-    ok = compare_modes(mebibytes, passes) && ok;
+    ok = compare_modes(mebibytes, passes, observations) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

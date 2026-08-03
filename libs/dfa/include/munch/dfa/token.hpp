@@ -22,19 +22,18 @@ public:
      * @param id The unique identifier for the token.
      */
     explicit Token(std::size_t id) noexcept;
-
-    /**
-     * @brief Returns the unique identifier of the token.
-     * @return The token's ID.
-     */
-    [[nodiscard]] std::size_t id() const noexcept;
-
     /**
      * @brief Equality comparison operator for tokens.
      * @param other The token to compare with.
      * @return True if the IDs are equal, false otherwise.
      */
     bool operator==(const Token& other) const noexcept;
+
+    /**
+     * @brief Returns the unique identifier of the token.
+     * @return The token's ID.
+     */
+    [[nodiscard]] std::size_t id() const noexcept;
 
 private:
     std::size_t id_;

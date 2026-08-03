@@ -9,6 +9,7 @@ endif ()
 
 # munch's own root for test data paths; CMAKE_SOURCE_DIR names the embedding project's root under add_subdirectory().
 set(MUNCH_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(MUNCH_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 
 # Defaulting the build type is a top-level convenience only; a parent project's choice is its own.
 if (MUNCH_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE)

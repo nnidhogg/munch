@@ -3,6 +3,7 @@
 
 # Generated files from cmake
 /build
+/build-*
 /cmake-build-debug*
 /cmake-build-release*
 

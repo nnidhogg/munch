@@ -98,6 +98,20 @@ public:
     Simulator(const Dfa& dfa, std::span<const std::size_t> ignored);
 
     /**
+     * @brief Compiles the given DFA, attaching a caller's word to every state accepting one of the named tokens.
+     *
+     * Stored by accepting state and handed back with the match, never read here, so a caller answers a per-token
+     * question without a second lookup and state numbering stays inside this class.
+     * @param dfa The DFA to simulate.
+     * @param ignored The IDs of tokens the caller discards before the stream is used.
+     * @param payloads Token ID and word pairs; a token named more than once keeps the last word given.
+     * @throws std::runtime_error If the DFA has more states than a table entry can index.
+     */
+    Simulator(
+            const Dfa& dfa, std::span<const std::size_t> ignored,
+            std::span<const std::pair<std::size_t, std::uint64_t>> payloads);
+
+    /**
      * @brief Returns whether the given symbol is a certified safe split point.
      *
      * A symbol is a safe split point when no state reachable after consuming input consumes it into a state that can
@@ -188,7 +202,7 @@ public:
     {
         if (begin == end)
         {
-            return {.token = accept_table_[init_state_], .length = 0};
+            return {.token = accepted(init_state_), .length = 0};
         }
 
         // A 64-bit state spares the dependency chain a zero-extension per byte when indexing the tables.
@@ -196,7 +210,7 @@ public:
 
         // The last accepting state seen and the length of input it had consumed. The Token itself is resolved once
         // after the scan, keeping its load off the per-byte dependency chain.
-        std::size_t accept_state{accept_table_[state] ? state : no_state_};
+        std::size_t accept_state{(flags_[state] & accept_flag_) != 0 ? state : no_state_};
 
         std::size_t accept_consumed{0};
 
@@ -227,7 +241,8 @@ public:
             }
         }
 
-        return accept_state != no_state_ ? Match{.token = accept_table_[accept_state], .length = accept_consumed} :
+        return accept_state != no_state_ ? Match{.token = std::optional<Token>{accept_table_[accept_state].token},
+                                                 .length = accept_consumed} :
                                            Match{.token = std::nullopt, .length = 0};
     }
 
@@ -258,7 +273,7 @@ public:
      * @return The number of input elements tokenized; anything short of the input's size means no token matched at
      *         the returned offset, unless the sink stopped the scan.
      */
-    template <std::random_access_iterator Iterator, std::invocable<const Token&, std::size_t> Sink>
+    template <std::random_access_iterator Iterator, std::invocable<const Token&, std::size_t, std::uint64_t> Sink>
     std::size_t run_all(Iterator begin, Iterator end, Sink sink) const
     {
         const auto size{static_cast<std::size_t>(end - begin)};
@@ -306,16 +321,19 @@ public:
 
             offset += accept_consumed;
 
-            if constexpr (std::convertible_to<std::invoke_result_t<Sink&, const Token&, std::size_t>, bool>)
+            const auto& accept{accept_table_[accept_state]};
+
+            if constexpr (std::convertible_to<
+                                  std::invoke_result_t<Sink&, const Token&, std::size_t, std::uint64_t>, bool>)
             {
-                if (!sink(*accept_table_[accept_state], accept_consumed))
+                if (!sink(accept.token, accept_consumed, accept.payload))
                 {
                     return offset;
                 }
             }
             else
             {
-                sink(*accept_table_[accept_state], accept_consumed);
+                sink(accept.token, accept_consumed, accept.payload);
             }
         }
 
@@ -359,9 +377,31 @@ private:
     std::vector<Entry_t> table_;
 
     /**
-     * @brief Accept tokens as one entry per state, holding nullopt where the state does not accept.
+     * @brief What a state accepts: the token, and the caller's opaque word for it.
+     *
+     * Together because a reported match reads both at once: split across two arrays they cost a second cache line
+     * per accepted token, measured at 12% on string-heavy input. Acceptance itself is left to flags_, which the scan
+     * already tests, so the entry stays its old width and a lexer using no payload pays nothing.
      */
-    std::vector<std::optional<Token>> accept_table_;
+    struct Accept
+    {
+        Token token{0};
+
+        std::uint64_t payload{0};
+    };
+
+    /**
+     * @brief Accept entries as one per state, meaningful only where flags_ marks the state accepting.
+     */
+    std::vector<Accept> accept_table_;
+
+    /**
+     * @brief The token a state accepts, or nullopt where it accepts nothing.
+     */
+    [[nodiscard]] std::optional<Token> accepted(const std::size_t state) const
+    {
+        return (flags_[state] & accept_flag_) != 0 ? std::optional<Token>{accept_table_[state].token} : std::nullopt;
+    }
 
     /**
      * @brief The flag byte of each state, read during the scan in place of the wide accept entries.

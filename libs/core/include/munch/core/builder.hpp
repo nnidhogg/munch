@@ -3,6 +3,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <initializer_list>
 #include <type_traits>
 #include <utility>
@@ -95,10 +96,20 @@ public:
     void set_ignored_tokens(std::vector<std::size_t> tokens) { ignored_ = std::move(tokens); }
 
     /**
-     * @brief Builds and returns the constructed Lexer.
-     * @return The constructed Lexer object.
+     * @brief Attaches a word to a token, delivered with every match of it in the built Lexer.
+     *
+     * A three-argument tokenize_all() sink receives it, so Mode_builder carries a token's mode action here rather
+     * than looking one up. It rides the sink rather than tokenize()'s Match, which widening measured 2.5x.
+     * @tparam T The token type used with add_token().
+     * @param token The token to attach the word to.
+     * @param word The word to report, zero meaning none.
      */
-    [[nodiscard]] Lexer build() const;
+    template <typename T>
+        requires(std::integral<T> || std::is_enum_v<T>)
+    void set_token_payload(const T token, const std::uint64_t word)
+    {
+        payloads_.emplace_back(static_cast<std::size_t>(token), word);
+    }
 
     /**
      * @brief Caps how many DFA states determinization may discover before build() and diagnose() throw.
@@ -112,6 +123,12 @@ public:
      * within the cap times the number of symbol classes times four bytes per entry.
      */
     void set_state_limit(const std::size_t limit) noexcept { state_limit_ = limit; }
+
+    /**
+     * @brief Builds and returns the constructed Lexer.
+     * @return The constructed Lexer object.
+     */
+    [[nodiscard]] Lexer build() const;
 
     /**
      * @brief Diagnoses the registered grammar; see Diagnostics.
@@ -193,6 +210,12 @@ private:
      *        points. Empty by default, in which case the two certificates coincide.
      */
     std::vector<std::size_t> ignored_;
+
+    /**
+     * @brief The token payloads set_token_payload() attached, passed to the Lexer at construction so it stays
+     *        immutable afterwards.
+     */
+    std::vector<std::pair<std::size_t, std::uint64_t>> payloads_;
 };
 
 } // namespace munch::core

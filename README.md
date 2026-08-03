@@ -797,28 +797,34 @@ const auto consumed{lexer.tokenize_all<Token>(
 `Tokenizer` accepts a `Mode_lexer` too, so a streaming driver gets the same grammar-carried transitions: `mode()`
 follows the stack, `depth()` reports the nesting, and `set_mode()` still forces a mode as an error-recovery hatch.
 
-Among the other measured engines, only lexertl17 also provides modes. It is munch's nearest relative, a lexer built
-at run time from rules, and it has had start states with a next-state per rule for years. The general-purpose regex
-engines have no mode concept, so a caller would switch patterns by hand, which measures their per-match cost rather
-than their mode support and is what the tables above already report.
+Among the other measured engines, only lexertl17 carries mode transitions in the grammar itself. It is munch's
+nearest relative, a lexer built at run time from rules, and it has had start states with a next-state per rule for
+years. logos reaches the same end from the caller's side rather than the grammar's: `Lexer::morph` turns a lexer for
+one token type into a lexer for another over the same input, which is context-dependent lexing driven by user code
+rather than by a per-rule transition. The general-purpose regex engines have no mode concept at all, so a caller
+would switch patterns by hand, which measures their per-match cost rather than their mode support and is what the
+tables above already report.
 
 | Engine    | Mode mechanism                          | MiB/s |
 |-----------|-----------------------------------------|------:|
-| `munch`   | grammar-carried actions on a mode stack |   642 |
-| lexertl17 | start states with a next-state per rule |   237 |
+| `munch`   | grammar-carried actions on a mode stack |   731 |
+| lexertl17 | start states with a next-state per rule |   241 |
 
-Best of 15 passes on a 16 MiB corpus averaging 3.28 bytes per token, from the `munch_benchmark_compare 16 15`
-invocation shown above, with the three scenarios interleaved rather than run one after another. That matters here:
-measured sequentially the flat row read 611 MiB/s, and interleaved it reads 828, because whichever engine goes first
-absorbs the drift. Both engines scan string interiors, and the harness validates that they agree on every token
-before timing either, so the 5,121,241 tokens are the same tokens.
+Median of 15 passes on a 16 MiB corpus averaging 3.28 bytes per token, from the `munch_benchmark_compare 16 15`
+invocation shown above, with the three scenarios interleaved rather than run one after another. Both engines scan
+string interiors, and the harness validates that they agree on every token before timing either, so the 5,121,241
+tokens are the same tokens. Measured at commit `e375934`; the modal driver has changed enough this year that figures
+from an older tree are not comparable, so re-run rather than quote across commits.
 
-A repeat of the same invocation gave 885, 658 and 245. The absolute figures move about 7% between runs on this
-machine; the ratio does not, staying at 2.7x. Read the ratio.
+The medians are reported rather than the best of each row, since picking each engine's best pass independently
+compares two different passes. A repeat of the same invocation gave 732 and 241. **The ratio is 3.03x in both runs,
+on medians and on bests alike.** Read the ratio.
 
-The same run puts a flat munch grammar, which treats a string literal as one token, at 828 MiB/s over 4,609,117
-tokens. That is the price of modes on this corpus, about a quarter, and most of it is the extra tokens rather than
-slower tokens.
+The same runs put a flat munch grammar, which treats a string literal as one token, at 818 and 832 MiB/s over
+4,609,117 tokens. That is the price of modes on this corpus, 12 to 14 percent, and the extra tokens are nearly all
+of it: the mode grammar emits 11.1% more tokens, so per-token cost rises only about 1 to 2 percent. That was not
+true earlier: on the same corpus at `c1c9030` the per-token cost was about 16 percent, and adaptive dispatch and
+the move to carrying actions on accepting states are what closed it.
 
 This is a separate table rather than a row in the ones above because a mode grammar emits more tokens than a flat
 one for the same bytes, so the two are not doing the same work and are not compared.
@@ -834,7 +840,9 @@ impossibility: what is proved is that a single byte cannot identify the mode whe
 sufficient for a safe cut but not necessary. No scheme is ruled out: a multi-byte window, a checkpoint recorded by an
 earlier pass, or a mode set restricted to stackless `go_to` are all outside what has been ruled out. And modes are an
 expressiveness feature rather than a performance one: where a flat token set can express the language it is faster, by
-roughly 7 to 27 percent depending on how much of the input sits inside the context-dependent constructs.
+12 to 14 percent on the one corpus where both grammars have been measured against each other, almost all of it the
+extra tokens a mode grammar emits. How that varies with the share of input sitting inside context-dependent constructs
+is not measured, since the scenario matrix varies the modal workload without a flat grammar beside it at each density.
 [docs/limits.md](docs/limits.md) gives the reasoning for both.
 
 [docs/limits.md](docs/limits.md) collects the full contract in one place: the matching model and what it excludes,

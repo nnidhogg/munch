@@ -1,0 +1,18 @@
+#ifndef MUNCH_TOOLS_BENCHMARK_PROVENANCE_HPP
+#define MUNCH_TOOLS_BENCHMARK_PROVENANCE_HPP
+
+namespace munch::tools::benchmark
+{
+/**
+ * @brief The commit the benchmark was built from, or "unknown" outside a git checkout.
+ */
+inline constexpr const char* kCommit{"@commit@"};
+
+/**
+ * @brief Whether the checkout was dirty, which makes the commit a lower bound rather than an identification.
+ */
+inline constexpr bool kDirty{@dirty@};
+
+} // namespace munch::tools::benchmark
+
+#endif // MUNCH_TOOLS_BENCHMARK_PROVENANCE_HPP

@@ -17,19 +17,6 @@ public:
      * @param priority The priority of the token (lower means higher priority).
      */
     Token(std::size_t id, std::size_t priority) noexcept;
-
-    /**
-     * @brief Returns the unique identifier of the token.
-     * @return The token's ID.
-     */
-    [[nodiscard]] std::size_t id() const noexcept;
-
-    /**
-     * @brief Returns the priority of the token.
-     * @return The token's priority.
-     */
-    [[nodiscard]] std::size_t priority() const noexcept;
-
     /**
      * @brief Less-than comparison operator for tokens (by priority, then ID).
      * @param other The token to compare with.
@@ -43,6 +30,18 @@ public:
      * @return True if the IDs and priorities are equal, false otherwise.
      */
     bool operator==(const Token& other) const noexcept;
+
+    /**
+     * @brief Returns the unique identifier of the token.
+     * @return The token's ID.
+     */
+    [[nodiscard]] std::size_t id() const noexcept;
+
+    /**
+     * @brief Returns the priority of the token.
+     * @return The token's priority.
+     */
+    [[nodiscard]] std::size_t priority() const noexcept;
 
 private:
     /// The unique identifier of the token.

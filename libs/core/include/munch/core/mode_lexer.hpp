@@ -75,7 +75,21 @@ public:
             return {};
         }
 
-        if (!stack.apply(action_of(stack.current, *token)))
+        // A zero-width match leaves the mode alone. The batch driver stops without reporting one, so applying an
+        // action here would let the same token change the mode through one entry point and not the other.
+        if (length == 0)
+        {
+            return {.token = static_cast<T>(*token), .length = 0};
+        }
+
+        const auto action{action_of(stack.current, *token)};
+
+        if (action.kind == Mode_action_kind::pop && !stack.saved.empty())
+        {
+            check(stack.saved.back());
+        }
+
+        if (!stack.apply(action))
         {
             return {};
         }
@@ -132,10 +146,8 @@ public:
         {
             const auto mode{stack.current};
 
-            // A mode nothing can leave needs no halt condition, so its sink returns void.
-            const auto& shape{dispatch_[mode]};
-
-            if (shape.shape == Mode_dispatch::Shape::none)
+            // A mode nothing can leave needs no halt condition, so its sink returns void and the pass runs to the end.
+            if (!acting_[mode])
             {
                 const auto whole{lexers_[mode].template tokenize_all<std::size_t>(
                         begin + static_cast<std::ptrdiff_t>(offset), end,
@@ -149,59 +161,40 @@ public:
             // A refused token is never passed to the sink, but the scan counts it, so its length is subtracted.
             std::size_t refused{0};
 
-            // The shape is fixed for the whole of this pass, so the two lookups are separate instantiations rather
-            // than a branch inside the sink. Testing it per token cost more than the lookup it selected.
-            const auto scan{[&](auto&& resolve) {
-                return lexers_[mode].template tokenize_all<std::size_t>(
-                        begin + static_cast<std::ptrdiff_t>(offset), end,
-                        [&sink, &stack, &refused, mode, resolve](const std::size_t token, const std::size_t length) {
-                            const auto action{resolve(token)};
+            const auto consumed{lexers_[mode].template tokenize_all<std::size_t>(
+                    begin + static_cast<std::ptrdiff_t>(offset), end,
+                    [this, &sink, &stack, &refused, mode](
+                            const std::size_t token, const std::size_t length, const std::uint64_t packed) {
+                        if (packed == 0)
+                        {
+                            sink(static_cast<T>(token), length, mode);
 
-                            if (action.kind == Mode_action_kind::stay)
-                            {
-                                sink(static_cast<T>(token), length, mode);
+                            return true;
+                        }
 
-                                return true;
-                            }
+                        const auto action{unpack(packed)};
 
-                            if (action.kind == Mode_action_kind::pop && stack.saved.empty())
+                        if (action.kind == Mode_action_kind::pop)
+                        {
+                            if (stack.saved.empty())
                             {
                                 refused = length;
 
                                 return false;
                             }
 
-                            sink(static_cast<T>(token), length, mode);
+                            check(stack.saved.back());
+                        }
 
-                            stack.apply(action);
+                        sink(static_cast<T>(token), length, mode);
 
-                            // Continuing on a same-mode action gains 11% at depth 16 and costs 5% at depth 1.
-                            return false;
-                        });
-            }};
+                        stack.apply(action);
 
-            const auto consumed{
-                    shape.shape == Mode_dispatch::Shape::one ?
-                            scan([single = shape.token, action = shape.action](const std::size_t token) {
-                                return token == single ? action : Mode_action{};
-                            }) :
-                            scan([mask = shape.shape == Mode_dispatch::Shape::masked ? shape.mask : ~std::uint64_t{0},
-                                  pairs = pairs_.data() + shape.first, count = shape.count](const std::size_t token) {
-                                if (token < 64 && (mask >> token & 1U) == 0U)
-                                {
-                                    return Mode_action{};
-                                }
-
-                                for (std::size_t at{0}; at < count; ++at)
-                                {
-                                    if (pairs[at].first == token)
-                                    {
-                                        return pairs[at].second;
-                                    }
-                                }
-
-                                return Mode_action{};
-                            })};
+                        // Continuing here when the target is the mode already being scanned, which is what a comment
+                        // nesting inside itself does, gained 8% at depth 16 and lost 12% on string-heavy input: a
+                        // constant false lets the inner scan compile knowing an action token always ends it.
+                        return false;
+                    })};
 
             offset += consumed - refused;
 
@@ -252,90 +245,69 @@ private:
     friend class Mode_builder;
 
     /**
+     * @brief One token that changes the mode, and the mode it was registered in.
+     */
+    struct Registered
+    {
+        std::size_t mode{0};
+
+        std::size_t token{0};
+
+        Packed_action action{0};
+    };
+
+    /**
      * @brief Rejects a stack naming a mode this lexer does not have.
      *
      * The caller owns the stack, so nothing stops it carrying a mode index from another lexer, or a saved frame
      * poisoned by hand. Both would be indexed unchecked, and the batch path would take an out-of-range mode straight
-     * into its no-actions branch. Checked once per call rather than per token: build() has already validated every
-     * target the driver itself can install, so only what the caller supplied can be wrong.
-     * @throws std::out_of_range If the current mode or any saved frame is not a mode of this lexer.
+     * into its no-actions branch. Only the current mode is checked on entry, and a saved frame just before the pop
+     * exposing it, since scanning every frame per call made a run of pushes quadratic in the nesting depth.
+     * @throws std::out_of_range If the current mode is not a mode of this lexer.
      */
-    void verify(const Mode_stack& stack) const
-    {
-        const auto bad{[this](const std::size_t mode) { return mode >= lexers_.size(); }};
-
-        if (bad(stack.current) || std::ranges::any_of(stack.saved, bad))
-        {
-            throw std::out_of_range{"Mode_lexer: the mode stack names a mode this lexer does not have"};
-        }
-    }
+    void verify(const Mode_stack& stack) const { check(stack.current); }
 
     /**
-     * @brief Constructs a mode lexer from one compiled Lexer per mode and a flat action table.
-     * @param lexers One Lexer per mode, indexed by mode.
-     * @param actions Actions at index mode * stride + token, or empty when no token changes the mode.
-     * @param stride The row width of that table, one past the largest token ID carrying an action.
+     * @brief Rejects a mode index this lexer does not have.
+     * @throws std::out_of_range If the index names no mode of this lexer.
      */
-    Mode_lexer(
-            std::vector<Lexer> lexers, std::vector<Mode_dispatch> dispatch,
-            std::vector<std::pair<std::size_t, Mode_action>> pairs)
-        : lexers_{std::move(lexers)}, dispatch_{std::move(dispatch)}, pairs_{std::move(pairs)}
+    void check(std::size_t mode) const;
+
+    /**
+     * @brief Constructs a mode lexer from one compiled Lexer per mode.
+     * @param lexers One Lexer per mode, indexed by mode, each carrying its tokens' actions as payloads.
+     * @param actions Each mode's mode-changing tokens and their actions.
+     */
+    Mode_lexer(std::vector<Lexer> lexers, std::vector<Registered> actions, std::vector<bool> acting)
+        : lexers_{std::move(lexers)}, actions_{std::move(actions)}, acting_{std::move(acting)}
     {}
 
     /**
      * @brief The action registered for a token in a mode, defaulting to stay.
      *
-     * One indexed load into a flat table rather than two into a vector of vectors. This runs once per token, so the
-     * second indirection and its bounds check were measurable: most tokens leave the mode alone and the lookup is
-     * pure overhead for them.
+     * Only the per-token entry point needs it; the batch driver reads each action from the matched token's payload.
+     * Defined out of line to keep its loop out of callers that inline aggressively, which cost the Tokenizer 10%.
      */
-    [[nodiscard]] Mode_action action_of(const std::size_t mode, const std::size_t token) const noexcept
-    {
-        if (mode >= dispatch_.size())
-        {
-            return {};
-        }
-
-        const auto& shape{dispatch_[mode]};
-
-        if (shape.shape == Mode_dispatch::Shape::one)
-        {
-            return token == shape.token ? shape.action : Mode_action{};
-        }
-
-        if (shape.shape == Mode_dispatch::Shape::masked && (token >= 64 || (shape.mask >> token & 1U) == 0U))
-        {
-            return {};
-        }
-
-        for (std::size_t at{shape.first}; at < shape.first + shape.count; ++at)
-        {
-            if (pairs_[at].first == token)
-            {
-                return pairs_[at].second;
-            }
-        }
-
-        return {};
-    }
+    [[nodiscard]] Mode_action action_of(std::size_t mode, std::size_t token) const noexcept;
 
     /**
-     * @brief One compiled Lexer per mode.
+     * @brief One compiled Lexer per mode, each carrying its tokens' actions as accepting-state payloads.
      */
     std::vector<Lexer> lexers_;
 
     /**
-     * @brief How each mode's actions are looked up, one entry per mode.
+     * @brief Every mode-changing token in the grammar, read only by the per-token entry point.
+     *
+     * One flat list rather than a list per mode: a grammar has a handful of these in total, so the scan is short,
+     * and holding them per mode cost 17% on mode-change-heavy input for data the batch driver never reads.
      */
-    std::vector<Mode_dispatch> dispatch_;
+    std::vector<Registered> actions_;
 
     /**
-     * @brief Every mode's (token ID, action) pairs, in per-mode ranges named by Mode_dispatch.
-     *
-     * Sized by how many action tokens exist rather than by the largest token ID, so a sparse public enumeration
-     * costs nothing.
+     * @brief Whether each mode has any such token, tested once per mode change and so held apart from the lists
+     *        themselves, which reaching through cost 17% on mode-change-heavy input.
      */
-    std::vector<std::pair<std::size_t, Mode_action>> pairs_;
+    std::vector<bool> acting_;
 };
 
 } // namespace munch::core

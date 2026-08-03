@@ -20,6 +20,11 @@ Label::Label(const Symbol_t s) noexcept : variant_{s}
 Label::Label(const Epsilon e) noexcept : variant_{e}
 {}
 
+bool Label::operator==(const Label& other) const noexcept
+{
+    return variant_ == other.variant_;
+}
+
 Label Label::epsilon() noexcept
 {
     return Label{Epsilon{}};
@@ -43,11 +48,6 @@ Label::Symbol_t Label::symbol() const
 const Label::Variant_t& Label::variant() const noexcept
 {
     return variant_;
-}
-
-bool Label::operator==(const Label& other) const noexcept
-{
-    return variant_ == other.variant_;
 }
 
 std::size_t Label::Hash::operator()(const Label& label) const noexcept

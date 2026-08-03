@@ -1,13 +1,18 @@
 #include "munch/tools/benchmark/harness.hpp"
 
+#include <sys/utsname.h>
+
+#include <ctime>
 #include <fstream>
 #include <limits>
 #include <numeric>
 #include <random>
+#include <thread>
 
 #include "munch/core/builder.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/utf8.hpp"
+#include "munch/tools/benchmark/provenance.hpp"
 
 namespace munch::tools::benchmark
 {
@@ -361,18 +366,53 @@ bool measure_interleaved(
 
     if (fresh)
     {
-        csv << "run,scenario,input_mib,round,seconds,mib_per_s\n";
+        csv << "run,commit,dirty,scenario,input_mib,round,seconds,mib_per_s\n";
     }
 
+    // The commit rides on every row: a row separated from its header must still say which tree produced it.
     for (const auto& observation : observations)
     {
         const auto mib{static_cast<double>(scenarios[observation.scenario].bytes) / (1024.0 * 1024.0)};
 
-        csv << run << ',' << scenarios[observation.scenario].name << ',' << input_mebibytes << ',' << observation.round
-            << ',' << observation.seconds << ',' << mib / observation.seconds << '\n';
+        csv << run << ',' << kCommit << ',' << (kDirty ? "yes" : "no") << ',' << scenarios[observation.scenario].name
+            << ',' << input_mebibytes << ',' << observation.round << ',' << observation.seconds << ','
+            << mib / observation.seconds << '\n';
     }
 
     return csv.flush().good();
+}
+
+void print_provenance(const char* const benchmark, const int passes, const char* const observations_path)
+{
+    const auto now{std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())};
+
+    std::tm utc{};
+
+    gmtime_r(&now, &utc);
+
+    char stamp[32]{};
+
+    std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S UTC", &utc);
+
+    std::printf("%s\n", benchmark);
+    std::printf("  commit      %s%s\n", kCommit, kDirty ? " (uncommitted changes present)" : "");
+    std::printf("  collected   %s\n", stamp);
+    std::printf("  passes      %d\n", passes);
+    std::printf("  hardware    %u threads visible\n", std::thread::hardware_concurrency());
+
+#ifdef __VERSION__
+    std::printf("  compiler    %s\n", __VERSION__);
+#endif
+
+    // The kernel and architecture without the node name, the promise collect.sh makes about its archives.
+    utsname system{};
+
+    if (uname(&system) == 0)
+    {
+        std::printf("  system      %s %s %s\n", system.sysname, system.release, system.machine);
+    }
+
+    std::printf("  observations %s\n\n", observations_path != nullptr ? observations_path : "not recorded");
 }
 
 } // namespace munch::tools::benchmark

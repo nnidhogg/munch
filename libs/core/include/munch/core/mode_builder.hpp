@@ -1,6 +1,7 @@
 #ifndef MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_MODE_BUILDER_HPP
 #define MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_MODE_BUILDER_HPP
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <stdexcept>
@@ -47,17 +48,6 @@ public:
 
         const auto id{as_index(token, "token")};
 
-        if (index >= modes_.size())
-        {
-            modes_.resize(index + 1);
-
-            actions_.resize(index + 1);
-
-            declared_.resize(index + 1);
-
-            populated_.resize(index + 1, false);
-        }
-
         // An action kind outside the enumeration reaches apply(), which rejects it, while the batch driver ignores
         // that rejection: the two drivers would disagree on the same input.
         switch (action.kind)
@@ -73,46 +63,48 @@ public:
         }
 
         // A target is only meaningful for the two kinds that name one; stay and pop document it as ignored, so it is
-        // normalized here rather than allowed to make two otherwise identical actions compare unequal.
-        const Mode_action normalized{
-                .kind = action.kind,
-                .target = action.kind == Mode_action_kind::go_to || action.kind == Mode_action_kind::push ?
-                                  action.target :
-                                  std::size_t{0}};
+        // normalized here rather than allowed to make two otherwise identical actions compare unequal. A go_to onto
+        // the mode it was registered in is observably a stay, and saying so lets a mode whose only action is that one
+        // take the driver's no-action path.
+        const auto targeted{action.kind == Mode_action_kind::go_to || action.kind == Mode_action_kind::push};
 
-        if (id >= declared_[index].size())
-        {
-            declared_[index].resize(id + 1, false);
-        }
+        const auto self_go_to{action.kind == Mode_action_kind::go_to && action.target == index};
+
+        const Mode_action normalized{
+                .kind = self_go_to ? Mode_action_kind::stay : action.kind,
+                .target = targeted && !self_go_to ? action.target : std::size_t{0}};
 
         // Patterns may share a token ID; conflicting actions for it cannot, since the scanner reports only the ID.
-        // Checked before the pattern is registered, so a caught exception leaves nothing behind.
-        if (declared_[index][id])
+        // Checked before anything is resized or registered, so a caught exception leaves the builder as it was.
+        if (index < registered_.size())
         {
-            const auto previous{id < actions_[index].size() ? actions_[index][id] : Mode_action{}};
-
-            if (previous.kind != normalized.kind || previous.target != normalized.target)
+            for (const auto& [declared, previous] : registered_[index])
             {
-                throw std::invalid_argument{
-                        "Mode_builder::add_token: token " + std::to_string(id) + " in mode " + std::to_string(index) +
-                        " already carries a different action"};
+                if (declared == id && (previous.kind != normalized.kind || previous.target != normalized.target))
+                {
+                    throw std::invalid_argument{
+                            "Mode_builder::add_token: token " + std::to_string(id) + " in mode " +
+                            std::to_string(index) + " already carries a different action"};
+                }
             }
+        }
+
+        if (index >= modes_.size())
+        {
+            modes_.resize(index + 1);
+
+            registered_.resize(index + 1);
+
+            populated_.resize(index + 1, false);
         }
 
         modes_[index].add_token(regex, id, priority);
 
         populated_[index] = true;
 
-        declared_[index][id] = true;
-
-        if (normalized.kind != Mode_action_kind::stay)
+        if (!std::ranges::any_of(registered_[index], [id](const auto& pair) { return pair.first == id; }))
         {
-            if (id >= actions_[index].size())
-            {
-                actions_[index].resize(id + 1);
-            }
-
-            actions_[index][id] = normalized;
+            registered_[index].emplace_back(id, normalized);
         }
     }
 
@@ -221,21 +213,19 @@ private:
     std::vector<Builder> modes_;
 
     /**
-     * @brief Non-default actions, indexed by mode then by token ID.
+     * @brief Every registered token and its normalized action, per mode.
+     *
+     * A list of what was actually registered rather than a row indexed by token ID: the row had to be sized to the
+     * largest ID, so a grammar numbering a token 70000 allocated a megabyte of empty entries at construction. It
+     * also answers whether a token was declared at all, which a table of non-stay actions cannot.
      */
-    std::vector<std::vector<Mode_action>> actions_;
+    std::vector<std::vector<std::pair<std::size_t, Mode_action>>> registered_;
 
     /**
      * @brief Whether each mode index received at least one token, so build() can reject a skipped mode rather
      *        than compile a lexer for it that matches nothing.
      */
     std::vector<bool> populated_;
-
-    /**
-     * @brief Which (mode, token ID) pairs have been registered at all, so a second registration carrying a
-     *        different action is caught. actions_ alone cannot answer this, since it stores only non-stay actions.
-     */
-    std::vector<std::vector<bool>> declared_;
 
     /**
      * @brief The per-mode determinization cap; zero means unlimited.

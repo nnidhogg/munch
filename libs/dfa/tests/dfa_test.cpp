@@ -590,7 +590,9 @@ TEST_F(Dfa_test, Accelerated_runs_preserve_longest_match)
 
     auto consumed{simulator.run_all(
             run_with_b.cbegin(), run_with_b.cend(),
-            [&tokens](const Token& token, const std::size_t length) { tokens.emplace_back(token.id(), length); })};
+            [&tokens](const Token& token, const std::size_t length, std::uint64_t) {
+                tokens.emplace_back(token.id(), length);
+            })};
 
     EXPECT_EQ(consumed, run_with_b.size());
     ASSERT_EQ(tokens.size(), 1U);
@@ -604,7 +606,9 @@ TEST_F(Dfa_test, Accelerated_runs_preserve_longest_match)
 
     consumed = simulator.run_all(
             run_without_b.cbegin(), run_without_b.cend(),
-            [&tokens](const Token& token, const std::size_t length) { tokens.emplace_back(token.id(), length); });
+            [&tokens](const Token& token, const std::size_t length, std::uint64_t) {
+                tokens.emplace_back(token.id(), length);
+            });
 
     EXPECT_EQ(consumed, run_without_b.size());
     EXPECT_EQ(tokens.size(), 40U);
@@ -640,7 +644,7 @@ TEST_F(Dfa_test, Accelerated_runs_extend_accepting_tokens)
 
         const auto consumed{simulator.run_all(
                 input.cbegin(), input.cend(),
-                [&lengths](const Token&, const std::size_t matched) { lengths.push_back(matched); })};
+                [&lengths](const Token&, const std::size_t matched, std::uint64_t) { lengths.push_back(matched); })};
 
         EXPECT_EQ(consumed, length);
         ASSERT_EQ(lengths.size(), 1U);

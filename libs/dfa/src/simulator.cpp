@@ -54,7 +54,13 @@ std::size_t highest_state(const Dfa& dfa)
 Simulator::Simulator(const Dfa& dfa) : Simulator{dfa, {}}
 {}
 
-Simulator::Simulator(const Dfa& dfa, const std::span<const std::size_t> ignored) : init_state_{dfa.init_state()}
+Simulator::Simulator(const Dfa& dfa, const std::span<const std::size_t> ignored) : Simulator{dfa, ignored, {}}
+{}
+
+Simulator::Simulator(
+        const Dfa& dfa, const std::span<const std::size_t> ignored,
+        const std::span<const std::pair<std::size_t, std::uint64_t>> payloads)
+    : init_state_{dfa.init_state()}
 {
     const auto highest{highest_state(dfa)};
 
@@ -74,15 +80,26 @@ Simulator::Simulator(const Dfa& dfa, const std::span<const std::size_t> ignored)
         row_offsets_[symbol] = classes[symbol] * states;
     }
 
-    accept_table_.assign(states, std::nullopt);
+    accept_table_.assign(states, Accept{});
 
     flags_.assign(states, 0);
 
     for (const auto& [state, token] : dfa.accept_states())
     {
-        accept_table_[state] = token;
+        accept_table_[state].token = token;
 
         flags_[state] |= accept_flag_;
+    }
+
+    for (const auto& [token, word] : payloads)
+    {
+        for (std::size_t state{0}; state < states; ++state)
+        {
+            if ((flags_[state] & accept_flag_) != 0 && accept_table_[state].token.id() == token)
+            {
+                accept_table_[state].payload = word;
+            }
+        }
     }
 
     table_.assign(states * class_count, no_state_);
@@ -239,7 +256,8 @@ void Simulator::derive_split_points_ignoring(
 
     for (std::size_t state{0}; state < states; ++state)
     {
-        accepts_discarded[state] = accept_table_[state] && discarded.contains(accept_table_[state]->id());
+        accepts_discarded[state] =
+                (flags_[state] & accept_flag_) != 0 && discarded.contains(accept_table_[state].token.id());
     }
 
     std::vector<bool> reaches_kept(states, false);
@@ -248,7 +266,7 @@ void Simulator::derive_split_points_ignoring(
 
     for (std::size_t state{0}; state < states; ++state)
     {
-        if (accept_table_[state] && !accepts_discarded[state])
+        if ((flags_[state] & accept_flag_) != 0 && !accepts_discarded[state])
         {
             reaches_kept[state] = true;
 

@@ -91,13 +91,42 @@ public:
      * @return The number of input elements tokenized; anything short of the input's size means no token matched at
      *         the returned offset, unless the sink stopped the scan.
      */
-    template <typename T, std::random_access_iterator Iterator, std::invocable<T, std::size_t> Sink>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <typename T, std::random_access_iterator Iterator, typename Sink>
+        requires(std::integral<T> || std::is_enum_v<T>) &&
+                (std::invocable<Sink&, T, std::size_t> || std::invocable<Sink&, T, std::size_t, std::uint64_t>)
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink) const
     {
-        return simulator_.run_all(begin, end, [&sink](const dfa::Token& token, const std::size_t length) {
-            return sink(static_cast<T>(token.id()), length);
-        });
+        // The payload is always delivered and dropped here for sinks that do not want it, so the scan itself has
+        // one sink shape rather than one per arity.
+        return simulator_.run_all(
+                begin, end, [&sink](const dfa::Token& token, const std::size_t length, const std::uint64_t payload) {
+                    if constexpr (std::invocable<Sink&, T, std::size_t, std::uint64_t>)
+                    {
+                        return sink(static_cast<T>(token.id()), length, payload);
+                    }
+                    else
+                    {
+                        return sink(static_cast<T>(token.id()), length);
+                    }
+                });
+    }
+
+    /**
+     * @brief Tokenizes a whole container in one pass, invoking the sink once per matched token.
+     * @tparam T The token type (enum or integral).
+     * @tparam Container The input container type (must offer random access).
+     * @tparam Sink Callable receiving each matched token and its length.
+     * @param container The input container.
+     * @param sink Invoked as sink(token, length) for every matched token, in input order.
+     * @return The number of input elements tokenized; anything short of the container's size means no token matched
+     *         at the returned offset.
+     */
+    template <typename T, common::concepts::Random_access_iterable Container, typename Sink>
+        requires(std::integral<T> || std::is_enum_v<T>) &&
+                (std::invocable<Sink&, T, std::size_t> || std::invocable<Sink&, T, std::size_t, std::uint64_t>)
+    std::size_t tokenize_all(const Container& container, Sink sink) const
+    {
+        return tokenize_all<T>(std::ranges::begin(container), std::ranges::end(container), std::move(sink));
     }
 
     /**
@@ -128,23 +157,6 @@ public:
     [[nodiscard]] bool is_split_point_ignoring(const char symbol) const noexcept
     {
         return simulator_.is_split_point_ignoring(symbol);
-    }
-
-    /**
-     * @brief Tokenizes a whole container in one pass, invoking the sink once per matched token.
-     * @tparam T The token type (enum or integral).
-     * @tparam Container The input container type (must offer random access).
-     * @tparam Sink Callable receiving each matched token and its length.
-     * @param container The input container.
-     * @param sink Invoked as sink(token, length) for every matched token, in input order.
-     * @return The number of input elements tokenized; anything short of the container's size means no token matched
-     *         at the returned offset.
-     */
-    template <typename T, common::concepts::Random_access_iterable Container, std::invocable<T, std::size_t> Sink>
-        requires(std::integral<T> || std::is_enum_v<T>)
-    std::size_t tokenize_all(const Container& container, Sink sink) const
-    {
-        return tokenize_all<T>(std::ranges::begin(container), std::ranges::end(container), std::move(sink));
     }
 
     /**
@@ -342,6 +354,14 @@ private:
      * @param ignored The IDs of tokens the caller deletes before using the stream.
      */
     Lexer(const dfa::Dfa& dfa, const std::span<const std::size_t> ignored) : simulator_{dfa, ignored} {}
+
+    /**
+     * @brief Compiles a DFA, attaching a caller's word to every match of the named tokens.
+     */
+    Lexer(const dfa::Dfa& dfa, const std::span<const std::size_t> ignored,
+          const std::span<const std::pair<std::size_t, std::uint64_t>> payloads)
+        : simulator_{dfa, ignored, payloads}
+    {}
 
     /**
      * @brief The simulator running the DFA the Lexer was constructed from.

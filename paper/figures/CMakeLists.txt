@@ -12,9 +12,12 @@ add_executable(munch_applicability
         ${MUNCH_SOURCE_DIR}/tools/benchmark/src/harness.cpp
 )
 
+add_dependencies(munch_applicability munch_benchmark_provenance)
+
 target_include_directories(munch_applicability
         PRIVATE
         ${MUNCH_SOURCE_DIR}/tools/benchmark/include
+        ${MUNCH_BINARY_DIR}/tools/benchmark/generated
 )
 
 target_link_libraries(munch_applicability

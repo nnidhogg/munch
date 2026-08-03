@@ -2,7 +2,7 @@
 // mode-stack depth. Mode_lexer picks its action lookup per mode, so one corpus cannot say which path an edit moved.
 // Interleaved, because run consecutively the first scenario absorbs the machine's drift.
 //
-// Usage: munch_benchmark_modes [input size in MiB] [passes]
+// Usage: munch_benchmark_modes [input size in MiB] [passes] [observations CSV]
 
 #include <cstdio>
 #include <cstdlib>
@@ -39,11 +39,21 @@ constexpr std::size_t kString{1};
 constexpr std::size_t kComment{2};
 
 /**
+ * @brief How many of mode zero's tokens carry an action, which is what selects the driver's lookup.
+ */
+enum class Acting
+{
+    none,
+    one,
+    all
+};
+
+/**
  * @brief A C-like modal grammar.
  * @param stack Whether entering and leaving a string pushes and pops, or merely goes to.
- * @param actions Whether any token changes the mode at all; false gives the driver its no-action path.
+ * @param acting How many tokens change the mode, which picks the no-action, single-comparison, or masked lookup.
  */
-munch::core::Mode_lexer build(const bool stack, const bool actions)
+munch::core::Mode_lexer build(const bool stack, const Acting acting)
 {
     munch::core::Mode_builder builder;
 
@@ -54,9 +64,12 @@ munch::core::Mode_lexer build(const bool stack, const bool actions)
     builder.add_token(kCode, plus(any_of(Set::digits())), Mode_token::number, 2);
     builder.add_token(kCode, any_of(Set{'(', ')', '{', '}', ';', ',', '='}), Mode_token::punctuation, 2);
 
-    if (!actions)
+    // Every variant registers the same kCode patterns, so the rows differ in the lookup and not in the DFA.
+    if (acting == Acting::none)
     {
         builder.add_token(kCode, text("\""), Mode_token::quote, 1);
+
+        builder.add_token(kCode, text("/*"), Mode_token::open_comment, 1);
 
         return builder.build();
     }
@@ -73,9 +86,19 @@ munch::core::Mode_lexer build(const bool stack, const bool actions)
     builder.add_token(kString, text("\""), Mode_token::quote, 1, back);
     builder.add_token(kString, plus(any_of(Set::all() - '"')), Mode_token::body, 2);
 
-    builder.add_token(
-            kCode, text("/*"), Mode_token::open_comment, 1,
-            {.kind = munch::core::Mode_action_kind::push, .target = kComment});
+    // Leaving the comment opener inert keeps mode zero on the single-comparison lookup rather than the masked one.
+    if (acting == Acting::one)
+    {
+        builder.add_token(kCode, text("/*"), Mode_token::open_comment, 1);
+    }
+    else
+    {
+        builder.add_token(
+                kCode, text("/*"), Mode_token::open_comment, 1,
+                {.kind = munch::core::Mode_action_kind::push, .target = kComment});
+    }
+
+    // Registered either way, so the two grammars hold the same number of modes and differ only in mode zero's lookup.
     builder.add_token(
             kComment, text("/*"), Mode_token::open_comment, 1,
             {.kind = munch::core::Mode_action_kind::push, .target = kComment});
@@ -148,20 +171,24 @@ int main(const int argc, const char** argv)
 
     const int passes{argc > 2 ? std::atoi(argv[2]) : 15};
 
+    const char* const observations{argc > 3 ? argv[3] : nullptr};
+
     if (mebibytes == 0 || passes <= 0)
     {
-        std::printf("usage: munch_benchmark_modes [input size in MiB > 0] [passes > 0]\n");
+        std::printf("usage: munch_benchmark_modes [input size in MiB > 0] [passes > 0] [observations CSV]\n");
 
         return EXIT_FAILURE;
     }
 
     const auto bytes{mebibytes << 20U};
 
-    const auto acting{build(true, true)};
+    const auto acting{build(true, Acting::all)};
 
-    const auto inert{build(true, false)};
+    const auto inert{build(true, Acting::none)};
 
-    const auto flat_modes{build(false, true)};
+    const auto single{build(true, Acting::one)};
+
+    const auto flat_modes{build(false, Acting::all)};
 
     // One row per axis point. The corpora are held for the whole run because the scenarios interleave.
     struct Row
@@ -177,6 +204,7 @@ int main(const int argc, const char** argv)
 
     rows.push_back({.name = "table-never-fires", .lexer = &acting, .input = generate(bytes, 0, 16, 0)});
     rows.push_back({.name = "no-actions-declared", .lexer = &inert, .input = generate(bytes, 0, 16, 0)});
+    rows.push_back({.name = "one-action-never-fires", .lexer = &single, .input = generate(bytes, 0, 16, 0)});
 
     for (const int percent : {1, 10, 40, 90})
     {
@@ -229,8 +257,10 @@ int main(const int argc, const char** argv)
                              }});
     }
 
+    munch::tools::benchmark::print_provenance("modal driver scenario matrix", passes, observations);
+
     std::printf("modal driver, %zu MiB per scenario, %d interleaved rounds\n", mebibytes, passes);
 
-    return munch::tools::benchmark::measure_interleaved(scenarios, passes, mebibytes, nullptr) ? EXIT_SUCCESS :
-                                                                                                 EXIT_FAILURE;
+    return munch::tools::benchmark::measure_interleaved(scenarios, passes, mebibytes, observations) ? EXIT_SUCCESS :
+                                                                                                      EXIT_FAILURE;
 }

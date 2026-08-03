@@ -4,7 +4,9 @@ project(munch_core)
 
 add_library(${PROJECT_NAME}
         src/builder.cpp
+        src/mode.cpp
         src/mode_builder.cpp
+        src/mode_lexer.cpp
         src/determinize.cpp
         src/exceptions/state_limit_error.cpp
 )

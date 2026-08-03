@@ -590,14 +590,115 @@ TEST(Mode, A_caller_supplied_stack_naming_a_missing_mode_is_rejected)
     EXPECT_THROW(
             std::ignore = lexer.tokenize_all<Tok>(input, [](Tok, std::size_t, std::size_t) {}, bad), std::out_of_range);
 
+    // A saved frame is checked when a pop is about to expose it rather than on entry, so a scan that never pops
+    // runs to completion beside one, and the same scan with a closing quote is rejected.
     Mode_stack poisoned;
 
     poisoned.saved.push_back(9);
 
+    EXPECT_NO_THROW(std::ignore = lexer.tokenize_all<Tok>(input, [](Tok, std::size_t, std::size_t) {}, poisoned));
+
+    Mode_stack popping;
+
+    popping.current = static_cast<std::size_t>(Mode::string);
+
+    popping.saved.push_back(9);
+
+    const std::string closing{"a\""};
+
     EXPECT_THROW(
             std::ignore = lexer.tokenize_all<Tok>(
-                    input, [](Tok, std::size_t, std::size_t) {}, poisoned),
+                    closing, [](Tok, std::size_t, std::size_t) {}, popping),
             std::out_of_range);
+
+    Mode_stack per_token;
+
+    per_token.current = static_cast<std::size_t>(Mode::string);
+
+    per_token.saved.push_back(9);
+
+    EXPECT_THROW(std::ignore = lexer.tokenize<Tok>(closing.cbegin() + 1, closing.cend(), per_token), std::out_of_range);
+}
+
+TEST(Mode, A_go_to_onto_its_own_mode_is_a_stay)
+{
+    Mode_builder builder;
+
+    builder.add_token(Mode::code, plus(any_of(Set::alpha())), Tok::identifier, 2);
+
+    // Observably a stay: the mode does not change, so both drivers must emit what a stay would.
+    builder.add_token(
+            Mode::code, any_of(Set{' '}), Tok::space, 1,
+            {.kind = Mode_action_kind::go_to, .target = static_cast<std::size_t>(Mode::code)});
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"ab cd ef"};
+
+    std::vector<std::pair<Tok, std::size_t>> batch;
+
+    Mode_stack stack;
+
+    const auto consumed{lexer.tokenize_all<Tok>(
+            input,
+            [&batch](const Tok token, const std::size_t length, std::size_t) { batch.emplace_back(token, length); },
+            stack)};
+
+    EXPECT_EQ(consumed, input.size());
+
+    EXPECT_EQ(stack.current, static_cast<std::size_t>(Mode::code));
+
+    EXPECT_TRUE(stack.saved.empty());
+
+    std::vector<std::pair<Tok, std::size_t>> per_token;
+
+    Mode_stack walking;
+
+    for (std::size_t offset{0}; offset < input.size();)
+    {
+        const auto [token, length]{lexer.tokenize<Tok>(input.cbegin() + offset, input.cend(), walking)};
+
+        ASSERT_TRUE(token.has_value());
+
+        per_token.emplace_back(*token, length);
+
+        offset += length;
+    }
+
+    EXPECT_EQ(batch, per_token);
+
+    EXPECT_EQ(walking.current, stack.current);
+}
+
+TEST(Mode, A_zero_width_match_leaves_the_mode_alone_in_both_drivers)
+{
+    Mode_builder builder;
+
+    // A pattern accepting the empty string, carrying an action the drivers must agree not to apply.
+    builder.add_token(
+            Mode::code, kleene(any_of(Set{'a'})), Tok::identifier, 1,
+            {.kind = Mode_action_kind::go_to, .target = static_cast<std::size_t>(Mode::string)});
+    builder.add_token(Mode::string, any_of(Set::all()), Tok::text, 2);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"b"};
+
+    Mode_stack per_token;
+
+    const auto [token, length]{lexer.tokenize<Tok>(input.cbegin(), input.cend(), per_token)};
+
+    EXPECT_EQ(token, Tok::identifier);
+
+    EXPECT_EQ(length, 0U);
+
+    Mode_stack batch;
+
+    EXPECT_EQ(lexer.tokenize_all<Tok>(input, [](Tok, std::size_t, std::size_t) {}, batch), 0U);
+
+    EXPECT_EQ(per_token.current, batch.current);
+
+    EXPECT_EQ(per_token.current, static_cast<std::size_t>(Mode::code));
 }
 
 TEST(Mode, An_action_kind_outside_the_enumeration_is_rejected)
@@ -681,12 +782,12 @@ TEST(Mode, Reachability_is_a_walk_from_mode_zero_not_merely_being_named)
     EXPECT_EQ(report.unreachable_modes, expected);
 }
 
-TEST(Mode, Sparse_token_ids_cost_only_their_own_pairs)
+TEST(Mode, Sparse_token_ids_cost_only_what_was_registered)
 {
     Mode_builder builder;
 
-    // A dense row indexed by token value made one parser-style code size the whole table, per mode. Nothing is
-    // indexed by public token value now, so these are as cheap as small ones.
+    // A row indexed by token value, in the builder as well as at runtime, made one parser-style code size the whole
+    // table per mode. Both are lists of what was registered now, so these are as cheap as small ones.
     builder.add_token(Mode::code, text("a"), std::size_t{0}, 1);
 
     builder.add_token(
@@ -713,7 +814,8 @@ TEST(Mode, Sparse_token_ids_cost_only_their_own_pairs)
 
 TEST(Mode, Every_dispatch_shape_agrees_with_the_per_token_driver)
 {
-    // one, masked and sparse are separate instantiations, so each needs exercising against the reference driver.
+    // The batch driver reads each action from the matched token's payload and the per-token one searches for it, so
+    // they are separate code needing to agree whatever a mode's action count.
     for (const std::size_t actions : {1U, 3U})
     {
         for (const std::size_t base : {std::size_t{0}, std::size_t{100}})

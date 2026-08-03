@@ -5,14 +5,14 @@ namespace munch::dfa
 Token::Token(const std::size_t id) noexcept : id_{id}
 {}
 
-std::size_t Token::id() const noexcept
-{
-    return id_;
-}
-
 bool Token::operator==(const Token& other) const noexcept
 {
     return id_ == other.id_;
+}
+
+std::size_t Token::id() const noexcept
+{
+    return id_;
 }
 
 } // namespace munch::dfa

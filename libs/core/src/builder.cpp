@@ -56,7 +56,7 @@ namespace munch::core
 {
 Lexer Builder::build() const
 {
-    return Lexer{dfa(), ignored_};
+    return Lexer{dfa(), ignored_, payloads_};
 }
 
 nfa::Nfa Builder::nfa() const

@@ -26,12 +26,12 @@ the parallel path; where it does not, `Mode_lexer` scans serially and honestly.
 
 **Modes are an expressiveness feature, not a performance one.** Where a flat token set can express the language it is
 faster, because a mode grammar scans string interiors and so emits more tokens for the same bytes. The
-`munch_benchmark_compare` mode section measures both on one corpus with the scenarios interleaved: modes cost about
-a quarter there, and most of that is the extra tokens a mode grammar emits for the same bytes rather than slower
-tokens. The gap widens as the input carries fewer string literals and those extra tokens stop paying for
-themselves. The
-intuition that several small automata beat one large one does not hold either, because only the states a scan
-actually visits are hot and splitting them across modes does not shrink that working set. Use `Lexer` where the
+`munch_benchmark_compare` mode section measures both on one corpus with the scenarios interleaved: modes cost 12 to
+14 percent there, and nearly all of that is the extra tokens a mode grammar emits for the same bytes rather than
+slower tokens, whose cost is now 1 to 2 percent. Whether the gap widens as the input carries fewer string literals
+is untested, since no flat grammar is measured beside the modal one at each density. The intuition that several
+small automata beat one large one does not hold either, because only the states a scan actually visits are hot and
+splitting them across modes does not shrink that working set. Use `Lexer` where the
 grammar allows it, both for the throughput and for the parallel path; use `Mode_lexer` where the language genuinely
 needs a mode stack.
 

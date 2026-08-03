@@ -27,10 +27,20 @@ Mode_builder::Mode_diagnostics Mode_builder::diagnose() const
 
     std::vector<bool> leaves(modes_.size(), false);
 
-    for (std::size_t mode{0}; mode < actions_.size(); ++mode)
+    // A token no reachable state awards can never fire, so an action on it neither leaves a mode nor enters one.
+    const auto live{[&out](const std::size_t mode, const std::size_t token) {
+        return !std::ranges::contains(out.per_mode[mode].dead_tokens, token);
+    }};
+
+    for (std::size_t mode{0}; mode < registered_.size(); ++mode)
     {
-        for (const auto& action : actions_[mode])
+        for (const auto& [token, action] : registered_[mode])
         {
+            if (!live(mode, token))
+            {
+                continue;
+            }
+
             switch (action.kind)
             {
             case Mode_action_kind::go_to:
@@ -62,13 +72,18 @@ Mode_builder::Mode_diagnostics Mode_builder::diagnose() const
 
             pending.pop_back();
 
-            if (mode >= actions_.size())
+            if (mode >= registered_.size())
             {
                 continue;
             }
 
-            for (const auto& action : actions_[mode])
+            for (const auto& [token, action] : registered_[mode])
             {
+                if (!live(mode, token))
+                {
+                    continue;
+                }
+
                 const auto targeted{action.kind == Mode_action_kind::go_to || action.kind == Mode_action_kind::push};
 
                 if (targeted && action.target < entered.size() && !entered[action.target])
@@ -115,11 +130,11 @@ Mode_lexer Mode_builder::build() const
     }
 
     // Checked here, not in add_token: a target may legitimately name a mode registered later.
-    for (std::size_t mode{0}; mode < actions_.size(); ++mode)
+    for (std::size_t mode{0}; mode < registered_.size(); ++mode)
     {
-        for (std::size_t token{0}; token < actions_[mode].size(); ++token)
+        for (const auto& [token, action] : registered_[mode])
         {
-            const auto& [kind, target]{actions_[mode][token]};
+            const auto& [kind, target]{action};
 
             const auto targeted{kind == Mode_action_kind::go_to || kind == Mode_action_kind::push};
 
@@ -137,74 +152,38 @@ Mode_lexer Mode_builder::build() const
 
     lexers.reserve(modes_.size());
 
-    for (auto builder : modes_)
+    // Each token's action rides on its own accepting states, so the driver never looks one up by token ID.
+    std::vector<Mode_lexer::Registered> mode_actions;
+
+    std::vector<bool> acting(modes_.size(), false);
+
+    for (std::size_t mode{0}; mode < modes_.size(); ++mode)
     {
+        auto builder{modes_[mode]};
+
         builder.set_state_limit(state_limit_);
+
+        if (mode < registered_.size())
+        {
+            for (const auto& [token, action] : registered_[mode])
+            {
+                if (action.kind == Mode_action_kind::stay)
+                {
+                    continue;
+                }
+
+                builder.set_token_payload(token, pack(action));
+
+                mode_actions.push_back({.mode = mode, .token = token, .action = pack(action)});
+
+                acting[mode] = true;
+            }
+        }
 
         lexers.push_back(builder.build());
     }
 
-    // Choose a lookup per mode by how many action tokens it has. Nothing is indexed by public token value, so a
-    // sparse enumeration costs only its own pairs.
-    std::vector<Mode_dispatch> dispatch(modes_.size());
-
-    std::vector<std::pair<std::size_t, Mode_action>> pairs;
-
-    for (std::size_t mode{0}; mode < modes_.size(); ++mode)
-    {
-        std::vector<std::pair<std::size_t, Mode_action>> mine;
-
-        if (mode < actions_.size())
-        {
-            for (std::size_t token{0}; token < actions_[mode].size(); ++token)
-            {
-                if (actions_[mode][token].kind != Mode_action_kind::stay)
-                {
-                    mine.emplace_back(token, actions_[mode][token]);
-                }
-            }
-        }
-
-        auto& chosen{dispatch[mode]};
-
-        if (mine.empty())
-        {
-            chosen.shape = Mode_dispatch::Shape::none;
-
-            continue;
-        }
-
-        if (mine.size() == 1)
-        {
-            chosen.shape = Mode_dispatch::Shape::one;
-
-            chosen.token = mine.front().first;
-
-            chosen.action = mine.front().second;
-
-            continue;
-        }
-
-        const auto maskable{std::ranges::all_of(mine, [](const auto& pair) { return pair.first < 64; })};
-
-        chosen.shape = maskable ? Mode_dispatch::Shape::masked : Mode_dispatch::Shape::sparse;
-
-        chosen.first = pairs.size();
-
-        chosen.count = mine.size();
-
-        for (const auto& [token, action] : mine)
-        {
-            if (maskable)
-            {
-                chosen.mask |= std::uint64_t{1} << token;
-            }
-
-            pairs.push_back({token, action});
-        }
-    }
-
-    return Mode_lexer{std::move(lexers), std::move(dispatch), std::move(pairs)};
+    return Mode_lexer{std::move(lexers), std::move(mode_actions), std::move(acting)};
 }
 
 } // namespace munch::core

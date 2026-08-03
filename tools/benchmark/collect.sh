@@ -10,6 +10,8 @@
 #   summary.txt       the human-readable scenario table
 #   observations.csv  every timed pass of the scaling scenarios, not just best/median/worst; the construction,
 #                     planning and thread-launch rows appear in summary.txt only
+#   modes.txt         the modal driver's scenario matrix
+#   modes.csv         every timed pass of it
 #
 # Send back the tarball it produces. It deliberately avoids identifying the machine or its users: uname omits the
 # hostname and the uptime line is printed without its count of logged-in users.
@@ -79,8 +81,8 @@ out=$(cd "$out" && pwd)
 # The benchmark appends to the CSV, so a second run into the same directory silently interleaves two datasets that
 # only the run column can separate, while summary.txt and environment.txt describe the last run alone. Refuse
 # instead: a fresh directory per run keeps the three files describing the same measurement.
-if [ -e "$out/observations.csv" ]; then
-    fail "$out already holds observations.csv from an earlier run; use a new output directory"
+if [ -e "$out/observations.csv" ] || [ -e "$out/modes.csv" ]; then
+    fail "$out already holds a CSV from an earlier run; use a new output directory"
 fi
 
 echo "munch benchmark collection"
@@ -159,6 +161,12 @@ echo "built"
 # fails loudly.
 "$build/tools/benchmark/munch_benchmark" "$sizes" "$passes" "$out/observations.csv" | tee "$out/summary.txt"
 
+# The modal matrix takes one size rather than the list: it builds a corpus per axis point, so the sweep is over
+# grammar shapes and not over input sizes. The first size given is the one used.
+modes_size=${sizes%%,*}
+
+"$build/tools/benchmark/munch_benchmark_modes" "$modes_size" "$passes" "$out/modes.csv" | tee "$out/modes.txt"
+
 {
     echo
     echo "== load at end =="
@@ -181,5 +189,5 @@ tar czf "$archive" --owner=0 --group=0 --numeric-owner -C "$(dirname "$out")" \
 echo
 echo "done. Send back this one file: $archive"
 ls -1 "$out" | sed 's/^/  /'
-echo "  $(wc -l < "$out/observations.csv") CSV rows, $(wc -l < "$out/summary.txt") summary lines"
+echo "  $(wc -l < "$out/observations.csv") scaling CSV rows, $(wc -l < "$out/modes.csv") modal CSV rows"
 echo "  archive $(du -h "$archive" | cut -f1)"

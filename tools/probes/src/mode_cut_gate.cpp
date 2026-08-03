@@ -1,6 +1,8 @@
-// Asserts the measurement behind the single-byte mode-cut impossibility result.
+// Asserts the measurement behind the single-byte mode-cut obstruction.
 //
-// For a cut at a byte to need no context reconstruction, three things must hold at once:
+// For a cut at a byte to need no context reconstruction, this route asks three things to hold at once. They are
+// SUFFICIENT for a context-free cut, not necessary: two modes emitting the same tokens onward would also admit one
+// without either being identified, which is why what follows is an obstruction rather than an impossibility.
 //
 //   1. the byte begins a token NO MATTER WHICH MODE the scan is in, or the worker cannot know it is between tokens;
 //   2. the byte determines the mode, since knowing you are between tokens is useless without knowing which token set
@@ -9,7 +11,8 @@
 //
 // Condition 1 is satisfiable and eleven bytes satisfy it here. Condition 2 is not: every byte begins a token in at
 // least two modes, because string, character and comment bodies each admit the whole alphabet, so no byte rules any
-// of them out. That is the impossibility, and it holds for single-byte cuts in any grammar with two such modes.
+// of them out. That closes this route for single-byte cuts in any grammar with two such modes. It does not close
+// every route, and a product-state argument over what the modes emit onward is what would settle the general case.
 //
 // The counts below are asserted rather than printed. They are the evidence behind a design decision recorded in
 // docs/limits.md, that Mode_lexer deliberately exposes no parallel entry point, and a decision resting on a
@@ -205,8 +208,9 @@ int main()
     ok = agrees("begins a token in every mode", universal_starter, kStartableInEveryMode) && ok;
 
     std::printf(
-            "\n%s\n", ok ? "Condition 1 holds and condition 2 cannot: no byte determines the mode, so no single-byte "
-                           "cut is context free." :
+            "\n%s\n", ok ? "Condition 1 holds and condition 2 cannot: no byte determines the mode, so this route to "
+                           "a context-free single-byte cut is closed. Identifying the mode is sufficient, not "
+                           "necessary, so other routes are not ruled out." :
                            "A published number moved. Re-derive the report before trusting it.");
 
     return ok ? 0 : 1;

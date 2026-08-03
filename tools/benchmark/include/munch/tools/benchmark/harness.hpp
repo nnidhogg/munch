@@ -183,6 +183,16 @@ struct Scenario
 bool measure_interleaved(
         std::span<const Scenario> scenarios, int passes, std::size_t input_mebibytes, const char* observations_path);
 
+/**
+ * @brief Prints what this run may be cited as: the commit built from, the machine, and the invocation.
+ *
+ * A throughput figure is quotable only beside the tree and machine that produced it.
+ * @param benchmark The name of the benchmark reporting.
+ * @param passes The pass count the run was invoked with.
+ * @param observations_path The CSV being written, or nullptr when none is.
+ */
+void print_provenance(const char* benchmark, int passes, const char* observations_path);
+
 } // namespace munch::tools::benchmark
 
 #endif // MUNCH_TOOLS_BENCHMARK_INCLUDE_MUNCH_TOOLS_BENCHMARK_HARNESS_HPP

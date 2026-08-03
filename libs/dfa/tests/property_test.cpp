@@ -244,9 +244,10 @@ Stream tokenize(const Simulator& simulator, const std::string& input, std::size_
 {
     Stream stream;
 
-    consumed = simulator.run_all(input.begin(), input.end(), [&stream](const Token& token, const std::size_t length) {
-        stream.emplace_back(token.id(), length);
-    });
+    consumed = simulator.run_all(
+            input.begin(), input.end(), [&stream](const Token& token, const std::size_t length, std::uint64_t) {
+                stream.emplace_back(token.id(), length);
+            });
 
     return stream;
 }

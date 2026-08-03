@@ -54,67 +54,31 @@ struct Mode_action
 };
 
 /**
- * @brief How one mode's token actions are looked up, chosen per mode by how many there are.
+ * @brief A Mode_action packed into one word, with stay as zero.
  *
- * A dense row indexed by token ID answered every lookup with a dependent load, and its width was the largest token
- * ID registered, so one parser-style code near 2^16 sized the whole table. Almost every mode carries one or two
- * action tokens, which a comparison answers without touching memory at all.
+ * Every token's action travels as the payload of its own accepting states, so the driver receives it with the match
+ * instead of looking it up by token ID. One word is what that channel carries, and making stay zero lets the common
+ * case, a token that leaves the mode alone, be a test against zero.
  */
-struct Mode_dispatch
+using Packed_action = std::uint64_t;
+
+/**
+ * @brief Packs an action, mapping every stay to zero whatever target it names.
+ */
+[[nodiscard]] constexpr Packed_action pack(const Mode_action& action) noexcept
 {
-    /**
-     * @brief How many action tokens this mode has, which selects the lookup below.
-     */
-    enum class Shape : std::size_t
-    {
-        /**
-         * @brief No token changes the mode; the driver scans it with a sink that cannot stop.
-         */
-        none,
+    return action.kind == Mode_action_kind::stay ?
+                   0 :
+                   static_cast<Packed_action>(action.kind) | static_cast<Packed_action>(action.target) << 2U;
+}
 
-        /**
-         * @brief Exactly one; one comparison against a token ID held in a register.
-         */
-        one,
-
-        /**
-         * @brief Several, all with IDs under 64; a bit test rejects the common case before any search.
-         */
-        masked,
-
-        /**
-         * @brief Several, at least one ID too large to mask; the range is searched directly.
-         */
-        sparse
-    };
-
-    Shape shape{Shape::none};
-
-    /**
-     * @brief The single action token's ID, when shape is one.
-     */
-    std::size_t token{0};
-
-    /**
-     * @brief The single token's action, when shape is one. Held inline so the hit path loads nothing either.
-     */
-    Mode_action action{};
-
-    /**
-     * @brief A bit per token ID under 64, when shape is masked.
-     */
-    std::uint64_t mask{0};
-
-    /**
-     * @brief Where this mode's (token, action) pairs begin in the shared table, when shape is masked or sparse.
-     */
-    std::size_t first{0};
-
-    /**
-     * @brief How many pairs this mode has there.
-     */
-    std::size_t count{0};
-};
+/**
+ * @brief Unpacks an action, which the driver needs only once a token has actually changed the mode.
+ */
+[[nodiscard]] constexpr Mode_action unpack(const Packed_action packed) noexcept
+{
+    return {.kind = static_cast<Mode_action_kind>(packed & 3U), .target = static_cast<std::size_t>(packed >> 2U)};
+}
 
 /**
  * @brief The scan position's mode, owned by the caller rather than by the lexer.
@@ -126,6 +90,18 @@ struct Mode_dispatch
 struct Mode_stack
 {
     /**
+     * @brief Equal when the current mode and every saved frame match.
+     */
+    bool operator==(const Mode_stack&) const = default;
+
+    /**
+     * @brief Applies an action, reporting whether it was legal.
+     * @param action The matched token's action.
+     * @return False if the action was a pop with nothing saved, in which case the stack is left unchanged.
+     */
+    bool apply(const Mode_action& action);
+
+    /**
      * @brief The mode the next token is matched in.
      */
     std::size_t current{0};
@@ -134,48 +110,6 @@ struct Mode_stack
      * @brief The modes push saved, innermost last.
      */
     std::vector<std::size_t> saved{};
-
-    /**
-     * @brief Applies an action, reporting whether it was legal.
-     * @param action The matched token's action.
-     * @return False if the action was a pop with nothing saved, in which case the stack is left unchanged.
-     */
-    bool apply(const Mode_action& action)
-    {
-        switch (action.kind)
-        {
-        case Mode_action_kind::stay:
-            return true;
-
-        case Mode_action_kind::go_to:
-            current = action.target;
-
-            return true;
-
-        case Mode_action_kind::push:
-            saved.push_back(current);
-
-            current = action.target;
-
-            return true;
-
-        case Mode_action_kind::pop:
-            if (saved.empty())
-            {
-                return false;
-            }
-
-            current = saved.back();
-
-            saved.pop_back();
-
-            return true;
-        }
-
-        return false;
-    }
-
-    bool operator==(const Mode_stack&) const = default;
 };
 
 } // namespace munch::core

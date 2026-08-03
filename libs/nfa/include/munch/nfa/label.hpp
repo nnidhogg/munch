@@ -51,6 +51,12 @@ public:
      * @param s The symbol for the label.
      */
     explicit Label(Symbol_t s) noexcept;
+    /**
+     * @brief Equality comparison operator for labels.
+     * @param other The label to compare with.
+     * @return True if the variants are equal, false otherwise.
+     */
+    bool operator==(const Label& other) const noexcept;
 
     /**
      * @brief Returns a label representing an epsilon transition.
@@ -82,13 +88,6 @@ public:
      * @return Reference to the variant.
      */
     [[nodiscard]] const Variant_t& variant() const noexcept;
-
-    /**
-     * @brief Equality comparison operator for labels.
-     * @param other The label to compare with.
-     * @return True if the variants are equal, false otherwise.
-     */
-    bool operator==(const Label& other) const noexcept;
 
     /**
      * @brief Hash functor for Label, suitable for use in unordered containers.

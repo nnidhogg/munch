@@ -844,6 +844,8 @@ int main(const int argc, const char** argv)
 
     const char* const observations{argc > 3 ? argv[3] : nullptr};
 
+    munch::tools::benchmark::print_provenance("munch benchmark", passes, observations);
+
     if (sizes.empty() || std::find(sizes.begin(), sizes.end(), std::size_t{0}) != sizes.end() || passes <= 0)
     {
         std::printf("usage: munch_benchmark [input MiB > 0, comma separated] [passes > 0] [observations.csv]\n");
