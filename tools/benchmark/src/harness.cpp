@@ -274,8 +274,8 @@ bool measure_interleaved(
 
     expected.reserve(scenarios.size());
 
-    // The warmup pass also fixes the result every timed pass must reproduce, so a scenario that drifts in content
-    // rather than in timing still fails loudly.
+    // The warmup pass also fixes the token count every timed pass must reproduce, so a scenario that stops
+    // scanning the whole corpus fails loudly. Content is checked once, against the reference stream, before timing.
     for (const auto& scenario : scenarios)
     {
         expected.push_back(scenario.pass());

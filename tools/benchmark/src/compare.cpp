@@ -703,15 +703,6 @@ std::string generate_mode_input(const std::size_t size)
 }
 
 /**
- * @brief Compares munch's modes against lexertl's start states on a language that needs them.
- *
- * Kept apart from the tables above rather than folded in, because the streams are deliberately different: a mode
- * grammar scans string interiors and so emits more tokens than a flat grammar that treats a literal as one token.
- * Validating against munch's flat stream would fail by construction, so the two mode engines validate against each
- * other instead.
- * @return True if both engines tokenized the corpus completely and agreed on every token.
- */
-/**
  * @brief Measures the two engines that carry mode transitions in the grammar on input requiring a mode stack.
  *
  * Kept apart from compare_modes(): that corpus needs no stack, while here both engines push and pop one. No flat
@@ -786,6 +777,15 @@ bool compare_nested(const std::size_t mebibytes, const int passes, const char* c
     return measure_interleaved(scenarios, passes, mebibytes, observations);
 }
 
+/**
+ * @brief Compares munch's modes against lexertl's start states on a corpus where modes are optional.
+ *
+ * Kept apart from the tables above rather than folded in, because the streams are deliberately different: a mode
+ * grammar scans string interiors and so emits more tokens than a flat grammar that treats a literal as one token.
+ * Validating against munch's flat stream would fail by construction, so the two mode engines validate against each
+ * other instead.
+ * @return True if both engines tokenized the corpus completely and agreed on every token.
+ */
 bool compare_modes(const std::size_t mebibytes, const int passes, const char* const observations)
 {
     using Scenario_t = munch::tools::benchmark::Scenario;
@@ -843,9 +843,8 @@ bool compare_modes(const std::size_t mebibytes, const int passes, const char* co
 
     const auto flat_lexer{flat.build()};
 
-    // Interleaved rather than one engine's passes then the next: flat and modal differ by only a percent or two on
-    // this corpus, which is well inside the drift a sequential ordering lets accumulate on one of them. The lexertl
-    // gap is large enough not to care, but it rides along for free.
+    // Interleaved rather than one engine's passes then the next, so that thermal and scheduling drift lands on
+    // every scenario alike instead of accumulating on whichever ran last.
     const Scenario_t scenarios[]{
             {.name = "munch-flat",
              .bytes = input.size(),
