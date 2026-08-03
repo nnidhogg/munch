@@ -2,6 +2,7 @@
 
 #include <sys/utsname.h>
 
+#include <cstring>
 #include <ctime>
 #include <fstream>
 #include <limits>
@@ -412,7 +413,13 @@ void print_provenance(const char* const benchmark, const int passes, const char*
         std::printf("  system      %s %s %s\n", system.sysname, system.release, system.machine);
     }
 
-    std::printf("  observations %s\n\n", observations_path != nullptr ? observations_path : "not recorded");
+    // The file name, never the path. This line is archived beside the CSV it names, and a directory from whoever
+    // ran the benchmark identifies their machine, which tools/benchmark/collect.sh promises its output does not.
+    const auto* const name{observations_path == nullptr ? nullptr : std::strrchr(observations_path, '/')};
+
+    std::printf(
+            "  observations %s\n\n",
+            observations_path == nullptr ? "not recorded" : (name != nullptr ? name + 1 : observations_path));
 }
 
 } // namespace munch::tools::benchmark

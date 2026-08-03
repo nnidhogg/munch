@@ -28,21 +28,23 @@ the parallel path; where it does not, `Mode_lexer` scans serially and honestly.
 
 **Modes are an expressiveness feature, not a performance one.** Where a flat token set can express the language it is
 faster, because a mode grammar scans string interiors and so emits more tokens for the same bytes. The
-`munch_benchmark_compare` mode section measures both on one corpus with the scenarios interleaved, and what modes
-cost there is not resolvable from the runs archived in `paper/data/modes-2026-08`: the mode grammar emits 11.1% more
-tokens for the same bytes, and the elapsed difference has measured anywhere from 6 to 18 percent across runs because
-the flat row alone swings by that much. The extra tokens are the stable part; the per-token difference changes sign
-between runs and is not quoted. Whether the gap widens as the input carries fewer string literals is untested, since
-no flat grammar is measured beside the modal one at each density. The intuition that several small automata beat one
-large one does not hold either, because only the states a scan actually visits are hot and splitting them across
-modes does not shrink that working set. Use `Lexer` where the
+`munch_benchmark_compare` mode section measures both on one corpus with the scenarios interleaved. In the archive at
+`paper/data/modes-2026-08` the mode grammar emits 11.1% more tokens for the same bytes and takes about 4% longer, so
+its per-token cost is around 6.5% lower there: the extra tokens are more than the whole of the difference. That
+describes one session. An earlier archive on the same machine gave the opposite sign, because the flat row alone
+moved by 11% between them while the modal rows moved by 1%, so no per-token figure is carried as a property of the
+library. Whether the gap widens as the input carries fewer string literals is untested, since no flat grammar is
+measured beside the modal one at each density. The intuition that several small automata beat one large one does
+not hold either, because only the states a scan actually visits are hot and splitting them across modes does not
+shrink that working set. Use `Lexer` where the
 grammar allows it, both for the throughput and for the parallel path; use `Mode_lexer` where the language genuinely
 needs a mode stack.
 
 Within `Mode_lexer`, scanning stays inside one mode's batch pass until a token carries any non-stay action, rather
 than re-entering the scanner once per token. Any such action ends the pass, including a push whose target is the
-mode already being scanned, which is what a comment nesting inside itself does. It is worth roughly 1.7x, which the
-`per-token` and `batched` rows of `munch_benchmark_modes` measure. A test pins only that the two drivers agree on the
+mode already being scanned, which is what a comment nesting inside itself does. The `per-token` and `batched` rows of
+`munch_benchmark_modes` measure what it is worth; no run of that benchmark is archived here, so no figure for it is
+quoted. A test pins only that the two drivers agree on the
 token stream, since a wall-clock bound in a unit test varies with the machine, the compiler and the sanitizers.
 
 The rest of this note describes the model each individual mode obeys.

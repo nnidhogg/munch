@@ -1,7 +1,7 @@
-collected:  2026-08-03 13:07:48 UTC
-commit:     20897e5
+collected:  2026-08-03 14:23:57 UTC
+commit:     7fe4a60
 dirty:      no
-invocation: munch_benchmark_compare 16 15, twice into one CSV
+invocation: munch_benchmark_compare 16 15, twice, appended to one CSV
 
 == cpu ==
 Architecture:                            x86_64
@@ -24,7 +24,7 @@ governor:   not exposed
 
 == memory ==
                total        used        free      shared  buff/cache   available
-Mem:            15Gi       1.2Gi        13Gi        34Mi       1.3Gi        14Gi
+Mem:            15Gi       1.3Gi        13Gi        34Mi       815Mi        14Gi
 Swap:          4.0Gi          0B       4.0Gi
 
 == os ==
@@ -36,5 +36,8 @@ wsl:        yes
 g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
 cmake version 3.28.3
 
-== load ==
- 14:42:05 up  5:31,  load average: 0.72, 1.15, 1.30
+== load before the runs ==
+ 16:23:57 up  7:11,  load average: 2.21, 1.64, 1.50
+
+== load after the runs ==
+ 16:27:54 up  7:15,  load average: 1.08, 1.35, 1.41

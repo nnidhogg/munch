@@ -198,9 +198,10 @@ does not isolate. Rerun the benchmark on your own hardware and language before c
 
 ### **Comparison with Other Engines**
 
-`munch_benchmark_modes` measures the modal driver across the axes that separate its lookup paths: an action table
-that never fires against a grammar with no actions at all, how often an action token occurs, how long the
-free-content runs between actions are, `go_to` against `push`/`pop`, and mode-stack depth. Run it when the action
+`munch_benchmark_modes` measures the modal driver across the axes that separate its paths: an action that never
+fires against a grammar with no actions at all, the batch entry point against the per-token one, how often an action
+token occurs, how long the free-content runs between actions are, `go_to` against `push`/`pop`, and mode-stack
+depth. Run it when the action
 lookup changes; a single corpus hides which path an edit helped, and one edit measured +11% on one row and -13% on
 another.
 
@@ -761,8 +762,9 @@ processing (`tools::tokenizer::Tokenizer`).
 ### **Context-Dependent Tokenization**
 
 `Lexer` matches one flat token set everywhere. Inside a string literal a quote terminates rather than opens, and a
-comment that nests needs to know how deep it is, so a single token set cannot express either. There are two ways to
-get context-dependence, and they differ in who decides when the context changes.
+comment that nests needs to know how deep it is. A flat token set does reach an ordinary escaped literal, matching it
+whole; what it cannot do is report the interior as separate tokens, and it cannot count nesting to an unbounded depth
+at all. There are two ways to get context-dependence, and they differ in who decides when the context changes.
 
 `Tokenizer` holds several lexers as modes and the driver switches between them with `set_mode()`. Constructed that
 way the tokenizer never switches on its own, which suits cases where the surrounding parser knows what is coming,
@@ -815,9 +817,9 @@ express, and input it cannot.
 
 | Engine       | Mode mechanism                                             |    MiB/s |
 |--------------|------------------------------------------------------------|---------:|
-| `munch`      | grammar-carried actions on a mode stack                    | 734, 728 |
-| lexertl17    | start states with a next-state per rule                    | 241, 244 |
-| `munch` flat | no modes at all, a string literal as one token             | 855, 861 |
+| `munch`      | grammar-carried actions on a mode stack                    | 732, 726 |
+| lexertl17    | start states with a next-state per rule                    | 243, 242 |
+| `munch` flat | no modes at all, a string literal as one token             | 760, 755 |
 
 Neither engine pushes on this corpus: the string mode is entered and left by a plain next-state transition, so this
 table prices carrying a mode at all rather than the stack.
@@ -826,8 +828,8 @@ table prices carrying a mode at all rather than the stack.
 
 | Engine    | Mode mechanism                                             |    MiB/s |
 |-----------|------------------------------------------------------------|---------:|
-| `munch`   | grammar-carried actions on a mode stack                    | 623, 634 |
-| lexertl17 | start states pushed and popped                             | 224, 226 |
+| `munch`   | grammar-carried actions on a mode stack                    | 614, 615 |
+| lexertl17 | start states pushed and popped                             | 231, 231 |
 
 Be precise about the theory this does not demonstrate. The language of ARBITRARILY nested comments is not regular,
 since counting to an unbounded depth is what one finite automaton cannot do. This corpus nests only to depth four,
@@ -835,23 +837,24 @@ and a bounded depth is regular, so a flat grammar could unroll four levels and t
 because that would be a different grammar answering a different question, not because none could exist.
 
 Both figures in each cell are medians of 15 passes from two runs of `munch_benchmark_compare 16 15`, with each
-corpus's scenarios interleaved, measured at commit `20897e5` on a clean tree. The full transcript, every timed pass
+corpus's scenarios interleaved, measured at commit `7fe4a60` on a clean tree. The full transcript, every timed pass
 and the machine are archived in [paper/data/modes-2026-08](paper/data/modes-2026-08). The harness validates that the
 engines agree on every token before timing either, so the 5,121,241 tokens of the first corpus and the 4,859,619 of
 the second are the same tokens in both.
 
-**Ratios, as ranges rather than a point: 2.99 to 3.05 where modes are optional, 2.78 to 2.80 where the grammar
+**Ratios, as ranges rather than a point: 2.99 to 3.01 where modes are optional, 2.66 to 2.67 where the grammar
 counts.** Those are the spreads within one session. Across sessions they move further, about 5 percent, so a ratio
 quoted from a different day is not comparable either. Read them as observations, not as a trend: the two corpora
 differ in token density, grammar and mechanism at once, so the difference between them is not attributable to any
 one of those.
 
-**What modes cost against a flat grammar is not resolvable from these runs.** Modes emit 11.1% more tokens for the
-same bytes. The elapsed difference measured 16.6% and 18.3% here, giving a per-token cost of about +5%, while
-earlier runs on the same corpora measured 6.5% and 6.3% elapsed, giving about -4% per token. The sign flips because
-the flat row alone swings from 734 to 861 MiB/s across runs while the modal rows stay within 3 percent. The extra
-tokens are the part that is stable; the per-token difference is inside the noise of the flat measurement and is not
-reported here as a figure.
+**What modes cost against a flat grammar, in this archive.** The mode grammar emits 11.1% more tokens for the same
+bytes and takes 3.8% and 4.0% longer, so its cost per token is about 6.5% LOWER: the extra tokens more than account
+for the elapsed difference. Those figures describe this binary on this machine in this session and nothing wider.
+An archive taken hours earlier on the same machine gave the opposite sign, about 5% higher per token, because the
+flat row alone moved from 842 to 759 MiB/s while the modal rows stayed between 726 and 733. The two archives are
+also at different commits, and comparing timings across changed executables is what this README tells you not to do,
+so no per-token figure is carried forward as a property of the library.
 
 These are separate tables rather than rows in the ones above because a mode grammar emits more tokens than a flat
 one for the same bytes, so the two are not doing the same work and are not compared.
