@@ -122,6 +122,131 @@ std::string generate_source_input(const std::size_t size)
     return input;
 }
 
+core::Lexer build_json_lexer(const bool discard_whitespace)
+{
+    using namespace munch::regex;
+
+    core::Builder builder;
+
+    // ws = *( %x20 / %x09 / %x0A / %x0D ).
+    builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), Json_token::whitespace, 2);
+
+    // unescaped = %x20-21 / %x23-5B / %x5D-10FFFF, taken over bytes, so the tail covers every continuation byte.
+    const auto unescaped{Set::range(0x20, 0x21) + Set::range(0x23, 0x5B) + Set::range(0x5D, 0xFF)};
+
+    const auto hex{Set::digits() + Set::range('a', 'f') + Set::range('A', 'F')};
+
+    const auto escape{concat(
+            text("\\"),
+            choice(any_of(Set{'"', '\\', '/', 'b', 'f', 'n', 'r', 't'}),
+                   concat(text("u"), concat(any_of(hex), concat(any_of(hex), concat(any_of(hex), any_of(hex)))))))};
+
+    builder.add_token(
+            concat(text("\""), concat(kleene(choice(any_of(unescaped), escape)), text("\""))), Json_token::string, 2);
+
+    const auto digits{plus(any_of(Set::digits()))};
+
+    const auto integer{choice(text("0"), concat(any_of(Set::range('1', '9')), kleene(any_of(Set::digits()))))};
+
+    const auto exponent{concat(any_of(Set{'e', 'E'}), concat(optional(any_of(Set{'+', '-'})), digits))};
+
+    builder.add_token(
+            concat(optional(text("-")),
+                   concat(integer, concat(optional(concat(text("."), digits)), optional(exponent)))),
+            Json_token::number, 2);
+
+    builder.add_token(choice(text("true"), text("false"), text("null")), Json_token::literal, 1);
+
+    builder.add_token(any_of(Set{'{', '}', '[', ']', ':', ','}), Json_token::structural, 2);
+
+    if (discard_whitespace)
+    {
+        builder.set_ignored_tokens({Json_token::whitespace});
+    }
+
+    return builder.build();
+}
+
+std::string generate_json_input(const std::size_t size, const bool pretty)
+{
+    constexpr const char* keys[]{"configuration_manager", "total_element_count", "process_next_request",
+                                 "buffer_capacity",       "validation_result",   "iterator_position"};
+
+    constexpr std::size_t fields{6};
+
+    const char* const line_end{pretty ? "\n" : ""};
+
+    const char* const indent{pretty ? "    " : ""};
+
+    const char* const gap{pretty ? " " : ""};
+
+    std::string input;
+
+    input.reserve(size + 256);
+
+    input += "[";
+    input += line_end;
+
+    // The same fixed-seed generator as generate_input(), so both shapes carry the same values in the same order.
+    unsigned seed{12345};
+
+    const auto random{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
+
+    while (input.size() < size)
+    {
+        input += indent;
+        input += "{";
+        input += line_end;
+
+        for (std::size_t field{0}; field < fields; ++field)
+        {
+            input += indent;
+            input += indent;
+            input += "\"";
+            input += keys[random() % std::size(keys)];
+            input += "\":";
+            input += gap;
+
+            switch (random() % 4)
+            {
+            case 0:
+                input += std::to_string(random() % 1000000);
+                break;
+            case 1:
+                input += "\"";
+                input += keys[random() % std::size(keys)];
+                input += "\"";
+                break;
+            case 2:
+                input += random() % 2 != 0 ? "true" : "false";
+                break;
+            default:
+                input += "null";
+                break;
+            }
+
+            if (field + 1 < fields)
+            {
+                input += ",";
+            }
+
+            input += line_end;
+        }
+
+        input += indent;
+        input += "},";
+        input += line_end;
+    }
+
+    // A trailing empty object keeps the document well formed however the loop above happened to stop.
+    input += indent;
+    input += "{}";
+    input += line_end;
+    input += "]";
+
+    return input;
+}
+
 namespace
 {
 /**

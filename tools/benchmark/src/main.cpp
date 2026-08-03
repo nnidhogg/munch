@@ -715,6 +715,102 @@ void measure_threads(const int passes)
     }
 }
 
+/**
+ * @brief Tokenizes JSON input serially, reporting 0 if any byte was rejected.
+ */
+std::size_t tokenize_json(const munch::core::Lexer& lexer, const std::string& input)
+{
+    std::size_t tokens{0};
+
+    const auto consumed{
+            lexer.tokenize_all<Json_token>(input, [&tokens](const Json_token, const std::size_t) { ++tokens; })};
+
+    if (consumed != input.size())
+    {
+        std::printf("json input rejected at offset %zu\n", consumed);
+
+        return 0;
+    }
+
+    return tokens;
+}
+
+/**
+ * @brief Reports how many split points a corpus actually contains, and how far apart they lie.
+ *
+ * A certificate says which bytes are safe; it does not say whether the corpus contains any. This separates the two,
+ * because a grammar admitting a byte the data never carries yields no parallelism at all.
+ */
+void report_density(const char* const name, const munch::core::Lexer& lexer, const std::string& input)
+{
+    std::size_t hits{0};
+
+    std::size_t previous{0};
+
+    std::size_t widest{0};
+
+    for (std::size_t offset{0}; offset < input.size(); ++offset)
+    {
+        if (lexer.is_split_point_ignoring(input[offset]))
+        {
+            ++hits;
+
+            widest = std::max(widest, offset - previous);
+
+            previous = offset;
+        }
+    }
+
+    const auto mean{hits == 0 ? 0.0 : static_cast<double>(input.size()) / static_cast<double>(hits)};
+
+    std::printf("%-16s %zu split points, mean gap %.1f, widest gap %zu\n", name, hits, mean, widest);
+}
+
+/**
+ * @brief Measures the JSON corpora, where the exact certificate is empty and the relaxed one is not.
+ *
+ * The two shapes recognize the same documents and differ only in whitespace, which isolates the corpus from the
+ * grammar: the certificate is identical for both, and only one of them carries a byte it admits. Throughput is
+ * reported serially because chunk_boundaries() plans with the exact certificate, which JSON leaves empty, so the
+ * parallel entry point divides either shape into a single chunk however many newlines it holds.
+ */
+bool measure_json(const std::size_t mebibytes, const int passes)
+{
+    const auto exact{build_json_lexer(false)};
+
+    const auto relaxed{build_json_lexer(true)};
+
+    std::size_t exact_bytes{0};
+
+    std::size_t relaxed_bytes{0};
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        exact_bytes += exact.is_split_point(static_cast<char>(symbol)) ? 1 : 0;
+
+        relaxed_bytes += relaxed.is_split_point_ignoring(static_cast<char>(symbol)) ? 1 : 0;
+    }
+
+    std::printf("\njson certificate: %zu bytes exact, %zu modulo discarded whitespace\n", exact_bytes, relaxed_bytes);
+
+    const auto pretty{generate_json_input(mebibytes << 20U, true)};
+
+    const auto minified{generate_json_input(mebibytes << 20U, false)};
+
+    report_density("json/pretty", relaxed, pretty);
+
+    report_density("json/minified", relaxed, minified);
+
+    auto ok{measure(
+            "lexer_all/pretty", pretty.size(), passes, [&relaxed, &pretty] { return tokenize_json(relaxed, pretty); })};
+
+    ok = measure("lexer_all/minified", minified.size(), passes,
+                 [&relaxed, &minified] { return tokenize_json(relaxed, minified); }) &&
+         ok;
+
+    return ok;
+}
+
 } // namespace
 
 /**
@@ -794,6 +890,8 @@ int main(const int argc, const char** argv)
     measure_xid_build(passes);
 
     ok = measure_planning(passes) && ok;
+
+    ok = measure_json(mebibytes, passes) && ok;
 
     measure_threads(passes);
 

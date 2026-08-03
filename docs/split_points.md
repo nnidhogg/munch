@@ -24,7 +24,7 @@ with no speculation, no overlap, no merge beyond ordered concatenation, and no d
 does not hold: the plan degenerates to a serial scan. We state the certificate and its one subtlety (a re-entrant
 initial state invalidates the exemption that makes it usable), show that deriving it is a linear-time analysis of the
 compiled table, prove the condition necessary as well as sufficient, and measure 92.6-95.3% parallel efficiency at eight
-threads on a 512 MiB dense corpus that does not fit in cache. That certificate is exact and, for the same reason,
+pinned threads on a 512 MiB dense corpus that does not fit in cache. That certificate is exact and, for the same reason,
 fragile: one string literal, comment, or whitespace run whose interior admits the candidate byte is enough to leave a
 conventional token set certifying nothing, and the tokens responsible are usually the ones a parser discards. So we give
 a second condition, weakening the guarantee to equality after those tokens are deleted from both streams. It is sound

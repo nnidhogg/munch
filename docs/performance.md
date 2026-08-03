@@ -157,8 +157,8 @@ one-chunk 730.1 MiB/s to 1434.2 MiB/s on two threads, 2828.0 MiB/s on four, and 
 source-shaped corpus within a few percent of the dense one at every width. Those numbers are the pinned bare-metal run
 in `paper/data/bare-metal-pinned-run2/`, on a 512 MiB corpus four times the machine's last-level cache, taken at the
 commit its `environment.txt` records. `paper/data/benchmark.txt` holds the older virtualized run, and
-`paper/data/README.md` explains what separates them. That is 92.6-95.3% parallel efficiency at eight threads on the
-dense corpus, measured against the same API driven with one chunk, and 3.46-3.94x end to end at four threads, both
+`paper/data/README.md` explains what separates them. That is 92.6-95.3% parallel efficiency at eight pinned threads on
+the dense corpus, measured against the same API driven with one chunk, and 3.46-3.94x end to end at four threads, both
 across two benchmark revisions on one machine, either way clearing the 70% bar this section treats as the threshold, and
 the shape is consistent with the diagnosis that the chains overlap because each thread's working set is a table that
 stays in cache plus a streamed slice of input. The chunking has since been promoted into the library:

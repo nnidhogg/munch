@@ -50,7 +50,7 @@
 \maketitle
 
 \begin{abstract}
-Table-driven DFA lexing is sequential: each transition depends on the state the previous byte produced. Scanning one
+Table-driven DFA lexing is sequential: each transition depends on the previous byte's state. Scanning one
 input in parallel needs each chunk's entry state, which existing methods recover by simulation, speculation,
 prescanning, or overlap. We give two conditions under which none is needed. For a longest-match scanner restarting from
 $q_0$ at every token boundary, a byte $b$ is a \emph{certified split symbol} when no reachable state other than $q_0$
@@ -62,10 +62,10 @@ therefore weaken the guarantee to equality after deleting a declared discarded s
 \emph{sound and strictly more permissive but conservative rather than exact}, decided from the same tables, answered by
 a second constant-time one-bit query. It recovers newline for a conventional C-like tokenization and tab, newline and
 carriage return for JSON, without altering their token definitions, and refuses it where block comments are
-unrestricted. It ships as a query only: the library's planner and every measurement here use the exact condition, so
-using it means planning boundaries yourself. Splitting at exact certificates in the munch lexer library~\cite{munch}
-reaches 92.6--95.3\% parallel efficiency at eight threads on a 512\,MiB dense corpus beyond last-level cache, and a
-$3.46$--$3.94\times$ end-to-end speedup at four threads, across two benchmark revisions on one machine. It turns
+unrestricted. It ships as a query only: the library's planner and every measurement here use the exact condition, so a
+caller must plan boundaries itself. Splitting at exact certificates in the munch library~\cite{munch}
+reaches 92.6--95.3\% parallel efficiency at eight pinned threads on a 512\,MiB dense corpus beyond last-level cache,
+and a $3.46$--$3.94\times$ end-to-end speedup at four threads, across two benchmark revisions on one machine. It turns
 delimiter-based parallel lexing from a language-specific assumption into a property a compiler checks.
 \end{abstract}
 
@@ -1040,6 +1040,14 @@ that the eight-chunk token stream on each corpus and size is identical to the se
 comparison; the timed rows carry a lighter per-pass check, each chunk's consumed length against a recomputed plan and
 the total token count.
 
+Both corpora are favourable to the method by construction, and the scaling figures should be read with that in mind.
+Neither contains a string literal or a comment, the two constructs that absorb the alphabet and empty the certificate,
+and the grammar driving them certifies 13 of the 14 bytes it uses. What follows therefore measures how the parallel
+machinery scales on a token set the certificate suits, and is not evidence about how often a token set does suit it;
+Table~\ref{tab:applicability} is what speaks to that, and six of its eleven rows admit no exact certificate at all.
+The two questions are separate, and a grammar can pass the first while failing the second: a certificate admitting a
+byte the corpus never carries yields no parallelism, as automatically generated JSON without newlines already shows.
+
 \subsection{Scaling}
 
 Table~\ref{tab:scaling} reports median throughput on Environment B, pinned, which is the most constrained configuration
@@ -1087,15 +1095,17 @@ falls to 80.4\%; coordinating an eight-thread scan, seven spawned workers joined
 only cause.
 
 \paragraph{What placement costs.} Running the same measurement unpinned, free to use all 32 logical processors, lowers
-eight-chunk efficiency from 95\% to 93\% at 512\,MiB and from 80\% to 68\% at 1\,MiB, the gap falling from twelve points
-at 1\,MiB to about three at 512. The two- and four-chunk figures move by two points or less at 128 and 512\,MiB and by
-more at the smaller sizes. One hypothesis is SMT: with eight threads free on 32 logical processors, some pairs share a
-physical core. We do not claim it, and cannot from this data. For each benchmark revision there is one run per
-placement, taken at different times rather than as replicated interleaved conditions, and a gap also appears at two
-chunks where collisions should be rare. Attributing it would need paired repeated runs, or per-thread CPU residence
-recorded during the scan. What the two runs support is narrower: on these runs the restricted CPU set had the higher
-eight-chunk efficiency, though not always the higher absolute eight-chunk throughput, and certified splitting delivered
-most of its benefit in both.
+eight-chunk efficiency from 95\% to 93\% at 512\,MiB and from 80\% to 68\% at 1\,MiB in the second revision, a gap of
+twelve points at 1\,MiB and under three at 512. It does not narrow monotonically: the gap is narrowest at 128\,MiB, one
+point, and widens again at 512. The first revision has the same shape one level down, 92.6\% to 88.5\% at 512\,MiB, so
+the placement cost there is four points rather than three. The two- and four-chunk figures move by two points or less at
+128 and 512\,MiB and by more at the smaller sizes. One hypothesis is SMT: with eight threads free on 32 logical
+processors, some pairs share a physical core. We do not claim it, and cannot from this data. For each benchmark revision
+there is one run per placement, taken at different times rather than as replicated interleaved conditions, and a gap
+also appears at two chunks where collisions should be rare. Attributing it would need paired repeated runs, or
+per-thread CPU residence recorded during the scan. What the two runs support is narrower: on these runs the restricted
+CPU set had the higher eight-chunk efficiency, though not always the higher absolute eight-chunk throughput, and
+certified splitting delivered most of its benefit in both.
 
 \paragraph{The two collections are not a controlled repeat.} Environment B was collected twice in each placement, but
 the two collections were taken at different commits: between them the benchmark began writing round-trip-safe CSV
@@ -1347,10 +1357,11 @@ discarded set. Deriving the certificate is a linear-time sweep of the transition
 construction time, and the same sweep decides which certified bytes can occur in valid input at all. That makes the
 applicability question mechanical, and the answer is often negative: a single token kind with a near-total interior
 alphabet, such as a block comment, removes every useful certificate from an otherwise cooperative C-like grammar. Where
-the certificate is non-empty the measured gain is 92.6--95.3\% parallel efficiency at eight threads against the same API
-driven with one chunk, on a 512\,MiB dense corpus that does not fit in cache, and $3.46$--$3.94\times$ end to end at
-four threads. Both are conventionally rounded ranges across the two benchmark revisions on one machine, and neither is
-a confidence interval: the per-scenario best-to-worst
+the certificate is non-empty the measured gain is 92.6--95.3\% parallel efficiency at eight pinned threads against the
+same API driven with one chunk, on a 512\,MiB dense corpus that does not fit in cache, and $3.46$--$3.94\times$ end to
+end at four threads. Both are conventionally rounded ranges across the two benchmark revisions on one machine, taken in
+the pinned placement; the unpinned placement reaches 88.5\% at eight chunks on the earlier revision. Neither is
+a confidence interval either: the per-scenario best-to-worst
 spreads behind them reach 9\% and 15\% on the two eight-chunk rows at 512\,MiB. The wider end-to-end range comes from
 the serial baseline used as its denominator: at 512\,MiB the multi-chunk rows move far less between the revisions than
 that baseline does; Section~\ref{sec:evaluation} reports that separately.

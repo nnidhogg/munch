@@ -661,11 +661,11 @@ compiled transition table, so it reflects the actual token set rather than a heu
 example, correctly disqualifies newline, where a split-at-newline rule would silently corrupt the token stream.
 `chunk_boundaries(input, chunks)` turns the certified points into a chunk plan, and `tokenize_all_parallel<T>(input,
 chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 92.6-95.3% parallel efficiency on eight
-threads over a 512 MiB dense corpus that does not fit in cache, and 3.46-3.94× the serial throughput on four, both
-across two benchmark revisions on one machine; see [docs/performance.md](docs/performance.md); for input that tokenizes
-completely, the token stream is guaranteed identical to the serial scan's, and on a failure the per-chunk consumed
-lengths expose it. A token set that certifies no split points degenerates to one chunk and the serial scan. The sink
-receives `(chunk, token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the
+pinned threads over a 512 MiB dense corpus that does not fit in cache, and 3.46-3.94× the serial throughput on four,
+both across two benchmark revisions on one machine; see [docs/performance.md](docs/performance.md); for input that
+tokenizes completely, the token stream is guaranteed identical to the serial scan's, and on a failure the per-chunk
+consumed lengths expose it. A token set that certifies no split points degenerates to one chunk and the serial scan. The
+sink receives `(chunk, token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the
 contract and [docs/performance.md](docs/performance.md) for the measurements.
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
@@ -747,6 +747,72 @@ processing (`tools::tokenizer::Tokenizer`).
 > **Note:** `Tokenizer` is not thread-safe, and `Token::lexeme()` is a `string_view` into the `Tokenizer`'s internal
 > input buffer. The view is invalidated by `load()` or by the `Tokenizer` being destroyed, so copy the lexeme to a
 > `std::string` if a token needs to outlive either.
+
+### **Context-Dependent Tokenization**
+
+`Lexer` matches one flat token set everywhere. Inside a string literal a quote terminates rather than opens, and a
+comment that nests needs to know how deep it is, so a single token set cannot express either. There are two ways to
+get context-dependence, and they differ in who decides when the context changes.
+
+`Tokenizer` holds several lexers as modes and the driver switches between them with `set_mode()`. Constructed that
+way the tokenizer never switches on its own, which suits cases where the surrounding parser knows what is coming,
+such as a header-name after `#include`.
+
+`Mode_lexer`, built by `Mode_builder`, declares the switches in the grammar instead. Each mode is its own token set
+compiled through the ordinary `Builder`, and each token carries an action on a mode stack: `stay`, `go_to`, `push` or
+`pop`. Nesting comes from the stack, so nested comments need no counter in user code.
+
+```cpp
+enum class Mode : std::size_t { code, string };
+enum class Token : std::size_t { identifier, quote, text, escape };
+
+munch::core::Mode_builder builder;
+
+builder.add_token(Mode::code, plus(any_of(Set::alpha())), Token::identifier, 2);
+builder.add_token(Mode::code, text("\""), Token::quote, 1,
+                  {.kind = munch::core::Mode_action_kind::push, .target = std::size_t{1}});
+
+builder.add_token(Mode::string, text("\""), Token::quote, 1, {.kind = munch::core::Mode_action_kind::pop});
+builder.add_token(Mode::string, concat(text("\\"), any_of(Set::all())), Token::escape, 1);
+builder.add_token(Mode::string, plus(any_of(Set::all() - '"' - '\\')), Token::text, 2);
+
+const auto lexer{builder.build()};
+
+munch::core::Mode_stack stack;
+
+const auto consumed{lexer.tokenize_all<Token>(
+        input, [](Token token, std::size_t length, std::size_t mode) { /* ... */ }, stack)};
+```
+
+`Tokenizer` accepts a `Mode_lexer` too, so a streaming driver gets the same grammar-carried transitions: `mode()`
+follows the stack, `depth()` reports the nesting, and `set_mode()` still forces a mode as an error-recovery hatch.
+
+Only one engine in the comparison below has the feature at all. lexertl17 is munch's nearest relative, a lexer built
+at run time from rules, and it has had start states with a next-state per rule for years. The general-purpose regex
+engines have no mode concept, so a caller would switch patterns by hand, which measures their per-match cost rather
+than their mode support and is what the tables above already report.
+
+| Engine    | Mode mechanism                          | modes |
+|-----------|-----------------------------------------|------:|
+| `munch`   | grammar-carried actions on a mode stack |   598 |
+| lexertl17 | start states with a next-state per rule |   240 |
+
+Best of 15 passes on an 8 MiB corpus averaging 3.28 bytes per token, measured on the machine and in the run that
+produced the tables above. Both engines scan string interiors, and `munch_benchmark_compare` validates that they
+agree on every token before timing either, so the 2,560,581 tokens are the same tokens. This is a separate table
+rather than a row in the ones above because a mode grammar emits more tokens than a flat one that treats a string
+literal as a single token: the two are not doing the same work, so they are not compared.
+
+The `Mode_stack` overload reports where a scan stopped and what it was doing there: `stack.current` names the mode and
+`stack.saved.size()` the nesting depth, which is what distinguishes an unterminated string from an unrecognized byte
+in code. `Mode_builder::diagnose()` reports each mode's dead tokens and priority ties, plus the two faults only a
+modal grammar has: modes nothing can enter, and modes nothing can leave.
+
+**Two things to know before reaching for it.** A `Mode_lexer` has no parallel entry point and never will, because a
+worker cutting blind cannot recover the mode and saved stack from the bytes at the cut. And modes are an
+expressiveness feature rather than a performance one: where a flat token set can express the language it is faster,
+by roughly 7 to 27 percent depending on how much of the input sits inside the context-dependent constructs.
+[docs/limits.md](docs/limits.md) gives the reasoning for both.
 
 [docs/limits.md](docs/limits.md) collects the full contract in one place: the matching model and what it excludes,
 byte-orientation and UTF-8 handling, hard bounds, concurrency and lifetime guarantees, construction cost, and the escape

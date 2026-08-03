@@ -50,6 +50,41 @@ std::string generate_input(std::size_t size, std::span<const char* const> identi
 std::string generate_source_input(std::size_t size);
 
 /**
+ * @brief The token types of the JSON lexer.
+ */
+enum class Json_token : std::size_t
+{
+    whitespace = 1,
+    string,
+    number,
+    literal,
+    structural
+};
+
+/**
+ * @brief Builds a lexer for the RFC 8259 lexical forms, taken over bytes.
+ *
+ * JSON is the corpus where the exact certificate is empty for a reason given by the specification rather than by
+ * an accident of the grammar: a string may hold any byte except a raw control byte, so a state inside one consumes
+ * most of the alphabet, and no byte is safe at every occurrence. Discarding whitespace recovers tab, newline and
+ * carriage return, which is what makes JSON the sharpest available test of the weaker certificate.
+ * @param discard_whitespace Whether whitespace is declared discarded, enabling the relaxed certificate.
+ */
+core::Lexer build_json_lexer(bool discard_whitespace);
+
+/**
+ * @brief Generates deterministic JSON of at least the given size.
+ *
+ * The two shapes recognize the same documents and differ only in whitespace, so a comparison between them isolates
+ * what the corpus contributes from what the grammar does: the pretty form carries newlines the relaxed certificate
+ * admits, and the minified form carries none at all.
+ * @param size The minimum size of the input in bytes.
+ * @param pretty Whether to indent and break lines, rather than emit the document on one line.
+ * @return The generated input.
+ */
+std::string generate_json_input(std::size_t size, bool pretty);
+
+/**
  * @brief Measures the throughput of a tokenization pass over a number of runs.
  *
  * The first pass warms caches and provides the token count the timed passes are validated against. Three figures
