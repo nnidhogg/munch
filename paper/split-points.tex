@@ -108,9 +108,9 @@ answered by a second constant-time one-bit query, and recovers newline for conve
 that certify
 nothing exactly (Section~\ref{sec:modulo}); it is shipped as a predicate rather than wired into the planner, so a
 caller wanting it must place boundaries itself;
-\item a survey of token sets under both conditions, showing where each property holds and where a single token kind
-destroys it, which grounds the folklore that source text can be split at line boundaries
-(Section~\ref{sec:applicability}).
+\item a controlled applicability study of eleven token sets under both conditions, showing where each property
+holds and where a single token kind destroys it, which grounds the folklore that source text can be split at line
+boundaries (Section~\ref{sec:applicability}).
 \end{itemize}
 \end{samepage}
 
@@ -171,16 +171,17 @@ divisions and sliding each cut to a language-specific separator~\cite{barenghi20
 search bound are chosen by hand, and finding a separator does not by itself remove the entry-state problem: the
 accompanying parallel lexical analysis enumerates the possible start states of a chunk rather than deducing one, with
 each worker carrying one computation per alternative and up to four at once in the worst
-case~\cite{barenghi2015parallel}. The technique is therefore separator relocation combined with state enumeration, not a
-proof that the separator is safe. Its worked cases are the direct antecedent of Section~\ref{sec:applicability}: newline
-preserves the JSON token stream that survives discarding, since no surviving lexeme admits it, yet it is rejected in
-practice because generated JSON may contain none~\cite{li2021plex}. Lua fails for a stronger reason than any certificate
-could address: its long-bracket delimiters \code{[=$^n$[} and \code{]=$^n$]} must agree on $n$, so the lexical grammar
-is not regular, the set of possible delimiters is unbounded, and with it the set of possible entry states; no fixed
-lookahead can decide which delimiter, if any, encloses a chunk~\cite{barenghi2015parallel}. Barenghi et al. recover a
-workable schema only by constraining the language, admitting just \code{[[} and \code{]]} for strings and requiring
-multi-line comments to end at a newline, after which newline does serve as their split point. What is missing is any way
-to decide, from the token set alone, whether a proposed separator byte is sound at every occurrence of raw input.
+case~\cite{barenghi2015parallel}. The technique is therefore separator relocation combined with state enumeration, not
+a proof that the separator is safe. Its worked cases are the direct antecedent of Section~\ref{sec:applicability}:
+newline preserves the JSON token stream that survives discarding, since no surviving lexeme admits it, yet it is
+rejected in practice because generated JSON may contain none~\cite{li2021plex}. Lua fails for a stronger reason than
+any certificate could address: its long-bracket delimiters \code{[=$^n$[} and \code{]=$^n$]} must agree on $n$, so the
+lexical grammar is not regular, the set of possible delimiters is unbounded, and with it the set of possible entry
+states; no fixed lookahead can decide which delimiter, if any, encloses a chunk~\cite{barenghi2015parallel}. Barenghi
+et al. recover a workable schema only by constraining the language, admitting just \code{[[} and \code{]]} for strings
+and requiring multi-line comments to end at a newline, after which newline does serve as their split point. What is
+missing is a way to decide, from the token set alone, whether every relevant occurrence of a proposed byte is safe to
+cut immediately before.
 
 \paragraph{Prescan for context.} Plex~\cite{li2021plex} removes the need for delimiters entirely. It derives a
 prescanning automaton from the lexer's own DFA, embedding backtracking cases into it, and runs that automaton over the
@@ -233,7 +234,11 @@ simdjson~\cite{langdale2019simdjson} locate JSON's structural characters and mas
 while Parabix~\cite{cameron2008parabix} builds XML lexical and validation bit streams, a different construction aimed
 at a different format.
 
-None of the surveyed methods asks the token set's own automaton which raw-input bytes are safe at every occurrence.
+None of these methods asks the token set's own automaton which raw-input bytes are safe at every occurrence. Lexer
+generators come closest: re2c analyses the compiled automaton to reject rules in which one user-declared end-of-input
+sentinel may occur before a lexeme ends~\cite{re2cdocs}. That is a terminal-in-lexeme test for a declared byte, a
+safe-after property under the model used here, rather than a derivation of the safe-before set, and
+Section~\ref{sec:related} shows the two properties are incomparable.
 
 \section{Preliminaries}
 \label{sec:prelim}
@@ -839,7 +844,7 @@ run's continuation state, so newline itself becomes mid-token-consumable. The by
 to miss.
 
 Third, and in the same family, \emph{a multi-byte token de-certifies every byte that can follow its first}. The
-survey's first row spells each operator as a single byte, so each is consumed only at the initial state and all
+study's first row spells each operator as a single byte, so each is consumed only at the initial state and all
 twenty-four certify. Section~\ref{sec:evaluation} measures two different C-like grammars, and the last two rows of
 Table~\ref{tab:applicability} name them rather than describing them, since they disagree. The construction-cost
 grammar, \code{keyword\_scale\_builder()} in \code{tools/benchmark/src/main.cpp}, spells operators as literals
@@ -866,9 +871,9 @@ isolates the change. Then newline certifies, and the folklore rule follows as a 
 in which newline is its own token, line-based splitting is sound when no other token can contain a newline. The
 automaton-level statement remains the exact one; ``no token spans a line'' is sufficient here but not necessary in
 general, since a token that merely \emph{begins} with newline leaves the certificate intact. Adding block comments,
-the one token kind in the surveyed split-friendly tokenization that spans lines, destroys the certificate again, which
-is the formal shape of both ``you cannot chunk C by lines'' and the quoted-newline problem that pushed CSV parsing
-into speculation.
+the one token kind in the split-friendly tokenization studied here that spans lines, destroys the certificate again,
+which is the formal shape of both ``you cannot chunk C by lines'' and the quoted-newline problem that pushed CSV
+parsing into speculation.
 
 The JSON row of Table~\ref{tab:applicability} appears to contradict the literature, and the reconciliation is about
 the equivalence each result preserves rather than about the automaton. Prior claims that JSON may be divided at
@@ -879,7 +884,7 @@ lexeme, which holds only once whitespace runs are not themselves counted as lexe
 one maximal whitespace match into two discarded matches whose lengths sum to the original, leaving the surviving
 stream unchanged. Theorem~\ref{thm:main} preserves something stronger, the complete sequence of emitted kinds and
 lengths, and under that semantics a newline inside a maximal whitespace token is not a certified boundary. The grammar
-surveyed here follows the RFC 8259 lexical forms~\cite{bray2017json} over byte input, with the full string escapes,
+studied here follows the RFC 8259 lexical forms~\cite{bray2017json} over byte input, with the full string escapes,
 signed numbers with fraction and exponent, the three literal names, and whitespace runs emitted as tokens, so it is
 refused exactly as it should be. It is a lexer over bytes rather than a conforming JSON processor: string interiors
 admit any byte from \code{0x20} up except quote and backslash, so UTF-8 well-formedness, which RFC 8259 requires of
@@ -988,7 +993,7 @@ Everything measured here uses the exact certificate. Both \code{chunk\_boundarie
 it consult the exact map, so no figure in this section reports what the relaxed condition would buy at run time.
 Section~\ref{sec:applicability} establishes which bytes it recovers, and that is a statement about token sets rather
 than about throughput; a token set that certifies nothing exactly can gain a boundary set from the relaxation, as seven
-of the eleven surveyed rows do and the block-comment rows do not, but turning that into a measured speedup needs a
+of the eleven rows studied do and the block-comment rows do not, but turning that into a measured speedup needs a
 planner this library does not yet ship.
 
 \paragraph{Environment A, virtualized.} An Intel Core i9-12900K, a hybrid part with eight performance cores carrying
@@ -1225,6 +1230,7 @@ individually; a non-x86 architecture, and per-thread placement, would strengthen
 correctness ones.
 
 \section{Related work}
+\label{sec:related}
 
 \paragraph{Reset words and synchronizing codes.} The live subautomaton $A^+$ is a partial DFA, and on a partial DFA a
 reset word is one whose action carries a non-empty set of states to a single state and is undefined
@@ -1252,15 +1258,28 @@ separators inserted between formed tokens, where here it marks tokens a raw-inpu
 
 Certified split points differ from simultaneous automata in requiring no enlarged automaton and no composition, from
 speculation in requiring no guess and no repair, from $k$-locality in being a per-symbol property derived from the
-token loop's reset rather than a uniform property of the automaton, from realignment after the fact in merging
-nothing, and from delimiter folklore in deriving the safe set from the compiled token set rather than assuming it per
-format. The derivation also correctly refuses the grammars for which the folklore is unsound. The contribution is
-therefore narrow and specific. Relocating cuts to a separator is classical, and the observation that it works for JSON
-but needs Lua's grammar constrained first is stated in the literature; what appears to be missing is the automatic
-certification step those choices leave implicit, namely a sound grammar-only test of whether a given byte is a safe
-separator for a given token set. The certificate supplies that test from the compiled automaton, with no hand analysis
-and no input-dependent context-recovery pass, and the survey of Section~\ref{sec:applicability} turns the same
-machinery into a statement about which token sets admit such bytes at all. The analysis is not merely sound.
+token loop's reset rather than a uniform property of the automaton, from the local parsability that operator
+precedence languages enjoy~\cite{barenghi2015parallel} in being a property of the token automaton that licenses a
+scanner to restart at a byte rather than a property of the syntax grammar that permits substrings to be parsed
+independently using bounded surrounding context, from realignment after the fact in merging nothing, and from
+delimiter folklore in deriving the safe set from the compiled token set rather than assuming it per format. The
+derivation also correctly refuses the grammars for which the folklore is unsound. The contribution is therefore narrow
+and specific. Relocating cuts to a separator is classical, and the observation that it works for JSON but needs Lua's
+grammar constrained first is stated in the literature; what appears to be missing is the automatic certification step
+those choices leave implicit, namely a sound grammar-only test of whether every relevant occurrence of a given byte is
+safe to cut immediately before. Among the surveyed generators, re2c~\cite{trofimovich2020re2c} validates a
+user-selected end-of-input sentinel by rejecting rules in which it may occur before the end of a lexeme, a check its
+documentation records as added in release~1.3 in December 2019~\cite{re2cdocs}. That is a terminal-in-lexeme test for
+one declared byte; under the completely-tokenizable-input model used here it is a safe-after property, and it is
+genuine static analysis of the compiled automaton rather than a convention. It is incomparable with the certificate
+rather than weaker. Over a token set whose only token is \code{ab}, the byte \code{b} passes the sentinel check
+because it ends the lexeme, yet it lies inside a token and is not certified; over \code{ba}, the byte \code{b}
+certifies, because every occurrence begins a token and the initial state is not re-entrant, yet it fails the sentinel
+check because the lexeme continues past it. We are not aware of an implementation that derives the complete set of
+symbols whose every relevant occurrence begins a token, nor of one that checks the initial-state condition that
+guarantee requires. The certificate supplies that test from the compiled automaton, with no hand analysis and no
+input-dependent context-recovery pass, and the study of Section~\ref{sec:applicability} turns the same machinery into
+a statement about which token sets admit such bytes at all. The analysis is not merely sound.
 Theorem~\ref{thm:necessity} shows the condition is also necessary once the analysis is restricted to $A^+$, which is
 what the derivation of Section~\ref{sec:necessity} does, so on a compiled token set the \emph{condition} rejects a
 byte exactly when a witness input exists that places it inside a token. The shipped predicate is deliberately
@@ -1372,12 +1391,12 @@ reasoning.
 
 Weakening the guarantee from token stream equality to equality after deleting discarded tokens recovers split points
 that the exact certificate must reject, at no scan-time cost, and for construction work in the same asymptotic class
-as the exact analysis, adding a backward closure, a second sweep of the stored table, and ordered-set membership
-costs logarithmic in the declared discarded set. The recovered cases include ones that
-matter in practice: the surveyed conventional C-like token set and a JSON lexer both gain newline without any change to
-their token definitions, which removes a token set redesign that the exact method had imposed on its users. The
-relaxation is conservative in general, rejecting roughly one exercised pair in four that had no counterexample through
-length eight, while agreeing with brute-force splitting on every candidate byte tested for the surveyed token sets.
+as the exact analysis, adding a backward closure, a second sweep of the stored table, and ordered-set membership costs
+logarithmic in the declared discarded set. The recovered cases include ones that matter in practice: the conventional
+C-like token set studied here and a JSON lexer both gain newline without any change to their token definitions, which
+removes a token set redesign that the exact method had imposed on its users. The relaxation is conservative in
+general, rejecting roughly one exercised pair in four that had no counterexample through length eight, while agreeing
+with brute-force splitting on every candidate byte tested for the token sets studied.
 
 Two boundaries are worth restating, because both were initially unclear to us. Certification depends on the token set,
 for the relaxed condition also on the declared discarded set, and never on the input, so read-time transformation cannot

@@ -39,7 +39,7 @@ Run those from the repository root against an existing build tree. The PDFs stay
 
 ## Applicability table
 
-`figures/applicability.cpp` produces the applicability table rather than documenting it. It builds each surveyed token
+`figures/applicability.cpp` produces the applicability table rather than documenting it. It builds each studied token
 set, reads `Lexer::is_split_point()` for all 256 byte values, and asserts the answer against the published row, so a
 change in the certificate that would silently invalidate the table fails the program instead. It prints one line per row
 and exits non-zero on any disagreement:

@@ -29,10 +29,10 @@ fragile: one string literal, comment, or whitespace run whose interior admits th
 conventional token set certifying nothing, and the tokens responsible are usually the ones a parser discards. So we give
 a second condition, weakening the guarantee to equality after those tokens are deleted from both streams. It is sound
 and strictly more permissive, but conservative rather than exact, and it is decided from the same tables and answered by
-a second one-bit query. We then survey which grammars certify usable symbols under each. The survey grounds a piece of
-folklore: for conventional tokenizations, line-based splitting of source text is sound when no token can span a line,
-and one token kind that can, the block comment, is alone sufficient to destroy every useful certificate in the surveyed
-C-like grammar, under both conditions.
+a second one-bit query. We then study which grammars certify usable symbols under each, over eleven token sets. That
+study grounds a piece of folklore: for conventional tokenizations, line-based splitting of source text is sound when no
+token can span a line, and one token kind that can, the block comment, is alone sufficient to destroy every useful
+certificate in the C-like grammar studied, under both conditions.
 
 ## 1 The problem
 
@@ -105,7 +105,8 @@ Published solutions accept the unknown-state problem and manage it:
   unbounded, and with it the set of possible entry states; no fixed lookahead can decide which delimiter, if any,
   encloses a chunk. Barenghi et al. recover a workable schema only by constraining the language, admitting just `[[` and
   `]]` for strings and requiring multi-line comments to end at a newline, after which newline does serve as their split
-  point. What is missing is any way to decide, from the token set alone, whether a proposed separator is sound.
+  point. What is missing is a way to decide, from the token set alone, whether every relevant occurrence of a
+  proposed byte is safe to cut immediately before.
 - **Prescan for context.** Plex (Li et al., IPDPS 2021) removes the need for delimiters entirely. It derives a
   prescanning automaton from the lexer's own DFA, embedding the backtracking cases into it, and runs that automaton over
   the input to compute a transfer function per chunk; combining those functions determines the states each chunk's
@@ -142,7 +143,10 @@ Published solutions accept the unknown-state problem and manage it:
   al., SIGMOD 2019); massively parallel delimiter parsing (Stehle and Jacobsen, PVLDB 2020) attacks the same context
   problem on GPUs. Format-specific structural scans (simdjson, Mison, Parabix) hand-derive comparable facts per format.
 
-What none of these do is ask the token set's own automaton *which bytes are safe*.
+What none of these do is ask the token set's own automaton *which bytes are safe*. Lexer generators come closest: re2c
+analyses the compiled automaton to reject rules in which one user-declared end-of-input sentinel may occur before a
+lexeme ends. That is a terminal-in-lexeme test for a declared byte, a safe-after property under the model used here,
+rather than a derivation of the safe-before set; Section 9 shows the two are incomparable.
 
 ## 3 The certificate
 
@@ -405,7 +409,7 @@ newline occurs in no lexeme, which holds only once whitespace runs are not thems
 division can split one maximal whitespace match into two discarded matches whose lengths sum to the original, leaving
 the surviving stream unchanged. The theorem here preserves something stronger, the complete sequence of emitted kinds
 and lengths, and under that semantics a newline inside a maximal whitespace token is not a certified boundary. The
-grammar surveyed here follows the RFC 8259 lexical forms over byte input, with the full string escapes, signed numbers
+grammar studied here follows the RFC 8259 lexical forms over byte input, with the full string escapes, signed numbers
 with fraction and exponent, the three literal names, and whitespace runs emitted as tokens, so it is refused exactly as
 it should be. It is a lexer over bytes rather than a conforming JSON processor: string interiors admit any byte from
 `0x20` up except quote and backslash, so UTF-8 well-formedness, which RFC 8259 requires of JSON exchanged outside a
@@ -537,31 +541,45 @@ discard.
 
 Certified split points differ from simultaneous automata (no enlarged automaton, no composition), from speculation (no
 guess, no re-run, exact by construction), from k-locality (the property is per-symbol and derived from the token loop's
-reset, not uniform over the automaton), from realignment after the fact (nothing is merged or realigned), and from
-delimiter folklore (the safe set is derived from the compiled token set rather than assumed per format, and the
-derivation correctly refuses grammars where the folklore is unsound).
+reset, not uniform over the automaton), from the local parsability that operator precedence languages enjoy (a property
+of the token automaton licensing a scanner to restart at a byte, rather than a property of the syntax grammar permitting
+substrings to be parsed independently using bounded surrounding context), from realignment after the fact (nothing is
+merged or realigned), and from delimiter folklore (the safe set is derived from the compiled token set rather than
+assumed per format, and the derivation correctly refuses grammars where the folklore is unsound).
 
 The contribution is therefore narrow and specific. Splitting at a delimiter is classical, and the observation that it
 works for JSON but needs Lua's grammar constrained first is stated in the literature; what appears to be missing is the
-automatic certification step those choices leave implicit, namely a sound grammar-only test of whether a given byte is a
-safe separator. The certificate supplies that test from the compiled automaton, with no hand analysis and no
-input-dependent context-recovery pass, and the survey in Section 6 turns the same machinery into a statement about which
-token sets admit such bytes at all. The analysis is not only sound: restricted to the states an input can reach and from
-which acceptance is still reachable, the condition is necessary too, so a rejected byte always admits an input placing
-it inside a token. To our knowledge this condition, in particular the re-entrancy requirement, has not been published as
-a static per-symbol property of the token DFA, though its components (synchronization, delimiter splitting, chunked
-scanning) are all classical. That claim was checked against the parallel lexing and parallel DFA literature, the theory
-of synchronizing automata and synchronizing codes, incremental lexical analysis, verified invertible lexing (Chassot and
-Kunčak, CAV 2026), and the recent work on sequential (Reps 1998; Li and Mamouras 2025) and streaming (Li, Yang, and
-Mamouras, ASPLOS 2026) tokenization. Each answers a neighbouring question: where to restart after an edit, which words
-reset an automaton and how long such a word must be, whether a code admits a word after which decoding may resume
-independently, whether printing a token sequence, plainly or with inserted separators, re-lexes to the same tokens
-exactly or modulo the separator class, how to avoid repeated rescanning, how to recover a chunk's entry state after the
-fact. The question here is which single bytes a given maximal-munch token set renders safe in advance, together with the
-token-length guarantee that makes the answer usable, and that framing was not found in those sources.
+automatic certification step those choices leave implicit, namely a sound grammar-only test of whether every relevant
+occurrence of a given byte is safe to cut immediately before. Among the generators considered, re2c validates a
+user-selected end-of-input sentinel by rejecting rules in which it may occur before the end of a lexeme, a check its
+documentation records as added in release 1.3 in December 2019. That property is incomparable with the certificate
+rather than weaker: over a token set whose only token is `ab` the byte `b` passes the sentinel check because it ends the
+lexeme, yet lies inside a token and is not certified; over `ba` the byte `b` is certified, because every occurrence
+begins a token and the initial state is not re-entrant, yet it fails the sentinel check because the lexeme continues
+past it. We are not aware of an implementation that derives the complete set of symbols whose every relevant occurrence
+begins a token, nor of one that checks the initial-state condition that guarantee requires. The certificate supplies
+that test from the compiled automaton, with no hand analysis and no input-dependent context-recovery pass, and the study
+in Section 6 turns the same machinery into a statement about which token sets admit such bytes at all. The analysis is
+not only sound: restricted to the states an input can reach and from which acceptance is still reachable, the condition
+is necessary too, so a rejected byte always admits an input placing it inside a token. We are not aware of prior work
+stating this condition, in particular the re-entrancy requirement, as a static per-symbol property of the token DFA,
+though its components (synchronization, delimiter splitting, chunked scanning) are all classical. We checked that claim
+against the parallel lexing and parallel DFA literature, the theory of synchronizing automata and synchronizing codes,
+incremental lexical analysis, verified invertible lexing (Chassot and Kunčak, CAV 2026), and the recent work on
+sequential (Reps 1998; Li and Mamouras 2025) and streaming (Li, Yang, and Mamouras, ASPLOS 2026) tokenization. Each
+answers a neighbouring question: where to restart after an edit, which words reset an automaton and how long such a word
+must be, whether a code admits a word after which decoding may resume independently, whether printing a token sequence,
+plainly or with inserted separators, re-lexes to the same tokens exactly or modulo the separator class, how to avoid
+repeated rescanning, how to recover a chunk's entry state after the fact. The question here is which single bytes a
+given maximal-munch token set renders safe in advance, together with the token-length guarantee that makes the answer
+usable, and that framing was not found in those sources.
 
 ## References
 
+- re2c project. *re2c documentation.* Warnings, https://re2c.org/manual/basics/warnings/warnings.html; Changelog,
+  https://re2c.org/releases/changelog/changelog.html. Accessed 3 August 2026.
+- U. Trofimovich. *RE2C: A lexer generator based on lookahead-TDFA.* Software Impacts 6:100027, 2020.
+  doi:10.1016/j.simpa.2020.100027.
 - R. Sin'ya, K. Matsuzaki, M. Sassa. *Simultaneous Finite Automata: An Efficient Data-Parallel Model for Regular
   Expression Matching.* ICPP 2013. arXiv:1405.0562.
 - T. Mytkowicz, M. Musuvathi, W. Schulte. *Data-Parallel Finite-State Machines.* ASPLOS 2014.

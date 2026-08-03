@@ -698,7 +698,7 @@ lexer.is_split_point_ignoring('\n');  // true: both halves of the split run are 
 ```
 
 The technical report *Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens* states both
-certificates formally, relates them to the parallel-automata literature, and surveys which grammars certify usable split
+certificates formally, relates them to the parallel-automata literature, and studies which grammars certify usable split
 symbols under each: read it as [docs/split_points.md](docs/split_points.md), or build the formal version from
 [paper/](paper/).
 
