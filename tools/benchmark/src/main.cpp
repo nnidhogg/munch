@@ -213,51 +213,9 @@ struct Staged_builder : munch::core::Builder
  */
 Staged_builder keyword_scale_builder()
 {
-    using namespace munch::regex;
-
-    // Roughly the C++ keyword set plus common fixed-width type names: 100 entries.
-    static constexpr const char* keywords[]{
-            "alignas",     "alignof",   "and",        "and_eq",    "asm",      "auto",         "bitand",
-            "bitor",       "bool",      "break",      "case",      "catch",    "char",         "char8_t",
-            "char16_t",    "char32_t",  "class",      "compl",     "concept",  "const",        "consteval",
-            "constexpr",   "constinit", "const_cast", "continue",  "co_await", "co_return",    "co_yield",
-            "decltype",    "default",   "delete",     "do",        "double",   "dynamic_cast", "else",
-            "enum",        "explicit",  "export",     "extern",    "false",    "float",        "for",
-            "friend",      "goto",      "if",         "inline",    "int",      "long",         "mutable",
-            "namespace",   "new",       "noexcept",   "not",       "not_eq",   "nullptr",      "operator",
-            "or",          "or_eq",     "private",    "protected", "public",   "register",     "reinterpret_cast",
-            "requires",    "return",    "short",      "signed",    "sizeof",   "static",       "static_assert",
-            "static_cast", "struct",    "switch",     "template",  "this",     "thread_local", "throw",
-            "true",        "try",       "typedef",    "typeid",    "typename", "union",        "unsigned",
-            "using",       "virtual",   "void",       "volatile",  "wchar_t",  "while",        "xor",
-            "xor_eq",      "final",     "override",   "import",    "module",   "int8_t",       "int16_t",
-            "int32_t",     "int64_t"};
-
     Staged_builder builder;
 
-    for (const auto* keyword : keywords)
-    {
-        builder.add_token(text(keyword), Token::keyword, 1);
-    }
-
-    builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::identifier, 2);
-
-    builder.add_token(patterns::decimal_float(), Token::number, 1);
-
-    builder.add_token(patterns::decimal_integer(), Token::number, 1);
-
-    builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 1);
-
-    for (const auto* op : {"==", "!=", "<=", ">=", "<<", ">>", "&&", "||", "++", "--", "->", "+=", "-=", "*=",
-                           "/=", "+",  "-",  "*",  "/",  "%",  "=",  "<",  ">",  "!",  "~",  "&",  "|",  "^"})
-    {
-        builder.add_token(text(op), Token::operator_, 2);
-    }
-
-    for (const auto* punct : {"(", ")", "{", "}", "[", "]", ";", ",", ".", ":", "?"})
-    {
-        builder.add_token(text(punct), Token::punctuation, 2);
-    }
+    munch::tools::benchmark::keyword_scale_tokens(builder);
 
     return builder;
 }

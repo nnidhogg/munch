@@ -671,13 +671,13 @@ completely, splitting immediately before it produces the identical token stream.
 compiled transition table, so it reflects the actual token set rather than a heuristic; a newline-run token, for
 example, correctly disqualifies newline, where a split-at-newline rule would silently corrupt the token stream.
 `chunk_boundaries(input, chunks)` turns the certified points into a chunk plan, and `tokenize_all_parallel<T>(input,
-chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 92.6-95.3% parallel efficiency on eight
-pinned threads over a 512 MiB dense corpus that does not fit in cache, and 3.46-3.94× the serial throughput on four,
-both across two benchmark revisions on one machine; see [docs/performance.md](docs/performance.md); for input that
-tokenizes completely, the token stream is guaranteed identical to the serial scan's, and on a failure the per-chunk
-consumed lengths expose it. A token set that certifies no split points degenerates to one chunk and the serial scan. The
-sink receives `(chunk, token, length)` and runs concurrently across chunks; see [docs/limits.md](docs/limits.md) for the
-contract and [docs/performance.md](docs/performance.md) for the measurements.
+chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 92.6-95.3% parallel efficiency at eight
+threads on a restricted CPU set, over a 512 MiB dense corpus that does not fit in cache, and 3.46-3.94× the serial
+throughput on four, both across two benchmark revisions on one machine; see [docs/performance.md](docs/performance.md);
+for input that tokenizes completely, the token stream is guaranteed identical to the serial scan's, and on a failure the
+per-chunk consumed lengths expose it. A token set that certifies no split points degenerates to one chunk and the serial
+scan. The sink receives `(chunk, token, length)` and runs concurrently across chunks; see
+[docs/limits.md](docs/limits.md) for the contract and [docs/performance.md](docs/performance.md) for the measurements.
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying

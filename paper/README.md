@@ -46,7 +46,7 @@ and exits non-zero on any disagreement:
 
 ```
 c++ -std=c++23 -I libs/common/include -I libs/core/include -I libs/dfa/include -I libs/nfa/include \
-    -I libs/regex/include -I tools/benchmark/include \
+    -I libs/regex/include -I tools/benchmark/include -I build/generated \
     paper/figures/applicability.cpp tools/benchmark/src/harness.cpp -o /tmp/applicability \
     -L build/libs/core -L build/libs/dfa -L build/libs/nfa -L build/libs/regex \
     -lmunch_core -lmunch_dfa -lmunch_nfa -lmunch_regex -lpthread

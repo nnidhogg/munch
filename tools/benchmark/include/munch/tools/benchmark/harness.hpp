@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
 
 namespace munch::tools::benchmark
@@ -32,6 +33,15 @@ enum class Token : std::size_t
  * @param greek_identifiers Whether identifiers may also contain Greek letters, encoded as UTF-8.
  */
 core::Lexer build_lexer(bool greek_identifiers);
+
+/**
+ * @brief Appends the keyword-scale token set to a builder: 100 keywords plus identifier, number, operator and
+ *        punctuation patterns, approximating a real language front end.
+ *
+ * Shared between the construction-cost benchmark and the applicability figure, so the published row is asserted
+ * against the grammar the benchmark compiles rather than against a transcription verified by eye.
+ */
+void keyword_scale_tokens(core::Builder& builder);
 
 /**
  * @brief Generates deterministic pseudo-code of at least the given size.

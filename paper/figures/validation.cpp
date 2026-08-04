@@ -14,10 +14,13 @@
  * the condition still refuses. That is checkable by hand and does not move when the generator changes.
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <iostream>
+#include <iterator>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "munch/core/builder.hpp"
@@ -233,6 +236,9 @@ struct Sweep
     std::size_t unsound{0};
     std::size_t lost{0};
     std::size_t conservative{0};
+
+    // The (round, symbol) identity of every conservative pair, so a bound change must name what it reclassified.
+    std::set<std::pair<std::size_t, char>> conservative_pairs;
 };
 
 Sweep sweep(const std::size_t rounds, const std::size_t max_length)
@@ -294,6 +300,11 @@ Sweep sweep(const std::size_t rounds, const std::size_t max_length)
                 totals.unsound += claim && !verdict.safe ? 1 : 0;
 
                 totals.conservative += !claim && verdict.safe ? 1 : 0;
+
+                if (!claim && verdict.safe)
+                {
+                    totals.conservative_pairs.emplace(round, static_cast<char>(symbol));
+                }
 
                 totals.lost += lexer.is_split_point(symbol) && !claim ? 1 : 0;
             }
@@ -377,6 +388,21 @@ int main()
     check("safe yet refused at the shorter bound", six.conservative, std::size_t{99});
 
     check("pairs reclassified by the longer bound", six.conservative - eight.conservative, std::size_t{2});
+
+    // A counterexample within length six is one within length eight, so the longer bound can only remove pairs;
+    // asserting the identities pins that no offsetting additions hide inside the aggregate difference of two.
+    const auto contained{std::ranges::includes(six.conservative_pairs, eight.conservative_pairs)};
+
+    check("every length-eight conservative pair is conservative at length six too", contained ? 1U : 0U, 1U);
+
+    std::set<std::pair<std::size_t, char>> reclassified;
+
+    std::ranges::set_difference(
+            six.conservative_pairs, eight.conservative_pairs, std::inserter(reclassified, reclassified.begin()));
+
+    const std::set<std::pair<std::size_t, char>> expected{{4, 'a'}, {319, 'c'}};
+
+    check("the reclassified pairs are the two named ones", reclassified == expected ? 1U : 0U, 1U);
 
     check("a named token set where splitting is safe and the condition refuses", conservatism_witness(), true);
 

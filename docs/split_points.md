@@ -23,16 +23,17 @@ occurrence begins a token. Splitting immediately before such a byte preserves th
 with no speculation, no overlap, no merge beyond ordered concatenation, and no duplicate tokenization when the property
 does not hold: the plan degenerates to a serial scan. We state the certificate and its one subtlety (a re-entrant
 initial state invalidates the exemption that makes it usable), show that deriving it is a linear-time analysis of the
-compiled table, prove the condition necessary as well as sufficient, and measure 92.6-95.3% parallel efficiency at eight
-threads on a restricted CPU set, on a 512 MiB dense corpus that does not fit in cache. That certificate is exact and,
-for the same reason, fragile: one string literal, comment, or whitespace run whose interior admits the candidate byte is
-enough to leave a conventional token set certifying nothing, and the tokens responsible are usually the ones a parser
-discards. So we give a second condition, weakening the guarantee to equality after those tokens are deleted from both
-streams. It is sound and strictly more permissive, but conservative rather than exact, and it is decided from the same
-tables and answered by a second one-bit query. We then study which grammars certify usable symbols under each, over
-eleven token sets. That study grounds a piece of folklore: for conventional tokenizations, line-based splitting of
-source text is sound when no token can span a line, and one token kind that can, the block comment, is alone sufficient
-to destroy every useful certificate in the C-like grammar studied, under both conditions.
+compiled table, prove the condition necessary as well as sufficient, and measure, with the exact certificate only and on
+a deliberately favourable corpus, 92.6-95.3% parallel efficiency at eight threads on a restricted CPU set, on a 512 MiB
+dense corpus that does not fit in cache. That certificate is exact and, for the same reason, fragile: one string
+literal, comment, or whitespace run whose interior admits the candidate byte is enough to leave a conventional token set
+certifying nothing, and the tokens responsible are usually the ones a parser discards. So we give a second condition,
+weakening the guarantee to equality after those tokens are deleted from both streams. It is sound and strictly more
+permissive, but conservative rather than exact, and it is decided from the same tables and answered by a second one-bit
+query. We then study which grammars certify usable symbols under each, over eleven token sets. That study grounds a
+piece of folklore: for conventional tokenizations, line-based splitting of source text is sound when no token can span a
+line, and one token kind that can, the block comment, is alone sufficient to destroy every useful certificate in the
+C-like grammar studied, under both conditions.
 
 ## 1 The problem
 
@@ -135,8 +136,9 @@ Published solutions accept the unknown-state problem and manage it:
   automaton rather than per symbol, and a lexical grammar need not have it.
 - **Realign after the fact.** Parallel tokenization for LLM vocabularies faces the same boundary problem, and the
   overlap-based answer to it, extending chunks so neighbours share a region and merging inside it, does not guarantee
-  the sequential result. LoPT (2026) instead matches on character positions and adjusts chunk lengths dynamically to
-  realign the segments, and proves the merged output identical to sequential tokenization.
+  the sequential result. LoPT (2026) remains overlap-based, matches overlap tokens by character position, and retries
+  with a doubled chunk whenever no overlap token matches; for WordPiece and BPE it proves equality with sequential
+  tokenization when every position-aligned overlap spans more characters than the longest vocabulary token.
 - **Folklore delimiters.** Data systems split logs and CSV at newlines because "records do not contain newlines",
   adjusting the cut to the next delimiter (the widow/orphan pattern). The assumption is per-format, informal, and
   famously unsound for CSV with quoted newlines, which is why speculative CSV parsing exists as a research topic (Ge et
@@ -558,21 +560,21 @@ lexeme, yet lies inside a token and is not certified; over `ba` the byte `b` is 
 begins a token and the initial state is not re-entrant, yet it fails the sentinel check because the lexeme continues
 past it. We are not aware of an implementation that derives the complete set of symbols whose every relevant occurrence
 begins a token, nor of one that checks the initial-state condition that guarantee requires. The certificate supplies
-that test from the compiled automaton, with no hand analysis and no input-dependent context-recovery pass, and the study
-in Section 6 turns the same machinery into a statement about which token sets admit such bytes at all. The analysis is
-not only sound: restricted to the states an input can reach and from which acceptance is still reachable, the condition
-is necessary too, so a rejected byte always admits an input placing it inside a token. We are not aware of prior work
-stating this condition, in particular the re-entrancy requirement, as a static per-symbol property of the token DFA,
-though its components (synchronization, delimiter splitting, chunked scanning) are all classical. We checked that claim
-against the parallel lexing and parallel DFA literature, the theory of synchronizing automata and synchronizing codes,
-incremental lexical analysis, verified invertible lexing (Chassot and Kunčak, CAV 2026), and the recent work on
-sequential (Reps 1998; Li and Mamouras 2025) and streaming (Li, Yang, and Mamouras, ASPLOS 2026) tokenization. Each
-answers a neighbouring question: where to restart after an edit, which words reset an automaton and how long such a word
-must be, whether a code admits a word after which decoding may resume independently, whether printing a token sequence,
-plainly or with inserted separators, re-lexes to the same tokens exactly or modulo the separator class, how to avoid
-repeated rescanning, how to recover a chunk's entry state after the fact. The question here is which single bytes a
-given maximal-munch token set renders safe in advance, together with the token-length guarantee that makes the answer
-usable, and that framing was not found in those sources.
+that test from the compiled automaton, with no hand analysis and no mandatory full-input state-composition pass, and the
+study in Section 6 turns the same machinery into a statement about which token sets admit such bytes at all. The
+analysis is not only sound: restricted to the states an input can reach and from which acceptance is still reachable,
+the condition is necessary too, so a rejected byte always admits an input placing it inside a token. We are not aware of
+prior work stating this condition, in particular the re-entrancy requirement, as a static per-symbol property of the
+token DFA, though its components (synchronization, delimiter splitting, chunked scanning) are all classical. We checked
+that claim against the parallel lexing and parallel DFA literature, the theory of synchronizing automata and
+synchronizing codes, incremental lexical analysis, verified invertible lexing (Chassot and Kunčak, CAV 2026), and the
+recent work on sequential (Reps 1998; Li and Mamouras 2025) and streaming (Li, Yang, and Mamouras, ASPLOS 2026)
+tokenization. Each answers a neighbouring question: where to restart after an edit, which words reset an automaton and
+how long such a word must be, whether a code admits a word after which decoding may resume independently, whether
+printing a token sequence, plainly or with inserted separators, re-lexes to the same tokens exactly or modulo the
+separator class, how to avoid repeated rescanning, how to recover a chunk's entry state after the fact. The question
+here is which single bytes a given maximal-munch token set renders safe in advance, together with the token-length
+guarantee that makes the answer usable, and that framing was not found in those sources.
 
 ## References
 
@@ -628,13 +630,14 @@ token set with `core::Builder`, reads `Lexer::is_split_point()` for every byte v
 published row, exiting non-zero if any row disagrees. The grammars are those listed, with `Set::all()`-derived interiors
 carrying the exclusions the source shows: a string admits any byte but `"` and newline, a line comment any byte but
 newline, and the block comment is written as `/* ( [^*] | *+ [^*/] )* *+ /`. The `build_lexer(false)` row is bound to
-the real function, which the checker compiles and compares against; the `keyword_scale_builder()` row is a hand-copied
-transcription of that grammar, keyword list and priorities included, asserted by the same checks but not sharing code
-with the benchmark. Against an existing build tree, from the repository root:
+the real function, which the checker compiles and compares against; the `keyword_scale_grammar()` row is a hand-copied
+transcription of that grammar, keyword list and priorities included, now compared against the linked
+`keyword_scale_tokens()` the benchmark itself compiles, 256 certified bits and a token stream, the same discipline as
+sharing code with the benchmark. Against an existing build tree, from the repository root:
 
 ```
 c++ -std=c++23 -I libs/common/include -I libs/core/include -I libs/dfa/include -I libs/nfa/include \
-    -I libs/regex/include -I tools/benchmark/include \
+    -I libs/regex/include -I tools/benchmark/include -I build/generated \
     paper/figures/applicability.cpp tools/benchmark/src/harness.cpp -o /tmp/applicability \
     -L build/libs/core -L build/libs/dfa -L build/libs/nfa -L build/libs/regex \
     -lmunch_core -lmunch_dfa -lmunch_nfa -lmunch_regex -lpthread

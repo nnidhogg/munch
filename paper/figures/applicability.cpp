@@ -381,8 +381,6 @@ std::string surviving_modulo(
 // compared against grammars.hpp's transcription of it. Agreement on all 256 certified bits and on the exact token
 // lengths of a corpus is far stronger than reading the two side by side.
 //
-// keyword_scale_builder() has no equivalent check: it is defined in tools/benchmark/src/main.cpp next to main(), so
-// it cannot be linked here without restructuring the benchmark target. That copy is still verified by eye only.
 bool scaling_grammar_matches_the_benchmark()
 {
     munch::core::Builder transcribed;
@@ -409,6 +407,59 @@ bool scaling_grammar_matches_the_benchmark()
     // what the two scanners actually emit. Kinds cannot be compared directly, the two enumerations differ.
     const std::string corpus{
             "while (counter <= 4711) { x1 = bar_baz + 97; if (x1 != 42) { return counter; } }\n\tint value2 = 0;\n"};
+
+    std::vector<std::size_t> copy_lengths, original_lengths;
+
+    const auto copy_consumed{copy.tokenize_all<std::size_t>(
+            corpus, [&copy_lengths](std::size_t, const std::size_t length) { copy_lengths.push_back(length); })};
+
+    const auto original_consumed{original.tokenize_all<std::size_t>(
+            corpus,
+            [&original_lengths](std::size_t, const std::size_t length) { original_lengths.push_back(length); })};
+
+    if (copy_consumed != original_consumed || copy_lengths != original_lengths)
+    {
+        std::cout << "         token streams differ: consumed " << copy_consumed << " against " << original_consumed
+                  << '\n';
+
+        return false;
+    }
+
+    return true;
+}
+
+// The same discipline for the construction-cost row: keyword_scale_tokens() is the grammar the benchmark compiles,
+// linked from the harness, so the published 16-of-24 cell cannot drift from it undetected.
+bool keyword_scale_grammar_matches_the_benchmark()
+{
+    munch::core::Builder transcribed;
+
+    keyword_scale_grammar(transcribed);
+
+    const auto copy{transcribed.build()};
+
+    munch::core::Builder linked;
+
+    munch::tools::benchmark::keyword_scale_tokens(linked);
+
+    const auto original{linked.build()};
+
+    for (int byte{0}; byte < 256; ++byte)
+    {
+        const auto symbol{static_cast<char>(byte)};
+
+        if (copy.is_split_point(symbol) != original.is_split_point(symbol))
+        {
+            std::cout << "         certified sets differ at byte " << byte << '\n';
+
+            return false;
+        }
+    }
+
+    // Certified sets alone would miss a change that moves a token boundary without moving a certificate, so compare
+    // what the two scanners actually emit. Kinds cannot be compared directly, the two enumerations differ.
+    const std::string corpus{
+            "while (alignas != 4711) { co_await counter++; } constexpr double x2 = -3.5e7 % rate;\n\tstatic_cast\n"};
 
     std::vector<std::size_t> copy_lengths, original_lengths;
 
@@ -748,6 +799,16 @@ int main()
                   << "the transcribed scaling grammar still matches build_lexer(false)\n";
 
         if (!bound)
+        {
+            ++failures;
+        }
+
+        const auto scale_bound{keyword_scale_grammar_matches_the_benchmark()};
+
+        std::cout << (scale_bound ? "  ok   " : "  FAIL ")
+                  << "the transcribed construction-cost grammar still matches keyword_scale_tokens()\n";
+
+        if (!scale_bound)
         {
             ++failures;
         }
