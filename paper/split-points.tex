@@ -102,12 +102,11 @@ no single-byte split symbol preserving the exact stream (Section~\ref{sec:necess
 \item a linear-time derivation, a boundary planner, and an exactness theorem for the resulting parallel scan,
 implemented and released in a general-purpose lexer library (Sections~\ref{sec:derivation} and~\ref{sec:evaluation});
 the planner and executor decide boundaries with the exact condition, and the evaluation measures that path;
-\item a second condition, weakening the guarantee to equality after the tokens a caller discards are deleted, which
-is \emph{sound and strictly more permissive but conservative rather than exact}, is decided from the same tables and
-answered by a second constant-time one-bit query, and recovers newline for conventional C-like and JSON tokenizations
-that certify
-nothing exactly (Section~\ref{sec:modulo}); it is shipped as a predicate rather than wired into the planner, so a
-caller wanting it must place boundaries itself;
+\item a second condition, weakening equality to hold only after the tokens a caller discards are deleted:
+\emph{sound and strictly more permissive but conservative rather than exact}, decided from the same tables and
+answered by a second constant-time one-bit query. It recovers newline for the conventional C-like and JSON
+tokenizations that certify nothing exactly, and ships as a query rather than in the planner, so a caller wanting it
+places the boundaries itself (Section~\ref{sec:modulo});
 \item a controlled applicability study of eleven token sets under both conditions, showing where each property
 holds and where a single token kind destroys it, which grounds the folklore that source text can be split at line
 boundaries (Section~\ref{sec:applicability}).
@@ -911,26 +910,25 @@ fails, and rightly, since severing a kept token is a difference the deletion pre
 In the exact column each outcome reports a fact about the tokenization rather than a limitation of the test, since
 Theorem~\ref{thm:necessity} makes that condition necessary as well as sufficient. The modulo column carries no such
 licence: it is conservative, so a byte absent there may still be safe modulo $I$ and merely refused, and only its
-positive entries are statements about the pair of token set and discarded set. Newline is recovered for the conventional
-C-like token set because line-bounded strings and \code{//} comments cannot contain one, so a whitespace run is the only
-token whose interior admits it. Space is recovered in no C-like row carrying strings or comments, since it sits legally
-inside both; the first row, which has neither, recovers it along with tab and newline. The JSON row is a lexer over
-bytes: UTF-8 well-formedness, which RFC 8259 requires of JSON exchanged outside a closed ecosystem, is assumed of the
-input rather than checked, and validating it could only remove bytes from string interiors, so it cannot de-certify
-anything that certifies without it. JSON gains tab and carriage return as well as newline because RFC 8259 excludes
-every raw byte below \code{0x20} from string interiors, which confines all three to whitespace, while space is admitted
-there and so is not recovered. That the recovered set is exactly JSON's whitespace minus space is a consequence of the
-RFC's own exclusion, not a coincidence. The rows carrying block comments continue to certify nothing, because a comment
-severed at a newline leaves \code{/*\,a} and \code{b\,*/}, and both halves re-tokenize completely: in this token set
-they become the operators \code{/} and \code{*} and an identifier, six kept tokens in place of one discarded comment,
-which is exactly the difference a caller can see. The correct conclusion is that a C-like language with block comments
-cannot be chunked at line boundaries, and the certificate says so.
+positive entries are statements about the pair of token set and discarded set. Newline is recovered for the
+conventional C-like token set because line-bounded strings and \code{//} comments cannot contain one, so a whitespace
+run is the only token whose interior admits it. Space is recovered in no C-like row carrying strings or comments,
+since it sits legally inside both; the first row, which has neither, recovers it along with tab and newline. The JSON
+row is the same lexer over bytes, its UTF-8 caveat unchanged from above. JSON gains tab and carriage return as well as
+newline because RFC 8259 excludes every raw byte below \code{0x20} from string interiors, which confines all three to
+whitespace, while space is admitted there and so is not recovered. That the recovered set is exactly JSON's whitespace
+minus space is a consequence of the RFC's own exclusion, not a coincidence. The rows carrying block comments continue
+to certify nothing, because a comment severed at a newline leaves \code{/*\,a} and \code{b\,*/}, and both halves
+re-tokenize completely: in this token set they become the operators \code{/} and \code{*} and an identifier, six kept
+tokens in place of one discarded comment, which is exactly the difference a caller can see. The correct conclusion is
+that a C-like language with block comments cannot be chunked at line boundaries, and the certificate says so.
 
 Four rows are cross-checked by splitting as well as by reading the predicate: the conventional and split-friendly
-C-like pair, that pair with block comments, and JSON. On those the condition agrees with brute-force splitting on
-every candidate byte the corpus exercises, which is a declared set of sixteen covering whitespace and the structural
-characters these token sets use, not all 256. The conservatism measured in Section~\ref{sec:decide} therefore did not
-appear on the bytes tested, which is weaker than exactness on those token sets and is all the artifact checks.
+C-like pair, the split-friendly row with block comments, and JSON. On those the condition agrees with brute-force
+splitting on every candidate byte the corpus exercises, which is a declared set of sixteen covering whitespace and the
+structural characters these token sets use, not all 256. The conservatism measured in Section~\ref{sec:decide}
+therefore did not appear on the bytes tested, which is weaker than exactness on those token sets and is all the
+artifact checks.
 
 The practical content is narrower than a count of moved cells suggests, and more useful. The exact certificate already
 admitted newline for the split-friendly tokenization in which newline is its own token and whitespace runs exclude it.
@@ -1025,15 +1023,15 @@ fixed ascending order. Every pass of the ten scaling scenarios is recorded indiv
 thread-launch figures below are summaries over 15 passes, not per-pass records.
 
 This environment is measured in two placements, each run twice, giving four archives. The unpinned runs may place
-threads on any of the 32 logical processors. The pinned run confines the process to the eight physical cores of a single
-L3 domain (\code{taskset -c 0-7}), which excludes the SMT siblings and the other L3 domain from the set the scheduler
-may use, so eight threads have eight distinct physical cores available to them. The archives certify the width of that
-mask but not its members: the collector recorded \code{nproc} as 8 from inside the affinity mask, while the archived
-\code{lscpu -e} describes the whole machine, and neither the mask itself nor the launch command was captured, so the
-specific cores, the single L3 domain and the SMT exclusion rest on the collection notes rather than on the artifact. The
-mask constrains placement rather than fixing it: threads remain free to migrate within those eight cores, and nothing
-prevents two from sharing one. It was not quiesced either: three login sessions were present, with load averages of 0.55
-and 1.83 before the unpinned and pinned runs of Tables~\ref{tab:scaling} and~\ref{tab:planning}. The two started two
+threads on any of the 32 logical processors. The pinned run confines the process to the eight physical cores of a
+single L3 domain (\code{taskset -c 0-7}), which excludes the SMT siblings and the other L3 domain from the set the
+scheduler may use, so eight threads have eight distinct physical cores available to them. The archives certify the
+width of that mask but not its members: the collector recorded \code{nproc} as 8 from inside the affinity mask, while
+the archived \code{lscpu -e} describes the whole machine, and neither the mask itself nor the launch command was
+captured, so the specific cores, the single L3 domain and the SMT exclusion rest on the collection notes rather than
+on the artifact. The mask constrains placement rather than fixing it: threads remain free to migrate within those
+eight cores, and nothing prevents two from sharing one. It was not quiesced either: load averages stood at 0.55 and
+1.83 before the unpinned and pinned runs of Tables~\ref{tab:scaling} and~\ref{tab:planning}. The two started two
 minutes apart, so the second figure is plausibly the first run's own residue, though the timing makes that likely
 rather than established; either way the machine was busy when the second run began.
 
