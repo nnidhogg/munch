@@ -49,25 +49,24 @@
 
 \maketitle
 
-\begin{abstract}
-Table-driven DFA lexing is sequential: each transition depends on the previous byte's state. Scanning one
-input in parallel needs each chunk's entry state, which existing methods recover by simulation, speculation,
-prescanning, or overlap. We give two conditions under which none is needed. For a longest-match scanner restarting from
-$q_0$ at every token boundary, a byte $b$ is a \emph{certified split symbol} when no reachable state other than $q_0$
-has a $b$-transition whose target can reach acceptance, and $q_0$ is not re-entrant if it has one. Every occurrence of
-such a byte in completely tokenizable input begins a token, so chunks starting there reproduce the serial sequence of
-kinds and lengths by ordered concatenation. The condition is necessary as well as sufficient, and fragile: one string,
-comment, or whitespace run can eliminate every useful certificate, and comments and whitespace are usually discarded. We
-therefore weaken the guarantee to equality after deleting a declared discarded set, and give a second condition,
-\emph{sound and strictly more permissive but conservative rather than exact}, decided from the same tables, answered by
-a second constant-time one-bit query. It recovers newline for a conventional C-like tokenization and tab, newline and
-carriage return for JSON, without altering their token definitions, and refuses it where block comments are
-unrestricted. It ships as a query only: the library's planner and every measurement here use the exact condition, so a
-caller must plan boundaries itself. Splitting at exact certificates in the munch library~\cite{munch}
-reaches 92.6--95.3\% parallel efficiency at eight pinned threads on a 512\,MiB dense corpus beyond last-level cache,
-and a $3.46$--$3.94\times$ end-to-end speedup at four threads, across two benchmark revisions on one machine. It turns
-delimiter-based parallel lexing from a language-specific assumption into a property a compiler checks.
-\end{abstract}
+\begin{abstract} Table-driven DFA lexing is sequential: each transition depends on the previous byte's state. Scanning
+one input in parallel needs each chunk's entry state, which existing methods recover by simulation, speculation,
+prescanning, or overlap. We give two conditions under which none is needed. For a longest-match scanner restarting
+from $q_0$ at every token boundary, a byte $b$ is a \emph{certified split symbol} when no reachable state other than
+$q_0$ has a $b$-transition whose target can reach acceptance, and $q_0$ is not re-entrant if it has one. Every
+occurrence of such a byte in completely tokenizable input begins a token, so chunks starting there reproduce the
+serial sequence of kinds and lengths by ordered concatenation. The condition is necessary as well as sufficient, and
+fragile: one string, comment, or whitespace run can eliminate every useful certificate, and comments and whitespace
+are usually discarded. We therefore weaken the guarantee to equality after deleting a declared discarded set, and give
+a second condition, \emph{sound and strictly more permissive but conservative rather than exact}, decided from the
+same tables, answered by a second constant-time one-bit query. It recovers newline for a conventional C-like
+tokenization and tab, newline and carriage return for JSON, without altering their token definitions, and refuses it
+where block comments are unrestricted. It ships as a query only: the library's planner and every measurement here use
+the exact condition, so a caller must plan boundaries itself. Splitting at exact certificates in the munch
+library~\cite{munch} reaches 92.6--95.3\% parallel efficiency at eight threads on a restricted CPU set, on a 512\,MiB
+dense corpus beyond last-level cache, and a $3.46$--$3.94\times$ end-to-end speedup at four threads, across two
+benchmark revisions on one machine. It turns delimiter-based parallel lexing from a language-specific assumption into
+a property a compiler checks. \end{abstract}
 
 \section{Introduction}
 
@@ -553,7 +552,7 @@ A(q) \;\equiv\; q = q_0 \text{ and } q_0 \text{ is not re-entrant},
 and $C(q)$ holds when all three of
 \begin{enumerate}
   \item $\tau(q)$ is defined,
-  \item $\delta^+(q, b) = \delta^+(q_0, b)$, and
+  \item $\delta^+(q_0, b)$ is defined and equal to $\delta^+(q, b)$, and
   \item $T(q) \subseteq I$
 \end{enumerate}
 are satisfied.
@@ -1045,11 +1044,12 @@ the total token count.
 
 Both corpora are favourable to the method by construction, and the scaling figures should be read with that in mind.
 Neither contains a string literal or a comment, the two constructs that absorb the alphabet and empty the certificate,
-and the grammar driving them certifies 13 of the 14 bytes it uses. What follows therefore measures how the parallel
-machinery scales on a token set the certificate suits, and is not evidence about how often a token set does suit it;
-Table~\ref{tab:applicability} is what speaks to that, and six of its eleven rows admit no exact certificate at all.
-The two questions are separate, and a grammar can pass the first while failing the second: a certificate admitting a
-byte the corpus never carries yields no parallelism, as automatically generated JSON without newlines already shows.
+and the grammar driving them certifies 13 of its 14 operator and punctuation candidates. What follows therefore
+measures how the parallel machinery scales on a token set the certificate suits, and is not evidence about how often a
+token set does suit it; Table~\ref{tab:applicability} is what speaks to that, and six of its eleven rows admit no
+exact certificate at all. The two questions are separate, and a grammar can pass the first while failing the second: a
+certificate admitting a byte the corpus never carries yields no parallelism, as automatically generated JSON without
+newlines already shows.
 
 \subsection{Scaling}
 
@@ -1370,18 +1370,18 @@ yields one.
 The condition is necessary as well as sufficient once the analysis is restricted to states an input can reach and from
 which acceptance is still reachable, so a token set with no certified byte has no single-byte split symbol preserving
 the exact stream, rather than merely defeating the test; the relaxed condition may still recover one modulo a
-discarded set. Deriving the certificate is a linear-time sweep of the transition table at
-construction time, and the same sweep decides which certified bytes can occur in valid input at all. That makes the
-applicability question mechanical, and the answer is often negative: a single token kind with a near-total interior
-alphabet, such as a block comment, removes every useful certificate from an otherwise cooperative C-like grammar. Where
-the certificate is non-empty the measured gain is 92.6--95.3\% parallel efficiency at eight pinned threads against the
+discarded set. Deriving the certificate is a linear-time sweep of the transition table at construction time, and the
+same sweep decides which certified bytes can occur in valid input at all. That makes the applicability question
+mechanical, and the answer is often negative: a single token kind with a near-total interior alphabet, such as a block
+comment, removes every useful certificate from an otherwise cooperative C-like grammar. Where the certificate is
+non-empty the measured gain is 92.6--95.3\% parallel efficiency at eight threads on a restricted CPU set, against the
 same API driven with one chunk, on a 512\,MiB dense corpus that does not fit in cache, and $3.46$--$3.94\times$ end to
-end at four threads. Both are conventionally rounded ranges across the two benchmark revisions on one machine, taken in
-the pinned placement; the unpinned placement reaches 88.5\% at eight chunks on the earlier revision. Neither is
-a confidence interval either: the per-scenario best-to-worst
-spreads behind them reach 9\% and 15\% on the two eight-chunk rows at 512\,MiB. The wider end-to-end range comes from
-the serial baseline used as its denominator: at 512\,MiB the multi-chunk rows move far less between the revisions than
-that baseline does; Section~\ref{sec:evaluation} reports that separately.
+end at four threads. Both are conventionally rounded ranges across the two benchmark revisions on one machine, taken
+in the pinned placement; the unpinned placement reaches 88.5\% at eight chunks on the earlier revision. Neither is a
+confidence interval either: the per-scenario best-to-worst spreads behind them reach 9\% and 15\% on the two
+eight-chunk rows at 512\,MiB. The wider end-to-end range comes from the serial baseline used as its denominator: at
+512\,MiB the multi-chunk rows move far less between the revisions than that baseline does;
+Section~\ref{sec:evaluation} reports that separately.
 
 The contribution is therefore narrow and exactly bounded: not another way to lex in parallel, but the
 automaton-derived certification step that prior delimiter-based systems have handled through language-specific

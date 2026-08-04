@@ -272,8 +272,8 @@ public:
      * @return The number of input elements tokenized per chunk, aligned with chunk_boundaries(begin, end,
      *         chunks); an entry short of its chunk's size means no token matched at that offset of the chunk.
      */
-    template <typename T, std::random_access_iterator Iterator, std::invocable<std::size_t, T, std::size_t> Sink>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <typename T, std::random_access_iterator Iterator, typename Sink>
+        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, std::size_t, T, std::size_t>
     std::vector<std::size_t> tokenize_all_parallel(
             Iterator begin, Iterator end, const std::size_t chunks, Sink sink) const
     {
@@ -332,10 +332,8 @@ public:
     /**
      * @brief Tokenizes a whole container as concurrent chunks split at certified safe split points.
      */
-    template <
-            typename T, common::concepts::Random_access_iterable Container,
-            std::invocable<std::size_t, T, std::size_t> Sink>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <typename T, common::concepts::Random_access_iterable Container, typename Sink>
+        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, std::size_t, T, std::size_t>
     std::vector<std::size_t> tokenize_all_parallel(
             const Container& container, const std::size_t chunks, Sink sink) const
     {

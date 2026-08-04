@@ -990,6 +990,51 @@ TEST_F(Lexer_test, Parallel_tokenization_matches_the_serial_stream)
     EXPECT_EQ(spliced, serial);
 }
 
+TEST_F(Lexer_test, Parallel_tokenization_accepts_a_sink_callable_only_as_an_lvalue)
+{
+    enum class Token_kind : std::uint8_t
+    {
+        word,
+        space
+    };
+
+    // The workers hold the sink by reference and call it as an lvalue, so the constraint has to ask for exactly
+    // that. Asking whether an rvalue is callable rejects this sink, which the implementation could have driven.
+    struct Lvalue_only_sink
+    {
+        std::size_t* seen;
+
+        void operator()(std::size_t, Token_kind, std::size_t) & { ++*seen; }
+    };
+
+    Builder builder;
+
+    builder.add_token(plus(any_of(Set::alpha())), Token_kind::word, 1);
+    builder.add_token(any_of(Set{' '}), Token_kind::space, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_TRUE(lexer.is_split_point(' '));
+
+    const std::string input{"ab cd ef gh"};
+
+    std::size_t seen{0};
+
+    const auto consumed{lexer.tokenize_all_parallel<Token_kind>(input, 2, Lvalue_only_sink{.seen = &seen})};
+
+    std::size_t total{0};
+
+    for (const auto length : consumed)
+    {
+        total += length;
+    }
+
+    EXPECT_EQ(total, input.size());
+
+    // Four words and the three spaces between them.
+    EXPECT_EQ(seen, 7U);
+}
+
 TEST_F(Lexer_test, Parallel_tokenization_reports_a_rejected_chunk)
 {
     enum class Token_kind : uint8_t
