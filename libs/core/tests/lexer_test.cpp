@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -1000,9 +1001,10 @@ TEST_F(Lexer_test, Parallel_tokenization_accepts_a_sink_callable_only_as_an_lval
 
     // The workers hold the sink by reference and call it as an lvalue, so the constraint has to ask for exactly
     // that. Asking whether an rvalue is callable rejects this sink, which the implementation could have driven.
+    // The counter is atomic because one sink serves every chunk's thread, as the API documents.
     struct Lvalue_only_sink
     {
-        std::size_t* seen;
+        std::atomic<std::size_t>* seen;
 
         void operator()(std::size_t, Token_kind, std::size_t) & { ++*seen; }
     };
@@ -1018,7 +1020,7 @@ TEST_F(Lexer_test, Parallel_tokenization_accepts_a_sink_callable_only_as_an_lval
 
     const std::string input{"ab cd ef gh"};
 
-    std::size_t seen{0};
+    std::atomic<std::size_t> seen{0};
 
     const auto consumed{lexer.tokenize_all_parallel<Token_kind>(input, 2, Lvalue_only_sink{.seen = &seen})};
 
