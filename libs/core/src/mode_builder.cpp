@@ -67,10 +67,10 @@ Mode_builder::Mode_diagnostics Mode_builder::diagnose() const
         }
     }
 
-    // Whether a mode can be entered with a frame outstanding, which is what its pop returns to. A push leaves one
-    // and a go_to keeps whatever the source carried, so `0 push-> 1 go_to-> 2 pop-> 0` escapes mode 2 even though
-    // nothing pushes into it directly. Only reachable modes propagate, so a push nothing can execute grants nothing.
-    std::vector<bool> framed(modes_.size(), false);
+    // Which modes the outstanding frames can name, since that is where a pop returns: presence alone would let a
+    // self-push fake an escape. Closing over push and go_to reaches every frame a pop can expose, because those
+    // buried under one naming f are a stack f once held.
+    std::vector<std::vector<bool>> framed(modes_.size(), std::vector<bool>(modes_.size(), false));
 
     for (auto changed{true}; changed;)
     {
@@ -85,18 +85,28 @@ Mode_builder::Mode_diagnostics Mode_builder::diagnose() const
 
             for (const auto& [token, action] : registered_[mode])
             {
-                if (!live(mode, token) || action.target >= framed.size())
+                const auto carries{action.kind == Mode_action_kind::push || action.kind == Mode_action_kind::go_to};
+
+                if (!live(mode, token) || !carries || action.target >= framed.size())
                 {
                     continue;
                 }
 
-                const auto carries{
-                        action.kind == Mode_action_kind::push ||
-                        (action.kind == Mode_action_kind::go_to && framed[mode])};
+                auto& target{framed[action.target]};
 
-                if (carries && !framed[action.target])
+                for (std::size_t named{0}; named < framed[mode].size(); ++named)
                 {
-                    framed[action.target] = true;
+                    if (framed[mode][named] && !target[named])
+                    {
+                        target[named] = true;
+
+                        changed = true;
+                    }
+                }
+
+                if (action.kind == Mode_action_kind::push && !target[mode])
+                {
+                    target[mode] = true;
 
                     changed = true;
                 }
@@ -124,7 +134,11 @@ Mode_builder::Mode_diagnostics Mode_builder::diagnose() const
                 break;
 
             case Mode_action_kind::pop:
-                leaves[mode] = leaves[mode] || framed[mode];
+                // Only a frame naming ANOTHER mode makes a pop an escape; one naming the mode itself returns there.
+                for (std::size_t named{0}; named < framed[mode].size(); ++named)
+                {
+                    leaves[mode] = leaves[mode] || (named != mode && framed[mode][named]);
+                }
 
                 break;
 

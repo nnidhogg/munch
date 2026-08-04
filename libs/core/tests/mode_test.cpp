@@ -631,6 +631,71 @@ TEST(Mode, A_go_to_carries_the_frame_that_a_later_pop_returns_to)
     EXPECT_TRUE(diagnostics.inescapable_modes.empty());
 }
 
+TEST(Mode, A_self_push_does_not_make_a_pop_an_escape)
+{
+    Mode_builder builder;
+
+    builder.add_token(Mode::code, plus(any_of(Set::alpha())), Tok::identifier, 2);
+    builder.add_token(
+            Mode::code, any_of(Set{'"'}), Tok::quote, 1,
+            {.kind = Mode_action_kind::go_to, .target = static_cast<std::size_t>(Mode::string)});
+
+    // Entered by go_to, so every frame the pop can ever expose comes from the mode's own self-push and names the
+    // mode itself: each pop returns exactly where it started, and no scan from mode 0 ever leaves again.
+    builder.add_token(
+            Mode::string, any_of(Set{'('}), Tok::escape, 1,
+            {.kind = Mode_action_kind::push, .target = static_cast<std::size_t>(Mode::string)});
+    builder.add_token(Mode::string, any_of(Set{')'}), Tok::quote, 1, {.kind = Mode_action_kind::pop});
+    builder.add_token(Mode::string, plus(any_of(Set::alpha())), Tok::text, 2);
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_EQ(diagnostics.inescapable_modes, std::vector<std::size_t>{static_cast<std::size_t>(Mode::string)});
+}
+
+TEST(Mode, A_dead_token_grants_neither_reachability_nor_escape)
+{
+    Mode_builder builder;
+
+    // The identifier fully shadows the push at every input, so the push can never fire: diagnose() must not let it
+    // enter its target or count as leaving, or the report describes a grammar the scanner does not run.
+    builder.add_token(Mode::code, plus(any_of(Set::alpha())), Tok::identifier, 1);
+    builder.add_token(
+            Mode::code, plus(any_of(Set::alpha())), Tok::text, 2,
+            {.kind = Mode_action_kind::push, .target = static_cast<std::size_t>(Mode::string)});
+    builder.add_token(Mode::string, any_of(Set{'"'}), Tok::quote, 1, {.kind = Mode_action_kind::pop});
+
+    const auto diagnostics{builder.diagnose()};
+
+    EXPECT_TRUE(std::ranges::contains(diagnostics.per_mode[0].dead_tokens, static_cast<std::size_t>(Tok::text)));
+    EXPECT_EQ(diagnostics.unreachable_modes, std::vector<std::size_t>{static_cast<std::size_t>(Mode::string)});
+
+    const std::vector<std::size_t> both{static_cast<std::size_t>(Mode::code), static_cast<std::size_t>(Mode::string)};
+
+    EXPECT_EQ(diagnostics.inescapable_modes, both);
+}
+
+TEST(Mode, A_pop_with_nothing_saved_is_refused_before_the_sink_in_the_batch_driver)
+{
+    const auto lexer{build()};
+
+    // Seeded directly into the string mode with nothing saved, so the closing quote's pop must refuse. The batch
+    // scan counts a stopping token as consumed, so the driver has to hold that length back and fire no sink.
+    Mode_stack stack{.current = static_cast<std::size_t>(Mode::string)};
+
+    const std::string input{"\""};
+
+    auto calls{0};
+
+    const auto consumed{lexer.tokenize_all<Tok>(
+            input.begin(), input.end(), [&calls](const Tok, const std::size_t, const std::size_t) { ++calls; }, stack)};
+
+    EXPECT_EQ(consumed, 0U);
+    EXPECT_EQ(calls, 0);
+    EXPECT_EQ(stack.current, static_cast<std::size_t>(Mode::string));
+    EXPECT_TRUE(stack.saved.empty());
+}
+
 TEST(Mode, A_go_to_onto_its_own_mode_is_a_stay)
 {
     Mode_builder builder;
