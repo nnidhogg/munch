@@ -22,9 +22,9 @@ table also certifies which bytes are safe chunk boundaries, so large inputs can 
 strong scaling and a provably identical token stream, a guarantee none of the code-generating lexers measured here
 derives or checks for its own token sets.
 
-The name is pronounced /mʊŋk/, like "munk", after the painter
-[Edvard Munch](https://en.wikipedia.org/wiki/Edvard_Munch); that it also reads as the English *munch* /mʌntʃ/, as in the
-maximal munch rule every lexer lives by, is the pun.
+The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal munch rule every lexer lives by; that it
+also reads as the painter [Edvard Munch](https://en.wikipedia.org/wiki/Edvard_Munch), pronounced /mʊŋk/, is the
+homage.
 
 ## **Features**
 
