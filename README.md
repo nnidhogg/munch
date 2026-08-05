@@ -864,7 +864,8 @@ one for the same bytes, so the two are not doing the same work and are not treat
 The `Mode_stack` overload reports where a scan stopped and what it was doing there: `stack.current` names the mode and
 `stack.saved.size()` the nesting depth, which is what distinguishes an unterminated string from an unrecognized byte
 in code. `Mode_builder::diagnose()` reports each mode's dead tokens and priority ties, plus the two faults only a
-modal grammar has: modes nothing can enter, and modes nothing can leave.
+modal grammar has: modes nothing can enter and modes nothing can leave, both judged from mode 0 with an initially
+empty stack; a caller-seeded `Mode_stack` can still start inside or pop out of them.
 
 **Two things to know before reaching for it.** A `Mode_lexer` has no parallel entry point, because a worker cutting
 blind cannot recover the mode and saved stack from the bytes at the cut. That is an obstruction rather than an

@@ -146,18 +146,22 @@ public:
         std::vector<Builder::Diagnostics> per_mode;
 
         /**
-         * @brief Modes no token can reach, in ascending order, excluding mode 0 where scanning starts.
+         * @brief Modes no token can reach from mode 0 with an initially empty stack, in ascending order,
+         *        excluding mode 0 itself where scanning starts.
          *
          * A mode nothing enters is a grammar fault the per-mode reports cannot see, since each of them is complete
-         * and consistent on its own.
+         * and consistent on its own. The judgment is about the grammar's own transitions; a caller-seeded
+         * Mode_stack can start a scan inside any mode regardless.
          */
         std::vector<std::size_t> unreachable_modes;
 
         /**
-         * @brief Modes carrying no token that leaves them, in ascending order.
+         * @brief Modes that cannot be left under live-token transitions and frames reachable from mode 0 with an
+         *        initially empty stack, in ascending order.
          *
-         * Entering one is a one-way trip. That is legitimate for a mode meant to consume the rest of the input, and
-         * a mistake everywhere else, so it is reported rather than rejected.
+         * Under that starting configuration, entering one is a one-way trip; a caller-seeded Mode_stack can still
+         * pop out through a frame the grammar never established. The one-way trip is legitimate for a mode meant
+         * to consume the rest of the input, and a mistake everywhere else, so it is reported rather than rejected.
          */
         std::vector<std::size_t> inescapable_modes;
     };
