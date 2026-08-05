@@ -18,7 +18,7 @@ nested comments need no counter in user code.
 state: a worker starting there knows it is between tokens. With modes it would also have to recover the mode and every
 saved frame, and no byte carries that. The same byte is a quote in code and a terminator in a string, and the depth a
 nested comment reached is unbounded, so no finite per-byte certificate can name it. What is proved unavailable is
-narrower than "never". What is proved is that a SINGLE BYTE cannot identify which mode the scan is in when two or more
+narrower than "never". What is proved is that a *single byte* cannot identify which mode the scan is in when two or more
 modes admit every byte. Identifying the mode is sufficient for a safe cut but not necessary, since two modes might emit
 the same tokens from that point on, so this is an obstruction rather than an impossibility. A multi-byte window, a
 checkpoint left by an earlier pass, an independently recorded stack, or a mode set restricted to stackless `go_to` are

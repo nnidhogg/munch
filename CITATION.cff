@@ -25,3 +25,15 @@ license: MIT
 version: 1.3.0
 date-released: "2026-08-03"
 doi: "10.5281/zenodo.21752996"
+preferred-citation:
+  type: article
+  title: "Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens"
+  authors:
+    - family-names: "Nidhögg"
+      given-names: "Nicklas"
+      orcid: "https://orcid.org/0009-0006-6161-6150"
+  year: 2026
+  identifiers:
+    - type: other
+      value: "arXiv:2608.03473"
+  url: "https://arxiv.org/abs/2608.03473"

@@ -699,8 +699,8 @@ lexer.is_split_point_ignoring('\n');  // true: both halves of the split run are 
 
 The technical report *Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens* states both
 certificates formally, relates them to the parallel-automata literature, and studies which grammars certify usable split
-symbols under each: read it as [docs/split_points.md](docs/split_points.md), or build the formal version from
-[paper/](paper/).
+symbols under each: read it as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473), as
+[docs/split_points.md](docs/split_points.md), or build the formal version from [paper/](paper/).
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
@@ -832,7 +832,7 @@ track the depth.
 | `munch`   | grammar-carried actions on a mode stack                    | 627.9, 621.6 |
 | lexertl17 | start states pushed and popped                             | 232.9, 236.8 |
 
-Be precise about the theory this does not demonstrate. The language of ARBITRARILY nested comments is not regular,
+Be precise about the theory this does not demonstrate. The language of *arbitrarily* nested comments is not regular,
 since counting to an unbounded depth is what one finite automaton cannot do. This corpus nests only to depth four,
 and a bounded depth is regular, so a flat grammar could unroll four levels and tokenize it. There is no flat row
 because that would be a different grammar answering a different question, not because none could exist.
@@ -852,7 +852,7 @@ corpora differ in token density, grammar and mechanism at once, so the differenc
 any one of those.
 
 **What modes cost against a flat grammar, in this archive.** The mode grammar emits 11.1% more tokens for the same
-bytes and takes 15.5% and 14.3% longer, so its cost per token is 3 to 4 percent HIGHER. Read that as a fact about this
+bytes and takes 15.5% and 14.3% longer, so its cost per token is 3 to 4 percent *higher*. Read that as a fact about this
 archive and nothing wider, because the sign does not remain stable across archive generations: across the three
 archives this history reaches, the same figure runs from 6.6 percent lower to 6.4 percent higher. It is dominated by
 the flat row, which ranged from 754.5 to 865.0 MiB/s, about 15 percent, while the modal rows stayed between 725.8 and
@@ -1098,7 +1098,8 @@ v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), 
 
 The technical report and its figures, `paper/split-points.tex` and `paper/figures/*.pdf`, are licensed under
 [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0), matching
-the licence the report carries on arXiv. The benchmark archives under `paper/data/` are released under
+the licence the report carries on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The benchmark
+archives under `paper/data/` are released under
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): they are measurements rather than authorship, and
 attribution on a throughput table serves no one. The programs that generate the figures are source code and are MIT
 like the rest of the tree.
