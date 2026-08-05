@@ -1,7 +1,6 @@
 #include "munch/core/mode_builder.hpp"
 
 #include <algorithm>
-#include <cstdint>
 #include <ranges>
 #include <stdexcept>
 #include <string>

@@ -23,7 +23,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <string>
-#include <vector>
 
 #include "munch/core/mode_builder.hpp"
 #include "munch/regex/regex.hpp"

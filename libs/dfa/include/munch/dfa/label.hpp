@@ -2,7 +2,6 @@
 #define MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_LABEL_HPP
 
 #include <cstddef>
-#include <functional>
 
 namespace munch::dfa
 {

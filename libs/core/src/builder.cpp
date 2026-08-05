@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "munch/core/determinize.hpp"
-#include "munch/core/exceptions/state_limit_error.hpp"
 #include "munch/dfa/minimize.hpp"
 
 namespace

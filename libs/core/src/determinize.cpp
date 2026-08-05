@@ -5,7 +5,6 @@
 #include <bit>
 #include <boost/container_hash/hash.hpp>
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <queue>
 #include <ranges>

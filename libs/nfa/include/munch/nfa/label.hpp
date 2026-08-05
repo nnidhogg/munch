@@ -2,7 +2,6 @@
 #define MUNCH_LIBS_NFA_INCLUDE_MUNCH_NFA_LABEL_HPP
 
 #include <cstddef>
-#include <functional>
 #include <variant>
 
 namespace munch::nfa

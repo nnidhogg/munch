@@ -1,5 +1,7 @@
 #include "munch/dfa/label.hpp"
 
+#include <functional>
+
 namespace munch::dfa
 {
 Label::Label(const Symbol_t s) noexcept : symbol_{s}

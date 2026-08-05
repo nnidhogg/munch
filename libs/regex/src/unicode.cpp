@@ -1,6 +1,5 @@
 #include "munch/regex/unicode.hpp"
 
-#include <array>
 #include <string_view>
 
 #include "munch/regex/utf8.hpp"

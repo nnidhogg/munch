@@ -1,6 +1,6 @@
 #include "munch/nfa/label.hpp"
 
-#include <stdexcept>
+#include <functional>
 
 namespace munch::nfa
 {
