@@ -156,12 +156,15 @@ public:
         std::vector<std::size_t> unreachable_modes;
 
         /**
-         * @brief Modes that cannot be left under live-token transitions and frames reachable from mode 0 with an
-         *        initially empty stack, in ascending order.
+         * @brief Modes with neither a live non-self push or go_to nor a live pop for which the default-start
+         *        grammar can establish a frame naming another mode, in ascending order.
          *
-         * Under that starting configuration, entering one is a one-way trip; a caller-seeded Mode_stack can still
-         * pop out through a frame the grammar never established. The one-way trip is legitimate for a mode meant
-         * to consume the rest of the input, and a mistake everywhere else, so it is reported rather than rejected.
+         * The two exits are judged differently: a live non-self push or go_to makes a mode escapable by itself,
+         * even when nothing reaches the mode, while pop escapability depends on the frames a scan from mode 0
+         * with an initially empty stack can establish. A caller-supplied frame may provide the missing return
+         * context, but only where such a live pop exists; no frame helps a stay-only mode. Being inescapable is
+         * legitimate for a mode meant to consume the rest of the input, and a mistake everywhere else, so it is
+         * reported rather than rejected.
          */
         std::vector<std::size_t> inescapable_modes;
     };
