@@ -3,7 +3,8 @@
 //
 // THE MODEL BELOW IS CONSERVATIVE AND PROVED SOUND. It reports windows it can justify and refuses ones it cannot,
 // so its counts are a lower bound on what genuinely certifies, never an upper one. The proof is stated here in
-// full, because the note carrying it is not public. Nobody else has read it.
+// full, because the note carrying it is not public. A second adversarial read confirmed it on 2026-08-05,
+// independently re-deriving the representation lemma and the quotient congruence and reproducing every figure.
 //
 // ASSUMPTIONS. The DFA is trimmed to its live states L, meaning reachable and co-accessible; q0 is live; no token
 // matches the empty string; and the input considered is one the scanner tokenizes completely. Note that "the scan
@@ -70,10 +71,10 @@
 // impossible history rather than a token boundary, and restarting it is what the argument cannot justify.
 //
 // The repair: drop the failure restart, and seed one fresh trajectory at the window's first byte and thereafter
-// only where some tracked state accepts, because a token can only end where the automaton accepted. That represents
-// every segmentation of the input into token words, the real maximal-munch one among them, so backup never has to
-// be simulated. It is conservative in the other direction: over {a, ab, b} the scanner always takes "ab", but the
-// accepting "a" also seeds "b" and the window is refused.
+// only where some tracked state accepts, because a token can only end where the automaton accepted. The cloud then
+// contains the final segmentation's actual token-prefix history, alongside conservative hypotheses, so backup never
+// has to be simulated. It is conservative in the other direction: over {a, ab, b} the scanner always takes "ab",
+// but the accepting "a" also seeds "b" and the window is refused.
 //
 // Acceptance gating alone does not terminate, since a grammar like a+ accepts after every byte and accumulates
 // origins without bound. The search therefore deduplicates on a finite quotient rather than on the cloud: which
@@ -303,9 +304,9 @@ std::optional<Cloud_t> step(
 
     // One fresh trajectory wherever the automaton had just accepted, which is the only place a token can begin.
     // No special case for the window's first byte: the initial cloud is every live state and so contains an
-    // accepting one, making the guard true there anyway, and the transition stays the same at every offset. Every
-    // segmentation of the input into token words is then represented, the real maximal-munch one among them, so
-    // backup never has to be simulated.
+    // accepting one, making the guard true there anyway, and the transition stays the same at every offset. The
+    // final segmentation's actual token-prefix history is then contained in the cloud, alongside conservative
+    // hypotheses, so backup never has to be simulated.
     if (restart_ok && accepting)
     {
         next.emplace(*restart, at);
@@ -319,14 +320,16 @@ std::optional<Cloud_t> step(
  *        distinct in-window origins each state carries, saturated at two.
  *
  * Acceptance gating seeds an origin wherever the automaton accepts, so `a+` alone accumulates origins without bound
- * and renaming them to rank order no longer bounds the space. Saturating at two is exact for the question asked,
- * since two origins meeting in one deterministic state follow identical futures under this quotient and can never
- * separate again, and
- * Summing counts across predecessors is exact rather than an over-approximation: an internal origin is seeded once
- * into one state and thereafter occupies exactly one state, since the step is deterministic, so origins arriving
- * from different predecessors are necessarily distinct and cannot be double counted. The pre-window origin is held
- * apart in its own support set. The quotient is therefore a transition congruence for this model, and the walk
- * decides exactly whether a window exists and what its minimum length is. It does NOT enumerate every certified
+ * and renaming them to rank order no longer bounds the space. Exactness rests on an invariant of the clouds this
+ * model can reach: every in-window origin occupies exactly one state, because it is seeded once into a single state
+ * and the deterministic step moves it to at most one successor. An arbitrary cloud placing one origin in two states
+ * would defeat the saturated counts, but no such cloud is reachable. Under that invariant, saturating at two is
+ * exact for the question asked, since two origins meeting in one deterministic state follow identical futures under
+ * this quotient and can never separate again, and summing counts across predecessors is exact rather than an
+ * over-approximation, since origins arriving from different predecessors are necessarily distinct and cannot be
+ * double counted. The pre-window origin is held apart in its own support set. The quotient is therefore a
+ * transition congruence over reachable clouds, and the walk decides exactly whether a window exists under this
+ * model and what its minimum length is. It does NOT enumerate every certified
  * word: prefixes reaching the same key collapse to one representative, so witnesses are examples rather than the
  * full set. At most 6^|Q+| configurations, so it terminates.
  */
@@ -928,6 +931,22 @@ struct Row
 };
 
 /**
+ * @brief Every rewinding execution the named rows exercised, asserted in total because the notes quote the figure.
+ */
+std::size_t g_exercised_total{0};
+
+/**
+ * @brief Whether the live set can carry evidence at all: non-empty and containing the initial state.
+ *
+ * A grammar whose trimmed automaton lost the initial state accepts nothing, so every check over it would pass
+ * vacuously; refusing it here keeps an all-green run from ever resting on empty evidence.
+ */
+bool live_usable(const Dfa& dfa, const States_t& live)
+{
+    return !live.empty() && live.contains(dfa.init_state());
+}
+
+/**
  * @brief Asserts that a NAMED window this grammar would otherwise never be checked at agrees with the scanner.
  *
  * run() only checks the windows the search reports, so a grammar whose shortest window is one byte never exercises a
@@ -948,18 +967,27 @@ bool named_window_agrees(const char* name, const std::string& window, std::size_
 
     const auto live{trim(dfa)};
 
+    if (!live_usable(dfa, live))
+    {
+        std::printf("  %-30s REJECTED: no live path from the initial state, evidence would be vacuous\n", name);
+
+        return false;
+    }
+
     std::size_t exercised{0};
 
     std::size_t prefixes{0};
 
     const auto disagreements{backup_disagreements(dfa, lexer, live, {window}, exercised, prefixes)};
 
+    g_exercised_total += exercised;
+
     const auto reentrant{init_reentrant(dfa, live)};
 
     const auto at{predicted(dfa, live, window, reentrant)};
 
     std::printf(
-            "  %-30s window \"%s\" %s, backup %zu over %zu rewinding inputs%s\n", name, window.c_str(),
+            "  %-30s window \"%s\" %s, backup %zu over %zu rewinding executions%s\n", name, window.c_str(),
             at ? ("origin " + std::to_string(*at)).c_str() : "refused", disagreements, exercised,
             disagreements == 0 ? "" : "   <- MODEL IS WRONG");
 
@@ -983,6 +1011,13 @@ bool run(const Row& row, Builder_dbg& builder)
     const auto lexer{builder.build()};
 
     const auto live{trim(dfa)};
+
+    if (!live_usable(dfa, live))
+    {
+        std::printf("  %-30s REJECTED: no live path from the initial state, evidence would be vacuous\n", row.name);
+
+        return false;
+    }
 
     const auto disagreements{single_byte_disagreements(dfa, lexer, live)};
 
@@ -1018,6 +1053,8 @@ bool run(const Row& row, Builder_dbg& builder)
 
     const auto backup{backup_disagreements(dfa, lexer, live, windows, exercised, prefixes)};
 
+    g_exercised_total += exercised;
+
     // Agreement over inputs that never rewind says nothing about backup, so the row's declaration is asserted too.
     const auto covered{row.rewinds_expected == (exercised > 0)};
 
@@ -1030,8 +1067,8 @@ bool run(const Row& row, Builder_dbg& builder)
     const auto ok{disagreements == 0 && shortest == row.shortest && backup == 0 && covered && conclusive};
 
     std::printf(
-            "  %-30s k=1 %zu, window %zu/%zu, backup %zu over %7zu rewinding inputs from %4zu prefixes%s\n", row.name,
-            disagreements, shortest, row.shortest, backup, exercised, prefixes, ok ? "" : "   <- MOVED");
+            "  %-30s k=1 %zu, window %zu/%zu, backup %zu over %7zu rewinding executions from %4zu prefixes%s\n",
+            row.name, disagreements, shortest, row.shortest, backup, exercised, prefixes, ok ? "" : "   <- MOVED");
 
     return ok;
 }
@@ -1213,6 +1250,8 @@ int main()
             "  %-30s of %zu certifying no byte: %zu certified, %zu with none found, %zu inconclusive\n",
             "window applicability", usable - with_certificate, rescued, proved_none, inconclusive);
 
+    std::printf("  %-30s %zu rewinding executions across every named row\n", "backup total", g_exercised_total);
+
     // Asserted rather than printed, because these figures are quoted in the notes and a loose bound would let one
     // move without anything failing. They are the NON-NULLABLE sample, which is what the soundness proof covers;
     // two thirds of what the generator produces is nullable and is excluded rather than counted. Pinning them
@@ -1221,8 +1260,11 @@ int main()
     // Inconclusive must stay zero: hitting the budget means the traversal stopped before exhausting the bounded
     // quotient, not that the quotient stopped bounding anything. A negative is "no window under this conservative
     // model", never "no window exists", since it refuses windows a greedy scanner would allow.
+    // The aggregate is asserted for the same reason as the sweep figures: the notes quote 1,079,392 rewinding
+    // executions, and only a pinned total keeps that sentence honest when a row or the input builder changes.
     ok = random_disagreements == 0 && usable == 134 && nullable == 266 && with_certificate == 39 &&
-         usable - with_certificate == 95 && rescued == 91 && proved_none == 4 && inconclusive == 0 && ok;
+         usable - with_certificate == 95 && rescued == 91 && proved_none == 4 && inconclusive == 0 &&
+         g_exercised_total == 1'079'392 && ok;
 
     std::printf(
             "\n%s\n", ok ? "The model reproduces is_split_point at length one on six named grammars with a "
