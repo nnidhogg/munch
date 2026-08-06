@@ -13,6 +13,14 @@
 
 # Generated files from the paper build; the figure PDFs under paper/figures are checked in on purpose
 /paper/split-points.pdf
+/paper/split-windows/split-windows.pdf
+/paper/split-windows/*.aux
+/paper/split-windows/*.bbl
+/paper/split-windows/*.blg
+/paper/split-windows/*.fdb_latexmk
+/paper/split-windows/*.fls
+/paper/split-windows/*.log
+/paper/split-windows/*.out
 /paper/*.aux
 /paper/*.bbl
 /paper/*.blg

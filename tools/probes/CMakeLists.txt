@@ -29,3 +29,25 @@ if (MUNCH_BUILD_TESTS)
 
     add_test(NAME munch_window_gate COMMAND munch_window_gate)
 endif ()
+
+# Dev-grade preview of the split-windows benchmark campaign: plans cuts at window-recovered origins, asserts
+# stream equality against the serial scan, and prints unarchived throughput. The equality assertions are why it
+# runs as a test; no printed figure may be quoted without the collect.sh ritual.
+add_executable(munch_window_bench src/window_bench.cpp)
+
+add_dependencies(munch_window_bench munch_provenance)
+
+target_include_directories(munch_window_bench
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+        ${MUNCH_PROVENANCE_DIR}
+)
+
+target_link_libraries(munch_window_bench
+        PRIVATE
+        munch_core
+)
+
+if (MUNCH_BUILD_TESTS)
+    add_test(NAME munch_window_bench COMMAND munch_window_bench)
+endif ()
