@@ -12,6 +12,9 @@
 #                     planning and thread-launch rows appear in summary.txt only
 #   modes.txt         the modal driver's scenario matrix
 #   modes.csv         every timed pass of it
+#   windows.txt       the certified-window probe over the same sizes: window cuts against serial on the no-byte
+#                     grammar, and scan for scan against the byte planner where both certify
+#   windows.csv       every timed pass of it, plans recorded separately
 #
 # Send back the tarball it produces. It deliberately avoids identifying the machine or its users: uname omits the
 # hostname and the uptime line is printed without its count of logged-in users.
@@ -90,8 +93,8 @@ esac
 
 # The benchmark appends to the CSV, so a second run into the same directory silently interleaves two datasets that
 # only the run column can separate, while summary.txt and environment.txt describe the last run alone. Refuse
-# instead: a fresh directory per run keeps the three files describing the same measurement.
-if [ -e "$out/observations.csv" ] || [ -e "$out/modes.csv" ]; then
+# instead: a fresh directory per run keeps the observation files describing the same measurement together.
+if [ -e "$out/observations.csv" ] || [ -e "$out/modes.csv" ] || [ -e "$out/windows.csv" ]; then
     fail "$out already holds a CSV from an earlier run; use a new output directory"
 fi
 
@@ -177,13 +180,22 @@ modes_size=${sizes%%,*}
 
 "$build/tools/benchmark/munch_benchmark_modes" "$modes_size" "$passes" "$out/modes.csv" | tee "$out/modes.txt"
 
+# The window campaign sweeps the same sizes as the scaling scenarios: certified-window cuts against serial on the
+# no-byte grammar, and scan-for-scan against the shipped byte planner on the grammar carrying both certificates,
+# with each plan timed separately. Stream equality is asserted inside the probe before its clocks start, so a row
+# here is a measurement of a proved-identical scan. All sizes append to one CSV; the input_mib column separates
+# them.
+for window_size in ${sizes//,/ }; do
+    "$build/tools/probes/munch_window_bench" "$window_size" "$passes" "$out/windows.csv" | tee -a "$out/windows.txt"
+done
+
 {
     echo
     echo "== load at end =="
     load_line
 } >> "$out/environment.txt"
 
-# Packed as one file on purpose: the summary, the per-pass CSV, and the environment only mean anything together,
+# Packed as one file on purpose: the summaries, the per-pass CSVs, and the environment only mean anything together,
 # and sending them loose invites a stray file from another run being read alongside them. The configure and build
 # logs stay out of the archive: compiler diagnostics quote absolute source paths, which name the account that ran
 # this, and the header promises the output identifies neither the machine nor its users. They are kept on disk
@@ -199,5 +211,5 @@ tar czf "$archive" --owner=0 --group=0 --numeric-owner -C "$(dirname "$out")" \
 echo
 echo "done. Send back this one file: $archive"
 ls -1 "$out" | sed 's/^/  /'
-echo "  $(wc -l < "$out/observations.csv") scaling CSV rows, $(wc -l < "$out/modes.csv") modal CSV rows"
+echo "  $(wc -l < "$out/observations.csv") scaling CSV rows, $(wc -l < "$out/modes.csv") modal CSV rows, $(wc -l < "$out/windows.csv") window CSV rows"
 echo "  archive $(du -h "$archive" | cut -f1)"
