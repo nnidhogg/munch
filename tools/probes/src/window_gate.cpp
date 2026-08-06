@@ -692,9 +692,62 @@ std::optional<std::pair<std::string, std::string>> find_witness(
 
     for (const auto& [window, origin] : words)
     {
+        // The covering token may need bytes past the window to reach acceptance: JSON's \t" needs the closing
+        // quote, a float's dot needs its digit. Derive the shortest completion of the token begun at the origin
+        // and try it as the first tail, so the displayed window can be witnessed with its own natural ending.
+        auto tried{tails};
+
+        {
+            auto state{dfa.init_state()};
+
+            auto alive{true};
+
+            for (std::size_t i{origin}; i < window.size() && alive; ++i)
+            {
+                const auto next{dfa.advance(state, window[i])};
+
+                alive = next && live.contains(*next);
+
+                state = alive ? *next : state;
+            }
+
+            if (alive && !dfa.has_accept_token(state))
+            {
+                std::map<Dfa::State_t, std::string> suffix{{state, ""}};
+
+                std::deque<Dfa::State_t> walk{state};
+
+                while (!walk.empty())
+                {
+                    const auto at{walk.front()};
+
+                    walk.pop_front();
+
+                    if (dfa.has_accept_token(at))
+                    {
+                        tried.insert(tried.begin(), suffix[at]);
+
+                        break;
+                    }
+
+                    for (int symbol{0}; symbol < 256; ++symbol)
+                    {
+                        const auto next{dfa.advance(at, static_cast<char>(symbol))};
+
+                        if (next && live.contains(*next) && !suffix.contains(*next))
+                        {
+                            suffix[*next] = suffix[at] + static_cast<char>(symbol);
+
+                            walk.push_back(*next);
+                        }
+                    }
+                }
+            }
+        }
+
         for (const auto& head : heads)
         {
-            for (const auto& tail : tails)
+            for (const auto& tail : tried)
             {
                 const auto input{head + window + tail};
 
@@ -1657,16 +1710,14 @@ bool run(const Row& row, Builder_dbg& builder)
         }
     }
 
-    // The occurrence witness: a complete tokenization containing a certified window, pinned per positive row so
-    // the usefulness of every displayed certificate is asserted, not implied by cloud non-emptiness.
+    // The occurrence witness: a complete tokenization containing THE DISPLAYED window, pinned per positive row.
+    // Witnessing some other certified word of the same grammar would leave the table's own window unattested,
+    // so the search is restricted to the example the row displays.
     std::vector<std::pair<std::string, std::size_t>> witness_words;
 
-    for (const auto& candidate : found)
+    if (example_has_origin)
     {
-        if (const auto at{predicted(dfa, live, candidate, reentrant)})
-        {
-            witness_words.emplace_back(candidate, *at);
-        }
+        witness_words.emplace_back(example, example_at);
     }
 
     const auto witness{find_witness(dfa, lexer, live, witness_words)};
@@ -1725,7 +1776,7 @@ int main()
                   .keys = 18,
                   .example = "\\n!",
                   .example_origin = 1,
-                  .witness = "//\\x00\\n"},
+                  .witness = "\\n!"},
                  b) &&
              ok;
     }
@@ -1739,7 +1790,7 @@ int main()
                   .keys = 53,
                   .example = "\\t*/\\t",
                   .example_origin = 3,
-                  .witness = "/*\\x00*/\\t"},
+                  .witness = "\\t*/\\t"},
                  b) &&
              ok;
     }
@@ -1757,7 +1808,7 @@ int main()
                   .keys = 27,
                   .example = "\\n!",
                   .example_origin = 1,
-                  .witness = "//\\x00\\n"},
+                  .witness = "\\n!"},
                  b) &&
              ok;
     }
@@ -1775,7 +1826,7 @@ int main()
                   .keys = 188,
                   .example = "\\n*/\\t",
                   .example_origin = 3,
-                  .witness = "/*\\x00*/\\n"},
+                  .witness = "\\n*/\\t"},
                  b) &&
              ok;
     }
@@ -1792,7 +1843,7 @@ int main()
                   .keys = 189,
                   .example = "\\n*/\\t",
                   .example_origin = 3,
-                  .witness = "/*\\x00*/\\n"},
+                  .witness = "\\n*/\\t"},
                  b) &&
              ok;
     }
@@ -1808,7 +1859,7 @@ int main()
                   .keys = 69,
                   .example = "\\t\"",
                   .example_origin = 1,
-                  .witness = "\\t,"},
+                  .witness = "\\t\"\""},
                  b) &&
              ok;
     }
@@ -1890,8 +1941,8 @@ int main()
         ok = strict_refusal("strict: {ab, abc, c} at \"abc\"", "abc", 0, "abc", 12, 932, b) && ok;
     }
     {
-        // The oracle's own regression pin: the reviewer-supplied false-witness family that the weak check
-        // certifies and the covering-token check correctly convicts.
+        // The oracle's own regression pin: a false-witness family that the weak some-token check certifies and
+        // the covering-token check correctly convicts.
         using namespace munch::regex;
 
         Builder_dbg b;
@@ -1940,7 +1991,7 @@ int main()
                   .keys = 9,
                   .example = " .",
                   .example_origin = 1,
-                  .witness = " 0"},
+                  .witness = " .."},
                  b) &&
              ok;
     }
@@ -2096,8 +2147,9 @@ int main()
 
     std::printf(
             "  %-30s %zu rewinding executions across every named row, %zu with a completely tokenizable input, "
-            "%zu witness origin disagreements\n",
-            "backup total", g_exercised_total, g_exercised_tokenizable, g_witness_disagreements);
+            "%zu with a malformed suffix, %zu witness origin disagreements\n",
+            "backup total", g_exercised_total, g_exercised_tokenizable, g_exercised_total - g_exercised_tokenizable,
+            g_witness_disagreements);
 
     // The metric, precisely: keys RETAINED before shortest-window stopping ends each search, not the complete
     // reachable quotient space; a search that certifies at length two never explores what lies past it. Total and
@@ -2121,7 +2173,8 @@ int main()
     ok = random_disagreements == 0 && usable == 134 && nullable == 266 && with_certificate == 39 &&
          usable - with_certificate == 95 && rescued == 91 && witnessed_rescued == 91 && proved_none == 4 &&
          inconclusive == 0 && g_exercised_total == 1'079'392 && g_exercised_tokenizable == 418'466 &&
-         g_witness_disagreements == 0 && g_visited_max == 32 && g_visited_total == 878 && ok;
+         g_exercised_total - g_exercised_tokenizable == 660'926 && g_witness_disagreements == 0 &&
+         g_visited_max == 32 && g_visited_total == 878 && ok;
 
     std::printf(
             "\n%s\n", ok ? "The model reproduces is_split_point at length one on six named grammars with a "
