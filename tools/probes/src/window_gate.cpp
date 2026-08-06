@@ -445,6 +445,13 @@ std::size_t single_byte_disagreements(const Dfa& dfa, const munch::core::Lexer& 
 std::size_t g_exercised_total{0};
 
 /**
+ * @brief The subset of those executions whose whole input tokenizes completely, asserted because the reviewer's
+ *        scope finding is answered by stating both counts: the stress rows require scanning through the window,
+ *        not complete tokenizability, and this counter says how many executions had it anyway.
+ */
+std::size_t g_exercised_tokenizable{0};
+
+/**
  * @brief Reachable quotient keys over the random sweep: the sum for the mean, and the worst grammar's count.
  *
  * The quotient space is 6^|Q+| in the worst case; these are the reachable fractions actually walked, which is the
@@ -534,6 +541,199 @@ std::pair<std::size_t, std::vector<std::string>> shortest_windows(
     visited = seen.size();
 
     return {shortest, found};
+}
+
+/**
+ * @brief Certified words up to a length bound, with their origins, for the witness search.
+ *
+ * Definition 1 permits vacuity: a nonempty unanimous cloud certifies a window even when no completely tokenizable
+ * input contains it ({0, 00, 01} certifies "1001" at origin 2, and no tokenizable input contains "1001"). Whether
+ * a word occurs is a property of the concrete word, not of its quotient key, so the applicability count must not
+ * stop at the shortest certified word: this walk continues past certified clouds up to the bound and collects one
+ * representative word per fresh key, capped, so the witness search downstream has candidates beyond the first
+ * certifying length. A bounded collection, deliberately: deciding occurrence exactly would need a realizability
+ * construction this instrument does not claim.
+ */
+std::vector<std::pair<std::string, std::size_t>> certified_words_upto(
+        const Dfa& dfa, const States_t& live, const bool reentrant, const std::size_t max_len, const std::size_t cap)
+{
+    std::vector<std::pair<std::string, std::size_t>> words;
+
+    constexpr std::size_t kSubsetBudget{200000};
+
+    std::map<Quotient_t, std::string> seen;
+
+    std::deque<std::pair<Cloud_t, std::string>> queue{{unknown(live), ""}};
+
+    seen[quotient(unknown(live))] = "";
+
+    while (!queue.empty() && words.size() < cap && seen.size() <= kSubsetBudget)
+    {
+        const auto [current, word]{queue.front()};
+
+        queue.pop_front();
+
+        if (word.size() >= max_len)
+        {
+            continue;
+        }
+
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto next{step(dfa, live, current, static_cast<char>(symbol), word.size(), reentrant)};
+
+            if (!next)
+            {
+                continue;
+            }
+
+            const auto extended{word + static_cast<char>(symbol)};
+
+            if (certified(*next) && words.size() < cap)
+            {
+                words.emplace_back(extended, next->begin()->second);
+            }
+
+            // Certified clouds are stepped onward too: a longer certified word can be witnessed where a shorter
+            // one is vacuous, and the shorter word's key must not swallow its extensions.
+            if (const auto key{quotient(*next)}; !seen.contains(key))
+            {
+                seen[key] = extended;
+
+                queue.emplace_back(*next, extended);
+            }
+        }
+    }
+
+    return words;
+}
+
+/**
+ * @brief Disagreements between a witness's covering-token origin and the model's prediction; asserted zero.
+ */
+std::size_t g_witness_disagreements{0};
+
+/**
+ * @brief A completely tokenizable input containing one of the given certified windows, if the bounded search
+ *        finds one.
+ *
+ * The witness is the evidence that a certified window is USEFUL rather than vacuous: some completely tokenizable
+ * input contains it. Contexts are the same (state, distance) prefix family the backup check uses, crossed with
+ * tails drawn from the grammar's own accepted words plus fixed generic tails, and an input counts only when the
+ * scan consumes it exactly and the token covering the window's final byte begins at the predicted origin. Failure
+ * to find a witness within this bounded family is NOT proof of vacuity, and callers must not report it as one.
+ */
+std::optional<std::pair<std::string, std::string>> find_witness(
+        const Dfa& dfa, const munch::core::Lexer& lexer, const States_t& live,
+        const std::vector<std::pair<std::string, std::size_t>>& words)
+{
+    constexpr std::size_t kMaxDistance{6};
+
+    std::map<std::pair<Dfa::State_t, std::size_t>, std::string> prefix;
+
+    std::deque<std::pair<Dfa::State_t, std::size_t>> pending;
+
+    const auto seed{std::pair{dfa.init_state(), std::size_t{0}}};
+
+    prefix[seed] = "";
+
+    pending.push_back(seed);
+
+    while (!pending.empty())
+    {
+        const auto [state, distance]{pending.front()};
+
+        pending.pop_front();
+
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto next{dfa.advance(state, static_cast<char>(symbol))};
+
+            if (!next || !live.contains(*next))
+            {
+                continue;
+            }
+
+            const auto moved{dfa.has_accept_token(*next) ? std::size_t{0} : distance + 1};
+
+            if (moved > kMaxDistance)
+            {
+                continue;
+            }
+
+            if (const auto key{std::pair{*next, moved}}; !prefix.contains(key))
+            {
+                prefix[key] = prefix[{state, distance}] + static_cast<char>(symbol);
+
+                pending.push_back(key);
+            }
+        }
+    }
+
+    std::vector<std::string> heads{""};
+
+    std::vector<std::string> tails{""};
+
+    for (const auto& [key, head] : prefix)
+    {
+        heads.push_back(head);
+
+        if (dfa.has_accept_token(key.first) && !head.empty() && tails.size() < 8)
+        {
+            tails.push_back(head);
+        }
+    }
+
+    for (const auto* generic : {" ", "\n", " x", ";\n", " 1 "})
+    {
+        tails.emplace_back(generic);
+    }
+
+    for (const auto& [window, origin] : words)
+    {
+        for (const auto& head : heads)
+        {
+            for (const auto& tail : tails)
+            {
+                const auto input{head + window + tail};
+
+                const auto last{head.size() + window.size() - 1};
+
+                std::size_t containing{0};
+
+                auto covered{false};
+
+                std::size_t offset{0};
+
+                const auto consumed{lexer.tokenize_all<Token>(input, [&](const Token, const std::size_t length) {
+                    if (offset <= last && last < offset + length)
+                    {
+                        containing = offset;
+
+                        covered = true;
+                    }
+
+                    offset += length;
+                })};
+
+                if (consumed != input.size())
+                {
+                    continue;
+                }
+
+                if (!covered || containing != head.size() + origin)
+                {
+                    ++g_witness_disagreements;
+
+                    continue;
+                }
+
+                return std::pair{input, window};
+            }
+        }
+    }
+
+    return std::nullopt;
 }
 
 /**
@@ -735,7 +935,11 @@ std::size_t backup_disagreements(
                         continue;
                     }
 
-                    exercised += rewinds(dfa, input) > 0 ? 1 : 0;
+                    const auto rewound{rewinds(dfa, input) > 0};
+
+                    exercised += rewound ? 1 : 0;
+
+                    g_exercised_tokenizable += rewound && consumed == input.size() ? 1 : 0;
 
                     disagreements += covered && containing == head.size() + *at ? 0 : 1;
                 }
@@ -814,8 +1018,10 @@ bool nullable_grammar(const Dfa& dfa)
  */
 std::size_t random_grammars(
         const std::size_t count, std::size_t& usable, std::size_t& nullable, std::size_t& with_certificate,
-        std::size_t& rescued, std::size_t& proved_none, std::size_t& inconclusive)
+        std::size_t& rescued, std::size_t& witnessed_rescued, std::size_t& proved_none, std::size_t& inconclusive)
 {
+    witnessed_rescued = 0;
+
     usable = 0;
 
     nullable = 0;
@@ -908,6 +1114,17 @@ std::size_t random_grammars(
                 proved_none += length == 0 && exhausted ? 1 : 0;
 
                 inconclusive += length == 0 && !exhausted ? 1 : 0;
+
+                // Model-positive is not usefulness: a certified word may occur in no completely tokenizable
+                // input. A grammar counts as witnessed-rescued only when the bounded search produces a complete
+                // tokenization containing a certified word; the search continues past the shortest certified
+                // length because occurrence is a property of the concrete word, not its quotient key.
+                if (length > 0)
+                {
+                    const auto words{certified_words_upto(dfa, live, reentrant, length + 2, 400)};
+
+                    witnessed_rescued += find_witness(dfa, lexer, live, words) ? 1 : 0;
+                }
             }
 
             std::vector<std::string> windows;
@@ -969,6 +1186,14 @@ struct Row
     std::string_view example;
 
     std::size_t example_origin;
+
+    /**
+     * @brief A pinned completely tokenizable input containing a certified window, escaped; empty for negative rows.
+     *
+     * The occurrence witness is what separates a useful certificate from a vacuous one, so every positive row
+     * asserts a concrete witness rather than resting on the cloud's non-emptiness.
+     */
+    std::string_view witness;
 };
 
 /**
@@ -1417,17 +1642,36 @@ bool run(const Row& row, Builder_dbg& builder)
         }
     }
 
+    // The occurrence witness: a complete tokenization containing a certified window, pinned per positive row so
+    // the usefulness of every displayed certificate is asserted, not implied by cloud non-emptiness.
+    std::vector<std::pair<std::string, std::size_t>> witness_words;
+
+    for (const auto& candidate : found)
+    {
+        if (const auto at{predicted(dfa, live, candidate, reentrant)})
+        {
+            witness_words.emplace_back(candidate, *at);
+        }
+    }
+
+    const auto witness{find_witness(dfa, lexer, live, witness_words)};
+
+    const auto witness_ok{
+            shortest == 0 ? !witness && row.witness.empty() :
+                            witness.has_value() && escaped(witness->first) == row.witness};
+
     const auto ok{
             disagreements == 0 && shortest == row.shortest && backup == 0 && covered && conclusive &&
             visited == row.keys && escaped(example) == row.example &&
-            (example.empty() || (example_has_origin && example_at == row.example_origin))};
+            (example.empty() || (example_has_origin && example_at == row.example_origin)) && witness_ok};
 
     std::printf(
             "  %-30s k=1 %zu, window %zu/%zu, backup %zu over %7zu rewinding executions from %4zu prefixes, "
-            "%4zu keys%s%s%s%s\n",
+            "%4zu keys%s%s%s%s%s%s\n",
             std::string{row.name}.c_str(), disagreements, shortest, row.shortest, backup, exercised, prefixes, visited,
             example.empty() ? "" : ", e.g. \"", escaped(example).c_str(),
-            example_has_origin ? ("\" at " + std::to_string(example_at)).c_str() : "", ok ? "" : "   <- MOVED");
+            example_has_origin ? ("\" at " + std::to_string(example_at)).c_str() : "",
+            witness ? (", witness \"" + escaped(witness->first) + "\"").c_str() : "", ok ? "" : "   <- MOVED", "");
 
     return ok;
 }
@@ -1451,7 +1695,8 @@ int main()
                   .rewinds_expected = false,
                   .keys = 24,
                   .example = "\\n!",
-                  .example_origin = 1},
+                  .example_origin = 1,
+                  .witness = "\\n!"},
                  b) &&
              ok;
     }
@@ -1464,7 +1709,8 @@ int main()
                   .rewinds_expected = false,
                   .keys = 18,
                   .example = "\\n!",
-                  .example_origin = 1},
+                  .example_origin = 1,
+                  .witness = "//\\x00\\n"},
                  b) &&
              ok;
     }
@@ -1477,22 +1723,61 @@ int main()
                   .rewinds_expected = false,
                   .keys = 53,
                   .example = "\\t*/\\t",
-                  .example_origin = 3},
+                  .example_origin = 3,
+                  .witness = "/*\\x00*/\\t"},
                  b) &&
              ok;
     }
     {
         Builder_dbg b;
+        // The predecessor's actual conventional row: strings and line comments over whitespace runs that include
+        // newline, with NO block-comment token. The row this used to be, strings plus line plus block comments
+        // from the same base, is neither predecessor row; it stays below, labelled as new to this study.
+        c_like(b, false);
+        b.add_token(string_literal(), Token::String, 2);
+        b.add_token(line_comment(), Token::LineComment, 1);
+        ok = run({.name = "C-like conventional",
+                  .shortest = 2,
+                  .rewinds_expected = false,
+                  .keys = 27,
+                  .example = "\\n!",
+                  .example_origin = 1,
+                  .witness = "//\\x00\\n"},
+                 b) &&
+             ok;
+    }
+    {
+        Builder_dbg b;
+        // The predecessor's sixth exact-empty row: the split-friendly base, newline its own token, plus block
+        // comments, the one token kind that spans lines.
+        c_like(b, true);
+        b.add_token(string_literal(), Token::String, 2);
+        b.add_token(line_comment(), Token::LineComment, 1);
+        b.add_token(block_comment(), Token::BlockComment, 1);
+        ok = run({.name = "split-friendly + block comments",
+                  .shortest = 4,
+                  .rewinds_expected = false,
+                  .keys = 188,
+                  .example = "\\n*/\\t",
+                  .example_origin = 3,
+                  .witness = "/*\\x00*/\\n"},
+                 b) &&
+             ok;
+    }
+    {
+        Builder_dbg b;
+        // New to this study, not a predecessor row: the conventional base with all three spanning forms at once.
         c_like(b, false);
         b.add_token(string_literal(), Token::String, 2);
         b.add_token(line_comment(), Token::LineComment, 1);
         b.add_token(block_comment(), Token::BlockComment, 1);
-        ok = run({.name = "C-like conventional",
+        ok = run({.name = "C-like cumulative (new here)",
                   .shortest = 4,
                   .rewinds_expected = false,
                   .keys = 189,
                   .example = "\\n*/\\t",
-                  .example_origin = 3},
+                  .example_origin = 3,
+                  .witness = "/*\\x00*/\\n"},
                  b) &&
              ok;
     }
@@ -1507,7 +1792,8 @@ int main()
                   .rewinds_expected = false,
                   .keys = 69,
                   .example = "\\t\"",
-                  .example_origin = 1},
+                  .example_origin = 1,
+                  .witness = "\\t,"},
                  b) &&
              ok;
     }
@@ -1529,7 +1815,8 @@ int main()
                   .rewinds_expected = true,
                   .keys = 4,
                   .example = "a",
-                  .example_origin = 0},
+                  .example_origin = 0,
+                  .witness = "a"},
                  b) &&
              ok;
     }
@@ -1554,7 +1841,8 @@ int main()
                   .rewinds_expected = true,
                   .keys = 5,
                   .example = "a",
-                  .example_origin = 0},
+                  .example_origin = 0,
+                  .witness = "a"},
                  b) &&
              ok;
 
@@ -1616,7 +1904,8 @@ int main()
                   .rewinds_expected = true,
                   .keys = 4,
                   .example = "A",
-                  .example_origin = 0},
+                  .example_origin = 0,
+                  .witness = "A"},
                  b) &&
              ok;
     }
@@ -1635,7 +1924,8 @@ int main()
                   .rewinds_expected = true,
                   .keys = 9,
                   .example = " .",
-                  .example_origin = 1},
+                  .example_origin = 1,
+                  .witness = " 0"},
                  b) &&
              ok;
     }
@@ -1653,7 +1943,8 @@ int main()
                   .rewinds_expected = true,
                   .keys = 4,
                   .example = "A",
-                  .example_origin = 0},
+                  .example_origin = 0,
+                  .witness = "A"},
                  b) &&
              ok;
     }
@@ -1671,7 +1962,8 @@ int main()
                   .rewinds_expected = true,
                   .keys = 4,
                   .example = "A",
-                  .example_origin = 0},
+                  .example_origin = 0,
+                  .witness = "A"},
                  b) &&
              ok;
     }
@@ -1689,7 +1981,8 @@ int main()
                   .rewinds_expected = true,
                   .keys = 9,
                   .example = "A",
-                  .example_origin = 0},
+                  .example_origin = 0,
+                  .witness = "A"},
                  b) &&
              ok;
     }
@@ -1707,9 +2000,50 @@ int main()
                   .rewinds_expected = false,
                   .keys = 3,
                   .example = "",
-                  .example_origin = 0},
+                  .example_origin = 0,
+                  .witness = ""},
                  b) &&
              ok;
+    }
+
+    {
+        // The vacuity witness, pinned so the model-versus-useful distinction can never silently regress.
+        // Definition 1 permits vacuity: over {0, 00, 01} the model certifies ("1001", 2) with a nonempty
+        // unanimous cloud, yet no completely tokenizable input contains "1001". Every "1" is the tail of a
+        // greedy "01", so a boundary follows the window's first byte; from it maximal munch must take "00",
+        // leaving the final "1" at a boundary no token starts. The bounded witness search must come back
+        // empty, which is exactly why the applicability figures count only witnessed certificates.
+        using namespace munch::regex;
+
+        Builder_dbg b;
+        b.add_token(text("0"), Token::Number, 2);
+        b.add_token(text("00"), Token::Identifier, 2);
+        b.add_token(text("01"), Token::Keyword, 2);
+
+        const auto dfa{b.dfa()};
+
+        const auto lexer{b.build()};
+
+        const auto live{trim(dfa)};
+
+        const auto reentrant{init_reentrant(dfa, live)};
+
+        const auto at{predicted(dfa, live, "1001", reentrant)};
+
+        // The search targets exactly the vacuous word: this grammar also certifies witnessed words, "10" among
+        // them via the input "010", and the point here is that certification of "1001" specifically is vacuous.
+        const std::vector<std::pair<std::string, std::size_t>> only{{std::string{"1001"}, at.value_or(0)}};
+
+        const auto witness{at ? find_witness(dfa, lexer, live, only) : std::nullopt};
+
+        const auto vacuous_ok{at.has_value() && *at == 2 && !witness.has_value()};
+
+        std::printf(
+                "  %-30s model certifies \"1001\" at %s, bounded witness search empty: %s%s\n",
+                "vacuity: {0, 00, 01} at \"1001\"", at ? std::to_string(*at).c_str() : "none", witness ? "NO" : "yes",
+                vacuous_ok ? "" : "   <- MOVED");
+
+        ok = vacuous_ok && ok;
     }
 
     std::size_t usable{0};
@@ -1720,12 +2054,14 @@ int main()
 
     std::size_t rescued{0};
 
+    std::size_t witnessed_rescued{0};
+
     std::size_t proved_none{0};
 
     std::size_t inconclusive{0};
 
-    const auto random_disagreements{
-            random_grammars(400, usable, nullable, with_certificate, rescued, proved_none, inconclusive)};
+    const auto random_disagreements{random_grammars(
+            400, usable, nullable, with_certificate, rescued, witnessed_rescued, proved_none, inconclusive)};
 
     std::printf(
             "\n  %-30s %zu disagreements over %zu non-nullable grammars, %zu with a non-empty certificate, %zu "
@@ -1734,10 +2070,19 @@ int main()
             random_disagreements == 0 ? "" : "   <- MODEL IS WRONG");
 
     std::printf(
-            "  %-30s of %zu certifying no byte: %zu certified, %zu with none found, %zu inconclusive\n",
+            "  %-30s of %zu certifying no byte: %zu model-positive, %zu with none found, %zu inconclusive\n",
             "window applicability", usable - with_certificate, rescued, proved_none, inconclusive);
 
-    std::printf("  %-30s %zu rewinding executions across every named row\n", "backup total", g_exercised_total);
+    // Model-positive against occurrence-witnessed: Definition 1 permits vacuity, so the applicability claim rests
+    // on the witnessed count. The unwitnessed remainder is UNRESOLVED under this bounded search, never negative.
+    std::printf(
+            "  %-30s %zu of %zu model-positive grammars have an occurrence-witnessed certificate, %zu unresolved\n",
+            "witnessed applicability", witnessed_rescued, rescued, rescued - witnessed_rescued);
+
+    std::printf(
+            "  %-30s %zu rewinding executions across every named row, %zu with a completely tokenizable input, "
+            "%zu witness origin disagreements\n",
+            "backup total", g_exercised_total, g_exercised_tokenizable, g_witness_disagreements);
 
     // The metric, precisely: keys RETAINED before shortest-window stopping ends each search, not the complete
     // reachable quotient space; a search that certifies at length two never explores what lies past it. Total and
@@ -1759,8 +2104,9 @@ int main()
     // The aggregate is asserted for the same reason as the sweep figures: the notes quote 1,079,392 rewinding
     // executions, and only a pinned total keeps that sentence honest when a row or the input builder changes.
     ok = random_disagreements == 0 && usable == 134 && nullable == 266 && with_certificate == 39 &&
-         usable - with_certificate == 95 && rescued == 91 && proved_none == 4 && inconclusive == 0 &&
-         g_exercised_total == 1'079'392 && g_visited_max == 32 && g_visited_total == 878 && ok;
+         usable - with_certificate == 95 && rescued == 91 && witnessed_rescued == 91 && proved_none == 4 &&
+         inconclusive == 0 && g_exercised_total == 1'079'392 && g_exercised_tokenizable == 419'780 &&
+         g_witness_disagreements == 0 && g_visited_max == 32 && g_visited_total == 878 && ok;
 
     std::printf(
             "\n%s\n", ok ? "The model reproduces is_split_point at length one on six named grammars with a "
