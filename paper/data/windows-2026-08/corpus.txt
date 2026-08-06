@@ -1,0 +1,120 @@
+window-recovered parallel cuts, preview of the split-windows benchmark campaign
+  commit eeb9afe (uncommitted changes present), 16 MiB, 3 passes, DEV RUN, observations discarded
+  certified two-byte windows: 341, found in 29.1 ms at construction time
+  libs/common/include/munch/common/concepts.hpp 45 occurrences over 1469 bytes, mean gap 32.6
+  libs/core/include/munch/core/builder.hpp 208 occurrences over 9004 bytes, mean gap 43.3
+  libs/core/include/munch/core/determinize.hpp 31 occurrences over 1417 bytes, mean gap 45.7
+  libs/core/include/munch/core/exceptions/state_limit_error.hpp 37 occurrences over 1034 bytes, mean gap 27.9
+  libs/core/include/munch/core/lexer.hpp   336 occurrences over 17932 bytes, mean gap 53.4
+  libs/core/include/munch/core/mode.hpp    126 occurrences over 3633 bytes, mean gap 28.8
+  libs/core/include/munch/core/mode_builder.hpp 221 occurrences over 10495 bytes, mean gap 47.5
+  libs/core/include/munch/core/mode_lexer.hpp 280 occurrences over 14241 bytes, mean gap 50.9
+  libs/core/src/builder.cpp                145 occurrences over 4401 bytes, mean gap 30.4
+  libs/core/src/determinize.cpp            335 occurrences over 11458 bytes, mean gap 34.2
+  libs/core/src/exceptions/state_limit_error.cpp 21 occurrences over 398 bytes, mean gap 19.0
+  libs/core/src/mode.cpp                   34 occurrences over 650 bytes, mean gap 19.1
+  libs/core/src/mode_builder.cpp           212 occurrences over 8244 bytes, mean gap 38.9
+  libs/core/src/mode_lexer.cpp             31 occurrences over 599 bytes, mean gap 19.3
+  libs/core/tests/lexer_test.cpp           1518 occurrences over 58102 bytes, mean gap 38.3
+  libs/core/tests/mode_test.cpp            821 occurrences over 32607 bytes, mean gap 39.7
+  libs/core/tests/property_test.cpp        334 occurrences over 11675 bytes, mean gap 35.0
+  libs/dfa/include/munch/dfa/builder.hpp   71 occurrences over 2176 bytes, mean gap 30.6
+  libs/dfa/include/munch/dfa/dfa.hpp       105 occurrences over 3507 bytes, mean gap 33.4
+  libs/dfa/include/munch/dfa/label.hpp     59 occurrences over 1432 bytes, mean gap 24.3
+  libs/dfa/include/munch/dfa/minimize.hpp  37 occurrences over 2115 bytes, mean gap 57.2
+  libs/dfa/include/munch/dfa/simulator.hpp 390 occurrences over 20046 bytes, mean gap 51.4
+  libs/dfa/include/munch/dfa/token.hpp     47 occurrences over 1335 bytes, mean gap 28.4
+  libs/dfa/src/builder.cpp                 57 occurrences over 872 bytes, mean gap 15.3
+  libs/dfa/src/dfa.cpp                     58 occurrences over 1272 bytes, mean gap 21.9
+  libs/dfa/src/label.cpp                   33 occurrences over 459 bytes, mean gap 13.9
+  libs/dfa/src/minimize.cpp                130 occurrences over 4326 bytes, mean gap 33.3
+  libs/dfa/src/simulator.cpp               310 occurrences over 12336 bytes, mean gap 39.8
+  libs/dfa/src/token.cpp                   25 occurrences over 291 bytes, mean gap 11.6
+  libs/dfa/tests/dfa_test.cpp              520 occurrences over 17841 bytes, mean gap 34.3
+  libs/dfa/tests/minimize_test.cpp         202 occurrences over 7177 bytes, mean gap 35.5
+  libs/dfa/tests/property_test.cpp         487 occurrences over 16982 bytes, mean gap 34.9
+  libs/dfa/tools/include/munch/dfa/tools/graphviz.hpp 47 occurrences over 1321 bytes, mean gap 28.1
+  libs/dfa/tools/src/graphviz.cpp          103 occurrences over 2431 bytes, mean gap 23.6
+  libs/dfa/tools/tests/graphviz_test.cpp   197 occurrences over 6725 bytes, mean gap 34.1
+  libs/nfa/include/munch/nfa/builder.hpp   159 occurrences over 6431 bytes, mean gap 40.4
+  libs/nfa/include/munch/nfa/label.hpp     110 occurrences over 2885 bytes, mean gap 26.2
+  libs/nfa/include/munch/nfa/nfa.hpp       114 occurrences over 3951 bytes, mean gap 34.7
+  libs/nfa/include/munch/nfa/simulator.hpp 77 occurrences over 2533 bytes, mean gap 32.9
+  libs/nfa/include/munch/nfa/token.hpp     56 occurrences over 1629 bytes, mean gap 29.1
+  libs/nfa/src/builder.cpp                 189 occurrences over 5025 bytes, mean gap 26.6
+  libs/nfa/src/label.cpp                   90 occurrences over 1352 bytes, mean gap 15.0
+  libs/nfa/src/nfa.cpp                     102 occurrences over 2656 bytes, mean gap 26.0
+  libs/nfa/src/token.cpp                   39 occurrences over 595 bytes, mean gap 15.3
+  libs/nfa/tests/nfa_test.cpp              451 occurrences over 15291 bytes, mean gap 33.9
+  libs/nfa/tools/include/munch/nfa/tools/graphviz.hpp 47 occurrences over 1324 bytes, mean gap 28.2
+  libs/nfa/tools/src/graphviz.cpp          112 occurrences over 2732 bytes, mean gap 24.4
+  libs/nfa/tools/tests/graphviz_test.cpp   227 occurrences over 7732 bytes, mean gap 34.1
+  libs/regex/include/munch/regex/any_of.hpp 26 occurrences over 486 bytes, mean gap 18.7
+  libs/regex/include/munch/regex/choice.hpp 30 occurrences over 662 bytes, mean gap 22.1
+  libs/regex/include/munch/regex/concat.hpp 30 occurrences over 647 bytes, mean gap 21.6
+  libs/regex/include/munch/regex/indirect.hpp 56 occurrences over 1836 bytes, mean gap 32.8
+  libs/regex/include/munch/regex/patterns.hpp 37 occurrences over 974 bytes, mean gap 26.3
+  libs/regex/include/munch/regex/regex.hpp 214 occurrences over 5321 bytes, mean gap 24.9
+  libs/regex/include/munch/regex/repeat.hpp 102 occurrences over 1589 bytes, mean gap 15.6
+  libs/regex/include/munch/regex/set.hpp   182 occurrences over 5396 bytes, mean gap 29.6
+  libs/regex/include/munch/regex/text.hpp  26 occurrences over 482 bytes, mean gap 18.5
+  libs/regex/include/munch/regex/unicode.hpp 39 occurrences over 1483 bytes, mean gap 38.0
+  libs/regex/include/munch/regex/utf8.hpp  51 occurrences over 1925 bytes, mean gap 37.7
+  libs/regex/src/any_of.cpp                27 occurrences over 674 bytes, mean gap 25.0
+  libs/regex/src/choice.cpp                41 occurrences over 1121 bytes, mean gap 27.3
+  libs/regex/src/concat.cpp                29 occurrences over 665 bytes, mean gap 22.9
+  libs/regex/src/patterns.cpp              28 occurrences over 404 bytes, mean gap 14.4
+  libs/regex/src/regex.cpp                 14 occurrences over 214 bytes, mean gap 15.3
+  libs/regex/src/repeat.cpp                264 occurrences over 7659 bytes, mean gap 29.0
+  libs/regex/src/set.cpp                   190 occurrences over 2741 bytes, mean gap 14.4
+  libs/regex/src/text.cpp                  28 occurrences over 680 bytes, mean gap 24.3
+  libs/regex/src/unicode.cpp               39 occurrences over 457 bytes, mean gap 11.7
+  libs/regex/src/utf8.cpp                  215 occurrences over 6705 bytes, mean gap 31.2
+  libs/regex/tests/any_of_test.cpp         346 occurrences over 13524 bytes, mean gap 39.1
+  libs/regex/tests/choice_test.cpp         73 occurrences over 2031 bytes, mean gap 27.8
+  libs/regex/tests/concat_test.cpp         69 occurrences over 2038 bytes, mean gap 29.5
+  libs/regex/tests/indirect_test.cpp       75 occurrences over 1688 bytes, mean gap 22.5
+  libs/regex/tests/patterns_test.cpp       81 occurrences over 2810 bytes, mean gap 34.7
+  libs/regex/tests/repeat_test.cpp         202 occurrences over 7496 bytes, mean gap 37.1
+  libs/regex/tests/set_test.cpp            409 occurrences over 9201 bytes, mean gap 22.5
+  libs/regex/tests/text_test.cpp           85 occurrences over 2418 bytes, mean gap 28.4
+  libs/regex/tests/unicode_test.cpp        135 occurrences over 3831 bytes, mean gap 28.4
+  libs/regex/tests/utf8_test.cpp           239 occurrences over 7338 bytes, mean gap 30.7
+  tools/benchmark/include/munch/tools/benchmark/harness.hpp 218 occurrences over 7987 bytes, mean gap 36.6
+  tools/benchmark/src/compare.cpp          994 occurrences over 38047 bytes, mean gap 38.3
+  tools/benchmark/src/harness.cpp          399 occurrences over 16393 bytes, mean gap 41.1
+  tools/benchmark/src/main.cpp             735 occurrences over 31903 bytes, mean gap 43.4
+  tools/benchmark/src/modes.cpp            270 occurrences over 10692 bytes, mean gap 39.6
+  tools/fuzz/src/builder_fuzzer.cpp        179 occurrences over 6558 bytes, mean gap 36.6
+  tools/fuzz/src/raw_string_fuzzer.cpp     144 occurrences over 5348 bytes, mean gap 37.1
+  tools/probes/src/mode_cut_gate.cpp       229 occurrences over 8056 bytes, mean gap 35.2
+  tools/probes/src/window_bench.cpp        862 occurrences over 32484 bytes, mean gap 37.7
+  tools/probes/src/window_gate.cpp         1687 occurrences over 69106 bytes, mean gap 41.0
+  tools/tokenizer/include/munch/tools/tokenizer/error.hpp 47 occurrences over 1152 bytes, mean gap 24.5
+  tools/tokenizer/include/munch/tools/tokenizer/raw_string.hpp 29 occurrences over 1299 bytes, mean gap 44.8
+  tools/tokenizer/include/munch/tools/tokenizer/result.hpp 104 occurrences over 3356 bytes, mean gap 32.3
+  tools/tokenizer/include/munch/tools/tokenizer/token.hpp 54 occurrences over 1443 bytes, mean gap 26.7
+  tools/tokenizer/include/munch/tools/tokenizer/tokenizer.hpp 231 occurrences over 9864 bytes, mean gap 42.7
+  tools/tokenizer/src/error.cpp            25 occurrences over 386 bytes, mean gap 15.4
+  tools/tokenizer/src/raw_string.cpp       73 occurrences over 2027 bytes, mean gap 27.8
+  tools/tokenizer/src/tokenizer.cpp        109 occurrences over 1912 bytes, mean gap 17.5
+  tools/tokenizer/tests/raw_string_test.cpp 139 occurrences over 4600 bytes, mean gap 33.1
+  tools/tokenizer/tests/tokenizer_test.cpp 481 occurrences over 16285 bytes, mean gap 33.9
+  README.md                                1401 occurrences over 65451 bytes, mean gap 46.7
+  docs/design.md                           86 occurrences over 4514 bytes, mean gap 52.5
+  docs/limits.md                           223 occurrences over 15220 bytes, mean gap 68.3
+  docs/performance.md                      350 occurrences over 19558 bytes, mean gap 55.9
+  docs/split_points.md                     984 occurrences over 59746 bytes, mean gap 60.7
+  corpus: 16777216 bytes, 368890 window occurrences, mean gap 45.5 bytes
+  streams identical: 4821182 tokens, spliced checksum equal, 8 chunks; window plan 11.13 ms
+  pass 0: serial   402.7 MiB/s, window-scan x8  2554.6 MiB/s, speedup 6.34x
+  pass 1: serial   400.5 MiB/s, window-scan x8  2785.9 MiB/s, speedup 6.96x
+  pass 2: serial   397.2 MiB/s, window-scan x8  2089.0 MiB/s, speedup 5.26x
+
+byte-certified versus window-recovered cuts, same grammar, same corpus
+  346 windows; both plans reproduce the serial stream of 5190120 tokens; plans: byte 0.00 ms for 8 chunks, window 14.14 ms for 8
+  pass 0: byte-scan x8  2379.4 MiB/s, window-scan x8  2373.4 MiB/s, ratio 1.00
+  pass 1: byte-scan x8  2656.0 MiB/s, window-scan x8  2425.9 MiB/s, ratio 0.91
+  pass 2: byte-scan x8  2828.7 MiB/s, window-scan x8  2525.0 MiB/s, ratio 0.89
+
+dev-grade preview only: archived figures require the collect.sh ritual on a quiet machine
