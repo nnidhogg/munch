@@ -1013,18 +1013,19 @@ int main(int argc, char** argv)
 
         Tally timed{};
 
-        std::size_t timed_offset{0};
+        std::size_t serial_covered{0};
 
         std::chrono::steady_clock::duration serial_elapsed{};
 
         std::chrono::steady_clock::duration chunked_elapsed{};
 
+        // The timed serial callback must do exactly the work the chunked callbacks do, checksum and count, or
+        // the baseline is unequal and the ratio lies; coverage comes from the driver's return value instead of
+        // a per-token accumulator in the timed region.
         const auto run_serial{[&] {
             const auto started{std::chrono::steady_clock::now()};
 
-            lexer.tokenize_all<Token>(corpus, [&](const Token token, const std::size_t length) {
-                timed_offset += length;
-
+            serial_covered = lexer.tokenize_all<Token>(corpus, [&](const Token token, const std::size_t) {
                 timed_serial.checksum = timed_serial.checksum * 31 + static_cast<std::size_t>(token);
 
                 ++timed_serial.tokens;
@@ -1056,7 +1057,7 @@ int main(int argc, char** argv)
             run_serial();
         }
 
-        agreed = agreed && agrees(timed_serial, serial) && timed_offset == corpus.size() && agrees(timed, serial);
+        agreed = agreed && agrees(timed_serial, serial) && serial_covered == corpus.size() && agrees(timed, serial);
 
         csv_row("serial-no-byte", pass, elapsed_s(serial_elapsed), mib_per_s(corpus.size(), serial_elapsed));
 
