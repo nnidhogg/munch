@@ -6,8 +6,9 @@ abstract: >-
   construction into an NFA, subset construction and minimization into a DFA, and a Builder/Lexer orchestration layer
   on top. It also derives certified split symbols from the compiled automaton, bytes at which every occurrence in a
   completely tokenizable input begins a token, so an input can be divided and scanned in parallel with the token
-  stream preserved exactly, without speculation or a merge phase. The condition is necessary as well as sufficient
-  once the analysis is restricted to states an input can reach and from which acceptance is still reachable.
+  stream preserved exactly, without speculation or a merge phase. For bytes occurring in some completely tokenizable
+  input, the condition is necessary as well as sufficient once the analysis is restricted to states an input can reach
+  and from which acceptance is still reachable.
 keywords:
   - lexical analysis
   - tokenization

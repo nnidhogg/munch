@@ -15,12 +15,12 @@
 `munch` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
 regex-like combinator DSL, compiled through Thompson construction, subset construction, and DFA minimization by Moore
 partition refinement, then executed by a cache-optimized table simulator. There are no predefined tokens or grammars.
-You describe the language, and the library builds the automaton. On the [comparison
-below](#comparison-with-other-engines), that automaton measures as the fastest of the run-time-built lexers measured
-there, in both languages and on both benchmark corpora; only compile-time code generation measures ahead. The compiled
-table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned in parallel with
-strong scaling and a provably identical token stream, a guarantee none of the code-generating lexers measured here
-derives or checks for its own token sets.
+You describe the language, and the library builds the automaton. On
+the [comparison below](#comparison-with-other-engines), that automaton measures as the fastest of the run-time-built
+lexers measured there, in both languages and on both benchmark corpora; only compile-time code generation measures
+ahead. The compiled table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned
+in parallel with strong scaling and a provably identical token stream, a guarantee none of the code-generating lexers
+measured here derives or checks for its own token sets.
 
 The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal munch rule every lexer lives by.
 
@@ -64,9 +64,9 @@ The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal mu
 
 - **Lightweight to Integrate**
 
-  Builds as static libraries by default (`BUILD_SHARED_LIBS` is honored) with `FetchContent`-managed dependencies. Add it with `add_subdirectory`, or
-  install it and `find_package(munch)`; either way, link `munch::munch`. The installed package is self-contained, with
-  no third-party dependencies in its public headers.
+  Builds as static libraries by default (`BUILD_SHARED_LIBS` is honored) with `FetchContent`-managed dependencies. Add
+  it with `add_subdirectory`, or install it and `find_package(munch)`; either way, link `munch::munch`. The installed
+  package is self-contained, with no third-party dependencies in its public headers.
 
 ## **How It Works**
 
@@ -196,12 +196,11 @@ does not isolate. Rerun the benchmark on your own hardware and language before c
 
 ### **Comparison with Other Engines**
 
-`munch_benchmark_modes` measures the modal driver across the axes that separate its paths: an action that never
-fires against a grammar with no actions at all, the batch entry point against the per-token one, how often an action
-token occurs, how long the free-content runs between actions are, `go_to` against `push`/`pop`, and mode-stack
-depth. Run it when the action
-lookup changes; a single corpus hides which path an edit helped, and one edit measured +11% on one row and -13% on
-another.
+`munch_benchmark_modes` measures the modal driver across the axes that separate its paths: an action that never fires
+against a grammar with no actions at all, the batch entry point against the per-token one, how often an action token
+occurs, how long the free-content runs between actions are, `go_to` against `push`/`pop`, and mode-stack depth. Run it
+when the action lookup changes; a single corpus hides which path an edit helped, and one edit measured +11% on one row
+and -13% on another.
 
 ```console
 $ ./build/tools/benchmark/munch_benchmark_modes 4 15
@@ -282,16 +281,16 @@ is measured against. regex-automata appears twice deliberately: once through its
 once steelmanned through its low-level automaton walk, so the claim holds against the best configuration measured here
 rather than its friendliest entry point.
 
-Every cell in the four tables below is the **best** of 15 passes, the statistic the transcripts above report first;
-the raw blocks carry the medians and the spread beside it. The paper's scaling tables quote **medians** instead, so
-a figure from here and a figure from there are not the same statistic and should not be set side by side.
+Every cell in the four tables below is the **best** of 15 passes, the statistic the transcripts above report first; the
+raw blocks carry the medians and the spread beside it. The paper's scaling tables quote **medians** instead, so a figure
+from here and a figure from there are not the same statistic and should not be set side by side.
 
-| Engine                 | Version   | Matching approach                       | dense | source |
-|------------------------|-----------|-----------------------------------------|------:|-------:|
+| Engine                 | Version   | Matching approach                         | dense | source |
+|------------------------|-----------|-------------------------------------------|------:|-------:|
 | `munch`                | this repo | table-compiled minimized DFA, single pass |   577 |    564 |
-| `regex-automata` (raw) | 0.4       | dense DFA walked at the automaton level |   349 |    399 |
-| lexertl17              | 652435f   | rules compiled to a DFA                 |   176 |    224 |
-| `regex-automata`       | 0.4       | dense DFA through its search API        |   168 |    222 |
+| `regex-automata` (raw) | 0.4       | dense DFA walked at the automaton level   |   349 |    399 |
+| lexertl17              | 652435f   | rules compiled to a DFA                   |   176 |    224 |
+| `regex-automata`       | 0.4       | dense DFA through its search API          |   168 |    222 |
 
 **The class above: compile-time code generation.** These freeze the token set at build time and emit code shaped like
 it, the one advantage a runtime-built table cannot take, so this group does not measure a competition munch can enter;
@@ -303,24 +302,24 @@ the dense corpus, because CTRE compiles the regex structure into code and still 
 kinds per token, while munch's determinized table erased the alternation before the first byte arrived. Only when longer
 tokens let generated code consume multi-byte runs does CTRE pull ahead.
 
-| Engine  | Version   | Matching approach                       | dense | source |
-|---------|-----------|-----------------------------------------|------:|-------:|
-| logos   | 0.15.1    | matcher generated by a derive macro     |   728 |    891 |
+| Engine  | Version   | Matching approach                         | dense | source |
+|---------|-----------|-------------------------------------------|------:|-------:|
+| logos   | 0.15.1    | matcher generated by a derive macro       |   728 |    891 |
 | `munch` | this repo | table-compiled minimized DFA, single pass |   577 |    564 |
-| CTRE    | 3.9.0     | matcher generated from the regex        |   421 |    575 |
+| CTRE    | 3.9.0     | matcher generated from the regex          |   421 |    575 |
 
 **The industry defaults: general-purpose regex engines.** This is what a codebase typically reaches for when it needs a
 tokenizer without adopting a lexer library, so the group measures what that convenience costs. The gap is not a defect
 in these engines: they solve a far broader problem, searching, captures, backreferences, and they pay for that
 generality on a workload of anchored matches every couple of bytes.
 
-| Engine       | Version        | Matching approach                       | dense | source |
-|--------------|----------------|-----------------------------------------|------:|-------:|
+| Engine       | Version        | Matching approach                         | dense | source |
+|--------------|----------------|-------------------------------------------|------:|-------:|
 | `munch`      | this repo      | table-compiled minimized DFA, single pass |   577 |    564 |
-| PCRE2        | 10.44          | backtracking, JIT-compiled              |    80 |    140 |
-| Boost.Regex  | 1.86.0         | backtracking                            |    16 |     28 |
-| RE2          | 2024-07-02     | leaves the DFA to extract captures      |    11 |     19 |
-| `std::regex` | libstdc++ 13.3 | backtracking                            |    11 |     16 |
+| PCRE2        | 10.44          | backtracking, JIT-compiled                |    80 |    140 |
+| Boost.Regex  | 1.86.0         | backtracking                              |    16 |     28 |
+| RE2          | 2024-07-02     | leaves the DFA to extract captures        |    11 |     19 |
+| `std::regex` | libstdc++ 13.3 | backtracking                              |    11 |     16 |
 
 With the input chunked at safe split points and scanned with one thread per chunk, for the two lexer classes fast enough
 for threading to matter:
@@ -332,8 +331,8 @@ for threading to matter:
 | logos   |       4 |  2708 |   3462 |
 | `munch` |       4 |  2035 |   2076 |
 
-Throughputs in MiB/s. The medians tell the same story throughout: no ranking above changes if the median is
-substituted for the best pass.
+Throughputs in MiB/s. The medians tell the same story throughout: no ranking above changes if the median is substituted
+for the best pass.
 
 Read the numbers for what they measure. The corpus averages under two bytes per token, so per-token overhead dominates:
 munch tokenizes the whole input through `tokenize_all()`, CTRE compiles the token set into a matcher at C++ compile
@@ -341,20 +340,18 @@ time, and the general-purpose engines re-enter a full match API for every token 
 point, `pcre2_jit_match`). RE2 does not use its DFA to report capture positions at all: it picks among three submatch
 engines, `SearchOnePass` when the program is one-pass and the match is anchored, `SearchBitState` for small enough
 subtexts, and `SearchNFA` otherwise. These matches are anchored, so the cost here is leaving the DFA path rather than
-falling all the way to the NFA. Both RE2 and PCRE2 are also designed for searching long texts, not for anchored
-matches every couple of bytes. The comparison
-pattern orders keywords before identifiers and multi-character operators before their prefixes, and the full-stream
-validation confirms that on these corpora the engines with first-match alternation semantics produce exactly munch's
-longest-match, priority-resolved tokenization. Ordering alone does not guarantee that in general: with `if` ordered
-ahead of identifiers, first match splits `ifx` where longest match does not.
+falling all the way to the NFA. Both RE2 and PCRE2 are also designed for searching long texts, not for anchored matches
+every couple of bytes. The comparison pattern orders keywords before identifiers and multi-character operators before
+their prefixes, and the full-stream validation confirms that on these corpora the engines with first-match alternation
+semantics produce exactly munch's longest-match, priority-resolved tokenization. Ordering alone does not guarantee that
+in general: with `if` ordered ahead of identifiers, first match splits `ifx` where longest match does not.
 
-Read as classes, the two corpora say one thing together. munch is the fastest among the run-time-built lexers
-measured here, on both,
-roughly 1.4 to 3.3 times ahead of its nearest relatives even with regex-automata steelmanned through its low-level walk,
-the narrow end being that steelman on the source-shaped corpus. The compile-time code generators own the overall lead as
-tokens grow longer: logos on both corpora and CTRE on source, because generated code consumes multi-byte runs where a
-table walk pays one dependent load per byte, which is also why munch's own throughput is nearly identical on both corpus
-shapes. [docs/performance.md](docs/performance.md) explains why that boundary is where it is.
+Read as classes, the two corpora say one thing together. munch is the fastest among the run-time-built lexers measured
+here, on both, roughly 1.4 to 3.3 times ahead of its nearest relatives even with regex-automata steelmanned through its
+low-level walk, the narrow end being that steelman on the source-shaped corpus. The compile-time code generators own the
+overall lead as tokens grow longer: logos on both corpora and CTRE on source, because generated code consumes multi-byte
+runs where a table walk pays one dependent load per byte, which is also why munch's own throughput is nearly identical
+on both corpus shapes. [docs/performance.md](docs/performance.md) explains why that boundary is where it is.
 
 Threading multiplies the class verdict rather than reordering it: both lexer classes scale strongly, close to linear at
 four threads and sublinearly at eight, so the serial ranking carries over at every width. What the threaded rows
@@ -616,7 +613,8 @@ int main()
     const std::string input = "boolean";
     const auto [token, consumed] = lexer.tokenize<Token_kind>(input);
 
-    std::cout << "Token: " << (token ? std::to_string(static_cast<int>(*token)) : "None") << ", Consumed: " << consumed << '\n';
+    std::cout << "Token: " << (token ? std::to_string(static_cast<int>(*token)) : "None") << ", Consumed: "
+              << consumed << '\n';
 
     return 0;
 }
@@ -761,12 +759,12 @@ processing (`tools::tokenizer::Tokenizer`).
 
 `Lexer` matches one flat token set everywhere. Inside a string literal a quote terminates rather than opens, and a
 comment that nests needs to know how deep it is. A flat token set does reach an ordinary escaped literal, matching it
-whole; what it cannot do is report the interior as separate tokens, and it cannot count nesting to an unbounded depth
-at all. There are two ways to get context-dependence, and they differ in who decides when the context changes.
+whole; what it cannot do is report the interior as separate tokens, and it cannot count nesting to an unbounded depth at
+all. There are two ways to get context-dependence, and they differ in who decides when the context changes.
 
-`Tokenizer` holds several lexers as modes and the driver switches between them with `set_mode()`. Constructed that
-way the tokenizer never switches on its own, which suits cases where the surrounding parser knows what is coming,
-such as a header-name after `#include`.
+`Tokenizer` holds several lexers as modes and the driver switches between them with `set_mode()`. Constructed that way
+the tokenizer never switches on its own, which suits cases where the surrounding parser knows what is coming, such as a
+header-name after `#include`.
 
 `Mode_lexer`, built by `Mode_builder`, declares the switches in the grammar instead. Each mode is its own token set
 compiled through the ordinary `Builder`, and each token carries an action on a mode stack: `stay`, `go_to`, `push` or
@@ -797,27 +795,26 @@ const auto consumed{lexer.tokenize_all<Token>(
 `Tokenizer` accepts a `Mode_lexer` too, so a streaming driver gets the same grammar-carried transitions: `mode()`
 follows the stack, `depth()` reports the nesting, and `set_mode()` still forces a mode as an error-recovery hatch.
 
-Among the other measured engines, only lexertl17 carries mode transitions in the grammar itself. It is munch's
-nearest relative, a lexer built at run time from rules, and it has had start states with a next-state per rule for
-years, with a stack behind them: `enums.hpp` carries `push_dfa` and `pop_dfa` bits and `lookup.hpp` pushes and pops
-start states, underflow included. **Its mode support is therefore the same expressive class as munch's, not a
-weaker one, and nesting is as available there as here.** The difference the table below reports is throughput, not
-reach. logos reaches the same end from the caller's side rather than the grammar's: `Lexer::morph` turns a lexer for
-one token type into a lexer for another over the same input, which is context-dependent lexing driven by user code
-rather than by a per-rule transition. The general-purpose regex engines have no mode concept at all, so a caller
-would switch patterns by hand, which measures their per-match cost rather than their mode support and is what the
-tables above already report.
+Among the other measured engines, only lexertl17 carries mode transitions in the grammar itself. It is munch's nearest
+relative, a lexer built at run time from rules, and it has had start states with a next-state per rule for years, with a
+stack behind them: `enums.hpp` carries `push_dfa` and `pop_dfa` bits and `lookup.hpp` pushes and pops start states,
+underflow included. **Its mode support is therefore the same expressive class as munch's, not a weaker one, and nesting
+is as available there as here.** The difference the table below reports is throughput, not reach. logos reaches the same
+end from the caller's side rather than the grammar's: `Lexer::morph` turns a lexer for one token type into a lexer for
+another over the same input, which is context-dependent lexing driven by user code rather than by a per-rule transition.
+The general-purpose regex engines have no mode concept at all, so a caller would switch patterns by hand, which measures
+their per-match cost rather than their mode support and is what the tables above already report.
 
-Mode support is an extension the grammar opts into, so the comparison comes in layers: input where modes are
-optional, and input where the tested grammar uses a stack to count nesting.
+Mode support is an extension the grammar opts into, so the comparison comes in layers: input where modes are optional,
+and input where the tested grammar uses a stack to count nesting.
 
 **Where modes are optional.** A string literal can be one token, so a flat grammar tokenizes this corpus too.
 
-| Engine       | Mode mechanism                                             |        MiB/s |
-|--------------|------------------------------------------------------------|-------------:|
-| `munch`      | grammar-carried actions on a mode stack                    | 748.9, 750.1 |
-| lexertl17    | start states with a next-state per rule                    | 245.5, 248.6 |
-| `munch` flat | no modes at all, a string literal as one token             | 865.0, 857.4 |
+| Engine       | Mode mechanism                                 |        MiB/s |
+|--------------|------------------------------------------------|-------------:|
+| `munch`      | grammar-carried actions on a mode stack        | 748.9, 750.1 |
+| lexertl17    | start states with a next-state per rule        | 245.5, 248.6 |
+| `munch` flat | no modes at all, a string literal as one token | 865.0, 857.4 |
 
 Neither engine pushes on this corpus: the string mode is entered and left by a plain next-state transition, so this
 table prices carrying a mode at all rather than the stack.
@@ -825,58 +822,57 @@ table prices carrying a mode at all rather than the stack.
 **Where the tested grammar uses a stack to count nesting.** Block comments nest here, and both engines push and pop to
 track the depth.
 
-| Engine    | Mode mechanism                                             |        MiB/s |
-|-----------|------------------------------------------------------------|-------------:|
-| `munch`   | grammar-carried actions on a mode stack                    | 627.9, 621.6 |
-| lexertl17 | start states pushed and popped                             | 232.9, 236.8 |
+| Engine    | Mode mechanism                          |        MiB/s |
+|-----------|-----------------------------------------|-------------:|
+| `munch`   | grammar-carried actions on a mode stack | 627.9, 621.6 |
+| lexertl17 | start states pushed and popped          | 232.9, 236.8 |
 
 Be precise about the theory this does not demonstrate. The language of *arbitrarily* nested comments is not regular,
-since counting to an unbounded depth is what one finite automaton cannot do. This corpus nests only to depth four,
-and a bounded depth is regular, so a flat grammar could unroll four levels and tokenize it. There is no flat row
-because that would be a different grammar answering a different question, not because none could exist.
+since counting to an unbounded depth is what one finite automaton cannot do. This corpus nests only to depth four, and a
+bounded depth is regular, so a flat grammar could unroll four levels and tokenize it. There is no flat row because that
+would be a different grammar answering a different question, not because none could exist.
 
-Both figures in each cell are medians of 15 passes from two runs of `munch_benchmark_compare 16 15`, with each
-corpus's scenarios interleaved, measured at commit `00aa889` on a clean tree. The full transcript, every timed pass of
-the five scenarios behind these tables, and the machine are archived in
-[paper/data/modes-2026-08](paper/data/modes-2026-08). The harness validates that the engines agree on every token
-before timing either, so the 5,121,241 tokens of the first corpus and the 4,859,619 of the second are the same tokens
-in both.
+Both figures in each cell are medians of 15 passes from two runs of `munch_benchmark_compare 16 15`, with each corpus's
+scenarios interleaved, measured at commit `00aa889` on a clean tree. The full transcript, every timed pass of the five
+scenarios behind these tables, and the machine are archived in
+[paper/data/modes-2026-08](paper/data/modes-2026-08). The harness validates that the engines agree on every token before
+timing either, so the 5,121,241 tokens of the first corpus and the 4,859,619 of the second are the same tokens in both.
 
 **Ratios, as ranges rather than a point: 3.02 to 3.05 where modes are optional, 2.62 to 2.70 where the tested grammar
-uses a stack to count nesting.** Those are the spreads within one session. Across three archive generations measured
-at different commits, the optional-mode ratio spans about 2 percent and the nested ratio about 7 percent; those
-movements conflate executable changes with environmental variation. Read them as observations, not as a trend: the two
-corpora differ in token density, grammar and mechanism at once, so the difference between them is not attributable to
-any one of those.
+uses a stack to count nesting.** Those are the spreads within one session. Across three archive generations measured at
+different commits, the optional-mode ratio spans about 2 percent and the nested ratio about 7 percent; those movements
+conflate executable changes with environmental variation. Read them as observations, not as a trend: the two corpora
+differ in token density, grammar and mechanism at once, so the difference between them is not attributable to any one of
+those.
 
-**What modes cost against a flat grammar, in this archive.** The mode grammar emits 11.1% more tokens for the same
-bytes and takes 15.5% and 14.3% longer, so its cost per token is 3 to 4 percent *higher*. Read that as a fact about this
-archive and nothing wider, because the sign does not remain stable across archive generations: across the three
-archives this history reaches, the same figure runs from 6.6 percent lower to 6.4 percent higher. It is dominated by
-the flat row, which ranged from 754.5 to 865.0 MiB/s, about 15 percent, while the modal rows stayed between 725.8 and
-750.1, about 3 percent. That is why no per-token figure is carried forward as a property of the library.
+**What modes cost against a flat grammar, in this archive.** The mode grammar emits 11.1% more tokens for the same bytes
+and takes 15.5% and 14.3% longer, so its cost per token is 3 to 4 percent *higher*. Read that as a fact about this
+archive and nothing wider, because the sign does not remain stable across archive generations: across the three archives
+this history reaches, the same figure runs from 6.6 percent lower to 6.4 percent higher. It is dominated by the flat
+row, which ranged from 754.5 to 865.0 MiB/s, about 15 percent, while the modal rows stayed between 725.8 and 750.1,
+about 3 percent. That is why no per-token figure is carried forward as a property of the library.
 
-These are separate tables rather than rows in the ones above because a mode grammar emits more tokens than a flat
-one for the same bytes, so the two are not doing the same work and are not treated as equal-work engine rows.
+These are separate tables rather than rows in the ones above because a mode grammar emits more tokens than a flat one
+for the same bytes, so the two are not doing the same work and are not treated as equal-work engine rows.
 
 The `Mode_stack` overload reports where a scan stopped and what it was doing there: `stack.current` names the mode and
-`stack.saved.size()` the nesting depth, which is what distinguishes an unterminated string from an unrecognized byte
-in code. `Mode_builder::diagnose()` reports each mode's dead tokens and priority ties, plus the two faults only a
-modal grammar has: modes nothing can enter, and modes nothing can leave. Unreachable modes are computed from mode 0
-with an initially empty stack. An inescapable mode has neither a live non-self `push`/`go_to` nor a live `pop` for
-which that default-start grammar can establish a frame naming another mode; a caller-supplied frame may provide the
-missing return context when such a live `pop` exists.
+`stack.saved.size()` the nesting depth, which is what distinguishes an unterminated string from an unrecognized byte in
+code. `Mode_builder::diagnose()` reports each mode's dead tokens and priority ties, plus the two faults only a modal
+grammar has: modes nothing can enter, and modes nothing can leave. Unreachable modes are computed from mode 0 with an
+initially empty stack. An inescapable mode has neither a live non-self `push`/`go_to` nor a live `pop` for which that
+default-start grammar can establish a frame naming another mode; a caller-supplied frame may provide the missing return
+context when such a live `pop` exists.
 
 **Two things to know before reaching for it.** A `Mode_lexer` has no parallel entry point, because a worker cutting
 blind cannot recover the mode and saved stack from the bytes at the cut. That is an obstruction rather than an
-impossibility: what is proved is that a single byte cannot identify the mode when two or more admit every byte, which
-is sufficient for a safe cut but not necessary. No scheme is ruled out: a multi-byte window, a checkpoint recorded by
-an earlier pass, or a mode set restricted to stackless `go_to` are all outside what has been ruled out. And modes are
-an expressiveness feature rather than a performance one. On the one corpus measured both ways the mode grammar took
-14.3 to 15.5 percent longer while emitting 11.1 percent more tokens, most of the difference being those extra tokens.
-Whether that holds for other grammars is not measured, and neither is how it varies with the share of input sitting
-inside context-dependent constructs, since the scenario matrix varies the modal workload without a flat grammar beside
-it at each density. [docs/limits.md](docs/limits.md) gives the reasoning for both.
+impossibility: what is proved is that a single byte cannot identify the mode when two or more admit every byte, which is
+sufficient for a safe cut but not necessary. No scheme is ruled out: a multi-byte window, a checkpoint recorded by an
+earlier pass, or a mode set restricted to stackless `go_to` are all outside what has been ruled out. And modes are an
+expressiveness feature rather than a performance one. On the one corpus measured both ways the mode grammar took 14.3 to
+15.5 percent longer while emitting 11.1 percent more tokens, most of the difference being those extra tokens. Whether
+that holds for other grammars is not measured, and neither is how it varies with the share of input sitting inside
+context-dependent constructs, since the scenario matrix varies the modal workload without a flat grammar beside it at
+each density. [docs/limits.md](docs/limits.md) gives the reasoning for both.
 
 [docs/limits.md](docs/limits.md) collects the full contract in one place: the matching model and what it excludes,
 byte-orientation and UTF-8 handling, hard bounds, concurrency and lifetime guarantees, construction cost, and the escape
@@ -934,12 +930,12 @@ libs/
   regex/                  The combinator DSL: Regex nodes and their lowering to munch::nfa::Builder.
   nfa/                    NFA representation and builder (Thompson construction, epsilon closure, merge/append).
     tools/                Graphviz DOT export for NFAs.
-  dfa/                    DFA representation, minimize() (Moore partition refinement), and the table-compiling Simulator.
+  dfa/                    DFA representation, minimize() (Moore partition refinement), the table Simulator.
     tools/                Graphviz DOT export for DFAs.
   core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
 tools/
   tokenizer/              Tokenizer: streaming driver over core::Lexer with modes, seek, and a raw string scanner.
-  benchmark/              Throughput benchmarks: core lexer, tokenizer driver, UTF-8, and other engines (see Performance).
+  benchmark/              Throughput benchmarks: core lexer, tokenizer driver, UTF-8, other engines.
 ```
 
 ## **Example CMake Integration**
@@ -1069,22 +1065,22 @@ an exception; see [docs/limits.md](docs/limits.md).
 Most lexer generators compile the automaton away; munch keeps it. That difference makes the library usable as a
 laboratory bench for anyone studying tokenization itself.
 
-**What the bench provides.** A grammar is built inline in a few lines of combinators and compiled at runtime, so the
-edit-run loop for experiments is seconds, with no generator step. The minimized DFA stays inspectable: `advance()`,
-`has_accept_token()`, and the initial state are queryable, so a probe can walk the compiled tables directly. The
-scanner is genuine maximal munch with real rewind behavior, not an approximation, and its semantics are pinned by the
-test suite. Properties of the compiled token set are first-class queries: `is_split_point()` and
-`chunk_boundaries()` answer boundary questions from the tables alone, before any input exists.
+**What the bench provides.** A grammar is built inline in a few lines of combinators and compiled at runtime, with no
+separate generator step in the edit-run loop. The minimized DFA stays inspectable: `advance()`, `has_accept_token()`,
+and the initial state are queryable, so a probe can walk the compiled tables directly. The scanner is genuine maximal
+munch with real rewind behavior, not an approximation, and its semantics are pinned by the test suite. Properties of the
+compiled token set are first-class queries: `is_split_point()` derives certified bytes from the compiled token set
+before input exists, and `chunk_boundaries()` applies those certificates to supplied input.
 
-**The methodology ships with the code.** The probes under `tools/probes/` show the working pattern: figures are
-printed and asserted, so a drifted number fails the build rather than a reader; oracles are exhaustive over declared
-finite input spaces with their occurrence counts pinned; expected-negative rows keep the oracles honest by asserting
-known violation counts; positive claims carry concrete witness inputs asserted per row; and every benchmark CSV row
-is stamped with the commit and dirty state it was built from. The pattern transfers to any certificate-flavored
-empirical work: state the claim, generate the evidence, and pin it so it cannot silently rot.
+**The methodology ships with the code.** The probes under `tools/probes/` show the working pattern: figures are printed
+and asserted, so a drifted number fails the build rather than a reader; oracles are exhaustive over declared finite
+input spaces with their occurrence counts pinned; expected-negative rows keep the oracles honest by asserting known
+violation counts; positive claims carry concrete witness inputs asserted per row; and every benchmark CSV row is stamped
+with the commit and dirty state it was built from. The pattern transfers to any certificate-flavored empirical work:
+state the claim, generate the evidence, and pin it so it cannot silently rot.
 
-The intended research user is comfortable with modern C++ and wants the tokenizer as an inspectable object; the
-library deliberately covers flat regular tokenization plus the composed mode layer, and nothing beyond it.
+The intended research user is comfortable with modern C++ and wants the tokenizer as an inspectable object; the library
+deliberately covers flat regular tokenization plus the composed mode layer.
 
 ## **Versioning and Stability**
 
@@ -1098,13 +1094,13 @@ arrive in minor versions.
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did
 `Builder::set_token_payload()` and the three-argument `tokenize_all()` sink that delivers what it attaches. A sink
-accepting both arities is called with two, which is what it was called with before the payload existed, so an
-existing sink keeps its behaviour.
+accepting both arities is called with two, which is what it was called with before the payload existed, so an existing
+sink keeps its behaviour.
 
 The supported platform is Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests, sanitizes,
 and fuzzes; other platforms may work but carry no promise. Semantic versioning covers source compatibility only. munch
-builds as static libraries by default and honours `BUILD_SHARED_LIBS`; either way the result is meant to be compiled
-by the consumer, so no ABI stability is promised between any two versions.
+builds as static libraries by default and honours `BUILD_SHARED_LIBS`; either way the result is meant to be compiled by
+the consumer, so no ABI stability is promised between any two versions.
 
 The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
@@ -1120,12 +1116,12 @@ generated Unicode identifier tables derive from the Unicode Character Database a
 v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), installed alongside the package.
 
 The technical report and its figures, `paper/split-points.tex` and `paper/figures/*.pdf`, are licensed under
-[Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0), matching
-the licence the report carries on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The benchmark
-archives under `paper/data/` are released under
+[Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0), matching the
+licence the report carries on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The benchmark archives
+under `paper/data/` are released under
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): they are measurements rather than authorship, and
-attribution on a throughput table serves no one. The programs that generate the figures are source code and are MIT
-like the rest of the tree.
+attribution on a throughput table serves no one. The programs that generate the figures are source code and are MIT like
+the rest of the tree.
 
 ## **Author**
 
