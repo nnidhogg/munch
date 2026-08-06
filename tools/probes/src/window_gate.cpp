@@ -445,9 +445,10 @@ std::size_t single_byte_disagreements(const Dfa& dfa, const munch::core::Lexer& 
 std::size_t g_exercised_total{0};
 
 /**
- * @brief The subset of those executions whose whole input tokenizes completely, asserted because the reviewer's
- *        scope finding is answered by stating both counts: the stress rows require scanning through the window,
- *        not complete tokenizability, and this counter says how many executions had it anyway.
+ * @brief The subset of those executions whose whole input tokenizes completely, asserted because the stress rows
+ *        require scanning through the window rather than complete tokenizability, and this counter says how many
+ *        executions had it anyway. Accumulated by the SAME callers that accumulate g_exercised_total, never
+ *        inside the check itself, so numerator and denominator always describe one call set.
  */
 std::size_t g_exercised_tokenizable{0};
 
@@ -803,8 +804,10 @@ std::size_t rewinds(const Dfa& dfa, const std::string& input)
  */
 std::size_t backup_disagreements(
         const Dfa& dfa, const munch::core::Lexer& lexer, const States_t& live, const std::vector<std::string>& windows,
-        std::size_t& exercised, std::size_t& prefixes)
+        std::size_t& exercised, std::size_t& tokenizable, std::size_t& prefixes)
 {
+    tokenizable = 0;
+
     const auto reentrant{init_reentrant(dfa, live)};
 
     exercised = 0;
@@ -939,7 +942,7 @@ std::size_t backup_disagreements(
 
                     exercised += rewound ? 1 : 0;
 
-                    g_exercised_tokenizable += rewound && consumed == input.size() ? 1 : 0;
+                    tokenizable += rewound && consumed == input.size() ? 1 : 0;
 
                     disagreements += covered && containing == head.size() + *at ? 0 : 1;
                 }
@@ -1144,9 +1147,13 @@ std::size_t random_grammars(
 
             std::size_t exercised{0};
 
+            std::size_t tokenizable{0};
+
             std::size_t prefixes{0};
 
-            disagreements += backup_disagreements(dfa, lexer, live, windows, exercised, prefixes);
+            // Neither count joins the named-row aggregates: the sweep's executions are a different call set, and
+            // the asserted numerator and denominator must describe the same one.
+            disagreements += backup_disagreements(dfa, lexer, live, windows, exercised, tokenizable, prefixes);
         }
         catch (const std::exception&)
         {
@@ -1469,11 +1476,15 @@ bool named_window_agrees(std::string_view name, const std::string& window, std::
 
     std::size_t exercised{0};
 
+    std::size_t tokenizable{0};
+
     std::size_t prefixes{0};
 
-    const auto disagreements{backup_disagreements(dfa, lexer, live, {window}, exercised, prefixes)};
+    const auto disagreements{backup_disagreements(dfa, lexer, live, {window}, exercised, tokenizable, prefixes)};
 
     g_exercised_total += exercised;
+
+    g_exercised_tokenizable += tokenizable;
 
     const auto reentrant{init_reentrant(dfa, live)};
 
@@ -1593,11 +1604,15 @@ bool run(const Row& row, Builder_dbg& builder)
 
     std::size_t exercised{0};
 
+    std::size_t tokenizable{0};
+
     std::size_t prefixes{0};
 
-    const auto backup{backup_disagreements(dfa, lexer, live, windows, exercised, prefixes)};
+    const auto backup{backup_disagreements(dfa, lexer, live, windows, exercised, tokenizable, prefixes)};
 
     g_exercised_total += exercised;
+
+    g_exercised_tokenizable += tokenizable;
 
     // Agreement over inputs that never rewind says nothing about backup, so the row's declaration is asserted too.
     const auto covered{row.rewinds_expected == (exercised > 0)};
@@ -2105,7 +2120,7 @@ int main()
     // executions, and only a pinned total keeps that sentence honest when a row or the input builder changes.
     ok = random_disagreements == 0 && usable == 134 && nullable == 266 && with_certificate == 39 &&
          usable - with_certificate == 95 && rescued == 91 && witnessed_rescued == 91 && proved_none == 4 &&
-         inconclusive == 0 && g_exercised_total == 1'079'392 && g_exercised_tokenizable == 419'780 &&
+         inconclusive == 0 && g_exercised_total == 1'079'392 && g_exercised_tokenizable == 418'466 &&
          g_witness_disagreements == 0 && g_visited_max == 32 && g_visited_total == 878 && ok;
 
     std::printf(
