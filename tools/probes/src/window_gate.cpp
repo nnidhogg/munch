@@ -132,6 +132,7 @@
 // the first of them caught a real defect the vacuous comparisons had hidden: a trajectory reading from the initial
 // state begins a token at that offset rather than inheriting the origin it carried in.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <deque>
@@ -140,6 +141,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -438,9 +440,29 @@ std::size_t single_byte_disagreements(const Dfa& dfa, const munch::core::Lexer& 
 }
 
 /**
- * @brief The length of the shortest certified window, or zero if none exists within the bound.
+ * @brief Every rewinding execution the named rows exercised, asserted in total because the notes quote the figure.
  */
-std::pair<std::size_t, std::vector<std::string>> shortest_windows(const Dfa& dfa, const States_t& live, bool& exhausted)
+std::size_t g_exercised_total{0};
+
+/**
+ * @brief Reachable quotient keys over the random sweep: the sum for the mean, and the worst grammar's count.
+ *
+ * The quotient space is 6^|Q+| in the worst case; these are the reachable fractions actually walked, which is the
+ * figure that decides practicality, so the maximum is asserted like every other quoted number.
+ */
+std::size_t g_visited_total{0};
+
+std::size_t g_visited_max{0};
+
+/**
+ * @brief The length of the shortest certified window, or zero if none exists within the bound.
+ *
+ * `visited` reports the reachable quotient keys the walk actually explored: 6^|Q+| is the size of the space, the
+ * reachable count is what decides whether the search is usable, and only measuring it stops the bound from
+ * standing in for the behaviour.
+ */
+std::pair<std::size_t, std::vector<std::string>> shortest_windows(
+        const Dfa& dfa, const States_t& live, bool& exhausted, std::size_t& visited)
 {
     exhausted = true;
 
@@ -508,6 +530,8 @@ std::pair<std::size_t, std::vector<std::string>> shortest_windows(const Dfa& dfa
             }
         }
     }
+
+    visited = seen.size();
 
     return {shortest, found};
 }
@@ -871,7 +895,13 @@ std::size_t random_grammars(
             {
                 auto exhausted{false};
 
-                const auto [length, found]{shortest_windows(dfa, live, exhausted)};
+                std::size_t visited{0};
+
+                const auto [length, found]{shortest_windows(dfa, live, exhausted, visited)};
+
+                g_visited_total += visited;
+
+                g_visited_max = std::max(g_visited_max, visited);
 
                 rescued += length > 0 ? 1 : 0;
 
@@ -915,7 +945,7 @@ std::size_t random_grammars(
  */
 struct Row
 {
-    const char* name;
+    std::string_view name;
 
     std::size_t shortest;
 
@@ -928,12 +958,18 @@ struct Row
      * or its agreement proves nothing about backup.
      */
     bool rewinds_expected;
-};
 
-/**
- * @brief Every rewinding execution the named rows exercised, asserted in total because the notes quote the figure.
- */
-std::size_t g_exercised_total{0};
+    /**
+     * @brief The retained quotient keys and the displayed example witness, asserted because the paper's table
+     *        quotes them: a transcription once conflated the generated-prefix count with the key count, and only
+     *        assertion makes that class of drift fail the build.
+     */
+    std::size_t keys;
+
+    std::string_view example;
+
+    std::size_t example_origin;
+};
 
 /**
  * @brief Whether the live set can carry evidence at all: non-empty and containing the initial state.
@@ -947,18 +983,33 @@ bool live_usable(const Dfa& dfa, const States_t& live)
 }
 
 /**
- * @brief Asserts that a NAMED window this grammar would otherwise never be checked at agrees with the scanner.
+ * @brief Asserts that a window the model REFUSES is nonetheless semantically certified, by exhaustive oracle.
  *
- * run() only checks the windows the search reports, so a grammar whose shortest window is one byte never exercises a
- * longer one. The window that exposed the old proof gap is three bytes long, and this is what keeps it under test.
+ * These are the strictness witnesses: the model's conservatism is real, so every negative claim must stay
+ * model-relative. A row passes only when the model refuses the window AND, in every completely tokenizable input
+ * over the alphabet up to the bound, the token COVERING the window's final byte begins exactly at the claimed
+ * origin at every occurrence, which is the property the model certifies. The occurrence count is asserted
+ * exactly, so a widened corpus that widens nothing cannot pass unnoticed.
  */
-bool named_window_agrees(const char* name, const std::string& window, std::size_t expected, Builder_dbg& builder)
+bool strict_refusal(
+        std::string_view name, const std::string& window, const std::size_t origin, const std::string& alphabet,
+        const std::size_t max_length, const std::size_t occurrences_expected, Builder_dbg& builder)
 {
+    if (window.empty() || origin >= window.size())
+    {
+        std::printf(
+                "  %-30s REJECTED: empty window or origin outside it, the claim is malformed\n",
+                std::string{name}.c_str());
+
+        return false;
+    }
+
     const auto dfa{builder.dfa()};
 
     if (nullable_grammar(dfa))
     {
-        std::printf("  %-30s REJECTED: a token matches the empty string, outside the proof\n", name);
+        std::printf(
+                "  %-30s REJECTED: a token matches the empty string, outside the proof\n", std::string{name}.c_str());
 
         return false;
     }
@@ -969,7 +1020,224 @@ bool named_window_agrees(const char* name, const std::string& window, std::size_
 
     if (!live_usable(dfa, live))
     {
-        std::printf("  %-30s REJECTED: no live path from the initial state, evidence would be vacuous\n", name);
+        std::printf(
+                "  %-30s REJECTED: no live path from the initial state, evidence would be vacuous\n",
+                std::string{name}.c_str());
+
+        return false;
+    }
+
+    // The strict half: the model must refuse this window. A model that certifies it is not wrong, it is less
+    // conservative than documented, and the paper's strictness section would be overclaiming.
+    const auto refused{!predicted(dfa, live, window, init_reentrant(dfa, live))};
+
+    // The semantic half: exhaustively, every occurrence has a token beginning at the claimed origin.
+    std::size_t occurrences{0};
+
+    std::size_t violations{0};
+
+    std::string input;
+
+    for (std::size_t length{window.size()}; length <= max_length; ++length)
+    {
+        std::size_t count{1};
+
+        for (std::size_t i{0}; i < length; ++i)
+        {
+            count *= alphabet.size();
+        }
+
+        for (std::size_t index{0}; index < count; ++index)
+        {
+            input.assign(length, alphabet[0]);
+
+            for (std::size_t i{0}, rest{index}; i < length; ++i, rest /= alphabet.size())
+            {
+                input[i] = alphabet[rest % alphabet.size()];
+            }
+
+            // The start of the token COVERING each position, which is the property the model certifies: the
+            // token containing the window's final byte begins at the origin. Checking merely that SOME token
+            // begins there passes false witnesses: over {a, abx, b, x} and "ab" at origin 0, the input "ab"
+            // tokenizes as a|b, a token does begin at offset 0, and yet the token covering the window's final
+            // byte begins at 1.
+            std::vector<std::size_t> covering(length, 0);
+
+            std::size_t offset{0};
+
+            const auto consumed{lexer.tokenize_all<Token>(input, [&](const Token, const std::size_t token_length) {
+                for (std::size_t inside{0}; inside < token_length; ++inside)
+                {
+                    covering[offset + inside] = offset;
+                }
+
+                offset += token_length;
+            })};
+
+            if (consumed < length)
+            {
+                continue;
+            }
+
+            for (std::size_t at{0}; at + window.size() <= length; ++at)
+            {
+                if (input.compare(at, window.size(), window) == 0)
+                {
+                    ++occurrences;
+
+                    violations += covering[at + window.size() - 1] == at + origin ? 0 : 1;
+                }
+            }
+        }
+    }
+
+    const auto ok{refused && violations == 0 && occurrences == occurrences_expected};
+
+    std::printf(
+            "  %-30s model %s, %zu violations over %zu occurrences%s\n", std::string{name}.c_str(),
+            refused ? "refuses" : "CERTIFIES", violations, occurrences, ok ? "" : "   <- STRICTNESS CLAIM MOVED");
+
+    return ok;
+}
+
+/**
+ * @brief Asserts the oracle itself has teeth: a family where the model refuses AND the semantics genuinely fail.
+ *
+ * The weak some-token-begins-at-the-origin check waves this family through: over {a, abx, b, x} at "ab", the
+ * input "ab" tokenizes as a|b, a token does begin at offset 0, yet the token covering the window's final byte
+ * begins at 1. Only the covering-token check counts those violations, so this row is the regression pin for the
+ * oracle's strength: revert the check and the violations vanish and the row fails.
+ */
+bool oracle_teeth(
+        std::string_view name, const std::string& window, const std::size_t origin, const std::string& alphabet,
+        const std::size_t max_length, const std::size_t occurrences_expected, const std::size_t violations_expected,
+        Builder_dbg& builder)
+{
+    if (window.empty() || origin >= window.size())
+    {
+        std::printf(
+                "  %-30s REJECTED: empty window or origin outside it, the claim is malformed\n",
+                std::string{name}.c_str());
+
+        return false;
+    }
+
+    const auto dfa{builder.dfa()};
+
+    if (nullable_grammar(dfa))
+    {
+        std::printf(
+                "  %-30s REJECTED: a token matches the empty string, outside the proof\n", std::string{name}.c_str());
+
+        return false;
+    }
+
+    const auto lexer{builder.build()};
+
+    const auto live{trim(dfa)};
+
+    if (!live_usable(dfa, live))
+    {
+        std::printf(
+                "  %-30s REJECTED: no live path from the initial state, evidence would be vacuous\n",
+                std::string{name}.c_str());
+
+        return false;
+    }
+
+    const auto refused{!predicted(dfa, live, window, init_reentrant(dfa, live))};
+
+    std::size_t occurrences{0};
+
+    std::size_t violations{0};
+
+    std::string input;
+
+    for (std::size_t length{window.size()}; length <= max_length; ++length)
+    {
+        std::size_t count{1};
+
+        for (std::size_t i{0}; i < length; ++i)
+        {
+            count *= alphabet.size();
+        }
+
+        for (std::size_t index{0}; index < count; ++index)
+        {
+            input.assign(length, alphabet[0]);
+
+            for (std::size_t i{0}, rest{index}; i < length; ++i, rest /= alphabet.size())
+            {
+                input[i] = alphabet[rest % alphabet.size()];
+            }
+
+            std::vector<std::size_t> covering(length, 0);
+
+            std::size_t offset{0};
+
+            const auto consumed{lexer.tokenize_all<Token>(input, [&](const Token, const std::size_t token_length) {
+                for (std::size_t inside{0}; inside < token_length; ++inside)
+                {
+                    covering[offset + inside] = offset;
+                }
+
+                offset += token_length;
+            })};
+
+            if (consumed < length)
+            {
+                continue;
+            }
+
+            for (std::size_t at{0}; at + window.size() <= length; ++at)
+            {
+                if (input.compare(at, window.size(), window) == 0)
+                {
+                    ++occurrences;
+
+                    violations += covering[at + window.size() - 1] == at + origin ? 0 : 1;
+                }
+            }
+        }
+    }
+
+    const auto ok{
+            refused && occurrences == occurrences_expected && violations == violations_expected && violations > 0};
+
+    std::printf(
+            "  %-30s model %s, oracle counts %zu violations over %zu occurrences%s\n", std::string{name}.c_str(),
+            refused ? "refuses" : "CERTIFIES", violations, occurrences, ok ? "" : "   <- ORACLE LOST ITS TEETH");
+
+    return ok;
+}
+
+/**
+ * @brief Asserts that a NAMED window this grammar would otherwise never be checked at agrees with the scanner.
+ *
+ * run() only checks the windows the search reports, so a grammar whose shortest window is one byte never exercises a
+ * longer one. The window that exposed the old proof gap is three bytes long, and this is what keeps it under test.
+ */
+bool named_window_agrees(std::string_view name, const std::string& window, std::size_t expected, Builder_dbg& builder)
+{
+    const auto dfa{builder.dfa()};
+
+    if (nullable_grammar(dfa))
+    {
+        std::printf(
+                "  %-30s REJECTED: a token matches the empty string, outside the proof\n", std::string{name}.c_str());
+
+        return false;
+    }
+
+    const auto lexer{builder.build()};
+
+    const auto live{trim(dfa)};
+
+    if (!live_usable(dfa, live))
+    {
+        std::printf(
+                "  %-30s REJECTED: no live path from the initial state, evidence would be vacuous\n",
+                std::string{name}.c_str());
 
         return false;
     }
@@ -987,8 +1255,8 @@ bool named_window_agrees(const char* name, const std::string& window, std::size_
     const auto at{predicted(dfa, live, window, reentrant)};
 
     std::printf(
-            "  %-30s window \"%s\" %s, backup %zu over %zu rewinding executions%s\n", name, window.c_str(),
-            at ? ("origin " + std::to_string(*at)).c_str() : "refused", disagreements, exercised,
+            "  %-30s window \"%s\" %s, backup %zu over %zu rewinding executions%s\n", std::string{name}.c_str(),
+            window.c_str(), at ? ("origin " + std::to_string(*at)).c_str() : "refused", disagreements, exercised,
             disagreements == 0 ? "" : "   <- MODEL IS WRONG");
 
     // A refusal is a fine outcome for a conservative model in general, but not here: this window is the one the
@@ -997,13 +1265,60 @@ bool named_window_agrees(const char* name, const std::string& window, std::size_
     return disagreements == 0 && exercised > 0 && at && *at == expected;
 }
 
+/**
+ * @brief A window rendered printably, control bytes escaped, for the example column of the paper's table.
+ */
+std::string escaped(const std::string& window)
+{
+    std::string out;
+
+    for (const auto byte : window)
+    {
+        switch (byte)
+        {
+        case '\n':
+            out += "\\n";
+
+            break;
+
+        case '\t':
+            out += "\\t";
+
+            break;
+
+        case '\r':
+            out += "\\r";
+
+            break;
+
+        default:
+            if (byte >= 32 && byte < 127)
+            {
+                out += byte;
+            }
+            else
+            {
+                char buffer[8];
+
+                std::snprintf(buffer, sizeof buffer, "\\x%02x", static_cast<unsigned char>(byte));
+
+                out += buffer;
+            }
+        }
+    }
+
+    return out;
+}
+
 bool run(const Row& row, Builder_dbg& builder)
 {
     const auto dfa{builder.dfa()};
 
     if (nullable_grammar(dfa))
     {
-        std::printf("  %-30s REJECTED: a token matches the empty string, outside the proof\n", row.name);
+        std::printf(
+                "  %-30s REJECTED: a token matches the empty string, outside the proof\n",
+                std::string{row.name}.c_str());
 
         return false;
     }
@@ -1014,7 +1329,9 @@ bool run(const Row& row, Builder_dbg& builder)
 
     if (!live_usable(dfa, live))
     {
-        std::printf("  %-30s REJECTED: no live path from the initial state, evidence would be vacuous\n", row.name);
+        std::printf(
+                "  %-30s REJECTED: no live path from the initial state, evidence would be vacuous\n",
+                std::string{row.name}.c_str());
 
         return false;
     }
@@ -1025,7 +1342,9 @@ bool run(const Row& row, Builder_dbg& builder)
 
     auto exhausted{false};
 
-    const auto [shortest, found]{shortest_windows(dfa, live, exhausted)};
+    std::size_t visited{0};
+
+    const auto [shortest, found]{shortest_windows(dfa, live, exhausted, visited)};
 
     // The backup check needs the windows the search actually reports, so a grammar whose shortest window is four is
     // checked at four rather than at two. It also needs volume, and a grammar whose shortest is one would otherwise
@@ -1064,11 +1383,51 @@ bool run(const Row& row, Builder_dbg& builder)
     // scanner would allow.
     const auto conclusive{shortest != 0 || exhausted};
 
-    const auto ok{disagreements == 0 && shortest == row.shortest && backup == 0 && covered && conclusive};
+    // Prefer a readable witness for the paper's table when one exists; the search's byte order surfaces
+    // \x00-heavy examples first otherwise.
+    auto example{found.empty() ? std::string{} : found.front()};
+
+    for (const auto& candidate : found)
+    {
+        const auto readable{std::all_of(candidate.begin(), candidate.end(), [](const char byte) {
+            return (byte >= 32 && byte < 127) || byte == '\n' || byte == '\t';
+        })};
+
+        if (readable)
+        {
+            example = candidate;
+
+            break;
+        }
+    }
+
+    // A plain flag-and-value pair rather than an optional: GCC 13's maybe-uninitialized analysis false-positives
+    // on optional reads inside the assertion expression below.
+    auto example_has_origin{false};
+
+    std::size_t example_at{0};
+
+    if (!example.empty())
+    {
+        if (const auto at{predicted(dfa, live, example, reentrant)})
+        {
+            example_has_origin = true;
+
+            example_at = *at;
+        }
+    }
+
+    const auto ok{
+            disagreements == 0 && shortest == row.shortest && backup == 0 && covered && conclusive &&
+            visited == row.keys && escaped(example) == row.example &&
+            (example.empty() || (example_has_origin && example_at == row.example_origin))};
 
     std::printf(
-            "  %-30s k=1 %zu, window %zu/%zu, backup %zu over %7zu rewinding executions from %4zu prefixes%s\n",
-            row.name, disagreements, shortest, row.shortest, backup, exercised, prefixes, ok ? "" : "   <- MOVED");
+            "  %-30s k=1 %zu, window %zu/%zu, backup %zu over %7zu rewinding executions from %4zu prefixes, "
+            "%4zu keys%s%s%s%s\n",
+            std::string{row.name}.c_str(), disagreements, shortest, row.shortest, backup, exercised, prefixes, visited,
+            example.empty() ? "" : ", e.g. \"", escaped(example).c_str(),
+            example_has_origin ? ("\" at " + std::to_string(example_at)).c_str() : "", ok ? "" : "   <- MOVED");
 
     return ok;
 }
@@ -1087,19 +1446,40 @@ int main()
         Builder_dbg b;
         c_like(b, false);
         b.add_token(string_literal(), Token::String, 2);
-        ok = run({.name = "C-like + string literals", .shortest = 2, .rewinds_expected = false}, b) && ok;
+        ok = run({.name = "C-like + string literals",
+                  .shortest = 2,
+                  .rewinds_expected = false,
+                  .keys = 24,
+                  .example = "\\n!",
+                  .example_origin = 1},
+                 b) &&
+             ok;
     }
     {
         Builder_dbg b;
         c_like(b, false);
         b.add_token(line_comment(), Token::LineComment, 1);
-        ok = run({.name = "C-like + // line comments", .shortest = 2, .rewinds_expected = false}, b) && ok;
+        ok = run({.name = "C-like + // line comments",
+                  .shortest = 2,
+                  .rewinds_expected = false,
+                  .keys = 18,
+                  .example = "\\n!",
+                  .example_origin = 1},
+                 b) &&
+             ok;
     }
     {
         Builder_dbg b;
         c_like(b, false);
         b.add_token(block_comment(), Token::BlockComment, 1);
-        ok = run({.name = "C-like + block comments", .shortest = 4, .rewinds_expected = false}, b) && ok;
+        ok = run({.name = "C-like + block comments",
+                  .shortest = 4,
+                  .rewinds_expected = false,
+                  .keys = 53,
+                  .example = "\\t*/\\t",
+                  .example_origin = 3},
+                 b) &&
+             ok;
     }
     {
         Builder_dbg b;
@@ -1107,7 +1487,14 @@ int main()
         b.add_token(string_literal(), Token::String, 2);
         b.add_token(line_comment(), Token::LineComment, 1);
         b.add_token(block_comment(), Token::BlockComment, 1);
-        ok = run({.name = "C-like conventional", .shortest = 4, .rewinds_expected = false}, b) && ok;
+        ok = run({.name = "C-like conventional",
+                  .shortest = 4,
+                  .rewinds_expected = false,
+                  .keys = 189,
+                  .example = "\\n*/\\t",
+                  .example_origin = 3},
+                 b) &&
+             ok;
     }
     {
         Builder_dbg b;
@@ -1115,7 +1502,14 @@ int main()
         // JSON rewinds readily in general, but not on the inputs this check builds: its certified windows end their
         // tokens cleanly, so no prefix reaching a trim state produces one. The backup evidence comes from the seven
         // rows below that do exercise one.
-        ok = run({.name = "JSON, RFC 8259", .shortest = 2, .rewinds_expected = false}, b) && ok;
+        ok = run({.name = "JSON, RFC 8259",
+                  .shortest = 2,
+                  .rewinds_expected = false,
+                  .keys = 69,
+                  .example = "\\t\"",
+                  .example_origin = 1},
+                 b) &&
+             ok;
     }
     {
         // The rows above produce no rewind over the windows this search reports, which is a fact about those inputs
@@ -1130,7 +1524,14 @@ int main()
         b.add_token(text("b"), Token::Number, 2);
         b.add_token(text("d"), Token::Operator, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind stress: a | abc | b | d", .shortest = 1, .rewinds_expected = true}, b) && ok;
+        ok = run({.name = "rewind stress: a | abc | b | d",
+                  .shortest = 1,
+                  .rewinds_expected = true,
+                  .keys = 4,
+                  .example = "a",
+                  .example_origin = 0},
+                 b) &&
+             ok;
     }
     {
         // The grammar that exposed the gap in the model this program used to run. Scanning "abx", the old step
@@ -1148,10 +1549,54 @@ int main()
         b.add_token(text("bx"), Token::Number, 1);
         b.add_token(text("x"), Token::Operator, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "proof-gap witness grammar", .shortest = 1, .rewinds_expected = true}, b) && ok;
+        ok = run({.name = "proof-gap witness grammar",
+                  .shortest = 1,
+                  .rewinds_expected = true,
+                  .keys = 5,
+                  .example = "a",
+                  .example_origin = 0},
+                 b) &&
+             ok;
 
         // The search stops at one byte here, so the three-byte window that exposed the defect has to be named.
         ok = named_window_agrees("proof-gap witness abx", "abx", 1, b) && ok;
+    }
+    {
+        // Strictness witness one: the scanner always takes "ab", but the accepting "a" seeds a competing origin
+        // for "b", unanimity is lost, and the model refuses a window the oracle proves safe. This is the shortest
+        // strict refusal possible: at length one the specialization theorem plus the published necessity result
+        // make the model exact, so conservatism begins at length two and this row attains the bound.
+        using namespace munch::regex;
+
+        Builder_dbg b;
+        b.add_token(text("a"), Token::Identifier, 1);
+        b.add_token(text("ab"), Token::Keyword, 1);
+        b.add_token(text("b"), Token::Operator, 1);
+        ok = strict_refusal("strict: {a, ab, b} at \"ab\"", "ab", 0, "ab", 14, 98305, b) && ok;
+    }
+    {
+        // Strictness witness two, structurally different: the competing origin comes from an accepting proper
+        // prefix INSIDE the longer token rather than from a standalone competitor, and the disagreement appears
+        // two bytes into the window instead of one.
+        using namespace munch::regex;
+
+        Builder_dbg b;
+        b.add_token(text("ab"), Token::Identifier, 1);
+        b.add_token(text("abc"), Token::Keyword, 1);
+        b.add_token(text("c"), Token::Operator, 1);
+        ok = strict_refusal("strict: {ab, abc, c} at \"abc\"", "abc", 0, "abc", 12, 932, b) && ok;
+    }
+    {
+        // The oracle's own regression pin: the reviewer-supplied false-witness family that the weak check
+        // certifies and the covering-token check correctly convicts.
+        using namespace munch::regex;
+
+        Builder_dbg b;
+        b.add_token(text("a"), Token::Identifier, 1);
+        b.add_token(text("abx"), Token::Keyword, 1);
+        b.add_token(text("b"), Token::Operator, 1);
+        b.add_token(text("x"), Token::Separator, 1);
+        ok = oracle_teeth("teeth: {a, abx, b, x} at \"ab\"", "ab", 0, "abx", 10, 83653, 59049, b) && ok;
     }
     // Five more rewinding grammars, each backing up for a structurally different reason, so the backup evidence does
     // not rest on one shape. Every one of them accepts a short prefix, then continues into a longer token that can
@@ -1166,7 +1611,14 @@ int main()
                 concat(plus(any_of(Set::digits())), concat(text("e"), plus(any_of(Set::digits())))), Token::Literal, 1);
         b.add_token(any_of(Set::alpha()), Token::Identifier, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: digits | digits e digits", .shortest = 1, .rewinds_expected = true}, b) && ok;
+        ok = run({.name = "rewind: digits | digits e digits",
+                  .shortest = 1,
+                  .rewinds_expected = true,
+                  .keys = 4,
+                  .example = "A",
+                  .example_origin = 0},
+                 b) &&
+             ok;
     }
     {
         // A float whose dot may instead begin a range operator: "1..2" accepts "1" and rewinds off the dot.
@@ -1178,7 +1630,14 @@ int main()
                 concat(plus(any_of(Set::digits())), concat(text("."), plus(any_of(Set::digits())))), Token::Literal, 1);
         b.add_token(text(".."), Token::Operator, 1);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: float vs range operator", .shortest = 2, .rewinds_expected = true}, b) && ok;
+        ok = run({.name = "rewind: float vs range operator",
+                  .shortest = 2,
+                  .rewinds_expected = true,
+                  .keys = 9,
+                  .example = " .",
+                  .example_origin = 1},
+                 b) &&
+             ok;
     }
     {
         // An operator ladder with a gap in the middle: "<<x" accepts "<" and rewinds, since "<<" accepts nothing.
@@ -1189,7 +1648,14 @@ int main()
         b.add_token(text("<<="), Token::Punctuation, 1);
         b.add_token(any_of(Set::alpha()), Token::Identifier, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: < | <<=", .shortest = 1, .rewinds_expected = true}, b) && ok;
+        ok = run({.name = "rewind: < | <<=",
+                  .shortest = 1,
+                  .rewinds_expected = true,
+                  .keys = 4,
+                  .example = "A",
+                  .example_origin = 0},
+                 b) &&
+             ok;
     }
     {
         // A keyword strictly extending a shorter token: "fox" accepts "f" and rewinds, since "fo" accepts nothing.
@@ -1200,7 +1666,14 @@ int main()
         b.add_token(text("for"), Token::Keyword, 1);
         b.add_token(any_of(Set::alpha()), Token::Separator, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: f | for", .shortest = 1, .rewinds_expected = true}, b) && ok;
+        ok = run({.name = "rewind: f | for",
+                  .shortest = 1,
+                  .rewinds_expected = true,
+                  .keys = 4,
+                  .example = "A",
+                  .example_origin = 0},
+                 b) &&
+             ok;
     }
     {
         // A deep rewind: seven bytes are scanned past the accepting position before the token dies.
@@ -1211,7 +1684,14 @@ int main()
         b.add_token(text("abcdefgh"), Token::Keyword, 1);
         b.add_token(any_of(Set::alpha()), Token::Separator, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "rewind: a | abcdefgh (depth 7)", .shortest = 1, .rewinds_expected = true}, b) && ok;
+        ok = run({.name = "rewind: a | abcdefgh (depth 7)",
+                  .shortest = 1,
+                  .rewinds_expected = true,
+                  .keys = 9,
+                  .example = "A",
+                  .example_origin = 0},
+                 b) &&
+             ok;
     }
     {
         // One token that repeats. Every byte continues the run as readily as it starts one, so no window pins a
@@ -1222,7 +1702,14 @@ int main()
 
         Builder_dbg b;
         b.add_token(plus(text("a")), Token::Identifier, 1);
-        ok = run({.name = "a+: no window found", .shortest = 0, .rewinds_expected = false}, b) && ok;
+        ok = run({.name = "a+: no window found",
+                  .shortest = 0,
+                  .rewinds_expected = false,
+                  .keys = 3,
+                  .example = "",
+                  .example_origin = 0},
+                 b) &&
+             ok;
     }
 
     std::size_t usable{0};
@@ -1252,6 +1739,15 @@ int main()
 
     std::printf("  %-30s %zu rewinding executions across every named row\n", "backup total", g_exercised_total);
 
+    // The metric, precisely: keys RETAINED before shortest-window stopping ends each search, not the complete
+    // reachable quotient space; a search that certifies at length two never explores what lies past it. Total and
+    // maximum are asserted because the mean is quoted.
+    std::printf(
+            "  %-30s max %zu, mean %.1f over the no-byte grammars, total %zu, against a 6^|Q+| worst case\n",
+            "retained search keys", g_visited_max,
+            usable - with_certificate ? static_cast<double>(g_visited_total) / (usable - with_certificate) : 0.0,
+            g_visited_total);
+
     // Asserted rather than printed, because these figures are quoted in the notes and a loose bound would let one
     // move without anything failing. They are the NON-NULLABLE sample, which is what the soundness proof covers;
     // two thirds of what the generator produces is nullable and is excluded rather than counted. Pinning them
@@ -1264,7 +1760,7 @@ int main()
     // executions, and only a pinned total keeps that sentence honest when a row or the input builder changes.
     ok = random_disagreements == 0 && usable == 134 && nullable == 266 && with_certificate == 39 &&
          usable - with_certificate == 95 && rescued == 91 && proved_none == 4 && inconclusive == 0 &&
-         g_exercised_total == 1'079'392 && ok;
+         g_exercised_total == 1'079'392 && g_visited_max == 32 && g_visited_total == 878 && ok;
 
     std::printf(
             "\n%s\n", ok ? "The model reproduces is_split_point at length one on six named grammars with a "
