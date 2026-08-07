@@ -320,13 +320,13 @@ std::optional<Cloud_t> step(
  *
  * Acceptance gating seeds an origin wherever the automaton accepts, so `a+` alone accumulates origins without bound
  * and renaming them to rank order no longer bounds the space. Exactness rests on an invariant of the clouds this
- * model can reach: every in-window origin occupies exactly one state, because it is seeded once into a single state
- * and the deterministic step moves it to at most one successor. An arbitrary cloud placing one origin in two states
- * would defeat the saturated counts, but no such cloud is reachable. Under that invariant, saturating at two is
- * exact for the question asked, since two origins meeting in one deterministic state follow identical futures under
- * this quotient and can never separate again, and summing counts across predecessors is exact rather than an
- * over-approximation, since origins arriving from different predecessors are necessarily distinct and cannot be
- * double counted. The pre-window origin is held apart in its own support set. The quotient is therefore a
+ * model can reach: every surviving in-window origin occupies at most one state, because it is seeded once into a
+ * single state, the deterministic step moves it to at most one successor, and a dead origin occupies none. An arbitrary
+ * cloud placing one origin in two states would defeat the saturated counts, but no such cloud is reachable. Under that
+ * invariant, saturating at two is exact for the question asked, since two origins meeting in one deterministic state
+ * follow identical futures under this quotient and can never separate again, and summing counts across predecessors is
+ * exact rather than an over-approximation, since origins arriving from different predecessors are necessarily distinct
+ * and cannot be double counted. The pre-window origin is held apart in its own support set. The quotient is therefore a
  * transition congruence over reachable clouds, and the walk decides exactly whether a window exists under this
  * model and what its minimum length is. It does NOT enumerate every certified
  * word: prefixes reaching the same key collapse to one representative, so witnesses are examples rather than the
@@ -1276,6 +1276,78 @@ bool live_usable(const Dfa& dfa, const States_t& live)
  * origin at every occurrence, which is the property the model certifies. The occurrence count is asserted
  * exactly, so a widened corpus that widens nothing cannot pass unnoticed.
  */
+/**
+ * @brief Exhaustively counts window occurrences in completely tokenized inputs over the alphabet, and how many
+ *        violate the covering-token claim: the token containing the window's final byte begins at the origin.
+ *
+ * The start of the token COVERING each position is the property the model certifies. Checking merely that SOME
+ * token begins at the origin passes false witnesses: over {a, abx, b, x} and "ab" at origin 0, the input "ab"
+ * tokenizes as a|b, a token does begin at offset 0, and yet the token covering the window's final byte begins at
+ * 1. The strictness rows and the teeth row both count through THIS one implementation, so a weakened comparison
+ * here erases the teeth row's pinned 59,049 violations and fails the suite; the two rows cross-check one oracle
+ * rather than trusting two copies.
+ */
+std::pair<std::size_t, std::size_t> covering_violations(
+        const munch::core::Lexer& lexer, const std::string& window, const std::size_t origin,
+        const std::string& alphabet, const std::size_t max_length)
+{
+    std::size_t occurrences{0};
+
+    std::size_t violations{0};
+
+    std::string input;
+
+    for (std::size_t length{window.size()}; length <= max_length; ++length)
+    {
+        std::size_t count{1};
+
+        for (std::size_t i{0}; i < length; ++i)
+        {
+            count *= alphabet.size();
+        }
+
+        for (std::size_t index{0}; index < count; ++index)
+        {
+            input.assign(length, alphabet[0]);
+
+            for (std::size_t i{0}, rest{index}; i < length; ++i, rest /= alphabet.size())
+            {
+                input[i] = alphabet[rest % alphabet.size()];
+            }
+
+            std::vector<std::size_t> covering(length, 0);
+
+            std::size_t offset{0};
+
+            const auto consumed{lexer.tokenize_all<Token>(input, [&](const Token, const std::size_t token_length) {
+                for (std::size_t inside{0}; inside < token_length; ++inside)
+                {
+                    covering[offset + inside] = offset;
+                }
+
+                offset += token_length;
+            })};
+
+            if (consumed < length)
+            {
+                continue;
+            }
+
+            for (std::size_t at{0}; at + window.size() <= length; ++at)
+            {
+                if (input.compare(at, window.size(), window) == 0)
+                {
+                    ++occurrences;
+
+                    violations += covering[at + window.size() - 1] == at + origin ? 0 : 1;
+                }
+            }
+        }
+    }
+
+    return {occurrences, violations};
+}
+
 bool strict_refusal(
         std::string_view name, const std::string& window, const std::size_t origin, const std::string& alphabet,
         const std::size_t max_length, const std::size_t occurrences_expected, Builder_dbg& builder)
@@ -1316,65 +1388,9 @@ bool strict_refusal(
     // conservative than documented, and the paper's strictness section would be overclaiming.
     const auto refused{!predicted(dfa, live, window, init_reentrant(dfa, live))};
 
-    // The semantic half: exhaustively, every occurrence has a token beginning at the claimed origin.
-    std::size_t occurrences{0};
-
-    std::size_t violations{0};
-
-    std::string input;
-
-    for (std::size_t length{window.size()}; length <= max_length; ++length)
-    {
-        std::size_t count{1};
-
-        for (std::size_t i{0}; i < length; ++i)
-        {
-            count *= alphabet.size();
-        }
-
-        for (std::size_t index{0}; index < count; ++index)
-        {
-            input.assign(length, alphabet[0]);
-
-            for (std::size_t i{0}, rest{index}; i < length; ++i, rest /= alphabet.size())
-            {
-                input[i] = alphabet[rest % alphabet.size()];
-            }
-
-            // The start of the token COVERING each position, which is the property the model certifies: the
-            // token containing the window's final byte begins at the origin. Checking merely that SOME token
-            // begins there passes false witnesses: over {a, abx, b, x} and "ab" at origin 0, the input "ab"
-            // tokenizes as a|b, a token does begin at offset 0, and yet the token covering the window's final
-            // byte begins at 1.
-            std::vector<std::size_t> covering(length, 0);
-
-            std::size_t offset{0};
-
-            const auto consumed{lexer.tokenize_all<Token>(input, [&](const Token, const std::size_t token_length) {
-                for (std::size_t inside{0}; inside < token_length; ++inside)
-                {
-                    covering[offset + inside] = offset;
-                }
-
-                offset += token_length;
-            })};
-
-            if (consumed < length)
-            {
-                continue;
-            }
-
-            for (std::size_t at{0}; at + window.size() <= length; ++at)
-            {
-                if (input.compare(at, window.size(), window) == 0)
-                {
-                    ++occurrences;
-
-                    violations += covering[at + window.size() - 1] == at + origin ? 0 : 1;
-                }
-            }
-        }
-    }
+    // The semantic half: exhaustively, every occurrence's covering token begins at the claimed origin, counted
+    // by the one shared oracle the teeth row pins.
+    const auto [occurrences, violations]{covering_violations(lexer, window, origin, alphabet, max_length)};
 
     const auto ok{refused && violations == 0 && occurrences == occurrences_expected};
 
@@ -1432,59 +1448,7 @@ bool oracle_teeth(
 
     const auto refused{!predicted(dfa, live, window, init_reentrant(dfa, live))};
 
-    std::size_t occurrences{0};
-
-    std::size_t violations{0};
-
-    std::string input;
-
-    for (std::size_t length{window.size()}; length <= max_length; ++length)
-    {
-        std::size_t count{1};
-
-        for (std::size_t i{0}; i < length; ++i)
-        {
-            count *= alphabet.size();
-        }
-
-        for (std::size_t index{0}; index < count; ++index)
-        {
-            input.assign(length, alphabet[0]);
-
-            for (std::size_t i{0}, rest{index}; i < length; ++i, rest /= alphabet.size())
-            {
-                input[i] = alphabet[rest % alphabet.size()];
-            }
-
-            std::vector<std::size_t> covering(length, 0);
-
-            std::size_t offset{0};
-
-            const auto consumed{lexer.tokenize_all<Token>(input, [&](const Token, const std::size_t token_length) {
-                for (std::size_t inside{0}; inside < token_length; ++inside)
-                {
-                    covering[offset + inside] = offset;
-                }
-
-                offset += token_length;
-            })};
-
-            if (consumed < length)
-            {
-                continue;
-            }
-
-            for (std::size_t at{0}; at + window.size() <= length; ++at)
-            {
-                if (input.compare(at, window.size(), window) == 0)
-                {
-                    ++occurrences;
-
-                    violations += covering[at + window.size() - 1] == at + origin ? 0 : 1;
-                }
-            }
-        }
-    }
+    const auto [occurrences, violations]{covering_violations(lexer, window, origin, alphabet, max_length)};
 
     const auto ok{
             refused && occurrences == occurrences_expected && violations == violations_expected && violations > 0};
@@ -1733,11 +1697,15 @@ bool run(const Row& row, Builder_dbg& builder)
             visited == row.keys && escaped(example) == row.example &&
             (example.empty() || (example_has_origin && example_at == row.example_origin)) && witness_ok};
 
+    // The status word makes the exhausted-versus-inconclusive distinction part of the printed record, not only
+    // of the assertion: a search that exceeded the key threshold prints INCONCLUSIVE and fails the row.
+    const auto status{shortest != 0 ? "certified" : exhausted ? "exhausted" : "INCONCLUSIVE"};
+
     std::printf(
-            "  %-30s k=1 %zu, window %zu/%zu, backup %zu over %7zu rewinding executions from %4zu prefixes, "
+            "  %-30s k=1 %zu, window %zu/%zu %s, backup %zu over %7zu rewinding executions from %4zu prefixes, "
             "%4zu keys%s%s%s%s%s%s\n",
-            std::string{row.name}.c_str(), disagreements, shortest, row.shortest, backup, exercised, prefixes, visited,
-            example.empty() ? "" : ", e.g. \"", escaped(example).c_str(),
+            std::string{row.name}.c_str(), disagreements, shortest, row.shortest, status, backup, exercised, prefixes,
+            visited, example.empty() ? "" : ", e.g. \"", escaped(example).c_str(),
             example_has_origin ? ("\" at " + std::to_string(example_at)).c_str() : "",
             witness ? (", witness \"" + escaped(witness->first) + "\"").c_str() : "", ok ? "" : "   <- MOVED", "");
 
@@ -1934,8 +1902,8 @@ int main()
         ok = strict_refusal("strict: {a, ab, b} at \"ab\"", "ab", 0, "ab", 14, 98305, b) && ok;
     }
     {
-        // Strictness witness two, structurally different: the competing origin comes from an accepting proper
-        // prefix INSIDE the longer token rather than from a standalone competitor, and the disagreement appears
+        // Strictness witness two, the same construction at greater prefix depth: the competing origin comes from
+        // an accepting proper prefix INSIDE the longer token, and the disagreement appears
         // two bytes into the window instead of one.
         using namespace munch::regex;
 
