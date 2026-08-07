@@ -3,9 +3,10 @@
 // here; this probe plans boundaries at window-recovered origins, PROVES the chunked stream equals the serial one
 // before any clock starts, and only then times the comparison.
 //
-// EVERY NUMBER PRINTED HERE IS DEV-GRADE. Nothing is archived, no provenance is stamped, and no figure from this
-// program may be quoted anywhere without the collect.sh ritual on a quiet machine. The assertions are the point;
-// the throughput lines are a preview of the campaign the split-windows draft's evaluation TODO describes.
+// EVERY NUMBER PRINTED HERE IS RUN-LOCAL. The program stamps commit and dirty-state provenance into its CSV and
+// stdout, collect.sh records the environment, and paper/data/ holds the committed campaign archives; even so, no
+// figure from a casual run may be quoted anywhere without the collect.sh ritual on a quiet machine. The
+// assertions are the point; the throughput lines only accompany them.
 //
 // The window model mirrored below is the one window_gate.cpp states and proves in full, with a confirmed second
 // adversarial read; see that header for the representation lemma, the soundness argument, and the quotient. This
@@ -825,8 +826,8 @@ int main(int argc, char** argv)
     }
 
     // Every certified two-byte window, as a 256x256 origin table for the occurrence scan. The search timing is
-    // the construction-cost figure the campaign owes: it is the whole price of window planning paid once per
-    // grammar.
+    // the planning-cost figure the campaign owes: the whole price of window planning, paid once per grammar in a
+    // post-construction analysis of the compiled tables.
     const auto search_started{std::chrono::steady_clock::now()};
 
     std::vector<unsigned char> origin_of(256 * 256, 0xff);
@@ -852,7 +853,7 @@ int main(int argc, char** argv)
     const auto search_elapsed{std::chrono::steady_clock::now() - search_started};
 
     std::printf(
-            "  certified two-byte windows: %zu, found in %.1f ms at construction time\n", windows,
+            "  certified two-byte windows: %zu, found in %.1f ms of post-construction analysis\n", windows,
             std::chrono::duration<double, std::milli>(search_elapsed).count());
 
     if (windows == 0)

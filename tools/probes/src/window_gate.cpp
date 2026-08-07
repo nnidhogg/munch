@@ -3,7 +3,8 @@
 //
 // THE MODEL BELOW IS CONSERVATIVE AND PROVED SOUND. It reports windows it can justify and refuses ones it cannot,
 // so its counts are a lower bound on what genuinely certifies, never an upper one. The proof is stated here in
-// full, because the note carrying it is not public. A second adversarial read confirmed it on 2026-08-05,
+// full so the probe stands alone, with or without the companion paper that states the same model and argument.
+// A second adversarial read confirmed it on 2026-08-05,
 // independently re-deriving the representation lemma and the quotient congruence and reproducing every figure.
 //
 // ASSUMPTIONS. The DFA is trimmed to its live states L, meaning reachable and co-accessible; q0 is live; no token
@@ -76,8 +77,9 @@
 // origins without bound. The search therefore deduplicates on a finite quotient rather than on the cloud: which
 // states carry the pre-window origin, and how many in-window origins each state carries, saturated at two. Two
 // clouds sharing a key have identical futures FOR CERTIFICATION, which is all the walk asks of them, so exploring
-// one of them loses nothing and the walk decides this model exactly. The walk also carries a subset budget, and a
-// search that exhausts it is reported inconclusive rather than negative. What exhaustion does not give is semantic
+// one of them loses nothing and the walk decides this model exactly. The walk also carries a safety threshold on
+// retained keys, and a search that exceeds it is reported inconclusive rather than negative; exhausting the finite
+// quotient below the threshold is a conclusive model-negative. What even exhaustion does not give is semantic
 // non-existence: the model itself refuses windows a greedy scanner would allow.
 //
 // The single-byte certificate answers "which bytes always begin a token". Six rows of the applicability table answer
@@ -108,7 +110,7 @@
 // works.
 //
 // A backup check over inputs that never rewind proves nothing, so each row declares whether its own check exercises
-// a rewind and that declaration is asserted. The first five rows do not, which is a fact about the inputs this
+// a rewind and that declaration is asserted. The first seven rows do not, which is a fact about the inputs this
 // search builds rather than about the grammars: the block-comment grammar CAN rewind, on an unfinished comment
 // opener after the slash has been accepted, but no window it reports produces one. Seven rows carry the backup
 // evidence over six distinct mechanisms, two of the rows sharing the short-token-then-longer-token gap: that gap, a
@@ -122,8 +124,8 @@
 // excludes nullable grammars, since the soundness proof does not cover them, so that count is history rather than
 // something this program still reports.
 //
-// The same caution applies to the length-one agreement. The first five rows certify no byte at all, so agreeing with
-// is_split_point is 0 == 0 there and proves little. Six of the seven rewinding rows have non-empty certificates,
+// The same caution applies to the length-one agreement. The first seven rows certify no byte at all, so agreeing
+// with is_split_point is 0 == 0 there and proves little. Six of the seven rewinding rows have non-empty certificates,
 // the float-against-range one being the exception with a shortest window of two, and adding
 // the first of them caught a real defect the vacuous comparisons had hidden: a trajectory reading from the initial
 // state begins a token at that offset rather than inheriting the origin it carried in.
@@ -414,6 +416,14 @@ std::optional<std::size_t> predicted(
     return certified(cloud) ? std::optional{cloud.begin()->second} : std::nullopt;
 }
 
+// The finite quotient is what terminates the search, so this threshold is a safety net rather than the bound.
+// Whether it was exceeded is reported, so "no window under this model" is never confused with "none found in
+// time". One shared constant, pinned to the figure the paper states, so it cannot drift in one caller and not
+// the other.
+constexpr std::size_t kSubsetBudget{200'000};
+
+static_assert(kSubsetBudget == 200'000, "the paper states a fixed safety threshold of 200,000 keys");
+
 /**
  * @brief How many bytes the model and the shipped predicate disagree about at length one.
  */
@@ -458,7 +468,8 @@ std::size_t g_visited_total{0};
 std::size_t g_visited_max{0};
 
 /**
- * @brief The length of the shortest certified window, or zero if none exists within the bound.
+ * @brief The length of the shortest certified window, or zero when the walk found none; the exhausted out-param
+ * distinguishes exact quotient exhaustion from a threshold-inconclusive traversal.
  *
  * `visited` reports the reachable quotient keys the walk actually explored: 6^|Q+| is the size of the space, the
  * reachable count is what decides whether the search is usable, and only measuring it stops the bound from
@@ -471,10 +482,6 @@ std::pair<std::size_t, std::vector<std::string>> shortest_windows(
 
     // Bounded so a grammar with many certified windows cannot make this a long-running test.
     constexpr std::size_t kKeep{400};
-
-    // The finite quotient is what terminates the search, so this cap is a safety net rather than the bound. Whether
-    // it was hit is reported, so "no window under this model" is never confused with "none found in time".
-    constexpr std::size_t kSubsetBudget{200000};
 
     std::vector<std::string> found;
 
@@ -554,8 +561,6 @@ std::vector<std::pair<std::string, std::size_t>> certified_words_upto(
         const Dfa& dfa, const States_t& live, const bool reentrant, const std::size_t max_len, const std::size_t cap)
 {
     std::vector<std::pair<std::string, std::size_t>> words;
-
-    constexpr std::size_t kSubsetBudget{200000};
 
     std::map<Quotient_t, std::string> seen;
 
@@ -1495,7 +1500,8 @@ bool oracle_teeth(
  * @brief Asserts that a NAMED window this grammar would otherwise never be checked at agrees with the scanner.
  *
  * run() only checks the windows the search reports, so a grammar whose shortest window is one byte never exercises a
- * longer one. The window that exposed the old proof gap is three bytes long, and this is what keeps it under test.
+ * longer one. The window that refuted the old restart step is three bytes long, and this is what keeps it under
+ * test.
  */
 bool named_window_agrees(std::string_view name, const std::string& window, std::size_t expected, Builder_dbg& builder)
 {
@@ -1544,8 +1550,9 @@ bool named_window_agrees(std::string_view name, const std::string& window, std::
             disagreements == 0 ? "" : "   <- MODEL IS WRONG");
 
     // A refusal is a fine outcome for a conservative model in general, but not here: this window is the one the
-    // gated step exists to certify, and the failure-restart step refuses it. Pinning the origin as well as the
-    // agreement is what stops a model that certifies the window at the wrong offset from passing.
+    // gated step exists to certify, and the failure-restart step certifies it at the wrong origin. Pinning the
+    // origin as well as the agreement is what stops a model that certifies the window at the wrong offset from
+    // passing.
     return disagreements == 0 && exercised > 0 && at && *at == expected;
 }
 
@@ -1665,9 +1672,9 @@ bool run(const Row& row, Builder_dbg& builder)
     // Agreement over inputs that never rewind says nothing about backup, so the row's declaration is asserted too.
     const auto covered{row.rewinds_expected == (exercised > 0)};
 
-    // Reporting "no window" counts only when the search exhausted the quotient space rather than hitting the
-    // budget, which would be inconclusive. Even exhausted it means none under this conservative model, never none
-    // in the maximal-munch sense: the quotient decides the model exactly, but the model refuses windows a greedy
+    // Reporting "no window" counts only when the search exhausted the quotient space rather than exceeding the
+    // key threshold, which would be inconclusive. Even exhausted it means none under this conservative model, never
+    // none in the maximal-munch sense: the quotient decides the model exactly, but the model refuses windows a greedy
     // scanner would allow.
     const auto conclusive{shortest != 0 || exhausted};
 
@@ -1744,6 +1751,10 @@ int main()
 
     std::printf(
             "windows where no single byte is certified, under the proved conservative model described in the header\n");
+
+    std::printf(
+            "  subset search threshold: inconclusive beyond %zu retained keys, pinned by static_assert\n",
+            kSubsetBudget);
 
     auto ok{true};
 
@@ -1882,13 +1893,12 @@ int main()
              ok;
     }
     {
-        // The grammar that exposed the gap in the model this program used to run. Scanning "abx", the old step
-        // followed "ab"
-        // toward "abc", saw "x" kill that path, restarted there, and carried a token beginning at offset 2. The
-        // scanner backs up to the accepted "a", emits it, and matches "bx", so its boundaries are 0 and 1. The old
-        // model as a whole refused the window rather than answering 2, since its other trajectories disagreed, so
-        // this witnesses the proof gap rather than a wrong prediction. The row exists so that restarting a dead
-        // trajectory cannot come back unnoticed.
+        // The grammar that refuted the model this program used to run. Scanning "abx", the old step followed
+        // "ab" toward "abc", saw "x" kill that path, restarted there, and carried a token beginning at offset 2;
+        // the restarts collapse the other trajectories too, so the old model as a whole certified "abx" at 2.
+        // The scanner backs up to the accepted "a", emits it, and matches "bx", so its boundaries are 0 and 1: a
+        // false certificate at a witnessed occurrence, executed and asserted by the legacy regression later in
+        // this run. The row exists so that restarting a dead trajectory cannot come back unnoticed.
         using namespace munch::regex;
 
         Builder_dbg b;
@@ -1897,7 +1907,7 @@ int main()
         b.add_token(text("bx"), Token::Number, 1);
         b.add_token(text("x"), Token::Operator, 2);
         b.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
-        ok = run({.name = "proof-gap witness grammar",
+        ok = run({.name = "refuted-model witness grammar",
                   .shortest = 1,
                   .rewinds_expected = true,
                   .keys = 5,
@@ -1907,8 +1917,8 @@ int main()
                  b) &&
              ok;
 
-        // The search stops at one byte here, so the three-byte window that exposed the defect has to be named.
-        ok = named_window_agrees("proof-gap witness abx", "abx", 1, b) && ok;
+        // The search stops at one byte here, so the three-byte window that refuted the old step has to be named.
+        ok = named_window_agrees("refuted-model witness abx", "abx", 1, b) && ok;
     }
     {
         // Strictness witness one: the scanner always takes "ab", but the accepting "a" seeds a competing origin
@@ -2072,8 +2082,9 @@ int main()
         // the header and the paper can never silently drift back into folklore. The variant replaced the
         // acceptance-gated seed with failure restart; over {a, abc, bx, x} its cloud on "abx" ends certifying
         // origin 2, a certificate that is FALSE at the witnessed occurrence "abx", which tokenizes a|bx with
-        // the covering token at offset 1. The repaired model's origin-1 answer is asserted by the proof-gap
-        // row above.
+        // the covering token at offset 1. All three sides are asserted here on the same builder: the discarded
+        // transition must certify 2, the repaired model must certify 1, and the scanner must consume "abx"
+        // completely with boundaries 0 and 1.
         using namespace munch::regex;
 
         Builder_dbg b;
@@ -2121,13 +2132,34 @@ int main()
             cloud = next;
         }
 
-        const auto legacy_ok{alive && certified(cloud) && cloud.begin()->second == 2};
+        const auto lexer{b.build()};
+
+        std::vector<std::size_t> covering(window.size(), window.size());
+
+        std::size_t offset{0};
+
+        const auto consumed{lexer.tokenize_all<Token>(window, [&](const Token, const std::size_t length) {
+            for (std::size_t inside{0}; inside < length; ++inside)
+            {
+                covering[offset + inside] = offset;
+            }
+
+            offset += length;
+        })};
+
+        const auto scan_ok{consumed == window.size() && covering[0] == 0 && covering[1] == 1 && covering[2] == 1};
+
+        const auto repaired{predicted(dfa, live, window, reentrant)};
+
+        const auto legacy_ok{
+                scan_ok && repaired && *repaired == 1 && alive && certified(cloud) && cloud.begin()->second == 2};
 
         std::printf(
-                "  %-30s restart transition certifies \"abx\" at %s, refuted at the witnessed occurrence%s\n",
+                "  %-30s restart transition certifies \"abx\" at %s, repaired model at %s, the scan covers its "
+                "final byte from %zu%s\n",
                 "legacy: {a, abc, bx, x} at abx",
                 alive && certified(cloud) ? std::to_string(cloud.begin()->second).c_str() : "none",
-                legacy_ok ? "" : "   <- MOVED");
+                repaired ? std::to_string(*repaired).c_str() : "refused", covering[2], legacy_ok ? "" : "   <- MOVED");
 
         ok = legacy_ok && ok;
     }
@@ -2219,16 +2251,16 @@ int main()
             usable - with_certificate ? static_cast<double>(g_visited_total) / (usable - with_certificate) : 0.0,
             g_visited_total);
 
-    // Asserted rather than printed, because these figures are quoted in the notes and a loose bound would let one
-    // move without anything failing. They are the NON-NULLABLE sample, which is what the soundness proof covers;
+    // Printed above and asserted below, because these figures are quoted in the notes and a loose bound would let
+    // one move without anything failing. They are the NON-NULLABLE sample, which is what the soundness proof covers;
     // two thirds of what the generator produces is nullable and is excluded rather than counted. Pinning them
     // exactly is only meaningful because random_regex() sequences its recursive calls: while it left them as
     // function arguments the sweep depended on evaluation order and GCC and Clang produced different grammars.
-    // Inconclusive must stay zero: hitting the budget means the traversal stopped before exhausting the bounded
-    // quotient, not that the quotient stopped bounding anything. A negative is "no window under this conservative
-    // model", never "no window exists", since it refuses windows a greedy scanner would allow.
-    // The aggregate is asserted for the same reason as the sweep figures: the notes quote 1,079,392 rewinding
-    // executions, and only a pinned total keeps that sentence honest when a row or the input builder changes.
+    // Inconclusive must stay zero: exceeding the 200,000-key threshold means the traversal stopped before
+    // exhausting the bounded quotient, not that the quotient stopped bounding anything. A negative is "no window under
+    // this conservative model", never "no window exists", since it refuses windows a greedy scanner would allow. The
+    // aggregate is asserted for the same reason as the sweep figures: the notes quote 1,079,392 rewinding executions,
+    // and only a pinned total keeps that sentence honest when a row or the input builder changes.
     ok = random_disagreements == 0 && usable == 134 && nullable == 266 && with_certificate == 39 &&
          usable - with_certificate == 95 && rescued == 91 && witnessed_rescued == 91 && proved_none == 4 &&
          inconclusive == 0 && g_exercised_total == 1'079'392 && g_exercised_tokenizable == 418'466 &&
