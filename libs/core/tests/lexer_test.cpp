@@ -852,7 +852,11 @@ TEST_F(Lexer_test, Window_fallback_plans_parallel_cuts_where_no_byte_certifies)
         input += "alpha beta \"quoted text!\" gamma\n!delta\n!";
     }
 
-    const auto boundaries{lexer.chunk_boundaries(input.begin(), input.end(), 8)};
+    // The default planner keeps the unconditional byte contract and degenerates here; window recovery is the
+    // explicit sibling with its documented completely-tokenizable condition.
+    ASSERT_EQ(lexer.chunk_boundaries(input, 8), (std::vector<std::size_t>{0, input.size()}));
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(input.begin(), input.end(), 8)};
 
     ASSERT_GT(boundaries.size(), 2U);
 
@@ -900,7 +904,7 @@ TEST_F(Lexer_test, Window_fallback_degrades_honestly_and_the_equality_check_has_
 
     const std::string runs(64, 'a');
 
-    const auto exhausted{unbounded.build().chunk_boundaries(runs.begin(), runs.end(), 4)};
+    const auto exhausted{unbounded.build().chunk_boundaries_with_windows(runs.begin(), runs.end(), 4)};
 
     EXPECT_EQ(exhausted, (std::vector<std::size_t>{0, runs.size()}));
 
@@ -910,7 +914,7 @@ TEST_F(Lexer_test, Window_fallback_degrades_honestly_and_the_equality_check_has_
     nullable.add_token(kleene(text("a")), Token_kind::Identifier, 1);
     nullable.add_token(text(" "), Token_kind::Whitespace, 1);
 
-    const auto refused{nullable.build().chunk_boundaries(runs.begin(), runs.end(), 4)};
+    const auto refused{nullable.build().chunk_boundaries_with_windows(runs.begin(), runs.end(), 4)};
 
     EXPECT_EQ(refused, (std::vector<std::size_t>{0, runs.size()}));
 
@@ -1050,7 +1054,9 @@ TEST_F(Lexer_test, Chunk_boundaries_recover_windows_when_no_byte_certifies)
 
     const std::string input{"alpha beta gamma delta epsilon zeta eta theta"};
 
-    const auto boundaries{lexer.chunk_boundaries(input, 4)};
+    ASSERT_EQ(lexer.chunk_boundaries(input, 4), (std::vector<std::size_t>{0, input.size()}));
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(input, 4)};
 
     ASSERT_GT(boundaries.size(), 2U);
     EXPECT_EQ(boundaries.front(), 0U);

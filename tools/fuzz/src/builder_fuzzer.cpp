@@ -153,11 +153,22 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* const data, const std:
         {
             require(boundaries[index] > boundaries[index - 1] && boundaries[index] < input.size());
 
-            // A planned interior cut is either a certified byte, or the reported origin of a certified window
-            // whose occurrence the planner found ending at or after it; the planner tries windows of two to four
-            // bytes, so the occurrence starts at most three bytes back. Either way the cut is a token start of
-            // the final segmentation, and the stream comparison below holds it to that promise.
-            const auto cut{boundaries[index]};
+            require(lexer.is_split_point(input[boundaries[index]]));
+        }
+
+        // The explicit window planner: its cuts are shape-checked here, and each interior cut must be a
+        // certified byte or the reported origin of a certified window found at most three bytes back. Its
+        // stream guarantee is conditional on completely tokenizable input by documentation, so no stream
+        // comparison is required on arbitrary fuzz input.
+        const auto windowed{lexer.chunk_boundaries_with_windows(input, chunks)};
+
+        require(windowed.front() == 0 && windowed.back() == input.size());
+
+        for (std::size_t index{1}; index + 1 < windowed.size(); ++index)
+        {
+            require(windowed[index] > windowed[index - 1] && windowed[index] < input.size());
+
+            const auto cut{windowed[index]};
 
             auto certified{lexer.is_split_point(input[cut])};
 
