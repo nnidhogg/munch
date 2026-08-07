@@ -362,7 +362,7 @@ Simulator::Classes_t Simulator::classify(const Dfa& dfa)
     return result;
 }
 
-std::optional<std::size_t> Simulator::is_split_window(const std::string_view window) const noexcept
+std::optional<std::size_t> Simulator::is_split_window(const std::string_view window) const
 {
     // An accepting initial state is the compiled signature of a nullable token set, which the soundness theorem
     // excludes; refuse rather than answer beyond the proved scope. The empty window certifies nothing either.
@@ -395,7 +395,7 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
         // where some tracked state accepts. The test runs on the cloud as it stands, ahead of the step.
         auto accepting{false};
 
-        for (const auto& [state, origin] : cloud)
+        for (const auto& state : cloud | std::views::keys)
         {
             accepting = accepting || (flags_[state] & accept_flag_) != 0;
         }
@@ -440,7 +440,7 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
     // pre-window marker means the window never resolves where the covering token began.
     const auto origin{cloud.begin()->second};
 
-    for (const auto& [state, at] : cloud)
+    for (const auto& at : cloud | std::views::values)
     {
         if (at != origin)
         {

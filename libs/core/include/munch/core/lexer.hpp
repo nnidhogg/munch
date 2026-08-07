@@ -178,7 +178,7 @@ public:
      * are model-relative and conservative, never proof that no certificate exists; nullable token sets are refused
      * outright. Derived from the compiled transition table; see dfa::Simulator::is_split_window().
      */
-    [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const noexcept
+    [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const
     {
         return simulator_.is_split_window(window);
     }

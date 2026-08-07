@@ -153,7 +153,28 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* const data, const std:
         {
             require(boundaries[index] > boundaries[index - 1] && boundaries[index] < input.size());
 
-            require(lexer.is_split_point(input[boundaries[index]]));
+            // A planned interior cut is either a certified byte, or the reported origin of a certified window
+            // whose occurrence the planner found ending at or after it; the planner tries windows of two to four
+            // bytes, so the occurrence starts at most three bytes back. Either way the cut is a token start of
+            // the final segmentation, and the stream comparison below holds it to that promise.
+            const auto cut{boundaries[index]};
+
+            auto certified{lexer.is_split_point(input[cut])};
+
+            for (std::size_t back{0}; !certified && back <= 3 && back <= cut; ++back)
+            {
+                const auto start{cut - back};
+
+                for (auto length{std::max<std::size_t>(2, back + 1)};
+                     !certified && length <= 4 && start + length <= input.size(); ++length)
+                {
+                    const auto origin{lexer.is_split_window(std::string_view{input}.substr(start, length))};
+
+                    certified = origin.has_value() && *origin == back;
+                }
+            }
+
+            require(certified);
         }
 
         std::vector<Stream_t> streams(boundaries.size() - 1);

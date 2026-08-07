@@ -194,7 +194,7 @@ public:
      * one this coincides exactly with is_split_point(). Nullable token sets are outside the proved scope and are
      * refused outright, matching the predicate's withdrawal of its initial-state exemption.
      */
-    [[nodiscard]] std::optional<std::size_t> is_split_window(std::string_view window) const noexcept;
+    [[nodiscard]] std::optional<std::size_t> is_split_window(std::string_view window) const;
 
     /**
      * @brief Reports whether the token set certifies any usable split point.
