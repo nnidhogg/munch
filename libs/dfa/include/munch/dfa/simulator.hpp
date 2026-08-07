@@ -7,7 +7,9 @@
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -56,6 +58,11 @@ class Simulator
      * @brief Per-state flag marking an accepting state.
      */
     static constexpr std::uint8_t accept_flag_{1};
+
+    /**
+     * @brief Per-state flag marking a live state: reachable from the initial state and able to still accept.
+     */
+    static constexpr std::uint8_t live_flag_{2};
 
     /**
      * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables.
@@ -166,6 +173,28 @@ public:
 
         return ((split_points_ignoring_[value >> 6U] >> (value & 63U)) & 1U) != 0;
     }
+
+    /**
+     * @brief Decides whether the given byte string is a certified split window, returning the covering origin.
+     *
+     * A certified split window (W, o) promises: in every completely tokenizable input containing W, the token
+     * covering the occurrence's final byte begins exactly o bytes into the occurrence. The certificate is
+     * conditional on occurrence; a window no completely tokenizable input contains satisfies it vacuously, and
+     * this decision does not establish that an occurrence exists. A caller that has just found W in its input at
+     * hand holds that occurrence, and on completely tokenizable input the promise applies to it directly; past
+     * the offset where a serial scan would first fail, the promise carries only what tokenize_all_parallel()
+     * documents.
+     *
+     * The decision runs the conservative cloud model over the compiled tables: every live state starts as a
+     * hypothesis whose token began before the window, each byte advances hypotheses deterministically, a fresh
+     * token may begin exactly where some represented history just ended one, and reading from a non-re-entrant
+     * initial state begins a token at that offset. The window is certified when every surviving hypothesis
+     * agrees on one in-window origin. A refusal is model-relative: the model deliberately refuses some windows a
+     * greedy scanner would allow, and refusal never proves that no certificate exists semantically. At length
+     * one this coincides exactly with is_split_point(). Nullable token sets are outside the proved scope and are
+     * refused outright, matching the predicate's withdrawal of its initial-state exemption.
+     */
+    [[nodiscard]] std::optional<std::size_t> is_split_window(std::string_view window) const noexcept;
 
     /**
      * @brief Reports whether the token set certifies any usable split point.
@@ -370,6 +399,14 @@ private:
      * @brief The state a simulation starts in.
      */
     Dfa::State_t init_state_;
+
+    /**
+     * @brief Whether any reachable transition re-enters the initial state.
+     *
+     * A nullable-free grammar can still re-enter its start state; when it does, arriving there no longer proves a
+     * token boundary, and both the byte predicate and the window walk withdraw the initial-state exemption.
+     */
+    bool init_reentrant_{};
 
     /**
      * @brief Transitions as one row per symbol class and one column per state, holding no_state_ where there is none.

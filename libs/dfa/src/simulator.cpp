@@ -207,6 +207,18 @@ Simulator::Simulator(
         }
     }
 
+    // Persist what the window walk needs at call time: liveness per state, and whether the initial-state
+    // exemption survives. Everything else it uses, the tables already carry.
+    init_reentrant_ = init_reentrant;
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (reachable[state] && co_accessible[state])
+        {
+            flags_[state] |= live_flag_;
+        }
+    }
+
     const auto consumes{[this, &co_accessible](const std::size_t symbol, const std::size_t state) {
         const auto to{table_[row_offsets_[symbol] + state]};
 
@@ -348,6 +360,95 @@ Simulator::Classes_t Simulator::classify(const Dfa& dfa)
     }
 
     return result;
+}
+
+std::optional<std::size_t> Simulator::is_split_window(const std::string_view window) const noexcept
+{
+    // An accepting initial state is the compiled signature of a nullable token set, which the soundness theorem
+    // excludes; refuse rather than answer beyond the proved scope. The empty window certifies nothing either.
+    if (window.empty() || (flags_[init_state_] & accept_flag_) != 0)
+    {
+        return std::nullopt;
+    }
+
+    // The pre-window origin: a hypothesis whose token began before the window. Any value no in-window offset can
+    // take serves as the marker.
+    constexpr std::size_t before{std::numeric_limits<std::size_t>::max()};
+
+    // The cloud of hypotheses (state, origin). A set, exactly as the proof's model: the seed and the rename can
+    // propose the identical pair and must coalesce.
+    std::set<std::pair<std::size_t, std::size_t>> cloud;
+
+    for (std::size_t state{0}; state < flags_.size(); ++state)
+    {
+        if ((flags_[state] & live_flag_) != 0)
+        {
+            cloud.emplace(state, before);
+        }
+    }
+
+    for (std::size_t at{0}; at < window.size(); ++at)
+    {
+        const auto row{row_offsets_[static_cast<unsigned char>(window[at])]};
+
+        // A token can only end where the automaton accepted, so a boundary BEFORE this byte is possible exactly
+        // where some tracked state accepts. The test runs on the cloud as it stands, ahead of the step.
+        auto accepting{false};
+
+        for (const auto& [state, origin] : cloud)
+        {
+            accepting = accepting || (flags_[state] & accept_flag_) != 0;
+        }
+
+        std::set<std::pair<std::size_t, std::size_t>> next;
+
+        for (const auto& [state, origin] : cloud)
+        {
+            if (const auto to{table_[row + state]}; to != no_state_ && (flags_[to] & live_flag_) != 0)
+            {
+                // Reading from the initial state begins a token here, so the origin is this offset rather than
+                // whatever the hypothesis carried in; valid only while nothing re-enters the initial state. A
+                // hypothesis that cannot consume the byte is an impossible history and is dropped, never
+                // restarted.
+                const auto begins{state == init_state_ && !init_reentrant_};
+
+                next.emplace(to, begins ? at : origin);
+            }
+        }
+
+        // One fresh hypothesis wherever the automaton had just accepted, the only place a token can begin. The
+        // initial cloud contains an accepting live state whenever the grammar is usable, so no first-byte special
+        // case exists.
+        if (accepting)
+        {
+            if (const auto to{table_[row + init_state_]}; to != no_state_ && (flags_[to] & live_flag_) != 0)
+            {
+                next.emplace(to, at);
+            }
+        }
+
+        // The empty cloud is absorbing: no live history crosses this window, and the walk refuses.
+        if (next.empty())
+        {
+            return std::nullopt;
+        }
+
+        cloud.swap(next);
+    }
+
+    // Certified exactly when every surviving hypothesis agrees on one in-window origin; unanimity at the
+    // pre-window marker means the window never resolves where the covering token began.
+    const auto origin{cloud.begin()->second};
+
+    for (const auto& [state, at] : cloud)
+    {
+        if (at != origin)
+        {
+            return std::nullopt;
+        }
+    }
+
+    return origin == before ? std::nullopt : std::optional{origin};
 }
 
 } // namespace munch::dfa

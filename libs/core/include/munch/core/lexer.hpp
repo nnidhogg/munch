@@ -10,6 +10,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -161,6 +162,23 @@ public:
     [[nodiscard]] bool is_split_point_ignoring(const char symbol) const noexcept
     {
         return simulator_.is_split_point_ignoring(symbol);
+    }
+
+    /**
+     * @brief Decides whether the given byte string is a certified split window, returning the covering origin.
+     *
+     * The multi-byte generalization of is_split_point(): where the byte certificate promises that every occurrence
+     * begins a token, a certified window (W, o) promises that in every completely tokenizable input containing W,
+     * the token covering the occurrence's final byte begins exactly o bytes into it. At length one the two coincide.
+     * The certificate is conditional on occurrence and this call does not establish that one exists; a caller that
+     * found W in its own input holds an occurrence, and the promise applies to it on completely tokenizable input,
+     * with tokenize_all_parallel()'s documentation governing what survives past a serial failure offset. Refusals
+     * are model-relative and conservative, never proof that no certificate exists; nullable token sets are refused
+     * outright. Derived from the compiled transition table; see dfa::Simulator::is_split_window().
+     */
+    [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const noexcept
+    {
+        return simulator_.is_split_window(window);
     }
 
     /**

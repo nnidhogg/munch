@@ -723,6 +723,97 @@ TEST_F(Lexer_test, Split_points_depend_on_the_token_set)
     EXPECT_FALSE(run_lexer.is_split_point('\n'));
 }
 
+TEST_F(Lexer_test, Split_windows_generalize_the_byte_certificate)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Keyword,
+        Number,
+        Operator,
+    };
+
+    // The refutation grammar from the certified-windows study: no single byte certifies, but the three-byte
+    // window "abx" pins the covering token of its final byte to origin 1, the occurrence tokenizing as a|bx.
+    Builder_dbg builder;
+
+    builder.add_token(text("a"), Token_kind::Identifier, 2);
+    builder.add_token(text("abc"), Token_kind::Keyword, 1);
+    builder.add_token(text("bx"), Token_kind::Number, 2);
+    builder.add_token(text("x"), Token_kind::Operator, 2);
+
+    const auto lexer{builder.build()};
+
+    const auto abx{lexer.is_split_window("abx")};
+
+    ASSERT_TRUE(abx.has_value());
+    EXPECT_EQ(*abx, 1U);
+
+    // The specialization theorem, executable: at length one the window decision coincides with the shipped byte
+    // predicate on every byte value, certificates and refusals alike.
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        const auto byte{static_cast<char>(symbol)};
+
+        EXPECT_EQ(lexer.is_split_window({&byte, 1}).has_value(), lexer.is_split_point(byte));
+    }
+}
+
+TEST_F(Lexer_test, Split_windows_stay_conservative_and_scoped)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Keyword,
+        Operator,
+    };
+
+    // Strictness: over {a, ab, b} the input "ab" always tokenizes as the single token ab, making it a true
+    // certificate at origin 0, and the conservative model still refuses it: the accepting a seeds a competing
+    // origin for b and unanimity is lost. Refusal is model-relative, never proof that no certificate exists.
+    Builder_dbg strict;
+
+    strict.add_token(text("a"), Token_kind::Identifier, 1);
+    strict.add_token(text("ab"), Token_kind::Keyword, 1);
+    strict.add_token(text("b"), Token_kind::Operator, 1);
+
+    EXPECT_FALSE(strict.build().is_split_window("ab").has_value());
+
+    // Vacuity: over {0, 00, 01} the model certifies "1001" at origin 2, and no completely tokenizable input
+    // contains that window. The call answers the model; the certificate is conditional on occurrence, and a
+    // caller holds an occurrence only by finding the window in input at hand.
+    Builder_dbg vacuous;
+
+    vacuous.add_token(text("0"), Token_kind::Identifier, 1);
+    vacuous.add_token(text("00"), Token_kind::Keyword, 1);
+    vacuous.add_token(text("01"), Token_kind::Operator, 1);
+
+    const auto model{vacuous.build().is_split_window("1001")};
+
+    ASSERT_TRUE(model.has_value());
+    EXPECT_EQ(*model, 2U);
+
+    // A grammar whose search space exhausts: a+ accepts after every byte, every offset stays in play, and no
+    // window of any length certifies.
+    Builder_dbg unbounded;
+
+    unbounded.add_token(plus(text("a")), Token_kind::Identifier, 1);
+
+    const auto plus_lexer{unbounded.build()};
+
+    EXPECT_FALSE(plus_lexer.is_split_window("a").has_value());
+    EXPECT_FALSE(plus_lexer.is_split_window("aa").has_value());
+
+    // Nullable token sets sit outside the soundness proof's scope and are refused outright, matching the byte
+    // predicate's withdrawal of its initial-state exemption. The empty window certifies nothing either.
+    Builder_dbg nullable;
+
+    nullable.add_token(kleene(text("a")), Token_kind::Identifier, 1);
+
+    EXPECT_FALSE(nullable.build().is_split_window("a").has_value());
+    EXPECT_FALSE(plus_lexer.is_split_window("").has_value());
+}
+
 TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)
 {
     enum class Token_kind : uint8_t
