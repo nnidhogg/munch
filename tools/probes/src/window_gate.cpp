@@ -57,18 +57,14 @@
 // Backup never appears in the argument. The model tracks where tokens BEGIN rather than what the scanner reads, so
 // a boundary backup later exposes was already seeded when the accepting position justifying it was crossed.
 //
-// It replaced an earlier model whose soundness could not be argued, and the defect is worth keeping in view. That
-// model restarted a trajectory whenever it could not consume the byte. Over tokens {a, abc, bx, x} and the window
-// "abx" the trajectory following "ab" toward "abc" is killed by "x", restarts there, and carries a token beginning
-// at offset 2, where the scanner backs up to the accepted "a" and matches "bx", cutting at 0 and 1. The complete
-// old cloud refused that window rather than reporting 2, so this is a gap in the argument, not a wrong answer
-// anyone observed.
-//
-// MEASURED, so the claim stays honest: that is the behaviour of one trajectory, not of the model. The old model
-// starts from EVERY live state, and those trajectories disagree, so it REFUSES "abx" rather than mispredicting it.
-// No input is known on which the old model reports a boundary the scanner does not take. Its problem is that no
-// soundness argument closes, not that a counterexample exists. A trajectory that cannot consume a byte is an
-// impossible history rather than a token boundary, and restarting it is what the argument cannot justify.
+// It replaced an earlier model whose transition restarted a trajectory whenever it could not consume the byte,
+// in place of the acceptance-gated seed. That variant is refuted, not merely unproved: over tokens
+// {a, abc, bx, x} and the window "abx" its cloud collapses to one trajectory per step and ends certifying
+// origin 2, yet the input "abx" itself tokenizes as a|bx with the covering token beginning at offset 1, a
+// false certificate at a witnessed occurrence. A trajectory that cannot consume a byte is an impossible
+// history rather than a token boundary, and restarting it manufactures support no execution justifies. The
+// legacy regression in main() keeps that refutation executable, so this account can never drift back into
+// folklore unnoticed.
 //
 // The repair: drop the failure restart, and seed one fresh trajectory at the window's first byte and thereafter
 // only where some tracked state accepts, because a token can only end where the automaton accepted. The cloud then
@@ -297,11 +293,10 @@ std::optional<Cloud_t> step(
             next.emplace(*direct, begins ? at : origin);
         }
 
-        // No restart when a trajectory dies. A state that cannot consume the byte is an impossible history, not a
-        // token boundary, and restarting there is what made the old model predict boundaries the scanner does not
-        // take: over {a, abc, bx, x} and "abx" one trajectory carried a boundary at offset 2, where the scanner
-        // cuts at 0 and 1. The complete old cloud refused that window rather than reporting 2, so this is a gap in
-        // the argument rather than an observed wrong answer.
+        // No restart when a trajectory dies. A state that cannot consume the byte is an impossible history, not
+        // a token boundary; the discarded variant that restarted here is refuted by the executable legacy
+        // regression in main(): over {a, abc, bx, x} and "abx" it certifies origin 2 where the scanner cuts at
+        // 0 and 1.
     }
 
     // One fresh trajectory wherever the automaton had just accepted, which is the only place a token can begin.
@@ -2072,6 +2067,70 @@ int main()
              ok;
     }
 
+    {
+        // The legacy regression: the discarded restart transition, kept executable so the refutation stated in
+        // the header and the paper can never silently drift back into folklore. The variant replaced the
+        // acceptance-gated seed with failure restart; over {a, abc, bx, x} its cloud on "abx" ends certifying
+        // origin 2, a certificate that is FALSE at the witnessed occurrence "abx", which tokenizes a|bx with
+        // the covering token at offset 1. The repaired model's origin-1 answer is asserted by the proof-gap
+        // row above.
+        using namespace munch::regex;
+
+        Builder_dbg b;
+        b.add_token(text("a"), Token::Identifier, 2);
+        b.add_token(text("abc"), Token::Keyword, 1);
+        b.add_token(text("bx"), Token::Number, 2);
+        b.add_token(text("x"), Token::Operator, 2);
+
+        const auto dfa{b.dfa()};
+
+        const auto live{trim(dfa)};
+
+        const auto reentrant{init_reentrant(dfa, live)};
+
+        Cloud_t cloud{unknown(live)};
+
+        const std::string window{"abx"};
+
+        auto alive{true};
+
+        for (std::size_t at{0}; at < window.size() && alive; ++at)
+        {
+            const auto restart{dfa.advance(dfa.init_state(), window[at])};
+
+            const auto restart_ok{restart && live.contains(*restart)};
+
+            Cloud_t next;
+
+            for (const auto& [state, origin] : cloud)
+            {
+                if (const auto direct{dfa.advance(state, window[at])}; direct && live.contains(*direct))
+                {
+                    const auto begins{state == dfa.init_state() && !reentrant};
+
+                    next.emplace(*direct, begins ? at : origin);
+                }
+                else if (restart_ok)
+                {
+                    next.emplace(*restart, at);
+                }
+            }
+
+            alive = !next.empty();
+
+            cloud = next;
+        }
+
+        const auto legacy_ok{alive && certified(cloud) && cloud.begin()->second == 2};
+
+        std::printf(
+                "  %-30s restart transition certifies \"abx\" at %s, refuted at the witnessed occurrence%s\n",
+                "legacy: {a, abc, bx, x} at abx",
+                alive && certified(cloud) ? std::to_string(cloud.begin()->second).c_str() : "none",
+                legacy_ok ? "" : "   <- MOVED");
+
+        ok = legacy_ok && ok;
+    }
     {
         // The vacuity witness, pinned so the model-versus-useful distinction can never silently regress.
         // Definition 1 permits vacuity: over {0, 00, 01} the model certifies ("1001", 2) with a nonempty
