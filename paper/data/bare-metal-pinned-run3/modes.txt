@@ -1,0 +1,28 @@
+modal driver scenario matrix
+  commit      40450d2
+  collected   2026-08-07 21:57:11 UTC
+  passes      15
+  hardware    32 threads visible
+  compiler    15.2.0
+  system      Linux 7.0.0-29-generic x86_64
+  observations modes.csv
+
+modal driver, 1 MiB per scenario, 15 interleaved rounds
+action-never-fires 1.0 MiB, 391903 tokens, 15 passes: best 952.6, median 949.8, worst 945.8 MiB/s
+per-token        1.0 MiB, 291587 tokens, 15 passes: best 452.7, median 449.9, worst 442.3 MiB/s
+batched          1.0 MiB, 291587 tokens, 15 passes: best 789.2, median 785.2, worst 780.5 MiB/s
+no-actions-declared 1.0 MiB, 391903 tokens, 15 passes: best 1017.5, median 1012.5, worst 1002.8 MiB/s
+one-action-never-fires 1.0 MiB, 391903 tokens, 15 passes: best 952.1, median 949.4, worst 935.7 MiB/s
+actions-1pc      1.0 MiB, 391458 tokens, 15 passes: best 947.0, median 943.0, worst 936.9 MiB/s
+actions-10pc     1.0 MiB, 388054 tokens, 15 passes: best 885.6, median 881.0, worst 875.0 MiB/s
+actions-40pc     1.0 MiB, 377942 tokens, 15 passes: best 766.2, median 763.3, worst 761.2 MiB/s
+actions-90pc     1.0 MiB, 365113 tokens, 15 passes: best 790.5, median 786.0, worst 777.1 MiB/s
+body-8           1.0 MiB, 443477 tokens, 15 passes: best 738.4, median 735.4, worst 731.2 MiB/s
+body-32          1.0 MiB, 291587 tokens, 15 passes: best 789.6, median 786.3, worst 782.9 MiB/s
+body-128         1.0 MiB, 123517 tokens, 15 passes: best 836.0, median 833.1, worst 826.0 MiB/s
+body-512         1.0 MiB, 38077 tokens, 15 passes: best 841.7, median 840.2, worst 833.7 MiB/s
+push-pop         1.0 MiB, 291587 tokens, 15 passes: best 790.2, median 787.4, worst 764.4 MiB/s
+go-to            1.0 MiB, 291587 tokens, 15 passes: best 802.7, median 801.3, worst 797.9 MiB/s
+depth-1          1.0 MiB, 405795 tokens, 15 passes: best 824.7, median 821.2, worst 816.0 MiB/s
+depth-4          1.0 MiB, 413259 tokens, 15 passes: best 779.2, median 775.9, worst 772.1 MiB/s
+depth-16         1.0 MiB, 435437 tokens, 15 passes: best 623.4, median 619.5, worst 616.3 MiB/s

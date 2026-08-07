@@ -1,0 +1,160 @@
+window-recovered parallel cuts, preview of the split-windows benchmark campaign
+  commit 40450d2, 1 MiB, 15 passes, observations recorded
+  certified two-byte windows: 341, found in 18.3 ms of post-construction analysis
+  corpus: 1048576 bytes, 23062 window occurrences, mean gap 45.5 bytes
+  streams identical: 301133 tokens, spliced checksum equal, 8 chunks; window plan 0.62 ms
+  pass 0: serial   469.9 MiB/s, window-scan x8  2531.3 MiB/s, speedup 5.39x
+  pass 1: serial   481.0 MiB/s, window-scan x8  2543.4 MiB/s, speedup 5.29x
+  pass 2: serial   483.5 MiB/s, window-scan x8  3180.5 MiB/s, speedup 6.58x
+  pass 3: serial   483.6 MiB/s, window-scan x8  2818.3 MiB/s, speedup 5.83x
+  pass 4: serial   471.6 MiB/s, window-scan x8  3179.8 MiB/s, speedup 6.74x
+  pass 5: serial   483.0 MiB/s, window-scan x8  2910.7 MiB/s, speedup 6.03x
+  pass 6: serial   484.2 MiB/s, window-scan x8  3158.4 MiB/s, speedup 6.52x
+  pass 7: serial   482.3 MiB/s, window-scan x8  2721.9 MiB/s, speedup 5.64x
+  pass 8: serial   483.6 MiB/s, window-scan x8  2514.9 MiB/s, speedup 5.20x
+  pass 9: serial   481.4 MiB/s, window-scan x8  2587.9 MiB/s, speedup 5.38x
+  pass 10: serial   483.1 MiB/s, window-scan x8  2543.1 MiB/s, speedup 5.26x
+  pass 11: serial   470.3 MiB/s, window-scan x8  3253.9 MiB/s, speedup 6.92x
+  pass 12: serial   483.8 MiB/s, window-scan x8  2987.8 MiB/s, speedup 6.18x
+  pass 13: serial   483.1 MiB/s, window-scan x8  3377.0 MiB/s, speedup 6.99x
+  pass 14: serial   480.6 MiB/s, window-scan x8  3188.4 MiB/s, speedup 6.63x
+
+byte-certified versus window-recovered cuts, same grammar, same corpus
+  346 windows; both plans reproduce the serial stream of 324242 tokens; plans: byte 0.00 ms for 8 chunks, window 0.61 ms for 8
+  pass 0: byte-scan x8  3060.1 MiB/s, window-scan x8  3169.5 MiB/s, ratio 1.04
+  pass 1: byte-scan x8  3370.3 MiB/s, window-scan x8  3226.6 MiB/s, ratio 0.96
+  pass 2: byte-scan x8  3290.7 MiB/s, window-scan x8  3177.6 MiB/s, ratio 0.97
+  pass 3: byte-scan x8  3115.8 MiB/s, window-scan x8  3332.9 MiB/s, ratio 1.07
+  pass 4: byte-scan x8  2886.9 MiB/s, window-scan x8  3311.5 MiB/s, ratio 1.15
+  pass 5: byte-scan x8  3363.2 MiB/s, window-scan x8  3196.6 MiB/s, ratio 0.95
+  pass 6: byte-scan x8  3340.4 MiB/s, window-scan x8  3450.4 MiB/s, ratio 1.03
+  pass 7: byte-scan x8  3450.8 MiB/s, window-scan x8  3435.0 MiB/s, ratio 1.00
+  pass 8: byte-scan x8  3532.0 MiB/s, window-scan x8  3490.8 MiB/s, ratio 0.99
+  pass 9: byte-scan x8  3269.9 MiB/s, window-scan x8  3233.3 MiB/s, ratio 0.99
+  pass 10: byte-scan x8  3330.0 MiB/s, window-scan x8  3315.2 MiB/s, ratio 1.00
+  pass 11: byte-scan x8  3430.7 MiB/s, window-scan x8  3388.7 MiB/s, ratio 0.99
+  pass 12: byte-scan x8  3347.8 MiB/s, window-scan x8  3197.9 MiB/s, ratio 0.96
+  pass 13: byte-scan x8  3301.9 MiB/s, window-scan x8  3349.6 MiB/s, ratio 1.01
+  pass 14: byte-scan x8  2852.7 MiB/s, window-scan x8  1654.1 MiB/s, ratio 0.58
+
+dev-grade preview only: archived figures require the collect.sh ritual on a quiet machine
+window-recovered parallel cuts, preview of the split-windows benchmark campaign
+  commit 40450d2, 16 MiB, 15 passes, observations recorded
+  certified two-byte windows: 341, found in 18.0 ms of post-construction analysis
+  corpus: 16777216 bytes, 368890 window occurrences, mean gap 45.5 bytes
+  streams identical: 4821182 tokens, spliced checksum equal, 8 chunks; window plan 10.42 ms
+  pass 0: serial   469.4 MiB/s, window-scan x8  3643.6 MiB/s, speedup 7.76x
+  pass 1: serial   480.8 MiB/s, window-scan x8  3646.4 MiB/s, speedup 7.58x
+  pass 2: serial   484.1 MiB/s, window-scan x8  3720.2 MiB/s, speedup 7.68x
+  pass 3: serial   476.7 MiB/s, window-scan x8  3838.7 MiB/s, speedup 8.05x
+  pass 4: serial   475.5 MiB/s, window-scan x8  1952.2 MiB/s, speedup 4.11x
+  pass 5: serial   479.1 MiB/s, window-scan x8  1936.7 MiB/s, speedup 4.04x
+  pass 6: serial   480.0 MiB/s, window-scan x8  2389.7 MiB/s, speedup 4.98x
+  pass 7: serial   474.2 MiB/s, window-scan x8  2499.6 MiB/s, speedup 5.27x
+  pass 8: serial   473.9 MiB/s, window-scan x8  1959.3 MiB/s, speedup 4.13x
+  pass 9: serial   475.8 MiB/s, window-scan x8  3632.1 MiB/s, speedup 7.63x
+  pass 10: serial   477.7 MiB/s, window-scan x8  3783.0 MiB/s, speedup 7.92x
+  pass 11: serial   479.2 MiB/s, window-scan x8  3785.1 MiB/s, speedup 7.90x
+  pass 12: serial   482.2 MiB/s, window-scan x8  3766.5 MiB/s, speedup 7.81x
+  pass 13: serial   477.6 MiB/s, window-scan x8  3820.1 MiB/s, speedup 8.00x
+  pass 14: serial   476.0 MiB/s, window-scan x8  3672.3 MiB/s, speedup 7.71x
+
+byte-certified versus window-recovered cuts, same grammar, same corpus
+  346 windows; both plans reproduce the serial stream of 5190120 tokens; plans: byte 0.00 ms for 8 chunks, window 9.67 ms for 8
+  pass 0: byte-scan x8  3501.9 MiB/s, window-scan x8  3626.6 MiB/s, ratio 1.04
+  pass 1: byte-scan x8  3639.9 MiB/s, window-scan x8  3633.4 MiB/s, ratio 1.00
+  pass 2: byte-scan x8  2932.5 MiB/s, window-scan x8  3539.1 MiB/s, ratio 1.21
+  pass 3: byte-scan x8  3602.3 MiB/s, window-scan x8  3585.6 MiB/s, ratio 1.00
+  pass 4: byte-scan x8  3616.0 MiB/s, window-scan x8  3605.5 MiB/s, ratio 1.00
+  pass 5: byte-scan x8  3600.6 MiB/s, window-scan x8  3590.9 MiB/s, ratio 1.00
+  pass 6: byte-scan x8  3602.1 MiB/s, window-scan x8  3622.1 MiB/s, ratio 1.01
+  pass 7: byte-scan x8  3550.2 MiB/s, window-scan x8  2124.5 MiB/s, ratio 0.60
+  pass 8: byte-scan x8  3535.5 MiB/s, window-scan x8  3611.2 MiB/s, ratio 1.02
+  pass 9: byte-scan x8  3604.2 MiB/s, window-scan x8  3626.4 MiB/s, ratio 1.01
+  pass 10: byte-scan x8  3622.6 MiB/s, window-scan x8  3639.2 MiB/s, ratio 1.00
+  pass 11: byte-scan x8  3637.8 MiB/s, window-scan x8  3622.8 MiB/s, ratio 1.00
+  pass 12: byte-scan x8  3618.5 MiB/s, window-scan x8  3596.3 MiB/s, ratio 0.99
+  pass 13: byte-scan x8  3576.3 MiB/s, window-scan x8  3622.9 MiB/s, ratio 1.01
+  pass 14: byte-scan x8  3617.0 MiB/s, window-scan x8  3623.6 MiB/s, ratio 1.00
+
+dev-grade preview only: archived figures require the collect.sh ritual on a quiet machine
+window-recovered parallel cuts, preview of the split-windows benchmark campaign
+  commit 40450d2, 128 MiB, 15 passes, observations recorded
+  certified two-byte windows: 341, found in 18.4 ms of post-construction analysis
+  corpus: 134217728 bytes, 2952741 window occurrences, mean gap 45.5 bytes
+  streams identical: 38563182 tokens, spliced checksum equal, 8 chunks; window plan 92.37 ms
+  pass 0: serial   475.9 MiB/s, window-scan x8  3855.5 MiB/s, speedup 8.10x
+  pass 1: serial   479.6 MiB/s, window-scan x8  3812.8 MiB/s, speedup 7.95x
+  pass 2: serial   481.3 MiB/s, window-scan x8  3920.7 MiB/s, speedup 8.15x
+  pass 3: serial   478.5 MiB/s, window-scan x8  3882.3 MiB/s, speedup 8.11x
+  pass 4: serial   477.2 MiB/s, window-scan x8  3908.1 MiB/s, speedup 8.19x
+  pass 5: serial   479.2 MiB/s, window-scan x8  3873.2 MiB/s, speedup 8.08x
+  pass 6: serial   482.2 MiB/s, window-scan x8  3914.7 MiB/s, speedup 8.12x
+  pass 7: serial   479.5 MiB/s, window-scan x8  3893.4 MiB/s, speedup 8.12x
+  pass 8: serial   480.7 MiB/s, window-scan x8  3864.4 MiB/s, speedup 8.04x
+  pass 9: serial   477.4 MiB/s, window-scan x8  3842.8 MiB/s, speedup 8.05x
+  pass 10: serial   480.5 MiB/s, window-scan x8  3880.7 MiB/s, speedup 8.08x
+  pass 11: serial   479.9 MiB/s, window-scan x8  3825.9 MiB/s, speedup 7.97x
+  pass 12: serial   479.3 MiB/s, window-scan x8  3875.7 MiB/s, speedup 8.09x
+  pass 13: serial   478.5 MiB/s, window-scan x8  3819.7 MiB/s, speedup 7.98x
+  pass 14: serial   480.2 MiB/s, window-scan x8  3866.3 MiB/s, speedup 8.05x
+
+byte-certified versus window-recovered cuts, same grammar, same corpus
+  346 windows; both plans reproduce the serial stream of 41515980 tokens; plans: byte 0.00 ms for 8 chunks, window 90.69 ms for 8
+  pass 0: byte-scan x8  3676.8 MiB/s, window-scan x8  3653.4 MiB/s, ratio 0.99
+  pass 1: byte-scan x8  3625.8 MiB/s, window-scan x8  3643.9 MiB/s, ratio 1.01
+  pass 2: byte-scan x8  3623.3 MiB/s, window-scan x8  3626.9 MiB/s, ratio 1.00
+  pass 3: byte-scan x8  3608.6 MiB/s, window-scan x8  3605.4 MiB/s, ratio 1.00
+  pass 4: byte-scan x8  3609.4 MiB/s, window-scan x8  3597.8 MiB/s, ratio 1.00
+  pass 5: byte-scan x8  3587.8 MiB/s, window-scan x8  3587.3 MiB/s, ratio 1.00
+  pass 6: byte-scan x8  3610.7 MiB/s, window-scan x8  3603.5 MiB/s, ratio 1.00
+  pass 7: byte-scan x8  3606.4 MiB/s, window-scan x8  3604.9 MiB/s, ratio 1.00
+  pass 8: byte-scan x8  2429.4 MiB/s, window-scan x8  3546.1 MiB/s, ratio 1.46
+  pass 9: byte-scan x8  3555.5 MiB/s, window-scan x8  3547.3 MiB/s, ratio 1.00
+  pass 10: byte-scan x8  3513.2 MiB/s, window-scan x8  3545.6 MiB/s, ratio 1.01
+  pass 11: byte-scan x8  3444.2 MiB/s, window-scan x8  3490.3 MiB/s, ratio 1.01
+  pass 12: byte-scan x8  3552.8 MiB/s, window-scan x8  3556.0 MiB/s, ratio 1.00
+  pass 13: byte-scan x8  3566.8 MiB/s, window-scan x8  3561.8 MiB/s, ratio 1.00
+  pass 14: byte-scan x8  3525.0 MiB/s, window-scan x8  3532.4 MiB/s, ratio 1.00
+
+dev-grade preview only: archived figures require the collect.sh ritual on a quiet machine
+window-recovered parallel cuts, preview of the split-windows benchmark campaign
+  commit 40450d2, 512 MiB, 15 passes, observations recorded
+  certified two-byte windows: 341, found in 18.2 ms of post-construction analysis
+  corpus: 536870912 bytes, 11810605 window occurrences, mean gap 45.5 bytes
+  streams identical: 154260879 tokens, spliced checksum equal, 8 chunks; window plan 364.24 ms
+  pass 0: serial   473.8 MiB/s, window-scan x8  3825.0 MiB/s, speedup 8.07x
+  pass 1: serial   480.0 MiB/s, window-scan x8  3758.5 MiB/s, speedup 7.83x
+  pass 2: serial   477.6 MiB/s, window-scan x8  3812.3 MiB/s, speedup 7.98x
+  pass 3: serial   475.6 MiB/s, window-scan x8  3762.7 MiB/s, speedup 7.91x
+  pass 4: serial   476.1 MiB/s, window-scan x8  3810.5 MiB/s, speedup 8.00x
+  pass 5: serial   474.9 MiB/s, window-scan x8  3705.4 MiB/s, speedup 7.80x
+  pass 6: serial   477.6 MiB/s, window-scan x8  3773.7 MiB/s, speedup 7.90x
+  pass 7: serial   484.3 MiB/s, window-scan x8  3744.4 MiB/s, speedup 7.73x
+  pass 8: serial   486.3 MiB/s, window-scan x8  3781.5 MiB/s, speedup 7.78x
+  pass 9: serial   476.6 MiB/s, window-scan x8  3753.0 MiB/s, speedup 7.87x
+  pass 10: serial   477.7 MiB/s, window-scan x8  3813.8 MiB/s, speedup 7.98x
+  pass 11: serial   475.6 MiB/s, window-scan x8  3760.1 MiB/s, speedup 7.91x
+  pass 12: serial   482.0 MiB/s, window-scan x8  3809.6 MiB/s, speedup 7.90x
+  pass 13: serial   473.6 MiB/s, window-scan x8  3764.9 MiB/s, speedup 7.95x
+  pass 14: serial   485.1 MiB/s, window-scan x8  3809.7 MiB/s, speedup 7.85x
+
+byte-certified versus window-recovered cuts, same grammar, same corpus
+  346 windows; both plans reproduce the serial stream of 166071525 tokens; plans: byte 0.00 ms for 8 chunks, window 368.32 ms for 8
+  pass 0: byte-scan x8  3515.3 MiB/s, window-scan x8  3512.5 MiB/s, ratio 1.00
+  pass 1: byte-scan x8  3452.7 MiB/s, window-scan x8  3453.5 MiB/s, ratio 1.00
+  pass 2: byte-scan x8  3455.4 MiB/s, window-scan x8  3557.1 MiB/s, ratio 1.03
+  pass 3: byte-scan x8  3590.8 MiB/s, window-scan x8  3576.8 MiB/s, ratio 1.00
+  pass 4: byte-scan x8  3571.5 MiB/s, window-scan x8  3586.0 MiB/s, ratio 1.00
+  pass 5: byte-scan x8  3577.2 MiB/s, window-scan x8  3585.5 MiB/s, ratio 1.00
+  pass 6: byte-scan x8  3558.0 MiB/s, window-scan x8  3594.3 MiB/s, ratio 1.01
+  pass 7: byte-scan x8  3575.5 MiB/s, window-scan x8  3593.7 MiB/s, ratio 1.01
+  pass 8: byte-scan x8  3572.3 MiB/s, window-scan x8  3566.8 MiB/s, ratio 1.00
+  pass 9: byte-scan x8  3583.1 MiB/s, window-scan x8  3576.8 MiB/s, ratio 1.00
+  pass 10: byte-scan x8  3598.6 MiB/s, window-scan x8  3573.7 MiB/s, ratio 0.99
+  pass 11: byte-scan x8  3588.4 MiB/s, window-scan x8  3577.9 MiB/s, ratio 1.00
+  pass 12: byte-scan x8  3587.6 MiB/s, window-scan x8  3583.7 MiB/s, ratio 1.00
+  pass 13: byte-scan x8  3583.7 MiB/s, window-scan x8  3575.1 MiB/s, ratio 1.00
+  pass 14: byte-scan x8  3592.8 MiB/s, window-scan x8  3589.7 MiB/s, ratio 1.00
+
+dev-grade preview only: archived figures require the collect.sh ritual on a quiet machine

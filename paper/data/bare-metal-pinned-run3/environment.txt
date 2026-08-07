@@ -1,0 +1,46 @@
+collected:  2026-08-07 21:55:10 UTC
+commit:     40450d26346730ba544f905c1da506dc8359b2bc
+dirty:      no
+sizes:      1,16,128,512 MiB
+passes:     15
+
+== cpu ==
+Architecture:                            x86_64
+CPU(s):                                  32
+Vendor ID:                               AuthenticAMD
+Model name:                              AMD Ryzen 9 9950X3D 16-Core Processor
+Thread(s) per core:                      2
+Core(s) per socket:                      16
+Socket(s):                               1
+CPU(s) scaling MHz:                      29%
+CPU max MHz:                             5756.4521
+CPU min MHz:                             624.1940
+L1d cache:                               768 KiB (16 instances)
+L2 cache:                                16 MiB (16 instances)
+L3 cache:                                128 MiB (2 instances)
+
+== topology visible to the process ==
+nproc:      8
+governor:   performance
+boost:      1
+
+== memory ==
+               total        used        free      shared  buff/cache   available
+Mem:            59Gi        12Gi        13Gi       801Mi        34Gi        46Gi
+Swap:          8.0Gi       768Ki       8.0Gi
+
+== os ==
+Linux 7.0.0-29-generic x86_64 GNU/Linux
+distro:     Ubuntu 26.04 LTS
+container:  none detected
+wsl:        no
+
+== toolchain ==
+c++ (Ubuntu 15.2.0-16ubuntu1) 15.2.0
+cmake version 4.2.3
+
+== load at start ==
+ 23:55:10 up 13:54,  load average: 1.99, 0.98, 0.49
+
+== load at end ==
+ 23:57:52 up 13:57,  load average: 1.83, 1.20, 0.65
