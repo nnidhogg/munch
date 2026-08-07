@@ -615,6 +615,25 @@ std::vector<std::pair<std::string, std::size_t>> certified_words_upto(
 std::size_t g_witness_disagreements{0};
 
 /**
+ * @brief Cross-checks of the shipped core::Lexer::is_split_window() against this probe's model, and disagreements.
+ *
+ * The library ports the walk this probe states and proves; they are two implementations of ONE model and must
+ * never diverge, certificates and refusals alike. Every place the probe computes a concrete window's answer also
+ * asks the shipped decision, the check count is pinned so silently skipping checks fails, and a single
+ * disagreement fails the suite.
+ */
+std::size_t g_port_checks{0};
+
+std::size_t g_port_disagreements{0};
+
+void cross_check(const munch::core::Lexer& lexer, const std::string& window, const std::optional<std::size_t>& model)
+{
+    ++g_port_checks;
+
+    g_port_disagreements += lexer.is_split_window(window) == model ? 0 : 1;
+}
+
+/**
  * @brief A completely tokenizable input containing one of the given certified windows, if the bounded search
  *        finds one.
  *
@@ -1192,8 +1211,10 @@ std::size_t random_grammars(
                 {
                     const std::string pair{static_cast<char>(first), static_cast<char>(second)};
 
-                    if (predicted(dfa, live, pair, reentrant))
+                    if (const auto at{predicted(dfa, live, pair, reentrant)})
                     {
+                        cross_check(lexer, pair, at);
+
                         windows.push_back(pair);
                     }
                 }
@@ -1389,6 +1410,8 @@ bool strict_refusal(
     // conservative than documented, and the paper's strictness section would be overclaiming.
     const auto refused{!predicted(dfa, live, window, init_reentrant(dfa, live))};
 
+    cross_check(lexer, window, std::nullopt);
+
     // The semantic half: exhaustively, every occurrence's covering token begins at the claimed origin, counted
     // by the one shared oracle the teeth row pins.
     const auto [occurrences, violations]{covering_violations(lexer, window, origin, alphabet, max_length)};
@@ -1449,6 +1472,8 @@ bool oracle_teeth(
 
     const auto refused{!predicted(dfa, live, window, init_reentrant(dfa, live))};
 
+    cross_check(lexer, window, std::nullopt);
+
     const auto [occurrences, violations]{covering_violations(lexer, window, origin, alphabet, max_length)};
 
     const auto ok{
@@ -1508,6 +1533,8 @@ bool named_window_agrees(std::string_view name, const std::string& window, std::
     const auto reentrant{init_reentrant(dfa, live)};
 
     const auto at{predicted(dfa, live, window, reentrant)};
+
+    cross_check(lexer, window, at);
 
     std::printf(
             "  %-30s window \"%s\" %s, backup %zu over %zu rewinding executions%s\n", std::string{name}.c_str(),
@@ -2120,6 +2147,8 @@ int main()
 
         const auto repaired{predicted(dfa, live, window, reentrant)};
 
+        cross_check(lexer, window, repaired);
+
         const auto legacy_ok{
                 scan_ok && repaired && *repaired == 1 && alive && certified(cloud) && cloud.begin()->second == 2};
 
@@ -2206,6 +2235,8 @@ int main()
 
         const auto at{predicted(dfa, live, "1001", reentrant)};
 
+        cross_check(lexer, "1001", at);
+
         // The search targets exactly the vacuous word: this grammar also certifies witnessed words, "10" among
         // them via the input "010", and the point here is that certification of "1001" specifically is vacuous.
         const std::vector<std::pair<std::string, std::size_t>> only{{std::string{"1001"}, at.value_or(0)}};
@@ -2280,11 +2311,15 @@ int main()
     // this conservative model", never "no window exists", since it refuses windows a greedy scanner would allow. The
     // aggregate is asserted for the same reason as the sweep figures: the notes quote 1,079,392 rewinding executions,
     // and only a pinned total keeps that sentence honest when a row or the input builder changes.
-    ok = random_disagreements == 0 && usable == 134 && nullable == 266 && with_certificate == 39 &&
-         usable - with_certificate == 95 && rescued == 91 && witnessed_rescued == 91 && proved_none == 4 &&
-         inconclusive == 0 && g_exercised_total == 1'079'392 && g_exercised_tokenizable == 418'466 &&
-         g_exercised_total - g_exercised_tokenizable == 660'926 && g_witness_disagreements == 0 &&
-         g_visited_max == 32 && g_visited_total == 878 && ok;
+    std::printf(
+            "  %-30s %zu checks against the probe's model, %zu disagreements%s\n", "shipped window decision",
+            g_port_checks, g_port_disagreements, g_port_disagreements == 0 ? "" : "   <- PORT DIVERGES");
+
+    ok = g_port_disagreements == 0 && g_port_checks == 399 && random_disagreements == 0 && usable == 134 &&
+         nullable == 266 && with_certificate == 39 && usable - with_certificate == 95 && rescued == 91 &&
+         witnessed_rescued == 91 && proved_none == 4 && inconclusive == 0 && g_exercised_total == 1'079'392 &&
+         g_exercised_tokenizable == 418'466 && g_exercised_total - g_exercised_tokenizable == 660'926 &&
+         g_witness_disagreements == 0 && g_visited_max == 32 && g_visited_total == 878 && ok;
 
     std::printf(
             "\n%s\n", ok ? "The model reproduces is_split_point at length one on six named grammars with a "
