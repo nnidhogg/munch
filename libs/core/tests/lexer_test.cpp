@@ -814,6 +814,134 @@ TEST_F(Lexer_test, Split_windows_stay_conservative_and_scoped)
     EXPECT_FALSE(plus_lexer.is_split_window("").has_value());
 }
 
+TEST_F(Lexer_test, Window_fallback_plans_parallel_cuts_where_no_byte_certifies)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+        Operator,
+        String,
+    };
+
+    // The study's motivating shape: whitespace runs swallow the newline, string bodies swallow every printable
+    // byte, and no single byte certifies; the two-byte window "\n!" still pins a token start at the '!'.
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+    builder.add_token(text("!"), Token_kind::Operator, 1);
+    builder.add_token(concat(text("\""), kleene(any_of(Set::printable())), text("\"")), Token_kind::String, 2);
+
+    const auto lexer{builder.build()};
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        EXPECT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    const auto window{lexer.is_split_window("\n!")};
+
+    ASSERT_TRUE(window.has_value());
+    EXPECT_EQ(*window, 1U);
+
+    std::string input;
+
+    for (int block{0}; block < 64; ++block)
+    {
+        input += "alpha beta \"quoted text!\" gamma\n!delta\n!";
+    }
+
+    const auto boundaries{lexer.chunk_boundaries(input.begin(), input.end(), 8)};
+
+    ASSERT_GT(boundaries.size(), 2U);
+
+    for (std::size_t index{1}; index < boundaries.size(); ++index)
+    {
+        EXPECT_GT(boundaries[index], boundaries[index - 1]);
+    }
+
+    // The semantic assertion: the concatenated chunk-local streams equal the serial stream, token for token.
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input, [&serial](const Token_kind kind, const std::size_t length) { serial.emplace_back(kind, length); })};
+
+    ASSERT_EQ(consumed, input.size());
+
+    std::vector<std::pair<Token_kind, std::size_t>> chunked;
+
+    for (std::size_t index{1}; index < boundaries.size(); ++index)
+    {
+        const std::string_view chunk{input.data() + boundaries[index - 1], boundaries[index] - boundaries[index - 1]};
+
+        const auto part{lexer.tokenize_all<Token_kind>(
+                chunk,
+                [&chunked](const Token_kind kind, const std::size_t length) { chunked.emplace_back(kind, length); })};
+
+        ASSERT_EQ(part, chunk.size());
+    }
+
+    EXPECT_EQ(chunked, serial);
+}
+
+TEST_F(Lexer_test, Window_fallback_degrades_honestly_and_the_equality_check_has_teeth)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+    };
+
+    // A grammar the window search exhausts plans the single whole-input chunk rather than cutting unsafely.
+    Builder_dbg unbounded;
+
+    unbounded.add_token(plus(text("a")), Token_kind::Identifier, 1);
+
+    const std::string runs(64, 'a');
+
+    const auto exhausted{unbounded.build().chunk_boundaries(runs.begin(), runs.end(), 4)};
+
+    EXPECT_EQ(exhausted, (std::vector<std::size_t>{0, runs.size()}));
+
+    // A nullable set sits outside both proofs and takes the same degradation without any window search.
+    Builder_dbg nullable;
+
+    nullable.add_token(kleene(text("a")), Token_kind::Identifier, 1);
+    nullable.add_token(text(" "), Token_kind::Whitespace, 1);
+
+    const auto refused{nullable.build().chunk_boundaries(runs.begin(), runs.end(), 4)};
+
+    EXPECT_EQ(refused, (std::vector<std::size_t>{0, runs.size()}));
+
+    // The teeth of the equality check above: a deliberately wrong cut inside a token must NOT reproduce the
+    // serial stream, so the assertion that plans do reproduce it is falsifiable, not decorative.
+    Builder_dbg words;
+
+    words.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    words.add_token(text(" "), Token_kind::Whitespace, 1);
+
+    const auto lexer{words.build()};
+
+    const std::string input{"alpha beta"};
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    lexer.tokenize_all<Token_kind>(
+            input, [&serial](const Token_kind kind, const std::size_t length) { serial.emplace_back(kind, length); });
+
+    std::vector<std::pair<Token_kind, std::size_t>> wrongly_chunked;
+
+    for (const auto& chunk : {std::string_view{input}.substr(0, 2), std::string_view{input}.substr(2)})
+    {
+        lexer.tokenize_all<Token_kind>(chunk, [&wrongly_chunked](const Token_kind kind, const std::size_t length) {
+            wrongly_chunked.emplace_back(kind, length);
+        });
+    }
+
+    EXPECT_NE(wrongly_chunked, serial);
+}
+
 TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)
 {
     enum class Token_kind : uint8_t
@@ -896,7 +1024,7 @@ TEST_F(Lexer_test, Chunk_boundaries_land_on_certified_split_points)
     }
 }
 
-TEST_F(Lexer_test, Chunk_boundaries_degenerate_when_nothing_certifies)
+TEST_F(Lexer_test, Chunk_boundaries_recover_windows_when_no_byte_certifies)
 {
     enum class Token_kind : uint8_t
     {
@@ -904,8 +1032,10 @@ TEST_F(Lexer_test, Chunk_boundaries_degenerate_when_nothing_certifies)
         Whitespace,
     };
 
-    // Identifier characters continue identifiers and whitespace continues runs, so no byte certifies and the
-    // plan is one chunk: the serial scan.
+    // Identifier characters continue identifiers and whitespace continues runs, so no byte certifies; before
+    // certified windows this plan degenerated to the single serial chunk. The two-byte window of a whitespace
+    // byte followed by a letter certifies at origin 1, whitespace cannot continue an identifier and a letter
+    // cannot continue a run, so the fallback now cuts at token starts the byte certificate cannot see.
     Builder_dbg builder;
 
     builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
@@ -913,13 +1043,36 @@ TEST_F(Lexer_test, Chunk_boundaries_degenerate_when_nothing_certifies)
 
     const auto lexer{builder.build()};
 
+    const auto window{lexer.is_split_window(" a")};
+
+    ASSERT_TRUE(window.has_value());
+    EXPECT_EQ(*window, 1U);
+
     const std::string input{"alpha beta gamma delta epsilon zeta eta theta"};
 
     const auto boundaries{lexer.chunk_boundaries(input, 4)};
 
-    ASSERT_EQ(boundaries.size(), 2U);
+    ASSERT_GT(boundaries.size(), 2U);
     EXPECT_EQ(boundaries.front(), 0U);
     EXPECT_EQ(boundaries.back(), input.size());
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    lexer.tokenize_all<Token_kind>(
+            input, [&serial](const Token_kind kind, const std::size_t length) { serial.emplace_back(kind, length); });
+
+    std::vector<std::pair<Token_kind, std::size_t>> chunked;
+
+    for (std::size_t index{1}; index < boundaries.size(); ++index)
+    {
+        const std::string_view chunk{input.data() + boundaries[index - 1], boundaries[index] - boundaries[index - 1]};
+
+        lexer.tokenize_all<Token_kind>(chunk, [&chunked](const Token_kind kind, const std::size_t length) {
+            chunked.emplace_back(kind, length);
+        });
+    }
+
+    EXPECT_EQ(chunked, serial);
 }
 
 TEST_F(Lexer_test, Dead_branches_do_not_decertify)

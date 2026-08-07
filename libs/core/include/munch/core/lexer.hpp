@@ -6,10 +6,12 @@
 #include <cstddef>
 #include <exception>
 #include <iterator>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <ranges>
 #include <span>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -186,9 +188,15 @@ public:
      *
      * Each interior boundary is the first certified split point at or after its equal-division target offset, so
      * every chunk starts at a symbol that can only begin a token; for completely tokenizable input, concatenating
-     * the chunk-local streams reproduces the whole-input token stream. When the token set certifies no usable points,
-     * the result is one chunk spanning the whole input, so parallel scanning degenerates to the serial scan rather than
-     * splitting unsafely.
+     * the chunk-local streams reproduces the whole-input token stream. When the token set certifies no usable
+     * byte at all, planning falls back to certified split windows: from each target offset the input is walked
+     * for the first occurrence of a window of two to four bytes that is_split_window() certifies, and the cut is
+     * placed at the occurrence plus the reported origin, a token start of the final segmentation at exactly that
+     * occurrence. Windows found in the input at hand are occurrence-witnessed by it, and each decision is
+     * memoized per distinct byte string, so the walk prices like the byte walk on realistic text. When neither
+     * bytes nor windows certify, or the token set is nullable and outside both proofs, the result is one chunk
+     * spanning the whole input, so parallel scanning degenerates to the serial scan rather than splitting
+     * unsafely.
      * @tparam Iterator Random access iterator type.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
@@ -250,6 +258,75 @@ public:
             if (offset < size)
             {
                 boundaries.push_back(offset);
+            }
+        }
+
+        // The window fallback, exactly where the byte certificate abandons the grammar: the no-byte token sets
+        // whose windows the split-window study rescued. Byte planning above is untouched; nullable sets are
+        // outside both soundness proofs and take the single-chunk degradation.
+        if (!any_certified && !simulator_.nullable() && size > 1)
+        {
+            // The longest window the planner tries; every named certified window in the study is at most four
+            // bytes. A grammar needing longer windows degrades to fewer chunks, never to an unsafe cut.
+            constexpr std::size_t longest{4};
+
+            // One decision per distinct byte string per plan: real text repeats its windows, so the walk prices
+            // like the byte walk instead of one cloud walk per position.
+            std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
+
+            std::size_t window_target{0};
+
+            std::size_t window_carry{0};
+
+            for (std::size_t index{1}; index < usable; ++index)
+            {
+                window_target += step;
+
+                if (window_carry += step_remainder; window_carry >= usable)
+                {
+                    ++window_target;
+
+                    window_carry -= usable;
+                }
+
+                for (auto occurrence{std::max(window_target, boundaries.back() + 1)}; occurrence + 2 <= size;
+                     ++occurrence)
+                {
+                    const auto limit{std::min(longest, size - occurrence)};
+
+                    std::string window{
+                            begin + static_cast<std::ptrdiff_t>(occurrence),
+                            begin + static_cast<std::ptrdiff_t>(occurrence + 2)};
+
+                    auto cut{false};
+
+                    for (std::size_t length{2}; length <= limit && !cut; ++length)
+                    {
+                        if (length > window.size())
+                        {
+                            window.push_back(begin[static_cast<std::ptrdiff_t>(occurrence + length - 1)]);
+                        }
+
+                        auto found{memo.find(window)};
+
+                        if (found == memo.end())
+                        {
+                            found = memo.emplace(window, is_split_window(window)).first;
+                        }
+
+                        if (const auto& origin{found->second})
+                        {
+                            boundaries.push_back(occurrence + *origin);
+
+                            cut = true;
+                        }
+                    }
+
+                    if (cut)
+                    {
+                        break;
+                    }
+                }
             }
         }
 

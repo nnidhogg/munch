@@ -200,6 +200,15 @@ public:
      * @brief Reports whether the token set certifies any usable split point.
      * @return True if at least one symbol is a split point.
      */
+    /**
+     * @brief Returns whether some token matches the empty string, the compiled signature being an accepting
+     *        initial state.
+     *
+     * Nullable token sets sit outside the certified split point and split window soundness proofs; both refuse
+     * their certificates there, and a planner consults this before spending any search on windows.
+     */
+    [[nodiscard]] bool nullable() const noexcept { return (flags_[init_state_] & accept_flag_) != 0; }
+
     [[nodiscard]] bool has_split_points() const noexcept
     {
         return (split_points_[0] | split_points_[1] | split_points_[2] | split_points_[3]) != 0;
