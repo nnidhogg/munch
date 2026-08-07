@@ -112,10 +112,10 @@
 // A backup check over inputs that never rewind proves nothing, so each row declares whether its own check exercises
 // a rewind and that declaration is asserted. The first seven rows do not, which is a fact about the inputs this
 // search builds rather than about the grammars: the block-comment grammar CAN rewind, on an unfinished comment
-// opener after the slash has been accepted, but no window it reports produces one. Seven rows carry the backup
-// evidence over six distinct mechanisms, two of the rows sharing the short-token-then-longer-token gap: that gap, a
-// numeric exponent, a float competing with a range operator, an operator ladder, a keyword extending an identifier,
-// and a seven-byte rewind depth.
+// opener after the slash has been accepted, but no window it reports produces one. Seven search rows plus the
+// named abx check carry the backup evidence over six distinct mechanisms, two of the rows sharing the
+// short-token-then-longer-token gap: that gap, a numeric exponent, a float competing with a range operator, an
+// operator ladder, a keyword extending an identifier, and a seven-byte rewind depth.
 //
 // Random grammars are the strongest check here. Hand-picked ones are what hid the origin defect, and they hid a
 // second: the model treated reading from the initial state as always beginning a token, which is false when a
@@ -857,7 +857,8 @@ std::size_t rewinds(const Dfa& dfa, const std::string& input)
  */
 std::size_t backup_disagreements(
         const Dfa& dfa, const munch::core::Lexer& lexer, const States_t& live, const std::vector<std::string>& windows,
-        std::size_t& exercised, std::size_t& tokenizable, std::size_t& prefixes)
+        std::size_t& exercised, std::size_t& tokenizable, std::size_t& prefixes,
+        const std::optional<std::size_t> force_origin = std::nullopt)
 {
     tokenizable = 0;
 
@@ -997,7 +998,7 @@ std::size_t backup_disagreements(
 
                     tokenizable += rewound && consumed == input.size() ? 1 : 0;
 
-                    disagreements += covered && containing == head.size() + *at ? 0 : 1;
+                    disagreements += covered && containing == head.size() + force_origin.value_or(*at) ? 0 : 1;
                 }
             }
         }
@@ -2130,6 +2131,56 @@ int main()
                 repaired ? std::to_string(*repaired).c_str() : "refused", covering[2], legacy_ok ? "" : "   <- MOVED");
 
         ok = legacy_ok && ok;
+    }
+    {
+        // False-origin controls: the witness search and the rewind comparison must each REJECT a deliberately
+        // wrong origin, or their origin checks could be weakened without any pinned figure moving, since on a
+        // sound tree those checks otherwise never fire. Same grammar as the legacy regression, same window, the
+        // discarded model's false origin 2 against the true origin 1.
+        using namespace munch::regex;
+
+        Builder_dbg b;
+        b.add_token(text("a"), Token::Identifier, 2);
+        b.add_token(text("abc"), Token::Keyword, 1);
+        b.add_token(text("bx"), Token::Number, 2);
+        b.add_token(text("x"), Token::Operator, 2);
+
+        const auto dfa{b.dfa()};
+
+        const auto lexer{b.build()};
+
+        const auto live{trim(dfa)};
+
+        // The witness search at the false origin must reject every completed candidate and find nothing; its
+        // rejections are intentional here, not soundness violations, so the counter is restored after the pin.
+        const auto before{g_witness_disagreements};
+
+        const auto wrong{find_witness(dfa, lexer, live, {{"abx", 2}})};
+
+        const auto rejected{g_witness_disagreements - before};
+
+        g_witness_disagreements = before;
+
+        const auto right{find_witness(dfa, lexer, live, {{"abx", 1}})};
+
+        // The rewind comparison at the forced false origin must count disagreements; local sinks keep this
+        // control out of the aggregated totals.
+        std::size_t exercised{0};
+
+        std::size_t tokenizable{0};
+
+        std::size_t prefixes{0};
+
+        const auto forced{backup_disagreements(dfa, lexer, live, {"abx"}, exercised, tokenizable, prefixes, 2)};
+
+        const auto fixture_ok{!wrong && rejected == 30 && right.has_value() && forced == 200};
+
+        std::printf(
+                "  %-30s witness at 2 refused with %zu rejections, witnessed at 1, forced origin 2 counts %zu "
+                "disagreements%s\n",
+                "false-origin controls: abx", rejected, forced, fixture_ok ? "" : "   <- CONTROL LOST ITS TEETH");
+
+        ok = fixture_ok && ok;
     }
     {
         // The vacuity witness, pinned so the model-versus-useful distinction can never silently regress.

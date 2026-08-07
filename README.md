@@ -1075,8 +1075,9 @@ before input exists, and `chunk_boundaries()` applies those certificates to supp
 **The methodology ships with the code.** The probes under `tools/probes/` show the working pattern: figures are printed
 and asserted, so a drifted number fails the build rather than a reader; oracles are exhaustive over declared finite
 input spaces with their occurrence counts pinned; expected-negative rows keep the oracles honest by asserting known
-violation counts; positive claims carry concrete witness inputs asserted per row; and every benchmark CSV row is stamped
-with the commit and dirty state it was built from. The pattern transfers to any certificate-flavored empirical work:
+violation counts; positive claims carry concrete witness inputs asserted per row; and every CSV the collector writes
+stamps each row with the commit and dirty state it was built from, while externally contributed runs carry that
+provenance in companion metadata files beside the CSV. The pattern transfers to any certificate-flavored empirical work:
 state the claim, generate the evidence, and pin it so it cannot silently rot.
 
 The intended research user is comfortable with modern C++ and wants the tokenizer as an inspectable object; the library
