@@ -195,6 +195,42 @@ measures within about ten percent of GCC since the accept path was pinned to a b
 disagreed by 14% on the plain serial scan and inverted its comparison with the one-chunk path, for reasons the report
 does not isolate. Rerun the benchmark on your own hardware and language before citing these numbers.
 
+### **Window-Planned Scaling**
+
+The conventional token set of the windows study, identifiers, integers, strings, line comments, whitespace runs that
+cross newlines, and single-byte operators, certifies no byte at all, so its parallel plan exists only through
+`chunk_boundaries_with_windows()`: the two-byte window of a newline before an operator certifies at the operator. The
+benchmark drives that planner on source-like text whose operator-initial lines put the certified window near every
+equal-division target, plans inside every timed pass exactly as the byte rows replan on every call, and validates
+before timing that the plan is complete (nine boundaries for eight chunks) and that the spliced chunk streams equal
+the serial scan. The `window_plan` row prices planning alone, and the `windowed1` row runs the full path on a single
+chunk, separating the plan-and-thread overhead from the parallelism the other rows add.
+
+```
+$ ./build/tools/benchmark/munch_benchmark 1,16,128,512 15
+  commit      802fdf0
+  system      Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
+window_plan/conv 1.0 MiB, 9 tokens, 15 passes: best 10754.8, median 10361.2, worst 9021.1 MiB/s
+...
+scaling at 512 MiB, 15 interleaved rounds
+lexer_all/conv   512.0 MiB, 200780997 tokens, 15 passes: best 870.8, median 858.2, worst 847.7 MiB/s
+windowed1/conv   512.0 MiB, 200780997 tokens, 15 passes: best 749.5, median 744.6, worst 740.7 MiB/s
+windowed2/conv   512.0 MiB, 200780997 tokens, 15 passes: best 1501.6, median 1484.9, worst 1433.3 MiB/s
+windowed4/conv   512.0 MiB, 200780997 tokens, 15 passes: best 2986.9, median 2951.8, worst 2858.9 MiB/s
+windowed8/conv   512.0 MiB, 200780997 tokens, 15 passes: best 5488.9, median 5124.2, worst 4732.6 MiB/s
+```
+
+The full output and every observation are archived as `paper/data/windows-wsl-2026-08/`. This collection ran on the
+development machine under WSL2, a different setup from the bare-metal archive the transcript above quotes, so ratios
+compare within one collection and never across two: here the window plan turns an 858 MiB/s serial scan into 5124
+MiB/s at eight chunks. The plan row prices the eight-chunk plan of the one-mebibyte corpus at about a tenth of a
+millisecond; the search is local to each equal-division target rather than a pass over the input, so the plan's
+share of the total only falls as inputs grow. Two disclosures carry the
+numbers. The plan is a property of the token set together with the input: this corpus is built so the certified
+window occurs near every target, and text without such shapes degrades toward fewer chunks, never toward an unsafe
+cut. And the window guarantee is conditional on completely tokenizable input, so byte planning remains the default
+everywhere and this section prices the explicit opt-in; see the planner documentation for the exact contract.
+
 ### **Comparison with Other Engines**
 
 `munch_benchmark_modes` measures the modal driver across the axes that separate its paths: an action that never fires
