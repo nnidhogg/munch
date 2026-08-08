@@ -408,6 +408,76 @@ public:
     }
 
     /**
+     * @brief Finds the first position at or after the given offset that a certificate marks as a token start.
+     *
+     * One forward walk, certificates merged nearest-first: a certified byte answers at its own position, and a
+     * certified window of two to four bytes answers at its occurrence plus the certified origin. Unlike the
+     * planners, byte certificates do not switch the window search off, since a recovery wants the nearest
+     * resynchronization point of either kind; a nullable token set contributes no windows, because only the
+     * window proof excludes it, while its byte certificates, when any, stand. The answer is the first
+     * certificate met in walk order, not a guaranteed minimum, and windows beginning before the given offset
+     * are not considered.
+     *
+     * The contract is the certificates' own: if the input from the returned position tokenizes completely,
+     * that position is a true token start of the suffix's segmentation. Otherwise the return is a
+     * grammar-derived resynchronization where classical panic mode offers only convention, and nothing more is
+     * promised. When no certificate exists at or after the offset, there is no answer.
+     * @param input The input being scanned.
+     * @param from The offset the search starts at; at or past the input's size finds nothing.
+     * @return The first certified token-start position, or std::nullopt when none exists.
+     */
+    [[nodiscard]] std::optional<std::size_t> next_certified_start(
+            const std::string_view input, const std::size_t from) const
+    {
+        const auto bytes{simulator_.has_split_points()};
+
+        const auto windows{!simulator_.nullable()};
+
+        if (!bytes && !windows)
+        {
+            return std::nullopt;
+        }
+
+        constexpr std::size_t longest{4};
+
+        std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
+
+        for (std::size_t at{from}; at < input.size(); ++at)
+        {
+            if (bytes && is_split_point(input[at]))
+            {
+                return at;
+            }
+
+            if (!windows)
+            {
+                continue;
+            }
+
+            const auto limit{std::min(longest, input.size() - at)};
+
+            for (std::size_t length{2}; length <= limit; ++length)
+            {
+                const auto window{input.substr(at, length)};
+
+                auto found{memo.find(window)};
+
+                if (found == memo.end())
+                {
+                    found = memo.emplace(std::string{window}, is_split_window(window)).first;
+                }
+
+                if (const auto& origin{found->second})
+                {
+                    return at + *origin;
+                }
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    /**
      * @brief Tokenizes one input as concurrent chunks split at certified safe split points.
      *
      * The input is divided by chunk_boundaries() and each chunk is scanned by tokenize_all() on its own thread,

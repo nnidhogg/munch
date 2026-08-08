@@ -115,6 +115,22 @@ public:
     void seek(std::size_t offset) noexcept;
 
     /**
+     * @brief Seeks to the next position the active mode's automaton certifies as a token start.
+     *
+     * The certified counterpart of the manual error loop: where seek() skips by whatever rule the driver
+     * invents, recover() asks the active mode's lexer for its nearest certified byte or split window at or
+     * after the position past the current one, and moves there. The contract is the certificates' own: if the
+     * remaining input from the recovered position tokenizes completely, scanning resumes at a true token start
+     * of that suffix's segmentation; otherwise it is a grammar-derived resynchronization, and the next read may
+     * error again. Only the active mode's lexer is consulted, and a forced or grammar-driven mode change is the
+     * driver's business exactly as for next(); when the automaton certifies nothing ahead, the position does
+     * not move.
+     * @return The number of bytes skipped from the current position, or std::nullopt when no certified start
+     *         exists in the remaining input.
+     */
+    [[nodiscard]] std::optional<std::size_t> recover();
+
+    /**
      * @brief Make the lexer of the given mode recognize the following tokens.
      * @tparam T The mode type (enum or integral).
      * @param mode The mode to activate, as passed to the constructor.
@@ -179,9 +195,10 @@ public:
      * On success, returns a Token<T>; End_of_input indicates the input is exhausted.
      * On failure, returns an Error describing the lexical error at the current position.
      *
-     * An error does not advance the reading position, because no automaton-derived answer says how far to skip and
-     * guessing would invent tokens. Recovery is therefore the driver's: stop, or seek() past the offending bytes
-     * before calling again. A loop that only tests end_of_input() and ignores has_error() will not terminate.
+     * An error does not advance the reading position: guessing a skip would invent tokens. Recovery is the
+     * driver's choice of three: stop; seek() past the offending bytes by its own rule; or recover(), which asks
+     * the active mode's automaton for the next certified token start. A loop that only tests end_of_input() and
+     * ignores has_error() will not terminate.
      */
     template <typename T>
         requires(std::integral<T> || std::is_enum_v<T>)

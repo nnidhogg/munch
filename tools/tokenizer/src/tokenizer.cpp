@@ -85,4 +85,24 @@ std::string_view Tokenizer::input() const noexcept
     return input_;
 }
 
+std::optional<std::size_t> Tokenizer::recover()
+{
+    // The search starts past the current position: after an error that position holds the offending byte, and
+    // recovering to where the scan already stands would not be a recovery.
+    const auto& lexer{automatic_ ? automatic_->mode(mode_) : lexers_[mode_]};
+
+    const auto found{lexer.next_certified_start(input_, offset_ + 1)};
+
+    if (!found)
+    {
+        return std::nullopt;
+    }
+
+    const auto skipped{*found - offset_};
+
+    offset_ = *found;
+
+    return skipped;
+}
+
 } // namespace munch::tools::tokenizer

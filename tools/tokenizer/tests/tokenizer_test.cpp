@@ -701,3 +701,194 @@ TEST(Tokenizer_modes, Forcing_a_mode_is_the_documented_recovery_hatch_after_an_e
     EXPECT_EQ(tokenizer.depth(), 1U);
     EXPECT_EQ(tokenizer.mode(), static_cast<std::size_t>(Ctx::code));
 }
+
+namespace
+{
+enum class Rec_token : std::size_t
+{
+    identifier = 1,
+    whitespace,
+    semicolon,
+    number
+};
+} // namespace
+
+TEST(Tokenizer_recovery, Recover_lands_at_the_certified_window_origin)
+{
+    // No byte certifies over identifiers and whitespace runs, so recovery rests on windows alone: the first
+    // certificate past the junk is the four-byte "def " at offset 6 with origin 3, so the resume position is 9,
+    // the whitespace that begins a token, and the skip count is exact. A recovery that ignored the origin and
+    // resumed at the occurrence would report 3 and land mid-identifier.
+    core::Builder builder;
+
+    builder.add_token(plus(any_of(Set::alpha())), Rec_token::identifier, 2);
+    builder.add_token(plus(any_of(Set::whitespace())), Rec_token::whitespace, 1);
+
+    Tokenizer tokenizer{builder.build(), "abc@@@def ghi"};
+
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+
+    const auto stopped{tokenizer.next<Rec_token>()};
+
+    ASSERT_TRUE(stopped.has_error());
+    ASSERT_EQ(stopped.error().position(), 3U);
+
+    const auto skipped{tokenizer.recover()};
+
+    ASSERT_TRUE(skipped.has_value());
+    EXPECT_EQ(*skipped, 6U);
+    EXPECT_EQ(tokenizer.offset(), 9U);
+
+    auto result{tokenizer.next<Rec_token>()};
+
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Rec_token::whitespace);
+
+    result = tokenizer.next<Rec_token>();
+
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Rec_token::identifier);
+    EXPECT_EQ(result.token().lexeme(), "ghi");
+
+    EXPECT_TRUE(tokenizer.next<Rec_token>().end_of_input());
+}
+
+TEST(Tokenizer_recovery, Recover_uses_certified_bytes_and_promises_nothing_past_resynchronization)
+{
+    // The semicolon is a certified byte, so recovery lands on it directly; the suffix then errors again, which
+    // is the documented weaker contract on malformed input, and a search past the last byte finds nothing and
+    // moves nothing.
+    core::Builder builder;
+
+    builder.add_token(text("a"), Rec_token::identifier, 1);
+    builder.add_token(text(";"), Rec_token::semicolon, 1);
+
+    Tokenizer tokenizer{builder.build(), "a;?;a;?"};
+
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+
+    const auto stopped{tokenizer.next<Rec_token>()};
+
+    ASSERT_TRUE(stopped.has_error());
+    ASSERT_EQ(stopped.error().position(), 2U);
+
+    const auto skipped{tokenizer.recover()};
+
+    ASSERT_TRUE(skipped.has_value());
+    EXPECT_EQ(*skipped, 1U);
+    EXPECT_EQ(tokenizer.offset(), 3U);
+
+    for (int expected{0}; expected < 3; ++expected)
+    {
+        ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+    }
+
+    const auto again{tokenizer.next<Rec_token>()};
+
+    ASSERT_TRUE(again.has_error());
+    ASSERT_EQ(again.error().position(), 6U);
+
+    EXPECT_FALSE(tokenizer.recover().has_value());
+    EXPECT_EQ(tokenizer.offset(), 6U);
+}
+
+TEST(Tokenizer_recovery, Recover_refuses_when_nothing_certifies)
+{
+    // A single unbounded run certifies neither bytes nor windows, so recovery finds nothing and the position
+    // stays put: refusal, not a guess.
+    core::Builder builder;
+
+    builder.add_token(plus(any_of(Set::alpha())), Rec_token::identifier, 1);
+
+    Tokenizer tokenizer{builder.build(), "abc?def"};
+
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_error());
+
+    EXPECT_FALSE(tokenizer.recover().has_value());
+    EXPECT_EQ(tokenizer.offset(), 3U);
+}
+
+TEST(Tokenizer_recovery, Recover_consults_the_active_mode_only)
+{
+    // The same input recovers differently per mode: mode zero's grammar certifies the semicolon, mode one's
+    // single run swallows it, so recovery under mode one refuses where mode zero succeeds. A recovery wired to
+    // any fixed lexer answers the same twice and fails one side.
+    core::Builder code;
+
+    code.add_token(plus(any_of(Set::alpha())), Rec_token::identifier, 1);
+    code.add_token(text(";"), Rec_token::semicolon, 1);
+
+    core::Builder digits;
+
+    digits.add_token(plus(any_of(Set::digits() + ';')), Rec_token::number, 1);
+
+    Tokenizer tokenizer{{code.build(), digits.build()}, "12?;34"};
+
+    enum class Rec_mode : std::size_t
+    {
+        code_mode,
+        digit_mode
+    };
+
+    tokenizer.set_mode(Rec_mode::digit_mode);
+
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+
+    const auto stopped{tokenizer.next<Rec_token>()};
+
+    ASSERT_TRUE(stopped.has_error());
+    ASSERT_EQ(stopped.error().position(), 2U);
+
+    EXPECT_FALSE(tokenizer.recover().has_value());
+    EXPECT_EQ(tokenizer.offset(), 2U);
+
+    tokenizer.set_mode(Rec_mode::code_mode);
+
+    const auto skipped{tokenizer.recover()};
+
+    ASSERT_TRUE(skipped.has_value());
+    EXPECT_EQ(*skipped, 1U);
+    EXPECT_EQ(tokenizer.offset(), 3U);
+
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+}
+
+TEST(Tokenizer_recovery, Recover_always_advances_past_the_offending_byte)
+{
+    // On malformed input a certified byte can still fail to start a token: 'a' is certified over {ab, ;}, yet
+    // "a;" has no token at the 'a'. A recovery that searched from the error position itself would return the
+    // same offset with zero bytes skipped and the driver's loop would never terminate; the search starts one
+    // past the offender by contract, and the skip count is therefore always positive.
+    core::Builder builder;
+
+    builder.add_token(text("ab"), Rec_token::identifier, 1);
+    builder.add_token(text(";"), Rec_token::semicolon, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_TRUE(lexer.is_split_point('a'));
+
+    Tokenizer tokenizer{lexer, ";a;ab"};
+
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+
+    const auto stopped{tokenizer.next<Rec_token>()};
+
+    ASSERT_TRUE(stopped.has_error());
+    ASSERT_EQ(stopped.error().position(), 1U);
+
+    const auto skipped{tokenizer.recover()};
+
+    ASSERT_TRUE(skipped.has_value());
+    EXPECT_EQ(*skipped, 1U);
+    EXPECT_EQ(tokenizer.offset(), 2U);
+
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+
+    const auto last{tokenizer.next<Rec_token>()};
+
+    ASSERT_TRUE(last.has_token());
+    EXPECT_EQ(last.token().lexeme(), "ab");
+}
