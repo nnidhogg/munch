@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -82,6 +83,86 @@ Stream_t scan(const Mode_lexer& lexer, const std::string& input, std::size_t& co
     return stream;
 }
 } // namespace
+
+// One viability probe per public Mode_lexer overload, for the same reason the flat lexer's suite keeps one per
+// overload: a combined requires-expression proves only that at least one call rejects a type.
+template <typename Iterator>
+concept Mode_single_through = requires(const Mode_lexer& lexer, const Iterator& iterator, Mode_stack& stack) {
+    lexer.template tokenize<int>(iterator, iterator, stack);
+};
+
+template <typename Iterator>
+concept Mode_full_through = requires(const Mode_lexer& lexer, const Iterator& iterator) {
+    lexer.template tokenize_all<int>(iterator, iterator, [](int, std::size_t, std::size_t) {});
+};
+
+template <typename Iterator>
+concept Mode_full_through_with_stack = requires(const Mode_lexer& lexer, const Iterator& iterator, Mode_stack& stack) {
+    lexer.template tokenize_all<int>(iterator, iterator, [](int, std::size_t, std::size_t) {}, stack);
+};
+
+template <typename Container>
+concept Mode_full_over = requires(const Mode_lexer& lexer, const Container& container) {
+    lexer.template tokenize_all<int>(container, [](int, std::size_t, std::size_t) {});
+};
+
+template <typename Container>
+concept Mode_full_over_with_stack = requires(const Mode_lexer& lexer, const Container& container, Mode_stack& stack) {
+    lexer.template tokenize_all<int>(container, [](int, std::size_t, std::size_t) {}, stack);
+};
+
+TEST(Mode, Every_entry_point_holds_the_byte_domain_and_scans_std_byte_like_char)
+{
+    using Good_iterator = std::string_view::iterator;
+    using Bad_iterator = std::vector<double>::const_iterator;
+
+    static_assert(Mode_single_through<Good_iterator> && !Mode_single_through<Bad_iterator>);
+    static_assert(Mode_full_through<Good_iterator> && !Mode_full_through<Bad_iterator>);
+    static_assert(Mode_full_through_with_stack<Good_iterator> && !Mode_full_through_with_stack<Bad_iterator>);
+    static_assert(Mode_full_over<std::string> && !Mode_full_over<std::vector<double>>);
+    static_assert(!Mode_full_over<std::vector<std::string>>);
+    static_assert(Mode_full_over_with_stack<std::string> && !Mode_full_over_with_stack<std::vector<double>>);
+
+    // Viability never instantiates a body, so std::byte runs through the modal scan as well, and the answers
+    // must match the same input spelled as char.
+    const auto lexer{build()};
+
+    const std::string text{R"(ab "x\"y" /* c /* d */ e */ f)"};
+
+    std::vector<std::byte> bytes;
+
+    for (const char symbol : text)
+    {
+        bytes.push_back(static_cast<std::byte>(symbol));
+    }
+
+    std::size_t consumed{0};
+
+    const auto expected{scan(lexer, text, consumed)};
+
+    ASSERT_EQ(consumed, text.size());
+
+    Stream_t from_bytes;
+
+    EXPECT_EQ(
+            consumed, lexer.tokenize_all<Tok>(
+                              bytes, [&from_bytes](const Tok token, const std::size_t length, const std::size_t mode) {
+                                  from_bytes.emplace_back(token, length, mode);
+                              }));
+
+    EXPECT_EQ(from_bytes, expected);
+
+    Stream_t through_iterators;
+
+    EXPECT_EQ(
+            consumed, lexer.tokenize_all<Tok>(
+                              bytes.begin(), bytes.end(),
+                              [&through_iterators](const Tok token, const std::size_t length, const std::size_t mode) {
+                                  through_iterators.emplace_back(token, length, mode);
+                              }));
+
+    EXPECT_EQ(through_iterators, expected);
+}
 
 TEST(Mode, Same_byte_means_different_tokens_in_different_modes)
 {

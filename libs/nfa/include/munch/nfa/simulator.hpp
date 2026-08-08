@@ -51,7 +51,10 @@ public:
         {
             ++consumed;
 
-            if (states = nfa.advance(states, *current); states.empty())
+            // Elements are read as the scanners read them, through unsigned char, so every byte-domain element
+            // type reaches the transition alphabet; advance() takes char and std::byte converts to it only
+            // explicitly.
+            if (states = nfa.advance(states, static_cast<char>(static_cast<unsigned char>(*current))); states.empty())
             {
                 continue;
             }

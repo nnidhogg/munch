@@ -346,13 +346,17 @@ public:
                 window_carry -= usable;
             }
 
+            // Elements are read as the scanners read them, through unsigned char, so every byte-domain element
+            // type forms the same memo key; the string constructor's implicit conversion would reject std::byte.
+            const auto byte_at{[&begin](const std::size_t at) {
+                return static_cast<char>(static_cast<unsigned char>(begin[static_cast<std::ptrdiff_t>(at)]));
+            }};
+
             for (auto occurrence{std::max(window_target, boundaries.back() + 1)}; occurrence + 2 <= size; ++occurrence)
             {
                 const auto limit{std::min(longest, size - occurrence)};
 
-                std::string window{
-                        begin + static_cast<std::ptrdiff_t>(occurrence),
-                        begin + static_cast<std::ptrdiff_t>(occurrence + 2)};
+                std::string window{byte_at(occurrence), byte_at(occurrence + 1)};
 
                 auto cut{false};
 
@@ -360,7 +364,7 @@ public:
                 {
                     if (length > window.size())
                     {
-                        window.push_back(begin[static_cast<std::ptrdiff_t>(occurrence + length - 1)]);
+                        window.push_back(byte_at(occurrence + length - 1));
                     }
 
                     auto found{memo.find(window)};

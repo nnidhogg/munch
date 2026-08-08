@@ -621,7 +621,8 @@ int main()
 }
 ```
 
-You can pass a standard container such as `std::array`, `std::string`, or any range-like input.
+You can pass a standard container such as `std::array` or `std::string`, or any common range whose elements read as
+bytes through const iteration, integral or `std::byte`.
 
 ```cpp
 std::array<char, 5> input = {'1', '2', '3', '4', '\0'};
@@ -650,8 +651,9 @@ This API is efficient and lightweight, suitable for use in parsers or compiler f
 
 To tokenize a whole input at once, `tokenize_all` scans in a single pass and invokes a sink per matched token, keeping
 the scan state live across token boundaries; it is the fastest way to tokenize a complete input. It requires random
-access to the input (a `std::string` or `std::vector` qualifies) and returns the number of characters tokenized, so a
-result short of the input's size names the first offset where no token matched:
+access to input of byte elements, integral or `std::byte`, so a `std::string` or a `std::vector` of bytes qualifies,
+and returns the number of characters tokenized, so a result short of the input's size names the first offset where no
+token matched:
 
 ```cpp
 std::vector<std::pair<Token_kind, std::size_t>> tokens;

@@ -2,6 +2,9 @@
 
 #include <array>
 #include <atomic>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -16,7 +19,9 @@
 
 #include "munch/common/concepts.hpp"
 #include "munch/core/builder.hpp"
+#include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
+#include "munch/nfa/simulator.hpp"
 #include "munch/nfa/tools/graphviz.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/unicode.hpp"
@@ -2455,21 +2460,285 @@ TEST_F(Lexer_test, Parallel_tokenization_propagates_a_throwing_sink)
     EXPECT_THROW(scan(lexer.chunk_boundaries(input, 4).size() - 2), std::runtime_error);
 }
 
+// A conforming random-access byte iterator that additionally converts to char. List-initializing a std::string
+// from two such iterators selects the initializer_list constructor over the range constructor, so a planner
+// that builds windows from iterator objects reads a byte pair the input never contains and can certify a cut
+// inside a token of completely tokenizable input, the one thing the window theorem forbids.
+struct Char_convertible_iterator
+{
+    using value_type = char;
+    using difference_type = std::ptrdiff_t;
+
+    const char* ptr{};
+
+    operator char() const { return *ptr; }
+
+    char operator*() const { return *ptr; }
+    char operator[](const difference_type at) const { return ptr[at]; }
+
+    Char_convertible_iterator& operator++()
+    {
+        ++ptr;
+        return *this;
+    }
+
+    Char_convertible_iterator operator++(int) { return {ptr++}; }
+
+    Char_convertible_iterator& operator--()
+    {
+        --ptr;
+        return *this;
+    }
+
+    Char_convertible_iterator operator--(int) { return {ptr--}; }
+
+    Char_convertible_iterator& operator+=(const difference_type by)
+    {
+        ptr += by;
+        return *this;
+    }
+
+    Char_convertible_iterator& operator-=(const difference_type by)
+    {
+        ptr -= by;
+        return *this;
+    }
+
+    friend Char_convertible_iterator operator+(const Char_convertible_iterator it, const difference_type by)
+    {
+        return {it.ptr + by};
+    }
+
+    friend Char_convertible_iterator operator+(const difference_type by, const Char_convertible_iterator it)
+    {
+        return {it.ptr + by};
+    }
+
+    friend Char_convertible_iterator operator-(const Char_convertible_iterator it, const difference_type by)
+    {
+        return {it.ptr - by};
+    }
+
+    friend difference_type operator-(const Char_convertible_iterator lhs, const Char_convertible_iterator rhs)
+    {
+        return lhs.ptr - rhs.ptr;
+    }
+
+    friend auto operator<=>(const Char_convertible_iterator&, const Char_convertible_iterator&) = default;
+};
+
+static_assert(std::random_access_iterator<Char_convertible_iterator>);
+
+TEST_F(Lexer_test, Window_planning_reads_elements_never_iterator_objects)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+    };
+
+    // Twelve spaces then eight letters puts the equal-division target where an iterator-built fake window would
+    // stitch a space and a letter from two positions apart into " a", certify it, and cut inside the whitespace
+    // run: the streams then diverge on completely tokenizable input. Reading elements, the plan must equal the
+    // plain char plan and rejoin to the serial stream.
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string text{std::string(12, ' ') + "alphabet"};
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(
+            Char_convertible_iterator{text.data()}, Char_convertible_iterator{text.data() + text.size()}, 2)};
+
+    EXPECT_EQ(boundaries, lexer.chunk_boundaries_with_windows(text, 2));
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    ASSERT_EQ(
+            text.size(),
+            lexer.tokenize_all<Token_kind>(text, [&serial](const Token_kind kind, const std::size_t length) {
+                serial.emplace_back(kind, length);
+            }));
+
+    std::vector<std::pair<Token_kind, std::size_t>> rejoined;
+
+    for (std::size_t index{1}; index < boundaries.size(); ++index)
+    {
+        const std::string_view chunk{text.data() + boundaries[index - 1], boundaries[index] - boundaries[index - 1]};
+
+        lexer.tokenize_all<Token_kind>(chunk, [&rejoined](const Token_kind kind, const std::size_t length) {
+            rejoined.emplace_back(kind, length);
+        });
+    }
+
+    EXPECT_EQ(rejoined, serial);
+}
+
+TEST_F(Lexer_test, Every_entry_point_scans_std_byte_input_like_char_input)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+    };
+
+    // The concept probes below ask only overload viability, which never instantiates a body; an element type the
+    // interface admits could still be rejected by a body's implicit conversions. std::byte converts to nothing
+    // implicitly, so running it through every entry point pins each body to the promised domain, and the answers
+    // must match the same input spelled as char. The grammar certifies no byte but certifies a window, so the
+    // window walk itself executes rather than short-circuiting.
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string text{"alpha beta gamma delta epsilon zeta eta theta"};
+
+    std::vector<std::byte> bytes;
+
+    for (const char symbol : text)
+    {
+        bytes.push_back(static_cast<std::byte>(symbol));
+    }
+
+    EXPECT_EQ(lexer.tokenize<Token_kind>(bytes), lexer.tokenize<Token_kind>(text));
+
+    std::vector<std::pair<Token_kind, std::size_t>> from_bytes;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            bytes,
+            [&from_bytes](const Token_kind kind, const std::size_t length) { from_bytes.emplace_back(kind, length); })};
+
+    std::vector<std::pair<Token_kind, std::size_t>> from_text;
+
+    ASSERT_EQ(
+            consumed,
+            lexer.tokenize_all<Token_kind>(text, [&from_text](const Token_kind kind, const std::size_t length) {
+                from_text.emplace_back(kind, length);
+            }));
+
+    EXPECT_EQ(from_bytes, from_text);
+
+    EXPECT_EQ(lexer.chunk_boundaries(bytes, 4), lexer.chunk_boundaries(text, 4));
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(bytes, 4)};
+
+    ASSERT_GT(boundaries.size(), 2U);
+    EXPECT_EQ(boundaries, lexer.chunk_boundaries_with_windows(text, 4));
+
+    std::vector<std::size_t> parallel_from_bytes(boundaries.size() - 1, 0);
+
+    const auto counted{lexer.tokenize_all_parallel<Token_kind>(
+            bytes, 4, [&parallel_from_bytes](const std::size_t chunk, Token_kind, const std::size_t) {
+                ++parallel_from_bytes[chunk];
+            })};
+
+    EXPECT_EQ(counted, lexer.tokenize_all_parallel<Token_kind>(text, 4, [](std::size_t, Token_kind, std::size_t) {}));
+
+    // The iterator overloads run their own bodies rather than sharing the container ones' instantiations, so
+    // each is driven explicitly; the answers must again match the char spelling.
+    EXPECT_EQ(lexer.tokenize<Token_kind>(bytes.begin(), bytes.end()), lexer.tokenize<Token_kind>(text));
+
+    std::size_t through_iterators{0};
+
+    EXPECT_EQ(
+            consumed,
+            lexer.tokenize_all<Token_kind>(bytes.begin(), bytes.end(), [&through_iterators](Token_kind, std::size_t) {
+                ++through_iterators;
+            }));
+
+    EXPECT_EQ(through_iterators, from_text.size());
+
+    EXPECT_EQ(lexer.chunk_boundaries(bytes.begin(), bytes.end(), 4), lexer.chunk_boundaries(text, 4));
+
+    EXPECT_EQ(lexer.chunk_boundaries_with_windows(bytes.begin(), bytes.end(), 4), boundaries);
+
+    EXPECT_EQ(
+            counted, lexer.tokenize_all_parallel<Token_kind>(
+                             bytes.begin(), bytes.end(), 4, [](std::size_t, Token_kind, std::size_t) {}));
+
+    // The NFA scanner is its own public surface with its own body.
+    const auto nfa_from_bytes{nfa::Simulator::run(builder.nfa(), bytes.begin(), bytes.end())};
+    const auto nfa_from_text{nfa::Simulator::run(builder.nfa(), text)};
+
+    EXPECT_EQ(nfa_from_bytes.token, nfa_from_text.token);
+    EXPECT_EQ(nfa_from_bytes.length, nfa_from_text.length);
+}
+
 // The dependent probes for the byte-domain assertions below: a requires-expression over concrete types is checked
-// as ordinary code, so viability at each entry point is asked through these instead.
+// as ordinary code, so viability is asked through these instead. One probe per public overload, because a
+// combined expression proves only that at least one call rejects a type, and a single overload could then
+// quietly lose its constraint.
 template <typename Container>
-concept Byte_input = requires(const Lexer& lexer, const Container& container) {
-    lexer.chunk_boundaries(container, std::size_t{2});
-    lexer.chunk_boundaries_with_windows(container, std::size_t{2});
-    lexer.template tokenize<int>(container);
+concept Single_scan_over =
+        requires(const Lexer& lexer, const Container& container) { lexer.template tokenize<int>(container); };
+
+template <typename Container>
+concept Full_scan_over = requires(const Lexer& lexer, const Container& container) {
     lexer.template tokenize_all<int>(container, [](int, std::size_t) {});
 };
 
+template <typename Container>
+concept Byte_plan_over =
+        requires(const Lexer& lexer, const Container& container) { lexer.chunk_boundaries(container, std::size_t{2}); };
+
+template <typename Container>
+concept Window_plan_over = requires(const Lexer& lexer, const Container& container) {
+    lexer.chunk_boundaries_with_windows(container, std::size_t{2});
+};
+
+template <typename Container>
+concept Parallel_scan_over = requires(const Lexer& lexer, const Container& container) {
+    lexer.template tokenize_all_parallel<int>(container, std::size_t{2}, [](std::size_t, int, std::size_t) {});
+};
+
 template <typename Iterator>
-concept Byte_iterator_input = requires(const Lexer& lexer, const Iterator& iterator) {
-    lexer.chunk_boundaries(iterator, iterator, std::size_t{2});
+concept Single_scan_through =
+        requires(const Lexer& lexer, const Iterator& iterator) { lexer.template tokenize<int>(iterator, iterator); };
+
+template <typename Iterator>
+concept Full_scan_through = requires(const Lexer& lexer, const Iterator& iterator) {
     lexer.template tokenize_all<int>(iterator, iterator, [](int, std::size_t) {});
 };
+
+template <typename Iterator>
+concept Byte_plan_through = requires(const Lexer& lexer, const Iterator& iterator) {
+    lexer.chunk_boundaries(iterator, iterator, std::size_t{2});
+};
+
+template <typename Iterator>
+concept Window_plan_through = requires(const Lexer& lexer, const Iterator& iterator) {
+    lexer.chunk_boundaries_with_windows(iterator, iterator, std::size_t{2});
+};
+
+template <typename Iterator>
+concept Parallel_scan_through = requires(const Lexer& lexer, const Iterator& iterator) {
+    lexer.template tokenize_all_parallel<int>(iterator, iterator, std::size_t{2}, [](std::size_t, int, std::size_t) {});
+};
+
+template <typename Iterator>
+concept Dfa_scan_through = requires(const dfa::Simulator& simulator, const Iterator& iterator) {
+    simulator.run(iterator, iterator);
+    simulator.run_all(iterator, iterator, [](const dfa::Token&, std::size_t, std::uint64_t) {});
+};
+
+template <typename Container>
+concept Dfa_scan_over =
+        requires(const dfa::Simulator& simulator, const Container& container) { simulator.run(container); };
+
+template <typename Iterator>
+concept Nfa_scan_through = requires(const nfa::Nfa& automaton, const Iterator& iterator) {
+    nfa::Simulator::run(automaton, iterator, iterator);
+};
+
+template <typename Container>
+concept Nfa_scan_over =
+        requires(const nfa::Nfa& automaton, const Container& container) { nfa::Simulator::run(automaton, container); };
 
 TEST_F(Lexer_test, Test_container_concepts_require_common_const_ranges)
 {
@@ -2536,13 +2805,44 @@ TEST_F(Lexer_test, Test_container_concepts_require_common_const_ranges)
 
     static_assert(!Random_access_byte_iterable<Two_faced>);
 
-    // The rejection happens at the interface of every entry point, container and iterator alike.
-    static_assert(Byte_input<std::string>);
-    static_assert(!Byte_input<std::vector<double>>);
-    static_assert(!Byte_input<std::vector<std::string>>);
-    static_assert(!Byte_input<Two_faced>);
-    static_assert(Byte_iterator_input<std::string_view::iterator>);
-    static_assert(!Byte_iterator_input<std::vector<double>::const_iterator>);
+    // The rejection happens at the interface of every entry point: each overload asserts its own acceptance and
+    // its own refusals, so no single overload can lose its constraint behind the others.
+    static_assert(
+            Single_scan_over<std::string> && Full_scan_over<std::string> && Byte_plan_over<std::string> &&
+            Window_plan_over<std::string> && Parallel_scan_over<std::string>);
+
+    static_assert(
+            !Single_scan_over<std::vector<double>> && !Full_scan_over<std::vector<double>> &&
+            !Byte_plan_over<std::vector<double>> && !Window_plan_over<std::vector<double>> &&
+            !Parallel_scan_over<std::vector<double>>);
+
+    static_assert(
+            !Single_scan_over<std::vector<std::string>> && !Full_scan_over<std::vector<std::string>> &&
+            !Byte_plan_over<std::vector<std::string>> && !Window_plan_over<std::vector<std::string>> &&
+            !Parallel_scan_over<std::vector<std::string>>);
+
+    static_assert(
+            !Single_scan_over<Two_faced> && !Full_scan_over<Two_faced> && !Byte_plan_over<Two_faced> &&
+            !Window_plan_over<Two_faced> && !Parallel_scan_over<Two_faced>);
+
+    using Good_iterator = std::string_view::iterator;
+    using Bad_iterator = std::vector<double>::const_iterator;
+
+    static_assert(
+            Single_scan_through<Good_iterator> && Full_scan_through<Good_iterator> &&
+            Byte_plan_through<Good_iterator> && Window_plan_through<Good_iterator> &&
+            Parallel_scan_through<Good_iterator>);
+
+    static_assert(
+            !Single_scan_through<Bad_iterator> && !Full_scan_through<Bad_iterator> &&
+            !Byte_plan_through<Bad_iterator> && !Window_plan_through<Bad_iterator> &&
+            !Parallel_scan_through<Bad_iterator>);
+
+    // The library scanners beneath the Lexer hold the same line.
+    static_assert(Dfa_scan_through<Good_iterator> && !Dfa_scan_through<Bad_iterator>);
+    static_assert(Dfa_scan_over<std::string> && !Dfa_scan_over<std::vector<double>> && !Dfa_scan_over<Two_faced>);
+    static_assert(Nfa_scan_through<Good_iterator> && !Nfa_scan_through<Bad_iterator>);
+    static_assert(Nfa_scan_over<std::string> && !Nfa_scan_over<std::vector<double>> && !Nfa_scan_over<Two_faced>);
 }
 
 TEST_F(Lexer_test, Test_ignored_tokens_reject_non_integral_initializers)
