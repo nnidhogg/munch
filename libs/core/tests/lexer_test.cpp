@@ -1108,6 +1108,81 @@ TEST_F(Lexer_test, Window_refusals_pin_the_nullable_guard_and_the_live_target_fi
     EXPECT_FALSE(dead_lexer.is_split_window("a").has_value());
 }
 
+TEST_F(Lexer_test, Next_certified_start_merges_both_certificates_nearest_first)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Whitespace,
+        Semicolon,
+        Optional_a,
+        Letter_b,
+    };
+
+    // Windows only: over identifiers and whitespace no byte certifies, and the first certificate past the junk
+    // is the four-byte "def " at offset 6 with origin 3, so the answer is 9 from either starting point before
+    // it; at or past the end there is no answer.
+    Builder_dbg words;
+
+    words.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    words.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+
+    const auto word_lexer{words.build()};
+
+    const std::string junk{"abc@@@def ghi"};
+
+    EXPECT_EQ(word_lexer.next_certified_start(junk, 0), std::optional<std::size_t>{9});
+    EXPECT_EQ(word_lexer.next_certified_start(junk, 4), std::optional<std::size_t>{9});
+    EXPECT_FALSE(word_lexer.next_certified_start(junk, junk.size()).has_value());
+    EXPECT_FALSE(word_lexer.next_certified_start(junk, junk.size() + 42).has_value());
+
+    // Bytes answer at their own position, and the offset itself is a candidate: the search is inclusive.
+    Builder_dbg pair;
+
+    pair.add_token(text("a"), Token_kind::Identifier, 1);
+    pair.add_token(text(";"), Token_kind::Semicolon, 1);
+
+    const auto pair_lexer{pair.build()};
+
+    EXPECT_EQ(pair_lexer.next_certified_start("a?;b", 1), std::optional<std::size_t>{2});
+    EXPECT_EQ(pair_lexer.next_certified_start(";", 0), std::optional<std::size_t>{0});
+
+    // Both certificate kinds at once: the semicolon is a certified byte, yet a window met earlier in the walk
+    // answers first, because a recovery wants the nearest point of either kind. A planner-style search that
+    // switched windows off wherever a byte certificate exists would run past the space and answer 6.
+    Builder_dbg mixed;
+
+    mixed.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    mixed.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
+    mixed.add_token(text(";"), Token_kind::Semicolon, 3);
+
+    const auto mixed_lexer{mixed.build()};
+
+    ASSERT_TRUE(mixed_lexer.is_split_point(';'));
+    EXPECT_EQ(mixed_lexer.next_certified_start("x@ abc;", 1), std::optional<std::size_t>{3});
+
+    // A nullable set keeps its byte certificates, since only the window proof excludes it: 'b' certifies over
+    // {optional a, b} because nothing re-enters the start, so recovery answers through the byte even though
+    // every window is refused.
+    Builder_dbg nullable;
+
+    nullable.add_token(optional(text("a")), Token_kind::Optional_a, 1);
+    nullable.add_token(text("b"), Token_kind::Letter_b, 1);
+
+    const auto nullable_lexer{nullable.build()};
+
+    ASSERT_TRUE(nullable_lexer.is_split_point('b'));
+    ASSERT_FALSE(nullable_lexer.is_split_window("bb").has_value());
+    EXPECT_EQ(nullable_lexer.next_certified_start("?bb", 1), std::optional<std::size_t>{1});
+
+    // A single unbounded run certifies nothing at any length.
+    Builder_dbg unbounded;
+
+    unbounded.add_token(plus(any_of(Set{'a'})), Token_kind::Identifier, 1);
+
+    EXPECT_FALSE(unbounded.build().next_certified_start("aaaa", 1).has_value());
+}
+
 TEST_F(Lexer_test, Malformed_input_keeps_the_serial_prefix_across_real_cuts)
 {
     enum class Token_kind : uint8_t
