@@ -779,7 +779,171 @@ bool measure_json(const std::size_t mebibytes, const int passes)
  */
 // Two serial rows plus four chunk counts on two corpora; the names are generated, so they need storage that
 // outlives the scenario list pointing at them.
-constexpr std::size_t kScalingRows{10};
+/**
+ * @brief Builds the conventional-row lexer of the windows study: no byte certifies once strings, comments, and
+ *        newline-crossing whitespace runs are present, and the two-byte window of a newline before an operator
+ *        certifies at the operator, so this is the grammar whose parallel plan exists only through windows.
+ */
+munch::core::Lexer conventional_lexer()
+{
+    using namespace munch::regex;
+
+    munch::core::Builder builder;
+
+    const auto letter{any_of(Set::alpha() + '_')};
+
+    builder.add_token(concat(letter, kleene(any_of(Set::alphanum() + '_'))), Token::identifier, 2);
+
+    builder.add_token(plus(any_of(Set::digits())), Token::number, 2);
+
+    builder.add_token(concat(text("\""), kleene(any_of(Set::printable())), text("\"")), Token::string_, 2);
+
+    builder.add_token(concat(text("//"), kleene(any_of(Set::all() - '\n'))), Token::comment, 1);
+
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token::whitespace, 1);
+
+    for (const auto* op : {"!", "=", "+", ";", "(", ")", "{", "}"})
+    {
+        builder.add_token(text(op), Token::operator_, 3);
+    }
+
+    return builder.build();
+}
+
+/**
+ * @brief Generates source-like text for the conventional row, with operator-initial lines throughout so the
+ *        certified newline-then-operator window occurs near every equal-division target.
+ */
+std::string generate_conventional_input(const std::size_t bytes)
+{
+    static constexpr const char* lines[]{
+            "count = count + 42; // trailing note\n",
+            "!(flag) name = \"a (string) with // inside\";\n",
+            "!done = 1;\n",
+            "total = total + count; // fold\n",
+    };
+
+    std::string input;
+
+    input.reserve(bytes + 64);
+
+    for (std::size_t index{0}; input.size() < bytes; ++index)
+    {
+        input += lines[index % std::size(lines)];
+    }
+
+    return input;
+}
+
+/**
+ * @brief Tokenizes the input in parallel chunks cut by the window planner.
+ *
+ * The plan runs inside the pass, exactly as tokenize_all_parallel() replans on every call, so the byte-planned
+ * and window-planned rows carry their planning cost identically and their ratio is honest.
+ * @return The total number of tokens matched, or 0 if any chunk was rejected.
+ */
+std::size_t windowed_chunked(const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
+{
+    // One counter per cache line, matching the parallel entry point's contract: adjacent per-chunk counters
+    // would false-share across the worker threads.
+    struct alignas(64) Count
+    {
+        std::size_t tokens{0};
+
+        std::size_t consumed{0};
+    };
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(input, chunks)};
+
+    std::vector<Count> counts(boundaries.size() - 1);
+
+    {
+        std::vector<std::jthread> workers;
+
+        workers.reserve(counts.size());
+
+        for (std::size_t index{0}; index < counts.size(); ++index)
+        {
+            workers.emplace_back([&lexer, &input, &boundaries, &counts, index] {
+                const auto begin{input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index])};
+
+                const auto end{input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index + 1])};
+
+                counts[index].consumed = lexer.tokenize_all<Token>(
+                        begin, end, [&counts, index](const Token, const std::size_t) { ++counts[index].tokens; });
+            });
+        }
+    }
+
+    std::size_t tokens{0};
+
+    std::size_t consumed{0};
+
+    for (const auto& count : counts)
+    {
+        tokens += count.tokens;
+
+        consumed += count.consumed;
+    }
+
+    return consumed == input.size() ? tokens : 0;
+}
+
+/**
+ * @brief Checks that the window-planned chunk streams rejoin to the serial scan and the plan is complete.
+ *
+ * A degenerate plan would time the serial scan under a parallel label, so the expected boundary count is part
+ * of the validation, not only stream equality.
+ */
+bool validate_windowed(const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
+{
+    using Stream_t = std::vector<std::pair<Token, std::size_t>>;
+
+    const auto collect{[](Stream_t& stream) {
+        return [&stream](const Token token, const std::size_t length) { stream.emplace_back(token, length); };
+    }};
+
+    Stream_t serial;
+
+    if (lexer.tokenize_all<Token>(input, collect(serial)) != input.size())
+    {
+        return false;
+    }
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(input, chunks)};
+
+    if (boundaries.size() != chunks + 1)
+    {
+        std::printf("window plan found %zu boundaries where %zu were expected\n", boundaries.size(), chunks + 1);
+
+        return false;
+    }
+
+    Stream_t chunked;
+
+    for (std::size_t index{0}; index + 1 < boundaries.size(); ++index)
+    {
+        const auto begin{input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index])};
+
+        const auto end{input.cbegin() + static_cast<std::ptrdiff_t>(boundaries[index + 1])};
+
+        if (lexer.tokenize_all<Token>(begin, end, collect(chunked)) != static_cast<std::size_t>(end - begin))
+        {
+            return false;
+        }
+    }
+
+    if (chunked != serial)
+    {
+        std::printf("windowed token stream diverged from the serial scan\n");
+
+        return false;
+    }
+
+    return true;
+}
+
+constexpr std::size_t kScalingRows{15};
 
 constexpr std::size_t kLabelWidth{24};
 
@@ -844,11 +1008,23 @@ int main(const int argc, const char** argv)
 
     const auto source_input{generate_source_input(mebibytes << 20U)};
 
+    const auto conventional{conventional_lexer()};
+
+    const auto conventional_input{generate_conventional_input(mebibytes << 20U)};
+
     measure_build(passes);
 
     measure_xid_build(passes);
 
     ok = measure_planning(passes) && ok;
+
+    // The conventional row certifies no byte, so its plan exists only through windows; the plan alone is timed
+    // against the corpus it serves, pricing planning as overhead per input byte rather than in the abstract.
+    ok = measure("window_plan/conv", conventional_input.size(), passes,
+                 [&conventional, &conventional_input] {
+                     return conventional.chunk_boundaries_with_windows(conventional_input, 8).size();
+                 }) &&
+         ok;
 
     ok = measure_json(mebibytes, passes) && ok;
 
@@ -863,7 +1039,11 @@ int main(const int argc, const char** argv)
 
         const auto source{size == mebibytes ? source_input : generate_source_input(size << 20U)};
 
+        const auto conv{size == mebibytes ? conventional_input : generate_conventional_input(size << 20U)};
+
         ok = validate_chunked(ascii_lexer, dense, 8) && validate_chunked(ascii_lexer, source, 8) && ok;
+
+        ok = validate_windowed(conventional, conv, 8) && ok;
 
         std::vector<char> labels(kScalingRows * kLabelWidth);
 
@@ -903,6 +1083,26 @@ int main(const int argc, const char** argv)
             scenarios.push_back(
                     Scenario{.name = label(row), .bytes = source.size(), .pass = [&ascii_lexer, &source, threads] {
                                  return tokenize_chunked(ascii_lexer, source, threads);
+                             }});
+
+            ++row;
+        }
+
+        std::snprintf(label(row), kLabelWidth, "lexer_all/conv");
+
+        scenarios.push_back(Scenario{.name = label(row), .bytes = conv.size(), .pass = [&conventional, &conv] {
+                                         return tokenize_all(conventional, conv);
+                                     }});
+
+        ++row;
+
+        for (const std::size_t threads : {1, 2, 4, 8})
+        {
+            std::snprintf(label(row), kLabelWidth, "windowed%zu/conv", threads);
+
+            scenarios.push_back(
+                    Scenario{.name = label(row), .bytes = conv.size(), .pass = [&conventional, &conv, threads] {
+                                 return windowed_chunked(conventional, conv, threads);
                              }});
 
             ++row;

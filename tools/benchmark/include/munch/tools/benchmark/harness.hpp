@@ -25,7 +25,9 @@ enum class Token : std::size_t
     number,
     keyword,
     operator_,
-    punctuation
+    punctuation,
+    string_,
+    comment
 };
 
 /**
