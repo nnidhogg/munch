@@ -1097,9 +1097,8 @@ munch follows semantic versioning. The stable surface is what this README docume
 `diagnose()`, `set_state_limit()`, and `set_ignored_tokens()`, `core::determinize()`, `core::Lexer` with `Match`,
 `tokenize()`, `tokenize_all()`, `is_split_point()`, `is_split_point_ignoring()`, `chunk_boundaries()`, and
 `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
-arrive in minor versions. The window layer, `is_split_window()` and `chunk_boundaries_with_windows()`, is present on
-master ahead of its release and joins that surface in 1.4.0; the release the companion paper cites, v1.3.3, deliberately
-ships no window-planning API.
+arrive in minor versions. The window layer, `is_split_window()` and `chunk_boundaries_with_windows()`, joined that
+surface in 1.4.0; the release the companion paper cites, v1.3.3, deliberately ships no window-planning API.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did
