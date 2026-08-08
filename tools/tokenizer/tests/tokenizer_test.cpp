@@ -5,6 +5,7 @@
 #include "munch/core/builder.hpp"
 #include "munch/core/mode_builder.hpp"
 #include "munch/regex/regex.hpp"
+#include "munch/tools/tokenizer/raw_string.hpp"
 
 using namespace munch;
 using namespace munch::core;
@@ -544,4 +545,159 @@ TEST(Tokenizer_modes, Set_mode_still_forces_a_mode_when_the_grammar_drives_them)
     EXPECT_EQ(tokenizer.mode(), static_cast<std::size_t>(Ctx::comment));
 
     EXPECT_THROW(tokenizer.set_mode(std::size_t{9}), std::out_of_range);
+}
+
+TEST_F(Tokenizer_test, The_documented_raw_string_dance_scans_by_hand_and_seeks_past)
+{
+    // seek()'s documentation names its canonical use: read the prefix token, scan the raw string literal by
+    // hand, seek past it, read on. The body holds a quote, a fake comment opener, and a byte no pattern
+    // accepts, so reaching the closing token proves the hand scan carried the driver over all of them.
+    const std::string input{"boolean R\"x(ab \"c\" /* @ )\" )x\" char"};
+
+    const auto lexer{build_lexer()};
+
+    Tokenizer tokenizer{lexer, input};
+
+    ASSERT_TRUE(tokenizer.next<Token_kind>().has_token());
+    ASSERT_TRUE(tokenizer.next<Token_kind>().has_token());
+
+    const auto prefix{tokenizer.next<Token_kind>()};
+
+    ASSERT_TRUE(prefix.has_token());
+    ASSERT_EQ(prefix.token().kind(), Token_kind::Identifier);
+    ASSERT_EQ(prefix.token().lexeme(), "R");
+
+    const auto literal_start{tokenizer.offset() - prefix.token().lexeme().size()};
+
+    ASSERT_EQ(tokenizer.input()[tokenizer.offset()], '"');
+
+    const auto length{scan_raw_string(tokenizer.input(), literal_start)};
+
+    ASSERT_TRUE(length.has_value());
+
+    tokenizer.seek(literal_start + *length);
+
+    auto result{tokenizer.next<Token_kind>()};
+
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Whitespace);
+
+    result = tokenizer.next<Token_kind>();
+
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Token_kind::Char);
+
+    EXPECT_TRUE(tokenizer.next<Token_kind>().end_of_input());
+}
+
+TEST_F(Tokenizer_test, The_documented_error_loop_skips_and_resumes)
+{
+    // next()'s documentation prescribes the driver loop: an error does not advance, so the driver seeks past
+    // the offending byte and calls again. This runs that loop to completion and is the manual baseline the
+    // certified recover() will be measured against.
+    const std::string input{"boolean @# x $ 123"};
+
+    const auto lexer{build_lexer()};
+
+    Tokenizer tokenizer{lexer, input};
+
+    std::vector<Token_kind> kinds;
+
+    std::vector<std::size_t> error_positions;
+
+    for (;;)
+    {
+        const auto result{tokenizer.next<Token_kind>()};
+
+        if (result.end_of_input())
+        {
+            break;
+        }
+
+        if (result.has_error())
+        {
+            error_positions.push_back(result.error().position());
+
+            tokenizer.seek(result.error().position() + 1);
+
+            continue;
+        }
+
+        kinds.push_back(result.token().kind());
+    }
+
+    const std::vector expected{Token_kind::Boolean,        Token_kind::Whitespace, Token_kind::Whitespace,
+                               Token_kind::Identifier,     Token_kind::Whitespace, Token_kind::Whitespace,
+                               Token_kind::Integer_literal};
+
+    EXPECT_EQ(kinds, expected);
+
+    EXPECT_EQ(error_positions, (std::vector<std::size_t>{8, 9, 13}));
+}
+
+TEST(Tokenizer_modes, Forcing_a_mode_is_the_documented_recovery_hatch_after_an_error)
+{
+    // set_mode()'s documentation names forcing as the recovery hatch after an error and promises the saved
+    // frames are left alone. A newline is illegal inside this string mode, so the scan stops mid-string with
+    // the stack still holding the frame, exactly the unterminated-string diagnosis depth() exists for; the
+    // driver forces code mode, seeks past the wreck, and reads on, and the frame stays put throughout.
+    using namespace munch::core;
+
+    Mode_builder builder;
+
+    builder.add_token(Ctx::code, plus(any_of(Set::alpha())), Ctx_token::identifier, 2);
+    builder.add_token(Ctx::code, any_of(Set{' '}), Ctx_token::space, 2);
+    builder.add_token(
+            Ctx::code, text("\""), Ctx_token::quote, 1,
+            {.kind = Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::string)});
+
+    builder.add_token(Ctx::string, text("\""), Ctx_token::quote, 1, {.kind = Mode_action_kind::pop});
+    builder.add_token(Ctx::string, plus(any_of(Set::all() - '"' - '\n')), Ctx_token::text, 2);
+
+    const std::string input{"ab \"cd\nef\" gh"};
+
+    munch::tools::tokenizer::Tokenizer tokenizer{builder.build(), input};
+
+    ASSERT_TRUE(tokenizer.next<Ctx_token>().has_token());
+    ASSERT_TRUE(tokenizer.next<Ctx_token>().has_token());
+    ASSERT_TRUE(tokenizer.next<Ctx_token>().has_token());
+    ASSERT_TRUE(tokenizer.next<Ctx_token>().has_token());
+
+    const auto stopped{tokenizer.next<Ctx_token>()};
+
+    ASSERT_TRUE(stopped.has_error());
+    EXPECT_EQ(stopped.error().position(), 6U);
+
+    // The stopped scan is diagnosable: string mode at depth one says unterminated string, not stray byte.
+    EXPECT_EQ(tokenizer.mode(), static_cast<std::size_t>(Ctx::string));
+    EXPECT_EQ(tokenizer.depth(), 1U);
+
+    tokenizer.set_mode(Ctx::code);
+
+    EXPECT_EQ(tokenizer.mode(), static_cast<std::size_t>(Ctx::code));
+    EXPECT_EQ(tokenizer.depth(), 1U);
+
+    tokenizer.seek(input.find('"', stopped.error().position()) + 1);
+
+    std::vector<Ctx_token> kinds;
+
+    for (;;)
+    {
+        const auto result{tokenizer.next<Ctx_token>()};
+
+        if (result.end_of_input())
+        {
+            break;
+        }
+
+        ASSERT_FALSE(result.has_error());
+
+        kinds.push_back(result.token().kind());
+    }
+
+    EXPECT_EQ(kinds, (std::vector{Ctx_token::space, Ctx_token::identifier}));
+
+    // The forced switch left the saved frame alone, as documented.
+    EXPECT_EQ(tokenizer.depth(), 1U);
+    EXPECT_EQ(tokenizer.mode(), static_cast<std::size_t>(Ctx::code));
 }
