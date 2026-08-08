@@ -85,6 +85,16 @@ void check_success(const std::string_view input, const std::size_t offset, const
 
     require(delimiter.size() <= max_delimiter_length);
 
+    // Every accepted delimiter character must be a C++23 d-char: a letter, a digit, or basic-set punctuation.
+    // Stated here independently of the scanner's own predicate, so a loosened predicate fails the harness.
+    for (const char accepted : delimiter)
+    {
+        constexpr std::string_view d_chars{R"(!"#%&'*+,-./:;<=>?[]^_{|}~)"};
+
+        require((accepted >= 'A' && accepted <= 'Z') || (accepted >= 'a' && accepted <= 'z') ||
+                (accepted >= '0' && accepted <= '9') || d_chars.find(accepted) != std::string_view::npos);
+    }
+
     // The literal ends with exactly the closing sequence the delimiter dictates.
     std::string closing{")"};
     closing += delimiter;

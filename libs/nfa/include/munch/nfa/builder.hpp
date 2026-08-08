@@ -28,7 +28,10 @@ public:
     [[nodiscard]] Nfa::State_t init_state() const noexcept;
 
     /**
-     * @brief Generates and returns the next available state identifier.
+     * @brief Generates and returns the next state identifier from the builder's own allocator.
+     *
+     * States added with explicit identifiers do not advance the allocator, so a caller mixing both must keep
+     * its own identifiers clear of the allocator's range.
      * @return The next state identifier.
      */
     [[nodiscard]] Nfa::State_t next_state() noexcept;
@@ -63,14 +66,14 @@ public:
     Builder& add_epsilon_transition(Nfa::State_t from, Nfa::State_t to);
 
     /**
-     * @brief Marks a state as an accept state.
+     * @brief Marks a state as an accept state, clearing any token an earlier call associated.
      * @param accept_state The state to mark as accepting.
      * @return Reference to this Builder for chaining.
      */
     Builder& add_accept_state(Nfa::State_t accept_state);
 
     /**
-     * @brief Marks a state as an accept state with the associated token.
+     * @brief Marks a state as an accept state with the associated token, replacing any earlier association.
      * @param accept_state The state to mark as accepting.
      * @param token The token associated with this accept state.
      * @return Reference to this Builder for chaining.
@@ -93,6 +96,8 @@ public:
 
     /**
      * @brief Returns a new Builder with all state indices offset by the given value.
+     * @throws std::runtime_error If the shift would overflow any state identifier; the same guard protects
+     *         prepend_init_state(), append(), merge(), and merge_all(), which renumber through this.
      * @param offset The value to offset state indices by.
      * @return A new Builder with offset state indices.
      */

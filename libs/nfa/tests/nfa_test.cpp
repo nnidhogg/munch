@@ -5,7 +5,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <sstream>
+#include <stdexcept>
+#include <vector>
 
 #include "munch/nfa/builder.hpp"
 #include "munch/nfa/simulator.hpp"
@@ -565,4 +568,61 @@ TEST_F(Nfa_test, Merge_all_unions_under_one_initial_state)
     // One key holds the root's three epsilon edges and each alternative adds one symbol key: four entries,
     // with no chain of pairwise union roots.
     EXPECT_EQ(nfa.transitions().size(), 4U);
+}
+
+TEST_F(Nfa_test, Oversized_identifiers_refuse_renumbering_instead_of_wrapping)
+{
+    // Composition renumbers the right operand past this builder's states; a hand-built operand whose highest
+    // identifier is the largest std::size_t used to wrap onto state 0, silently changing the language, and the
+    // corrupted automaton sailed through determinization. Every composing operation must refuse instead.
+    Builder oversized;
+
+    oversized.add_transition(0, Label{'x'}, std::numeric_limits<std::size_t>::max());
+    oversized.add_accept_state(std::numeric_limits<std::size_t>::max(), Token{1, 1});
+
+    const Builder left;
+
+    EXPECT_THROW(static_cast<void>(left.append(oversized)), std::runtime_error);
+    EXPECT_THROW(static_cast<void>(left.merge(oversized)), std::runtime_error);
+
+    const std::vector<Builder> alternatives{oversized};
+
+    EXPECT_THROW(static_cast<void>(Builder::merge_all(alternatives)), std::runtime_error);
+}
+
+TEST_F(Nfa_test, Reaccepting_a_state_replaces_the_earlier_association)
+{
+    // The tokenless overload used to leave an earlier token in place and the token overload an earlier
+    // nullopt, both silently; the association now follows the latest call, matching the DFA builder.
+    Builder builder;
+
+    const auto accept{builder.next_state()};
+
+    builder.add_accept_state(accept);
+    builder.add_accept_state(accept, Token{7, 1});
+
+    ASSERT_TRUE(builder.accept_states().at(accept).has_value());
+    EXPECT_EQ(builder.accept_states().at(accept)->id(), 7U);
+
+    builder.add_accept_state(accept);
+
+    EXPECT_FALSE(builder.accept_states().at(accept).has_value());
+}
+
+TEST_F(Nfa_test, Graphviz_accepts_a_bare_filename)
+{
+    // A bare filename has an empty parent path, and directory creation used to be attempted on it and fail;
+    // only a stated directory may be created.
+    Builder builder;
+
+    builder.add_transition(builder.init_state(), Label{'a'}, 1);
+    builder.add_accept_state(1, Token{1, 1});
+
+    const std::filesystem::path bare{"graphviz_bare_test.dot"};
+
+    Graphviz::to_file(builder.build(), bare);
+
+    EXPECT_TRUE(std::filesystem::exists(bare));
+
+    std::filesystem::remove(bare);
 }

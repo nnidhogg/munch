@@ -324,7 +324,10 @@ public:
         const auto step_remainder{usable == 0 ? std::size_t{0} : size % usable};
 
         // The longest window the planner tries; every named certified window in the study is at most four
-        // bytes. A grammar needing longer windows degrades to fewer chunks, never to an unsafe cut.
+        // bytes. A grammar needing longer windows degrades to fewer chunks, never to an unsafe cut. The
+        // shortest tried is two, and that bound is not a guard: this branch runs only when no exact byte
+        // certifies and the set is not nullable, where the length-one equivalence theorem makes every one-byte
+        // window refuse, so skipping length one is provably inert rather than something a test could pin.
         constexpr std::size_t longest{4};
 
         // One decision per distinct byte string per plan: memoization caps cloud evaluations at the distinct

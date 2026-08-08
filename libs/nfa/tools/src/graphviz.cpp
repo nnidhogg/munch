@@ -12,7 +12,9 @@ namespace munch::nfa::tools
 {
 void Graphviz::to_file(const Nfa& nfa, const std::filesystem::path& path)
 {
-    if (std::error_code ec; std::filesystem::create_directories(path.parent_path(), ec), ec)
+    // A bare filename has an empty parent, and create_directories("") fails; only a stated directory is created.
+    if (std::error_code ec;
+        !path.parent_path().empty() && (std::filesystem::create_directories(path.parent_path(), ec), ec))
     {
         throw std::runtime_error("Unable to create directories " + path.parent_path().string() + "; " + ec.message());
     }

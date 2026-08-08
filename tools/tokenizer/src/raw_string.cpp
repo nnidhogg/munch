@@ -1,6 +1,7 @@
 #include "munch/tools/tokenizer/raw_string.hpp"
 
 #include <string>
+#include <string_view>
 
 namespace munch::tools::tokenizer
 {
@@ -14,12 +15,21 @@ constexpr std::size_t max_delimiter_length{16};
 /**
  * @brief Checks whether a character may appear in a raw string delimiter.
  *
- * The standard allows any basic character except spaces, parentheses, backslashes, and control characters; the
- * opening parenthesis never reaches this check, as it ends the delimiter.
+ * C++23 restricts a d-char to the basic character set less spaces, parentheses, backslashes, and control
+ * characters, so the check is a whitelist of exactly those members: letters, digits, and the set's punctuation.
+ * Dollar, at-sign, grave accent, and bytes outside ASCII are not d-chars until P2558 lands in a later standard;
+ * the opening parenthesis never reaches this check, as it ends the delimiter.
  */
 bool is_delimiter_character(const char c)
 {
-    return c != ' ' && c != ')' && c != '\\' && static_cast<unsigned char>(c) > 0x1F && c != 0x7F;
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+    {
+        return true;
+    }
+
+    constexpr std::string_view punctuation{R"(!"#%&'*+,-./:;<=>?[]^_{|}~)"};
+
+    return punctuation.find(c) != std::string_view::npos;
 }
 
 } // namespace

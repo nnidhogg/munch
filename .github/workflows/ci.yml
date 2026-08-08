@@ -82,6 +82,42 @@ jobs:
           cd build
           ctest --output-on-failure
 
+  cmake-floor:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install the exact declared CMake minimum
+        # The floor is only honest while something builds with it: 3.20.0 through 3.20.2 lack the GNU mapping
+        # for cxx_std_23, and newer FetchContent keywords silently misparse on old CMake, so this job configures,
+        # builds, and tests with precisely the version cmake_minimum_required() declares.
+        run: |
+          curl -sLO https://github.com/Kitware/CMake/releases/download/v3.20.6/cmake-3.20.6-linux-x86_64.tar.gz
+          tar xzf cmake-3.20.6-linux-x86_64.tar.gz
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure build with CMake
+        run: |
+          mkdir build
+          cd build
+          ../cmake-3.20.6-linux-x86_64/bin/cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release \
+                -DMUNCH_BUILD_BENCHMARK=OFF
+      - name: Build with CMake
+        run: |
+          cd build
+          ../cmake-3.20.6-linux-x86_64/bin/cmake --build .
+
+      - name: Run tests with CTest
+        run: |
+          cd build
+          ../cmake-3.20.6-linux-x86_64/bin/ctest --output-on-failure
+
   sanitize:
     runs-on: ubuntu-24.04
 

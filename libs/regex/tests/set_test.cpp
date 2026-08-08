@@ -345,3 +345,14 @@ TEST_F(Set_test, Move_assignment)
     s2 = std::move(s1);
     EXPECT_EQ(s2.symbols().size(), 3);
 }
+
+TEST_F(Set_test, Self_subtraction_empties_the_set)
+{
+    // Subtracting a set from itself used to erase the elements being iterated, a use-after-free the sanitizer
+    // flagged; the answer is defined as the empty set and must not touch a dangling iterator.
+    Set set = {'a', 'b', 'c'};
+
+    set -= set;
+
+    EXPECT_TRUE(set.symbols().empty());
+}

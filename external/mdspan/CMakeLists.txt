@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20.6)
 project(munch_mdspan)
 
 add_library(${PROJECT_NAME} INTERFACE)

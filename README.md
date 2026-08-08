@@ -150,7 +150,7 @@ $ ./tools/benchmark/collect.sh ~/munch-run 1,16,128,512 15
 
 It writes `environment.txt` (CPU, visible topology, governor, memory, kernel, toolchain, and whether a hypervisor is
 present), `summary.txt`, and `observations.csv` with every timed pass of the scaling scenarios; the construction,
-planning and thread-launch rows appear in the summary only. It checks its own prerequisites first: CMake 3.20+, a C++23
+planning and thread-launch rows appear in the summary only. It checks its own prerequisites first: CMake 3.20.6+, a C++23
 compiler (GCC 13+ or Clang 19+), and git with network access on the first configure, since four header-only Boost
 libraries and mdspan are cloned at pinned revisions. `-DUSE_SYSTEM_BOOST=ON` skips the Boost clones but not mdspan, so a
 fully offline configure is not supported.
@@ -890,7 +890,7 @@ hatches for constructs beyond regular languages.
   and older cannot compile the tokenizer: libstdc++'s `<expected>` requires `__cpp_concepts >= 202002L`, which Clang
   first reports in 19. GCC 13 has no native `<mdspan>`, which `external/mdspan` (the Kokkos reference implementation)
   supplies via `FetchContent`.
-- CMake 3.20+.
+- CMake 3.20.6+.
 - Everything else (`boost.config`/`describe`/`mp11`/`container_hash`, `mdspan`, `googletest`) is fetched by CMake at
   configure time; there is nothing to install manually. Pass `-DUSE_SYSTEM_BOOST=ON` / `-DUSE_SYSTEM_GTEST=ON` to use
   system packages instead.
@@ -948,7 +948,7 @@ tools/
 munch can be consumed two ways. As a subdirectory, vendored or fetched:
 
 ```cmake
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20.6)
 project(MyProject VERSION 1.0 LANGUAGES CXX)
 
 # Add the munch library

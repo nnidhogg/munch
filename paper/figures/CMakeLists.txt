@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20.6)
 project(munch_paper_figures)
 
 # The applicability table in paper/split-points.tex and docs/split_points.md is not documentation of a measurement,

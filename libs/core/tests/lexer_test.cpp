@@ -1625,6 +1625,11 @@ TEST_F(Lexer_test, Chunk_boundaries_recover_windows_when_no_byte_certifies)
     builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
     builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
 
+    // Discarding identifiers gives the RELAXED byte certificate plenty of bytes, so a fallback that consulted
+    // the relaxed query instead of the exact one would return the degenerate exact plan here and never search
+    // for windows; the exact set stays empty and the window recovery below must still happen.
+    builder.set_ignored_tokens({static_cast<std::size_t>(Token_kind::Identifier)});
+
     const auto lexer{builder.build()};
 
     const auto window{lexer.is_split_window(" a")};

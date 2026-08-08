@@ -83,6 +83,28 @@ TEST(Raw_string_test, Rejects_delimiter_characters_the_standard_forbids)
     EXPECT_FALSE(scan_raw_string("R\"\\(\"", 0).has_value());   // '\' in the delimiter
     EXPECT_FALSE(scan_raw_string("R\"\t(\"", 0).has_value());   // A control character in the delimiter
     EXPECT_FALSE(scan_raw_string("R\"\x7F(\"", 0).has_value()); // DEL in the delimiter
+
+    // C++23 d-chars are the basic character set only: dollar, at-sign, and grave accent arrive with P2558 in a
+    // later standard, and bytes outside ASCII were never members, so a compiler rejects every one of these.
+    EXPECT_FALSE(scan_raw_string("R\"$(x)$\"", 0).has_value());
+    EXPECT_FALSE(scan_raw_string("R\"@(x)@\"", 0).has_value());
+    EXPECT_FALSE(scan_raw_string("R\"`(x)`\"", 0).has_value());
+    EXPECT_FALSE(scan_raw_string("R\"\x80(x)\x80\"", 0).has_value());
+    EXPECT_FALSE(scan_raw_string("R\"\xC3\xA9(x)\xC3\xA9\"", 0).has_value());
+}
+
+TEST(Raw_string_test, Accepts_every_basic_set_delimiter_character)
+{
+    // The whitelist must not overshoot: every legal d-char scans, including the double quote the basic set
+    // surprisingly permits inside a delimiter.
+    const std::string punctuation{R"(!"#%&'*+,-./:;<=>?[]^_{|}~)"};
+
+    for (const char legal : punctuation)
+    {
+        const std::string input{std::string{"R\""} + legal + "(x)" + legal + "\""};
+
+        EXPECT_TRUE(scan_raw_string(input, 0).has_value()) << legal;
+    }
 }
 
 TEST(Raw_string_test, Rejects_other_input)

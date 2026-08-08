@@ -104,6 +104,14 @@ Set& Set::operator+=(const Symbol_t s)
 
 Set& Set::operator-=(const Set& other)
 {
+    // Subtracting a set from itself would erase the elements being iterated; the answer is the empty set.
+    if (this == &other)
+    {
+        symbols_.clear();
+
+        return *this;
+    }
+
     std::ranges::for_each(other.symbols_, [this](const Symbol_t s) { symbols_.erase(s); });
 
     return *this;

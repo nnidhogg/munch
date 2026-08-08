@@ -660,3 +660,21 @@ TEST_F(Dfa_test, Oversized_state_identifier_throws_before_the_count_wraps)
 
     EXPECT_THROW((Simulator{dfa}), std::runtime_error);
 }
+
+TEST_F(Dfa_test, Graphviz_accepts_a_bare_filename)
+{
+    // A bare filename has an empty parent path, and directory creation used to be attempted on it and fail;
+    // only a stated directory may be created.
+    Builder builder;
+
+    builder.add_transition(builder.init_state(), dfa::Label('a'), 1);
+    builder.add_accept_state(1, dfa::Token{1});
+
+    const std::filesystem::path bare{"graphviz_bare_test.dot"};
+
+    Graphviz::to_file(builder.build(), bare);
+
+    EXPECT_TRUE(std::filesystem::exists(bare));
+
+    std::filesystem::remove(bare);
+}

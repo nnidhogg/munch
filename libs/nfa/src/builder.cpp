@@ -1,11 +1,46 @@
 #include "munch/nfa/builder.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <ranges>
+#include <stdexcept>
 #include <utility>
 
 namespace munch::nfa
 {
+namespace
+{
+/**
+ * @brief Returns the highest state identifier the builder holds, the allocator's next identifier included.
+ *
+ * The renumbering guard wants the identifier itself rather than a count, so an oversized builder is rejected
+ * before any addition can wrap.
+ */
+std::size_t highest_state(
+        const Nfa::State_t init_state, const Nfa::State_t next_state, const Nfa::Transitions_t& transitions,
+        const Nfa::Accept_states_t& accept_states)
+{
+    auto highest{std::max(init_state, next_state)};
+
+    for (const auto& [key, states] : transitions)
+    {
+        highest = std::max(highest, key.first);
+
+        for (const auto state : states)
+        {
+            highest = std::max(highest, state);
+        }
+    }
+
+    for (const auto state : std::views::keys(accept_states))
+    {
+        highest = std::max(highest, state);
+    }
+
+    return highest;
+}
+} // namespace
+
 Builder::Builder() : init_state_{0}, next_state_{1}
 {}
 
@@ -54,14 +89,14 @@ Builder& Builder::add_epsilon_transition(const Nfa::State_t from, const Nfa::Sta
 
 Builder& Builder::add_accept_state(const Nfa::State_t accept_state)
 {
-    accept_states_.emplace(accept_state, std::nullopt);
+    accept_states_.insert_or_assign(accept_state, std::nullopt);
 
     return *this;
 }
 
 Builder& Builder::add_accept_state(const Nfa::State_t accept_state, const Token& token)
 {
-    accept_states_.emplace(accept_state, token);
+    accept_states_.insert_or_assign(accept_state, token);
 
     return *this;
 }
@@ -86,6 +121,14 @@ Builder& Builder::set_accept_token(const Token& token)
 
 Builder Builder::offset(const std::size_t offset) const
 {
+    // A shift that wraps any identifier would silently collide renumbered states with existing ones and change
+    // the language; composing an automaton that numbers states near the top of the range refuses instead.
+    if (highest_state(init_state_, next_state_, transitions_, accept_states_) >
+        std::numeric_limits<std::size_t>::max() - offset)
+    {
+        throw std::runtime_error("NFA state renumbering would overflow the identifier range");
+    }
+
     Nfa::Transitions_t transitions;
 
     for (const auto& [key, states] : transitions_)
@@ -108,6 +151,11 @@ Builder Builder::offset(const std::size_t offset) const
 
 Builder Builder::prepend_init_state() const
 {
+    if (next_state_ == std::numeric_limits<std::size_t>::max())
+    {
+        throw std::runtime_error("NFA state renumbering would overflow the identifier range");
+    }
+
     Builder nfa{next_state_, next_state_ + 1, transitions_, accept_states_};
 
     nfa.add_epsilon_transition(next_state_, init_state_);
@@ -139,6 +187,11 @@ Builder Builder::merge(const Builder& other) const
     const auto offset_nfa{other.offset(next_state_)};
 
     const auto init_state{offset_nfa.next_state_};
+
+    if (init_state == std::numeric_limits<std::size_t>::max())
+    {
+        throw std::runtime_error("NFA state renumbering would overflow the identifier range");
+    }
 
     Builder nfa{init_state, init_state + 1, transitions_, accept_states_};
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20.6)
 project(munch_probes)
 
 # Programs backing claims made outside this repository, in the same spirit as paper/figures: the numbers are asserted

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <experimental/mdspan>
+#include <limits>
 #include <map>
 #include <ranges>
 #include <set>
@@ -74,6 +75,13 @@ Simulator::Simulator(
     const auto classes{classify(dfa)};
 
     const auto class_count{static_cast<std::size_t>(std::ranges::max(classes)) + 1};
+
+    // The table is class_count rows of states entries; on a 32-bit size_t the product can wrap where the
+    // per-state vectors still allocate, leaving an undersized table under an mdspan of the unwrapped extents.
+    if (states > std::numeric_limits<std::size_t>::max() / class_count)
+    {
+        throw std::runtime_error("DFA transition table size overflows std::size_t");
+    }
 
     for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
     {
