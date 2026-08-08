@@ -1194,6 +1194,258 @@ TEST_F(Lexer_test, Window_planner_reaches_the_four_byte_study_case)
     EXPECT_EQ(boundaries[1], 7U);
 }
 
+TEST_F(Lexer_test, Complete_c_like_grammar_windows_end_to_end)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Integer,
+        String,
+        Comment,
+        Whitespace,
+        Operator,
+    };
+
+    // The study's conventional row as a complete grammar: identifiers, integers, strings whose bodies exclude
+    // the newline, line comments that end before it, whitespace runs that include it, and single-byte
+    // operators. No byte certifies, and the two-byte window of a newline followed by an operator resolves the
+    // origin at the operator, which must begin a token.
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Integer, 2);
+    builder.add_token(concat(text("\""), kleene(any_of(Set::printable())), text("\"")), Token_kind::String, 2);
+    builder.add_token(concat(text("//"), kleene(any_of(Set::all() - Set{'\n'}))), Token_kind::Comment, 1);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+    for (const auto op : {"!", "=", "+", ";", "(", ")", "{", "}"})
+    {
+        builder.add_token(text(op), Token_kind::Operator, 3);
+    }
+
+    const auto lexer{builder.build()};
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        EXPECT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    const auto window{lexer.is_split_window("\n!")};
+
+    ASSERT_TRUE(window.has_value());
+    EXPECT_EQ(*window, 1U);
+
+    // Source with operator-initial lines, the occurrence shape the campaign corpus discloses as favorable.
+    std::string input;
+
+    for (int block{0}; block < 32; ++block)
+    {
+        input += "count = count + 42; // trailing note\n";
+        input += "!(flag) name = \"a (string) with // inside\";\n";
+        input += "!done = 1;\n";
+    }
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(input, 8)};
+
+    ASSERT_GT(boundaries.size(), 2U);
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input, [&serial](const Token_kind kind, const std::size_t length) { serial.emplace_back(kind, length); })};
+
+    ASSERT_EQ(consumed, input.size());
+
+    std::vector<std::pair<Token_kind, std::size_t>> rejoined;
+
+    for (std::size_t index{1}; index < boundaries.size(); ++index)
+    {
+        const std::string_view chunk{input.data() + boundaries[index - 1], boundaries[index] - boundaries[index - 1]};
+
+        const auto part{lexer.tokenize_all<Token_kind>(
+                chunk,
+                [&rejoined](const Token_kind kind, const std::size_t length) { rejoined.emplace_back(kind, length); })};
+
+        ASSERT_EQ(part, chunk.size());
+    }
+
+    EXPECT_EQ(rejoined, serial);
+}
+
+TEST_F(Lexer_test, Complete_json_grammar_windows_end_to_end)
+{
+    enum class Token_kind : uint8_t
+    {
+        String,
+        Number,
+        Punct,
+        Whitespace,
+    };
+
+    // The study's JSON row as a complete grammar: strings, integers, structural punctuation, and whitespace runs
+    // over space, tab, and newline. The tab-then-quote window certifies at the quote, and pretty-printed JSON
+    // contains that occurrence at every indented key, so the favorable shape here is the format's own.
+    Builder_dbg builder;
+
+    builder.add_token(
+            concat(text("\""), kleene(any_of(Set::printable() - Set{'"'})), text("\"")), Token_kind::String, 2);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Number, 2);
+
+    for (const auto punct : {"{", "}", "[", "]", ":", ","})
+    {
+        builder.add_token(text(punct), Token_kind::Punct, 1);
+    }
+
+    builder.add_token(plus(any_of(Set{' '} + '\t' + '\n')), Token_kind::Whitespace, 1);
+
+    const auto lexer{builder.build()};
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        EXPECT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    const auto window{lexer.is_split_window("\t\"")};
+
+    ASSERT_TRUE(window.has_value());
+    EXPECT_EQ(*window, 1U);
+
+    std::string input{"{\n"};
+
+    for (int entry{0}; entry < 64; ++entry)
+    {
+        input += "\t\"key\": [1, 22, 333],\n";
+        input += "\t\"name\": \"value with [brackets] and 42\",\n";
+    }
+
+    input += "\t\"last\": 0\n}";
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(input, 8)};
+
+    ASSERT_GT(boundaries.size(), 2U);
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input, [&serial](const Token_kind kind, const std::size_t length) { serial.emplace_back(kind, length); })};
+
+    ASSERT_EQ(consumed, input.size());
+
+    std::vector<std::pair<Token_kind, std::size_t>> rejoined;
+
+    for (std::size_t index{1}; index < boundaries.size(); ++index)
+    {
+        const std::string_view chunk{input.data() + boundaries[index - 1], boundaries[index] - boundaries[index - 1]};
+
+        const auto part{lexer.tokenize_all<Token_kind>(
+                chunk,
+                [&rejoined](const Token_kind kind, const std::size_t length) { rejoined.emplace_back(kind, length); })};
+
+        ASSERT_EQ(part, chunk.size());
+    }
+
+    EXPECT_EQ(rejoined, serial);
+}
+
+TEST_F(Lexer_test, Complete_c_like_grammar_with_block_comments_windows_end_to_end)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Integer,
+        String,
+        Line_comment,
+        Block_comment,
+        Whitespace,
+        Operator,
+    };
+
+    // The conventional row extended with multiline block comments. A newline may now sit inside a comment, so
+    // every newline-anchored window dies, and only the four-byte family around the comment closer survives: a
+    // guard byte ahead of */ against reading the star as an opener's star, and a newline on one side to defeat
+    // line comments and strings. The origin lands directly after the closer, the study's four-byte mechanism
+    // inside a complete grammar.
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Integer, 2);
+    builder.add_token(concat(text("\""), kleene(any_of(Set::printable())), text("\"")), Token_kind::String, 2);
+    builder.add_token(concat(text("//"), kleene(any_of(Set::all() - Set{'\n'}))), Token_kind::Line_comment, 1);
+
+    const auto not_star{any_of(Set::all() - Set{'*'})};
+
+    const auto stars_then_other{concat(plus(any_of(Set{'*'})), any_of(Set::all() - Set{'*'} - Set{'/'}))};
+
+    builder.add_token(
+            concat(text("/*"), kleene(choice(not_star, stars_then_other)), plus(any_of(Set{'*'})), text("/")),
+            Token_kind::Block_comment, 1);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+    for (const auto op : {"!", "=", "+", ";", "(", ")", "{", "}", "*", "/"})
+    {
+        builder.add_token(text(op), Token_kind::Operator, 3);
+    }
+
+    const auto lexer{builder.build()};
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        EXPECT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    // The conventional row's two-byte window is gone, a block comment can contain both of its bytes.
+    EXPECT_FALSE(lexer.is_split_window("\n!").has_value());
+
+    // The study case's own window is gone too, a line comment can contain all four bytes.
+    EXPECT_FALSE(lexer.is_split_window("\t*/\t").has_value());
+
+    // A closer at the very front is refused, the leading star could be an opener's star with the slash and the
+    // newline still inside the comment.
+    EXPECT_FALSE(lexer.is_split_window("*/\n!").has_value());
+
+    const auto window{lexer.is_split_window(" */\n")};
+
+    ASSERT_TRUE(window.has_value());
+    EXPECT_EQ(*window, 3U);
+
+    // Source where block comments close at line ends, the occurrence shape the surviving windows require.
+    std::string input;
+
+    for (int block{0}; block < 24; ++block)
+    {
+        input += "/* block header\n   spanning two lines */\n";
+        input += "!(flag) total = total + 7; // trailing note\n";
+        input += "text = \"keep /* this */ inline\";\n";
+        input += "value = value * 2 / 4; /* closing note */\n";
+    }
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(input, 8)};
+
+    ASSERT_GT(boundaries.size(), 2U);
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input, [&serial](const Token_kind kind, const std::size_t length) { serial.emplace_back(kind, length); })};
+
+    ASSERT_EQ(consumed, input.size());
+
+    std::vector<std::pair<Token_kind, std::size_t>> rejoined;
+
+    for (std::size_t index{1}; index < boundaries.size(); ++index)
+    {
+        const std::string_view chunk{input.data() + boundaries[index - 1], boundaries[index] - boundaries[index - 1]};
+
+        const auto part{lexer.tokenize_all<Token_kind>(
+                chunk,
+                [&rejoined](const Token_kind kind, const std::size_t length) { rejoined.emplace_back(kind, length); })};
+
+        ASSERT_EQ(part, chunk.size());
+    }
+
+    EXPECT_EQ(rejoined, serial);
+}
+
 TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)
 {
     enum class Token_kind : uint8_t
