@@ -943,8 +943,6 @@ bool validate_windowed(const munch::core::Lexer& lexer, const std::string& input
     return true;
 }
 
-constexpr std::size_t kScalingRows{15};
-
 constexpr std::size_t kLabelWidth{24};
 
 int main(const int argc, const char** argv)
@@ -964,6 +962,27 @@ int main(const int argc, const char** argv)
     const int passes{argc > 2 ? std::atoi(argv[2]) : 15};
 
     const char* const observations{argc > 3 ? argv[3] : nullptr};
+
+    // An optional comma-separated chunk list widens the scaling sweep past the default 1,2,4,8: the pinned
+    // thread sweep wants 3, 6, 12, and 16 to map where per-core efficiency falls on a hybrid part.
+    std::vector<std::size_t> chunk_counts;
+
+    for (const char* cursor{argc > 4 ? argv[4] : "1,2,4,8"}; *cursor != '\0';)
+    {
+        char* end{nullptr};
+
+        chunk_counts.push_back(std::strtoull(cursor, &end, 10));
+
+        cursor = *end == ',' ? end + 1 : end;
+    }
+
+    if (chunk_counts.empty() ||
+        std::find(chunk_counts.begin(), chunk_counts.end(), std::size_t{0}) != chunk_counts.end())
+    {
+        std::fprintf(stderr, "chunk counts must be positive\n");
+
+        return EXIT_FAILURE;
+    }
 
     munch::tools::benchmark::print_provenance("munch benchmark", passes, observations);
 
@@ -1045,7 +1064,9 @@ int main(const int argc, const char** argv)
 
         ok = validate_windowed(conventional, conv, 8) && ok;
 
-        std::vector<char> labels(kScalingRows * kLabelWidth);
+        const auto rows{3 + 3 * chunk_counts.size()};
+
+        std::vector<char> labels(rows * kLabelWidth);
 
         std::vector<Scenario> scenarios;
 
@@ -1067,7 +1088,7 @@ int main(const int argc, const char** argv)
 
         // The single-chunk row runs the parallel API without spawning anything, so it separates the cost of that
         // API and its per-chunk sink from the parallelism the other rows add.
-        for (const std::size_t threads : {1, 2, 4, 8})
+        for (const std::size_t threads : chunk_counts)
         {
             std::snprintf(label(row), kLabelWidth, "chunked%zu/ascii", threads);
 
@@ -1096,7 +1117,7 @@ int main(const int argc, const char** argv)
 
         ++row;
 
-        for (const std::size_t threads : {1, 2, 4, 8})
+        for (const std::size_t threads : chunk_counts)
         {
             std::snprintf(label(row), kLabelWidth, "windowed%zu/conv", threads);
 
