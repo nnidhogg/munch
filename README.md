@@ -907,8 +907,9 @@ existing `build/` directory keeps whatever type it was first configured with.
 
 ## **Testing**
 
-Every library and tool under `libs/` and `tools/` has its own GoogleTest suite in a `tests/` subdirectory, registered
-with CTest. To run them all:
+Each automaton and scanner library under `libs/` has a GoogleTest suite in a `tests/` subdirectory, and the probes
+under `tools/probes/` are self-checking executables; everything is registered with CTest, while the fuzz harnesses run
+as their own CI job instead. To run the registered tests:
 
 ```bash
 cd build

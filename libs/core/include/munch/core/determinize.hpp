@@ -23,6 +23,8 @@ namespace munch::core
  * @param state_limit The largest number of DFA states to discover before throwing; zero means unlimited.
  * @return The constructed DFA.
  * @throws State_limit_error If the state limit is exceeded.
+ * @throws std::runtime_error If the NFA numbers a state beyond the determinizer's 32-bit dense index, whose
+ *         identifiers are used as given rather than remapped.
  */
 [[nodiscard]] dfa::Dfa determinize(const nfa::Nfa& nfa, std::size_t state_limit = 0);
 

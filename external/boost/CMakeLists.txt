@@ -23,25 +23,21 @@ else ()
             boost_config
             GIT_REPOSITORY https://github.com/boostorg/config.git
             GIT_TAG boost-1.90.0
-            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_Declare(
             boost_describe
             GIT_REPOSITORY https://github.com/boostorg/describe.git
             GIT_TAG boost-1.90.0
-            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_Declare(
             boost_mp11
             GIT_REPOSITORY https://github.com/boostorg/mp11.git
             GIT_TAG boost-1.90.0
-            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_Declare(
             boost_container_hash
             GIT_REPOSITORY https://github.com/boostorg/container_hash.git
             GIT_TAG boost-1.90.0
-            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
 
     FetchContent_MakeAvailable(

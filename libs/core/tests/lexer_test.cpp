@@ -19,6 +19,7 @@
 
 #include "munch/common/concepts.hpp"
 #include "munch/core/builder.hpp"
+#include "munch/core/determinize.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/nfa/simulator.hpp"
@@ -1206,6 +1207,73 @@ TEST_F(Lexer_test, Window_planner_reaches_the_four_byte_study_case)
     EXPECT_EQ(boundaries[1], 7U);
 }
 
+TEST_F(Lexer_test, Window_planner_stops_at_the_documented_longest_window)
+{
+    enum class Token_kind : uint8_t
+    {
+        Double_b,
+        Aab,
+        Baa,
+        Triple_a,
+    };
+
+    // Over {bb, aab, baa, aaa} no byte certifies and no window of two to four bytes does, while "baaab"
+    // certifies at 4: the shortest usable certificate is five bytes, one past the planner's documented reach.
+    // The planner must therefore leave the plan degenerate where a longer search would cut, pinning the upper
+    // bound the four-byte study case cannot: widening the cap cuts here and fails the equality below.
+    Builder_dbg builder;
+
+    builder.add_token(text("bb"), Token_kind::Double_b, 1);
+    builder.add_token(text("aab"), Token_kind::Aab, 1);
+    builder.add_token(text("baa"), Token_kind::Baa, 1);
+    builder.add_token(text("aaa"), Token_kind::Triple_a, 1);
+
+    const auto lexer{builder.build()};
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        EXPECT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    // Every window the planner is documented to try refuses; the sweep covers the whole consumable alphabet.
+    for (std::size_t length{2}; length <= 4; ++length)
+    {
+        for (std::size_t pattern{0}; pattern < (std::size_t{1} << length); ++pattern)
+        {
+            std::string window;
+
+            for (std::size_t at{0}; at < length; ++at)
+            {
+                window += (pattern & (std::size_t{1} << at)) != 0 ? 'b' : 'a';
+            }
+
+            EXPECT_FALSE(lexer.is_split_window(window).has_value());
+        }
+    }
+
+    const auto window{lexer.is_split_window("baaab")};
+
+    ASSERT_TRUE(window.has_value());
+    EXPECT_EQ(*window, 4U);
+
+    std::string input;
+
+    for (int block{0}; block < 8; ++block)
+    {
+        input += "bbaaabb";
+    }
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    ASSERT_EQ(
+            input.size(),
+            lexer.tokenize_all<Token_kind>(input, [&serial](const Token_kind kind, const std::size_t length) {
+                serial.emplace_back(kind, length);
+            }));
+
+    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2), (std::vector<std::size_t>{0, input.size()}));
+}
+
 TEST_F(Lexer_test, Complete_c_like_grammar_windows_end_to_end)
 {
     enum class Token_kind : uint8_t
@@ -2106,6 +2174,16 @@ TEST_F(Lexer_test, State_limit_stops_an_exploding_construction)
     EXPECT_EQ(length, 13U);
 }
 
+TEST_F(Lexer_test, Oversized_nfa_state_identifier_throws_before_the_count_wraps)
+{
+    // The determinizer mirrors the DFA simulator's guard: a hand-built NFA may number states sparsely, and the
+    // largest possible identifier used to wrap the dense-index count to zero, narrow the initial state onto an
+    // empty table, and crash in the walk instead of the promised rejection.
+    const nfa::Nfa nfa{std::numeric_limits<std::size_t>::max(), {}, {}};
+
+    EXPECT_THROW(static_cast<void>(determinize(nfa)), std::runtime_error);
+}
+
 TEST_F(Lexer_test, State_limit_leaves_reasonable_grammars_untouched)
 {
     enum class Token_kind : uint8_t
@@ -2722,8 +2800,11 @@ concept Parallel_scan_through = requires(const Lexer& lexer, const Iterator& ite
 };
 
 template <typename Iterator>
-concept Dfa_scan_through = requires(const dfa::Simulator& simulator, const Iterator& iterator) {
-    simulator.run(iterator, iterator);
+concept Dfa_run_through =
+        requires(const dfa::Simulator& simulator, const Iterator& iterator) { simulator.run(iterator, iterator); };
+
+template <typename Iterator>
+concept Dfa_run_all_through = requires(const dfa::Simulator& simulator, const Iterator& iterator) {
     simulator.run_all(iterator, iterator, [](const dfa::Token&, std::size_t, std::uint64_t) {});
 };
 
@@ -2839,7 +2920,8 @@ TEST_F(Lexer_test, Test_container_concepts_require_common_const_ranges)
             !Parallel_scan_through<Bad_iterator>);
 
     // The library scanners beneath the Lexer hold the same line.
-    static_assert(Dfa_scan_through<Good_iterator> && !Dfa_scan_through<Bad_iterator>);
+    static_assert(Dfa_run_through<Good_iterator> && !Dfa_run_through<Bad_iterator>);
+    static_assert(Dfa_run_all_through<Good_iterator> && !Dfa_run_all_through<Bad_iterator>);
     static_assert(Dfa_scan_over<std::string> && !Dfa_scan_over<std::vector<double>> && !Dfa_scan_over<Two_faced>);
     static_assert(Nfa_scan_through<Good_iterator> && !Nfa_scan_through<Bad_iterator>);
     static_assert(Nfa_scan_over<std::string> && !Nfa_scan_over<std::vector<double>> && !Nfa_scan_over<Two_faced>);

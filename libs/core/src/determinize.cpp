@@ -5,9 +5,11 @@
 #include <bit>
 #include <boost/container_hash/hash.hpp>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <queue>
 #include <ranges>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -32,25 +34,34 @@ class Determinizer
 public:
     explicit Determinizer(const munch::nfa::Nfa& nfa, const std::size_t state_limit) : state_limit_{state_limit}
     {
-        auto count{nfa.init_state() + 1};
+        // The highest identifier rather than the count, so an oversized NFA is rejected before the increment,
+        // which would wrap for a hand-built NFA whose highest state is the largest std::size_t.
+        auto highest{nfa.init_state()};
 
         for (const auto& [key, targets] : nfa.transitions())
         {
-            count = std::max(count, key.first + 1);
+            highest = std::max(highest, key.first);
 
             for (const auto target : targets)
             {
-                count = std::max(count, target + 1);
+                highest = std::max(highest, target);
             }
         }
 
         for (const auto state : std::views::keys(nfa.accept_states()))
         {
-            count = std::max(count, state + 1);
+            highest = std::max(highest, state);
         }
 
-        // Dense indices are 32 bits: an NFA approaching four billion states exhausts memory orders of
-        // magnitude earlier, so the narrowing casts onto them cannot truncate in practice.
+        // Dense indices are 32 bits, and identifiers are used as given rather than remapped, so a sparse NFA
+        // numbering states beyond that range is rejected rather than silently truncated onto them.
+        if (highest >= std::numeric_limits<std::uint32_t>::max())
+        {
+            throw std::runtime_error("NFA has too many states for the determinizer's dense index");
+        }
+
+        const auto count{highest + 1};
+
         words_ = (count + 63) / 64;
 
         init_ = static_cast<std::uint32_t>(nfa.init_state());
