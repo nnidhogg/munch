@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -186,6 +188,30 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* const data, const std:
             }
 
             require(certified);
+        }
+
+        // On completely tokenizable input the window theorem promises exact agreement, so fuzz-generated
+        // complete inputs hold the window plan to it: every windowed chunk consumes fully and the concatenation
+        // equals the serial stream. On malformed input the windows contract deliberately promises nothing.
+        if (consumed == input.size())
+        {
+            Stream_t rejoined;
+
+            auto complete{true};
+
+            for (std::size_t index{1}; index < windowed.size(); ++index)
+            {
+                const std::string_view chunk{input.data() + windowed[index - 1], windowed[index] - windowed[index - 1]};
+
+                const auto part{lexer.tokenize_all<unsigned>(
+                        chunk, [&rejoined](const unsigned token, const std::size_t length) {
+                            rejoined.emplace_back(token, length);
+                        })};
+
+                complete = complete && part == chunk.size();
+            }
+
+            require(complete && rejoined == serial);
         }
 
         std::vector<Stream_t> streams(boundaries.size() - 1);

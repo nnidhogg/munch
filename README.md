@@ -1069,8 +1069,10 @@ laboratory bench for anyone studying tokenization itself.
 separate generator step in the edit-run loop. The minimized DFA stays inspectable: `advance()`, `has_accept_token()`,
 and the initial state are queryable, so a probe can walk the compiled tables directly. The scanner is genuine maximal
 munch with real rewind behavior, not an approximation, and its semantics are pinned by the test suite. Properties of the
-compiled token set are first-class queries: `is_split_point()` derives certified bytes from the compiled token set
-before input exists, and `chunk_boundaries()` applies those certificates to supplied input.
+compiled token set are first-class queries: `is_split_point()` derives certified bytes and `is_split_window()`
+decides certified split windows from the compiled token set before input exists; `chunk_boundaries()` applies the
+byte certificates to supplied input unconditionally, and `chunk_boundaries_with_windows()` additionally recovers
+window cuts under the window certificate's completely-tokenizable condition.
 
 **The methodology ships with the code.** The probes under `tools/probes/` show the working pattern: figures are printed
 and asserted, so a drifted number fails the build rather than a reader; oracles are exhaustive over declared finite

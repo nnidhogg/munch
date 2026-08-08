@@ -182,17 +182,16 @@ public:
      * conditional on occurrence; a window no completely tokenizable input contains satisfies it vacuously, and
      * this decision does not establish that an occurrence exists. A caller that has just found W in its input at
      * hand holds that occurrence, and on completely tokenizable input the promise applies to it directly; past
-     * the offset where a serial scan would first fail, the promise carries only what tokenize_all_parallel()
-     * documents.
+     * the offset where a serial scan of malformed input first fails, the promise carries nothing.
      *
      * The decision runs the conservative cloud model over the compiled tables: every live state starts as a
      * hypothesis whose token began before the window, each byte advances hypotheses deterministically, a fresh
      * token may begin exactly where some represented history just ended one, and reading from a non-re-entrant
      * initial state begins a token at that offset. The window is certified when every surviving hypothesis
      * agrees on one in-window origin. A refusal is model-relative: the model deliberately refuses some windows a
-     * greedy scanner would allow, and refusal never proves that no certificate exists semantically. At length
-     * one this coincides exactly with is_split_point(). Nullable token sets are outside the proved scope and are
-     * refused outright, matching the predicate's withdrawal of its initial-state exemption.
+     * greedy scanner would allow, and refusal never proves that no certificate exists semantically. On
+     * non-nullable token sets this coincides at length one with is_split_point(); nullable sets are outside the
+     * window proof and refused outright here, while the byte predicate can still certify for them.
      */
     [[nodiscard]] std::optional<std::size_t> is_split_window(std::string_view window) const;
 
@@ -204,8 +203,9 @@ public:
      * @brief Returns whether some token matches the empty string, the compiled signature being an accepting
      *        initial state.
      *
-     * Nullable token sets sit outside the certified split point and split window soundness proofs; both refuse
-     * their certificates there, and a planner consults this before spending any search on windows.
+     * Nullable token sets sit outside the split window soundness proof, and every window is refused for them.
+     * The byte predicate instead withdraws only its initial-state exemption there, so byte certificates can
+     * remain; a planner consults this before spending any search on windows, never to discard a byte plan.
      */
     [[nodiscard]] bool nullable() const noexcept { return (flags_[init_state_] & accept_flag_) != 0; }
 

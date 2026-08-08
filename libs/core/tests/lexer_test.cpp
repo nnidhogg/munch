@@ -946,6 +946,77 @@ TEST_F(Lexer_test, Window_fallback_degrades_honestly_and_the_equality_check_has_
     EXPECT_NE(wrongly_chunked, serial);
 }
 
+TEST_F(Lexer_test, Malformed_input_keeps_the_default_prefix_guarantee_and_windows_promise_nothing)
+{
+    enum class Token_kind : uint8_t
+    {
+        T,
+    };
+
+    // The reviewer's minimal vector: over {a, aa, ab, bc} the serial scan of "abc" takes ab and fails at c,
+    // consuming two of three. The default plan stays byte-only and reproduces exactly that. The window plan
+    // legally cuts at the certified "bc" occurrence, both fragments consume fully, and the concatenation is not
+    // even a prefix of the serial stream: full per-chunk consumption proves nothing about the whole input, which
+    // is precisely the conditional contract chunk_boundaries_with_windows() documents.
+    Builder_dbg builder;
+
+    builder.add_token(choice(choice(text("a"), text("aa")), choice(text("ab"), text("bc"))), Token_kind::T, 1);
+
+    const auto lexer{builder.build()};
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        EXPECT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    const auto window{lexer.is_split_window("bc")};
+
+    ASSERT_TRUE(window.has_value());
+    EXPECT_EQ(*window, 0U);
+
+    const std::string input{"abc"};
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input, [&serial](const Token_kind kind, const std::size_t length) { serial.emplace_back(kind, length); })};
+
+    EXPECT_EQ(consumed, 2U);
+    EXPECT_EQ(serial, (std::vector<std::pair<Token_kind, std::size_t>>{{Token_kind::T, 2}}));
+
+    EXPECT_EQ(lexer.chunk_boundaries(input, 3), (std::vector<std::size_t>{0, input.size()}));
+
+    std::vector<std::pair<Token_kind, std::size_t>> parallel;
+
+    const auto per_chunk{lexer.tokenize_all_parallel<Token_kind>(
+            input, 3, [&parallel](const std::size_t, const Token_kind kind, const std::size_t length) {
+                parallel.emplace_back(kind, length);
+            })};
+
+    EXPECT_EQ(per_chunk, (std::vector<std::size_t>{2}));
+    EXPECT_EQ(parallel, serial);
+
+    const auto windowed{lexer.chunk_boundaries_with_windows(input, 3)};
+
+    EXPECT_EQ(windowed, (std::vector<std::size_t>{0, 1, 3}));
+
+    std::vector<std::pair<Token_kind, std::size_t>> rejoined;
+
+    for (std::size_t index{1}; index < windowed.size(); ++index)
+    {
+        const std::string_view chunk{input.data() + windowed[index - 1], windowed[index] - windowed[index - 1]};
+
+        const auto part{lexer.tokenize_all<Token_kind>(
+                chunk,
+                [&rejoined](const Token_kind kind, const std::size_t length) { rejoined.emplace_back(kind, length); })};
+
+        EXPECT_EQ(part, chunk.size());
+    }
+
+    EXPECT_EQ(rejoined, (std::vector<std::pair<Token_kind, std::size_t>>{{Token_kind::T, 1}, {Token_kind::T, 2}}));
+    EXPECT_NE(rejoined.front(), serial.front());
+}
+
 TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)
 {
     enum class Token_kind : uint8_t

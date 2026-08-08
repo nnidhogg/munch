@@ -171,12 +171,13 @@ public:
      *
      * The multi-byte generalization of is_split_point(): where the byte certificate promises that every occurrence
      * begins a token, a certified window (W, o) promises that in every completely tokenizable input containing W,
-     * the token covering the occurrence's final byte begins exactly o bytes into it. At length one the two coincide.
-     * The certificate is conditional on occurrence and this call does not establish that one exists; a caller that
-     * found W in its own input holds an occurrence, and the promise applies to it on completely tokenizable input,
-     * with tokenize_all_parallel()'s documentation governing what survives past a serial failure offset. Refusals
-     * are model-relative and conservative, never proof that no certificate exists; nullable token sets are refused
-     * outright. Derived from the compiled transition table; see dfa::Simulator::is_split_window().
+     * the token covering the occurrence's final byte begins exactly o bytes into it. On non-nullable token sets
+     * the two coincide at length one; a nullable set can certify bytes while every window is refused here. The
+     * certificate is conditional on occurrence and this call does not establish that one exists; a caller that
+     * found W in its own input holds an occurrence, the promise applies to it on completely tokenizable input,
+     * and nothing survives past the offset where a serial scan of malformed input first fails, the consequence
+     * chunk_boundaries_with_windows() documents. Refusals are model-relative and conservative, never proof that
+     * no certificate exists. Derived from the compiled transition table; see dfa::Simulator::is_split_window().
      */
     [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const
     {
@@ -280,8 +281,9 @@ public:
      * From each equal-division target the input is walked for the first occurrence of a window of two to four
      * bytes that is_split_window() certifies, and the cut is placed at the occurrence plus the reported origin.
      * Each decision is memoized per distinct byte string, so the walk prices like the byte walk on realistic
-     * text; when neither bytes nor windows certify, or the token set is nullable and outside both proofs, the
-     * single whole-input chunk results.
+     * text. A nullable token set contributes no windows, since the window proof excludes it, though its byte
+     * plan, when any, stands untouched; when neither certificate offers cuts, the single whole-input chunk
+     * results.
      *
      * The window guarantee is conditional where the byte certificate's is not: a certified window pins the
      * covering token's origin at occurrences in completely tokenizable input, a property of the whole input
@@ -387,7 +389,7 @@ public:
     /**
      * @brief Range overload of chunk_boundaries_with_windows(begin, end, chunks).
      */
-    template <std::ranges::random_access_range Container>
+    template <common::concepts::Random_access_iterable Container>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
             const Container& container, const std::size_t chunks) const
     {
