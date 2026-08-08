@@ -2,7 +2,10 @@
 #define MUNCH_LIBS_COMMON_INCLUDE_MUNCH_COMMON_CONCEPTS_HPP
 
 #include <concepts>
+#include <cstddef>
+#include <iterator>
 #include <ranges>
+#include <type_traits>
 
 namespace munch::common::concepts
 {
@@ -33,6 +36,48 @@ concept Iterable = std::ranges::common_range<const T>;
  */
 template <typename T>
 concept Random_access_iterable = std::ranges::common_range<const T> && std::ranges::random_access_range<const T>;
+
+/**
+ * @brief Concept that checks if a dereferenced element reads as a byte.
+ *
+ * Integral elements qualify, wider ones under the scanners' documented modulo-256 reading, and so does std::byte.
+ * Floating-point elements do not: converting an unrepresentable floating value to an integral type is undefined,
+ * so such inputs are rejected at overload resolution rather than deep inside a scan.
+ * @tparam T The dereferenced element type to check.
+ */
+template <typename T>
+concept Byte = std::integral<std::remove_cvref_t<T>> || std::same_as<std::remove_cvref_t<T>, std::byte>;
+
+/**
+ * @brief Concept that checks if a type is an input iterator over bytes.
+ * @tparam T The type to check.
+ */
+template <typename T>
+concept Byte_iterator = Iterator<T> && Byte<std::iter_reference_t<T>>;
+
+/**
+ * @brief Concept that checks if a type is a random-access iterator over bytes.
+ * @tparam T The type to check.
+ */
+template <typename T>
+concept Random_access_byte_iterator = std::random_access_iterator<T> && Byte<std::iter_reference_t<T>>;
+
+/**
+ * @brief Concept that checks if a type is a range iterating as bytes.
+ *
+ * The element is checked against const T, for the reason Iterable states: a range that yields bytes only from
+ * mutable iteration would satisfy a looser concept and still fail inside the body.
+ * @tparam T The type to check.
+ */
+template <typename T>
+concept Byte_iterable = Iterable<T> && Byte<std::ranges::range_reference_t<const T>>;
+
+/**
+ * @brief Concept that checks if a type is a random-access range iterating as bytes.
+ * @tparam T The type to check.
+ */
+template <typename T>
+concept Random_access_byte_iterable = Random_access_iterable<T> && Byte<std::ranges::range_reference_t<const T>>;
 
 } // namespace munch::common::concepts
 

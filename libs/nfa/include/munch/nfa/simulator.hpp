@@ -37,7 +37,7 @@ public:
      * @param end Iterator to the end of the input.
      * @return The match: the token, if any, and the length it consumed.
      */
-    template <common::concepts::Iterator Iterator>
+    template <common::concepts::Byte_iterator Iterator>
     [[nodiscard]] static Match run(const Nfa& nfa, Iterator begin, Iterator end)
     {
         auto states{nfa.epsilon_closure({nfa.init_state()})};
@@ -72,7 +72,7 @@ public:
      * @param container The input container.
      * @return The match: the token, if any, and the length it consumed.
      */
-    template <common::concepts::Iterable Container>
+    template <common::concepts::Byte_iterable Container>
     [[nodiscard]] static auto run(const Nfa& nfa, const Container& container)
     {
         return run(nfa, std::ranges::begin(container), std::ranges::end(container));

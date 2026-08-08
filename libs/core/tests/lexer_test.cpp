@@ -1092,7 +1092,14 @@ TEST_F(Lexer_test, Window_refusals_pin_the_nullable_guard_and_the_live_target_fi
     dead_tail.add_token(concat(text("ab"), any_of(Set{})), Token_kind::Identifier, 1);
     dead_tail.add_token(text("b"), Token_kind::Operator, 1);
 
-    EXPECT_FALSE(dead_tail.build().is_split_window("ab").has_value());
+    const auto dead_lexer{dead_tail.build()};
+
+    EXPECT_FALSE(dead_lexer.is_split_window("ab").has_value());
+
+    // The acceptance-gated seed has its own live-target filter, and the window "a" reaches it alone: every
+    // direct history steps dead, so the only hypothesis a mutant could keep alive is the fresh seed landing in
+    // the dead tail. Dropping just that filter certifies "a" at 0 where the cloud must empty and refuse.
+    EXPECT_FALSE(dead_lexer.is_split_window("a").has_value());
 }
 
 TEST_F(Lexer_test, Malformed_input_keeps_the_serial_prefix_across_real_cuts)
@@ -2448,6 +2455,22 @@ TEST_F(Lexer_test, Parallel_tokenization_propagates_a_throwing_sink)
     EXPECT_THROW(scan(lexer.chunk_boundaries(input, 4).size() - 2), std::runtime_error);
 }
 
+// The dependent probes for the byte-domain assertions below: a requires-expression over concrete types is checked
+// as ordinary code, so viability at each entry point is asked through these instead.
+template <typename Container>
+concept Byte_input = requires(const Lexer& lexer, const Container& container) {
+    lexer.chunk_boundaries(container, std::size_t{2});
+    lexer.chunk_boundaries_with_windows(container, std::size_t{2});
+    lexer.template tokenize<int>(container);
+    lexer.template tokenize_all<int>(container, [](int, std::size_t) {});
+};
+
+template <typename Iterator>
+concept Byte_iterator_input = requires(const Lexer& lexer, const Iterator& iterator) {
+    lexer.chunk_boundaries(iterator, iterator, std::size_t{2});
+    lexer.template tokenize_all<int>(iterator, iterator, [](int, std::size_t) {});
+};
+
 TEST_F(Lexer_test, Test_container_concepts_require_common_const_ranges)
 {
     using munch::common::concepts::Iterable;
@@ -2489,6 +2512,37 @@ TEST_F(Lexer_test, Test_container_concepts_require_common_const_ranges)
     EXPECT_EQ(lexer.tokenize<int>(common), Lexer::Match<int>(std::nullopt, 0));
 
     EXPECT_EQ(lexer.chunk_boundaries(common, 2), (std::vector<std::size_t>{0, 4}));
+
+    // The byte domain: integral elements qualify, wider ones under the documented modulo-256 reading, and so does
+    // std::byte; floating and non-byte elements fall out at overload resolution instead of failing inside a scan.
+    using munch::common::concepts::Random_access_byte_iterable;
+
+    static_assert(Random_access_byte_iterable<std::string>);
+    static_assert(Random_access_byte_iterable<std::vector<std::uint8_t>>);
+    static_assert(Random_access_byte_iterable<std::vector<int>>);
+    static_assert(Random_access_byte_iterable<std::array<std::byte, 4>>);
+    static_assert(!Random_access_byte_iterable<std::vector<double>>);
+    static_assert(!Random_access_byte_iterable<std::vector<std::string>>);
+
+    // A range that yields bytes from mutable iteration but something else from const iteration is judged by its
+    // const face, the one every container overload receives.
+    struct Two_faced
+    {
+        [[nodiscard]] char* begin() { return nullptr; }
+        [[nodiscard]] char* end() { return nullptr; }
+        [[nodiscard]] const std::string* begin() const { return nullptr; }
+        [[nodiscard]] const std::string* end() const { return nullptr; }
+    };
+
+    static_assert(!Random_access_byte_iterable<Two_faced>);
+
+    // The rejection happens at the interface of every entry point, container and iterator alike.
+    static_assert(Byte_input<std::string>);
+    static_assert(!Byte_input<std::vector<double>>);
+    static_assert(!Byte_input<std::vector<std::string>>);
+    static_assert(!Byte_input<Two_faced>);
+    static_assert(Byte_iterator_input<std::string_view::iterator>);
+    static_assert(!Byte_iterator_input<std::vector<double>::const_iterator>);
 }
 
 TEST_F(Lexer_test, Test_ignored_tokens_reject_non_integral_initializers)

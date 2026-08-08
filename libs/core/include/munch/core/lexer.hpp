@@ -57,7 +57,7 @@ public:
      * @param end Iterator to the end of the input.
      * @return The match: the token, if any, and the length it consumed.
      */
-    template <typename T, common::concepts::Iterator Iterator>
+    template <typename T, common::concepts::Byte_iterator Iterator>
         requires(std::integral<T> || std::is_enum_v<T>)
     [[nodiscard]] Match<T> tokenize(Iterator begin, Iterator end) const
     {
@@ -73,7 +73,7 @@ public:
      * @param container The input container.
      * @return The match: the token, if any, and the length it consumed.
      */
-    template <typename T, common::concepts::Iterable Container>
+    template <typename T, common::concepts::Byte_iterable Container>
         requires(std::integral<T> || std::is_enum_v<T>)
     [[nodiscard]] Match<T> tokenize(const Container& container) const
     {
@@ -99,7 +99,7 @@ public:
      * @return The number of input elements tokenized; anything short of the input's size means no token matched at
      *         the returned offset, unless the sink stopped the scan.
      */
-    template <typename T, std::random_access_iterator Iterator, typename Sink>
+    template <typename T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires(std::integral<T> || std::is_enum_v<T>) &&
                 (std::invocable<Sink&, T, std::size_t> || std::invocable<Sink&, T, std::size_t, std::uint64_t>)
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink) const
@@ -130,7 +130,7 @@ public:
      * @return The number of input elements tokenized; anything short of the container's size means no token matched
      *         at the returned offset.
      */
-    template <typename T, common::concepts::Random_access_iterable Container, typename Sink>
+    template <typename T, common::concepts::Random_access_byte_iterable Container, typename Sink>
         requires(std::integral<T> || std::is_enum_v<T>) &&
                 (std::invocable<Sink&, T, std::size_t> || std::invocable<Sink&, T, std::size_t, std::uint64_t>)
     std::size_t tokenize_all(const Container& container, Sink sink) const
@@ -206,7 +206,7 @@ public:
      *        behaves as one, the whole input as a single chunk.
      * @return Offsets from 0 to the input size inclusive; adjacent pairs delimit the chunks.
      */
-    template <std::random_access_iterator Iterator>
+    template <common::concepts::Random_access_byte_iterator Iterator>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries(
             Iterator begin, Iterator end, const std::size_t chunks) const
     {
@@ -271,8 +271,7 @@ public:
     /**
      * @brief Computes chunk boundaries for parallel tokenization of a whole container.
      */
-    template <common::concepts::Random_access_iterable Container>
-        requires std::convertible_to<std::ranges::range_value_t<Container>, char>
+    template <common::concepts::Random_access_byte_iterable Container>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries(const Container& container, const std::size_t chunks) const
     {
         return chunk_boundaries(std::ranges::begin(container), std::ranges::end(container), chunks);
@@ -284,8 +283,9 @@ public:
      *
      * From each equal-division target the input is walked for the first occurrence of a window of two to four
      * bytes that is_split_window() certifies, and the cut is placed at the occurrence plus the reported origin.
-     * Each decision is memoized per distinct byte string, so the walk's cost is bounded by the distinct windows
-     * tried rather than by input positions; no representative-corpus pricing is claimed until one is measured. A
+     * Each decision is memoized per distinct byte string, so cloud evaluations are bounded by the distinct
+     * windows tried, while the positional scan and its memo lookups still scale with the positions examined; no
+     * representative-corpus pricing is claimed until one is measured. A
      * nullable token set contributes no windows, since the window proof excludes it, though its byte plan, when any,
      * stands untouched; when neither certificate offers cuts, the single whole-input chunk results.
      *
@@ -302,7 +302,7 @@ public:
      * @param chunks The number of chunks aimed for; fewer result when neither certificate offers cuts.
      * @return Offsets from 0 to the input size inclusive; adjacent pairs delimit the chunks.
      */
-    template <std::random_access_iterator Iterator>
+    template <common::concepts::Random_access_byte_iterator Iterator>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
             Iterator begin, Iterator end, const std::size_t chunks) const
     {
@@ -327,8 +327,8 @@ public:
         // bytes. A grammar needing longer windows degrades to fewer chunks, never to an unsafe cut.
         constexpr std::size_t longest{4};
 
-        // One decision per distinct byte string per plan: real text repeats its windows, so the walk prices
-        // like the byte walk instead of one cloud walk per position.
+        // One decision per distinct byte string per plan: memoization caps cloud evaluations at the distinct
+        // windows tried, while the position loop and its lookups remain per position examined.
         std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
 
         std::size_t window_target{0};
@@ -393,8 +393,7 @@ public:
     /**
      * @brief Range overload of chunk_boundaries_with_windows(begin, end, chunks).
      */
-    template <common::concepts::Random_access_iterable Container>
-        requires std::convertible_to<std::ranges::range_value_t<Container>, char>
+    template <common::concepts::Random_access_byte_iterable Container>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
             const Container& container, const std::size_t chunks) const
     {
@@ -424,7 +423,7 @@ public:
      * @return The number of input elements tokenized per chunk, aligned with chunk_boundaries(begin, end,
      *         chunks); an entry short of its chunk's size means no token matched at that offset of the chunk.
      */
-    template <typename T, std::random_access_iterator Iterator, typename Sink>
+    template <typename T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, std::size_t, T, std::size_t>
     [[nodiscard]] std::vector<std::size_t> tokenize_all_parallel(
             Iterator begin, Iterator end, const std::size_t chunks, Sink sink) const
@@ -484,7 +483,7 @@ public:
     /**
      * @brief Tokenizes a whole container as concurrent chunks split at certified safe split points.
      */
-    template <typename T, common::concepts::Random_access_iterable Container, typename Sink>
+    template <typename T, common::concepts::Random_access_byte_iterable Container, typename Sink>
         requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, std::size_t, T, std::size_t>
     [[nodiscard]] std::vector<std::size_t> tokenize_all_parallel(
             const Container& container, const std::size_t chunks, Sink sink) const

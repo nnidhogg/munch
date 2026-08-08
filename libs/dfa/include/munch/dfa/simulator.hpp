@@ -2,12 +2,12 @@
 #define MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_SIMULATOR_HPP
 
 #include <array>
+#include <concepts>
 #include <cstdint>
 #include <iterator>
 #include <limits>
 #include <optional>
 #include <ranges>
-#include <set>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -237,7 +237,7 @@ public:
      * @param end Iterator to the end of the input.
      * @return The match: the token, if any, and the length it consumed.
      */
-    template <common::concepts::Iterator Iterator>
+    template <common::concepts::Byte_iterator Iterator>
     [[nodiscard]] Match run(Iterator begin, Iterator end) const
     {
         if (begin == end)
@@ -292,7 +292,7 @@ public:
      * @param container The input container.
      * @return The match: the token, if any, and the length it consumed.
      */
-    template <common::concepts::Iterable Container>
+    template <common::concepts::Byte_iterable Container>
     [[nodiscard]] Match run(const Container& container) const
     {
         return run(std::ranges::begin(container), std::ranges::end(container));
@@ -314,7 +314,7 @@ public:
      *         the returned offset, unless the sink stopped the scan. Input elements are read as unsigned char, so
      *         wider element types reduce modulo 256.
      */
-    template <std::random_access_iterator Iterator, typename Sink>
+    template <common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires std::invocable<Sink&, const Token&, std::size_t, std::uint64_t>
     std::size_t run_all(Iterator begin, Iterator end, Sink sink) const
     {

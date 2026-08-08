@@ -429,9 +429,10 @@ static_assert(kSubsetBudget == 200'000, "the paper states a fixed safety thresho
  *
  * The library ports the walk this probe states and proves; they are two implementations of one model and must
  * never diverge, certificates and refusals alike. The named rows' pinned windows, the strictness refusals, the
- * legacy and vacuity grammars, and every model-positive random pair also ask the shipped decision; the check
- * count is pinned so silently skipping checks fails, and a single disagreement fails the suite. Coverage is
- * those sites, not exhaustive equivalence.
+ * legacy and vacuity grammars, the full length-one sweep of every named and every non-nullable random grammar,
+ * and every model-positive random pair also ask the shipped decision; the check count is pinned so silently
+ * skipping checks fails, and a single disagreement fails the suite. Coverage is those sites, not exhaustive
+ * equivalence.
  */
 std::size_t g_port_checks{0};
 
@@ -1166,7 +1167,13 @@ std::size_t random_grammars(
             {
                 const std::string one(1, static_cast<char>(symbol));
 
-                const auto model{predicted(dfa, live, one, reentrant).has_value()};
+                const auto at{predicted(dfa, live, one, reentrant)};
+
+                // The random grammars cross-check the shipped window port too, certificates and refusals both,
+                // not only the byte predicate.
+                cross_check(lexer, one, at);
+
+                const auto model{at.has_value()};
 
                 const auto shipped{lexer.is_split_point(static_cast<char>(symbol))};
 
@@ -2326,7 +2333,7 @@ int main()
             "  %-30s %zu checks against the probe's model, %zu disagreements%s\n", "shipped window decision",
             g_port_checks, g_port_disagreements, g_port_disagreements == 0 ? "" : "   <- PORT DIVERGES");
 
-    ok = g_port_disagreements == 0 && g_port_checks == 4253 && random_disagreements == 0 && usable == 134 &&
+    ok = g_port_disagreements == 0 && g_port_checks == 38557 && random_disagreements == 0 && usable == 134 &&
          nullable == 266 && with_certificate == 39 && usable - with_certificate == 95 && rescued == 91 &&
          witnessed_rescued == 91 && proved_none == 4 && inconclusive == 0 && g_exercised_total == 1'079'392 &&
          g_exercised_tokenizable == 418'466 && g_exercised_total - g_exercised_tokenizable == 660'926 &&
