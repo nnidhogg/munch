@@ -82,6 +82,40 @@ jobs:
           cd build
           ctest --output-on-failure
 
+  build-and-test-arm:
+    runs-on: ubuntu-24.04-arm
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure build with CMake
+        # Plain char is unsigned on this architecture, the opposite of the x86-64 jobs, so this build exercises
+        # the byte-carrier convention live: symbols are stored as char and given meaning only through unsigned
+        # char at every use site, and nothing anywhere may depend on the carrier's signedness.
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_BENCHMARK=OFF
+
+      - name: Build with CMake
+        run: |
+          cd build
+          cmake --build .
+
+      - name: Run tests with CTest
+        run: |
+          cd build
+          ctest --output-on-failure
+
   cmake-floor:
     runs-on: ubuntu-24.04
 
