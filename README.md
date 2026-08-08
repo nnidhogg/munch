@@ -1107,8 +1107,8 @@ The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_l
 accepting both arities is called with two, which is what it was called with before the payload existed, so an existing
 sink keeps its behaviour.
 
-The supported platform is Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests, sanitizes,
-and fuzzes; other platforms may work but carry no promise. Semantic versioning covers source compatibility only. munch
+The supported platform is 64-bit Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests,
+sanitizes, and fuzzes; other platforms, 32-bit ones included, may work but carry no promise. Semantic versioning covers source compatibility only. munch
 builds as static libraries by default and honours `BUILD_SHARED_LIBS`; either way the result is meant to be compiled by
 the consumer, so no ABI stability is promised between any two versions.
 
