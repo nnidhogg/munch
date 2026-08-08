@@ -78,6 +78,9 @@ Simulator::Simulator(
 
     // The table is class_count rows of states entries; on a 32-bit size_t the product can wrap where the
     // per-state vectors still allocate, leaving an undersized table under an mdspan of the unwrapped extents.
+    // On a 64-bit size_t this call is dead code, the entry-width guard above caps states below 2^32 and
+    // classes never exceed 256, so no test on the platforms that run the suite can pin this call site; the
+    // helper's arithmetic is pinned in its own right, and this line is the wiring a 32-bit build relies on.
     if (table_size_overflows(states, class_count, std::numeric_limits<std::size_t>::max()))
     {
         throw std::runtime_error("DFA transition table size overflows std::size_t");

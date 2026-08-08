@@ -126,13 +126,14 @@ jobs:
         # a silent deletion fails rather than passes.
         run: |
           pattern='^[[:space:]]*cmake_minimum_required\('
+          exact='^[[:space:]]*cmake_minimum_required\(VERSION 3\.20\.6\)[[:space:]]*$'
           declared=$(git grep -hiE "$pattern" -- '*CMakeLists.txt' '.github/workflows' | wc -l)
           if [ "$declared" != "15" ]; then
             echo "expected 15 cmake_minimum_required declarations, found $declared"
             exit 1
           fi
-          if git grep -hiE "$pattern" -- '*CMakeLists.txt' '.github/workflows' | grep -iv "VERSION 3.20.6"; then
-            echo "a declaration names a different minimum than this job tests"
+          if git grep -hiE "$pattern" -- '*CMakeLists.txt' '.github/workflows' | grep -ivE "$exact"; then
+            echo "a declaration is not exactly the minimum this job tests"
             exit 1
           fi
 
