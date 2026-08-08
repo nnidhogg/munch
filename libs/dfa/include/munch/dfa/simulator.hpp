@@ -30,7 +30,10 @@ namespace munch::dfa
 [[nodiscard]] constexpr bool table_size_overflows(
         const std::size_t states, const std::size_t classes, const std::size_t limit) noexcept
 {
-    return states > limit / classes;
+    // A table of zero classes has zero entries and cannot overflow; stated explicitly because the division
+    // would otherwise be undefined, and a public constexpr function answers for every input, not only the one
+    // to two hundred fifty-six classes the constructor supplies.
+    return classes != 0 && states > limit / classes;
 }
 
 /**

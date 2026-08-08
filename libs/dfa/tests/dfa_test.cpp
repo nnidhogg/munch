@@ -691,6 +691,17 @@ TEST_F(Dfa_test, Table_size_overflow_arithmetic_is_pinned_on_every_platform)
     static_assert(!table_size_overflows(16777215U, 256U, limit_32));
     static_assert(!table_size_overflows(1024U, 256U, limit_32));
 
-    // And on the actual platform limit the realistic maxima stay far from the edge.
-    static_assert(!table_size_overflows(limit_32, 256U, std::numeric_limits<std::size_t>::max()));
+    // Zero classes means zero entries, never an overflow and never a division.
+    static_assert(!table_size_overflows(limit_32, 0U, limit_32));
+
+    // A product one past the platform limit distinguishes the checked division from an unchecked
+    // multiplication, which would wrap to zero here and answer false on every width.
+    static_assert(table_size_overflows(
+            std::numeric_limits<std::size_t>::max() / 2 + 1, 2U, std::numeric_limits<std::size_t>::max()));
+
+    // On a 64-bit limit the maximal state count with every class distinct stays far from the edge; on a
+    // 32-bit one it does not, which is this guard's reason to exist, so the platform claim is width-guarded.
+    static_assert(
+            sizeof(std::size_t) < 8 || !table_size_overflows(limit_32, 256U, std::numeric_limits<std::size_t>::max()));
+    static_assert(table_size_overflows(limit_32, 256U, limit_32));
 }

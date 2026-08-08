@@ -121,9 +121,18 @@ jobs:
       - name: Check every declared minimum matches the version this job tests
         # Without this coupling the job proves only that 3.20.6 works, not that the tree declares it: a
         # CMakeLists declaring an older floor would pass here while promising consumers a version that fails.
+        # Line-anchored so only real declarations count, case-insensitive because CMake commands are, the
+        # install-consumer fixture is included, and the declaration count is pinned like the gate's figures so
+        # a silent deletion fails rather than passes.
         run: |
-          if git grep -h "cmake_minimum_required" -- '*CMakeLists.txt' | grep -v "VERSION 3.20.6"; then
-            echo "a CMakeLists.txt declares a different minimum than this job tests"
+          pattern='^[[:space:]]*cmake_minimum_required\('
+          declared=$(git grep -hiE "$pattern" -- '*CMakeLists.txt' '.github/workflows' | wc -l)
+          if [ "$declared" != "15" ]; then
+            echo "expected 15 cmake_minimum_required declarations, found $declared"
+            exit 1
+          fi
+          if git grep -hiE "$pattern" -- '*CMakeLists.txt' '.github/workflows' | grep -iv "VERSION 3.20.6"; then
+            echo "a declaration names a different minimum than this job tests"
             exit 1
           fi
 
@@ -274,7 +283,7 @@ jobs:
         run: |
           mkdir -p consumer
           cat > consumer/CMakeLists.txt <<'EOF'
-          cmake_minimum_required(VERSION 3.20)
+          cmake_minimum_required(VERSION 3.20.6)
           project(consumer CXX)
 
           set(CMAKE_CXX_STANDARD 23)

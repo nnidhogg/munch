@@ -98,8 +98,7 @@ public:
 
     /**
      * @brief Returns a new Builder with all state indices offset by the given value.
-     * @throws std::runtime_error If the shift would overflow any state identifier; the same guard protects
-     *         prepend_init_state(), append(), merge(), and merge_all(), which renumber through this.
+     * @throws std::runtime_error If the shift would overflow any state identifier.
      * @param offset The value to offset state indices by.
      * @return A new Builder with offset state indices.
      */
@@ -111,6 +110,7 @@ public:
      * The prepended state has no incoming transitions, giving repetition constructions a loop-back target that is
      * distinct from any state of the enclosed NFA.
      * @return A new Builder with the prepended initial state.
+     * @throws std::runtime_error If no identifier remains for the fresh initial state.
      */
     [[nodiscard]] Builder prepend_init_state() const;
 
@@ -118,6 +118,7 @@ public:
      * @brief Returns a new Builder by appending another Builder's NFA.
      * @param other The Builder to append.
      * @return A new Builder representing the appended NFA.
+     * @throws std::runtime_error If renumbering the appended operand would overflow the identifier range.
      */
     [[nodiscard]] Builder append(const Builder& other) const;
 
@@ -129,6 +130,8 @@ public:
      * states are kept.
      * @param other The Builder to merge.
      * @return A new Builder representing the merged NFA.
+     * @throws std::runtime_error If renumbering the merged operand would overflow the identifier range, or if
+     *         no identifier remains for the fresh root.
      */
     [[nodiscard]] Builder merge(const Builder& other) const;
 
@@ -139,6 +142,7 @@ public:
      * and chains one extra initial state each, quadratic work that dominates lowering the generated Unicode
      * classes; this single pass renumbers every alternative once and adds one initial state in total.
      * @param builders The builders to merge; read, not consumed.
+     * @throws std::runtime_error If renumbering any merged operand would overflow the identifier range.
      * @return The merged Builder.
      */
     [[nodiscard]] static Builder merge_all(std::span<const Builder> builders);
