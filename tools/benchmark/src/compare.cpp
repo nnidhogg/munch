@@ -503,7 +503,7 @@ bool scan_lexertl_nested(const lexertl::state_machine& sm, const std::string& in
  * @brief Code carrying block comments that nest, which the measured grammars count rather than bound.
  *
  * The LANGUAGE of arbitrarily nested comments is not regular, since counting to an unbounded depth is what one
- * finite automaton cannot do. This corpus nests only to depth four, and a bounded depth IS regular: a flat grammar
+ * finite automaton cannot do. This corpus nests only to depth four, and a bounded depth is regular: a flat grammar
  * could unroll four levels into distinct states and tokenize it. What the corpus measures is therefore the cost of
  * the stack both engines actually use, not a reach a flat grammar is denied here.
  * @param size The minimum size of the input in bytes.
@@ -826,7 +826,7 @@ bool compare_modes(const std::size_t mebibytes, const int passes, const char* co
             "\ncorpus modes: %.2f bytes per token, string interiors scanned by both\n",
             static_cast<double>(input.size()) / static_cast<double>(munch_stream->size()));
 
-    // The same language expressed WITHOUT modes, as a flat grammar treating a string literal as one token. Its
+    // The same language expressed without modes, as a flat grammar treating a string literal as one token. Its
     // stream is deliberately different, so it is validated only for completeness rather than against the two mode
     // engines; the point of the row is the price of modes, which docs/limits.md quotes.
     using namespace munch::regex;

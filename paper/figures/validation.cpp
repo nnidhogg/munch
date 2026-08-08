@@ -10,7 +10,7 @@
  *
  * The third is that the condition is conservative. A percentage from a random sweep says as much about the generator
  * as about the condition, so the sweep counts are asserted for reproducibility while the report leans on a named
- * WITNESS instead: a specific small token set, written out below, where splitting is safe modulo the ignored set and
+ * witness instead: a specific small token set, written out below, where splitting is safe modulo the ignored set and
  * the condition still refuses. That is checkable by hand and does not move when the generator changes.
  */
 

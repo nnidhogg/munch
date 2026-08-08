@@ -1,7 +1,7 @@
-// Searches for candidate multi-byte WINDOWS in the grammars whose single-byte certificate is empty, and checks the
+// Searches for candidate multi-byte windows in the grammars whose single-byte certificate is empty, and checks the
 // search's model against the shipped scanner.
 //
-// THE MODEL BELOW IS CONSERVATIVE AND PROVED SOUND. It reports windows it can justify and refuses ones it cannot,
+// The model below is conservative and proved sound. It reports windows it can justify and refuses ones it cannot,
 // so its counts are a lower bound on what genuinely certifies, never an upper one. The proof is stated here in
 // full so the probe stands alone, with or without the companion paper that states the same model and argument.
 // A second adversarial read confirmed it on 2026-08-05,
@@ -14,19 +14,19 @@
 //
 // NOTATION. Fix an input x whose window W = w_0 ... w_{k-1} occupies offsets [t, t+k), with k >= 1. Maximal munch
 // gives x a unique boundary set. C_j is the cloud after the model has consumed the first j bytes of the window. For
-// j in 1..k let sigma_j be the start of the token containing the byte at t+j-1 IN THE FINAL GREEDY SEGMENTATION,
+// j in 1..k let sigma_j be the start of the token containing the byte at t+j-1 in the final greedy segmentation,
 // let rho_j = delta*(q0, x[sigma_j .. t+j)) be that token's prefix state after consuming through byte t+j-1, and
 // let omega_j be sigma_j - t, or "before" when sigma_j < t.
 //
 // REPRESENTATION LEMMA. For every j in 1..k, the pair (rho_j, omega_j) is in C_j. Note what this does and does not
-// say: rho_j is the prefix state of the token the FINAL segmentation assigns to that byte, not wherever the
+// say: rho_j is the prefix state of the token the final segmentation assigns to that byte, not wherever the
 // scanner's read head happens to be. Speculative lookahead that is later rewound away occupies other states, and
 // the lemma says nothing about them.
 //
 // Every rho_j is live: reachable by construction, and co-accessible because its token ends at some e >= t+j in an
 // accepting state with x[t+j .. e) carrying rho_j there.
 //
-// BASE, j = 1. If sigma_1 < t then omega_1 is "before", the state p = delta*(q0, x[sigma_1 .. t)) is live and so
+// Base, j = 1. If sigma_1 < t then omega_1 is "before", the state p = delta*(q0, x[sigma_1 .. t)) is live and so
 // lies in C_0, which is all of L paired with "before", and the direct branch carries it to (rho_1, before) with the
 // origin intact. The begins rename cannot interfere for the same reason it cannot in the step: p has consumed at
 // least one byte, so p = q0 only if a non-empty live path returns to q0, which makes init_reentrant true and begins
@@ -35,12 +35,12 @@
 // live accepting state: the grammar has a token, and that token's accepting state is reachable and trivially
 // co-accessible.
 //
-// STEP, j to j+1. Two cases for the byte at t+j.
+// Step, j to j+1. Two cases for the byte at t+j.
 //
 //   It continues its token, sigma_{j+1} = sigma_j. Then rho_{j+1} = delta(rho_j, w_j), live as above, and the
 //   direct branch carries the pair with its origin unchanged. The begins rename does not overwrite that origin,
 //   which is the one place the implementation's "begins ? at : origin" needs its own argument: the rename fires
-//   only when the pre-step state is q0 AND q0 is not re-entrant. Here rho_j has consumed at least the byte at
+//   only when the pre-step state is q0 and q0 is not re-entrant. Here rho_j has consumed at least the byte at
 //   t+j-1, so if rho_j = q0 then a non-empty live path returns to q0, which is exactly what init_reentrant
 //   detects, so it is true, begins is false, and the origin survives. Where q0 is genuinely not re-entrant,
 //   rho_j = q0 cannot arise and the case is vacuous.
@@ -55,7 +55,7 @@
 // by the lemma, so omega_k = o, so sigma_k = t + o, which is a boundary. Since x was an arbitrary completely
 // tokenized input containing W at t, the certificate holds in every context.
 //
-// Backup never appears in the argument. The model tracks where tokens BEGIN rather than what the scanner reads, so
+// Backup never appears in the argument. The model tracks where tokens begin rather than what the scanner reads, so
 // a boundary backup later exposes was already seeded when the accepting position justifying it was crossed.
 //
 // It replaced an earlier model whose transition restarted a trajectory whenever it could not consume the byte,
@@ -94,13 +94,13 @@
 // thereafter wherever some tracked state accepts, because a token can only begin where the previous one ended and
 // one can only end where the automaton accepted. The cloud therefore represents every way the input can be cut into
 // token words, not only the greedy way, which is what makes it independent of backup and also what makes it
-// conservative. The window is certified when every surviving trajectory agrees on a start offset INSIDE it.
+// conservative. The window is certified when every surviving trajectory agrees on a start offset inside it.
 // Agreement on the state alone is not enough, since learning that the scan is inside a string literal is knowledge
 // rather than a boundary.
 //
 // Longest-match backup is what makes the model non-obvious. A token that cannot extend does not end at the byte
 // that killed it; the scan rewinds to the last accepting position and re-reads. The model never simulates that,
-// because it tracks where tokens BEGIN rather than what the scanner reads: a boundary backup later exposes was
+// because it tracks where tokens begin rather than what the scanner reads: a boundary backup later exposes was
 // seeded when the accepting position justifying it was crossed. That is the proof's step for a byte beginning a
 // token, and it is why the failure restart had to go rather than be repaired. backup_disagreements() is therefore
 // a check on the implementation rather than evidence for the model, and it asserts the scanner never disagrees. Its
@@ -111,7 +111,7 @@
 //
 // A backup check over inputs that never rewind proves nothing, so each row declares whether its own check exercises
 // a rewind and that declaration is asserted. The first seven rows do not, which is a fact about the inputs this
-// search builds rather than about the grammars: the block-comment grammar CAN rewind, on an unfinished comment
+// search builds rather than about the grammars: the block-comment grammar can rewind, on an unfinished comment
 // opener after the slash has been accepted, but no window it reports produces one. Seven search rows plus the
 // named abx check carry the backup evidence over six distinct mechanisms, two of the rows sharing the
 // short-token-then-longer-token gap: that gap, a numeric exponent, a float competing with a range operator, an
@@ -119,7 +119,7 @@
 //
 // Random grammars are the strongest check here. Hand-picked ones are what hid the origin defect, and they hid a
 // second: the model treated reading from the initial state as always beginning a token, which is false when a
-// nullable pattern makes that state re-entrant. An earlier UNFILTERED sweep of four hundred found 18 disagreements
+// nullable pattern makes that state re-entrant. An earlier unfiltered sweep of four hundred found 18 disagreements
 // from that one cause, and none of the named rows had a re-entrant initial state to expose it. The sweep now
 // excludes nullable grammars, since the soundness proof does not cover them, so that count is history rather than
 // something this program still reports.
@@ -328,7 +328,7 @@ std::optional<Cloud_t> step(
  * exact rather than an over-approximation, since origins arriving from different predecessors are necessarily distinct
  * and cannot be double counted. The pre-window origin is held apart in its own support set. The quotient is therefore a
  * transition congruence over reachable clouds, and the walk decides exactly whether a window exists under this
- * model and what its minimum length is. It does NOT enumerate every certified
+ * model and what its minimum length is. It does not enumerate every certified
  * word: prefixes reaching the same key collapse to one representative, so witnesses are examples rather than the
  * full set. At most 6^|Q+| configurations, so it terminates.
  */
@@ -425,6 +425,26 @@ constexpr std::size_t kSubsetBudget{200'000};
 static_assert(kSubsetBudget == 200'000, "the paper states a fixed safety threshold of 200,000 keys");
 
 /**
+ * @brief Cross-checks of the shipped core::Lexer::is_split_window() against this probe's model, and disagreements.
+ *
+ * The library ports the walk this probe states and proves; they are two implementations of one model and must
+ * never diverge, certificates and refusals alike. The named rows' pinned windows, the strictness refusals, the
+ * legacy and vacuity grammars, and every model-positive random pair also ask the shipped decision; the check
+ * count is pinned so silently skipping checks fails, and a single disagreement fails the suite. Coverage is
+ * those sites, not exhaustive equivalence.
+ */
+std::size_t g_port_checks{0};
+
+std::size_t g_port_disagreements{0};
+
+void cross_check(const munch::core::Lexer& lexer, const std::string& window, const std::optional<std::size_t>& model)
+{
+    ++g_port_checks;
+
+    g_port_disagreements += lexer.is_split_window(window) == model ? 0 : 1;
+}
+
+/**
  * @brief How many bytes the model and the shipped predicate disagree about at length one.
  */
 std::size_t single_byte_disagreements(const Dfa& dfa, const munch::core::Lexer& lexer, const States_t& live)
@@ -437,8 +457,13 @@ std::size_t single_byte_disagreements(const Dfa& dfa, const munch::core::Lexer& 
     {
         const std::string one(1, static_cast<char>(symbol));
 
-        disagreements +=
-                predicted(dfa, live, one, reentrant).has_value() != lexer.is_split_point(static_cast<char>(symbol));
+        const auto at{predicted(dfa, live, one, reentrant)};
+
+        // Refusals and certificates alike: the length-one sweep is where the port's refusal side gets its
+        // coverage, two hundred fifty-six answers per grammar.
+        cross_check(lexer, one, at);
+
+        disagreements += at.has_value() != lexer.is_split_point(static_cast<char>(symbol));
     }
 
     return disagreements;
@@ -615,33 +640,14 @@ std::vector<std::pair<std::string, std::size_t>> certified_words_upto(
 std::size_t g_witness_disagreements{0};
 
 /**
- * @brief Cross-checks of the shipped core::Lexer::is_split_window() against this probe's model, and disagreements.
- *
- * The library ports the walk this probe states and proves; they are two implementations of ONE model and must
- * never diverge, certificates and refusals alike. Every place the probe computes a concrete window's answer also
- * asks the shipped decision, the check count is pinned so silently skipping checks fails, and a single
- * disagreement fails the suite.
- */
-std::size_t g_port_checks{0};
-
-std::size_t g_port_disagreements{0};
-
-void cross_check(const munch::core::Lexer& lexer, const std::string& window, const std::optional<std::size_t>& model)
-{
-    ++g_port_checks;
-
-    g_port_disagreements += lexer.is_split_window(window) == model ? 0 : 1;
-}
-
-/**
  * @brief A completely tokenizable input containing one of the given certified windows, if the bounded search
  *        finds one.
  *
- * The witness is the evidence that a certified window is USEFUL rather than vacuous: some completely tokenizable
+ * The witness is the evidence that a certified window is useful rather than vacuous: some completely tokenizable
  * input contains it. Contexts are the same (state, distance) prefix family the backup check uses, crossed with
  * tails drawn from the grammar's own accepted words plus fixed generic tails, and an input counts only when the
  * scan consumes it exactly and the token covering the window's final byte begins at the predicted origin. Failure
- * to find a witness within this bounded family is NOT proof of vacuity, and callers must not report it as one.
+ * to find a witness within this bounded family is not proof of vacuity, and callers must not report it as one.
  */
 std::optional<std::pair<std::string, std::string>> find_witness(
         const Dfa& dfa, const munch::core::Lexer& lexer, const States_t& live,
@@ -1251,9 +1257,9 @@ struct Row
     /**
      * @brief Whether the backup check's own generated inputs are expected to rewind.
      *
-     * A claim about those inputs, not about the grammar: several rows whose grammars CAN rewind produce no rewind
+     * A claim about those inputs, not about the grammar: several rows whose grammars can rewind produce no rewind
      * over the windows this search reports. The C-like block-comment grammar is one, since an unfinished comment
-     * opener rewinds onto the accepted slash. Where a rewind IS expected the check must be shown to exercise one,
+     * opener rewinds onto the accepted slash. Where a rewind is expected the check must be shown to exercise one,
      * or its agreement proves nothing about backup.
      */
     bool rewinds_expected;
@@ -1293,8 +1299,8 @@ bool live_usable(const Dfa& dfa, const States_t& live)
  * @brief Asserts that a window the model REFUSES is nonetheless semantically certified, by exhaustive oracle.
  *
  * These are the strictness witnesses: the model's conservatism is real, so every negative claim must stay
- * model-relative. A row passes only when the model refuses the window AND, in every completely tokenizable input
- * over the alphabet up to the bound, the token COVERING the window's final byte begins exactly at the claimed
+ * model-relative. A row passes only when the model refuses the window and, in every completely tokenizable input
+ * over the alphabet up to the bound, the token covering the window's final byte begins exactly at the claimed
  * origin at every occurrence, which is the property the model certifies. The occurrence count is asserted
  * exactly, so a widened corpus that widens nothing cannot pass unnoticed.
  */
@@ -1302,10 +1308,10 @@ bool live_usable(const Dfa& dfa, const States_t& live)
  * @brief Exhaustively counts window occurrences in completely tokenized inputs over the alphabet, and how many
  *        violate the covering-token claim: the token containing the window's final byte begins at the origin.
  *
- * The start of the token COVERING each position is the property the model certifies. Checking merely that SOME
+ * The start of the token covering each position is the property the model certifies. Checking merely that some
  * token begins at the origin passes false witnesses: over {a, abx, b, x} and "ab" at origin 0, the input "ab"
  * tokenizes as a|b, a token does begin at offset 0, and yet the token covering the window's final byte begins at
- * 1. The strictness rows and the teeth row both count through THIS one implementation, so a weakened comparison
+ * 1. The strictness rows and the teeth row both count through this one implementation, so a weakened comparison
  * here erases the teeth row's pinned 59,049 violations and fails the suite; the two rows cross-check one oracle
  * rather than trusting two copies.
  */
@@ -1426,7 +1432,7 @@ bool strict_refusal(
 }
 
 /**
- * @brief Asserts the oracle itself has teeth: a family where the model refuses AND the semantics genuinely fail.
+ * @brief Asserts the oracle itself has teeth: a family where the model refuses and the semantics genuinely fail.
  *
  * The weak some-token-begins-at-the-origin check waves this family through: over {a, abx, b, x} at "ab", the
  * input "ab" tokenizes as a|b, a token does begin at offset 0, yet the token covering the window's final byte
@@ -1696,7 +1702,12 @@ bool run(const Row& row, Builder_dbg& builder)
 
     if (!example.empty())
     {
-        if (const auto at{predicted(dfa, live, example, reentrant)})
+        const auto at{predicted(dfa, live, example, reentrant)};
+
+        // The displayed window is a named claim of the paper's table, so the shipped decision answers it too.
+        cross_check(lexer, example, at);
+
+        if (at)
         {
             example_has_origin = true;
 
@@ -1704,7 +1715,7 @@ bool run(const Row& row, Builder_dbg& builder)
         }
     }
 
-    // The occurrence witness: a complete tokenization containing THE DISPLAYED window, pinned per positive row.
+    // The occurrence witness: a complete tokenization containing the displayed window, pinned per positive row.
     // Witnessing some other certified word of the same grammar would leave the table's own window unattested,
     // so the search is restricted to the example the row displays.
     std::vector<std::pair<std::string, std::size_t>> witness_words;
@@ -1931,7 +1942,7 @@ int main()
     }
     {
         // Strictness witness two, the same construction at greater prefix depth: the competing origin comes from
-        // an accepting proper prefix INSIDE the longer token, and the disagreement appears
+        // an accepting proper prefix inside the longer token, and the disagreement appears
         // two bytes into the window instead of one.
         using namespace munch::regex;
 
@@ -2077,7 +2088,7 @@ int main()
         // The legacy regression: the discarded restart transition, kept executable so the refutation stated in
         // the header and the paper can never silently drift back into folklore. The variant replaced the
         // acceptance-gated seed with failure restart; over {a, abc, bx, x} its cloud on "abx" ends certifying
-        // origin 2, a certificate that is FALSE at the witnessed occurrence "abx", which tokenizes a|bx with
+        // origin 2, a certificate that is false at the witnessed occurrence "abx", which tokenizes a|bx with
         // the covering token at offset 1. All three sides are asserted here on the same builder: the discarded
         // transition must certify 2, the repaired model must certify 1, and the scanner must consume "abx"
         // completely with boundaries 0 and 1.
@@ -2162,7 +2173,7 @@ int main()
         ok = legacy_ok && ok;
     }
     {
-        // False-origin controls: the witness search and the rewind comparison must each REJECT a deliberately
+        // False-origin controls: the witness search and the rewind comparison must each reject a deliberately
         // wrong origin, or their origin checks could be weakened without any pinned figure moving, since on a
         // sound tree those checks otherwise never fire. Same grammar as the legacy regression, same window, the
         // discarded model's false origin 2 against the true origin 1.
@@ -2281,7 +2292,7 @@ int main()
             "window applicability", usable - with_certificate, rescued, proved_none, inconclusive);
 
     // Model-positive against occurrence-witnessed: Definition 1 permits vacuity, so the applicability claim rests
-    // on the witnessed count. The unwitnessed remainder is UNRESOLVED under this bounded search, never negative.
+    // on the witnessed count. The unwitnessed remainder is unresolved under this bounded search, never negative.
     std::printf(
             "  %-30s %zu of %zu model-positive grammars have an occurrence-witnessed certificate, %zu unresolved\n",
             "witnessed applicability", witnessed_rescued, rescued, rescued - witnessed_rescued);
@@ -2315,7 +2326,7 @@ int main()
             "  %-30s %zu checks against the probe's model, %zu disagreements%s\n", "shipped window decision",
             g_port_checks, g_port_disagreements, g_port_disagreements == 0 ? "" : "   <- PORT DIVERGES");
 
-    ok = g_port_disagreements == 0 && g_port_checks == 399 && random_disagreements == 0 && usable == 134 &&
+    ok = g_port_disagreements == 0 && g_port_checks == 4253 && random_disagreements == 0 && usable == 134 &&
          nullable == 266 && with_certificate == 39 && usable - with_certificate == 95 && rescued == 91 &&
          witnessed_rescued == 91 && proved_none == 4 && inconclusive == 0 && g_exercised_total == 1'079'392 &&
          g_exercised_tokenizable == 418'466 && g_exercised_total - g_exercised_tokenizable == 660'926 &&

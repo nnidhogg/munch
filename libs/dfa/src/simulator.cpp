@@ -391,7 +391,7 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
     {
         const auto row{row_offsets_[static_cast<unsigned char>(window[at])]};
 
-        // A token can only end where the automaton accepted, so a boundary BEFORE this byte is possible exactly
+        // A token can only end where the automaton accepted, so a boundary before this byte is possible exactly
         // where some tracked state accepts. The test runs on the cloud as it stands, ahead of the step.
         auto accepting{false};
 

@@ -19,8 +19,9 @@ You describe the language, and the library builds the automaton. On
 the [comparison below](#comparison-with-other-engines), that automaton measures as the fastest of the run-time-built
 lexers measured there, in both languages and on both benchmark corpora; only compile-time code generation measures
 ahead. The compiled table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned
-in parallel with strong scaling and a provably identical token stream, a guarantee none of the code-generating lexers
-measured here derives or checks for its own token sets.
+in parallel with strong scaling and, for input the serial scan tokenizes completely, a provably identical token
+stream, with a serial-prefix guarantee on malformed input; none of the code-generating lexers measured here derives
+or checks such a guarantee for its own token sets.
 
 The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal munch rule every lexer lives by.
 
@@ -680,7 +681,8 @@ interior admits the candidate byte disqualifies it, which is enough to leave a c
 nothing. Since the tokens responsible are usually the ones a parser throws away, `set_ignored_tokens()` lets a builder
 declare them, and `is_split_point_ignoring(symbol)` then answers a weaker question: is splitting here safe once those
 tokens are deleted from both streams? It is sound and never admits less than `is_split_point()`, but it is conservative
-rather than exact, and the guarantee it carries is correspondingly weaker, so a caller that keeps those tokens must use
+rather than exact, and the guarantee it carries is correspondingly weaker on two counts: it holds only for input the
+serial scan tokenizes completely, with no malformed-input prefix analogue, and a caller that keeps those tokens must use
 `is_split_point()` instead. It recovers newline for a conventional C-like token set and newline, tab and carriage return
 for a JSON lexer, in both cases without changing the token definitions:
 
@@ -1092,7 +1094,9 @@ munch follows semantic versioning. The stable surface is what this README docume
 `diagnose()`, `set_state_limit()`, and `set_ignored_tokens()`, `core::determinize()`, `core::Lexer` with `Match`,
 `tokenize()`, `tokenize_all()`, `is_split_point()`, `is_split_point_ignoring()`, `chunk_boundaries()`, and
 `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
-arrive in minor versions.
+arrive in minor versions. The window layer, `is_split_window()` and `chunk_boundaries_with_windows()`, is present on
+master ahead of its release and joins that surface in 1.4.0; the release the companion paper cites, v1.3.3, deliberately
+ships no window-planning API.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did

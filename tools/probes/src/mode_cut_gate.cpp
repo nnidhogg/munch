@@ -1,7 +1,7 @@
 // Asserts the measurement behind the single-byte mode-cut obstruction.
 //
 // For a cut at a byte to need no context reconstruction, this route asks three things to hold at once. They are
-// SUFFICIENT for a context-free cut, not necessary: two modes emitting the same tokens onward would also admit one
+// Sufficient for a context-free cut, not necessary: two modes emitting the same tokens onward would also admit one
 // without either being identified, which is why what follows is an obstruction rather than an impossibility.
 //
 //   1. the byte begins a token NO MATTER WHICH MODE the scan is in, or the worker cannot know it is between tokens;

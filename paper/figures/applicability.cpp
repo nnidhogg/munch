@@ -743,7 +743,7 @@ int main()
 
     // The framing construction: a byte no token admits in its interior, given a rule of its own, is certified
     // outright by the shipped predicate even for the token set that certifies nothing. 0x1E is ASCII RECORD
-    // SEPARATOR, reserved for exactly this.
+    // Separator, reserved for exactly this.
     {
         munch::core::Builder b;
 

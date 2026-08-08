@@ -1,9 +1,9 @@
-// Measures what a certified split WINDOW is worth as a parallel cut, on the grammar the window search rescues:
-// C-like with string literals, whose exact single-byte certificate is empty. The published planner cannot help
-// here; this probe plans boundaries at window-recovered origins, PROVES the chunked stream equals the serial one
+// Measures what a certified split window is worth as a parallel cut, on the grammar the window search rescues:
+// C-like with string literals, whose exact single-byte certificate is empty. Byte planning cannot help here;
+// this probe plans boundaries at window-recovered origins, PROVES the chunked stream equals the serial one
 // before any clock starts, and only then times the comparison.
 //
-// EVERY NUMBER PRINTED HERE IS RUN-LOCAL. The program stamps commit and dirty-state provenance into its CSV and
+// Every number printed here is run-local. The program stamps commit and dirty-state provenance into its CSV and
 // stdout, collect.sh records the environment, and paper/data/ holds the committed campaign archives; even so, no
 // figure from a casual run may be quoted anywhere without the collect.sh ritual on a quiet machine. The
 // assertions are the point; the throughput lines only accompany them.
@@ -410,7 +410,7 @@ double elapsed_s(const std::chrono::steady_clock::duration elapsed)
  * @brief Scans the corpus in the chunks the edges delimit: one jthread per interior chunk, the last chunk on the
  *        calling thread, per-chunk tallies spliced in stream order.
  *
- * This is the ONE scan machinery every timed path shares, byte-planned and window-planned alike, so a throughput
+ * This is the one scan machinery every timed path shares, byte-planned and window-planned alike, so a throughput
  * ratio compares plans and nothing else. The tally work is the observable workload on every path, its results are
  * validated by the callers after every timed pass, and being used is what keeps the compiler from discarding it.
  */
@@ -518,7 +518,7 @@ bool exact_match(
 }
 
 /**
- * @brief The same measurement on a grammar carrying BOTH certificates: split-friendly C-like plus strings.
+ * @brief The same measurement on a grammar carrying both certificates: split-friendly C-like plus strings.
  *
  * Newline is exactly certified there, so the shipped byte planner and the window planner run on the same corpus
  * and the window path's cost is priced against the native one, which is the comparison the campaign owes. Both

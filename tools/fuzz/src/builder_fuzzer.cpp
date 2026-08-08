@@ -190,7 +190,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* const data, const std:
             require(certified);
         }
 
-        // On completely tokenizable input the window theorem promises exact agreement, so fuzz-generated
+        // On completely tokenizable input the window theorem promises exact agreement for non-nullable token
+        // sets, and a nullable set's plan here is its byte plan, which promises the same, so fuzz-generated
         // complete inputs hold the window plan to it: every windowed chunk consumes fully and the concatenation
         // equals the serial stream. On malformed input the windows contract deliberately promises nothing.
         if (consumed == input.size())

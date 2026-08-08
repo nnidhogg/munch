@@ -312,8 +312,9 @@ token `a*`, where serial scanning of `aa` emits one token of length two and spli
 difference the caller can see. With the token discarded the same split is safe, and the three conditions grant it: a
 re-entered initial state is allowed to consume the byte on exactly the terms every other state is.
 
-Splitting at such a byte preserves the token stream after discarded tokens are deleted from both sides. The guarantee is
-weaker than Section 3's, and it must be kept distinct:
+Splitting at such a byte preserves the token stream after discarded tokens are deleted from both sides, and only for
+input the serial scan tokenizes completely: unlike the exact certificate's serial-prefix result, the relaxed guarantee
+has no malformed-input analogue at all. The guarantee is weaker than Section 3's, and it must be kept distinct:
 
 | | exact certificate | modulo *I* |
 | --- | --- | --- |
@@ -505,9 +506,10 @@ Correctness is enforced at three levels. The benchmark checks that the eight-chu
 is identical to the serial one by exact (kind, length) comparison before the scaling rows it protects; the timed rows
 carry a lighter per-pass check of consumed chunk lengths against a recomputed plan plus a token tally, so every chunked
 row plans twice. The unit suite carries the certification counterexamples, including the re-entrant-initial-state case.
-And the fuzzer generates arbitrary grammars and inputs, checks every planned boundary against `is_split_point`, and
-compares the concatenated parallel stream with the serial stream on every execution; local extended fuzzing and a
-bounded fuzzing job on every CI run have found no violation.
+And the fuzzer generates arbitrary grammars and inputs, checks every planned boundary against `is_split_point`,
+requires the serial stream to be a prefix of the concatenated parallel stream on every execution, and requires exact
+equality whenever the serial scan consumes the whole input; local extended fuzzing and a bounded fuzzing job on every
+CI run have found no violation.
 
 ## 8 Limitations and future work
 

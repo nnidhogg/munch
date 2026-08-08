@@ -733,8 +733,9 @@ TEST_F(Lexer_test, Split_windows_generalize_the_byte_certificate)
         Operator,
     };
 
-    // The refutation grammar from the certified-windows study: no single byte certifies, but the three-byte
-    // window "abx" pins the covering token of its final byte to origin 1, the occurrence tokenizing as a|bx.
+    // The refutation grammar from the certified-windows study: the byte certificate reaches only "a", which
+    // cannot cut inside the window, while the three-byte window "abx" pins the covering token of its final byte
+    // to origin 1, the occurrence tokenizing as a|bx.
     Builder_dbg builder;
 
     builder.add_token(text("a"), Token_kind::Identifier, 2);
@@ -803,8 +804,10 @@ TEST_F(Lexer_test, Split_windows_stay_conservative_and_scoped)
 
     EXPECT_FALSE(plus_lexer.is_split_window("a").has_value());
     EXPECT_FALSE(plus_lexer.is_split_window("aa").has_value());
+    EXPECT_FALSE(plus_lexer.is_split_window("aaaaa").has_value());
+    EXPECT_FALSE(plus_lexer.is_split_window("aaaaaa").has_value());
 
-    // Nullable token sets sit outside the soundness proof's scope and are refused outright, matching the byte
+    // Nullable token sets sit outside the window soundness proof and are refused outright, matching the byte
     // predicate's withdrawal of its initial-state exemption. The empty window certifies nothing either.
     Builder_dbg nullable;
 
@@ -908,7 +911,8 @@ TEST_F(Lexer_test, Window_fallback_degrades_honestly_and_the_equality_check_has_
 
     EXPECT_EQ(exhausted, (std::vector<std::size_t>{0, runs.size()}));
 
-    // A nullable set sits outside both proofs and takes the same degradation without any window search.
+    // A nullable set contributes no windows, the window proof excludes it, and with no byte certificate either
+    // it takes the same degradation without any window search.
     Builder_dbg nullable;
 
     nullable.add_token(kleene(text("a")), Token_kind::Identifier, 1);
@@ -918,7 +922,7 @@ TEST_F(Lexer_test, Window_fallback_degrades_honestly_and_the_equality_check_has_
 
     EXPECT_EQ(refused, (std::vector<std::size_t>{0, runs.size()}));
 
-    // The teeth of the equality check above: a deliberately wrong cut inside a token must NOT reproduce the
+    // The teeth of the equality check above: a deliberately wrong cut inside a token must not reproduce the
     // serial stream, so the assertion that plans do reproduce it is falsifiable, not decorative.
     Builder_dbg words;
 
@@ -1013,8 +1017,181 @@ TEST_F(Lexer_test, Malformed_input_keeps_the_default_prefix_guarantee_and_window
         EXPECT_EQ(part, chunk.size());
     }
 
-    EXPECT_EQ(rejoined, (std::vector<std::pair<Token_kind, std::size_t>>{{Token_kind::T, 1}, {Token_kind::T, 2}}));
-    EXPECT_NE(rejoined.front(), serial.front());
+    ASSERT_EQ(rejoined, (std::vector<std::pair<Token_kind, std::size_t>>{{Token_kind::T, 1}, {Token_kind::T, 2}}));
+    EXPECT_NE(rejoined, serial);
+}
+
+TEST_F(Lexer_test, Default_planning_uses_the_exact_certificate_never_the_relaxed_one)
+{
+    enum class Token_kind : uint8_t
+    {
+        Run,
+        Operator,
+    };
+
+    // With the run declared ignored, the relaxed map certifies bytes the exact map refuses; the default planner
+    // must plan with the exact certificate only, or malformed input loses the serial-prefix guarantee the
+    // relaxed certificate never carried.
+    Builder_dbg builder;
+
+    builder.add_token(plus(text("a")), Token_kind::Run, 1);
+    builder.add_token(text("b"), Token_kind::Operator, 1);
+    builder.set_ignored_tokens({static_cast<std::size_t>(Token_kind::Run)});
+
+    const auto lexer{builder.build()};
+
+    ASSERT_TRUE(lexer.is_split_point_ignoring('a'));
+    ASSERT_FALSE(lexer.is_split_point('a'));
+
+    const std::string input{"aaaab"};
+
+    // The exact map certifies only 'b', so the only interior cut available to the default plan is at the 'b'.
+    const auto boundaries{lexer.chunk_boundaries(input, 3)};
+
+    for (std::size_t index{1}; index + 1 < boundaries.size(); ++index)
+    {
+        EXPECT_TRUE(lexer.is_split_point(input[boundaries[index]]));
+
+        EXPECT_EQ(input[boundaries[index]], 'b');
+    }
+}
+
+TEST_F(Lexer_test, Window_refusals_pin_the_nullable_guard_and_the_live_target_filter)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Operator,
+    };
+
+    // A nullable set whose initial state is NOT re-entrant: optional(a) accepts emptily and nothing returns to
+    // the start, so a model that merely forgot the nullable guard would certify "b" at 0. The refusal pins the
+    // guard itself, not a coincidental re-entrancy.
+    Builder_dbg nullable;
+
+    nullable.add_token(optional(text("a")), Token_kind::Identifier, 1);
+    nullable.add_token(text("b"), Token_kind::Operator, 1);
+
+    EXPECT_FALSE(nullable.build().is_split_window("b").has_value());
+
+    // The non-re-entrant rename guard, pinned by the language (ab)*a: reading "a" from the initial state must
+    // NOT be treated as beginning a token there, because live paths re-enter the start; the completely
+    // tokenizable input "aba" is one token covering its final "a" from offset 0, so certifying ("a", 0) would be
+    // a false certificate. A model that dropped the re-entrancy condition certifies it.
+    Builder_dbg reentrant;
+
+    reentrant.add_token(concat(kleene(text("ab")), text("a")), Token_kind::Identifier, 1);
+
+    EXPECT_FALSE(reentrant.build().is_split_window("a").has_value());
+
+    // A token whose tail is the empty language leaves live-looking transitions into dead states: over
+    // {ab followed by nothing acceptable, b} the window "ab" must empty the cloud and refuse, because no
+    // accepting future exists past the a. Dropping the live-target filter would certify it at 0 instead.
+    Builder_dbg dead_tail;
+
+    dead_tail.add_token(concat(text("ab"), any_of(Set{})), Token_kind::Identifier, 1);
+    dead_tail.add_token(text("b"), Token_kind::Operator, 1);
+
+    EXPECT_FALSE(dead_tail.build().is_split_window("ab").has_value());
+}
+
+TEST_F(Lexer_test, Malformed_input_keeps_the_serial_prefix_across_real_cuts)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Separator,
+    };
+
+    // Certified cuts on both sides of a malformed byte: serial fails at the '?', earlier chunks reproduce its
+    // stream exactly, and later chunks scan independently, so the serial stream is a strict prefix of the
+    // concatenation, which is precisely tokenize_all_parallel()'s documented malformed-input promise.
+    Builder_dbg builder;
+
+    builder.add_token(text("a"), Token_kind::Identifier, 1);
+    builder.add_token(text(";"), Token_kind::Separator, 1);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"a;?;a"};
+
+    const auto boundaries{lexer.chunk_boundaries(input, 3)};
+
+    ASSERT_GT(boundaries.size(), 2U);
+
+    std::vector<std::pair<Token_kind, std::size_t>> serial;
+
+    const auto consumed{lexer.tokenize_all<Token_kind>(
+            input, [&serial](const Token_kind kind, const std::size_t length) { serial.emplace_back(kind, length); })};
+
+    ASSERT_EQ(consumed, 2U);
+
+    std::vector<std::vector<std::pair<Token_kind, std::size_t>>> streams(boundaries.size() - 1);
+
+    const auto per_chunk{lexer.tokenize_all_parallel<Token_kind>(
+            input, 3, [&streams](const std::size_t chunk, const Token_kind kind, const std::size_t length) {
+                streams[chunk].emplace_back(kind, length);
+            })};
+
+    ASSERT_EQ(per_chunk.size(), boundaries.size() - 1);
+
+    std::vector<std::pair<Token_kind, std::size_t>> joined;
+
+    for (const auto& stream : streams)
+    {
+        joined.insert(joined.end(), stream.begin(), stream.end());
+    }
+
+    ASSERT_GE(joined.size(), serial.size());
+
+    for (std::size_t index{0}; index < serial.size(); ++index)
+    {
+        EXPECT_EQ(joined[index], serial[index]);
+    }
+
+    EXPECT_GT(joined.size(), serial.size());
+}
+
+TEST_F(Lexer_test, Window_planner_reaches_the_four_byte_study_case)
+{
+    enum class Token_kind : uint8_t
+    {
+        Whitespace,
+        Comment,
+        Star,
+        Slash,
+    };
+
+    // The study's principal four-byte certificate: block comments over an operator alphabet, where the pair */
+    // reads as a closer in comment context and as two operators otherwise, so no shorter window resolves the
+    // origin. The planner promises windows of two to four bytes; this pins the upper bound at the length the
+    // paper's table actually needs.
+    Builder_dbg builder;
+
+    const auto not_star{any_of(Set::all() - Set{'*'})};
+
+    const auto stars_then_other{concat(plus(any_of(Set{'*'})), any_of(Set::all() - Set{'*'} - Set{'/'}))};
+
+    builder.add_token(plus(any_of(Set{'\t'})), Token_kind::Whitespace, 1);
+    builder.add_token(
+            concat(text("/*"), kleene(choice(not_star, stars_then_other)), plus(any_of(Set{'*'})), text("/")),
+            Token_kind::Comment, 1);
+    builder.add_token(text("*"), Token_kind::Star, 2);
+    builder.add_token(text("/"), Token_kind::Slash, 2);
+
+    const auto lexer{builder.build()};
+
+    const auto window{lexer.is_split_window("\t*/\t")};
+
+    ASSERT_TRUE(window.has_value());
+    EXPECT_EQ(*window, 3U);
+
+    const std::string input{"\t*/\t\t*/\t"};
+
+    const auto boundaries{lexer.chunk_boundaries_with_windows(input, 2)};
+
+    ASSERT_EQ(boundaries.size(), 3U);
+    EXPECT_EQ(boundaries[1], 7U);
 }
 
 TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)

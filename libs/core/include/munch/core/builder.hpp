@@ -72,8 +72,10 @@ public:
      * @brief Declares the tokens the caller discards before using the stream.
      *
      * Only affects Lexer::is_split_point_ignoring(), which certifies split points under the weaker equivalence that
-     * deletes these tokens from both streams before comparing. The exact certificate is unaffected, so declaring a
-     * set never weakens a guarantee a caller was already relying on; it only makes the relaxed one available.
+     * deletes these tokens from both streams before comparing, and only for input the serial scan tokenizes
+     * completely; the relaxed certificate has no malformed-input guarantee at all. The exact certificate is
+     * unaffected, so declaring a set never weakens a guarantee a caller was already relying on; it only makes the
+     * relaxed one available.
      * @tparam T The token type used with add_token().
      * @param tokens The tokens to treat as discarded.
      */

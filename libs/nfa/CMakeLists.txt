@@ -21,6 +21,9 @@ target_compile_features(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
+        PUBLIC
+        # The public headers include munch/common/concepts.hpp, so consumers need the include path too.
+        munch_common
         PRIVATE
         # Build-interface only: a header-only build dependency a consumer of the installed package never needs.
         $<BUILD_INTERFACE:munch_boost>

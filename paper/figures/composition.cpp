@@ -6,7 +6,7 @@
  * that is the domain the per-line transition functions range over. Two things are computed here, and the report
  * should quote the first:
  *
- *   1. A STRUCTURAL bound, read off the automaton with no corpus at all. A line start is either a token boundary or
+ *   1. A structural bound, read off the automaton with no corpus at all. A line start is either a token boundary or
  *      sits mid-token having just consumed a newline, so the mid-token contexts are contained in the targets of the
  *      newline transitions out of live reachable states that can still continue. This holds for every input.
  *   2. The set a corpus actually realizes, which must be a subset of the bound. Corpus-dependent counts are reported

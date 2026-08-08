@@ -394,7 +394,7 @@ TEST(Dfa_property_test, Re_entrant_initial_state_is_admitted_only_when_its_token
     ASSERT_FALSE(Simulator{dfa}.is_split_point('a'));
 }
 
-// Both certificates quantify over states that are reachable AND co-accessible. Only a hand-built automaton separates
+// Both certificates quantify over states that are reachable and co-accessible. Only a hand-built automaton separates
 // the two halves: subset construction discovers reachable subsets only, and minimization would drop the detached
 // state before a test could see it. So this one is assembled directly, and it pins the reachable half, which a state
 // no input enters must not be able to override.

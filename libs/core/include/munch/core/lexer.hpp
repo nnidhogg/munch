@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <iterator>
 #include <map>
@@ -14,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -103,7 +105,7 @@ public:
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink) const
     {
         // The payload is always delivered and dropped here for sinks that do not want it, so the scan itself has
-        // one sink shape rather than one per arity. A sink accepting BOTH arities, which a generic or variadic one
+        // one sink shape rather than one per arity. A sink accepting both arities, which a generic or variadic one
         // does, is called with two: that is what it received before the payload existed.
         return simulator_.run_all(
                 begin, end, [&sink](const dfa::Token& token, const std::size_t length, const std::uint64_t payload) {
@@ -171,11 +173,12 @@ public:
      *
      * The multi-byte generalization of is_split_point(): where the byte certificate promises that every occurrence
      * begins a token, a certified window (W, o) promises that in every completely tokenizable input containing W,
-     * the token covering the occurrence's final byte begins exactly o bytes into it. On non-nullable token sets
-     * the two coincide at length one; a nullable set can certify bytes while every window is refused here. The
+     * the token covering the occurrence's final byte begins exactly o bytes into it. On non-empty, non-nullable token
+     * sets the two coincide at length one; a nullable set can certify bytes while every window is refused here, and an
+     * empty token set refuses everything on both sides. The
      * certificate is conditional on occurrence and this call does not establish that one exists; a caller that
      * found W in its own input holds an occurrence, the promise applies to it on completely tokenizable input,
-     * and nothing survives past the offset where a serial scan of malformed input first fails, the consequence
+     * and on malformed input the window promise carries nothing at all, the consequence
      * chunk_boundaries_with_windows() documents. Refusals are model-relative and conservative, never proof that
      * no certificate exists. Derived from the compiled transition table; see dfa::Simulator::is_split_window().
      */
@@ -190,9 +193,9 @@ public:
      * Each interior boundary is the first certified split point at or after its equal-division target offset, so
      * every chunk starts at a symbol that can only begin a token; for completely tokenizable input, concatenating
      * the chunk-local streams reproduces the whole-input token stream. The byte certificate is a property of
-     * single transitions, so it binds in every context, including past the offset where a serial scan of
-     * malformed input first fails; that is what upholds tokenize_all_parallel()'s prefix guarantee
-     * unconditionally. When the token set certifies no usable points, the result is one chunk spanning the whole
+     * single transitions rather than of whole inputs, which is what upholds tokenize_all_parallel()'s
+     * serial-prefix guarantee on malformed input; past the serial failure offset that prefix relation is all the
+     * certificate promises. When the token set certifies no usable points, the result is one chunk spanning the whole
      * input, so parallel scanning degenerates to the serial scan rather than splitting unsafely; on such token
      * sets chunk_boundaries_with_windows() can recover cuts, at the price of a guarantee conditional on the
      * input being completely tokenizable.
@@ -269,6 +272,7 @@ public:
      * @brief Computes chunk boundaries for parallel tokenization of a whole container.
      */
     template <common::concepts::Random_access_iterable Container>
+        requires std::convertible_to<std::ranges::range_value_t<Container>, char>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries(const Container& container, const std::size_t chunks) const
     {
         return chunk_boundaries(std::ranges::begin(container), std::ranges::end(container), chunks);
@@ -280,10 +284,10 @@ public:
      *
      * From each equal-division target the input is walked for the first occurrence of a window of two to four
      * bytes that is_split_window() certifies, and the cut is placed at the occurrence plus the reported origin.
-     * Each decision is memoized per distinct byte string, so the walk prices like the byte walk on realistic
-     * text. A nullable token set contributes no windows, since the window proof excludes it, though its byte
-     * plan, when any, stands untouched; when neither certificate offers cuts, the single whole-input chunk
-     * results.
+     * Each decision is memoized per distinct byte string, so the walk's cost is bounded by the distinct windows
+     * tried rather than by input positions; no representative-corpus pricing is claimed until one is measured. A
+     * nullable token set contributes no windows, since the window proof excludes it, though its byte plan, when any,
+     * stands untouched; when neither certificate offers cuts, the single whole-input chunk results.
      *
      * The window guarantee is conditional where the byte certificate's is not: a certified window pins the
      * covering token's origin at occurrences in completely tokenizable input, a property of the whole input
@@ -390,6 +394,7 @@ public:
      * @brief Range overload of chunk_boundaries_with_windows(begin, end, chunks).
      */
     template <common::concepts::Random_access_iterable Container>
+        requires std::convertible_to<std::ranges::range_value_t<Container>, char>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
             const Container& container, const std::size_t chunks) const
     {
@@ -421,7 +426,7 @@ public:
      */
     template <typename T, std::random_access_iterator Iterator, typename Sink>
         requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, std::size_t, T, std::size_t>
-    std::vector<std::size_t> tokenize_all_parallel(
+    [[nodiscard]] std::vector<std::size_t> tokenize_all_parallel(
             Iterator begin, Iterator end, const std::size_t chunks, Sink sink) const
     {
         const auto boundaries{chunk_boundaries(begin, end, chunks)};
@@ -481,7 +486,7 @@ public:
      */
     template <typename T, common::concepts::Random_access_iterable Container, typename Sink>
         requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, std::size_t, T, std::size_t>
-    std::vector<std::size_t> tokenize_all_parallel(
+    [[nodiscard]] std::vector<std::size_t> tokenize_all_parallel(
             const Container& container, const std::size_t chunks, Sink sink) const
     {
         return tokenize_all_parallel<T>(

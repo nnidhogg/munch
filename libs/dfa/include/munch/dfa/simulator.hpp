@@ -10,6 +10,7 @@
 #include <set>
 #include <span>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -181,8 +182,8 @@ public:
      * covering the occurrence's final byte begins exactly o bytes into the occurrence. The certificate is
      * conditional on occurrence; a window no completely tokenizable input contains satisfies it vacuously, and
      * this decision does not establish that an occurrence exists. A caller that has just found W in its input at
-     * hand holds that occurrence, and on completely tokenizable input the promise applies to it directly; past
-     * the offset where a serial scan of malformed input first fails, the promise carries nothing.
+     * hand holds that occurrence, and on completely tokenizable input the promise applies to it directly; on
+     * malformed input the promise carries nothing at all.
      *
      * The decision runs the conservative cloud model over the compiled tables: every live state starts as a
      * hypothesis whose token began before the window, each byte advances hypotheses deterministically, a fresh
@@ -190,8 +191,9 @@ public:
      * initial state begins a token at that offset. The window is certified when every surviving hypothesis
      * agrees on one in-window origin. A refusal is model-relative: the model deliberately refuses some windows a
      * greedy scanner would allow, and refusal never proves that no certificate exists semantically. On
-     * non-nullable token sets this coincides at length one with is_split_point(); nullable sets are outside the
-     * window proof and refused outright here, while the byte predicate can still certify for them.
+     * non-empty, non-nullable token sets this coincides at length one with is_split_point(); nullable sets are
+     * outside the window proof and refused outright here, while the byte predicate can still certify for them,
+     * and an empty token set refuses everything on both sides.
      */
     [[nodiscard]] std::optional<std::size_t> is_split_window(std::string_view window) const;
 
@@ -199,6 +201,11 @@ public:
      * @brief Reports whether the token set certifies any usable split point.
      * @return True if at least one symbol is a split point.
      */
+    [[nodiscard]] bool has_split_points() const noexcept
+    {
+        return (split_points_[0] | split_points_[1] | split_points_[2] | split_points_[3]) != 0;
+    }
+
     /**
      * @brief Returns whether some token matches the empty string, the compiled signature being an accepting
      *        initial state.
@@ -208,11 +215,6 @@ public:
      * remain; a planner consults this before spending any search on windows, never to discard a byte plan.
      */
     [[nodiscard]] bool nullable() const noexcept { return (flags_[init_state_] & accept_flag_) != 0; }
-
-    [[nodiscard]] bool has_split_points() const noexcept
-    {
-        return (split_points_[0] | split_points_[1] | split_points_[2] | split_points_[3]) != 0;
-    }
 
     /**
      * @brief Reports whether the token set certifies any usable split point once discarded tokens are deleted.
@@ -309,9 +311,11 @@ public:
      * @param sink Invoked as sink(token, length) for every matched token, in input order. A sink returning a value
      *        convertible to bool stops the scan by returning false; the stopping token still counts as tokenized.
      * @return The number of input elements tokenized; anything short of the input's size means no token matched at
-     *         the returned offset, unless the sink stopped the scan.
+     *         the returned offset, unless the sink stopped the scan. Input elements are read as unsigned char, so
+     *         wider element types reduce modulo 256.
      */
-    template <std::random_access_iterator Iterator, std::invocable<const Token&, std::size_t, std::uint64_t> Sink>
+    template <std::random_access_iterator Iterator, typename Sink>
+        requires std::invocable<Sink&, const Token&, std::size_t, std::uint64_t>
     std::size_t run_all(Iterator begin, Iterator end, Sink sink) const
     {
         const auto size{static_cast<std::size_t>(end - begin)};
