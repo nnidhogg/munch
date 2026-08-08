@@ -590,6 +590,30 @@ TEST_F(Nfa_test, Oversized_identifiers_refuse_renumbering_instead_of_wrapping)
     EXPECT_THROW(static_cast<void>(Builder::merge_all(alternatives)), std::runtime_error);
 }
 
+TEST_F(Nfa_test, Exhausted_allocator_and_near_top_compositions_refuse_instead_of_wrapping)
+{
+    // A legal composition can park the allocator's cursor at the last identifier; the next allocation used to
+    // wrap it to zero and silently reuse an existing state. The cursor-parked builder comes from valid public
+    // operations, so each guard here is reachable without any oversized operand.
+    const std::vector<Builder> single{Builder{}.offset(std::numeric_limits<std::size_t>::max() - 2)};
+
+    auto parked{Builder::merge_all(single)};
+
+    EXPECT_THROW(static_cast<void>(parked.next_state()), std::runtime_error);
+
+    // The fresh-state guards of prepend_init_state() and merge() are their own doors: both mint one state past
+    // the cursor, and neither is reachable through offset()'s guard alone.
+    const auto at_top{Builder{}.offset(std::numeric_limits<std::size_t>::max() - 1)};
+
+    EXPECT_THROW(static_cast<void>(at_top.prepend_init_state()), std::runtime_error);
+
+    const Builder left;
+
+    EXPECT_THROW(
+            static_cast<void>(left.merge(Builder{}.offset(std::numeric_limits<std::size_t>::max() - 2))),
+            std::runtime_error);
+}
+
 TEST_F(Nfa_test, Reaccepting_a_state_replaces_the_earlier_association)
 {
     // The tokenless overload used to leave an earlier token in place and the token overload an earlier
@@ -618,7 +642,7 @@ TEST_F(Nfa_test, Graphviz_accepts_a_bare_filename)
     builder.add_transition(builder.init_state(), Label{'a'}, 1);
     builder.add_accept_state(1, Token{1, 1});
 
-    const std::filesystem::path bare{"graphviz_bare_test.dot"};
+    const std::filesystem::path bare{"graphviz_bare_nfa_test.dot"};
 
     Graphviz::to_file(builder.build(), bare);
 

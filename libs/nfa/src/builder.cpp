@@ -58,8 +58,15 @@ Nfa::State_t Builder::init_state() const noexcept
     return init_state_;
 }
 
-Nfa::State_t Builder::next_state() noexcept
+Nfa::State_t Builder::next_state()
 {
+    // A composition may legally park the cursor at the last identifier; handing it out would wrap the cursor to
+    // zero and the following allocation would silently reuse an existing state.
+    if (next_state_ == std::numeric_limits<std::size_t>::max())
+    {
+        throw std::runtime_error("NFA state allocator is exhausted");
+    }
+
     return next_state_++;
 }
 

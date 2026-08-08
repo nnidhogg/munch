@@ -17,8 +17,8 @@ constexpr std::size_t max_delimiter_length{16};
  *
  * C++23 restricts a d-char to the basic character set less spaces, parentheses, backslashes, and control
  * characters, so the check is a whitelist of exactly those members: letters, digits, and the set's punctuation.
- * Dollar, at-sign, grave accent, and bytes outside ASCII are not d-chars until P2558 lands in a later standard;
- * the opening parenthesis never reaches this check, as it ends the delimiter.
+ * Dollar, at-sign, and grave accent become d-chars only when P2558 lands in a later standard, and bytes outside
+ * ASCII are never d-chars; the opening parenthesis never reaches this check, as it ends the delimiter.
  */
 bool is_delimiter_character(const char c)
 {

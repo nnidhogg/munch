@@ -118,6 +118,15 @@ jobs:
           cd build
           ../cmake-3.20.6-linux-x86_64/bin/ctest --output-on-failure
 
+      - name: Check every declared minimum matches the version this job tests
+        # Without this coupling the job proves only that 3.20.6 works, not that the tree declares it: a
+        # CMakeLists declaring an older floor would pass here while promising consumers a version that fails.
+        run: |
+          if git grep -h "cmake_minimum_required" -- '*CMakeLists.txt' | grep -v "VERSION 3.20.6"; then
+            echo "a CMakeLists.txt declares a different minimum than this job tests"
+            exit 1
+          fi
+
   sanitize:
     runs-on: ubuntu-24.04
 

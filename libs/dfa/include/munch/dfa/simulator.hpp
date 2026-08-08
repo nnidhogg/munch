@@ -20,6 +20,20 @@
 namespace munch::dfa
 {
 /**
+ * @brief Whether a transition table of the given states and symbol classes would overflow the given size limit.
+ *
+ * The compiled table is one row of states entries per class. On 64-bit platforms the product cannot overflow,
+ * since states fit 32 bits and classes fit 8; on a 32-bit std::size_t it can, which the constructor refuses.
+ * Stated as its own function with the limit as a parameter so the arithmetic is testable on every platform,
+ * even where the guard itself is unreachable.
+ */
+[[nodiscard]] constexpr bool table_size_overflows(
+        const std::size_t states, const std::size_t classes, const std::size_t limit) noexcept
+{
+    return states > limit / classes;
+}
+
+/**
  * @brief Runs a DFA over input sequences.
  *
  * Compiles the DFA it is constructed from into flat tables indexed by state and input symbol, so that advancing on an
@@ -93,7 +107,8 @@ public:
     /**
      * @brief Compiles the given DFA into transition and accept tables.
      * @param dfa The DFA to simulate.
-     * @throws std::runtime_error If the DFA has more states than a table entry can index.
+     * @throws std::runtime_error If the DFA has more states than a table entry can index, or if the transition
+     *         table's size would overflow std::size_t, which only a 32-bit platform can reach.
      */
     explicit Simulator(const Dfa& dfa);
 
@@ -101,7 +116,8 @@ public:
      * @brief Compiles the given DFA, additionally certifying split points modulo a set of discarded tokens.
      * @param dfa The DFA to simulate.
      * @param ignored The IDs of tokens the caller discards before the stream is used.
-     * @throws std::runtime_error If the DFA has more states than a table entry can index.
+     * @throws std::runtime_error If the DFA has more states than a table entry can index, or if the transition
+     *         table's size would overflow std::size_t, which only a 32-bit platform can reach.
      */
     Simulator(const Dfa& dfa, std::span<const std::size_t> ignored);
 
@@ -113,7 +129,8 @@ public:
      * @param dfa The DFA to simulate.
      * @param ignored The IDs of tokens the caller discards before the stream is used.
      * @param payloads Token ID and word pairs; a token named more than once keeps the last word given.
-     * @throws std::runtime_error If the DFA has more states than a table entry can index.
+     * @throws std::runtime_error If the DFA has more states than a table entry can index, or if the transition
+     *         table's size would overflow std::size_t, which only a 32-bit platform can reach.
      */
     Simulator(
             const Dfa& dfa, std::span<const std::size_t> ignored,

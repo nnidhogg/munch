@@ -20,7 +20,7 @@
 # hostname and the uptime line is printed without its count of logged-in users.
 #
 # Requirements:
-#   cmake 3.20 or newer
+#   cmake 3.20.6 or newer
 #   a C++23 compiler: GCC 13+ or Clang 19+ (Clang 18 reports __cpp_concepts too low for libstdc++'s <expected>)
 #   git and network access on the first configure: four header-only Boost libraries and mdspan are cloned from
 #     GitHub at pinned revisions. -DUSE_SYSTEM_BOOST=ON skips the Boost clones but not mdspan, so a fully offline
@@ -38,12 +38,14 @@ set -euo pipefail
 
 fail() { echo "error: $*" >&2; exit 1; }
 
-command -v cmake >/dev/null || fail "cmake not found; install cmake 3.20 or newer"
+command -v cmake >/dev/null || fail "cmake not found; install cmake 3.20.6 or newer"
 command -v git   >/dev/null || fail "git not found; it is needed to fetch the pinned Boost headers"
 
-cmake_version=$(cmake --version | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
-if [ "$(printf '%s\n3.20\n' "$cmake_version" | sort -V | head -1)" != "3.20" ]; then
-    fail "cmake $cmake_version is too old; 3.20 or newer is required"
+# The patch component matters: 3.20.0 through 3.20.5 fail to configure, so the full three-component version is
+# compared against the declared floor.
+cmake_version=$(cmake --version | head -1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+if [ "$(printf '%s\n3.20.6\n' "$cmake_version" | sort -V | head -1)" != "3.20.6" ]; then
+    fail "cmake $cmake_version is too old; 3.20.6 or newer is required"
 fi
 
 # A C++23 feature the tree actually depends on, so this rejects a too-old compiler up front rather than mid-build.

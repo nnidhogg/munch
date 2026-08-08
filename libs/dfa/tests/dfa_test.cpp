@@ -670,11 +670,27 @@ TEST_F(Dfa_test, Graphviz_accepts_a_bare_filename)
     builder.add_transition(builder.init_state(), dfa::Label('a'), 1);
     builder.add_accept_state(1, dfa::Token{1});
 
-    const std::filesystem::path bare{"graphviz_bare_test.dot"};
+    const std::filesystem::path bare{"graphviz_bare_dfa_test.dot"};
 
     Graphviz::to_file(builder.build(), bare);
 
     EXPECT_TRUE(std::filesystem::exists(bare));
 
     std::filesystem::remove(bare);
+}
+
+TEST_F(Dfa_test, Table_size_overflow_arithmetic_is_pinned_on_every_platform)
+{
+    // The constructor's product guard is unreachable on a 64-bit std::size_t, where 32-bit states times at most
+    // 256 classes cannot wrap; the arithmetic is pinned here against a 32-bit-sized limit instead, so the guard
+    // the 32-bit platform relies on cannot rot unnoticed on the platforms that test it.
+    constexpr std::size_t limit_32{4294967295U};
+
+    static_assert(table_size_overflows(16777216U, 256U, limit_32));
+    static_assert(table_size_overflows(limit_32, 2U, limit_32));
+    static_assert(!table_size_overflows(16777215U, 256U, limit_32));
+    static_assert(!table_size_overflows(1024U, 256U, limit_32));
+
+    // And on the actual platform limit the realistic maxima stay far from the edge.
+    static_assert(!table_size_overflows(limit_32, 256U, std::numeric_limits<std::size_t>::max()));
 }

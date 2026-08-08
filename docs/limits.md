@@ -91,7 +91,9 @@ rejected by construction). The consequences:
 ## **Hard Bounds**
 
 - The compiled `Simulator` indexes states with `uint32_t`, so a lexer is limited to just under 2^32 DFA states. The
-  constructor throws rather than truncate. No realistic token set approaches this. A narrow index keeps entries small,
+  constructor throws rather than truncate. On a 32-bit `std::size_t` the bound is smaller still: the transition
+  table is states times symbol classes entries, and the constructor refuses a product that would not fit rather
+  than allocate a wrapped size. No realistic token set approaches this. A narrow index keeps entries small,
   which keeps realistic tables small enough to stay resident in cache, where the throughput comes from; it is not a
   guarantee, and a table with billions of states would not be resident at any entry width.
 - Determinization has exponential worst cases, and a caller accepting untrusted token sets should cap it:

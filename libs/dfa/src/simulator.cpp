@@ -78,7 +78,7 @@ Simulator::Simulator(
 
     // The table is class_count rows of states entries; on a 32-bit size_t the product can wrap where the
     // per-state vectors still allocate, leaving an undersized table under an mdspan of the unwrapped extents.
-    if (states > std::numeric_limits<std::size_t>::max() / class_count)
+    if (table_size_overflows(states, class_count, std::numeric_limits<std::size_t>::max()))
     {
         throw std::runtime_error("DFA transition table size overflows std::size_t");
     }

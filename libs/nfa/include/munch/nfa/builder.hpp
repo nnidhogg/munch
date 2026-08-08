@@ -33,8 +33,10 @@ public:
      * States added with explicit identifiers do not advance the allocator, so a caller mixing both must keep
      * its own identifiers clear of the allocator's range.
      * @return The next state identifier.
+     * @throws std::runtime_error If the allocator is exhausted: a composition may legally park the cursor at
+     *         the last identifier, and advancing past it would wrap onto existing states.
      */
-    [[nodiscard]] Nfa::State_t next_state() noexcept;
+    [[nodiscard]] Nfa::State_t next_state();
 
     /**
      * @brief Returns the transition table of the NFA.
