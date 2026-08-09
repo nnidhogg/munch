@@ -1163,13 +1163,12 @@ The source code is licensed under the terms of the MIT License. See the [LICENSE
 generated Unicode identifier tables derive from the Unicode Character Database and are used under the Unicode License
 v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), installed alongside the package.
 
-The technical report and its figures, `paper/split-points.tex` and `paper/figures/*.pdf`, are licensed under
-[Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0), matching the
-licence the report carries on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The benchmark archives
-under `paper/data/` are released under
-[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): they are measurements rather than authorship, and
-attribution on a throughput table serves no one. The programs that generate the figures are source code and are MIT like
-the rest of the tree.
+The technical report and its figures, `paper/split-points/split-points.tex` and `paper/figures/*.pdf`, are licensed
+under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0),
+matching the licence the report carries on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The benchmark
+archives under `paper/data/` are released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): they are
+measurements rather than authorship, and attribution on a throughput table serves no one. The programs that generate the
+figures are source code and are MIT like the rest of the tree.
 
 ## **Author**
 

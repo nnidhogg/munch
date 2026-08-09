@@ -1,9 +1,9 @@
 # Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens
 
-**Nicklas Nidhögg**, August 2026. Mirrors `paper/split-points.tex`, which describes munch at the v1.2.0 release. The
-scaling measurements in the evaluation were taken on an earlier tree, preserved by the `benchmark/split-points-2026-08`
-tag; the composition and validation figures are asserted from the release tree under CI, and the certificate
-figures' DOT sources are regenerated there and byte-compared against the committed copies.
+**Nicklas Nidhögg**, August 2026. Mirrors `paper/split-points/split-points.tex`, which describes munch at the v1.2.0
+release. The scaling measurements in the evaluation were taken on an earlier tree, preserved by the
+`benchmark/split-points-2026-08` tag; the composition and validation figures are asserted from the release tree under
+CI, and the certificate figures' DOT sources are regenerated there and byte-compared against the committed copies.
 
 *A technical report on the mechanism behind `Lexer::is_split_point()`, `chunk_boundaries()`, and
 `tokenize_all_parallel()`. The implementation, tests, and benchmarks live in this repository; this document states the

@@ -12,7 +12,14 @@
 /tools/benchmark/rust/target
 
 # Generated files from the paper build; the figure PDFs under paper/figures are checked in on purpose
-/paper/split-points.pdf
+/paper/split-points/split-points.pdf
+/paper/split-points/*.aux
+/paper/split-points/*.bbl
+/paper/split-points/*.blg
+/paper/split-points/*.fdb_latexmk
+/paper/split-points/*.fls
+/paper/split-points/*.log
+/paper/split-points/*.out
 /paper/split-windows/split-windows.pdf
 /paper/split-windows/*.aux
 /paper/split-windows/*.bbl

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20.6)
 project(munch_paper_figures)
 
-# The applicability table in paper/split-points.tex and docs/split_points.md is not documentation of a measurement,
+# The applicability table in paper/split-points/split-points.tex and docs/split_points.md is not documentation of a measurement,
 # it is the output of this program, which asserts every published cell against what the shipped predicate answers.
 # Running it under CTest is what makes "the table cannot silently drift" a property of the build rather than of
 # someone remembering the manual command.
@@ -51,7 +51,7 @@ foreach(figure certificate_sound certificate_nullable certificate_cyclic)
     set_tests_properties(munch_certificates_${figure} PROPERTIES FIXTURES_REQUIRED certificate_figures)
 endforeach()
 
-# The composition comparison in paper/split-points.tex quotes how many states a prefix scan over line boundaries
+# The composition comparison in paper/split-points/split-points.tex quotes how many states a prefix scan over line boundaries
 # must carry. That is the whole of its argument, so it is computed from the automaton rather than counted by hand.
 add_executable(munch_composition composition.cpp)
 
@@ -62,7 +62,7 @@ target_link_libraries(munch_composition
 
 add_test(NAME munch_composition COMMAND munch_composition)
 
-# The soundness and conservatism figures of paper/split-points.tex. The sweep is exhaustive over a small alphabet
+# The soundness and conservatism figures of paper/split-points/split-points.tex. The sweep is exhaustive over a small alphabet
 # rather than sampled, because a sampled corpus reports a symbol as safe whenever it never exercised it.
 add_executable(munch_validation validation.cpp)
 

@@ -1,22 +1,18 @@
-# Builds the technical report. Requires a LaTeX toolchain:
+# Builds both technical reports. Requires a LaTeX toolchain:
 #   sudo apt-get install -y texlive-latex-recommended texlive-fonts-recommended texlive-latex-extra latexmk
+#
+# The papers are sibling directories, each self-contained with its own sources, bibliography, and Makefile;
+# figures/ and data/ beside them are shared evidence. The bibliographies are deliberately separate sets,
+# independently verified with different artifact pins, and must not be merged.
 
-PAPER := split-points
+PAPERS := split-points split-windows
 
-# The figure PDFs are checked in, so building the paper needs no Graphviz and no compiler. Regenerating them does;
-# see README.md.
-FIGURES := $(wildcard figures/*.pdf)
+.PHONY: all clean $(PAPERS)
 
-.PHONY: all clean
+all: $(PAPERS)
 
-all: $(PAPER).pdf
-
-# LaTeX silently discards anything after \end{document}, so a botched edit can drop whole sections while every
-# build check still passes. A merge did exactly that here once. Fail the build instead.
-$(PAPER).pdf: $(PAPER).tex refs.bib $(FIGURES)
-	@awk '/\\end\{document\}/{f=1;next} f&&NF{print FILENAME": content after \\end{document} on line "NR": "$$0; c=1} END{exit c}' $(PAPER).tex
-	latexmk -pdf -halt-on-error -Werror $(PAPER).tex
+$(PAPERS):
+	$(MAKE) -C $@
 
 clean:
-	latexmk -C
-	rm -f $(PAPER).bbl
+	for paper in $(PAPERS); do $(MAKE) -C $$paper clean; done

@@ -29,11 +29,17 @@ jobs:
       # latexmk resolves the bibliography and reruns until references settle; -halt-on-error stops at the first
       # TeX error, and -Werror additionally fails the build on an undefined citation or reference, which latexmk
       # evaluates after the final resolving pass rather than on an intermediate one.
-      - name: Build the report
+      - name: Build the reports
         run: make -C paper
 
-      - name: Upload the report
+      - name: Upload the split-points report
         uses: actions/upload-artifact@v4
         with:
           name: split-points
-          path: paper/split-points.pdf
+          path: paper/split-points/split-points.pdf
+
+      - name: Upload the split-windows report
+        uses: actions/upload-artifact@v4
+        with:
+          name: split-windows
+          path: paper/split-windows/split-windows.pdf
