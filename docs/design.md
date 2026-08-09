@@ -34,6 +34,15 @@ classes possible, which is what keeps a realistic transition table small enough 
 throughput lives. `utf8::range` expands code point ranges into byte sequences while patterns are being built, so Unicode
 is handled by the same decision as everything else: earlier.
 
+Those bytes travel as plain `char`, whose signedness the standard leaves to the platform, and the code treats that as a
+division of labour rather than a hazard: `char` is the carrier, used only to store, compare for equality, and hash;
+the unsigned byte value is the meaning, produced by a cast at exactly the site that indexes a table or names a symbol
+value, never carried around. The projection is idempotent, casting a value that already went through it changes
+nothing, so no site needs to know how many conversions came before it, which is what makes the convention trackable:
+signedness is decided at each point of meaning instead of threaded through every layer in between. CI builds where
+plain `char` is unsigned as well as signed, and the `std::byte` test instantiations exist to make any site that skips
+its cast fail to compile rather than misbehave on the other platform.
+
 ## **Layers That Can Be Tested Alone**
 
 regex lowers to nfa, nfa determinizes to dfa, core orchestrates, and each layer holds its own suite, with fixed-seed
