@@ -116,6 +116,10 @@ jobs:
           cd build
           ctest --output-on-failure
 
+  # No macOS job: it requires an Apple toolchain whose libc++ ships std::jthread, which none does, Xcode 26
+  # included, and the parallel scan keeps jthread rather than take platform conditionals. The mdspan
+  # bracket-operator definition such a job also needs is already unconditional in external/mdspan/CMakeLists.txt.
+
   cmake-floor:
     runs-on: ubuntu-24.04
 

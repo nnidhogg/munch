@@ -1143,9 +1143,12 @@ accepting both arities is called with two, which is what it was called with befo
 sink keeps its behaviour.
 
 The supported platform is 64-bit Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests,
-sanitizes, and fuzzes; other platforms, 32-bit ones included, may work but carry no promise. Semantic versioning covers source compatibility only. munch
-builds as static libraries by default and honours `BUILD_SHARED_LIBS`; either way the result is meant to be compiled by
-the consumer, so no ABI stability is promised between any two versions.
+sanitizes, and fuzzes, on x86-64 and ARM64 so both signednesses of plain `char` are exercised. Other platforms, 32-bit
+ones included, may work but carry no promise; macOS specifically is known not to build, because Apple's libc++ ships
+no `std::jthread` on any Xcode through 26 and the parallel scan keeps `jthread`, so that door opens when Apple ships
+P0660. Semantic versioning covers source compatibility only. munch builds as static libraries by default and honours
+`BUILD_SHARED_LIBS`; either way the result is meant to be compiled by the consumer, so no ABI stability is promised
+between any two versions.
 
 The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,

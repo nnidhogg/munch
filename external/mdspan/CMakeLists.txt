@@ -20,3 +20,14 @@ target_include_directories(${PROJECT_NAME}
         INTERFACE
         ${mdspan_SOURCE_DIR}/include
 )
+
+# mdspan disables its C++23 bracket operator on Clang older than 17 and on exactly 17.0.0, working around an
+# upstream parameter-pack bug fixed in LLVM 17.0.1. Apple renumbers Clang, so AppleClang 17.0.0, which is built on
+# a later LLVM that carries the fix, collides with the excluded upstream release and loses the operator munch's
+# table construction uses. The definition states, unconditionally and on every platform, what the documented
+# compiler floor of GCC 13 and Clang 19 already guarantees: multidimensional subscript works, so the workaround
+# gate is not consulted.
+target_compile_definitions(${PROJECT_NAME}
+        INTERFACE
+        MDSPAN_USE_BRACKET_OPERATOR=1
+)
