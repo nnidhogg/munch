@@ -143,9 +143,11 @@ point. Computing it takes a forward pass from the start state marking what input
 what can still accept, and one sweep over the transition table. The start state's exemption holds only while no live
 transition re-enters it, which a nullable pattern's self-looping start state does; the exemption then certifies nothing,
 and only bytes no live state consumes remain vacuously safe. A token set whose strings or comments can contain any byte
-certifies no safe points, and the right behavior is to refuse and scan sequentially rather than speculate, in keeping
-with [limits.md](limits.md). The certification is built: `Lexer::is_split_point()` reports the certified bytes of a
-compiled token set, computed by those passes in the simulator's constructor.
+certifies no safe points, and the byte planner then refuses rather than speculates, in keeping with
+[limits.md](limits.md). Since 1.4.0 the explicit window sibling can recover certified cuts where no byte carries one,
+still without speculation, under the window certificate's completely-tokenizable condition; where neither certificate
+exists, the refusal stands and the scan is sequential. The certification is built: `Lexer::is_split_point()` reports
+the certified bytes of a compiled token set, computed by those passes in the simulator's constructor.
 
 The threaded chunking is measured, and the prediction stated here held. The benchmark splits the input at the first
 certified point at or after each equal-division offset, runs one whole-input scan per chunk on its own thread, and first
