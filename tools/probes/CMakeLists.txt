@@ -30,6 +30,25 @@ if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_window_gate COMMAND munch_window_gate)
 endif ()
 
+# Quality of certified error recovery against the classical panic-mode conventions, on the study's grammar rows
+# under a deterministic corruption model. Runs as a test because it carries the pristine oracle and the theorem
+# transfer as hard assertions; the campaign form passes larger figures and archives the CSV.
+add_executable(munch_recovery_quality src/recovery_quality.cpp)
+
+target_include_directories(munch_recovery_quality
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+)
+
+target_link_libraries(munch_recovery_quality
+        PRIVATE
+        munch_core
+)
+
+if (MUNCH_BUILD_TESTS)
+    add_test(NAME munch_recovery_quality COMMAND munch_recovery_quality)
+endif ()
+
 # Dev-grade preview of the split-windows benchmark campaign: plans cuts at window-recovered origins, asserts
 # stream equality against the serial scan, and prints unarchived throughput. The equality assertions are why it
 # runs as a test; no printed figure may be quoted without the collect.sh ritual.
