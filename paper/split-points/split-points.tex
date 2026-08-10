@@ -1237,7 +1237,11 @@ design, and the composition and speculation families of Section~\ref{sec:prior} 
 of. Several extensions look natural. A \emph{conditional} certificate over symbol pairs or short windows, for instance
 cutting before a newline conditional on the preceding byte being \code{)}, could recover splitting for some grammars
 where no single byte certifies. A hybrid plan could split at certified bytes where they exist and fall back to
-speculative entry elsewhere, keeping the guarantee where it is free and paying for it only where it is not. The
+speculative entry elsewhere, keeping the guarantee where it is free and paying for it only where it is not; the
+certified occurrences would moreover fence the speculative regions, since no live state other than a
+non-re-entrant $q_0$ consumes a certified symbol, so a scan begun at a wrong entry state cannot carry any token
+across an occurrence, both scans place a boundary there and agree beyond it, and misprediction repair is confined
+to the gap before the next certified occurrence, whose distribution over representative corpora is future work. The
 grammar-refactoring lever of Section~\ref{sec:applicability} could be automated: under a stated observational
 equivalence and edit-cost metric, search for a minimum-cost re-tokenization that makes a chosen byte usefully certify.
 The certificate is also orthogonal to a separate worst-case cost of naive longest-match scanning: some token sets and
