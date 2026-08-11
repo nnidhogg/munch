@@ -736,7 +736,10 @@ lexer.is_split_point_ignoring('\n');  // true: both halves of the split run are 
 The technical report *Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens* states both
 certificates formally, relates them to the parallel-automata literature, and studies which grammars certify usable split
 symbols under each: read it as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473), as
-[docs/split_points.md](docs/split_points.md), or build the formal version from [paper/](paper/).
+[docs/split_points.md](docs/split_points.md), or build the formal version from [paper/](paper/). Its companion report
+*Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies* generalizes the certificate
+from single bytes to short byte windows, the mechanism behind `chunk_boundaries_with_windows()`: read it as
+[arXiv:2608.09761](https://arxiv.org/abs/2608.09761) or build it from the same directory.
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
@@ -1163,12 +1166,14 @@ The source code is licensed under the terms of the MIT License. See the [LICENSE
 generated Unicode identifier tables derive from the Unicode Character Database and are used under the Unicode License
 v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), installed alongside the package.
 
-The technical report and its figures, `paper/split-points/split-points.tex` and `paper/figures/*.pdf`, are licensed
-under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0),
-matching the licence the report carries on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The benchmark
-archives under `paper/data/` are released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): they are
-measurements rather than authorship, and attribution on a throughput table serves no one. The programs that generate the
-figures are source code and are MIT like the rest of the tree.
+The technical reports and their figures, `paper/split-points/split-points.tex`, `paper/split-windows/split-windows.tex`,
+and `paper/figures/*.pdf`, are licensed under
+[Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0), matching the
+licence they carry on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473) and
+[arXiv:2608.09761](https://arxiv.org/abs/2608.09761). The benchmark archives under `paper/data/` are released under
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): they are measurements rather than authorship, and
+attribution on a throughput table serves no one. The programs that generate the figures are source code and are MIT
+like the rest of the tree.
 
 ## **Author**
 

@@ -38,3 +38,15 @@ preferred-citation:
     - type: other
       value: "arXiv:2608.03473"
   url: "https://arxiv.org/abs/2608.03473"
+references:
+  - type: article
+    title: "Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies"
+    authors:
+      - family-names: "Nidhögg"
+        given-names: "Nicklas"
+        orcid: "https://orcid.org/0009-0006-6161-6150"
+    year: 2026
+    identifiers:
+      - type: other
+        value: "arXiv:2608.09761"
+    url: "https://arxiv.org/abs/2608.09761"
