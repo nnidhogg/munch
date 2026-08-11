@@ -118,8 +118,14 @@ sound for the C-like tokenizations studied (Section~\ref{sec:applicability}).
 \end{itemize}
 \end{samepage}
 
-Section~\ref{sec:prior} places the certificate among the existing answers to the entry-state problem, and
-Section~\ref{sec:evaluation} reports what it costs and what it buys.
+The paper separates the result from the study around it. The result is
+Sections~\ref{sec:prelim}--\ref{sec:modulo}: the definitions, the exact certificate with its necessity proof and the
+re-entrancy subtlety, and the relaxed condition modulo discarded tokens. The study and the artifact are
+Sections~\ref{sec:derivation}--\ref{sec:evaluation}: the derivation and planner as released, the applicability of both
+conditions over eleven token sets, and the measured parallel scan. Section~\ref{sec:prior} places the certificate among
+the existing answers to the entry-state problem before the result, and Section~\ref{sec:related} returns to that
+literature after it. A companion report generalizes the certificate from single bytes to short byte
+windows~\cite{nidhogg2026splitwindows}; nothing here depends on it.
 
 \section{Prior approaches}
 \label{sec:prior}
@@ -1234,9 +1240,11 @@ concurrent calls, and order-sensitive effects need per-chunk buffering followed 
 
 The approach trades generality for certainty. When the grammar does not cooperate it offers no usable split points, by
 design, and the composition and speculation families of Section~\ref{sec:prior} remain the applicable answers we know
-of. Several extensions look natural. A \emph{conditional} certificate over symbol pairs or short windows, for instance
-cutting before a newline conditional on the preceding byte being \code{)}, could recover splitting for some grammars
-where no single byte certifies. A hybrid plan could split at certified bytes where they exist and fall back to
+of. Several extensions look natural, and the first has since been carried out: a companion report generalizes the
+certificate from single bytes to short byte windows, certifying a cut at a fixed offset inside every occurrence of a
+multi-byte string, which recovers splitting for some grammars where no single byte
+certifies~\cite{nidhogg2026splitwindows}; the certificate of this paper is exactly its length-one case. A hybrid plan
+could split at certified bytes where they exist and fall back to
 speculative entry elsewhere, keeping the guarantee where it is free and paying for it only where it is not; the
 certified occurrences would moreover fence the speculative regions, since no live state other than a
 non-re-entrant $q_0$ consumes a certified symbol, so a scan begun at a wrong entry state cannot carry any token
