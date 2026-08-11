@@ -515,12 +515,16 @@ CI run have found no violation.
 
 The approach trades generality for certainty: when the grammar does not cooperate, it offers no usable split points, by
 design, and the speculation and composition families remain the applicable answers we know of. Several extensions look
-natural. A
-*conditional* certificate over symbol pairs or short windows ("`)` followed by `\n`") would recover splitting for
-grammars where no single byte certifies. A hybrid plan could split at certified bytes where they exist and fall back to
-speculative entry elsewhere, keeping the guarantee where it is free and paying for it only where it is not. Finally, the
-grammar-refactoring lever of Section 6 could be automated: given a token set, propose the minimal re-tokenization that
-makes a chosen byte certify.
+natural, and the first has since been carried out: the companion report
+[arXiv:2608.09761](https://arxiv.org/abs/2608.09761) generalizes the certificate from single bytes to short byte
+windows, certifying a cut at a fixed offset inside every occurrence of a multi-byte string, which recovers splitting
+for some grammars where no single byte certifies; the certificate of this report is exactly its length-one case. A
+hybrid plan could split at certified bytes where they exist and fall back to speculative entry elsewhere, keeping the
+guarantee where it is free and paying for it only where it is not; the certified occurrences would moreover fence the
+speculative regions, since no live state other than a non-re-entrant initial state consumes a certified symbol, so
+misprediction repair is confined to the gap before the next certified occurrence. Finally, the grammar-refactoring
+lever of Section 6 could be automated: given a token set, propose the minimal re-tokenization that makes a chosen byte
+certify.
 
 ## 9 Related-work summary
 
