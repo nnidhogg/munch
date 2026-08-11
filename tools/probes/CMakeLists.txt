@@ -49,6 +49,26 @@ if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_recovery_quality COMMAND munch_recovery_quality)
 endif ()
 
+# Occurrence of certified positions on corpora, the empirical question both reports name and neither answers.
+# Runs as a test because the grammar-level facts (no exact bytes on the published rows, the whitespace-anchored
+# two-byte census, the structural poison-byte windows) and the generated-corpus plan-and-splice equality are hard
+# assertions; the campaign form takes a corpus directory and archives the CSV under the collection ritual.
+add_executable(munch_corpus_windows src/corpus_windows.cpp)
+
+target_include_directories(munch_corpus_windows
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+)
+
+target_link_libraries(munch_corpus_windows
+        PRIVATE
+        munch_core
+)
+
+if (MUNCH_BUILD_TESTS)
+    add_test(NAME munch_corpus_windows COMMAND munch_corpus_windows)
+endif ()
+
 # Dev-grade preview of the split-windows benchmark campaign: plans cuts at window-recovered origins, asserts
 # stream equality against the serial scan, and prints unarchived throughput. The equality assertions are why it
 # runs as a test; no printed figure may be quoted without the collect.sh ritual.
