@@ -739,7 +739,8 @@ symbols under each: read it as [arXiv:2608.03473](https://arxiv.org/abs/2608.034
 [docs/split_points.md](docs/split_points.md), or build the formal version from [paper/](paper/). Its companion report
 *Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies* generalizes the certificate
 from single bytes to short byte windows, the mechanism behind `chunk_boundaries_with_windows()`: read it as
-[arXiv:2608.09761](https://arxiv.org/abs/2608.09761) or build it from the same directory.
+[arXiv:2608.09761](https://arxiv.org/abs/2608.09761), as [docs/split_windows.md](docs/split_windows.md), or build it
+from the same directory.
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
