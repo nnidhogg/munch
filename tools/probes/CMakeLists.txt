@@ -69,6 +69,26 @@ if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_corpus_windows COMMAND munch_corpus_windows)
 endif ()
 
+# Pins the window planner's malformed-input caveat as a checked behavior: on a deterministically broken
+# corpus the plan still recovers its chunks, every chunk consumes fully, and the spliced token count exceeds
+# the stop-on-first-error serial count, with both counts pinned. The campaign form measures the same hazard
+# on external corpora; its collection is paper/data/malformed-splice-2026-08.
+add_executable(munch_malformed_splice src/malformed_splice.cpp)
+
+target_include_directories(munch_malformed_splice
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+)
+
+target_link_libraries(munch_malformed_splice
+        PRIVATE
+        munch_core
+)
+
+if (MUNCH_BUILD_TESTS)
+    add_test(NAME munch_malformed_splice COMMAND munch_malformed_splice)
+endif ()
+
 # Dev-grade preview of the split-windows benchmark campaign: plans cuts at window-recovered origins, asserts
 # stream equality against the serial scan, and prints unarchived throughput. The equality assertions are why it
 # runs as a test; no printed figure may be quoted without the collect.sh ritual.
