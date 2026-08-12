@@ -33,9 +33,17 @@
 // The occurrence begins at most three bytes before the answer, the longest window is four bytes with origin at
 // most three, so every certified answer at or past end + 3 MUST land, and the harness asserts exactly that,
 // failing the run on any violation. Answers in the seam band [end, end + 3) may rest on an occurrence straddling
-// the seam, where no theorem speaks; they are measured, not asserted. A second hard assertion runs before any
+// the seam, where the theorems bind only repairs that preserve the straddling evidence and predict nothing
+// about the mapped-pristine oracle; they are measured, not asserted. A second hard assertion runs before any
 // corruption: on the pristine corpus, every next_certified_start() answer from sampled offsets must be a boundary
 // of B, the same oracle discipline the split-points report uses.
+//
+// The position-only answer hides its evidence, so the harness replicates the walk to recover it: each
+// certified answer's CSV row carries two extra columns, the evidence's begin offset and the minimal answer
+// any certificate at or after the search start would have produced. A sharper transfer assertion fires on
+// the exact precondition rather than the three-byte margin: a certified answer whose evidence begins at or
+// past the corruption end MUST land. The conservative end-plus-three assertion stays beside it, and the
+// summary reports the covered and straddling tallies with the nonminimality figure.
 //
 // METRICS, per grammar row, operation, k, and strategy, aggregated over trials whose damage actually broke the
 // serial scan (damage the grammar absorbs is counted and set aside):
@@ -589,6 +597,73 @@ struct Row
 };
 
 /**
+ * @brief The evidence behind a walk answer: the certified byte's position or the window occurrence's start.
+ *
+ * Replicates next_certified_start()'s walk deterministically and reports where the answering certificate
+ * begins, which the position-only return cannot carry; the support-aware classification and its assertion
+ * read the theorems' exact precondition from this. A mismatch with the library's answer is a harness defect
+ * and fails the run.
+ */
+std::optional<std::size_t> evidence_of(
+        const munch::core::Lexer& lexer, const std::string_view input, const std::size_t from, const std::size_t answer)
+{
+    for (std::size_t at{from}; at < input.size(); ++at)
+    {
+        if (lexer.is_split_point(input[at]))
+        {
+            return at == answer ? std::optional{at} : std::nullopt;
+        }
+
+        const auto limit{std::min<std::size_t>(4, input.size() - at)};
+
+        for (std::size_t length{2}; length <= limit; ++length)
+        {
+            if (const auto origin{lexer.is_split_window(input.substr(at, length))})
+            {
+                return at + *origin == answer ? std::optional{at} : std::nullopt;
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief The smallest answer any certificate at or after the offset yields, for the nonminimality figure.
+ *
+ * Evidence past the walk's answer cannot yield a smaller one, so the scan stops there.
+ */
+std::size_t minimal_answer(
+        const munch::core::Lexer& lexer, const std::string_view input, const std::size_t from, const std::size_t answer)
+{
+    auto minimal{answer};
+
+    for (std::size_t at{from}; at <= answer && at < input.size(); ++at)
+    {
+        if (lexer.is_split_point(input[at]))
+        {
+            minimal = std::min(minimal, at);
+
+            continue;
+        }
+
+        const auto limit{std::min<std::size_t>(4, input.size() - at)};
+
+        for (std::size_t length{2}; length <= limit; ++length)
+        {
+            if (const auto origin{lexer.is_split_window(input.substr(at, length))})
+            {
+                minimal = std::min(minimal, at + *origin);
+
+                break;
+            }
+        }
+    }
+
+    return minimal;
+}
+
+/**
  * @brief Hard oracle on the pristine corpus: every certified answer from sampled offsets must be a boundary.
  *
  * The corpus is completely tokenizable, so the certificates' own theorems apply to it directly, with no repair
@@ -709,7 +784,7 @@ int main(const int argc, const char** argv)
     // statistic stays computable from the archive; overshoot is blank where no post-corruption boundary exists.
     if (csv)
     {
-        std::fprintf(csv, "grammar,op,k,trial,p,e,strategy,answer,landed,overshoot,lost,cascade\n");
+        std::fprintf(csv, "grammar,op,k,trial,p,e,strategy,answer,landed,overshoot,lost,cascade,evidence,minimal\n");
     }
 
     constexpr std::array<Op, 3> ops{Op::Substitute, Op::Delete, Op::Insert};
@@ -717,6 +792,16 @@ int main(const int argc, const char** argv)
     constexpr std::array<std::size_t, 3> ks{1, 4, 16};
 
     std::size_t theorem_failures{0};
+
+    std::size_t evidence_covered{0};
+
+    std::size_t evidence_straddling{0};
+
+    std::size_t evidence_straddling_landed{0};
+
+    std::size_t nonminimal_answers{0};
+
+    std::size_t nonminimal_bytes{0};
 
     std::size_t absorbed_total{0};
 
@@ -821,6 +906,62 @@ int main(const int argc, const char** argv)
 
                         cell.landings += did_land ? 1 : 0;
 
+                        // Support-aware classification: replicate the walk's evidence and assert the sharp
+                        // form of the transfer, a certified answer whose evidence clears the corruption end
+                        // MUST land; the conservative end-plus-three assertion stays below.
+                        std::optional<std::size_t> evidence;
+
+                        auto minimal{*r};
+
+                        if (s == 0)
+                        {
+                            evidence = evidence_of(row.lexer, y.input, e + 1, *r);
+
+                            if (!evidence)
+                            {
+                                std::fprintf(
+                                        stderr, "EVIDENCE MISMATCH: %s %s k=%zu p=%zu e=%zu answered %zu\n",
+                                        std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e, *r);
+
+                                ++theorem_failures;
+                            }
+                            else
+                            {
+                                minimal = minimal_answer(row.lexer, y.input, e + 1, *r);
+
+                                if (minimal < *r)
+                                {
+                                    ++nonminimal_answers;
+
+                                    nonminimal_bytes += *r - minimal;
+                                }
+
+                                if (*evidence >= y.end)
+                                {
+                                    ++evidence_covered;
+
+                                    if (!did_land)
+                                    {
+                                        std::fprintf(
+                                                stderr, "EVIDENCE VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
+                                                std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e,
+                                                *r);
+
+                                        ++theorem_failures;
+                                    }
+                                }
+                                else
+                                {
+                                    ++evidence_straddling;
+
+                                    if (did_land)
+                                    {
+                                        ++evidence_straddling_landed;
+                                    }
+                                }
+                            }
+                        }
+
                         // The theorem transfer: a certified answer clear of the seam band must land, because the
                         // pristine corpus is itself a tokenizable repair of the preserved suffix.
                         if (s == 0 && *r >= y.end + 3 && !did_land)
@@ -892,7 +1033,16 @@ int main(const int argc, const char** argv)
                                         static_cast<std::ptrdiff_t>(*r) - static_cast<std::ptrdiff_t>(*first));
                             }
 
-                            std::fprintf(csv, ",%zu,%zu\n", lost, events);
+                            std::fprintf(csv, ",%zu,%zu", lost, events);
+
+                            if (s == 0 && evidence)
+                            {
+                                std::fprintf(csv, ",%zu,%zu\n", *evidence, minimal);
+                            }
+                            else
+                            {
+                                std::fprintf(csv, ",,\n");
+                            }
                         }
                     }
                 }
@@ -937,6 +1087,12 @@ int main(const int argc, const char** argv)
     }
 
     std::printf("\ndamage absorbed by the grammar without a scan failure: %zu trials\n", absorbed_total);
+
+    std::printf(
+            "evidence-covered answers: %zu, all asserted to land; straddling: %zu, of which %zu landed\n",
+            evidence_covered, evidence_straddling, evidence_straddling_landed);
+
+    std::printf("nonminimal answers: %zu, %zu extra bytes in total\n", nonminimal_answers, nonminimal_bytes);
 
     if (oracle_failures != 0 || theorem_failures != 0)
     {
