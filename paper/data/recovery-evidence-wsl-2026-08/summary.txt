@@ -1,0 +1,123 @@
+pristine oracle: 0 violations over 3 rows x 512 samples
+
+c-like conventional with strings and line comments
+  op           k  strategy    answers   refuse   landing  overshoot    lost   cascade
+  substitute   1  certified       531        0    100.0%       24.6     7.6      1.00
+  substitute   1  skip-one        531        0     35.0%       -1.7     0.0      1.03
+  substitute   1  newline         531        0    100.0%       24.8     7.8      1.00
+  substitute   1  semicolon       531        0    100.0%       79.3    23.7      1.00
+  substitute   4  certified       840        0     96.9%       24.4     7.4      1.01
+  substitute   4  skip-one        840        0      2.4%       -4.6     0.0      2.70
+  substitute   4  newline         840        0     99.2%       24.7     7.7      1.01
+  substitute   4  semicolon       840        0     98.8%       81.4    24.3      1.01
+  substitute  16  certified       958        0     92.3%       21.6     6.7      1.05
+  substitute  16  skip-one        958        0      1.8%      -16.7     0.0     10.39
+  substitute  16  newline         958        0     94.3%       21.8     6.9      1.06
+  substitute  16  semicolon       958        0     94.8%       70.4    21.2      1.05
+  delete       1  certified        28        0    100.0%       18.9     5.7      1.00
+  delete       1  skip-one         28        0     64.3%       -2.2     0.0      1.00
+  delete       1  newline          28        0    100.0%       19.2     6.0      1.00
+  delete       1  semicolon        28        0    100.0%       87.8    27.2      1.00
+  delete       4  certified        78        0     98.7%       23.0     6.0      1.00
+  delete       4  skip-one         78        0     61.5%        0.8     0.0      1.00
+  delete       4  newline          78        0    100.0%       23.3     6.2      1.00
+  delete       4  semicolon        78        0    100.0%       77.7    22.0      1.00
+  delete      16  certified       240        0    100.0%       22.5     6.1      1.00
+  delete      16  skip-one        240        0     59.6%        1.0     0.0      1.00
+  delete      16  newline         240        0    100.0%       22.8     6.4      1.00
+  delete      16  semicolon       240        0    100.0%       87.4    25.4      1.00
+  insert       1  certified       510        0     99.8%       24.1     7.4      1.00
+  insert       1  skip-one        510        0     38.2%       -1.6     0.0      1.00
+  insert       1  newline         510        0     99.8%       24.3     7.7      1.00
+  insert       1  semicolon       510        0    100.0%       78.6    23.6      1.00
+  insert       4  certified       808        0     97.5%       24.5     7.7      1.00
+  insert       4  skip-one        808        0      1.4%       -4.0     0.0      2.63
+  insert       4  newline         808        0     99.3%       24.8     7.9      1.00
+  insert       4  semicolon       808        0     99.3%       73.0    22.0      1.00
+  insert      16  certified       844        0     91.6%       23.0     7.2      1.06
+  insert      16  skip-one        844        0      0.0%      -16.1     0.0     10.38
+  insert      16  newline         844        0     93.6%       23.3     7.5      1.06
+  insert      16  semicolon       844        0     95.0%       68.9    20.7      1.05
+
+c-like conventional plus block comments alone
+  op           k  strategy    answers   refuse   landing  overshoot    lost   cascade
+  substitute   1  certified       348        0    100.0%      157.6    34.4      1.00
+  substitute   1  skip-one        348        0     36.5%       -2.6     0.0      1.00
+  substitute   1  newline         348        0     96.6%       18.8     6.9      1.00
+  substitute   1  semicolon       348        0    100.0%      128.9    27.0      1.00
+  substitute   4  certified       589        0    100.0%      152.1    32.8      1.00
+  substitute   4  skip-one        589        0      0.7%       -7.3     0.0      2.65
+  substitute   4  newline         589        0     92.9%       15.5     6.5      1.00
+  substitute   4  semicolon       589        0     98.6%      126.5    25.7      1.01
+  substitute  16  certified       597        0    100.0%      137.2    29.2      1.00
+  substitute  16  skip-one        597        0      0.0%      -23.1     0.0     10.49
+  substitute  16  newline         597        0     84.4%        9.7     5.4      1.05
+  substitute  16  semicolon       596        1     95.6%      131.1    26.4      1.04
+  delete       1  certified         0        0      0.0%        0.0     0.0      0.00
+  delete       1  skip-one          0        0      0.0%        0.0     0.0      0.00
+  delete       1  newline           0        0      0.0%        0.0     0.0      0.00
+  delete       1  semicolon         0        0      0.0%        0.0     0.0      0.00
+  delete       4  certified         0        0      0.0%        0.0     0.0      0.00
+  delete       4  skip-one          0        0      0.0%        0.0     0.0      0.00
+  delete       4  newline           0        0      0.0%        0.0     0.0      0.00
+  delete       4  semicolon         0        0      0.0%        0.0     0.0      0.00
+  delete      16  certified         0        0      0.0%        0.0     0.0      0.00
+  delete      16  skip-one          0        0      0.0%        0.0     0.0      0.00
+  delete      16  newline           0        0      0.0%        0.0     0.0      0.00
+  delete      16  semicolon         0        0      0.0%        0.0     0.0      0.00
+  insert       1  certified       379        0    100.0%      164.3    36.6      1.00
+  insert       1  skip-one        379        0     33.0%       -1.8     0.0      1.00
+  insert       1  newline         379        0     98.9%       19.9     7.2      1.00
+  insert       1  semicolon       379        0    100.0%      120.9    24.2      1.00
+  insert       4  certified       572        0    100.0%      164.2    36.5      1.00
+  insert       4  skip-one        572        0      2.1%       -4.9     0.0      2.66
+  insert       4  newline         572        0     96.7%       20.0     7.4      1.01
+  insert       4  semicolon       572        0     98.8%      125.2    26.1      1.01
+  insert      16  certified       576        0    100.0%      160.1    34.7      1.00
+  insert      16  skip-one        576        0      0.0%      -16.4     0.0     10.45
+  insert      16  newline         576        0     93.9%       19.5     7.2      1.04
+  insert      16  semicolon       576        0     94.6%      114.3    23.3      1.05
+
+json rfc 8259 lexical forms
+  op           k  strategy    answers   refuse   landing  overshoot    lost   cascade
+  substitute   1  certified       598        0     98.8%        4.5     2.1      1.01
+  substitute   1  skip-one        598        0     41.3%       -2.4     0.0      7.19
+  substitute   1  newline         598        0     99.8%       28.2    11.4      1.00
+  substitute   1  semicolon         2      596    100.0%        0.0     0.0      1.00
+  substitute   4  certified       861        0     97.3%        3.7     1.5      1.02
+  substitute   4  skip-one        861        0      0.0%       -6.0     0.0     13.41
+  substitute   4  newline         861        0     98.5%       29.9    12.0      1.02
+  substitute   4  semicolon         7      854      0.0%       -6.0     0.0      1.00
+  substitute  16  certified       975        0     93.7%        2.4     1.5      1.06
+  substitute  16  skip-one        975        0      0.0%      -19.4     0.0     24.61
+  substitute  16  newline         975        0     93.8%       28.0    11.6      1.06
+  substitute  16  semicolon        51      924      5.9%       -8.6     0.0      1.00
+  delete       1  certified       220        0    100.0%        5.7     1.8      1.00
+  delete       1  skip-one        220        0      4.1%       -1.5     0.0     10.87
+  delete       1  newline         220        0    100.0%       28.0    10.9      1.00
+  delete       1  semicolon         0      220      0.0%        0.0     0.0      0.00
+  delete       4  certified       586        0     98.6%        5.4     1.2      1.01
+  delete       4  skip-one        586        0      9.9%       -1.1     0.0     12.57
+  delete       4  newline         586        0    100.0%       32.0    12.2      1.00
+  delete       4  semicolon         0      586      0.0%        0.0     0.0      0.00
+  delete      16  certified       483        0    100.0%        5.7     1.3      1.00
+  delete      16  skip-one        483        0      6.4%       -1.8     0.0     13.21
+  delete      16  newline         483        0    100.0%       29.2    10.9      1.00
+  delete      16  semicolon         0      483      0.0%        0.0     0.0      0.00
+  insert       1  certified       543        0     99.6%        4.9     2.7      1.00
+  insert       1  skip-one        543        0     65.2%       -1.8     0.0      3.74
+  insert       1  newline         543        0     99.8%       31.2    12.7      1.00
+  insert       1  semicolon         0      543      0.0%        0.0     0.0      0.00
+  insert       4  certified       730        0     95.5%        3.7     2.2      1.04
+  insert       4  skip-one        730        0      0.0%       -6.6     0.0     10.17
+  insert       4  newline         730        0     98.5%       28.3    11.6      1.02
+  insert       4  semicolon         9      721     11.1%       -2.4     0.0      1.00
+  insert      16  certified       959        0     93.4%        2.4     1.7      1.06
+  insert      16  skip-one        959        0      0.0%      -19.7     0.0     23.88
+  insert      16  newline         959        0     94.0%       26.6    11.4      1.06
+  insert      16  semicolon        56      903      0.0%      -10.7     0.0      1.02
+
+damage absorbed by the grammar without a scan failure: 13147 trials
+evidence-covered answers: 13016, all asserted to land; straddling: 837, of which 447 landed
+nonminimal answers: 51, 51 extra bytes in total
+all oracle and theorem assertions held
