@@ -410,18 +410,22 @@ public:
     /**
      * @brief Finds the first position at or after the given offset that a certificate marks as a token start.
      *
-     * One forward walk, certificates merged nearest-first: a certified byte answers at its own position, and a
-     * certified window of two to four bytes answers at its occurrence plus the certified origin. Unlike the
-     * planners, byte certificates do not switch the window search off, since a recovery wants the nearest
-     * resynchronization point of either kind; a nullable token set contributes no windows, because only the
-     * window proof excludes it, while its byte certificates, when any, stand. The answer is the first
-     * certificate met in walk order, not a guaranteed minimum, and windows beginning before the given offset
-     * are not considered.
+     * One forward walk consulting both certificate kinds at every position: a certified byte answers at its
+     * own position, and a certified window of two to four bytes answers at its occurrence plus the certified
+     * origin. Unlike the planners, byte certificates do not switch the window search off; a nullable token set
+     * contributes no windows, because only the window proof excludes it, while its byte certificates, when
+     * any, stand. The answer is the first certificate met in evidence order, the walk's position order, which
+     * is not always the smallest answerable position: a window met earlier can answer a byte or two past one
+     * met later, and windows beginning before the given offset are not considered.
      *
-     * The contract is the certificates' own: if the input from the returned position tokenizes completely,
-     * that position is a true token start of the suffix's segmentation. Otherwise the return is a
-     * grammar-derived resynchronization where classical panic mode offers only convention, and nothing more is
-     * promised. When no certificate exists at or after the offset, there is no answer.
+     * The contract is complete-repair invariance, not the vacuous observation that a suffix which tokenizes
+     * begins a token: in every completely tokenizable replacement of the input before the answer's supporting
+     * evidence, the answer's image begins a token of the repaired segmentation. The evidence is the certified
+     * byte itself or the whole window occurrence, beginning at most three bytes before the answer; a repair
+     * that alters the evidence forfeits the guarantee, and the existence of any tokenizable repair is not
+     * promised, so where the damage has no fix the guarantee holds vacuously. The certificate speaks for this
+     * automaton alone; under mode-driven scanning that scoping is load-bearing. When no certificate exists at
+     * or after the offset, there is no answer.
      * @param input The input being scanned.
      * @param from The offset the search starts at; at or past the input's size finds nothing.
      * @return The first certified token-start position, or std::nullopt when none exists.

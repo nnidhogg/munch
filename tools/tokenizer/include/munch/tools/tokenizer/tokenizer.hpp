@@ -118,13 +118,14 @@ public:
      * @brief Seeks to the next position the active mode's automaton certifies as a token start.
      *
      * The certified counterpart of the manual error loop: where seek() skips by whatever rule the driver
-     * invents, recover() asks the active mode's lexer for its nearest certified byte or split window at or
-     * after the position past the current one, and moves there. The contract is the certificates' own: if the
-     * remaining input from the recovered position tokenizes completely, scanning resumes at a true token start
-     * of that suffix's segmentation; otherwise it is a grammar-derived resynchronization, and the next read may
-     * error again. Only the active mode's lexer is consulted, and a forced or grammar-driven mode change is the
-     * driver's business exactly as for next(); when the automaton certifies nothing ahead, the position does
-     * not move.
+     * invents, recover() asks the active mode's lexer for its first certified byte or split window in evidence
+     * order at or after the position past the current one, and moves there. The contract is complete-repair
+     * invariance: in every completely tokenizable repair of the input before the answer's preserved evidence,
+     * scanning resumes at a token start of the repaired segmentation. No tokenizable repair is promised to
+     * exist, and the next read may error again. Consulting the active mode is a policy the flat theorems do
+     * not upgrade to a modal guarantee, since a repair could reach the resume point in a different mode; a
+     * forced or grammar-driven mode change is the driver's business exactly as for next(). When the automaton
+     * certifies nothing ahead, the position does not move.
      * @return The number of bytes skipped from the current position, or std::nullopt when no certified start
      *         exists in the remaining input.
      */
