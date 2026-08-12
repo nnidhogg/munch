@@ -1,11 +1,23 @@
-# Certified Split Points for Parallel Lexing: the technical report in LaTeX
+# The technical reports in LaTeX
 
-`split-points.tex` is the formal version of [docs/split_points.md](../docs/split_points.md): the same argument stated
-over the live subautomaton, with numbered definitions, the split-invariance theorem and its malformed-input corollary,
-the characterization theorem that makes the condition necessary as well as sufficient, the weaker certificate modulo the
-tokens a caller discards with its own soundness and strict-extension results, and a bibliography. The markdown report is
-the accessible form, linked from the README and kept next to the implementation it describes; it carries the same claims
-but not every formal qualification, so where the two differ this directory is authoritative.
+Two sibling reports live here, sharing `figures/` and `data/`.
+
+`split-points/split-points.tex` is the formal version of [docs/split_points.md](../docs/split_points.md), published as
+[arXiv:2608.03473](https://arxiv.org/abs/2608.03473): the argument stated over the live subautomaton, with numbered
+definitions, the split-invariance theorem and its malformed-input corollary, the characterization theorem that makes
+the condition necessary as well as sufficient, the weaker certificate modulo the tokens a caller discards with its own
+soundness and strict-extension results, and a bibliography.
+
+`split-windows/split-windows.tex` is its companion, published as
+[arXiv:2608.09761](https://arxiv.org/abs/2608.09761) and mirrored by [docs/split_windows.md](../docs/split_windows.md):
+the generalization from certified bytes to certified windows, with the conservative cloud model and its soundness
+proof, the finite quotient that makes the search a decision procedure, the specialization theorem tying length one to
+the shipped predicate, and the strictness witnesses. Its evaluation runs as asserted probes in the test suite
+(`tools/probes/window_gate.cpp`), and `split-windows/campaign.md` names the archived collections behind its figures.
+
+The markdown reports are the accessible form, linked from the README and kept next to the implementation they
+describe; they carry the same claims but not every formal qualification, so where the two differ this directory is
+authoritative.
 
 ## Building
 
@@ -14,8 +26,8 @@ sudo apt-get install -y texlive-latex-recommended texlive-fonts-recommended texl
 make
 ```
 
-The result is `split-points.pdf`. Building needs no Graphviz and no compiler: the figure PDFs under `figures/` are
-checked in.
+The recursive Makefile builds both reports: `split-points/split-points.pdf` and `split-windows/split-windows.pdf`.
+Building needs no Graphviz and no compiler: the figure PDFs under `figures/` are checked in.
 
 ## Figures
 
