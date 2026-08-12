@@ -1,0 +1,1 @@
+934 files, 11495688 bytes; serial consumed 3504937 (30.5%), 596401 tokens; 8 chunks, 5 incomplete; spliced 1276875 tokens, ratio 2.14
