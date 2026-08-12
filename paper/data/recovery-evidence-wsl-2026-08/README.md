@@ -1,7 +1,7 @@
 # Recovery quality campaign with evidence classification, 2026-08
 
 The same deterministic campaign as `recovery-wsl-2026-08`, rerun by the harness at the commit that taught it
-to replicate each certified answer's evidence: `tools/probes/recovery_quality.cpp` with the corpus at 256 KiB
+to replicate each certified answer's evidence: `tools/probes/src/recovery_quality.cpp` with the corpus at 256 KiB
 and 1000 trials per operation and k, collected on the development machine under WSL2. The campaign measures
 recovery quality, not throughput, so the machine does not gate what these figures support, exactly as for the
 sibling collection. Every trial is derived from the same linear congruential generator as before, so the

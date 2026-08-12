@@ -1108,7 +1108,7 @@ TEST_F(Lexer_test, Window_refusals_pin_the_nullable_guard_and_the_live_target_fi
     EXPECT_FALSE(dead_lexer.is_split_window("a").has_value());
 }
 
-TEST_F(Lexer_test, Next_certified_start_merges_both_certificates_nearest_first)
+TEST_F(Lexer_test, Next_certified_start_answers_both_certificate_kinds_in_evidence_order)
 {
     enum class Token_kind : uint8_t
     {

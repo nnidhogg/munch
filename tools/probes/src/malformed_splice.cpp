@@ -4,11 +4,12 @@
 // program behind it.
 //
 // THE HAZARD. chunk_boundaries_with_windows() documents that on malformed input a window cut can land inside
-// a token of the serial scan's doomed suffix, the fragments can each consume fully, and the concatenated
-// chunk streams then contain tokens the serial scan never reaches. Blind splicing therefore OVERPRODUCES:
-// the spliced token count exceeds the stop-on-first-error serial count, and nothing in the per-chunk results
-// flags it. Continuation past a failure needs an explicit restart contract, which is what certified recovery
-// supplies; this probe measures what its absence costs.
+// a token of the serial scan's doomed suffix, and the concatenated chunk streams then contain tokens the
+// serial scan never reaches. The undamaged fragments consume fully and silently; only chunks holding a
+// locally unconsumable byte report short consumption, so a caller checking the per-chunk counts is flagged,
+// and one accepting later-chunk output without checking swallows the overproduced stream. Continuation past
+// a failure needs an explicit restart contract, which is what certified recovery supplies; this probe
+// measures what ignoring the flags costs.
 //
 // WHAT RUNS AS A TEST. A deterministic generated corpus is broken by one unconsumable byte near its front,
 // so the serial scan stops there. The window plan still recovers all eight chunks; the chunk holding the

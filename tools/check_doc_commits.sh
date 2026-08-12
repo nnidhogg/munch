@@ -20,6 +20,7 @@ set -euo pipefail
 foreign=(
     652435f                                  # lexertl17, the revision the engine comparison pins
     884f17a24301955d47cbb22318f06b8d8bee7ca3 # mdspan, the revision master pins
+    ab8058aa09e8c14b86b3d06c08ade66f863d22fe # rust-lang/rust, the corpus pin of the malformed-splice archive
 )
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
