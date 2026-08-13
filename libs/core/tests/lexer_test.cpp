@@ -10,6 +10,8 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <map>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -1599,6 +1601,252 @@ TEST_F(Lexer_test, Complete_c_like_grammar_with_block_comments_windows_end_to_en
     }
 
     EXPECT_EQ(rejoined, serial);
+}
+
+TEST_F(Lexer_test, Mandatory_core_reports_the_family_verdicts_and_a_long_core_refuses_planning)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        String,
+        Comment,
+        Whitespace,
+        Operator,
+    };
+
+    const auto not_star{any_of(Set::all() - Set{'*'})};
+
+    const auto stars_then_other{concat(plus(any_of(Set{'*'})), any_of(Set::all() - Set{'*'} - Set{'/'}))};
+
+    const auto block_comment{
+            concat(text("/*"), kleene(choice(not_star, stars_then_other)), plus(any_of(Set{'*'})), text("/"))};
+
+    // The block-comment row: the closer is the only exit from an input-total comment interior, so every death
+    // word carries "*/" before its killing byte and the accessor reports the closer. This is the licence the
+    // filtered planner runs on.
+    {
+        Builder_dbg builder;
+
+        builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+        builder.add_token(block_comment, Token_kind::Comment, 1);
+        builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+        EXPECT_EQ(builder.build().mandatory_core(), "*/");
+    }
+
+    // The JSON row: the string interior dies on the bytes outside the printable set, so no live state consumes
+    // everything and nothing proposes a core. Certified windows exist for this family; the accelerator simply
+    // has no licence, and planning keeps the exhaustive walk.
+    {
+        Builder_dbg builder;
+
+        builder.add_token(
+                concat(text("\""), kleene(any_of(Set::printable() - Set{'"'})), text("\"")), Token_kind::String, 2);
+        builder.add_token(plus(any_of(Set::digits())), Token_kind::Identifier, 2);
+        builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+        for (const auto op : {"{", "}", "[", "]", ":", ","})
+        {
+            builder.add_token(text(op), Token_kind::Operator, 3);
+        }
+
+        EXPECT_EQ(builder.build().mandatory_core(), "");
+    }
+
+    // Single-byte tokens leave no input-total state at all, so the accessor is empty for the toy row too.
+    {
+        Builder_dbg builder;
+
+        builder.add_token(text("a"), Token_kind::Identifier, 2);
+        builder.add_token(text("b"), Token_kind::Operator, 2);
+
+        EXPECT_EQ(builder.build().mandatory_core(), "");
+    }
+
+    // Quadruple-quote strings prove a four-byte core, one byte past the longest window the planner tries, so
+    // no candidate window can hold the core and a byte after it. The filter concludes the walk's refusal
+    // without scanning, and the plan is the single serial chunk.
+    {
+        Builder_dbg builder;
+
+        const auto not_quote{any_of(Set::all() - Set{'"'})};
+
+        const auto interior{
+                choice(not_quote, concat(text("\""), not_quote), concat(text("\"\""), not_quote),
+                       concat(text("\"\"\""), not_quote))};
+
+        builder.add_token(concat(text("\"\"\"\""), kleene(interior), text("\"\"\"\"")), Token_kind::String, 1);
+        builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+        builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+        const auto lexer{builder.build()};
+
+        EXPECT_EQ(lexer.mandatory_core(), "\"\"\"\"");
+
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            EXPECT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+        }
+
+        std::string input;
+
+        for (int block{0}; block < 40; ++block)
+        {
+            input += "name ";
+            input += "\"\"\"\"text with \"\"inner\"\" quotes\nand lines\"\"\"\" ";
+            input += "tail\n";
+        }
+
+        const std::vector<std::size_t> serial{0, input.size()};
+
+        EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 6), serial);
+    }
+}
+
+TEST_F(Lexer_test, Core_filtered_planning_equals_the_exhaustive_walk)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Integer,
+        Comment,
+        Line_comment,
+        Whitespace,
+        Operator,
+    };
+
+    Builder_dbg builder;
+
+    const auto not_star{any_of(Set::all() - Set{'*'})};
+
+    const auto stars_then_other{concat(plus(any_of(Set{'*'})), any_of(Set::all() - Set{'*'} - Set{'/'}))};
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Integer, 2);
+    builder.add_token(
+            concat(text("/*"), kleene(choice(not_star, stars_then_other)), plus(any_of(Set{'*'})), text("/")),
+            Token_kind::Comment, 1);
+    builder.add_token(concat(text("//"), kleene(any_of(Set::all() - Set{'\n'}))), Token_kind::Line_comment, 1);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+    for (const auto op : {"!", "=", "+", ";", "(", ")", "*", "/"})
+    {
+        builder.add_token(text(op), Token_kind::Operator, 3);
+    }
+
+    const auto lexer{builder.build()};
+
+    ASSERT_EQ(lexer.mandatory_core(), "*/");
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        ASSERT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    // The planner exactly as it shipped before the filter existed: every position from the floor, lengths
+    // ascending, first certificate wins, refusal only at the end of the input. The filtered planner claims
+    // equality with this walk, so this test holds the claim against drift byte for byte.
+    const auto reference{[&lexer](const std::string_view text, const std::size_t chunks) {
+        std::vector<std::size_t> boundaries{0};
+
+        const auto size{text.size()};
+
+        const auto usable{std::min(chunks, size)};
+
+        const auto step{size / usable};
+
+        const auto step_remainder{size % usable};
+
+        constexpr std::size_t longest{4};
+
+        std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
+
+        std::size_t window_target{0};
+
+        std::size_t window_carry{0};
+
+        for (std::size_t index{1}; index < usable; ++index)
+        {
+            window_target += step;
+
+            if (window_carry += step_remainder; window_carry >= usable)
+            {
+                ++window_target;
+
+                window_carry -= usable;
+            }
+
+            for (auto occurrence{std::max(window_target, boundaries.back() + 1)}; occurrence + 2 <= size; ++occurrence)
+            {
+                const auto limit{std::min(longest, size - occurrence)};
+
+                auto cut{false};
+
+                for (std::size_t length{2}; length <= limit && !cut; ++length)
+                {
+                    std::string window{text.substr(occurrence, length)};
+
+                    auto found{memo.find(window)};
+
+                    if (found == memo.end())
+                    {
+                        found = memo.emplace(window, lexer.is_split_window(window)).first;
+                    }
+
+                    if (const auto& origin{found->second})
+                    {
+                        boundaries.push_back(occurrence + *origin);
+
+                        cut = true;
+                    }
+                }
+
+                if (cut)
+                {
+                    break;
+                }
+            }
+        }
+
+        boundaries.push_back(size);
+
+        return boundaries;
+    }};
+
+    // Closers dense at the front and absent from the tail, so one plan covers certified cuts, in-window
+    // origins away from the evidence position, and refused targets falling through to the final boundary.
+    std::string input;
+
+    for (int block{0}; block < 18; ++block)
+    {
+        input += "/* note\n   spans lines */\n";
+        input += "total = total + 7; x = (y); /* end */\n";
+    }
+
+    for (int block{0}; block < 18; ++block)
+    {
+        input += "plain = code + 1; // closer-free tail\n";
+    }
+
+    for (const auto chunks : {2U, 3U, 5U, 8U, 13U})
+    {
+        const auto walk{reference(input, chunks)};
+
+        EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, chunks), walk) << chunks;
+
+        // The comparison must be over real cuts, or the equality would hold vacuously between empty plans.
+        EXPECT_GT(walk.size(), 2U) << chunks;
+    }
+
+    // A stream with no occurrence of the core at all refuses instantly on the filtered side and after a full
+    // scan on the reference side, with the same single-chunk answer.
+    const std::string bare(4096, 'x');
+
+    const auto refused{lexer.chunk_boundaries_with_windows(bare, 5)};
+
+    EXPECT_EQ(refused, reference(bare, 5));
+
+    EXPECT_EQ(refused, (std::vector<std::size_t>{0, bare.size()}));
 }
 
 TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)

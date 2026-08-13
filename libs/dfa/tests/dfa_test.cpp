@@ -559,6 +559,77 @@ TEST_F(Dfa_test, Unreachable_transitions_do_not_make_the_initial_state_reentrant
     EXPECT_TRUE(simulator.is_split_point('a'));
 }
 
+TEST_F(Dfa_test, Mandatory_core_is_proved_when_every_death_word_carries_it)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+
+    const Token token{1};
+
+    // The confirming shape: q1 consumes every byte, and the only route out of its loop is 'a' into q2, whose
+    // sole live byte returns. Every word that kills a scan sitting in q1 must therefore spell 'a' strictly
+    // before its killing byte, which is exactly the licence the accessor reports.
+    dfa.add_accept_state(q1, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), q1);
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        if (static_cast<char>(symbol) != 'a')
+        {
+            dfa.add_transition(q1, dfa::Label(static_cast<char>(symbol)), q1);
+        }
+    }
+
+    dfa.add_transition(q1, dfa::Label('a'), q2);
+    dfa.add_transition(q2, dfa::Label('c'), q1);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "a");
+}
+
+TEST_F(Dfa_test, Mandatory_core_stays_empty_when_a_second_route_dies_without_it)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+
+    const Token token{1};
+
+    // The refuting shape: the same loop now has a second escape, 'z' into q3, so a scan can die by spelling
+    // "z" and then a byte q3 refuses, a death word that never contains the 'a' the first route proposes. The
+    // proof must fail and the accessor must stay empty, since a nonempty answer here would license a planner
+    // filter that skips cuts the exhaustive walk finds.
+    dfa.add_accept_state(q1, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), q1);
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        if (static_cast<char>(symbol) != 'a' && static_cast<char>(symbol) != 'z')
+        {
+            dfa.add_transition(q1, dfa::Label(static_cast<char>(symbol)), q1);
+        }
+    }
+
+    dfa.add_transition(q1, dfa::Label('a'), q2);
+    dfa.add_transition(q2, dfa::Label('c'), q1);
+
+    dfa.add_transition(q1, dfa::Label('z'), q3);
+    dfa.add_transition(q3, dfa::Label('c'), q1);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "");
+}
+
 TEST_F(Dfa_test, Accelerated_runs_preserve_longest_match)
 {
     dfa::Builder dfa;

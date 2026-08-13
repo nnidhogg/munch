@@ -182,6 +182,16 @@ public:
      * chunk_boundaries_with_windows() documents. Refusals are model-relative and conservative, never proof that
      * no certificate exists. Derived from the compiled transition table; see dfa::Simulator::is_split_window().
      */
+    /**
+     * @brief The byte string every certified split window provably contains, or empty when none is proved.
+     *
+     * A pass-through of dfa::Simulator::mandatory_core(), where the derivation and its proof live; the
+     * window planner searches occurrences of this string instead of walking every position whenever it is
+     * non-empty, with identical plans either way and the exhaustive walk kept as the fallback.
+     * @return The proved mandatory core, or an empty view.
+     */
+    [[nodiscard]] std::string_view mandatory_core() const noexcept { return simulator_.mandatory_core(); }
+
     [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const
     {
         return simulator_.is_split_window(window);
@@ -281,13 +291,20 @@ public:
      * @brief Computes chunk boundaries like chunk_boundaries(), additionally recovering cuts from certified
      *        split windows where the token set certifies no usable byte.
      *
-     * From each equal-division target the input is walked for the first occurrence of a window of two to four
-     * bytes that is_split_window() certifies, and the cut is placed at the occurrence plus the reported origin.
-     * Each decision is memoized per distinct byte string, so cloud evaluations are bounded by the distinct
-     * windows tried, while the positional scan and its memo lookups still scale with the positions examined; no
-     * representative-corpus pricing is claimed until one is measured. A
-     * nullable token set contributes no windows, since the window proof excludes it, though its byte plan, when any,
-     * stands untouched; when neither certificate offers cuts, the single whole-input chunk results.
+     * From each equal-division target the input is walked for the first occurrence of a window of two to four bytes
+     * that is_split_window() certifies, and the cut is placed at the occurrence plus the reported origin. Each decision
+     * is memoized per distinct byte string, so cloud evaluations are bounded by the distinct windows tried, while the
+     * positional walk and its memo lookups still scale with the positions examined; no representative-corpus pricing is
+     * claimed until one is measured. A nullable token set contributes no windows, since the window proof excludes it,
+     * though its byte plan, when any, stands untouched; when neither certificate offers cuts, the single whole-input
+     * chunk results.
+     *
+     * When the token set proves a mandatory core (mandatory_core()), the walk narrows to its licence: every certifying
+     * window provably contains the core with a byte after it, so candidate windows are generated around core
+     * occurrences alone, visited in the walk's own position-then-length order, and verified by the same memoized
+     * decision. The resulting plan equals the exhaustive walk's, refusals included, at occurrence cost instead of full-
+     * scan cost. A core too long to fit the longest window with a byte to spare refuses every target outright, and an
+     * empty core keeps the exhaustive walk.
      *
      * The window guarantee is conditional where the byte certificate's is not: a certified window pins the
      * covering token's origin at occurrences in completely tokenizable input, a property of the whole input
@@ -330,9 +347,159 @@ public:
         // window refuse, so skipping length one is provably inert rather than something a test could pin.
         constexpr std::size_t longest{4};
 
+        const auto core{simulator_.mandatory_core()};
+
+        // A proved core longer than the longest window minus its trailing byte admits no candidate at all:
+        // no window certifies at these lengths, so every target refuses, exactly as the exhaustive walk
+        // would conclude after scanning to the end of the input.
+        if (!core.empty() && core.size() + 1 > longest)
+        {
+            boundaries.push_back(size);
+
+            return boundaries;
+        }
+
         // One decision per distinct byte string per plan: memoization caps cloud evaluations at the distinct
         // windows tried, while the position loop and its lookups remain per position examined.
         std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
+
+        // Elements are read as the scanners read them, through unsigned char, so every byte-domain element
+        // type forms the same memo key; the string constructor's implicit conversion would reject std::byte.
+        const auto byte_at{[&begin](const std::size_t at) {
+            return static_cast<char>(static_cast<unsigned char>(begin[static_cast<std::ptrdiff_t>(at)]));
+        }};
+
+        // The memoized decision on one window, with the cut at the evidence position plus the certified
+        // origin.
+        const auto certify{[&](const std::size_t at, const std::size_t length) {
+            std::string window;
+
+            window.reserve(length);
+
+            for (std::size_t offset{0}; offset < length; ++offset)
+            {
+                window.push_back(byte_at(at + offset));
+            }
+
+            auto found{memo.find(window)};
+
+            if (found == memo.end())
+            {
+                const auto verdict{is_split_window(window)};
+
+                found = memo.emplace(std::move(window), verdict).first;
+            }
+
+            return found->second;
+        }};
+
+        // The exhaustive walk: every position from the floor, lengths ascending, first certificate wins.
+        const auto walk{[&](const std::size_t floor) -> std::optional<std::size_t> {
+            for (auto occurrence{floor}; occurrence + 2 <= size; ++occurrence)
+            {
+                const auto limit{std::min(longest, size - occurrence)};
+
+                for (std::size_t length{2}; length <= limit; ++length)
+                {
+                    if (const auto origin{certify(occurrence, length)})
+                    {
+                        return occurrence + *origin;
+                    }
+                }
+            }
+
+            return std::nullopt;
+        }};
+
+        // The core-filtered search: every certifying window provably contains the core with a byte after
+        // it, so candidates exist only where the core occurs, and visiting them in the walk's own
+        // position-then-length order gives the walk's plan, refusals included, at occurrence cost instead
+        // of full-scan cost.
+        const auto filtered{[&](const std::size_t floor) -> std::optional<std::size_t> {
+            const auto matches{[&](const std::size_t at) {
+                for (std::size_t offset{0}; offset < core.size(); ++offset)
+                {
+                    if (byte_at(at + offset) != core[offset])
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }};
+
+            std::size_t cursor{floor};
+
+            const auto next_occurrence{[&]() -> std::optional<std::size_t> {
+                for (; cursor + core.size() <= size; ++cursor)
+                {
+                    if (matches(cursor))
+                    {
+                        return cursor++;
+                    }
+                }
+
+                return std::nullopt;
+            }};
+
+            std::vector<std::pair<std::size_t, std::size_t>> heap;
+
+            // A window of length in (m, longest] starting at t holds the m-byte core occurring at c, plus
+            // a byte after it, exactly when t lies in [c + m + 1 - length, c].
+            const auto ingest{[&](const std::size_t at) {
+                for (auto length{core.size() + 1}; length <= longest; ++length)
+                {
+                    const auto lowest{at + core.size() + 1 > length ? at + core.size() + 1 - length : std::size_t{0}};
+
+                    for (auto t{std::max(floor, lowest)}; t <= at && t + length <= size; ++t)
+                    {
+                        heap.emplace_back(t, length);
+
+                        std::ranges::push_heap(heap, std::greater{});
+                    }
+                }
+            }};
+
+            auto pending{next_occurrence()};
+
+            std::optional<std::pair<std::size_t, std::size_t>> last;
+
+            // A pop waits until no unread occurrence can still contribute a smaller pair, which holds once
+            // the next occurrence starts past t + longest - m - 1; overlapping occurrences propose
+            // duplicate pairs, which pop adjacently and are skipped.
+            while (true)
+            {
+                while (pending && (heap.empty() || *pending <= heap.front().first + longest - core.size() - 1))
+                {
+                    ingest(*pending);
+
+                    pending = next_occurrence();
+                }
+
+                if (heap.empty())
+                {
+                    return std::nullopt;
+                }
+
+                std::ranges::pop_heap(heap, std::greater{});
+
+                const auto candidate{heap.back()};
+
+                heap.pop_back();
+
+                if (last == std::optional{candidate})
+                {
+                    continue;
+                }
+
+                last = candidate;
+
+                if (const auto origin{certify(candidate.first, candidate.second)})
+                {
+                    return candidate.first + *origin;
+                }
+            }
+        }};
 
         std::size_t window_target{0};
 
@@ -349,46 +516,11 @@ public:
                 window_carry -= usable;
             }
 
-            // Elements are read as the scanners read them, through unsigned char, so every byte-domain element
-            // type forms the same memo key; the string constructor's implicit conversion would reject std::byte.
-            const auto byte_at{[&begin](const std::size_t at) {
-                return static_cast<char>(static_cast<unsigned char>(begin[static_cast<std::ptrdiff_t>(at)]));
-            }};
+            const auto floor{std::max(window_target, boundaries.back() + 1)};
 
-            for (auto occurrence{std::max(window_target, boundaries.back() + 1)}; occurrence + 2 <= size; ++occurrence)
+            if (const auto cut{core.empty() ? walk(floor) : filtered(floor)})
             {
-                const auto limit{std::min(longest, size - occurrence)};
-
-                std::string window{byte_at(occurrence), byte_at(occurrence + 1)};
-
-                auto cut{false};
-
-                for (std::size_t length{2}; length <= limit && !cut; ++length)
-                {
-                    if (length > window.size())
-                    {
-                        window.push_back(byte_at(occurrence + length - 1));
-                    }
-
-                    auto found{memo.find(window)};
-
-                    if (found == memo.end())
-                    {
-                        found = memo.emplace(window, is_split_window(window)).first;
-                    }
-
-                    if (const auto& origin{found->second})
-                    {
-                        boundaries.push_back(occurrence + *origin);
-
-                        cut = true;
-                    }
-                }
-
-                if (cut)
-                {
-                    break;
-                }
+                boundaries.push_back(*cut);
             }
         }
 

@@ -9,6 +9,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -251,6 +252,22 @@ public:
     }
 
     /**
+     * @brief The byte string every certified split window provably contains, or empty when none is proved.
+     *
+     * Derived once at construction. A live state whose every transition is live cannot be killed by byte
+     * choice, so any window certifying in its presence must carry that state's forced exit; the shortest
+     * exit is proposed as a core and proved mandatory by exhausting core-avoiding death words over the live
+     * tables, with the killing byte never fed to the matcher. The longest proved core is kept: every window
+     * is_split_window() certifies contains it with at least one byte following, which is what lets the
+     * planner search occurrences of this string instead of walking every position. Empty means no core is
+     * proved, because no such state exists, the candidate was refuted by a core-free death word, or the
+     * token set is nullable; the planner then keeps its exhaustive walk, and nothing weakens: the core is an
+     * accelerator's licence, never a certificate itself.
+     * @return The proved mandatory core, or an empty view.
+     */
+    [[nodiscard]] std::string_view mandatory_core() const noexcept { return mandatory_core_; }
+
+    /**
      * @brief Runs the DFA over a range defined by iterators.
      * @tparam Iterator Input iterator type.
      * @param begin Iterator to the beginning of the input.
@@ -442,6 +459,11 @@ private:
     bool init_reentrant_{};
 
     /**
+     * @brief The proved mandatory window core, empty when none is; see mandatory_core().
+     */
+    std::string mandatory_core_;
+
+    /**
      * @brief Transitions as one row per symbol class and one column per state, holding no_state_ where there is none.
      */
     std::vector<Entry_t> table_;
@@ -503,6 +525,11 @@ private:
             std::span<const std::size_t> ignored, const std::vector<bool>& reachable,
             const std::vector<bool>& co_accessible, const std::vector<std::vector<Entry_t>>& predecessors,
             bool init_reentrant);
+
+    /**
+     * @brief Derives and proves mandatory_core() from the live tables the constructor has already built.
+     */
+    void derive_mandatory_core();
 
     /**
      * @brief The table offset of the class row of each symbol value.

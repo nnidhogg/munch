@@ -257,6 +257,8 @@ Simulator::Simulator(
     }
 
     derive_split_points_ignoring(ignored, reachable, co_accessible, predecessors, init_reentrant);
+
+    derive_mandatory_core();
 }
 
 // Condition three of the weaker certificate asks whether every token still reachable from a state is discarded. That
@@ -461,6 +463,204 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
     }
 
     return origin == before ? std::nullopt : std::optional{origin};
+}
+
+// The planner's accelerator licence. A live state alive on every byte survives any window that lacks its
+// forced exit, so a window certifying at all must carry that exit: the derivation proposes each such state's
+// shortest exit and keeps the longest one that survives the proof, which exhausts core-avoiding death words
+// over the live tables and refutes the candidate on the first one found. The matcher reads only the live
+// prefix; the killing byte is never fed to it, since a core completing on the killing byte is too late.
+// Refusal leaves the core empty and the planner exhaustive: the core is an accelerator's licence, never a
+// certificate. Nullable sets skip the derivation outright, because the window certificate refuses them
+// wholesale and a core would license nothing.
+void Simulator::derive_mandatory_core()
+{
+    if (nullable())
+    {
+        return;
+    }
+
+    const auto states{flags_.size()};
+
+    const auto live{[this](const std::size_t state) { return (flags_[state] & live_flag_) != 0; }};
+
+    const auto advance_live{
+            [this, &live](const std::size_t state, const std::size_t symbol) -> std::optional<std::size_t> {
+                const auto to{table_[row_offsets_[symbol] + state]};
+
+                return to != no_state_ && live(to) ? std::optional<std::size_t>{to} : std::nullopt;
+            }};
+
+    // Shortest death words by relaxation over live transitions: depth one where some byte has no live
+    // target, one byte more than a successor's otherwise. A state no death word leaves keeps infinity and
+    // proposes nothing.
+    constexpr auto infinity{std::numeric_limits<std::size_t>::max()};
+
+    std::vector<std::size_t> depth(states, infinity);
+
+    std::vector<std::string> word(states);
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (!live(state))
+        {
+            continue;
+        }
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            if (!advance_live(state, symbol))
+            {
+                depth[state] = 1;
+
+                word[state] = std::string{static_cast<char>(symbol)};
+
+                break;
+            }
+        }
+    }
+
+    for (auto grew{true}; grew;)
+    {
+        grew = false;
+
+        for (std::size_t state{0}; state < states; ++state)
+        {
+            if (!live(state))
+            {
+                continue;
+            }
+
+            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+            {
+                const auto to{advance_live(state, symbol)};
+
+                if (!to || depth[*to] == infinity || depth[*to] + 1 >= depth[state])
+                {
+                    continue;
+                }
+
+                depth[state] = depth[*to] + 1;
+
+                word[state] = static_cast<char>(symbol) + word[*to];
+
+                grew = true;
+            }
+        }
+    }
+
+    // Candidates come from input-total states of the required set: a non-re-entrant initial state is
+    // exempt, since its window hypothesis renames rather than survives. The core is the death word with the
+    // killing byte removed; a depth below two leaves nothing to search for.
+    std::vector<std::pair<std::size_t, std::string>> candidates;
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (!live(state) || (state == init_state_ && !init_reentrant_))
+        {
+            continue;
+        }
+
+        if (depth[state] == infinity || depth[state] < 2)
+        {
+            continue;
+        }
+
+        auto total{true};
+
+        for (std::size_t symbol{0}; total && symbol < symbol_count_; ++symbol)
+        {
+            total = advance_live(state, symbol).has_value();
+        }
+
+        if (total)
+        {
+            candidates.emplace_back(state, word[state].substr(0, depth[state] - 1));
+        }
+    }
+
+    // The proof, per candidate from its own proposing state: breadth-first over pairs of a live state and a
+    // matcher prefix, refuted the moment any reachable pair meets a byte with no live target, since the
+    // word spelled to that point is a core-avoiding death word. Pairs whose matcher completed the core are
+    // satisfied for every continuation and are not expanded.
+    const auto proved{[&](const std::size_t origin, const std::string& core) {
+        const auto length{core.size()};
+
+        std::vector<std::size_t> fall(length, 0);
+
+        for (std::size_t at{1}; at < length; ++at)
+        {
+            auto matched{fall[at - 1]};
+
+            while (matched != 0 && core[at] != core[matched])
+            {
+                matched = fall[matched - 1];
+            }
+
+            if (core[at] == core[matched])
+            {
+                ++matched;
+            }
+
+            fall[at] = matched;
+        }
+
+        const auto advance_match{[&core, &fall](std::size_t matched, const char byte) {
+            while (matched != 0 && core[matched] != byte)
+            {
+                matched = fall[matched - 1];
+            }
+
+            return core[matched] == byte ? matched + 1 : 0;
+        }};
+
+        std::vector<char> seen(states * length, 0);
+
+        std::vector<std::pair<std::size_t, std::size_t>> pending{{origin, 0}};
+
+        seen[origin * length] = 1;
+
+        while (!pending.empty())
+        {
+            const auto [state, matched]{pending.back()};
+
+            pending.pop_back();
+
+            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+            {
+                const auto to{advance_live(state, symbol)};
+
+                if (!to)
+                {
+                    return false;
+                }
+
+                const auto next{advance_match(matched, static_cast<char>(symbol))};
+
+                if (next == length)
+                {
+                    continue;
+                }
+
+                if (seen[*to * length + next] == 0)
+                {
+                    seen[*to * length + next] = 1;
+
+                    pending.emplace_back(*to, next);
+                }
+            }
+        }
+
+        return true;
+    }};
+
+    for (const auto& [state, core] : candidates)
+    {
+        if (core.size() > mandatory_core_.size() && proved(state, core))
+        {
+            mandatory_core_ = core;
+        }
+    }
 }
 
 } // namespace munch::dfa
