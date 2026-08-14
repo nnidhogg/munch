@@ -1040,7 +1040,7 @@ TEST_F(Lexer_test, Malformed_input_keeps_the_default_prefix_guarantee_and_window
         T,
     };
 
-    // The reviewer's minimal vector: over {a, aa, ab, bc} the serial scan of "abc" takes ab and fails at c,
+    // The minimal vector: over {a, aa, ab, bc} the serial scan of "abc" takes ab and fails at c,
     // consuming two of three. The default plan stays byte-only and reproduces exactly that. The window plan
     // legally cuts at the certified "bc" occurrence, both fragments consume fully, and the concatenation is not
     // even a prefix of the serial stream: full per-chunk consumption proves nothing about the whole input, which
@@ -2111,6 +2111,27 @@ TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses
     EXPECT_EQ(plan, reference_window_walk(lexer, micro, 2));
 
     EXPECT_EQ(plan, (std::vector<std::size_t>{0, 8, micro.size()}));
+
+    // A target whose whole window range still fits before the input's end: the barren shortcut may refuse
+    // only floors past the last occurrence, and a guard that refuses a byte too eagerly drops this cut.
+    const std::string tight{" <@; "};
+
+    const auto tight_plan{lexer.chunk_boundaries_with_windows(tight, 2)};
+
+    EXPECT_EQ(tight_plan, reference_window_walk(lexer, tight, 2));
+
+    EXPECT_EQ(tight_plan, (std::vector<std::size_t>{0, 4, tight.size()}));
+
+    // A later target landing exactly ON the last recorded occurrence: the barren cache holds the offset
+    // one past it, so an endpoint recorded a byte tighter wrongly swallows the occurrence itself and the
+    // cut it certifies.
+    const std::string edge{"qx;b ;a;@ x  q@"};
+
+    const auto edge_plan{lexer.chunk_boundaries_with_windows(edge, 6)};
+
+    EXPECT_EQ(edge_plan, reference_window_walk(lexer, edge, 6));
+
+    EXPECT_EQ(edge_plan, (std::vector<std::size_t>{0, 3, 6, 8, edge.size()}));
 }
 
 TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_through_duplicate_candidates)

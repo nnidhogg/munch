@@ -697,46 +697,271 @@ TEST_F(Dfa_test, Mandatory_core_breaks_equal_length_ties_in_state_order)
     dfa::Builder dfa;
 
     const auto q0{dfa.init_state()};
-    const auto hub_a{dfa.next_state()};
-    const auto killer_a{dfa.next_state()};
-    const auto hub_b{dfa.next_state()};
-    const auto killer_b{dfa.next_state()};
 
     const Token token{1};
 
-    // Two disconnected loops, each proving its own one-byte core within its own reach: both proposals are
-    // sound, so the answer is a tie the accessor has always broken toward the earlier state. The published
-    // value is part of the behavior the planner tests pin against, so the tie must not drift.
-    dfa.add_accept_state(hub_a, token);
-    dfa.add_accept_state(hub_b, token);
+    // Twenty disconnected loops, each proving its own one-byte core within its own reach: every proposal is
+    // sound, so the answer is a many-way tie the accessor has always broken toward the earliest state. The
+    // published value is part of the behavior the planner tests pin against, and with this many equal
+    // candidates any unstable ordering of the proposals lands somewhere in the middle of the pack.
+    for (int region{0}; region < 20; ++region)
+    {
+        const auto hub{dfa.next_state()};
+        const auto killer{dfa.next_state()};
 
-    dfa.add_transition(q0, dfa::Label('s'), hub_a);
-    dfa.add_transition(q0, dfa::Label('t'), hub_b);
+        const auto escape{static_cast<char>('a' + region)};
+
+        dfa.add_accept_state(hub, token);
+
+        dfa.add_transition(q0, dfa::Label(static_cast<char>('A' + region)), hub);
+
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto byte{static_cast<char>(symbol)};
+
+            if (byte != escape)
+            {
+                dfa.add_transition(hub, dfa::Label(byte), hub);
+            }
+        }
+
+        dfa.add_transition(hub, dfa::Label(escape), killer);
+        dfa.add_transition(killer, dfa::Label('c'), hub);
+    }
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "a");
+}
+
+TEST_F(Dfa_test, Mandatory_core_failure_table_chains_two_borders_in_construction)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto hub{dfa.next_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+    const auto q4{dfa.next_state()};
+    const auto r5{dfa.next_state()};
+    const auto r6{dfa.next_state()};
+    const auto r7{dfa.next_state()};
+    const auto killer{dfa.next_state()};
+
+    const Token token{1};
+
+    // The hub's proposal "aaabb" is refuted only by the alternate route spelling "aaabaabb", and telling
+    // those apart hinges on the failure table built for the proposal itself: at its fourth position the
+    // construction must chain through two borders to land on zero, where a single construction hop leaves a
+    // link that lets the alternate route pretend to carry the proposal. The honest answer is the next
+    // proposal down, "aabb", which both routes genuinely contain.
+    dfa.add_accept_state(hub, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), hub);
+
+    const auto reset_except{[&dfa, &hub](const auto state, const std::initializer_list<char> taken) {
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto byte{static_cast<char>(symbol)};
+
+            auto skip{false};
+
+            for (const auto held : taken)
+            {
+                skip = skip || byte == held;
+            }
+
+            if (!skip)
+            {
+                dfa.add_transition(state, dfa::Label(byte), hub);
+            }
+        }
+    }};
+
+    reset_except(hub, {'a'});
+    reset_except(q1, {'a'});
+    reset_except(q2, {'a'});
+    reset_except(q3, {'b'});
+    reset_except(q4, {'b', 'a'});
+    reset_except(r5, {'a'});
+    reset_except(r6, {'b'});
+    reset_except(r7, {'b'});
+
+    dfa.add_transition(hub, dfa::Label('a'), q1);
+    dfa.add_transition(q1, dfa::Label('a'), q2);
+    dfa.add_transition(q2, dfa::Label('a'), q3);
+    dfa.add_transition(q3, dfa::Label('b'), q4);
+    dfa.add_transition(q4, dfa::Label('b'), killer);
+
+    dfa.add_transition(q4, dfa::Label('a'), r5);
+    dfa.add_transition(r5, dfa::Label('a'), r6);
+    dfa.add_transition(r6, dfa::Label('b'), r7);
+    dfa.add_transition(r7, dfa::Label('b'), killer);
+
+    dfa.add_transition(killer, dfa::Label('c'), hub);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "aabb");
+}
+
+TEST_F(Dfa_test, Mandatory_core_seeding_reads_both_ends_of_the_alphabet)
+{
+    // The killer consumes every byte except one, placed at either end of the alphabet, so its death is
+    // visible only to a seeding pass covering the full symbol range; a pass starting one byte late misses
+    // the zero case and one stopping a byte early misses the last, each forfeiting the core the hub's
+    // escape plainly proves.
+    const auto build{[](const int missing) {
+        dfa::Builder dfa;
+
+        const auto q0{dfa.init_state()};
+        const auto hub{dfa.next_state()};
+        const auto killer{dfa.next_state()};
+
+        const Token token{1};
+
+        dfa.add_accept_state(hub, token);
+
+        dfa.add_transition(q0, dfa::Label('s'), hub);
+
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto byte{static_cast<char>(symbol)};
+
+            if (byte != 'a')
+            {
+                dfa.add_transition(hub, dfa::Label(byte), hub);
+            }
+
+            if (symbol != missing)
+            {
+                dfa.add_transition(killer, dfa::Label(byte), hub);
+            }
+        }
+
+        dfa.add_transition(hub, dfa::Label('a'), killer);
+
+        return Simulator{dfa.build()};
+    }};
+
+    EXPECT_EQ(build(0x00).mandatory_core(), "a");
+
+    EXPECT_EQ(build(0xff).mandatory_core(), "a");
+}
+
+TEST_F(Dfa_test, Mandatory_core_reverse_search_reads_the_last_byte)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto hub{dfa.next_state()};
+    const auto tail{dfa.next_state()};
+
+    const Token token{1};
+
+    // The only route from the hub to death rides the alphabet's final byte, so the backward search's
+    // predecessor edges must be built through the very last symbol; a construction stopping one short
+    // leaves the hub depthless and the accessor empty where the escape proves a core.
+    dfa.add_accept_state(hub, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), hub);
+
+    for (int symbol{0}; symbol < 255; ++symbol)
+    {
+        dfa.add_transition(hub, dfa::Label(static_cast<char>(symbol)), hub);
+    }
+
+    dfa.add_transition(hub, dfa::Label(static_cast<char>(0xff)), tail);
+    dfa.add_transition(tail, dfa::Label('c'), hub);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), std::string{static_cast<char>(0xff)});
+}
+
+TEST_F(Dfa_test, Mandatory_core_canonical_word_starts_at_the_zeroth_byte)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto hub{dfa.next_state()};
+    const auto middle{dfa.next_state()};
+    const auto killer{dfa.next_state()};
+
+    const Token token{1};
+
+    // The shortest death word leaves the hub on byte zero, so the canonical-word pass choosing the smallest
+    // byte one layer shallower must scan from the alphabet's start; a scan beginning at byte one finds no
+    // shallower step at the hub and spells garbage in place of the two-byte core the route proves.
+    dfa.add_accept_state(hub, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), hub);
+
+    for (int symbol{1}; symbol < 256; ++symbol)
+    {
+        const auto byte{static_cast<char>(symbol)};
+
+        dfa.add_transition(hub, dfa::Label(byte), hub);
+
+        if (byte != 'a')
+        {
+            dfa.add_transition(middle, dfa::Label(byte), hub);
+        }
+    }
+
+    dfa.add_transition(hub, dfa::Label(static_cast<char>(0)), middle);
+    dfa.add_transition(middle, dfa::Label(static_cast<char>(0)), hub);
+    dfa.add_transition(middle, dfa::Label('a'), killer);
+    dfa.add_transition(killer, dfa::Label('c'), hub);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), (std::string{"\0a", 2}));
+}
+
+TEST_F(Dfa_test, Mandatory_core_proofs_do_not_inherit_the_previous_searchs_footprint)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto slow{dfa.next_state()};
+    const auto fast{dfa.next_state()};
+    const auto immortal{dfa.next_state()};
+
+    const Token token{1};
+
+    // Two candidates of different lengths both refute through the initial state's dead bytes, and because
+    // the initial state's index is zero, the pair it contributes lands in the same buffer cell under both
+    // proofs' strides. A buffer that carries the first search's footprint into the second suppresses that
+    // revisit, skips the refutation, and wrongly proves the shorter core; the honest answer is empty.
+    dfa.add_accept_state(immortal, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), fast);
+    dfa.add_transition(q0, dfa::Label('t'), slow);
+    dfa.add_transition(q0, dfa::Label('v'), immortal);
 
     for (int symbol{0}; symbol < 256; ++symbol)
     {
         const auto byte{static_cast<char>(symbol)};
 
-        if (byte != 'a')
-        {
-            dfa.add_transition(hub_a, dfa::Label(byte), hub_a);
-        }
+        dfa.add_transition(immortal, dfa::Label(byte), immortal);
 
-        if (byte != 'b')
+        if (symbol < 'a')
         {
-            dfa.add_transition(hub_b, dfa::Label(byte), hub_b);
+            dfa.add_transition(fast, dfa::Label(byte), immortal);
+            dfa.add_transition(slow, dfa::Label(byte), immortal);
+        }
+        else
+        {
+            dfa.add_transition(fast, dfa::Label(byte), q0);
+            dfa.add_transition(slow, dfa::Label(byte), fast);
         }
     }
 
-    dfa.add_transition(hub_a, dfa::Label('a'), killer_a);
-    dfa.add_transition(killer_a, dfa::Label('c'), hub_a);
-
-    dfa.add_transition(hub_b, dfa::Label('b'), killer_b);
-    dfa.add_transition(killer_b, dfa::Label('c'), hub_b);
-
     const Simulator simulator{dfa.build()};
 
-    EXPECT_EQ(simulator.mandatory_core(), "a");
+    EXPECT_EQ(simulator.mandatory_core(), "");
 }
 
 TEST_F(Dfa_test, Mandatory_core_exemption_follows_the_initial_states_reentrancy)

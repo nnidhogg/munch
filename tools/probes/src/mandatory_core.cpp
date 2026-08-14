@@ -1,9 +1,9 @@
 // Decides the mandatory-core premise of the proof-directed planner: for a state q and a family K of byte
 // strings, does EVERY death word from q contain some member of K ending strictly before the killing byte?
 //
-// WHY THIS EXISTS. The planned prefilter searches core occurrences instead of walking every position, and
-// its exact-plan-equality argument rests on the premise above (the mandatory-death-core theorem). The
-// premise must be PROVED per grammar, not recognized by shape: the confirmation review produced a concrete
+// WHY THIS EXISTS. The planned prefilter narrows its candidate windows to core occurrences, and its
+// exact-plan-equality argument rests on the premise above (the mandatory-death-core theorem). The
+// premise must be PROVED per grammar, not recognized by shape: there is a concrete
 // automaton where a plausible component satisfies the first-exit intuition while an internal death bypasses
 // the core entirely. This probe is the decision procedure: an Aho-Corasick matcher over K is producted with
 // the live automaton, and the premise fails exactly when a pair of a live state and a match-free matcher

@@ -622,11 +622,17 @@ void Simulator::derive_mandatory_core()
         return core;
     }};
 
-    // One stamped buffer serves every proof: an entry from an older search reads as unseen under the
-    // current stamp, so nothing is ever cleared or reallocated between candidates.
-    std::vector<std::size_t> seen(states * longest, 0);
+    // One byte-wide buffer serves every proof, with the entries a search touched cleared when the next one
+    // begins: bookkeeping follows the work actually done rather than the buffer size, and the buffer costs
+    // one byte per pair rather than a stamp-sized cell.
+    std::vector<char> seen(states * longest, 0);
 
-    std::size_t generation{0};
+    std::vector<std::size_t> touched;
+
+    // The matcher precomputed as a table per candidate, one lookup per transition: a graph search defeats
+    // the usual amortization of chained failure links, so paying them once here keeps a proof's cost at the
+    // pairs it visits.
+    std::vector<std::size_t> matcher;
 
     // The proof, per candidate from its own proposing state: a stack-driven reachability search over pairs
     // of a live state and a matcher prefix, refuted the moment any reachable pair meets a byte with no live
@@ -655,18 +661,33 @@ void Simulator::derive_mandatory_core()
             fall[at] = matched;
         }
 
-        const auto advance_match{[&core, &fall](std::size_t matched, const char byte) {
-            while (matched != 0 && core[matched] != byte)
+        matcher.assign(length * symbol_count_, 0);
+
+        for (std::size_t at{0}; at < length; ++at)
+        {
+            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
             {
-                matched = fall[matched - 1];
+                if (core[at] == static_cast<char>(symbol))
+                {
+                    matcher[at * symbol_count_ + symbol] = at + 1;
+                }
+                else if (at > 0)
+                {
+                    matcher[at * symbol_count_ + symbol] = matcher[fall[at - 1] * symbol_count_ + symbol];
+                }
             }
+        }
 
-            return core[matched] == byte ? matched + 1 : 0;
-        }};
+        for (const auto index : touched)
+        {
+            seen[index] = 0;
+        }
 
-        ++generation;
+        touched.clear();
 
-        seen[origin * length] = generation;
+        seen[origin * length] = 1;
+
+        touched.push_back(origin * length);
 
         std::vector<std::pair<std::size_t, std::size_t>> pending{{origin, 0}};
 
@@ -685,16 +706,18 @@ void Simulator::derive_mandatory_core()
                     return false;
                 }
 
-                const auto next{advance_match(matched, static_cast<char>(symbol))};
+                const auto next{matcher[matched * symbol_count_ + symbol]};
 
                 if (next == length)
                 {
                     continue;
                 }
 
-                if (seen[*to * length + next] != generation)
+                if (seen[*to * length + next] == 0)
                 {
-                    seen[*to * length + next] = generation;
+                    seen[*to * length + next] = 1;
+
+                    touched.push_back(*to * length + next);
 
                     pending.emplace_back(*to, next);
                 }
