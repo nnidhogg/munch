@@ -551,7 +551,8 @@ void Simulator::derive_mandatory_core()
 
     // Candidates come from input-total states of the required set: a non-re-entrant initial state is
     // exempt, since its window hypothesis renames rather than survives. The core is the death word with the
-    // killing byte removed; a depth below two leaves nothing to search for.
+    // killing byte removed, and a depth of at least two is input-totality itself, since the seeding pass
+    // gave depth one to every live state missing a byte.
     std::vector<std::pair<std::size_t, std::string>> candidates;
 
     for (std::size_t state{0}; state < states; ++state)
@@ -566,23 +567,14 @@ void Simulator::derive_mandatory_core()
             continue;
         }
 
-        auto total{true};
-
-        for (std::size_t symbol{0}; total && symbol < symbol_count_; ++symbol)
-        {
-            total = advance_live(state, symbol).has_value();
-        }
-
-        if (total)
-        {
-            candidates.emplace_back(state, word[state].substr(0, depth[state] - 1));
-        }
+        candidates.emplace_back(state, word[state].substr(0, depth[state] - 1));
     }
 
-    // The proof, per candidate from its own proposing state: breadth-first over pairs of a live state and a
-    // matcher prefix, refuted the moment any reachable pair meets a byte with no live target, since the
-    // word spelled to that point is a core-avoiding death word. Pairs whose matcher completed the core are
-    // satisfied for every continuation and are not expanded.
+    // The proof, per candidate from its own proposing state: a stack-driven reachability search over pairs
+    // of a live state and a matcher prefix, refuted the moment any reachable pair meets a byte with no live
+    // target, since the word spelled to that point is a core-avoiding death word. Pairs whose matcher
+    // completed the core are satisfied for every continuation and are not expanded; visiting order carries
+    // nothing, only the reachable set.
     const auto proved{[&](const std::size_t origin, const std::string& core) {
         const auto length{core.size()};
 
@@ -654,11 +646,19 @@ void Simulator::derive_mandatory_core()
         return true;
     }};
 
+    // Longest first, so the first proved candidate is the answer and every shorter proposal goes untried; a
+    // chain of nested proposals then costs one product search rather than one per link. Stability keeps the
+    // state-order tie between equally long proposals where it has always been.
+    std::ranges::stable_sort(
+            candidates, [](const auto& left, const auto& right) { return left.second.size() > right.second.size(); });
+
     for (const auto& [state, core] : candidates)
     {
-        if (core.size() > mandatory_core_.size() && proved(state, core))
+        if (proved(state, core))
         {
             mandatory_core_ = core;
+
+            break;
         }
     }
 }

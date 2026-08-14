@@ -182,6 +182,11 @@ public:
      * chunk_boundaries_with_windows() documents. Refusals are model-relative and conservative, never proof that
      * no certificate exists. Derived from the compiled transition table; see dfa::Simulator::is_split_window().
      */
+    [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const
+    {
+        return simulator_.is_split_window(window);
+    }
+
     /**
      * @brief The byte string every certified split window provably contains, or empty when none is proved.
      *
@@ -191,11 +196,6 @@ public:
      * @return The proved mandatory core, or an empty view.
      */
     [[nodiscard]] std::string_view mandatory_core() const noexcept { return simulator_.mandatory_core(); }
-
-    [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const
-    {
-        return simulator_.is_split_window(window);
-    }
 
     /**
      * @brief Computes chunk boundaries for parallel tokenization at certified safe split points.
@@ -302,9 +302,10 @@ public:
      * When the token set proves a mandatory core (mandatory_core()), the walk narrows to its licence: every certifying
      * window provably contains the core with a byte after it, so candidate windows are generated around core
      * occurrences alone, visited in the walk's own position-then-length order, and verified by the same memoized
-     * decision. The resulting plan equals the exhaustive walk's, refusals included, at occurrence cost instead of full-
-     * scan cost. A core too long to fit the longest window with a byte to spare refuses every target outright, and an
-     * empty core keeps the exhaustive walk.
+     * decision. The resulting plan equals the exhaustive walk's, refusals included; every position is still scanned,
+     * but for a bare byte comparison, and windows are built and certified only where the core occurs. A core too long
+     * to fit the longest window with a byte to spare refuses every target outright, and an empty core keeps the
+     * exhaustive walk.
      *
      * The window guarantee is conditional where the byte certificate's is not: a certified window pins the
      * covering token's origin at occurrences in completely tokenizable input, a property of the whole input
@@ -413,8 +414,8 @@ public:
 
         // The core-filtered search: every certifying window provably contains the core with a byte after
         // it, so candidates exist only where the core occurs, and visiting them in the walk's own
-        // position-then-length order gives the walk's plan, refusals included, at occurrence cost instead
-        // of full-scan cost.
+        // position-then-length order gives the walk's plan, refusals included. Positions are still scanned
+        // one by one, but for a byte comparison each; windows are built and certified only at occurrences.
         const auto filtered{[&](const std::size_t floor) -> std::optional<std::size_t> {
             const auto matches{[&](const std::size_t at) {
                 for (std::size_t offset{0}; offset < core.size(); ++offset)

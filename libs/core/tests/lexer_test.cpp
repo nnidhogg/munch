@@ -45,6 +45,80 @@ public:
     using Builder::nfa;
 };
 
+// The window planner exactly as it shipped before the mandatory-core filter existed: every position from the
+// floor, lengths ascending, first certificate wins, refusal only at the end of the input. The filtered planner
+// claims equality with this walk, so the equality tests hold the claim against drift byte for byte. The walk
+// carries none of the shipped guards, so callers must first assert what the guards would have decided: a
+// grammar with no split points, no nullable token, and an input of at least two bytes.
+std::vector<std::size_t> reference_window_walk(
+        const Lexer& lexer, const std::string_view text, const std::size_t chunks)
+{
+    std::vector<std::size_t> boundaries{0};
+
+    const auto size{text.size()};
+
+    const auto usable{std::min(chunks, size)};
+
+    const auto step{size / usable};
+
+    const auto step_remainder{size % usable};
+
+    constexpr std::size_t longest{4};
+
+    std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
+
+    std::size_t window_target{0};
+
+    std::size_t window_carry{0};
+
+    for (std::size_t index{1}; index < usable; ++index)
+    {
+        window_target += step;
+
+        if (window_carry += step_remainder; window_carry >= usable)
+        {
+            ++window_target;
+
+            window_carry -= usable;
+        }
+
+        for (auto occurrence{std::max(window_target, boundaries.back() + 1)}; occurrence + 2 <= size; ++occurrence)
+        {
+            const auto limit{std::min(longest, size - occurrence)};
+
+            auto cut{false};
+
+            for (std::size_t length{2}; length <= limit && !cut; ++length)
+            {
+                std::string window{text.substr(occurrence, length)};
+
+                auto found{memo.find(window)};
+
+                if (found == memo.end())
+                {
+                    found = memo.emplace(window, lexer.is_split_window(window)).first;
+                }
+
+                if (const auto& origin{found->second})
+                {
+                    boundaries.push_back(occurrence + *origin);
+
+                    cut = true;
+                }
+            }
+
+            if (cut)
+            {
+                break;
+            }
+        }
+    }
+
+    boundaries.push_back(size);
+
+    return boundaries;
+}
+
 } // namespace
 
 class Lexer_test : public testing::Test
@@ -1663,6 +1737,18 @@ TEST_F(Lexer_test, Mandatory_core_reports_the_family_verdicts_and_a_long_core_re
         EXPECT_EQ(builder.build().mandatory_core(), "");
     }
 
+    // The nullable row pins the guard itself: the comment interior would prove "*/" exactly as in the first
+    // row, but an optional token accepts emptily and the derivation must not even begin, because no window
+    // certifies anything for a nullable set and a core would claim a licence where no walk runs.
+    {
+        Builder_dbg builder;
+
+        builder.add_token(optional(text("a")), Token_kind::Identifier, 2);
+        builder.add_token(block_comment, Token_kind::Comment, 1);
+
+        EXPECT_EQ(builder.build().mandatory_core(), "");
+    }
+
     // Quadruple-quote strings prove a four-byte core, one byte past the longest window the planner tries, so
     // no candidate window can hold the core and a byte after it. The filter concludes the walk's refusal
     // without scanning, and the plan is the single serial chunk.
@@ -1743,76 +1829,6 @@ TEST_F(Lexer_test, Core_filtered_planning_equals_the_exhaustive_walk)
         ASSERT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
     }
 
-    // The planner exactly as it shipped before the filter existed: every position from the floor, lengths
-    // ascending, first certificate wins, refusal only at the end of the input. The filtered planner claims
-    // equality with this walk, so this test holds the claim against drift byte for byte.
-    const auto reference{[&lexer](const std::string_view text, const std::size_t chunks) {
-        std::vector<std::size_t> boundaries{0};
-
-        const auto size{text.size()};
-
-        const auto usable{std::min(chunks, size)};
-
-        const auto step{size / usable};
-
-        const auto step_remainder{size % usable};
-
-        constexpr std::size_t longest{4};
-
-        std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
-
-        std::size_t window_target{0};
-
-        std::size_t window_carry{0};
-
-        for (std::size_t index{1}; index < usable; ++index)
-        {
-            window_target += step;
-
-            if (window_carry += step_remainder; window_carry >= usable)
-            {
-                ++window_target;
-
-                window_carry -= usable;
-            }
-
-            for (auto occurrence{std::max(window_target, boundaries.back() + 1)}; occurrence + 2 <= size; ++occurrence)
-            {
-                const auto limit{std::min(longest, size - occurrence)};
-
-                auto cut{false};
-
-                for (std::size_t length{2}; length <= limit && !cut; ++length)
-                {
-                    std::string window{text.substr(occurrence, length)};
-
-                    auto found{memo.find(window)};
-
-                    if (found == memo.end())
-                    {
-                        found = memo.emplace(window, lexer.is_split_window(window)).first;
-                    }
-
-                    if (const auto& origin{found->second})
-                    {
-                        boundaries.push_back(occurrence + *origin);
-
-                        cut = true;
-                    }
-                }
-
-                if (cut)
-                {
-                    break;
-                }
-            }
-        }
-
-        boundaries.push_back(size);
-
-        return boundaries;
-    }};
-
     // Closers dense at the front and absent from the tail, so one plan covers certified cuts, in-window
     // origins away from the evidence position, and refused targets falling through to the final boundary.
     std::string input;
@@ -1830,7 +1846,7 @@ TEST_F(Lexer_test, Core_filtered_planning_equals_the_exhaustive_walk)
 
     for (const auto chunks : {2U, 3U, 5U, 8U, 13U})
     {
-        const auto walk{reference(input, chunks)};
+        const auto walk{reference_window_walk(lexer, input, chunks)};
 
         EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, chunks), walk) << chunks;
 
@@ -1838,15 +1854,255 @@ TEST_F(Lexer_test, Core_filtered_planning_equals_the_exhaustive_walk)
         EXPECT_GT(walk.size(), 2U) << chunks;
     }
 
-    // A stream with no occurrence of the core at all refuses instantly on the filtered side and after a full
-    // scan on the reference side, with the same single-chunk answer.
+    // A stream with no occurrence of the core at all refuses on both sides with the same single-chunk
+    // answer, the filtered side from a bare byte scan that never has to certify a window.
     const std::string bare(4096, 'x');
 
     const auto refused{lexer.chunk_boundaries_with_windows(bare, 5)};
 
-    EXPECT_EQ(refused, reference(bare, 5));
+    EXPECT_EQ(refused, reference_window_walk(lexer, bare, 5));
 
     EXPECT_EQ(refused, (std::vector<std::size_t>{0, bare.size()}));
+}
+
+TEST_F(Lexer_test, Three_byte_core_planning_equals_the_walk_when_no_window_certifies)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        String,
+        Whitespace,
+    };
+
+    Builder_dbg builder;
+
+    const auto not_quote{any_of(Set::all() - Set{'"'})};
+
+    const auto interior{choice(not_quote, concat(text("\""), not_quote), concat(text("\"\""), not_quote))};
+
+    builder.add_token(concat(text("\"\"\""), kleene(interior), text("\"\"\"")), Token_kind::String, 1);
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+    const auto lexer{builder.build()};
+
+    // Triple-quote strings sit exactly on the refusal boundary: the core fills all but one byte of the
+    // longest window, so the filter must still plan rather than refuse, and every occurrence proposes a
+    // single candidate window instead of a range. The licence is real and the certificates are not: outside
+    // a string a bare closer opens a fresh string that swallows the byte after it, so no window ever agrees
+    // on an origin under this token set, and both sides must certify their way to the same refusal.
+    ASSERT_EQ(lexer.mandatory_core(), "\"\"\"");
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        ASSERT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    // Closers dense at the front with six-quote runs whose occurrences sit one byte apart, so the filtered
+    // side generates and certifies a real candidate stream before concluding what the walk concludes.
+    std::string input;
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "name \"\"\"text with \"\"inner\"\" quotes\nand lines\"\"\" ";
+        input += "\"\"\"\"\"\" tail\n";
+    }
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "plain words with no quotes at all\n";
+    }
+
+    const std::vector<std::size_t> serial{0, input.size()};
+
+    for (const auto chunks : {2U, 3U, 5U, 8U, 13U})
+    {
+        const auto walk{reference_window_walk(lexer, input, chunks)};
+
+        EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, chunks), walk) << chunks;
+
+        // The refusal must be the walk's own conclusion, reached through the same candidates, not a guess.
+        EXPECT_EQ(walk, serial) << chunks;
+    }
+}
+
+TEST_F(Lexer_test, Three_byte_core_planning_cuts_where_the_closer_dies_outside_its_token)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        String,
+        Whitespace,
+    };
+
+    Builder_dbg builder;
+
+    const auto not_gt{any_of(Set::all() - Set{'>'})};
+
+    const auto interior{choice(not_gt, concat(text(">"), not_gt), concat(text(">>"), not_gt))};
+
+    builder.add_token(concat(text("<"), kleene(interior), text(">>>")), Token_kind::String, 1);
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+    const auto lexer{builder.build()};
+
+    // The same three-byte shape as the triple-quote family, with one change that turns refusals into cuts:
+    // the closer's byte belongs to no other token, so every history that is not inside a string dies on the
+    // window instead of surviving to disagree, and the closer plus one byte certifies. This is the only core
+    // length where the refusal threshold sits one byte away, so real cuts here pin that comparison exactly.
+    ASSERT_EQ(lexer.mandatory_core(), ">>>");
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        ASSERT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    std::string input;
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "name <text with >>inner>> marks\nand lines>>> ";
+        input += "<dense>>>>\n";
+    }
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "plain words with no closer at all\n";
+    }
+
+    for (const auto chunks : {2U, 3U, 5U, 8U, 13U})
+    {
+        const auto walk{reference_window_walk(lexer, input, chunks)};
+
+        EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, chunks), walk) << chunks;
+
+        // The comparison must be over real cuts, or the equality would hold vacuously between empty plans.
+        EXPECT_GT(walk.size(), 2U) << chunks;
+    }
+}
+
+TEST_F(Lexer_test, Single_byte_core_planning_equals_the_walk_over_the_full_length_range)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Integer,
+        Region,
+        Whitespace,
+        Operator,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Integer, 2);
+    builder.add_token(concat(text("<@"), kleene(any_of(Set::all() - Set{';'})), text(";")), Token_kind::Region, 1);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+    for (const auto op : {"=", "+", ";", "(", ")", "<", "@"})
+    {
+        builder.add_token(text(op), Token_kind::Operator, 3);
+    }
+
+    const auto lexer{builder.build()};
+
+    // A single-byte core is the widest case of the candidate algebra: every occurrence proposes windows of
+    // all three lengths, and a repeated closer puts occurrences one byte apart, so neighbouring occurrences
+    // propose the same window at two lengths and the duplicate skip runs against real certificates.
+    ASSERT_EQ(lexer.mandatory_core(), ";");
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        ASSERT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    std::string input;
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "<@ region body\nspans lines; total = total + 7;;\n";
+        input += "<@ dense;;; (tight) runs;\n";
+    }
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "plain = code + 1 (no closer at all)\n";
+    }
+
+    for (const auto chunks : {2U, 3U, 5U, 8U, 13U})
+    {
+        const auto walk{reference_window_walk(lexer, input, chunks)};
+
+        EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, chunks), walk) << chunks;
+
+        // The comparison must be over real cuts, or the equality would hold vacuously between empty plans.
+        EXPECT_GT(walk.size(), 2U) << chunks;
+    }
+}
+
+TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_through_duplicate_candidates)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Integer,
+        Comment,
+        Whitespace,
+        Operator,
+    };
+
+    Builder_dbg builder;
+
+    const auto not_star{any_of(Set::all() - Set{'*'})};
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    builder.add_token(plus(any_of(Set::digits())), Token_kind::Integer, 2);
+    builder.add_token(
+            concat(text("(*"), kleene(choice(not_star, concat(text("*"), not_star))), text("**")), Token_kind::Comment,
+            1);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+    for (const auto op : {"=", "+", ";", "(", ")", "*"})
+    {
+        builder.add_token(text(op), Token_kind::Operator, 3);
+    }
+
+    const auto lexer{builder.build()};
+
+    // A doubled-byte closer overlaps itself, so a star run holds occurrences one byte apart and neighbouring
+    // occurrences propose the same length-four window. Those duplicates pop adjacently from the heap and the
+    // skip must drop exactly them, no more and no fewer, for the plan to match the walk. The committed
+    // block-comment corpus can never collide this way, which is why the overlap gets its own equality run.
+    ASSERT_EQ(lexer.mandatory_core(), "**");
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        ASSERT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    std::string input;
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "(* note **) total = total + 7; (* spans\nlines **)\n";
+        input += "runs (*a***** and (*b****** follow;\n";
+    }
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "plain = code + 1; single * stars only\n";
+    }
+
+    for (const auto chunks : {2U, 3U, 5U, 8U, 13U})
+    {
+        const auto walk{reference_window_walk(lexer, input, chunks)};
+
+        EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, chunks), walk) << chunks;
+
+        // The comparison must be over real cuts, or the equality would hold vacuously between empty plans.
+        EXPECT_GT(walk.size(), 2U) << chunks;
+    }
 }
 
 TEST_F(Lexer_test, Long_runs_tokenize_identically_to_the_per_token_scan)

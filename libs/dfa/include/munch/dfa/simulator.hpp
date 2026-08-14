@@ -254,8 +254,9 @@ public:
     /**
      * @brief The byte string every certified split window provably contains, or empty when none is proved.
      *
-     * Derived once at construction. A live state whose every transition is live cannot be killed by byte
-     * choice, so any window certifying in its presence must carry that state's forced exit; the shortest
+     * Derived once at construction. A live state whose every transition is live cannot be killed by any
+     * single byte, only led along a longer word to death, so any window certifying in its presence must
+     * carry that state's forced exit; the shortest
      * exit is proposed as a core and proved mandatory by exhausting core-avoiding death words over the live
      * tables, with the killing byte never fed to the matcher. The longest proved core is kept: every window
      * is_split_window() certifies contains it with at least one byte following, which is what lets the
