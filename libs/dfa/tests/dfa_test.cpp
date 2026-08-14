@@ -632,52 +632,111 @@ TEST_F(Dfa_test, Mandatory_core_stays_empty_when_a_second_route_dies_without_it)
 
 TEST_F(Dfa_test, Mandatory_core_keeps_the_longest_proved_candidate)
 {
+    // A chain of forced escapes: the only route from the hub loop to death spells 'x' then 'y' then 'z', and
+    // every deviation returns to the loop. The three loop states are all input-total and propose the nested
+    // cores "xyz", "yz" and "z", every one of which is proved, so the accessor must keep the longest. The
+    // same table is wired twice with the proposing states allocated in opposite orders, so neither state
+    // order nor proposal order can stand in for the actual length comparison: a model that kept the first or
+    // the last proposal instead of the longest fails one of the two.
+    const auto build{[](const bool reversed) {
+        dfa::Builder dfa;
+
+        const auto q0{dfa.init_state()};
+
+        const auto first{dfa.next_state()};
+        const auto second{dfa.next_state()};
+        const auto third{dfa.next_state()};
+
+        const auto hub{reversed ? third : first};
+        const auto middle{second};
+        const auto low{reversed ? first : third};
+
+        const auto killer{dfa.next_state()};
+
+        const Token token{1};
+
+        dfa.add_accept_state(hub, token);
+
+        dfa.add_transition(q0, dfa::Label('s'), hub);
+
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto byte{static_cast<char>(symbol)};
+
+            if (byte != 'x')
+            {
+                dfa.add_transition(hub, dfa::Label(byte), hub);
+            }
+
+            if (byte != 'y')
+            {
+                dfa.add_transition(middle, dfa::Label(byte), hub);
+            }
+
+            if (byte != 'z')
+            {
+                dfa.add_transition(low, dfa::Label(byte), hub);
+            }
+        }
+
+        dfa.add_transition(hub, dfa::Label('x'), middle);
+        dfa.add_transition(middle, dfa::Label('y'), low);
+        dfa.add_transition(low, dfa::Label('z'), killer);
+        dfa.add_transition(killer, dfa::Label('c'), hub);
+
+        return Simulator{dfa.build()};
+    }};
+
+    EXPECT_EQ(build(false).mandatory_core(), "xyz");
+
+    EXPECT_EQ(build(true).mandatory_core(), "xyz");
+}
+
+TEST_F(Dfa_test, Mandatory_core_breaks_equal_length_ties_in_state_order)
+{
     dfa::Builder dfa;
 
     const auto q0{dfa.init_state()};
-    const auto q1{dfa.next_state()};
-    const auto q2{dfa.next_state()};
-    const auto q3{dfa.next_state()};
-    const auto q4{dfa.next_state()};
+    const auto hub_a{dfa.next_state()};
+    const auto killer_a{dfa.next_state()};
+    const auto hub_b{dfa.next_state()};
+    const auto killer_b{dfa.next_state()};
 
     const Token token{1};
 
-    // A chain of forced escapes: the only route from the q1 loop to death spells 'x' then 'y' then 'z', and
-    // every deviation returns to the loop. The three loop states are all input-total and propose the nested
-    // cores "xyz", "yz" and "z", every one of which is proved, so the accessor must keep the longest. A model
-    // that kept the last proved candidate instead would report "z" and license a filter that skips windows.
-    dfa.add_accept_state(q1, token);
+    // Two disconnected loops, each proving its own one-byte core within its own reach: both proposals are
+    // sound, so the answer is a tie the accessor has always broken toward the earlier state. The published
+    // value is part of the behavior the planner tests pin against, so the tie must not drift.
+    dfa.add_accept_state(hub_a, token);
+    dfa.add_accept_state(hub_b, token);
 
-    dfa.add_transition(q0, dfa::Label('s'), q1);
+    dfa.add_transition(q0, dfa::Label('s'), hub_a);
+    dfa.add_transition(q0, dfa::Label('t'), hub_b);
 
     for (int symbol{0}; symbol < 256; ++symbol)
     {
         const auto byte{static_cast<char>(symbol)};
 
-        if (byte != 'x')
+        if (byte != 'a')
         {
-            dfa.add_transition(q1, dfa::Label(byte), q1);
+            dfa.add_transition(hub_a, dfa::Label(byte), hub_a);
         }
 
-        if (byte != 'y')
+        if (byte != 'b')
         {
-            dfa.add_transition(q2, dfa::Label(byte), q1);
-        }
-
-        if (byte != 'z')
-        {
-            dfa.add_transition(q3, dfa::Label(byte), q1);
+            dfa.add_transition(hub_b, dfa::Label(byte), hub_b);
         }
     }
 
-    dfa.add_transition(q1, dfa::Label('x'), q2);
-    dfa.add_transition(q2, dfa::Label('y'), q3);
-    dfa.add_transition(q3, dfa::Label('z'), q4);
-    dfa.add_transition(q4, dfa::Label('c'), q1);
+    dfa.add_transition(hub_a, dfa::Label('a'), killer_a);
+    dfa.add_transition(killer_a, dfa::Label('c'), hub_a);
+
+    dfa.add_transition(hub_b, dfa::Label('b'), killer_b);
+    dfa.add_transition(killer_b, dfa::Label('c'), hub_b);
 
     const Simulator simulator{dfa.build()};
 
-    EXPECT_EQ(simulator.mandatory_core(), "xyz");
+    EXPECT_EQ(simulator.mandatory_core(), "a");
 }
 
 TEST_F(Dfa_test, Mandatory_core_exemption_follows_the_initial_states_reentrancy)
@@ -881,6 +940,222 @@ TEST_F(Dfa_test, Mandatory_core_shrinks_when_an_overlapping_route_only_pretends_
     const Simulator simulator{dfa.build()};
 
     EXPECT_EQ(simulator.mandatory_core(), "ba");
+}
+
+TEST_F(Dfa_test, Mandatory_core_refutation_reaches_the_last_byte_of_the_alphabet)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+
+    const Token token{1};
+
+    // The refuting route dies on 0xff and on nothing else, so a proof search that stops one symbol short of
+    // the alphabet's end never sees the death and wrongly proves the 'a' the other route proposes. The
+    // second escape's killing byte sits at the boundary on purpose; everything else about the shape is the
+    // familiar two-route refutation.
+    dfa.add_accept_state(q1, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), q1);
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        const auto byte{static_cast<char>(symbol)};
+
+        if (byte != 'a' && byte != 'z')
+        {
+            dfa.add_transition(q1, dfa::Label(byte), q1);
+        }
+
+        if (symbol != 0x01)
+        {
+            dfa.add_transition(q2, dfa::Label(byte), q1);
+        }
+
+        if (symbol != 0xff)
+        {
+            dfa.add_transition(q3, dfa::Label(byte), q1);
+        }
+    }
+
+    dfa.add_transition(q1, dfa::Label('a'), q2);
+    dfa.add_transition(q1, dfa::Label('z'), q3);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "");
+}
+
+TEST_F(Dfa_test, Mandatory_core_revisits_a_state_under_a_different_matcher_prefix)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+
+    const Token token{1};
+
+    // The initial state's proposal "zz" is refuted only along "zy" followed by "zz": the search reaches q1
+    // first with one byte matched and later with none, and the refutation lives behind the second visit. A
+    // search that keys its seen set on the pair it came from rather than the pair it reaches conflates the
+    // two visits, never walks the refuting route, and wrongly proves the longer core over the honest "z".
+    dfa.add_accept_state(q1, token);
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        const auto byte{static_cast<char>(symbol)};
+
+        if (byte != 'z')
+        {
+            dfa.add_transition(q0, dfa::Label(byte), q0);
+        }
+
+        if (byte != 'y' && byte != 'z')
+        {
+            dfa.add_transition(q1, dfa::Label(byte), q0);
+        }
+
+        if (byte != 'z')
+        {
+            dfa.add_transition(q2, dfa::Label(byte), q0);
+        }
+    }
+
+    dfa.add_transition(q0, dfa::Label('z'), q1);
+    dfa.add_transition(q1, dfa::Label('y'), q1);
+    dfa.add_transition(q1, dfa::Label('z'), q2);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "z");
+}
+
+TEST_F(Dfa_test, Mandatory_core_matcher_falls_back_across_several_borders_at_once)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto hub{dfa.next_state()};
+    const auto n1{dfa.next_state()};
+    const auto n2{dfa.next_state()};
+    const auto n3{dfa.next_state()};
+    const auto m4{dfa.next_state()};
+    const auto m5{dfa.next_state()};
+    const auto m6{dfa.next_state()};
+    const auto killer{dfa.next_state()};
+
+    const Token token{1};
+
+    // Death spells "abab" or "abaabab" from the hub, so the proposal is "abab" and the longer route carries
+    // it only because its tail overlaps its own middle: on "abaa" the matcher must fall from three matched
+    // through one to zero and back up, two borders in a single byte. A matcher that takes only one fallback
+    // hop loses the occurrence, treats the longer route as core-free, and shrinks the answer to "bab".
+    dfa.add_accept_state(hub, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), hub);
+
+    const auto loop_except{[&dfa, &hub](const auto state, const std::initializer_list<char> taken) {
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto byte{static_cast<char>(symbol)};
+
+            auto skip{false};
+
+            for (const auto held : taken)
+            {
+                skip = skip || byte == held;
+            }
+
+            if (!skip)
+            {
+                dfa.add_transition(state, dfa::Label(byte), hub);
+            }
+        }
+    }};
+
+    loop_except(hub, {'a'});
+    loop_except(n1, {'b'});
+    loop_except(n2, {'a'});
+    loop_except(n3, {'b', 'a'});
+    loop_except(m4, {'b'});
+    loop_except(m5, {'a'});
+    loop_except(m6, {'b'});
+
+    dfa.add_transition(hub, dfa::Label('a'), n1);
+    dfa.add_transition(n1, dfa::Label('b'), n2);
+    dfa.add_transition(n2, dfa::Label('a'), n3);
+    dfa.add_transition(n3, dfa::Label('b'), killer);
+    dfa.add_transition(n3, dfa::Label('a'), m4);
+    dfa.add_transition(m4, dfa::Label('b'), m5);
+    dfa.add_transition(m5, dfa::Label('a'), m6);
+    dfa.add_transition(m6, dfa::Label('b'), killer);
+
+    dfa.add_transition(killer, dfa::Label('c'), hub);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "abab");
+}
+
+TEST_F(Dfa_test, Mandatory_core_failure_links_chain_while_the_table_is_built)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+
+    std::array<dfa::Dfa::State_t, 7> chain{};
+
+    for (auto& state : chain)
+    {
+        state = dfa.next_state();
+    }
+
+    const Token token{1};
+
+    // The KMP prefix automaton of "aabaaaa", laid out as live states: every 'a'/'b' edge follows the
+    // matcher, every other byte restarts. The proposal is the full word, and the death route that reads
+    // "aabaaab" mid-way still carries it, but only a failure table built with chained fallback knows that
+    // border; a table built by restarting from nothing at each mismatch misjudges that route as core-free
+    // and shrinks the answer by its first byte.
+    dfa.add_accept_state(chain[0], token);
+
+    const auto pair_edges{[&dfa](const auto from, const auto on_a, const auto on_b) {
+        dfa.add_transition(from, dfa::Label('a'), on_a);
+        dfa.add_transition(from, dfa::Label('b'), on_b);
+    }};
+
+    pair_edges(q0, chain[0], q0);
+    pair_edges(chain[0], chain[1], q0);
+    pair_edges(chain[1], chain[1], chain[2]);
+    pair_edges(chain[2], chain[3], q0);
+    pair_edges(chain[3], chain[4], q0);
+    pair_edges(chain[4], chain[5], chain[2]);
+    pair_edges(chain[5], chain[6], chain[2]);
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        const auto byte{static_cast<char>(symbol)};
+
+        if (byte != 'a' && byte != 'b')
+        {
+            dfa.add_transition(q0, dfa::Label(byte), q0);
+
+            for (const auto state : chain)
+            {
+                dfa.add_transition(state, dfa::Label(byte), q0);
+            }
+        }
+    }
+
+    dfa.add_transition(chain[6], dfa::Label('x'), q0);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "aabaaaa");
 }
 
 TEST_F(Dfa_test, Accelerated_runs_preserve_longest_match)

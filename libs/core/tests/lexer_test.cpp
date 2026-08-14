@@ -49,7 +49,8 @@ public:
 // floor, lengths ascending, first certificate wins, refusal only at the end of the input. The filtered planner
 // claims equality with this walk, so the equality tests hold the claim against drift byte for byte. The walk
 // carries none of the shipped guards, so callers must first assert what the guards would have decided: a
-// grammar with no split points, no nullable token, and an input of at least two bytes.
+// grammar with no split points, no nullable token, an input of at least two bytes, and a chunk count of at
+// least one, since the walk divides by it where production would have returned the serial plan.
 std::vector<std::size_t> reference_window_walk(
         const Lexer& lexer, const std::string_view text, const std::size_t chunks)
 {
@@ -2009,7 +2010,7 @@ TEST_F(Lexer_test, Single_byte_core_planning_equals_the_walk_over_the_full_lengt
 
     // A single-byte core is the widest case of the candidate algebra: every occurrence proposes windows of
     // all three lengths, and a repeated closer puts occurrences one byte apart, so neighbouring occurrences
-    // propose the same window at two lengths and the duplicate skip runs against real certificates.
+    // propose the same window and the candidate stream carries duplicates through the heap's ordering.
     ASSERT_EQ(lexer.mandatory_core(), ";");
 
     for (int symbol{0}; symbol < 256; ++symbol)
@@ -2039,6 +2040,77 @@ TEST_F(Lexer_test, Single_byte_core_planning_equals_the_walk_over_the_full_lengt
         // The comparison must be over real cuts, or the equality would hold vacuously between empty plans.
         EXPECT_GT(walk.size(), 2U) << chunks;
     }
+}
+
+TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Region,
+        Whitespace,
+        Operator,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
+    builder.add_token(
+            concat(text("<@"), kleene(any_of(Set::all() - Set{';'})), text(";"), kleene(any_of(Set{'x'}))),
+            Token_kind::Region, 1);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::Whitespace, 1);
+
+    for (const auto op : {";", "<", "@"})
+    {
+        builder.add_token(text(op), Token_kind::Operator, 3);
+    }
+
+    const auto lexer{builder.build()};
+
+    // The region swallows 'x' bytes past its closer, so the two-byte window at an occurrence refuses while
+    // the three- and four-byte windows certify with different origins. The plan is then decided by which
+    // length is tried first at the same position, which is exactly the ordering the heap must reproduce: a
+    // planner popping lengths longest-first, or skipping a length, moves real cuts.
+    ASSERT_EQ(lexer.mandatory_core(), ";");
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        ASSERT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    std::string input;
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "<@ first region;x alpha beta\n";
+        input += "<@ second;xxx gamma <@ third; delta\n";
+    }
+
+    for (int block{0}; block < 15; ++block)
+    {
+        input += "plain words with no closer at all\n";
+    }
+
+    for (const auto chunks : {2U, 3U, 5U, 8U, 13U})
+    {
+        const auto walk{reference_window_walk(lexer, input, chunks)};
+
+        EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, chunks), walk) << chunks;
+
+        // The comparison must be over real cuts, or the equality would hold vacuously between empty plans.
+        EXPECT_GT(walk.size(), 2U) << chunks;
+    }
+
+    // One target landing exactly on an occurrence, so no earlier window can answer first: the two-byte
+    // window refuses, the three-byte one cuts at eight, and only a walk trying lengths in ascending order
+    // finds it, since the four-byte window would cut at nine. The plan is pinned, not just compared.
+    const std::string micro{"<@qqqq;x a b"};
+
+    const auto plan{lexer.chunk_boundaries_with_windows(micro, 2)};
+
+    EXPECT_EQ(plan, reference_window_walk(lexer, micro, 2));
+
+    EXPECT_EQ(plan, (std::vector<std::size_t>{0, 8, micro.size()}));
 }
 
 TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_through_duplicate_candidates)
@@ -2071,9 +2143,10 @@ TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_through_duplic
     const auto lexer{builder.build()};
 
     // A doubled-byte closer overlaps itself, so a star run holds occurrences one byte apart and neighbouring
-    // occurrences propose the same length-four window. Those duplicates pop adjacently from the heap and the
-    // skip must drop exactly them, no more and no fewer, for the plan to match the walk. The committed
-    // block-comment corpus can never collide this way, which is why the overlap gets its own equality run.
+    // occurrences propose the same length-four window: the candidate stream carries duplicates the committed
+    // block-comment corpus can never produce. Duplicates share their memoized verdict, so no final plan can
+    // see whether the skip fired; what this run pins is that overlap-heavy proposal generation still equals
+    // the walk, and that the skip drops nothing it should keep.
     ASSERT_EQ(lexer.mandatory_core(), "**");
 
     for (int symbol{0}; symbol < 256; ++symbol)

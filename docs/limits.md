@@ -155,8 +155,11 @@ rejected by construction). The consequences:
 keyword-scale token set, 143 patterns covering 100 keywords with identifier, literal, operator, and punctuation forms,
 builds in about 21 ms into a 251-state DFA on the README's reference machine (`./build/tools/benchmark/munch_benchmark`
 reports it as `build/keywords`), roughly doubling when identifiers admit every non-ASCII code point through
-`utf8::range`. Compiling the tables out of the finished DFA contributes less than a tenth of a millisecond of that; the
-cost is determinization, not the Simulator. It is a one-time cost. Build the lexer once and reuse it across inputs and
+`utf8::range`. Compiling the tables out of the finished DFA contributes less than a tenth of a millisecond of that for
+grammars of this shape, so the cost is ordinarily determinization, not the Simulator, with one caveat: the mandatory
+core derivation proves candidates at construction, and a table whose every state consumes every byte along a long
+death chain can propose one candidate per state, each proof walking the live tables once, a quadratic worst case that
+real token sets do not approach. It is a one-time cost either way. Build the lexer once and reuse it across inputs and
 threads; building per input or per request is a design mistake the library does not try to make cheap.
 
 ## **The Escape Hatches**

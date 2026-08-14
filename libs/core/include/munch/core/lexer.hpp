@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <mutex>
@@ -191,8 +192,8 @@ public:
      * @brief The byte string every certified split window provably contains, or empty when none is proved.
      *
      * A pass-through of dfa::Simulator::mandatory_core(), where the derivation and its proof live; the
-     * window planner searches occurrences of this string instead of walking every position whenever it is
-     * non-empty, with identical plans either way and the exhaustive walk kept as the fallback.
+     * window planner narrows its candidate windows to occurrences of this string whenever it is non-empty,
+     * with identical plans either way and the exhaustive walk kept as the fallback.
      * @return The proved mandatory core, or an empty view.
      */
     [[nodiscard]] std::string_view mandatory_core() const noexcept { return simulator_.mandatory_core(); }
@@ -302,10 +303,10 @@ public:
      * When the token set proves a mandatory core (mandatory_core()), the walk narrows to its licence: every certifying
      * window provably contains the core with a byte after it, so candidate windows are generated around core
      * occurrences alone, visited in the walk's own position-then-length order, and verified by the same memoized
-     * decision. The resulting plan equals the exhaustive walk's, refusals included; every position is still scanned,
-     * but for a bare byte comparison, and windows are built and certified only where the core occurs. A core too long
-     * to fit the longest window with a byte to spare refuses every target outright, and an empty core keeps the
-     * exhaustive walk.
+     * decision. The resulting plan equals the exhaustive walk's, refusals included; positions are scanned for a bare
+     * byte comparison, windows are built and certified only where the core occurs, and a tail once proved
+     * occurrence-free refuses every later target without another scan. A core too long to fit the longest window with
+     * a byte to spare refuses every target outright, and an empty core keeps the exhaustive walk.
      *
      * The window guarantee is conditional where the byte certificate's is not: a certified window pins the
      * covering token's origin at occurrences in completely tokenizable input, a property of the whole input
@@ -412,11 +413,20 @@ public:
             return std::nullopt;
         }};
 
+        // No core occurrence begins at or after this offset; a scan that drains the input tightens it, so
+        // targets falling in a tail already proved occurrence-free refuse without rescanning it.
+        auto barren{size};
+
         // The core-filtered search: every certifying window provably contains the core with a byte after
         // it, so candidates exist only where the core occurs, and visiting them in the walk's own
         // position-then-length order gives the walk's plan, refusals included. Positions are still scanned
         // one by one, but for a byte comparison each; windows are built and certified only at occurrences.
         const auto filtered{[&](const std::size_t floor) -> std::optional<std::size_t> {
+            if (floor >= barren)
+            {
+                return std::nullopt;
+            }
+
             const auto matches{[&](const std::size_t at) {
                 for (std::size_t offset{0}; offset < core.size(); ++offset)
                 {
@@ -431,14 +441,20 @@ public:
 
             std::size_t cursor{floor};
 
+            std::size_t latest{floor};
+
             const auto next_occurrence{[&]() -> std::optional<std::size_t> {
                 for (; cursor + core.size() <= size; ++cursor)
                 {
                     if (matches(cursor))
                     {
+                        latest = cursor + 1;
+
                         return cursor++;
                     }
                 }
+
+                barren = std::min(barren, latest);
 
                 return std::nullopt;
             }};

@@ -491,14 +491,18 @@ void Simulator::derive_mandatory_core()
                 return to != no_state_ && live(to) ? std::optional<std::size_t>{to} : std::nullopt;
             }};
 
-    // Shortest death words by relaxation over live transitions: depth one where some byte has no live
-    // target, one byte more than a successor's otherwise. A state no death word leaves keeps infinity and
-    // proposes nothing.
+    // Shortest death words by search from the deaths backward: depth one where some byte has no live
+    // target, and each layer of the reverse traversal one byte deeper, every live transition read once. A
+    // state no death word leaves keeps infinity and proposes nothing.
     constexpr auto infinity{std::numeric_limits<std::size_t>::max()};
 
     std::vector<std::size_t> depth(states, infinity);
 
-    std::vector<std::string> word(states);
+    std::vector<char> step(states, 0);
+
+    std::vector<std::size_t> onward(states, 0);
+
+    std::vector<std::size_t> frontier;
 
     for (std::size_t state{0}; state < states; ++state)
     {
@@ -513,38 +517,70 @@ void Simulator::derive_mandatory_core()
             {
                 depth[state] = 1;
 
-                word[state] = std::string{static_cast<char>(symbol)};
+                step[state] = static_cast<char>(symbol);
+
+                frontier.push_back(state);
 
                 break;
             }
         }
     }
 
-    for (auto grew{true}; grew;)
+    std::vector<std::vector<std::size_t>> sources(states);
+
+    for (std::size_t state{0}; state < states; ++state)
     {
-        grew = false;
-
-        for (std::size_t state{0}; state < states; ++state)
+        if (!live(state))
         {
-            if (!live(state))
+            continue;
+        }
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            const auto to{advance_live(state, symbol)};
+
+            if (to && (sources[*to].empty() || sources[*to].back() != state))
             {
-                continue;
+                sources[*to].push_back(state);
             }
+        }
+    }
 
-            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    for (std::size_t head{0}; head < frontier.size(); ++head)
+    {
+        const auto to{frontier[head]};
+
+        for (const auto from : sources[to])
+        {
+            if (depth[from] == infinity)
             {
-                const auto to{advance_live(state, symbol)};
+                depth[from] = depth[to] + 1;
 
-                if (!to || depth[*to] == infinity || depth[*to] + 1 >= depth[state])
-                {
-                    continue;
-                }
+                frontier.push_back(from);
+            }
+        }
+    }
 
-                depth[state] = depth[*to] + 1;
+    // The death word is never stored: with the depths final, each state keeps one byte and one successor,
+    // chosen as the smallest byte stepping one layer shallower, and a word is spelled by walking the chain.
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (!live(state) || depth[state] == infinity || depth[state] < 2)
+        {
+            continue;
+        }
 
-                word[state] = static_cast<char>(symbol) + word[*to];
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            const auto to{advance_live(state, symbol)};
 
-                grew = true;
+            if (to && depth[*to] != infinity && depth[*to] + 1 == depth[state])
+            {
+                step[state] = static_cast<char>(symbol);
+
+                onward[state] = *to;
+
+                break;
             }
         }
     }
@@ -552,8 +588,11 @@ void Simulator::derive_mandatory_core()
     // Candidates come from input-total states of the required set: a non-re-entrant initial state is
     // exempt, since its window hypothesis renames rather than survives. The core is the death word with the
     // killing byte removed, and a depth of at least two is input-totality itself, since the seeding pass
-    // gave depth one to every live state missing a byte.
-    std::vector<std::pair<std::size_t, std::string>> candidates;
+    // gave depth one to every live state missing a byte. Only the state is kept; its core is spelled when
+    // its proof runs.
+    std::vector<std::size_t> candidates;
+
+    std::size_t longest{0};
 
     for (std::size_t state{0}; state < states; ++state)
     {
@@ -567,8 +606,27 @@ void Simulator::derive_mandatory_core()
             continue;
         }
 
-        candidates.emplace_back(state, word[state].substr(0, depth[state] - 1));
+        candidates.push_back(state);
+
+        longest = std::max(longest, depth[state] - 1);
     }
+
+    const auto materialize{[&](const std::size_t origin) {
+        std::string core;
+
+        for (auto state{origin}; depth[state] > 1; state = onward[state])
+        {
+            core.push_back(step[state]);
+        }
+
+        return core;
+    }};
+
+    // One stamped buffer serves every proof: an entry from an older search reads as unseen under the
+    // current stamp, so nothing is ever cleared or reallocated between candidates.
+    std::vector<std::size_t> seen(states * longest, 0);
+
+    std::size_t generation{0};
 
     // The proof, per candidate from its own proposing state: a stack-driven reachability search over pairs
     // of a live state and a matcher prefix, refuted the moment any reachable pair meets a byte with no live
@@ -606,11 +664,11 @@ void Simulator::derive_mandatory_core()
             return core[matched] == byte ? matched + 1 : 0;
         }};
 
-        std::vector<char> seen(states * length, 0);
+        ++generation;
+
+        seen[origin * length] = generation;
 
         std::vector<std::pair<std::size_t, std::size_t>> pending{{origin, 0}};
-
-        seen[origin * length] = 1;
 
         while (!pending.empty())
         {
@@ -634,9 +692,9 @@ void Simulator::derive_mandatory_core()
                     continue;
                 }
 
-                if (seen[*to * length + next] == 0)
+                if (seen[*to * length + next] != generation)
                 {
-                    seen[*to * length + next] = 1;
+                    seen[*to * length + next] = generation;
 
                     pending.emplace_back(*to, next);
                 }
@@ -650,10 +708,12 @@ void Simulator::derive_mandatory_core()
     // chain of nested proposals then costs one product search rather than one per link. Stability keeps the
     // state-order tie between equally long proposals where it has always been.
     std::ranges::stable_sort(
-            candidates, [](const auto& left, const auto& right) { return left.second.size() > right.second.size(); });
+            candidates, [&depth](const auto left, const auto right) { return depth[left] > depth[right]; });
 
-    for (const auto& [state, core] : candidates)
+    for (const auto state : candidates)
     {
+        const auto core{materialize(state)};
+
         if (proved(state, core))
         {
             mandatory_core_ = core;

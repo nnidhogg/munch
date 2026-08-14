@@ -260,7 +260,7 @@ public:
      * exit is proposed as a core and proved mandatory by exhausting core-avoiding death words over the live
      * tables, with the killing byte never fed to the matcher. The longest proved core is kept: every window
      * is_split_window() certifies contains it with at least one byte following, which is what lets the
-     * planner search occurrences of this string instead of walking every position. Empty means no core is
+     * planner narrow its candidate windows to occurrences of this string. Empty means no core is
      * proved, because no such state exists, the candidate was refuted by a core-free death word, or the
      * token set is nullable; the planner then keeps its exhaustive walk, and nothing weakens: the core is an
      * accelerator's licence, never a certificate itself.
