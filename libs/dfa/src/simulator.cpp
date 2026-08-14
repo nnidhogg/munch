@@ -1,6 +1,7 @@
 #include "munch/dfa/simulator.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <experimental/mdspan>
 #include <limits>
 #include <map>
@@ -622,12 +623,12 @@ void Simulator::derive_mandatory_core()
         return core;
     }};
 
-    // One byte-wide buffer serves every proof, with the entries a search touched cleared when the next one
-    // begins: bookkeeping follows the work actually done rather than the buffer size, and the buffer costs
-    // one byte per pair rather than a stamp-sized cell.
-    std::vector<char> seen(states * longest, 0);
+    // One stamped buffer serves every proof: an entry from an older search reads as unseen under the
+    // current stamp, so nothing is cleared or reallocated between candidates, and a four-byte stamp is
+    // wrap-safe because there are fewer candidates than stamps.
+    std::vector<std::uint32_t> seen(states * longest, 0);
 
-    std::vector<std::size_t> touched;
+    std::uint32_t generation{0};
 
     // The matcher precomputed as a table per candidate, one lookup per transition: a graph search defeats
     // the usual amortization of chained failure links, so paying them once here keeps a proof's cost at the
@@ -678,16 +679,9 @@ void Simulator::derive_mandatory_core()
             }
         }
 
-        for (const auto index : touched)
-        {
-            seen[index] = 0;
-        }
+        ++generation;
 
-        touched.clear();
-
-        seen[origin * length] = 1;
-
-        touched.push_back(origin * length);
+        seen[origin * length] = generation;
 
         std::vector<std::pair<std::size_t, std::size_t>> pending{{origin, 0}};
 
@@ -713,11 +707,9 @@ void Simulator::derive_mandatory_core()
                     continue;
                 }
 
-                if (seen[*to * length + next] == 0)
+                if (seen[*to * length + next] != generation)
                 {
-                    seen[*to * length + next] = 1;
-
-                    touched.push_back(*to * length + next);
+                    seen[*to * length + next] = generation;
 
                     pending.emplace_back(*to, next);
                 }

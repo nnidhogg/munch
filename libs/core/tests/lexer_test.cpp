@@ -2112,7 +2112,7 @@ TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses
 
     EXPECT_EQ(plan, (std::vector<std::size_t>{0, 8, micro.size()}));
 
-    // A target whose whole window range still fits before the input's end: the barren shortcut may refuse
+    // A target whose end-touching windows still fit before the input's end: the barren shortcut may refuse
     // only floors past the last occurrence, and a guard that refuses a byte too eagerly drops this cut.
     const std::string tight{" <@; "};
 

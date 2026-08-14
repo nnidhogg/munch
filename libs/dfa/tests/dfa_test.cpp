@@ -703,7 +703,8 @@ TEST_F(Dfa_test, Mandatory_core_breaks_equal_length_ties_in_state_order)
     // Twenty disconnected loops, each proving its own one-byte core within its own reach: every proposal is
     // sound, so the answer is a many-way tie the accessor has always broken toward the earliest state. The
     // published value is part of the behavior the planner tests pin against, and with this many equal
-    // candidates any unstable ordering of the proposals lands somewhere in the middle of the pack.
+    // candidates an unstable ordering is free to land anywhere in the pack, and the widths here make the
+    // library implementations at hand actually do so; the pinned value itself is what the contract owes.
     for (int region{0}; region < 20; ++region)
     {
         const auto hub{dfa.next_state()};
@@ -732,6 +733,151 @@ TEST_F(Dfa_test, Mandatory_core_breaks_equal_length_ties_in_state_order)
     const Simulator simulator{dfa.build()};
 
     EXPECT_EQ(simulator.mandatory_core(), "a");
+}
+
+TEST_F(Dfa_test, Mandatory_core_origin_stamps_do_not_leak_across_proofs)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto shorter{dfa.next_state()};
+    const auto longer{dfa.next_state()};
+    const auto immortal{dfa.next_state()};
+    const auto killer{dfa.next_state()};
+
+    const Token token{1};
+
+    // The state indices are chosen so the first proof's origin cell and the second proof's refuting pair
+    // land on the same physical slot: the two-byte proposal's origin occupies index four, and the one-byte
+    // proposal must later visit the killer at prefix zero, which is index four again under its stride. A
+    // buffer that lets the first proof's origin stamp leak forward suppresses that visit, skips the only
+    // refutation, and wrongly proves the shorter core; the honest answer is empty.
+    dfa.add_accept_state(immortal, token);
+
+    dfa.add_transition(q0, dfa::Label('x'), longer);
+    dfa.add_transition(q0, dfa::Label('y'), shorter);
+    dfa.add_transition(q0, dfa::Label('v'), immortal);
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        const auto byte{static_cast<char>(symbol)};
+
+        dfa.add_transition(immortal, dfa::Label(byte), immortal);
+
+        if (byte != 'a' && byte != 'b')
+        {
+            dfa.add_transition(shorter, dfa::Label(byte), immortal);
+        }
+
+        if (byte != 'a')
+        {
+            dfa.add_transition(longer, dfa::Label(byte), immortal);
+        }
+    }
+
+    dfa.add_transition(shorter, dfa::Label('a'), killer);
+    dfa.add_transition(shorter, dfa::Label('b'), killer);
+    dfa.add_transition(longer, dfa::Label('a'), shorter);
+
+    dfa.add_transition(killer, dfa::Label('c'), immortal);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "");
+}
+
+TEST_F(Dfa_test, Mandatory_core_matcher_rows_start_fresh_for_every_candidate)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+
+    const Token token{1};
+
+    // Three loops proposing equal-length one-byte cores in allocation order: the first is refuted along its
+    // 0x81 route, the second along its 0x80 route, and the third proves. The second refutation hinges on
+    // the matcher table being rebuilt from zero for its candidate: a table keeping the first proof's stale
+    // row-zero entry for byte 0x80 treats that route as a completed match, prunes it, and wrongly proves
+    // the second core instead of the third.
+    const auto region{[&dfa, &token](const char escape, const std::optional<char> refuter) {
+        const auto hub{dfa.next_state()};
+        const auto killer{dfa.next_state()};
+
+        dfa.add_accept_state(hub, token);
+
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto byte{static_cast<char>(symbol)};
+
+            if (byte != escape && (!refuter || byte != *refuter))
+            {
+                dfa.add_transition(hub, dfa::Label(byte), hub);
+            }
+        }
+
+        dfa.add_transition(hub, dfa::Label(escape), killer);
+
+        if (refuter)
+        {
+            dfa.add_transition(hub, dfa::Label(*refuter), killer);
+        }
+
+        dfa.add_transition(killer, dfa::Label('c'), hub);
+
+        return hub;
+    }};
+
+    dfa.add_transition(q0, dfa::Label('x'), region(static_cast<char>(0x80), static_cast<char>(0x81)));
+    dfa.add_transition(q0, dfa::Label('y'), region(static_cast<char>(0x01), static_cast<char>(0x80)));
+    dfa.add_transition(q0, dfa::Label('z'), region(static_cast<char>(0x02), std::nullopt));
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), std::string{static_cast<char>(0x02)});
+}
+
+TEST_F(Dfa_test, Mandatory_core_survives_a_core_longer_than_the_byte_range)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+
+    const Token token{1};
+
+    std::vector<dfa::Dfa::State_t> chain;
+
+    for (int at{0}; at <= 256; ++at)
+    {
+        chain.push_back(dfa.next_state());
+    }
+
+    // A 256-byte core: every matcher-table entry up to 256 must survive intact, so any cell narrower than
+    // the count of prefixes wraps and shears the proposal down. The chain forces the full run before the
+    // only death, and the accessor must report all 256 bytes.
+    dfa.add_accept_state(chain[0], token);
+
+    dfa.add_transition(q0, dfa::Label('s'), chain[0]);
+
+    for (int at{0}; at < 256; ++at)
+    {
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto byte{static_cast<char>(symbol)};
+
+            if (byte != 'a')
+            {
+                dfa.add_transition(chain[at], dfa::Label(byte), chain[0]);
+            }
+        }
+
+        dfa.add_transition(chain[at], dfa::Label('a'), chain[at + 1]);
+    }
+
+    dfa.add_transition(chain[256], dfa::Label('c'), chain[0]);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), std::string(256, 'a'));
 }
 
 TEST_F(Dfa_test, Mandatory_core_failure_table_chains_two_borders_in_construction)
@@ -1167,51 +1313,55 @@ TEST_F(Dfa_test, Mandatory_core_shrinks_when_an_overlapping_route_only_pretends_
     EXPECT_EQ(simulator.mandatory_core(), "ba");
 }
 
-TEST_F(Dfa_test, Mandatory_core_refutation_reaches_the_last_byte_of_the_alphabet)
+TEST_F(Dfa_test, Mandatory_core_refutation_reaches_both_ends_of_the_alphabet)
 {
-    dfa::Builder dfa;
+    // The refuting route dies on one byte and on nothing else, and that byte sits at either end of the
+    // alphabet: a proof search stopping one symbol short of the end misses the 0xff death, and one starting
+    // a symbol late misses the 0x00 death, each wrongly proving the 'a' the other route proposes. The
+    // shape is otherwise the familiar two-route refutation.
+    const auto build{[](const int edge) {
+        dfa::Builder dfa;
 
-    const auto q0{dfa.init_state()};
-    const auto q1{dfa.next_state()};
-    const auto q2{dfa.next_state()};
-    const auto q3{dfa.next_state()};
+        const auto q0{dfa.init_state()};
+        const auto q1{dfa.next_state()};
+        const auto q2{dfa.next_state()};
+        const auto q3{dfa.next_state()};
 
-    const Token token{1};
+        const Token token{1};
 
-    // The refuting route dies on 0xff and on nothing else, so a proof search that stops one symbol short of
-    // the alphabet's end never sees the death and wrongly proves the 'a' the other route proposes. The
-    // second escape's killing byte sits at the boundary on purpose; everything else about the shape is the
-    // familiar two-route refutation.
-    dfa.add_accept_state(q1, token);
+        dfa.add_accept_state(q1, token);
 
-    dfa.add_transition(q0, dfa::Label('s'), q1);
+        dfa.add_transition(q0, dfa::Label('s'), q1);
 
-    for (int symbol{0}; symbol < 256; ++symbol)
-    {
-        const auto byte{static_cast<char>(symbol)};
-
-        if (byte != 'a' && byte != 'z')
+        for (int symbol{0}; symbol < 256; ++symbol)
         {
-            dfa.add_transition(q1, dfa::Label(byte), q1);
+            const auto byte{static_cast<char>(symbol)};
+
+            if (byte != 'a' && byte != 'z')
+            {
+                dfa.add_transition(q1, dfa::Label(byte), q1);
+            }
+
+            if (symbol != 0x01)
+            {
+                dfa.add_transition(q2, dfa::Label(byte), q1);
+            }
+
+            if (symbol != edge)
+            {
+                dfa.add_transition(q3, dfa::Label(byte), q1);
+            }
         }
 
-        if (symbol != 0x01)
-        {
-            dfa.add_transition(q2, dfa::Label(byte), q1);
-        }
+        dfa.add_transition(q1, dfa::Label('a'), q2);
+        dfa.add_transition(q1, dfa::Label('z'), q3);
 
-        if (symbol != 0xff)
-        {
-            dfa.add_transition(q3, dfa::Label(byte), q1);
-        }
-    }
+        return Simulator{dfa.build()};
+    }};
 
-    dfa.add_transition(q1, dfa::Label('a'), q2);
-    dfa.add_transition(q1, dfa::Label('z'), q3);
+    EXPECT_EQ(build(0xff).mandatory_core(), "");
 
-    const Simulator simulator{dfa.build()};
-
-    EXPECT_EQ(simulator.mandatory_core(), "");
+    EXPECT_EQ(build(0x00).mandatory_core(), "");
 }
 
 TEST_F(Dfa_test, Mandatory_core_revisits_a_state_under_a_different_matcher_prefix)
@@ -1343,9 +1493,10 @@ TEST_F(Dfa_test, Mandatory_core_failure_links_chain_while_the_table_is_built)
 
     // The KMP prefix automaton of "aabaaaa", laid out as live states: every 'a'/'b' edge follows the
     // matcher, every other byte restarts. The proposal is the full word, and the death route that reads
-    // "aabaaab" mid-way still carries it, but only a failure table built with chained fallback knows that
-    // border; a table built by restarting from nothing at each mismatch misjudges that route as core-free
-    // and shrinks the answer by its first byte.
+    // "aabaaab" mid-way still carries it, but only a failure table that inherits progress through the
+    // word's border knows that; a table restarting from nothing at each mismatch misjudges the route as
+    // core-free and shrinks the answer by its first byte. The construction here never needs more than one
+    // fallback hop; the chained multi-hop case is the "aaabb" test's job.
     dfa.add_accept_state(chain[0], token);
 
     const auto pair_edges{[&dfa](const auto from, const auto on_a, const auto on_b) {
