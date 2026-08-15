@@ -129,3 +129,24 @@ target_link_libraries(munch_window_bench
 if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_window_bench COMMAND munch_window_bench)
 endif ()
+
+# Synthesizes carry prepasses from the compiled tables for token sets whose split certificates a wall
+# refuses: decides the zero-lag premise, bounds the wall from below behind it, searches the flavor
+# labeling whose byte permutations form the carry group, certifies windows behind the resolved flavor,
+# and holds every carry-driven plan to the serial scan. Runs as a test because every verdict, campaign
+# count, and price is pinned and every unproved premise is a refusal.
+add_executable(munch_wall_prepass src/wall_prepass.cpp)
+
+target_include_directories(munch_wall_prepass
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+)
+
+target_link_libraries(munch_wall_prepass
+        PRIVATE
+        munch_core
+)
+
+if (MUNCH_BUILD_TESTS)
+    add_test(NAME munch_wall_prepass COMMAND munch_wall_prepass)
+endif ()

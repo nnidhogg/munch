@@ -310,9 +310,9 @@ which lies outside the paper's evaluation and is not a claim of the paper.
 
 For token sets whose certified windows all share structure, the simulator proves it at construction: a byte string that
 occurs, with at least one byte after it, inside every certified split window. Candidates come from the shortest words
-that force a scan to die, and each is proved or refuted against every death path the live tables allow, so the accessor
-reports only what holds for all of them. Block comments prove their closer; token sets whose windows share no such
-string report nothing and lose nothing.
+that force a scan to die, and each is proved or refuted against every death path the live tables allow from its
+proposing state, so the accessor reports only what holds for all of them. Block comments prove their closer; token sets
+whose windows share no such string report nothing and lose nothing.
 
 The window planner runs on this licence when it exists: candidate windows are generated only around occurrences of the
 core, visited in the exhaustive walk's own order and certified by the same memoized decision, so the plan is byte for

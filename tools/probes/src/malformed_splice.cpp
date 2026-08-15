@@ -11,7 +11,7 @@
 // a failure needs an explicit restart contract, which is what certified recovery supplies; this probe
 // measures what ignoring the flags costs.
 //
-// What runs as A test. A deterministic generated corpus is broken by one unconsumable byte near its front,
+// What runs as a test. A deterministic generated corpus is broken by one unconsumable byte near its front,
 // so the serial scan stops there. The window plan still recovers all eight chunks; the chunk holding the
 // damage reports short consumption, which a caller checking per-chunk counts would catch, while the other
 // seven consume fully and silently, and the spliced token count dwarfs the serial one. The probe asserts

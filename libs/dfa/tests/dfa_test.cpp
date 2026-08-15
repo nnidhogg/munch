@@ -837,8 +837,8 @@ TEST_F(Dfa_test, Mandatory_core_reaches_a_proposer_allocated_last)
 
     const Token token{1};
 
-    // The only proposing state carries the highest index on purpose: every derivation pass — predecessor
-    // construction, canonical links, candidate collection — must include the final state, and a loop bound
+    // The only proposing state carries the highest index on purpose: every derivation pass (predecessor
+    // construction, canonical links, candidate collection) must include the final state, and a loop bound
     // trimmed by one silently forgets exactly this proposer, turning the proved core into an empty answer.
     dfa.add_accept_state(hub, token);
 
@@ -875,7 +875,7 @@ TEST_F(Dfa_test, Mandatory_core_origin_stamp_uses_the_current_proofs_stride)
     const Token token{1};
 
     // The allocation puts the one-byte proposer at index one and its killer at index two, so an origin seed
-    // written with the wrong stride — the longest length instead of the current proof's — lands exactly on
+    // written with the wrong stride (the longest length instead of the current proof's) lands exactly on
     // the cell the second proof must visit to refute. The two-byte proposal refutes first, the one-byte one
     // must refute through the killer, and a mis-strided seed suppresses that visit and proves it instead.
     dfa.add_accept_state(shorter, token);

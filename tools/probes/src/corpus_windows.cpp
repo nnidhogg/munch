@@ -3,7 +3,7 @@
 // proves where a byte certifies and the split-windows report proves where a window does, but occurrence on
 // real inputs is a property of corpora, not of grammars, and no frequency claim exists in either paper.
 //
-// What runs as A test. The grammar-level facts this file asserts are corpus-free and pin the mechanism:
+// What runs as a test. The grammar-level facts this file asserts are corpus-free and pin the mechanism:
 // the published cumulative C-like row and the RFC 8259 row certify no exact byte; the RFC 8259 row's 120
 // certified two-byte windows split into 63 of the form control-whitespace-then-must-start-byte and 57 of the
 // form token-final-byte-then-control-whitespace, and the space byte appears in neither position at either
