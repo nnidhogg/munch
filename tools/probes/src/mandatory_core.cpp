@@ -1,27 +1,27 @@
 // Decides the mandatory-core premise of the proof-directed planner: for a state q and a family K of byte
-// strings, does EVERY death word from q contain some member of K ending strictly before the killing byte?
+// strings, does every death word from q contain some member of K ending strictly before the killing byte?
 //
-// WHY THIS EXISTS. The planned prefilter narrows its candidate windows to core occurrences, and its
+// Why this exists. The planned prefilter narrows its candidate windows to core occurrences, and its
 // exact-plan-equality argument rests on the premise above (the mandatory-death-core theorem). The
-// premise must be PROVED per grammar, not recognized by shape: there is a concrete
+// premise must be proved per grammar, not recognized by shape: there is a concrete
 // automaton where a plausible component satisfies the first-exit intuition while an internal death bypasses
 // the core entirely. This probe is the decision procedure: an Aho-Corasick matcher over K is producted with
 // the live automaton, and the premise fails exactly when a pair of a live state and a match-free matcher
 // state is reachable whose live state is not input-total, since any missing byte there ends a K-avoiding
 // death word. The matcher reads only the live prefix; the killing byte is never fed to it, because a core
 // completed on the killing byte is too late. Families are nonempty strings by contract; a state that can
-// die with no core before the killing byte gets a REFUTED verdict with a reconstructed witness.
+// die with no core before the killing byte gets a refuted verdict with a reconstructed witness.
 //
-// WHAT RUNS AS A TEST. The shipped instances and the review's counterexamples, all pinned:
-//   - the C-like cumulative row PROVES the family {*/} at its comment-interior state;
-//   - a Python-like triple-quote row PROVES the family {three quotes} at its string-interior state;
-//   - the RFC 8259 row REFUTES every family at its string-interior state with a one-byte witness, since a
+// What runs as a test. The shipped instances and the hostile counterexamples, all pinned:
+//   - the C-like cumulative row proves the family {*/} at its comment-interior state;
+//   - a Python-like triple-quote row proves the family {three quotes} at its string-interior state;
+//   - the RFC 8259 row refutes every family at its string-interior state with a one-byte witness, since a
 //     control byte kills it immediately: JSON gets no filter and the planner's exhaustive walk stays;
 //   - the token set {a, b} has no provable family anywhere although it certifies the window ab, the case
 //     that made the naive planner-equality claim false: the checker's refusal is what routes such grammars
 //     to the exhaustive walk;
-//   - the review's synthetic automaton REFUTES K = {c} with the witness ab, and a repaired variant of the
-//     same table PROVES it, so the load-bearing premise correction is itself a checked behavior.
+//   - a synthetic automaton refutes K = {c} with the witness ab, and a repaired variant of the
+//     same table proves it, so the load-bearing premise correction is itself a checked behavior.
 //
 // The checker operates on an abstract table view so that hand-built tables and compiled automata run
 // through the identical decision procedure.
@@ -380,7 +380,7 @@ int main()
         const auto closer{check(compiled.view(), interior, {"*/"})};
 
         std::cout << "C comment interior, K={*/}: "
-                  << (closer.proved ? "PROVED" : "refuted, witness [" + printable(closer.witness) + "]") << "\n";
+                  << (closer.proved ? "proved" : "refuted, witness [" + printable(closer.witness) + "]") << "\n";
 
         expect(closer.proved, "the C row's comment interior does not prove {*/}");
 
@@ -417,7 +417,7 @@ int main()
         const auto triple{check(compiled.view(), interior, {one + one + one})};
 
         std::cout << "Python triple interior, K={\"\"\"}: "
-                  << (triple.proved ? "PROVED" : "refuted, witness [" + printable(triple.witness) + "]") << "\n";
+                  << (triple.proved ? "proved" : "refuted, witness [" + printable(triple.witness) + "]") << "\n";
 
         expect(triple.proved, "the triple-quote interior does not prove its delimiter family");
     }
@@ -436,7 +436,7 @@ int main()
         const auto refuted{check(compiled.view(), interior, {"\","})};
 
         std::cout << "JSON string interior, any K: "
-                  << (refuted.proved ? "PROVED" : "refuted, witness [" + printable(refuted.witness) + "]") << "\n";
+                  << (refuted.proved ? "proved" : "refuted, witness [" + printable(refuted.witness) + "]") << "\n";
 
         expect(!refuted.proved, "the JSON string interior proves a family although a control byte kills it");
 
@@ -462,12 +462,12 @@ int main()
         std::cout << "{a, b} accept state, any K: refuted, witness [" << printable(refuted.witness) << "]\n";
     }
 
-    // The confirmation review's counterexample: S = {q, s}, s dies on b, every first-exit word contains c,
+    // The synthetic counterexample: S = {q, s}, s dies on b, every first-exit word contains c,
     // yet ab is a death word from q avoiding c. The checker must refute K = {c} with exactly that witness,
     // and the repaired table, where s survives b, must prove it.
     {
-        // States 0 = q, 1 = s, 2 = t. Both S-states loop on every byte not named, so the ONLY death in the
-        // whole table is s on b: exactly the review's shape, an internal death bypassing every c-bearing
+        // States 0 = q, 1 = s, 2 = t. Both S-states loop on every byte not named, so the only death in the
+        // whole table is s on b: exactly the counterexample's shape, an internal death bypassing every c-bearing
         // first-exit word.
         const auto synthetic{[](const bool repaired) {
             return View{
@@ -500,8 +500,8 @@ int main()
 
         const auto broken{check(synthetic(false), 0, {"c"})};
 
-        std::cout << "review counterexample, K={c}: "
-                  << (broken.proved ? "PROVED" : "refuted, witness [" + printable(broken.witness) + "]") << "\n";
+        std::cout << "synthetic counterexample, K={c}: "
+                  << (broken.proved ? "proved" : "refuted, witness [" + printable(broken.witness) + "]") << "\n";
 
         expect(!broken.proved, "the counterexample table proves {c} although ab is a c-free death word");
 

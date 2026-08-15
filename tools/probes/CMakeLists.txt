@@ -71,7 +71,7 @@ endif ()
 
 # Decides the mandatory-core premise of the proof-directed planner: an Aho-Corasick matcher over the family
 # is producted with the live automaton, refuting with a reconstructed witness when a core-free death word
-# exists. Runs as a test because the shipped instances and the review's counterexample are pinned verdicts.
+# exists. Runs as a test because the shipped instances and the synthetic counterexample are pinned verdicts.
 add_executable(munch_mandatory_core src/mandatory_core.cpp)
 
 target_include_directories(munch_mandatory_core

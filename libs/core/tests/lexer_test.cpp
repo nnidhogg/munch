@@ -1147,7 +1147,7 @@ TEST_F(Lexer_test, Window_refusals_pin_the_nullable_guard_and_the_live_target_fi
         Operator,
     };
 
-    // A nullable set whose initial state is NOT re-entrant: optional(a) accepts emptily and nothing returns to
+    // A nullable set whose initial state is not re-entrant: optional(a) accepts emptily and nothing returns to
     // the start, so a model that merely forgot the nullable guard would certify "b" at 0. The refusal pins the
     // guard itself, not a coincidental re-entrancy.
     Builder_dbg nullable;
@@ -1158,7 +1158,7 @@ TEST_F(Lexer_test, Window_refusals_pin_the_nullable_guard_and_the_live_target_fi
     EXPECT_FALSE(nullable.build().is_split_window("b").has_value());
 
     // The non-re-entrant rename guard, pinned by the language (ab)*a: reading "a" from the initial state must
-    // NOT be treated as beginning a token there, because live paths re-enter the start; the completely
+    // not be treated as beginning a token there, because live paths re-enter the start; the completely
     // tokenizable input "aba" is one token covering its final "a" from offset 0, so certifying ("a", 0) would be
     // a false certificate. A model that dropped the re-entrancy condition certifies it.
     Builder_dbg reentrant;
@@ -2133,7 +2133,7 @@ TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses
 
     EXPECT_EQ(wrap_plan, (std::vector<std::size_t>{0, 4, wrap.size()}));
 
-    // A later target landing exactly ON the last recorded occurrence: the barren cache holds the offset
+    // A later target landing exactly on the last recorded occurrence: the barren cache holds the offset
     // one past it, so an endpoint recorded a byte tighter wrongly swallows the occurrence itself and the
     // cut it certifies.
     const std::string edge{"qx;b ;a;@ x  q@"};
@@ -2377,7 +2377,7 @@ TEST_F(Lexer_test, Chunk_boundaries_recover_windows_when_no_byte_certifies)
     builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
     builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
 
-    // Discarding identifiers gives the RELAXED byte certificate plenty of bytes, so a fallback that consulted
+    // Discarding identifiers gives the relaxed byte certificate plenty of bytes, so a fallback that consulted
     // the relaxed query instead of the exact one would return the degenerate exact plan here and never search
     // for windows; the exact set stays empty and the window recovery below must still happen.
     builder.set_ignored_tokens({static_cast<std::size_t>(Token_kind::Identifier)});

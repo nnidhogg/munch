@@ -3,7 +3,7 @@
 // validation. The recovery report's motivation quotes a measurement of this hazard, and this probe is the
 // program behind it.
 //
-// THE HAZARD. chunk_boundaries_with_windows() documents that on malformed input a window cut can land inside
+// The hazard. chunk_boundaries_with_windows() documents that on malformed input a window cut can land inside
 // a token of the serial scan's doomed suffix, and the concatenated chunk streams then contain tokens the
 // serial scan never reaches. The undamaged fragments consume fully and silently; only chunks holding a
 // locally unconsumable byte report short consumption, so a caller checking the per-chunk counts is flagged,
@@ -11,14 +11,14 @@
 // a failure needs an explicit restart contract, which is what certified recovery supplies; this probe
 // measures what ignoring the flags costs.
 //
-// WHAT RUNS AS A TEST. A deterministic generated corpus is broken by one unconsumable byte near its front,
+// What runs as A test. A deterministic generated corpus is broken by one unconsumable byte near its front,
 // so the serial scan stops there. The window plan still recovers all eight chunks; the chunk holding the
 // damage reports short consumption, which a caller checking per-chunk counts would catch, while the other
 // seven consume fully and silently, and the spliced token count dwarfs the serial one. The probe asserts
 // exactly that shape with both counts pinned; the caveat is thereby a checked behavior rather than a
 // documentation sentence.
 //
-// CAMPAIGN MODE. With a directory argument the probe concatenates the given extension's files in sorted
+// Campaign mode. With a directory argument the probe concatenates the given extension's files in sorted
 // order, applies the consumption-complete C row (deliberately mismatched to languages whose strings span
 // lines, which is what makes real corpora malformed under it), and reports serial consumption, the plan,
 // per-chunk consumption, and the spliced-versus-serial token counts. Figures from campaign runs are archived

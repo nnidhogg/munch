@@ -202,10 +202,10 @@ concatenated output as a successful tokenization.
 begin with b. That exemption is only sound while no input can *return* the automaton to the initial state mid-scan. A
 nullable pattern breaks it: `kleene(text("a"))` minimizes to an accepting initial state with a self-loop on `a`, the
 initial state is re-entrant, and the naive certificate wrongly certifies `a`; splitting `aa` then changes the token
-stream. munch shipped exactly this bug and an external review found it: the fix conditions the exemption on the initial
-state having no incoming reachable live transition, so a detached edge into it de-certifies nothing, and the regression
-suite carries the counterexample and a cyclic `(ab)*c` re-entry case. The condition is not a refinement for
-completeness; without it the certificate is unsound.
+stream. munch shipped exactly this bug: the fix conditions the exemption on the initial state having no incoming
+reachable live transition, so a detached edge into it de-certifies nothing, and the regression suite carries the
+counterexample and a cyclic `(ab)*c` re-entry case. The condition is not a refinement for completeness; without it the
+certificate is unsound.
 
 The three automata below are drawn by munch itself, from the minimized tables it compiles for each token set. Double
 circles are accepting states, labelled with the state number and the token identifier.

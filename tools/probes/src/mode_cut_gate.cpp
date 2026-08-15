@@ -4,7 +4,7 @@
 // Sufficient for a context-free cut, not necessary: two modes emitting the same tokens onward would also admit one
 // without either being identified, which is why what follows is an obstruction rather than an impossibility.
 //
-//   1. the byte begins a token NO MATTER WHICH MODE the scan is in, or the worker cannot know it is between tokens;
+//   1. the byte begins a token no matter which mode the scan is in, or the worker cannot know it is between tokens;
 //   2. the byte determines the mode, since knowing you are between tokens is useless without knowing which token set
 //      applies;
 //   3. the byte determines the mode stack, which no byte can do once nesting is unbounded.

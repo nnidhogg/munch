@@ -502,7 +502,7 @@ bool scan_lexertl_nested(const lexertl::state_machine& sm, const std::string& in
 /**
  * @brief Code carrying block comments that nest, which the measured grammars count rather than bound.
  *
- * The LANGUAGE of arbitrarily nested comments is not regular, since counting to an unbounded depth is what one
+ * The language of arbitrarily nested comments is not regular, since counting to an unbounded depth is what one
  * finite automaton cannot do. This corpus nests only to depth four, and a bounded depth is regular: a flat grammar
  * could unroll four levels into distinct states and tokenize it. What the corpus measures is therefore the cost of
  * the stack both engines actually use, not a reach a flat grammar is denied here.

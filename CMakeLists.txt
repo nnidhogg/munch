@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20.6)
-project(munch VERSION 1.4.0)
+project(munch VERSION 1.5.0)
 
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(MUNCH_IS_TOP_LEVEL ON)

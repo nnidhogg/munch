@@ -1,20 +1,20 @@
 // Measures the quality of certified error recovery against the classical panic-mode conventions, on the grammar
 // rows the split-points study established, under a corruption model whose ground truth is exact by construction.
 //
-// THE QUESTION. next_certified_start() returns positions with a soundness theorem: in every tokenizable repair of
+// The question. next_certified_start() returns positions with a soundness theorem: in every tokenizable repair of
 // the input before an anchor, the image of a certified position begins a token. The classical conventions, skip
 // one byte, skip past the next newline, skip past the next semicolon, promise nothing. This probe quantifies what
 // the theorem is worth in practice: how often each strategy resumes at a true token boundary, how far past the
 // first true boundary it lands, and how much of the stream each one loses per error.
 //
-// CORRUPTION MODEL. A pristine corpus x, completely tokenizable by its row's grammar and asserted so, is damaged
+// Corruption model. A pristine corpus x, completely tokenizable by its row's grammar and asserted so, is damaged
 // at a position p by one of three operations on k bytes: substitute k bytes with pseudo-random ones, delete k
 // bytes, or insert k pseudo-random bytes. Every trial is deterministic: one linear congruential generator seeds
 // the corpus, the positions, and the damage, so every run of this program performs the identical experiment.
 //
-// GROUND TRUTH. The token boundaries of the damaged input's own segmentation past the seam are unknowable without
+// Ground truth. The token boundaries of the damaged input's own segmentation past the seam are unknowable without
 // a repair oracle, so the study uses the seed note's definition: ground truth is the boundary set B of the
-// PRISTINE corpus, mapped into damaged coordinates. Each operation leaves a suffix of x intact, y[end..] equals
+// pristine corpus, mapped into damaged coordinates. Each operation leaves a suffix of x intact, y[end..] equals
 // x[c..] for the corruption end named below, and boundaries inside the damaged window have no image and are
 // dropped:
 //
@@ -22,16 +22,16 @@
 //   delete:     y[p..] equals x[p+k..);       end = p,     images past the cut shift by -k.
 //   insert:     y[p+k..] equals x[p..);       end = p + k, images past the seam shift by +k.
 //
-// A resume position counts as LANDED when it is the image of a pristine boundary outside the damaged window. Near
+// A resume position counts as landed when it is the image of a pristine boundary outside the damaged window. Near
 // the seam the damaged input's true segmentation can genuinely diverge from the mapped pristine one, and that
 // divergence penalizes every strategy identically, so the comparison stays fair even where the ground truth is
 // conservative.
 //
-// THE THEOREM GIVES TEETH. The pristine corpus is itself a tokenizable repair of the damaged suffix: x equals
+// The theorem gives teeth. The pristine corpus is itself a tokenizable repair of the damaged suffix: x equals
 // x[0..c) concatenated with x[c..], the very suffix y preserves. So the repair-invariance theorems force any
 // certified answer whose supporting occurrence lies wholly in the preserved suffix to map to a boundary of B.
 // The occurrence begins at most three bytes before the answer, the longest window is four bytes with origin at
-// most three, so every certified answer at or past end + 3 MUST land, and the harness asserts exactly that,
+// most three, so every certified answer at or past end + 3 must land, and the harness asserts exactly that,
 // failing the run on any violation. Answers in the seam band [end, end + 3) may rest on an occurrence straddling
 // the seam, where the theorems bind only repairs that preserve the straddling evidence and predict nothing
 // about the mapped-pristine oracle; they are measured, not asserted. A second hard assertion runs before any
@@ -42,10 +42,10 @@
 // certified answer's CSV row carries two extra columns, the evidence's begin offset and the minimal answer
 // any certificate at or after the search start would have produced. A sharper transfer assertion fires on
 // the exact precondition rather than the three-byte margin: a certified answer whose evidence begins at or
-// past the corruption end MUST land. The conservative end-plus-three assertion stays beside it, and the
+// past the corruption end must land. The conservative end-plus-three assertion stays beside it, and the
 // summary reports the covered and straddling tallies with the nonminimality figure.
 //
-// METRICS, per grammar row, operation, k, and strategy, aggregated over trials whose damage actually broke the
+// Metrics, per grammar row, operation, k, and strategy, aggregated over trials whose damage actually broke the
 // serial scan (damage the grammar absorbs is counted and set aside):
 //
 //   answers   trials where the strategy produced a resume position inside the input.
@@ -59,16 +59,16 @@
 //   cascade   resume events needed to reach the end of the input when the driver loop alternates scan and
 //             recover, capped by the progress lemma's bound; refusal mid-cascade ends the loop.
 //
-// BASELINE CONVENTIONS. All strategies search from e + 1, the same progress contract recover() keeps, so no
+// Baseline conventions. All strategies search from e + 1, the same progress contract recover() keeps, so no
 // strategy may retry the offending byte. Skip-one resumes at e + 1. The delimiter conventions resume one past the
 // next delimiter at or after e + 1, the classical discard-through-the-delimiter reading of panic mode.
 //
-// NON-CLAIMS. Certified recovery answers with the first certificate in walk order, not the closest boundary, and
+// Non-claims. Certified recovery answers with the first certificate in walk order, not the closest boundary, and
 // refuses where nothing certifies; both behaviors are measured here, not excused. Nothing is claimed about the
 // damaged input's own segmentation between the failure and the resume position. Printed figures are quotable only
 // beside the clean commit of the collection ritual, exactly as the benchmark's are.
 //
-// USAGE. recovery_quality [corpus KiB] [trials per cell] [csv path]
+// Usage. recovery_quality [corpus KiB] [trials per cell] [csv path]
 // Defaults are sized to run as a test; the campaign passes larger figures and archives the CSV.
 
 #include <algorithm>
@@ -908,7 +908,7 @@ int main(const int argc, const char** argv)
 
                         // Support-aware classification: replicate the walk's evidence and assert the sharp
                         // form of the transfer, a certified answer whose evidence clears the corruption end
-                        // MUST land; the conservative end-plus-three assertion stays below.
+                        // must land; the conservative end-plus-three assertion stays below.
                         std::optional<std::size_t> evidence;
 
                         auto minimal{*r};

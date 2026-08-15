@@ -133,7 +133,7 @@ Mode_builder::Mode_diagnostics Mode_builder::diagnose() const
                 break;
 
             case Mode_action_kind::pop:
-                // Only a frame naming ANOTHER mode makes a pop an escape; one naming the mode itself returns there.
+                // Only a frame naming another mode makes a pop an escape; one naming the mode itself returns there.
                 for (std::size_t named{0}; named < framed[mode].size(); ++named)
                 {
                     leaves[mode] = leaves[mode] || (named != mode && framed[mode][named]);

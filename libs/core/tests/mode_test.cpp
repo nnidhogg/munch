@@ -604,7 +604,7 @@ TEST(Mode, Two_patterns_may_share_a_token_when_the_action_agrees)
 {
     Mode_builder builder;
 
-    // Sharing an ID is fine; only a conflicting ACTION is not.
+    // Sharing an ID is fine; only a conflicting action is not.
     builder.add_token(Mode::code, text("x"), Tok::identifier, 1);
 
     EXPECT_NO_THROW(builder.add_token(Mode::code, text("y"), Tok::identifier, 1));

@@ -278,7 +278,7 @@ TEST_F(Tokenizer_test, Offset_tracking)
     EXPECT_EQ(result.token().kind(), Token_kind::Integer_literal);
     EXPECT_EQ(tokenizer.offset(), 13u);
 
-    // EOF - offset should stay at end
+    // Eof - offset should stay at end
     result = tokenizer.next<Token_kind>();
     EXPECT_TRUE(result.end_of_input());
     EXPECT_EQ(tokenizer.offset(), 13u);

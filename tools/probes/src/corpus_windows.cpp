@@ -3,23 +3,23 @@
 // proves where a byte certifies and the split-windows report proves where a window does, but occurrence on
 // real inputs is a property of corpora, not of grammars, and no frequency claim exists in either paper.
 //
-// WHAT RUNS AS A TEST. The grammar-level facts this file asserts are corpus-free and pin the mechanism:
+// What runs as A test. The grammar-level facts this file asserts are corpus-free and pin the mechanism:
 // the published cumulative C-like row and the RFC 8259 row certify no exact byte; the RFC 8259 row's 120
 // certified two-byte windows split into 63 of the form control-whitespace-then-must-start-byte and 57 of the
-// form token-final-byte-then-control-whitespace, and the SPACE byte appears in neither position at either
+// form token-final-byte-then-control-whitespace, and the space byte appears in neither position at either
 // end, because a space is a legal string interior and so poisons no hypothesis, where tab, newline, and
 // carriage return are excluded from unescaped string interiors by RFC 8259 and kill every inside-a-string
-// reading. Three-byte STRUCTURAL windows extend the same mechanism to printable text: {,"v} certifies at
+// reading. Three-byte structural windows extend the same mechanism to printable text: {,"v} certifies at
 // origin 1 because no JSON token starts with v, so every cloud hypothesis in which the quote closes a string
 // dies on the final byte and the sole survivor has the quote opening one; the dual {t":} certifies at origin
 // 2 because no JSON token ends with t. The two-byte prefixes of both refuse, as does {,"9}, whose digit can
-// begin a Number and so keeps the closure hypothesis alive: the poison byte must be unable to START a token
+// begin a Number and so keeps the closure hypothesis alive: the poison byte must be unable to start a token
 // for the mechanism to fire. The consumption-complete C row certifies no two-byte window at all; its plans
 // rest entirely on lengths three and four. A deterministic generated C-like corpus then exercises
 // the shipped planner end to end: complete consumption, a full plan at eight chunks, and spliced-scan token
 // equality against the serial scan, all with pinned counts, so a drifted number fails the test suite.
 //
-// THE CONSUMPTION-COMPLETE C ROW. Real C defeats every published study row before certification is even in
+// The consumption-complete C row. Real C defeats every published study row before certification is even in
 // question: the preprocessor's # begins essentially every file, so the cumulative row consumes 2.5% of a
 // pinned Linux kernel sample. This instrument therefore carries its own row, the published cumulative row
 // plus nine consumption fixes (#, backslash, @, backtick, $, and the apostrophe as punctuation, carriage
@@ -28,7 +28,7 @@
 // Identifier fragments, which certification does not care about but token consumers would. It is this
 // instrument's own row, not a published one.
 //
-// CAMPAIGN MODE. With a corpus directory argument the instrument walks its regular files (grammar chosen by
+// Campaign mode. With a corpus directory argument the instrument walks its regular files (grammar chosen by
 // extension: .json uses the RFC 8259 row, everything else the consumption-complete C row), concatenates them
 // in sorted order, and reports per file and for the stream: bytes, consumed fraction, chunks achieved against
 // requested, balance (largest chunk over ideal), and boundary-deviation quantiles against equal-division
@@ -457,7 +457,7 @@ int main(const int argc, const char** argv)
 
     expect(spliced_tokens == serial_tokens, "spliced token count differs from the serial scan");
 
-    std::cout << (failures == 0 ? "all assertions hold\n" : "ASSERTION FAILURES\n");
+    std::cout << (failures == 0 ? "all assertions hold\n" : "assertion failures\n");
 
     return failures == 0 ? 0 : 1;
 }

@@ -3,9 +3,11 @@
 **Nicklas Nidhögg**, August 2026. Mirrors `paper/split-windows/split-windows.tex`, published as
 [arXiv:2608.09761](https://arxiv.org/abs/2608.09761), which evaluates munch at the v1.3.3 release, where the window
 machinery is a probe: the paper's principle is that the certificate's formulation should freeze there before becoming a
-public contract. The supported API, `Lexer::is_split_window()` and `chunk_boundaries_with_windows()`, arrived in
-release 1.4.0, after the paper's submission, and lies outside its evaluation. Every empirical aggregate below is
-printed and asserted by the probes, so a drifted number fails the test suite.
+public contract. The supported API, `Lexer::is_split_window()` and `chunk_boundaries_with_windows()`, arrived in release
+1.4.0, after the paper's submission, and lies outside its evaluation. The mandatory core section is this document's
+addition alone: release 1.5.0 derives that machinery on top of the same certificates, and no version of the paper
+contains it. Every empirical aggregate below is printed and asserted by the probes, so a drifted number fails the test
+suite.
 
 *A technical report on the certificate behind the window layer. The implementation, tests, and probes live in this
 repository; this document states the idea precisely, relates it to prior work, and reports what it recovers.*
@@ -303,6 +305,21 @@ around the cut. The division of labour is exact: this report establishes that `t
 establishes what a scan starting at a boundary preserves. The v1.3.3 artifact the paper evaluates plans with
 single-byte certificates only; release 1.4.0, published after submission, added the explicit window-planning sibling,
 which lies outside the paper's evaluation and is not a claim of the paper.
+
+### The mandatory core
+
+For token sets whose certified windows all share structure, the simulator proves it at construction: a byte string that
+occurs, with at least one byte after it, inside every certified split window. Candidates come from the shortest words
+that force a scan to die, and each is proved or refuted against every death path the live tables allow, so the accessor
+reports only what holds for all of them. Block comments prove their closer; token sets whose windows share no such
+string report nothing and lose nothing.
+
+The window planner runs on this licence when it exists: candidate windows are generated only around occurrences of the
+core, visited in the exhaustive walk's own order and certified by the same memoized decision, so the plan is byte for
+byte the walk's, refusals included. A core too long to fit the longest window with a byte to spare concludes the walk's
+refusal without scanning, and a tail with no occurrence refuses later targets without another scan. The core is an
+accelerator's licence, never a certificate: every cut is still established by the certified window decision, and
+grammars without a proved core keep the exhaustive walk unchanged. Construction cost is discussed in limits.md.
 
 ## 9 Evaluation
 

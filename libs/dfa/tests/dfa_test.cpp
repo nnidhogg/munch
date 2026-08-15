@@ -799,7 +799,7 @@ TEST_F(Dfa_test, Mandatory_core_ignores_escapes_into_states_that_never_accept_ag
 
     // The hub's 'z' escape leads to a loop from which acceptance is unreachable, so it is not a live
     // transition and the hub is not input-total: no candidate exists and the accessor stays empty. A
-    // derivation that forgets to require LIVE targets treats the dead loop as an ordinary neighbour,
+    // derivation that forgets to require live targets treats the dead loop as an ordinary neighbour,
     // finds the hub total, and proves the 'a' whose only counterweight was that very escape.
     dfa.add_accept_state(hub, token);
 

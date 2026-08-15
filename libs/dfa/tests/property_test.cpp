@@ -368,7 +368,7 @@ TEST(Dfa_property_test, Minimization_is_idempotent)
 }
 
 // The specification and the implementation disagreed here once: the report rejected any candidate the re-entrant
-// initial state consumes, while the predicate exempts only a NON-re-entrant initial state and otherwise lets q0 earn
+// initial state consumes, while the predicate exempts only a non-re-entrant initial state and otherwise lets q0 earn
 // its place on the same three conditions as any other state. Random property tests could not see it, because they
 // check behaviour against an oracle rather than correspondence to an independently written rule. These two cases pin
 // the boundary: identical automata, differing only in whether the token is discarded.

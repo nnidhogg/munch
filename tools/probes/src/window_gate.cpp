@@ -7,18 +7,18 @@
 // A second adversarial read confirmed it on 2026-08-05,
 // independently re-deriving the representation lemma and the quotient congruence and reproducing every figure.
 //
-// ASSUMPTIONS. The DFA is trimmed to its live states L, meaning reachable and co-accessible; q0 is live; no token
+// Assumptions. The DFA is trimmed to its live states L, meaning reachable and co-accessible; q0 is live; no token
 // matches the empty string; and the input considered is one the scanner tokenizes completely. Note that "the scan
-// is in a live state" is a claim about the FINAL segmentation's token prefixes, which is what the lemma tracks.
+// is in a live state" is a claim about the final segmentation's token prefixes, which is what the lemma tracks.
 // Speculative lookahead that maximal munch later rewinds away can sit in a state that is not co-accessible at all.
 //
-// NOTATION. Fix an input x whose window W = w_0 ... w_{k-1} occupies offsets [t, t+k), with k >= 1. Maximal munch
+// Notation. Fix an input x whose window W = w_0 ... w_{k-1} occupies offsets [t, t+k), with k >= 1. Maximal munch
 // gives x a unique boundary set. C_j is the cloud after the model has consumed the first j bytes of the window. For
 // j in 1..k let sigma_j be the start of the token containing the byte at t+j-1 in the final greedy segmentation,
 // let rho_j = delta*(q0, x[sigma_j .. t+j)) be that token's prefix state after consuming through byte t+j-1, and
 // let omega_j be sigma_j - t, or "before" when sigma_j < t.
 //
-// REPRESENTATION LEMMA. For every j in 1..k, the pair (rho_j, omega_j) is in C_j. Note what this does and does not
+// Representation lemma. For every j in 1..k, the pair (rho_j, omega_j) is in C_j. Note what this does and does not
 // say: rho_j is the prefix state of the token the final segmentation assigns to that byte, not wherever the
 // scanner's read head happens to be. Speculative lookahead that is later rewound away occupies other states, and
 // the lemma says nothing about them.
@@ -51,7 +51,7 @@
 //   because x[sigma_j .. t+j) is a token, so delta*(q0, x[sigma_j .. t+j)) accepts, and that state is rho_j, in
 //   C_j by hypothesis.
 //
-// SOUNDNESS. If every pair in C_k carries the same origin o and o is not "before", then (rho_k, omega_k) is in C_k
+// Soundness. If every pair in C_k carries the same origin o and o is not "before", then (rho_k, omega_k) is in C_k
 // by the lemma, so omega_k = o, so sigma_k = t + o, which is a boundary. Since x was an arbitrary completely
 // tokenized input containing W at t, the certificate holds in every context.
 //
@@ -76,7 +76,7 @@
 // Acceptance gating alone does not terminate, since a grammar like a+ accepts after every byte and accumulates
 // origins without bound. The search therefore deduplicates on a finite quotient rather than on the cloud: which
 // states carry the pre-window origin, and how many in-window origins each state carries, saturated at two. Two
-// clouds sharing a key have identical futures FOR CERTIFICATION, which is all the walk asks of them, so exploring
+// clouds sharing a key have identical futures for certification, which is all the walk asks of them, so exploring
 // one of them loses nothing and the walk decides this model exactly. The walk also carries a safety threshold on
 // retained keys, and a search that exceeds it is reported inconclusive rather than negative; exhausting the finite
 // quotient below the threshold is a conclusive model-negative. What even exhaustion does not give is semantic
@@ -270,7 +270,7 @@ std::optional<Cloud_t> step(
 
     const auto restart_ok{restart && live.contains(*restart)};
 
-    // A token can only end where the automaton accepted, so a boundary BEFORE this byte is possible exactly where
+    // A token can only end where the automaton accepted, so a boundary before this byte is possible exactly where
     // some tracked state accepts. Hence the test runs on the cloud as it stands, ahead of the step.
     auto accepting{false};
 
@@ -285,7 +285,7 @@ std::optional<Cloud_t> step(
     {
         if (const auto direct{dfa.advance(state, symbol)}; direct && live.contains(*direct))
         {
-            // Reading from the initial state BEGINS a token here, so the origin is this offset rather than whatever
+            // Reading from the initial state begins a token here, so the origin is this offset rather than whatever
             // the trajectory carried in. That holds only while nothing re-enters the initial state: a nullable
             // pattern minimizes to an accepting start state with a self-loop, and then arriving there no longer
             // proves the scan is between tokens. The shipped predicate withdraws its own exemption for the same
@@ -478,7 +478,7 @@ std::size_t g_exercised_total{0};
 /**
  * @brief The subset of those executions whose whole input tokenizes completely, asserted because the stress rows
  *        require scanning through the window rather than complete tokenizability, and this counter says how many
- *        executions had it anyway. Accumulated by the SAME callers that accumulate g_exercised_total, never
+ *        executions had it anyway. Accumulated by the same callers that accumulate g_exercised_total, never
  *        inside the check itself, so numerator and denominator always describe one call set.
  */
 std::size_t g_exercised_tokenizable{0};
@@ -876,7 +876,7 @@ std::size_t rewinds(const Dfa& dfa, const std::string& input)
  * @brief Counts places where the real scanner disagrees with the origin the model predicts.
  *
  * For every trim state it builds a shortest prefix reaching that state, lexes prefix + window + tail, and requires
- * the token CONTAINING the window's last byte to start exactly at the predicted offset. That is the model's actual
+ * the token containing the window's last byte to start exactly at the predicted offset. That is the model's actual
  * claim; merely finding a boundary somewhere would be weaker, since over {a, abc, bx, x} and "abx" both 0 and 1 are
  * boundaries and only 1 is the origin. Inputs whose scan dies before the window ends test nothing and are skipped.
  * A single disagreement means the model is unsound and its windows are not certificates.
@@ -895,7 +895,7 @@ std::size_t backup_disagreements(
     prefixes = 0;
 
     // One prefix per state is not enough. What decides how far a rewind travels is the distance the scan has run
-    // PAST its last accepting position, so the prefix set covers (state, distance) pairs rather than states. A
+    // past its last accepting position, so the prefix set covers (state, distance) pairs rather than states. A
     // grammar that rewinds seven bytes needs a prefix that is seven bytes past an accepting position to exercise
     // it. Coverage is therefore over the reachable live (state, distance) pairs with distance at most kMaxDistance,
     // not over every input the grammar admits.
@@ -944,7 +944,7 @@ std::size_t backup_disagreements(
     }
 
     // Every prefix above ends mid-token starting from the initial state. Prepending an accepted word varies the
-    // POTENTIAL boundary distance ahead of the window: it does not place a boundary, because under maximal munch
+    // potential boundary distance ahead of the window: it does not place a boundary, because under maximal munch
     // the concatenation can extend that word rather than end it. Without this the prefix set exercises one such
     // distance.
     std::vector<std::string> completed{""};
@@ -1303,7 +1303,7 @@ bool live_usable(const Dfa& dfa, const States_t& live)
 }
 
 /**
- * @brief Asserts that a window the model REFUSES is nonetheless semantically certified, by exhaustive oracle.
+ * @brief Asserts that a window the model refuses is nonetheless semantically certified, by exhaustive oracle.
  *
  * These are the strictness witnesses: the model's conservatism is real, so every negative claim must stay
  * model-relative. A row passes only when the model refuses the window and, in every completely tokenizable input
@@ -1500,7 +1500,7 @@ bool oracle_teeth(
 }
 
 /**
- * @brief Asserts that a NAMED window this grammar would otherwise never be checked at agrees with the scanner.
+ * @brief Asserts that a named window this grammar would otherwise never be checked at agrees with the scanner.
  *
  * run() only checks the windows the search reports, so a grammar whose shortest window is one byte never exercises a
  * longer one. The window that refuted the old restart step is three bytes long, and this is what keeps it under
@@ -1744,7 +1744,7 @@ bool run(const Row& row, Builder_dbg& builder)
             (example.empty() || (example_has_origin && example_at == row.example_origin)) && witness_ok};
 
     // The status word makes the exhausted-versus-inconclusive distinction part of the printed record, not only
-    // of the assertion: a search that exceeded the key threshold prints INCONCLUSIVE and fails the row.
+    // of the assertion: a search that exceeded the key threshold prints inconclusive and fails the row.
     const auto status{shortest != 0 ? "certified" : exhausted ? "exhausted" : "INCONCLUSIVE"};
 
     std::printf(
@@ -1817,7 +1817,7 @@ int main()
     {
         Builder_dbg b;
         // The predecessor's actual conventional row: strings and line comments over whitespace runs that include
-        // newline, with NO block-comment token. The row this used to be, strings plus line plus block comments
+        // newline, with no block-comment token. The row this used to be, strings plus line plus block comments
         // from the same base, is neither predecessor row; it stays below, labelled as new to this study.
         c_like(b, false);
         b.add_token(string_literal(), Token::String, 2);
@@ -2310,7 +2310,7 @@ int main()
             "backup total", g_exercised_total, g_exercised_tokenizable, g_exercised_total - g_exercised_tokenizable,
             g_witness_disagreements);
 
-    // The metric, precisely: keys RETAINED before shortest-window stopping ends each search, not the complete
+    // The metric, precisely: keys retained before shortest-window stopping ends each search, not the complete
     // reachable quotient space; a search that certifies at length two never explores what lies past it. Total and
     // maximum are asserted because the mean is quoted.
     std::printf(
@@ -2320,7 +2320,7 @@ int main()
             g_visited_total);
 
     // Printed above and asserted below, because these figures are quoted in the notes and a loose bound would let
-    // one move without anything failing. They are the NON-NULLABLE sample, which is what the soundness proof covers;
+    // one move without anything failing. They are the non-nullable sample, which is what the soundness proof covers;
     // two thirds of what the generator produces is nullable and is excluded rather than counted. Pinning them
     // exactly is only meaningful because random_regex() sequences its recursive calls: while it left them as
     // function arguments the sweep depended on evaluation order and GCC and Clang produced different grammars.

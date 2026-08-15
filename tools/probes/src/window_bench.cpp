@@ -1,6 +1,6 @@
 // Measures what a certified split window is worth as a parallel cut, on the grammar the window search rescues:
 // C-like with string literals, whose exact single-byte certificate is empty. Byte planning cannot help here;
-// this probe plans boundaries at window-recovered origins, PROVES the chunked stream equals the serial one
+// this probe plans boundaries at window-recovered origins, proves the chunked stream equals the serial one
 // before any clock starts, and only then times the comparison.
 //
 // Every number printed here is run-local. The program stamps commit and dirty-state provenance into its CSV and

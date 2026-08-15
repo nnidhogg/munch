@@ -22,7 +22,7 @@ namespace munch::core
  *
  * One compiled Lexer per mode, selected by a Mode_stack the caller owns. This is what a front end needs for
  * separately tokenizing the interior of a string literal, string interpolation, and comments that nest. Be precise
- * about which of those a flat token set is DENIED: an ordinary escaped string literal is regular and a flat grammar
+ * about which of those a flat token set is denied: an ordinary escaped string literal is regular and a flat grammar
  * matches it whole, so modes buy the interior tokens rather than the literal. Arbitrarily nested comments are the
  * genuinely non-regular case, since counting to an unbounded depth is what one finite automaton cannot do.
  * A construct whose terminator is chosen per occurrence, such as a heredoc naming its own delimiter, is outside
@@ -35,7 +35,7 @@ namespace munch::core
  * and here it is not. A worker landing on a byte would have to recover the mode and the whole saved stack as well,
  * and no single byte carries that: the same byte is a quote inside code and a terminator inside a string, and the
  * stack depth a nested comment reached is unbounded, so no finite certificate can name it. The proved obstruction is
- * narrower than "never": a SINGLE BYTE cannot identify the mode where two or more of them admit every byte, which is
+ * narrower than "never": a single byte cannot identify the mode where two or more of them admit every byte, which is
  * sufficient for a safe cut but not necessary. A multi-byte
  * window, a checkpoint from an earlier pass, or a stackless go_to-only mode set are outside it. Parallel
  * tokenization is absent rather than present and unsound; use Lexer where the grammar admits a flat token set.
