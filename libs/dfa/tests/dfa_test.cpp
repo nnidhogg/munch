@@ -827,6 +827,41 @@ TEST_F(Dfa_test, Mandatory_core_ignores_escapes_into_states_that_never_accept_ag
     EXPECT_EQ(simulator.mandatory_core(), "");
 }
 
+TEST_F(Dfa_test, Mandatory_core_reaches_a_proposer_allocated_last)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto killer{dfa.next_state()};
+    const auto hub{dfa.next_state()};
+
+    const Token token{1};
+
+    // The only proposing state carries the highest index on purpose: every derivation pass — predecessor
+    // construction, canonical links, candidate collection — must include the final state, and a loop bound
+    // trimmed by one silently forgets exactly this proposer, turning the proved core into an empty answer.
+    dfa.add_accept_state(hub, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), hub);
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        const auto byte{static_cast<char>(symbol)};
+
+        if (byte != 'a')
+        {
+            dfa.add_transition(hub, dfa::Label(byte), hub);
+        }
+    }
+
+    dfa.add_transition(hub, dfa::Label('a'), killer);
+    dfa.add_transition(killer, dfa::Label('c'), hub);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "a");
+}
+
 TEST_F(Dfa_test, Mandatory_core_origin_stamp_uses_the_current_proofs_stride)
 {
     dfa::Builder dfa;
@@ -888,9 +923,9 @@ TEST_F(Dfa_test, Mandatory_core_generations_survive_more_proofs_than_a_byte_can_
     const Token token{1};
 
     // Two hundred and fifty-six regions, each proposing a core its own second escape refutes, so two
-    // hundred and fifty-six proofs run and every one must start from a fresh stamp. A generation counter
-    // one byte wide wraps to zero on the last proof, reads every virgin cell as already seen, skips the
-    // refutation, and falsely proves the final region's core; the honest answer is empty.
+    // hundred and fifty-six proofs run and every one must carry a distinct stamp. An ordinal stamp one
+    // byte wide wraps to the buffer's virgin zero on the last proof, reads every untouched cell as already
+    // seen, skips the refutation, and falsely proves the final region's core; the honest answer is empty.
     for (int region{0}; region < 256; ++region)
     {
         const auto hub{dfa.next_state()};

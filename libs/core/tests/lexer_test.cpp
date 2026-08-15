@@ -2145,6 +2145,43 @@ TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses
     EXPECT_EQ(edge_plan, (std::vector<std::size_t>{0, 3, 6, 8, edge.size()}));
 }
 
+TEST_F(Lexer_test, Window_walk_advances_past_the_previous_cut)
+{
+    enum class Token_kind : uint8_t
+    {
+        T,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(choice(choice(text("a"), text("aa")), choice(text("ab"), text("bc"))), Token_kind::T, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_EQ(lexer.mandatory_core(), "");
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        ASSERT_FALSE(lexer.is_split_point(static_cast<char>(symbol)));
+    }
+
+    // Two certifying windows sit one byte apart, and several targets funnel to the same region: each
+    // target's walk must begin strictly past the previous cut, or the walk rediscovers the first cut for
+    // every later target and the plan collapses onto one boundary repeated. The plan is pinned, so a floor
+    // that fails to advance moves real cuts.
+    std::string input(30, 'a');
+
+    input += "bc";
+
+    input += std::string(68, 'a');
+
+    const auto plan{lexer.chunk_boundaries_with_windows(input, 10)};
+
+    EXPECT_EQ(plan, reference_window_walk(lexer, input, 10));
+
+    EXPECT_EQ(plan, (std::vector<std::size_t>{0, 30, 32, input.size()}));
+}
+
 TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_through_duplicate_candidates)
 {
     enum class Token_kind : uint8_t
