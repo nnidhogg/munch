@@ -2182,6 +2182,37 @@ TEST_F(Lexer_test, Window_walk_advances_past_the_previous_cut)
     EXPECT_EQ(plan, (std::vector<std::size_t>{0, 30, 32, input.size()}));
 }
 
+TEST_F(Lexer_test, Window_walk_defers_to_a_certified_byte_even_when_the_input_lacks_it)
+{
+    enum class Token_kind : uint8_t
+    {
+        T,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(
+            choice(choice(choice(text("a"), text("aa")), choice(text("ab"), text("bc"))), text("!")), Token_kind::T, 1);
+
+    const auto lexer{builder.build()};
+
+    // The exclamation mark certifies as a byte, so the token set does not lack a usable byte, and the window
+    // recovery is documented for sets that do. This input carries certifiable windows around "bc" yet no
+    // exclamation mark, so a planner that dropped the byte-certificate condition would cut at 30 and 32 where
+    // the shipped plan must remain the byte plan's single whole-input chunk.
+    ASSERT_TRUE(lexer.is_split_point('!'));
+
+    std::string input(30, 'a');
+
+    input += "bc";
+
+    input += std::string(68, 'a');
+
+    EXPECT_EQ(lexer.chunk_boundaries(input, 10), (std::vector<std::size_t>{0, input.size()}));
+
+    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 10), (std::vector<std::size_t>{0, input.size()}));
+}
+
 TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_through_duplicate_candidates)
 {
     enum class Token_kind : uint8_t
