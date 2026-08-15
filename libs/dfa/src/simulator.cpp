@@ -630,10 +630,20 @@ void Simulator::derive_mandatory_core()
 
     std::uint32_t generation{0};
 
+    // The widths carry the wrap argument: states are capped below the 32-bit sentinel and at most one
+    // candidate proposes per state, so distinct nonzero generations never wrap, and a matcher cell must
+    // hold every prefix count a supported table can reach. Narrowing either type would break both claims
+    // silently, so they are pinned here rather than chased with ever larger automata.
+    static_assert(
+            std::numeric_limits<decltype(seen)::value_type>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
+
     // The matcher precomputed as a table per candidate, one lookup per transition: a graph search defeats
     // the usual amortization of chained failure links, so paying them once here keeps a proof's cost at the
     // pairs it visits.
     std::vector<std::size_t> matcher;
+
+    static_assert(
+            std::numeric_limits<decltype(matcher)::value_type>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
 
     // The proof, per candidate from its own proposing state: a stack-driven reachability search over pairs
     // of a live state and a matcher prefix, refuted the moment any reachable pair meets a byte with no live

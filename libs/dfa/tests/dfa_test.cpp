@@ -786,6 +786,100 @@ TEST_F(Dfa_test, Mandatory_core_origin_stamps_do_not_leak_across_proofs)
     EXPECT_EQ(simulator.mandatory_core(), "");
 }
 
+TEST_F(Dfa_test, Mandatory_core_origin_stamp_uses_the_current_proofs_stride)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto shorter{dfa.next_state()};
+    const auto killer{dfa.next_state()};
+    const auto longer{dfa.next_state()};
+    const auto immortal{dfa.next_state()};
+
+    const Token token{1};
+
+    // The allocation puts the one-byte proposer at index one and its killer at index two, so an origin seed
+    // written with the wrong stride — the longest length instead of the current proof's — lands exactly on
+    // the cell the second proof must visit to refute. The two-byte proposal refutes first, the one-byte one
+    // must refute through the killer, and a mis-strided seed suppresses that visit and proves it instead.
+    dfa.add_accept_state(shorter, token);
+    dfa.add_accept_state(longer, token);
+    dfa.add_accept_state(immortal, token);
+
+    dfa.add_transition(q0, dfa::Label('x'), shorter);
+    dfa.add_transition(q0, dfa::Label('y'), longer);
+    dfa.add_transition(q0, dfa::Label('v'), immortal);
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        const auto byte{static_cast<char>(symbol)};
+
+        dfa.add_transition(immortal, dfa::Label(byte), immortal);
+
+        if (byte != 'a' && byte != 'b')
+        {
+            dfa.add_transition(shorter, dfa::Label(byte), immortal);
+        }
+
+        if (byte != 'd')
+        {
+            dfa.add_transition(longer, dfa::Label(byte), immortal);
+        }
+    }
+
+    dfa.add_transition(shorter, dfa::Label('a'), killer);
+    dfa.add_transition(shorter, dfa::Label('b'), killer);
+    dfa.add_transition(longer, dfa::Label('d'), shorter);
+
+    dfa.add_transition(killer, dfa::Label('c'), immortal);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "");
+}
+
+TEST_F(Dfa_test, Mandatory_core_generations_survive_more_proofs_than_a_byte_can_count)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+
+    const Token token{1};
+
+    // Two hundred and fifty-six regions, each proposing a core its own second escape refutes, so two
+    // hundred and fifty-six proofs run and every one must start from a fresh stamp. A generation counter
+    // one byte wide wraps to zero on the last proof, reads every virgin cell as already seen, skips the
+    // refutation, and falsely proves the final region's core; the honest answer is empty.
+    for (int region{0}; region < 256; ++region)
+    {
+        const auto hub{dfa.next_state()};
+        const auto killer{dfa.next_state()};
+
+        dfa.add_accept_state(hub, token);
+
+        dfa.add_transition(q0, dfa::Label(static_cast<char>(region)), hub);
+
+        for (int symbol{0}; symbol < 256; ++symbol)
+        {
+            const auto byte{static_cast<char>(symbol)};
+
+            if (byte != 'a' && byte != 'b')
+            {
+                dfa.add_transition(hub, dfa::Label(byte), hub);
+            }
+        }
+
+        dfa.add_transition(hub, dfa::Label('a'), killer);
+        dfa.add_transition(hub, dfa::Label('b'), killer);
+
+        dfa.add_transition(killer, dfa::Label('c'), hub);
+    }
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "");
+}
+
 TEST_F(Dfa_test, Mandatory_core_matcher_rows_start_fresh_for_every_candidate)
 {
     dfa::Builder dfa;
