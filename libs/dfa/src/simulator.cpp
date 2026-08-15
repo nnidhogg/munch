@@ -626,34 +626,38 @@ void Simulator::derive_mandatory_core()
     // One stamped buffer serves every proof: an entry from an older search reads as unseen under the
     // current stamp, so nothing is cleared or reallocated between candidates, and a four-byte stamp is
     // wrap-safe because there are fewer candidates than stamps.
-    std::vector<std::uint32_t> seen(states * longest, 0);
-
-    std::uint32_t generation{0};
-
     // The widths carry the wrap argument: states are capped below the 32-bit sentinel and at most one
-    // candidate proposes per state, so distinct nonzero generations never wrap, and a matcher cell must
-    // hold every prefix count a supported table can reach. Narrowing either type would break both claims
-    // silently, so they are pinned here rather than chased with ever larger automata.
+    // candidate proposes per state, so a stamp holds any proof ordinal, and a prefix cell must hold every
+    // matcher position a supported table can reach. Both types are pinned here, integrality included, so
+    // no narrowing or rounding representation can slip in silently.
+    using Stamp_t = std::uint32_t;
+
+    using Prefix_t = std::size_t;
+
     static_assert(
-            std::numeric_limits<decltype(seen)::value_type>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
+            std::numeric_limits<Stamp_t>::is_integer &&
+            std::numeric_limits<Stamp_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
+
+    static_assert(
+            std::numeric_limits<Prefix_t>::is_integer &&
+            std::numeric_limits<Prefix_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
+
+    std::vector<Stamp_t> seen(states * longest, 0);
 
     // The matcher precomputed as a table per candidate, one lookup per transition: a graph search defeats
     // the usual amortization of chained failure links, so paying them once here keeps a proof's cost at the
     // pairs it visits.
-    std::vector<std::size_t> matcher;
-
-    static_assert(
-            std::numeric_limits<decltype(matcher)::value_type>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
+    std::vector<Prefix_t> matcher;
 
     // The proof, per candidate from its own proposing state: a stack-driven reachability search over pairs
     // of a live state and a matcher prefix, refuted the moment any reachable pair meets a byte with no live
     // target, since the word spelled to that point is a core-avoiding death word. Pairs whose matcher
     // completed the core are satisfied for every continuation and are not expanded; visiting order carries
     // nothing, only the reachable set.
-    const auto proved{[&](const std::size_t origin, const std::string& core) {
+    const auto proved{[&](const std::size_t origin, const std::string& core, const Stamp_t stamp) {
         const auto length{core.size()};
 
-        std::vector<std::size_t> fall(length, 0);
+        std::vector<Prefix_t> fall(length, 0);
 
         for (std::size_t at{1}; at < length; ++at)
         {
@@ -689,9 +693,7 @@ void Simulator::derive_mandatory_core()
             }
         }
 
-        ++generation;
-
-        seen[origin * length] = generation;
+        seen[origin * length] = stamp;
 
         std::vector<std::pair<std::size_t, std::size_t>> pending{{origin, 0}};
 
@@ -717,9 +719,9 @@ void Simulator::derive_mandatory_core()
                     continue;
                 }
 
-                if (seen[*to * length + next] != generation)
+                if (seen[*to * length + next] != stamp)
                 {
-                    seen[*to * length + next] = generation;
+                    seen[*to * length + next] = stamp;
 
                     pending.emplace_back(*to, next);
                 }
@@ -735,11 +737,13 @@ void Simulator::derive_mandatory_core()
     std::ranges::stable_sort(
             candidates, [&depth](const auto left, const auto right) { return depth[left] > depth[right]; });
 
-    for (const auto state : candidates)
+    // The stamp is the proof's one-based ordinal, so distinctness holds by construction rather than by
+    // increment discipline, and the ordinal never reaches the buffer's virgin zero.
+    for (std::size_t at{0}; at < candidates.size(); ++at)
     {
-        const auto core{materialize(state)};
+        const auto core{materialize(candidates[at])};
 
-        if (proved(state, core))
+        if (proved(candidates[at], core, static_cast<Stamp_t>(at + 1)))
         {
             mandatory_core_ = core;
 

@@ -786,6 +786,47 @@ TEST_F(Dfa_test, Mandatory_core_origin_stamps_do_not_leak_across_proofs)
     EXPECT_EQ(simulator.mandatory_core(), "");
 }
 
+TEST_F(Dfa_test, Mandatory_core_ignores_escapes_into_states_that_never_accept_again)
+{
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto hub{dfa.next_state()};
+    const auto killer{dfa.next_state()};
+    const auto dead{dfa.next_state()};
+
+    const Token token{1};
+
+    // The hub's 'z' escape leads to a loop from which acceptance is unreachable, so it is not a live
+    // transition and the hub is not input-total: no candidate exists and the accessor stays empty. A
+    // derivation that forgets to require LIVE targets treats the dead loop as an ordinary neighbour,
+    // finds the hub total, and proves the 'a' whose only counterweight was that very escape.
+    dfa.add_accept_state(hub, token);
+
+    dfa.add_transition(q0, dfa::Label('s'), hub);
+
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        const auto byte{static_cast<char>(symbol)};
+
+        if (byte != 'a' && byte != 'z')
+        {
+            dfa.add_transition(hub, dfa::Label(byte), hub);
+        }
+
+        dfa.add_transition(dead, dfa::Label(byte), dead);
+    }
+
+    dfa.add_transition(hub, dfa::Label('a'), killer);
+    dfa.add_transition(hub, dfa::Label('z'), dead);
+
+    dfa.add_transition(killer, dfa::Label('c'), hub);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.mandatory_core(), "");
+}
+
 TEST_F(Dfa_test, Mandatory_core_origin_stamp_uses_the_current_proofs_stride)
 {
     dfa::Builder dfa;

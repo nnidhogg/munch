@@ -2122,6 +2122,17 @@ TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses
 
     EXPECT_EQ(tight_plan, (std::vector<std::size_t>{0, 4, tight.size()}));
 
+    // An occurrence one byte in, tried at the longest window length: the candidate range's lower end
+    // saturates at zero here, and a raw subtraction would wrap, skip the only certifying window, and lose
+    // the cut.
+    const std::string wrap{"q;xx "};
+
+    const auto wrap_plan{lexer.chunk_boundaries_with_windows(wrap, 5)};
+
+    EXPECT_EQ(wrap_plan, reference_window_walk(lexer, wrap, 5));
+
+    EXPECT_EQ(wrap_plan, (std::vector<std::size_t>{0, 4, wrap.size()}));
+
     // A later target landing exactly ON the last recorded occurrence: the barren cache holds the offset
     // one past it, so an endpoint recorded a byte tighter wrongly swallows the occurrence itself and the
     // cut it certifies.
