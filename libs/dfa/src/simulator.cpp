@@ -108,7 +108,7 @@ Simulator::Simulator(
     {
         for (std::size_t state{0}; state < states; ++state)
         {
-            if ((flags_[state] & accept_flag_) != 0 && accept_table_[state].token.id() == token)
+            if (is_accepting(state) && accept_table_[state].token.id() == token)
             {
                 accept_table_[state].payload = word;
             }
@@ -154,7 +154,7 @@ Simulator::Simulator(
 
     for (std::size_t state{0}; state < states; ++state)
     {
-        if ((flags_[state] & accept_flag_) != 0)
+        if (is_accepting(state))
         {
             co_accessible[state] = true;
 
@@ -209,16 +209,13 @@ Simulator::Simulator(
     // A symbol only the initial state consumes can only begin a token, but the exemption is valid only while the
     // initial state cannot be reached again after consuming input: a nullable pattern such as kleene minimizes to
     // an accepting start state with a self-loop, where the "first byte of a token" reasoning no longer holds.
-    auto init_reentrant{false};
-
-    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-    {
-        for (std::size_t state{0}; state < states; ++state)
-        {
-            init_reentrant = init_reentrant || (reachable[state] && table_[row_offsets_[symbol] + state] ==
-                                                                            static_cast<Entry_t>(init_state_));
-        }
-    }
+    const auto init_reentrant{
+            std::ranges::any_of(std::views::iota(std::size_t{0}, symbol_count_), [&](const std::size_t symbol) {
+                return std::ranges::any_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {
+                    return reachable[state] &&
+                           table_[row_offsets_[symbol] + state] == static_cast<Entry_t>(init_state_);
+                });
+            })};
 
     // Persist what the window walk needs at call time: liveness per state, and whether the initial-state
     // exemption survives. Everything else it uses, the tables already carry.
@@ -240,12 +237,9 @@ Simulator::Simulator(
 
     for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
     {
-        auto safe{true};
-
-        for (std::size_t state{0}; safe && state < states; ++state)
-        {
-            safe = !reachable[state] || (state == init_state_ && !init_reentrant) || !consumes(symbol, state);
-        }
+        const auto safe{std::ranges::all_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {
+            return !reachable[state] || (state == init_state_ && !init_reentrant) || !consumes(symbol, state);
+        })};
 
         // A symbol no live state consumes is certified vacuously: no input this lexer accepts can contain it, so it is
         // useless to a caller and searching for one scans to the end of the input for nothing. Since a certified
@@ -283,8 +277,7 @@ void Simulator::derive_split_points_ignoring(
 
     for (std::size_t state{0}; state < states; ++state)
     {
-        accepts_discarded[state] =
-                (flags_[state] & accept_flag_) != 0 && discarded.contains(accept_table_[state].token.id());
+        accepts_discarded[state] = is_accepting(state) && discarded.contains(accept_table_[state].token.id());
     }
 
     std::vector<bool> reaches_kept(states, false);
@@ -293,7 +286,7 @@ void Simulator::derive_split_points_ignoring(
 
     for (std::size_t state{0}; state < states; ++state)
     {
-        if ((flags_[state] & accept_flag_) != 0 && !accepts_discarded[state])
+        if (is_accepting(state) && !accepts_discarded[state])
         {
             reaches_kept[state] = true;
 
@@ -326,20 +319,17 @@ void Simulator::derive_split_points_ignoring(
 
     for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
     {
-        auto safe{true};
-
-        for (std::size_t state{0}; safe && state < states; ++state)
-        {
+        const auto safe{std::ranges::all_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {
             if (!reachable[state] || !consumes(symbol, state) || (state == init_state_ && !init_reentrant))
             {
-                continue;
+                return true;
             }
 
             // The left chunk must end on a complete token the caller discards, every token the severed one could
             // still become must be discarded too, and the restart must land where the interrupted scan already is.
-            safe = accepts_discarded[state] && !reaches_kept[state] &&
+            return accepts_discarded[state] && !reaches_kept[state] &&
                    table_[row_offsets_[symbol] + state] == table_[row_offsets_[symbol] + init_state_];
-        }
+        })};
 
         // Vacuity is judged as for the exact map: a symbol no live state consumes is useless to a caller.
         if (safe && consumes(symbol, init_state_))
@@ -381,7 +371,7 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
 {
     // An accepting initial state is the compiled signature of a nullable token set, which the soundness theorem
     // excludes; refuse rather than answer beyond the proved scope. The empty window certifies nothing either.
-    if (window.empty() || (flags_[init_state_] & accept_flag_) != 0)
+    if (window.empty() || is_accepting(init_state_))
     {
         return std::nullopt;
     }
@@ -396,7 +386,7 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
 
     for (std::size_t state{0}; state < flags_.size(); ++state)
     {
-        if ((flags_[state] & live_flag_) != 0)
+        if (is_live(state))
         {
             cloud.emplace(state, before);
         }
@@ -408,18 +398,14 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
 
         // A token can only end where the automaton accepted, so a boundary before this byte is possible exactly
         // where some tracked state accepts. The test runs on the cloud as it stands, ahead of the step.
-        auto accepting{false};
-
-        for (const auto& state : cloud | std::views::keys)
-        {
-            accepting = accepting || (flags_[state] & accept_flag_) != 0;
-        }
+        const auto accepting{std::ranges::any_of(
+                cloud | std::views::keys, [this](const std::size_t state) { return is_accepting(state); })};
 
         std::set<std::pair<std::size_t, std::size_t>> next;
 
         for (const auto& [state, origin] : cloud)
         {
-            if (const auto to{table_[row + state]}; to != no_state_ && (flags_[to] & live_flag_) != 0)
+            if (const auto to{table_[row + state]}; to != no_state_ && is_live(to))
             {
                 // Reading from the initial state begins a token here, so the origin is this offset rather than
                 // whatever the hypothesis carried in; valid only while nothing re-enters the initial state. A
@@ -436,7 +422,7 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
         // case exists.
         if (accepting)
         {
-            if (const auto to{table_[row + init_state_]}; to != no_state_ && (flags_[to] & live_flag_) != 0)
+            if (const auto to{table_[row + init_state_]}; to != no_state_ && is_live(to))
             {
                 next.emplace(to, at);
             }
@@ -455,12 +441,9 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
     // pre-window marker means the window never resolves where the covering token began.
     const auto origin{cloud.begin()->second};
 
-    for (const auto& at : cloud | std::views::values)
+    if (!std::ranges::all_of(cloud | std::views::values, [origin](const std::size_t at) { return at == origin; }))
     {
-        if (at != origin)
-        {
-            return std::nullopt;
-        }
+        return std::nullopt;
     }
 
     return origin == before ? std::nullopt : std::optional{origin};
@@ -483,14 +466,11 @@ void Simulator::derive_mandatory_core()
 
     const auto states{flags_.size()};
 
-    const auto live{[this](const std::size_t state) { return (flags_[state] & live_flag_) != 0; }};
+    const auto advance_live{[this](const std::size_t state, const std::size_t symbol) -> std::optional<std::size_t> {
+        const auto to{table_[row_offsets_[symbol] + state]};
 
-    const auto advance_live{
-            [this, &live](const std::size_t state, const std::size_t symbol) -> std::optional<std::size_t> {
-                const auto to{table_[row_offsets_[symbol] + state]};
-
-                return to != no_state_ && live(to) ? std::optional<std::size_t>{to} : std::nullopt;
-            }};
+        return to != no_state_ && is_live(to) ? std::optional<std::size_t>{to} : std::nullopt;
+    }};
 
     // Shortest death words by search from the deaths backward: depth one where some byte has no live
     // target, and each layer of the reverse traversal one byte deeper, every live transition read once. A
@@ -507,7 +487,7 @@ void Simulator::derive_mandatory_core()
 
     for (std::size_t state{0}; state < states; ++state)
     {
-        if (!live(state))
+        if (!is_live(state))
         {
             continue;
         }
@@ -531,7 +511,7 @@ void Simulator::derive_mandatory_core()
 
     for (std::size_t state{0}; state < states; ++state)
     {
-        if (!live(state))
+        if (!is_live(state))
         {
             continue;
         }
@@ -566,7 +546,7 @@ void Simulator::derive_mandatory_core()
     // chosen as the smallest byte stepping one layer shallower, and a word is spelled by walking the chain.
     for (std::size_t state{0}; state < states; ++state)
     {
-        if (!live(state) || depth[state] == infinity || depth[state] < 2)
+        if (!is_live(state) || depth[state] == infinity || depth[state] < 2)
         {
             continue;
         }
@@ -597,7 +577,7 @@ void Simulator::derive_mandatory_core()
 
     for (std::size_t state{0}; state < states; ++state)
     {
-        if (!live(state) || (state == init_state_ && !init_reentrant_))
+        if (!is_live(state) || (state == init_state_ && !init_reentrant_))
         {
             continue;
         }
@@ -739,11 +719,11 @@ void Simulator::derive_mandatory_core()
 
     // The stamp is the proof's one-based ordinal, so distinctness holds by construction rather than by
     // increment discipline, and the ordinal never reaches the buffer's virgin zero.
-    for (std::size_t at{0}; at < candidates.size(); ++at)
+    for (const auto [at, candidate] : std::views::enumerate(candidates))
     {
-        const auto core{materialize(candidates[at])};
+        const auto core{materialize(candidate)};
 
-        if (proved(candidates[at], core, static_cast<Stamp_t>(at + 1)))
+        if (proved(candidate, core, static_cast<Stamp_t>(at + 1)))
         {
             mandatory_core_ = core;
 

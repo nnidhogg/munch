@@ -235,7 +235,7 @@ public:
      * The byte predicate instead withdraws only its initial-state exemption there, so byte certificates can
      * remain; a planner consults this before spending any search on windows, never to discard a byte plan.
      */
-    [[nodiscard]] bool nullable() const noexcept { return (flags_[init_state_] & accept_flag_) != 0; }
+    [[nodiscard]] bool nullable() const noexcept { return is_accepting(init_state_); }
 
     /**
      * @brief Reports whether the token set certifies any usable split point once discarded tokens are deleted.
@@ -422,6 +422,19 @@ public:
 
 private:
     /**
+     * @brief Whether the state accepts some token; the flag test, named once.
+     */
+    [[nodiscard]] bool is_accepting(const std::size_t state) const noexcept
+    {
+        return (flags_[state] & accept_flag_) != 0;
+    }
+
+    /**
+     * @brief Whether the state is reachable and can still reach acceptance; the flag test, named once.
+     */
+    [[nodiscard]] bool is_live(const std::size_t state) const noexcept { return (flags_[state] & live_flag_) != 0; }
+
+    /**
      * @brief Keeps the accepting-state updates on a branch rather than conditional moves.
      *
      * As conditional moves the updates make the accepted length data-dependent on every state load of the token,
@@ -493,7 +506,7 @@ private:
      */
     [[nodiscard]] std::optional<Token> accepted(const std::size_t state) const
     {
-        return (flags_[state] & accept_flag_) != 0 ? std::optional<Token>{accept_table_[state].token} : std::nullopt;
+        return is_accepting(state) ? std::optional<Token>{accept_table_[state].token} : std::nullopt;
     }
 
     /**
