@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "munch/common/concepts.hpp"
 #include "munch/core/exceptions/state_limit_error.hpp"
 #include "munch/core/lexer.hpp"
 #include "munch/dfa/dfa.hpp"
@@ -61,8 +62,7 @@ public:
      * @param token The token value (enum or integer).
      * @param priority The priority for resolving conflicts (lower is higher priority).
      */
-    template <typename T>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T>
     void add_token(const regex::Regex& regex, const T token, const std::size_t priority)
     {
         add_token(regex, {static_cast<std::size_t>(token), priority});
@@ -79,8 +79,7 @@ public:
      * @tparam T The token type used with add_token().
      * @param tokens The tokens to treat as discarded.
      */
-    template <typename T>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T>
     void set_ignored_tokens(const std::initializer_list<T> tokens)
     {
         ignored_.clear();
@@ -106,8 +105,7 @@ public:
      * @param token The token to attach the word to.
      * @param word The word to report, zero meaning none.
      */
-    template <typename T>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T>
     void set_token_payload(const T token, const std::uint64_t word)
     {
         payloads_.emplace_back(static_cast<std::size_t>(token), word);

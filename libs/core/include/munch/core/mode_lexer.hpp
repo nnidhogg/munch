@@ -67,8 +67,7 @@ public:
      * @return The match. An empty token means no pattern matched, or the token's pop found nothing saved; the
      *         stack is unchanged in both cases, so a caller can report the position without losing context.
      */
-    template <typename T, common::concepts::Byte_iterator Iterator>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T, common::concepts::Byte_iterator Iterator>
     [[nodiscard]] Match<T> tokenize(Iterator begin, Iterator end, Mode_stack& stack) const
     {
         verify(stack);
@@ -121,8 +120,8 @@ public:
      * @return The number of input elements tokenized; anything short of the input's size means no token matched at
      *         the returned offset, or a pop found nothing saved there.
      */
-    template <typename T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, T, std::size_t, std::size_t>
+    template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
+        requires std::invocable<Sink&, T, std::size_t, std::size_t>
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink) const
     {
         Mode_stack stack;
@@ -139,8 +138,8 @@ public:
      * `stack.saved.size()` the depth.
      * @param stack Receives the mode and saved frames at the stopping point; its incoming value starts the scan.
      */
-    template <typename T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, T, std::size_t, std::size_t>
+    template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
+        requires std::invocable<Sink&, T, std::size_t, std::size_t>
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink, Mode_stack& stack) const
     {
         verify(stack);
@@ -217,8 +216,8 @@ public:
     /**
      * @brief Tokenizes a container, driving its own mode stack.
      */
-    template <typename T, common::concepts::Random_access_byte_iterable Container, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, T, std::size_t, std::size_t>
+    template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container, typename Sink>
+        requires std::invocable<Sink&, T, std::size_t, std::size_t>
     std::size_t tokenize_all(const Container& container, Sink sink) const
     {
         return tokenize_all<T>(std::ranges::begin(container), std::ranges::end(container), std::move(sink));
@@ -227,8 +226,8 @@ public:
     /**
      * @brief Tokenizes a container, reporting the mode and nesting depth the scan ended in.
      */
-    template <typename T, common::concepts::Random_access_byte_iterable Container, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, T, std::size_t, std::size_t>
+    template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container, typename Sink>
+        requires std::invocable<Sink&, T, std::size_t, std::size_t>
     std::size_t tokenize_all(const Container& container, Sink sink, Mode_stack& stack) const
     {
         return tokenize_all<T>(std::ranges::begin(container), std::ranges::end(container), std::move(sink), stack);
