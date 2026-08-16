@@ -53,48 +53,6 @@ namespace munch::dfa
  */
 class Simulator
 {
-    /**
-     * @brief Type of a symbol equivalence class, i.e. a row index of the transition table.
-     *
-     * There are at most symbol_count_ classes, so the widest index fits.
-     */
-    using Class_t = std::uint8_t;
-
-    /**
-     * @brief Type of a transition table entry.
-     *
-     * Narrower than Dfa::State_t, as the table is read once per input character and halving it keeps twice as much
-     * of it in cache. This bounds the number of states a DFA can have, which the constructor checks.
-     */
-    using Entry_t = std::uint32_t;
-
-    /**
-     * @brief Table entry marking the absence of a transition.
-     */
-    static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
-
-    /**
-     * @brief Per-state flag marking an accepting state.
-     */
-    static constexpr std::uint8_t accept_flag_{1};
-
-    /**
-     * @brief Per-state flag marking a live state: reachable from the initial state and able to still accept.
-     */
-    static constexpr std::uint8_t live_flag_{2};
-
-    /**
-     * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables.
-     */
-    static constexpr std::size_t symbol_count_{1U << (sizeof(Label::Symbol_t) * 8U)};
-
-    /**
-     * @brief The equivalence class of each symbol value.
-     *
-     * Declared after the constants it depends on, out of size order.
-     */
-    using Classes_t = std::array<Class_t, symbol_count_>;
-
 public:
     /**
      * @brief The result of one match attempt: the matched token, if any, and the length of the match.
@@ -422,6 +380,62 @@ public:
 
 private:
     /**
+     * @brief Type of a symbol equivalence class, i.e. a row index of the transition table.
+     *
+     * There are at most symbol_count_ classes, so the widest index fits.
+     */
+    using Class_t = std::uint8_t;
+
+    /**
+     * @brief Type of a transition table entry.
+     *
+     * Narrower than Dfa::State_t, as the table is read once per input character and halving it keeps twice as much
+     * of it in cache. This bounds the number of states a DFA can have, which the constructor checks.
+     */
+    using Entry_t = std::uint32_t;
+
+    /**
+     * @brief Table entry marking the absence of a transition.
+     */
+    static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
+
+    /**
+     * @brief Per-state flag marking an accepting state.
+     */
+    static constexpr std::uint8_t accept_flag_{1};
+
+    /**
+     * @brief Per-state flag marking a live state: reachable from the initial state and able to still accept.
+     */
+    static constexpr std::uint8_t live_flag_{2};
+
+    /**
+     * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables.
+     */
+    static constexpr std::size_t symbol_count_{1U << (sizeof(Label::Symbol_t) * 8U)};
+
+    /**
+     * @brief The equivalence class of each symbol value.
+     *
+     * Declared after the constants it depends on, out of size order.
+     */
+    using Classes_t = std::array<Class_t, symbol_count_>;
+
+    /**
+     * @brief What a state accepts: the token, and the caller's opaque word for it.
+     *
+     * Together because a reported match reads both at once: split across two arrays they cost a second cache line
+     * per accepted token, measured at 12% on string-heavy input. Acceptance itself is left to flags_, which the scan
+     * already tests, so the entry stays its old width and a lexer using no payload pays nothing.
+     */
+    struct Accept
+    {
+        Token token{0};
+
+        std::uint64_t payload{0};
+    };
+
+    /**
      * @brief Whether the state accepts some token; the flag test, named once.
      */
     [[nodiscard]] bool is_accepting(const std::size_t state) const noexcept
@@ -460,6 +474,32 @@ private:
     [[nodiscard]] static Classes_t classify(const Dfa& dfa);
 
     /**
+     * @brief The token a state accepts, or nullopt where it accepts nothing.
+     */
+    [[nodiscard]] std::optional<Token> accepted(const std::size_t state) const
+    {
+        return is_accepting(state) ? std::optional<Token>{accept_table_[state].token} : std::nullopt;
+    }
+
+    /**
+     * @brief Fills split_points_ignoring_ from the tables the constructor has already built.
+     * @param ignored The token IDs the caller discards.
+     * @param reachable Which states a scan can arrive in.
+     * @param co_accessible Which states can still reach acceptance.
+     * @param predecessors The reverse index the constructor built for co-accessibility, reused here.
+     * @param init_reentrant Whether a reachable state re-enters the initial state, as the exact map judges it.
+     */
+    void derive_split_points_ignoring(
+            std::span<const std::size_t> ignored, const std::vector<bool>& reachable,
+            const std::vector<bool>& co_accessible, const std::vector<std::vector<Entry_t>>& predecessors,
+            bool init_reentrant);
+
+    /**
+     * @brief Derives and proves mandatory_core() from the live tables the constructor has already built.
+     */
+    void derive_mandatory_core();
+
+    /**
      * @brief The state a simulation starts in.
      */
     Dfa::State_t init_state_;
@@ -483,31 +523,9 @@ private:
     std::vector<Entry_t> table_;
 
     /**
-     * @brief What a state accepts: the token, and the caller's opaque word for it.
-     *
-     * Together because a reported match reads both at once: split across two arrays they cost a second cache line
-     * per accepted token, measured at 12% on string-heavy input. Acceptance itself is left to flags_, which the scan
-     * already tests, so the entry stays its old width and a lexer using no payload pays nothing.
-     */
-    struct Accept
-    {
-        Token token{0};
-
-        std::uint64_t payload{0};
-    };
-
-    /**
      * @brief Accept entries as one per state, meaningful only where flags_ marks the state accepting.
      */
     std::vector<Accept> accept_table_;
-
-    /**
-     * @brief The token a state accepts, or nullopt where it accepts nothing.
-     */
-    [[nodiscard]] std::optional<Token> accepted(const std::size_t state) const
-    {
-        return is_accepting(state) ? std::optional<Token>{accept_table_[state].token} : std::nullopt;
-    }
 
     /**
      * @brief The flag byte of each state, read during the scan in place of the wide accept entries.
@@ -526,24 +544,6 @@ private:
      * must not silently receive the other. With an empty ignored set they hold the same bits.
      */
     std::array<std::uint64_t, 4> split_points_ignoring_{};
-
-    /**
-     * @brief Fills split_points_ignoring_ from the tables the constructor has already built.
-     * @param ignored The token IDs the caller discards.
-     * @param reachable Which states a scan can arrive in.
-     * @param co_accessible Which states can still reach acceptance.
-     * @param predecessors The reverse index the constructor built for co-accessibility, reused here.
-     * @param init_reentrant Whether a reachable state re-enters the initial state, as the exact map judges it.
-     */
-    void derive_split_points_ignoring(
-            std::span<const std::size_t> ignored, const std::vector<bool>& reachable,
-            const std::vector<bool>& co_accessible, const std::vector<std::vector<Entry_t>>& predecessors,
-            bool init_reentrant);
-
-    /**
-     * @brief Derives and proves mandatory_core() from the live tables the constructor has already built.
-     */
-    void derive_mandatory_core();
 
     /**
      * @brief The table offset of the class row of each symbol value.
