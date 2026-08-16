@@ -3,6 +3,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <ranges>
 #include <type_traits>
@@ -78,6 +79,27 @@ concept Byte_iterable = Iterable<T> && Byte<std::ranges::range_reference_t<const
  */
 template <typename T>
 concept Random_access_byte_iterable = Random_access_iterable<T> && Byte<std::ranges::range_reference_t<const T>>;
+
+/**
+ * @brief Concept that checks if a type can name a token: an enumeration or an integral type.
+ *
+ * Every tokenizing entry point takes its token type through this concept, in place of a requires clause repeated
+ * at each declaration.
+ * @tparam T The type to check.
+ */
+template <typename T>
+concept Token_id = std::integral<T> || std::is_enum_v<T>;
+
+/**
+ * @brief Concept for a sink receiving matched tokens.
+ *
+ * A sink is invocable with the token and its length, or with the token, its length, and the payload attached at
+ * build time; the scanners deliver the payload and drop it for sinks of the shorter shape.
+ * @tparam Sink The callable to check.
+ * @tparam T The token type the sink receives.
+ */
+template <typename Sink, typename T>
+concept Token_sink = std::invocable<Sink&, T, std::size_t> || std::invocable<Sink&, T, std::size_t, std::uint64_t>;
 
 } // namespace munch::common::concepts
 

@@ -58,8 +58,7 @@ public:
      * @param end Iterator to the end of the input.
      * @return The match: the token, if any, and the length it consumed.
      */
-    template <typename T, common::concepts::Byte_iterator Iterator>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T, common::concepts::Byte_iterator Iterator>
     [[nodiscard]] Match<T> tokenize(Iterator begin, Iterator end) const
     {
         const auto [token, offset]{simulator_.run(begin, end)};
@@ -74,8 +73,7 @@ public:
      * @param container The input container.
      * @return The match: the token, if any, and the length it consumed.
      */
-    template <typename T, common::concepts::Byte_iterable Container>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T, common::concepts::Byte_iterable Container>
     [[nodiscard]] Match<T> tokenize(const Container& container) const
     {
         return tokenize<T>(std::ranges::begin(container), std::ranges::end(container));
@@ -100,9 +98,9 @@ public:
      * @return The number of input elements tokenized; anything short of the input's size means no token matched at
      *         the returned offset, unless the sink stopped the scan.
      */
-    template <typename T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) &&
-                (std::invocable<Sink&, T, std::size_t> || std::invocable<Sink&, T, std::size_t, std::uint64_t>)
+    template <
+            common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator,
+            common::concepts::Token_sink<T> Sink>
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink) const
     {
         // The payload is always delivered and dropped here for sinks that do not want it, so the scan itself has
@@ -131,9 +129,9 @@ public:
      * @return The number of input elements tokenized; anything short of the container's size means no token matched
      *         at the returned offset.
      */
-    template <typename T, common::concepts::Random_access_byte_iterable Container, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) &&
-                (std::invocable<Sink&, T, std::size_t> || std::invocable<Sink&, T, std::size_t, std::uint64_t>)
+    template <
+            common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container,
+            common::concepts::Token_sink<T> Sink>
     std::size_t tokenize_all(const Container& container, Sink sink) const
     {
         return tokenize_all<T>(std::ranges::begin(container), std::ranges::end(container), std::move(sink));
@@ -342,181 +340,23 @@ public:
 
         const auto step_remainder{usable == 0 ? std::size_t{0} : size % usable};
 
-        // The longest window the planner tries; every named certified window in the study is at most four
-        // bytes. A grammar needing longer windows degrades to fewer chunks, never to an unsafe cut. The
-        // shortest tried is two, and that bound is not a guard: this branch runs only when no exact byte
-        // certifies and the set is not nullable, where the length-one equivalence theorem makes every one-byte
-        // window refuse, so skipping length one is provably inert rather than something a test could pin.
-        constexpr std::size_t longest{4};
-
         const auto core{simulator_.mandatory_core()};
 
         // A proved core longer than the longest window minus its trailing byte admits no candidate at all:
         // no window certifies at these lengths, so every target refuses, exactly as the exhaustive walk
         // would conclude after scanning to the end of the input.
-        if (!core.empty() && core.size() + 1 > longest)
+        if (!core.empty() && core.size() + 1 > longest_window_)
         {
             boundaries.push_back(size);
 
             return boundaries;
         }
 
-        // One decision per distinct byte string per plan: memoization caps cloud evaluations at the distinct
-        // windows tried, while the position loop and its lookups remain per position examined.
-        std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
-
-        // Elements are read as the scanners read them, through unsigned char, so every byte-domain element
-        // type forms the same memo key; the string constructor's implicit conversion would reject std::byte.
-        const auto byte_at{[&begin](const std::size_t at) {
-            return static_cast<char>(static_cast<unsigned char>(begin[static_cast<std::ptrdiff_t>(at)]));
-        }};
-
-        // The memoized decision on one window, with the cut at the evidence position plus the certified
-        // origin.
-        const auto certify{[&](const std::size_t at, const std::size_t length) {
-            std::string window;
-
-            window.reserve(length);
-
-            for (std::size_t offset{0}; offset < length; ++offset)
-            {
-                window.push_back(byte_at(at + offset));
-            }
-
-            auto found{memo.find(window)};
-
-            if (found == memo.end())
-            {
-                const auto verdict{is_split_window(window)};
-
-                found = memo.emplace(std::move(window), verdict).first;
-            }
-
-            return found->second;
-        }};
-
-        // The exhaustive walk: every position from the floor, lengths ascending, first certificate wins.
-        const auto walk{[&](const std::size_t floor) -> std::optional<std::size_t> {
-            for (auto occurrence{floor}; occurrence + 2 <= size; ++occurrence)
-            {
-                const auto limit{std::min(longest, size - occurrence)};
-
-                for (std::size_t length{2}; length <= limit; ++length)
-                {
-                    if (const auto origin{certify(occurrence, length)})
-                    {
-                        return occurrence + *origin;
-                    }
-                }
-            }
-
-            return std::nullopt;
-        }};
+        Window_memo memo;
 
         // No core occurrence begins at or after this offset; a scan that drains the input tightens it, so
         // targets falling in a tail already proved occurrence-free refuse without rescanning it.
         auto barren{size};
-
-        // The core-filtered search: every certifying window provably contains the core with a byte after
-        // it, so candidates exist only where the core occurs, and visiting them in the walk's own
-        // position-then-length order gives the walk's plan, refusals included. Positions are still scanned
-        // one by one, but for a byte comparison each; windows are built and certified only at occurrences.
-        const auto filtered{[&](const std::size_t floor) -> std::optional<std::size_t> {
-            if (floor >= barren)
-            {
-                return std::nullopt;
-            }
-
-            const auto matches{[&](const std::size_t at) {
-                for (std::size_t offset{0}; offset < core.size(); ++offset)
-                {
-                    if (byte_at(at + offset) != core[offset])
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
-            }};
-
-            std::size_t cursor{floor};
-
-            std::size_t latest{floor};
-
-            const auto next_occurrence{[&]() -> std::optional<std::size_t> {
-                for (; cursor + core.size() <= size; ++cursor)
-                {
-                    if (matches(cursor))
-                    {
-                        latest = cursor + 1;
-
-                        return cursor++;
-                    }
-                }
-
-                barren = std::min(barren, latest);
-
-                return std::nullopt;
-            }};
-
-            std::vector<std::pair<std::size_t, std::size_t>> heap;
-
-            // A window of length in (m, longest] starting at t holds the m-byte core occurring at c, plus
-            // a byte after it, exactly when t lies in [c + m + 1 - length, c].
-            const auto ingest{[&](const std::size_t at) {
-                for (auto length{core.size() + 1}; length <= longest; ++length)
-                {
-                    const auto lowest{at + core.size() + 1 > length ? at + core.size() + 1 - length : std::size_t{0}};
-
-                    for (auto t{std::max(floor, lowest)}; t <= at && t + length <= size; ++t)
-                    {
-                        heap.emplace_back(t, length);
-
-                        std::ranges::push_heap(heap, std::greater{});
-                    }
-                }
-            }};
-
-            auto pending{next_occurrence()};
-
-            std::optional<std::pair<std::size_t, std::size_t>> last;
-
-            // A pop waits until no unread occurrence can still contribute a smaller pair, which holds once
-            // the next occurrence starts past t + longest - m - 1; overlapping occurrences propose
-            // duplicate pairs, which pop adjacently and are skipped.
-            while (true)
-            {
-                while (pending && (heap.empty() || *pending <= heap.front().first + longest - core.size() - 1))
-                {
-                    ingest(*pending);
-
-                    pending = next_occurrence();
-                }
-
-                if (heap.empty())
-                {
-                    return std::nullopt;
-                }
-
-                std::ranges::pop_heap(heap, std::greater{});
-
-                const auto candidate{heap.back()};
-
-                heap.pop_back();
-
-                if (last == std::optional{candidate})
-                {
-                    continue;
-                }
-
-                last = candidate;
-
-                if (const auto origin{certify(candidate.first, candidate.second)})
-                {
-                    return candidate.first + *origin;
-                }
-            }
-        }};
 
         std::size_t window_target{0};
 
@@ -535,7 +375,11 @@ public:
 
             const auto floor{std::max(window_target, boundaries.back() + 1)};
 
-            if (const auto cut{core.empty() ? walk(floor) : filtered(floor)})
+            const auto cut{
+                    core.empty() ? window_cut(memo, begin, size, floor) :
+                                   window_cut_at_core(memo, begin, size, floor, core, barren)};
+
+            if (cut)
             {
                 boundaries.push_back(*cut);
             }
@@ -653,8 +497,8 @@ public:
      * @return The number of input elements tokenized per chunk, aligned with chunk_boundaries(begin, end,
      *         chunks); an entry short of its chunk's size means no token matched at that offset of the chunk.
      */
-    template <typename T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, std::size_t, T, std::size_t>
+    template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
+        requires std::invocable<Sink&, std::size_t, T, std::size_t>
     [[nodiscard]] std::vector<std::size_t> tokenize_all_parallel(
             Iterator begin, Iterator end, const std::size_t chunks, Sink sink) const
     {
@@ -669,8 +513,7 @@ public:
         // An exception escaping a jthread's callable calls std::terminate, so a throwing sink would abort the
         // process on a worker while the caller's own chunk merely propagated. Keep the first one and rethrow it
         // after every worker has joined, so both paths behave alike and no thread outlives the throw.
-        const auto scan{[this, &boundaries, &consumed, begin, &sink, &failure_mutex,
-                         &failure](const std::size_t chunk) {
+        const auto scan{[&](const std::size_t chunk) {
             try
             {
                 consumed[chunk] = tokenize_all<T>(
@@ -713,8 +556,8 @@ public:
     /**
      * @brief Tokenizes a whole container as concurrent chunks split at certified safe split points.
      */
-    template <typename T, common::concepts::Random_access_byte_iterable Container, typename Sink>
-        requires(std::integral<T> || std::is_enum_v<T>) && std::invocable<Sink&, std::size_t, T, std::size_t>
+    template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container, typename Sink>
+        requires std::invocable<Sink&, std::size_t, T, std::size_t>
     [[nodiscard]] std::vector<std::size_t> tokenize_all_parallel(
             const Container& container, const std::size_t chunks, Sink sink) const
     {
@@ -723,7 +566,196 @@ public:
     }
 
 private:
+    // The Builder is the only construction path: a Lexer exists exclusively over a DFA the Builder
+    // compiled, so the constructors below stay private and the friendship is the whole public door.
     friend class Builder;
+
+    /**
+     * @brief The longest window the planners try; every named certified window in the study is at most four
+     * bytes. A grammar needing longer windows degrades to fewer chunks, never to an unsafe cut. The shortest
+     * tried is two, and that bound is not a guard: the window planners run only when no exact byte certifies
+     * and the set is not nullable, where the length-one equivalence theorem makes every one-byte window
+     * refuse, so skipping length one is provably inert rather than something a test could pin.
+     */
+    static constexpr std::size_t longest_window_{4};
+
+    /**
+     * @brief One decision per distinct byte string per plan: memoization caps cloud evaluations at the
+     * distinct windows tried, while the position loops and their lookups remain per position examined.
+     */
+    using Window_memo = std::map<std::string, std::optional<std::size_t>, std::less<>>;
+
+    /**
+     * @brief One input element read as the scanners read it, through unsigned char, so every byte-domain
+     * element type forms the same memo key; the string constructor's implicit conversion would reject
+     * std::byte.
+     */
+    template <common::concepts::Random_access_byte_iterator Iterator>
+    [[nodiscard]] static char window_byte(Iterator begin, const std::size_t at)
+    {
+        return static_cast<char>(static_cast<unsigned char>(begin[static_cast<std::ptrdiff_t>(at)]));
+    }
+
+    /**
+     * @brief The memoized window decision at one occurrence: the certified origin, if any.
+     */
+    template <common::concepts::Random_access_byte_iterator Iterator>
+    [[nodiscard]] std::optional<std::size_t> certified_origin(
+            Window_memo& memo, Iterator begin, const std::size_t at, const std::size_t length) const
+    {
+        std::string window;
+
+        window.reserve(length);
+
+        for (std::size_t offset{0}; offset < length; ++offset)
+        {
+            window.push_back(window_byte(begin, at + offset));
+        }
+
+        auto found{memo.find(window)};
+
+        if (found == memo.end())
+        {
+            const auto verdict{is_split_window(window)};
+
+            found = memo.emplace(std::move(window), verdict).first;
+        }
+
+        return found->second;
+    }
+
+    /**
+     * @brief The exhaustive window search: every position from the floor, lengths ascending, first
+     * certificate wins; the cut is the occurrence plus the certified origin.
+     */
+    template <common::concepts::Random_access_byte_iterator Iterator>
+    [[nodiscard]] std::optional<std::size_t> window_cut(
+            Window_memo& memo, Iterator begin, const std::size_t size, const std::size_t floor) const
+    {
+        for (auto occurrence{floor}; occurrence + 2 <= size; ++occurrence)
+        {
+            const auto limit{std::min(longest_window_, size - occurrence)};
+
+            for (std::size_t length{2}; length <= limit; ++length)
+            {
+                if (const auto origin{certified_origin(memo, begin, occurrence, length)})
+                {
+                    return occurrence + *origin;
+                }
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    /**
+     * @brief The core-filtered window search: every certifying window provably contains the core with a
+     * byte after it, so candidates exist only where the core occurs, and visiting them in the exhaustive
+     * walk's own position-then-length order gives that walk's plan, refusals included. Positions are still
+     * scanned one by one, but for a byte comparison each; windows are built and certified only at
+     * occurrences. The barren offset tightens across calls: once a scan drains the input, targets falling in
+     * a tail already proved occurrence-free refuse without rescanning it.
+     */
+    template <common::concepts::Random_access_byte_iterator Iterator>
+    [[nodiscard]] std::optional<std::size_t> window_cut_at_core(
+            Window_memo& memo, Iterator begin, const std::size_t size, const std::size_t floor,
+            const std::string_view core, std::size_t& barren) const
+    {
+        if (floor >= barren)
+        {
+            return std::nullopt;
+        }
+
+        const auto matches{[&](const std::size_t at) {
+            for (std::size_t offset{0}; offset < core.size(); ++offset)
+            {
+                if (window_byte(begin, at + offset) != core[offset])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }};
+
+        std::size_t cursor{floor};
+
+        std::size_t latest{floor};
+
+        const auto next_occurrence{[&]() -> std::optional<std::size_t> {
+            for (; cursor + core.size() <= size; ++cursor)
+            {
+                if (matches(cursor))
+                {
+                    latest = cursor + 1;
+
+                    return cursor++;
+                }
+            }
+
+            barren = std::min(barren, latest);
+
+            return std::nullopt;
+        }};
+
+        std::vector<std::pair<std::size_t, std::size_t>> heap;
+
+        // A window of length in (m, longest] starting at t holds the m-byte core occurring at c, plus
+        // a byte after it, exactly when t lies in [c + m + 1 - length, c].
+        const auto ingest{[&](const std::size_t at) {
+            for (auto length{core.size() + 1}; length <= longest_window_; ++length)
+            {
+                const auto lowest{at + core.size() + 1 > length ? at + core.size() + 1 - length : std::size_t{0}};
+
+                for (auto t{std::max(floor, lowest)}; t <= at && t + length <= size; ++t)
+                {
+                    heap.emplace_back(t, length);
+
+                    std::ranges::push_heap(heap, std::greater{});
+                }
+            }
+        }};
+
+        auto pending{next_occurrence()};
+
+        std::optional<std::pair<std::size_t, std::size_t>> last;
+
+        // A pop waits until no unread occurrence can still contribute a smaller pair, which holds once
+        // the next occurrence starts past t + longest - m - 1; overlapping occurrences propose
+        // duplicate pairs, which pop adjacently and are skipped.
+        while (true)
+        {
+            while (pending && (heap.empty() || *pending <= heap.front().first + longest_window_ - core.size() - 1))
+            {
+                ingest(*pending);
+
+                pending = next_occurrence();
+            }
+
+            if (heap.empty())
+            {
+                return std::nullopt;
+            }
+
+            std::ranges::pop_heap(heap, std::greater{});
+
+            const auto candidate{heap.back()};
+
+            heap.pop_back();
+
+            if (last == std::optional{candidate})
+            {
+                continue;
+            }
+
+            last = candidate;
+
+            if (const auto origin{certified_origin(memo, begin, candidate.first, candidate.second)})
+            {
+                return candidate.first + *origin;
+            }
+        }
+    }
 
     /**
      * @brief Constructs a Lexer from a DFA.

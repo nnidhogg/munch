@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "munch/common/concepts.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/mode.hpp"
 #include "munch/core/mode_lexer.hpp"
@@ -38,8 +39,7 @@ public:
      *        target may name a mode not yet registered; build() checks it once every mode is known.
      * @throws std::invalid_argument If this token was already registered in this mode with a different action.
      */
-    template <typename M, typename T>
-        requires(std::integral<M> || std::is_enum_v<M>) && (std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id M, common::concepts::Token_id T>
     void add_token(
             const M mode, const regex::Regex& regex, const T token, const std::size_t priority,
             const Mode_action action = {})
