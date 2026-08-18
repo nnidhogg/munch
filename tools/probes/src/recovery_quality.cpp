@@ -23,9 +23,8 @@
 //   insert:     y[p+k..] equals x[p..);       end = p + k, images past the seam shift by +k.
 //
 // A resume position counts as landed when it is the image of a pristine boundary outside the damaged window. Near
-// the seam the damaged input's true segmentation can genuinely diverge from the mapped pristine one, and that
-// divergence penalizes every strategy identically, so the comparison stays fair even where the ground truth is
-// conservative.
+// the seam the damaged input's true segmentation can genuinely diverge from the mapped pristine one; the same
+// conservative oracle is applied uniformly to every strategy, though their near-seam exposure differs.
 //
 // The theorem gives teeth. The pristine corpus is itself a tokenizable repair of the damaged suffix: x equals
 // x[0..c) concatenated with x[c..], the very suffix y preserves. So the repair-invariance theorems force any
