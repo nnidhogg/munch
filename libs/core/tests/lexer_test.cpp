@@ -1225,8 +1225,9 @@ TEST_F(Lexer_test, Next_certified_start_answers_both_certificate_kinds_in_eviden
     EXPECT_EQ(pair_lexer.next_certified_start(";", 0), std::optional<std::size_t>{0});
 
     // Both certificate kinds at once: the semicolon is a certified byte, yet a window met earlier in the walk
-    // answers first, because a recovery wants the nearest point of either kind. A planner-style search that
-    // switched windows off wherever a byte certificate exists would run past the space and answer 6.
+    // answers first, because the walk returns the first certificate in evidence order and keeps both kinds
+    // live. A planner-style search that switched windows off wherever a byte certificate exists would run
+    // past the space and answer 6.
     Builder_dbg mixed;
 
     mixed.add_token(identifier_regex(), Token_kind::Identifier, 2);
