@@ -67,8 +67,10 @@
 // damaged input's own segmentation between the failure and the resume position. Printed figures are quotable only
 // beside the clean commit of the collection ritual, exactly as the benchmark's are.
 //
-// Usage. recovery_quality [corpus KiB] [trials per cell] [csv path]
-// Defaults are sized to run as a test; the campaign passes larger figures and archives the CSV.
+// Usage. recovery_quality [corpus KiB] [trials per cell] [csv path] [real json corpus path]
+// Defaults are sized to run as a test; the campaign passes larger figures and archives the CSV. The optional
+// fourth argument adds an ecological row: a real-world JSON document, read verbatim, held to the same complete
+// tokenizability assertion, the same damage schedule, and the same oracle as the generated rows.
 
 #include <algorithm>
 #include <array>
@@ -78,6 +80,7 @@
 #include <fstream>
 #include <functional>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -704,6 +707,8 @@ int main(const int argc, const char** argv)
 
     const char* csv_path{argc > 3 ? argv[3] : nullptr};
 
+    const char* real_path{argc > 4 ? argv[4] : nullptr};
+
     const auto bytes{corpus_kib << 10U};
 
     std::vector<Row> rows;
@@ -768,6 +773,78 @@ int main(const int argc, const char** argv)
                     .begins = std::move(begins)});
     }
 
+    {
+        munch::core::Builder b;
+
+        figures::c_like(b, true);
+
+        b.add_token(figures::string_literal(), Token::String, 2);
+
+        b.add_token(figures::line_comment(), Token::LineComment, 1);
+
+        auto corpus{c_like_corpus(bytes, true, true, false)};
+
+        auto lexer{b.build()};
+
+        auto begins{boundaries(lexer, corpus)};
+
+        rows.push_back(
+                Row{.label = "c-like split-friendly with strings and line comments",
+                    .lexer = std::move(lexer),
+                    .corpus = std::move(corpus),
+                    .begins = std::move(begins)});
+    }
+
+    {
+        munch::core::Builder b;
+
+        figures::c_like(b, false);
+
+        auto corpus{c_like_corpus(bytes, false, false, false)};
+
+        auto lexer{b.build()};
+
+        auto begins{boundaries(lexer, corpus)};
+
+        rows.push_back(
+                Row{.label = "c-like bare: identifiers numbers operators punctuation",
+                    .lexer = std::move(lexer),
+                    .corpus = std::move(corpus),
+                    .begins = std::move(begins)});
+    }
+
+    if (real_path)
+    {
+        munch::core::Builder b;
+
+        figures::json(b);
+
+        std::ifstream in{real_path, std::ios::binary};
+
+        std::stringstream buffer;
+
+        buffer << in.rdbuf();
+
+        auto corpus{buffer.str()};
+
+        if (corpus.empty())
+        {
+            std::fprintf(stderr, "real corpus unreadable or empty: %s\n", real_path);
+
+            return EXIT_FAILURE;
+        }
+
+        auto lexer{b.build()};
+
+        auto begins{boundaries(lexer, corpus)};
+
+        rows.push_back(
+                Row{.label = "json rfc 8259 lexical forms on a real-world document",
+                    .lexer = std::move(lexer),
+                    .corpus = std::move(corpus),
+                    .begins = std::move(begins)});
+    }
+
     std::size_t oracle_failures{0};
 
     for (const auto& row : rows)
@@ -775,7 +852,7 @@ int main(const int argc, const char** argv)
         oracle_failures += pristine_oracle(row, 512);
     }
 
-    std::printf("pristine oracle: %zu violations over 3 rows x 512 samples\n", oracle_failures);
+    std::printf("pristine oracle: %zu violations over %zu rows x 512 samples\n", oracle_failures, rows.size());
 
     std::FILE* csv{csv_path ? std::fopen(csv_path, "w") : nullptr};
 
@@ -783,7 +860,10 @@ int main(const int argc, const char** argv)
     // statistic stays computable from the archive; overshoot is blank where no post-corruption boundary exists.
     if (csv)
     {
-        std::fprintf(csv, "grammar,op,k,trial,p,e,strategy,answer,landed,overshoot,lost,cascade,evidence,minimal\n");
+        std::fprintf(
+                csv,
+                "grammar,op,k,trial,p,failure_offset,corruption_end,strategy,answer,landed,overshoot,lost,cascade,"
+                "evidence,minimal\n");
     }
 
     constexpr std::array<Op, 3> ops{Op::Substitute, Op::Delete, Op::Insert};
@@ -867,8 +947,8 @@ int main(const int argc, const char** argv)
                         if (csv)
                         {
                             std::fprintf(
-                                    csv, "%s,%s,%zu,%zu,%zu,,absorbed,,,,,\n", std::string{row.label}.c_str(),
-                                    std::string{name(op)}.c_str(), k, trial, p);
+                                    csv, "%s,%s,%zu,%zu,%zu,,%zu,absorbed,,,,,,,\n", std::string{row.label}.c_str(),
+                                    std::string{name(op)}.c_str(), k, trial, p, y.end);
                         }
 
                         continue;
@@ -891,8 +971,8 @@ int main(const int argc, const char** argv)
                             if (csv)
                             {
                                 std::fprintf(
-                                        csv, "%s,%s,%zu,%zu,%zu,%zu,%s,,,,,\n", std::string{row.label}.c_str(),
-                                        std::string{name(op)}.c_str(), k, trial, p, e,
+                                        csv, "%s,%s,%zu,%zu,%zu,%zu,%zu,%s,,,,,,,\n", std::string{row.label}.c_str(),
+                                        std::string{name(op)}.c_str(), k, trial, p, e, y.end,
                                         std::string{strategies[s].name}.c_str());
                             }
 
@@ -1021,8 +1101,8 @@ int main(const int argc, const char** argv)
                         if (csv)
                         {
                             std::fprintf(
-                                    csv, "%s,%s,%zu,%zu,%zu,%zu,%s,%zu,%d,", std::string{row.label}.c_str(),
-                                    std::string{name(op)}.c_str(), k, trial, p, e,
+                                    csv, "%s,%s,%zu,%zu,%zu,%zu,%zu,%s,%zu,%d,", std::string{row.label}.c_str(),
+                                    std::string{name(op)}.c_str(), k, trial, p, e, y.end,
                                     std::string{strategies[s].name}.c_str(), *r, did_land ? 1 : 0);
 
                             if (first)
