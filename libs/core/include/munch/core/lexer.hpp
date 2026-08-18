@@ -417,8 +417,8 @@ public:
      * byte itself or the whole window occurrence, beginning at most three bytes before the answer; a repair
      * that alters the evidence forfeits the guarantee, and the existence of any tokenizable repair is not
      * promised, so where the damage has no fix the guarantee holds vacuously. The certificate speaks for this
-     * automaton alone; under mode-driven scanning that scoping is load-bearing. When no certificate exists at
-     * or after the offset, there is no answer.
+     * automaton alone; under mode-driven scanning that scoping is load-bearing. When no certificate of the
+     * searched kinds and lengths exists at or after the offset, there is no answer.
      * @param input The input being scanned.
      * @param from The offset the search starts at; at or past the input's size finds nothing.
      * @return The first certified token-start position, or std::nullopt when none exists.
