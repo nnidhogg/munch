@@ -124,8 +124,8 @@ public:
      * scanning resumes at a token start of the repaired segmentation. No tokenizable repair is promised to
      * exist, and the next read may error again. Consulting the active mode is a policy the flat theorems do
      * not upgrade to a modal guarantee, since a repair could reach the resume point in a different mode; a
-     * forced or grammar-driven mode change is the driver's business exactly as for next(). When the automaton
-     * certifies nothing ahead, the position does not move.
+     * forced or grammar-driven mode change is the driver's business exactly as for next(). When the search
+     * finds no certificate ahead, the position does not move.
      * @return The number of bytes skipped from the current position, or std::nullopt when no certified start
      *         exists in the remaining input.
      */
