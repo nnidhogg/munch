@@ -42,7 +42,7 @@
 // any certificate at or after the search start would have produced. A sharper transfer assertion fires on
 // the exact precondition rather than the three-byte margin: a certified answer whose evidence begins at or
 // past the corruption end must land. The conservative end-plus-three assertion stays beside it, and the
-// summary reports the covered and straddling tallies with the nonminimality figure.
+// summary reports the covered and uncovered tallies with the nonminimality figure.
 //
 // Metrics, per grammar row, operation, k, and strategy, aggregated over trials whose damage actually broke the
 // serial scan (damage the grammar absorbs is counted and set aside):
@@ -874,9 +874,9 @@ int main(const int argc, const char** argv)
 
     std::size_t evidence_covered{0};
 
-    std::size_t evidence_straddling{0};
+    std::size_t evidence_uncovered{0};
 
-    std::size_t evidence_straddling_landed{0};
+    std::size_t evidence_uncovered_landed{0};
 
     std::size_t nonminimal_answers{0};
 
@@ -1031,11 +1031,11 @@ int main(const int argc, const char** argv)
                                 }
                                 else
                                 {
-                                    ++evidence_straddling;
+                                    ++evidence_uncovered;
 
                                     if (did_land)
                                     {
-                                        ++evidence_straddling_landed;
+                                        ++evidence_uncovered_landed;
                                     }
                                 }
                             }
@@ -1168,8 +1168,8 @@ int main(const int argc, const char** argv)
     std::printf("\ndamage absorbed by the grammar without a scan failure: %zu trials\n", absorbed_total);
 
     std::printf(
-            "evidence-covered answers: %zu, all asserted to land; straddling: %zu, of which %zu landed\n",
-            evidence_covered, evidence_straddling, evidence_straddling_landed);
+            "evidence-covered answers: %zu, all asserted to land; evidence-uncovered: %zu, of which %zu landed\n",
+            evidence_covered, evidence_uncovered, evidence_uncovered_landed);
 
     std::printf("nonminimal answers: %zu, %zu extra bytes in total\n", nonminimal_answers, nonminimal_bytes);
 
