@@ -435,8 +435,6 @@ public:
             return std::nullopt;
         }
 
-        constexpr std::size_t longest{4};
-
         std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
 
         for (std::size_t at{from}; at < input.size(); ++at)
@@ -451,7 +449,7 @@ public:
                 continue;
             }
 
-            const auto limit{std::min(longest, input.size() - at)};
+            const auto limit{std::min(longest_window_, input.size() - at)};
 
             for (std::size_t length{2}; length <= limit; ++length)
             {
@@ -472,6 +470,46 @@ public:
         }
 
         return std::nullopt;
+    }
+
+    /**
+     * @brief The lag of the token set, or nothing when unbounded; see the simulator's contract.
+     * @return The longest post-accept nonaccepting run, or std::nullopt when a cycle makes it unbounded.
+     */
+    [[nodiscard]] std::optional<std::size_t> lag() const { return simulator_.lag(); }
+
+    /**
+     * @brief Whether every stretch-opening byte is dead from the initial state; see the simulator's contract.
+     * @return True when a synchronous-restart observer agrees with serial maximal munch on every input.
+     */
+    [[nodiscard]] bool rescue_free() const { return simulator_.rescue_free(); }
+
+    /**
+     * @brief The first anchored-certified start in the tail at or after the offset.
+     *
+     * The anchored counterpart of next_certified_start(), exact where the walk is merely sound: with the
+     * tail's end known to be the end of the input, every completely tokenizable repair of whatever preceded
+     * the tail places a token boundary at the returned position. Strictly more positions answer here than
+     * under the certificates, which cannot use the end of input; a tail beyond repair refuses rather than
+     * answering vacuously, and nullable token sets are refused outright.
+     * @param tail The preserved suffix of the input, its end the end of the input.
+     * @param from The offset the search starts at; at or past the tail's size finds nothing.
+     * @return The first anchored-certified position, or std::nullopt when none exists or no repair does.
+     */
+    [[nodiscard]] std::optional<std::size_t> next_anchored_start(
+            const std::string_view tail, const std::size_t from) const
+    {
+        return simulator_.next_anchored_start(tail, from);
+    }
+
+    /**
+     * @brief A shortest repair for the tail, empty when it already tokenizes; nothing when none exists.
+     * @param tail The preserved suffix of the input.
+     * @return A minimal repair, or std::nullopt when the tail is beyond repair or the set is nullable.
+     */
+    [[nodiscard]] std::optional<std::string> minimal_repair(const std::string_view tail) const
+    {
+        return simulator_.minimal_repair(tail);
     }
 
     /**

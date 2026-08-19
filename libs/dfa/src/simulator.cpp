@@ -3,11 +3,16 @@
 #include <algorithm>
 #include <cstdint>
 #include <experimental/mdspan>
+#include <functional>
 #include <limits>
 #include <map>
+#include <optional>
 #include <ranges>
 #include <set>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace munch::dfa
@@ -366,6 +371,149 @@ Simulator::Classes_t Simulator::classify(const Dfa& dfa)
 
     return result;
 }
+
+namespace
+{
+/**
+ * @brief The anchored machinery's view of the compiled tables: enough to walk, nothing more.
+ */
+struct Walk_view
+{
+    std::size_t states{};
+    std::size_t init{};
+    std::function<std::optional<std::size_t>(std::size_t, unsigned char)> step;
+    std::function<bool(std::size_t)> accepting;
+};
+
+/**
+ * @brief The maximal-munch jump table over the tail: the committed end of the token starting at each
+ *        offset, and complete tokenizability of every suffix, built right to left.
+ */
+struct Jump_table
+{
+    std::vector<std::optional<std::size_t>> end;
+    std::vector<char> tokenizes; // indexed to tail size inclusive
+};
+
+Jump_table build_jump_table(const Walk_view& view, const std::string_view tail)
+{
+    Jump_table table{
+            .end = std::vector<std::optional<std::size_t>>(tail.size()),
+            .tokenizes = std::vector<char>(tail.size() + 1, 0)};
+
+    table.tokenizes[tail.size()] = 1;
+
+    for (std::size_t offset{tail.size()}; offset-- > 0;)
+    {
+        auto state{view.init};
+
+        std::optional<std::size_t> last;
+
+        for (std::size_t at{offset}; at < tail.size(); ++at)
+        {
+            const auto next{view.step(state, static_cast<unsigned char>(tail[at]))};
+
+            if (!next)
+            {
+                break;
+            }
+
+            state = *next;
+
+            if (view.accepting(state))
+            {
+                last = at + 1;
+            }
+        }
+
+        table.end[offset] = last;
+
+        table.tokenizes[offset] = static_cast<char>(last && table.tokenizes[*last] != 0);
+    }
+
+    return table;
+}
+
+/**
+ * @brief States reachable from the initial state by at least one transition, each with a shortest
+ *        witnessing word: the crossing entries, whose witnesses double as the repairs that realize them.
+ */
+std::vector<std::pair<std::size_t, std::string>> crossing_entries(const Walk_view& view)
+{
+    std::map<std::size_t, std::string> seen;
+
+    std::vector<std::size_t> frontier;
+
+    const auto push{[&](const std::size_t state, const std::string& via) {
+        if (seen.emplace(state, via).second)
+        {
+            frontier.push_back(state);
+        }
+    }};
+
+    for (int byte{0}; byte < 256; ++byte)
+    {
+        if (const auto to{view.step(view.init, static_cast<unsigned char>(byte))})
+        {
+            push(*to, std::string(1, static_cast<char>(byte)));
+        }
+    }
+
+    for (std::size_t at{0}; at < frontier.size(); ++at)
+    {
+        const auto from{frontier[at]};
+
+        const auto via{seen.at(from)};
+
+        for (int byte{0}; byte < 256; ++byte)
+        {
+            if (const auto to{view.step(from, static_cast<unsigned char>(byte))})
+            {
+                push(*to, via + static_cast<char>(byte));
+            }
+        }
+    }
+
+    return {seen.begin(), seen.end()};
+}
+
+/**
+ * @brief One crossing scenario's first in-tail boundary: the last in-tail accept of the maximal run from
+ *        the entry, counting zero when the entry itself accepts; nothing when the run never accepts.
+ */
+std::optional<std::size_t> scenario_boundary(
+        const Walk_view& view, const std::string_view tail, const std::size_t entry)
+{
+    std::optional<std::size_t> last;
+
+    if (view.accepting(entry))
+    {
+        last = 0;
+    }
+
+    auto state{entry};
+
+    for (std::size_t at{0}; at < tail.size(); ++at)
+    {
+        const auto next{view.step(state, static_cast<unsigned char>(tail[at]))};
+
+        if (!next)
+        {
+            break;
+        }
+
+        state = *next;
+
+        if (view.accepting(state))
+        {
+            last = at + 1;
+        }
+    }
+
+    return last;
+}
+
+} // namespace
 
 std::optional<std::size_t> Simulator::is_split_window(const std::string_view window) const
 {
@@ -730,6 +878,261 @@ void Simulator::derive_mandatory_core()
             break;
         }
     }
+}
+
+std::optional<std::size_t> Simulator::lag() const
+{
+    // The post-accept nonaccepting region: nonaccepting successors of accepting states, closed under
+    // nonaccepting transitions; a cycle inside it is the unboundedness witness, and otherwise the lag is
+    // the longest path measured in states.
+    std::vector<char> in_region(flags_.size(), 0);
+
+    std::vector<std::size_t> frontier;
+
+    const auto enter{[&](const std::size_t state) {
+        if (in_region[state] == 0)
+        {
+            in_region[state] = 1;
+
+            frontier.push_back(state);
+        }
+    }};
+
+    for (std::size_t state{0}; state < flags_.size(); ++state)
+    {
+        if (!is_accepting(state))
+        {
+            continue;
+        }
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            const auto to{table_[row_offsets_[symbol] + state]};
+
+            if (to != no_state_ && !is_accepting(to))
+            {
+                enter(to);
+            }
+        }
+    }
+
+    for (std::size_t at{0}; at < frontier.size(); ++at)
+    {
+        const auto from{frontier[at]};
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            const auto to{table_[row_offsets_[symbol] + from]};
+
+            if (to != no_state_ && !is_accepting(to))
+            {
+                enter(to);
+            }
+        }
+    }
+
+    // Longest path by repeated sink peeling; anything left over closes a cycle.
+    std::vector<std::size_t> depth(flags_.size(), 0);
+
+    auto remaining{frontier};
+
+    std::size_t longest{0};
+
+    for (bool shrank{true}; shrank && !remaining.empty();)
+    {
+        shrank = false;
+
+        std::vector<std::size_t> keep;
+
+        for (const auto state : remaining)
+        {
+            std::optional<std::size_t> deepest{0};
+
+            for (std::size_t symbol{0}; symbol < symbol_count_ && deepest; ++symbol)
+            {
+                const auto to{table_[row_offsets_[symbol] + state]};
+
+                if (to == no_state_ || is_accepting(to))
+                {
+                    continue;
+                }
+
+                if (in_region[to] == 2)
+                {
+                    deepest = std::max(*deepest, depth[to]);
+                }
+                else
+                {
+                    deepest = std::nullopt; // a successor still unresolved: not yet a sink
+                }
+            }
+
+            if (deepest)
+            {
+                depth[state] = 1 + *deepest;
+
+                in_region[state] = 2;
+
+                longest = std::max(longest, depth[state]);
+
+                shrank = true;
+            }
+            else
+            {
+                keep.push_back(state);
+            }
+        }
+
+        remaining = std::move(keep);
+    }
+
+    if (!remaining.empty())
+    {
+        return std::nullopt; // the leftover states close a nonaccepting cycle: unbounded
+    }
+
+    return longest;
+}
+
+bool Simulator::rescue_free() const
+{
+    for (std::size_t state{0}; state < flags_.size(); ++state)
+    {
+        if (!is_accepting(state))
+        {
+            continue;
+        }
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            const auto opened{table_[row_offsets_[symbol] + state]};
+
+            if (opened == no_state_ || is_accepting(opened))
+            {
+                continue;
+            }
+
+            // A stretch opens on this byte; the gate needs it dead from the initial state, where dead
+            // means no transition or one that can never reach acceptance.
+            const auto entered{table_[row_offsets_[symbol] + init_state_]};
+
+            if (entered != no_state_ && is_live(entered))
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+std::optional<std::size_t> Simulator::next_anchored_start(const std::string_view tail, const std::size_t from) const
+{
+    // Nullable token sets sit outside the model, exactly as for is_split_window().
+    if (is_accepting(init_state_) || from >= tail.size())
+    {
+        return std::nullopt;
+    }
+
+    const Walk_view view{
+            .states = flags_.size(),
+            .init = init_state_,
+            .step = [this](const std::size_t state, const unsigned char symbol) -> std::optional<std::size_t> {
+                const auto to{table_[row_offsets_[symbol] + state]};
+
+                return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
+            },
+            .accepting = [this](const std::size_t state) { return is_accepting(state); }};
+
+    const auto table{build_jump_table(view, tail)};
+
+    // Every completing scenario votes for its boundary chain; a position is anchored-certified when
+    // every completing scenario contains it. No completing scenario means the tail is beyond repair and
+    // every position only vacuously invariant, which is deliberately a refusal.
+    std::vector<std::size_t> votes(tail.size(), 0);
+
+    std::size_t completing{0};
+
+    const auto vote{[&](const std::size_t first) {
+        ++completing;
+
+        for (auto at{first}; at < tail.size(); at = *table.end[at])
+        {
+            ++votes[at];
+        }
+    }};
+
+    if (table.tokenizes[0] != 0)
+    {
+        vote(0);
+    }
+
+    for (const auto& [entry, via] : crossing_entries(view))
+    {
+        const auto boundary{scenario_boundary(view, tail, entry)};
+
+        if (boundary && table.tokenizes[*boundary] != 0)
+        {
+            vote(*boundary);
+        }
+    }
+
+    if (completing == 0)
+    {
+        return std::nullopt;
+    }
+
+    for (auto at{from}; at < tail.size(); ++at)
+    {
+        if (votes[at] == completing)
+        {
+            return at;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::string> Simulator::minimal_repair(const std::string_view tail) const
+{
+    if (is_accepting(init_state_))
+    {
+        return std::nullopt;
+    }
+
+    const Walk_view view{
+            .states = flags_.size(),
+            .init = init_state_,
+            .step = [this](const std::size_t state, const unsigned char symbol) -> std::optional<std::size_t> {
+                const auto to{table_[row_offsets_[symbol] + state]};
+
+                return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
+            },
+            .accepting = [this](const std::size_t state) { return is_accepting(state); }};
+
+    const auto table{build_jump_table(view, tail)};
+
+    if (table.tokenizes[0] != 0)
+    {
+        return std::string{};
+    }
+
+    // The minimal repair is a shortest path to a completing crossing entry; the entries carry shortest
+    // witnesses by construction, so the cheapest completing one is the answer, and none completing is a
+    // certificate that no repair of any length exists.
+    std::optional<std::string> best;
+
+    for (const auto& [entry, via] : crossing_entries(view))
+    {
+        const auto boundary{scenario_boundary(view, tail, entry)};
+
+        if (boundary && table.tokenizes[*boundary] != 0 && (!best || via.size() < best->size()))
+        {
+            best = via;
+        }
+    }
+
+    return best;
 }
 
 } // namespace munch::dfa
