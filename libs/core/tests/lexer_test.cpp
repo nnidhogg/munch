@@ -1360,6 +1360,165 @@ TEST_F(Lexer_test, Window_planner_reaches_the_four_byte_study_case)
     EXPECT_EQ(boundaries[1], 7U);
 }
 
+TEST_F(Lexer_test, Lag_and_rescue_freeness_decide_the_rollback_shape)
+{
+    enum class Token_kind : uint8_t
+    {
+        A,
+        B,
+        C,
+        D,
+    };
+
+    // {a, abc}: one stretch of one state after the accepted a, opened by b, which starts no token: lag
+    // one, rescue-free. The pair is the canonical sufficient-not-necessary witness: not zero-lag, yet the
+    // restart abstraction is exact on it.
+    Builder_dbg toy;
+
+    toy.add_token(text("a"), Token_kind::A, 2);
+    toy.add_token(text("abc"), Token_kind::B, 1);
+
+    const auto toy_lexer{toy.build()};
+
+    EXPECT_EQ(toy_lexer.lag(), std::optional<std::size_t>{1});
+    EXPECT_TRUE(toy_lexer.rescue_free());
+
+    // {a, ab*c, b, x}: the b-loop after the accepted a is a post-accept nonaccepting cycle, the executed
+    // unboundedness certificate; the decider must refuse a number rather than invent one.
+    Builder_dbg classic;
+
+    classic.add_token(text("a"), Token_kind::A, 2);
+    classic.add_token(concat(text("a"), concat(kleene(text("b")), text("c"))), Token_kind::B, 1);
+    classic.add_token(text("b"), Token_kind::C, 2);
+    classic.add_token(text("x"), Token_kind::D, 2);
+
+    const auto classic_lexer{classic.build()};
+
+    EXPECT_FALSE(classic_lexer.lag().has_value());
+
+    // {a, abb, b, c}: bounded lag but rescuable, since the stretch opener b starts a viable token; the
+    // gate must see through liveness, not just definedness.
+    Builder_dbg rescuable;
+
+    rescuable.add_token(text("a"), Token_kind::A, 2);
+    rescuable.add_token(text("abb"), Token_kind::B, 1);
+    rescuable.add_token(text("b"), Token_kind::C, 2);
+    rescuable.add_token(text("c"), Token_kind::D, 2);
+
+    const auto rescuable_lexer{rescuable.build()};
+
+    EXPECT_EQ(rescuable_lexer.lag(), std::optional<std::size_t>{1});
+    EXPECT_FALSE(rescuable_lexer.rescue_free());
+
+    // Two single-byte tokens: no stretch exists, lag zero, rescue-free vacuously.
+    Builder_dbg flat;
+
+    flat.add_token(text("a"), Token_kind::A, 1);
+    flat.add_token(text(";"), Token_kind::B, 2);
+
+    const auto flat_lexer{flat.build()};
+
+    EXPECT_EQ(flat_lexer.lag(), std::optional<std::size_t>{0});
+    EXPECT_TRUE(flat_lexer.rescue_free());
+}
+
+TEST_F(Lexer_test, Anchored_starts_answer_where_certificates_cannot)
+{
+    enum class Token_kind : uint8_t
+    {
+        Ab,
+        Ba,
+    };
+
+    // {ab, ba}: the end-of-input witness. Position zero of the tail "ab" is repair-invariant, because the
+    // only crossing scenario dies in the tail, yet no certified window of any length explains it: "baba"
+    // refutes every candidate, and the refuting continuations need bytes past the end. The anchored query
+    // answers zero while the certificate walk stays silent, which is the whole point of anchoring.
+    Builder_dbg builder;
+
+    builder.add_token(text("ab"), Token_kind::Ab, 1);
+    builder.add_token(text("ba"), Token_kind::Ba, 2);
+
+    const auto lexer{builder.build()};
+
+    EXPECT_EQ(lexer.next_anchored_start("ab", 0), std::optional<std::size_t>{0});
+    EXPECT_FALSE(lexer.next_certified_start("ab", 0).has_value());
+
+    // Position one is not invariant, and nothing at or after it is: a refusal, not a weaker answer.
+    EXPECT_FALSE(lexer.next_anchored_start("ab", 1).has_value());
+
+    // The alternating tail carries every even position and nothing else.
+    EXPECT_EQ(lexer.next_anchored_start("abab", 0), std::optional<std::size_t>{0});
+    EXPECT_EQ(lexer.next_anchored_start("abab", 1), std::optional<std::size_t>{2});
+    EXPECT_FALSE(lexer.next_anchored_start("abab", 3).has_value());
+
+    // A tail beyond repair is a refusal, never a vacuous answer: every position of an unrepairable tail
+    // is invariant over an empty set of repairs, and answering one would send a driver to a dead spot.
+    EXPECT_FALSE(lexer.next_anchored_start("z", 0).has_value());
+}
+
+TEST_F(Lexer_test, Anchored_starts_reach_past_the_window_cap)
+{
+    enum class Token_kind : uint8_t
+    {
+        Bb,
+        Aab,
+        Baa,
+        Aaa,
+    };
+
+    // Over {bb, aab, baa, aaa} the shortest usable certificate is five bytes, one past the documented
+    // window cap, so the certificate walk refuses everywhere on this tail; the anchored decider answers
+    // three positions, the five-byte window's origin among them.
+    Builder_dbg builder;
+
+    builder.add_token(text("bb"), Token_kind::Bb, 1);
+    builder.add_token(text("aab"), Token_kind::Aab, 2);
+    builder.add_token(text("baa"), Token_kind::Baa, 3);
+    builder.add_token(text("aaa"), Token_kind::Aaa, 4);
+
+    const auto lexer{builder.build()};
+
+    const std::string tail{"baaabbbb"};
+
+    EXPECT_FALSE(lexer.next_certified_start(tail, 0).has_value());
+
+    EXPECT_EQ(lexer.next_anchored_start(tail, 0), std::optional<std::size_t>{1});
+    EXPECT_EQ(lexer.next_anchored_start(tail, 2), std::optional<std::size_t>{4});
+    EXPECT_EQ(lexer.next_anchored_start(tail, 5), std::optional<std::size_t>{6});
+    EXPECT_FALSE(lexer.next_anchored_start(tail, 7).has_value());
+}
+
+TEST_F(Lexer_test, Minimal_repair_prices_the_tail_or_certifies_refusal)
+{
+    enum class Token_kind : uint8_t
+    {
+        Ab,
+        Ba,
+    };
+
+    Builder_dbg builder;
+
+    builder.add_token(text("ab"), Token_kind::Ab, 1);
+    builder.add_token(text("ba"), Token_kind::Ba, 2);
+
+    const auto lexer{builder.build()};
+
+    // A tail that tokenizes needs nothing; the empty tail is already a boundary.
+    EXPECT_EQ(lexer.minimal_repair("ab"), std::optional<std::string>{""});
+    EXPECT_EQ(lexer.minimal_repair(""), std::optional<std::string>{""});
+
+    // The dangling b is repaired by one byte, the shortest witness of the completing crossing entry, and
+    // the repaired whole must actually tokenize.
+    const auto repaired{lexer.minimal_repair("b")};
+
+    ASSERT_TRUE(repaired.has_value());
+    EXPECT_EQ(*repaired, "a");
+
+    // No repair of any length saves a byte outside every token: the refusal is a certificate.
+    EXPECT_FALSE(lexer.minimal_repair("z").has_value());
+}
+
 TEST_F(Lexer_test, Window_planner_stops_at_the_documented_longest_window)
 {
     enum class Token_kind : uint8_t

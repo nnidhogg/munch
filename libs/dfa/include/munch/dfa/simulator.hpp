@@ -227,6 +227,60 @@ public:
     [[nodiscard]] std::string_view mandatory_core() const noexcept { return mandatory_core_; }
 
     /**
+     * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after
+     *        leaving an accepting state, or nothing when that run is unbounded.
+     *
+     * Co-accessibility is deliberately not required: a failed lookahead buffers bytes whether or not the
+     * excursion could still accept, so the measure counts every defined continuation. Zero is the premise
+     * under which a restart-style scheme executes serial maximal munch exactly; a bounded value prices the
+     * checkpoint a rollback-aware scheme must carry; an unbounded region, reported as nothing, carries a
+     * cycle witness in the tables themselves.
+     * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
+     */
+    [[nodiscard]] std::optional<std::size_t> lag() const;
+
+    /**
+     * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
+     *
+     * Rescue-free token sets are exactly those where a rollback can never rescue an input the restart
+     * abstraction declares malformed: every rollback fires into an instant dead end, so a synchronous-restart
+     * observer agrees with serial maximal munch on every input. Zero-lag sets pass vacuously, no stretch
+     * existing; the gate is strictly weaker than zero lag.
+     * @return True when no stretch-opening byte starts a viable token from the initial state.
+     */
+    [[nodiscard]] bool rescue_free() const;
+
+    /**
+     * @brief The first anchored-certified start in the tail at or after an offset, under the exact
+     *        repair-invariance contract: every completely tokenizable repair of whatever preceded the tail
+     *        places a token boundary there, the tail's end being the end of the input.
+     *
+     * The anchored decider is exact where the certificate walk is merely sound: certificates quantify over
+     * every input containing their evidence and cannot use the end of input, while this query can, so it
+     * answers strictly more positions at the tail. Decided by one scenario play per reachable state, no
+     * repair enumerated. When no repair of any prefix makes the whole tokenizable, every position is
+     * vacuously invariant and this query deliberately refuses instead of answering; nullable token sets sit
+     * outside the underlying model and are refused outright, as for is_split_window().
+     * @param tail The preserved suffix of the input, its end the end of input.
+     * @param from The offset the search starts at; at or past the tail's size finds nothing.
+     * @return The first anchored-certified position, or std::nullopt when none exists or the tail is
+     *         beyond repair.
+     */
+    [[nodiscard]] std::optional<std::size_t> next_anchored_start(std::string_view tail, std::size_t from) const;
+
+    /**
+     * @brief A shortest repair for the tail: a byte string of minimal length whose concatenation with the
+     *        tail is completely tokenizable, empty when the tail already tokenizes.
+     *
+     * Existence and minimality are exact: the minimal repair is a shortest path to a completing crossing
+     * entry, and a refusal certifies that no repair of any length exists. Nullable token sets are refused,
+     * as for next_anchored_start().
+     * @param tail The preserved suffix of the input.
+     * @return A minimal repair, or std::nullopt when the tail is beyond repair.
+     */
+    [[nodiscard]] std::optional<std::string> minimal_repair(std::string_view tail) const;
+
+    /**
      * @brief Runs the DFA over a range defined by iterators.
      * @tparam Iterator Input iterator type.
      * @param begin Iterator to the beginning of the input.

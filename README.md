@@ -799,6 +799,69 @@ processing (`tools::tokenizer::Tokenizer`).
 > input buffer. The view is invalidated by `load()` or by the `Tokenizer` being destroyed, so copy the lexeme to a
 > `std::string` if a token needs to outlive either.
 
+### **Error Recovery**
+
+On malformed input, `next()` reports the error and deliberately does not advance: guessing a skip would invent
+tokens. The driver chooses what happens next, and `recover()` is the certified choice: it moves to the nearest
+position that provably begins a token and returns how many bytes were skipped.
+
+```cpp
+for (;;)
+{
+    const auto result{tokenizer.next<Token_kind>()};
+
+    if (result.end_of_input())
+    {
+        break;
+    }
+
+    if (result.has_error())
+    {
+        const auto skipped{tokenizer.recover()};
+
+        if (!skipped)
+        {
+            break;  // nothing certifies ahead: an explicit refusal, not a silent guess
+        }
+
+        std::cerr << "recovered, skipped " << *skipped << " bytes\n";
+        continue;
+    }
+
+    process(result.token());
+}
+```
+
+The position `recover()` lands on carries a contract rather than a convention: every completely tokenizable
+repair of the broken input places a token boundary there, so wherever the damage came from and however it might
+be fixed, the resume point is a real token start. When no certificate lies ahead, the position does not move and
+the refusal is explicit. Under modes, the answer is relative to the active mode's automaton. The position-only
+form is `Lexer::next_certified_start(input, from)`, for drivers that plan without moving.
+
+When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored
+queries answer exactly rather than conservatively, because they may use what the certificates cannot: that the
+input ends where the tail ends.
+
+```cpp
+// Over the token set {ab, ba}: position 0 of the tail "ab" is provably a token start in every
+// possible repair, yet no certificate can see it, because refuting continuations would need
+// bytes past the end of the input.
+lexer.next_certified_start("ab", 0);  // nullopt: sound, but blind to the end of input
+lexer.next_anchored_start("ab", 0);   // 0: exact at the tail
+
+lexer.minimal_repair("b");            // "a": the shortest prefix that makes the tail tokenize
+lexer.minimal_repair("z");            // nullopt: a certificate that no repair of any length exists
+```
+
+A tail beyond repair makes `next_anchored_start()` refuse rather than answer vacuously, and `minimal_repair()`
+returning a value guarantees the repaired whole tokenizes, with the empty string meaning the tail already does.
+
+Two related queries describe the token set itself. `lag()` reports how far a scan can run past an accepted token
+before a rollback could occur, with `std::nullopt` as a certificate that the excursion is unbounded, and
+`rescue_free()` reports whether every such excursion is a dead end, the condition under which restart-style
+processing agrees with serial maximal munch on every input. Like `is_split_point()`, all of these are properties
+certified from the compiled automaton, not heuristics.
+
 ### **Context-Dependent Tokenization**
 
 `Lexer` matches one flat token set everywhere. Inside a string literal a quote terminates rather than opens, and a
