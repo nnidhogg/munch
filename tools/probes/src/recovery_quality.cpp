@@ -38,11 +38,17 @@
 // of B, the same oracle discipline the split-points report uses.
 //
 // The position-only answer hides its evidence, so the harness replicates the walk to recover it: each
-// certified answer's CSV row carries two extra columns, the evidence's begin offset and the minimal answer
-// any certificate at or after the search start would have produced. A sharper transfer assertion fires on
+// certified answer's CSV row carries five extra columns, the evidence's begin offset, the minimal answer
+// any certificate at or after the search start would have produced, the evidence's kind (byte or window),
+// its length, and its origin, so byte and window answers are auditable apart even when an origin-zero
+// window's begin equals its answer. A sharper transfer assertion fires on
 // the exact precondition rather than the three-byte margin: a certified answer whose evidence begins at or
 // past the corruption end must land. The conservative end-plus-three assertion stays beside it, and the
-// summary reports the covered and uncovered tallies with the nonminimality figure.
+// summary reports the covered and uncovered tallies with the nonminimality figure. A fifth arm,
+// certified-clean, models the caller who knows the damage's true extent: the same walk started at the
+// corruption end or one past the failure, whichever is later, so every answer's evidence is covered by
+// construction, asserted to be so and to land on every trial. The generated corpora are written beside the
+// archive so every column recomputes from the archive alone.
 //
 // Metrics, per grammar row, operation, k, and strategy, aggregated over trials whose damage actually broke the
 // serial scan (damage the grammar absorbs is counted and set aside):
@@ -74,6 +80,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -548,6 +555,10 @@ struct Strategy
     std::string_view name;
 
     std::function<std::optional<std::size_t>(const std::string_view, const std::size_t)> resume;
+
+    /// The known-clean-end arm: the walk starts at the corruption end or one past the failure,
+    /// whichever is later, modeling a caller (an editor knows its edit span) told the damage's extent.
+    bool clean{false};
 };
 
 /**
@@ -606,14 +617,30 @@ struct Row
  * read the theorems' exact precondition from this. A mismatch with the library's answer is a harness defect
  * and fails the run.
  */
-std::optional<std::size_t> evidence_of(
+struct Evidence
+{
+    std::size_t begin{0};
+
+    bool byte{false};
+
+    std::size_t length{0};
+
+    std::size_t origin{0};
+};
+
+std::optional<Evidence> evidence_of(
         const munch::core::Lexer& lexer, const std::string_view input, const std::size_t from, const std::size_t answer)
 {
     for (std::size_t at{from}; at < input.size(); ++at)
     {
         if (lexer.is_split_point(input[at]))
         {
-            return at == answer ? std::optional{at} : std::nullopt;
+            if (at == answer)
+            {
+                return Evidence{.begin = at, .byte = true, .length = 1, .origin = 0};
+            }
+
+            return std::nullopt;
         }
 
         const auto limit{std::min<std::size_t>(4, input.size() - at)};
@@ -622,7 +649,12 @@ std::optional<std::size_t> evidence_of(
         {
             if (const auto origin{lexer.is_split_window(input.substr(at, length))})
             {
-                return at + *origin == answer ? std::optional{at} : std::nullopt;
+                if (at + *origin == answer)
+                {
+                    return Evidence{.begin = at, .byte = false, .length = length, .origin = *origin};
+                }
+
+                return std::nullopt;
             }
         }
     }
@@ -854,6 +886,34 @@ int main(const int argc, const char** argv)
 
     std::printf("pristine oracle: %zu violations over %zu rows x 512 samples\n", oracle_failures, rows.size());
 
+    std::printf(
+            "deterministic: corpus seeds 0x5eed0001 through 0x5eed0003, schedule seed 0x5eedc0de offset per "
+            "(op, k)\n");
+
+    // The generated corpora, written beside the archive so every column recomputes from the archive alone; the
+    // real document is already on disk, hashed in the data notes.
+    if (csv_path != nullptr)
+    {
+        for (const auto& row : rows)
+        {
+            if (real_path != nullptr && row.label == "json rfc 8259 lexical forms on a real-world document")
+            {
+                continue;
+            }
+
+            std::string slug{row.label};
+
+            for (auto& byte : slug)
+            {
+                byte = static_cast<char>(std::isalnum(static_cast<unsigned char>(byte)) != 0 ? byte : '-');
+            }
+
+            std::ofstream out{"corpus-" + slug + ".bin", std::ios::binary};
+
+            out.write(row.corpus.data(), static_cast<std::streamsize>(row.corpus.size()));
+        }
+    }
+
     std::FILE* csv{csv_path ? std::fopen(csv_path, "w") : nullptr};
 
     // One raw row per strategy per damaging trial, plus one row marking each trial the grammar absorbed, so any
@@ -863,7 +923,7 @@ int main(const int argc, const char** argv)
         std::fprintf(
                 csv,
                 "grammar,op,k,trial,p,failure_offset,corruption_end,strategy,answer,landed,overshoot,lost,cascade,"
-                "evidence,minimal\n");
+                "evidence,minimal,kind,length,origin\n");
     }
 
     constexpr std::array<Op, 3> ops{Op::Substitute, Op::Delete, Op::Insert};
@@ -882,6 +942,10 @@ int main(const int argc, const char** argv)
 
     std::size_t nonminimal_bytes{0};
 
+    std::size_t clean_answers{0};
+
+    std::size_t clean_refusals{0};
+
     std::size_t absorbed_total{0};
 
     for (const auto& row : rows)
@@ -892,13 +956,20 @@ int main(const int argc, const char** argv)
                 "  %-11s %2s  %-10s %8s %8s %9s %10s %7s %9s\n", "op", "k", "strategy", "answers", "refuse", "landing",
                 "overshoot", "lost", "cascade");
 
-        const std::array<Strategy, 4> strategies{
+        const std::array<Strategy, 5> strategies{
                 Strategy{
                         .name = "certified",
                         .resume =
                                 [&row](const std::string_view input, const std::size_t from) {
                                     return row.lexer.next_certified_start(input, from);
                                 }},
+                Strategy{
+                        .name = "certified-clean",
+                        .resume =
+                                [&row](const std::string_view input, const std::size_t from) {
+                                    return row.lexer.next_certified_start(input, from);
+                                },
+                        .clean = true},
                 Strategy{
                         .name = "skip-one",
                         .resume = [](const std::string_view input,
@@ -924,7 +995,7 @@ int main(const int argc, const char** argv)
         {
             for (const auto k : ks)
             {
-                std::array<Cell, 4> cells{};
+                std::array<Cell, 5> cells{};
 
                 Lcg positions{0x5eedc0deU + static_cast<unsigned>(k) * 7U + static_cast<unsigned>(op) * 131U};
 
@@ -947,7 +1018,7 @@ int main(const int argc, const char** argv)
                         if (csv)
                         {
                             std::fprintf(
-                                    csv, "%s,%s,%zu,%zu,%zu,,%zu,absorbed,,,,,,,\n", std::string{row.label}.c_str(),
+                                    csv, "%s,%s,%zu,%zu,%zu,,%zu,absorbed,,,,,,,,,,\n", std::string{row.label}.c_str(),
                                     std::string{name(op)}.c_str(), k, trial, p, y.end);
                         }
 
@@ -962,16 +1033,23 @@ int main(const int argc, const char** argv)
 
                         ++cell.trials;
 
-                        const auto r{strategies[s].resume(y.input, e + 1)};
+                        const auto start{strategies[s].clean ? std::max(e + 1, y.end) : e + 1};
+
+                        const auto r{strategies[s].resume(y.input, start)};
 
                         if (!r)
                         {
                             ++cell.refusals;
 
+                            if (strategies[s].clean)
+                            {
+                                ++clean_refusals;
+                            }
+
                             if (csv)
                             {
                                 std::fprintf(
-                                        csv, "%s,%s,%zu,%zu,%zu,%zu,%zu,%s,,,,,,,\n", std::string{row.label}.c_str(),
+                                        csv, "%s,%s,%zu,%zu,%zu,%zu,%zu,%s,,,,,,,,,,\n", std::string{row.label}.c_str(),
                                         std::string{name(op)}.c_str(), k, trial, p, e, y.end,
                                         std::string{strategies[s].name}.c_str());
                             }
@@ -988,13 +1066,13 @@ int main(const int argc, const char** argv)
                         // Support-aware classification: replicate the walk's evidence and assert the sharp
                         // form of the transfer, a certified answer whose evidence clears the corruption end
                         // must land; the conservative end-plus-three assertion stays below.
-                        std::optional<std::size_t> evidence;
+                        std::optional<Evidence> evidence;
 
                         auto minimal{*r};
 
-                        if (s == 0)
+                        if (s == 0 || strategies[s].clean)
                         {
-                            evidence = evidence_of(row.lexer, y.input, e + 1, *r);
+                            evidence = evidence_of(row.lexer, y.input, start, *r);
 
                             if (!evidence)
                             {
@@ -1004,9 +1082,9 @@ int main(const int argc, const char** argv)
 
                                 ++theorem_failures;
                             }
-                            else
+                            else if (s == 0)
                             {
-                                minimal = minimal_answer(row.lexer, y.input, e + 1, *r);
+                                minimal = minimal_answer(row.lexer, y.input, start, *r);
 
                                 if (minimal < *r)
                                 {
@@ -1015,7 +1093,7 @@ int main(const int argc, const char** argv)
                                     nonminimal_bytes += *r - minimal;
                                 }
 
-                                if (*evidence >= y.end)
+                                if (evidence->begin >= y.end)
                                 {
                                     ++evidence_covered;
 
@@ -1037,6 +1115,24 @@ int main(const int argc, const char** argv)
                                     {
                                         ++evidence_uncovered_landed;
                                     }
+                                }
+                            }
+                            else
+                            {
+                                // The clean arm's contract is total: the search began at or past the
+                                // corruption end, so the evidence is covered by construction and the
+                                // answer must land, both asserted on every trial.
+                                minimal = minimal_answer(row.lexer, y.input, start, *r);
+
+                                ++clean_answers;
+
+                                if (evidence->begin < y.end || !did_land)
+                                {
+                                    std::fprintf(
+                                            stderr, "CLEAN-ARM VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
+                                            std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e, *r);
+
+                                    ++theorem_failures;
                                 }
                             }
                         }
@@ -1114,13 +1210,15 @@ int main(const int argc, const char** argv)
 
                             std::fprintf(csv, ",%zu,%zu", lost, events);
 
-                            if (s == 0 && evidence)
+                            if (evidence)
                             {
-                                std::fprintf(csv, ",%zu,%zu\n", *evidence, minimal);
+                                std::fprintf(
+                                        csv, ",%zu,%zu,%s,%zu,%zu\n", evidence->begin, minimal,
+                                        evidence->byte ? "byte" : "window", evidence->length, evidence->origin);
                             }
                             else
                             {
-                                std::fprintf(csv, ",,\n");
+                                std::fprintf(csv, ",,,,,\n");
                             }
                         }
                     }
@@ -1172,6 +1270,10 @@ int main(const int argc, const char** argv)
             evidence_covered, evidence_uncovered, evidence_uncovered_landed);
 
     std::printf("nonminimal answers: %zu, %zu extra bytes in total\n", nonminimal_answers, nonminimal_bytes);
+
+    std::printf(
+            "known-clean arm: %zu answers, every one asserted covered and landed; %zu refusals\n", clean_answers,
+            clean_refusals);
 
     if (oracle_failures != 0 || theorem_failures != 0)
     {
