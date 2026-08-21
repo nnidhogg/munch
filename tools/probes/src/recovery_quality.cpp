@@ -1315,7 +1315,15 @@ int main(const int argc, const char** argv)
 
     if (csv)
     {
-        std::fclose(csv);
+        // A partial archive must never report success: stream errors and the close are
+        // checked before any summary claims the run (a referee's artifact-hardening ask;
+        // no byte of a healthy run changes).
+        if (std::ferror(csv) != 0 || std::fclose(csv) != 0)
+        {
+            std::fprintf(stderr, "csv write or close failed\n");
+
+            return EXIT_FAILURE;
+        }
     }
 
     std::printf("\ndamage absorbed by the grammar without a scan failure: %zu trials\n", absorbed_total);
