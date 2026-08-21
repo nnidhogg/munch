@@ -577,6 +577,24 @@ std::optional<std::size_t> past_next(const std::string_view input, const std::si
     return at + 1;
 }
 
+/**
+ * @brief The position of the next occurrence of the delimiter itself at or after from: the
+ *        delimiter retained rather than consumed, the other classical reading, evaluated as
+ *        its own named baseline because the two placements are different algorithms with
+ *        outcome-critical differences.
+ */
+std::optional<std::size_t> at_next(const std::string_view input, const std::size_t from, const char delimiter)
+{
+    const auto at{input.find(delimiter, from)};
+
+    if (at == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+
+    return at;
+}
+
 struct Cell
 {
     std::size_t trials{0};
@@ -956,7 +974,7 @@ int main(const int argc, const char** argv)
                 "  %-11s %2s  %-10s %8s %8s %9s %10s %7s %9s\n", "op", "k", "strategy", "answers", "refuse", "landing",
                 "overshoot", "lost", "cascade");
 
-        const std::array<Strategy, 5> strategies{
+        const std::array<Strategy, 7> strategies{
                 Strategy{
                         .name = "certified",
                         .resume =
@@ -986,16 +1004,24 @@ int main(const int argc, const char** argv)
                         .resume = [](const std::string_view input,
                                      const std::size_t from) { return past_next(input, from, '\n'); }},
                 Strategy{
+                        .name = "newline-at",
+                        .resume = [](const std::string_view input,
+                                     const std::size_t from) { return at_next(input, from, '\n'); }},
+                Strategy{
                         .name = "semicolon",
                         .resume = [](const std::string_view input,
                                      const std::size_t from) { return past_next(input, from, ';'); }},
+                Strategy{
+                        .name = "semicolon-at",
+                        .resume = [](const std::string_view input,
+                                     const std::size_t from) { return at_next(input, from, ';'); }},
         };
 
         for (const auto op : ops)
         {
             for (const auto k : ks)
             {
-                std::array<Cell, 5> cells{};
+                std::array<Cell, 7> cells{};
 
                 Lcg positions{0x5eedc0deU + static_cast<unsigned>(k) * 7U + static_cast<unsigned>(op) * 131U};
 
@@ -1027,6 +1053,8 @@ int main(const int argc, const char** argv)
 
                     const auto first{first_true_boundary(row.begins, y)};
 
+                    std::array<std::optional<std::size_t>, 7> got{};
+
                     for (std::size_t s{0}; s < strategies.size(); ++s)
                     {
                         auto& cell{cells[s]};
@@ -1036,6 +1064,8 @@ int main(const int argc, const char** argv)
                         const auto start{strategies[s].clean ? std::max(e + 1, y.end) : e + 1};
 
                         const auto r{strategies[s].resume(y.input, start)};
+
+                        got[s] = r;
 
                         if (!r)
                         {
@@ -1220,6 +1250,31 @@ int main(const int argc, const char** argv)
                             {
                                 std::fprintf(csv, ",,,,,\n");
                             }
+                        }
+                    }
+
+                    // The two delimiter placements must differ by exactly the delimiter,
+                    // and interchanging them fails here, the regression a referee asked
+                    // for: the after form refuses where the delimiter is the input's last
+                    // byte, and the at form still answers there.
+                    for (const auto& [after_s, at_s, delimiter] :
+                         {std::tuple<std::size_t, std::size_t, char>{3, 4, '\n'},
+                          std::tuple<std::size_t, std::size_t, char>{5, 6, ';'}})
+                    {
+                        if (got[after_s])
+                        {
+                            if (!got[at_s] || *got[at_s] + 1 != *got[after_s] || y.input[*got[at_s]] != delimiter)
+                            {
+                                std::fprintf(stderr, "CONVENTION VIOLATION\n");
+
+                                ++theorem_failures;
+                            }
+                        }
+                        else if (got[at_s] && *got[at_s] + 1 < y.input.size())
+                        {
+                            std::fprintf(stderr, "CONVENTION VIOLATION\n");
+
+                            ++theorem_failures;
                         }
                     }
                 }
