@@ -1430,10 +1430,12 @@ TEST_F(Lexer_test, Anchored_starts_answer_where_certificates_cannot)
         Ba,
     };
 
-    // {ab, ba}: the end-of-input witness. Position zero of the tail "ab" is repair-invariant, because the
-    // only crossing scenario dies in the tail, yet no certified window of any length explains it: "baba"
-    // refutes every candidate, and the refuting continuations need bytes past the end. The anchored query
-    // answers zero while the certificate walk stays silent, which is the whole point of anchoring.
+    // {ab, ba}: the end-of-input witness. Position zero of the tail "ab" is invariant under every
+    // completely tokenizable repair, because the only crossing scenario dies in the tail, yet no certified
+    // window of any length explains it: "baba" refutes every candidate, and the refuting continuations
+    // need bytes past the end. The anchored query answers zero while the certificate walk stays silent,
+    // which is the whole point of anchoring; the quantifier is complete repairs alone, since the failing
+    // repair "b" reaches one-byte evidence in "bab" with no boundary at the answer's image.
     Builder_dbg builder;
 
     builder.add_token(text("ab"), Token_kind::Ab, 1);

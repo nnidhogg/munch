@@ -854,8 +854,9 @@ input ends where the tail ends.
 
 ```cpp
 // Over the token set {ab, ba}: position 0 of the tail "ab" is provably a token start in every
-// possible repair, yet no certificate can see it, because refuting continuations would need
-// bytes past the end of the input.
+// completely tokenizable repair, yet no certificate can see it, because refuting continuations
+// would need bytes past the end of the input. The quantifier matters: a repair whose scan fails
+// partway (prefix "b" gives "bab", which commits "ba" and dies) places no boundary there.
 lexer.next_certified_start("ab", 0);  // nullopt: sound, but blind to the end of input
 lexer.next_anchored_start("ab", 0);   // 0: exact at the tail
 

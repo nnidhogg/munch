@@ -796,7 +796,8 @@ std::size_t pristine_oracle(const Row& row, const std::size_t samples)
     for (std::size_t sample{0}; sample < samples; ++sample)
     {
         // The widened generator broke the old 15-bit scaling here silently, every draw landing past the
-        // corpus and the oracle checking nothing; unbiased rejection sampling replaces it.
+        // corpus and the oracle checking nothing; unbiased rejection sampling replaces it, drawing offsets
+        // in [0, size - 2], the final byte excluded since no certificate can begin there and answer.
         const auto from{static_cast<std::size_t>(random.bounded(static_cast<std::uint32_t>(row.corpus.size() - 1)))};
 
         if (const auto found{row.lexer.next_certified_start(row.corpus, from)})
@@ -930,9 +931,10 @@ struct Incident
 
     std::optional<munch::core::Lexer::Certified_start> evidence;
 
-    /// Every certified move's resume position with its evidence begin, so the theorem assertions and the
-    /// covered tallies range over all answers, not the first per incident.
-    std::vector<std::pair<std::size_t, std::size_t>> moves;
+    /// Every certified move's resume position with its full evidence interval, so the theorem assertions
+    /// and the covered tallies range over all answers, not the first per incident, and the sidecar table
+    /// archives what the assertions consumed.
+    std::vector<std::array<std::size_t, 3>> moves;
 
     std::optional<std::size_t> terminal;
 
@@ -1045,7 +1047,7 @@ Incident run_incident(
 
         if (evidence)
         {
-            incident.moves.emplace_back(*resume, evidence->evidence_begin);
+            incident.moves.push_back({*resume, evidence->evidence_begin, evidence->evidence_end});
         }
 
         incident.terminal = *resume;
@@ -1198,12 +1200,24 @@ Convergence converge(
         }
     }
 
+    // Spurious starts are counted over the same region as lost boundaries, from the corruption end to
+    // the convergence point; emitted starts before the corruption end sit outside the manuscript's
+    // divergence region and never count.
     for (const auto start : starts)
     {
-        if (start >= floor && start < result.at && !landed(pristine, y, start))
+        if (start >= y.end && start < result.at && !landed(pristine, y, start))
         {
             ++result.spurious;
         }
+    }
+
+    // The empty-region regression a referee asked for: convergence at the corruption end leaves no room
+    // for either count.
+    if (result.at <= y.end && (result.lost != 0 || result.spurious != 0))
+    {
+        std::fprintf(stderr, "CONVERGENCE REGION VIOLATION\n");
+
+        std::exit(EXIT_FAILURE);
     }
 
     return result;
@@ -1423,6 +1437,17 @@ int main(const int argc, const char** argv)
     }
 
     std::FILE* csv{csv_path ? std::fopen(csv_path, "w") : nullptr};
+
+    // The sidecar archives every certified move's answer and evidence interval, arm zero and the clean
+    // walk alike, so the move-level assertions are auditable offline rather than aggregate-only.
+    const std::string moves_path{csv_path ? std::string{csv_path} + ".moves.csv" : std::string{}};
+
+    std::FILE* moves_csv{csv_path ? std::fopen(moves_path.c_str(), "w") : nullptr};
+
+    if (moves_csv)
+    {
+        std::fprintf(moves_csv, "grammar,op,k,seed,trial,strategy,move,answer,evidence_begin,evidence_end\n");
+    }
 
     // One raw row per strategy per damaging trial, plus one row marking each trial the grammar absorbed, so any
     // statistic stays computable from the archive; overshoot is blank where no post-corruption boundary exists.
@@ -1686,8 +1711,12 @@ int main(const int argc, const char** argv)
                         // both certified arms' whole incidents.
                         for (const std::size_t arm_index : {std::size_t{0}, std::size_t{1}})
                         {
-                            for (const auto& [move_at, move_evidence] : incidents[arm_index].moves)
+                            for (const auto& move : incidents[arm_index].moves)
                             {
+                                const auto move_at{move[0]};
+
+                                const auto move_evidence{move[1]};
+
                                 if (arm_index == 0)
                                 {
                                     ++certified_moves_total;
@@ -1985,13 +2014,13 @@ int main(const int argc, const char** argv)
 
                                     std::size_t covered_landed{0};
 
-                                    for (const auto& [move_at, move_evidence] : incident.moves)
+                                    for (const auto& move : incident.moves)
                                     {
-                                        if (move_evidence >= y.end)
+                                        if (move[1] >= y.end)
                                         {
                                             ++covered_moves;
 
-                                            if (move_at < y.input.size() && landed(row.begins, y, move_at))
+                                            if (move[0] < y.input.size() && landed(row.begins, y, move[0]))
                                             {
                                                 ++covered_landed;
                                             }
@@ -2014,6 +2043,20 @@ int main(const int argc, const char** argv)
                                 else
                                 {
                                     std::fprintf(csv, ",,\n");
+                                }
+
+                                if (moves_csv && !incident.moves.empty())
+                                {
+                                    for (std::size_t move_index{0}; move_index < incident.moves.size(); ++move_index)
+                                    {
+                                        const auto& move{incident.moves[move_index]};
+
+                                        std::fprintf(
+                                                moves_csv, "%s,%s,%zu,%zu,%zu,%s,%zu,%zu,%zu,%zu\n",
+                                                std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, seed,
+                                                trial, std::string{arms[s_index].name}.c_str(), move_index, move[0],
+                                                move[1], move[2]);
+                                    }
                                 }
                             }
                         }
@@ -2126,6 +2169,16 @@ int main(const int argc, const char** argv)
         if (std::ferror(csv) != 0 || std::fclose(csv) != 0)
         {
             std::fprintf(stderr, "csv write or close failed\n");
+
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (moves_csv)
+    {
+        if (std::ferror(moves_csv) != 0 || std::fclose(moves_csv) != 0)
+        {
+            std::fprintf(stderr, "moves csv write or close failed\n");
 
             return EXIT_FAILURE;
         }
