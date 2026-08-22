@@ -9,8 +9,9 @@
 //
 // Corruption model. A pristine corpus x, completely tokenizable by its row's grammar and asserted so, is damaged
 // at a position p by one of three operations on k bytes: substitute k bytes with pseudo-random ones, delete k
-// bytes, or insert k pseudo-random bytes. Every trial is deterministic: one linear congruential generator seeds
-// the corpus, the positions, and the damage, so every run of this program performs the identical experiment.
+// bytes, or insert k pseudo-random bytes. Every trial is deterministic: independently seeded linear congruential
+// generators cover the corpus, the damage positions, and the damage payloads, so every run of this program
+// performs the identical experiment.
 //
 // Ground truth. The token boundaries of the damaged input's own segmentation past the seam are unknowable without
 // a repair oracle, so the study uses the seed note's definition: ground truth is the boundary set B of the
