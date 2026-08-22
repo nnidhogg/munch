@@ -802,8 +802,9 @@ processing (`tools::tokenizer::Tokenizer`).
 ### **Error Recovery**
 
 On malformed input, `next()` reports the error and deliberately does not advance: guessing a skip would invent
-tokens. The driver chooses what happens next, and `recover()` is the certified choice: it moves to the nearest
-position that provably begins a token and returns how many bytes were skipped.
+tokens. The driver chooses what happens next, and `recover()` is the certified choice: it moves to the first
+position past the failure that a certificate proves begins a token, the first met in evidence order rather
+than the provably smallest, and returns how many bytes were skipped.
 
 ```cpp
 for (;;)
@@ -833,10 +834,12 @@ for (;;)
 ```
 
 The position `recover()` lands on carries a contract rather than a convention: every completely tokenizable
-repair of the broken input places a token boundary there, so wherever the damage came from and however it might
-be fixed, the resume point is a real token start. When no certificate lies ahead, the position does not move and
-the refusal is explicit. Under modes, the answer is relative to the active mode's automaton. The position-only
-form is `Lexer::next_certified_start(input, from)`, for drivers that plan without moving.
+repair of the input before the answer's supporting evidence places a token boundary there, so however the
+damage before that evidence might be fixed, the resume point is a real token start; a repair that alters the
+evidence itself, the certified byte or the whole window occurrence, forfeits the guarantee. When no
+certificate lies ahead, the position does not move and the refusal is explicit. Under modes, the answer is
+relative to the active mode's automaton. The position-only form is `Lexer::next_certified_start(input, from)`,
+for drivers that plan without moving.
 
 When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored
 queries answer exactly rather than conservatively, because they may use what the certificates cannot: that the
