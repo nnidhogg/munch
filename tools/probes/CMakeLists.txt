@@ -46,7 +46,9 @@ target_link_libraries(munch_recovery_quality
 )
 
 if (MUNCH_BUILD_TESTS)
-    add_test(NAME munch_recovery_quality COMMAND munch_recovery_quality)
+    # The r4 driver runs eleven arms, three seeds, and the exact machinery per trial, so the test
+    # invocation passes a small corpus and one seed; the campaign passes its own figures.
+    add_test(NAME munch_recovery_quality COMMAND munch_recovery_quality 16 20 "" "" 1)
 endif ()
 
 # Occurrence of certified positions on corpora, the empirical question both reports name and neither answers.

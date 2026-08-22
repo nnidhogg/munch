@@ -2,10 +2,13 @@
 // rows the split-points study established, under a corruption model whose ground truth is exact by construction.
 //
 // The question. next_certified_start() returns positions with a soundness theorem: in every tokenizable repair of
-// the input before an anchor, the image of a certified position begins a token. The classical conventions, skip
-// one byte, skip past the next newline, skip past the next semicolon, promise nothing. This probe quantifies what
-// the theorem is worth in practice: how often each strategy resumes at a true token boundary, how far past the
-// first true boundary it lands, and how much of the stream each one loses per error.
+// the input before an anchor, the image of a certified position begins a token. The library also ships the
+// anchored-exact machinery, next_anchored_start() and minimal_repair(), exact where the walk is merely sound.
+// The classical conventions, skip one byte, skip to a delimiter raw or token-aware, promise nothing. This probe
+// drives every arm through completed incidents under one stopping rule and quantifies each against the same
+// oracle: where the first answer lands, where the terminal one does, whether the incident completes, refuses, or
+// exhausts its budget, how fast the resumed stream converges to the mapped pristine one, and how the walk's
+// answers stratify by whether any repair exists at its anchor at all.
 //
 // Corruption model. A pristine corpus x, completely tokenizable by its row's grammar and asserted so, is damaged
 // at a position p by one of three operations on k bytes: substitute k bytes with pseudo-random ones, delete k
@@ -38,50 +41,67 @@
 // corruption: on the pristine corpus, every next_certified_start() answer from sampled offsets must be a boundary
 // of B, the same oracle discipline the split-points report uses.
 //
-// The position-only answer hides its evidence, so the harness replicates the walk to recover it: each
-// certified answer's CSV row carries five extra columns, the evidence's begin offset, the minimal answer
-// any certificate at or after the search start would have produced, the evidence's kind (byte or window),
-// its length, and its origin, so byte and window answers are auditable apart even when an origin-zero
-// window's begin equals its answer. A sharper transfer assertion fires on
-// the exact precondition rather than the three-byte margin: a certified answer whose evidence begins at or
-// past the corruption end must land. The conservative end-plus-three assertion stays beside it, and the
-// summary reports the covered and uncovered tallies with the nonminimality figure. A fifth arm,
-// certified-clean, models the caller who knows the damage's true extent: the same walk started at the
-// corruption end or one past the failure, whichever is later, so every answer's evidence is covered by
-// construction, asserted to be so and to land on every trial. The generated corpora are written beside the
-// archive so every column recomputes from the archive alone.
+// Eleven arms share the completed-incident driver. certified is the evidence-order walk, its answers carrying
+// the library's evidence interval, cross-checked on every first move against an independent replica of the walk,
+// so a harness defect and a library defect cannot agree. certified-clean starts the walk at the corruption end
+// or one past the failure, whichever is later, the oracle arm whose every answer is asserted covered and landed.
+// exact is the anchored procedure: the shipped exact decider at the anchor, the anchor advancing past a
+// beyond-repair tail's poison until a certificate holds; exact-clean anchors at the corruption end, its answers
+// asserted to land since the pristine prefix is a repair of what precedes the preserved suffix. skip-one and the
+// four raw delimiter placements are the classical conventions, the past placement repaired to return the
+// end-of-input offset at a final delimiter rather than refusing. token-newline and token-semicolon are the
+// token-aware reading a referee asked for: skip until the scan makes progress, discard emitted tokens through
+// the first containing the delimiter, resume one past it, so a delimiter inside a string or comment no longer
+// counts as a synchronizer by accident.
 //
-// Metrics, per grammar row, operation, k, and strategy, aggregated over trials whose damage actually broke the
-// serial scan (damage the grammar absorbs is counted and set aside):
+// Repairability stratifies every trial: minimal_repair() at the blind anchor decides whether any completely
+// tokenizable repair exists, and the summary counts the walk's answers on unrepairable tails apart, the
+// vacuously certified share. Two theorem-grade regressions bind the arms together: on a repairable trial a walk
+// answer implies an exact answer at or before it, and on an unrepairable trial the exact decider must refuse at
+// the blind anchor before the procedure advances. The sharper transfer assertion fires on the exact
+// precondition: a certified answer whose evidence begins at or past the corruption end must land; the
+// conservative end-plus-three assertion stays beside it, and the summary reports covered and uncovered tallies
+// with the nonminimality figure. The generated corpora are written beside the archive so every column recomputes
+// from the archive alone.
 //
-//   answers   trials where the strategy produced a resume position inside the input.
-//   refusals  trials where it produced none: no certificate for certified recovery, no delimiter for the
-//             delimiter conventions, resume past the end for all.
-//   landing   fraction of answers that are images of pristine boundaries, as defined above.
-//   overshoot signed distance in bytes from the first mapped boundary at or past the corruption end to the
-//             answer; negative when the answer lands before the corruption end, in the unchanged prefix.
-//   lost      mapped boundaries in (e, r): token starts the error and the resume choice together skipped, where
-//             e is the failure offset, the first byte the serial scan left unconsumed.
-//   cascade   resume events needed to reach the end of the input when the driver loop alternates scan and
-//             recover, capped by the progress lemma's bound; refusal mid-cascade ends the loop.
+// Metrics, per grammar row, operation, k, and arm, every (op, k, arm) cell pooled over independent seeds and the
+// per-seed figures printed beside the pooled ones (damage the grammar absorbs is counted and set aside):
 //
-// Baseline conventions. All strategies search from e + 1, the same progress contract recover() keeps, so no
-// strategy may retry the offending byte. Skip-one resumes at e + 1. The delimiter conventions resume one past the
-// next delimiter at or after e + 1, the classical discard-through-the-delimiter reading of panic mode.
+//   answers    incidents whose first move produced a resume position; refusals is its complement.
+//   f-land     fraction of first answers that are images of pristine boundaries, as defined above.
+//   t-land     fraction of interior terminal positions, the incident's last resume, that land.
+//   complete   fraction of incidents that reached the end of input under the driver; capped counts incidents
+//              that exhausted the attempt budget of one hundred moves.
+//   attempts   mean recovery moves per incident.
+//   conv       mean distance from the corruption end to where the resumed token stream and the mapped pristine
+//              stream agree forever after, over completed incidents.
+//   lost       mapped pristine boundaries inside the divergence region, tokens never recovered.
+//   spur       emitted starts inside the divergence region that land on no mapped boundary, tokens invented.
+//   overshoot  signed distance from the first mapped boundary at or past the corruption end to the first answer.
+//
+// The summary closes with Wilson 95 percent intervals on pooled first landing and completion per arm, the
+// repairability tallies with the vacuous share, the exact arm's byte savings on repairable trials beside its
+// signed net displacement over all pairs, and the duplicate count of the rejection-sampled positions.
+//
+// Baseline conventions. All arms search from e + 1 after every failure, the same progress contract recover()
+// keeps, so no arm may retry the offending byte; the oracle arms floor their search at the corruption end. The
+// driver alternates scan and recover under one stopping rule for every arm: end of input, refusal, or budget.
 //
 // Non-claims. Certified recovery answers with the first certificate in walk order, not the closest boundary, and
 // refuses where nothing certifies; both behaviors are measured here, not excused. Nothing is claimed about the
 // damaged input's own segmentation between the failure and the resume position. Printed figures are quotable only
 // beside the clean commit of the collection ritual, exactly as the benchmark's are.
 //
-// Usage. recovery_quality [corpus KiB] [trials per cell] [csv path] [real json corpus path]
+// Usage. recovery_quality [corpus KiB] [trials per cell] [csv path] [real json corpus path] [seeds]
 // Defaults are sized to run as a test; the campaign passes larger figures and archives the CSV. The optional
 // fourth argument adds an ecological row: a real-world JSON document, read verbatim, held to the same complete
-// tokenizability assertion, the same damage schedule, and the same oracle as the generated rows.
+// tokenizability assertion, the same damage schedule, and the same oracle as the generated rows. The fifth is
+// the number of independent seeds, three by default, each a fully separate schedule of positions and payloads.
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -92,6 +112,9 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "grammars.hpp"
@@ -122,6 +145,24 @@ public:
         state_ = state_ * 1664525U + 1013904223U;
 
         return state_ ^ (state_ >> 16U);
+    }
+
+    /**
+     * @brief An unbiased draw from [0, span) by Lemire multiply-shift with rejection.
+     */
+    std::uint32_t bounded(const std::uint32_t span)
+    {
+        while (true)
+        {
+            const auto x{next()};
+
+            const auto m{static_cast<std::uint64_t>(x) * span};
+
+            if (static_cast<std::uint32_t>(m) >= span || static_cast<std::uint32_t>(m) >= (0U - span) % span)
+            {
+                return static_cast<std::uint32_t>(m >> 32U);
+            }
+        }
     }
 
     /**
@@ -523,50 +564,44 @@ std::optional<std::size_t> first_true_boundary(const std::vector<std::size_t>& p
 }
 
 /**
- * @brief Mapped boundaries in the open interval (e, r): the token starts the error and the resume skipped.
+ * @brief The recovery move an arm makes, one of five kinds sharing the completed-incident driver.
  */
-std::size_t lost_starts(
-        const std::vector<std::size_t>& pristine, const Damage& y, const std::size_t e, const std::size_t r)
+enum class Kind : std::size_t
 {
-    std::size_t count{0};
+    /// The certificate walk, byte and window evidence in evidence order.
+    Certified,
 
-    for (const auto b : pristine)
-    {
-        std::ptrdiff_t image{};
+    /// The anchored-exact procedure: the shipped strictly-stronger decider at the anchor, the anchor
+    /// advancing past a beyond-repair tail's poison until a certificate holds, so refusal at one anchor
+    /// is a decision, not a dead end.
+    Exact,
 
-        if (b < y.low)
-        {
-            image = static_cast<std::ptrdiff_t>(b);
-        }
-        else if (b >= y.cut)
-        {
-            image = static_cast<std::ptrdiff_t>(b) + y.shift;
-        }
-        else
-        {
-            continue;
-        }
+    /// Resume at the search start itself, the skip-one convention.
+    Skip,
 
-        if (image > static_cast<std::ptrdiff_t>(e) && image < static_cast<std::ptrdiff_t>(r))
-        {
-            ++count;
-        }
-    }
+    /// Raw-byte delimiter search, at or one past the next occurrence.
+    Delim,
 
-    return count;
-}
+    /// Token-aware delimiter search: skip until the scan makes progress, discard emitted tokens through
+    /// the first containing the delimiter, resume one past that token, classical two-phase panic made
+    /// concrete at the lexical layer.
+    TokenDelim,
+};
 
 /**
- * @brief One resume convention: a name and a rule producing a resume position from the failure offset.
+ * @brief One evaluated arm: a kind, its delimiter where one applies, and whether the search floor is the
+ *        corruption end (the oracle arms, modeling a caller told the damage's extent) or the failure alone.
  */
-struct Strategy
+struct Arm
 {
     std::string_view name;
 
-    std::function<std::optional<std::size_t>(const std::string_view, const std::size_t)> resume;
+    Kind kind;
 
-    /// The known-clean-end arm: the walk starts at the corruption end or one past the failure,
-    /// whichever is later, modeling a caller (an editor knows its edit span) told the damage's extent.
+    char delimiter{'\0'};
+
+    bool past{false};
+
     bool clean{false};
 };
 
@@ -578,11 +613,12 @@ std::optional<std::size_t> past_next(const std::string_view input, const std::si
 {
     const auto at{input.find(delimiter, from)};
 
-    if (at == std::string_view::npos || at + 1 >= input.size())
+    if (at == std::string_view::npos)
     {
         return std::nullopt;
     }
 
+    // One past a final delimiter is the end-of-input offset, a completed resume rather than a refusal.
     return at + 1;
 }
 
@@ -604,7 +640,10 @@ std::optional<std::size_t> at_next(const std::string_view input, const std::size
     return at;
 }
 
-struct Cell
+/**
+ * @brief One arm's accumulated incident outcomes for a stratum: every figure the summary reports.
+ */
+struct Tally
 {
     std::size_t trials{0};
 
@@ -612,17 +651,30 @@ struct Cell
 
     std::size_t refusals{0};
 
-    std::size_t landings{0};
+    std::size_t first_landings{0};
+
+    std::size_t terminal_landings{0};
+
+    std::size_t completions{0};
+
+    std::size_t capped{0};
+
+    std::size_t attempts_sum{0};
+
+    std::size_t conv_sum{0};
+
+    std::size_t conv_count{0};
+
+    std::size_t lost_sum{0};
+
+    std::size_t spurious_sum{0};
 
     std::ptrdiff_t overshoot_sum{0};
 
     std::size_t overshoot_count{0};
 
-    std::size_t lost_sum{0};
-
-    std::size_t cascade_sum{0};
-
-    std::size_t cascade_count{0};
+    /// Terminal positions strictly inside the input, the terminal-landing denominator.
+    std::size_t terminal_interior{0};
 };
 
 struct Row
@@ -736,7 +788,9 @@ std::size_t pristine_oracle(const Row& row, const std::size_t samples)
 
     for (std::size_t sample{0}; sample < samples; ++sample)
     {
-        const auto from{random.next() * (row.corpus.size() - 1) / 0x7fffU};
+        // The widened generator broke the old 15-bit scaling here silently, every draw landing past the
+        // corpus and the oracle checking nothing; unbiased rejection sampling replaces it.
+        const auto from{static_cast<std::size_t>(random.bounded(static_cast<std::uint32_t>(row.corpus.size() - 1)))};
 
         if (const auto found{row.lexer.next_certified_start(row.corpus, from)})
         {
@@ -754,6 +808,368 @@ std::size_t pristine_oracle(const Row& row, const std::size_t samples)
     return failures;
 }
 
+/**
+ * @brief Wilson 95 percent score interval for successes out of n, both bounds in percent.
+ */
+std::pair<double, double> wilson(const std::size_t successes, const std::size_t n)
+{
+    if (n == 0)
+    {
+        return {0.0, 0.0};
+    }
+
+    const auto z{1.959963984540054};
+
+    const auto total{static_cast<double>(n)};
+
+    const auto rate{static_cast<double>(successes) / total};
+
+    const auto denominator{1.0 + z * z / total};
+
+    const auto center{rate + z * z / (2.0 * total)};
+
+    const auto margin{z * std::sqrt(rate * (1.0 - rate) / total + z * z / (4.0 * total * total))};
+
+    return {100.0 * (center - margin) / denominator, 100.0 * (center + margin) / denominator};
+}
+
+/**
+ * @brief Scans one resumed segment from base, recording every absolute token start, returning bytes consumed.
+ */
+std::size_t segment_starts(
+        const munch::core::Lexer& lexer, const std::string_view input, const std::size_t base,
+        std::vector<std::size_t>& starts)
+{
+    std::size_t at{base};
+
+    return lexer.tokenize_all<Token>(
+            std::string_view{input.data() + base, input.size() - base}, [&](const Token, const std::size_t length) {
+                starts.push_back(at);
+
+                at += length;
+            });
+}
+
+/**
+ * @brief The token-aware delimiter move: from the search start, skip bytes until the scan makes progress,
+ *        then discard emitted tokens through the first whose text contains the delimiter and resume one
+ *        past it; refuses when no such token exists ahead of any resumable offset.
+ */
+std::optional<std::size_t> token_sync(
+        const munch::core::Lexer& lexer, const std::string_view input, const std::size_t from, const char delimiter)
+{
+    std::size_t at{from};
+
+    while (at < input.size())
+    {
+        std::optional<std::size_t> sync;
+
+        std::size_t scan{at};
+
+        const auto consumed{lexer.tokenize_all<Token>(
+                std::string_view{input.data() + at, input.size() - at}, [&](const Token, const std::size_t length) {
+                    if (!sync &&
+                        std::string_view{input.data() + scan, length}.find(delimiter) != std::string_view::npos)
+                    {
+                        sync = scan + length;
+                    }
+
+                    scan += length;
+                })};
+
+        if (sync)
+        {
+            return sync;
+        }
+
+        if (at + consumed >= input.size())
+        {
+            return std::nullopt;
+        }
+
+        at += consumed + 1;
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief One arm's completed incident: driven from the first failure to the end of input, a refusal, or
+ *        the attempt budget, under one stopping rule shared by every arm.
+ */
+struct Incident
+{
+    std::optional<std::size_t> first;
+
+    std::optional<munch::core::Lexer::Certified_start> evidence;
+
+    std::optional<std::size_t> terminal;
+
+    std::size_t attempts{0};
+
+    /// 0 completed, 1 refused, 2 capped.
+    std::size_t outcome{1};
+
+    /// Absolute starts of every token emitted after the first resume.
+    std::vector<std::size_t> starts;
+};
+
+constexpr std::string_view outcome_name(const std::size_t outcome)
+{
+    switch (outcome)
+    {
+    case 0:
+        return "completed";
+
+    case 1:
+        return "refused";
+
+    default:
+        return "capped";
+    }
+}
+
+Incident run_incident(
+        const munch::core::Lexer& lexer, const std::string_view input, const std::size_t failure,
+        const std::size_t clean_floor, const Arm& arm, const std::size_t cap)
+{
+    Incident incident{};
+
+    std::size_t fail{failure};
+
+    while (true)
+    {
+        const auto start{arm.clean ? std::max(clean_floor, fail + 1) : fail + 1};
+
+        if (start >= input.size())
+        {
+            incident.terminal = input.size();
+
+            incident.outcome = 0;
+
+            break;
+        }
+
+        std::optional<std::size_t> resume;
+
+        std::optional<munch::core::Lexer::Certified_start> evidence;
+
+        switch (arm.kind)
+        {
+        case Kind::Certified:
+            evidence = lexer.next_certified_evidence(input, start);
+
+            if (evidence)
+            {
+                resume = evidence->start;
+            }
+
+            break;
+
+        case Kind::Exact:
+            for (std::size_t anchor{start}; anchor < input.size(); ++anchor)
+            {
+                if (const auto found{lexer.next_anchored_start(
+                            std::string_view{input.data() + anchor, input.size() - anchor}, 0)})
+                {
+                    resume = anchor + *found;
+
+                    break;
+                }
+            }
+
+            break;
+
+        case Kind::Skip:
+            resume = start;
+
+            break;
+
+        case Kind::Delim:
+            resume = arm.past ? past_next(input, start, arm.delimiter) : at_next(input, start, arm.delimiter);
+
+            break;
+
+        default:
+            resume = token_sync(lexer, input, start, arm.delimiter);
+
+            break;
+        }
+
+        if (!resume)
+        {
+            incident.outcome = 1;
+
+            break;
+        }
+
+        ++incident.attempts;
+
+        if (!incident.first)
+        {
+            incident.first = *resume;
+
+            incident.evidence = evidence;
+        }
+
+        incident.terminal = *resume;
+
+        if (*resume >= input.size())
+        {
+            incident.outcome = 0;
+
+            break;
+        }
+
+        const auto consumed{segment_starts(lexer, input, *resume, incident.starts)};
+
+        if (*resume + consumed == input.size())
+        {
+            incident.outcome = 0;
+
+            break;
+        }
+
+        fail = *resume + consumed;
+
+        if (incident.attempts >= cap)
+        {
+            incident.outcome = 2;
+
+            break;
+        }
+    }
+
+    return incident;
+}
+
+/**
+ * @brief Where the resumed stream and the mapped pristine stream agree forever after: the smallest emitted
+ *        position from which the two boundary suffixes coincide, with the divergence region's mapped
+ *        boundaries counted lost and its non-landing emitted starts counted spurious.
+ */
+struct Convergence
+{
+    std::size_t at{0};
+
+    std::size_t lost{0};
+
+    std::size_t spurious{0};
+};
+
+Convergence converge(
+        const std::vector<std::size_t>& pristine, const Damage& y, const std::vector<std::size_t>& starts,
+        const std::size_t floor)
+{
+    const auto image = [&](const std::size_t boundary) -> std::optional<std::size_t> {
+        if (boundary < y.low)
+        {
+            return boundary;
+        }
+
+        if (boundary >= y.cut)
+        {
+            return static_cast<std::size_t>(static_cast<std::ptrdiff_t>(boundary) + y.shift);
+        }
+
+        return std::nullopt;
+    };
+
+    // Walk both sorted sequences backward from their ends to the first disagreement.
+    auto i{static_cast<std::ptrdiff_t>(starts.size()) - 1};
+
+    auto j{static_cast<std::ptrdiff_t>(pristine.size()) - 1};
+
+    std::optional<std::size_t> agreed;
+
+    while (i >= 0 && starts[static_cast<std::size_t>(i)] >= floor)
+    {
+        // The next mapped pristine boundary at or above the floor, skipping the imageless window.
+        std::optional<std::size_t> mapped;
+
+        while (j >= 0)
+        {
+            mapped = image(pristine[static_cast<std::size_t>(j)]);
+
+            if (mapped && *mapped < floor)
+            {
+                mapped = std::nullopt;
+
+                j = -1;
+
+                break;
+            }
+
+            if (mapped)
+            {
+                break;
+            }
+
+            --j;
+        }
+
+        if (!mapped || *mapped != starts[static_cast<std::size_t>(i)])
+        {
+            break;
+        }
+
+        agreed = *mapped;
+
+        --i;
+
+        --j;
+    }
+
+    Convergence result{};
+
+    // Full agreement down to the floor on both sides converges at the floor; no common suffix converges
+    // only at the end of input.
+    const auto exhausted_pristine{[&] {
+        while (j >= 0)
+        {
+            const auto mapped{image(pristine[static_cast<std::size_t>(j)])};
+
+            if (mapped && *mapped >= floor)
+            {
+                return false;
+            }
+
+            --j;
+        }
+
+        return true;
+    }};
+
+    if ((i < 0 || starts[static_cast<std::size_t>(i)] < floor) && exhausted_pristine())
+    {
+        result.at = floor;
+    }
+    else
+    {
+        result.at = agreed ? *agreed : y.input.size();
+    }
+
+    for (const auto boundary : pristine)
+    {
+        const auto mapped{image(boundary)};
+
+        if (mapped && *mapped >= floor && *mapped < result.at)
+        {
+            ++result.lost;
+        }
+    }
+
+    for (const auto start : starts)
+    {
+        if (start >= floor && start < result.at && !landed(pristine, y, start))
+        {
+            ++result.spurious;
+        }
+    }
+
+    return result;
+}
+
 } // namespace
 
 int main(const int argc, const char** argv)
@@ -762,9 +1178,12 @@ int main(const int argc, const char** argv)
 
     const std::size_t trials{argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 60};
 
-    const char* csv_path{argc > 3 ? argv[3] : nullptr};
+    // Empty strings stand for absent, so a caller can reach the seed argument without a csv or real corpus.
+    const char* csv_path{argc > 3 && argv[3][0] != '\0' ? argv[3] : nullptr};
 
-    const char* real_path{argc > 4 ? argv[4] : nullptr};
+    const char* real_path{argc > 4 && argv[4][0] != '\0' ? argv[4] : nullptr};
+
+    const std::size_t seeds{argc > 5 ? std::strtoull(argv[5], nullptr, 10) : 3};
 
     const auto bytes{corpus_kib << 10U};
 
@@ -911,15 +1330,14 @@ int main(const int argc, const char** argv)
 
     std::printf("pristine oracle: %zu violations over %zu rows x 512 samples\n", oracle_failures, rows.size());
 
-    // The end-of-input asymmetry, constructed rather than awaited: on an input whose last byte is the
-    // delimiter, the at placement answers at that final byte while the past placement refuses, the one
-    // availability difference the paired regression's opportunistic branch guards. No archived campaign
-    // trial ever reached it, since damage sampling keeps clear of both corpus edges, so this fixture
-    // forces the branch's premise directly.
+    // The final-delimiter fixture, updated for the repaired past placement: one past a final delimiter is
+    // now the end-of-input offset, a completed resume with nothing left to scan, rather than a refusal, so
+    // the two placements answer together everywhere and differ by exactly the delimiter.
     {
         constexpr std::string_view final_newline{"aa\n"};
 
-        if (past_next(final_newline, 1, '\n') || at_next(final_newline, 1, '\n') != std::optional<std::size_t>{2})
+        if (past_next(final_newline, 1, '\n') != std::optional<std::size_t>{3} ||
+            at_next(final_newline, 1, '\n') != std::optional<std::size_t>{2})
         {
             std::printf("FAILED: the final-delimiter fixture broke\n");
 
@@ -929,7 +1347,9 @@ int main(const int argc, const char** argv)
 
     std::printf(
             "deterministic: corpus seeds 0x5eed0001 through 0x5eed0003, schedule seed 0x5eedc0de and payload seed "
-            "0x5eedbeef each offset per (op, k)\n");
+            "0x5eedbeef each offset per (seed, op, k), %zu independent seeds, positions by unbiased rejection "
+            "sampling, attempt budget 100 per incident\n",
+            seeds);
 
     // The generated corpora, written beside the archive so every column recomputes from the archive alone; the
     // real document is already on disk, hashed in the data notes.
@@ -952,6 +1372,14 @@ int main(const int argc, const char** argv)
             std::ofstream out{"corpus-" + slug + ".bin", std::ios::binary};
 
             out.write(row.corpus.data(), static_cast<std::streamsize>(row.corpus.size()));
+
+            // A truncated corpus beside the archive would break offline recomputation silently.
+            if (!out)
+            {
+                std::fprintf(stderr, "corpus write failed: %s\n", slug.c_str());
+
+                return EXIT_FAILURE;
+            }
         }
     }
 
@@ -963,8 +1391,9 @@ int main(const int argc, const char** argv)
     {
         std::fprintf(
                 csv,
-                "grammar,op,k,trial,p,failure_offset,corruption_end,strategy,answer,landed,overshoot,lost,cascade,"
-                "evidence,minimal,kind,length,origin\n");
+                "grammar,op,k,seed,trial,p,failure_offset,corruption_end,first_true,repairable,minimal_repair,"
+                "strategy,first,first_landed,evidence_begin,evidence_end,evidence_kind,minimal,terminal,"
+                "terminal_landed,outcome,attempts,converged,lost,spurious\n");
     }
 
     constexpr std::array<Op, 3> ops{Op::Substitute, Op::Delete, Op::Insert};
@@ -989,352 +1418,556 @@ int main(const int argc, const char** argv)
 
     std::size_t absorbed_total{0};
 
+    std::size_t repairable_total{0};
+
+    std::size_t unrepairable_total{0};
+
+    std::size_t vacuous_walk_answers{0};
+
+    std::size_t exact_answers_total{0};
+
+    std::size_t exact_saved_bytes{0};
+
+    std::ptrdiff_t exact_net_displacement{0};
+
+    std::size_t exact_pairs{0};
+
+    std::size_t duplicate_positions{0};
+
+    constexpr std::array<Arm, 11> arms{
+            Arm{.name = "certified", .kind = Kind::Certified},
+            Arm{.name = "certified-clean", .kind = Kind::Certified, .clean = true},
+            Arm{.name = "exact", .kind = Kind::Exact},
+            Arm{.name = "exact-clean", .kind = Kind::Exact, .clean = true},
+            Arm{.name = "skip-one", .kind = Kind::Skip},
+            Arm{.name = "newline", .kind = Kind::Delim, .delimiter = '\n', .past = true},
+            Arm{.name = "newline-at", .kind = Kind::Delim, .delimiter = '\n'},
+            Arm{.name = "semicolon", .kind = Kind::Delim, .delimiter = ';', .past = true},
+            Arm{.name = "semicolon-at", .kind = Kind::Delim, .delimiter = ';'},
+            Arm{.name = "token-newline", .kind = Kind::TokenDelim, .delimiter = '\n'},
+            Arm{.name = "token-semicolon", .kind = Kind::TokenDelim, .delimiter = ';'},
+    };
+
+    constexpr std::size_t cap{100};
+
     for (const auto& row : rows)
     {
         std::printf("\n%s\n", std::string{row.label}.c_str());
 
-        std::printf(
-                "  %-11s %2s  %-10s %8s %8s %9s %10s %7s %9s\n", "op", "k", "strategy", "answers", "refuse", "landing",
-                "overshoot", "lost", "cascade");
+        // Tallies pooled over seeds per (op, k, arm) stratum; per-seed first-landing kept beside them so
+        // seed stability is a printed figure rather than a claim.
+        std::array<std::array<std::array<Tally, 11>, 3>, 3> tallies{};
 
-        const std::array<Strategy, 7> strategies{
-                Strategy{
-                        .name = "certified",
-                        .resume =
-                                [&row](const std::string_view input, const std::size_t from) {
-                                    return row.lexer.next_certified_start(input, from);
-                                }},
-                Strategy{
-                        .name = "certified-clean",
-                        .resume =
-                                [&row](const std::string_view input, const std::size_t from) {
-                                    return row.lexer.next_certified_start(input, from);
-                                },
-                        .clean = true},
-                Strategy{
-                        .name = "skip-one",
-                        .resume = [](const std::string_view input,
-                                     const std::size_t from) -> std::optional<std::size_t> {
-                            if (from >= input.size())
-                            {
-                                return std::nullopt;
-                            }
+        std::vector<std::array<std::size_t, 11>> seed_answers(seeds);
 
-                            return from;
-                        }},
-                Strategy{
-                        .name = "newline",
-                        .resume = [](const std::string_view input,
-                                     const std::size_t from) { return past_next(input, from, '\n'); }},
-                Strategy{
-                        .name = "newline-at",
-                        .resume = [](const std::string_view input,
-                                     const std::size_t from) { return at_next(input, from, '\n'); }},
-                Strategy{
-                        .name = "semicolon",
-                        .resume = [](const std::string_view input,
-                                     const std::size_t from) { return past_next(input, from, ';'); }},
-                Strategy{
-                        .name = "semicolon-at",
-                        .resume = [](const std::string_view input,
-                                     const std::size_t from) { return at_next(input, from, ';'); }},
-        };
+        std::vector<std::array<std::size_t, 11>> seed_landings(seeds);
 
-        for (const auto op : ops)
+        for (std::size_t seed{0}; seed < seeds; ++seed)
         {
-            for (const auto k : ks)
+            for (std::size_t op_index{0}; op_index < ops.size(); ++op_index)
             {
-                std::array<Cell, 7> cells{};
+                const auto op{ops[op_index]};
 
-                Lcg positions{0x5eedc0deU + static_cast<unsigned>(k) * 7U + static_cast<unsigned>(op) * 131U};
-
-                Lcg payload{0x5eedbeefU + static_cast<unsigned>(k) * 7U + static_cast<unsigned>(op) * 131U};
-
-                std::size_t absorbed{0};
-
-                for (std::size_t trial{0}; trial < trials; ++trial)
+                for (std::size_t k_index{0}; k_index < ks.size(); ++k_index)
                 {
-                    const auto span{row.corpus.size() - k - 128};
+                    const auto k{ks[k_index]};
 
-                    const auto p{64 + (static_cast<std::size_t>(positions.next()) * 48271U) % span};
+                    Lcg positions{
+                            0x5eedc0deU + static_cast<std::uint32_t>(seed) * 0x01000193U +
+                            static_cast<std::uint32_t>(k) * 7U + static_cast<std::uint32_t>(op) * 131U};
 
-                    auto y{damage(row.corpus, op, p, k, payload)};
+                    Lcg payload{
+                            0x5eedbeefU + static_cast<std::uint32_t>(seed) * 0x01000193U +
+                            static_cast<std::uint32_t>(k) * 7U + static_cast<std::uint32_t>(op) * 131U};
 
-                    const auto e{failure_offset(row.lexer, y.input)};
+                    std::unordered_set<std::size_t> seen_positions;
 
-                    if (e == y.input.size())
+                    for (std::size_t trial{0}; trial < trials; ++trial)
                     {
-                        ++absorbed;
+                        const auto span{row.corpus.size() - k - 128};
 
-                        if (csv)
+                        const auto p{
+                                64 + static_cast<std::size_t>(positions.bounded(static_cast<std::uint32_t>(span)))};
+
+                        if (!seen_positions.insert(p).second)
                         {
-                            std::fprintf(
-                                    csv, "%s,%s,%zu,%zu,%zu,,%zu,absorbed,,,,,,,,,,\n", std::string{row.label}.c_str(),
-                                    std::string{name(op)}.c_str(), k, trial, p, y.end);
+                            ++duplicate_positions;
                         }
 
-                        continue;
-                    }
+                        auto y{damage(row.corpus, op, p, k, payload)};
 
-                    const auto first{first_true_boundary(row.begins, y)};
+                        const auto e{failure_offset(row.lexer, y.input)};
 
-                    std::array<std::optional<std::size_t>, 7> got{};
-
-                    for (std::size_t s{0}; s < strategies.size(); ++s)
-                    {
-                        auto& cell{cells[s]};
-
-                        ++cell.trials;
-
-                        const auto start{strategies[s].clean ? std::max(e + 1, y.end) : e + 1};
-
-                        const auto r{strategies[s].resume(y.input, start)};
-
-                        got[s] = r;
-
-                        if (!r)
+                        if (e == y.input.size())
                         {
-                            ++cell.refusals;
-
-                            if (strategies[s].clean)
-                            {
-                                ++clean_refusals;
-                            }
+                            ++absorbed_total;
 
                             if (csv)
                             {
                                 std::fprintf(
-                                        csv, "%s,%s,%zu,%zu,%zu,%zu,%zu,%s,,,,,,,,,,\n", std::string{row.label}.c_str(),
-                                        std::string{name(op)}.c_str(), k, trial, p, e, y.end,
-                                        std::string{strategies[s].name}.c_str());
+                                        csv, "%s,%s,%zu,%zu,%zu,%zu,,%zu,,,,absorbed,,,,,,,,,,,,,\n",
+                                        std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, seed, trial,
+                                        p, y.end);
                             }
 
                             continue;
                         }
 
-                        ++cell.answers;
+                        const auto first_true{first_true_boundary(row.begins, y)};
 
-                        const auto did_land{landed(row.begins, y, *r)};
+                        // Repairability of the blind tail, the stratifier separating real answers from
+                        // vacuous ones: an unrepairable tail admits no completely tokenizable repair, so
+                        // any certificate there is vacuously true.
+                        const auto repair{row.lexer.minimal_repair(
+                                std::string_view{y.input}.substr(std::min(e + 1, y.input.size())))};
 
-                        cell.landings += did_land ? 1 : 0;
-
-                        // Support-aware classification: replicate the walk's evidence and assert the sharp
-                        // form of the transfer, a certified answer whose evidence clears the corruption end
-                        // must land; the conservative end-plus-three assertion stays below.
-                        std::optional<Evidence> evidence;
-
-                        auto minimal{*r};
-
-                        if (s == 0 || strategies[s].clean)
+                        if (repair)
                         {
-                            evidence = evidence_of(row.lexer, y.input, start, *r);
+                            ++repairable_total;
+                        }
+                        else
+                        {
+                            ++unrepairable_total;
+                        }
 
-                            if (!evidence)
+                        std::array<Incident, 11> incidents{};
+
+                        for (std::size_t s_index{0}; s_index < arms.size(); ++s_index)
+                        {
+                            incidents[s_index] = run_incident(row.lexer, y.input, e, y.end, arms[s_index], cap);
+                        }
+
+                        // Harness-independence: the library's evidence must match the replica's walk.
+                        if (incidents[0].first)
+                        {
+                            const auto replica{evidence_of(row.lexer, y.input, e + 1, *incidents[0].first)};
+
+                            if (!replica || !incidents[0].evidence ||
+                                incidents[0].evidence->evidence_begin != replica->begin ||
+                                incidents[0].evidence->window == replica->byte)
                             {
                                 std::fprintf(
                                         stderr, "EVIDENCE MISMATCH: %s %s k=%zu p=%zu e=%zu answered %zu\n",
-                                        std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e, *r);
+                                        std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e,
+                                        *incidents[0].first);
 
                                 ++theorem_failures;
                             }
-                            else if (s == 0)
+                        }
+
+                        // The sharp transfer: a certified answer whose evidence clears the corruption end
+                        // must land; the conservative end-plus-three form stays beside it.
+                        if (incidents[0].first)
+                        {
+                            const auto landed_first{landed(row.begins, y, *incidents[0].first)};
+
+                            if (incidents[0].evidence && incidents[0].evidence->evidence_begin >= y.end)
                             {
-                                minimal = minimal_answer(row.lexer, y.input, start, *r);
+                                ++evidence_covered;
 
-                                if (minimal < *r)
-                                {
-                                    ++nonminimal_answers;
-
-                                    nonminimal_bytes += *r - minimal;
-                                }
-
-                                if (evidence->begin >= y.end)
-                                {
-                                    ++evidence_covered;
-
-                                    if (!did_land)
-                                    {
-                                        std::fprintf(
-                                                stderr, "EVIDENCE VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
-                                                std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e,
-                                                *r);
-
-                                        ++theorem_failures;
-                                    }
-                                }
-                                else
-                                {
-                                    ++evidence_uncovered;
-
-                                    if (did_land)
-                                    {
-                                        ++evidence_uncovered_landed;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                // The clean arm's contract is total: the search began at or past the
-                                // corruption end, so the evidence is covered by construction and the
-                                // answer must land, both asserted on every trial.
-                                minimal = minimal_answer(row.lexer, y.input, start, *r);
-
-                                ++clean_answers;
-
-                                if (evidence->begin < y.end || !did_land)
+                                if (!landed_first)
                                 {
                                     std::fprintf(
-                                            stderr, "CLEAN-ARM VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
-                                            std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e, *r);
+                                            stderr, "EVIDENCE VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
+                                            std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e,
+                                            *incidents[0].first);
 
                                     ++theorem_failures;
                                 }
                             }
+                            else
+                            {
+                                ++evidence_uncovered;
+
+                                if (landed_first)
+                                {
+                                    ++evidence_uncovered_landed;
+                                }
+                            }
+
+                            if (*incidents[0].first >= y.end + 3 && !landed_first)
+                            {
+                                std::fprintf(
+                                        stderr, "THEOREM VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
+                                        std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e,
+                                        *incidents[0].first);
+
+                                ++theorem_failures;
+                            }
+
+                            const auto minimal{minimal_answer(row.lexer, y.input, e + 1, *incidents[0].first)};
+
+                            if (minimal < *incidents[0].first)
+                            {
+                                ++nonminimal_answers;
+
+                                nonminimal_bytes += *incidents[0].first - minimal;
+                            }
                         }
 
-                        // The theorem transfer: a certified answer clear of the seam band must land, because the
-                        // pristine corpus is itself a tokenizable repair of the preserved suffix.
-                        if (s == 0 && *r >= y.end + 3 && !did_land)
+                        // The clean certified arm's contract is total: search floor at the corruption end,
+                        // evidence covered by construction, landing guaranteed, both asserted on every trial.
+                        if (incidents[1].first)
+                        {
+                            ++clean_answers;
+
+                            if (!incidents[1].evidence || incidents[1].evidence->evidence_begin < y.end ||
+                                !landed(row.begins, y, *incidents[1].first))
+                            {
+                                std::fprintf(
+                                        stderr, "CLEAN-ARM VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
+                                        std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e,
+                                        *incidents[1].first);
+
+                                ++theorem_failures;
+                            }
+                        }
+                        else
+                        {
+                            ++clean_refusals;
+                        }
+
+                        // Exact-versus-walk regressions, theorem-grade both ways: on a repairable tail a
+                        // walk answer implies an exact answer at or before it; on an unrepairable tail the
+                        // exact decider must refuse where the walk may answer vacuously.
+                        if (repair && incidents[0].first &&
+                            (!incidents[2].first || *incidents[2].first > *incidents[0].first))
                         {
                             std::fprintf(
-                                    stderr, "THEOREM VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
-                                    std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e, *r);
+                                    stderr, "EXACT ORDER VIOLATION: %s %s k=%zu p=%zu e=%zu\n",
+                                    std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e);
 
                             ++theorem_failures;
                         }
 
-                        if (first)
-                        {
-                            cell.overshoot_sum += static_cast<std::ptrdiff_t>(*r) - static_cast<std::ptrdiff_t>(*first);
-
-                            ++cell.overshoot_count;
-                        }
-
-                        const auto lost{lost_starts(row.begins, y, e, *r)};
-
-                        cell.lost_sum += lost;
-
-                        // The driver loop of the progress lemma: alternate scan and resume until the end or a
-                        // refusal, counting resume events; the lemma bounds the loop by the input's size.
-                        std::size_t events{0};
-
-                        std::size_t at{*r};
-
-                        ++events;
-
-                        while (at < y.input.size() && events <= y.input.size())
-                        {
-                            const std::string_view suffix{y.input.data() + at, y.input.size() - at};
-
-                            const auto consumed{failure_offset(row.lexer, suffix)};
-
-                            if (consumed == suffix.size())
-                            {
-                                break;
-                            }
-
-                            const auto again{strategies[s].resume(y.input, at + consumed + 1)};
-
-                            if (!again || *again <= at + consumed)
-                            {
-                                break;
-                            }
-
-                            at = *again;
-
-                            ++events;
-                        }
-
-                        cell.cascade_sum += events;
-
-                        ++cell.cascade_count;
-
-                        if (csv)
+                        // The decider's refusal contract, checked directly at the blind anchor: a tail
+                        // beyond repair refuses rather than answering vacuously, and a repairable tail's
+                        // answer or refusal is the procedure's own first move.
+                        if (!repair && row.lexer.next_anchored_start(
+                                               std::string_view{y.input}.substr(std::min(e + 1, y.input.size())), 0))
                         {
                             std::fprintf(
-                                    csv, "%s,%s,%zu,%zu,%zu,%zu,%zu,%s,%zu,%d,", std::string{row.label}.c_str(),
-                                    std::string{name(op)}.c_str(), k, trial, p, e, y.end,
-                                    std::string{strategies[s].name}.c_str(), *r, did_land ? 1 : 0);
+                                    stderr, "EXACT REFUSAL VIOLATION: %s %s k=%zu p=%zu e=%zu\n",
+                                    std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e);
 
-                            if (first)
-                            {
-                                std::fprintf(
-                                        csv, "%td",
-                                        static_cast<std::ptrdiff_t>(*r) - static_cast<std::ptrdiff_t>(*first));
-                            }
+                            ++theorem_failures;
+                        }
 
-                            std::fprintf(csv, ",%zu,%zu", lost, events);
+                        if (!repair && incidents[0].first)
+                        {
+                            ++vacuous_walk_answers;
+                        }
 
-                            if (evidence)
+                        if (incidents[2].first)
+                        {
+                            ++exact_answers_total;
+
+                            if (incidents[0].first)
                             {
-                                std::fprintf(
-                                        csv, ",%zu,%zu,%s,%zu,%zu\n", evidence->begin, minimal,
-                                        evidence->byte ? "byte" : "window", evidence->length, evidence->origin);
-                            }
-                            else
-                            {
-                                std::fprintf(csv, ",,,,,\n");
+                                ++exact_pairs;
+
+                                // Nonnegative by the order assertion on repairable trials; on unrepairable
+                                // ones the advanced anchor can land past the walk's vacuous answer, so the
+                                // net crosses zero and is kept signed.
+                                if (repair)
+                                {
+                                    exact_saved_bytes += *incidents[0].first - *incidents[2].first;
+                                }
+
+                                exact_net_displacement += static_cast<std::ptrdiff_t>(*incidents[0].first) -
+                                                          static_cast<std::ptrdiff_t>(*incidents[2].first);
                             }
                         }
-                    }
 
-                    // The two delimiter placements must differ by exactly the delimiter,
-                    // and interchanging them fails here, the regression a referee asked
-                    // for: the after form refuses where the delimiter is the input's last
-                    // byte, and the at form still answers there.
-                    for (const auto& [after_s, at_s, delimiter] :
-                         {std::tuple<std::size_t, std::size_t, char>{3, 4, '\n'},
-                          std::tuple<std::size_t, std::size_t, char>{5, 6, ';'}})
-                    {
-                        if (got[after_s])
+                        // The exact clean arm's answers must land: the pristine prefix is a repair of what
+                        // precedes the preserved suffix, so an anchored-invariant position lies on a mapped
+                        // pristine boundary.
+                        if (incidents[3].first && *incidents[3].first < y.input.size() &&
+                            !landed(row.begins, y, *incidents[3].first))
                         {
-                            if (!got[at_s] || *got[at_s] + 1 != *got[after_s] || y.input[*got[at_s]] != delimiter)
+                            std::fprintf(
+                                    stderr, "EXACT-CLEAN VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
+                                    std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e,
+                                    *incidents[3].first);
+
+                            ++theorem_failures;
+                        }
+
+                        // The two delimiter placements now answer together everywhere and differ by exactly
+                        // the delimiter, the repaired past placement having no refusal of its own.
+                        for (const auto& [past_s, at_s, delimiter] :
+                             {std::tuple<std::size_t, std::size_t, char>{5, 6, '\n'},
+                              std::tuple<std::size_t, std::size_t, char>{7, 8, ';'}})
+                        {
+                            const auto& past_first{incidents[past_s].first};
+
+                            const auto& at_first{incidents[at_s].first};
+
+                            if (past_first.has_value() != at_first.has_value() ||
+                                (past_first && (*past_first != *at_first + 1 || y.input[*at_first] != delimiter)))
                             {
                                 std::fprintf(stderr, "CONVENTION VIOLATION\n");
 
                                 ++theorem_failures;
                             }
                         }
-                        else if (got[at_s] && *got[at_s] + 1 < y.input.size())
-                        {
-                            std::fprintf(stderr, "CONVENTION VIOLATION\n");
 
-                            ++theorem_failures;
+                        for (std::size_t s_index{0}; s_index < arms.size(); ++s_index)
+                        {
+                            const auto& incident{incidents[s_index]};
+
+                            auto& tally{tallies[op_index][k_index][s_index]};
+
+                            ++tally.trials;
+
+                            tally.attempts_sum += incident.attempts;
+
+                            std::optional<bool> first_landed;
+
+                            if (incident.first && *incident.first < y.input.size())
+                            {
+                                first_landed = landed(row.begins, y, *incident.first);
+                            }
+
+                            std::optional<bool> terminal_landed;
+
+                            if (incident.terminal && *incident.terminal < y.input.size())
+                            {
+                                terminal_landed = landed(row.begins, y, *incident.terminal);
+
+                                ++tally.terminal_interior;
+                            }
+
+                            if (incident.first)
+                            {
+                                ++tally.answers;
+
+                                ++seed_answers[seed][s_index];
+
+                                if (first_landed.value_or(false))
+                                {
+                                    ++tally.first_landings;
+
+                                    ++seed_landings[seed][s_index];
+                                }
+
+                                if (first_true)
+                                {
+                                    tally.overshoot_sum += static_cast<std::ptrdiff_t>(*incident.first) -
+                                                           static_cast<std::ptrdiff_t>(*first_true);
+
+                                    ++tally.overshoot_count;
+                                }
+                            }
+                            else
+                            {
+                                ++tally.refusals;
+                            }
+
+                            if (terminal_landed.value_or(false))
+                            {
+                                ++tally.terminal_landings;
+                            }
+
+                            std::optional<Convergence> convergence;
+
+                            if (incident.outcome == 0)
+                            {
+                                ++tally.completions;
+
+                                convergence = incident.first ?
+                                                      converge(row.begins, y, incident.starts, *incident.first) :
+                                                      Convergence{.at = y.input.size(), .lost = 0, .spurious = 0};
+
+                                tally.conv_sum += convergence->at > y.end ? convergence->at - y.end : 0;
+
+                                ++tally.conv_count;
+
+                                tally.lost_sum += convergence->lost;
+
+                                tally.spurious_sum += convergence->spurious;
+                            }
+                            else if (incident.outcome == 2)
+                            {
+                                ++tally.capped;
+                            }
+
+                            if (csv)
+                            {
+                                std::fprintf(
+                                        csv, "%s,%s,%zu,%zu,%zu,%zu,%zu,%zu,", std::string{row.label}.c_str(),
+                                        std::string{name(op)}.c_str(), k, seed, trial, p, e, y.end);
+
+                                if (first_true)
+                                {
+                                    std::fprintf(csv, "%zu", *first_true);
+                                }
+
+                                std::fprintf(csv, ",%d,", repair ? 1 : 0);
+
+                                if (repair)
+                                {
+                                    std::fprintf(csv, "%zu", repair->size());
+                                }
+
+                                std::fprintf(csv, ",%s,", std::string{arms[s_index].name}.c_str());
+
+                                if (incident.first)
+                                {
+                                    std::fprintf(csv, "%zu", *incident.first);
+                                }
+
+                                std::fprintf(csv, ",");
+
+                                if (first_landed)
+                                {
+                                    std::fprintf(csv, "%d", *first_landed ? 1 : 0);
+                                }
+
+                                if (incident.evidence)
+                                {
+                                    std::fprintf(
+                                            csv, ",%zu,%zu,%s,", incident.evidence->evidence_begin,
+                                            incident.evidence->evidence_end,
+                                            incident.evidence->window ? "window" : "byte");
+
+                                    std::fprintf(
+                                            csv, "%zu",
+                                            minimal_answer(
+                                                    row.lexer, y.input,
+                                                    arms[s_index].clean ? std::max(y.end, e + 1) : e + 1,
+                                                    *incident.first));
+                                }
+                                else
+                                {
+                                    std::fprintf(csv, ",,,,");
+                                }
+
+                                std::fprintf(csv, ",");
+
+                                if (incident.terminal)
+                                {
+                                    std::fprintf(csv, "%zu", *incident.terminal);
+                                }
+
+                                std::fprintf(csv, ",");
+
+                                if (terminal_landed)
+                                {
+                                    std::fprintf(csv, "%d", *terminal_landed ? 1 : 0);
+                                }
+
+                                std::fprintf(
+                                        csv, ",%s,%zu,", std::string{outcome_name(incident.outcome)}.c_str(),
+                                        incident.attempts);
+
+                                if (convergence)
+                                {
+                                    std::fprintf(
+                                            csv, "%zu,%zu,%zu\n", convergence->at, convergence->lost,
+                                            convergence->spurious);
+                                }
+                                else
+                                {
+                                    std::fprintf(csv, ",,\n");
+                                }
+                            }
                         }
                     }
                 }
+            }
+        }
 
-                absorbed_total += absorbed;
+        // The stratified table first, every (op, k, arm) cell pooled over seeds.
+        std::printf(
+                "  %-11s %2s  %-15s %7s %7s %8s %8s %8s %6s %8s %8s %6s %6s %9s\n", "op", "k", "strategy", "answers",
+                "refuse", "f-land", "t-land", "complete", "capped", "attempts", "conv", "lost", "spur", "overshoot");
 
-                for (std::size_t s{0}; s < strategies.size(); ++s)
+        for (std::size_t op_index{0}; op_index < ops.size(); ++op_index)
+        {
+            for (std::size_t k_index{0}; k_index < ks.size(); ++k_index)
+            {
+                for (std::size_t s_index{0}; s_index < arms.size(); ++s_index)
                 {
-                    const auto& cell{cells[s]};
+                    const auto& tally{tallies[op_index][k_index][s_index]};
 
-                    const auto landing{
-                            cell.answers ?
-                                    100.0 * static_cast<double>(cell.landings) / static_cast<double>(cell.answers) :
-                                    0.0};
+                    const auto rate{[](const std::size_t hits, const std::size_t total) {
+                        return total ? 100.0 * static_cast<double>(hits) / static_cast<double>(total) : 0.0;
+                    }};
 
-                    const auto overshoot{
-                            cell.overshoot_count ? static_cast<double>(cell.overshoot_sum) /
-                                                           static_cast<double>(cell.overshoot_count) :
-                                                   0.0};
-
-                    const auto lost{
-                            cell.answers ? static_cast<double>(cell.lost_sum) / static_cast<double>(cell.answers) :
-                                           0.0};
-
-                    const auto cascade{
-                            cell.cascade_count ?
-                                    static_cast<double>(cell.cascade_sum) / static_cast<double>(cell.cascade_count) :
-                                    0.0};
+                    const auto mean{[](const auto sum, const std::size_t total) {
+                        return total ? static_cast<double>(sum) / static_cast<double>(total) : 0.0;
+                    }};
 
                     std::printf(
-                            "  %-11s %2zu  %-10s %8zu %8zu %8.1f%% %10.1f %7.1f %9.2f\n", std::string{name(op)}.c_str(),
-                            k, std::string{strategies[s].name}.c_str(), cell.answers, cell.refusals, landing, overshoot,
-                            lost, cascade);
+                            "  %-11s %2zu  %-15s %7zu %7zu %7.1f%% %7.1f%% %7.1f%% %6zu %8.2f %8.0f %6.2f %6.2f "
+                            "%9.1f\n",
+                            std::string{name(ops[op_index])}.c_str(), ks[k_index],
+                            std::string{arms[s_index].name}.c_str(), tally.answers, tally.refusals,
+                            rate(tally.first_landings, tally.answers),
+                            rate(tally.terminal_landings, tally.terminal_interior),
+                            rate(tally.completions, tally.trials), tally.capped, mean(tally.attempts_sum, tally.trials),
+                            mean(tally.conv_sum, tally.conv_count), mean(tally.lost_sum, tally.conv_count),
+                            mean(tally.spurious_sum, tally.conv_count),
+                            mean(tally.overshoot_sum, tally.overshoot_count));
                 }
             }
+        }
+
+        // The pooled row summary with Wilson 95 percent intervals on first landing and completion.
+        std::printf("\n  pooled over all cells and seeds, Wilson 95%% intervals\n");
+
+        for (std::size_t s_index{0}; s_index < arms.size(); ++s_index)
+        {
+            Tally pooled{};
+
+            for (std::size_t op_index{0}; op_index < ops.size(); ++op_index)
+            {
+                for (std::size_t k_index{0}; k_index < ks.size(); ++k_index)
+                {
+                    const auto& tally{tallies[op_index][k_index][s_index]};
+
+                    pooled.trials += tally.trials;
+
+                    pooled.answers += tally.answers;
+
+                    pooled.refusals += tally.refusals;
+
+                    pooled.first_landings += tally.first_landings;
+
+                    pooled.completions += tally.completions;
+
+                    pooled.capped += tally.capped;
+                }
+            }
+
+            const auto [land_low, land_high]{wilson(pooled.first_landings, pooled.answers)};
+
+            const auto [complete_low, complete_high]{wilson(pooled.completions, pooled.trials)};
+
+            std::printf(
+                    "  %-15s answers %6zu refusals %5zu first-landing [%5.1f%%, %5.1f%%] completion [%5.1f%%, %5.1f%%] "
+                    "capped %zu\n",
+                    std::string{arms[s_index].name}.c_str(), pooled.answers, pooled.refusals, land_low, land_high,
+                    complete_low, complete_high, pooled.capped);
+        }
+
+        for (std::size_t seed{0}; seed < seeds; ++seed)
+        {
+            std::printf("  seed %zu first-landing:", seed);
+
+            for (std::size_t s_index{0}; s_index < arms.size(); ++s_index)
+            {
+                const auto answers{seed_answers[seed][s_index]};
+
+                std::printf(
+                        " %s %.1f%%", std::string{arms[s_index].name}.c_str(),
+                        answers ? 100.0 * static_cast<double>(seed_landings[seed][s_index]) /
+                                          static_cast<double>(answers) :
+                                  0.0);
+            }
+
+            std::printf("\n");
         }
     }
 
@@ -1360,8 +1993,21 @@ int main(const int argc, const char** argv)
     std::printf("nonminimal answers: %zu, %zu extra bytes in total\n", nonminimal_answers, nonminimal_bytes);
 
     std::printf(
-            "known-clean arm: %zu answers, every one asserted covered and landed; %zu refusals\n", clean_answers,
-            clean_refusals);
+            "known-clean certified arm: %zu answers, every one asserted covered and landed; %zu refusals\n",
+            clean_answers, clean_refusals);
+
+    std::printf(
+            "repairability at the blind anchor: %zu repairable, %zu unrepairable; the walk answered %zu of the "
+            "unrepairable, the vacuous share its stratification labels\n",
+            repairable_total, unrepairable_total, vacuous_walk_answers);
+
+    std::printf(
+            "exact anchored arm: %zu answers, the decider asserted at or before the walk on every repairable "
+            "trial and refusing every unrepairable one before the anchor advances; %zu paired answers, %zu bytes "
+            "saved on repairable trials, net displacement %td bytes over all pairs\n",
+            exact_answers_total, exact_pairs, exact_saved_bytes, exact_net_displacement);
+
+    std::printf("duplicate sampled positions across all cells: %zu\n", duplicate_positions);
 
     if (oracle_failures != 0 || theorem_failures != 0)
     {
