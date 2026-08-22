@@ -83,6 +83,7 @@
 #include <array>
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -107,13 +108,20 @@ using figures::Token;
 class Lcg
 {
 public:
-    explicit Lcg(const unsigned seed) : state_{seed} {}
+    explicit Lcg(const std::uint32_t seed) : state_{seed} {}
 
-    unsigned next()
+    /**
+     * @brief A full-width draw, the whole mixed state, so position sampling covers every offset of a span.
+     *
+     * The archived campaigns drew fifteen-bit values here, confining each cell's positions to a
+     * multiplicatively spread lattice of 32,768 offsets, a disclosed limitation of those archives; this
+     * widening postdates them and changes every future schedule.
+     */
+    std::uint32_t next()
     {
         state_ = state_ * 1664525U + 1013904223U;
 
-        return (state_ >> 16U) & 0x7fffU;
+        return state_ ^ (state_ >> 16U);
     }
 
     /**
@@ -127,7 +135,7 @@ public:
     }
 
 private:
-    unsigned state_;
+    std::uint32_t state_;
 };
 
 /**
