@@ -706,8 +706,6 @@ std::size_t minimal_answer(
             if (const auto origin{lexer.is_split_window(input.substr(at, length))})
             {
                 minimal = std::min(minimal, at + *origin);
-
-                break;
             }
         }
     }
@@ -904,9 +902,25 @@ int main(const int argc, const char** argv)
 
     std::printf("pristine oracle: %zu violations over %zu rows x 512 samples\n", oracle_failures, rows.size());
 
+    // The end-of-input asymmetry, constructed rather than awaited: on an input whose last byte is the
+    // delimiter, the at placement answers at that final byte while the past placement refuses, the one
+    // availability difference the paired regression's opportunistic branch guards. No archived campaign
+    // trial ever reached it, since damage sampling keeps clear of both corpus edges, so this fixture
+    // forces the branch's premise directly.
+    {
+        constexpr std::string_view final_newline{"aa\n"};
+
+        if (past_next(final_newline, 1, '\n') || at_next(final_newline, 1, '\n') != std::optional<std::size_t>{2})
+        {
+            std::printf("FAILED: the final-delimiter fixture broke\n");
+
+            return 1;
+        }
+    }
+
     std::printf(
-            "deterministic: corpus seeds 0x5eed0001 through 0x5eed0003, schedule seed 0x5eedc0de offset per "
-            "(op, k)\n");
+            "deterministic: corpus seeds 0x5eed0001 through 0x5eed0003, schedule seed 0x5eedc0de and payload seed "
+            "0x5eedbeef each offset per (op, k)\n");
 
     // The generated corpora, written beside the archive so every column recomputes from the archive alone; the
     // real document is already on disk, hashed in the data notes.
@@ -1025,6 +1039,8 @@ int main(const int argc, const char** argv)
 
                 Lcg positions{0x5eedc0deU + static_cast<unsigned>(k) * 7U + static_cast<unsigned>(op) * 131U};
 
+                Lcg payload{0x5eedbeefU + static_cast<unsigned>(k) * 7U + static_cast<unsigned>(op) * 131U};
+
                 std::size_t absorbed{0};
 
                 for (std::size_t trial{0}; trial < trials; ++trial)
@@ -1033,7 +1049,7 @@ int main(const int argc, const char** argv)
 
                     const auto p{64 + (static_cast<std::size_t>(positions.next()) * 48271U) % span};
 
-                    auto y{damage(row.corpus, op, p, k, positions)};
+                    auto y{damage(row.corpus, op, p, k, payload)};
 
                     const auto e{failure_offset(row.lexer, y.input)};
 
