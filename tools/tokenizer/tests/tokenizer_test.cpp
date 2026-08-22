@@ -753,6 +753,92 @@ TEST(Tokenizer_recovery, Recover_lands_at_the_certified_window_origin)
     EXPECT_TRUE(tokenizer.next<Rec_token>().end_of_input());
 }
 
+TEST(Tokenizer_recovery, Recover_from_failure_returns_the_window_evidence_interval)
+{
+    // The same window fixture as above, asked through the evidence-returning interface: the four-byte
+    // occurrence "def " begins at 6 with origin 3, so the certified start is 9 and the evidence interval
+    // is [6, 10), reported as a window. recover()'s skip count is this start minus the position before.
+    core::Builder builder;
+
+    builder.add_token(plus(any_of(Set::alpha())), Rec_token::identifier, 2);
+    builder.add_token(plus(any_of(Set::whitespace())), Rec_token::whitespace, 1);
+
+    Tokenizer tokenizer{builder.build(), "abc@@@def ghi"};
+
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_token());
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_error());
+
+    const auto found{tokenizer.recover_from_failure()};
+
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(found->start, 9U);
+    EXPECT_EQ(found->evidence_begin, 6U);
+    EXPECT_EQ(found->evidence_end, 10U);
+    EXPECT_TRUE(found->window);
+    EXPECT_EQ(tokenizer.offset(), 9U);
+}
+
+TEST(Tokenizer_recovery, Recover_from_clean_floors_the_search_and_covers_the_evidence)
+{
+    // The blind search answers at the first semicolon, inside what the caller knows is damaged; the
+    // clean-anchored search starts at the caller's clean offset and answers there, its byte evidence at or
+    // past the floor by construction. The two arms differ on the same input, which is the interface split's
+    // whole point.
+    core::Builder builder;
+
+    builder.add_token(text("ab"), Rec_token::identifier, 1);
+    builder.add_token(text(";"), Rec_token::semicolon, 1);
+
+    const auto lexer{builder.build()};
+
+    Tokenizer blind{lexer, "@;@;ab"};
+
+    ASSERT_TRUE(blind.next<Rec_token>().has_error());
+
+    const auto blind_found{blind.recover_from_failure()};
+
+    ASSERT_TRUE(blind_found.has_value());
+    EXPECT_EQ(blind_found->start, 1U);
+    EXPECT_EQ(blind_found->evidence_begin, 1U);
+    EXPECT_EQ(blind_found->evidence_end, 2U);
+    EXPECT_FALSE(blind_found->window);
+
+    Tokenizer clean{lexer, "@;@;ab"};
+
+    ASSERT_TRUE(clean.next<Rec_token>().has_error());
+
+    const auto clean_found{clean.recover_from_clean(4)};
+
+    ASSERT_TRUE(clean_found.has_value());
+    EXPECT_EQ(clean_found->start, 4U);
+    EXPECT_GE(clean_found->evidence_begin, 4U);
+    EXPECT_EQ(clean.offset(), 4U);
+
+    const auto resumed{clean.next<Rec_token>()};
+
+    ASSERT_TRUE(resumed.has_token());
+    EXPECT_EQ(resumed.token().lexeme(), "ab");
+}
+
+TEST(Tokenizer_recovery, Recover_from_clean_refuses_without_moving)
+{
+    // A clean floor past every certificate leaves nothing to find; the refusal must not move the position,
+    // the same fail-closed shape recover() keeps.
+    core::Builder builder;
+
+    builder.add_token(text("ab"), Rec_token::identifier, 1);
+    builder.add_token(text(";"), Rec_token::semicolon, 1);
+
+    Tokenizer tokenizer{builder.build(), "@;ab"};
+
+    ASSERT_TRUE(tokenizer.next<Rec_token>().has_error());
+
+    const auto before{tokenizer.offset()};
+
+    EXPECT_FALSE(tokenizer.recover_from_clean(4).has_value());
+    EXPECT_EQ(tokenizer.offset(), before);
+}
+
 TEST(Tokenizer_recovery, Recover_uses_certified_bytes_and_promises_nothing_past_resynchronization)
 {
     // The semicolon is a certified byte, so recovery lands on it directly; the suffix then errors again, which

@@ -426,6 +426,41 @@ public:
     [[nodiscard]] std::optional<std::size_t> next_certified_start(
             const std::string_view input, const std::size_t from) const
     {
+        const auto found{next_certified_evidence(input, from)};
+
+        return found ? std::optional{found->start} : std::nullopt;
+    }
+
+    /**
+     * @brief The answer a certificate supports, together with the evidence that supports it.
+     *
+     * The start is the certified token-start position; the evidence is the certified byte itself
+     * (evidence_begin == start, one byte) or the whole window occurrence, and the guarantee is exactly the
+     * certificate's: the repair-invariance transfer requires the evidence interval to survive whatever changed,
+     * so a caller comparing evidence_begin against a known-clean lower bound can decide whether the answer
+     * carries the pristine-input guarantee or only the damaged-suffix one.
+     */
+    struct Certified_start
+    {
+        std::size_t start;          ///< The certified token-start position, the answer.
+        std::size_t evidence_begin; ///< First byte of the supporting evidence.
+        std::size_t evidence_end;   ///< One past the supporting evidence's last byte.
+        bool window;                ///< True for window evidence; false for a certified byte at the start itself.
+    };
+
+    /**
+     * @brief The certificate walk of next_certified_start(), reporting the supporting evidence with the answer.
+     *
+     * Same walk, same evidence order, same refusal; the position-only form above is this one with the evidence
+     * dropped. The evidence lies wholly at or after the search offset by construction, which is what makes the
+     * comparison against a caller's clean bound meaningful.
+     * @param input The input being scanned.
+     * @param from The offset the search starts at; at or past the input's size finds nothing.
+     * @return The first certified answer in evidence order with its evidence interval, or std::nullopt.
+     */
+    [[nodiscard]] std::optional<Certified_start> next_certified_evidence(
+            const std::string_view input, const std::size_t from) const
+    {
         const auto bytes{simulator_.has_split_points()};
 
         const auto windows{!simulator_.nullable()};
@@ -441,7 +476,7 @@ public:
         {
             if (bytes && is_split_point(input[at]))
             {
-                return at;
+                return Certified_start{.start = at, .evidence_begin = at, .evidence_end = at + 1, .window = false};
             }
 
             if (!windows)
@@ -464,7 +499,11 @@ public:
 
                 if (const auto& origin{found->second})
                 {
-                    return at + *origin;
+                    return Certified_start{
+                            .start = at + *origin,
+                            .evidence_begin = at,
+                            .evidence_end = at + length,
+                            .window = true};
                 }
             }
         }

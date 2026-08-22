@@ -841,6 +841,13 @@ certificate lies ahead, the position does not move and the refusal is explicit. 
 relative to the active mode's automaton. The position-only form is `Lexer::next_certified_start(input, from)`,
 for drivers that plan without moving.
 
+The evidence itself is returned on request: `recover_from_failure()` answers with the certified start and the
+evidence interval and kind behind it, so a caller can reject an answer whose evidence overlaps text it
+distrusts, and `recover_from_clean(clean_from)` floors the search at a caller's known-clean offset (an editor
+knows its edit span), so the returned evidence is covered by construction. `recover()` stays the skip-count
+form above, all three refuse identically, and the lexer-level form is
+`Lexer::next_certified_evidence(input, from)`.
+
 When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored
 queries answer exactly rather than conservatively, because they may use what the certificates cannot: that the
 input ends where the tail ends.

@@ -132,6 +132,33 @@ public:
     [[nodiscard]] std::optional<std::size_t> recover();
 
     /**
+     * @brief recover(), with the supporting evidence returned: certified relative to the damaged suffix.
+     *
+     * The failure-anchored contract, named as such: the search starts one past the current position, which
+     * after an error is the failure offset, and the answer's guarantee quantifies over repairs of text before
+     * the evidence interval it returns. The scanner does not know the damage's true extent, so when the
+     * corruption reaches past the evidence, the transfer to the intended input is forfeit; the returned
+     * interval is exactly what a caller needs to check that condition against knowledge of its own. Flat
+     * token sets carry the published theorems; under modes the answer is per-automaton, as for recover().
+     * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
+     */
+    [[nodiscard]] std::optional<core::Lexer::Certified_start> recover_from_failure();
+
+    /**
+     * @brief Recovery under a caller-supplied clean bound: the pristine-input guarantee.
+     *
+     * The clean-anchored contract: the search starts at the later of one past the current position and
+     * clean_from, so the returned evidence begins at or after clean_from by construction. When the caller's
+     * bound is truly at or past the damage's end, an editor's edit span or a transport frame's boundary, the
+     * evidence lies in undamaged text and the certificate transfers to the intended input, the guarantee the
+     * failure-anchored form cannot establish alone. Flat token sets carry the published theorems; under modes
+     * the answer is per-automaton, as for recover().
+     * @param clean_from The caller's lower bound on undamaged text.
+     * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
+     */
+    [[nodiscard]] std::optional<core::Lexer::Certified_start> recover_from_clean(std::size_t clean_from);
+
+    /**
      * @brief Make the lexer of the given mode recognize the following tokens.
      * @tparam T The mode type (enum or integral).
      * @param mode The mode to activate, as passed to the constructor.
