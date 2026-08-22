@@ -89,20 +89,32 @@ std::optional<std::size_t> Tokenizer::recover()
 {
     // The search starts past the current position: after an error that position holds the offending byte, and
     // recovering to where the scan already stands would not be a recovery.
+    const auto before{offset_};
+
+    const auto found{recover_from_failure()};
+
+    return found ? std::optional{found->start - before} : std::nullopt;
+}
+
+std::optional<core::Lexer::Certified_start> Tokenizer::recover_from_failure()
+{
+    return recover_from_clean(0);
+}
+
+std::optional<core::Lexer::Certified_start> Tokenizer::recover_from_clean(const std::size_t clean_from)
+{
     const auto& lexer{automatic_ ? automatic_->mode(mode_) : lexers_[mode_]};
 
-    const auto found{lexer.next_certified_start(input_, offset_ + 1)};
+    const auto found{lexer.next_certified_evidence(input_, std::max(clean_from, offset_ + 1))};
 
     if (!found)
     {
         return std::nullopt;
     }
 
-    const auto skipped{*found - offset_};
+    offset_ = found->start;
 
-    offset_ = *found;
-
-    return skipped;
+    return found;
 }
 
 } // namespace munch::tools::tokenizer
