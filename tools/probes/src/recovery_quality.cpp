@@ -53,7 +53,7 @@
 // since the pristine prefix is a repair of what precedes the preserved suffix. skip-one and the four raw
 // delimiter placements are the classical conventions, the past placement repaired to return the end-of-input
 // offset at a final delimiter rather than refusing. token-newline and token-semicolon are the token-aware
-// reading a referee asked for, synchronizing on a designated token: the delimiter's own punctuation token
+// reading, synchronizing on a designated token: the delimiter's own punctuation token
 // exactly, or an all-whitespace token carrying the newline, so a string or comment that merely contains the
 // delimiter byte never synchronizes.
 //
@@ -576,7 +576,7 @@ enum class Kind : std::size_t
     /// The certificate walk, byte and window evidence in evidence order.
     Certified,
 
-    /// The anchored-exact procedure: the shipped strictly-stronger decider at the anchor, the anchor
+    /// The anchored procedure: the shipped complete-repair-invariance decider at the anchor, the anchor
     /// advancing past a beyond-repair tail's poison until a certificate holds, so refusal at one anchor
     /// is a decision, not a dead end.
     Exact,
@@ -588,8 +588,8 @@ enum class Kind : std::size_t
     Delim,
 
     /// Token-aware delimiter search: skip until the scan makes progress, discard emitted tokens through
-    /// the first containing the delimiter, resume one past that token, classical two-phase panic made
-    /// concrete at the lexical layer.
+    /// the first designated synchronizer, resume one past that token, classical two-phase panic made
+    /// concrete at the lexical layer under a fresh restart.
     TokenDelim,
 };
 
@@ -1211,7 +1211,7 @@ Convergence converge(
         }
     }
 
-    // The empty-region regression a referee asked for: convergence at the corruption end leaves no room
+    // The empty-region regression: convergence at the corruption end leaves no room
     // for either count.
     if (result.at <= y.end && (result.lost != 0 || result.spurious != 0))
     {
@@ -2164,8 +2164,7 @@ int main(const int argc, const char** argv)
     if (csv)
     {
         // A partial archive must never report success: stream errors and the close are
-        // checked before any summary claims the run (a referee's artifact-hardening ask;
-        // no byte of a healthy run changes).
+        // checked before any summary claims the run; no byte of a healthy run changes.
         if (std::ferror(csv) != 0 || std::fclose(csv) != 0)
         {
             std::fprintf(stderr, "csv write or close failed\n");

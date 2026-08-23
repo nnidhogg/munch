@@ -87,7 +87,8 @@ std::string_view Tokenizer::input() const noexcept
 
 std::optional<std::size_t> Tokenizer::recover()
 {
-    // The search starts past the current position: after an error that position holds the offending byte, and
+    // The search starts past the current position: after an error that position is the failure offset, the
+    // scan's final committed offset where the failed token attempt began, and
     // recovering to where the scan already stands would not be a recovery.
     const auto before{offset_};
 

@@ -845,7 +845,9 @@ The evidence itself is returned on request: `recover_from_failure()` answers wit
 evidence interval and kind behind it, so a caller can reject an answer whose evidence overlaps text it
 distrusts, and `recover_from_clean(clean_from)` floors the search at a caller's known-clean offset (an editor
 knows its edit span), so the returned evidence is covered by construction. `recover()` stays the skip-count
-form above, all three refuse identically, and the lexer-level form is
+form above. All three leave the position unchanged when their own search refuses; `recover()` and
+`recover_from_failure()` search identically, while the clean floor can shrink the search domain, so the
+clean form may refuse where the failure-anchored forms answer. The lexer-level form is
 `Lexer::next_certified_evidence(input, from)`.
 
 When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored

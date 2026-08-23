@@ -252,12 +252,15 @@ public:
 
     /**
      * @brief The first anchored-certified start in the tail at or after an offset, under the exact
-     *        repair-invariance contract: every completely tokenizable repair of whatever preceded the tail
-     *        places a token boundary there, the tail's end being the end of the input.
+     *        complete-repair invariance contract: every completely tokenizable repair of whatever preceded
+     *        the tail places a token boundary there, the tail's end being the end of the input.
      *
-     * The anchored decider is exact where the certificate walk is merely sound: certificates quantify over
-     * every input containing their evidence and cannot use the end of input, while this query can, so it
-     * answers strictly more positions at the tail. Decided by one scenario play per reachable state, no
+     * The anchored decider is exact for that complete-repair question, where the certificate walk is
+     * merely sound: certificates quantify over every input containing their evidence and cannot use the
+     * end of input, while this query can, so on a repairable tail it answers at or before any certificate.
+     * The certificates' own guarantee also binds repairs whose scans merely commit through their evidence
+     * without completing, a larger set this decider does not speak about, so neither subsumes the other
+     * outright. Decided by one scenario play per reachable state, no
      * repair enumerated. When no repair of any prefix makes the whole tokenizable, every position is
      * vacuously invariant and this query deliberately refuses instead of answering; nullable token sets sit
      * outside the underlying model and are refused outright, as for is_split_window().

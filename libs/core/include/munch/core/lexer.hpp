@@ -528,11 +528,13 @@ public:
      *
      * The anchored counterpart of next_certified_start(), exact where the walk is merely sound: with the
      * tail's end known to be the end of the input, every completely tokenizable repair of whatever preceded
-     * the tail places a token boundary at the returned position. For that complete-repair question, strictly
-     * more positions answer here than under the certificates, which cannot use the end of input; the
-     * certificates' own guarantee also binds repairs whose scans merely reach their evidence, a set this
-     * decider does not speak about. A tail beyond repair refuses rather than
-     * answering vacuously, and nullable token sets are refused outright.
+     * the tail places a token boundary at the returned position. For that complete-repair question,
+     * strictly more positions answer here than under the certificates, which cannot use the end of input;
+     * the certificates' own guarantee also binds repairs whose scans merely reach their evidence, a set
+     * this decider does not speak about: over {"ab", "ba"} the tail "ab" answers zero here, yet the repair
+     * "b" gives "bab", commits "ba", and dies having reached one-byte evidence with no boundary at the
+     * answer's image. A tail beyond repair refuses rather than answering vacuously, and
+     * nullable token sets are refused outright.
      * @param tail The preserved suffix of the input, its end the end of the input.
      * @param from The offset the search starts at; at or past the tail's size finds nothing.
      * @return The first anchored-certified position, or std::nullopt when none exists or no repair does.
