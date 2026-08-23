@@ -102,7 +102,8 @@
 // Usage. recovery_quality [corpus KiB] [trials per cell] [csv path] [real json corpus path] [seeds]
 // Defaults are sized to run as a test; the campaign passes larger figures and archives the CSV. The optional
 // fourth argument adds an ecological row: a real-world JSON document, read verbatim, held to the same complete
-// tokenizability assertion, the same damage schedule, and the same oracle as the generated rows. The fifth is
+// tokenizability assertion, the same damage protocol, and the same oracle as the generated rows; the schedule
+// and payload streams are salted per row, so no two rows share one. The fifth is
 // the number of independent seeds, three by default, each a fully separate schedule of positions and payloads.
 
 #include <algorithm>
@@ -977,7 +978,8 @@ Incident run_incident(
         const auto start{arm.clean ? std::max(clean_floor, fail + 1) : fail + 1};
 
         // An exhausted search start ends the incident as completed, a driver convention for scoring; the
-        // library primitives refuse at end of input instead. No certified arm reaches this branch.
+        // library primitives refuse at end of input instead. No certified arm reached this branch in the
+        // archived campaigns.
         if (start >= input.size())
         {
             incident.terminal = input.size();

@@ -851,8 +851,9 @@ clean form may refuse where the failure-anchored forms answer. The lexer-level f
 `Lexer::next_certified_evidence(input, from)`.
 
 When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored
-queries answer exactly rather than conservatively, because they may use what the certificates cannot: that the
-input ends where the tail ends.
+queries answer exactly rather than conservatively on non-nullable token sets, the qualification their
+documentation carries, because they may use what the certificates cannot: that the input ends where the
+tail ends.
 
 ```cpp
 // Over the token set {ab, ba}: position 0 of the tail "ab" is provably a token start in every

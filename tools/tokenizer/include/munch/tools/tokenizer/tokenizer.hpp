@@ -137,7 +137,7 @@ public:
      * The failure-anchored contract, named as such: the search starts one past the current position, which
      * after an error is the failure offset, and the answer's guarantee quantifies over repairs of text before
      * the evidence interval it returns whose scans commit through that evidence; a repair the scan never
-     * carries to the evidence is outside the guarantee, with a completely tokenizable repaired remainder the
+     * carries to the evidence is outside the guarantee, with a completely tokenizable repaired input the
      * simplest sufficient condition. The scanner does not know the damage's true extent, so when the
      * corruption reaches past the evidence, the transfer to the intended input is forfeit; the returned
      * interval is exactly what a caller needs to check that condition against knowledge of its own. Flat
@@ -153,9 +153,9 @@ public:
      * clean_from, so the returned evidence begins at or after clean_from by construction. When the caller's
      * bound is truly at or past the damage's end, an editor's edit span or a transport frame's boundary, the
      * evidence lies in undamaged text and the certificate transfers to the intended input provided the intended
-     * input's scan reaches the evidence, with complete tokenizability of the intended remainder the sufficient
-     * case, the guarantee the failure-anchored form cannot establish alone. Flat token sets carry the published
-     * theorems; under modes
+     * input's scan reaches the evidence, with the whole intended input being completely tokenizable the
+     * sufficient case, the guarantee the failure-anchored form cannot establish alone. Flat token sets carry
+     * the published theorems; under modes
      * the answer is per-automaton, as for recover().
      * @param clean_from The caller's lower bound on undamaged text.
      * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
