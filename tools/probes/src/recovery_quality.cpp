@@ -3,7 +3,8 @@
 //
 // The question. next_certified_start() returns positions with a soundness theorem: in every tokenizable repair of
 // the input before an anchor, the image of a certified position begins a token. The library also ships the
-// anchored-exact machinery, next_anchored_start() and minimal_repair(), exact where the walk is merely sound.
+// anchored machinery, next_anchored_start() and minimal_repair(), exact for the complete-repair predicate; the
+// walk's soundness binds the larger class of repairs whose scans commit through the preserved evidence.
 // The classical conventions, skip one byte, skip to a delimiter raw or token-aware, promise nothing. This probe
 // drives every arm through completed incidents under one stopping rule and quantifies each against the same
 // oracle: where the first answer lands, where the terminal one does, whether the incident completes, refuses, or
@@ -66,7 +67,8 @@
 // fires on the exact precondition: a certified answer whose evidence begins at or past the corruption end must
 // land, asserted for every move; the conservative end-plus-three assertion stays beside it, and the summary
 // reports covered and uncovered tallies with the nonminimality figure. The generated corpora are written
-// beside the archive so every column recomputes from the archive alone.
+// beside the archive so the aggregate columns recompute from the archive alone; the mapped-oracle columns
+// need this pinned source tree as well, the boundary oracle and the lexer being live machinery.
 //
 // Metrics, per grammar row, operation, k, and arm, every (op, k, arm) cell pooled over independent seeds and the
 // per-seed figures printed beside the pooled ones (damage the grammar absorbs is counted and set aside):
@@ -974,6 +976,8 @@ Incident run_incident(
     {
         const auto start{arm.clean ? std::max(clean_floor, fail + 1) : fail + 1};
 
+        // An exhausted search start ends the incident as completed, a driver convention for scoring; the
+        // library primitives refuse at end of input instead. No certified arm reaches this branch.
         if (start >= input.size())
         {
             incident.terminal = input.size();
@@ -1404,8 +1408,9 @@ int main(const int argc, const char** argv)
             "positions by unbiased rejection sampling, attempt budget 100 per incident\n",
             seeds);
 
-    // The generated corpora, written beside the archive so every column recomputes from the archive alone; the
-    // real document is already on disk, hashed in the data notes.
+    // The generated corpora, written beside the archive so the aggregate columns recompute from the archive
+    // alone, the mapped-oracle columns needing this pinned source tree besides; the real document is already on
+    // disk, hashed in the data notes.
     if (csv_path != nullptr)
     {
         for (const auto& row : rows)

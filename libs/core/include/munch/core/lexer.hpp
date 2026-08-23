@@ -436,9 +436,10 @@ public:
      *
      * The start is the certified token-start position; the evidence is the certified byte itself
      * (evidence_begin == start, one byte) or the whole window occurrence, and the guarantee is exactly the
-     * certificate's: the repair-invariance transfer requires the evidence interval to survive whatever changed,
-     * so a caller comparing evidence_begin against a known-clean lower bound can decide whether the answer
-     * carries the pristine-input guarantee or only the damaged-suffix one.
+     * certificate's: the repair-invariance transfer requires the evidence interval to survive whatever changed
+     * and the repaired scan to commit through it, so a caller comparing evidence_begin against a known-clean
+     * lower bound can decide whether the answer carries the pristine-input guarantee or only the
+     * damaged-suffix one.
      */
     struct Certified_start
     {
@@ -453,7 +454,10 @@ public:
      *
      * Same walk, same evidence order, same refusal; the position-only form above is this one with the evidence
      * dropped. The evidence lies wholly at or after the search offset by construction, which is what makes the
-     * comparison against a caller's clean bound meaningful.
+     * comparison against a caller's clean bound meaningful. The certificate binds every repair of the text
+     * before the evidence whose resumed scan commits through that evidence; a repair whose scan never reaches
+     * the evidence is outside the guarantee, with a completely tokenizable repaired remainder the simplest
+     * sufficient condition for reaching it.
      * @param input The input being scanned.
      * @param from The offset the search starts at; at or past the input's size finds nothing.
      * @return The first certified answer in evidence order with its evidence interval, or std::nullopt.
