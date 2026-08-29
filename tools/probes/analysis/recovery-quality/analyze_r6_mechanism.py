@@ -18,6 +18,7 @@
 import csv
 import gzip
 import os
+import statistics
 import sys
 
 COLUMN_COUNT = 28
@@ -86,6 +87,13 @@ def main():
             begin = int(row[col["evidence_begin"]])
             width = int(row[col["evidence_end"]]) - begin
             kind = row[col["evidence_kind"]]
+            # The kind's domain first, then the searched width range, then the width law. The
+            # equivalence alone would wave through an unknown kind on any multi-byte evidence, both of
+            # its sides false, and it says nothing at all about a width of zero or five, which the
+            # search never produces: a row outside the range would otherwise be retained in the totals
+            # and silently dropped from the fixed shape buckets below.
+            assert kind in ("byte", "window"), row
+            assert 1 <= width <= 4, row
             assert (kind == "byte") == (width == 1), row
 
             # The coverage identity, asserted per row: covered is exactly travel >= overhang - 1.
@@ -102,8 +110,11 @@ def main():
                     row[col["grammar"]].startswith("c-like bare"),
                     begin,
                     begin + width,  # evidence interval
-                    end,
-                    int(row[col["p"]]),  # corruption end, damage start
+                    end,  # the corruption end
+                    int(row[col["p"]]),  # the damage start
+                    begin - (failure + 1),  # the evidence travel
+                    row[col["grammar"]],
+                    abs(int(row[col["first"]]) - int(row[col["first_true"]])) if row[col["first_true"]] else None,
                 )
             )
 
@@ -144,9 +155,15 @@ def main():
         emit(f"  {label}: {100 * len(windows) / len(members):.1f}%, {byte_rate}, {window_rate}")
 
     emit("certificate shape (kind/width, answers, covered%):")
+    shape_total = 0
     for kind, width in (("byte", 1), ("window", 2), ("window", 3), ("window", 4)):
         members = [r for r in rows if r[3] == kind and r[4] == width]
+        shape_total += len(members)
         emit(f"  {kind}/{width}: {len(members)}, {100 * sum(1 for r in members if r[1]) / len(members):.1f}%")
+
+    # The four buckets partition the certified answers: a row outside them would be counted in the
+    # totals above and missing here, which is exactly how a corrupted shape would hide.
+    assert shape_total == len(rows), (shape_total, len(rows))
 
     emit("pooled coverage by operation and by damage size:")
     for field, values in ((5, ("substitute", "insert", "delete")), (6, ("1", "4", "16"))):
@@ -165,6 +182,24 @@ def main():
     emit(f"  begins before the damage start: {sum(1 for r in uncovered_rows if r[8] < r[11])}")
     emit(f"  ends at or before the corruption end: {sum(1 for r in uncovered_rows if r[9] <= r[10])}")
     emit(f"  straddles the corruption end: {sum(1 for r in uncovered_rows if r[9] > r[10])}")
+
+    # The travel is what the search spends to certify, and by the overhang law it is also what coverage
+    # requires: the same quantity read in opposite directions, per row.
+    emit(
+        "search travel and coverage per row (row, answers, median travel, median overhang, mean travel, "
+        "covered%, mean overshoot):"
+    )
+    labels = sorted({r[13] for r in rows}, key=lambda g: statistics.median([r[12] for r in rows if r[13] == g]))
+    for label in labels:
+        members = [r for r in rows if r[13] == label]
+        overshoots = [r[14] for r in members if r[14] is not None]
+        emit(
+            f"  {label}: {len(members)}, {statistics.median([r[12] for r in members]):.1f}, "
+            f"{statistics.median([r[0] for r in members]):.1f}, "
+            f"{statistics.mean([r[12] for r in members]):.1f}, "
+            f"{100 * sum(1 for r in members if r[1]) / len(members):.1f}%, "
+            f"{statistics.mean(overshoots):.1f}"
+        )
 
     emit("bare row within-row split (kind, answers, uncovered, uncovered%, uncovered landed):")
     for kind in ("byte", "window"):

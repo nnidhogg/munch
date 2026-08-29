@@ -3,10 +3,13 @@
 # archived r6 campaign that the analyzer must refuse. The suite first establishes the baseline, running the
 # analyzer on the decompressed gold archive and requiring exit 0 together with three emissions byte-identical
 # to the archived copies, so a later rejection can be attributed to the mutation rather than to drift. It
-# then reproduces the archived mechanism emission with analyze_r6_mechanism.py from the same staged CSV, so
+# then reproduces both archived mechanism emissions with analyze_r6_mechanism.py from the same staged CSV,
+# the printed figures and the overhang data file the manuscript's plot reads coordinate by coordinate, so
 # the second checked-in program that feeds the manuscript is pinned to its archived output as well. Each
-# case that follows stages one corrupted archive and requires a nonzero analyzer exit; a mutation the
-# analyzer accepts is a hole in the audit and fails the suite.
+# case that follows stages one corrupted archive and requires a nonzero exit from the program it is aimed
+# at, the auditing analyzer for all but one case and the mechanism companion for that one, so the
+# companion's own refusal of a corrupted archive is executable rather than assumed; a mutation the program
+# accepts is a hole in the audit and fails the suite.
 #
 # Two properties beyond exit codes are checked, because an exit code alone is weak evidence. First, a
 # rejection must come from the guard the mutation aims at: the analyzer's stderr is captured and searched
@@ -25,7 +28,7 @@
 # name it as the run's only failure, and exit nonzero. The mode's own exit code is therefore inverted, 0
 # exactly when the suite failed for that reason and 1 otherwise, and the run prints a line saying so.
 #
-# Usage: test_analyze_r6.py [--prove-detection] [data-dir]
+# Usage: test_analyze_r6.py [--prove-detection] [--list-cases] [--case NAME] [data-dir]
 #
 # The suite is deterministic and stdlib-only. It never writes inside the data directory: the gold archive is
 # decompressed once into a temporary working directory, held in memory as lines, and each mutant is written
@@ -44,7 +47,10 @@ GOLD_DIR = "r6"
 CAMPAIGN = "recovery-quality-six-rows-512k-500-r6.csv"
 SIDECAR_SUFFIX = ".moves.csv"
 EMISSIONS = ("r6-stats.txt", "r6-pooled-table.tex", "r6-landing-figure.csv")
-MECHANISM_EMISSION = "r6-mechanism.txt"
+
+# Both files analyze_r6_mechanism.py writes: the printed mechanism figures, and the overhang data file the
+# manuscript's plot reads directly, which is pinned here for the same reason the tables are.
+MECHANISM_EMISSIONS = ("r6-mechanism.txt", "r6-overhang.dat")
 
 # The eleven arms the harness runs against every damaging incident, and the six of them that recover by
 # scanning for a delimiter rather than by deciding. Only the arm count is needed here, to check that a whole
@@ -80,6 +86,61 @@ NEUTERED_CASE = "sidecar-answer-equals-evidence-end"
 
 # The operation name the cell-renaming case writes, chosen so it is not one the schedule ever ran.
 UNKNOWN_OPERATION = "scramble"
+
+# The grammar name the unknown-row case writes, chosen so it is not one of the six rows the schedule ran and
+# so the analyzer's per-grammar source lengths cannot carry it.
+UNKNOWN_GRAMMAR = "c-like row the schedule never ran"
+
+# The outer bound the analyzer holds every archived byte offset under, mirrored here so the case that breaks
+# it can name the value the guard reports. No input the harness reads approaches sixteen mebibytes.
+POSITION_BOUND = 1 << 24
+
+# The inner bound's source length for a generated row, mirrored here for the same reason: the cases that
+# reach past a row's own corpus name the coordinates they write. The five generated rows run on half a
+# mebibyte each and the real-world row runs on a longer document, so those cases are staged on generated
+# rows, and the rows they use are asserted not to be the real-world one.
+GENERATED_SOURCE_BYTES = 512 * 1024
+REAL_DOCUMENT_GRAMMAR = "json rfc 8259 lexical forms on a real-world document"
+
+# What each damage operation does to the input's length, mirrored here for the same reason as the lengths
+# themselves: a substitution replaces k bytes in place, a deletion removes them, an insertion adds them.
+DAMAGED_LENGTH_DELTA = {"substitute": 0, "delete": -1, "insert": 1}
+
+# The real document's source length, mirrored like the generated one because every capped row in this
+# archive lives on that grammar and the capped case must name that row's own input end.
+REAL_DOCUMENT_SOURCE_BYTES = 631515
+
+# Every column a row may carry only when it answered, mirrored here so the case that rewrites a row into a
+# refusal empties exactly the columns a genuine refusal leaves empty and no others.
+ANSWER_DEPENDENT_COLUMNS = (
+    "first",
+    "first_landed",
+    "evidence_begin",
+    "evidence_end",
+    "evidence_kind",
+    "minimal",
+    "terminal",
+    "terminal_landed",
+    "moves_covered",
+    "moves_covered_landed",
+    "converged",
+    "lost",
+    "spurious",
+)
+
+# The two coordinates those cases write. Nine hundred million lies past the outer bound as well, so the outer
+# bound is what refuses it and the case pins that. Six hundred thousand is the coordinate that matters: it
+# sits deep inside the outer bound and past every generated corpus, so only the source length derived for the
+# row's own grammar can see it.
+WILD_COORDINATE = 900000000
+PAST_CORPUS_COORDINATE = 600000
+
+# The driver's attempt budget, and the advance a row claiming the whole of it must archive between its
+# first and terminal answers, since every attempt past the first moves the answer at least one byte. The
+# two cases that hand a row the whole budget are staged on rows whose answers already cover it, so the
+# feasibility relation is satisfied and the contract each case aims at is the only one left to object.
+ATTEMPT_BUDGET = 100
+BUDGET_ADVANCE = ATTEMPT_BUDGET - 1
 
 
 def load_gzipped_lines(path):
@@ -130,14 +191,21 @@ class Archive:
 
         # The sidecar line holding each certified arm's first move, so a case that moves a campaign row's
         # evidence interval can move the sidecar's copy of it coherently and leave the reconciliation
-        # between the two files intact, and the line holding its last move, which is the one the archived
+        # between the two files intact, the line holding its second move, which is the earliest move the
+        # advance guard speaks about, and the line holding its last move, which is the one the archived
         # terminal answer and its landing flag are reconciled against.
         self.sidecar_first = {}
+        self.sidecar_second = {}
         self.sidecar_last = {}
 
         # Certified rows that answered more than once and archive a landed terminal: candidates for the
         # covered-terminal case, which cannot be settled until the sidecar's last move is known.
         self.terminal_candidates = []
+
+        # Certified rows that answered at least three times: candidates for the advance case, which pulls
+        # a middle move's evidence back onto its predecessor's answer and so needs a move after it, and
+        # which cannot be settled until the sidecar's first two moves are known.
+        self.advance_candidates = []
         self._scan()
         self._scan_sidecar()
         self._pair()
@@ -172,6 +240,18 @@ class Archive:
                 self._note("absorbed_first", position)
                 if self.targets.get("absorbed_first") != position:
                     self._note("absorbed_second", position)
+
+                # An absorbed draw whose damage is a span rather than a seam, so its corruption end is the
+                # damage start plus the damage size: the geometry the analyzer now checks before an
+                # absorbed row leaves the loop, and the only fact a one-byte shift of that end disturbs.
+                if fields[column["op"]] == "substitute":
+                    self._note("absorbed_substitute", position)
+
+                # An absorbed insertion, whose damage start is a seam rather than a span consumed from the
+                # source: the draw the insertion's own source bound is tested through, since insertion is
+                # the one operation whose start may sit at the source's very end.
+                if fields[column["op"]] == "insert":
+                    self._note("absorbed_insert", position)
                 continue
             self._note("ordinary", position)
             if incident_key is None:
@@ -191,6 +271,70 @@ class Archive:
                 self.blocks["delete_incident"].append(position)
             if fields[column["outcome"]] == "capped":
                 self._note("capped_row", position)
+                if (
+                    fields[column["strategy"]] not in ("certified", "certified-clean")
+                    and int(fields[column["first"]]) + int(fields[column["attempts"]]) - 1
+                    <= (REAL_DOCUMENT_SOURCE_BYTES
+                        if fields[column["grammar"]] == REAL_DOCUMENT_GRAMMAR
+                        else GENERATED_SOURCE_BYTES)
+                    + DAMAGED_LENGTH_DELTA[fields[column["op"]]] * int(fields[column["k"]])
+                ):
+                    self._note("capped_room_to_eof", position)
+
+            # A completed row of a repairable incident whose first answer is not the stream's own origin:
+            # the convergence point can be put one byte below that answer and stay a canonical nonnegative
+            # integer, so the spelling guard cannot be what objects to the convergence-order case.
+            if (
+                fields[column["outcome"]] == "completed"
+                and fields[column["exact_at_anchor"]]
+                and fields[column["first"]]
+                and int(fields[column["first"]]) >= 1
+            ):
+                self._note("completed_at_anchor", position)
+
+            # A completed row of a repairable incident whose convergence point does not reach past the
+            # corruption end: the divergence region is empty there, so neither a lost nor a spurious
+            # boundary can be counted in it. Two rows are kept, because the guard is one assertion and the
+            # pair of cases built on it are told apart by the row each reports.
+            if (
+                fields[column["outcome"]] == "completed"
+                and fields[column["exact_at_anchor"]]
+                and fields[column["converged"]]
+                and int(fields[column["converged"]]) <= int(fields[column["corruption_end"]])
+            ):
+                self._note("empty_region", position)
+                if self.targets.get("empty_region") != position:
+                    self._note("empty_region_second", position)
+
+            # Completed rows with room in their divergence region, one repairable and one beyond
+            # repair: the region's width bounds the disjoint lost and spurious positions inside it, and
+            # a case per side of the label proves the bound is read from the row rather than reached
+            # through the anchor column. Each keeps the other count at zero so the staged sum is exact.
+            if (
+                fields[column["outcome"]] == "completed"
+                and fields[column["converged"]]
+                and int(fields[column["converged"]]) > int(fields[column["corruption_end"]])
+            ):
+                if fields[column["exact_at_anchor"]] and fields[column["spurious"]] == "0":
+                    self._note("span_room", position)
+                if not fields[column["exact_at_anchor"]] and fields[column["lost"]] == "0":
+                    self._note("unrepairable_span_room", position)
+
+            # The same two facts on an incident the routine labels beyond repair, where the decider's
+            # anchor query returned nothing at all. Completion and an empty divergence region are
+            # properties of the row rather than of the label, so the guards must reach these rows too,
+            # and a case staged on a repairable row cannot show that they do. The convergence target
+            # keeps a byte of room below its first answer above the corruption end, so lowering the
+            # convergence point breaks the order alone and leaves the divergence region inhabited.
+            if fields[column["outcome"]] == "completed" and not fields[column["exact_at_anchor"]]:
+                if fields[column["first"]] and int(fields[column["first"]]) - 1 > int(fields[column["corruption_end"]]):
+                    self._note("unrepairable_completed", position)
+                if (
+                    fields[column["converged"]]
+                    and int(fields[column["converged"]]) <= int(fields[column["corruption_end"]])
+                    and fields[column["lost"]] == "0"
+                ):
+                    self._note("unrepairable_empty_region", position)
             if fields[column["trial"]] not in ("", "0"):
                 # A trial whose value is not zero is the one padding can genuinely disturb: prefixing a
                 # zero to it produces a different string naming the same trial.
@@ -201,6 +345,32 @@ class Archive:
                     self._note("completed_certified", position)
                 if fields[column["moves_covered"]] not in ("", "0"):
                     self._note("certified_covered", position)
+
+                # A blind row that completed after answering more than once, with at least two bytes
+                # between its first answer and its terminal one: the row the two reconciliation cases
+                # against the sidecar need, since a single-attempt row's terminal is pinned to its first
+                # and moving either of them alone would break that pinning before the sidecar is reached.
+                if (
+                    fields[column["outcome"]] == "completed"
+                    and int(fields[column["attempts"]]) >= 2
+                    and int(fields[column["terminal"]]) >= int(fields[column["first"]]) + 2
+                ):
+                    self._note("certified_multi_attempt", position)
+
+                # A completed blind row whose two answers already cover the whole attempt budget:
+                # relabeling a completed row capped means handing it that budget, and a budget of one
+                # hundred attempts is feasible only where the answers advance ninety-nine bytes or more.
+                if (
+                    fields[column["outcome"]] == "completed"
+                    and int(fields[column["terminal"]]) - int(fields[column["first"]]) >= BUDGET_ADVANCE
+                ):
+                    self._note("certified_wide_advance", position)
+
+                # A blind row that answered at least three times: the advance case pulls the second move's
+                # evidence back onto the first move's answer, and a third move behind it keeps that move
+                # out of the terminal reconciliation, which reads the last move alone.
+                if int(fields[column["attempts"]]) >= 3 and len(self.advance_candidates) < 500:
+                    self.advance_candidates.append(position)
                 if fields[column["first"]]:
                     begin = int(fields[column["evidence_begin"]])
                     end = int(fields[column["evidence_end"]])
@@ -208,6 +378,11 @@ class Archive:
                     corruption_end = int(fields[column["corruption_end"]])
                     if fields[column["evidence_kind"]] == "window":
                         self._note("certified_window", position)
+                    else:
+                        # Byte-shaped evidence, the shape through which the mechanism companion can see an
+                        # unknown certificate kind at all: that program keeps no kind domain of its own and
+                        # reads the column only against the width of the interval it describes.
+                        self._note("certified_byte", position)
 
                     # A row whose evidence begins exactly on the blind floor, and whose interval can be
                     # slid one byte down without disturbing anything else the analyzer reconciles: the
@@ -248,12 +423,95 @@ class Archive:
                     self._note("clean_floor_tight", position)
             if strategy == "exact":
                 self._note("exact_arm", position)
+
+                # The anchored arm on an incident the routine labels beyond repair, where the anchor
+                # query archived nothing: the row that shows the totality guard reads the arm rather
+                # than the anchor column.
+                if not fields[column["exact_at_anchor"]]:
+                    self._note("unrepairable_exact_row", position)
+
+                # The exact arm answering on a repairable incident, far enough above its blind floor that
+                # its answer can be lowered a byte and still clear it: the row the direct-agreement case
+                # needs, since the archived decider answer and this arm's answer are the same query and
+                # moving one of them away from the other is all the case does.
+                if (
+                    fields[column["exact_at_anchor"]]
+                    and fields[column["first"]]
+                    and int(fields[column["first"]]) - 1 >= int(fields[column["failure_offset"]]) + 1
+                ):
+                    self._note("exact_direct_answer", position)
             if strategy == "exact-clean" and fields[column["first"]]:
                 # The other arm the harness floors at the corruption end, and the one that carries no
                 # evidence at all: its answer alone is what the floor can be tested through.
                 self._note("exact_clean_answered", position)
+
+                # The same arm answering on a repairable incident with both landings archived: the arm
+                # searches ground the damage never touched, so this is the row whose landing flags the
+                # landing contract forbids to be unlanded.
+                if (
+                    fields[column["exact_at_anchor"]]
+                    and fields[column["first_landed"]] == "1"
+                    and fields[column["terminal_landed"]] == "1"
+                ):
+                    self._note("exact_clean_landed", position)
+
+                # The same arm answering on an incident labeled beyond repair. The arm is floored at the
+                # corruption end whatever the label says, so it searches the same untouched ground and
+                # its answers land the same way; the row is here because the label is not what the
+                # landing rests on, and a case staged on a repairable row cannot show that.
+                if (
+                    not fields[column["exact_at_anchor"]]
+                    and fields[column["first_landed"]] == "1"
+                    and fields[column["terminal_landed"]] == "1"
+                ):
+                    self._note("unrepairable_exact_clean_landed", position)
             if strategy == "newline":
                 self._note("newline_arm", position)
+
+            # The at-placement rows of the two delimiter pairs. The copied-answer case needs room for
+            # the raised first to stay strictly below the terminal; the refusal case needs any answered
+            # at-row, rewritten into a refusal while its past-placement partner keeps its answer.
+            if strategy == "newline-at" and fields[column["first"]]:
+                if (
+                    int(fields[column["attempts"]]) >= 2
+                    and int(fields[column["terminal"]]) >= int(fields[column["first"]]) + 2
+                ):
+                    self._note("pair_at_with_room", position)
+                self._note("pair_at_answered", position)
+
+                # Room to lower this row's terminal two bytes below its partner's, which leaves the
+                # pair's two-value terminal law as the only thing broken: the lowered terminal stays
+                # strictly past the first with the attempts still feasible, off the mapped boundary,
+                # and unlanded, so no other guard can be what objects.
+                if (
+                    int(fields[column["attempts"]]) >= 2
+                    and fields[column["terminal_landed"]] == "0"
+                    and int(fields[column["terminal"]]) - int(fields[column["first"]])
+                    >= int(fields[column["attempts"]]) + 1
+                    and int(fields[column["terminal"]]) - 1 != int(fields[column["first_true"]])
+                    and int(fields[column["terminal"]]) - 2 != int(fields[column["first_true"]])
+                ):
+                    self._note("pair_terminal_room", position)
+
+                # Attempt headroom for the pair-attempts case: one more attempt stays feasible against
+                # the advance and under the budget, and the outcome is not capped, so raising the count
+                # by one breaks only the reconciliation with the partner row.
+                if (
+                    fields[column["outcome"]] != "capped"
+                    and int(fields[column["attempts"]]) + 1 < ATTEMPT_BUDGET
+                    and int(fields[column["terminal"]]) - int(fields[column["first"]])
+                    >= int(fields[column["attempts"]]) + 1
+                ):
+                    self._note("pair_attempts_room", position)
+
+            # The other delimiter family's at-placement, so the pair laws are staged on both families
+            # rather than proved for one and assumed for the other.
+            if strategy == "semicolon-at" and fields[column["first"]]:
+                if (
+                    int(fields[column["attempts"]]) >= 2
+                    and int(fields[column["terminal"]]) >= int(fields[column["first"]]) + 2
+                ):
+                    self._note("semicolon_at_with_room", position)
             if fields[column["attempts"]] == "0":
                 self._note("zero_attempt", position)
                 if strategy in DELIMITER_ARMS:
@@ -264,10 +522,120 @@ class Archive:
                 # A refusal that did propose: the divergence fields are empty here because the incident did
                 # not complete, not because the arm never answered.
                 self._note("refused_with_attempts", position)
+
+                # The same row on a generated grammar, for the case that slides its terminal onto the
+                # input's very end: the harness closes that state as completed before any other outcome
+                # can be written, so a refusal ending there is the contradiction the case stages. The
+                # noncertified arm keeps the sidecar out of it.
+                if (
+                    fields[column["grammar"]] != REAL_DOCUMENT_GRAMMAR
+                    and fields[column["strategy"]] not in ("certified", "certified-clean")
+                    and int(fields[column["attempts"]]) >= 2
+                ):
+                    self._note("refused_room_to_eof", position)
             if strategy != "certified" and fields[column["first"]] and fields[column["first_landed"]]:
                 self._note("landed_answer", position)
             if strategy not in ("certified", "certified-clean") and fields[column["first"]]:
                 self._note("noncertified_answered", position)
+
+                # Answered rows on arms the sidecar knows nothing about, so a terminal answer can be moved
+                # on them without any reconciliation standing in the way. The multi-attempt one answered
+                # far enough above its floor that its terminal can be put below its first answer and still
+                # above that floor, leaving the order between the two as the only broken fact; the
+                # one-attempt one carries both landing flags, which a single attempt forces to agree.
+                floor = int(fields[column["failure_offset"]]) + 1
+                if strategy == "exact-clean":
+                    floor = max(floor, int(fields[column["corruption_end"]]))
+                attempts = int(fields[column["attempts"]])
+                if attempts >= 2 and int(fields[column["first"]]) - 1 >= floor:
+                    self._note("noncertified_multi_attempt", position)
+
+                # A row that answered more than once, outside the capped outcome whose count is pinned to
+                # the whole budget, with room between the advance its two answers cover and that budget:
+                # raising the count past the advance breaks the feasibility relation and nothing else,
+                # since the arm owns no sidecar moves to reconcile the count against.
+                advance = int(fields[column["terminal"]]) - int(fields[column["first"]])
+                if attempts >= 2 and fields[column["outcome"]] != "capped" and advance + 2 < ATTEMPT_BUDGET:
+                    self._note("attempts_advance", position)
+                # An unlanded answer inside the damaged window of a span operation: the oracle maps no
+                # boundary in there, so the flag can only be corrupted upward, and the row chosen keeps
+                # its flag at zero so the flip is the only change. More than one attempt, so the
+                # single-attempt flag tie is not what objects.
+                if (
+                    attempts >= 2
+                    and fields[column["op"]] in ("substitute", "insert")
+                    and int(fields[column["p"]]) <= int(fields[column["first"]]) < int(fields[column["corruption_end"]])
+                    and fields[column["first_landed"]] == "0"
+                ):
+                    self._note("window_interior_answer", position)
+
+                # Answered skip rows on each side of the repairability label, chosen so raising the
+                # first answer one byte breaks the arm's definition and nothing else: the advance still
+                # covers the attempts, the raised answer stays below the terminal, off the mapped
+                # boundary, and unlanded, so no feasibility, boundary, or landing guard can be what
+                # objects. The arm's whole definition is answering one past the failure, and a case per
+                # label proves the guard reads the row rather than the anchor column.
+                if (
+                    strategy == "skip-one"
+                    and int(fields[column["terminal"]]) - int(fields[column["first"]]) >= attempts + 1
+                    and fields[column["first_landed"]] == "0"
+                    and int(fields[column["first"]]) + 1 != int(fields[column["first_true"]])
+                ):
+                    if fields[column["exact_at_anchor"]]:
+                        self._note("skip_answered", position)
+                    else:
+                        self._note("skip_answered_beyond", position)
+
+                # A completed skip row away from the attempt budget, for the outcome relabeling case,
+                # and a multi-attempt skip row with room to slide its terminal to the input's end.
+                if strategy == "skip-one":
+                    if fields[column["outcome"]] == "completed" and fields[column["attempts"]] != "100":
+                        self._note("skip_completed", position)
+                    if (
+                        attempts >= 2
+                        and fields[column["outcome"]] != "capped"
+                        and fields[column["grammar"]] != REAL_DOCUMENT_GRAMMAR
+                    ):
+                        self._note("skip_multi", position)
+
+                # A landed covered terminal with the boundary strictly below it and room to lower the
+                # terminal beneath the boundary without touching the first answer or the attempt
+                # feasibility: the case that proves the terminal half of the mapped-boundary bound.
+                if (
+                    strategy != "exact-clean"
+                    and attempts >= 2
+                    and fields[column["terminal_landed"]] == "1"
+                    and int(fields[column["first_true"]]) - 1 >= int(fields[column["corruption_end"]])
+                    and int(fields[column["first_true"]]) >= int(fields[column["first"]]) + attempts
+                ):
+                    self._note("terminal_below_boundary", position)
+
+                # A single-attempt answer sitting exactly on the oracle's first mapped boundary with
+                # both flags landed: flipping both keeps the single-attempt tie and leaves the
+                # boundary-answer landing rule as the only thing broken, on its first-answer side.
+                if (
+                    attempts == 1
+                    and fields[column["first"]] == fields[column["first_true"]]
+                    and fields[column["first_landed"]] == "1"
+                    and fields[column["terminal_landed"]] == "1"
+                ):
+                    self._note("boundary_first_landed", position)
+
+                # A row whose terminal answer sits exactly on the oracle's first mapped boundary and is
+                # flagged as landed: an answer standing on that boundary is on a boundary of the pristine
+                # mapping by that very fact, so the flag cannot be cleared. More than one attempt, so the
+                # single-attempt rule that ties the two flags together is not what objects.
+                if attempts >= 2 and fields[column["terminal"]] == fields[column["first_true"]]:
+                    if fields[column["terminal_landed"]] == "1":
+                        self._note("terminal_on_first_true", position)
+                if attempts >= 2 and fields[column["outcome"]] == "refused" and advance >= BUDGET_ADVANCE:
+                    # A refusal that proposed more than once, its two answers already covering the whole
+                    # budget: relabeling its attempt count as that budget leaves every other relation on
+                    # the row intact, the feasibility relation included, and the budget contract is what
+                    # is left to object.
+                    self._note("refused_multi_attempt", position)
+                if attempts == 1 and fields[column["first_landed"]] and fields[column["terminal_landed"]]:
+                    self._note("attempts_one_flagged", position)
         required = (
             "absorbed_first",
             "absorbed_second",
@@ -291,6 +659,41 @@ class Archive:
             "clean_arm",
             "clean_floor_tight",
             "exact_clean_answered",
+            "absorbed_substitute",
+            "absorbed_insert",
+            "certified_multi_attempt",
+            "noncertified_multi_attempt",
+            "refused_multi_attempt",
+            "attempts_one_flagged",
+            "completed_at_anchor",
+            "exact_direct_answer",
+            "exact_clean_landed",
+            "empty_region",
+            "empty_region_second",
+            "certified_byte",
+            "attempts_advance",
+            "certified_wide_advance",
+            "unrepairable_completed",
+            "unrepairable_empty_region",
+            "unrepairable_exact_clean_landed",
+            "terminal_on_first_true",
+            "span_room",
+            "unrepairable_span_room",
+            "window_interior_answer",
+            "skip_completed",
+            "skip_multi",
+            "terminal_below_boundary",
+            "boundary_first_landed",
+            "pair_at_with_room",
+            "pair_at_answered",
+            "skip_answered",
+            "skip_answered_beyond",
+            "pair_terminal_room",
+            "semicolon_at_with_room",
+            "unrepairable_exact_row",
+            "pair_attempts_room",
+            "refused_room_to_eof",
+            "capped_room_to_eof",
         )
         missing = [name for name in required if name not in self.targets]
         assert not missing, missing
@@ -303,6 +706,7 @@ class Archive:
         trial_cells = {tuple(split_fields(self.campaign[position])[:4]) for position in self.trial_block}
         assert trial_cells == self.cells, sorted(self.cells - trial_cells)[:3]
         assert self.terminal_candidates, "no multi-attempt certified row archives a landed terminal"
+        assert self.advance_candidates, "no certified row archives three moves"
 
     def _scan_sidecar(self):
         for position in range(1, len(self.sidecar)):
@@ -311,6 +715,9 @@ class Archive:
             if fields[SIDECAR_COLUMNS.index("move")] == "0":
                 assert key not in self.sidecar_first, key
                 self.sidecar_first[key] = position
+            if fields[SIDECAR_COLUMNS.index("move")] == "1":
+                assert key not in self.sidecar_second, key
+                self.sidecar_second[key] = position
 
             # The moves of one incident are written in order, so the last line carrying a key is that
             # incident's terminal move, the move the archived terminal answer is reconciled against.
@@ -327,8 +734,45 @@ class Archive:
                 continue
             if int(self.sidecar_field(last, "evidence_begin")) >= int(fields[self.index["corruption_end"]]):
                 self._note("certified_covered_terminal", position)
-                break
+
+                # The same row on a generated grammar, whose corpus is the shorter one: the case that
+                # slides a terminal move to the input's far end writes the length that grammar's own
+                # source implies, and on the real-world row that length would be an ordinary interior
+                # coordinate with nothing to object to it. One target per span operation besides, since
+                # the damaged length is derived per operation and a case on one operation cannot prove
+                # the derivation for another.
+                if fields[self.index["grammar"]] != REAL_DOCUMENT_GRAMMAR:
+                    self._note("certified_generated_terminal", position)
+                    self._note("sidecar_op_" + fields[self.index["op"]], position)
         assert "certified_covered_terminal" in self.targets, len(self.terminal_candidates)
+        assert "certified_generated_terminal" in self.targets, len(self.terminal_candidates)
+        for op in ("substitute", "insert", "delete"):
+            assert "sidecar_op_" + op in self.targets, op
+
+        # The other joined target: the advance case pulls the second move's evidence back to begin exactly
+        # on the first move's answer, which is the strongest position the advance guard forbids, and stops
+        # there. Two conditions make that the only broken fact. The interval must still fit inside the
+        # searched widths once its far end is set one past the answer it carries, which bounds the gap
+        # between the two answers by three; and it must not change sides of the corruption end, or the
+        # recounted covered tally would stop matching the archived one and object first.
+        for position in self.advance_candidates:
+            fields = split_fields(self.campaign[position])
+            key = (tuple(fields[:5]), fields[self.index["strategy"]])
+            first = self.sidecar_first.get(key)
+            second = self.sidecar_second.get(key)
+            if first is None or second is None:
+                continue
+            answer = int(self.sidecar_field(first, "answer"))
+            next_answer = int(self.sidecar_field(second, "answer"))
+            next_begin = int(self.sidecar_field(second, "evidence_begin"))
+            corruption_end = int(fields[self.index["corruption_end"]])
+            if next_answer - answer > 3:
+                continue
+            if (next_begin >= corruption_end) != (answer >= corruption_end):
+                continue
+            self._note("certified_advance", position)
+            break
+        assert "certified_advance" in self.targets, len(self.advance_candidates)
 
     def _note(self, name, position):
         self.targets.setdefault(name, position)
@@ -341,6 +785,25 @@ class Archive:
         for name, value in changes.items():
             fields[self.index[name]] = value
         return [join_fields(fields)]
+
+    def tuple_of(self, position):
+        # The (key, strategy) pair the analyzer's row guards carry, spelled as the traceback prints it, so
+        # two cases aimed at one guard can still be told apart by the row that tripped it.
+        fields = split_fields(self.campaign[position])
+        return repr((tuple(fields[:5]), fields[self.index["strategy"]]))
+
+    def arm_row_of(self, position, strategy):
+        """The row of `strategy` belonging to the same incident as `position`.
+
+        The eleven arm rows of one incident are written consecutively, so the partner sits within a
+        block's reach of the given row; membership is still decided by the key, not by adjacency.
+        """
+        key = tuple(split_fields(self.campaign[position])[:5])
+        for candidate in range(max(1, position - 15), min(len(self.campaign), position + 16)):
+            fields = split_fields(self.campaign[candidate])
+            if tuple(fields[:5]) == key and fields[self.index["strategy"]] == strategy:
+                return candidate
+        raise AssertionError(("no partner row found", position, strategy))
 
     def duplicated(self, position):
         return [self.campaign[position], self.campaign[position]]
@@ -364,6 +827,12 @@ class Archive:
         # holding the same evidence interval the campaign row archives as its first answer's.
         fields = split_fields(self.campaign[position])
         return self.sidecar_first[(tuple(fields[:5]), fields[self.index["strategy"]])]
+
+    def second_move_of(self, position):
+        # The sidecar line carrying move one of the campaign row at this position, the earliest move whose
+        # evidence the analyzer floors against the move before it.
+        fields = split_fields(self.campaign[position])
+        return self.sidecar_second[(tuple(fields[:5]), fields[self.index["strategy"]])]
 
     def last_move_of(self, position):
         # The sidecar line carrying the final move of the campaign row at this position, the move the
@@ -443,6 +912,45 @@ def build_cases(archive):
     certified_covered_first = column_targets["certified_covered_first"]
     certified_covered_terminal = column_targets["certified_covered_terminal"]
     exact_clean_answered = column_targets["exact_clean_answered"]
+    absorbed_substitute = column_targets["absorbed_substitute"]
+    absorbed_insert = column_targets["absorbed_insert"]
+    certified_multi_attempt = column_targets["certified_multi_attempt"]
+    certified_advance = column_targets["certified_advance"]
+    noncertified_multi_attempt = column_targets["noncertified_multi_attempt"]
+    refused_multi_attempt = column_targets["refused_multi_attempt"]
+    attempts_one_flagged = column_targets["attempts_one_flagged"]
+    completed_at_anchor = column_targets["completed_at_anchor"]
+    exact_direct_answer = column_targets["exact_direct_answer"]
+    exact_clean_landed = column_targets["exact_clean_landed"]
+    empty_region = column_targets["empty_region"]
+    empty_region_second = column_targets["empty_region_second"]
+    certified_byte = column_targets["certified_byte"]
+    attempts_advance = column_targets["attempts_advance"]
+    certified_wide_advance = column_targets["certified_wide_advance"]
+    unrepairable_completed = column_targets["unrepairable_completed"]
+    unrepairable_empty_region = column_targets["unrepairable_empty_region"]
+    unrepairable_exact_clean_landed = column_targets["unrepairable_exact_clean_landed"]
+    terminal_on_first_true = column_targets["terminal_on_first_true"]
+    certified_generated_terminal = column_targets["certified_generated_terminal"]
+    span_room = column_targets["span_room"]
+    unrepairable_span_room = column_targets["unrepairable_span_room"]
+    window_interior_answer = column_targets["window_interior_answer"]
+    skip_completed = column_targets["skip_completed"]
+    skip_multi = column_targets["skip_multi"]
+    terminal_below_boundary = column_targets["terminal_below_boundary"]
+    boundary_first_landed = column_targets["boundary_first_landed"]
+    pair_at_with_room = column_targets["pair_at_with_room"]
+    pair_at_answered = column_targets["pair_at_answered"]
+    sidecar_op_delete = column_targets["sidecar_op_delete"]
+    sidecar_op_insert = column_targets["sidecar_op_insert"]
+    skip_answered = column_targets["skip_answered"]
+    skip_answered_beyond = column_targets["skip_answered_beyond"]
+    pair_terminal_room = column_targets["pair_terminal_room"]
+    semicolon_at_with_room = column_targets["semicolon_at_with_room"]
+    unrepairable_exact_row = column_targets["unrepairable_exact_row"]
+    pair_attempts_room = column_targets["pair_attempts_room"]
+    refused_room_to_eof = column_targets["refused_room_to_eof"]
+    capped_room_to_eof = column_targets["capped_room_to_eof"]
     incident_block = archive.blocks["incident"]
     repairable_block = archive.blocks["repairable_incident"]
     delete_block = archive.blocks["delete_incident"]
@@ -478,7 +986,15 @@ def build_cases(archive):
     exact_arm_name = archive.field(exact_arm, "strategy")
     certified_arm_name = archive.field(certified, "strategy")
     refused_arm = archive.field(refused_with_attempts, "strategy")
+    noncertified_multi_arm = archive.field(noncertified_multi_attempt, "strategy")
+    refused_multi_arm = archive.field(refused_multi_attempt, "strategy")
+    attempts_one_arm = archive.field(attempts_one, "strategy")
+    attempts_one_flagged_arm = archive.field(attempts_one_flagged, "strategy")
     kind_flipped = "window" if archive.field(certified, "evidence_kind") == "byte" else "byte"
+
+    # The other legal kind for the byte-shaped row, so the case that relabels it names a kind the domain
+    # admits and leaves the width law as the only guard that can object.
+    byte_row_kind_flipped = "window" if archive.field(certified_byte, "evidence_kind") == "byte" else "byte"
     fabricated_begin = archive.field(noncertified_answered, "corruption_end")
     fabricated_end = str(int(fabricated_begin) + 1)
 
@@ -521,8 +1037,174 @@ def build_cases(archive):
     # An answer one byte below the corruption end on the arm the harness floors there.
     exact_clean_below = str(int(archive.field(exact_clean_answered, "corruption_end")) - 1)
 
+    # The same two corruptions the repairable cases stage, aimed at rows the routine labels beyond
+    # repair: a convergence point a byte below the first answer, and a lost boundary counted in a
+    # divergence region that is empty. Both values stay canonical and both rows stay completed.
+    unrepairable_converged_below = str(int(archive.field(unrepairable_completed, "first")) - 1)
+    unrepairable_completed_arm = archive.field(unrepairable_completed, "strategy")
+    terminal_on_first_true_arm = archive.field(terminal_on_first_true, "strategy")
+
+    # The last move of a covered-terminal certified row on a generated grammar, slid to the far end of
+    # the damaged input. The row's terminal answer moves with it, because the last move's answer and the
+    # archived terminal are reconciled against each other; the answer stops exactly at the damaged
+    # input's length, which the campaign bound admits, so the one coordinate left outside the input is
+    # the move's own evidence end. The length is derived here the way the operation implies rather than
+    # read from the analyzer, which is the program on trial.
+    terminal_move = archive.last_move_of(certified_generated_terminal)
+    terminal_damaged_size = GENERATED_SOURCE_BYTES + DAMAGED_LENGTH_DELTA[
+        archive.field(certified_generated_terminal, "op")
+    ] * int(archive.field(certified_generated_terminal, "k"))
+    # The answer stays one byte inside the input, since an answer at the very end carries no landing
+    # flag and the flag the row already has would trip that rule instead; the interval around it still
+    # ends one byte outside, which is the one fact left for the length bound to refuse.
+    move_answer_inside = str(terminal_damaged_size - 1)
+    move_past_input_end = str(terminal_damaged_size + 1)
+
+    # The divergence region's width on the two span-room rows, and the count one past it that the
+    # bound must refuse; the other count is zero on each row by the scan, so the staged sum is exact.
+    def region_of(position):
+        return int(archive.field(position, "converged")) - int(archive.field(position, "corruption_end"))
+
+    lost_past_region = str(region_of(span_room) + 1)
+    spurious_past_region = str(region_of(unrepairable_span_room) + 1)
+
+    # The skip row's own damaged input length, derived the way the operation implies, for the case that
+    # slides its terminal onto the very end, where the harness computes no landing flag.
+    skip_damaged_size = str(
+        GENERATED_SOURCE_BYTES
+        + DAMAGED_LENGTH_DELTA[archive.field(skip_multi, "op")] * int(archive.field(skip_multi, "k"))
+    )
+
+    # The mapped boundary a byte below itself, for the terminal half of the boundary bound.
+    boundary_below_terminal = str(int(archive.field(terminal_below_boundary, "first_true")) - 1)
+
+    # The at-placement terminal lowered out of the pair's two-value set, and the semicolon family's
+    # copied first answer, so both laws are staged on both families.
+    pair_terminal_partner = archive.arm_row_of(pair_terminal_room, "newline")
+    pair_terminal_outside = str(int(archive.field(pair_terminal_partner, "terminal")) - 2)
+    semicolon_partner = archive.arm_row_of(semicolon_at_with_room, "semicolon")
+    semicolon_copied_first = archive.field(semicolon_partner, "first")
+
+    # The past-placement partner rows of the two pair cases, and the value the copy case writes.
+    pair_past_partner = archive.arm_row_of(pair_at_with_room, "newline")
+    copied_past_first = archive.field(pair_past_partner, "first")
+    pair_refusal_fields = {field: "" for field in ANSWER_DEPENDENT_COLUMNS}
+    pair_refusal_fields["attempts"] = "0"
+    pair_refusal_fields["outcome"] = "refused"
+
+    # The certified window's interval stretched to five bytes and collapsed to zero, for the
+    # companion's width range; the campaign auditor refuses both by its own bound, so these run the
+    # companion alone.
+    window_end_stretched = str(int(archive.field(certified_window, "evidence_end")) + 1)
+    window_end_collapsed = archive.field(certified_window, "evidence_begin")
+
+    # The per-operation damaged lengths for the two remaining sidecar span cases.
+    def op_damaged_size(position):
+        return GENERATED_SOURCE_BYTES + DAMAGED_LENGTH_DELTA[archive.field(position, "op")] * int(
+            archive.field(position, "k")
+        )
+
+    delete_move = archive.last_move_of(sidecar_op_delete)
+    delete_size = op_damaged_size(sidecar_op_delete)
+    insert_move = archive.last_move_of(sidecar_op_insert)
+    insert_size = op_damaged_size(sidecar_op_insert)
+
+    # The exact arm turned into a refusal that never proposed, coherently: no attempts, the refused
+    # outcome, and every answer-dependent column emptied, exactly as a genuine refusal is archived. The
+    # archived decider answer stays where it is, which is the one fact left contradicting the row, and a
+    # coherent refusal is the shape that matters, since an incoherent one would be refused by the
+    # dependency guards long before the agreement between the two columns is read.
+    refused_exact_fields = {field: "" for field in ANSWER_DEPENDENT_COLUMNS}
+    refused_exact_fields["attempts"] = "0"
+    refused_exact_fields["outcome"] = "refused"
+    direct_without_answer = archive.field(exact_direct_answer, "exact_at_anchor")
+
     # The cell the deletion case removes, spelled as the grid guard reports the cells it finds missing.
     deleted_cell = repr(tuple(split_fields(archive.campaign[cell_block[0]])[:4]))
+
+    # An absorbed substitution's corruption end, moved one byte past the span the damage size fixes. The
+    # row stays an absorbed row in every other respect, so the geometry is the only fact it breaks, and
+    # the geometry is now read before an absorbed row is allowed to leave the loop.
+    absorbed_end_shifted = str(
+        int(archive.field(absorbed_substitute, "p")) + int(archive.field(absorbed_substitute, "k")) + 1
+    )
+
+    # The blind row the two sidecar reconciliation cases run on: it answered more than once, so moving its
+    # first answer up a byte or its terminal answer up a byte leaves the row's own order intact, and the
+    # gap between the two absorbs the first of those moves.
+    multi_first_raised = str(int(archive.field(certified_multi_attempt, "first")) + 1)
+    multi_terminal_raised = str(int(archive.field(certified_multi_attempt, "terminal")) + 1)
+
+    # Terminal positions the terminal contract forbids, each staged on a row where nothing else objects:
+    # below the oracle-floored arm's own floor, below the first answer on a row that answered twice, above
+    # the first answer on a row that answered once, and equal to it on a row that answered twice.
+    noncertified_terminal_below_first = str(int(archive.field(noncertified_multi_attempt, "first")) - 1)
+    noncertified_terminal_at_first = archive.field(noncertified_multi_attempt, "first")
+    attempts_one_terminal_raised = str(int(archive.field(attempts_one, "terminal")) + 1)
+    attempts_one_flag_flipped = "0" if archive.field(attempts_one_flagged, "terminal_landed") == "1" else "1"
+
+    # The advance case's coordinates: the second move's evidence is pulled back to begin exactly on the
+    # first move's answer, which the advance guard forbids by one byte, and its far end is set one past
+    # the answer it carries, so the interval still contains that answer and still fits the searched
+    # widths. Nothing else moves, in either file.
+    advance_move = archive.second_move_of(certified_advance)
+    advance_begin = archive.sidecar_field(archive.first_move_of(certified_advance), "answer")
+    advance_end = str(int(archive.sidecar_field(advance_move, "answer")) + 1)
+
+    # A convergence point one byte below the answer the incident started from, and the arm that archives
+    # it, which the marker needs to say which row of the incident tripped the order guard.
+    completed_at_anchor_arm = archive.field(completed_at_anchor, "strategy")
+    converged_below_first = str(int(archive.field(completed_at_anchor, "first")) - 1)
+
+    # The exact arm's answer lowered a byte, and the archived decider answer it is thereby pulled away
+    # from. The arm answers once in this campaign without exception, so its terminal answer is lowered with
+    # its first: the one-attempt rule pins the two together and would otherwise be what objects.
+    direct_answer = archive.field(exact_direct_answer, "exact_at_anchor")
+    exact_answer_lowered = str(int(archive.field(exact_direct_answer, "first")) - 1)
+
+    # An absorbed substitution moved bodily onto the position bound, its damage start and its span end
+    # together, so the operation's geometry still holds and only the bound is broken. The start is the
+    # first position column the spelling and bound pass reads, so it is the column the guard reports.
+    absorbed_beyond_bound = str(POSITION_BOUND)
+    absorbed_beyond_end = str(POSITION_BOUND + int(archive.field(absorbed_substitute, "k")))
+
+    # Coordinates for the three cases that move an absorbed draw's damage outside the source its own grammar
+    # runs on. Each moves the damage start and the span end together, so the operation's geometry still holds
+    # and the row stays an absorbed row in every other respect, and the start is the first coordinate the
+    # source bounds are read from, so it is the column the guard reports. The wild coordinate lies past the
+    # outer bound as well, which is therefore what refuses it. The other two are what the outer bound cannot
+    # see: a substitution's span, which must lie whole inside the source, and an insertion's seam, which may
+    # sit at the source's end and so is broken by putting it one byte past.
+    wild_start = str(WILD_COORDINATE)
+    wild_end = str(WILD_COORDINATE + int(archive.field(absorbed_substitute, "k")))
+    past_corpus_start = str(PAST_CORPUS_COORDINATE)
+    past_corpus_end = str(PAST_CORPUS_COORDINATE + int(archive.field(absorbed_substitute, "k")))
+    insert_past_corpus_start = str(GENERATED_SOURCE_BYTES + 1)
+    insert_past_corpus_end = str(GENERATED_SOURCE_BYTES + 1 + int(archive.field(absorbed_insert, "k")))
+
+    # A coordinate at exactly the generated source's length: inside the input a substitution damages, and one
+    # byte past the shorter input a deletion of k bytes leaves behind.
+    undeleted_source_length = str(GENERATED_SOURCE_BYTES)
+
+    # An attempt count one past what the row's two answers can cover: each attempt after the first
+    # advances the answer by at least a byte, so a count of advance plus two is one more than the advance
+    # allows, and it stays inside the budget the driver enforces.
+    attempts_past_advance = str(
+        int(archive.field(attempts_advance, "terminal")) - int(archive.field(attempts_advance, "first")) + 2
+    )
+
+    # The mapped boundary raised past every landed covered answer of one incident. A landed answer at or
+    # past the corruption end sits on a mapped boundary, so the region's first mapped boundary cannot lie
+    # beyond it; raising the boundary past all of them makes the first such answer in the block the one the
+    # guard reports, and writing it into all eleven arms leaves the arms agreeing with each other.
+    landed_covered_arms = [
+        position
+        for position in incident_block
+        if archive.field(position, "first_landed") == "1"
+        and archive.field(position, "first")
+        and int(archive.field(position, "first")) >= int(archive.field(position, "corruption_end"))
+    ]
+    raised_first_true = str(max(int(archive.field(position, "first")) for position in landed_covered_arms) + 1)
 
     cases = []
 
@@ -532,6 +1214,7 @@ def build_cases(archive):
         sidecar=None,
         omit_sidecar=False,
         extra_env=None,
+        program=ANALYZER,
         marker=None,
         expect="reject",
         emissions=None,
@@ -543,6 +1226,7 @@ def build_cases(archive):
                 "sidecar": sidecar or {},
                 "omit_sidecar": omit_sidecar,
                 "env": extra_env,
+                "program": program,
                 "marker": marker,
                 "expect": expect,
                 "emissions": emissions,
@@ -591,15 +1275,18 @@ def build_cases(archive):
     )
     case("sidecar-file-missing", omit_sidecar=True, marker="assert os.path.exists(sidecar)")
 
-    # Reconciliation between the sidecar and the archived per-incident aggregates.
+    # Reconciliation between the sidecar and the archived per-incident aggregates. Both cases run on a row
+    # that answered more than once with room to spare between its two answers, because the row's own
+    # terminal contract pins a single-attempt row's terminal to its first answer and would otherwise be
+    # what objects, leaving the reconciliation against the sidecar unproven.
     case(
         "campaign-first-answer-changed",
-        campaign={certified: archive.edited(certified, first=str(int(archive.field(certified, "first")) + 1))},
+        campaign={certified_multi_attempt: archive.edited(certified_multi_attempt, first=multi_first_raised)},
         marker='assert record["first"] and int(record["first"]) == first_answer',
     )
     case(
         "campaign-terminal-answer-changed",
-        campaign={certified: archive.edited(certified, terminal=str(int(archive.field(certified, "terminal")) + 1))},
+        campaign={certified_multi_attempt: archive.edited(certified_multi_attempt, terminal=multi_terminal_raised)},
         marker='assert record["terminal"] and int(record["terminal"]) == move_last[(key, arm)]',
     )
     case(
@@ -680,7 +1367,7 @@ def build_cases(archive):
     case(
         "landing-flag-without-answer",
         campaign={landed_answer: archive.edited(landed_answer, first="")},
-        marker='assert (record[flag] == "") == (record[anchor_field] == "")',
+        marker=('assert record[flag] == ""', "'first_landed')"),
     )
     case(
         "noncertified-arm-carries-covered-tally",
@@ -736,10 +1423,14 @@ def build_cases(archive):
     # relabeling a completed row and populating a refused one both break the same dependency from opposite
     # directions; the arm name in the tuple keeps the two markers apart. The relabeled row is given the
     # full attempt budget along with its new label, because a capped outcome means the budget was spent
-    # and the budget contract would otherwise be what objects, leaving the dependency unproven.
+    # and the budget contract would otherwise be what objects, leaving the dependency unproven. It is a
+    # row that answered more than once for the same reason: the budget it is given is not one, and a row
+    # claiming more than one attempt must archive a terminal answer past its first, far enough past it to
+    # cover the advance that budget implies, which is why the row chosen archives ninety-nine bytes or more
+    # between its two answers.
     case(
         "completed-row-relabeled-capped-keeping-divergence",
-        campaign={completed_certified: archive.edited(completed_certified, outcome="capped", attempts="100")},
+        campaign={certified_wide_advance: archive.edited(certified_wide_advance, outcome="capped", attempts="100")},
         marker=f"'{certified_arm_name}', 'converged')",
     )
     case(
@@ -930,12 +1621,17 @@ def build_cases(archive):
     )
 
     # Covered moves land, the harness's own runtime assertion, and the archive records that landing twice:
-    # once as the per-incident flag and once as the covered tally. The two cases flip a flag while leaving
-    # the tallies untouched and equal to each other, so the tally reconciliation is satisfied and only the
-    # per-move landing reconciliation can object, at the first move and at the terminal one respectively.
+    # once as the per-incident flag and once as the covered tally. The two cases unland a flag while
+    # leaving the tallies untouched and equal to each other, so the tally reconciliation is satisfied and
+    # only the per-move landing reconciliation can object, at the first move and at the terminal one
+    # respectively. The first-move case unlands both flags of its row at once: no covered first move in
+    # this archive belongs to a row that answered twice, and on a row that answered once the two flags are
+    # required to agree, so unlanding one alone would be caught by that agreement instead.
     case(
         "covered-first-move-flag-flipped-to-unlanded",
-        campaign={certified_covered_first: archive.edited(certified_covered_first, first_landed="0")},
+        campaign={
+            certified_covered_first: archive.edited(certified_covered_first, first_landed="0", terminal_landed="0")
+        },
         marker='assert record["first_landed"] == "1"',
     )
     case(
@@ -1053,10 +1749,647 @@ def build_cases(archive):
         marker=('assert int(record["first"]) >= floor', ", 'exact-clean')"),
     )
 
+    # Damage geometry on an absorbed draw. An absorbed row carries the damage coordinates and nothing
+    # else, so before the geometry was read ahead of the absorbed rows' early exit this shift was the one
+    # corruption an absorbed row could carry undetected: the emptiness check has nothing to say about a
+    # populated coordinate, and the row leaves the loop before any later guard sees it. The strategy in
+    # the reported tuple is what shows the rejection came from an absorbed row rather than an arm row.
+    case(
+        "absorbed-substitution-corruption-end-off-the-span",
+        campaign={absorbed_substitute: archive.edited(absorbed_substitute, corruption_end=absorbed_end_shifted)},
+        marker=('assert int(record["corruption_end"]) == int(record["p"]) + int(record["k"])', "'absorbed')"),
+    )
+
+    # The decider's own answer is a position in the stream, found by a search that starts at the blind
+    # anchor, so it cannot lie at or below the failure offset. Zero is written into all eleven arms of a
+    # repairable incident at once, so the arms agree perfectly and the cross-arm equality guard has
+    # nothing to report; the repairability dependency is satisfied too, since a zero is a value and the
+    # dependency reads presence rather than magnitude. Only the anchor floor is left to object.
+    case(
+        "decider-answer-at-zero-on-every-arm-of-one-incident",
+        campaign={position: archive.edited(position, exact_at_anchor="0") for position in repairable_block},
+        marker='assert int(record["exact_at_anchor"]) >= int(record["failure_offset"]) + 1',
+    )
+
+    # The terminal answer is an answer, so it obeys the same floor its arm searched under. The exact-clean
+    # arm is where that stands alone again: floored at the corruption end, carrying no evidence, and its
+    # first answer left where the archive put it, so the first answer's own floor check passes and the
+    # terminal's is the only one that can fire.
+    case(
+        "exact-clean-terminal-below-the-corruption-end",
+        campaign={exact_clean_answered: archive.edited(exact_clean_answered, terminal=exact_clean_below)},
+        marker=('assert int(record["terminal"]) >= floor', ", 'exact-clean')"),
+    )
+
+    # The order between the two answers, and the two ways the attempt count constrains it. A row that
+    # answered more than once must end past where it began, so a terminal below the first answer is
+    # corruption even when it clears the floor, and a terminal equal to the first is corruption because
+    # nothing advanced; a row that answered once must end exactly where it began, position and landing
+    # flag alike. All four run on arms the sidecar knows nothing about, or on the campaign row alone, so
+    # no reconciliation between the two files stands between the mutation and the contract it aims at.
+    case(
+        "multi-attempt-terminal-below-the-first-answer",
+        campaign={
+            noncertified_multi_attempt: archive.edited(
+                noncertified_multi_attempt, terminal=noncertified_terminal_below_first
+            )
+        },
+        marker=('assert int(record["terminal"]) >= int(record["first"])', f", '{noncertified_multi_arm}')"),
+    )
+    case(
+        "multi-attempt-terminal-equal-to-the-first-answer",
+        campaign={
+            noncertified_multi_attempt: archive.edited(
+                noncertified_multi_attempt, terminal=noncertified_terminal_at_first
+            )
+        },
+        marker=('assert int(record["terminal"]) > int(record["first"])', f", '{noncertified_multi_arm}')"),
+    )
+    case(
+        "single-attempt-terminal-past-the-first-answer",
+        campaign={attempts_one: archive.edited(attempts_one, terminal=attempts_one_terminal_raised)},
+        marker=('assert record["terminal"] == record["first"]', f", '{attempts_one_arm}')"),
+    )
+    case(
+        "single-attempt-terminal-landing-differs-from-the-first",
+        campaign={
+            attempts_one_flagged: archive.edited(attempts_one_flagged, terminal_landed=attempts_one_flag_flipped)
+        },
+        marker=('assert record["terminal_landed"] == record["first_landed"]', f", '{attempts_one_flagged_arm}')"),
+    )
+
+    # Spending the whole budget is what capped means, so a refusal that claims the whole budget is naming
+    # the wrong outcome for what it did. The row chosen proposed more than once, so its terminal answer
+    # already lies past its first and the advance the new count implies is already archived; the budget
+    # contract is then the only thing the relabeled count breaks.
+    case(
+        "refused-row-claiming-the-whole-attempt-budget",
+        campaign={refused_multi_attempt: archive.edited(refused_multi_attempt, attempts="100")},
+        marker=(
+            'assert not (record["outcome"] == "refused" and record["attempts"] == "100")',
+            f", '{refused_multi_arm}')",
+        ),
+    )
+
+    # The sidecar's own advance. A walk that resumes one past its predecessor cannot produce a move whose
+    # evidence begins where the previous move answered, and the case puts it exactly there, one byte short
+    # of the floor the guard reads. The far end moves with it, so the interval still holds the move's
+    # answer and still fits the searched widths; the move is an interior one, so the terminal
+    # reconciliation reads a different line; and the interval stays on the side of the corruption end it
+    # was already on, so the recounted covered tally still matches the archived one.
+    case(
+        "sidecar-move-evidence-back-on-the-previous-answer",
+        sidecar={
+            advance_move: archive.sidecar_edited(advance_move, evidence_begin=advance_begin, evidence_end=advance_end)
+        },
+        marker=("assert begin > move_last[(key, arm)]", ", 'certified', 1)"),
+    )
+
+    # The oracle-floored decider searches ground the damage never touched, so its answers land, the first
+    # and the last alike. Both flags are unlanded at once: the row answered once, and a single attempt
+    # forces the two flags to agree, so unlanding one alone would be caught by that agreement rather than
+    # by the landing contract the case aims at. Nothing else on the row moves, and the arm carries no
+    # evidence and no sidecar moves, so no reconciliation stands in the way either.
+    case(
+        "exact-clean-answer-unlanded-on-both-flags",
+        campaign={exact_clean_landed: archive.edited(exact_clean_landed, first_landed="0", terminal_landed="0")},
+        marker=('assert record["first_landed"] == "1" and record["terminal_landed"] == "1"', ", 'exact-clean')"),
+    )
+
+    # A completed incident converges at or past the answer it started from, so a convergence point one byte
+    # below the first answer is corruption. The value stays a canonical nonnegative integer, so the
+    # spelling guard has nothing to say, and it stays populated on a completed row, so the outcome
+    # dependency is satisfied too; only the order between the two positions is broken.
+    case(
+        "completed-row-converges-below-its-first-answer",
+        campaign={completed_at_anchor: archive.edited(completed_at_anchor, converged=converged_below_first)},
+        marker=('assert int(record["converged"]) >= int(record["first"])', f", '{completed_at_anchor_arm}')"),
+    )
+
+    # The archived decider answer and the exact arm's first answer are the same query asked once, so where
+    # both exist they agree. The arm's answer is lowered a byte and the archived answer is left alone. The
+    # exact arm archives a single attempt on every row of this campaign, so its terminal answer is lowered
+    # with its first, as the one-attempt rule requires; the lowered answer still clears the arm's blind
+    # floor, the row's convergence point still lies at or past it, and the sidecar knows nothing about this
+    # arm. Only the agreement between the two columns is left to object.
+    case(
+        "exact-arm-answer-disagrees-with-the-archived-decider-answer",
+        campaign={
+            exact_direct_answer: archive.edited(
+                exact_direct_answer, first=exact_answer_lowered, terminal=exact_answer_lowered
+            )
+        },
+        marker=("assert direct == exact_first", f", '{direct_answer}', '{exact_answer_lowered}')"),
+    )
+
+    # A convergence point that does not reach past the corruption end leaves the divergence region empty,
+    # and an empty region holds no boundaries at all, so neither a lost nor a spurious one can be counted
+    # in it. The two cases put a count on each side of that guard in turn, on two different rows, since the
+    # guard is a single assertion whose source text they share and the row it reports is what tells them
+    # apart. Both counts stay canonical nonnegative integers and both rows stay completed, so neither the
+    # spelling guard nor the outcome dependency can be what objects.
+    case(
+        "completed-row-counts-a-lost-boundary-in-an-empty-divergence-region",
+        campaign={empty_region: archive.edited(empty_region, lost="1")},
+        marker=(
+            'assert record["lost"] == "0" and record["spurious"] == "0"',
+            archive.tuple_of(empty_region),
+        ),
+    )
+    case(
+        "completed-row-counts-a-spurious-boundary-in-an-empty-divergence-region",
+        campaign={empty_region_second: archive.edited(empty_region_second, spurious="1")},
+        marker=(
+            'assert record["lost"] == "0" and record["spurious"] == "0"',
+            archive.tuple_of(empty_region_second),
+        ),
+    )
+
+    # The mechanism companion reads the same archive, so several cases are aimed at that program rather
+    # than at the auditing analyzer: a second program deriving manuscript figures from a corrupted archive
+    # would be a hole in the audit the first program's guards say nothing about. This one relabels byte-shaped
+    # evidence as a window, a kind the domain admits, so the width law is the only thing that can see the
+    # contradiction between the name and the one-byte interval it stands for. The marker names the
+    # companion's own file besides its guard, since the two programs are what these cases tell apart.
+    case(
+        "mechanism-refuses-a-window-kind-on-byte-shaped-evidence",
+        campaign={certified_byte: archive.edited(certified_byte, evidence_kind=byte_row_kind_flipped)},
+        program=MECHANISM,
+        marker=(MECHANISM, 'assert (kind == "byte") == (width == 1), row'),
+    )
+
+    # No input this campaign reads approaches sixteen mebibytes, so a coordinate past that bound is a
+    # corrupted field rather than a large run. The absorbed row carries the damage coordinates and nothing
+    # else, and both of them move together onto the bound, so the operation's geometry still holds and the
+    # row is still an absorbed row in every other respect: only the bound is left to object, and it objects
+    # at the damage start, the first position column the spelling and bound pass reads.
+    case(
+        "absorbed-row-position-past-the-sixteen-mebibyte-bound",
+        campaign={
+            absorbed_substitute: archive.edited(
+                absorbed_substitute, p=absorbed_beyond_bound, corruption_end=absorbed_beyond_end
+            )
+        },
+        marker=f"('p', '{absorbed_beyond_bound}')",
+    )
+
+    # Each attempt past the first advances the answer by at least one byte, so the distance between the
+    # first and terminal answers bounds the attempt count from below. The count is raised one past what
+    # that distance allows, on an arm the sidecar knows nothing about, outside the capped outcome whose
+    # count is pinned to the whole budget and well inside the budget itself, so neither reconciliation nor
+    # the budget contract can be what objects.
+    case(
+        "attempts-past-the-advance-the-answers-allow",
+        campaign={attempts_advance: archive.edited(attempts_advance, attempts=attempts_past_advance)},
+        marker=(
+            'assert int(record["terminal"]) - int(record["first"]) >= int(record["attempts"]) - 1',
+            archive.tuple_of(attempts_advance),
+        ),
+    )
+
+    # A landed answer at or past the corruption end sits on a mapped boundary of the repaired region, so
+    # the first mapped boundary of that region cannot lie past it. The boundary is raised one byte past the
+    # furthest such answer the incident archives, on all eleven arms at once, so the arms agree perfectly
+    # and the cross-arm comparison sees nothing; the boundary still lies at or past the corruption end, so
+    # the guard that floors it there is satisfied too, and the row the guard reports is the incident's
+    # first landed covered answer.
+    case(
+        "first-true-boundary-past-a-landed-covered-answer-on-every-arm",
+        campaign={position: archive.edited(position, first_true=raised_first_true) for position in incident_block},
+        marker=(
+            'assert int(record["first_true"]) <= int(record["first"])',
+            archive.tuple_of(landed_covered_arms[0]),
+        ),
+    )
+
+    # The generic bound is wide enough to admit coordinates no corpus in this campaign can carry, so every
+    # coordinate is held to the source its own grammar runs on besides. The three cases below move an
+    # absorbed draw's damage bodily, keeping the span equation the geometry guard reads, so the row is
+    # corrupt in exactly one respect: it names a place its own source does not have. The first is the wild
+    # coordinate, past the outer bound as well, and the outer bound is what refuses it, which is the point of
+    # keeping the case: it fixes what that bound does and does not settle. The second stays deep inside the
+    # outer bound and lands past a half-mebibyte corpus, where the outer bound has nothing to say and the
+    # source length derived for the row's grammar is the only guard left. The third breaks the insertion
+    # bound, which is one byte wider than the span operations' because an insertion consumes nothing and may
+    # sit at the source's end.
+    case(
+        "absorbed-substitution-moved-to-a-wild-coordinate",
+        campaign={absorbed_substitute: archive.edited(absorbed_substitute, p=wild_start, corruption_end=wild_end)},
+        marker=("assert int(value) < POSITION_BOUND", f"('p', '{wild_start}')"),
+    )
+    case(
+        "absorbed-substitution-span-past-its-grammar-source",
+        campaign={
+            absorbed_substitute: archive.edited(
+                absorbed_substitute, p=past_corpus_start, corruption_end=past_corpus_end
+            )
+        },
+        marker=(
+            'assert int(record["p"]) + int(record["k"]) <= source_size',
+            f", 'absorbed', '{past_corpus_start}')",
+        ),
+    )
+    case(
+        "absorbed-insertion-seam-past-its-grammar-source",
+        campaign={
+            absorbed_insert: archive.edited(
+                absorbed_insert, p=insert_past_corpus_start, corruption_end=insert_past_corpus_end
+            )
+        },
+        marker=('assert int(record["p"]) <= source_size', f", 'absorbed', '{insert_past_corpus_start}')"),
+    )
+
+    # Every coordinate but the damage start indexes the damaged input rather than the source, so the length
+    # they are held to is the one the operation leaves behind. The terminal answer is moved past a
+    # half-mebibyte row's damaged input, deep inside the outer bound again, on an arm the sidecar knows
+    # nothing about; and a deletion incident's mapped boundary is put at exactly the undamaged source length,
+    # which a substitution could carry and a deletion of k bytes cannot, so the case passes only if the
+    # length was derived per operation rather than taken from the source. That one is written into all eleven
+    # arms of the incident, the shared column's own convention, so the arms agree perfectly and the guard
+    # reports the first of them.
+    case(
+        "terminal-answer-past-the-damaged-input-length",
+        campaign={noncertified_answered: archive.edited(noncertified_answered, terminal=past_corpus_start)},
+        marker=(
+            "assert int(record[field]) <= damaged_size",
+            f", '{noncertified_arm}', 'terminal', '{past_corpus_start}')",
+        ),
+    )
+    case(
+        "delete-incident-boundary-at-the-undeleted-source-length",
+        campaign={
+            position: archive.edited(position, first_true=undeleted_source_length) for position in delete_block
+        },
+        marker=(
+            "assert int(record[field]) <= damaged_size",
+            f", 'first_true', '{undeleted_source_length}')",
+        ),
+    )
+
+    # The three row-level facts above hold whatever the routine's label says, so each is staged a second
+    # time on an incident labeled beyond repair, where the decider's anchor query returned nothing. These
+    # are the cases the earlier suite could not have failed: it chose every one of its targets by that
+    # same anchor query, so it exercised only the rows where the guards were reached at all.
+    case(
+        "beyond-repair-row-converges-below-its-first-answer",
+        campaign={
+            unrepairable_completed: archive.edited(unrepairable_completed, converged=unrepairable_converged_below)
+        },
+        marker=(
+            'assert int(record["converged"]) >= int(record["first"])',
+            archive.tuple_of(unrepairable_completed),
+        ),
+    )
+    case(
+        "beyond-repair-row-counts-a-lost-boundary-in-an-empty-divergence-region",
+        campaign={unrepairable_empty_region: archive.edited(unrepairable_empty_region, lost="1")},
+        marker=(
+            'assert record["lost"] == "0" and record["spurious"] == "0"',
+            archive.tuple_of(unrepairable_empty_region),
+        ),
+    )
+    case(
+        "beyond-repair-exact-clean-answer-unlanded-on-both-flags",
+        campaign={
+            unrepairable_exact_clean_landed: archive.edited(
+                unrepairable_exact_clean_landed, first_landed="0", terminal_landed="0"
+            )
+        },
+        marker=(
+            'assert record["first_landed"] == "1" and record["terminal_landed"] == "1"',
+            archive.tuple_of(unrepairable_exact_clean_landed),
+        ),
+    )
+
+    # The decider arms answer on every incident, and the guard must be shown to read the row rather
+    # than the anchor column or the arm name: the oracle-floored arm rewritten into a refusal, and the
+    # anchored arm on an incident the routine labels beyond repair, each staged as a coherent refusal.
+    case(
+        "exact-clean-arm-rewritten-into-a-refusal",
+        campaign={exact_clean_answered: archive.edited(exact_clean_answered, **pair_refusal_fields)},
+        marker=("assert answered, (key", ", 'exact-clean')"),
+    )
+    case(
+        "beyond-repair-exact-arm-rewritten-into-a-refusal",
+        campaign={
+            unrepairable_exact_row: archive.edited(unrepairable_exact_row, **pair_refusal_fields)
+        },
+        marker=("assert answered, (key", archive.tuple_of(unrepairable_exact_row)),
+    )
+
+    # The decider's anchor query and the exact arm's first answer are one query asked once, so an archived
+    # anchor answer beside an arm that never proposed is a contradiction. The arm is rewritten into a
+    # refusal that is coherent in every other respect, so the dependency guards have nothing to say and the
+    # co-presence of the two columns is what is left to object.
+    case(
+        "archived-decider-answer-beside-an-exact-arm-that-refused",
+        campaign={exact_direct_answer: archive.edited(exact_direct_answer, **refused_exact_fields)},
+        marker=("assert answered, (key", archive.tuple_of(exact_direct_answer)),
+    )
+
+    # An answer standing exactly on the oracle's first mapped boundary is on a boundary of the pristine
+    # mapping by that very fact, so its landing flag cannot be clear. The row answered more than once, so
+    # the single-attempt rule that ties the two flags together is not what objects, and the arm carries no
+    # evidence and no sidecar moves, so no reconciliation does either.
+    case(
+        "terminal-answer-on-the-mapped-boundary-flagged-unlanded",
+        campaign={terminal_on_first_true: archive.edited(terminal_on_first_true, terminal_landed="0")},
+        marker=('assert record[flag] == "1"', f", '{terminal_on_first_true_arm}', 'terminal')"),
+    )
+
+    # The mechanism companion reads the certificate kind against the width of the interval it describes,
+    # and that equivalence has both sides false for an unknown kind on any multi-byte evidence, so the
+    # kind's own domain is asserted before it. The byte-shaped case above is kept because it fixes what the
+    # width law settles by itself; this one is aimed at the half of the domain the law cannot see.
+    case(
+        "mechanism-refuses-an-unknown-kind-on-window-shaped-evidence",
+        campaign={certified_window: archive.edited(certified_window, evidence_kind="bogus")},
+        program=MECHANISM,
+        marker=(MECHANISM, 'assert kind in ("byte", "window"), row'),
+    )
+
+    # The sidecar's coordinates index the damaged input exactly as the campaign's do, so they are held to
+    # the same length. The terminal move is slid to the input's far end, and the archived terminal answer
+    # is slid with it, since the two are reconciled against each other. The answer stops exactly at the
+    # damaged input's length, which the campaign bound admits and which leaves the move's evidence end one
+    # byte outside the input as the only coordinate left to object; the move stays covered, so the
+    # recounted covered tally still matches the archived one.
+    case(
+        "sidecar-move-evidence-past-the-damaged-input-length",
+        campaign={
+            certified_generated_terminal: archive.edited(certified_generated_terminal, terminal=move_answer_inside)
+        },
+        sidecar={
+            terminal_move: archive.sidecar_edited(
+                terminal_move,
+                answer=move_answer_inside,
+                evidence_begin=move_answer_inside,
+                evidence_end=move_past_input_end,
+            )
+        },
+        marker=("assert end <= move_damaged_size", f", {terminal_damaged_size})"),
+    )
+
+    # Lost and spurious boundaries are disjoint positions inside the divergence region, so their sum
+    # is bounded by the region's width. One case per count and per side of the repairability label,
+    # since a bound reached through the anchor column would be the round-old mistake repeated.
+    case(
+        "completed-row-counting-more-lost-boundaries-than-its-region-holds",
+        campaign={span_room: archive.edited(span_room, lost=lost_past_region)},
+        marker=(
+            'assert int(record["lost"]) + int(record["spurious"]) <= region',
+            archive.tuple_of(span_room)[:-1],
+        ),
+    )
+    case(
+        "beyond-repair-row-counting-more-spurious-boundaries-than-its-region-holds",
+        campaign={unrepairable_span_room: archive.edited(unrepairable_span_room, spurious=spurious_past_region)},
+        marker=(
+            'assert int(record["lost"]) + int(record["spurious"]) <= region',
+            archive.tuple_of(unrepairable_span_room)[:-1],
+        ),
+    )
+
+    # The oracle maps no boundary into a span operation's damaged window, so an answer inside it
+    # cannot land, and the only corruption a flag there admits is the upward flip staged here.
+    case(
+        "answer-inside-the-damaged-window-flagged-landed",
+        campaign={window_interior_answer: archive.edited(window_interior_answer, first_landed="1")},
+        marker=('assert record[flag] == "0"', archive.tuple_of(window_interior_answer)[:-1], "'first')"),
+    )
+
+    # The skip arm's resume is always its own start, so it can never refuse; and no landing flag
+    # exists for an answer at the damaged input's very end, where the harness computes none.
+    case(
+        "skip-row-answering-past-its-own-definition",
+        campaign={
+            skip_answered: archive.edited(skip_answered, first=str(int(archive.field(skip_answered, "first")) + 1))
+        },
+        marker=(
+            'assert int(record["first"]) == int(record["failure_offset"]) + 1',
+            archive.tuple_of(skip_answered)[:-1],
+        ),
+    )
+    case(
+        "beyond-repair-skip-row-answering-past-its-own-definition",
+        campaign={
+            skip_answered_beyond: archive.edited(
+                skip_answered_beyond, first=str(int(archive.field(skip_answered_beyond, "first")) + 1)
+            )
+        },
+        marker=(
+            'assert int(record["first"]) == int(record["failure_offset"]) + 1',
+            archive.tuple_of(skip_answered_beyond)[:-1],
+        ),
+    )
+    case(
+        "skip-row-relabeled-as-a-refusal",
+        campaign={
+            skip_completed: archive.edited(skip_completed, outcome="refused", converged="", lost="", spurious="")
+        },
+        marker=('assert record["outcome"] != "refused"', archive.tuple_of(skip_completed)),
+    )
+    case(
+        "terminal-answer-at-the-damaged-end-carrying-a-flag",
+        campaign={skip_multi: archive.edited(skip_multi, terminal=skip_damaged_size)},
+        marker=('assert record[flag] == ""', archive.tuple_of(skip_multi)[:-1], "'terminal_landed')"),
+    )
+
+    # The terminal half of the mapped-boundary bound: a landed covered terminal lowered beneath the
+    # incident's first mapped boundary, everything else untouched.
+    case(
+        "landed-terminal-below-the-mapped-boundary",
+        campaign={
+            terminal_below_boundary: archive.edited(terminal_below_boundary, terminal=boundary_below_terminal)
+        },
+        marker=(
+            'assert int(record["first_true"]) <= int(record["terminal"])',
+            archive.tuple_of(terminal_below_boundary),
+        ),
+    )
+
+    # The first-answer half of the boundary landing rule: an answer standing exactly on the mapped
+    # boundary with both flags cleared at once, the single-attempt tie kept.
+    case(
+        "first-answer-on-the-mapped-boundary-flagged-unlanded",
+        campaign={
+            boundary_first_landed: archive.edited(boundary_first_landed, first_landed="0", terminal_landed="0")
+        },
+        marker=('assert record[flag] == "1"', archive.tuple_of(boundary_first_landed)[:-1], "'first')"),
+    )
+
+    # The two placements of one delimiter convention are one search reported twice, so their rows
+    # answer together and their first answers differ by exactly one byte. One case copies the past
+    # placement's answer onto the at placement; the other rewrites the at placement into a refusal
+    # while its partner keeps answering.
+    case(
+        "at-placement-answer-copied-from-its-past-partner",
+        campaign={pair_at_with_room: archive.edited(pair_at_with_room, first=copied_past_first)},
+        marker=('assert int(at["first"]) == int(past["first"]) - 1', "'newline'"),
+    )
+    case(
+        "at-placement-spending-an-attempt-its-partner-does-not",
+        campaign={
+            pair_attempts_room: archive.edited(
+                pair_attempts_room, attempts=str(int(archive.field(pair_attempts_room, "attempts")) + 1)
+            )
+        },
+        marker=('assert int(at["attempts"]) == int(past["attempts"]) + extra', "'newline'"),
+    )
+    case(
+        "refused-row-ending-at-the-damaged-input-end",
+        campaign={
+            refused_room_to_eof: archive.edited(
+                refused_room_to_eof,
+                terminal=str(GENERATED_SOURCE_BYTES
+                             + DAMAGED_LENGTH_DELTA[archive.field(refused_room_to_eof, "op")]
+                             * int(archive.field(refused_room_to_eof, "k"))),
+                terminal_landed="",
+            )
+        },
+        marker=('assert record["outcome"] == "completed"', archive.tuple_of(refused_room_to_eof)[:-1]),
+    )
+    case(
+        "capped-row-ending-at-the-damaged-input-end",
+        campaign={
+            capped_room_to_eof: archive.edited(
+                capped_room_to_eof,
+                terminal=str((REAL_DOCUMENT_SOURCE_BYTES
+                              if archive.field(capped_room_to_eof, "grammar") == REAL_DOCUMENT_GRAMMAR
+                              else GENERATED_SOURCE_BYTES)
+                             + DAMAGED_LENGTH_DELTA[archive.field(capped_room_to_eof, "op")]
+                             * int(archive.field(capped_room_to_eof, "k"))),
+                terminal_landed="",
+            )
+        },
+        marker=('assert record["outcome"] == "completed"', archive.tuple_of(capped_room_to_eof)[:-1]),
+    )
+    case(
+        "at-placement-terminal-outside-the-pair-law",
+        campaign={pair_terminal_room: archive.edited(pair_terminal_room, terminal=pair_terminal_outside)},
+        marker=("assert int(at[\"terminal\"]) in (int(past[\"terminal\"]) - 1, int(past[\"terminal\"]))",
+                "'newline'"),
+    )
+    case(
+        "semicolon-at-answer-copied-from-its-past-partner",
+        campaign={
+            semicolon_at_with_room: archive.edited(semicolon_at_with_room, first=semicolon_copied_first)
+        },
+        marker=('assert int(at["first"]) == int(past["first"]) - 1', "'semicolon'"),
+    )
+    case(
+        "at-placement-refuses-while-its-past-partner-answers",
+        campaign={pair_at_answered: archive.edited(pair_at_answered, **pair_refusal_fields)},
+        marker=('assert bool(past["first"]) == bool(at["first"])', "'newline'"),
+    )
+
+    # The companion's searched width range, attacked from both ends on window evidence: a five-byte
+    # interval the search never produces, and an empty one. The width law alone sees neither, both of
+    # its sides false, and the campaign auditor's own range does not travel to a second program.
+    case(
+        "mechanism-refuses-a-five-byte-window",
+        campaign={certified_window: archive.edited(certified_window, evidence_end=window_end_stretched)},
+        program=MECHANISM,
+        marker=(MECHANISM, "assert 1 <= width <= 4, row"),
+    )
+    case(
+        "mechanism-refuses-an-empty-window",
+        campaign={certified_window: archive.edited(certified_window, evidence_end=window_end_collapsed)},
+        program=MECHANISM,
+        marker=(MECHANISM, "assert 1 <= width <= 4, row"),
+    )
+
+    # The damaged length is derived per operation, so the substitution-staged case above proves
+    # nothing about deletion or insertion; one case per remaining operation slides that operation's
+    # own terminal move to its own input length.
+    case(
+        "sidecar-move-past-the-deletion-shortened-input",
+        campaign={
+            sidecar_op_delete: archive.edited(sidecar_op_delete, terminal=str(delete_size - 1))
+        },
+        sidecar={
+            delete_move: archive.sidecar_edited(
+                delete_move,
+                answer=str(delete_size - 1),
+                evidence_begin=str(delete_size - 1),
+                evidence_end=str(delete_size + 1),
+            )
+        },
+        marker=("assert end <= move_damaged_size", ", %d)" % delete_size),
+    )
+    case(
+        "sidecar-move-past-the-insertion-lengthened-input",
+        campaign={
+            sidecar_op_insert: archive.edited(sidecar_op_insert, terminal=str(insert_size - 1))
+        },
+        sidecar={
+            insert_move: archive.sidecar_edited(
+                insert_move,
+                answer=str(insert_size - 1),
+                evidence_begin=str(insert_size - 1),
+                evidence_end=str(insert_size + 1),
+            )
+        },
+        marker=("assert end <= move_damaged_size", ", %d)" % insert_size),
+    )
+
+    # The source lengths are pinned per grammar, so a row naming a grammar the mapping does not carry has no
+    # length to be bounded by at all. The audit refuses it there rather than reading on with no bound, which
+    # is where the schedule grid would otherwise catch it, several hundred thousand rows later.
+    case(
+        "row-names-a-grammar-with-no-source-length",
+        campaign={ordinary: archive.edited(ordinary, grammar=UNKNOWN_GRAMMAR)},
+        marker=('assert record["grammar"] in GRAMMAR_SOURCE_BYTES', UNKNOWN_GRAMMAR),
+    )
+
     assert certified_covered_value not in ("", "0"), certified_covered_value
+    assert archive.field(absorbed_substitute, "op") == "substitute", absorbed_substitute
+    assert archive.field(certified_covered_first, "attempts") == "1", certified_covered_first
+    assert archive.field(attempts_one, "attempts") == "1", attempts_one
+    assert archive.field(attempts_one_flagged, "attempts") == "1", attempts_one_flagged
+    assert archive.field(refused_multi_attempt, "outcome") == "refused", refused_multi_attempt
+    assert archive.field(refused_multi_attempt, "attempts") != "100", refused_multi_attempt
     assert archive.field(repairable_block[0], "repairable") == "1", repairable_block[0]
     assert archive.field(delete_block[0], "op") == "delete", delete_block[0]
     assert archive.field(capped_row, "outcome") == "capped", capped_row
+    assert archive.field(exact_clean_landed, "strategy") == "exact-clean", exact_clean_landed
+    assert archive.field(exact_direct_answer, "strategy") == "exact", exact_direct_answer
+    assert archive.field(exact_direct_answer, "attempts") == "1", exact_direct_answer
+    assert direct_answer == archive.field(exact_direct_answer, "first"), exact_direct_answer
+    assert archive.field(exact_direct_answer, "terminal") == direct_answer, exact_direct_answer
+    assert archive.field(certified_byte, "evidence_kind") == "byte", certified_byte
+    assert archive.field(certified_window, "evidence_kind") == "window", certified_window
+    assert not archive.field(unrepairable_completed, "exact_at_anchor"), unrepairable_completed
+    assert not archive.field(unrepairable_empty_region, "exact_at_anchor"), unrepairable_empty_region
+    assert not archive.field(unrepairable_exact_clean_landed, "exact_at_anchor"), unrepairable_exact_clean_landed
+    assert archive.field(unrepairable_exact_clean_landed, "strategy") == "exact-clean", unrepairable_exact_clean_landed
+    assert archive.field(unrepairable_completed, "outcome") == "completed", unrepairable_completed
+    assert archive.field(unrepairable_empty_region, "lost") == "0", unrepairable_empty_region
+    assert direct_without_answer, exact_direct_answer
+    assert archive.field(terminal_on_first_true, "terminal") == archive.field(
+        terminal_on_first_true, "first_true"
+    ), terminal_on_first_true
+    assert int(archive.field(terminal_on_first_true, "attempts")) >= 2, terminal_on_first_true
+    assert archive.field(certified_generated_terminal, "grammar") != REAL_DOCUMENT_GRAMMAR, certified_generated_terminal
+    assert int(archive.field(certified_generated_terminal, "terminal")) < terminal_damaged_size - 1, terminal_damaged_size
+    assert archive.field(empty_region, "lost") == "0", empty_region
+    assert archive.field(empty_region_second, "spurious") == "0", empty_region_second
+    assert empty_region != empty_region_second, empty_region
+    assert int(archive.field(absorbed_substitute, "p")) < POSITION_BOUND, absorbed_substitute
+    assert archive.field(absorbed_substitute, "k") == "1", absorbed_substitute
+    assert archive.field(absorbed_insert, "op") == "insert", absorbed_insert
+    assert archive.field(absorbed_insert, "strategy") == "absorbed", absorbed_insert
+    assert UNKNOWN_GRAMMAR != archive.field(ordinary, "grammar"), UNKNOWN_GRAMMAR
+    assert GENERATED_SOURCE_BYTES < PAST_CORPUS_COORDINATE < POSITION_BOUND < WILD_COORDINATE, POSITION_BOUND
+    # The three cases that reach past a corpus are staged on generated rows, which are the shorter ones: on
+    # the real-world row the coordinates they write would be inside the source and nothing would object.
+    for position in (absorbed_substitute, absorbed_insert, noncertified_answered, delete_block[0]):
+        assert archive.field(position, "grammar") != REAL_DOCUMENT_GRAMMAR, position
+    assert archive.field(attempts_advance, "outcome") != "capped", attempts_advance
+    assert int(archive.field(attempts_advance, "attempts")) >= 2, attempts_advance
+    assert landed_covered_arms, incident_block[0]
+    assert archive.field(certified_wide_advance, "outcome") == "completed", certified_wide_advance
+    assert archive.field(certified_wide_advance, "strategy") == certified_arm_name, certified_wide_advance
     # The renamed cell must not be a deletion cell: a deletion's corruption end is the deletion point,
     # and a row renamed out of that operation would be caught by the geometry rather than by the grid.
     assert archive.field(cell_block[0], "op") != "delete", cell_block[0]
@@ -1092,7 +2425,7 @@ def neuter_case(archive, cases, name):
     raise AssertionError(f"no such case to neuter: {name}")
 
 
-def run_suite(data_dir, neutered=None):
+def run_suite(data_dir, neutered=None, only=None):
     analyzer = os.path.join(data_dir, ANALYZER)
     mechanism = os.path.join(data_dir, MECHANISM)
     gold_dir = os.path.join(data_dir, GOLD_DIR)
@@ -1131,22 +2464,30 @@ def run_suite(data_dir, neutered=None):
             print("baseline-reproduces-archived-emissions PASSED")
 
         # The mechanism companion is pinned the same way, from the same staged CSV: it reads the campaign
-        # alone, needs no sidecar, and writes its single emission into a directory of the suite's choosing,
-        # so nothing is written beside the archive.
+        # alone, needs no sidecar, and writes its emissions into a directory of the suite's choosing, so
+        # nothing is written beside the archive. Both are compared, the printed figures and the overhang
+        # data file, because the plot the manuscript prints is drawn from the second one alone.
         out_mech = os.path.join(work, "out-mech")
         status, _ = run_analyzer(mechanism, base_csv, out_mech)
-        mismatched = compare_emissions(out_mech, gold_dir, (MECHANISM_EMISSION,)) if status == 0 else []
+        mismatched = compare_emissions(out_mech, gold_dir, MECHANISM_EMISSIONS) if status == 0 else []
         if status != 0 or mismatched:
-            detail = f"exit {status}" if status != 0 else "emission differs: " + ", ".join(mismatched)
-            print(f"mechanism-baseline-reproduces-archived-emission FAILED ({detail})")
+            detail = f"exit {status}" if status != 0 else "emissions differ: " + ", ".join(mismatched)
+            print(f"mechanism-baseline-reproduces-archived-emissions FAILED ({detail})")
             failures.append("mechanism-baseline")
         else:
-            print("mechanism-baseline-reproduces-archived-emission PASSED")
+            print("mechanism-baseline-reproduces-archived-emissions PASSED")
 
         out_mut = os.path.join(work, "out-mut")
         cases = build_cases(archive)
         if neutered is not None:
             neuter_case(archive, cases, neutered)
+        if only is not None:
+            named = [case for case in cases if case["name"] == only]
+            if not named:
+                sys.exit(f"test_analyze_r6.py: no case named {only}; --list-cases prints them")
+            # The control still runs first, so a failure of the named case cannot be blamed on the
+            # staging machinery.
+            cases = [case for case in cases if case["expect"] == "accept"] + named
         for case in cases:
             for path in (mut_csv, mut_sidecar):
                 if os.path.exists(path):
@@ -1160,7 +2501,7 @@ def run_suite(data_dir, neutered=None):
                     stream(archive.sidecar, case["sidecar"], mut_sidecar)
                 else:
                     link_or_copy(base_sidecar, mut_sidecar)
-            status, stderr = run_analyzer(analyzer, mut_csv, out_mut, case["env"])
+            status, stderr = run_analyzer(os.path.join(data_dir, case["program"]), mut_csv, out_mut, case["env"])
             if case["expect"] == "accept":
                 mismatched = compare_emissions(out_mut, gold_dir, case["emissions"]) if status == 0 else []
                 if status != 0:
@@ -1230,11 +2571,38 @@ def prove_detection(data_dir):
 def main():
     arguments = sys.argv[1:]
     prove = "--prove-detection" in arguments
-    positional = [argument for argument in arguments if argument != "--prove-detection"]
+    listing = "--list-cases" in arguments
+    only = None
+    positional = []
+    skip_next = False
+    for index, argument in enumerate(arguments):
+        if skip_next:
+            skip_next = False
+            continue
+        if argument in ("--prove-detection", "--list-cases"):
+            continue
+        if argument == "--case":
+            if index + 1 >= len(arguments):
+                sys.exit("test_analyze_r6.py: --case needs a case name; --list-cases prints them")
+            only = arguments[index + 1]
+            skip_next = True
+            continue
+        positional.append(argument)
     data_dir = os.path.abspath(positional[0] if positional else os.path.dirname(os.path.abspath(__file__)))
+    if listing:
+        # The names come from the staged archive's own case list, so the listing can never drift from
+        # what a run would stage.
+        gold_dir = os.path.join(data_dir, GOLD_DIR)
+        archive = Archive(
+            load_gzipped_lines(os.path.join(gold_dir, CAMPAIGN + ".gz")),
+            load_gzipped_lines(os.path.join(gold_dir, CAMPAIGN + SIDECAR_SUFFIX + ".gz")),
+        )
+        for case in build_cases(archive):
+            print(case["name"])
+        return 0
     if prove:
         return prove_detection(data_dir)
-    return run_suite(data_dir)[0]
+    return run_suite(data_dir, only=only)[0]
 
 
 if __name__ == "__main__":
