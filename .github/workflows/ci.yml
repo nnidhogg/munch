@@ -435,6 +435,7 @@ jobs:
             --exclude '(.*/)?_deps/.*'
             --exclude '(.*/)?tests/.*'
             --exclude '(.*/)?tools/benchmark/.*'
+            --exclude '(.*/)?tools/probes/.*'
             --exclude '(.*/)?CMakeFiles/.*'
           )
 
