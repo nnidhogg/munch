@@ -7,7 +7,7 @@
 # the printed figures and the overhang data file the manuscript's plot reads coordinate by coordinate, so
 # the second checked-in program that feeds the manuscript is pinned to its archived output as well. Each
 # case that follows stages one corrupted archive and requires a nonzero exit from the program it is aimed
-# at, the auditing analyzer for all but one case and the mechanism companion for that one, so the
+# at, the auditing analyzer for most cases and the mechanism companion for its four, so the
 # companion's own refusal of a corrupted archive is executable rather than assumed; a mutation the program
 # accepts is a hole in the audit and fails the suite.
 #
@@ -440,6 +440,21 @@ class Archive:
                     and int(fields[column["first"]]) - 1 >= int(fields[column["failure_offset"]]) + 1
                 ):
                     self._note("exact_direct_answer", position)
+
+                # The exact arm completing in one move on a repairable incident with both landings
+                # archived: the row the two cross-arm reconciliation cases are staged through, since
+                # the certified arm answers the same coordinate on these incidents and the
+                # incident-level guards read the two rows against each other. That sharing is asserted
+                # where the cases are built rather than assumed here, since this scan sees one row at
+                # a time.
+                if (
+                    fields[column["exact_at_anchor"]]
+                    and fields[column["outcome"]] == "completed"
+                    and fields[column["attempts"]] == "1"
+                    and fields[column["first_landed"]] == "1"
+                    and fields[column["terminal_landed"]] == "1"
+                ):
+                    self._note("exact_shared_coordinate", position)
             if strategy == "exact-clean" and fields[column["first"]]:
                 # The other arm the harness floors at the corruption end, and the one that carries no
                 # evidence at all: its answer alone is what the floor can be tested through.
@@ -504,14 +519,33 @@ class Archive:
                 ):
                     self._note("pair_attempts_room", position)
 
-            # The other delimiter family's at-placement, so the pair laws are staged on both families
-            # rather than proved for one and assumed for the other.
+            # The other delimiter family's at-placement, so every pair law is staged on both families
+            # rather than proved for one and assumed for the other: co-presence, the copied first, the
+            # terminal's two-value set, and the attempts reconciliation each get a semicolon row too,
+            # under the same room conditions their newline twins require.
             if strategy == "semicolon-at" and fields[column["first"]]:
+                self._note("semicolon_at_answered", position)
                 if (
                     int(fields[column["attempts"]]) >= 2
                     and int(fields[column["terminal"]]) >= int(fields[column["first"]]) + 2
                 ):
                     self._note("semicolon_at_with_room", position)
+                if (
+                    int(fields[column["attempts"]]) >= 2
+                    and fields[column["terminal_landed"]] == "0"
+                    and int(fields[column["terminal"]]) - int(fields[column["first"]])
+                    >= int(fields[column["attempts"]]) + 1
+                    and int(fields[column["terminal"]]) - 1 != int(fields[column["first_true"]])
+                    and int(fields[column["terminal"]]) - 2 != int(fields[column["first_true"]])
+                ):
+                    self._note("semicolon_terminal_room", position)
+                if (
+                    fields[column["outcome"]] != "capped"
+                    and int(fields[column["attempts"]]) + 1 < ATTEMPT_BUDGET
+                    and int(fields[column["terminal"]]) - int(fields[column["first"]])
+                    >= int(fields[column["attempts"]]) + 1
+                ):
+                    self._note("semicolon_attempts_room", position)
             if fields[column["attempts"]] == "0":
                 self._note("zero_attempt", position)
                 if strategy in DELIMITER_ARMS:
@@ -694,6 +728,10 @@ class Archive:
             "pair_attempts_room",
             "refused_room_to_eof",
             "capped_room_to_eof",
+            "semicolon_at_answered",
+            "semicolon_terminal_room",
+            "semicolon_attempts_room",
+            "exact_shared_coordinate",
         )
         missing = [name for name in required if name not in self.targets]
         assert not missing, missing
@@ -947,6 +985,10 @@ def build_cases(archive):
     skip_answered_beyond = column_targets["skip_answered_beyond"]
     pair_terminal_room = column_targets["pair_terminal_room"]
     semicolon_at_with_room = column_targets["semicolon_at_with_room"]
+    semicolon_at_answered = column_targets["semicolon_at_answered"]
+    semicolon_terminal_room = column_targets["semicolon_terminal_room"]
+    semicolon_attempts_room = column_targets["semicolon_attempts_room"]
+    exact_shared_coordinate = column_targets["exact_shared_coordinate"]
     unrepairable_exact_row = column_targets["unrepairable_exact_row"]
     pair_attempts_room = column_targets["pair_attempts_room"]
     refused_room_to_eof = column_targets["refused_room_to_eof"]
@@ -1091,6 +1133,211 @@ def build_cases(archive):
     pair_refusal_fields = {field: "" for field in ANSWER_DEPENDENT_COLUMNS}
     pair_refusal_fields["attempts"] = "0"
     pair_refusal_fields["outcome"] = "refused"
+
+    # The semicolon family's terminal case mirrors the newline one: the at-placement terminal lowered
+    # two bytes below its partner's, out of the pair law's two-value set.
+    semicolon_terminal_partner = archive.arm_row_of(semicolon_terminal_room, "semicolon")
+    semicolon_terminal_outside = str(int(archive.field(semicolon_terminal_partner, "terminal")) - 2)
+
+    # The cross-arm reconciliation cases edit the exact arm of an incident whose certified arm answered
+    # the same coordinate the same way. That sharing is the staged precondition, so it is asserted from
+    # the archive here rather than assumed: if the target row's neighbour ever stops sharing, this
+    # staging fails loudly instead of building a case that proves nothing.
+    shared_coordinate = archive.field(exact_shared_coordinate, "first")
+    shared_partner = archive.arm_row_of(exact_shared_coordinate, "certified")
+    assert archive.field(shared_partner, "first") == shared_coordinate, shared_coordinate
+    assert archive.field(shared_partner, "first_landed") == "1", shared_coordinate
+    assert archive.field(shared_partner, "outcome") == "completed", shared_coordinate
+    assert archive.field(shared_partner, "attempts") == "1", shared_coordinate
+    assert archive.field(shared_partner, "converged") == archive.field(exact_shared_coordinate, "converged")
+    shared_converged_moved = str(int(archive.field(exact_shared_coordinate, "converged")) + 1)
+
+    # The floor-answer case: the exact arm on a direct-absent incident rewritten to claim the blind
+    # floor itself, one past the failure, which is the position the absent direct answer says refused.
+    floor_answer = str(int(archive.field(unrepairable_exact_row, "failure_offset")) + 1)
+
+    # The cross-row pair targets below need both placements of an incident at once, which the one-row
+    # scan above cannot see: this walk reads each at-placement row beside its past partner and returns
+    # the first pair satisfying the staged conditions, failing loudly if the archive holds none.
+    def find_at_row(past_name, at_name, want):
+        for position in range(1, len(archive.campaign)):
+            fields = split_fields(archive.campaign[position])
+            if fields[archive.index["strategy"]] != at_name or not fields[archive.index["first"]]:
+                continue
+            partner = split_fields(archive.campaign[archive.arm_row_of(position, past_name)])
+            if want(fields, partner):
+                return position, partner
+        raise AssertionError((past_name, at_name, "no archive row satisfies the staging conditions"))
+
+    # A pair one byte apart on terminals whose flags disagree about the shared position-to-be: raising
+    # the at placement's terminal onto its partner's, with the extra attempt the pair law then expects,
+    # leaves every pair law satisfied while the two rows declare one coordinate landed and unlanded.
+    def equal_terminal_want(at_fields, past_fields):
+        # Raising the terminal and the attempts together keeps the advance law satisfied on its own:
+        # the archived row already has its terminal past its first by at least the attempts less one,
+        # and both sides of that inequality grow by one. Only the cap and the budget need checking.
+        return (
+            at_fields[archive.index["terminal_landed"]] == "0"
+            and past_fields[archive.index["terminal_landed"]] == "1"
+            and int(past_fields[archive.index["terminal"]]) == int(at_fields[archive.index["terminal"]]) + 1
+            and at_fields[archive.index["outcome"]] != "capped"
+            and int(at_fields[archive.index["attempts"]]) + 1 < ATTEMPT_BUDGET
+            # The raised terminal must not sit on the oracle's first mapped boundary, where a clear
+            # flag is refused by a row guard before any pair or cross-arm law is read.
+            and int(past_fields[archive.index["terminal"]]) != int(at_fields[archive.index["first_true"]])
+        )
+
+    newline_landing_row, newline_landing_partner = find_at_row("newline", "newline-at", equal_terminal_want)
+
+    # The semicolon family admits no off-boundary flag disagreement: in every archived semicolon pair
+    # whose flags part ways across a one-byte terminal gap, the shared coordinate is the oracle's first
+    # mapped boundary, where the row-level boundary rule refuses the clear flag before any cross-arm
+    # law is read. The family's staging is therefore that fact itself: the terminal raised onto the
+    # shared boundary coordinate must be refused by the row guard that owns the shape.
+    def boundary_terminal_want(at_fields, past_fields):
+        return (
+            at_fields[archive.index["terminal_landed"]] == "0"
+            and past_fields[archive.index["terminal_landed"]] == "1"
+            and int(past_fields[archive.index["terminal"]]) == int(at_fields[archive.index["terminal"]]) + 1
+            and at_fields[archive.index["outcome"]] != "capped"
+            and int(at_fields[archive.index["attempts"]]) + 1 < ATTEMPT_BUDGET
+            and int(past_fields[archive.index["terminal"]]) == int(at_fields[archive.index["first_true"]])
+        )
+
+    semicolon_boundary_row, semicolon_boundary_partner = find_at_row(
+        "semicolon", "semicolon-at", boundary_terminal_want)
+
+    # The equal-terminal attempts branch: on the archive's own rows of that branch every field is
+    # pinned by the row-level geometry, one attempt over an advance of one, so no coherent single edit
+    # reaches the pair law there. The branch is staged from the other side instead: a pair one byte
+    # apart is pushed onto the shared terminal without the extra attempt the branch requires, and the
+    # attempts reconciliation is the first law that can object.
+    def rare_branch_want(at_fields, past_fields):
+        # The two placements' terminal flags must agree, which also keeps the raised coordinate off
+        # the end of the input and inside every flag-domain rule the partner row already satisfies
+        # there, so the attempts reconciliation is the first law that can object.
+        return (
+            int(past_fields[archive.index["terminal"]]) == int(at_fields[archive.index["terminal"]]) + 1
+            and int(at_fields[archive.index["attempts"]]) == int(past_fields[archive.index["attempts"]])
+            and int(at_fields[archive.index["attempts"]]) >= 2
+            and at_fields[archive.index["outcome"]] != "capped"
+            and at_fields[archive.index["terminal_landed"]] != ""
+            and at_fields[archive.index["terminal_landed"]] == past_fields[archive.index["terminal_landed"]]
+            and int(past_fields[archive.index["terminal"]]) != int(at_fields[archive.index["first_true"]])
+        )
+
+    def find_incident(strategy, want):
+        """The first row of `strategy` whose whole incident satisfies `want(fields, arms)`."""
+        for position in range(1, len(archive.campaign)):
+            fields = split_fields(archive.campaign[position])
+            if fields[archive.index["strategy"]] != strategy:
+                continue
+            key = tuple(fields[:5])
+            arms = {}
+            for candidate in range(max(1, position - 15), min(len(archive.campaign), position + 16)):
+                sibling = split_fields(archive.campaign[candidate])
+                if tuple(sibling[:5]) == key:
+                    arms[sibling[archive.index["strategy"]]] = sibling
+            if len(arms) == ARMS_PER_INCIDENT and want(fields, arms):
+                return position
+        raise AssertionError((strategy, "no incident satisfies the staging conditions"))
+
+    F = archive.index
+
+    def is_collapsed(fields):
+        return int(fields[F["failure_offset"]]) + 1 >= int(fields[F["corruption_end"]])
+
+    def completed_one(fields):
+        return fields[F["outcome"]] == "completed" and fields[F["attempts"]] == "1"
+
+    # The membership cases relabel an arm out of a shared completed single-attempt group; the group
+    # guard must be what objects, so the arm must genuinely share its first answer with another
+    # completed single-attempt member.
+    def shares_completed_group(name):
+        def want(fields, arms):
+            return completed_one(fields) and any(
+                other != name and r[F["first"]] == fields[F["first"]] and completed_one(r)
+                for other, r in arms.items())
+        return want
+
+    membership_exact_clean = find_incident(
+        "exact-clean",
+        lambda fields, arms: not is_collapsed(fields) and shares_completed_group("exact-clean")(fields, arms))
+    membership_token_newline = find_incident(
+        "token-newline",
+        lambda fields, arms: not is_collapsed(fields) and shares_completed_group("token-newline")(fields, arms))
+    membership_token_semicolon = find_incident(
+        "token-semicolon", lambda fields, arms: completed_one(fields))
+    membership_semicolon_pair = find_incident(
+        "semicolon",
+        lambda fields, arms: completed_one(fields) and fields[F["k"]] == "1"
+        and completed_one(arms["semicolon-at"]))
+    membership_all_three = find_incident(
+        "semicolon",
+        lambda fields, arms: completed_one(fields) and fields[F["k"]] == "4"
+        and completed_one(arms["semicolon-at"]) and completed_one(arms["token-semicolon"]))
+    semicolon_multi_attempt = find_incident(
+        "semicolon",
+        lambda fields, arms: fields[F["outcome"]] == "completed" and fields[F["attempts"]] == "2")
+    membership_certified_clean = find_incident(
+        "certified-clean",
+        lambda fields, arms: is_collapsed(fields) and shares_completed_group("certified-clean")(fields, arms))
+
+    # The collapsed identity case moves the exact-clean pair's one answer a byte down, since the
+    # convergence point sits at the answer on these rows and an upward move would trip its floor. The
+    # moved coordinate must stay at or above both search floors and the first mapped boundary, carry
+    # no contradicting landing flag, and start no completed group of its own, so the identity
+    # comparison is the first law that can object.
+    def first_movable(fields, arms):
+        if not (is_collapsed(fields) and completed_one(fields)):
+            return False
+        moved = str(int(fields[F["first"]]) - 1)
+        if int(moved) < int(fields[F["failure_offset"]]) + 1:
+            return False
+        if int(moved) < int(fields[F["corruption_end"]]):
+            return False
+        if int(fields[F["first_true"]]) > int(moved):
+            return False
+        for r in arms.values():
+            if r[F["first"]] == moved:
+                return False
+            for coordinate, flag in ((r[F["first"]], r[F["first_landed"]]),
+                                     (r[F["terminal"]], r[F["terminal_landed"]])):
+                if coordinate == moved and flag == "0":
+                    return False
+        return True
+
+    identity_first = find_incident("exact-clean", first_movable)
+    identity_first_moved = str(int(archive.field(identity_first, "first")) - 1)
+
+    # Every collapsed certified-clean run in this archive is single-attempt, and a single move is
+    # fully joined to its row by the sidecar reconciliation, so the ordered-sidecar half of the
+    # identity law is implied here by run-field identity plus the join guards; it stays asserted for
+    # any archive where multi-move collapsed runs appear. The stageable shapes are therefore the
+    # identity on an evidence field, row and move shifted coherently together, and the join guard's
+    # ownership of a sidecar-only divergence.
+    def evidence_movable(fields, arms):
+        if not (is_collapsed(fields) and completed_one(fields)):
+            return False
+        begin, end = int(fields[F["evidence_begin"]]), int(fields[F["evidence_end"]])
+        return end - begin >= 2 and begin + 1 <= int(fields[F["first"]])
+
+    identity_evidence = find_incident("certified-clean", evidence_movable)
+    identity_evidence_moved = str(int(archive.field(identity_evidence, "evidence_begin")) + 1)
+    identity_evidence_key = tuple(split_fields(archive.campaign[identity_evidence])[:5])
+    identity_evidence_move = None
+    for position in range(1, len(archive.sidecar)):
+        move_fields = split_fields(archive.sidecar[position])
+        if (tuple(move_fields[:5]) == identity_evidence_key and move_fields[5] == "certified-clean"
+                and move_fields[6] == "0"):
+            identity_evidence_move = position
+            break
+    assert identity_evidence_move is not None, identity_evidence_key
+
+    rare_semicolon_row, rare_semicolon_partner = find_at_row("semicolon", "semicolon-at", rare_branch_want)
+    rare_shared_terminal = rare_semicolon_partner[archive.index["terminal"]]
+    # The guard's message carries the incident key, whose most distinctive member is the trial.
+    rare_incident_trial = archive.field(rare_semicolon_row, "trial")
 
     # The certified window's interval stretched to five bytes and collapsed to zero, for the
     # companion's width range; the campaign auditor refuses both by its own bound, so these run the
@@ -2087,6 +2334,56 @@ def build_cases(archive):
         marker=("assert answered, (key", archive.tuple_of(exact_direct_answer)),
     )
 
+    # The membership-erasure shapes reports drove through: an arm relabeled refused with every
+    # answer field blanked leaves the divergence groups entirely, and coherently. What objects is
+    # the harness reconciliation, three exact per-cell identities over all eleven arms: answers
+    # count the rows carrying a first answer and equally the rows that attempted, initial refusals
+    # the refusals that never attempted, terminal refusals the refused rows outright. Each staged
+    # shape below was demonstrated by a report and is pinned at its own identity: the single token
+    # arms of both families, the semicolon pair erased together so the pair laws stay silent, all
+    # three excluded-family arms at once, and a multi-attempt relabel that keeps its first answer
+    # and attempts so only the outcome moves.
+    case(
+        "token-arm-erasing-its-own-membership",
+        campaign={membership_token_newline: archive.edited(
+            membership_token_newline, **refused_exact_fields)},
+        marker=("cell_first_present.get(summary_cell, 0) == answers", "'token-newline'"),
+    )
+    case(
+        "token-semicolon-arm-erasing-its-own-membership",
+        campaign={membership_token_semicolon: archive.edited(
+            membership_token_semicolon, **refused_exact_fields)},
+        marker=("cell_first_present.get(summary_cell, 0) == answers", "'token-semicolon'"),
+    )
+    case(
+        "semicolon-pair-erasing-both-memberships-together",
+        campaign={
+            membership_semicolon_pair: archive.edited(
+                membership_semicolon_pair, **refused_exact_fields),
+            archive.arm_row_of(membership_semicolon_pair, "semicolon-at"): archive.edited(
+                archive.arm_row_of(membership_semicolon_pair, "semicolon-at"),
+                **refused_exact_fields),
+        },
+        marker=("cell_first_present.get(summary_cell, 0) == answers", "'1', 'semicolon')"),
+    )
+    case(
+        "all-three-excluded-family-arms-erased-together",
+        campaign={
+            membership_all_three: archive.edited(membership_all_three, **refused_exact_fields),
+            archive.arm_row_of(membership_all_three, "semicolon-at"): archive.edited(
+                archive.arm_row_of(membership_all_three, "semicolon-at"), **refused_exact_fields),
+            archive.arm_row_of(membership_all_three, "token-semicolon"): archive.edited(
+                archive.arm_row_of(membership_all_three, "token-semicolon"), **refused_exact_fields),
+        },
+        marker=("cell_first_present.get(summary_cell, 0) == answers", "'4', 'semicolon')"),
+    )
+    case(
+        "multi-attempt-semicolon-relabeled-refused-with-its-answer-standing",
+        campaign={semicolon_multi_attempt: archive.edited(
+            semicolon_multi_attempt, outcome="refused", converged="", lost="", spurious="")},
+        marker=("cell_refused.get(summary_cell, 0) == terminal_refusals",),
+    )
+
     # An answer standing exactly on the oracle's first mapped boundary is on a boundary of the pristine
     # mapping by that very fact, so its landing flag cannot be clear. The row answered more than once, so
     # the single-attempt rule that ties the two flags together is not what objects, and the arm carries no
@@ -2283,6 +2580,172 @@ def build_cases(archive):
         marker=('assert bool(past["first"]) == bool(at["first"])', "'newline'"),
     )
 
+    # The semicolon family staged under every pair law its newline twin already carries, so the staging
+    # claim can name both families: the terminal lowered out of the two-value set, the attempts count
+    # raised past its reconciliation, and the at placement rewritten into a refusal beside an answering
+    # partner. The equal-terminal attempts branch, which the archive holds only rarely, gets its own
+    # case through a pair already on that branch.
+    case(
+        "semicolon-at-terminal-outside-the-pair-law",
+        campaign={
+            semicolon_terminal_room: archive.edited(
+                semicolon_terminal_room, terminal=semicolon_terminal_outside)
+        },
+        marker=("assert int(at[\"terminal\"]) in (int(past[\"terminal\"]) - 1, int(past[\"terminal\"]))",
+                "'semicolon'"),
+    )
+    case(
+        "semicolon-at-spending-an-attempt-its-partner-does-not",
+        campaign={
+            semicolon_attempts_room: archive.edited(
+                semicolon_attempts_room,
+                attempts=str(int(archive.field(semicolon_attempts_room, "attempts")) + 1))
+        },
+        marker=('assert int(at["attempts"]) == int(past["attempts"]) + extra', "'semicolon'"),
+    )
+    case(
+        "semicolon-at-refuses-while-its-past-partner-answers",
+        campaign={semicolon_at_answered: archive.edited(semicolon_at_answered, **pair_refusal_fields)},
+        marker=('assert bool(past["first"]) == bool(at["first"])', "'semicolon'"),
+    )
+    case(
+        "semicolon-pair-attempts-broken-on-the-equal-terminal-branch",
+        campaign={
+            rare_semicolon_row: archive.edited(rare_semicolon_row, terminal=rare_shared_terminal)
+        },
+        marker=('assert int(at["attempts"]) == int(past["attempts"]) + extra',
+                f"'{rare_incident_trial}'"),
+    )
+
+    # Decider totality staged on both arms across both repairability labels rather than proved for
+    # three cells of that grid and assumed for the fourth: the exact-clean arm rewritten into an
+    # otherwise coherent refusal on a repairable incident and on one labeled beyond repair. The exact
+    # arm's two labels are staged above, by the archived-decider co-presence case and the beyond-repair
+    # refusal case.
+    case(
+        "exact-clean-arm-rewritten-into-a-refusal-on-a-repairable-incident",
+        campaign={exact_clean_landed: archive.edited(exact_clean_landed, **pair_refusal_fields)},
+        marker=("assert answered, (key", archive.tuple_of(exact_clean_landed)),
+    )
+    case(
+        "beyond-repair-exact-clean-arm-rewritten-into-a-refusal",
+        campaign={
+            unrepairable_exact_clean_landed: archive.edited(
+                unrepairable_exact_clean_landed, **pair_refusal_fields)
+        },
+        marker=("assert answered, (key", archive.tuple_of(unrepairable_exact_clean_landed)),
+    )
+
+    # The direct query and the exact arm cover both of the law's branches: the tie is staged above by
+    # moving an archived answer off its direct partner, and this case stages the complementary branch,
+    # an arm claiming the blind floor its absent direct answer says refused.
+    case(
+        "exact-arm-answering-its-blind-floor-after-a-direct-refusal",
+        campaign={
+            unrepairable_exact_row: archive.edited(
+                unrepairable_exact_row, first=floor_answer, terminal=floor_answer)
+        },
+        marker=("assert int(exact_first) > int", f"'{floor_answer}'"),
+    )
+
+    # The cross-arm reconciliations, staged in the shapes that once rode through: one arm's landing
+    # flags flipped while a neighbour keeps answering the same coordinate landed; a pair pushed onto
+    # equal terminals whose flags then disagree about one position, in both delimiter families; and a
+    # single-attempt completed arm whose divergence triple parts from the neighbour it shares its
+    # answer with.
+    case(
+        "exact-arm-landing-flags-flipped-against-a-sharing-neighbour",
+        campaign={
+            exact_shared_coordinate: archive.edited(
+                exact_shared_coordinate, first_landed="0", terminal_landed="0")
+        },
+        marker=("assert seen_flag == flag", f"'{shared_coordinate}'"),
+    )
+    case(
+        "newline-pair-equal-terminals-landing-apart",
+        campaign={
+            newline_landing_row: archive.edited(
+                newline_landing_row,
+                terminal=newline_landing_partner[archive.index["terminal"]],
+                attempts=str(int(archive.field(newline_landing_row, "attempts")) + 1))
+        },
+        marker=("assert seen_flag == flag",
+                f"'{newline_landing_partner[archive.index['terminal']]}'"),
+    )
+    case(
+        "semicolon-pair-shared-boundary-terminal-claimed-unlanded",
+        campaign={
+            semicolon_boundary_row: archive.edited(
+                semicolon_boundary_row,
+                terminal=semicolon_boundary_partner[archive.index["terminal"]],
+                attempts=str(int(archive.field(semicolon_boundary_row, "attempts")) + 1))
+        },
+        marker=('assert record[flag] == "1"',
+                f"'{archive.field(semicolon_boundary_row, 'strategy')}', 'terminal')"),
+    )
+    case(
+        "single-attempt-arm-diverging-from-its-coordinate-sharing-neighbour",
+        campaign={
+            exact_shared_coordinate: archive.edited(
+                exact_shared_coordinate, converged=shared_converged_moved)
+        },
+        marker=("assert len(triples) == 1", f"'{shared_converged_moved}'"),
+    )
+
+    # Membership is validated before outcome filtering, staged in the exact shape one round accepted:
+    # an arm sharing a completed single-attempt answer relabels itself refused, clears its divergence
+    # fields coherently, and must be caught by the group guard rather than slipping out of the very
+    # comparison meant to validate it. Staged on both oracle-floored arms, one on a plain incident and
+    # one on a collapsed-floor incident, so neither label owns the law alone.
+    case(
+        "sharing-exact-clean-arm-opting-out-of-its-completed-group",
+        campaign={
+            membership_exact_clean: archive.edited(
+                membership_exact_clean, outcome="refused", converged="", lost="", spurious="")
+        },
+        marker=('assert r["outcome"] == "completed" and r["attempts"] == "1"', "'exact-clean'"),
+    )
+    case(
+        "sharing-certified-clean-arm-opting-out-on-a-collapsed-incident",
+        campaign={
+            membership_certified_clean: archive.edited(
+                membership_certified_clean, outcome="refused", converged="", lost="", spurious="")
+        },
+        marker=('assert r["outcome"] == "completed" and r["attempts"] == "1"', "'certified-clean'"),
+    )
+
+    # The collapsed-floor identity, staged on a run field and on the ordered sidecar: where one past
+    # the failure reaches the corruption end the two floors coincide, so the clean twin cannot part
+    # from its arm on any field, and the certified pair cannot part on a single move.
+    case(
+        "collapsed-floor-exact-pair-parting-on-the-first-answer",
+        campaign={
+            identity_first: archive.edited(
+                identity_first, first=identity_first_moved, terminal=identity_first_moved)
+        },
+        marker=("assert arms[one][field] == arms[twin][field]", "'first')"),
+    )
+    case(
+        "collapsed-floor-certified-pair-parting-on-its-evidence",
+        campaign={
+            identity_evidence: archive.edited(
+                identity_evidence, evidence_begin=identity_evidence_moved)
+        },
+        sidecar={
+            identity_evidence_move: archive.sidecar_edited(
+                identity_evidence_move, evidence_begin=identity_evidence_moved)
+        },
+        marker=("assert arms[one][field] == arms[twin][field]", "'evidence_begin'"),
+    )
+    case(
+        "collapsed-floor-certified-move-owned-by-its-record-join",
+        sidecar={
+            identity_evidence_move: archive.sidecar_edited(
+                identity_evidence_move, evidence_begin=identity_evidence_moved)
+        },
+        marker=('assert int(record["evidence_begin"]) == first_begin', "'certified-clean'"),
+    )
+
     # The companion's searched width range, attacked from both ends on window evidence: a five-byte
     # interval the search never produces, and an empty one. The width law alone sees neither, both of
     # its sides false, and the campaign auditor's own range does not travel to a second program.
@@ -2394,6 +2857,125 @@ def build_cases(archive):
     # and a row renamed out of that operation would be caught by the geometry rather than by the grid.
     assert archive.field(cell_block[0], "op") != "delete", cell_block[0]
     assert UNKNOWN_OPERATION not in ("substitute", "insert", "delete"), UNKNOWN_OPERATION
+
+    # The staged coverage matrix, checked rather than described: every law whose staging the covering
+    # note claims per family, per label, or per branch must have each of its strata present in this
+    # list by name, so prose about coverage cannot outrun what --list-cases prints. A stratum removed
+    # or renamed fails this build step before any case runs.
+    staged = {entry["name"] for entry in cases}
+    # Names must be unique, or the population count could hide a case replaced by a duplicate.
+    if len(staged) != len(cases):
+        raise AssertionError("duplicate case names in the suite")
+    matrix = {
+        "pair first answer, both families": (
+            "at-placement-answer-copied-from-its-past-partner",
+            "semicolon-at-answer-copied-from-its-past-partner",
+        ),
+        "pair co-presence, both families": (
+            "at-placement-refuses-while-its-past-partner-answers",
+            "semicolon-at-refuses-while-its-past-partner-answers",
+        ),
+        "pair terminal set, both families": (
+            "at-placement-terminal-outside-the-pair-law",
+            "semicolon-at-terminal-outside-the-pair-law",
+        ),
+        "membership erasure pinned by the harness, every demonstrated shape": (
+            "token-arm-erasing-its-own-membership",
+            "token-semicolon-arm-erasing-its-own-membership",
+            "semicolon-pair-erasing-both-memberships-together",
+            "all-three-excluded-family-arms-erased-together",
+            "multi-attempt-semicolon-relabeled-refused-with-its-answer-standing",
+        ),
+        "pair attempts, both families and the equal-terminal branch": (
+            "at-placement-spending-an-attempt-its-partner-does-not",
+            "semicolon-at-spending-an-attempt-its-partner-does-not",
+            "semicolon-pair-attempts-broken-on-the-equal-terminal-branch",
+        ),
+        "cross-arm landing: flipped flags, newline equal terminals, the owned semicolon shape": (
+            "exact-arm-landing-flags-flipped-against-a-sharing-neighbour",
+            "newline-pair-equal-terminals-landing-apart",
+            "semicolon-pair-shared-boundary-terminal-claimed-unlanded",
+        ),
+        "cross-arm divergence": (
+            "single-attempt-arm-diverging-from-its-coordinate-sharing-neighbour",
+        ),
+        "decider totality, both arms and both labels": (
+            "archived-decider-answer-beside-an-exact-arm-that-refused",
+            "beyond-repair-exact-arm-rewritten-into-a-refusal",
+            "exact-clean-arm-rewritten-into-a-refusal-on-a-repairable-incident",
+            "beyond-repair-exact-clean-arm-rewritten-into-a-refusal",
+        ),
+        "decider floor advance, both branches": (
+            "exact-arm-answer-disagrees-with-the-archived-decider-answer",
+            "exact-arm-answering-its-blind-floor-after-a-direct-refusal",
+        ),
+        "group membership before outcome filtering, both oracle-floored arms": (
+            "sharing-exact-clean-arm-opting-out-of-its-completed-group",
+            "sharing-certified-clean-arm-opting-out-on-a-collapsed-incident",
+        ),
+        "collapsed-floor identity, run fields and the joined sidecar": (
+            "collapsed-floor-exact-pair-parting-on-the-first-answer",
+            "collapsed-floor-certified-pair-parting-on-its-evidence",
+            "collapsed-floor-certified-move-owned-by-its-record-join",
+        ),
+    }
+    for law, names in matrix.items():
+        absent = [name for name in names if name not in staged]
+        assert not absent, (law, absent)
+
+    # The same coverage encoded as metadata rather than names, so a stratum is a queryable fact: each
+    # tagged case carries its law and stratum, and the queries below assert the combinations the
+    # covering note claims. A tag naming a missing case fails, and a claimed combination with no
+    # tagged case fails, so renaming a case cannot silently thin the matrix.
+    strata = {
+        "at-placement-answer-copied-from-its-past-partner": ("pair-first", "newline"),
+        "semicolon-at-answer-copied-from-its-past-partner": ("pair-first", "semicolon"),
+        "at-placement-refuses-while-its-past-partner-answers": ("pair-presence", "newline"),
+        "semicolon-at-refuses-while-its-past-partner-answers": ("pair-presence", "semicolon"),
+        "at-placement-terminal-outside-the-pair-law": ("pair-terminal", "newline"),
+        "semicolon-at-terminal-outside-the-pair-law": ("pair-terminal", "semicolon"),
+        "at-placement-spending-an-attempt-its-partner-does-not": ("pair-attempts", "newline"),
+        "semicolon-at-spending-an-attempt-its-partner-does-not": ("pair-attempts", "semicolon"),
+        "semicolon-pair-attempts-broken-on-the-equal-terminal-branch": ("pair-attempts", "equal-terminal"),
+        "archived-decider-answer-beside-an-exact-arm-that-refused": ("totality", "exact-repairable"),
+        "beyond-repair-exact-arm-rewritten-into-a-refusal": ("totality", "exact-beyond-repair"),
+        "exact-clean-arm-rewritten-into-a-refusal-on-a-repairable-incident": ("totality", "clean-repairable"),
+        "beyond-repair-exact-clean-arm-rewritten-into-a-refusal": ("totality", "clean-beyond-repair"),
+        "exact-arm-answer-disagrees-with-the-archived-decider-answer": ("direct-query", "present"),
+        "exact-arm-answering-its-blind-floor-after-a-direct-refusal": ("direct-query", "absent"),
+        "exact-arm-landing-flags-flipped-against-a-sharing-neighbour": ("landing", "flipped-flags"),
+        "newline-pair-equal-terminals-landing-apart": ("landing", "equal-terminals"),
+        "semicolon-pair-shared-boundary-terminal-claimed-unlanded": ("landing", "owned-boundary"),
+        "single-attempt-arm-diverging-from-its-coordinate-sharing-neighbour": ("divergence", "triple"),
+        "sharing-exact-clean-arm-opting-out-of-its-completed-group": ("divergence", "membership-plain"),
+        "sharing-certified-clean-arm-opting-out-on-a-collapsed-incident": ("divergence", "membership-collapsed"),
+        "collapsed-floor-exact-pair-parting-on-the-first-answer": ("identity", "run-field"),
+        "collapsed-floor-certified-pair-parting-on-its-evidence": ("identity", "evidence-field"),
+        "collapsed-floor-certified-move-owned-by-its-record-join": ("identity", "sidecar-owned"),
+        "token-arm-erasing-its-own-membership": ("erasure", "token-newline"),
+        "token-semicolon-arm-erasing-its-own-membership": ("erasure", "token-semicolon"),
+        "semicolon-pair-erasing-both-memberships-together": ("erasure", "paired-semicolon"),
+        "all-three-excluded-family-arms-erased-together": ("erasure", "all-three"),
+        "multi-attempt-semicolon-relabeled-refused-with-its-answer-standing":
+            ("erasure", "outcome-relabel"),
+    }
+    for name in strata:
+        assert name in staged, (name, "strata names a missing case")
+    tagged = set(strata.values())
+    for law, wanted in (
+        ("pair-first", ("newline", "semicolon")),
+        ("pair-presence", ("newline", "semicolon")),
+        ("pair-terminal", ("newline", "semicolon")),
+        ("pair-attempts", ("newline", "semicolon", "equal-terminal")),
+        ("totality", ("exact-repairable", "exact-beyond-repair", "clean-repairable", "clean-beyond-repair")),
+        ("direct-query", ("present", "absent")),
+        ("landing", ("flipped-flags", "equal-terminals", "owned-boundary")),
+        ("divergence", ("triple", "membership-plain", "membership-collapsed")),
+        ("identity", ("run-field", "evidence-field", "sidecar-owned")),
+    ):
+        for stratum in wanted:
+            assert (law, stratum) in tagged, (law, stratum)
+
     return cases
 
 
@@ -2439,6 +3021,7 @@ def run_suite(data_dir, neutered=None, only=None):
     failures = []
     verdicts = {}
     rejected = 0
+    mechanism_rejected = 0
     controls = 0
     try:
         archive = Archive(load_gzipped_lines(campaign_gz), load_gzipped_lines(sidecar_gz))
@@ -2452,6 +3035,12 @@ def run_suite(data_dir, neutered=None, only=None):
         mut_sidecar = mut_csv + SIDECAR_SUFFIX
         stream(archive.campaign, {}, base_csv)
         stream(archive.sidecar, {}, base_sidecar)
+        # The harness summary travels beside every staged CSV under the twin name the analyzer
+        # derives, because the reconciliation reads it as a required input, never an optional one.
+        summary_name = CAMPAIGN[: -len(".csv")] + ".txt"
+        gold_summary = os.path.join(gold_dir, summary_name)
+        shutil.copyfile(gold_summary, os.path.join(base_dir, summary_name))
+        shutil.copyfile(gold_summary, os.path.join(mut_dir, summary_name))
 
         out_base = os.path.join(work, "out-base")
         status, _ = run_analyzer(analyzer, base_csv, out_base)
@@ -2485,9 +3074,11 @@ def run_suite(data_dir, neutered=None, only=None):
             named = [case for case in cases if case["name"] == only]
             if not named:
                 sys.exit(f"test_analyze_r6.py: no case named {only}; --list-cases prints them")
-            # The control still runs first, so a failure of the named case cannot be blamed on the
-            # staging machinery.
-            cases = [case for case in cases if case["expect"] == "accept"] + named
+            # The control still runs first so a failure of the named case cannot be blamed on the
+            # staging machinery, except when the control itself is what was named: then it runs once,
+            # since --case NAME promises one named run and a doubled control would count itself twice.
+            passing = [case for case in cases if case["expect"] == "accept" and case["name"] != only]
+            cases = passing + named
         for case in cases:
             for path in (mut_csv, mut_sidecar):
                 if os.path.exists(path):
@@ -2532,10 +3123,17 @@ def run_suite(data_dir, neutered=None, only=None):
                 verdicts[case["name"]] = "REJECTED"
                 print(f"{case['name']} REJECTED")
                 rejected += 1
+                if case["program"] == MECHANISM:
+                    mechanism_rejected += 1
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
-    print(f"{rejected} rejected, {controls} control accepted, {len(failures)} failed")
+    # The two programs under test are named apart in the summary, since one count over both would
+    # read as coverage of either alone: the archive auditor and the mechanism companion each reject
+    # their own staged corruptions.
+    print(f"{rejected} rejected, {rejected - mechanism_rejected} against the archive auditor and "
+          f"{mechanism_rejected} against the mechanism companion, {controls} control accepted, "
+          f"{len(failures)} failed")
     if failures:
         print("failing: " + ", ".join(failures))
         return 1, failures, verdicts
@@ -2569,6 +3167,11 @@ def prove_detection(data_dir):
 
 
 def main():
+    # The audit is the assertions: under -O or PYTHONOPTIMIZE they are stripped and the coverage
+    # matrix, strata, and staging checks silently vanish, so an optimized interpreter is refused
+    # outright, exactly as the analyzer refuses one.
+    if sys.flags.optimize:
+        sys.exit("test_analyze_r6.py: refusing to run with assertions disabled (-O/PYTHONOPTIMIZE)")
     arguments = sys.argv[1:]
     prove = "--prove-detection" in arguments
     listing = "--list-cases" in arguments
@@ -2597,8 +3200,19 @@ def main():
             load_gzipped_lines(os.path.join(gold_dir, CAMPAIGN + ".gz")),
             load_gzipped_lines(os.path.join(gold_dir, CAMPAIGN + SIDECAR_SUFFIX + ".gz")),
         )
-        for case in build_cases(archive):
-            print(case["name"])
+        cases = build_cases(archive)
+        for case in cases:
+            print("%s  [%s]" % (case["name"], "control" if case["expect"] == "accept" else "mutation"))
+        controls = sum(1 for case in cases if case["expect"] == "accept")
+        mutations = len(cases) - controls
+        # The split is asserted from the cases' own expectations, fail-closed: a listing that says
+        # anything other than the documented population exits nonzero rather than printing a shorter
+        # list that still reads like the claim.
+        if mutations != 137 or controls != 1:
+            print("the case population is %d mutations and %d controls, not the documented 137 and 1"
+                  % (mutations, controls), file=sys.stderr)
+            return 1
+        print("137 mutations and 1 control, asserted from the cases' own expectations")
         return 0
     if prove:
         return prove_detection(data_dir)

@@ -226,6 +226,16 @@ def main():
     absorbed_keys = set()
     region_rows = 0
     region_tight = 0
+    landing_cross = 0
+    landing_within = 0
+    divergence_rechecks = 0
+    cell_rows = defaultdict(int)
+    cell_first_present = defaultdict(int)
+    cell_attempts_positive = defaultdict(int)
+    cell_refused_zero_attempts = defaultdict(int)
+    cell_refused = defaultdict(int)
+    collapsed_incidents = 0
+    collapsed_moves = defaultdict(list)
 
     with open(sys.argv[1], newline="") as handle:
         reader = csv.reader(handle)
@@ -245,6 +255,22 @@ def main():
                     if field in POSITION_COLUMNS:
                         assert int(value) < POSITION_BOUND, (field, value)
             key = (record["grammar"], record["op"], record["k"], record["seed"], record["trial"])
+
+            # Per-cell tallies for the harness reconciliation below: what this CSV says each
+            # (grammar, op, k, arm) cell holds, counted before any row can be filtered, grouped, or
+            # absorbed out of a later comparison. Three facts per row feed the three summary columns:
+            # whether it carries a first answer, whether it spent attempts, and whether it refused,
+            # split by whether the refusal ever attempted.
+            cell = (record["grammar"], record["op"], record["k"], record["strategy"])
+            cell_rows[cell] += 1
+            if record["first"]:
+                cell_first_present[cell] += 1
+            if record["attempts"] and int(record["attempts"]) > 0:
+                cell_attempts_positive[cell] += 1
+            if record["outcome"] == "refused":
+                cell_refused[cell] += 1
+                if not record["attempts"] or int(record["attempts"]) == 0:
+                    cell_refused_zero_attempts[cell] += 1
             # The damage geometry belongs to the draw, so it is checked before the absorbed rows leave:
             # deletion leaves a seam, insertion and substitution a k-byte span.
             if record["op"] == "delete":
@@ -506,16 +532,25 @@ def main():
         direct, exact_first = arms["exact"]["exact_at_anchor"], arms["exact"]["first"]
         if direct:
             assert direct == exact_first, (key, direct, exact_first)
+        else:
+            # The complementary branch, so the law covers both of the query's outcomes: the arm starts
+            # at the blind floor, one past the failure, and the archived direct query is that floor's
+            # own anchored question, so an absent direct answer means the floor refused and the arm's
+            # first answer must sit strictly past it. Derived before it was asserted: every
+            # direct-absent exact row in the archive advances, by one byte up to four hundred eighty.
+            assert int(exact_first) > int(arms["exact"]["failure_offset"]) + 1, (key, exact_first)
         base = arms[ARMS[0]]
         for record in arms.values():
             for field in SHARED_FIELDS:
                 assert record[field] == base[field], (key, field)
 
-        # Each delimiter convention runs in two placements over the same input, so the two rows are one
-        # search reported twice: they answer together or refuse together, and an at-placement answer
-        # sits exactly one byte below its past-placement partner. The terminal is looser by exactly one
-        # case, derived before it was asserted: the at-placement can fit one further attempt in before
-        # a shared refusal point, and then the two terminals coincide instead of differing by one.
+        # Each delimiter convention runs in two placements over the same input, paired delimiter
+        # searches over one incident rather than one search reported twice, since the placements can
+        # part ways late: pairs exist whose two placements end in different outcomes. What the pairing
+        # does bind, derived before it was asserted, is the start: they answer together or refuse
+        # together, and an at-placement answer sits exactly one byte below its past-placement partner.
+        # The terminal is looser by exactly one case: the at-placement can fit one further attempt in
+        # before a shared refusal point, and then the two terminals coincide instead of differing by one.
         for past_name, at_name in (("newline", "newline-at"), ("semicolon", "semicolon-at")):
             past, at = arms[past_name], arms[at_name]
             assert bool(past["first"]) == bool(at["first"]), (key, past_name)
@@ -524,9 +559,9 @@ def main():
                 assert int(at["terminal"]) in (int(past["terminal"]) - 1, int(past["terminal"])), \
                     (key, past_name, at["terminal"])
 
-                # One search reported twice spends the same attempts, plus exactly the one further
-                # attempt the at placement fits in whenever the two terminals coincide; anything else
-                # is a pair whose rows describe different searches.
+                # The paired searches spend the same attempts, plus exactly the one further attempt
+                # the at placement fits in whenever the two terminals coincide; anything else is a
+                # pair whose rows describe different searches.
                 extra = 1 if at["terminal"] == past["terminal"] else 0
                 assert int(at["attempts"]) == int(past["attempts"]) + extra, \
                     (key, past_name, at["attempts"])
@@ -616,6 +651,11 @@ def main():
                     assert begin >= int(record["corruption_end"]), (key, index)
                 if begin >= int(record["corruption_end"]):
                     move_covered[(key, arm)] += 1
+
+                # Where the two search floors collapse, the certified pair's ordered moves are compared
+                # whole below; only those incidents are collected, so the memory stays bounded.
+                if int(record["failure_offset"]) + 1 >= int(record["corruption_end"]):
+                    collapsed_moves[(key, arm)].append((index, answer, begin, end))
         for key, arms in incidents.items():
             for arm in ("certified", "certified-clean"):
                 record = arms[arm]
@@ -643,6 +683,71 @@ def main():
                     assert not record["evidence_begin"] and not record["evidence_end"], (key, arm)
                 expected = int(record["moves_covered"]) if record["moves_covered"] else 0
                 assert move_covered.get((key, arm), 0) == expected, (key, arm)
+
+    # The consistency reconciliations run in their own pass, after every row-level and sidecar-level
+    # guard above, so a corruption those guards already pin keeps its own refusal and these object
+    # only to what nothing narrower caught. What each establishes is agreement among duplicated
+    # archive fields, not an independent recomputation of the fact they duplicate.
+    for key, arms in incidents.items():
+        # Landing is a fact about a coordinate, not about the arm or placement that reached it:
+        # within one incident every answered placement at a given coordinate carries the same landing
+        # flag, first and terminal placements alike. Every arm that has placed at a coordinate is
+        # kept, so a recheck is within-arm exactly when this very arm has already placed there and
+        # cross-arm when only other arms have: the split is a fact about the recheck itself and does
+        # not depend on the order the arms are read in.
+        landings = {}
+        for name, record in arms.items():
+            for coordinate, flag in ((record["first"], record["first_landed"]),
+                                     (record["terminal"], record["terminal_landed"])):
+                if coordinate:
+                    if coordinate in landings:
+                        seen_flag, seen_arms = landings[coordinate]
+                        if name in seen_arms:
+                            landing_within += 1
+                        else:
+                            landing_cross += 1
+                        assert seen_flag == flag, (key, coordinate, flag)
+                        seen_arms.add(name)
+                    else:
+                        landings[coordinate] = (flag, {name})
+
+        # Sharing is decided before outcomes are read: the arms are grouped by their first answer,
+        # and a group containing a completed single-attempt member must be completed single-attempt
+        # throughout, with one divergence verdict, because every member resumes the identical
+        # deterministic scan from the same coordinate. Filtering on outcome first would let a
+        # corrupted row opt out of the very comparison meant to validate it, which is exactly the
+        # accepted relabeling this guard exists against. Multi-attempt groups stay exempt by
+        # derivation: their later moves are their own.
+        by_first = defaultdict(list)
+        for name, record in arms.items():
+            if record["first"]:
+                by_first[record["first"]].append((name, record))
+        for coordinate, group in by_first.items():
+            if not any(r["outcome"] == "completed" and r["attempts"] == "1" for _, r in group):
+                continue
+            triples = set()
+            for name, r in group:
+                assert r["outcome"] == "completed" and r["attempts"] == "1", (key, name, coordinate)
+                triples.add((r["converged"], r["lost"], r["spurious"]))
+            divergence_rechecks += len(group) - 1
+            assert len(triples) == 1, (key, coordinate, sorted(triples))
+
+        # Where the damage collapses the two search floors, one past the failure at or past the
+        # corruption end, an oracle-floored arm and its blind twin search identical ground, so the
+        # exact pair and the certified pair must agree on their entire run records, and the certified
+        # pair on the ordered move sidecar as well. Derived exhaustively before assertion; the
+        # incident count is emitted below.
+        base = arms["certified"]
+        if int(base["failure_offset"]) + 1 >= int(base["corruption_end"]):
+            collapsed_incidents += 1
+            for one, twin in (("exact", "exact-clean"), ("certified", "certified-clean")):
+                for field in ANSWER_FIELDS + ("outcome", "attempts"):
+                    assert arms[one][field] == arms[twin][field], (key, one, field)
+            # In this archive every collapsed run is single-attempt, so this ordered comparison is
+            # implied by the field identities above plus the sidecar join guards; it is asserted all
+            # the same, because the law is about runs, not about this archive's shape of them.
+            assert collapsed_moves.get((key, "certified"), []) == \
+                collapsed_moves.get((key, "certified-clean"), []), (key, "certified sidecar order")
 
     # Per (grammar, arm) pooled aggregates.
     pooled = defaultdict(lambda: defaultdict(list))
@@ -905,6 +1010,96 @@ def main():
     lines.append(
         f"divergence bound tightness: {region_tight} of {region_rows} positive-region completed rows "
         f"attain lost + spurious = region"
+    )
+
+    # The incident-level reconciliations above are printed as derived counts for the same reason: a
+    # guard that fired zero times guards nothing, and the count of agreements it enforced should be
+    # read off this run rather than recalled. The landing count is split by ownership, because a
+    # single arm's terminal rechecking its own first placement is a placement-consistency fact, not a
+    # cross-arm one, and the two must not be summed under one label.
+    # The harness's own summary is the one campaign artifact these rows cannot rewrite about
+    # themselves: the harness printed per-(grammar, op, k, arm) answered and refusal counts into the
+    # summary text as it ran, so a row that relabels its outcome or erases its own membership fields
+    # still moves a count the summary already fixed. The reconciliation covers every one of the
+    # eleven arms with three exact per-cell identities, derived against this archive and each
+    # holding on all 594 cells: the summary's answers column counts exactly the rows carrying a
+    # first answer, and exactly the rows that spent attempts, so the two are also identical to each
+    # other; its initial-refusals column counts exactly the refused rows that never attempted; and
+    # its terminal-refusals column counts exactly the refused rows outright. An all-zero summary
+    # cell must hold no rows at all, and every CSV cell of a recovery arm must have its summary row,
+    # so erasure is refused in both directions. The reconciliation runs after the intra-archive laws
+    # above deliberately, as the outermost cross-check, so a corruption a narrower guard can name is
+    # refused at that guard and only the shapes no grouping can see reach this one.
+    summary_path = sys.argv[1][:-len(".csv")] + ".txt"
+    assert sys.argv[1].endswith(".csv"), sys.argv[1]
+    assert os.path.exists(summary_path), summary_path
+    harness_cells = {}
+    summary_grammar = None
+    with open(summary_path) as handle:
+        for line in handle:
+            if line.strip() and not line.startswith(" "):
+                summary_grammar = line.strip()
+                continue
+            parts = line.split()
+            # A cell row is op, k, strategy, then the counted columns; the pooled sections and the
+            # header rows fail this shape and are not cells.
+            if len(parts) >= 11 and parts[0] != "op" and parts[1].isdigit() \
+                    and parts[3].isdigit() and parts[4].isdigit() and parts[5].isdigit():
+                assert summary_grammar is not None, line
+                summary_cell = (summary_grammar, parts[0], parts[1], parts[2])
+                assert summary_cell not in harness_cells, summary_cell
+                harness_cells[summary_cell] = (int(parts[3]), int(parts[4]), int(parts[5]))
+    reconciled_cells = 0
+    reconciled_answered = 0
+    reconciled_initial = 0
+    reconciled_terminal = 0
+    summary_arms = {summary_cell[3] for summary_cell in harness_cells}
+    assert set(ARMS) <= summary_arms, summary_arms
+    for summary_cell, (answers, initial_refusals, terminal_refusals) in harness_cells.items():
+        assert summary_cell[3] in ARMS, summary_cell
+        reconciled_cells += 1
+        reconciled_answered += answers
+        reconciled_initial += initial_refusals
+        reconciled_terminal += terminal_refusals
+        assert cell_first_present.get(summary_cell, 0) == answers, \
+            (summary_cell, "first answers", answers, cell_first_present.get(summary_cell, 0))
+        assert cell_attempts_positive.get(summary_cell, 0) == answers, \
+            (summary_cell, "attempted", answers, cell_attempts_positive.get(summary_cell, 0))
+        assert cell_refused_zero_attempts.get(summary_cell, 0) == initial_refusals, \
+            (summary_cell, "initial refusals", initial_refusals,
+             cell_refused_zero_attempts.get(summary_cell, 0))
+        assert cell_refused.get(summary_cell, 0) == terminal_refusals, \
+            (summary_cell, "terminal refusals", terminal_refusals,
+             cell_refused.get(summary_cell, 0))
+        if answers == 0 and initial_refusals == 0 and terminal_refusals == 0:
+            assert cell_rows.get(summary_cell, 0) == 0, (summary_cell, cell_rows.get(summary_cell, 0))
+    for cell in cell_rows:
+        if cell[3] != "absorbed":
+            assert cell in harness_cells, (cell, "cell missing from the harness summary")
+
+
+    assert landing_cross > 0 and landing_within > 0 and divergence_rechecks > 0, (
+        landing_cross, landing_within, divergence_rechecks)
+    assert collapsed_incidents > 0, collapsed_incidents
+    lines.append(
+        f"landing agreement: {landing_cross + landing_within} repeated placement rechecks, "
+        f"{landing_cross} against a different arm and {landing_within} within one arm's own "
+        f"placements, every flag a function of its coordinate"
+    )
+    lines.append(
+        f"cross-arm divergence agreement: {divergence_rechecks} rechecks of arms sharing a completed "
+        f"single-attempt answer, membership and the converged, lost, spurious triple both enforced"
+    )
+    lines.append(
+        f"harness reconciliation: {reconciled_cells} cells of all eleven arms, "
+        f"{reconciled_answered} answered, {reconciled_initial} initial and {reconciled_terminal} "
+        f"terminal refusals equal to the harness summary's own counts in both directions, the "
+        f"answered rows exactly the rows carrying a first answer"
+    )
+    lines.append(
+        f"collapsed-floor identity: {collapsed_incidents} incidents where one past the failure "
+        f"reaches the corruption end, the exact and certified pairs identical on every run field and "
+        f"the certified pair on its ordered move sidecar"
     )
 
     with open(f"{out_dir}/r6-stats.txt", "w") as handle:
