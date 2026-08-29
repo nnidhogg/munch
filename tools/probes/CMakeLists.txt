@@ -167,3 +167,26 @@ target_link_libraries(munch_wall_prepass
 if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_wall_prepass COMMAND munch_wall_prepass)
 endif ()
+
+# The recovery cross-check: two C++ probes call munch's public scan and anchored-decider API, and a
+# separate from-scratch Python reference model in analysis/recovery-crosscheck/ is compared against
+# them over bounded exhaustive token-set sweeps. This is the implementation-fidelity check behind the
+# certified-recovery paper's claim that its proofs describe the code munch ships. The reference is
+# kept in Python on purpose: a separately written model in another language makes agreement evidence
+# rather than a shared-idiom coincidence. The drivers fail on any disagreement.
+add_executable(munch_crosscheck_scan src/crosscheck_scan.cpp)
+target_compile_options(munch_crosscheck_scan PRIVATE -O2 -Wall -Wextra)
+target_link_libraries(munch_crosscheck_scan PRIVATE munch_core munch_regex munch_dfa munch_nfa)
+
+add_executable(munch_crosscheck_anchor src/crosscheck_anchor.cpp)
+target_compile_options(munch_crosscheck_anchor PRIVATE -O2 -Wall -Wextra)
+target_link_libraries(munch_crosscheck_anchor PRIVATE munch_core munch_regex munch_dfa munch_nfa)
+
+if (MUNCH_BUILD_TESTS)
+    add_test(NAME munch_crosscheck_scan
+            COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/analysis/recovery-crosscheck/crosscheck_scan.py
+            $<TARGET_FILE:munch_crosscheck_scan>)
+    add_test(NAME munch_crosscheck_anchor
+            COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/analysis/recovery-crosscheck/crosscheck_anchor.py
+            $<TARGET_FILE:munch_crosscheck_anchor>)
+endif ()
