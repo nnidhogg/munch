@@ -1,6 +1,7 @@
 // The parallel scanner over certified anchors: the splitting theorem run as a program, not a policy.
 //
-// Every practical parallel lexer splits speculatively and reconciles at the joins. This probe splits at
+// Parallel lexers reach an exact result by enumerating the states a chunk might start in and
+// resolving afterwards, paying for that enumeration per chunk. This probe splits at
 // certified anchors instead: positions where a decision procedure over the grammar has proved that every
 // completely tokenizable context places a token start, so a chunk scanned independently from one
 // reproduces the sequential segmentation exactly, no speculation window and no fixup pass. The anchor
