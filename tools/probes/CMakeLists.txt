@@ -51,6 +51,21 @@ if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_recovery_quality COMMAND munch_recovery_quality 16 20 "" "" 1)
 endif ()
 
+# The parallel scanner over certified anchors: the splitting theorem run as a program. Splits a corpus at
+# anchor positions computed by the certification instruments, scans every chunk in its own thread against
+# the shared lexer, and requires the concatenated boundary stream byte-identical to the sequential scan.
+add_executable(munch_parallel_scan src/parallel_scan.cpp)
+
+target_include_directories(munch_parallel_scan
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+)
+
+target_link_libraries(munch_parallel_scan
+        PRIVATE
+        munch_core
+)
+
 # Occurrence of certified positions on corpora, the empirical question both reports name and neither answers.
 # Runs as a test because the grammar-level facts (no exact bytes on the published rows, the whitespace-anchored
 # two-byte census, the structural poison-byte windows) and the generated-corpus plan-and-splice equality are hard
