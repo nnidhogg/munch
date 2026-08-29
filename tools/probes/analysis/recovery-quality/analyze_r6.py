@@ -19,7 +19,14 @@ import csv
 import math
 import os
 import sys
+
+sys.dont_write_bytecode = True
+
 from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import commit_r6
 
 COLUMNS = [
     "grammar",
@@ -234,6 +241,7 @@ def main():
     cell_attempts_positive = defaultdict(int)
     cell_refused_zero_attempts = defaultdict(int)
     cell_refused = defaultdict(int)
+    cell_capped = defaultdict(int)
     collapsed_incidents = 0
     collapsed_moves = defaultdict(list)
 
@@ -271,6 +279,8 @@ def main():
                 cell_refused[cell] += 1
                 if not record["attempts"] or int(record["attempts"]) == 0:
                     cell_refused_zero_attempts[cell] += 1
+            if record["outcome"] == "capped":
+                cell_capped[cell] += 1
             # The damage geometry belongs to the draw, so it is checked before the absorbed rows leave:
             # deletion leaves a seam, insertion and substitution a k-byte span.
             if record["op"] == "delete":
@@ -1033,34 +1043,65 @@ def main():
     summary_path = sys.argv[1][:-len(".csv")] + ".txt"
     assert sys.argv[1].endswith(".csv"), sys.argv[1]
     assert os.path.exists(summary_path), summary_path
+
+    # The summary is parsed against an exact schema rather than by shape: every header line must be
+    # exactly the header the harness prints, one per grammar section; every cell row must name a
+    # known operation, damage size, and arm; and the parsed cell set must equal the full expected
+    # grid, all six grammars by three operations by three damage sizes by eleven arms, zero-valued
+    # cells included. A renamed column, an unknown cell, a missing section, or a section for a
+    # grammar the campaign never ran is refused here, not skipped by a shape filter.
+    SUMMARY_HEADER = ("op", "k", "strategy", "answers", "refuse", "t-ref", "f-land", "t-land",
+                      "complete", "capped", "attempts", "conv", "lost", "spur", "overshoot")
+    SUMMARY_OPS = ("substitute", "delete", "insert")
+    SUMMARY_KS = ("1", "4", "16")
     harness_cells = {}
     summary_grammar = None
+    headers_seen = 0
     with open(summary_path) as handle:
         for line in handle:
             if line.strip() and not line.startswith(" "):
-                summary_grammar = line.strip()
+                stripped = line.strip()
+                summary_grammar = stripped if stripped in GRAMMARS else None
                 continue
             parts = line.split()
-            # A cell row is op, k, strategy, then the counted columns; the pooled sections and the
-            # header rows fail this shape and are not cells.
-            if len(parts) >= 11 and parts[0] != "op" and parts[1].isdigit() \
-                    and parts[3].isdigit() and parts[4].isdigit() and parts[5].isdigit():
+            if parts and parts[0] == "op":
+                assert tuple(parts) == SUMMARY_HEADER, (summary_path, parts)
                 assert summary_grammar is not None, line
+                headers_seen += 1
+                continue
+            # A cell row is op, k, strategy, then the counted columns; pooled and per-seed lines
+            # carry neither a known operation at the front nor a known arm third, and are not cells.
+            # A line that is cell-shaped on either side, a known operation or a known arm in place,
+            # must be a fully well-formed known cell: an unknown operation, damage size, or arm in a
+            # cell position is summary corruption and is refused, never skipped by shape.
+            if len(parts) >= 11 and (parts[0] in SUMMARY_OPS or parts[2] in ARMS):
+                assert parts[0] in SUMMARY_OPS and parts[1] in SUMMARY_KS and parts[2] in ARMS, \
+                    (summary_path, parts[:3])
+                assert summary_grammar is not None, line
+                assert parts[3].isdigit() and parts[4].isdigit() and parts[5].isdigit() \
+                    and parts[9].isdigit(), (summary_path, parts)
                 summary_cell = (summary_grammar, parts[0], parts[1], parts[2])
                 assert summary_cell not in harness_cells, summary_cell
-                harness_cells[summary_cell] = (int(parts[3]), int(parts[4]), int(parts[5]))
+                harness_cells[summary_cell] = (int(parts[3]), int(parts[4]), int(parts[5]),
+                                               int(parts[9]))
+    assert headers_seen == len(GRAMMARS), (headers_seen, len(GRAMMARS))
+    expected_grid = {(grammar, op, k, arm) for grammar in GRAMMARS for op in SUMMARY_OPS
+                     for k in SUMMARY_KS for arm in ARMS}
+    assert set(harness_cells) == expected_grid, (
+        sorted(set(harness_cells) - expected_grid)[:3],
+        sorted(expected_grid - set(harness_cells))[:3])
     reconciled_cells = 0
     reconciled_answered = 0
     reconciled_initial = 0
     reconciled_terminal = 0
-    summary_arms = {summary_cell[3] for summary_cell in harness_cells}
-    assert set(ARMS) <= summary_arms, summary_arms
-    for summary_cell, (answers, initial_refusals, terminal_refusals) in harness_cells.items():
-        assert summary_cell[3] in ARMS, summary_cell
+    reconciled_capped = 0
+    for summary_cell, (answers, initial_refusals, terminal_refusals, capped) in \
+            harness_cells.items():
         reconciled_cells += 1
         reconciled_answered += answers
         reconciled_initial += initial_refusals
         reconciled_terminal += terminal_refusals
+        reconciled_capped += capped
         assert cell_first_present.get(summary_cell, 0) == answers, \
             (summary_cell, "first answers", answers, cell_first_present.get(summary_cell, 0))
         assert cell_attempts_positive.get(summary_cell, 0) == answers, \
@@ -1071,11 +1112,48 @@ def main():
         assert cell_refused.get(summary_cell, 0) == terminal_refusals, \
             (summary_cell, "terminal refusals", terminal_refusals,
              cell_refused.get(summary_cell, 0))
+        # The capped count is exact in the summary and exact here: with the row count, the terminal
+        # refusals, and the capped rows each fixed, the completed count is determined too, so an
+        # outcome relabel between completed and capped moves a count the summary already holds.
+        assert cell_capped.get(summary_cell, 0) == capped, \
+            (summary_cell, "capped", capped, cell_capped.get(summary_cell, 0))
         if answers == 0 and initial_refusals == 0 and terminal_refusals == 0:
             assert cell_rows.get(summary_cell, 0) == 0, (summary_cell, cell_rows.get(summary_cell, 0))
     for cell in cell_rows:
         if cell[3] != "absorbed":
             assert cell in harness_cells, (cell, "cell missing from the harness summary")
+
+    # The membership commitments, the outermost reconciliation of all: the aggregate identities above
+    # bind counts, and a balanced pair of edits inside one cell can preserve every count while moving
+    # an incident's membership, so the archived commitment file binds the bytes of each
+    # (grammar, op, k, seed) cell's rows themselves. The digests are recomputed here from the raw
+    # lines by the same shipped tool that generated the archive's, the reproduction script
+    # regenerates them from the fresh harness rerun it byte-compares first, and the comparison is
+    # exact in both directions over the full 162-cell grid, so a transfer that survives every count
+    # still changes a digest.
+    commitments_path = sys.argv[1][:-len(".csv")] + ".commitments.txt"
+    assert os.path.exists(commitments_path), commitments_path
+    archived_commitments = {}
+    with open(commitments_path, encoding="utf-8") as handle:
+        for number, line in enumerate(handle.read().split("\n")[:-1], start=1):
+            assert len(line) > 66 and line[64:66] == "  ", (commitments_path, number, line[:70])
+            digest, key = line[:64], line[66:]
+            assert all(c in "0123456789abcdef" for c in digest), (number, digest)
+            assert key not in archived_commitments, (number, key)
+            archived_commitments[key] = digest
+    recomputed = commit_r6.cell_commitments(sys.argv[1])
+    expected_commit_cells = {
+        "|".join((grammar, op, k, seed))
+        for grammar in GRAMMARS for op in SUMMARY_OPS for k in SUMMARY_KS
+        for seed in ("0", "1", "2")
+    }
+    assert set(recomputed) == expected_commit_cells, (
+        sorted(set(recomputed) ^ expected_commit_cells)[:3])
+    assert set(archived_commitments) == expected_commit_cells, (
+        sorted(set(archived_commitments) ^ expected_commit_cells)[:3])
+    commitment_mismatches = [key for key in sorted(expected_commit_cells)
+                             if archived_commitments[key] != recomputed[key]]
+    assert not commitment_mismatches, (commitment_mismatches[:3], "membership commitment broken")
 
 
     assert landing_cross > 0 and landing_within > 0 and divergence_rechecks > 0, (
@@ -1091,10 +1169,16 @@ def main():
         f"single-attempt answer, membership and the converged, lost, spurious triple both enforced"
     )
     lines.append(
-        f"harness reconciliation: {reconciled_cells} cells of all eleven arms, "
-        f"{reconciled_answered} answered, {reconciled_initial} initial and {reconciled_terminal} "
-        f"terminal refusals equal to the harness summary's own counts in both directions, the "
-        f"answered rows exactly the rows carrying a first answer"
+        f"harness reconciliation: {reconciled_cells} cells of all eleven arms under the exact "
+        f"header and cell grid, {reconciled_answered} answered, {reconciled_initial} initial and "
+        f"{reconciled_terminal} terminal refusals and {reconciled_capped} capped equal to the "
+        f"harness summary's own counts in both directions, the answered rows exactly the rows "
+        f"carrying a first answer"
+    )
+    lines.append(
+        f"membership commitments: {len(expected_commit_cells)} per-seed cells, every recomputed "
+        f"cell digest equal to the archived commitment, so membership transfers that balance every "
+        f"count are refused at the bytes"
     )
     lines.append(
         f"collapsed-floor identity: {collapsed_incidents} incidents where one past the failure "

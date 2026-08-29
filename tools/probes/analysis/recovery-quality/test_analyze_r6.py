@@ -925,6 +925,91 @@ def compare_emissions(out_dir, gold_dir, names):
     return mismatched
 
 
+# The one declaration of every tagged case's law and stratum. The case objects, the coverage
+# queries, and the --list-cases output all derive from this mapping, so there is no second structure
+# to drift from it: removing an entry, retagging one, or naming a case that is not staged breaks the
+# grid equality below, and --prove-metadata proves the breakage exits nonzero.
+CASE_SCHEMA = {
+    "at-placement-answer-copied-from-its-past-partner": ("pair-first", "newline"),
+    "semicolon-at-answer-copied-from-its-past-partner": ("pair-first", "semicolon"),
+    "at-placement-refuses-while-its-past-partner-answers": ("pair-presence", "newline"),
+    "semicolon-at-refuses-while-its-past-partner-answers": ("pair-presence", "semicolon"),
+    "at-placement-terminal-outside-the-pair-law": ("pair-terminal", "newline"),
+    "semicolon-at-terminal-outside-the-pair-law": ("pair-terminal", "semicolon"),
+    "at-placement-spending-an-attempt-its-partner-does-not": ("pair-attempts", "newline"),
+    "semicolon-at-spending-an-attempt-its-partner-does-not": ("pair-attempts", "semicolon"),
+    "semicolon-pair-attempts-broken-on-the-equal-terminal-branch": ("pair-attempts", "equal-terminal"),
+    "archived-decider-answer-beside-an-exact-arm-that-refused": ("totality", "exact-repairable"),
+    "beyond-repair-exact-arm-rewritten-into-a-refusal": ("totality", "exact-beyond-repair"),
+    "exact-clean-arm-rewritten-into-a-refusal-on-a-repairable-incident": ("totality", "clean-repairable"),
+    "beyond-repair-exact-clean-arm-rewritten-into-a-refusal": ("totality", "clean-beyond-repair"),
+    "exact-arm-answer-disagrees-with-the-archived-decider-answer": ("direct-query", "present"),
+    "exact-arm-answering-its-blind-floor-after-a-direct-refusal": ("direct-query", "absent"),
+    "exact-arm-landing-flags-flipped-against-a-sharing-neighbour": ("landing", "flipped-flags"),
+    "newline-pair-equal-terminals-landing-apart": ("landing", "equal-terminals"),
+    "semicolon-pair-shared-boundary-terminal-claimed-unlanded": ("landing", "owned-boundary"),
+    "single-attempt-arm-diverging-from-its-coordinate-sharing-neighbour": ("divergence", "triple"),
+    "sharing-exact-clean-arm-opting-out-of-its-completed-group": ("divergence", "membership-plain"),
+    "sharing-certified-clean-arm-opting-out-on-a-collapsed-incident": ("divergence", "membership-collapsed"),
+    "collapsed-floor-exact-pair-parting-on-the-first-answer": ("identity", "run-field"),
+    "collapsed-floor-certified-pair-parting-on-its-evidence": ("identity", "evidence-field"),
+    "collapsed-floor-certified-move-owned-by-its-record-join": ("identity", "sidecar-owned"),
+    "token-arm-erasing-its-own-membership": ("erasure", "token-newline"),
+    "token-semicolon-arm-erasing-its-own-membership": ("erasure", "token-semicolon"),
+    "semicolon-pair-erasing-both-memberships-together": ("erasure", "paired-semicolon"),
+    "all-three-excluded-family-arms-erased-together": ("erasure", "all-three"),
+    "multi-attempt-semicolon-relabeled-refused-with-its-answer-standing":
+        ("erasure", "outcome-relabel"),
+    "cell-balanced-membership-transfer-preserving-every-count": ("membership", "emission-neutral"),
+    "completed-row-divergence-rebalanced-within-its-region": ("membership", "value-moving"),
+    "completed-row-relabeled-capped": ("summary", "capped-count"),
+    "summary-header-column-renamed": ("summary", "header-schema"),
+    "summary-carrying-an-unknown-cell": ("summary", "cell-domain"),
+}
+
+# The complete expected grid, laws to strata, every erasure stratum included: the schema's value
+# multiset must equal this grid exactly, so a silent thinning of any law, the erasure family that
+# once slipped a query included, is a build failure and never a shorter list that reads like the claim.
+LAW_STRATA = {
+    "pair-first": ("newline", "semicolon"),
+    "pair-presence": ("newline", "semicolon"),
+    "pair-terminal": ("newline", "semicolon"),
+    "pair-attempts": ("newline", "semicolon", "equal-terminal"),
+    "totality": ("exact-repairable", "exact-beyond-repair", "clean-repairable",
+                 "clean-beyond-repair"),
+    "direct-query": ("present", "absent"),
+    "landing": ("flipped-flags", "equal-terminals", "owned-boundary"),
+    "divergence": ("triple", "membership-plain", "membership-collapsed"),
+    "identity": ("run-field", "evidence-field", "sidecar-owned"),
+    "erasure": ("token-newline", "token-semicolon", "paired-semicolon", "all-three",
+                "outcome-relabel"),
+    "membership": ("emission-neutral", "value-moving"),
+    "summary": ("capped-count", "header-schema", "cell-domain"),
+}
+
+
+def assert_case_metadata(cases, schema):
+    """Inject each tagged case's law and stratum and hold the schema to the full grid, fail-closed.
+
+    Every schema name must be a staged case; the schema's value multiset must equal the law grid in
+    both directions, so a removed, retagged, or extra entry fails; and the tags land in the case
+    objects themselves, which is what --list-cases prints.
+    """
+    by_name = {entry["name"]: entry for entry in cases}
+    missing = [name for name in schema if name not in by_name]
+    assert not missing, ("schema names cases that are not staged", missing)
+    expected = sorted((law, stratum) for law, strata in LAW_STRATA.items() for stratum in strata)
+    declared = sorted(schema.values())
+    assert declared == expected, (
+        "the schema's law and stratum grid is not the expected one",
+        [pair for pair in expected if pair not in declared][:3],
+        [pair for pair in declared if pair not in expected][:3],
+    )
+    for name, (law, stratum) in schema.items():
+        by_name[name]["law"] = law
+        by_name[name]["stratum"] = stratum
+
+
 def build_cases(archive):
     column_targets = archive.targets
     ordinary = column_targets["ordinary"]
@@ -1465,6 +1550,7 @@ def build_cases(archive):
         marker=None,
         expect="reject",
         emissions=None,
+        summary_edit=None,
     ):
         cases.append(
             {
@@ -1477,6 +1563,11 @@ def build_cases(archive):
                 "marker": marker,
                 "expect": expect,
                 "emissions": emissions,
+                "summary_edit": summary_edit,
+                # law and stratum are injected from the one schema declaration after every case is
+                # built, so the case object carries its own metadata and the two can never drift.
+                "law": None,
+                "stratum": None,
             }
         )
 
@@ -2858,123 +2949,111 @@ def build_cases(archive):
     assert archive.field(cell_block[0], "op") != "delete", cell_block[0]
     assert UNKNOWN_OPERATION not in ("substitute", "insert", "delete"), UNKNOWN_OPERATION
 
-    # The staged coverage matrix, checked rather than described: every law whose staging the covering
-    # note claims per family, per label, or per branch must have each of its strata present in this
-    # list by name, so prose about coverage cannot outrun what --list-cases prints. A stratum removed
-    # or renamed fails this build step before any case runs.
+    # The five certification cases the sixth round demanded: the two membership transfers only the
+    # cell commitments can see, the capped relabel only the summary's exact capped column can see,
+    # and the two summary corruptions the exact schema and cell domain refuse. The transfer rows are
+    # located by their keys and the completion's fields are taken from the incident's own exact arm,
+    # the reported construction reproduced rather than approximated.
+    def row_position(grammar, op, k, seed, trial, strategy):
+        prefix = f"{grammar},{op},{k},{seed},{trial},"
+        for position in range(1, len(archive.campaign)):
+            line = archive.campaign[position]
+            if line.startswith(prefix) and split_fields(line)[archive.index["strategy"]] == strategy:
+                return position
+        raise AssertionError((grammar, op, k, seed, trial, strategy))
+
+    transfer_refusal = {field: "" for field in ANSWER_DEPENDENT_COLUMNS}
+    transfer_refusal["attempts"] = "0"
+    transfer_refusal["outcome"] = "refused"
+    balanced_grammar = "c-like conventional plus block comments alone"
+    balanced_out = row_position(balanced_grammar, "substitute", "1", "0", "0", "token-semicolon")
+    balanced_in = row_position(balanced_grammar, "substitute", "1", "0", "382", "token-semicolon")
+    balanced_exact = archive.arm_row_of(balanced_in, "exact")
+    balanced_completion = {
+        field: archive.field(balanced_exact, field)
+        for field in ("first", "first_landed", "terminal", "terminal_landed", "converged",
+                      "lost", "spurious", "attempts")
+    }
+    balanced_completion["outcome"] = "completed"
+    case(
+        "cell-balanced-membership-transfer-preserving-every-count",
+        campaign={
+            balanced_out: archive.edited(balanced_out, **transfer_refusal),
+            balanced_in: archive.edited(balanced_in, **balanced_completion),
+        },
+        marker=("membership commitment broken", "plus block comments alone|substitute|1|0"),
+    )
+
+    # The value-moving twin of the balanced transfer: a completed multi-attempt row's lost and
+    # spurious counts are rebalanced with their sum preserved, so the divergence bound, every
+    # aggregate identity, and every incident law hold while the pooled lost and spurious means move.
+    # Multi-attempt, so the single-attempt divergence sharing law is not what objects; only the
+    # cell's membership commitment sees the bytes change.
+    rebalance_grammar = "c-like conventional with strings and line comments"
+    rebalance_row = None
+    for trial in range(TRIALS_PER_CELL):
+        try:
+            candidate = row_position(rebalance_grammar, "substitute", "16", "0", str(trial),
+                                     "token-semicolon")
+        except AssertionError:
+            continue
+        if archive.field(candidate, "outcome") == "completed" \
+                and int(archive.field(candidate, "attempts")) >= 2 \
+                and int(archive.field(candidate, "lost")) >= 1:
+            rebalance_row = candidate
+            break
+    assert rebalance_row is not None
+    case(
+        "completed-row-divergence-rebalanced-within-its-region",
+        campaign={
+            rebalance_row: archive.edited(
+                rebalance_row,
+                lost=str(int(archive.field(rebalance_row, "lost")) - 1),
+                spurious=str(int(archive.field(rebalance_row, "spurious")) + 1),
+            )
+        },
+        marker=("membership commitment broken", "with strings and line comments|substitute|16|0"),
+    )
+
+    capped_row = row_position("json rfc 8259 lexical forms on a real-world document",
+                              "substitute", "4", "0", "437", "skip-one")
+    assert archive.field(capped_row, "outcome") == "completed"
+    assert archive.field(capped_row, "attempts") == "100"
+    case(
+        "completed-row-relabeled-capped",
+        campaign={
+            capped_row: archive.edited(capped_row, outcome="capped", converged="", lost="",
+                                       spurious="")
+        },
+        marker=("cell_capped.get(summary_cell, 0) == capped", "'skip-one')"),
+    )
+
+    case(
+        "summary-header-column-renamed",
+        summary_edit=("strategy        answers", "strategy        answcnt", 1),
+        marker=("tuple(parts) == SUMMARY_HEADER",),
+    )
+    case(
+        "summary-carrying-an-unknown-cell",
+        summary_edit=(
+            "  substitute   1  certified ",
+            "  scramble    999  certified             0       0       0    0.0%     0.0%"
+            "     0.0%      0     0.00        0   0.00   0.00       0.0\n  substitute   1  certified ",
+            1,
+        ),
+        marker=("parts[0] in SUMMARY_OPS and parts[1] in SUMMARY_KS and parts[2] in ARMS",
+                "'scramble'"),
+    )
+
+    # One declaration carries every case's law and stratum, and everything else derives from it: the
+    # tags are injected into the case objects themselves, the full law-and-stratum grid is asserted
+    # equal to the declaration in both directions, and every declared name must be a staged case.
+    # There is no second structure to drift from the first, removing or retagging any entry breaks
+    # the grid equality, and --prove-metadata demonstrates that the breakage is fatal.
     staged = {entry["name"] for entry in cases}
-    # Names must be unique, or the population count could hide a case replaced by a duplicate.
     if len(staged) != len(cases):
         raise AssertionError("duplicate case names in the suite")
-    matrix = {
-        "pair first answer, both families": (
-            "at-placement-answer-copied-from-its-past-partner",
-            "semicolon-at-answer-copied-from-its-past-partner",
-        ),
-        "pair co-presence, both families": (
-            "at-placement-refuses-while-its-past-partner-answers",
-            "semicolon-at-refuses-while-its-past-partner-answers",
-        ),
-        "pair terminal set, both families": (
-            "at-placement-terminal-outside-the-pair-law",
-            "semicolon-at-terminal-outside-the-pair-law",
-        ),
-        "membership erasure pinned by the harness, every demonstrated shape": (
-            "token-arm-erasing-its-own-membership",
-            "token-semicolon-arm-erasing-its-own-membership",
-            "semicolon-pair-erasing-both-memberships-together",
-            "all-three-excluded-family-arms-erased-together",
-            "multi-attempt-semicolon-relabeled-refused-with-its-answer-standing",
-        ),
-        "pair attempts, both families and the equal-terminal branch": (
-            "at-placement-spending-an-attempt-its-partner-does-not",
-            "semicolon-at-spending-an-attempt-its-partner-does-not",
-            "semicolon-pair-attempts-broken-on-the-equal-terminal-branch",
-        ),
-        "cross-arm landing: flipped flags, newline equal terminals, the owned semicolon shape": (
-            "exact-arm-landing-flags-flipped-against-a-sharing-neighbour",
-            "newline-pair-equal-terminals-landing-apart",
-            "semicolon-pair-shared-boundary-terminal-claimed-unlanded",
-        ),
-        "cross-arm divergence": (
-            "single-attempt-arm-diverging-from-its-coordinate-sharing-neighbour",
-        ),
-        "decider totality, both arms and both labels": (
-            "archived-decider-answer-beside-an-exact-arm-that-refused",
-            "beyond-repair-exact-arm-rewritten-into-a-refusal",
-            "exact-clean-arm-rewritten-into-a-refusal-on-a-repairable-incident",
-            "beyond-repair-exact-clean-arm-rewritten-into-a-refusal",
-        ),
-        "decider floor advance, both branches": (
-            "exact-arm-answer-disagrees-with-the-archived-decider-answer",
-            "exact-arm-answering-its-blind-floor-after-a-direct-refusal",
-        ),
-        "group membership before outcome filtering, both oracle-floored arms": (
-            "sharing-exact-clean-arm-opting-out-of-its-completed-group",
-            "sharing-certified-clean-arm-opting-out-on-a-collapsed-incident",
-        ),
-        "collapsed-floor identity, run fields and the joined sidecar": (
-            "collapsed-floor-exact-pair-parting-on-the-first-answer",
-            "collapsed-floor-certified-pair-parting-on-its-evidence",
-            "collapsed-floor-certified-move-owned-by-its-record-join",
-        ),
-    }
-    for law, names in matrix.items():
-        absent = [name for name in names if name not in staged]
-        assert not absent, (law, absent)
-
-    # The same coverage encoded as metadata rather than names, so a stratum is a queryable fact: each
-    # tagged case carries its law and stratum, and the queries below assert the combinations the
-    # covering note claims. A tag naming a missing case fails, and a claimed combination with no
-    # tagged case fails, so renaming a case cannot silently thin the matrix.
-    strata = {
-        "at-placement-answer-copied-from-its-past-partner": ("pair-first", "newline"),
-        "semicolon-at-answer-copied-from-its-past-partner": ("pair-first", "semicolon"),
-        "at-placement-refuses-while-its-past-partner-answers": ("pair-presence", "newline"),
-        "semicolon-at-refuses-while-its-past-partner-answers": ("pair-presence", "semicolon"),
-        "at-placement-terminal-outside-the-pair-law": ("pair-terminal", "newline"),
-        "semicolon-at-terminal-outside-the-pair-law": ("pair-terminal", "semicolon"),
-        "at-placement-spending-an-attempt-its-partner-does-not": ("pair-attempts", "newline"),
-        "semicolon-at-spending-an-attempt-its-partner-does-not": ("pair-attempts", "semicolon"),
-        "semicolon-pair-attempts-broken-on-the-equal-terminal-branch": ("pair-attempts", "equal-terminal"),
-        "archived-decider-answer-beside-an-exact-arm-that-refused": ("totality", "exact-repairable"),
-        "beyond-repair-exact-arm-rewritten-into-a-refusal": ("totality", "exact-beyond-repair"),
-        "exact-clean-arm-rewritten-into-a-refusal-on-a-repairable-incident": ("totality", "clean-repairable"),
-        "beyond-repair-exact-clean-arm-rewritten-into-a-refusal": ("totality", "clean-beyond-repair"),
-        "exact-arm-answer-disagrees-with-the-archived-decider-answer": ("direct-query", "present"),
-        "exact-arm-answering-its-blind-floor-after-a-direct-refusal": ("direct-query", "absent"),
-        "exact-arm-landing-flags-flipped-against-a-sharing-neighbour": ("landing", "flipped-flags"),
-        "newline-pair-equal-terminals-landing-apart": ("landing", "equal-terminals"),
-        "semicolon-pair-shared-boundary-terminal-claimed-unlanded": ("landing", "owned-boundary"),
-        "single-attempt-arm-diverging-from-its-coordinate-sharing-neighbour": ("divergence", "triple"),
-        "sharing-exact-clean-arm-opting-out-of-its-completed-group": ("divergence", "membership-plain"),
-        "sharing-certified-clean-arm-opting-out-on-a-collapsed-incident": ("divergence", "membership-collapsed"),
-        "collapsed-floor-exact-pair-parting-on-the-first-answer": ("identity", "run-field"),
-        "collapsed-floor-certified-pair-parting-on-its-evidence": ("identity", "evidence-field"),
-        "collapsed-floor-certified-move-owned-by-its-record-join": ("identity", "sidecar-owned"),
-        "token-arm-erasing-its-own-membership": ("erasure", "token-newline"),
-        "token-semicolon-arm-erasing-its-own-membership": ("erasure", "token-semicolon"),
-        "semicolon-pair-erasing-both-memberships-together": ("erasure", "paired-semicolon"),
-        "all-three-excluded-family-arms-erased-together": ("erasure", "all-three"),
-        "multi-attempt-semicolon-relabeled-refused-with-its-answer-standing":
-            ("erasure", "outcome-relabel"),
-    }
-    for name in strata:
-        assert name in staged, (name, "strata names a missing case")
-    tagged = set(strata.values())
-    for law, wanted in (
-        ("pair-first", ("newline", "semicolon")),
-        ("pair-presence", ("newline", "semicolon")),
-        ("pair-terminal", ("newline", "semicolon")),
-        ("pair-attempts", ("newline", "semicolon", "equal-terminal")),
-        ("totality", ("exact-repairable", "exact-beyond-repair", "clean-repairable", "clean-beyond-repair")),
-        ("direct-query", ("present", "absent")),
-        ("landing", ("flipped-flags", "equal-terminals", "owned-boundary")),
-        ("divergence", ("triple", "membership-plain", "membership-collapsed")),
-        ("identity", ("run-field", "evidence-field", "sidecar-owned")),
-    ):
-        for stratum in wanted:
-            assert (law, stratum) in tagged, (law, stratum)
+    assert_case_metadata(cases, CASE_SCHEMA)
 
     return cases
 
@@ -3035,12 +3114,20 @@ def run_suite(data_dir, neutered=None, only=None):
         mut_sidecar = mut_csv + SIDECAR_SUFFIX
         stream(archive.campaign, {}, base_csv)
         stream(archive.sidecar, {}, base_sidecar)
-        # The harness summary travels beside every staged CSV under the twin name the analyzer
-        # derives, because the reconciliation reads it as a required input, never an optional one.
+        # The harness summary and the membership commitments travel beside every staged CSV under
+        # the twin names the analyzer derives, because both reconciliations read them as required
+        # inputs, never optional ones. The summary is rewritten per case, pristine or carrying the
+        # case's own summary edit, so a summary corruption is staged the same way a row corruption is.
         summary_name = CAMPAIGN[: -len(".csv")] + ".txt"
         gold_summary = os.path.join(gold_dir, summary_name)
+        with open(gold_summary, encoding="utf-8") as handle:
+            gold_summary_text = handle.read()
         shutil.copyfile(gold_summary, os.path.join(base_dir, summary_name))
         shutil.copyfile(gold_summary, os.path.join(mut_dir, summary_name))
+        commitments_name = CAMPAIGN[: -len(".csv")] + ".commitments.txt"
+        gold_commitments = os.path.join(gold_dir, commitments_name)
+        shutil.copyfile(gold_commitments, os.path.join(base_dir, commitments_name))
+        shutil.copyfile(gold_commitments, os.path.join(mut_dir, commitments_name))
 
         out_base = os.path.join(work, "out-base")
         status, _ = run_analyzer(analyzer, base_csv, out_base)
@@ -3083,6 +3170,13 @@ def run_suite(data_dir, neutered=None, only=None):
             for path in (mut_csv, mut_sidecar):
                 if os.path.exists(path):
                     os.remove(path)
+            summary_text = gold_summary_text
+            if case["summary_edit"] is not None:
+                before, after, count = case["summary_edit"]
+                assert summary_text.count(before) >= count, (case["name"], before[:40])
+                summary_text = summary_text.replace(before, after, count)
+            with open(os.path.join(mut_dir, summary_name), "w", encoding="utf-8") as handle:
+                handle.write(summary_text)
             if case["campaign"]:
                 stream(archive.campaign, case["campaign"], mut_csv)
             else:
@@ -3174,6 +3268,7 @@ def main():
         sys.exit("test_analyze_r6.py: refusing to run with assertions disabled (-O/PYTHONOPTIMIZE)")
     arguments = sys.argv[1:]
     prove = "--prove-detection" in arguments
+    prove_metadata = "--prove-metadata" in arguments
     listing = "--list-cases" in arguments
     only = None
     positional = []
@@ -3182,7 +3277,7 @@ def main():
         if skip_next:
             skip_next = False
             continue
-        if argument in ("--prove-detection", "--list-cases"):
+        if argument in ("--prove-detection", "--prove-metadata", "--list-cases"):
             continue
         if argument == "--case":
             if index + 1 >= len(arguments):
@@ -3192,6 +3287,35 @@ def main():
             continue
         positional.append(argument)
     data_dir = os.path.abspath(positional[0] if positional else os.path.dirname(os.path.abspath(__file__)))
+    if prove_metadata:
+        # The metadata check must be fatal when the schema is thinned or retagged: one erasure entry
+        # is removed and one stratum is rewritten, and each doctored schema must fail the grid
+        # assertion. The exit is inverted the way --prove-detection's is: zero exactly when both
+        # breakages were caught.
+        gold_dir = os.path.join(data_dir, GOLD_DIR)
+        archive = Archive(
+            load_gzipped_lines(os.path.join(gold_dir, CAMPAIGN + ".gz")),
+            load_gzipped_lines(os.path.join(gold_dir, CAMPAIGN + SIDECAR_SUFFIX + ".gz")),
+        )
+        cases = build_cases(archive)
+        thinned = dict(CASE_SCHEMA)
+        del thinned["token-semicolon-arm-erasing-its-own-membership"]
+        retagged = dict(CASE_SCHEMA)
+        retagged["token-arm-erasing-its-own-membership"] = ("erasure", "renamed-away")
+        caught = 0
+        for doctored in (thinned, retagged):
+            try:
+                assert_case_metadata(cases, doctored)
+            except AssertionError:
+                caught += 1
+        if caught != 2:
+            print("--prove-metadata: a thinned or retagged schema passed the grid assertion",
+                  file=sys.stderr)
+            return 1
+        print("--prove-metadata: a schema missing an erasure entry and a schema retagging one both "
+              "fail the grid assertion, so the metadata claim is fail-closed")
+        return 0
+
     if listing:
         # The names come from the staged archive's own case list, so the listing can never drift from
         # what a run would stage.
@@ -3202,17 +3326,25 @@ def main():
         )
         cases = build_cases(archive)
         for case in cases:
-            print("%s  [%s]" % (case["name"], "control" if case["expect"] == "accept" else "mutation"))
+            kind = "control" if case["expect"] == "accept" else "mutation"
+            if case["law"] is not None:
+                print("%s  [%s, %s/%s]" % (case["name"], kind, case["law"], case["stratum"]))
+            else:
+                print("%s  [%s]" % (case["name"], kind))
         controls = sum(1 for case in cases if case["expect"] == "accept")
         mutations = len(cases) - controls
+        tagged = sum(1 for case in cases if case["law"] is not None)
         # The split is asserted from the cases' own expectations, fail-closed: a listing that says
         # anything other than the documented population exits nonzero rather than printing a shorter
-        # list that still reads like the claim.
-        if mutations != 137 or controls != 1:
-            print("the case population is %d mutations and %d controls, not the documented 137 and 1"
-                  % (mutations, controls), file=sys.stderr)
+        # list that still reads like the claim. The tag count is part of the population, so a case
+        # dropped from the schema is a failed listing, never a quietly shorter one.
+        if mutations != 142 or controls != 1 or tagged != len(CASE_SCHEMA):
+            print("the case population is %d mutations, %d controls, %d tagged, not the documented "
+                  "142, 1, and %d" % (mutations, controls, tagged, len(CASE_SCHEMA)),
+                  file=sys.stderr)
             return 1
-        print("137 mutations and 1 control, asserted from the cases' own expectations")
+        print("142 mutations and 1 control, %d cases carrying their law and stratum, asserted from "
+              "the cases' own objects" % tagged)
         return 0
     if prove:
         return prove_detection(data_dir)
