@@ -32,7 +32,6 @@
 #include <vector>
 
 #include "grammars.hpp"
-
 #include "munch/core/builder.hpp"
 
 namespace
@@ -296,8 +295,9 @@ int main(const int argc, const char** argv)
 
     std::printf("corpus: %zu bytes, %zu sequential token starts\n", corpus.size(), sequential.size());
 
-    std::printf("anchors: %zu from %zu table windows, every one on the sequential boundary set\n",
-                anchors.size(), windows.size());
+    std::printf(
+            "anchors: %zu from %zu table windows, every one on the sequential boundary set\n", anchors.size(),
+            windows.size());
 
     const auto sequential_ms{best_of_runs(5, [&] { boundaries(lexer, corpus); })};
 
@@ -359,12 +359,11 @@ int main(const int argc, const char** argv)
 
                     const auto piece{view.substr(cuts[chunk], cuts[chunk + 1] - cuts[chunk])};
 
-                    const auto consumed{
-                            lexer.tokenize_all<Token>(piece, [&](const Token, const std::size_t length) {
-                                chunk_begins[chunk].push_back(at);
+                    const auto consumed{lexer.tokenize_all<Token>(piece, [&](const Token, const std::size_t length) {
+                        chunk_begins[chunk].push_back(at);
 
-                                at += length;
-                            })};
+                        at += length;
+                    })};
 
                     if (consumed != piece.size())
                     {
@@ -392,18 +391,19 @@ int main(const int argc, const char** argv)
 
         if (chunked != sequential)
         {
-            std::fprintf(stderr, "chunked segmentation differs from the sequential scan at %zu workers\n",
-                         workers);
+            std::fprintf(stderr, "chunked segmentation differs from the sequential scan at %zu workers\n", workers);
 
             return EXIT_FAILURE;
         }
 
-        std::printf("workers %zu: %zu chunks, snap max %zu bytes, chunked boundary stream "
-                    "byte-identical to the sequential scan\n",
-                    workers, cuts.size() - 1, snap_max);
+        std::printf(
+                "workers %zu: %zu chunks, snap max %zu bytes, chunked boundary stream "
+                "byte-identical to the sequential scan\n",
+                workers, cuts.size() - 1, snap_max);
 
-        std::printf("timing: workers %zu parallel scan %.2f ms best of five, speedup %.2f\n", workers,
-                    parallel_ms, sequential_ms / parallel_ms);
+        std::printf(
+                "timing: workers %zu parallel scan %.2f ms best of five, speedup %.2f\n", workers, parallel_ms,
+                sequential_ms / parallel_ms);
     }
 
     std::printf("the split theorem held on every configuration: no speculation and no fixup pass\n");
