@@ -99,13 +99,13 @@ DAMAGED_LENGTH_COLUMNS = (
 )
 
 # The campaign's six grammar rows, fixed by the schedule, each beside the byte length of the source it runs
-# on: the grid audit requires exactly these rows, and every coordinate a row archives is bounded by the input
-# that length implies. No column carries the length, so the mapping is pinned here as it was derived. The
-# five generated rows run on the 512 KiB corpora archived with the campaign (`corpus-*.bin`, 524,288 bytes
-# each); the real-world row runs on the archived `twitter.json`, 631,515 bytes. The row population
-# corroborates every entry: all 518,360 archived rows fit inside the lengths below, the closest any
-# coordinate comes to the length bounding it is 38 bytes, and the widest damage the schedule drew stops 66
-# bytes short of its corpus end.
+# on: the grid audit requires exactly these rows, and every coordinate a row archives is bounded by the
+# input that length implies. No column carries the length, so the mapping is pinned here as it was derived.
+# The five generated rows run on the 512 KiB corpora archived with the campaign (`corpus-*.bin`, 524,288
+# bytes each); the real-world row runs on `twitter.json`, 631,515 bytes, which the reproduction scripts
+# fetch. The row population corroborates every entry: all 518,360 archived rows fit inside the lengths
+# below, the closest any coordinate comes to the length bounding it is 38 bytes, and the widest damage the
+# schedule drew stops 66 bytes short of its corpus end.
 GRAMMAR_SOURCE_BYTES = {
     "c-like bare: identifiers numbers operators punctuation": 524288,
     "c-like conventional plus block comments alone": 524288,

@@ -286,7 +286,7 @@ def main():
     # requires: the same quantity read in opposite directions, per row.
     emit(
         "search travel and coverage per row (row, answers, median travel, median overhang, mean travel, "
-        "covered%, mean overshoot):"
+        "covered%, mean absolute overshoot):"
     )
     labels = sorted({r[13] for r in rows}, key=lambda g: statistics.median([r[12] for r in rows if r[13] == g]))
     for label in labels:
