@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# Everything in this file is negative-path software testing of this research artifact's own contents: each staged case
+# corrupts a scratch copy of data the bundle carries, or alters only the interpreter configuration, and proves a validation check declines it. Nothing here probes,
+# monitors, or touches any live system, network, or third party.
 # Proves that analyze_r6.py is fail-closed: every invariant it asserts is exercised by a mutation of the
 # archived r6 campaign that the analyzer must refuse. The suite first establishes the baseline, running the
 # analyzer on the decompressed gold archive and requiring exit 0 together with three emissions byte-identical
@@ -7,7 +11,7 @@
 # the printed figures and the overhang data file the manuscript's plot reads coordinate by coordinate, so
 # the second checked-in program that feeds the manuscript is pinned to its archived output as well. Each
 # case that follows stages one corrupted archive and requires a nonzero exit from the program it is aimed
-# at, the auditing analyzer for most cases and the mechanism companion for its four, so the
+# at, the auditing analyzer for most cases and the mechanism companion for its eleven, so the
 # companion's own refusal of a corrupted archive is executable rather than assumed; a mutation the program
 # accepts is a hole in the audit and fails the suite.
 #
@@ -40,6 +44,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+# Set before the sibling import: an interpreter caching bytecode for it would drop an unlisted file
+# into the very tree the exact-set gates refuse.
+sys.dont_write_bytecode = True
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import commit_r6
 
 ANALYZER = "analyze_r6.py"
 MECHANISM = "analyze_r6_mechanism.py"
@@ -925,11 +937,139 @@ def compare_emissions(out_dir, gold_dir, names):
     return mismatched
 
 
-# The one declaration of every tagged case's law and stratum. The case objects, the coverage
-# queries, and the --list-cases output all derive from this mapping, so there is no second structure
-# to drift from it: removing an entry, retagging one, or naming a case that is not staged breaks the
-# grid equality below, and --prove-metadata proves the breakage exits nonzero.
+# The one declaration of every guard-bearing case's law and stratum, complete over the population:
+# every rejecting case that names an intended-guard marker must appear here, and the name sets are
+# asserted equal in both directions, so an untagged guard-bearing case, a renamed case, a removed
+# entry, a retagged one, or a name that is not staged is a build failure. The case objects, the
+# coverage queries, and the --list-cases output all derive from this mapping; the critical entries
+# are additionally bound to their cases' own markers below, so a tag moved to a different case or
+# two valid tags swapped between cases also fails, and --prove-metadata proves each breakage fatal.
 CASE_SCHEMA = {
+    "sidecar-answer-equals-evidence-end": ("sidecar", "answer-at-end"),
+    "sidecar-answer-outside-evidence-interval": ("sidecar", "answer-outside"),
+    "sidecar-row-deleted": ("sidecar", "row-deleted"),
+    "sidecar-row-duplicated": ("sidecar", "row-duplicated"),
+    "sidecar-move-index-broken": ("sidecar", "index-broken"),
+    "sidecar-file-missing": ("sidecar", "file-missing"),
+    "sidecar-move-index-padded": ("sidecar", "index-padded"),
+    "sidecar-answer-negated": ("sidecar", "answer-negated"),
+    "sidecar-move-evidence-back-on-the-previous-answer": ("sidecar", "move-regressed"),
+    "sidecar-move-evidence-past-the-damaged-input-length": ("sidecar", "move-past-end"),
+    "sidecar-move-past-the-deletion-shortened-input": ("sidecar", "deletion-length"),
+    "sidecar-move-past-the-insertion-lengthened-input": ("sidecar", "insertion-length"),
+    "campaign-first-answer-changed": ("record-join", "first-answer"),
+    "campaign-terminal-answer-changed": ("record-join", "terminal-answer"),
+    "campaign-covered-count-corrupted": ("record-join", "covered-count"),
+    "campaign-covered-landed-differs-from-covered": ("record-join", "covered-landed"),
+    "certified-answer-loses-covered-tally": ("record-join", "covered-presence"),
+    "campaign-ordinary-row-duplicated": ("containment", "ordinary-duplicate"),
+    "campaign-absorbed-row-duplicated": ("containment", "absorbed-duplicate"),
+    "absorbed-row-reuses-damaging-key": ("containment", "key-exclusive"),
+    "absorbed-row-carries-answer-field": ("containment", "absorbed-answer-field"),
+    "arm-row-dropped-from-incident": ("containment", "arm-missing"),
+    "unknown-strategy-name": ("containment", "strategy-domain"),
+    "unknown-outcome-value": ("containment", "outcome-domain"),
+    "header-schema-altered": ("containment", "column-header"),
+    "row-names-a-grammar-with-no-source-length": ("containment", "grammar-domain"),
+    "zero-attempt-row-fabricates-first-answer": ("zero-attempt", "fabricated-first"),
+    "zero-attempt-row-retains-terminal-and-evidence-kind": ("zero-attempt", "retained-terminal"),
+    "positive-attempts-row-loses-first-answer": ("zero-attempt", "answer-presence"),
+    "optimized-interpreter-refused": ("interpreter", "analyzer"),
+    "mechanism-refuses-a-window-kind-on-byte-shaped-evidence": ("mechanism", "byte-kind"),
+    "mechanism-refuses-an-unknown-kind-on-window-shaped-evidence": ("mechanism", "unknown-kind"),
+    "mechanism-refuses-a-five-byte-window": ("mechanism", "wide-window"),
+    "mechanism-refuses-an-empty-window": ("mechanism", "empty-window"),
+    "mechanism-refuses-a-deleted-noncertified-arm-row": ("mechanism", "arm-set"),
+    "mechanism-refuses-a-nonnumeric-noncertified-field": ("mechanism", "numeric-canonical"),
+    "mechanism-refuses-a-blank-certified-landing-flag": ("mechanism", "certified-flag"),
+    "mechanism-refuses-a-deleted-absorbed-incident": ("mechanism", "absorbed-incident-count"),
+    "mechanism-refuses-a-trial-rekeyed-off-the-schedule": ("mechanism", "trial-rekeyed"),
+    "mechanism-refuses-a-negative-zero-trial": ("mechanism", "negative-zero-trial"),
+    "mechanism-refuses-a-negative-zero-ignored-field": ("mechanism", "negative-zero-ignored"),
+    "padded-zero-attempts-hides-fabricated-answer": ("padding", "attempts-zero"),
+    "padded-trial-key-hides-duplicate-arm-row": ("padding", "trial-key"),
+    "padded-attempts-on-answered-row": ("padding", "attempts-answered"),
+    "absorbed-row-nonnumeric-damage-coordinate": ("padding", "nonnumeric-coordinate"),
+    "completed-row-relabeled-capped-keeping-divergence": ("outcome-fields", "capped-divergence"),
+    "refused-row-given-convergence-point": ("outcome-fields", "refused-convergence"),
+    "capped-row-short-of-the-attempt-budget": ("outcome-fields", "capped-budget"),
+    "attempts-past-the-budget-bound": ("outcome-fields", "budget-bound"),
+    "refused-row-claiming-the-whole-attempt-budget": ("outcome-fields", "refused-budget"),
+    "skip-row-relabeled-as-a-refusal": ("outcome-fields", "skip-refusal"),
+    "completed-row-negative-convergence-point": ("outcome-fields", "negative-convergence"),
+    "completed-row-negative-lost-count": ("outcome-fields", "negative-lost"),
+    "refused-row-ending-at-the-damaged-input-end": ("outcome-fields", "refused-at-end"),
+    "capped-row-ending-at-the-damaged-input-end": ("outcome-fields", "capped-at-end"),
+    "certified-evidence-kind-unknown": ("evidence", "kind-domain"),
+    "certified-evidence-kind-contradicts-interval-width": ("evidence", "kind-width"),
+    "noncertified-arm-carries-fabricated-evidence": ("evidence", "noncertified-fabricated"),
+    "noncertified-arm-carries-covered-tally": ("evidence", "noncertified-covered"),
+    "certified-evidence-begins-below-blind-anchor": ("evidence", "anchor-floor"),
+    "certified-window-stretched-past-four-bytes": ("evidence", "window-width"),
+    "absorbed-row-deleted-breaks-grid": ("schedule-grid", "absorbed-deleted"),
+    "whole-incident-deleted-breaks-grid": ("schedule-grid", "incident-deleted"),
+    "whole-schedule-cell-deleted": ("schedule-grid", "cell-deleted"),
+    "schedule-cell-operation-renamed": ("schedule-grid", "operation-renamed"),
+    "last-trial-deleted-from-every-cell": ("schedule-grid", "trial-deleted"),
+    "arm-damage-coordinates-shifted": ("damage-geometry", "coordinates-shifted"),
+    "delete-incident-corruption-end-off-the-seam": ("damage-geometry", "delete-seam"),
+    "absorbed-substitution-corruption-end-off-the-span": ("damage-geometry", "absorbed-span"),
+    "absorbed-row-position-past-the-sixteen-mebibyte-bound": ("damage-geometry", "position-bound"),
+    "absorbed-substitution-moved-to-a-wild-coordinate": ("damage-geometry", "wild-coordinate"),
+    "absorbed-substitution-span-past-its-grammar-source": ("damage-geometry", "span-source"),
+    "absorbed-insertion-seam-past-its-grammar-source": ("damage-geometry", "seam-source"),
+    "terminal-answer-past-the-damaged-input-length": ("damage-geometry", "answer-length"),
+    "delete-incident-boundary-at-the-undeleted-source-length":
+        ("damage-geometry", "boundary-length"),
+    "arm-repairable-flag-flipped": ("repairability", "flag-repair"),
+    "minimal-repair-blanked-on-one-arm": ("repairability", "blank-one"),
+    "minimal-repair-blanked-on-every-arm-of-one-incident": ("repairability", "blank-incident"),
+    "certified-minimal-answer-past-the-answer-taken": ("repairability", "minimal-past-answer"),
+    "blind-minimal-position-below-the-search-floor": ("repairability", "blind-floor"),
+    "clean-minimal-position-below-the-corruption-end": ("repairability", "clean-floor"),
+    "landing-flag-without-answer": ("landing", "flag-without-answer"),
+    "covered-first-move-flag-flipped-to-unlanded": ("landing", "covered-first"),
+    "covered-terminal-move-flag-flipped-to-unlanded": ("landing", "covered-terminal"),
+    "terminal-answer-on-the-mapped-boundary-flagged-unlanded": ("landing", "mapped-terminal"),
+    "answer-inside-the-damaged-window-flagged-landed": ("landing", "damaged-window"),
+    "terminal-answer-at-the-damaged-end-carrying-a-flag": ("landing", "damaged-end"),
+    "landed-terminal-below-the-mapped-boundary": ("landing", "mapped-order"),
+    "first-answer-on-the-mapped-boundary-flagged-unlanded": ("landing", "mapped-first"),
+    "clean-answer-evidence-below-the-corruption-end": ("clean-scope", "evidence-floor"),
+    "clean-sidecar-move-below-the-corruption-end": ("clean-scope", "move-floor"),
+    "exact-clean-answer-below-the-corruption-end": ("clean-scope", "answer-floor"),
+    "exact-clean-terminal-below-the-corruption-end": ("clean-scope", "terminal-floor"),
+    "exact-clean-answer-unlanded-on-both-flags": ("clean-scope", "unlanded-flags"),
+    "beyond-repair-exact-clean-answer-unlanded-on-both-flags":
+        ("clean-scope", "beyond-repair-flags"),
+    "first-true-boundary-blanked-on-every-arm-of-one-incident": ("mapped-boundary", "blanked"),
+    "first-true-boundary-below-the-corruption-end-on-every-arm": ("mapped-boundary", "below-end"),
+    "first-true-boundary-past-a-landed-covered-answer-on-every-arm":
+        ("mapped-boundary", "past-answer"),
+    "multi-attempt-terminal-below-the-first-answer": ("attempt-order", "below-first"),
+    "multi-attempt-terminal-equal-to-the-first-answer": ("attempt-order", "equal-first"),
+    "single-attempt-terminal-past-the-first-answer": ("attempt-order", "single-past"),
+    "single-attempt-terminal-landing-differs-from-the-first": ("attempt-order", "single-landing"),
+    "attempts-past-the-advance-the-answers-allow": ("attempt-order", "advance-bound"),
+    "skip-row-answering-past-its-own-definition": ("attempt-order", "skip-definition"),
+    "beyond-repair-skip-row-answering-past-its-own-definition":
+        ("attempt-order", "skip-beyond-repair"),
+    "completed-row-converges-below-its-first-answer": ("divergence-region", "converged-below"),
+    "beyond-repair-row-converges-below-its-first-answer":
+        ("divergence-region", "beyond-converged"),
+    "completed-row-counts-a-lost-boundary-in-an-empty-divergence-region":
+        ("divergence-region", "empty-lost"),
+    "completed-row-counts-a-spurious-boundary-in-an-empty-divergence-region":
+        ("divergence-region", "empty-spurious"),
+    "beyond-repair-row-counts-a-lost-boundary-in-an-empty-divergence-region":
+        ("divergence-region", "beyond-empty-lost"),
+    "completed-row-counting-more-lost-boundaries-than-its-region-holds":
+        ("divergence-region", "region-width"),
+    "beyond-repair-row-counting-more-spurious-boundaries-than-its-region-holds":
+        ("divergence-region", "beyond-region-width"),
+    "negative-decider-answer-on-every-arm-of-one-incident": ("decider", "negative"),
+    "decider-answer-at-zero-on-every-arm-of-one-incident": ("decider", "floor"),
+    "exact-clean-arm-rewritten-into-a-refusal": ("totality", "clean-refusal-plain"),
     "at-placement-answer-copied-from-its-past-partner": ("pair-first", "newline"),
     "semicolon-at-answer-copied-from-its-past-partner": ("pair-first", "semicolon"),
     "at-placement-refuses-while-its-past-partner-answers": ("pair-presence", "newline"),
@@ -964,40 +1104,360 @@ CASE_SCHEMA = {
     "completed-row-divergence-rebalanced-within-its-region": ("membership", "value-moving"),
     "completed-row-relabeled-capped": ("summary", "capped-count"),
     "summary-header-column-renamed": ("summary", "header-schema"),
+    "summary-header-deleted-from-one-section": ("summary", "header-deleted"),
+    "summary-header-duplicated-inside-another-section": ("summary", "header-duplicated"),
     "summary-carrying-an-unknown-cell": ("summary", "cell-domain"),
+    "summary-cell-with-operation-size-and-arm-all-unknown": ("summary", "cell-all-unknown"),
+    "summary-cell-with-an-unknown-operation-alone": ("summary", "cell-operation"),
+    "summary-cell-with-an-unknown-arm-alone": ("summary", "cell-arm"),
+    "summary-cell-carrying-an-extra-field": ("summary", "cell-extra-field"),
+    "summary-cell-missing-its-last-field": ("summary", "cell-missing-field"),
+    "summary-rewritten-with-a-non-breaking-space": ("summary", "cell-non-ascii"),
+    "summary-count-in-arabic-indic-digits": ("summary", "cell-unicode-digits"),
+    "summary-count-padded-with-a-leading-zero": ("summary", "cell-leading-zero"),
+    "summary-percentage-past-a-hundred": ("summary", "cell-percentage-range"),
+    "summary-count-longer-than-any-campaign-writes": ("summary", "cell-length-bound"),
+    "summary-cell-field-off-its-grammar": ("summary", "cell-field-grammar"),
+    "summary-signed-overshoot-padded-with-a-leading-zero":
+        ("summary", "cell-signed-leading-zero"),
+    "summary-signed-overshoot-spelling-a-negative-zero":
+        ("summary", "cell-signed-negative-zero"),
+    "summary-tail-displacement-padded-with-a-leading-zero":
+        ("summary", "tail-leading-zero"),
+    "summary-tail-displacement-spelling-a-negative-zero":
+        ("summary", "tail-negative-zero"),
+    "summary-preamble-seeds-padded-with-a-leading-zero": ("summary", "preamble-leading-zero"),
+    "summary-oracle-rows-padded-with-a-leading-zero": ("summary", "oracle-leading-zero"),
+    "summary-pooled-answers-padded-with-a-leading-zero": ("summary", "pooled-leading-zero"),
+    "summary-per-seed-rate-padded-with-a-leading-zero": ("summary", "seed-leading-zero"),
+}
+
+# Ownership, not merely population: each critical stratum names a fragment that must appear inside
+# its own case's declared marker and inside no other case's, read back from the case objects after
+# staging. A tag moved to a different case, or two valid tags swapped between cases, leaves the
+# multiset whole and fails here, because the marker is the ground truth of which guard a case
+# exercises and the fragment rides the marker, not the schema. The critical laws are declared once
+# and the signature table's key set is asserted equal to their full strata in both directions, so
+# a deleted or stray signature is a build failure, never a quietly narrower ownership check.
+# Every tag's own guard, declared once for the whole population rather than for the critical laws
+# alone. The value is the exact marker tuple the case holding that tag must carry, so a tag moved
+# between two cases whose guards differ fails here even though the population, the grid, and the
+# critical signatures all survive: the declaration says which guard each tag names, and a case
+# whose marker is not that guard cannot hold it. Where two cases genuinely exercise one guard with
+# one detail their tuples coincide, and the binding then fixes the group rather than the member;
+# the run prints how many such groups there are rather than leaving the reader to assume none.
+TAG_GUARDS = {
+    ("attempt-order", "advance-bound"): ('assert int(record["terminal"]) - int(record["first"]) >= int(record["attempts"]) - 1', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '13'), 'skip-one')"),
+    ("attempt-order", "below-first"): ('assert int(record["terminal"]) >= int(record["first"])', ", 'newline')"),
+    ("attempt-order", "equal-first"): ('assert int(record["terminal"]) > int(record["first"])', ", 'newline')"),
+    ("attempt-order", "single-landing"): ('assert record["terminal_landed"] == record["first_landed"]', ", 'exact')"),
+    ("attempt-order", "single-past"): ('assert record["terminal"] == record["first"]', ", 'certified')"),
+    ("attempt-order", "skip-beyond-repair"): ('assert int(record["first"]) == int(record["failure_offset"]) + 1', "(('c-like conventional with strings and line comments', 'substitute', '4', '0', '42'), 'skip-one'"),
+    ("attempt-order", "skip-definition"): ('assert int(record["first"]) == int(record["failure_offset"]) + 1', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '13'), 'skip-one'"),
+    ("clean-scope", "answer-floor"): ('assert int(record["first"]) >= floor', ", 'exact-clean')"),
+    ("clean-scope", "beyond-repair-flags"): ('assert record["first_landed"] == "1" and record["terminal_landed"] == "1"', "(('c-like conventional with strings and line comments', 'substitute', '4', '0', '42'), 'exact-clean')"),
+    ("clean-scope", "evidence-floor"): ('assert int(record["evidence_begin"]) >= int(record["corruption_end"])',),
+    ("clean-scope", "move-floor"): ('assert begin >= int(record["corruption_end"])',),
+    ("clean-scope", "terminal-floor"): ('assert int(record["terminal"]) >= floor', ", 'exact-clean')"),
+    ("clean-scope", "unlanded-flags"): ('assert record["first_landed"] == "1" and record["terminal_landed"] == "1"', ", 'exact-clean')"),
+    ("containment", "absorbed-answer-field"): ('assert not record[field], (key, field)',),
+    ("containment", "absorbed-duplicate"): ('assert key not in absorbed_keys',),
+    ("containment", "arm-missing"): ('assert len(arms) == len(ARMS)',),
+    ("containment", "column-header"): ('assert head == COLUMNS',),
+    ("containment", "grammar-domain"): ('assert record["grammar"] in GRAMMAR_SOURCE_BYTES', 'c-like row the schedule never ran'),
+    ("containment", "key-exclusive"): ('assert absorbed_keys.isdisjoint(incidents.keys())',),
+    ("containment", "ordinary-duplicate"): ('assert record["strategy"] not in incidents[key]',),
+    ("containment", "outcome-domain"): ('assert record["outcome"] in OUTCOMES',),
+    ("containment", "strategy-domain"): ('assert record["strategy"] in ARMS',),
+    ("damage-geometry", "absorbed-span"): ('assert int(record["corruption_end"]) == int(record["p"]) + int(record["k"])', "'absorbed')"),
+    ("damage-geometry", "answer-length"): ('assert int(record[field]) <= damaged_size', ", 'exact', 'terminal', '600000')"),
+    ("damage-geometry", "boundary-length"): ('assert int(record[field]) <= damaged_size', ", 'first_true', '524288')"),
+    ("damage-geometry", "coordinates-shifted"): ("'p')",),
+    ("damage-geometry", "delete-seam"): ('assert record["corruption_end"] == record["p"]',),
+    ("damage-geometry", "position-bound"): ("('p', '16777216')",),
+    ("damage-geometry", "seam-source"): ('assert int(record["p"]) <= source_size', ", 'absorbed', '524289')"),
+    ("damage-geometry", "span-source"): ('assert int(record["p"]) + int(record["k"]) <= source_size', ", 'absorbed', '600000')"),
+    ("damage-geometry", "wild-coordinate"): ('assert int(value) < POSITION_BOUND', "('p', '900000000')"),
+    ("decider", "floor"): ('assert int(record["exact_at_anchor"]) >= int(record["failure_offset"]) + 1',),
+    ("decider", "negative"): ("('exact_at_anchor', '-1')",),
+    ("direct-query", "absent"): ('assert int(exact_first) > int', "'299352'"),
+    ("direct-query", "present"): ('assert direct == exact_first', ", '327130', '327129')"),
+    ("divergence", "membership-collapsed"): ('assert r["outcome"] == "completed" and r["attempts"] == "1"', "'certified-clean'"),
+    ("divergence", "membership-plain"): ('assert r["outcome"] == "completed" and r["attempts"] == "1"', "'exact-clean'"),
+    ("divergence", "triple"): ('assert len(triples) == 1', "'327131'"),
+    ("divergence-region", "beyond-converged"): ('assert int(record["converged"]) >= int(record["first"])', "(('c-like conventional with strings and line comments', 'substitute', '4', '0', '42'), 'certified-clean')"),
+    ("divergence-region", "beyond-empty-lost"): ('assert record["lost"] == "0" and record["spurious"] == "0"', "(('c-like conventional with strings and line comments', 'substitute', '4', '0', '42'), 'skip-one')"),
+    ("divergence-region", "beyond-region-width"): ('assert int(record["lost"]) + int(record["spurious"]) <= region', "(('c-like conventional with strings and line comments', 'substitute', '16', '0', '0'), 'skip-one'"),
+    ("divergence-region", "converged-below"): ('assert int(record["converged"]) >= int(record["first"])', ", 'certified')"),
+    ("divergence-region", "empty-lost"): ('assert record["lost"] == "0" and record["spurious"] == "0"', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '12'), 'skip-one')"),
+    ("divergence-region", "empty-spurious"): ('assert record["lost"] == "0" and record["spurious"] == "0"', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '15'), 'skip-one')"),
+    ("divergence-region", "region-width"): ('assert int(record["lost"]) + int(record["spurious"]) <= region', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '0'), 'certified'"),
+    ("erasure", "all-three"): ('cell_first_present.get(summary_cell, 0) == answers', "'4', 'semicolon')"),
+    ("erasure", "outcome-relabel"): ('cell_refused.get(summary_cell, 0) == terminal_refusals',),
+    ("erasure", "paired-semicolon"): ('cell_first_present.get(summary_cell, 0) == answers', "'1', 'semicolon')"),
+    ("erasure", "token-newline"): ('cell_first_present.get(summary_cell, 0) == answers', "'token-newline'"),
+    ("erasure", "token-semicolon"): ('cell_first_present.get(summary_cell, 0) == answers', "'token-semicolon'"),
+    ("evidence", "anchor-floor"): ('assert int(record["evidence_begin"]) >= int(record["failure_offset"]) + 1',),
+    ("evidence", "kind-domain"): ('assert record["evidence_kind"] in ("byte", "window")',),
+    ("evidence", "kind-width"): ('assert (record["evidence_kind"] == "byte") == (width == 1)',),
+    ("evidence", "noncertified-covered"): ("'exact', 'moves_covered')",),
+    ("evidence", "noncertified-fabricated"): ("'exact', 'evidence_begin')",),
+    ("evidence", "window-width"): ('assert 1 <= width <= 4',),
+    ("identity", "evidence-field"): ('assert arms[one][field] == arms[twin][field]', "'evidence_begin'"),
+    ("identity", "run-field"): ('assert arms[one][field] == arms[twin][field]', "'first')"),
+    ("identity", "sidecar-owned"): ('assert int(record["evidence_begin"]) == first_begin', "'certified-clean'"),
+    ("interpreter", "analyzer"): ('refusing to run with assertions disabled',),
+    ("landing", "covered-first"): ('assert record["first_landed"] == "1"',),
+    ("landing", "covered-terminal"): ('assert record["terminal_landed"] == "1"',),
+    ("landing", "damaged-end"): ('assert record[flag] == ""', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '13'), 'skip-one'", "'terminal_landed')"),
+    ("landing", "damaged-window"): ('assert record[flag] == "0"', "(('c-like conventional with strings and line comments', 'substitute', '4', '0', '0'), 'skip-one'", "'first')"),
+    ("landing", "equal-terminals"): ('assert seen_flag == flag', "'83377'"),
+    ("landing", "flag-without-answer"): ('assert record[flag] == ""', "'first_landed')"),
+    ("landing", "flipped-flags"): ('assert seen_flag == flag', "'327130'"),
+    ("landing", "mapped-first"): ('assert record[flag] == "1"', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '12'), 'skip-one'", "'first')"),
+    ("landing", "mapped-order"): ('assert int(record["first_true"]) <= int(record["terminal"])', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '13'), 'skip-one')"),
+    ("landing", "mapped-terminal"): ('assert record[flag] == "1"', ", 'skip-one', 'terminal')"),
+    ("landing", "owned-boundary"): ('assert record[flag] == "1"', "'semicolon-at', 'terminal')"),
+    ("mapped-boundary", "below-end"): ('assert int(record["first_true"]) >= int(record["corruption_end"])',),
+    ("mapped-boundary", "blanked"): ('assert record["first_true"]',),
+    ("mapped-boundary", "past-answer"): ('assert int(record["first_true"]) <= int(record["first"])', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '0'), 'certified')"),
+    ("mechanism", "byte-kind"): ('analyze_r6_mechanism.py', 'assert (kind == "byte") == (width == 1), row'),
+    ("mechanism", "empty-window"): ('analyze_r6_mechanism.py', 'assert 1 <= width <= 4, row'),
+    ("mechanism", "unknown-kind"): ('analyze_r6_mechanism.py', 'assert kind in ("byte", "window"), row'),
+    ("mechanism", "wide-window"): ('analyze_r6_mechanism.py', 'assert 1 <= width <= 4, row'),
+    ("mechanism", "arm-set"): ('analyze_r6_mechanism.py',
+                               "arm set is neither the eleven recovery arms nor one absorbed draw"),
+    ("mechanism", "numeric-canonical"): ('analyze_r6_mechanism.py',
+                                         'attempts is neither blank nor a canonical integer'),
+    ("mechanism", "certified-flag"): ('analyze_r6_mechanism.py',
+                                      'a certified row leaves first_landed blank'),
+    ("mechanism", "absorbed-incident-count"): ('analyze_r6_mechanism.py',
+                                               "trial identifiers are not exactly the declared zero through four"),
+    ("mechanism", "trial-rekeyed"): ('analyze_r6_mechanism.py',
+                                     "trial identifiers are not exactly the declared zero through four"),
+    ("mechanism", "negative-zero-trial"): ('analyze_r6_mechanism.py',
+                                           'trial is neither blank nor a canonical integer'),
+    ("mechanism", "negative-zero-ignored"): ('analyze_r6_mechanism.py',
+                                             'attempts is neither blank nor a canonical integer'),
+    ("membership", "emission-neutral"): ('membership commitment broken', 'plus block comments alone|substitute|1|0'),
+    ("membership", "value-moving"): ('membership commitment broken', 'with strings and line comments|substitute|16|0'),
+    ("outcome-fields", "budget-bound"): ('assert int(record["attempts"]) <= 100',),
+    ("outcome-fields", "capped-at-end"): ('assert record["outcome"] == "completed"', "(('json rfc 8259 lexical forms on a real-world document', 'substitute', '1', '0', '56'), 'skip-one'"),
+    ("outcome-fields", "capped-budget"): ('assert record["outcome"] != "capped" or record["attempts"] == "100"',),
+    ("outcome-fields", "capped-divergence"): ("'certified', 'converged')",),
+    ("outcome-fields", "negative-convergence"): ("('converged', '-1')",),
+    ("outcome-fields", "negative-lost"): ("('lost', '-3')",),
+    ("outcome-fields", "refused-at-end"): ('assert record["outcome"] == "completed"', "(('json rfc 8259 lexical forms', 'substitute', '16', '0', '411'), 'semicolon'"),
+    ("outcome-fields", "refused-budget"): ('assert not (record["outcome"] == "refused" and record["attempts"] == "100")', ", 'semicolon')"),
+    ("outcome-fields", "refused-convergence"): ("'semicolon-at', 'converged')",),
+    ("outcome-fields", "skip-refusal"): ('assert record["outcome"] != "refused"', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '0'), 'skip-one')"),
+    ("padding", "attempts-answered"): ("('attempts', '01')",),
+    ("padding", "attempts-zero"): ("('attempts', '00')",),
+    ("padding", "nonnumeric-coordinate"): ("('p', '12x')",),
+    ("padding", "trial-key"): ("('trial', '01')",),
+    ("pair-attempts", "equal-terminal"): ('assert int(at["attempts"]) == int(past["attempts"]) + extra', "'45'"),
+    ("pair-attempts", "newline"): ('assert int(at["attempts"]) == int(past["attempts"]) + extra', "'newline'"),
+    ("pair-attempts", "semicolon"): ('assert int(at["attempts"]) == int(past["attempts"]) + extra', "'semicolon'"),
+    ("pair-first", "newline"): ('assert int(at["first"]) == int(past["first"]) - 1', "'newline'"),
+    ("pair-first", "semicolon"): ('assert int(at["first"]) == int(past["first"]) - 1', "'semicolon'"),
+    ("pair-presence", "newline"): ('assert bool(past["first"]) == bool(at["first"])', "'newline'"),
+    ("pair-presence", "semicolon"): ('assert bool(past["first"]) == bool(at["first"])', "'semicolon'"),
+    ("pair-terminal", "newline"): ('assert int(at["terminal"]) in (int(past["terminal"]) - 1, int(past["terminal"]))', "'newline'"),
+    ("pair-terminal", "semicolon"): ('assert int(at["terminal"]) in (int(past["terminal"]) - 1, int(past["terminal"]))', "'semicolon'"),
+    ("record-join", "covered-count"): ('assert move_covered.get((key, arm), 0) == expected',),
+    ("record-join", "covered-landed"): ('assert record["moves_covered_landed"] == record["moves_covered"]',),
+    ("record-join", "covered-presence"): ('assert bool(record[field]) == answered',),
+    ("record-join", "first-answer"): ('assert record["first"] and int(record["first"]) == first_answer',),
+    ("record-join", "terminal-answer"): ('assert record["terminal"] and int(record["terminal"]) == move_last[(key, arm)]',),
+    ("repairability", "blank-incident"): ('assert (record["repairable"] == "1") == bool(record["minimal_repair"])',),
+    ("repairability", "blank-one"): ('assert (record["repairable"] == "1") == bool(record["minimal_repair"])',),
+    ("repairability", "blind-floor"): ('assert int(record["minimal"]) >= floor', ", 'certified')"),
+    ("repairability", "clean-floor"): ('assert int(record["minimal"]) >= floor', ", 'certified-clean')"),
+    ("repairability", "flag-repair"): ('assert (record["repairable"] == "1") == bool(record["minimal_repair"])',),
+    ("repairability", "minimal-past-answer"): ('assert int(record["minimal"]) <= int(record["first"])',),
+    ("schedule-grid", "absorbed-deleted"): ('assert cell_sizes == {500}', 'AssertionError: [499, 500]'),
+    ("schedule-grid", "cell-deleted"): ('assert set(cells) == expected_cells', "AssertionError: [('c-like conventional with strings and line comments', 'substitute', '1', '0')]"),
+    ("schedule-grid", "incident-deleted"): ('assert cell_sizes == {500}', 'AssertionError: [499, 500]'),
+    ("schedule-grid", "operation-renamed"): ('assert set(cells) == expected_cells', "'scramble'"),
+    ("schedule-grid", "trial-deleted"): ('assert cell_sizes == {500}', 'AssertionError: [499]'),
+    ("sidecar", "answer-at-end"): ('assert begin <= answer < end',),
+    ("sidecar", "answer-negated"): ("['c-like conventional with strings and line comments', 'substitute', '1', '0', '0', 'certified'], '-327130')",),
+    ("sidecar", "answer-outside"): ('assert begin <= answer < end',),
+    ("sidecar", "deletion-length"): ('assert end <= move_damaged_size', ', 524284)'),
+    ("sidecar", "file-missing"): ('assert os.path.exists(sidecar)',),
+    ("sidecar", "index-broken"): ('assert index == move_prev.get((key, arm), -1) + 1',),
+    ("sidecar", "index-padded"): ("['c-like conventional with strings and line comments', 'substitute', '1', '0', '0', 'certified'], '00')",),
+    ("sidecar", "insertion-length"): ('assert end <= move_damaged_size', ', 524292)'),
+    ("sidecar", "move-past-end"): ('assert end <= move_damaged_size', ', 524288)'),
+    ("sidecar", "move-regressed"): ('assert begin > move_last[(key, arm)]', ", 'certified', 1)"),
+    ("sidecar", "row-deleted"): ('assert move_prev.get((key, arm), -1) + 1 == expected_moves',),
+    ("sidecar", "row-duplicated"): ('assert index == move_prev.get((key, arm), -1) + 1',),
+    ("summary", "capped-count"): ('cell_capped.get(summary_cell, 0) == capped', "'skip-one')"),
+    ("summary", "cell-all-unknown"): ('summary cell row off the declared grid', 'alien 999 ghost'),
+    ("summary", "cell-arm"): ('summary cell row off the declared grid', 'mystery'),
+    ("summary", "cell-domain"): ('summary cell row off the declared grid', 'scramble    999'),
+    ("summary", "cell-extra-field"): ('summary cell row off the declared grid', '26.1 0'),
+    ("summary", "cell-field-grammar"): ('summary cell field off its declared grammar', 'bogus%'),
+    ("summary", "cell-signed-leading-zero"):
+        ('summary cell field off its declared grammar', '-02.1'),
+    ("summary", "cell-signed-negative-zero"):
+        ('summary cell field spells a negative zero', '-0.0'),
+    ("summary", "tail-leading-zero"):
+        ('summary number carries a leading zero', '-014029'),
+    ("summary", "tail-negative-zero"):
+        ('summary number spells a negative zero', 'displacement -0 bytes'),
+    ("summary", "preamble-leading-zero"):
+        ('summary number carries a leading zero', '03 independent seeds'),
+    ("summary", "oracle-leading-zero"):
+        ('summary number carries a leading zero', '06 rows'),
+    ("summary", "pooled-leading-zero"):
+        ('summary number carries a leading zero', '07356'),
+    ("summary", "seed-leading-zero"):
+        ('summary number carries a leading zero', '096.9%'),
+    ("summary", "cell-leading-zero"): ('summary cell field carries a leading zero', '0841'),
+    ("summary", "cell-length-bound"): ('summary cell field longer than any count this campaign writes',),
+    ("summary", "cell-missing-field"): ('summary cell row off the declared grid', "0.00', ('substitute'"),
+    ("summary", "cell-non-ascii"): ('byte outside ASCII at offset', '0xc2'),
+    ("summary", "cell-operation"): ('summary cell row off the declared grid', 'scramble     1'),
+    ("summary", "cell-percentage-range"): ('summary percentage outside nought to a hundred', '999.9%'),
+    ("summary", "cell-unicode-digits"): ('byte outside ASCII at offset', '0xd9'),
+    ("summary", "header-deleted"): ('summary header not verbatim', "'c-like conventional plus block comments alone'"),
+    ("summary", "header-duplicated"): ('summary cell row off the declared grid', 'overshoot'),
+    ("summary", "header-schema"): ('summary header not verbatim', 'answcnt'),
+    ("totality", "clean-beyond-repair"): ('assert answered, (key', "(('c-like conventional with strings and line comments', 'substitute', '4', '0', '42'), 'exact-clean')"),
+    ("totality", "clean-refusal-plain"): ('assert answered, (key', ", 'exact-clean')"),
+    ("totality", "clean-repairable"): ('assert answered, (key', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '0'), 'exact-clean')"),
+    ("totality", "exact-beyond-repair"): ('assert answered, (key', "(('c-like conventional with strings and line comments', 'substitute', '4', '0', '42'), 'exact')"),
+    ("totality", "exact-repairable"): ('assert answered, (key', "(('c-like conventional with strings and line comments', 'substitute', '1', '0', '0'), 'exact')"),
+    ("zero-attempt", "answer-presence"): ('assert answered == bool(record["first"]) == bool(record["terminal"])',),
+    ("zero-attempt", "fabricated-first"): ("'semicolon', 'first')",),
+    ("zero-attempt", "retained-terminal"): ("'semicolon', 'evidence_kind')",),
+}
+
+CRITICAL_LAWS = ("erasure", "membership", "summary")
+
+CRITICAL_SIGNATURES = {
+    ("erasure", "token-newline"): "'token-newline'",
+    ("erasure", "token-semicolon"): "'token-semicolon'",
+    ("erasure", "paired-semicolon"): "'1', 'semicolon')",
+    ("erasure", "all-three"): "'4', 'semicolon')",
+    ("erasure", "outcome-relabel"): "cell_refused.get(summary_cell, 0) == terminal_refusals",
+    ("membership", "emission-neutral"): "plus block comments alone|substitute|1|0",
+    ("membership", "value-moving"): "with strings and line comments|substitute|16|0",
+    ("summary", "capped-count"): "cell_capped.get(summary_cell, 0) == capped",
+    ("summary", "header-schema"): "answcnt",
+    ("summary", "header-deleted"): "'c-like conventional plus block comments alone'",
+    ("summary", "header-duplicated"): "overshoot",
+    ("summary", "cell-domain"): "scramble    999",
+    ("summary", "cell-all-unknown"): "alien 999 ghost",
+    ("summary", "cell-operation"): "scramble     1",
+    ("summary", "cell-arm"): "mystery",
+    ("summary", "cell-extra-field"): "26.1 0",
+    ("summary", "cell-missing-field"): "0.00', ('substitute'",
+    ("summary", "cell-non-ascii"): "0xc2",
+    ("summary", "cell-unicode-digits"): "0xd9",
+    ("summary", "cell-leading-zero"): "0841",
+    ("summary", "cell-percentage-range"): "999.9%",
+    ("summary", "cell-length-bound"): "longer than any count this campaign writes",
+    ("summary", "cell-field-grammar"): "bogus%",
+    ("summary", "cell-signed-leading-zero"): "-02.1",
+    ("summary", "preamble-leading-zero"): "03 independent seeds",
+    ("summary", "oracle-leading-zero"): "06 rows",
+    ("summary", "pooled-leading-zero"): "07356",
+    ("summary", "seed-leading-zero"): "096.9%",
+    ("summary", "cell-signed-negative-zero"): "-0.0",
+    ("summary", "tail-leading-zero"): "-014029",
+    ("summary", "tail-negative-zero"): "displacement -0 bytes",
 }
 
 # The complete expected grid, laws to strata, every erasure stratum included: the schema's value
 # multiset must equal this grid exactly, so a silent thinning of any law, the erasure family that
 # once slipped a query included, is a build failure and never a shorter list that reads like the claim.
 LAW_STRATA = {
+    "sidecar": ("answer-at-end", "answer-outside", "row-deleted", "row-duplicated", "index-broken",
+                "file-missing", "index-padded", "answer-negated", "move-regressed", "move-past-end",
+                "deletion-length", "insertion-length"),
+    "record-join": ("first-answer", "terminal-answer", "covered-count", "covered-landed",
+                    "covered-presence"),
+    "containment": ("ordinary-duplicate", "absorbed-duplicate", "key-exclusive",
+                    "absorbed-answer-field", "arm-missing", "strategy-domain", "outcome-domain",
+                    "column-header", "grammar-domain"),
+    "zero-attempt": ("fabricated-first", "retained-terminal", "answer-presence"),
+    "interpreter": ("analyzer",),
+    "mechanism": ("byte-kind", "unknown-kind", "wide-window", "empty-window", "arm-set",
+                  "numeric-canonical", "certified-flag", "absorbed-incident-count",
+                  "negative-zero-trial", "negative-zero-ignored", "trial-rekeyed"),
+    "padding": ("attempts-zero", "trial-key", "attempts-answered", "nonnumeric-coordinate"),
+    "outcome-fields": ("capped-divergence", "refused-convergence", "capped-budget", "budget-bound",
+                       "refused-budget", "skip-refusal", "negative-convergence", "negative-lost",
+                       "refused-at-end", "capped-at-end"),
+    "evidence": ("kind-domain", "kind-width", "noncertified-fabricated", "noncertified-covered",
+                 "anchor-floor", "window-width"),
+    "schedule-grid": ("absorbed-deleted", "incident-deleted", "cell-deleted", "operation-renamed",
+                      "trial-deleted"),
+    "damage-geometry": ("coordinates-shifted", "delete-seam", "absorbed-span", "position-bound",
+                        "wild-coordinate", "span-source", "seam-source", "answer-length",
+                        "boundary-length"),
+    "repairability": ("flag-repair", "blank-one", "blank-incident", "minimal-past-answer",
+                      "blind-floor", "clean-floor"),
+    "clean-scope": ("evidence-floor", "move-floor", "answer-floor", "terminal-floor",
+                    "unlanded-flags", "beyond-repair-flags"),
+    "mapped-boundary": ("blanked", "below-end", "past-answer"),
+    "attempt-order": ("below-first", "equal-first", "single-past", "single-landing",
+                      "advance-bound", "skip-definition", "skip-beyond-repair"),
+    "divergence-region": ("converged-below", "beyond-converged", "empty-lost", "empty-spurious",
+                          "beyond-empty-lost", "region-width", "beyond-region-width"),
+    "decider": ("negative", "floor"),
     "pair-first": ("newline", "semicolon"),
     "pair-presence": ("newline", "semicolon"),
     "pair-terminal": ("newline", "semicolon"),
     "pair-attempts": ("newline", "semicolon", "equal-terminal"),
     "totality": ("exact-repairable", "exact-beyond-repair", "clean-repairable",
-                 "clean-beyond-repair"),
+                 "clean-beyond-repair", "clean-refusal-plain"),
     "direct-query": ("present", "absent"),
-    "landing": ("flipped-flags", "equal-terminals", "owned-boundary"),
+    "landing": ("flipped-flags", "equal-terminals", "owned-boundary", "flag-without-answer",
+                "covered-first", "covered-terminal", "mapped-terminal", "damaged-window",
+                "damaged-end", "mapped-order", "mapped-first"),
     "divergence": ("triple", "membership-plain", "membership-collapsed"),
     "identity": ("run-field", "evidence-field", "sidecar-owned"),
     "erasure": ("token-newline", "token-semicolon", "paired-semicolon", "all-three",
                 "outcome-relabel"),
     "membership": ("emission-neutral", "value-moving"),
-    "summary": ("capped-count", "header-schema", "cell-domain"),
+    "summary": ("capped-count", "header-schema", "header-deleted", "header-duplicated",
+                "cell-domain", "cell-all-unknown", "cell-operation", "cell-arm",
+                "cell-extra-field", "cell-missing-field", "cell-field-grammar",
+                "cell-non-ascii", "cell-unicode-digits", "cell-leading-zero",
+                "cell-percentage-range", "cell-length-bound", "cell-signed-leading-zero",
+                "cell-signed-negative-zero", "tail-leading-zero", "tail-negative-zero",
+                "preamble-leading-zero", "pooled-leading-zero", "seed-leading-zero",
+                "oracle-leading-zero"),
 }
 
 
-def assert_case_metadata(cases, schema):
-    """Inject each tagged case's law and stratum and hold the schema to the full grid, fail-closed.
+def assert_case_metadata(cases, schema, signatures=None):
+    """Inject each tagged case's law and stratum and hold the declaration fail-closed five ways.
 
-    Every schema name must be a staged case; the schema's value multiset must equal the law grid in
-    both directions, so a removed, retagged, or extra entry fails; and the tags land in the case
-    objects themselves, which is what --list-cases prints.
+    Population: the schema's name set must equal, in both directions, the set of rejecting cases
+    that declare an intended-guard marker, so an untagged guard-bearing case, a renamed case, and a
+    schema name that is not staged all fail. Grid: the schema's value multiset must equal the law
+    grid in both directions, so a removed, retagged, or extra entry fails. Ownership: every critical
+    stratum's signature fragment must appear inside its own case's declared marker and inside no
+    other case's, so a tag moved between cases or two valid tags swapped fails even though the
+    multiset survives. The signature table's key set: it must equal the critical laws' strata in
+    both directions, so a deleted or stray signature is a build failure, never a quietly narrower
+    ownership check. Injection: the tags land in the case objects themselves, which is what
+    --list-cases prints.
     """
     by_name = {entry["name"]: entry for entry in cases}
     missing = [name for name in schema if name not in by_name]
     assert not missing, ("schema names cases that are not staged", missing)
+    guard_bearing = {entry["name"] for entry in cases
+                     if entry["expect"] == "reject" and entry["marker"] is not None}
+    untagged = sorted(guard_bearing - set(schema))
+    assert not untagged, ("guard-bearing cases outside the declaration", untagged[:3])
+    tagged_beyond = sorted(set(schema) - guard_bearing)
+    assert not tagged_beyond, ("declared names outside the guard-bearing population",
+                               tagged_beyond[:3])
     expected = sorted((law, stratum) for law, strata in LAW_STRATA.items() for stratum in strata)
     declared = sorted(schema.values())
     assert declared == expected, (
@@ -1005,6 +1465,49 @@ def assert_case_metadata(cases, schema):
         [pair for pair in expected if pair not in declared][:3],
         [pair for pair in declared if pair not in expected][:3],
     )
+    # The ownership table is itself held fail-closed: its key set must equal, in both directions,
+    # the full strata of the critical laws as LAW_STRATA declares them, so deleting one signature,
+    # or signing a stratum no critical law carries, is a build failure and never a silently
+    # narrower ownership check. The required set is derived from the grid, not declared twice.
+    required = {(law, stratum) for law in CRITICAL_LAWS for stratum in LAW_STRATA[law]}
+    if signatures is None:
+        signatures = CRITICAL_SIGNATURES
+    missing_signatures = sorted(required - set(signatures))
+    assert not missing_signatures, (
+        "critical strata without an ownership signature", missing_signatures[:3])
+    stray_signatures = sorted(set(signatures) - required)
+    assert not stray_signatures, (
+        "ownership signatures outside the critical laws", stray_signatures[:3])
+    # The whole-population binding: every declared tag must name the guard the declaration says it
+    # names, checked against the case that holds it.
+    owners = {tag: name for name, tag in schema.items()}
+    declared_tags = set(schema.values())
+    assert set(TAG_GUARDS) == declared_tags, (
+        "the tag-to-guard declaration is not the tag set",
+        sorted(declared_tags - set(TAG_GUARDS))[:3], sorted(set(TAG_GUARDS) - declared_tags)[:3])
+    for tag, expected_marker in TAG_GUARDS.items():
+        holder = owners[tag]
+        marker = by_name[holder]["marker"]
+        actual = (marker,) if isinstance(marker, str) else tuple(marker)
+        assert actual == expected_marker, (
+            "the case holding this tag does not carry the guard the declaration names",
+            tag, holder, actual, expected_marker)
+    for tag, fragment in signatures.items():
+        owner = owners.get(tag)
+        assert owner is not None, ("a critical stratum has no owning case", tag)
+        marker = by_name[owner]["marker"]
+        joined = "\x1f".join(marker) if isinstance(marker, tuple) else (marker or "")
+        assert fragment in joined, (
+            "the critical stratum's signature is absent from its own case's marker",
+            tag, owner, fragment)
+        for entry in cases:
+            if entry["name"] == owner or entry["marker"] is None:
+                continue
+            other = entry["marker"]
+            other_joined = "\x1f".join(other) if isinstance(other, tuple) else other
+            assert fragment not in other_joined, (
+                "a critical signature also matches a case that does not own the tag",
+                tag, owner, entry["name"], fragment)
     for name, (law, stratum) in schema.items():
         by_name[name]["law"] = law
         by_name[name]["stratum"] = stratum
@@ -1551,6 +2054,7 @@ def build_cases(archive):
         expect="reject",
         emissions=None,
         summary_edit=None,
+        commitments=None,
     ):
         cases.append(
             {
@@ -1564,6 +2068,7 @@ def build_cases(archive):
                 "expect": expect,
                 "emissions": emissions,
                 "summary_edit": summary_edit,
+                "commitments": commitments,
                 # law and stratum are injected from the one schema declaration after every case is
                 # built, so the case object carries its own metadata and the two can never drift.
                 "law": None,
@@ -2837,7 +3342,7 @@ def build_cases(archive):
         marker=('assert int(record["evidence_begin"]) == first_begin', "'certified-clean'"),
     )
 
-    # The companion's searched width range, attacked from both ends on window evidence: a five-byte
+    # The companion's searched width range, probed from both ends on window evidence: a five-byte
     # interval the search never produces, and an empty one. The width law alone sees neither, both of
     # its sides false, and the campaign auditor's own range does not travel to a second program.
     case(
@@ -2851,6 +3356,61 @@ def build_cases(archive):
         campaign={certified_window: archive.edited(certified_window, evidence_end=window_end_collapsed)},
         program=MECHANISM,
         marker=(MECHANISM, "assert 1 <= width <= 4, row"),
+    )
+
+    # The companion's population closure, staged as the accepted shapes that were caughted before it
+    # existed. Uniqueness alone let a deleted arm row pass, because a missing row repeats nothing;
+    # the aggregate filter let a corrupted field ride in an arm no aggregate reads; and the certified
+    # arm's landing flags were held to the whole file's domain, which admits blank, rather than to
+    # the answers that arm always gives. Each is aimed at the companion, whose own refusal is the
+    # thing on trial; the archive auditor catching the same corruption proves nothing about it.
+    case(
+        "mechanism-refuses-a-deleted-noncertified-arm-row",
+        campaign={newline_arm: []},
+        program=MECHANISM,
+        marker=(MECHANISM, "arm set is neither the eleven recovery arms nor one absorbed draw"),
+    )
+    case(
+        "mechanism-refuses-a-nonnumeric-noncertified-field",
+        campaign={noncertified_answered: archive.edited(noncertified_answered, attempts="notanumber")},
+        program=MECHANISM,
+        marker=(MECHANISM, "attempts is neither blank nor a canonical integer"),
+    )
+    case(
+        "mechanism-refuses-a-blank-certified-landing-flag",
+        campaign={certified: archive.edited(certified, first_landed="")},
+        program=MECHANISM,
+        marker=(MECHANISM, "a certified row leaves first_landed blank"),
+    )
+    # The arm-set closure misses a whole incident deleted with every row it had, because a missing
+    # key repeats nothing; the declared five hundred draws per cell close that. And negative zero
+    # satisfies a naive signed integer class while being a number no arithmetic here emits, staged
+    # once in a key column and once in a field no aggregate reads.
+    case(
+        "mechanism-refuses-a-deleted-absorbed-incident",
+        campaign={absorbed_first: []},
+        program=MECHANISM,
+        marker=(MECHANISM, "trial identifiers are not exactly the declared zero through four"),
+    )
+    # Rekeying one absorbed draw onto an unused trial keeps the cell's count at five hundred while
+    # its identifiers leave the schedule, so the wall is the exact identifier set, never the count.
+    case(
+        "mechanism-refuses-a-trial-rekeyed-off-the-schedule",
+        campaign={absorbed_second: archive.edited(absorbed_second, trial="500")},
+        program=MECHANISM,
+        marker=(MECHANISM, "trial identifiers are not exactly the declared zero through four"),
+    )
+    case(
+        "mechanism-refuses-a-negative-zero-trial",
+        campaign={certified: archive.edited(certified, trial="-0")},
+        program=MECHANISM,
+        marker=(MECHANISM, "trial is neither blank nor a canonical integer"),
+    )
+    case(
+        "mechanism-refuses-a-negative-zero-ignored-field",
+        campaign={clean_arm: archive.edited(clean_arm, attempts="-0")},
+        program=MECHANISM,
+        marker=(MECHANISM, "attempts is neither blank nor a canonical integer"),
     )
 
     # The damaged length is derived per operation, so the substitution-staged case above proves
@@ -3015,6 +3575,60 @@ def build_cases(archive):
         marker=("membership commitment broken", "with strings and line comments|substitute|16|0"),
     )
 
+    # The commitment's disclosed boundary, staged rather than left to prose: the same coherent
+    # rebalance with its commitment recomputed from the mutant campaign is accepted, and the
+    # statistics emission drifts, which is exactly what the commitment cannot see on its own. The
+    # authority binding the commitment file itself is the manifest, the root ledger, and the pinned
+    # reproduction run; this case proves the boundary sits
+    # where the prose says it sits, not nearer and not farther.
+    # The row is derived from the guards themselves: a completed single-attempt skip-one row whose
+    # answer sits on no mapped boundary, inside no damaged window, at no input end, and is shared by
+    # no other arm of its incident, so both landing flags can flip together with every structural
+    # law still holding. The landing emission then moves, which is the demonstration.
+    def coherent_flag_row():
+        for position in range(1, len(archive.campaign)):
+            try:
+                if archive.field(position, "strategy") != "skip-one":
+                    continue
+                if archive.field(position, "outcome") != "completed":
+                    continue
+                if archive.field(position, "attempts") != "1":
+                    continue
+                first = archive.field(position, "first")
+                if not first or archive.field(position, "first_landed") != "1":
+                    continue
+                if first == archive.field(position, "first_true"):
+                    continue
+                p = int(archive.field(position, "p"))
+                k = int(archive.field(position, "k"))
+                if p <= int(first) < p + k:
+                    continue
+                shared = False
+                for arm in ("certified", "certified-clean", "exact", "exact-clean", "skip-one",
+                            "newline", "newline-at", "semicolon", "semicolon-at",
+                            "token-newline", "token-semicolon"):
+                    partner = archive.arm_row_of(position, arm)
+                    if partner is not None and partner != position \
+                            and archive.field(partner, "first") == first:
+                        shared = True
+                        break
+                if not shared:
+                    return position
+            except (IndexError, KeyError, ValueError):
+                continue
+        raise AssertionError("no coherent flag row found for the commitment boundary case")
+
+    flag_row = coherent_flag_row()
+    case(
+        "coherent-cell-rewrite-with-recomputed-commitment",
+        campaign={
+            flag_row: archive.edited(flag_row, first_landed="0", terminal_landed="0")
+        },
+        commitments="recompute",
+        expect="accept-drift",
+        emissions=EMISSIONS,
+    )
+
     capped_row = row_position("json rfc 8259 lexical forms on a real-world document",
                               "substitute", "4", "0", "437", "skip-one")
     assert archive.field(capped_row, "outcome") == "completed"
@@ -3028,10 +3642,35 @@ def build_cases(archive):
         marker=("cell_capped.get(summary_cell, 0) == capped", "'skip-one')"),
     )
 
+    # The summary's closed positional parser, exercised shape by shape: a renamed header column, a
+    # header deleted from one section and one duplicated inside another, and five cell-row shapes,
+    # the fully unknown 595th cell the reports staged themselves among them. Each dies at the exact
+    # position the walk expects something else, because the parser never infers what a line is from
+    # field values whose corruption it exists to catch.
+    summary_header_line = ("  op           k  strategy        answers  refuse   t-ref  f-land"
+                           "   t-land complete capped attempts     conv   lost   spur overshoot")
     case(
         "summary-header-column-renamed",
         summary_edit=("strategy        answers", "strategy        answcnt", 1),
-        marker=("tuple(parts) == SUMMARY_HEADER",),
+        marker=("summary header not verbatim", "answcnt"),
+    )
+    case(
+        "summary-header-deleted-from-one-section",
+        summary_edit=(
+            "c-like conventional plus block comments alone\n" + summary_header_line,
+            "c-like conventional plus block comments alone",
+            1,
+        ),
+        marker=("summary header not verbatim", "'c-like conventional plus block comments alone'"),
+    )
+    case(
+        "summary-header-duplicated-inside-another-section",
+        summary_edit=(
+            "json rfc 8259 lexical forms\n" + summary_header_line,
+            "json rfc 8259 lexical forms\n" + summary_header_line + "\n" + summary_header_line,
+            1,
+        ),
+        marker=("summary cell row off the declared grid", "overshoot"),
     )
     case(
         "summary-carrying-an-unknown-cell",
@@ -3041,8 +3680,119 @@ def build_cases(archive):
             "     0.0%      0     0.00        0   0.00   0.00       0.0\n  substitute   1  certified ",
             1,
         ),
-        marker=("parts[0] in SUMMARY_OPS and parts[1] in SUMMARY_KS and parts[2] in ARMS",
-                "'scramble'"),
+        marker=("summary cell row off the declared grid", "scramble    999"),
+    )
+    case(
+        "summary-cell-with-operation-size-and-arm-all-unknown",
+        summary_edit=(
+            "  substitute   1  certified ",
+            "  alien 999 ghost 0 0 0 0 0 0 0 0 0 0 0 0\n  substitute   1  certified ",
+            1,
+        ),
+        marker=("summary cell row off the declared grid", "alien 999 ghost"),
+    )
+    case(
+        "summary-cell-with-an-unknown-operation-alone",
+        summary_edit=("  substitute   1  certified           841",
+                      "  scramble     1  certified           841", 1),
+        marker=("summary cell row off the declared grid", "scramble     1"),
+    )
+    case(
+        "summary-cell-with-an-unknown-arm-alone",
+        summary_edit=("  substitute   1  skip-one ", "  substitute   1  mystery  ", 1),
+        marker=("summary cell row off the declared grid", "mystery"),
+    )
+    case(
+        "summary-cell-carrying-an-extra-field",
+        summary_edit=("   7.53   0.00      26.1", "   7.53   0.00      26.1 0", 1),
+        marker=("summary cell row off the declared grid", "26.1 0"),
+    )
+    case(
+        "summary-rewritten-with-a-non-breaking-space",
+        summary_edit=("certified           841", "certified\u00a0          841", 1),
+        marker=("byte outside ASCII at offset", "0xc2"),
+    )
+    case(
+        "summary-count-in-arabic-indic-digits",
+        summary_edit=("certified           841", "certified           \u0668\u0664\u0661", 1),
+        marker=("byte outside ASCII at offset", "0xd9"),
+    )
+    case(
+        "summary-count-padded-with-a-leading-zero",
+        summary_edit=("certified           841", "certified           0841", 1),
+        marker=("summary cell field carries a leading zero", "0841"),
+    )
+    case(
+        "summary-percentage-past-a-hundred",
+        summary_edit=("  100.0%   100.0%   100.0%      0     1.00       28   7.53   0.00      26.1",
+                      "  999.9%   100.0%   100.0%      0     1.00       28   7.53   0.00      26.1", 1),
+        marker=("summary percentage outside nought to a hundred", "999.9%"),
+    )
+    case(
+        "summary-count-longer-than-any-campaign-writes",
+        summary_edit=("certified           841", "certified           " + "9" * 40, 1),
+        marker=("summary cell field longer than any count this campaign writes",),
+    )
+    case(
+        "summary-cell-field-off-its-grammar",
+        summary_edit=("certified           841       0       0  100.0%",
+                      "certified           841       0       0  bogus%", 1),
+        marker=("summary cell field off its declared grammar", "bogus%"),
+    )
+    case(
+        "summary-signed-overshoot-padded-with-a-leading-zero",
+        summary_edit=("   0.05   0.73      -2.1", "   0.05   0.73      -02.1", 1),
+        marker=("summary cell field off its declared grammar", "-02.1"),
+    )
+    # Negative zero walks past the leading-zero wall, which is anchored at the first character, and
+    # satisfies the signed field's own grammar. It is not a spelling the harness's integer-sum mean
+    # can emit for zero, so it is staged as its own case at its own wall.
+    case(
+        "summary-signed-overshoot-spelling-a-negative-zero",
+        summary_edit=("   0.05   0.73      -2.1", "   0.05   0.73      -0.0", 1),
+        marker=("summary cell field spells a negative zero", "-0.0"),
+    )
+    # The tail lines are matched as whole lines, so their digit classes admit spellings the cell
+    # loop's field walls would refuse. These two stage that boundary from both directions.
+    case(
+        "summary-tail-displacement-padded-with-a-leading-zero",
+        summary_edit=("net displacement -14029 bytes", "net displacement -014029 bytes", 1),
+        marker=("summary number carries a leading zero", "-014029"),
+    )
+    case(
+        "summary-tail-displacement-spelling-a-negative-zero",
+        summary_edit=("net displacement -14029 bytes", "net displacement -0 bytes", 1),
+        marker=("summary number spells a negative zero", "displacement -0 bytes"),
+    )
+    # The canonical scanner covers every summary line kind, so each remaining kind is staged once:
+    # a padded seed count in the determinism preamble, a padded pooled answer count, and a padded
+    # per-seed rate, each a spelling the harness's own arithmetic cannot emit.
+    case(
+        "summary-oracle-rows-padded-with-a-leading-zero",
+        summary_edit=("violations over 6 rows", "violations over 06 rows", 1),
+        marker=("summary number carries a leading zero", "06 rows"),
+    )
+    case(
+        "summary-preamble-seeds-padded-with-a-leading-zero",
+        summary_edit=("3 independent seeds", "03 independent seeds", 1),
+        marker=("summary number carries a leading zero", "03 independent seeds"),
+    )
+    case(
+        "summary-pooled-answers-padded-with-a-leading-zero",
+        summary_edit=("  certified       answers   7356 initial",
+                      "  certified       answers   07356 initial", 1),
+        marker=("summary number carries a leading zero", "07356"),
+    )
+    case(
+        "summary-per-seed-rate-padded-with-a-leading-zero",
+        summary_edit=("seed 0 first-landing: certified 96.9%",
+                      "seed 0 first-landing: certified 096.9%", 1),
+        marker=("summary number carries a leading zero", "096.9%"),
+    )
+    case(
+        "summary-cell-missing-its-last-field",
+        summary_edit=("   7.53   0.00      26.1", "   7.53   0.00", 1),
+        marker=("summary cell row off the declared grid", "0.00', ('substitute'"),
     )
 
     # One declaration carries every case's law and stratum, and everything else derives from it: the
@@ -3053,6 +3803,7 @@ def build_cases(archive):
     staged = {entry["name"] for entry in cases}
     if len(staged) != len(cases):
         raise AssertionError("duplicate case names in the suite")
+    assert_case_markers(cases)
     assert_case_metadata(cases, CASE_SCHEMA)
 
     return cases
@@ -3066,7 +3817,30 @@ def missing_markers(case, stderr):
     if marker is None:
         return []
     wanted = (marker,) if isinstance(marker, str) else tuple(marker)
+    # An empty fragment is a substring of every refusal, so a case carrying one would credit any
+    # rejection at all to the guard it names, which is the opposite of what a marker is for. The
+    # emptiness is refused here rather than left to a reader's eye, and the whole population is
+    # held to the same rule by assert_case_markers before any case runs.
+    assert all(text for text in wanted), ("a case carries an empty marker fragment", case["name"])
     return [text for text in wanted if text not in stderr]
+
+
+def assert_case_markers(cases):
+    """Every rejecting case names at least one nonempty fragment, asserted over the population.
+
+    A marker that is absent, empty, or a tuple carrying an empty fragment would make the suite
+    report REJECTED for a refusal from any guard whatever, so the population is checked once,
+    before the first case is staged, rather than case by case as they happen to run.
+    """
+    for entry in cases:
+        if entry["expect"] != "reject":
+            continue
+        marker = entry["marker"]
+        assert marker is not None, ("a rejecting case names no guard", entry["name"])
+        fragments = (marker,) if isinstance(marker, str) else tuple(marker)
+        assert fragments, ("a rejecting case names an empty marker set", entry["name"])
+        assert all(isinstance(text, str) and text for text in fragments), \
+            ("a rejecting case carries an empty marker fragment", entry["name"])
 
 
 def neuter_case(archive, cases, name):
@@ -3102,6 +3876,7 @@ def run_suite(data_dir, neutered=None, only=None):
     rejected = 0
     mechanism_rejected = 0
     controls = 0
+    boundaries = 0
     try:
         archive = Archive(load_gzipped_lines(campaign_gz), load_gzipped_lines(sidecar_gz))
         base_dir = os.path.join(work, "base")
@@ -3181,12 +3956,40 @@ def run_suite(data_dir, neutered=None, only=None):
                 stream(archive.campaign, case["campaign"], mut_csv)
             else:
                 link_or_copy(base_csv, mut_csv)
+            # Every case starts from the archived commitment file; the one boundary case recomputes
+            # it from the mutant campaign instead, which is exactly the coherent-rewrite shape the
+            # commitment is documented not to see on its own.
+            shutil.copyfile(gold_commitments, os.path.join(mut_dir, commitments_name))
+            if case["commitments"] == "recompute":
+                digests = commit_r6.cell_commitments(mut_csv)
+                with open(os.path.join(mut_dir, commitments_name), "w",
+                          encoding="utf-8") as handle:
+                    handle.write("\n".join(f"{digests[key]}  {key}"
+                                           for key in sorted(digests)) + "\n")
             if not case["omit_sidecar"]:
                 if case["sidecar"]:
                     stream(archive.sidecar, case["sidecar"], mut_sidecar)
                 else:
                     link_or_copy(base_sidecar, mut_sidecar)
             status, stderr = run_analyzer(os.path.join(data_dir, case["program"]), mut_csv, out_mut, case["env"])
+            if case["expect"] == "accept-drift":
+                mismatched = compare_emissions(out_mut, gold_dir, case["emissions"]) if status == 0 else []
+                if status != 0:
+                    verdicts[case["name"]] = "REJECTED"
+                    print(f"{case['name']} REJECTED (boundary, expected acceptance, exit {status})")
+                    failures.append(case["name"])
+                elif sorted(mismatched) != ["r6-landing-figure.csv", "r6-stats.txt"]:
+                    verdicts[case["name"]] = "ACCEPTED-WITHOUT-DRIFT"
+                    print(f"{case['name']} ACCEPTED-WITHOUT-DRIFT (boundary, expected exactly the "
+                          f"statistics and landing emissions to move, got: "
+                          f"{', '.join(sorted(mismatched)) or 'none'})")
+                    failures.append(case["name"])
+                else:
+                    verdicts[case["name"]] = "ACCEPTED-WITH-DRIFT"
+                    print(f"{case['name']} ACCEPTED-WITH-DRIFT (boundary: the coherent rewrite "
+                          f"passes with its recomputed commitment and moves: {', '.join(mismatched)})")
+                    boundaries += 1
+                continue
             if case["expect"] == "accept":
                 mismatched = compare_emissions(out_mut, gold_dir, case["emissions"]) if status == 0 else []
                 if status != 0:
@@ -3227,7 +4030,7 @@ def run_suite(data_dir, neutered=None, only=None):
     # their own staged corruptions.
     print(f"{rejected} rejected, {rejected - mechanism_rejected} against the archive auditor and "
           f"{mechanism_rejected} against the mechanism companion, {controls} control accepted, "
-          f"{len(failures)} failed")
+          f"{boundaries} boundary accepted with drifted emissions, {len(failures)} failed")
     if failures:
         print("failing: " + ", ".join(failures))
         return 1, failures, verdicts
@@ -3288,32 +4091,99 @@ def main():
         positional.append(argument)
     data_dir = os.path.abspath(positional[0] if positional else os.path.dirname(os.path.abspath(__file__)))
     if prove_metadata:
-        # The metadata check must be fatal when the schema is thinned or retagged: one erasure entry
-        # is removed and one stratum is rewritten, and each doctored schema must fail the grid
-        # assertion. The exit is inverted the way --prove-detection's is: zero exactly when both
-        # breakages were caught.
+        # The metadata check must be fatal for nine doctored declarations, each staged to reach
+        # a specific wall, population, grid, ownership, or the ownership table's own key set, and
+        # each must be refused at that wall with its own named detail, matched against the
+        # refusal's message. The exit is inverted the way --prove-detection's is: zero exactly
+        # when all nine were caught as staged.
         gold_dir = os.path.join(data_dir, GOLD_DIR)
         archive = Archive(
             load_gzipped_lines(os.path.join(gold_dir, CAMPAIGN + ".gz")),
             load_gzipped_lines(os.path.join(gold_dir, CAMPAIGN + SIDECAR_SUFFIX + ".gz")),
         )
         cases = build_cases(archive)
+        # Nine doctored declarations, each a shape a report staged or demanded: a critical
+        # entry removed, a stratum retagged to a name the grid does not hold, two valid erasure
+        # tags swapped between the token cases so the multiset survives, a critical tag
+        # retargeted to an unrelated staged case, a non-critical entry removed so a guard-bearing
+        # case goes untagged, an ownership signature deleted so the key-set wall must catch the
+        # narrowing, an ownership signature altered so it no longer lives in its own case's
+        # marker, a stray ownership key, and a noncritical tag swap. Every one must fail its own
+        # assertion for this mode to pass.
         thinned = dict(CASE_SCHEMA)
         del thinned["token-semicolon-arm-erasing-its-own-membership"]
         retagged = dict(CASE_SCHEMA)
         retagged["token-arm-erasing-its-own-membership"] = ("erasure", "renamed-away")
+        swapped = dict(CASE_SCHEMA)
+        swapped["token-arm-erasing-its-own-membership"] = ("erasure", "token-semicolon")
+        swapped["token-semicolon-arm-erasing-its-own-membership"] = ("erasure", "token-newline")
+        # The retarget preserves the population and the grid deliberately, tags exchanged between a
+        # critical case and an unrelated staged one, so only the ownership signature can catch it;
+        # a retarget that also thins the population is the thinned shape wearing another name.
+        retargeted = dict(CASE_SCHEMA)
+        retargeted["row-names-a-grammar-with-no-source-length"] = ("erasure", "token-semicolon")
+        retargeted["token-semicolon-arm-erasing-its-own-membership"] = \
+            CASE_SCHEMA["row-names-a-grammar-with-no-source-length"]
+        untagged = dict(CASE_SCHEMA)
+        del untagged["sidecar-answer-equals-evidence-end"]
+        # Two noncritical tags exchanged between cases whose guards differ: population, grid, and
+        # every critical signature survive, and only the whole-population tag-to-guard binding can
+        # see it. This is the shape a report demonstrated passing.
+        noncritical_swap = dict(CASE_SCHEMA)
+        noncritical_swap["sidecar-row-deleted"] = CASE_SCHEMA["unknown-strategy-name"]
+        noncritical_swap["unknown-strategy-name"] = CASE_SCHEMA["sidecar-row-deleted"]
+        unsigned = dict(CRITICAL_SIGNATURES)
+        del unsigned[("summary", "cell-all-unknown")]
+        resigned = dict(CRITICAL_SIGNATURES)
+        resigned[("summary", "cell-arm")] = "gremlin"
+        oversigned = dict(CRITICAL_SIGNATURES)
+        oversigned[("summary", "stray-ownership-key")] = "unused"
+        # Each doctored declaration must fail at its own named assertion, distinguished by the
+        # refusal's message, so a shape caught by an unrelated guard fails this mode rather than
+        # padding the count.
+        staged_shapes = (
+            (thinned, None, "guard-bearing cases outside the declaration",
+             "token-semicolon-arm-erasing-its-own-membership"),
+            (retagged, None, "law and stratum grid is not the expected one", "renamed-away"),
+            (swapped, None, "does not carry the guard the declaration names",
+             "token-semicolon-arm-erasing-its-own-membership"),
+            (retargeted, None, "does not carry the guard the declaration names",
+             "token-semicolon-arm-erasing-its-own-membership"),
+            (untagged, None, "guard-bearing cases outside the declaration",
+             "sidecar-answer-equals-evidence-end"),
+            (noncritical_swap, None,
+             "does not carry the guard the declaration names", "sidecar-row-deleted"),
+            (dict(CASE_SCHEMA), unsigned, "critical strata without an ownership signature",
+             "cell-all-unknown"),
+            (dict(CASE_SCHEMA), resigned, "signature is absent from its own case's marker",
+             "summary-cell-with-an-unknown-arm-alone"),
+            (dict(CASE_SCHEMA), oversigned, "ownership signatures outside the critical laws",
+             "stray-ownership-key"),
+        )
         caught = 0
-        for doctored in (thinned, retagged):
+        for doctored, doctored_signatures, wall, detail in staged_shapes:
             try:
-                assert_case_metadata(cases, doctored)
-            except AssertionError:
-                caught += 1
-        if caught != 2:
-            print("--prove-metadata: a thinned or retagged schema passed the grid assertion",
-                  file=sys.stderr)
+                assert_case_metadata(cases, doctored, doctored_signatures)
+            except AssertionError as refusal:
+                text = str(refusal)
+                if wall in text and detail in text:
+                    caught += 1
+                else:
+                    print("--prove-metadata: a doctored declaration was refused at the wrong "
+                          "wall: expected %r naming %r, got %s" % (wall, detail, text[:200]),
+                          file=sys.stderr)
+        if caught != 9:
+            print("--prove-metadata: a doctored declaration passed the metadata assertions or "
+                  "failed off its own wall, %d of 9 caught as staged" % caught, file=sys.stderr)
             return 1
-        print("--prove-metadata: a schema missing an erasure entry and a schema retagging one both "
-              "fail the grid assertion, so the metadata claim is fail-closed")
+        print("--prove-metadata: a thinned critical entry, a stratum retagged off the grid, two "
+              "valid tags swapped between their cases, a critical tag retargeted onto an unrelated "
+              "case with the population preserved, an untagged guard-bearing case, a deleted "
+              "ownership signature, an altered one, a stray ownership signature, and two "
+              "noncritical tags exchanged between "
+              "cases whose guards differ, each fail at their own named assertion, "
+              "distinguished by its message, so the declaration is fail-closed over population, "
+              "grid, and ownership, and the ownership table itself is fail-closed over its key set")
         return 0
 
     if listing:
@@ -3326,25 +4196,33 @@ def main():
         )
         cases = build_cases(archive)
         for case in cases:
-            kind = "control" if case["expect"] == "accept" else "mutation"
+            if case["expect"] == "accept":
+                kind = "control"
+            elif case["expect"] == "accept-drift":
+                kind = "boundary"
+            else:
+                kind = "mutation"
             if case["law"] is not None:
                 print("%s  [%s, %s/%s]" % (case["name"], kind, case["law"], case["stratum"]))
             else:
                 print("%s  [%s]" % (case["name"], kind))
         controls = sum(1 for case in cases if case["expect"] == "accept")
-        mutations = len(cases) - controls
+        boundaries = sum(1 for case in cases if case["expect"] == "accept-drift")
+        mutations = sum(1 for case in cases if case["expect"] == "reject")
         tagged = sum(1 for case in cases if case["law"] is not None)
         # The split is asserted from the cases' own expectations, fail-closed: a listing that says
         # anything other than the documented population exits nonzero rather than printing a shorter
-        # list that still reads like the claim. The tag count is part of the population, so a case
-        # dropped from the schema is a failed listing, never a quietly shorter one.
-        if mutations != 142 or controls != 1 or tagged != len(CASE_SCHEMA):
-            print("the case population is %d mutations, %d controls, %d tagged, not the documented "
-                  "142, 1, and %d" % (mutations, controls, tagged, len(CASE_SCHEMA)),
+        # list that still reads like the claim. Every rejecting case carries a tag now, the
+        # population equality lives in assert_case_metadata, and the counts here are the outer wall.
+        if mutations != 170 or controls != 1 or boundaries != 1 or tagged != len(CASE_SCHEMA) \
+                or tagged != mutations:
+            print("the case population is %d mutations, %d controls, %d boundary, %d tagged, not "
+                  "the documented 170, 1, 1, and %d" % (mutations, controls, boundaries, tagged,
+                                                        len(CASE_SCHEMA)),
                   file=sys.stderr)
             return 1
-        print("142 mutations and 1 control, %d cases carrying their law and stratum, asserted from "
-              "the cases' own objects" % tagged)
+        print("170 mutations, 1 control, and 1 commitment-boundary case, every mutation carrying "
+              "its law and stratum, asserted from the cases' own objects")
         return 0
     if prove:
         return prove_detection(data_dir)

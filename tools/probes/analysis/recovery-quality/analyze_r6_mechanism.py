@@ -18,6 +18,7 @@
 import csv
 import gzip
 import os
+import re
 import statistics
 import sys
 
@@ -77,8 +78,74 @@ def main():
         ], head
         col = {name: index for index, name in enumerate(head)}
         rows = []
+        # The companion's population is closed before any row is read for its content: the operation,
+        # the damage size, the arm, and the landing flags are held to their declared domains, every
+        # numeric column is held to a canonical spelling whether or not an aggregate reads it, and
+        # every incident's arm set is required to be one of the two the campaign can produce.
+        # Filtering to the certified arm first and asking nothing about the rest let an off-domain
+        # row ride through invisibly, since a row that no aggregate happens to read is a row nobody
+        # checked: a deleted arm row and a non-numeric field in one were both accepted while the
+        # emissions stayed byte-identical.
+        #
+        # The two arm sets are not a modelling choice. An incident is either a damaging trial, which
+        # the harness answers with all eleven recovery arms, or an absorbed draw, which it records as
+        # a single row of the same schema. Requiring one row per arm for every incident, as this
+        # comment once did, is false of the campaign the companion reads.
+        OPERATIONS = ("substitute", "delete", "insert")
+        # The eleven recovery arms plus the absorbed draw, which is a row of the same schema
+        # recording damage the grammar swallowed without a scan failure rather than an arm's answer.
+        ARMS = ("certified", "certified-clean", "exact", "exact-clean", "skip-one", "newline",
+                "newline-at", "semicolon", "semicolon-at", "token-newline", "token-semicolon",
+                "absorbed")
+        SIZES = ("1", "4", "16")
+        GRAMMARS = (
+            "c-like conventional with strings and line comments",
+            "c-like conventional plus block comments alone",
+            "json rfc 8259 lexical forms",
+            "c-like split-friendly with strings and line comments",
+            "c-like bare: identifiers numbers operators punctuation",
+            "json rfc 8259 lexical forms on a real-world document",
+        )
+        SEEDS = ("0", "1", "2")
+        DRAWS_PER_CELL = 500
+        FLAGS = ("", "0", "1")
+        # Blank is a legitimate spelling in many columns, so the wall is blank or canonical, never
+        # merely convertible: a padded or non-numeric field in an arm no aggregate reads is still a
+        # field this companion failed to check.
+        NUMERIC = ("k", "seed", "trial", "p", "failure_offset", "corruption_end", "first_true",
+                   "repairable", "minimal_repair", "exact_at_anchor", "first", "first_landed",
+                   "evidence_begin", "evidence_end", "minimal", "terminal", "terminal_landed",
+                   "attempts", "moves_covered", "moves_covered_landed", "converged", "lost",
+                   "spurious")
+        # Zero has one spelling, so the minus belongs to nonzero magnitudes only: -0 satisfies the
+        # naive signed form and is a number no arithmetic here can emit.
+        CANONICAL = re.compile(r"0|-?[1-9][0-9]*")
+        RECOVERY_ARMS = frozenset(arm for arm in ARMS if arm != "absorbed")
+        ABSORBED_ONLY = frozenset(("absorbed",))
+        seen_keys = set()
+        incident_arms = {}
         for row in reader:
             assert len(row) == COLUMN_COUNT, row
+            assert row[col["op"]] in OPERATIONS, ("operation outside its domain", row[:6])
+            assert row[col["k"]] in SIZES, ("damage size outside its domain", row[:6])
+            assert row[col["grammar"]] in GRAMMARS, ("grammar outside its domain", row[:6])
+            assert row[col["seed"]] in SEEDS, ("seed outside its domain", row[:6])
+            assert row[col["strategy"]] in ARMS, ("arm outside its domain", row[:6])
+            for flag in ("first_landed", "terminal_landed"):
+                assert row[col[flag]] in FLAGS, (flag + " outside its domain", row[:6])
+            for name in NUMERIC:
+                value = row[col[name]]
+                assert value == "" or CANONICAL.fullmatch(value), \
+                    (name + " is neither blank nor a canonical integer", row[:6])
+            key = tuple(row[:5]) + (row[col["strategy"]],)
+            assert key not in seen_keys, ("a row repeats an incident and arm", key)
+            seen_keys.add(key)
+            incident_arms.setdefault(tuple(row[:5]), set()).add(row[col["strategy"]])
+            if row[col["strategy"]] == "certified":
+                for flag in ("first_landed", "terminal_landed"):
+                    assert row[col[flag]] in ("0", "1"), \
+                        ("a certified row leaves " + flag + " blank, which the arm always answers",
+                         row[:6])
             if row[col["strategy"]] != "certified":
                 continue
             assert row[col["first"]], row
@@ -117,6 +184,38 @@ def main():
                     abs(int(row[col["first"]]) - int(row[col["first_true"]])) if row[col["first_true"]] else None,
                 )
             )
+
+        # Population closure, once every row has been read: an incident is a damaging trial the
+        # harness answered with all eleven recovery arms, or an absorbed draw recorded as one row of
+        # the same schema. Uniqueness alone accepted a deleted arm row, because a missing row
+        # repeats nothing, and the emissions stayed byte-identical while it did.
+        for incident, arms_seen in incident_arms.items():
+            assert frozenset(arms_seen) in (RECOVERY_ARMS, ABSORBED_ONLY), \
+                ("an incident's arm set is neither the eleven recovery arms nor one absorbed draw",
+                 incident, sorted(arms_seen))
+        # The arm-set closure alone still misses a whole incident deleted with every row it had,
+        # because a missing key repeats nothing and joins nothing. The campaign's schedule is a
+        # declared grid: five hundred draws in each of the one hundred sixty-two cells, every draw
+        # either a damaging trial or an absorbed one. Counting incidents per cell against that
+        # declared count closes deletion and off-grid insertion alike.
+        cell_trials = {}
+        for incident in incident_arms:
+            grammar, op, k, seed, trial = incident
+            cell_trials.setdefault((grammar, op, k, seed), set()).add(trial)
+        declared_cells = [(grammar, op, k, seed) for grammar in GRAMMARS for op in OPERATIONS
+                          for k in SIZES for seed in SEEDS]
+        declared_trials = {str(trial) for trial in range(DRAWS_PER_CELL)}
+        assert len(cell_trials) == len(declared_cells) == 162, \
+            ("the incidents do not cover the declared cell grid", len(cell_trials))
+        for cell in declared_cells:
+            trials = cell_trials.get(cell, set())
+            # The exact identifier set, not the count: five hundred distinct trials with one rekeyed
+            # off the schedule still count five hundred, and the schedule draws trials zero through
+            # four hundred ninety-nine, never anything else.
+            assert trials == declared_trials, \
+                ("a cell's trial identifiers are not exactly the declared zero through four "
+                 "hundred ninety-nine draws", cell, sorted(trials - declared_trials)[:3],
+                 sorted(declared_trials - trials)[:3])
 
     lines = []
     emit = lines.append

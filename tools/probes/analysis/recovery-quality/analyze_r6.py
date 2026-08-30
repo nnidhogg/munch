@@ -16,8 +16,10 @@
 # ones.
 
 import csv
+import io
 import math
 import os
+import re
 import sys
 
 sys.dont_write_bytecode = True
@@ -245,7 +247,13 @@ def main():
     collapsed_incidents = 0
     collapsed_moves = defaultdict(list)
 
-    with open(sys.argv[1], newline="") as handle:
+    # The campaign is read into one snapshot and everything downstream, the audit here and the
+    # membership commitments at the end, works from these bytes. Reopening the pathname later would
+    # let a file swapped between the two reads be audited as one archive and committed as another,
+    # so the pathname is resolved to bytes exactly once.
+    with open(sys.argv[1], "rb") as handle:
+        campaign_bytes = handle.read()
+    with io.StringIO(campaign_bytes.decode("utf-8"), newline="") as handle:
         reader = csv.reader(handle)
         head = next(reader)
         assert head == COLUMNS, head
@@ -1044,52 +1052,169 @@ def main():
     assert sys.argv[1].endswith(".csv"), sys.argv[1]
     assert os.path.exists(summary_path), summary_path
 
-    # The summary is parsed against an exact schema rather than by shape: every header line must be
-    # exactly the header the harness prints, one per grammar section; every cell row must name a
-    # known operation, damage size, and arm; and the parsed cell set must equal the full expected
-    # grid, all six grammars by three operations by three damage sizes by eleven arms, zero-valued
-    # cells included. A renamed column, an unknown cell, a missing section, or a section for a
-    # grammar the campaign never ran is refused here, not skipped by a shape filter.
-    SUMMARY_HEADER = ("op", "k", "strategy", "answers", "refuse", "t-ref", "f-land", "t-land",
-                      "complete", "capped", "attempts", "conv", "lost", "spur", "overshoot")
+    # The summary is consumed by a closed positional parser, never a shape filter: the file is a
+    # fixed grammar of line kinds in a declared order, and every nonblank line must be the one kind
+    # the walk expects at its position or the parse refuses. Two preamble lines; then per grammar
+    # section, in the harness's own section order, the grammar name, the one verbatim header line,
+    # exactly the declared cell grid in its declared row order with exactly fifteen fields per row,
+    # the pooled heading, eleven pooled arm rows in arm order, and three per-seed rows; then the
+    # eight tail lines by their own anchored grammars; then nothing. A 595th cell, however unknown
+    # its every field, a missing or duplicated header, a row grown or shrunk by a field, a section
+    # out of order, and any line no kind declares are all refused at their exact position, because
+    # nothing here infers what a line is from field values whose corruption it exists to catch.
+    SUMMARY_HEADER_LINE = ("  op           k  strategy        answers  refuse   t-ref  f-land"
+                           "   t-land complete capped attempts     conv   lost   spur overshoot")
+    SUMMARY_POOLED_LINE = "  pooled over all cells and seeds, Wilson 95% intervals"
+    SUMMARY_GRAMMAR_ORDER = (
+        "c-like conventional with strings and line comments",
+        "c-like conventional plus block comments alone",
+        "json rfc 8259 lexical forms",
+        "c-like split-friendly with strings and line comments",
+        "c-like bare: identifiers numbers operators punctuation",
+        "json rfc 8259 lexical forms on a real-world document",
+    )
+    assert set(SUMMARY_GRAMMAR_ORDER) == set(GRAMMARS), "summary section order names the grammars"
     SUMMARY_OPS = ("substitute", "delete", "insert")
     SUMMARY_KS = ("1", "4", "16")
+    # Every counted column of a cell row has its own grammar, validated whole: three integer counts,
+    # three percentages, the capped count, the attempts and divergence means to two decimals, the
+    # convergence count, and the signed overshoot to one decimal. A field replaced by anything else
+    # is refused even where no reconciliation reads it, because an unvalidated column is exactly
+    # where corruption goes to wait.
+    SUMMARY_CELL_FIELDS = (
+        r"[0-9]+", r"[0-9]+", r"[0-9]+", r"[0-9]+\.[0-9]%", r"[0-9]+\.[0-9]%",
+        r"[0-9]+\.[0-9]%", r"[0-9]+", r"[0-9]+\.[0-9][0-9]", r"[0-9]+",
+        r"[0-9]+\.[0-9][0-9]", r"[0-9]+\.[0-9][0-9]", r"-?(?:0|[1-9][0-9]*)\.[0-9]",
+    )
+    SUMMARY_TAIL = (
+        ("absorbed tail line", r"damage absorbed by the grammar without a scan failure: [0-9]+ trials"),
+        ("coverage tail line",
+         r"evidence-covered first answers: [0-9]+, all asserted to land; evidence-uncovered: \d+, of"
+         r" which [0-9]+ landed; certified moves in total: \d+, of which \d+ covered, every covered"
+         r" move asserted to land"),
+        ("minimality tail line", r"nonminimal answers: [0-9]+, \d+ extra bytes in total"),
+        ("known-clean tail line",
+         r"known-clean certified arm: [0-9]+ answers, every one asserted covered and landed;"
+         r" [0-9]+ refusals"),
+        ("repairability tail line",
+         r"repairability at the blind anchor: [0-9]+ repairable, \d+ unrepairable; the walk answered"
+         r" [0-9]+ of the unrepairable, the vacuous share its stratification labels"),
+        ("anchored tail line",
+         r"exact anchored arm: [0-9]+ answers, the decider asserted at or before the walk on every"
+         r" repairable trial and refusing every unrepairable one before the anchor advances;"
+         r" [0-9]+ paired answers, \d+ bytes saved on repairable trials, net displacement -?[0-9]+ bytes"
+         r" over all pairs"),
+        ("duplicate tail line", r"duplicate sampled positions across all cells: [0-9]+"),
+        ("closing tail line", r"all oracle and theorem assertions held"),
+    )
+    # The harness writes this file in ASCII, so the parser requires ASCII: Python's whitespace and
+    # digit classes are Unicode-aware, and without this wall a non-breaking space separates fields
+    # like a space while an Arabic-Indic numeral converts to the same integer as its ASCII spelling,
+    # so a summary rewritten in either reconciles as though it were the original. The bytes are
+    # checked before any of them is split or matched.
+    with open(summary_path, "rb") as handle:
+        summary_bytes = handle.read()
+    stray = next((position for position, byte in enumerate(summary_bytes) if byte > 0x7F), None)
+    assert stray is None, (summary_path, "byte outside ASCII at offset", stray,
+                           "0x%02x" % summary_bytes[stray] if stray is not None else None)
+    nonblank = [raw for raw in summary_bytes.decode("ascii").split("\n") if raw.strip()]
+    position = 0
+
+    def summary_next(kind):
+        nonlocal position
+        assert position < len(nonblank), ("the summary ends before its " + kind, position)
+        taken = nonblank[position]
+        position += 1
+        return taken
+
+    def summary_numbers_canonical(line, kind):
+        # Every decimal number this summary prints has exactly one spelling; hex seed literals
+        # are outside this rule and are blanked below. The cell loop below checks its
+        # fields one at a time against their own grammars, but the pooled, per-seed and tail lines
+        # are matched as whole lines whose digit classes accept a padded magnitude and a signed zero
+        # that no arithmetic here can emit. Scanning a line that has already matched its shape holds
+        # those kinds to the same rule without widening what the shapes admit.
+        # The determinism preamble spells its seeds in hex, where a digit run inside the literal is
+        # not a decimal number; hex literals are blanked before the scan so only decimal spellings
+        # answer for canonicality.
+        for token in re.findall(r"-?[0-9]+(?:\.[0-9]+)?", re.sub(r"0x[0-9a-f]+", " ", line)):
+            assert not re.fullmatch(r"-?0[0-9].*", token), \
+                ("summary number carries a leading zero", kind, token, line)
+            assert not re.fullmatch(r"-0(?:\.0+)?", token), \
+                ("summary number spells a negative zero", kind, token, line)
+
+
+    line = summary_next("oracle preamble")
+    assert re.fullmatch(r"pristine oracle: [0-9]+ violations over [0-9]+ rows x [0-9]+ samples",
+                        line, re.ASCII), line
+    summary_numbers_canonical(line, "oracle preamble")
+    line = summary_next("determinism preamble")
+    assert re.fullmatch(
+        r"deterministic: corpus seeds 0x[0-9a-f]+ through 0x[0-9a-f]+, schedule seed 0x[0-9a-f]+"
+        r" and payload seed 0x[0-9a-f]+ each offset per \(row, seed, op, k\) so no two rows share"
+        r" a stream, [0-9]+ independent seeds, positions by unbiased rejection sampling, attempt"
+        r" budget [0-9]+ per incident", line, re.ASCII), line
+    summary_numbers_canonical(line, "determinism preamble")
     harness_cells = {}
-    summary_grammar = None
-    headers_seen = 0
-    with open(summary_path) as handle:
-        for line in handle:
-            if line.strip() and not line.startswith(" "):
-                stripped = line.strip()
-                summary_grammar = stripped if stripped in GRAMMARS else None
-                continue
-            parts = line.split()
-            if parts and parts[0] == "op":
-                assert tuple(parts) == SUMMARY_HEADER, (summary_path, parts)
-                assert summary_grammar is not None, line
-                headers_seen += 1
-                continue
-            # A cell row is op, k, strategy, then the counted columns; pooled and per-seed lines
-            # carry neither a known operation at the front nor a known arm third, and are not cells.
-            # A line that is cell-shaped on either side, a known operation or a known arm in place,
-            # must be a fully well-formed known cell: an unknown operation, damage size, or arm in a
-            # cell position is summary corruption and is refused, never skipped by shape.
-            if len(parts) >= 11 and (parts[0] in SUMMARY_OPS or parts[2] in ARMS):
-                assert parts[0] in SUMMARY_OPS and parts[1] in SUMMARY_KS and parts[2] in ARMS, \
-                    (summary_path, parts[:3])
-                assert summary_grammar is not None, line
-                assert parts[3].isdigit() and parts[4].isdigit() and parts[5].isdigit() \
-                    and parts[9].isdigit(), (summary_path, parts)
-                summary_cell = (summary_grammar, parts[0], parts[1], parts[2])
-                assert summary_cell not in harness_cells, summary_cell
-                harness_cells[summary_cell] = (int(parts[3]), int(parts[4]), int(parts[5]),
-                                               int(parts[9]))
-    assert headers_seen == len(GRAMMARS), (headers_seen, len(GRAMMARS))
-    expected_grid = {(grammar, op, k, arm) for grammar in GRAMMARS for op in SUMMARY_OPS
-                     for k in SUMMARY_KS for arm in ARMS}
-    assert set(harness_cells) == expected_grid, (
-        sorted(set(harness_cells) - expected_grid)[:3],
-        sorted(expected_grid - set(harness_cells))[:3])
+    for summary_grammar in SUMMARY_GRAMMAR_ORDER:
+        line = summary_next("grammar name")
+        assert line == summary_grammar, ("summary section off its declared order", line,
+                                         summary_grammar)
+        line = summary_next("header line")
+        assert line == SUMMARY_HEADER_LINE, ("summary header not verbatim", summary_grammar, line)
+        for op in SUMMARY_OPS:
+            for k in SUMMARY_KS:
+                for arm in ARMS:
+                    line = summary_next("cell row")
+                    parts = line.split()
+                    assert line.startswith("  ") and len(parts) == 15 \
+                        and tuple(parts[:3]) == (op, k, arm), \
+                        ("summary cell row off the declared grid", line, (op, k, arm))
+                    for value, pattern in zip(parts[3:], SUMMARY_CELL_FIELDS):
+                        # Bounded before matched, because a field of thousands of digits matches a
+                        # digit class and then raises a bare conversion error rather than this
+                        # assertion, which reports the wrong wall; canonical before converted,
+                        # because a padded count compares unequal to the same number written
+                        # plainly and a percentage outside nought to a hundred is impossible
+                        # whatever its spelling.
+                        assert len(value) <= 12, \
+                            ("summary cell field longer than any count this campaign writes",
+                             value[:20], line)
+                        assert re.fullmatch(pattern, value), \
+                            ("summary cell field off its declared grammar", value, line)
+                        assert not re.fullmatch(r"0[0-9].*", value), \
+                            ("summary cell field carries a leading zero", value, line)
+                        assert not re.fullmatch(r"-0(?:\.0+)?", value), \
+                            ("summary cell field spells a negative zero", value, line)
+                        if value.endswith("%"):
+                            assert 0.0 <= float(value[:-1]) <= 100.0, \
+                                ("summary percentage outside nought to a hundred", value, line)
+                    summary_cell = (summary_grammar, op, k, arm)
+                    harness_cells[summary_cell] = (int(parts[3]), int(parts[4]), int(parts[5]),
+                                                   int(parts[9]))
+        line = summary_next("pooled heading")
+        assert line == SUMMARY_POOLED_LINE, ("pooled heading not verbatim", summary_grammar, line)
+        for arm in ARMS:
+            line = summary_next("pooled arm row")
+            assert re.fullmatch(
+                "  " + re.escape(arm) + r"\s+answers\s+[0-9]+ initial-refusals\s+[0-9]+"
+                r" terminal-refused\s+[0-9]+ first-landing \[\s*[0-9]+\.[0-9]%,\s*[0-9]+\.[0-9]%\]"
+                r" completion \[\s*[0-9]+\.[0-9]%,\s*[0-9]+\.[0-9]%\] capped [0-9]+", line, re.ASCII), \
+                ("pooled arm row off its declared shape", summary_grammar, arm, line)
+            summary_numbers_canonical(line, "pooled arm row")
+        for seed in ("0", "1", "2"):
+            line = summary_next("per-seed row")
+            assert re.fullmatch(
+                "  seed " + seed + " first-landing:"
+                + "".join(" " + re.escape(arm) + r" [0-9]+\.[0-9]%" for arm in ARMS), line, re.ASCII), \
+                ("per-seed row off its declared shape", summary_grammar, seed, line)
+            summary_numbers_canonical(line, "per-seed row")
+    for kind, pattern in SUMMARY_TAIL:
+        line = summary_next(kind)
+        assert re.fullmatch(pattern, line, re.ASCII), (kind, line)
+        summary_numbers_canonical(line, kind)
+    assert position == len(nonblank), \
+        ("the summary carries a line its grammar does not declare", nonblank[position])
     reconciled_cells = 0
     reconciled_answered = 0
     reconciled_initial = 0
@@ -1135,13 +1260,19 @@ def main():
     assert os.path.exists(commitments_path), commitments_path
     archived_commitments = {}
     with open(commitments_path, encoding="utf-8") as handle:
-        for number, line in enumerate(handle.read().split("\n")[:-1], start=1):
-            assert len(line) > 66 and line[64:66] == "  ", (commitments_path, number, line[:70])
-            digest, key = line[:64], line[66:]
-            assert all(c in "0123456789abcdef" for c in digest), (number, digest)
-            assert key not in archived_commitments, (number, key)
-            archived_commitments[key] = digest
-    recomputed = commit_r6.cell_commitments(sys.argv[1])
+        commitment_text = handle.read()
+    # The file must end with a newline and every segment before it is a line: splitting and
+    # dropping the tail unconditionally would discard an unterminated final record, so a garbage
+    # line or a 163rd commitment appended without a newline would be read as absent rather than
+    # refused. The terminator is required first, and then nothing is discarded.
+    assert commitment_text.endswith("\n"), (commitments_path, "no final newline")
+    for number, line in enumerate(commitment_text[:-1].split("\n"), start=1):
+        assert len(line) > 66 and line[64:66] == "  ", (commitments_path, number, line[:70])
+        digest, key = line[:64], line[66:]
+        assert all(c in "0123456789abcdef" for c in digest), (number, digest)
+        assert key not in archived_commitments, (number, key)
+        archived_commitments[key] = digest
+    recomputed = commit_r6.cell_commitments(sys.argv[1], campaign_bytes)
     expected_commit_cells = {
         "|".join((grammar, op, k, seed))
         for grammar in GRAMMARS for op in SUMMARY_OPS for k in SUMMARY_KS

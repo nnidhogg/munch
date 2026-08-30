@@ -18,15 +18,27 @@ import sys
 sys.dont_write_bytecode = True
 
 
-def cell_commitments(csv_path):
+def cell_commitments(csv_path, snapshot=None):
+    """Per-cell digests over the campaign's raw lines, computed from one immutable snapshot.
+
+    `snapshot` is the file's bytes as some caller already read them. The analyzer passes the very
+    bytes it audited, so the digests describe what was analyzed rather than whatever the pathname
+    resolves to a second time: reopening the path would let an archive swapped between the two
+    reads be analyzed as one file and committed as another. Called without it, the function reads
+    the path once and hashes that single read for the same reason.
+    """
+    if snapshot is None:
+        with open(csv_path, "rb") as handle:
+            snapshot = handle.read()
     digests = {}
-    with open(csv_path, "rb") as handle:
-        header = handle.readline()
-        assert header.startswith(b"grammar,"), header[:40]
-        for raw in handle:
-            fields = raw.decode("utf-8").split(",", 4)
-            key = "|".join(fields[:4])
-            digests.setdefault(key, hashlib.sha256()).update(raw)
+    newline = snapshot.find(b"\n")
+    assert newline != -1, "the campaign file carries no header line"
+    header = snapshot[:newline + 1]
+    assert header.startswith(b"grammar,"), header[:40]
+    for raw in snapshot[newline + 1:].splitlines(keepends=True):
+        fields = raw.decode("utf-8").split(",", 4)
+        key = "|".join(fields[:4])
+        digests.setdefault(key, hashlib.sha256()).update(raw)
     return {key: digest.hexdigest() for key, digest in digests.items()}
 
 
