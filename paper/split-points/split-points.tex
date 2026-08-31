@@ -522,7 +522,7 @@ false. Consider the token set consisting of the single nullable pattern $a^*$. M
 initial state is accepting and carries a self-loop on $a$; the only state consuming $a$ is $q_0$, so the naive
 certificate admits $a$. Splitting the input $aa$ between its two bytes then yields two tokens where the serial scan,
 by longest match, yields one. The condition is therefore not a refinement for completeness but a soundness
-requirement. This case was found by adversarial review of a shipped implementation.
+requirement.
 
 Figure~\ref{fig:reentrancy} shows why the condition is stated as an incoming transition rather than as a self-loop. In
 the nullable case the initial state re-enters itself directly, which a self-loop test would catch. In the cyclic
