@@ -1389,6 +1389,31 @@ def main():
                 low, high = wilson(cell["first_landings"], answers)
                 handle.write(f"{grammar},{arm},{rate:.2f},{low:.2f},{high:.2f}\n")
 
+    # The landing figure reads this file directly, the way the overhang plot reads r6-overhang.dat and
+    # the pooled table is taken up by input. Its rows are the figure's symbolic x coordinates and its
+    # columns the six arms the figure draws, so the document carries no transcribed coordinate and a
+    # value cannot be mistyped between this archive and the manuscript.
+    figure_grammars = {
+        "c-like conventional with strings and line comments": "conventional",
+        "c-like conventional plus block comments alone": "block",
+        "json rfc 8259 lexical forms": "JSON",
+        "c-like split-friendly with strings and line comments": "split-friendly",
+        "c-like bare: identifiers numbers operators punctuation": "bare",
+        "json rfc 8259 lexical forms on a real-world document": "real JSON",
+    }
+    figure_arms = ["certified", "exact", "skip-one", "newline", "newline-at", "token-newline"]
+    assert set(figure_grammars) <= set(grammars), sorted(set(figure_grammars) - set(grammars))
+    assert set(figure_arms) <= set(ARMS), sorted(set(figure_arms) - set(ARMS))
+    with open(f"{out_dir}/r6-landing-figure.dat", "w") as handle:
+        handle.write("grammar," + ",".join(figure_arms) + "\n")
+        for grammar, short in figure_grammars.items():
+            cells = []
+            for arm in figure_arms:
+                cell = counts[(grammar, arm)]
+                answers = cell["answers"]
+                cells.append(f"{100.0 * cell['first_landings'] / answers if answers else 0.0:.2f}")
+            handle.write(f"{short}," + ",".join(cells) + "\n")
+
     print(f"analyzed {damaging} damaging trials over {len(grammars)} rows into {out_dir}")
 
 
