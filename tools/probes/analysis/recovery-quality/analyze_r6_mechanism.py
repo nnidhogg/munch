@@ -3,11 +3,11 @@
 # identity and its binned rates, the certificate-shape split, the per-operation and per-size coverage,
 # the uncovered geometry against the corruption end, the bin composition behind the final bin's rebound,
 # and the bare row's within-row decomposition. Companion to analyze_r6.py, which audits the archive and
-# emits the main tables; this program emits only the mechanism numbers, so every one of them is the
-# output of a checked-in program rather than a transcription. Reads the campaign CSV, decompressed or
+# emits the main tables; this program emits only the mechanism numbers, so every one of them is
+# program-derived rather than calculated by hand. Reads the campaign CSV, decompressed or
 # gzip-compressed, prints one labeled figure per line, and, given an output directory, writes the same
-# lines to r6-mechanism.txt there, the archived copy of which is compared byte for byte by the test
-# suite.
+# lines to r6-mechanism.txt there and the overhang figure's plotted table to r6-overhang.dat, the archived
+# copies of which are compared byte for byte by the test suite.
 #
 # Usage: analyze_r6_mechanism.py <campaign csv or csv.gz> [output directory]
 #

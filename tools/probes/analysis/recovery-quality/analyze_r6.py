@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # Derives the campaign figures the paper quotes from the r6 archive alone, so the manuscript's numbers are
-# the output of a checked-in program rather than a transcription. Reads the campaign CSV, writes three
+# program-derived rather than calculated by hand. Reads the campaign CSV, writes four
 # files beside it: r6-stats.txt (every named figure, one per line), r6-pooled-table.tex (the pooled table
-# body in exactly the manuscript's columns, taken up by input), and r6-landing-figure.csv (per-grammar
-# per-arm landing coordinates for the results figure). Figures the harness alone can attest (the pristine
-# oracle pass, within-cell repeat counts, per-seed stability) live in the archived summary text, and the
-# manuscript cites them from there; this program derives everything that comes from the CSV.
+# body in exactly the manuscript's columns, taken up by input), r6-landing-figure.csv (per-grammar per-arm
+# landing coordinates with Wilson bounds, long form), and r6-landing-figure.dat (the same landing rates as
+# the wide grammar-by-arm table the results figure reads directly). Figures the harness alone can attest
+# (the pristine oracle pass, within-cell repeat counts, per-seed stability) live in the archived summary
+# text, and the manuscript cites them from there; this program and analyze_r6_mechanism.py together derive
+# everything that comes from the CSV, this one writing the four files named above.
 #
 # Usage: analyze_r6.py <campaign csv> [output directory]
 #
@@ -188,7 +190,7 @@ CERTIFIED_ONLY = (
 
 def wilson(successes, n):
     if n == 0:
-        return 0.0, 0.0
+        raise ValueError("a Wilson interval needs at least one answer; an empty cell has no rate and no interval")
     z = 1.959963984540054
     p = successes / n
     denominator = 1.0 + z * z / n
@@ -955,10 +957,10 @@ def main():
         capped = sum(counts[(g, arm)]["capped"] for g in grammars)
         attempts = [v for g in grammars for v in pooled[(g, arm)]["attempts"]]
         conv = [v for g in grammars for v in pooled[(g, arm)]["conv"]]
-        low, high = wilson(landings, answers)
         emit(f"pooled | {arm} | answers", answers)
         emit(f"pooled | {arm} | refusals", trial_count - answers)
         if answers:
+            low, high = wilson(landings, answers)
             emit(f"pooled | {arm} | first-landing-percent", f"{100.0 * landings / answers:.1f}")
             emit(f"pooled | {arm} | first-landing-wilson", f"[{low:.1f}, {high:.1f}]")
         terminal_refused = sum(counts[(g, arm)]["terminal_refused"] for g in grammars)
@@ -990,11 +992,11 @@ def main():
             cell = counts[(grammar, arm)]
             values = pooled[(grammar, arm)]
             answers = cell["answers"]
-            low, high = wilson(cell["first_landings"], answers)
             tag = f"{grammar} | {arm}"
             emit(f"{tag} | answers", answers)
             emit(f"{tag} | refusals", cell["refusals"])
             if answers:
+                low, high = wilson(cell["first_landings"], answers)
                 emit(f"{tag} | first-landing-percent", f"{100.0 * cell['first_landings'] / answers:.1f}")
                 emit(f"{tag} | first-landing-wilson", f"[{low:.1f}, {high:.1f}]")
             if cell["terminal_interior"]:
@@ -1385,14 +1387,19 @@ def main():
             for arm in ARMS:
                 cell = counts[(grammar, arm)]
                 answers = cell["answers"]
-                rate = 100.0 * cell["first_landings"] / answers if answers else 0.0
-                low, high = wilson(cell["first_landings"], answers)
-                handle.write(f"{grammar},{arm},{rate:.2f},{low:.2f},{high:.2f}\n")
+                # A cell with no answers has no rate and no interval: NA, never a manufactured zero.
+                if answers:
+                    rate = 100.0 * cell["first_landings"] / answers
+                    low, high = wilson(cell["first_landings"], answers)
+                    handle.write(f"{grammar},{arm},{rate:.2f},{low:.2f},{high:.2f}\n")
+                else:
+                    handle.write(f"{grammar},{arm},NA,NA,NA\n")
 
     # The landing figure reads this file directly, the way the overhang plot reads r6-overhang.dat and
     # the pooled table is taken up by input. Its rows are the figure's symbolic x coordinates and its
-    # columns the six arms the figure draws, so the document carries no transcribed coordinate and a
-    # value cannot be mistyped between this archive and the manuscript.
+    # columns the six arms the figure draws, so no plotted-series value is transcribed or can be
+    # mistyped between this archive and the manuscript; the figure's two hand-placed annotations
+    # remain reviewed by eye.
     figure_grammars = {
         "c-like conventional with strings and line comments": "conventional",
         "c-like conventional plus block comments alone": "block",
@@ -1411,7 +1418,9 @@ def main():
             for arm in figure_arms:
                 cell = counts[(grammar, arm)]
                 answers = cell["answers"]
-                cells.append(f"{100.0 * cell['first_landings'] / answers if answers else 0.0:.2f}")
+                if not answers:
+                    raise ValueError(f"plotted cell {short}/{arm} has no answers, so it has no rate")
+                cells.append(f"{100.0 * cell['first_landings'] / answers:.2f}")
             handle.write(f"{short}," + ",".join(cells) + "\n")
 
     print(f"analyzed {damaging} damaging trials over {len(grammars)} rows into {out_dir}")

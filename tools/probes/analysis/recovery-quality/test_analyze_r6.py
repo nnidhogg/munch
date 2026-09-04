@@ -5,7 +5,7 @@
 # monitors, or touches any live system, network, or third party.
 # Proves that analyze_r6.py is fail-closed: every invariant it asserts is exercised by a mutation of the
 # archived r6 campaign that the analyzer must refuse. The suite first establishes the baseline, running the
-# analyzer on the decompressed gold archive and requiring exit 0 together with three emissions byte-identical
+# analyzer on the decompressed gold archive and requiring exit 0 together with four emissions byte-identical
 # to the archived copies, so a later rejection can be attributed to the mutation rather than to drift. It
 # then reproduces both archived mechanism emissions with analyze_r6_mechanism.py from the same staged CSV,
 # the printed figures and the overhang data file the manuscript's plot reads coordinate by coordinate, so
@@ -22,7 +22,7 @@
 # the tuple tells them apart; a rejection whose stderr lacks any of them is reported as
 # REJECTED-WRONG-GUARD and fails the suite just as an acceptance does. Second, one case stages the pristine
 # archive through the same edit and streaming machinery every mutant passes through and requires exit 0 with
-# all three emissions byte-identical, so the suite is shown to distinguish acceptance from rejection rather
+# all four emissions byte-identical, so the suite is shown to distinguish acceptance from rejection rather
 # than refusing everything it is handed. That case is counted and printed as a control, not as a mutation.
 #
 # The third property, that the suite would really report an acceptance rather than pass over it, is an
@@ -32,7 +32,7 @@
 # name it as the run's only failure, and exit nonzero. The mode's own exit code is therefore inverted, 0
 # exactly when the suite failed for that reason and 1 otherwise, and the run prints a line saying so.
 #
-# Usage: test_analyze_r6.py [--prove-detection] [--list-cases] [--case NAME] [data-dir]
+# Usage: test_analyze_r6.py [--prove-detection] [--prove-metadata] [--list-cases] [--case NAME] [data-dir]
 #
 # The suite is deterministic and stdlib-only. It never writes inside the data directory: the gold archive is
 # decompressed once into a temporary working directory, held in memory as lines, and each mutant is written
@@ -58,7 +58,8 @@ MECHANISM = "analyze_r6_mechanism.py"
 GOLD_DIR = "r6"
 CAMPAIGN = "recovery-quality-six-rows-512k-500-r6.csv"
 SIDECAR_SUFFIX = ".moves.csv"
-EMISSIONS = ("r6-stats.txt", "r6-pooled-table.tex", "r6-landing-figure.csv")
+EMISSIONS = ("r6-stats.txt", "r6-pooled-table.tex", "r6-landing-figure.csv",
+             "r6-landing-figure.dat")
 
 # Both files analyze_r6_mechanism.py writes: the printed mechanism figures, and the overhang data file the
 # manuscript's plot reads directly, which is pinned here for the same reason the tables are.
@@ -925,8 +926,15 @@ def run_analyzer(analyzer, csv_path, out_dir, extra_env=None):
     return completed.returncode, completed.stderr.decode("utf-8", "replace")
 
 
-def compare_emissions(out_dir, gold_dir, names):
+def compare_emissions(out_dir, gold_dir, names, complete=False):
     mismatched = []
+    # A complete comparison also refuses an emission the analyzer produced but the inventory does
+    # not declare, so the next added output cannot escape the suite the way the plotted table did.
+    if complete:
+        produced_set = {n for n in os.listdir(out_dir)
+                        if os.path.isfile(os.path.join(out_dir, n))}
+        for name in sorted(produced_set - set(names)):
+            mismatched.append(name + " (undeclared emission)")
     for name in names:
         produced = os.path.join(out_dir, name)
         archived = os.path.join(gold_dir, name)
@@ -2079,7 +2087,7 @@ def build_cases(archive):
     # The control, run first so a later failure cannot be blamed on the staging machinery. The archive is
     # streamed through the same edit path every mutant uses, with edits that replace both headers by
     # themselves, so the bytes reaching the analyzer are the gold bytes and the analyzer must accept them
-    # and reproduce all three archived emissions. Counted and printed as a control, never as a mutation.
+    # and reproduce all four archived emissions. Counted and printed as a control, never as a mutation.
     case(
         "pristine-archive-restaged-unchanged",
         campaign={0: [archive.campaign[0]]},
@@ -3906,7 +3914,7 @@ def run_suite(data_dir, neutered=None, only=None):
 
         out_base = os.path.join(work, "out-base")
         status, _ = run_analyzer(analyzer, base_csv, out_base)
-        mismatched = compare_emissions(out_base, gold_dir, EMISSIONS) if status == 0 else []
+        mismatched = compare_emissions(out_base, gold_dir, EMISSIONS, complete=True) if status == 0 else []
         if status != 0 or mismatched:
             detail = f"exit {status}" if status != 0 else "emissions differ: " + ", ".join(mismatched)
             print(f"baseline-reproduces-archived-emissions FAILED ({detail})")
@@ -3920,7 +3928,7 @@ def run_suite(data_dir, neutered=None, only=None):
         # data file, because the plot the manuscript prints is drawn from the second one alone.
         out_mech = os.path.join(work, "out-mech")
         status, _ = run_analyzer(mechanism, base_csv, out_mech)
-        mismatched = compare_emissions(out_mech, gold_dir, MECHANISM_EMISSIONS) if status == 0 else []
+        mismatched = compare_emissions(out_mech, gold_dir, MECHANISM_EMISSIONS, complete=True) if status == 0 else []
         if status != 0 or mismatched:
             detail = f"exit {status}" if status != 0 else "emissions differ: " + ", ".join(mismatched)
             print(f"mechanism-baseline-reproduces-archived-emissions FAILED ({detail})")
@@ -3978,7 +3986,7 @@ def run_suite(data_dir, neutered=None, only=None):
                     verdicts[case["name"]] = "REJECTED"
                     print(f"{case['name']} REJECTED (boundary, expected acceptance, exit {status})")
                     failures.append(case["name"])
-                elif sorted(mismatched) != ["r6-landing-figure.csv", "r6-stats.txt"]:
+                elif sorted(mismatched) != ["r6-landing-figure.csv", "r6-landing-figure.dat", "r6-stats.txt"]:
                     verdicts[case["name"]] = "ACCEPTED-WITHOUT-DRIFT"
                     print(f"{case['name']} ACCEPTED-WITHOUT-DRIFT (boundary, expected exactly the "
                           f"statistics and landing emissions to move, got: "
@@ -4063,6 +4071,70 @@ def prove_detection(data_dir):
     return 0 if detected else 1
 
 
+
+LANDING_GRAMMARS = ("c-like bare: identifiers numbers operators punctuation",
+                    "c-like conventional plus block comments alone",
+                    "c-like conventional with strings and line comments",
+                    "c-like split-friendly with strings and line comments",
+                    "json rfc 8259 lexical forms",
+                    "json rfc 8259 lexical forms on a real-world document")
+LANDING_ARMS = ("certified", "certified-clean", "exact", "exact-clean", "skip-one", "newline",
+                "newline-at", "semicolon", "semicolon-at", "token-newline", "token-semicolon")
+
+
+def _landing_conventions_hold(rev, lines):
+    """The conventions over one CSV's lines; raises AssertionError naming the first breach."""
+    assert lines[0] == "grammar,arm,landing_percent,wilson_low,wilson_high", f"{rev} landing CSV header"
+    rows = [line.split(",") for line in lines[1:]]
+    assert len(rows) == 66 and all(len(row) == 5 for row in rows), f"{rev} landing CSV grid"
+    # The grid is the six grammars by the eleven arms exactly, not any 66 distinct pairs: a row
+    # renamed to a grammar the campaign never ran must fail here by name.
+    found = [(g, a) for g, a, *_ in rows]
+    expected = {(g, a) for g in LANDING_GRAMMARS for a in LANDING_ARMS}
+    assert len(set(found)) == 66, f"{rev}: repeated (grammar, arm) pair"
+    assert set(found) == expected, (rev, "missing", sorted(expected - set(found)),
+                                    "unexpected", sorted(set(found) - expected))
+    nas = [(g, a) for g, a, r, lo, hi in rows if "NA" in (r, lo, hi)]
+    assert nas == [("json rfc 8259 lexical forms", "token-semicolon"),
+                   ("json rfc 8259 lexical forms on a real-world document", "token-semicolon")], (rev, nas)
+    assert all(row[2] == row[3] == row[4] == "NA" for row in rows if "NA" in row[2:]), f"{rev}: partial NA"
+    numeric = [(float(r), float(lo), float(hi)) for _, _, r, lo, hi in rows if r != "NA"]
+    assert len(numeric) == 64 and all(0.0 <= lo <= r <= hi <= 100.0 for r, lo, hi in numeric), \
+        f"{rev}: numeric row count or a rate outside its interval"
+    return len(nas), len(numeric)
+
+
+def landing_csv_conventions(data_dir):
+    """The archived landing CSVs' shape and conventions, held as a regression: the exact header, the
+    exact six-by-eleven grid of grammars and arms, the two designated token-semicolon cells carrying NA in all
+    three statistical fields, never a manufactured zero, this helper reading the emitted CSV alone, and every one of the 64 numeric rates
+    sitting inside its own Wilson interval. The regression then proves its own teeth on each file:
+    a changed header, a deleted row, an added row, and a numeric row renamed to a grammar the
+    campaign never ran must each be rejected, since a check that accepts a unique bogus pair pins
+    the row count and not the grid."""
+    for rev, folder in (("r6", GOLD_DIR), ("r5", "r5")):
+        path = os.path.join(data_dir, folder, f"{rev}-landing-figure.csv")
+        lines = open(path).read().splitlines()
+        nas, numeric = _landing_conventions_hold(rev, lines)
+        renamed = next(i for i, line in enumerate(lines) if i and "NA" not in line)
+        staged = {
+            "changed header": ["grammar,arm,landing,wilson_low,wilson_high"] + lines[1:],
+            "deleted row": lines[:renamed] + lines[renamed + 1:],
+            "added row": lines + [lines[renamed]],
+            "renamed pair": lines[:renamed] + ["alien grammar" + lines[renamed][lines[renamed].index(",") :]]
+            + lines[renamed + 1:],
+        }
+        for label, mutated in staged.items():
+            try:
+                _landing_conventions_hold(rev, mutated)
+            except AssertionError:
+                continue
+            raise AssertionError(f"{rev}: the landing regression accepted a staged corruption: {label}")
+        print(f"    {rev} landing CSV conventions hold: the grid is exactly the six grammars by the "
+              f"eleven arms, {nas} designated NA cells, {numeric} rates sit inside their own "
+              f"intervals, and {len(staged)} staged corruptions are each rejected")
+
+
 def main():
     # The audit is the assertions: under -O or PYTHONOPTIMIZE they are stripped and the coverage
     # matrix, strata, and staging checks silently vanish, so an optimized interpreter is refused
@@ -4090,6 +4162,7 @@ def main():
             continue
         positional.append(argument)
     data_dir = os.path.abspath(positional[0] if positional else os.path.dirname(os.path.abspath(__file__)))
+    landing_csv_conventions(data_dir)
     if prove_metadata:
         # The metadata check must be fatal for nine doctored declarations, each staged to reach
         # a specific wall, population, grid, ownership, or the ownership table's own key set, and
@@ -4176,14 +4249,23 @@ def main():
             print("--prove-metadata: a doctored declaration passed the metadata assertions or "
                   "failed off its own wall, %d of 9 caught as staged" % caught, file=sys.stderr)
             return 1
-        print("--prove-metadata: a thinned critical entry, a stratum retagged off the grid, two "
-              "valid tags swapped between their cases, a critical tag retargeted onto an unrelated "
-              "case with the population preserved, an untagged guard-bearing case, a deleted "
-              "ownership signature, an altered one, a stray ownership signature, and two "
-              "noncritical tags exchanged between "
-              "cases whose guards differ, each fail at their own named assertion, "
-              "distinguished by its message, so the declaration is fail-closed over population, "
-              "grid, and ownership, and the ownership table itself is fail-closed over its key set")
+        # What the marker binding cannot see, said with the count: cases whose intended-guard
+        # marker tuples coincide are told apart by name and tag alone, so two tags exchanged inside
+        # one such group pass the marker binding, and the claim below stops at the nine staged shapes.
+        by_marker = {}
+        for entry in cases:
+            if entry["expect"] == "reject" and entry["marker"] is not None:
+                by_marker.setdefault(tuple(entry["marker"]), []).append(entry["name"])
+        shared = [names for names in by_marker.values() if len(names) > 1]
+        print("--prove-metadata: the nine staged doctored declarations, a thinned critical entry, "
+              "a stratum retagged off the grid, two valid tags swapped between cases whose markers "
+              "differ, a critical tag retargeted onto an unrelated case with the population "
+              "preserved, an untagged guard-bearing case, a deleted ownership signature, an "
+              "altered one, a stray ownership signature, and two noncritical tags exchanged between "
+              "cases whose guards differ, each fail at their own named assertion, distinguished by "
+              "its message; %d shared-marker groups, %d cases in total, six pairs and one triple, "
+              "have members told apart by name and tag, not by marker, so a swap inside such a group "
+              "is outside what this proof shows" % (len(shared), sum(len(g) for g in shared)))
         return 0
 
     if listing:
