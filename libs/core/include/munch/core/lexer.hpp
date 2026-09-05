@@ -80,23 +80,24 @@ public:
     }
 
     /**
-     * @brief Tokenizes a whole input in one pass, invoking the sink once per matched token.
+     * @brief Tokenizes a whole input in one pass, invoking the sink once per consumed token.
      *
-     * Equivalent to calling tokenize() repeatedly at each token boundary, but the scan state stays live across
-     * tokens, amortizing the per-call overhead. Random access is required because longest match may read past the
-     * last accepting position and must resume from it.
+     * Consumes the same positive-width tokens, IDs and lengths, as calling tokenize() repeatedly at each token
+     * boundary, invoking the sink after each and stopping when the sink returns false, but the scan state stays live
+     * across tokens, amortizing the per-call overhead. Random access is required because longest match may read past
+     * the last accepting position and must resume from it.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator Random access iterator type.
-     * @tparam Sink Callable receiving each matched token and its length.
+     * @tparam Sink Callable receiving each consumed token and its length.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @param sink Invoked as sink(token, length) for every matched token, in input order, or as
+     * @param sink Invoked as sink(token, length) for every consumed token, in input order, or as
      *        sink(token, length, payload) where the sink accepts that and the payload is what
      *        Builder::set_token_payload() attached. A sink accepting both is called with two, which is what it
      *        received before payloads existed. A sink returning a value convertible to bool stops the scan by
      *        returning false; the stopping token still counts as tokenized.
-     * @return The number of input elements tokenized; anything short of the input's size means no token matched at
-     *         the returned offset, unless the sink stopped the scan.
+     * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at
+     *         the returned offset: no token matched there, a zero-width token did, or the sink returned false.
      */
     template <
             common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator,
@@ -120,14 +121,18 @@ public:
     }
 
     /**
-     * @brief Tokenizes a whole container in one pass, invoking the sink once per matched token.
+     * @brief Tokenizes a whole container in one pass, invoking the sink once per consumed token.
      * @tparam T The token type (enum or integral).
      * @tparam Container The input container type (must offer random access).
-     * @tparam Sink Callable receiving each matched token and its length.
+     * @tparam Sink Callable receiving each consumed token and its length, or those and its payload.
      * @param container The input container.
-     * @param sink Invoked as sink(token, length) for every matched token, in input order.
-     * @return The number of input elements tokenized; anything short of the container's size means no token matched
-     *         at the returned offset.
+     * @param sink Invoked as sink(token, length) for every consumed token, in input order, or as
+     *        sink(token, length, payload) where the sink accepts that and the payload is what
+     *        Builder::set_token_payload() attached. A sink accepting both is called with two, which is what it
+     *        received before payloads existed. A sink returning a value convertible to bool stops the scan by
+     *        returning false; the stopping token still counts as tokenized.
+     * @return The number of input elements tokenized; anything short of the container's size means the scan stopped
+     *         at the returned offset: no token matched there, a zero-width token did, or the sink returned false.
      */
     template <
             common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container,
@@ -199,14 +204,14 @@ public:
     /**
      * @brief Computes chunk boundaries for parallel tokenization at certified safe split points.
      *
-     * Each interior boundary is the first certified split point at or after its equal-division target offset, so
-     * every chunk starts at a symbol that can only begin a token; for completely tokenizable input, concatenating
-     * the chunk-local streams reproduces the whole-input token stream. The byte certificate is a property of
-     * single transitions rather than of whole inputs, which is what upholds tokenize_all_parallel()'s
-     * serial-prefix guarantee on malformed input; past the serial failure offset that prefix relation is all the
-     * certificate promises. When the token set certifies no usable points, the result is one chunk spanning the whole
-     * input, so parallel scanning degenerates to the serial scan rather than splitting unsafely; on such token
-     * sets chunk_boundaries_with_windows() can recover cuts, at the price of a guarantee conditional on the
+     * Each interior boundary is the first certified split point at or after the later of its equal-division target and
+     * one past the previous boundary, so every chunk starts at a symbol that can only begin a token; for completely
+     * tokenizable input, concatenating the chunk-local streams reproduces the whole-input token stream. The byte
+     * certificate is a property of single transitions rather than of whole inputs, which is what upholds
+     * tokenize_all_parallel()'s serial-prefix guarantee on malformed input; past the serial failure offset that prefix
+     * relation is all the certificate promises. When the token set certifies no usable points, the result is one chunk
+     * spanning the whole input, so parallel scanning degenerates to the serial scan rather than splitting unsafely; on
+     * such token sets chunk_boundaries_with_windows() can recover cuts, at the price of a guarantee conditional on the
      * input being completely tokenizable.
      * @tparam Iterator Random access iterator type.
      * @param begin Iterator to the beginning of the input.
@@ -524,7 +529,8 @@ public:
 
     /**
      * @brief Whether every stretch-opening byte is dead from the initial state; see the simulator's contract.
-     * @return True when a synchronous-restart observer agrees with serial maximal munch on every input.
+     * @return True guarantees that a synchronous-restart observer agrees with serial maximal munch on every
+     * input; false is inconclusive, the gate being sufficient and not necessary, as {a, abc, bc} shows.
      */
     [[nodiscard]] bool rescue_free() const { return simulator_.rescue_free(); }
 
@@ -533,13 +539,13 @@ public:
      *
      * The anchored counterpart of next_certified_start(), exact where the walk is merely sound: with the
      * tail's end known to be the end of the input, every completely tokenizable repair of whatever preceded
-     * the tail places a token boundary at the returned position. For that complete-repair question,
-     * strictly more positions answer here than under the certificates, which cannot use the end of input;
-     * the certificates' own guarantee also binds repairs whose scans merely reach their evidence, a set
-     * this decider does not speak about: over {"ab", "ba"} the tail "ab" answers zero here, yet the repair
-     * "b" gives "bab", commits "ba", and dies having reached one-byte evidence with no boundary at the
-     * answer's image. A tail beyond repair refuses rather than answering vacuously, and
-     * nullable token sets are refused outright.
+     * the tail places a token boundary at the returned position. For that complete-repair question, strictly
+     * more positions answer here than under the certificates, which cannot use the end of input; the
+     * certificates' own guarantee also binds repairs whose scans merely reach their evidence, a set this
+     * decider does not speak about: over {"ab", "ba"} the tail "ab" answers zero here, yet the repair "b"
+     * gives "bab", commits "ba", and dies having reached one-byte evidence with no boundary at the answer's
+     * image. A tail beyond repair refuses rather than answering vacuously, and nullable token sets are
+     * refused outright.
      * @param tail The preserved suffix of the input, its end the end of the input.
      * @param from The offset the search starts at; at or past the tail's size finds nothing.
      * @return The first anchored-certified position, or std::nullopt when none exists or no repair does.
@@ -574,14 +580,15 @@ public:
      * scaling. There is no early-stop form.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator Random access iterator type.
-     * @tparam Sink Callable receiving the chunk index, each matched token, and its length.
+     * @tparam Sink Callable receiving the chunk index, each consumed token, and its length.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
      * @param chunks The number of chunks aimed for; fewer are scanned when certified points are scarce, and zero
      *        behaves as one, the serial scan on the calling thread.
-     * @param sink Invoked as sink(chunk, token, length) for every matched token.
+     * @param sink Invoked as sink(chunk, token, length) for every consumed token.
      * @return The number of input elements tokenized per chunk, aligned with chunk_boundaries(begin, end,
-     *         chunks); an entry short of its chunk's size means no token matched at that offset of the chunk.
+     *         chunks); an entry short of its chunk's size means the scan stopped at that offset of the chunk, no
+     *         token matching there or a zero-width one doing so; this form's sink cannot stop a chunk.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires std::invocable<Sink&, std::size_t, T, std::size_t>

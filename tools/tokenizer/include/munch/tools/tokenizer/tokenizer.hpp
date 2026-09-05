@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "munch/common/concepts.hpp"
 #include "munch/core/lexer.hpp"
 #include "munch/core/mode_lexer.hpp"
 #include "munch/tools/tokenizer/result.hpp"
@@ -152,11 +153,10 @@ public:
      * The clean-anchored contract: the search starts at the later of one past the current position and
      * clean_from, so the returned evidence begins at or after clean_from by construction. When the caller's
      * bound is truly at or past the damage's end, an editor's edit span or a transport frame's boundary, the
-     * evidence lies in undamaged text and the certificate transfers to the intended input provided the intended
-     * input's scan reaches the evidence, with the whole intended input being completely tokenizable the
-     * sufficient case, the guarantee the failure-anchored form cannot establish alone. Flat token sets carry
-     * the published theorems; under modes
-     * the answer is per-automaton, as for recover().
+     * evidence lies in undamaged text and the certificate transfers to the intended input provided the
+     * intended input's scan reaches the evidence, with the whole intended input being completely tokenizable
+     * the sufficient case, the guarantee the failure-anchored form cannot establish alone. Flat token sets
+     * carry the published theorems; under modes the answer is per-automaton, as for recover().
      * @param clean_from The caller's lower bound on undamaged text.
      * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
      */
@@ -168,8 +168,7 @@ public:
      * @param mode The mode to activate, as passed to the constructor.
      * @throws std::out_of_range If no lexer was given for the mode.
      */
-    template <typename T>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T>
     void set_mode(const T mode)
     {
         const auto index{static_cast<std::size_t>(mode)};
@@ -232,8 +231,7 @@ public:
      * the active mode's automaton for the next certified token start. A loop that only tests end_of_input() and
      * ignores has_error() will not terminate.
      */
-    template <typename T>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T>
     [[nodiscard]] Result_t<T> next()
     {
         if (offset_ >= input_.size())

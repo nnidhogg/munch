@@ -35,12 +35,11 @@ public:
     /**
      * @brief Certified grammar diagnostics, computed from the merged automaton without building a Lexer.
      *
-     * Subset construction only discovers reachable inputs, so a registered token missing from every accepting
-     * state set is dead: no input ever tokenizes as it. The classic cause is a keyword registered at a worse
-     * priority than the identifier pattern, which then wins the keyword's own spelling. A tie is two distinct
-     * tokens accepting the same input at the same priority; the build resolves it deterministically but
-     * arbitrarily, by the lower registered value, so a tie usually marks a priority the grammar author never
-     * decided.
+     * Subset construction only discovers reachable inputs, so a registered token missing from every accepting state set
+     * is dead: no input ever tokenizes as it. The classic cause is a keyword registered at a worse priority than the
+     * identifier pattern, which then wins the keyword's own spelling. A tie is two distinct tokens accepting the same
+     * input at the highest priority accepting it; the build resolves it deterministically but arbitrarily, by the lower
+     * registered value, so a tie usually marks a priority the grammar author never decided.
      */
     struct Diagnostics
     {
@@ -50,7 +49,8 @@ public:
         std::vector<std::size_t> dead_tokens;
 
         /**
-         * @brief Pairs of token values accepting the same input at the same priority, each pair ascending.
+         * @brief Pairs of token values accepting the same input at the highest priority accepting it, each pair
+         *        ascending.
          */
         std::vector<std::pair<std::size_t, std::size_t>> equal_priority_ties;
     };
@@ -97,10 +97,12 @@ public:
     void set_ignored_tokens(std::vector<std::size_t> tokens) { ignored_ = std::move(tokens); }
 
     /**
-     * @brief Attaches a word to a token, delivered with every match of it in the built Lexer.
+     * @brief Attaches a word to a token, delivered to a three-argument tokenize_all() sink with every consumed
+     * token of it in the built Lexer.
      *
-     * A three-argument tokenize_all() sink receives it, so Mode_builder carries a token's mode action here rather
-     * than looking one up. It rides the sink rather than tokenize()'s Match, which widening measured 2.5x.
+     * A three-argument tokenize_all() sink receives it, which is how Mode_lexer's batch driver reads a token's mode
+     * action without a lookup; its per-token driver looks the action up. It rides the sink rather than tokenize()'s
+     * Match, which widening measured 2.5x.
      * @tparam T The token type used with add_token().
      * @param token The token to attach the word to.
      * @param word The word to report, zero meaning none.

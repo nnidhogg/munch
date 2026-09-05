@@ -11,13 +11,14 @@ travel with the archive).
   its binned rates, the certificate-shape split, per-operation and per-size coverage, the uncovered
   geometry, and the bare row's within-row decomposition, and writes the overhang figure's plotted
   coordinates to the data file the paper's plot reads.
-- `test_analyze_r6.py` proves the audit fail-closed by execution: a byte-identical pristine baseline, a
-  mechanism baseline covering both of that program's emissions, and eighty-seven staged archive
-  corruptions that must each be rejected by the guard built for them, one of them aimed at
-  `analyze_r6_mechanism.py` rather than at the auditing analyzer. Invoked as
-  `test_analyze_r6.py --prove-detection` it proves its own detection as well, disarming one corruption
-  so the archive reaches the analyzer unchanged and exiting 0 only when the ordinary run reports the
-  resulting acceptance as a failure.
+- `test_analyze_r6.py` proves the audit fail-closed by execution: a byte-identical pristine
+  baseline, a mechanism baseline covering both of that program's emissions, and one hundred and
+  seventy staged archive corruptions that must each be rejected by the guard built for them, eleven
+  of them aimed at `analyze_r6_mechanism.py` rather than at the auditing analyzer, beside one
+  control case staged unchanged and one commitment-boundary case, the population pinned as a
+  multiset. Invoked as `test_analyze_r6.py --prove-detection` it proves its own detection as well,
+  disarming one corruption so the archive reaches the analyzer unchanged and exiting 0 only when the
+  ordinary run reports the resulting acceptance as a failure.
 
 All three are deterministic and stdlib-only, refuse an optimized interpreter, and run against the
 archive published with the paper; the copies shipped inside that archive are byte-identical to these.

@@ -120,14 +120,14 @@ rejected by construction). The consequences:
   token set, though it recognizes the same language; `is_split_point()` accounts for it by ignoring transitions that can
   never reach acceptance.
 - A pattern matching the empty string is legal to build but needs care to run, and the three entry points differ.
-  `tokenize_all()` and `tokenize_all_parallel()` treat a zero-length acceptance as no match and stop there, so the
-  returned consumed count falls short of the input. `Lexer::tokenize()` returns the match as it is, with length zero, so
-  a caller driving it in a loop must reject that or spin at one offset. The `Tokenizer` does exactly that, reporting a
-  zero-width match as an error. `Mode_lexer` inherits the same split, and its two drivers therefore report a nullable
-  token differently: the per-token entry point returns it with length zero, while the batch one stops without
-  reporting it at all. The mode is the same either way, because `Mode_builder::build()` rejects a nullable token
-  carrying an action outright: an action only one entry point would apply is not something a caller can act on. A
-  nullable token without an action still builds, and still reports differently between the two.
+  `tokenize_all()` and `tokenize_all_parallel()` stop at a zero-length acceptance without delivering it, so the consumed
+  count falls short of the input, or of its chunk for the parallel form. `Lexer::tokenize()` returns the match as it is,
+  with length zero, so a caller driving it in a loop must reject that or spin at one offset. The `Tokenizer` does
+  exactly that, reporting a zero-width match as an error. `Mode_lexer` inherits the same split, and its two drivers
+  therefore report a nullable token differently: the per-token entry point returns it with length zero, while the batch
+  one stops without reporting it at all. The mode is the same either way, because `Mode_builder::build()` rejects a
+  nullable token carrying an action outright: an action only one entry point would apply is not something a caller can
+  act on. A nullable token without an action still builds, and still reports differently between the two.
 - A `Tokenizer` holds the entire input in memory as one string; there is no chunked or incremental feeding, so inputs
   are bounded by memory. Where that matters, the way out is the layer below: `core::Lexer` matches over any iterator
   range without owning it, so a driver can do its own buffering and drive the lexer directly, provided each buffer ends

@@ -685,11 +685,11 @@ In both cases, the lexer returns:
 
 This API is efficient and lightweight, suitable for use in parsers or compiler front ends.
 
-To tokenize a whole input at once, `tokenize_all` scans in a single pass and invokes a sink per matched token, keeping
+To tokenize a whole input at once, `tokenize_all` scans in a single pass and invokes a sink per consumed token, keeping
 the scan state live across token boundaries; it is the fastest way to tokenize a complete input. It requires random
-access to input of byte elements, integral or `std::byte`, so a `std::string` or a `std::vector` of bytes qualifies,
-and returns the number of characters tokenized, so a result short of the input's size names the first offset where no
-token matched:
+access to input of byte elements, integral or `std::byte`, so a `std::string` or a `std::vector` of bytes qualifies, and
+returns the number of characters tokenized, so a result short of the input's size names the offset where the scan
+stopped: no token matched there, a zero-width token did, or the sink returned false:
 
 ```cpp
 std::vector<std::pair<Token_kind, std::size_t>> tokens;
@@ -1008,6 +1008,8 @@ hatches for constructs beyond regular languages.
   first reports in 19. GCC 13 has no native `<mdspan>`, which `external/mdspan` (the Kokkos reference implementation)
   supplies via `FetchContent`.
 - CMake 3.20.6+.
+- python3 at test time only: two probe tests under `tools/probes` run the recovery cross-check scripts with it, and
+  `ctest` reports those two as failed without it; the library and every other target build and test without python.
 - Everything else (`boost.config`/`describe`/`mp11`/`container_hash`, `mdspan`, `googletest`) is fetched by CMake at
   configure time; there is nothing to install manually. Pass `-DUSE_SYSTEM_BOOST=ON` / `-DUSE_SYSTEM_GTEST=ON` to use
   system packages instead.
@@ -1216,6 +1218,11 @@ munch follows semantic versioning. The stable surface is what this README docume
 `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
 arrive in minor versions. The window layer, `is_split_window()` and `chunk_boundaries_with_windows()`, joined that
 surface in 1.4.0; the release the companion paper cites, v1.3.3, deliberately ships no window-planning API.
+
+The recovery layer joined that surface in 1.6.0: `next_certified_start()`, `next_certified_evidence()`,
+`next_anchored_start()`, `minimal_repair()`, `lag()`, and `rescue_free()`, each under the contract its own
+documentation states, evidence-order answers under preserved evidence and complete-repair invariance on
+non-nullable sets.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did
