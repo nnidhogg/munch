@@ -228,18 +228,39 @@ TEST(Mode, Unbalanced_close_stops_the_scan)
 {
     const auto lexer{build()};
 
-    std::size_t consumed{0};
-
-    // A pop with nothing saved is a lexing error, reported as a short consumed length rather than a wrong token.
-    const auto stream{scan(lexer, "ab\"", consumed)};
-
-    EXPECT_EQ(consumed, 3U);
-
+    // Started in string mode with nothing saved, so the closing quote's pop finds no frame: the text before it is
+    // delivered, the scan stops at the quote with a short consumed length, and the stack stays where it stood.
     Mode_stack stack;
 
-    EXPECT_FALSE(stack.apply({.kind = Mode_action_kind::pop}));
+    stack.current = static_cast<std::size_t>(Mode::string);
 
-    EXPECT_EQ(stack.current, 0U);
+    Stream_t stream;
+
+    const std::string input{"a\"b"};
+
+    const auto consumed{lexer.tokenize_all<Tok>(
+            input.begin(), input.end(),
+            [&stream](const Tok token, const std::size_t length, const std::size_t mode) {
+                stream.emplace_back(token, length, mode);
+            },
+            stack)};
+
+    EXPECT_EQ(consumed, 1U);
+
+    ASSERT_EQ(stream.size(), 1U);
+
+    EXPECT_EQ(std::get<0>(stream.front()), Tok::text);
+
+    EXPECT_EQ(stack.current, static_cast<std::size_t>(Mode::string));
+
+    EXPECT_TRUE(stack.saved.empty());
+
+    // The bare stack refuses the same pop.
+    Mode_stack bare;
+
+    EXPECT_FALSE(bare.apply({.kind = Mode_action_kind::pop}));
+
+    EXPECT_EQ(bare.current, 0U);
 }
 
 TEST(Mode, Unterminated_string_consumes_but_stays_in_string_mode)
@@ -978,10 +999,11 @@ TEST(Mode, Sparse_token_ids_cost_only_what_was_registered)
     EXPECT_EQ(tokens, 6U);
 }
 
-TEST(Mode, Every_dispatch_shape_agrees_with_the_per_token_driver)
+TEST(Mode, The_two_drivers_agree_for_every_action_count_and_token_base)
 {
     // The batch driver reads each action from the matched token's payload and the per-token one searches for it, so
-    // they are separate code needing to agree whatever a mode's action count.
+    // they are separate code needing to agree whatever a mode's action count. The input drives every go_to letter
+    // once, returns through y each time, and ends on z in mode 0, so both drivers consume it whole.
     for (const std::size_t actions : {1U, 3U})
     {
         for (const std::size_t base : {std::size_t{0}, std::size_t{100}})
@@ -1001,20 +1023,39 @@ TEST(Mode, Every_dispatch_shape_agrees_with_the_per_token_driver)
 
             const auto lexer{builder.build()};
 
-            const std::string input{"azbyczaybz"};
+            std::string input;
+
+            std::vector<std::pair<std::size_t, std::size_t>> expected;
+
+            for (std::size_t extra{0}; extra < actions; ++extra)
+            {
+                input += static_cast<char>('a' + extra);
+                input += 'y';
+                expected.emplace_back(base + extra + 1, std::size_t{0});
+                expected.emplace_back(base + 90, std::size_t{1});
+            }
+
+            input += 'z';
+            expected.emplace_back(base, std::size_t{0});
 
             std::vector<std::pair<std::size_t, std::size_t>> batch;
 
-            lexer.tokenize_all<std::size_t>(
-                    input, [&batch](const std::size_t token, std::size_t, const std::size_t mode) {
+            Mode_stack batch_stack;
+
+            const auto batch_consumed{lexer.tokenize_all<std::size_t>(
+                    input.cbegin(), input.cend(),
+                    [&batch](const std::size_t token, std::size_t, const std::size_t mode) {
                         batch.emplace_back(token, mode);
-                    });
+                    },
+                    batch_stack)};
 
             std::vector<std::pair<std::size_t, std::size_t>> single;
 
             Mode_stack stack;
 
-            for (std::size_t at{0}; at < input.size();)
+            std::size_t at{0};
+
+            while (at < input.size())
             {
                 const auto mode{stack.current};
 
@@ -1031,7 +1072,21 @@ TEST(Mode, Every_dispatch_shape_agrees_with_the_per_token_driver)
                 at += match.length;
             }
 
-            EXPECT_EQ(batch, single) << "actions=" << actions << " base=" << base;
+            const auto label{"actions=" + std::to_string(actions) + " base=" + std::to_string(base)};
+
+            EXPECT_EQ(batch_consumed, input.size()) << label;
+
+            EXPECT_EQ(at, input.size()) << label;
+
+            EXPECT_EQ(batch, expected) << label;
+
+            EXPECT_EQ(single, expected) << label;
+
+            EXPECT_EQ(batch_stack.current, 0U) << label;
+
+            EXPECT_EQ(stack.current, 0U) << label;
+
+            EXPECT_TRUE(batch_stack.saved.empty() && stack.saved.empty()) << label;
         }
     }
 }
