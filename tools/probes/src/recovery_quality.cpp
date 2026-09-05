@@ -1245,7 +1245,19 @@ int main(const int argc, const char** argv)
 
     const std::size_t corpus_kib{argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 64};
 
+    // The damage widths; a corpus shorter than the widest plus the sampler's margins underflows the span.
     constexpr std::array<std::size_t, 3> ks{1, 4, 16};
+
+    constexpr std::size_t shortest_corpus{ks.back() + 128 + 1};
+
+    if (corpus_kib * 1024 < shortest_corpus)
+    {
+        std::fprintf(
+                stderr, "generated corpus too short: %zu KiB, at least %zu bytes are needed\n", corpus_kib,
+                shortest_corpus);
+
+        return EXIT_FAILURE;
+    }
 
     const std::size_t trials{argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 60};
 
@@ -1377,6 +1389,15 @@ int main(const int argc, const char** argv)
         if (corpus.empty())
         {
             std::fprintf(stderr, "real corpus unreadable or empty: %s\n", real_path);
+
+            return EXIT_FAILURE;
+        }
+
+        if (corpus.size() < shortest_corpus)
+        {
+            std::fprintf(
+                    stderr, "real corpus too short: %zu bytes, at least %zu are needed for the widest damage\n",
+                    corpus.size(), shortest_corpus);
 
             return EXIT_FAILURE;
         }

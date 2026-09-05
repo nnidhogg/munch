@@ -300,6 +300,14 @@ int main(const int argc, const char** argv)
             "anchors: %zu from %zu table windows, every one on the sequential boundary set\n", anchors.size(),
             windows.size());
 
+    // No anchor means no chunk boundary exists, and a split at an ideal cut would read past an empty table.
+    if (anchors.empty())
+    {
+        std::fprintf(stderr, "no certified anchor in the corpus, so it cannot be split into chunks\n");
+
+        return EXIT_FAILURE;
+    }
+
     const auto sequential_ms{best_of_runs(5, [&] { boundaries(lexer, corpus); })};
 
     std::printf("timing: sequential scan %.2f ms best of five\n", sequential_ms);
