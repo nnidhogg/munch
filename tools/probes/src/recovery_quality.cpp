@@ -42,21 +42,22 @@
 // corruption: on the pristine corpus, every next_certified_start() answer from sampled offsets must be a boundary
 // of B, the same oracle discipline the split-points report uses.
 //
-// Eleven arms share the completed-incident driver. certified is the evidence-order walk, its answers carrying
-// the library's evidence interval, cross-checked on every first move against an independent replica of the walk,
-// so a harness defect and a library defect cannot agree; every certified move's evidence is recorded and every
-// covered move is asserted to land, not only the first per incident. certified-clean starts the walk at the
-// corruption end or one past the failure, whichever is later, the oracle arm whose every answer is asserted
-// covered and landed. exact is the anchored procedure over the library's complete-repair-invariance decider,
-// the anchor advancing past a beyond-repair tail's poison until a certificate holds; the decider's direct
-// answer at the blind anchor is archived separately per trial, and the cross-arm regressions test that direct
-// call, never the advancing procedure. exact-clean anchors at the corruption end, its answers asserted to land
-// since the pristine prefix is a repair of what precedes the preserved suffix. skip-one and the four raw
-// delimiter placements are the classical conventions, the past placement repaired to return the end-of-input
-// offset at a final delimiter rather than refusing. token-newline and token-semicolon are the token-aware
-// reading, synchronizing on a designated token: the delimiter's own punctuation token
-// exactly, or an all-whitespace token carrying the newline, so a string or comment that merely contains the
-// delimiter byte never synchronizes.
+// Eleven arms share the completed-incident driver. certified is the evidence-order walk, its answers carrying the
+// library's evidence interval, cross-checked on every first move against a replica of the walk coded apart from the
+// library's search but running over its split-point and split-window predicates, handed the library's answer and
+// compared with it on the evidence's existence, beginning, and byte-or-window class, so a defect in the walk's
+// order or traversal is caught while one in the predicates would not be; every certified move's evidence is
+// recorded and every covered move is asserted to land, not only the first per incident. certified-clean starts the
+// walk at the corruption end or one past the failure, whichever is later, the oracle arm whose every answer is
+// asserted covered and landed. exact is the anchored procedure over the library's complete-repair-invariance
+// decider, the anchor advancing past a beyond-repair tail's poison until a certificate holds; the decider's direct
+// answer at the blind anchor is archived separately per trial, and the cross-arm regressions test that direct call,
+// never the advancing procedure. exact-clean anchors at the corruption end, its answers asserted to land since the
+// pristine prefix is a repair of what precedes the preserved suffix. skip-one and the four raw delimiter placements
+// are the classical conventions, the past placement repaired to return the end-of-input offset at a final delimiter
+// rather than refusing. token-newline and token-semicolon are the token-aware reading, synchronizing on a
+// designated token: the delimiter's own punctuation token exactly, or an all-whitespace token carrying the newline,
+// so a string or comment that merely contains the delimiter byte never synchronizes.
 //
 // Repairability stratifies every trial: minimal_repair() at the blind anchor reports whether any completely
 // tokenizable repair exists, every returned repair witness-verified by scanning repair plus tail to the end of
@@ -798,9 +799,12 @@ std::size_t pristine_oracle(const Row& row, const std::size_t samples)
 
     for (std::size_t sample{0}; sample < samples; ++sample)
     {
-        // The widened generator broke the old 15-bit scaling here silently, every draw landing past the
-        // corpus and the oracle checking nothing; unbiased rejection sampling replaces it, drawing offsets
-        // in [0, size - 2], the final byte excluded since no certificate can begin there and answer.
+        // The widened generator broke the old 15-bit scaling here silently, every draw landing past the corpus and
+        // the oracle checking nothing; unbiased rejection sampling replaces it, drawing offsets in [0, size - 2];
+        // the final byte is excluded, so this oracle never exercises the final starting offset and a defect
+        // confined to it would escape; the exclusion is not because nothing can answer there: on the
+        // split-friendly row a final newline is a one-byte certificate the library answers with, while the other
+        // rows refuse at that offset, checked separately.
         const auto from{static_cast<std::size_t>(random.bounded(static_cast<std::uint32_t>(row.corpus.size() - 1)))};
 
         if (const auto found{row.lexer.next_certified_start(row.corpus, from)})
