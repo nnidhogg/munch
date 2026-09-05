@@ -48,6 +48,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -401,12 +402,41 @@ bool campaign(const std::filesystem::path& root, const std::size_t chunks, const
     return true;
 }
 
-// A corpus mixing the two grammars, written under a fresh directory for the refusal below.
+// A directory removed when the guard goes out of scope, so a fixture never outlives the check that made it.
+struct Removed_on_exit
+{
+    std::filesystem::path root;
+
+    ~Removed_on_exit()
+    {
+        std::error_code ignored;
+
+        std::filesystem::remove_all(root, ignored);
+    }
+};
+
+// A corpus mixing the two grammars, written under a private directory made by mkdtemp beneath TMPDIR, so
+// concurrent runs never share a fixture and no existing directory of a fixed name is ever removed.
 std::filesystem::path mixed_corpus()
 {
-    const auto root{std::filesystem::temp_directory_path() / "munch-corpus-windows-mixed"};
+    const char* const base{std::getenv("TMPDIR")};
 
-    std::filesystem::create_directories(root);
+    std::string pattern{base != nullptr && *base != '\0' ? base : "/tmp"};
+
+    pattern += "/munch-corpus-windows-XXXXXX";
+
+    std::vector<char> buffer(pattern.begin(), pattern.end());
+
+    buffer.push_back('\0');
+
+    if (::mkdtemp(buffer.data()) == nullptr)
+    {
+        std::perror("mkdtemp");
+
+        std::exit(EXIT_FAILURE);
+    }
+
+    const std::filesystem::path root{buffer.data()};
 
     std::ofstream{root / "a.json"} << "{\"k\": [1, 2]}\n";
 
@@ -510,15 +540,13 @@ int main(const int argc, const char** argv)
 
     // The stream row is planned by one lexer, so a corpus carrying both grammars refuses it rather than planning
     // the aggregate under whichever came first; a single-grammar corpus plans it.
-    const auto mixed_root{mixed_corpus()};
+    const Removed_on_exit scratch{mixed_corpus()};
 
-    expect(!campaign(mixed_root, 2, nullptr), "a mixed corpus planned its aggregate stream");
+    expect(!campaign(scratch.root, 2, nullptr), "a mixed corpus planned its aggregate stream");
 
-    std::filesystem::remove(mixed_root / "b.c");
+    std::filesystem::remove(scratch.root / "b.c");
 
-    expect(campaign(mixed_root, 2, nullptr), "a single-grammar corpus refused its aggregate stream");
-
-    std::filesystem::remove_all(mixed_root);
+    expect(campaign(scratch.root, 2, nullptr), "a single-grammar corpus refused its aggregate stream");
 
     std::cout << (failures == 0 ? "all assertions hold\n" : "assertion failures\n");
 

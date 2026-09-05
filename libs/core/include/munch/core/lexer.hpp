@@ -295,13 +295,13 @@ public:
      * @brief Computes chunk boundaries like chunk_boundaries(), additionally recovering cuts from certified
      *        split windows where the token set certifies no usable byte.
      *
-     * From each equal-division target the input is walked for the first occurrence of a window of two to four bytes
-     * that is_split_window() certifies, and the cut is placed at the occurrence plus the reported origin. Each decision
-     * is memoized per distinct byte string, so cloud evaluations are bounded by the distinct windows tried, while the
-     * positional walk and its memo lookups still scale with the positions examined; no representative-corpus pricing is
-     * claimed until one is measured. A nullable token set contributes no windows, since the window proof excludes it,
-     * though its byte plan, when any, stands untouched; when neither certificate offers cuts, the single whole-input
-     * chunk results.
+     * From the later of each equal-division target and one past the previous boundary the input is walked for the first
+     * occurrence of a window of two to four bytes that is_split_window() certifies, and the cut is placed at the
+     * occurrence plus the reported origin. Each decision is memoized per distinct byte string, so cloud evaluations are
+     * bounded by the distinct windows tried, while the positional walk and its memo lookups still scale with the
+     * positions examined; no representative-corpus pricing is claimed until one is measured. A nullable token set
+     * contributes no windows, since the window proof excludes it, though its byte plan, when any, stands untouched;
+     * when neither certificate offers cuts, the single whole-input chunk results.
      *
      * When the token set proves a mandatory core (mandatory_core()), the walk narrows to its licence: every certifying
      * window provably contains the core with a byte after it, so candidate windows are generated around core
