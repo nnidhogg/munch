@@ -898,9 +898,10 @@ std::optional<std::size_t> Simulator::lag() const
         }
     }};
 
+    // An accepting state no input reaches opens no stretch; for an accepting state, live means reachable.
     for (std::size_t state{0}; state < flags_.size(); ++state)
     {
-        if (!is_accepting(state))
+        if (!is_accepting(state) || !is_live(state))
         {
             continue;
         }
@@ -996,9 +997,10 @@ std::optional<std::size_t> Simulator::lag() const
 
 bool Simulator::rescue_free() const
 {
+    // As in lag(): an accepting state no input reaches cannot refute rescue-freeness.
     for (std::size_t state{0}; state < flags_.size(); ++state)
     {
-        if (!is_accepting(state))
+        if (!is_accepting(state) || !is_live(state))
         {
             continue;
         }
