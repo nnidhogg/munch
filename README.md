@@ -685,11 +685,11 @@ In both cases, the lexer returns:
 
 This API is efficient and lightweight, suitable for use in parsers or compiler front ends.
 
-To tokenize a whole input at once, `tokenize_all` scans in a single pass and invokes a sink per matched token, keeping
+To tokenize a whole input at once, `tokenize_all` scans in a single pass and invokes a sink per consumed token, keeping
 the scan state live across token boundaries; it is the fastest way to tokenize a complete input. It requires random
-access to input of byte elements, integral or `std::byte`, so a `std::string` or a `std::vector` of bytes qualifies,
-and returns the number of characters tokenized, so a result short of the input's size names the first offset where no
-token matched:
+access to input of byte elements, integral or `std::byte`, so a `std::string` or a `std::vector` of bytes qualifies, and
+returns the number of characters tokenized, so a result short of the input's size names the offset where the scan
+stopped: no token matched there, a zero-width token did, or the sink returned false:
 
 ```cpp
 std::vector<std::pair<Token_kind, std::size_t>> tokens;
@@ -822,7 +822,7 @@ for (;;)
 
         if (!skipped)
         {
-            break;  // nothing certifies ahead: an explicit refusal, not a silent guess
+            break;  // no certified byte or window of two to four bytes ahead: an explicit refusal, not a guess
         }
 
         std::cerr << "recovered, skipped " << *skipped << " bytes\n";
@@ -836,10 +836,10 @@ for (;;)
 The position `recover()` lands on carries a contract rather than a convention: every completely tokenizable
 repair of the input before the answer's supporting evidence places a token boundary there, so however the
 damage before that evidence might be fixed, the resume point is a real token start; a repair that alters the
-evidence itself, the certified byte or the whole window occurrence, forfeits the guarantee. When no
-certificate lies ahead, the position does not move and the refusal is explicit. Under modes, the answer is
-relative to the active mode's automaton. The position-only form is `Lexer::next_certified_start(input, from)`,
-for drivers that plan without moving.
+evidence itself, the certified byte or the whole window occurrence, forfeits the guarantee. When no certified
+byte and no certified window of two to four bytes, the widths the search consults, lies ahead, the position
+does not move and the refusal is explicit. Under modes, the answer is relative to the active mode's automaton.
+The position-only form is `Lexer::next_certified_start(input, from)`, for drivers that plan without moving.
 
 The evidence itself is returned on request: `recover_from_failure()` answers with the certified start and the
 evidence interval and kind behind it, so a caller can reject an answer whose evidence overlaps text it
@@ -870,11 +870,12 @@ lexer.minimal_repair("z");            // nullopt: a certificate that no repair o
 A tail beyond repair makes `next_anchored_start()` refuse rather than answer vacuously, and `minimal_repair()`
 returning a value guarantees the repaired whole tokenizes, with the empty string meaning the tail already does.
 
-Two related queries describe the token set itself. `lag()` reports how far a scan can run past an accepted token
-before a rollback could occur, with `std::nullopt` as a certificate that the excursion is unbounded, and
-`rescue_free()` reports whether every such excursion is a dead end, the condition under which restart-style
-processing agrees with serial maximal munch on every input. Like `is_split_point()`, all of these are properties
-certified from the compiled automaton, not heuristics.
+Two related queries describe the token set itself. `lag()` reports how far a scan can run past an accepted token before
+a rollback could occur, with `std::nullopt` as a certificate that the excursion is unbounded. `rescue_free()` is a
+one-sided gate: true guarantees that a synchronous-restart observer agrees with serial maximal munch on every input, and
+false is inconclusive, since the gate is sufficient and not necessary. On `{a, abc, bc}` it returns false though no
+rescue exists there. Like `is_split_point()`, all of these are properties certified from the compiled automaton, not
+heuristics.
 
 ### **Context-Dependent Tokenization**
 
@@ -1008,6 +1009,8 @@ hatches for constructs beyond regular languages.
   first reports in 19. GCC 13 has no native `<mdspan>`, which `external/mdspan` (the Kokkos reference implementation)
   supplies via `FetchContent`.
 - CMake 3.20.6+.
+- python3 at test time only: two probe tests under `tools/probes` run the recovery cross-check scripts with it, and
+  `ctest` reports those two as failed without it; the library and every other target build and test without python.
 - Everything else (`boost.config`/`describe`/`mp11`/`container_hash`, `mdspan`, `googletest`) is fetched by CMake at
   configure time; there is nothing to install manually. Pass `-DUSE_SYSTEM_BOOST=ON` / `-DUSE_SYSTEM_GTEST=ON` to use
   system packages instead.
@@ -1216,6 +1219,11 @@ munch follows semantic versioning. The stable surface is what this README docume
 `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions
 arrive in minor versions. The window layer, `is_split_window()` and `chunk_boundaries_with_windows()`, joined that
 surface in 1.4.0; the release the companion paper cites, v1.3.3, deliberately ships no window-planning API.
+
+The recovery layer joined that surface in 1.6.0: `next_certified_start()`, `next_certified_evidence()`,
+`next_anchored_start()`, `minimal_repair()`, `lag()`, and `rescue_free()`, each under the contract its own
+documentation states, evidence-order answers under preserved evidence and complete-repair invariance on
+non-nullable sets.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did

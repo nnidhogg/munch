@@ -96,9 +96,12 @@ public:
 
     /**
      * @brief Advances the NFA from a set of states on an input symbol.
-     * @param states The current set of states.
+     *
+     * The given set must already be epsilon-closed, from epsilon_closure() or from an earlier advance(), since a
+     * state reachable only by an epsilon step out of it is otherwise never consulted for the symbol.
+     * @param states The current set of states, epsilon-closed.
      * @param symbol The input symbol.
-     * @return The set of next states reachable on the symbol.
+     * @return The epsilon closure of the states reachable on the symbol.
      */
     [[nodiscard]] States_t advance(const States_t& states, char symbol) const;
 

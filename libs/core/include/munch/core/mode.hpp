@@ -56,9 +56,11 @@ struct Mode_action
 /**
  * @brief A Mode_action packed into one word, with stay as zero.
  *
- * Every token's action travels as the payload of its own accepting states, so the driver receives it with the match
- * instead of looking it up by token ID. One word is what that channel carries, and making stay zero lets the common
- * case, a token that leaves the mode alone, be a test against zero.
+ * Every token's action travels as the payload of its own accepting states, so the batch driver receives it as
+ * accepting-state payload while the per-token driver looks up the stored ones, which are the non-stay actions, by
+ * token ID. An absent lookup denotes a stay, the same stay the zero payload denotes on the other driver. One word is
+ * what that channel carries, and making stay zero lets the common case, a token that leaves the mode alone, be a test
+ * against zero.
  */
 using Packed_action = std::uint64_t;
 
@@ -73,7 +75,7 @@ using Packed_action = std::uint64_t;
 }
 
 /**
- * @brief Unpacks an action, which the driver needs only once a token has actually changed the mode.
+ * @brief Unpacks an action, the inverse of pack(); zero denotes a stay, which is never stored and never unpacked.
  */
 [[nodiscard]] constexpr Mode_action unpack(const Packed_action packed) noexcept
 {

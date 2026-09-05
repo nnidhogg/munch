@@ -48,8 +48,8 @@ void Tokenizer::reset() noexcept
 {
     offset_ = 0;
 
-    // A mode the mode lexer chose describes the text just rewound past, so it is rewound too. A mode the caller
-    // chose with set_mode() is theirs and survives.
+    // Under a mode lexer the stack describes the text just rewound past, so it is rewound to mode 0 whatever set
+    // it, set_mode() included. Under caller-supplied lexers the current mode is the caller's and survives.
     if (automatic_)
     {
         stack_.current = 0;
@@ -88,8 +88,8 @@ std::string_view Tokenizer::input() const noexcept
 std::optional<std::size_t> Tokenizer::recover()
 {
     // The search starts past the current position: after an error that position is the failure offset, the
-    // scan's final committed offset where the failed token attempt began, and
-    // recovering to where the scan already stands would not be a recovery.
+    // scan's final committed offset where the failed token attempt began, and recovering to where the scan
+    // already stands would not be a recovery.
     const auto before{offset_};
 
     const auto found{recover_from_failure()};

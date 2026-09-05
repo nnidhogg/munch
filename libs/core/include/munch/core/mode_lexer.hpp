@@ -113,12 +113,13 @@ public:
      * plain Lexer, and this recovers it.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator The input iterator type.
-     * @tparam Sink Callable receiving each matched token, its length, and the mode it matched in.
+     * @tparam Sink Callable receiving each consumed token, its length, and the mode it matched in.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @param sink Invoked as sink(token, length, mode) for every matched token, in input order.
-     * @return The number of input elements tokenized; anything short of the input's size means no token matched at
-     *         the returned offset, or a pop found nothing saved there.
+     * @param sink Invoked as sink(token, length, mode) for every consumed token, in input order.
+     * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at
+     *         the returned offset: no token matched there, a zero-width token did, or a pop found nothing saved
+     *         there; this form's sink cannot stop the scan.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires std::invocable<Sink&, T, std::size_t, std::size_t>

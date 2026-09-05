@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "munch/common/concepts.hpp"
 #include "munch/core/lexer.hpp"
 #include "munch/core/mode_lexer.hpp"
 #include "munch/tools/tokenizer/result.hpp"
@@ -99,10 +100,13 @@ public:
     void load(std::string input);
 
     /**
-     * @brief Reset the reading position to the beginning of the current input, and the mode with it.
+     * @brief Reset the reading position to the beginning of the current input, and with it the mode a mode lexer
+     *        drives.
      *
-     * The mode a driven scan ended in belongs to the text it read, so rewinding the position rewinds the mode too,
-     * including a mode set_mode() forced. Call set_mode() again after reset() to re-enter one deliberately.
+     * Where a mode lexer drives the mode, the mode a scan ended in belongs to the text just rewound past, so it
+     * returns to zero with the saved frames, however that mode was reached, set_mode() included; call set_mode()
+     * again after reset() to re-enter one deliberately. Where the caller drives the mode with several lexers
+     * instead, it is the caller's and is kept.
      */
     void reset() noexcept;
 
@@ -126,8 +130,9 @@ public:
      * not upgrade to a modal guarantee, since a repair could reach the resume point in a different mode; a
      * forced or grammar-driven mode change is the driver's business exactly as for next(). When the search
      * finds no certificate ahead, the position does not move.
-     * @return The number of bytes skipped from the current position, or std::nullopt when no certified start
-     *         exists in the remaining input.
+     * @return The number of bytes skipped from the current position, or std::nullopt when no certified byte and no
+     *         certified window of two to four bytes lies ahead in the remaining input, the widths the search
+     *         consults.
      */
     [[nodiscard]] std::optional<std::size_t> recover();
 
@@ -135,13 +140,11 @@ public:
      * @brief recover(), with the supporting evidence returned: certified relative to the damaged suffix.
      *
      * The failure-anchored contract, named as such: the search starts one past the current position, which
-     * after an error is the failure offset, and the answer's guarantee quantifies over repairs of text before
-     * the evidence interval it returns whose scans commit through that evidence; a repair the scan never
-     * carries to the evidence is outside the guarantee, with a completely tokenizable repaired input the
-     * simplest sufficient condition. The scanner does not know the damage's true extent, so when the
-     * corruption reaches past the evidence, the transfer to the intended input is forfeit; the returned
-     * interval is exactly what a caller needs to check that condition against knowledge of its own. Flat
-     * token sets carry the published theorems; under modes the answer is per-automaton, as for recover().
+     * after an error is the failure offset, and the answer carries core::Lexer::Certified_start's guarantee.
+     * The scanner does not know the damage's true extent, so when the corruption reaches past the evidence,
+     * the transfer to the intended input is forfeit; the returned interval is exactly what a caller needs to
+     * check that condition against knowledge of its own. Flat token sets carry the published theorems; under
+     * modes the answer is per-automaton, as for recover().
      * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
      */
     [[nodiscard]] std::optional<core::Lexer::Certified_start> recover_from_failure();
@@ -152,11 +155,9 @@ public:
      * The clean-anchored contract: the search starts at the later of one past the current position and
      * clean_from, so the returned evidence begins at or after clean_from by construction. When the caller's
      * bound is truly at or past the damage's end, an editor's edit span or a transport frame's boundary, the
-     * evidence lies in undamaged text and the certificate transfers to the intended input provided the intended
-     * input's scan reaches the evidence, with the whole intended input being completely tokenizable the
-     * sufficient case, the guarantee the failure-anchored form cannot establish alone. Flat token sets carry
-     * the published theorems; under modes
-     * the answer is per-automaton, as for recover().
+     * evidence lies in undamaged text, which settles the survival half of core::Lexer::Certified_start's
+     * guarantee that the failure-anchored form cannot establish alone. Flat token sets carry the published
+     * theorems; under modes the answer is per-automaton, as for recover().
      * @param clean_from The caller's lower bound on undamaged text.
      * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
      */
@@ -168,8 +169,7 @@ public:
      * @param mode The mode to activate, as passed to the constructor.
      * @throws std::out_of_range If no lexer was given for the mode.
      */
-    template <typename T>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T>
     void set_mode(const T mode)
     {
         const auto index{static_cast<std::size_t>(mode)};
@@ -232,8 +232,7 @@ public:
      * the active mode's automaton for the next certified token start. A loop that only tests end_of_input() and
      * ignores has_error() will not terminate.
      */
-    template <typename T>
-        requires(std::integral<T> || std::is_enum_v<T>)
+    template <common::concepts::Token_id T>
     [[nodiscard]] Result_t<T> next()
     {
         if (offset_ >= input_.size())

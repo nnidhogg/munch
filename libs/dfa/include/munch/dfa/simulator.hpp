@@ -86,8 +86,8 @@ public:
     /**
      * @brief Compiles the given DFA, attaching a caller's word to every state accepting one of the named tokens.
      *
-     * Stored by accepting state and handed back with the match, never read here, so a caller answers a per-token
-     * question without a second lookup and state numbering stays inside this class.
+     * Stored by accepting state and handed to run_all()'s sink with each consumed token, never interpreted here, so a
+     * caller answers a per-token question without a second lookup and state numbering stays inside this class.
      * @param dfa The DFA to simulate.
      * @param ignored The IDs of tokens the caller discards before the stream is used.
      * @param payloads Token ID and word pairs; a token named more than once keeps the last word given.
@@ -354,20 +354,23 @@ public:
     }
 
     /**
-     * @brief Tokenizes a whole input in one pass, invoking the sink once per matched token.
+     * @brief Tokenizes a whole input in one pass, invoking the sink once per consumed token.
      *
-     * Equivalent to calling run() repeatedly at each token boundary, but the scan state stays live across tokens,
-     * amortizing the per-call overhead. Random access is required because longest match may read past the last
+     * Consumes the same positive-width tokens, IDs and lengths, as calling run() repeatedly at each token boundary,
+     * invoking the sink after each and stopping when the sink returns false, but the scan state stays live across
+     * tokens, amortizing the per-call overhead. Random access is required because longest match may read past the last
      * accepting position and must resume from it. A zero-width match stops the scan rather than looping in place.
      * @tparam Iterator Random access iterator type.
-     * @tparam Sink Callable receiving each matched token and its length.
+     * @tparam Sink Callable receiving each consumed token, its length, and its payload.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @param sink Invoked as sink(token, length) for every matched token, in input order. A sink returning a value
-     *        convertible to bool stops the scan by returning false; the stopping token still counts as tokenized.
-     * @return The number of input elements tokenized; anything short of the input's size means no token matched at
-     *         the returned offset, unless the sink stopped the scan. Input elements are read as unsigned char, so
-     *         wider element types reduce modulo 256.
+     * @param sink Invoked as sink(token, length, payload) for every consumed token, in input order, the payload being
+     *        the word the constructor's payloads attached to that token, zero when none was. The Simulator takes the
+     *        three-argument form only; the Lexer adapts a two-argument sink. A sink returning a value convertible to
+     *        bool stops the scan by returning false; the stopping token still counts.
+     * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at
+     *         the returned offset: no token matched there, a zero-width token did, or the sink returned false. Input
+     *         elements are read as unsigned char, so wider element types reduce modulo 256.
      */
     template <common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires std::invocable<Sink&, const Token&, std::size_t, std::uint64_t>

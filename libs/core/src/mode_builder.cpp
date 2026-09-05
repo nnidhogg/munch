@@ -203,7 +203,8 @@ Mode_lexer Mode_builder::build() const
 
     lexers.reserve(modes_.size());
 
-    // Each token's action rides on its own accepting states, so the driver never looks one up by token ID.
+    // Each token's action rides on its own accepting states, so the batch driver never looks one up by token
+    // ID; the per-token driver does.
     std::vector<Mode_lexer::Registered> mode_actions;
 
     std::vector<bool> acting(modes_.size(), false);

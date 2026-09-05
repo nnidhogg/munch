@@ -122,12 +122,12 @@ public:
      * @return The constructed Mode_lexer.
      * @throws State_limit_error If any mode's determinization exceeds the cap.
      * @throws std::invalid_argument If no token was registered, a mode index was skipped, an action targets a mode
-     *         that does not exist, or a token matching the empty string carries an action.
+     *         that does not exist, or a token whose empty match would win carries an action.
      */
     [[nodiscard]] Mode_lexer build() const;
 
     /**
-     * @brief The number of modes tokens have been registered in.
+     * @brief One more than the highest mode index tokens have been registered in.
      */
     [[nodiscard]] std::size_t modes() const noexcept { return modes_.size(); }
 
