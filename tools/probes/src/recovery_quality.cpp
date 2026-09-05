@@ -59,7 +59,7 @@
 // designated token: the delimiter's own punctuation token exactly, or an all-whitespace token carrying the newline,
 // so a string or comment that merely contains the delimiter byte never synchronizes.
 //
-// Repairability stratifies every trial: minimal_repair() at the blind anchor reports whether any completely
+// Repairability stratifies every damaging trial: minimal_repair() at the blind anchor reports whether any completely
 // tokenizable repair exists, every returned repair witness-verified by scanning repair plus tail to the end of
 // input, and the summary counts the walk's answers on unrepairable tails apart. Two consistency regressions
 // bind the routines at the blind anchor itself: on a repairable trial a walk answer implies a direct decider
@@ -68,8 +68,10 @@
 // fires on the exact precondition: a certified answer whose evidence begins at or past the corruption end must
 // land, asserted for every move; the conservative end-plus-three assertion stays beside it, and the summary
 // reports covered and uncovered tallies with the nonminimality figure. The generated corpora are written
-// beside the archive so the aggregate columns recompute from the archive alone; the mapped-oracle columns
-// need this pinned source tree as well, the boundary oracle and the lexer being live machinery.
+// beside the archive, as <archive stem>.corpus-<slug>.bin, so the aggregate columns recompute from the archive
+// alone and two campaigns in one directory keep their own; a run whose archive, moves sidecar, corpora and real
+// corpus paths are not all distinct is refused before any of them is opened. The mapped-oracle columns need this
+// pinned source tree as well, the boundary oracle and the lexer being live machinery.
 //
 // Metrics, per grammar row, operation, k, and arm, every (op, k, arm) cell pooled over independent seeds and the
 // per-seed figures printed beside the pooled ones (damage the grammar absorbs is counted and set aside):
@@ -1235,9 +1237,42 @@ Convergence converge(
 
 } // namespace
 
+namespace
+{
+// The corpus a row runs on, written beside the archive under the archive's own stem so two campaigns in one
+// directory keep their corpora apart: <archive stem>.corpus-<slug>.bin, the slug being the row label with every
+// non-alphanumeric byte replaced by a dash.
+std::string corpus_path(const char* const csv_path, const std::string_view label)
+{
+    std::string stem{csv_path};
+
+    if (stem.ends_with(".csv"))
+    {
+        stem.resize(stem.size() - 4);
+    }
+
+    std::string slug{label};
+
+    for (auto& byte : slug)
+    {
+        byte = static_cast<char>(std::isalnum(static_cast<unsigned char>(byte)) != 0 ? byte : '-');
+    }
+
+    return stem + ".corpus-" + slug + ".bin";
+}
+} // namespace
+
 int main(const int argc, const char** argv)
 {
+    // Test hook: unbuffered stdout so every summary write fails where it happens; production never sets it.
+    if (std::getenv("MUNCH_UNBUFFERED_STDOUT") != nullptr)
+    {
+        std::setvbuf(stdout, nullptr, _IONBF, 0);
+    }
+
     const std::size_t corpus_kib{argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 64};
+
+    constexpr std::array<std::size_t, 3> ks{1, 4, 16};
 
     const std::size_t trials{argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 60};
 
@@ -1409,10 +1444,41 @@ int main(const int argc, const char** argv)
     }
 
     std::printf(
-            "deterministic: corpus seeds 0x5eed0001 through 0x5eed0003, schedule seed 0x5eedc0de and payload seed "
+            "deterministic: corpus seeds 0x5eed0001 and 0x5eed0002, the pristine-oracle sampling seed 0x5eed0003, "
+            "schedule seed 0x5eedc0de and payload seed "
             "0x5eedbeef each offset per (row, seed, op, k) so no two rows share a stream, %zu independent seeds, "
             "positions by unbiased rejection sampling, attempt budget 100 per incident\n",
             seeds);
+
+    std::FILE* csv{csv_path ? std::fopen(csv_path, "w") : nullptr};
+
+    // An archive that was asked for and could not be opened must stop the run here: a null stream
+    // is otherwise indistinguishable from no archive requested, and every write below is guarded by
+    // the stream, so the run would report success having written nothing.
+    if (csv_path != nullptr && csv == nullptr)
+    {
+        std::fprintf(stderr, "cannot open archive %s\n", csv_path);
+
+        return EXIT_FAILURE;
+    }
+
+    // The sidecar archives every certified move's answer and evidence interval, arm zero and the clean
+    // walk alike, so the move-level assertions are auditable offline rather than aggregate-only.
+    const std::string moves_path{csv_path ? std::string{csv_path} + ".moves.csv" : std::string{}};
+
+    std::FILE* moves_csv{csv_path ? std::fopen(moves_path.c_str(), "w") : nullptr};
+
+    if (csv_path != nullptr && moves_csv == nullptr)
+    {
+        std::fprintf(stderr, "cannot open moves archive %s\n", moves_path.c_str());
+
+        return EXIT_FAILURE;
+    }
+
+    if (moves_csv)
+    {
+        std::fprintf(moves_csv, "grammar,op,k,seed,trial,strategy,move,answer,evidence_begin,evidence_end\n");
+    }
 
     // The generated corpora, written beside the archive so the aggregate columns recompute from the archive
     // alone, the mapped-oracle columns needing this pinned source tree besides; the real document is already on
@@ -1426,38 +1492,21 @@ int main(const int argc, const char** argv)
                 continue;
             }
 
-            std::string slug{row.label};
+            const auto corpus_file{corpus_path(csv_path, row.label)};
 
-            for (auto& byte : slug)
-            {
-                byte = static_cast<char>(std::isalnum(static_cast<unsigned char>(byte)) != 0 ? byte : '-');
-            }
-
-            std::ofstream out{"corpus-" + slug + ".bin", std::ios::binary};
+            std::ofstream out{corpus_file, std::ios::binary};
 
             out.write(row.corpus.data(), static_cast<std::streamsize>(row.corpus.size()));
+            out.close();
 
-            // A truncated corpus beside the archive would break offline recomputation silently.
+            // A truncated corpus would break offline recomputation silently; the close is checked too.
             if (!out)
             {
-                std::fprintf(stderr, "corpus write failed: %s\n", slug.c_str());
+                std::fprintf(stderr, "corpus write failed: %s\n", corpus_file.c_str());
 
                 return EXIT_FAILURE;
             }
         }
-    }
-
-    std::FILE* csv{csv_path ? std::fopen(csv_path, "w") : nullptr};
-
-    // The sidecar archives every certified move's answer and evidence interval, arm zero and the clean
-    // walk alike, so the move-level assertions are auditable offline rather than aggregate-only.
-    const std::string moves_path{csv_path ? std::string{csv_path} + ".moves.csv" : std::string{}};
-
-    std::FILE* moves_csv{csv_path ? std::fopen(moves_path.c_str(), "w") : nullptr};
-
-    if (moves_csv)
-    {
-        std::fprintf(moves_csv, "grammar,op,k,seed,trial,strategy,move,answer,evidence_begin,evidence_end\n");
     }
 
     // One raw row per strategy per damaging trial, plus one row marking each trial the grammar absorbed, so any
@@ -1473,8 +1522,6 @@ int main(const int argc, const char** argv)
     }
 
     constexpr std::array<Op, 3> ops{Op::Substitute, Op::Delete, Op::Insert};
-
-    constexpr std::array<std::size_t, 3> ks{1, 4, 16};
 
     std::size_t theorem_failures{0};
 
@@ -2215,7 +2262,8 @@ int main(const int argc, const char** argv)
 
     std::printf(
             "exact anchored arm: %zu answers, the decider asserted at or before the walk on every repairable "
-            "trial and refusing every unrepairable one before the anchor advances; %zu paired answers, %zu bytes "
+            "trial where the walk answered and refusing every unrepairable one before the anchor advances; %zu paired "
+            "answers, %zu bytes "
             "saved on repairable trials, net displacement %td bytes over all pairs\n",
             exact_answers_total, exact_pairs, exact_saved_bytes, exact_net_displacement);
 
@@ -2229,6 +2277,17 @@ int main(const int argc, const char** argv)
     }
 
     std::printf("all oracle and theorem assertions held\n");
+
+    // The summary is the run's claim: the flush and the error indicator both, an earlier failed write
+    // leaving the indicator set while a later flush of nothing succeeds.
+    const auto flushed{std::fflush(stdout)};
+
+    if (flushed != 0 || std::ferror(stdout) != 0)
+    {
+        std::fprintf(stderr, "summary write failed\n");
+
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }
