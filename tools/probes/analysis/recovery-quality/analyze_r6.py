@@ -1101,9 +1101,10 @@ def main():
         ("repairability tail line",
          r"repairability at the blind anchor: [0-9]+ repairable, \d+ unrepairable; the walk answered"
          r" [0-9]+ of the unrepairable, the vacuous share its stratification labels"),
+        # Revision-six summaries carry the earlier sentence; later harnesses add "where the walk answered".
         ("anchored tail line",
          r"exact anchored arm: [0-9]+ answers, the decider asserted at or before the walk on every"
-         r" repairable trial and refusing every unrepairable one before the anchor advances;"
+         r" repairable trial( where the walk answered)? and refusing every unrepairable one before the anchor advances;"
          r" [0-9]+ paired answers, \d+ bytes saved on repairable trials, net displacement -?[0-9]+ bytes"
          r" over all pairs"),
         ("duplicate tail line", r"duplicate sampled positions across all cells: [0-9]+"),
