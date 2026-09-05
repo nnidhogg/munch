@@ -336,7 +336,7 @@ std::optional<Carry> synthesize(const Table& table)
 
     // Floors by ascending-width reverse propagation, single-pass by construction: processing nodes in
     // increasing width order means the first touch a node receives carries the smallest width its
-    // forward closure reaches, so every node and reverse edge is visited once and an adversarial chain
+    // forward closure reaches, so every node and reverse edge is visited once and a worst-case chain
     // costs the same as a friendly graph.
     std::vector<std::vector<std::size_t>> predecessors(count);
 
@@ -1275,7 +1275,7 @@ Verdict decide(const Table& table)
     }
 
     // Floors by the same ascending-width reverse propagation as the synthesizer: single-pass by
-    // construction, so an adversarial chain cannot make the floor propagation quadratic. The sustained
+    // construction, so a worst-case chain cannot make the floor propagation quadratic. The sustained
     // phase above remains quadratic by design and is why this walker's bound is the tight one.
     std::vector<std::vector<std::size_t>> predecessors_of(count);
 
@@ -2959,7 +2959,7 @@ int main()
     }
 
     {
-        // The adversarial chain: one byte erodes the cloud by a single member per step, so the subset
+        // The worst-case chain: one byte erodes the cloud by a single member per step, so the subset
         // graph is a five-hundred-node chain whose floors a naive relaxation would propagate one node
         // per pass at quadratic cost; the ascending-width propagation is single-pass by construction,
         // so this row's cost is the subset walk itself, and the refusal is the floor of one.

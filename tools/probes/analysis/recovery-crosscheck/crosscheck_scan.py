@@ -38,8 +38,7 @@ from pathlib import Path
 import reference
 
 HERE = Path(__file__).resolve().parent
-# The compiled scan probe, given as the first argument by the munch test wiring; the fallback is
-# the conventional in-tree build location for a hand run.
+# The compiled scan probe, given as the first argument by the munch test wiring.
 if len(sys.argv) < 2:
     sys.exit("usage: crosscheck_scan.py <path to the built munch_crosscheck_scan probe>")
 PROBE = Path(sys.argv[1])

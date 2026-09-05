@@ -15,14 +15,25 @@
 # the search travel l = q - (f + 1), an answer is covered precisely when l >= h - 1. The search never
 # looks before the blind anchor, l >= 0, so an overhang of at most one forces coverage by construction.
 
+import contextlib
 import csv
 import gzip
 import os
 import re
+import shutil
 import statistics
 import sys
+import tempfile
 
-COLUMN_COUNT = 28
+# Set before the sibling import: an interpreter caching bytecode for it would drop an unlisted file
+# into the very tree the exact-set gates refuse.
+sys.dont_write_bytecode = True
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# The auditor beside this program, whose row laws are reused by import rather than copied.
+import analyze_r6  # noqa: E402
+
 
 BINS = [
     ("<=0", None, 0),
@@ -46,106 +57,9 @@ def main():
     with opener(sys.argv[1], "rt", newline="") as handle:
         reader = csv.reader(handle)
         head = next(reader)
-        assert head == [
-            "grammar",
-            "op",
-            "k",
-            "seed",
-            "trial",
-            "p",
-            "failure_offset",
-            "corruption_end",
-            "first_true",
-            "repairable",
-            "minimal_repair",
-            "exact_at_anchor",
-            "strategy",
-            "first",
-            "first_landed",
-            "evidence_begin",
-            "evidence_end",
-            "evidence_kind",
-            "minimal",
-            "terminal",
-            "terminal_landed",
-            "outcome",
-            "attempts",
-            "moves_covered",
-            "moves_covered_landed",
-            "converged",
-            "lost",
-            "spurious",
-        ], head
         col = {name: index for index, name in enumerate(head)}
         rows = []
-        # The companion's population is closed before any row is read for its content: the operation,
-        # the damage size, the arm, and the landing flags are held to their declared domains, every
-        # numeric column is held to a canonical spelling whether or not an aggregate reads it, and
-        # every incident's arm set is required to be one of the two the campaign can produce.
-        # Filtering to the certified arm first and asking nothing about the rest let an off-domain
-        # row ride through invisibly, since a row that no aggregate happens to read is a row nobody
-        # checked: a deleted arm row and a non-numeric field in one were both accepted while the
-        # emissions stayed byte-identical.
-        #
-        # The two arm sets are not a modelling choice. An incident is either a damaging trial, which
-        # the harness answers with all eleven recovery arms, or an absorbed draw, which it records as
-        # a single row of the same schema. Requiring one row per arm for every incident, as this
-        # comment once did, is false of the campaign the companion reads.
-        OPERATIONS = ("substitute", "delete", "insert")
-        # The eleven recovery arms plus the absorbed draw, which is a row of the same schema
-        # recording damage the grammar swallowed without a scan failure rather than an arm's answer.
-        ARMS = ("certified", "certified-clean", "exact", "exact-clean", "skip-one", "newline",
-                "newline-at", "semicolon", "semicolon-at", "token-newline", "token-semicolon",
-                "absorbed")
-        SIZES = ("1", "4", "16")
-        GRAMMARS = (
-            "c-like conventional with strings and line comments",
-            "c-like conventional plus block comments alone",
-            "json rfc 8259 lexical forms",
-            "c-like split-friendly with strings and line comments",
-            "c-like bare: identifiers numbers operators punctuation",
-            "json rfc 8259 lexical forms on a real-world document",
-        )
-        SEEDS = ("0", "1", "2")
-        DRAWS_PER_CELL = 500
-        FLAGS = ("", "0", "1")
-        # Blank is a legitimate spelling in many columns, so the wall is blank or canonical, never
-        # merely convertible: a padded or non-numeric field in an arm no aggregate reads is still a
-        # field this companion failed to check.
-        NUMERIC = ("k", "seed", "trial", "p", "failure_offset", "corruption_end", "first_true",
-                   "repairable", "minimal_repair", "exact_at_anchor", "first", "first_landed",
-                   "evidence_begin", "evidence_end", "minimal", "terminal", "terminal_landed",
-                   "attempts", "moves_covered", "moves_covered_landed", "converged", "lost",
-                   "spurious")
-        # Zero has one spelling, so the minus belongs to nonzero magnitudes only: -0 satisfies the
-        # naive signed form and is a number no arithmetic here can emit.
-        CANONICAL = re.compile(r"0|-?[1-9][0-9]*")
-        RECOVERY_ARMS = frozenset(arm for arm in ARMS if arm != "absorbed")
-        ABSORBED_ONLY = frozenset(("absorbed",))
-        seen_keys = set()
-        incident_arms = {}
         for row in reader:
-            assert len(row) == COLUMN_COUNT, row
-            assert row[col["op"]] in OPERATIONS, ("operation outside its domain", row[:6])
-            assert row[col["k"]] in SIZES, ("damage size outside its domain", row[:6])
-            assert row[col["grammar"]] in GRAMMARS, ("grammar outside its domain", row[:6])
-            assert row[col["seed"]] in SEEDS, ("seed outside its domain", row[:6])
-            assert row[col["strategy"]] in ARMS, ("arm outside its domain", row[:6])
-            for flag in ("first_landed", "terminal_landed"):
-                assert row[col[flag]] in FLAGS, (flag + " outside its domain", row[:6])
-            for name in NUMERIC:
-                value = row[col[name]]
-                assert value == "" or CANONICAL.fullmatch(value), \
-                    (name + " is neither blank nor a canonical integer", row[:6])
-            key = tuple(row[:5]) + (row[col["strategy"]],)
-            assert key not in seen_keys, ("a row repeats an incident and arm", key)
-            seen_keys.add(key)
-            incident_arms.setdefault(tuple(row[:5]), set()).add(row[col["strategy"]])
-            if row[col["strategy"]] == "certified":
-                for flag in ("first_landed", "terminal_landed"):
-                    assert row[col[flag]] in ("0", "1"), \
-                        ("a certified row leaves " + flag + " blank, which the arm always answers",
-                         row[:6])
             if row[col["strategy"]] != "certified":
                 continue
             assert row[col["first"]], row
@@ -154,17 +68,7 @@ def main():
             begin = int(row[col["evidence_begin"]])
             width = int(row[col["evidence_end"]]) - begin
             kind = row[col["evidence_kind"]]
-            # The kind's domain first, then the searched width range, then the width law. The
-            # equivalence alone would wave through an unknown kind on any multi-byte evidence, both of
-            # its sides false, and it says nothing at all about a width of zero or five, which the
-            # search never produces: a row outside the range would otherwise be retained in the totals
-            # and silently dropped from the fixed shape buckets below.
-            assert kind in ("byte", "window"), row
-            assert 1 <= width <= 4, row
-            assert (kind == "byte") == (width == 1), row
 
-            # The coverage identity, asserted per row: covered is exactly travel >= overhang - 1.
-            assert (begin >= end) == (begin - (failure + 1) >= (end - failure) - 1), row
             rows.append(
                 (
                     end - failure,  # overhang
@@ -185,37 +89,23 @@ def main():
                 )
             )
 
-        # Population closure, once every row has been read: an incident is a damaging trial the
-        # harness answered with all eleven recovery arms, or an absorbed draw recorded as one row of
-        # the same schema. Uniqueness alone accepted a deleted arm row, because a missing row
-        # repeats nothing, and the emissions stayed byte-identical while it did.
-        for incident, arms_seen in incident_arms.items():
-            assert frozenset(arms_seen) in (RECOVERY_ARMS, ABSORBED_ONLY), \
-                ("an incident's arm set is neither the eleven recovery arms nor one absorbed draw",
-                 incident, sorted(arms_seen))
-        # The arm-set closure alone still misses a whole incident deleted with every row it had,
-        # because a missing key repeats nothing and joins nothing. The campaign's schedule is a
-        # declared grid: five hundred draws in each of the one hundred sixty-two cells, every draw
-        # either a damaging trial or an absorbed one. Counting incidents per cell against that
-        # declared count closes deletion and off-grid insertion alike.
-        cell_trials = {}
-        for incident in incident_arms:
-            grammar, op, k, seed, trial = incident
-            cell_trials.setdefault((grammar, op, k, seed), set()).add(trial)
-        declared_cells = [(grammar, op, k, seed) for grammar in GRAMMARS for op in OPERATIONS
-                          for k in SIZES for seed in SEEDS]
-        declared_trials = {str(trial) for trial in range(DRAWS_PER_CELL)}
-        assert len(cell_trials) == len(declared_cells) == 162, \
-            ("the incidents do not cover the declared cell grid", len(cell_trials))
-        for cell in declared_cells:
-            trials = cell_trials.get(cell, set())
-            # The exact identifier set, not the count: five hundred distinct trials with one rekeyed
-            # off the schedule still count five hundred, and the schedule draws trials zero through
-            # four hundred ninety-nine, never anything else.
-            assert trials == declared_trials, \
-                ("a cell's trial identifiers are not exactly the declared zero through four "
-                 "hundred ninety-nine draws", cell, sorted(trials - declared_trials)[:3],
-                 sorted(declared_trials - trials)[:3])
+
+    # Every law the auditor holds the archive to holds here, by import rather than by a second copy,
+    # before any statistic is derived: the schema and domains, the per-row bounds and geometry, the
+    # answer and landing rules, the absorbed rows' blank fields, the shared fields across an
+    # incident's arms, the schedule grid, and the move sidecar. The auditor reads the plain CSV
+    # beside its sidecar, so a compressed archive is unpacked for it into a directory that outlives
+    # nothing.
+    with tempfile.TemporaryDirectory() as unpacked:
+        campaign = sys.argv[1]
+        if campaign.endswith(".gz"):
+            campaign = os.path.join(unpacked, os.path.basename(sys.argv[1])[:-len(".gz")])
+            sidecar = sys.argv[1][:-len(".gz")] + ".moves.csv.gz"
+            for source, target in ((sys.argv[1], campaign), (sidecar, campaign + ".moves.csv")):
+                with gzip.open(source, "rb") as packed, open(target, "wb") as plain:
+                    shutil.copyfileobj(packed, plain)
+        with open(os.devnull, "w") as silent, contextlib.redirect_stdout(silent):
+            analyze_r6.main([sys.argv[0], campaign], audit_only=True)
 
     lines = []
     emit = lines.append
@@ -288,7 +178,13 @@ def main():
         "search travel and coverage per row (row, answers, median travel, median overhang, mean travel, "
         "covered%, mean absolute overshoot):"
     )
-    labels = sorted({r[13] for r in rows}, key=lambda g: statistics.median([r[12] for r in rows if r[13] == g]))
+    # A total key. The median alone leaves tied rows in the set's iteration order, which is
+    # randomized per interpreter run, so two runs over one archive could emit these rows in
+    # different orders; the label breaks every tie and the order is the archive's alone.
+    labels = sorted(
+        {r[13] for r in rows},
+        key=lambda g: (statistics.median([r[12] for r in rows if r[13] == g]), g),
+    )
     for label in labels:
         members = [r for r in rows if r[13] == label]
         overshoots = [r[14] for r in members if r[14] is not None]

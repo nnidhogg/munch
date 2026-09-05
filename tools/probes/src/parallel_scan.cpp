@@ -20,6 +20,7 @@
 // Usage: munch_parallel_scan <corpus file> <anchor table file> [worker counts...]
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
@@ -29,6 +30,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -37,6 +39,16 @@
 
 namespace
 {
+// A whole decimal number and nothing else, so a count that is not one is refused rather than read as zero.
+bool parse_count(const std::string_view text, std::size_t& value)
+{
+    const auto* const end{text.data() + text.size()};
+
+    const auto parsed{std::from_chars(text.data(), end, value)};
+
+    return parsed.ec == std::errc{} && parsed.ptr == end;
+}
+
 using namespace munch;
 
 using figures::Token;
@@ -262,7 +274,16 @@ int main(const int argc, const char** argv)
 
     for (int argument{3}; argument < argc; ++argument)
     {
-        worker_counts.push_back(static_cast<std::size_t>(std::strtoul(argv[argument], nullptr, 10)));
+        std::size_t count{0};
+
+        if (!parse_count(argv[argument], count) || count == 0)
+        {
+            std::fprintf(stderr, "worker count must be a positive whole number: %s\n", argv[argument]);
+
+            return EXIT_FAILURE;
+        }
+
+        worker_counts.push_back(count);
     }
 
     if (worker_counts.empty())
@@ -296,10 +317,6 @@ int main(const int argc, const char** argv)
 
     std::printf("corpus: %zu bytes, %zu sequential token starts\n", corpus.size(), sequential.size());
 
-    std::printf(
-            "anchors: %zu from %zu table windows, every one on the sequential boundary set\n", anchors.size(),
-            windows.size());
-
     // No anchor means no chunk boundary exists, and a split at an ideal cut would read past an empty table.
     if (anchors.empty())
     {
@@ -307,6 +324,10 @@ int main(const int argc, const char** argv)
 
         return EXIT_FAILURE;
     }
+
+    std::printf(
+            "anchors: %zu from %zu table windows, every one on the sequential boundary set\n", anchors.size(),
+            windows.size());
 
     const auto sequential_ms{best_of_runs(5, [&] { boundaries(lexer, corpus); })};
 

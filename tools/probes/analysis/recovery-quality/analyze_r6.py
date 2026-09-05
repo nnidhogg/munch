@@ -79,18 +79,6 @@ ARMS = [
 
 OUTCOMES = {"completed", "refused", "capped"}
 
-# No input this harness reads approaches sixteen million bytes: the generated corpora are half a mebibyte and
-# the real document is under a mebibyte. A coordinate past this bound is not a large campaign, it is a
-# corrupted field. This is the outer bound, wide enough to admit coordinates no corpus in the campaign can
-# carry; the inner one, derived per row from the source its own grammar runs on, is what refuses those.
-POSITION_BOUND = 1 << 24
-
-# Every column holding a byte offset into an input, as opposed to a count or a flag.
-POSITION_COLUMNS = (
-    "p", "failure_offset", "corruption_end", "first_true", "minimal_repair", "exact_at_anchor", "first",
-    "evidence_begin", "evidence_end", "minimal", "terminal", "converged",
-)
-
 # The position columns the damaged input's length bounds, which is every one of them but `p`, the damage
 # start in the pristine source. Ten are offsets into the damaged input the arms search; `minimal_repair` is
 # the returned repair's byte length rather than an offset, and a repair longer than the whole input it
@@ -199,6 +187,17 @@ def wilson(successes, n):
     return 100.0 * (center - margin) / denominator, 100.0 * (center + margin) / denominator
 
 
+def summary_rate(hits, total):
+    # The harness's own rate and its rounding, nought where the stratum is empty, so a recomputed
+    # figure compares against the summary as printed rather than as a float.
+    return f"{100.0 * hits / total if total else 0.0:.1f}"
+
+
+def summary_mean(total, count, places):
+    # The harness's own mean and its rounding, nought where nothing was counted.
+    return f"{total / count if count else 0.0:.{places}f}"
+
+
 def damaged_length(source_size, op, k):
     # The length of the input a row's arms search, which the damage its operation applied to the source
     # decides: a substitution rewrites k bytes in place and leaves the length alone, a deletion removes k of
@@ -222,14 +221,17 @@ def quantile(values, q):
     return ordered[low] + (ordered[high] - ordered[low]) * (index - low)
 
 
-def main():
+def main(argv=None, audit_only=False):
     # The audit is the assertions: under -O or PYTHONOPTIMIZE they are stripped and every check
-    # silently vanishes, so an optimized interpreter is refused outright.
+    # silently vanishes, so an optimized interpreter is refused outright. The mechanism companion
+    # imports this function with audit_only set, holding its rows to every law below before it
+    # derives anything, and returns before the emissions and the summary reconciliation.
     if sys.flags.optimize:
         sys.exit("analyze_r6.py: refusing to run with assertions disabled (-O/PYTHONOPTIMIZE)")
-    if len(sys.argv) < 2:
+    argv = list(sys.argv) if argv is None else list(argv)
+    if len(argv) < 2:
         sys.exit("usage: analyze_r6.py <campaign csv> [output directory]")
-    out_dir = sys.argv[2] if len(sys.argv) > 2 else "."
+    out_dir = argv[2] if len(argv) > 2 else "."
 
     trials = {}  # (grammar, op, k, seed, trial) -> shared trial fields
     incidents = defaultdict(dict)  # same key -> arm -> row
@@ -249,11 +251,18 @@ def main():
     collapsed_incidents = 0
     collapsed_moves = defaultdict(list)
 
+    # Every column of the harness's per-cell summary row, its per-seed landing split, and every
+    # trial's drawn damage position, tallied from the rows themselves so the summary's own figures
+    # can be recomputed and compared below rather than merely parsed.
+    cell_tally = defaultdict(lambda: defaultdict(int))
+    seed_tally = defaultdict(lambda: defaultdict(int))
+    sampled_positions = {}
+
     # The campaign is read into one snapshot and everything downstream, the audit here and the
     # membership commitments at the end, works from these bytes. Reopening the pathname later would
     # let a file swapped between the two reads be audited as one archive and committed as another,
     # so the pathname is resolved to bytes exactly once.
-    with open(sys.argv[1], "rb") as handle:
+    with open(argv[1], "rb") as handle:
         campaign_bytes = handle.read()
     with io.StringIO(campaign_bytes.decode("utf-8"), newline="") as handle:
         reader = csv.reader(handle)
@@ -270,9 +279,11 @@ def main():
                 value = record[field]
                 if value:
                     assert value.isdigit() and value == str(int(value)), (field, value)
-                    if field in POSITION_COLUMNS:
-                        assert int(value) < POSITION_BOUND, (field, value)
             key = (record["grammar"], record["op"], record["k"], record["seed"], record["trial"])
+
+            # One drawn damage position per trial, absorbed and damaging alike, for the repeated-draw
+            # figure the summary reports; every arm of an incident carries it, asserted below.
+            sampled_positions.setdefault(key, record["p"])
 
             # Per-cell tallies for the harness reconciliation below: what this CSV says each
             # (grammar, op, k, arm) cell holds, counted before any row can be filtered, grouped, or
@@ -508,6 +519,38 @@ def main():
                 for field in CERTIFIED_ONLY:
                     assert not record[field], (key, record["strategy"], field)
 
+            # The rest of the harness's per-cell summary row, tallied the way the harness tallied it,
+            # so the reconciliation below recomputes the whole row rather than four of its counts.
+            tally = cell_tally[cell]
+            seed_landing = seed_tally[(record["grammar"], record["seed"], record["strategy"])]
+            tally["trials"] += 1
+            tally["attempts_sum"] += int(record["attempts"])
+            if record["first"]:
+                tally["answers"] += 1
+                seed_landing["answers"] += 1
+                if record["first_landed"] == "1":
+                    tally["first_landings"] += 1
+                    seed_landing["landings"] += 1
+                if record["first_true"]:
+                    tally["overshoot_sum"] += int(record["first"]) - int(record["first_true"])
+                    tally["overshoot_count"] += 1
+            else:
+                tally["refusals"] += 1
+            if record["terminal_landed"]:
+                tally["terminal_interior"] += 1
+                if record["terminal_landed"] == "1":
+                    tally["terminal_landings"] += 1
+            if record["outcome"] == "completed":
+                tally["completions"] += 1
+                tally["conv_count"] += 1
+                tally["conv_sum"] += int(record["converged"]) - int(record["corruption_end"])
+                tally["lost_sum"] += int(record["lost"])
+                tally["spurious_sum"] += int(record["spurious"])
+            elif record["outcome"] == "capped":
+                tally["capped"] += 1
+            elif record["outcome"] == "refused":
+                tally["terminal_refused"] += 1
+
             # One row per (incident, arm): a duplicate would silently shadow its predecessor in a plain
             # dictionary write, so it is rejected instead.
             assert record["strategy"] not in incidents[key], (key, record["strategy"])
@@ -590,119 +633,124 @@ def main():
     # certified move row is re-tallied against the incident's moves_covered count, fail-closed.
     # The sidecar is part of the archive's contract, not an optional extra: its absence fails the
     # analysis rather than silently narrowing the audit.
-    sidecar = sys.argv[1] + ".moves.csv"
+    sidecar = argv[1] + ".moves.csv"
     assert os.path.exists(sidecar), sidecar
-    if True:
-        move_covered = defaultdict(int)
-        move_last = {}
-        move_first = {}
-        move_last_begin = {}
-        move_prev = {}
-        move_rows = 0
-        with open(sidecar, newline="") as handle:
-            reader = csv.reader(handle)
-            head = next(reader)
-            assert head == [
-                "grammar",
-                "op",
-                "k",
-                "seed",
-                "trial",
-                "strategy",
-                "move",
-                "answer",
-                "evidence_begin",
-                "evidence_end",
-            ], head
-            for row in reader:
-                assert len(row) == 10, row
-                move_rows += 1
-                key = (row[0], row[1], row[2], row[3], row[4])
-                arm = row[5]
-                assert arm in ("certified", "certified-clean"), row
-                record = incidents[key][arm]
+    move_covered = defaultdict(int)
+    move_last = {}
+    move_first = {}
+    move_last_begin = {}
+    move_prev = {}
+    move_rows = 0
+    with open(sidecar, newline="") as handle:
+        reader = csv.reader(handle)
+        head = next(reader)
+        assert head == [
+            "grammar",
+            "op",
+            "k",
+            "seed",
+            "trial",
+            "strategy",
+            "move",
+            "answer",
+            "evidence_begin",
+            "evidence_end",
+        ], head
+        for row in reader:
+            assert len(row) == 10, row
+            move_rows += 1
+            key = (row[0], row[1], row[2], row[3], row[4])
+            arm = row[5]
+            assert arm in ("certified", "certified-clean"), row
 
-                # Canonical nonnegative integers in every numeric sidecar field, the same discipline
-                # as the campaign columns: a padded or signed spelling is corruption.
-                for field in row[6:10]:
-                    assert field.isdigit() and field == str(int(field)), (row[:6], field)
-                index = int(row[6])
-                answer = int(row[7])
-                begin = int(row[8])
-                end = int(row[9])
+            # The join key is validated whole before it indexes anything: a sidecar row naming a
+            # (grammar, op, k, seed, trial) the campaign never archived, or an arm that incident
+            # never ran, is refused by name rather than reaching the join as a missing key.
+            assert key in incidents and arm in incidents[key], \
+                (row[:6], "sidecar row names no archived incident")
+            record = incidents[key][arm]
 
-                # Contiguous unique numbering, evidence widths within the searched lengths, the interval
-                # ending at or after its answer's certificate shape, and strictly advancing moves.
-                assert index == move_prev.get((key, arm), -1) + 1, (key, arm, index)
-                move_prev[(key, arm)] = index
-                assert 1 <= end - begin <= 4, row
+            # Canonical nonnegative integers in every numeric sidecar field, the same discipline
+            # as the campaign columns: a padded or signed spelling is corruption.
+            for field in row[6:10]:
+                assert field.isdigit() and field == str(int(field)), (row[:6], field)
+            index = int(row[6])
+            answer = int(row[7])
+            begin = int(row[8])
+            end = int(row[9])
 
-                # A move's coordinates index the damaged input exactly as the campaign columns do, so
-                # they are held to the same length: an interval ending past the input is a place the
-                # walk cannot have read. The bound lives here as well as on the campaign row because
-                # this file is a separate archive with its own coordinates.
-                move_damaged_size = damaged_length(
-                    GRAMMAR_SOURCE_BYTES[record["grammar"]], record["op"], int(record["k"])
-                )
-                assert end <= move_damaged_size, (row, move_damaged_size)
+            # Contiguous unique numbering, evidence widths within the searched lengths, the interval
+            # ending at or after its answer's certificate shape, and strictly advancing moves.
+            assert index == move_prev.get((key, arm), -1) + 1, (key, arm, index)
+            move_prev[(key, arm)] = index
+            assert 1 <= end - begin <= 4, row
 
-                # A certified answer lies inside its evidence interval: at the byte itself, or at the
-                # occurrence plus an origin strictly inside the window.
-                assert begin <= answer < end, row
-                if index > 0:
-                    # A later move's evidence begins past the position the previous move resumed at,
-                    # the reconstructible floor for a search restarting one past its predecessor.
-                    assert begin > move_last[(key, arm)], (key, arm, index)
-                if index == 0:
-                    move_first[(key, arm)] = (answer, begin, end)
+            # A move's coordinates index the damaged input exactly as the campaign columns do, so
+            # they are held to the same length: an interval ending past the input is a place the
+            # walk cannot have read. The bound lives here as well as on the campaign row because
+            # this file is a separate archive with its own coordinates.
+            move_damaged_size = damaged_length(
+                GRAMMAR_SOURCE_BYTES[record["grammar"]], record["op"], int(record["k"])
+            )
+            assert end <= move_damaged_size, (row, move_damaged_size)
 
-                    # A covered first move lands, the harness's runtime assertion: its archived flag
-                    # cannot disagree.
-                    if begin >= int(record["corruption_end"]):
-                        assert record["first_landed"] == "1", (key, arm)
-                else:
-                    assert answer > move_last[(key, arm)], (key, arm)
-                move_last[(key, arm)] = answer
-                move_last_begin[(key, arm)] = begin
+            # A certified answer lies inside its evidence interval: at the byte itself, or at the
+            # occurrence plus an origin strictly inside the window.
+            assert begin <= answer < end, row
+            if index > 0:
+                # A later move's evidence begins past the position the previous move resumed at,
+                # the reconstructible floor for a search restarting one past its predecessor.
+                assert begin > move_last[(key, arm)], (key, arm, index)
+            if index == 0:
+                move_first[(key, arm)] = (answer, begin, end)
 
-                # Every clean-walk move's evidence sits at or past the corruption end, the floor the
-                # arm searches under; a single uncovered clean move is corruption.
-                if arm == "certified-clean":
-                    assert begin >= int(record["corruption_end"]), (key, index)
+                # A covered first move lands, the harness's runtime assertion: its archived flag
+                # cannot disagree.
                 if begin >= int(record["corruption_end"]):
-                    move_covered[(key, arm)] += 1
+                    assert record["first_landed"] == "1", (key, arm)
+            else:
+                assert answer > move_last[(key, arm)], (key, arm)
+            move_last[(key, arm)] = answer
+            move_last_begin[(key, arm)] = begin
 
-                # Where the two search floors collapse, the certified pair's ordered moves are compared
-                # whole below; only those incidents are collected, so the memory stays bounded.
-                if int(record["failure_offset"]) + 1 >= int(record["corruption_end"]):
-                    collapsed_moves[(key, arm)].append((index, answer, begin, end))
-        for key, arms in incidents.items():
-            for arm in ("certified", "certified-clean"):
-                record = arms[arm]
+            # Every clean-walk move's evidence sits at or past the corruption end, the floor the
+            # arm searches under; a single uncovered clean move is corruption.
+            if arm == "certified-clean":
+                assert begin >= int(record["corruption_end"]), (key, index)
+            if begin >= int(record["corruption_end"]):
+                move_covered[(key, arm)] += 1
 
-                # Every incident's sidecar rows reconcile with the archived aggregates: one row per
-                # attempt, the first row joining the incident's first answer and evidence interval, the
-                # last joining its terminal answer, and the covered tally equal to the archived count. The
-                # covered-landed aggregate is asserted at runtime by the harness and equals the covered
-                # count in this archive; landing itself needs the mapped oracle and is not recomputable
-                # from the sidecar alone.
-                expected_moves = int(record["attempts"]) if record["attempts"] else 0
-                assert move_prev.get((key, arm), -1) + 1 == expected_moves, (key, arm)
-                if expected_moves > 0:
-                    first_answer, first_begin, first_end = move_first[(key, arm)]
-                    assert record["first"] and int(record["first"]) == first_answer, (key, arm)
-                    assert int(record["evidence_begin"]) == first_begin, (key, arm)
-                    assert int(record["evidence_end"]) == first_end, (key, arm)
-                    assert record["terminal"] and int(record["terminal"]) == move_last[(key, arm)], (key, arm)
-                    if move_last_begin[(key, arm)] >= int(record["corruption_end"]):
-                        assert record["terminal_landed"] == "1", (key, arm)
-                else:
-                    # Zero archived attempts must mean zero answers: an incident with no sidecar rows
-                    # cannot carry a first answer or evidence interval.
-                    assert not record["first"], (key, arm)
-                    assert not record["evidence_begin"] and not record["evidence_end"], (key, arm)
-                expected = int(record["moves_covered"]) if record["moves_covered"] else 0
-                assert move_covered.get((key, arm), 0) == expected, (key, arm)
+            # Where the two search floors collapse, the certified pair's ordered moves are compared
+            # whole below; only those incidents are collected, so the memory stays bounded.
+            if int(record["failure_offset"]) + 1 >= int(record["corruption_end"]):
+                collapsed_moves[(key, arm)].append((index, answer, begin, end))
+    for key, arms in incidents.items():
+        for arm in ("certified", "certified-clean"):
+            record = arms[arm]
+
+            # Every incident's sidecar rows reconcile with the archived aggregates: one row per
+            # attempt, the first row joining the incident's first answer and evidence interval, the
+            # last joining its terminal answer, and the covered tally equal to the archived count. The
+            # covered-landed aggregate is asserted at runtime by the harness and equals the covered
+            # count in this archive; landing itself needs the mapped oracle and is not recomputable
+            # from the sidecar alone.
+            expected_moves = int(record["attempts"]) if record["attempts"] else 0
+            assert move_prev.get((key, arm), -1) + 1 == expected_moves, (key, arm)
+            if expected_moves > 0:
+                first_answer, first_begin, first_end = move_first[(key, arm)]
+                assert record["first"] and int(record["first"]) == first_answer, (key, arm)
+                assert int(record["evidence_begin"]) == first_begin, (key, arm)
+                assert int(record["evidence_end"]) == first_end, (key, arm)
+                assert record["terminal"] and int(record["terminal"]) == move_last[(key, arm)], (key, arm)
+                if move_last_begin[(key, arm)] >= int(record["corruption_end"]):
+                    assert record["terminal_landed"] == "1", (key, arm)
+            else:
+                # Zero archived attempts must mean zero answers: an incident with no sidecar rows
+                # cannot carry a first answer or evidence interval.
+                assert not record["first"], (key, arm)
+                assert not record["evidence_begin"] and not record["evidence_end"], (key, arm)
+            expected = int(record["moves_covered"]) if record["moves_covered"] else 0
+            assert move_covered.get((key, arm), 0) == expected, (key, arm)
 
     # The consistency reconciliations run in their own pass, after every row-level and sidecar-level
     # guard above, so a corruption those guards already pin keeps its own refusal and these object
@@ -907,6 +955,9 @@ def main():
 
     lines = []
 
+    if audit_only:
+        return 0
+
     def emit(name, value):
         lines.append(f"{name} = {value}")
 
@@ -1048,10 +1099,11 @@ def main():
     # its terminal-refusals column counts exactly the refused rows outright. An all-zero summary
     # cell must hold no rows at all, and every CSV cell of a recovery arm must have its summary row,
     # so erasure is refused in both directions. The reconciliation runs after the intra-archive laws
-    # above deliberately, as the outermost cross-check, so a corruption a narrower guard can name is
-    # refused at that guard and only the shapes no grouping can see reach this one.
-    summary_path = sys.argv[1][:-len(".csv")] + ".txt"
-    assert sys.argv[1].endswith(".csv"), sys.argv[1]
+    # above deliberately, as an outer cross-check, so a corruption a narrower guard can name is
+    # refused at that guard and only the shapes no grouping can see reach this one; the summary's
+    # values are reconciled outside even the membership commitments, at the end of this function.
+    summary_path = argv[1][:-len(".csv")] + ".txt"
+    assert argv[1].endswith(".csv"), argv[1]
     assert os.path.exists(summary_path), summary_path
 
     # The summary is consumed by a closed positional parser, never a shape filter: the file is a
@@ -1067,6 +1119,10 @@ def main():
     SUMMARY_HEADER_LINE = ("  op           k  strategy        answers  refuse   t-ref  f-land"
                            "   t-land complete capped attempts     conv   lost   spur overshoot")
     SUMMARY_POOLED_LINE = "  pooled over all cells and seeds, Wilson 95% intervals"
+    # The pristine oracle is the one campaign fact no archived row carries, so this revision's
+    # verdict is pinned rather than reconciled: it passed clean over the whole sweep, and a summary
+    # reporting a violation, or a differently sized sweep, is not this archive.
+    SUMMARY_ORACLE_LINE = "pristine oracle: 0 violations over 6 rows x 512 samples"
     SUMMARY_GRAMMAR_ORDER = (
         "c-like conventional with strings and line comments",
         "c-like conventional plus block comments alone",
@@ -1109,17 +1165,8 @@ def main():
         ("duplicate tail line", r"duplicate sampled positions across all cells: [0-9]+"),
         ("closing tail line", r"all oracle and theorem assertions held"),
     )
-    # The harness writes this file in ASCII, so the parser requires ASCII: Python's whitespace and
-    # digit classes are Unicode-aware, and without this wall a non-breaking space separates fields
-    # like a space while an Arabic-Indic numeral converts to the same integer as its ASCII spelling,
-    # so a summary rewritten in either reconciles as though it were the original. The bytes are
-    # checked before any of them is split or matched.
-    with open(summary_path, "rb") as handle:
-        summary_bytes = handle.read()
-    stray = next((position for position, byte in enumerate(summary_bytes) if byte > 0x7F), None)
-    assert stray is None, (summary_path, "byte outside ASCII at offset", stray,
-                           "0x%02x" % summary_bytes[stray] if stray is not None else None)
-    nonblank = [raw for raw in summary_bytes.decode("ascii").split("\n") if raw.strip()]
+    with open(summary_path, encoding="ascii") as handle:
+        nonblank = [raw for raw in handle.read().split("\n") if raw.strip()]
     position = 0
 
     def summary_next(kind):
@@ -1129,35 +1176,29 @@ def main():
         position += 1
         return taken
 
-    def summary_numbers_canonical(line, kind):
-        # Every decimal number this summary prints has exactly one spelling; hex seed literals
-        # are outside this rule and are blanked below. The cell loop below checks its
-        # fields one at a time against their own grammars, but the pooled, per-seed and tail lines
-        # are matched as whole lines whose digit classes accept a padded magnitude and a signed zero
-        # that no arithmetic here can emit. Scanning a line that has already matched its shape holds
-        # those kinds to the same rule without widening what the shapes admit.
-        # The determinism preamble spells its seeds in hex, where a digit run inside the literal is
-        # not a decimal number; hex literals are blanked before the scan so only decimal spellings
-        # answer for canonicality.
-        for token in re.findall(r"-?[0-9]+(?:\.[0-9]+)?", re.sub(r"0x[0-9a-f]+", " ", line)):
-            assert not re.fullmatch(r"-?0[0-9].*", token), \
-                ("summary number carries a leading zero", kind, token, line)
-            assert not re.fullmatch(r"-0(?:\.0+)?", token), \
-                ("summary number spells a negative zero", kind, token, line)
-
 
     line = summary_next("oracle preamble")
     assert re.fullmatch(r"pristine oracle: [0-9]+ violations over [0-9]+ rows x [0-9]+ samples",
                         line, re.ASCII), line
-    summary_numbers_canonical(line, "oracle preamble")
+    oracle_line = line
     line = summary_next("determinism preamble")
-    assert re.fullmatch(
+    # Revision-six summaries name the corpus seeds as a range.
+    # The seed count and the attempt budget are captured rather than discarded: both are figures the
+    # archive can answer for, and both are reconciled with the other summary values at the end.
+    preamble = re.fullmatch(
         r"deterministic: corpus seeds 0x[0-9a-f]+ through 0x[0-9a-f]+, schedule seed 0x[0-9a-f]+"
         r" and payload seed 0x[0-9a-f]+ each offset per \(row, seed, op, k\) so no two rows share"
-        r" a stream, [0-9]+ independent seeds, positions by unbiased rejection sampling, attempt"
-        r" budget [0-9]+ per incident", line, re.ASCII), line
-    summary_numbers_canonical(line, "determinism preamble")
+        r" a stream, ([0-9]+) independent seeds, positions by unbiased rejection sampling, attempt"
+        r" budget ([0-9]+) per incident", line, re.ASCII)
+    assert preamble, line
+    preamble_seeds, preamble_budget = preamble.group(1), preamble.group(2)
+    # The summary's parsed figures, kept beside its shapes: the values are compared against the
+    # archive last of all, after the intra-archive laws and the membership commitments, so a
+    # corruption a narrower guard can name is still refused at that guard.
     harness_cells = {}
+    harness_pooled = {}
+    harness_seeds = {}
+    harness_tail = {}
     for summary_grammar in SUMMARY_GRAMMAR_ORDER:
         line = summary_next("grammar name")
         assert line == summary_grammar, ("summary section off its declared order", line,
@@ -1173,27 +1214,10 @@ def main():
                         and tuple(parts[:3]) == (op, k, arm), \
                         ("summary cell row off the declared grid", line, (op, k, arm))
                     for value, pattern in zip(parts[3:], SUMMARY_CELL_FIELDS):
-                        # Bounded before matched, because a field of thousands of digits matches a
-                        # digit class and then raises a bare conversion error rather than this
-                        # assertion, which reports the wrong wall; canonical before converted,
-                        # because a padded count compares unequal to the same number written
-                        # plainly and a percentage outside nought to a hundred is impossible
-                        # whatever its spelling.
-                        assert len(value) <= 12, \
-                            ("summary cell field longer than any count this campaign writes",
-                             value[:20], line)
                         assert re.fullmatch(pattern, value), \
                             ("summary cell field off its declared grammar", value, line)
-                        assert not re.fullmatch(r"0[0-9].*", value), \
-                            ("summary cell field carries a leading zero", value, line)
-                        assert not re.fullmatch(r"-0(?:\.0+)?", value), \
-                            ("summary cell field spells a negative zero", value, line)
-                        if value.endswith("%"):
-                            assert 0.0 <= float(value[:-1]) <= 100.0, \
-                                ("summary percentage outside nought to a hundred", value, line)
                     summary_cell = (summary_grammar, op, k, arm)
-                    harness_cells[summary_cell] = (int(parts[3]), int(parts[4]), int(parts[5]),
-                                                   int(parts[9]))
+                    harness_cells[summary_cell] = tuple(parts[3:])
         line = summary_next("pooled heading")
         assert line == SUMMARY_POOLED_LINE, ("pooled heading not verbatim", summary_grammar, line)
         for arm in ARMS:
@@ -1203,18 +1227,18 @@ def main():
                 r" terminal-refused\s+[0-9]+ first-landing \[\s*[0-9]+\.[0-9]%,\s*[0-9]+\.[0-9]%\]"
                 r" completion \[\s*[0-9]+\.[0-9]%,\s*[0-9]+\.[0-9]%\] capped [0-9]+", line, re.ASCII), \
                 ("pooled arm row off its declared shape", summary_grammar, arm, line)
-            summary_numbers_canonical(line, "pooled arm row")
+            harness_pooled[(summary_grammar, arm)] = re.findall(r"[0-9]+(?:\.[0-9]+)?", line)
         for seed in ("0", "1", "2"):
             line = summary_next("per-seed row")
             assert re.fullmatch(
                 "  seed " + seed + " first-landing:"
                 + "".join(" " + re.escape(arm) + r" [0-9]+\.[0-9]%" for arm in ARMS), line, re.ASCII), \
                 ("per-seed row off its declared shape", summary_grammar, seed, line)
-            summary_numbers_canonical(line, "per-seed row")
+            harness_seeds[(summary_grammar, seed)] = re.findall(r"[0-9]+(?:\.[0-9]+)?", line)
     for kind, pattern in SUMMARY_TAIL:
         line = summary_next(kind)
         assert re.fullmatch(pattern, line, re.ASCII), (kind, line)
-        summary_numbers_canonical(line, kind)
+        harness_tail[kind] = [int(token) for token in re.findall(r"-?[0-9]+", line)]
     assert position == len(nonblank), \
         ("the summary carries a line its grammar does not declare", nonblank[position])
     reconciled_cells = 0
@@ -1222,8 +1246,9 @@ def main():
     reconciled_initial = 0
     reconciled_terminal = 0
     reconciled_capped = 0
-    for summary_cell, (answers, initial_refusals, terminal_refusals, capped) in \
-            harness_cells.items():
+    for summary_cell, columns in harness_cells.items():
+        answers, initial_refusals, terminal_refusals, capped = (
+            int(columns[0]), int(columns[1]), int(columns[2]), int(columns[6]))
         reconciled_cells += 1
         reconciled_answered += answers
         reconciled_initial += initial_refusals
@@ -1258,7 +1283,7 @@ def main():
     # regenerates them from the fresh harness rerun it byte-compares first, and the comparison is
     # exact in both directions over the full 162-cell grid, so a transfer that survives every count
     # still changes a digest.
-    commitments_path = sys.argv[1][:-len(".csv")] + ".commitments.txt"
+    commitments_path = argv[1][:-len(".csv")] + ".commitments.txt"
     assert os.path.exists(commitments_path), commitments_path
     archived_commitments = {}
     with open(commitments_path, encoding="utf-8") as handle:
@@ -1274,7 +1299,7 @@ def main():
         assert all(c in "0123456789abcdef" for c in digest), (number, digest)
         assert key not in archived_commitments, (number, key)
         archived_commitments[key] = digest
-    recomputed = commit_r6.cell_commitments(sys.argv[1], campaign_bytes)
+    recomputed = commit_r6.cell_commitments(argv[1], campaign_bytes)
     expected_commit_cells = {
         "|".join((grammar, op, k, seed))
         for grammar in GRAMMARS for op in SUMMARY_OPS for k in SUMMARY_KS
@@ -1287,6 +1312,86 @@ def main():
     commitment_mismatches = [key for key in sorted(expected_commit_cells)
                              if archived_commitments[key] != recomputed[key]]
     assert not commitment_mismatches, (commitment_mismatches[:3], "membership commitment broken")
+
+    # The summary's values, reconciled last of all. Every guard above reads shapes, spellings, or the
+    # rows themselves; between them a summary carrying a well-formed figure that simply disagrees with
+    # the archive is accepted, since the commitments bind the rows rather than what the harness printed
+    # about them. So every figure the summary states that these rows can derive is recomputed here and
+    # compared as printed, in the harness's own rounding: the twelve columns of all 594 cells, the
+    # pooled arm rows with their intervals, the per-seed landing rates, and every count in the tail.
+    # What no row carries, the pristine oracle's verdict over the untouched sources, is pinned to this
+    # archive instead. Running last keeps the ordering the reconciliations above declare: a corruption
+    # a narrower guard can name is refused at that guard, and a rewritten campaign at its commitment.
+    assert oracle_line == SUMMARY_ORACLE_LINE, \
+        ("the archived pristine-oracle verdict is not this campaign's", oracle_line,
+         SUMMARY_ORACLE_LINE)
+    # The determinism preamble's own two counts. The seed count is answered by the seeds the archived
+    # rows carry, which the schedule grid above pins to exactly 0, 1 and 2; the attempt budget is
+    # answered by the per-incident bound every row is held to at "attempts <= 100". A summary that
+    # states either figure canonically and untruthfully is refused here by the figure's name.
+    archive_seeds = sorted({cell[3] for cell in cells})
+    assert int(preamble_seeds) == len(archive_seeds), \
+        ("summary independent-seed count disagrees with the archive", preamble_seeds, archive_seeds)
+    assert int(preamble_budget) == 100, \
+        ("summary attempt budget disagrees with the bound these rows are held to", preamble_budget)
+    for summary_cell, columns in harness_cells.items():
+        tally = cell_tally[summary_cell]
+        derived = (
+            str(tally["answers"]), str(tally["refusals"]), str(tally["terminal_refused"]),
+            summary_rate(tally["first_landings"], tally["answers"]) + "%",
+            summary_rate(tally["terminal_landings"], tally["terminal_interior"]) + "%",
+            summary_rate(tally["completions"], tally["trials"]) + "%",
+            str(tally["capped"]),
+            summary_mean(tally["attempts_sum"], tally["trials"], 2),
+            summary_mean(tally["conv_sum"], tally["conv_count"], 0),
+            summary_mean(tally["lost_sum"], tally["conv_count"], 2),
+            summary_mean(tally["spurious_sum"], tally["conv_count"], 2),
+            summary_mean(tally["overshoot_sum"], tally["overshoot_count"], 1),
+        )
+        assert derived == columns, \
+            ("summary cell row disagrees with the archive", summary_cell, columns, derived)
+    for (pooled_grammar, arm), stated in harness_pooled.items():
+        row = counts[(pooled_grammar, arm)]
+        land = wilson(row["first_landings"], row["answers"]) if row["answers"] else (0.0, 0.0)
+        done = wilson(row["completions"], row["trials"]) if row["trials"] else (0.0, 0.0)
+        derived = [str(row["answers"]), str(row["refusals"]), str(row["terminal_refused"]),
+                   f"{land[0]:.1f}", f"{land[1]:.1f}", f"{done[0]:.1f}", f"{done[1]:.1f}",
+                   str(row["capped"])]
+        assert derived == stated, \
+            ("summary pooled arm row disagrees with the archive", pooled_grammar, arm, stated,
+             derived)
+    for (seed_grammar, seed), stated in harness_seeds.items():
+        derived = [seed] + [summary_rate(seed_tally[(seed_grammar, seed, arm)]["landings"],
+                                         seed_tally[(seed_grammar, seed, arm)]["answers"])
+                            for arm in ARMS]
+        assert derived == stated, \
+            ("summary per-seed row disagrees with the archive", seed_grammar, seed, stated, derived)
+
+    # The repeated draws the summary counts, recomputed per schedule cell from the rows' own damage
+    # starts, which every arm of an incident is asserted above to carry identically.
+    cell_draws = defaultdict(list)
+    for draw_key, drawn in sampled_positions.items():
+        cell_draws[draw_key[:4]].append(drawn)
+    duplicate_positions = sum(len(draws) - len(set(draws)) for draws in cell_draws.values())
+    tail_derived = {
+        "absorbed tail line": [absorbed],
+        "coverage tail line": [evidence_covered, evidence_uncovered, evidence_uncovered_landed,
+                               moves_total, moves_covered],
+        "minimality tail line": [nonminimal, nonminimal_bytes],
+        "known-clean tail line": [sum(counts[(g, "certified-clean")]["answers"] for g in grammars),
+                                  sum(counts[(g, "certified-clean")]["refusals"] for g in grammars)],
+        "repairability tail line": [repairable, unrepairable, vacuous_walk],
+        "anchored tail line": [sum(counts[(g, "exact")]["answers"] for g in grammars), exact_pairs,
+                               exact_saved_repairable, exact_net],
+        "duplicate tail line": [duplicate_positions],
+        "closing tail line": [],
+    }
+    # A tail line without a derivation would reconcile against nothing, so the two declarations are
+    # held equal rather than left to agree by inspection.
+    assert set(tail_derived) == {kind for kind, _ in SUMMARY_TAIL}, sorted(tail_derived)
+    for kind, stated in harness_tail.items():
+        assert stated == tail_derived[kind], \
+            ("summary tail line disagrees with the archive", kind, stated, tail_derived[kind])
 
 
     assert landing_cross > 0 and landing_within > 0 and divergence_rechecks > 0, (
@@ -1399,7 +1504,7 @@ def main():
     # the pooled table is taken up by input. Its rows are the figure's symbolic x coordinates and its
     # columns the six arms the figure draws, so no plotted-series value is transcribed or can be
     # mistyped between this archive and the manuscript; the figure's two hand-placed annotations
-    # remain reviewed by eye.
+    # are checked by eye.
     figure_grammars = {
         "c-like conventional with strings and line comments": "conventional",
         "c-like conventional plus block comments alone": "block",
