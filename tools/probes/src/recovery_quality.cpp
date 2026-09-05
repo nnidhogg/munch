@@ -44,20 +44,21 @@
 //
 // Eleven arms share the completed-incident driver. certified is the evidence-order walk, its answers carrying the
 // library's evidence interval, cross-checked on every first move against a replica of the walk coded apart from the
-// library's search but running over its split-point and split-window predicates, handed the library's answer and
-// compared with it on the evidence's existence, beginning, and byte-or-window class, so a defect in the walk's
-// order or traversal is caught while one in the predicates would not be; every certified move's evidence is
-// recorded and every covered move is asserted to land, not only the first per incident. certified-clean starts the
-// walk at the corruption end or one past the failure, whichever is later, the oracle arm whose every answer is
-// asserted covered and landed. exact is the anchored procedure over the library's complete-repair-invariance
-// decider, the anchor advancing past a beyond-repair tail's poison until a certificate holds; the decider's direct
-// answer at the blind anchor is archived separately per trial, and the cross-arm regressions test that direct call,
-// never the advancing procedure. exact-clean anchors at the corruption end, its answers asserted to land since the
-// pristine prefix is a repair of what precedes the preserved suffix. skip-one and the four raw delimiter placements
-// are the classical conventions, the past placement repaired to return the end-of-input offset at a final delimiter
-// rather than refusing. token-newline and token-semicolon are the token-aware reading, synchronizing on a
-// designated token: the delimiter's own punctuation token exactly, or an all-whitespace token carrying the newline,
-// so a string or comment that merely contains the delimiter byte never synchronizes.
+// library's search but running over its split-point and split-window predicates. The replica walks from one past the
+// failure for the first certificate itself, never handed the library's answer, and the two are compared on existence
+// first, so a library refusing where a certificate exists fails the run, and then on the evidence's beginning and
+// byte-or-window class, so a defect in the walk's order or traversal is caught while one in the predicates would not
+// be; every certified move's evidence is recorded and every covered move is asserted to land, not only the first per
+// incident. certified-clean starts the walk at the corruption end or one past the failure, whichever is later, the
+// oracle arm whose every answer is asserted covered and landed. exact is the anchored procedure over the library's
+// complete-repair-invariance decider, the anchor advancing past a beyond-repair tail's poison until a certificate
+// holds; the decider's direct answer at the blind anchor is archived separately per trial, and the cross-arm
+// regressions test that direct call, never the advancing procedure. exact-clean anchors at the corruption end, its
+// answers asserted to land since the pristine prefix is a repair of what precedes the preserved suffix. skip-one and
+// the four raw delimiter placements are the classical conventions, the past placement repaired to return the
+// end-of-input offset at a final delimiter rather than refusing. token-newline and token-semicolon are the token-aware
+// reading, synchronizing on a designated token: the delimiter's own punctuation token exactly, or an all-whitespace
+// token carrying the newline, so a string or comment that merely contains the delimiter byte never synchronizes.
 //
 // Repairability stratifies every damaging trial: minimal_repair() at the blind anchor reports whether any completely
 // tokenizable repair exists, every returned repair witness-verified by scanning repair plus tail to the end of
@@ -101,15 +102,18 @@
 // beside the clean commit of the collection ritual, exactly as the benchmark's are.
 //
 // Usage. recovery_quality [corpus KiB] [trials per cell] [csv path] [real json corpus path] [seeds]
-// Defaults are sized to run as a test; the campaign passes larger figures and archives the CSV. The optional
-// fourth argument adds an ecological row: a real-world JSON document, read verbatim, held to the same complete
-// tokenizability assertion, the same damage protocol, and the same oracle as the generated rows; the schedule
-// and payload streams are salted per row, so no two rows share one. The fifth is
-// the number of independent seeds, three by default, each a fully separate schedule of positions and payloads.
+// Defaults are sized to run as a test; the campaign passes larger figures and archives the CSV. The optional fourth
+// argument adds an ecological row: a real-world JSON document, read verbatim, held to the same complete tokenizability
+// assertion, the same damage protocol, and the same oracle as the generated rows; the schedule and payload streams are
+// salted per row, so no two rows share one. The fifth is the number of independent seeds, three by default, each a
+// fully separate schedule of positions and payloads. Every count argument must be a whole decimal number, the trials
+// and the seeds positive and the corpus figure small enough for its byte count not to wrap; anything else is refused
+// with a diagnostic and exit status one.
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -117,6 +121,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -145,9 +150,9 @@ public:
     /**
      * @brief A full-width draw, the whole mixed state, so position sampling covers every offset of a span.
      *
-     * The archived campaigns drew fifteen-bit values here, confining each cell's positions to a
-     * multiplicatively spread lattice of 32,768 offsets, a disclosed limitation of those archives; this
-     * widening postdates them and changes every future schedule.
+     * The third revision's campaign drew fifteen-bit values here, confining each cell's positions to a multiplicatively
+     * spread lattice of 32,768 offsets, a disclosed limitation of that archive; the archived revisions four to six and
+     * every later schedule draw full width.
      */
     std::uint32_t next()
     {
@@ -704,8 +709,8 @@ struct Row
  *
  * Replicates next_certified_start()'s walk deterministically and reports where the answering certificate
  * begins, which the position-only return cannot carry; the support-aware classification and its assertion
- * read the theorems' exact precondition from this. A mismatch with the library's answer is a harness defect
- * and fails the run.
+ * read the theorems' exact precondition from this. A mismatch with the library's evidence, a refusal against
+ * an answer included, fails the run.
  */
 struct Evidence
 {
@@ -719,18 +724,13 @@ struct Evidence
 };
 
 std::optional<Evidence> evidence_of(
-        const munch::core::Lexer& lexer, const std::string_view input, const std::size_t from, const std::size_t answer)
+        const munch::core::Lexer& lexer, const std::string_view input, const std::size_t from)
 {
     for (std::size_t at{from}; at < input.size(); ++at)
     {
         if (lexer.is_split_point(input[at]))
         {
-            if (at == answer)
-            {
-                return Evidence{.begin = at, .byte = true, .length = 1, .origin = 0};
-            }
-
-            return std::nullopt;
+            return Evidence{.begin = at, .byte = true, .length = 1, .origin = 0};
         }
 
         const auto limit{std::min<std::size_t>(4, input.size() - at)};
@@ -739,12 +739,7 @@ std::optional<Evidence> evidence_of(
         {
             if (const auto origin{lexer.is_split_window(input.substr(at, length))})
             {
-                if (at + *origin == answer)
-                {
-                    return Evidence{.begin = at, .byte = false, .length = length, .origin = *origin};
-                }
-
-                return std::nullopt;
+                return Evidence{.begin = at, .byte = false, .length = length, .origin = *origin};
             }
         }
     }
@@ -1233,6 +1228,21 @@ Convergence converge(
     return result;
 }
 
+/**
+ * @brief One whole decimal count argument, refusing anything whose whole text is not a number.
+ *
+ * strtoull() reads garbage as zero and saturates on overflow, so a mistyped figure runs a campaign nobody
+ * asked for; this reports both as a refusal instead.
+ */
+bool parse_count(const std::string_view text, std::size_t& value)
+{
+    const auto* const end{text.data() + text.size()};
+
+    const auto parsed{std::from_chars(text.data(), end, value)};
+
+    return parsed.ec == std::errc{} && parsed.ptr == end;
+}
+
 } // namespace
 
 int main(const int argc, const char** argv)
@@ -1243,7 +1253,23 @@ int main(const int argc, const char** argv)
         std::setvbuf(stdout, nullptr, _IONBF, 0);
     }
 
-    const std::size_t corpus_kib{argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 64};
+    std::size_t corpus_kib{64};
+
+    if (argc > 1 && !parse_count(argv[1], corpus_kib))
+    {
+        std::fprintf(stderr, "corpus KiB must be a whole number: %s\n", argv[1]);
+
+        return EXIT_FAILURE;
+    }
+
+    // The corpus is built in bytes, so a KiB figure whose shift would wrap is refused rather than run at
+    // whatever it wraps to.
+    if (corpus_kib > std::numeric_limits<std::size_t>::max() / 1024)
+    {
+        std::fprintf(stderr, "corpus KiB does not fit in bytes: %zu\n", corpus_kib);
+
+        return EXIT_FAILURE;
+    }
 
     // The damage widths; a corpus shorter than the widest plus the sampler's margins underflows the span.
     constexpr std::array<std::size_t, 3> ks{1, 4, 16};
@@ -1259,14 +1285,28 @@ int main(const int argc, const char** argv)
         return EXIT_FAILURE;
     }
 
-    const std::size_t trials{argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 60};
+    std::size_t trials{60};
+
+    if (argc > 2 && (!parse_count(argv[2], trials) || trials == 0))
+    {
+        std::fprintf(stderr, "trials per cell must be a positive whole number: %s\n", argv[2]);
+
+        return EXIT_FAILURE;
+    }
 
     // Empty strings stand for absent, so a caller can reach the seed argument without a csv or real corpus.
     const char* csv_path{argc > 3 && argv[3][0] != '\0' ? argv[3] : nullptr};
 
     const char* real_path{argc > 4 && argv[4][0] != '\0' ? argv[4] : nullptr};
 
-    const std::size_t seeds{argc > 5 ? std::strtoull(argv[5], nullptr, 10) : 3};
+    std::size_t seeds{3};
+
+    if (argc > 5 && (!parse_count(argv[5], seeds) || seeds == 0))
+    {
+        std::fprintf(stderr, "seeds must be a positive whole number: %s\n", argv[5]);
+
+        return EXIT_FAILURE;
+    }
 
     const auto bytes{corpus_kib << 10U};
 
@@ -1702,19 +1742,22 @@ int main(const int argc, const char** argv)
                             incidents[s_index] = run_incident(row.lexer, y.input, e, y.end, arms[s_index], cap);
                         }
 
-                        // Harness-independence: the library's evidence must match the replica's walk.
-                        if (incidents[0].first)
+                        // Harness-independence: the replica walks for the first certificate itself, so a
+                        // library refusing where one exists is a mismatch rather than a skipped check.
                         {
-                            const auto replica{evidence_of(row.lexer, y.input, e + 1, *incidents[0].first)};
+                            const auto replica{evidence_of(row.lexer, y.input, e + 1)};
 
-                            if (!replica || !incidents[0].evidence ||
-                                incidents[0].evidence->evidence_begin != replica->begin ||
-                                incidents[0].evidence->window == replica->byte)
+                            const auto& answer{incidents[0].evidence};
+
+                            if (replica.has_value() != answer.has_value() ||
+                                (replica &&
+                                 (answer->evidence_begin != replica->begin || answer->window == replica->byte)))
                             {
                                 std::fprintf(
-                                        stderr, "EVIDENCE MISMATCH: %s %s k=%zu p=%zu e=%zu answered %zu\n",
+                                        stderr, "EVIDENCE MISMATCH: %s %s k=%zu p=%zu e=%zu library %td replica %td\n",
                                         std::string{row.label}.c_str(), std::string{name(op)}.c_str(), k, p, e,
-                                        *incidents[0].first);
+                                        answer ? static_cast<std::ptrdiff_t>(answer->evidence_begin) : -1,
+                                        replica ? static_cast<std::ptrdiff_t>(replica->begin) : -1);
 
                                 ++theorem_failures;
                             }

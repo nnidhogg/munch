@@ -87,7 +87,9 @@ CONTROL_EXPECTATION = {
     "letter caught": 28,
     "letter survivors": 7,
     "letter not minimal": 35,
-    "displaced non-vacuous": 68,
+    # Control D's denominator counts the answers the displacement really moved, not every
+    # non-vacuous one: an answer already at the last input position is left where it was.
+    "displaced non-vacuous": 48,
     "displaced caught": 31,
     "skew covered": 38781,
     "skew violations": 38781,
@@ -287,6 +289,7 @@ class AnchoredChecker:
         self.anchored_answers = 0
         self.anchored_refusals = 0
         self.anchored_vacuous = 0
+        self.anchored_displaced = 0
         self.anchored_pairs = 0
         self.anchored_bad = []
         self.anchored_range_bad = []
@@ -469,8 +472,15 @@ class AnchoredChecker:
 
             self.anchored_answers += 1
 
+            # A displacement that lands where the answer already was has moved nothing, so the
+            # control has fed the check no wrong answer there; only the answers it really moved
+            # are its population, counted below once the vacuous cases have left.
+            moved = False
+
             if self.displace_anchored is not None:
-                answered = self.displace_anchored(answered, len(text))
+                displaced = self.displace_anchored(answered, len(text))
+                moved = displaced != answered
+                answered = displaced
 
             if answered < anchor or answered >= len(text):
                 self.anchored_range_bad.append((tokens, text, anchor, answered))
@@ -482,6 +492,9 @@ class AnchoredChecker:
                 self.anchored_vacuous += 1
 
                 continue
+
+            if moved:
+                self.anchored_displaced += 1
 
             self.anchored_pairs += len(good)
 
@@ -1288,7 +1301,7 @@ def main():
         "letter caught": len(control_letter.repair_bad),
         "letter survivors": control_letter.repair_verified,
         "letter not minimal": len(control_letter.repair_not_minimal),
-        "displaced non-vacuous": control_displaced.anchored_answers - control_displaced.anchored_vacuous,
+        "displaced non-vacuous": control_displaced.anchored_displaced,
         "displaced caught": len(control_displaced.anchored_bad),
         "skew covered": control_skew.covered,
         "skew violations": len(control_skew.violations),

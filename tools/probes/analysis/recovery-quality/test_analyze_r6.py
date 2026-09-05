@@ -78,6 +78,10 @@ DELIMITER_ARMS = ("newline", "newline-at", "semicolon", "semicolon-at", "token-n
 TRIALS_PER_CELL = 500
 LAST_TRIAL = str(TRIALS_PER_CELL - 1)
 
+# One past the last trial any cell holds, so a sidecar row rekeyed to it names an incident the
+# campaign never archived while every other field of the row stays what the archive wrote.
+UNKNOWN_TRIAL = str(TRIALS_PER_CELL)
+
 # The move sidecar's columns, in the order the analyzer asserts them.
 SIDECAR_COLUMNS = [
     "grammar",
@@ -965,6 +969,7 @@ CASE_SCHEMA = {
     "sidecar-move-evidence-past-the-damaged-input-length": ("sidecar", "move-past-end"),
     "sidecar-move-past-the-deletion-shortened-input": ("sidecar", "deletion-length"),
     "sidecar-move-past-the-insertion-lengthened-input": ("sidecar", "insertion-length"),
+    "sidecar-row-outside-the-incident-set": ("sidecar", "unknown-key"),
     "campaign-first-answer-changed": ("record-join", "first-answer"),
     "campaign-terminal-answer-changed": ("record-join", "terminal-answer"),
     "campaign-covered-count-corrupted": ("record-join", "covered-count"),
@@ -1138,6 +1143,11 @@ CASE_SCHEMA = {
     "summary-oracle-rows-padded-with-a-leading-zero": ("summary", "oracle-leading-zero"),
     "summary-pooled-answers-padded-with-a-leading-zero": ("summary", "pooled-leading-zero"),
     "summary-per-seed-rate-padded-with-a-leading-zero": ("summary", "seed-leading-zero"),
+    "summary-cell-landing-rate-disagreeing-with-the-archive": ("summary", "cell-value"),
+    "summary-pooled-interval-disagreeing-with-the-archive": ("summary", "pooled-value"),
+    "summary-per-seed-rate-disagreeing-with-the-archive": ("summary", "seed-value"),
+    "summary-repairable-count-disagreeing-with-the-archive": ("summary", "tail-value"),
+    "summary-oracle-reporting-a-violation": ("summary", "oracle-verdict"),
 }
 
 # Ownership, not merely population: each critical stratum names a fragment that must appear inside
@@ -1299,8 +1309,17 @@ TAG_GUARDS = {
     ("sidecar", "move-past-end"): ('assert end <= move_damaged_size', ', 524288)'),
     ("sidecar", "move-regressed"): ('assert begin > move_last[(key, arm)]', ", 'certified', 1)"),
     ("sidecar", "row-deleted"): ('assert move_prev.get((key, arm), -1) + 1 == expected_moves',),
+    ("sidecar", "unknown-key"): ("sidecar row names no archived incident", "'500'"),
     ("sidecar", "row-duplicated"): ('assert index == move_prev.get((key, arm), -1) + 1',),
     ("summary", "capped-count"): ('cell_capped.get(summary_cell, 0) == capped', "'skip-one')"),
+    ("summary", "cell-value"): ('summary cell row disagrees with the archive', "'99.0%'"),
+    ("summary", "pooled-value"): ('summary pooled arm row disagrees with the archive', "'96.4'"),
+    ("summary", "seed-value"): ('summary per-seed row disagrees with the archive', "'96.8'"),
+    ("summary", "tail-value"):
+        ('summary tail line disagrees with the archive', '[26929, 16808, 16808]'),
+    ("summary", "oracle-verdict"):
+        ("the archived pristine-oracle verdict is not this campaign's",
+         'pristine oracle: 1 violations'),
     ("summary", "cell-all-unknown"): ('summary cell row off the declared grid', 'alien 999 ghost'),
     ("summary", "cell-arm"): ('summary cell row off the declared grid', 'mystery'),
     ("summary", "cell-domain"): ('summary cell row off the declared grid', 'scramble    999'),
@@ -1376,6 +1395,11 @@ CRITICAL_SIGNATURES = {
     ("summary", "cell-signed-negative-zero"): "-0.0",
     ("summary", "tail-leading-zero"): "-014029",
     ("summary", "tail-negative-zero"): "displacement -0 bytes",
+    ("summary", "cell-value"): "'99.0%'",
+    ("summary", "pooled-value"): "'96.4'",
+    ("summary", "seed-value"): "'96.8'",
+    ("summary", "tail-value"): "[26929, 16808, 16808]",
+    ("summary", "oracle-verdict"): "pristine oracle: 1 violations",
 }
 
 # The complete expected grid, laws to strata, every erasure stratum included: the schema's value
@@ -1384,7 +1408,7 @@ CRITICAL_SIGNATURES = {
 LAW_STRATA = {
     "sidecar": ("answer-at-end", "answer-outside", "row-deleted", "row-duplicated", "index-broken",
                 "file-missing", "index-padded", "answer-negated", "move-regressed", "move-past-end",
-                "deletion-length", "insertion-length"),
+                "deletion-length", "insertion-length", "unknown-key"),
     "record-join": ("first-answer", "terminal-answer", "covered-count", "covered-landed",
                     "covered-presence"),
     "containment": ("ordinary-duplicate", "absorbed-duplicate", "key-exclusive",
@@ -1438,7 +1462,8 @@ LAW_STRATA = {
                 "cell-percentage-range", "cell-length-bound", "cell-signed-leading-zero",
                 "cell-signed-negative-zero", "tail-leading-zero", "tail-negative-zero",
                 "preamble-leading-zero", "pooled-leading-zero", "seed-leading-zero",
-                "oracle-leading-zero"),
+                "oracle-leading-zero", "cell-value", "pooled-value", "seed-value",
+                "tail-value", "oracle-verdict"),
 }
 
 
@@ -2125,6 +2150,13 @@ def build_cases(archive):
         marker="assert index == move_prev.get((key, arm), -1) + 1",
     )
     case("sidecar-file-missing", omit_sidecar=True, marker="assert os.path.exists(sidecar)")
+    # The join key itself, rather than a field inside a row that joins: rekeyed to a trial no cell
+    # holds, the row names no archived incident and must be refused by name where it is read.
+    case(
+        "sidecar-row-outside-the-incident-set",
+        sidecar={first_move: archive.sidecar_edited(first_move, trial=UNKNOWN_TRIAL)},
+        marker=("sidecar row names no archived incident", "'500'"),
+    )
 
     # Reconciliation between the sidecar and the archived per-incident aggregates. Both cases run on a row
     # that answered more than once with room to spare between its two answers, because the row's own
@@ -3583,60 +3615,50 @@ def build_cases(archive):
         marker=("membership commitment broken", "with strings and line comments|substitute|16|0"),
     )
 
-    # The commitment's disclosed boundary, staged rather than left to prose: the same coherent
-    # rebalance with its commitment recomputed from the mutant campaign is accepted, and the
-    # statistics emission drifts, which is exactly what the commitment cannot see on its own. The
-    # authority binding the commitment file itself is the manifest, the root ledger, and the pinned
-    # reproduction run; this case proves the boundary sits
+    # The archive's disclosed boundary, staged rather than left to prose: a rewrite made coherent
+    # across all three files the analyzer reads, the campaign row, the harness summary that states
+    # what the rows add up to, and the commitment recomputed from the mutant campaign, is accepted,
+    # and the statistics emission drifts. That is what none of the three can see on its own, and the
+    # summary reconciliation moved the boundary out to exactly here: a rewrite left incoherent with
+    # the summary is refused by the cases above. The authority binding the files themselves is the
+    # manifest, the root ledger, and the pinned reproduction run; this case proves the boundary sits
     # where the prose says it sits, not nearer and not farther.
-    # The row is derived from the guards themselves: a completed single-attempt skip-one row whose
-    # answer sits on no mapped boundary, inside no damaged window, at no input end, and is shared by
-    # no other arm of its incident, so both landing flags can flip together with every structural
-    # law still holding. The landing emission then moves, which is the demonstration.
-    def coherent_flag_row():
+    # The row is derived from the guards themselves: a certified row whose recorded minimal
+    # answerable position is the answer it took, with a byte of slack above the blind search floor,
+    # in an incident whose two floors have not collapsed onto each other, so lowering that position
+    # by one byte leaves every structural law and every cross-arm identity holding and moves only the
+    # nonminimality figures, which the summary's tail states and this case restates.
+    def coherent_minimal_row():
         for position in range(1, len(archive.campaign)):
-            try:
-                if archive.field(position, "strategy") != "skip-one":
-                    continue
-                if archive.field(position, "outcome") != "completed":
-                    continue
-                if archive.field(position, "attempts") != "1":
-                    continue
-                first = archive.field(position, "first")
-                if not first or archive.field(position, "first_landed") != "1":
-                    continue
-                if first == archive.field(position, "first_true"):
-                    continue
-                p = int(archive.field(position, "p"))
-                k = int(archive.field(position, "k"))
-                if p <= int(first) < p + k:
-                    continue
-                shared = False
-                for arm in ("certified", "certified-clean", "exact", "exact-clean", "skip-one",
-                            "newline", "newline-at", "semicolon", "semicolon-at",
-                            "token-newline", "token-semicolon"):
-                    partner = archive.arm_row_of(position, arm)
-                    if partner is not None and partner != position \
-                            and archive.field(partner, "first") == first:
-                        shared = True
-                        break
-                if not shared:
-                    return position
-            except (IndexError, KeyError, ValueError):
+            if archive.field(position, "strategy") != "certified":
                 continue
-        raise AssertionError("no coherent flag row found for the commitment boundary case")
+            first = archive.field(position, "first")
+            minimal = archive.field(position, "minimal")
+            if not first or minimal != first:
+                continue
+            failure = int(archive.field(position, "failure_offset"))
+            if int(minimal) - 1 < failure + 1:
+                continue
+            if failure + 1 >= int(archive.field(position, "corruption_end")):
+                continue
+            return position
+        raise AssertionError("no coherent minimal row found for the commitment boundary case")
 
-    flag_row = coherent_flag_row()
+    minimal_row = coherent_minimal_row()
     case(
         "coherent-cell-rewrite-with-recomputed-commitment",
         campaign={
-            flag_row: archive.edited(flag_row, first_landed="0", terminal_landed="0")
+            minimal_row: archive.edited(
+                minimal_row,
+                minimal=str(int(archive.field(minimal_row, "minimal")) - 1),
+            )
         },
+        summary_edit=("nonminimal answers: 90, 90 extra bytes in total",
+                      "nonminimal answers: 91, 91 extra bytes in total", 1),
         commitments="recompute",
         expect="accept-drift",
         emissions=EMISSIONS,
     )
-
     capped_row = row_position("json rfc 8259 lexical forms on a real-world document",
                               "substitute", "4", "0", "437", "skip-one")
     assert archive.field(capped_row, "outcome") == "completed"
@@ -3801,6 +3823,42 @@ def build_cases(archive):
         "summary-cell-missing-its-last-field",
         summary_edit=("   7.53   0.00      26.1", "   7.53   0.00", 1),
         marker=("summary cell row off the declared grid", "0.00', ('substitute'"),
+    )
+
+    # Canonically spelled and simply untrue: each of these five edits leaves a summary whose every
+    # shape, field grammar, and number spelling is exactly what the harness writes, and changes only
+    # what the figure says. Nothing above them can object, because nothing above them recomputes; the
+    # value reconciliation at the end of the analyzer is what each one is aimed at, one case per
+    # stratum of it, the cell grid, the pooled rows, the per-seed rates, and the tail. The oracle
+    # verdict is the fifth, and the one figure no archived row carries: it is pinned, not recomputed,
+    # so a campaign whose summary confesses a violation is refused rather than analyzed.
+    case(
+        "summary-cell-landing-rate-disagreeing-with-the-archive",
+        summary_edit=("  substitute   1  certified           841       0       0  100.0%",
+                      "  substitute   1  certified           841       0       0   99.0%", 1),
+        marker=("summary cell row disagrees with the archive", "'99.0%'"),
+    )
+    case(
+        "summary-pooled-interval-disagreeing-with-the-archive",
+        summary_edit=("first-landing [ 96.3%,  97.1%]", "first-landing [ 96.4%,  97.1%]", 1),
+        marker=("summary pooled arm row disagrees with the archive", "'96.4'"),
+    )
+    case(
+        "summary-per-seed-rate-disagreeing-with-the-archive",
+        summary_edit=("seed 0 first-landing: certified 96.9%",
+                      "seed 0 first-landing: certified 96.8%", 1),
+        marker=("summary per-seed row disagrees with the archive", "'96.8'"),
+    )
+    case(
+        "summary-repairable-count-disagreeing-with-the-archive",
+        summary_edit=("blind anchor: 26928 repairable", "blind anchor: 26929 repairable", 1),
+        marker=("summary tail line disagrees with the archive", "[26929, 16808, 16808]"),
+    )
+    case(
+        "summary-oracle-reporting-a-violation",
+        summary_edit=("pristine oracle: 0 violations", "pristine oracle: 1 violations", 1),
+        marker=("the archived pristine-oracle verdict is not this campaign's",
+                "pristine oracle: 1 violations"),
     )
 
     # One declaration carries every case's law and stratum, and everything else derives from it: the
@@ -3986,16 +4044,17 @@ def run_suite(data_dir, neutered=None, only=None):
                     verdicts[case["name"]] = "REJECTED"
                     print(f"{case['name']} REJECTED (boundary, expected acceptance, exit {status})")
                     failures.append(case["name"])
-                elif sorted(mismatched) != ["r6-landing-figure.csv", "r6-landing-figure.dat", "r6-stats.txt"]:
+                elif sorted(mismatched) != ["r6-stats.txt"]:
                     verdicts[case["name"]] = "ACCEPTED-WITHOUT-DRIFT"
                     print(f"{case['name']} ACCEPTED-WITHOUT-DRIFT (boundary, expected exactly the "
-                          f"statistics and landing emissions to move, got: "
+                          f"statistics emission to move, got: "
                           f"{', '.join(sorted(mismatched)) or 'none'})")
                     failures.append(case["name"])
                 else:
                     verdicts[case["name"]] = "ACCEPTED-WITH-DRIFT"
-                    print(f"{case['name']} ACCEPTED-WITH-DRIFT (boundary: the coherent rewrite "
-                          f"passes with its recomputed commitment and moves: {', '.join(mismatched)})")
+                    print(f"{case['name']} ACCEPTED-WITH-DRIFT (boundary: the rewrite passes with "
+                          f"its coherent summary and recomputed commitment and moves: "
+                          f"{', '.join(mismatched)})")
                     boundaries += 1
                 continue
             if case["expect"] == "accept":
@@ -4296,14 +4355,14 @@ def main():
         # anything other than the documented population exits nonzero rather than printing a shorter
         # list that still reads like the claim. Every rejecting case carries a tag now, the
         # population equality lives in assert_case_metadata, and the counts here are the outer wall.
-        if mutations != 170 or controls != 1 or boundaries != 1 or tagged != len(CASE_SCHEMA) \
+        if mutations != 176 or controls != 1 or boundaries != 1 or tagged != len(CASE_SCHEMA) \
                 or tagged != mutations:
             print("the case population is %d mutations, %d controls, %d boundary, %d tagged, not "
-                  "the documented 170, 1, 1, and %d" % (mutations, controls, boundaries, tagged,
+                  "the documented 176, 1, 1, and %d" % (mutations, controls, boundaries, tagged,
                                                         len(CASE_SCHEMA)),
                   file=sys.stderr)
             return 1
-        print("170 mutations, 1 control, and 1 commitment-boundary case, every mutation carrying "
+        print("176 mutations, 1 control, and 1 commitment-boundary case, every mutation carrying "
               "its law and stratum, asserted from the cases' own objects")
         return 0
     if prove:

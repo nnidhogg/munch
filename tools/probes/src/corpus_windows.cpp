@@ -15,9 +15,10 @@
 // 2 because no JSON token ends with t. The two-byte prefixes of both refuse, as does {,"9}, whose digit can
 // begin a Number and so keeps the closure hypothesis alive: the poison byte must be unable to start a token
 // for the mechanism to fire. The consumption-complete C row certifies no two-byte window at all; its plans
-// rest entirely on lengths three and four. A deterministic generated C-like corpus then exercises
-// the shipped planner end to end: complete consumption, a full plan at eight chunks, and spliced-scan token
-// equality against the serial scan, all with pinned counts, so a drifted number fails the test suite.
+// rest entirely on lengths three and four. A deterministic generated C-like corpus then exercises the shipped
+// planner end to end: complete consumption, a full plan at eight chunks, and equality of the spliced chunks'
+// concatenated (token, length) stream against the serial scan's, with the corpus size and the token count
+// pinned, so a drifted number fails the test suite.
 //
 // The consumption-complete C row. Real C defeats every published study row before certification is even in
 // question: the preprocessor's # begins essentially every file, so the cumulative row consumes 2.5% of a
@@ -45,6 +46,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "grammars.hpp"
@@ -271,6 +273,15 @@ std::size_t scan(const munch::core::Lexer& lexer, const std::string_view input, 
     return lexer.tokenize_all<Token>(input, [&tokens](Token, std::size_t) { ++tokens; });
 }
 
+// The same scan recording each token with its length, so spliced and serial streams compare as streams.
+std::size_t scan(
+        const munch::core::Lexer& lexer, const std::string_view input,
+        std::vector<std::pair<Token, std::size_t>>& tokens)
+{
+    return lexer.tokenize_all<Token>(
+            input, [&tokens](const Token token, const std::size_t length) { tokens.emplace_back(token, length); });
+}
+
 void campaign(const std::filesystem::path& root, const std::size_t chunks, const char* csv_path)
 {
     const auto json_lexer{rfc_json()};
@@ -426,11 +437,11 @@ int main(const int argc, const char** argv)
 
     expect(corpus.size() == 262194, "generated corpus size moved");
 
-    std::size_t serial_tokens{0};
+    std::vector<std::pair<Token, std::size_t>> serial_stream;
 
-    expect(scan(c_lexer, corpus, serial_tokens) == corpus.size(), "generated corpus does not consume completely");
+    expect(scan(c_lexer, corpus, serial_stream) == corpus.size(), "generated corpus does not consume completely");
 
-    expect(serial_tokens == 74838, "generated corpus token count moved");
+    expect(serial_stream.size() == 74838, "generated corpus token count moved");
 
     const auto planned{plan(c_lexer, corpus, 8)};
 
@@ -442,7 +453,7 @@ int main(const int argc, const char** argv)
 
     const auto bounds{c_lexer.chunk_boundaries_with_windows(corpus, 8)};
 
-    std::size_t spliced_tokens{0};
+    std::vector<std::pair<Token, std::size_t>> spliced_stream;
 
     auto consumed_all{true};
 
@@ -450,12 +461,12 @@ int main(const int argc, const char** argv)
     {
         const std::string_view chunk{corpus.data() + bounds[index - 1], bounds[index] - bounds[index - 1]};
 
-        consumed_all = scan(c_lexer, chunk, spliced_tokens) == chunk.size() && consumed_all;
+        consumed_all = scan(c_lexer, chunk, spliced_stream) == chunk.size() && consumed_all;
     }
 
     expect(consumed_all, "a planned chunk of the generated corpus does not consume completely");
 
-    expect(spliced_tokens == serial_tokens, "spliced token count differs from the serial scan");
+    expect(spliced_stream == serial_stream, "spliced token stream differs from the serial scan");
 
     std::cout << (failures == 0 ? "all assertions hold\n" : "assertion failures\n");
 

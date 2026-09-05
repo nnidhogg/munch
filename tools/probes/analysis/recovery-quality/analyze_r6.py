@@ -199,6 +199,17 @@ def wilson(successes, n):
     return 100.0 * (center - margin) / denominator, 100.0 * (center + margin) / denominator
 
 
+def summary_rate(hits, total):
+    # The harness's own rate and its rounding, nought where the stratum is empty, so a recomputed
+    # figure compares against the summary as printed rather than as a float.
+    return f"{100.0 * hits / total if total else 0.0:.1f}"
+
+
+def summary_mean(total, count, places):
+    # The harness's own mean and its rounding, nought where nothing was counted.
+    return f"{total / count if count else 0.0:.{places}f}"
+
+
 def damaged_length(source_size, op, k):
     # The length of the input a row's arms search, which the damage its operation applied to the source
     # decides: a substitution rewrites k bytes in place and leaves the length alone, a deletion removes k of
@@ -249,6 +260,13 @@ def main():
     collapsed_incidents = 0
     collapsed_moves = defaultdict(list)
 
+    # Every column of the harness's per-cell summary row, its per-seed landing split, and every
+    # trial's drawn damage position, tallied from the rows themselves so the summary's own figures
+    # can be recomputed and compared below rather than merely parsed.
+    cell_tally = defaultdict(lambda: defaultdict(int))
+    seed_tally = defaultdict(lambda: defaultdict(int))
+    sampled_positions = {}
+
     # The campaign is read into one snapshot and everything downstream, the audit here and the
     # membership commitments at the end, works from these bytes. Reopening the pathname later would
     # let a file swapped between the two reads be audited as one archive and committed as another,
@@ -273,6 +291,10 @@ def main():
                     if field in POSITION_COLUMNS:
                         assert int(value) < POSITION_BOUND, (field, value)
             key = (record["grammar"], record["op"], record["k"], record["seed"], record["trial"])
+
+            # One drawn damage position per trial, absorbed and damaging alike, for the repeated-draw
+            # figure the summary reports; every arm of an incident carries it, asserted below.
+            sampled_positions.setdefault(key, record["p"])
 
             # Per-cell tallies for the harness reconciliation below: what this CSV says each
             # (grammar, op, k, arm) cell holds, counted before any row can be filtered, grouped, or
@@ -508,6 +530,38 @@ def main():
                 for field in CERTIFIED_ONLY:
                     assert not record[field], (key, record["strategy"], field)
 
+            # The rest of the harness's per-cell summary row, tallied the way the harness tallied it,
+            # so the reconciliation below recomputes the whole row rather than four of its counts.
+            tally = cell_tally[cell]
+            seed_landing = seed_tally[(record["grammar"], record["seed"], record["strategy"])]
+            tally["trials"] += 1
+            tally["attempts_sum"] += int(record["attempts"])
+            if record["first"]:
+                tally["answers"] += 1
+                seed_landing["answers"] += 1
+                if record["first_landed"] == "1":
+                    tally["first_landings"] += 1
+                    seed_landing["landings"] += 1
+                if record["first_true"]:
+                    tally["overshoot_sum"] += int(record["first"]) - int(record["first_true"])
+                    tally["overshoot_count"] += 1
+            else:
+                tally["refusals"] += 1
+            if record["terminal_landed"]:
+                tally["terminal_interior"] += 1
+                if record["terminal_landed"] == "1":
+                    tally["terminal_landings"] += 1
+            if record["outcome"] == "completed":
+                tally["completions"] += 1
+                tally["conv_count"] += 1
+                tally["conv_sum"] += int(record["converged"]) - int(record["corruption_end"])
+                tally["lost_sum"] += int(record["lost"])
+                tally["spurious_sum"] += int(record["spurious"])
+            elif record["outcome"] == "capped":
+                tally["capped"] += 1
+            elif record["outcome"] == "refused":
+                tally["terminal_refused"] += 1
+
             # One row per (incident, arm): a duplicate would silently shadow its predecessor in a plain
             # dictionary write, so it is rejected instead.
             assert record["strategy"] not in incidents[key], (key, record["strategy"])
@@ -620,6 +674,12 @@ def main():
                 key = (row[0], row[1], row[2], row[3], row[4])
                 arm = row[5]
                 assert arm in ("certified", "certified-clean"), row
+
+                # The join key is validated whole before it indexes anything: a sidecar row naming a
+                # (grammar, op, k, seed, trial) the campaign never archived, or an arm that incident
+                # never ran, is refused by name rather than reaching the join as a missing key.
+                assert key in incidents and arm in incidents[key], \
+                    (row[:6], "sidecar row names no archived incident")
                 record = incidents[key][arm]
 
                 # Canonical nonnegative integers in every numeric sidecar field, the same discipline
@@ -1048,8 +1108,9 @@ def main():
     # its terminal-refusals column counts exactly the refused rows outright. An all-zero summary
     # cell must hold no rows at all, and every CSV cell of a recovery arm must have its summary row,
     # so erasure is refused in both directions. The reconciliation runs after the intra-archive laws
-    # above deliberately, as the outermost cross-check, so a corruption a narrower guard can name is
-    # refused at that guard and only the shapes no grouping can see reach this one.
+    # above deliberately, as an outer cross-check, so a corruption a narrower guard can name is
+    # refused at that guard and only the shapes no grouping can see reach this one; the summary's
+    # values are reconciled outside even the membership commitments, at the end of this function.
     summary_path = sys.argv[1][:-len(".csv")] + ".txt"
     assert sys.argv[1].endswith(".csv"), sys.argv[1]
     assert os.path.exists(summary_path), summary_path
@@ -1067,6 +1128,10 @@ def main():
     SUMMARY_HEADER_LINE = ("  op           k  strategy        answers  refuse   t-ref  f-land"
                            "   t-land complete capped attempts     conv   lost   spur overshoot")
     SUMMARY_POOLED_LINE = "  pooled over all cells and seeds, Wilson 95% intervals"
+    # The pristine oracle is the one campaign fact no archived row carries, so this revision's
+    # verdict is pinned rather than reconciled: it passed clean over the whole sweep, and a summary
+    # reporting a violation, or a differently sized sweep, is not this archive.
+    SUMMARY_ORACLE_LINE = "pristine oracle: 0 violations over 6 rows x 512 samples"
     SUMMARY_GRAMMAR_ORDER = (
         "c-like conventional with strings and line comments",
         "c-like conventional plus block comments alone",
@@ -1151,14 +1216,23 @@ def main():
     assert re.fullmatch(r"pristine oracle: [0-9]+ violations over [0-9]+ rows x [0-9]+ samples",
                         line, re.ASCII), line
     summary_numbers_canonical(line, "oracle preamble")
+    oracle_line = line
     line = summary_next("determinism preamble")
+    # Revision-six summaries name the corpus seeds as a range; later harnesses name the oracle seed apart.
     assert re.fullmatch(
-        r"deterministic: corpus seeds 0x[0-9a-f]+ through 0x[0-9a-f]+, schedule seed 0x[0-9a-f]+"
+        r"deterministic: corpus seeds 0x[0-9a-f]+ (?:through 0x[0-9a-f]+|and 0x[0-9a-f]+, the pristine-oracle"
+        r" sampling seed 0x[0-9a-f]+), schedule seed 0x[0-9a-f]+"
         r" and payload seed 0x[0-9a-f]+ each offset per \(row, seed, op, k\) so no two rows share"
         r" a stream, [0-9]+ independent seeds, positions by unbiased rejection sampling, attempt"
         r" budget [0-9]+ per incident", line, re.ASCII), line
     summary_numbers_canonical(line, "determinism preamble")
+    # The summary's parsed figures, kept beside its shapes: the values are compared against the
+    # archive last of all, after the intra-archive laws and the membership commitments, so a
+    # corruption a narrower guard can name is still refused at that guard.
     harness_cells = {}
+    harness_pooled = {}
+    harness_seeds = {}
+    harness_tail = {}
     for summary_grammar in SUMMARY_GRAMMAR_ORDER:
         line = summary_next("grammar name")
         assert line == summary_grammar, ("summary section off its declared order", line,
@@ -1193,8 +1267,7 @@ def main():
                             assert 0.0 <= float(value[:-1]) <= 100.0, \
                                 ("summary percentage outside nought to a hundred", value, line)
                     summary_cell = (summary_grammar, op, k, arm)
-                    harness_cells[summary_cell] = (int(parts[3]), int(parts[4]), int(parts[5]),
-                                                   int(parts[9]))
+                    harness_cells[summary_cell] = tuple(parts[3:])
         line = summary_next("pooled heading")
         assert line == SUMMARY_POOLED_LINE, ("pooled heading not verbatim", summary_grammar, line)
         for arm in ARMS:
@@ -1205,6 +1278,7 @@ def main():
                 r" completion \[\s*[0-9]+\.[0-9]%,\s*[0-9]+\.[0-9]%\] capped [0-9]+", line, re.ASCII), \
                 ("pooled arm row off its declared shape", summary_grammar, arm, line)
             summary_numbers_canonical(line, "pooled arm row")
+            harness_pooled[(summary_grammar, arm)] = re.findall(r"[0-9]+(?:\.[0-9]+)?", line)
         for seed in ("0", "1", "2"):
             line = summary_next("per-seed row")
             assert re.fullmatch(
@@ -1212,10 +1286,12 @@ def main():
                 + "".join(" " + re.escape(arm) + r" [0-9]+\.[0-9]%" for arm in ARMS), line, re.ASCII), \
                 ("per-seed row off its declared shape", summary_grammar, seed, line)
             summary_numbers_canonical(line, "per-seed row")
+            harness_seeds[(summary_grammar, seed)] = re.findall(r"[0-9]+(?:\.[0-9]+)?", line)
     for kind, pattern in SUMMARY_TAIL:
         line = summary_next(kind)
         assert re.fullmatch(pattern, line, re.ASCII), (kind, line)
         summary_numbers_canonical(line, kind)
+        harness_tail[kind] = [int(token) for token in re.findall(r"-?[0-9]+", line)]
     assert position == len(nonblank), \
         ("the summary carries a line its grammar does not declare", nonblank[position])
     reconciled_cells = 0
@@ -1223,8 +1299,9 @@ def main():
     reconciled_initial = 0
     reconciled_terminal = 0
     reconciled_capped = 0
-    for summary_cell, (answers, initial_refusals, terminal_refusals, capped) in \
-            harness_cells.items():
+    for summary_cell, columns in harness_cells.items():
+        answers, initial_refusals, terminal_refusals, capped = (
+            int(columns[0]), int(columns[1]), int(columns[2]), int(columns[6]))
         reconciled_cells += 1
         reconciled_answered += answers
         reconciled_initial += initial_refusals
@@ -1288,6 +1365,77 @@ def main():
     commitment_mismatches = [key for key in sorted(expected_commit_cells)
                              if archived_commitments[key] != recomputed[key]]
     assert not commitment_mismatches, (commitment_mismatches[:3], "membership commitment broken")
+
+    # The summary's values, reconciled last of all. Every guard above reads shapes, spellings, or the
+    # rows themselves; between them a summary carrying a well-formed figure that simply disagrees with
+    # the archive is accepted, since the commitments bind the rows rather than what the harness printed
+    # about them. So every figure the summary states that these rows can derive is recomputed here and
+    # compared as printed, in the harness's own rounding: the twelve columns of all 594 cells, the
+    # pooled arm rows with their intervals, the per-seed landing rates, and every count in the tail.
+    # What no row carries, the pristine oracle's verdict over the untouched sources, is pinned to this
+    # archive instead. Running last keeps the ordering the reconciliations above declare: a corruption
+    # a narrower guard can name is refused at that guard, and a rewritten campaign at its commitment.
+    assert oracle_line == SUMMARY_ORACLE_LINE, \
+        ("the archived pristine-oracle verdict is not this campaign's", oracle_line,
+         SUMMARY_ORACLE_LINE)
+    for summary_cell, columns in harness_cells.items():
+        tally = cell_tally[summary_cell]
+        derived = (
+            str(tally["answers"]), str(tally["refusals"]), str(tally["terminal_refused"]),
+            summary_rate(tally["first_landings"], tally["answers"]) + "%",
+            summary_rate(tally["terminal_landings"], tally["terminal_interior"]) + "%",
+            summary_rate(tally["completions"], tally["trials"]) + "%",
+            str(tally["capped"]),
+            summary_mean(tally["attempts_sum"], tally["trials"], 2),
+            summary_mean(tally["conv_sum"], tally["conv_count"], 0),
+            summary_mean(tally["lost_sum"], tally["conv_count"], 2),
+            summary_mean(tally["spurious_sum"], tally["conv_count"], 2),
+            summary_mean(tally["overshoot_sum"], tally["overshoot_count"], 1),
+        )
+        assert derived == columns, \
+            ("summary cell row disagrees with the archive", summary_cell, columns, derived)
+    for (pooled_grammar, arm), stated in harness_pooled.items():
+        row = counts[(pooled_grammar, arm)]
+        land = wilson(row["first_landings"], row["answers"]) if row["answers"] else (0.0, 0.0)
+        done = wilson(row["completions"], row["trials"]) if row["trials"] else (0.0, 0.0)
+        derived = [str(row["answers"]), str(row["refusals"]), str(row["terminal_refused"]),
+                   f"{land[0]:.1f}", f"{land[1]:.1f}", f"{done[0]:.1f}", f"{done[1]:.1f}",
+                   str(row["capped"])]
+        assert derived == stated, \
+            ("summary pooled arm row disagrees with the archive", pooled_grammar, arm, stated,
+             derived)
+    for (seed_grammar, seed), stated in harness_seeds.items():
+        derived = [seed] + [summary_rate(seed_tally[(seed_grammar, seed, arm)]["landings"],
+                                         seed_tally[(seed_grammar, seed, arm)]["answers"])
+                            for arm in ARMS]
+        assert derived == stated, \
+            ("summary per-seed row disagrees with the archive", seed_grammar, seed, stated, derived)
+
+    # The repeated draws the summary counts, recomputed per schedule cell from the rows' own damage
+    # starts, which every arm of an incident is asserted above to carry identically.
+    cell_draws = defaultdict(list)
+    for draw_key, drawn in sampled_positions.items():
+        cell_draws[draw_key[:4]].append(drawn)
+    duplicate_positions = sum(len(draws) - len(set(draws)) for draws in cell_draws.values())
+    tail_derived = {
+        "absorbed tail line": [absorbed],
+        "coverage tail line": [evidence_covered, evidence_uncovered, evidence_uncovered_landed,
+                               moves_total, moves_covered],
+        "minimality tail line": [nonminimal, nonminimal_bytes],
+        "known-clean tail line": [sum(counts[(g, "certified-clean")]["answers"] for g in grammars),
+                                  sum(counts[(g, "certified-clean")]["refusals"] for g in grammars)],
+        "repairability tail line": [repairable, unrepairable, vacuous_walk],
+        "anchored tail line": [sum(counts[(g, "exact")]["answers"] for g in grammars), exact_pairs,
+                               exact_saved_repairable, exact_net],
+        "duplicate tail line": [duplicate_positions],
+        "closing tail line": [],
+    }
+    # A tail line without a derivation would reconcile against nothing, so the two declarations are
+    # held equal rather than left to agree by inspection.
+    assert set(tail_derived) == {kind for kind, _ in SUMMARY_TAIL}, sorted(tail_derived)
+    for kind, stated in harness_tail.items():
+        assert stated == tail_derived[kind], \
+            ("summary tail line disagrees with the archive", kind, stated, tail_derived[kind])
 
 
     assert landing_cross > 0 and landing_within > 0 and divergence_rechecks > 0, (

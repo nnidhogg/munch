@@ -49,7 +49,7 @@ if (MUNCH_BUILD_TESTS)
     # The r4 driver runs eleven arms, three seeds, and the exact machinery per trial, so the test
     # invocation passes a small corpus and one seed; the campaign passes its own figures.
     add_test(NAME munch_recovery_quality COMMAND munch_recovery_quality 16 20 "" "" 1)
-    # Three refusals, each exit status one with its diagnostic, driven by refuse.sh: an archive in a missing
+    # Three write refusals, each exit status one with its diagnostic, driven by refuse.sh: an archive in a missing
     # directory, a directory where the sidecar would go, and a summary to /dev/full written unbuffered
     # through the probe's hook, which guards the error-indicator check rather than the buffered flush.
     add_test(NAME munch_recovery_quality_refuses_unwritable_archive
@@ -64,6 +64,20 @@ if (MUNCH_BUILD_TESTS)
                     "summary write failed" "" 1 1 "" "" 1)
     set_tests_properties(munch_recovery_quality_refuses_unwritable_summary PROPERTIES ENVIRONMENT
                          "MUNCH_REFUSE_STDOUT=/dev/full;MUNCH_REFUSE_UNBUFFERED=1")
+    # The count arguments, refused rather than defaulted: a figure that is not wholly a number, an empty
+    # schedule from a zero, and a KiB figure whose byte count would wrap. Each runs through refuse.sh.
+    add_test(NAME munch_recovery_quality_refuses_nonnumeric_trials
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_recovery_quality>
+                    "trials per cell must be a positive whole number" "" 16 bogus)
+    add_test(NAME munch_recovery_quality_refuses_zero_trials
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_recovery_quality>
+                    "trials per cell must be a positive whole number" "" 16 0 "" "" 1)
+    add_test(NAME munch_recovery_quality_refuses_zero_seeds
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_recovery_quality>
+                    "seeds must be a positive whole number" "" 16 20 "" "" 0)
+    add_test(NAME munch_recovery_quality_refuses_oversized_corpus
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_recovery_quality>
+                    "corpus KiB does not fit in bytes" "" 18014398509481985 1 "" "" 1)
 endif ()
 
 # The parallel scanner over certified anchors: the splitting theorem run as a program. Splits a corpus at
