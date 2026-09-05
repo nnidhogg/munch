@@ -44,6 +44,19 @@ TEST_F(Dfa_test, Test_empty)
     EXPECT_EQ(simulator.run(input), Match(std::nullopt, 0));
 }
 
+TEST_F(Dfa_test, Next_state_clears_identifiers_the_caller_named)
+{
+    dfa::Builder dfa;
+
+    dfa.add_transition(dfa.init_state(), dfa::Label('a'), 1);
+
+    EXPECT_EQ(dfa.next_state(), 2);
+
+    dfa.add_accept_state(7, Token{1});
+
+    EXPECT_EQ(dfa.next_state(), 8);
+}
+
 TEST_F(Dfa_test, Empty_and_non_empty_string_container)
 {
     dfa::Builder dfa;

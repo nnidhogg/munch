@@ -27,8 +27,9 @@ public:
     [[nodiscard]] Dfa::State_t init_state() const noexcept;
 
     /**
-     * @brief Generates and returns the next available state identifier.
-     * @return The next state identifier.
+     * @brief Generates and returns a state identifier no call has named yet.
+     * @return One past the highest identifier this Builder has named, whether by an earlier next_state() or by a
+     *         state passed to add_transition() or add_accept_state().
      */
     [[nodiscard]] Dfa::State_t next_state() noexcept;
 

@@ -22,12 +22,17 @@ Builder& Builder::add_transition(const Dfa::State_t from, const Label& label, co
 {
     transitions_[{from, label}] = to;
 
+    // A caller naming its own identifiers is as much a namer as next_state() is, so the counter tracks both.
+    next_state_ = std::max({next_state_, from + 1, to + 1});
+
     return *this;
 }
 
 Builder& Builder::add_accept_state(const Dfa::State_t accept_state, const Token& token)
 {
     accept_states_.insert_or_assign(accept_state, token);
+
+    next_state_ = std::max(next_state_, accept_state + 1);
 
     return *this;
 }
