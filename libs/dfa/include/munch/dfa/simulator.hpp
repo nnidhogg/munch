@@ -242,11 +242,13 @@ public:
     /**
      * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
      *
-     * Rescue-free token sets are exactly those where a rollback can never rescue an input the restart
-     * abstraction declares malformed: every rollback fires into an instant dead end, so a synchronous-restart
-     * observer agrees with serial maximal munch on every input. Zero-lag sets pass vacuously, no stretch
-     * existing; the gate is strictly weaker than zero lag.
-     * @return True when no stretch-opening byte starts a viable token from the initial state.
+     * On a rescue-free token set a rollback can never rescue an input the restart abstraction declares
+     * malformed: every rollback fires into an instant dead end, so a synchronous-restart observer agrees with
+     * serial maximal munch on every input. The gate is sufficient and not necessary: on {a, abc, bc} it
+     * returns false though no rescue exists there. Zero-lag sets pass vacuously; the gate is strictly weaker
+     * than zero lag.
+     * @return True when no stretch-opening byte starts a viable token from the initial state; false says
+     * only that this gate did not establish rescue-freeness.
      */
     [[nodiscard]] bool rescue_free() const;
 
@@ -255,15 +257,15 @@ public:
      *        complete-repair invariance contract: every completely tokenizable repair of whatever preceded
      *        the tail places a token boundary there, the tail's end being the end of the input.
      *
-     * The anchored decider is exact for that complete-repair question, where the certificate walk is
-     * merely sound: certificates quantify over every input containing their evidence and cannot use the
-     * end of input, while this query can, so on a repairable tail it answers at or before any certificate.
-     * The certificates' own guarantee also binds repairs whose scans merely commit through their evidence
-     * without completing, a larger set this decider does not speak about, so neither subsumes the other
-     * outright. Decided by one scenario play per reachable state, no
-     * repair enumerated. When no repair of any prefix makes the whole tokenizable, every position is
-     * vacuously invariant and this query deliberately refuses instead of answering; nullable token sets sit
-     * outside the underlying model and are refused outright, as for is_split_window().
+     * The anchored decider is exact for that complete-repair question, where the certificate walk is merely
+     * sound: certificates quantify over every input containing their evidence and cannot use the end of
+     * input, while this query can, so on a repairable tail it answers at or before any certificate. The
+     * certificates' own guarantee also binds repairs whose scans merely commit through their evidence without
+     * completing, a larger set this decider does not speak about, so neither subsumes the other outright.
+     * Decided by one scenario play per reachable state, no repair enumerated. When no repair of any prefix
+     * makes the whole tokenizable, every position is vacuously invariant and this query deliberately refuses
+     * instead of answering; nullable token sets sit outside the underlying model and are refused outright, as
+     * for is_split_window().
      * @param tail The preserved suffix of the input, its end the end of input.
      * @param from The offset the search starts at; at or past the tail's size finds nothing.
      * @return The first anchored-certified position, or std::nullopt when none exists or the tail is
