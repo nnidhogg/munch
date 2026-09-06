@@ -478,7 +478,7 @@ public:
             return std::nullopt;
         }
 
-        std::map<std::string, std::optional<std::size_t>, std::less<>> memo;
+        Window_memo memo;
 
         for (std::size_t at{from}; at < input.size(); ++at)
         {
@@ -496,16 +496,7 @@ public:
 
             for (std::size_t length{2}; length <= limit; ++length)
             {
-                const auto window{input.substr(at, length)};
-
-                auto found{memo.find(window)};
-
-                if (found == memo.end())
-                {
-                    found = memo.emplace(std::string{window}, is_split_window(window)).first;
-                }
-
-                if (const auto& origin{found->second})
+                if (const auto origin{certified_origin(memo, input.data(), at, length)})
                 {
                     return Certified_start{
                             .start = at + *origin,

@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <experimental/mdspan>
-#include <functional>
 #include <limits>
 #include <map>
 #include <optional>
@@ -372,139 +371,37 @@ Simulator::Classes_t Simulator::classify(const Dfa& dfa)
     return result;
 }
 
-namespace
+std::optional<std::size_t> Simulator::step(const std::size_t state, const unsigned char symbol) const noexcept
 {
-/**
- * @brief The anchored machinery's view of the compiled tables: enough to walk, nothing more.
- */
-struct Walk_view
-{
-    std::size_t states{};
-    std::size_t init{};
-    std::function<std::optional<std::size_t>(std::size_t, unsigned char)> step;
-    std::function<bool(std::size_t)> accepting;
-};
+    const auto to{table_[row_offsets_[symbol] + state]};
 
-/**
- * @brief The maximal-munch jump table over the tail: the committed end of the token starting at each
- *        offset, and complete tokenizability of every suffix, built right to left.
- */
-struct Jump_table
-{
-    std::vector<std::optional<std::size_t>> end;
-    std::vector<char> tokenizes; // indexed to tail size inclusive
-};
-
-Jump_table build_jump_table(const Walk_view& view, const std::string_view tail)
-{
-    Jump_table table{
-            .end = std::vector<std::optional<std::size_t>>(tail.size()),
-            .tokenizes = std::vector<char>(tail.size() + 1, 0)};
-
-    table.tokenizes[tail.size()] = 1;
-
-    for (std::size_t offset{tail.size()}; offset-- > 0;)
-    {
-        auto state{view.init};
-
-        std::optional<std::size_t> last;
-
-        for (std::size_t at{offset}; at < tail.size(); ++at)
-        {
-            const auto next{view.step(state, static_cast<unsigned char>(tail[at]))};
-
-            if (!next)
-            {
-                break;
-            }
-
-            state = *next;
-
-            if (view.accepting(state))
-            {
-                last = at + 1;
-            }
-        }
-
-        table.end[offset] = last;
-
-        table.tokenizes[offset] = static_cast<char>(last && table.tokenizes[*last] != 0);
-    }
-
-    return table;
+    return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
 }
 
-/**
- * @brief States reachable from the initial state by at least one transition, each with a shortest
- *        witnessing word: the crossing entries, whose witnesses double as the repairs that realize them.
- */
-std::vector<std::pair<std::size_t, std::string>> crossing_entries(const Walk_view& view)
-{
-    std::map<std::size_t, std::string> seen;
-
-    std::vector<std::size_t> frontier;
-
-    const auto push{[&](const std::size_t state, const std::string& via) {
-        if (seen.emplace(state, via).second)
-        {
-            frontier.push_back(state);
-        }
-    }};
-
-    for (int byte{0}; byte < 256; ++byte)
-    {
-        if (const auto to{view.step(view.init, static_cast<unsigned char>(byte))})
-        {
-            push(*to, std::string(1, static_cast<char>(byte)));
-        }
-    }
-
-    for (std::size_t at{0}; at < frontier.size(); ++at)
-    {
-        const auto from{frontier[at]};
-
-        const auto via{seen.at(from)};
-
-        for (int byte{0}; byte < 256; ++byte)
-        {
-            if (const auto to{view.step(from, static_cast<unsigned char>(byte))})
-            {
-                push(*to, via + static_cast<char>(byte));
-            }
-        }
-    }
-
-    return {seen.begin(), seen.end()};
-}
-
-/**
- * @brief One crossing scenario's first in-tail boundary: the last in-tail accept of the maximal run from
- *        the entry, counting zero when the entry itself accepts; nothing when the run never accepts.
- */
-std::optional<std::size_t> scenario_boundary(
-        const Walk_view& view, const std::string_view tail, const std::size_t entry)
+std::optional<std::size_t> Simulator::maximal_run(
+        const std::size_t state, const std::string_view tail, const std::size_t from) const
 {
     std::optional<std::size_t> last;
 
-    if (view.accepting(entry))
+    if (is_accepting(state))
     {
-        last = 0;
+        last = from;
     }
 
-    auto state{entry};
+    auto current{state};
 
-    for (std::size_t at{0}; at < tail.size(); ++at)
+    for (std::size_t at{from}; at < tail.size(); ++at)
     {
-        const auto next{view.step(state, static_cast<unsigned char>(tail[at]))};
+        const auto next{step(current, static_cast<unsigned char>(tail[at]))};
 
         if (!next)
         {
             break;
         }
 
-        state = *next;
+        current = *next;
 
-        if (view.accepting(state))
+        if (is_accepting(current))
         {
             last = at + 1;
         }
@@ -513,7 +410,59 @@ std::optional<std::size_t> scenario_boundary(
     return last;
 }
 
-} // namespace
+Simulator::Jump_table Simulator::build_jump_table(const std::string_view tail) const
+{
+    Jump_table table{
+            .end = std::vector<std::optional<std::size_t>>(tail.size()),
+            .tokenizes = std::vector<bool>(tail.size() + 1)};
+
+    // The empty suffix tokenizes; walking right to left, every other suffix's answer is one lookup past its token.
+    table.tokenizes[tail.size()] = true;
+
+    for (std::size_t offset{tail.size()}; offset > 0;)
+    {
+        --offset;
+
+        table.end[offset] = maximal_run(init_state_, tail, offset);
+
+        table.tokenizes[offset] = table.end[offset].has_value() && table.tokenizes[*table.end[offset]];
+    }
+
+    return table;
+}
+
+std::vector<std::pair<std::size_t, std::string>> Simulator::crossing_entries() const
+{
+    std::map<std::size_t, std::string> seen;
+
+    std::vector<std::size_t> frontier;
+
+    // Breadth first from the initial state, so the first word to reach a state is a shortest one.
+    const auto expand{[&](const std::size_t from, const std::string& via) {
+        for (int byte{0}; byte < 256; ++byte)
+        {
+            if (const auto to{step(from, static_cast<unsigned char>(byte))};
+                to && seen.emplace(*to, via + static_cast<char>(byte)).second)
+            {
+                frontier.push_back(*to);
+            }
+        }
+    }};
+
+    expand(init_state_, std::string{});
+
+    for (std::size_t at{0}; at < frontier.size(); ++at)
+    {
+        expand(frontier[at], seen.at(frontier[at]));
+    }
+
+    return {seen.begin(), seen.end()};
+}
+
+std::optional<std::size_t> Simulator::scenario_boundary(const std::string_view tail, const std::size_t entry) const
+{
+    return maximal_run(entry, tail, 0);
+}
 
 std::optional<std::size_t> Simulator::is_split_window(const std::string_view window) const
 {
@@ -627,7 +576,7 @@ void Simulator::derive_mandatory_core()
 
     std::vector<std::size_t> depth(states, infinity);
 
-    std::vector<char> step(states, 0);
+    std::vector<char> entered_by(states, 0);
 
     std::vector<std::size_t> onward(states, 0);
 
@@ -646,7 +595,7 @@ void Simulator::derive_mandatory_core()
             {
                 depth[state] = 1;
 
-                step[state] = static_cast<char>(symbol);
+                entered_by[state] = static_cast<char>(symbol);
 
                 frontier.push_back(state);
 
@@ -705,7 +654,7 @@ void Simulator::derive_mandatory_core()
 
             if (to && depth[*to] != infinity && depth[*to] + 1 == depth[state])
             {
-                step[state] = static_cast<char>(symbol);
+                entered_by[state] = static_cast<char>(symbol);
 
                 onward[state] = *to;
 
@@ -745,7 +694,7 @@ void Simulator::derive_mandatory_core()
 
         for (auto state{origin}; depth[state] > 1; state = onward[state])
         {
-            core.push_back(step[state]);
+            core.push_back(entered_by[state]);
         }
 
         return core;
@@ -885,14 +834,21 @@ std::optional<std::size_t> Simulator::lag() const
     // The post-accept nonaccepting region: nonaccepting successors of accepting states, closed under
     // nonaccepting transitions; a cycle inside it is the unboundedness witness, and otherwise the lag is
     // the longest path measured in states.
-    std::vector<char> in_region(flags_.size(), 0);
+    enum class Mark : char
+    {
+        outside,
+        unresolved,
+        resolved
+    };
+
+    std::vector<Mark> mark(flags_.size(), Mark::outside);
 
     std::vector<std::size_t> frontier;
 
     const auto enter{[&](const std::size_t state) {
-        if (in_region[state] == 0)
+        if (mark[state] == Mark::outside)
         {
-            in_region[state] = 1;
+            mark[state] = Mark::unresolved;
 
             frontier.push_back(state);
         }
@@ -958,7 +914,7 @@ std::optional<std::size_t> Simulator::lag() const
                     continue;
                 }
 
-                if (in_region[to] == 2)
+                if (mark[to] == Mark::resolved)
                 {
                     deepest = std::max(*deepest, depth[to]);
                 }
@@ -972,7 +928,7 @@ std::optional<std::size_t> Simulator::lag() const
             {
                 depth[state] = 1 + *deepest;
 
-                in_region[state] = 2;
+                mark[state] = Mark::resolved;
 
                 longest = std::max(longest, depth[state]);
 
@@ -1036,17 +992,7 @@ std::optional<std::size_t> Simulator::next_anchored_start(const std::string_view
         return std::nullopt;
     }
 
-    const Walk_view view{
-            .states = flags_.size(),
-            .init = init_state_,
-            .step = [this](const std::size_t state, const unsigned char symbol) -> std::optional<std::size_t> {
-                const auto to{table_[row_offsets_[symbol] + state]};
-
-                return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
-            },
-            .accepting = [this](const std::size_t state) { return is_accepting(state); }};
-
-    const auto table{build_jump_table(view, tail)};
+    const auto table{build_jump_table(tail)};
 
     // Every completing scenario votes for its boundary chain; a position is anchored-certified when
     // every completing scenario contains it. No completing scenario means the tail is beyond repair and
@@ -1064,16 +1010,16 @@ std::optional<std::size_t> Simulator::next_anchored_start(const std::string_view
         }
     }};
 
-    if (table.tokenizes[0] != 0)
+    if (table.tokenizes[0])
     {
         vote(0);
     }
 
-    for (const auto& [entry, via] : crossing_entries(view))
+    for (const auto& [entry, via] : crossing_entries())
     {
-        const auto boundary{scenario_boundary(view, tail, entry)};
+        const auto boundary{scenario_boundary(tail, entry)};
 
-        if (boundary && table.tokenizes[*boundary] != 0)
+        if (boundary && table.tokenizes[*boundary])
         {
             vote(*boundary);
         }
@@ -1102,19 +1048,9 @@ std::optional<std::string> Simulator::minimal_repair(const std::string_view tail
         return std::nullopt;
     }
 
-    const Walk_view view{
-            .states = flags_.size(),
-            .init = init_state_,
-            .step = [this](const std::size_t state, const unsigned char symbol) -> std::optional<std::size_t> {
-                const auto to{table_[row_offsets_[symbol] + state]};
+    const auto table{build_jump_table(tail)};
 
-                return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
-            },
-            .accepting = [this](const std::size_t state) { return is_accepting(state); }};
-
-    const auto table{build_jump_table(view, tail)};
-
-    if (table.tokenizes[0] != 0)
+    if (table.tokenizes[0])
     {
         return std::string{};
     }
@@ -1124,11 +1060,11 @@ std::optional<std::string> Simulator::minimal_repair(const std::string_view tail
     // certificate that no repair of any length exists.
     std::optional<std::string> best;
 
-    for (const auto& [entry, via] : crossing_entries(view))
+    for (const auto& [entry, via] : crossing_entries())
     {
-        const auto boundary{scenario_boundary(view, tail, entry)};
+        const auto boundary{scenario_boundary(tail, entry)};
 
-        if (boundary && table.tokenizes[*boundary] != 0 && (!best || via.size() < best->size()))
+        if (boundary && table.tokenizes[*boundary] && (!best || via.size() < best->size()))
         {
             best = via;
         }

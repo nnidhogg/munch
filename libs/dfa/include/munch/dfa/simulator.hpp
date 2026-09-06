@@ -511,6 +511,80 @@ private:
     [[nodiscard]] bool is_live(const std::size_t state) const noexcept { return (flags_[state] & live_flag_) != 0; }
 
     /**
+     * @brief The maximal-munch jump table over a tail.
+     *
+     * One entry per tail offset for where the maximal token beginning there ends, and one per offset plus the
+     * tail's end for whether the suffix beginning there tokenizes completely; built right to left, so each suffix's
+     * answer is one lookup past its own token's end.
+     */
+    struct Jump_table
+    {
+        /**
+         * @brief The committed end of the maximal token beginning at each offset, or std::nullopt where none accepts.
+         */
+        std::vector<std::optional<std::size_t>> end;
+
+        /**
+         * @brief Whether the suffix beginning at each offset tokenizes completely; the entry at the tail's size,
+         *        the empty suffix, is true.
+         */
+        std::vector<bool> tokenizes;
+    };
+
+    /**
+     * @brief Follows one transition of the compiled table.
+     *
+     * The step every anchored walk takes; the tables hold only valid states, so no bounds check is needed.
+     * @param state The state the walk stands in.
+     * @param symbol The byte read.
+     * @return The state the transition leads to, or std::nullopt where the table has none.
+     */
+    [[nodiscard]] std::optional<std::size_t> step(std::size_t state, unsigned char symbol) const noexcept;
+
+    /**
+     * @brief Runs maximal munch from a state over the tail's suffix and reports where it last accepted.
+     *
+     * The run follows transitions while the table has them and records every accept, a state accepting before it
+     * reads counting as an accept at the start.
+     * @param state The state the run starts in.
+     * @param tail The tail being walked.
+     * @param from The offset in the tail the run starts at.
+     * @return The offset one past the last accept, or std::nullopt when the run never accepts.
+     */
+    [[nodiscard]] std::optional<std::size_t> maximal_run(
+            std::size_t state, std::string_view tail, std::size_t from) const;
+
+    /**
+     * @brief Builds the maximal-munch jump table over a tail.
+     *
+     * Each offset's token end is the maximal run from the initial state there, and a suffix tokenizes exactly when
+     * its token ends where a tokenizing suffix begins, which the right-to-left order has already decided.
+     * @param tail The tail the table covers.
+     * @return The table, sized to the tail with the empty suffix's entry.
+     */
+    [[nodiscard]] Jump_table build_jump_table(std::string_view tail) const;
+
+    /**
+     * @brief Lists the states a scan can stand in when it crosses into the tail mid-token.
+     *
+     * The states reachable from the initial state by at least one transition, found breadth first so that each
+     * carries a shortest word reaching it, which doubles as the repair realizing that crossing.
+     * @return The crossing entries with their witnesses, in state order.
+     */
+    [[nodiscard]] std::vector<std::pair<std::size_t, std::string>> crossing_entries() const;
+
+    /**
+     * @brief Finds the first in-tail token boundary of one crossing scenario.
+     *
+     * The maximal run from the entry over the whole tail; its last accept is the boundary, zero when the entry
+     * itself accepts.
+     * @param tail The tail being walked.
+     * @param entry The state the scan crosses into the tail in.
+     * @return The boundary as an offset into the tail, or std::nullopt when the run never accepts.
+     */
+    [[nodiscard]] std::optional<std::size_t> scenario_boundary(std::string_view tail, std::size_t entry) const;
+
+    /**
      * @brief Keeps the accepting-state updates on a branch rather than conditional moves.
      *
      * As conditional moves the updates make the accepted length data-dependent on every state load of the token,
