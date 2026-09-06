@@ -18,6 +18,19 @@
 
 namespace munch::tools::benchmark
 {
+namespace
+{
+/**
+ * @brief One timed pass of one scenario.
+ */
+struct Observation
+{
+    std::size_t scenario;
+    int round;
+    double seconds;
+};
+} // namespace
+
 core::Lexer build_lexer(const bool greek_identifiers)
 {
     using namespace munch::regex;
@@ -300,19 +313,6 @@ std::string generate_json_input(const std::size_t size, const bool pretty)
 
     return input;
 }
-
-namespace
-{
-/**
- * @brief One timed pass of one scenario.
- */
-struct Observation
-{
-    std::size_t scenario;
-    int round;
-    double seconds;
-};
-} // namespace
 
 bool measure_interleaved(
         const std::span<const Scenario> scenarios, const int passes, const std::size_t input_mebibytes,

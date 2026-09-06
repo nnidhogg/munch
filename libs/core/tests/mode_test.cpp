@@ -82,6 +82,95 @@ Stream_t scan(const Mode_lexer& lexer, const std::string& input, std::size_t& co
 
     return stream;
 }
+
+/**
+ * @brief A deterministic pseudo-random modal grammar over a three-symbol alphabet.
+ *
+ * Hand-picked grammars agree with the driver that was written alongside them. Random ones do not, which is what
+ * makes them worth running: the alphabet is kept tiny so inputs collide with the grammar often enough to exercise
+ * mode changes rather than failing at the first byte.
+ */
+Mode_lexer random_mode_grammar(unsigned& seed)
+{
+    const auto next{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
+
+    const auto modes{2 + next() % 3};
+
+    Mode_builder builder;
+
+    for (std::size_t mode{0}; mode < modes; ++mode)
+    {
+        // Every mode gets one single-byte token that changes the mode. Without it most random grammars fail at the
+        // first byte, streams stay one or two tokens long, and the driver under test never sees a mode change.
+        builder.add_token(
+                mode, text(std::string(1, static_cast<char>('a' + mode % 3))), std::size_t{0}, 1,
+                Mode_action{
+                        .kind = mode % 2 == 0 ? Mode_action_kind::push : Mode_action_kind::pop,
+                        .target = (mode + 1) % modes});
+
+        const auto tokens{2 + next() % 3};
+
+        for (std::size_t token{1}; token < tokens + 1; ++token)
+        {
+            constexpr const char* atoms[]{"a", "b", "c", "ab", "bc", "ca", "abc"};
+
+            const auto pattern{text(atoms[next() % std::size(atoms)])};
+
+            Mode_action action{};
+
+            switch (next() % 5)
+            {
+            case 0:
+                action = {.kind = Mode_action_kind::push, .target = next() % modes};
+                break;
+
+            case 1:
+                action = {.kind = Mode_action_kind::pop};
+                break;
+
+            case 2:
+                action = {.kind = Mode_action_kind::go_to, .target = next() % modes};
+                break;
+
+            default:
+                break;
+            }
+
+            builder.add_token(mode, pattern, token, 1 + token % 2, action);
+        }
+    }
+
+    return builder.build();
+}
+
+/**
+ * @brief Drives a mode lexer one token at a time, the shape the batch driver replaced.
+ */
+Stream_t drive_per_token(const Mode_lexer& lexer, const std::string& input, std::size_t& consumed, Mode_stack& stack)
+{
+    Stream_t stream;
+
+    consumed = 0;
+
+    while (consumed < input.size())
+    {
+        const auto mode{stack.current};
+
+        const auto match{
+                lexer.tokenize<Tok>(input.cbegin() + static_cast<std::ptrdiff_t>(consumed), input.cend(), stack)};
+
+        if (!match.token || match.length == 0)
+        {
+            break;
+        }
+
+        stream.emplace_back(*match.token, match.length, mode);
+
+        consumed += match.length;
+    }
+
+    return stream;
+}
 } // namespace
 
 // One viability probe per public Mode_lexer overload, for the same reason the flat lexer's suite keeps one per
@@ -424,98 +513,6 @@ TEST(Mode, Diagnose_is_quiet_on_a_sound_grammar)
 
     EXPECT_TRUE(report.inescapable_modes.empty());
 }
-
-namespace
-{
-/**
- * @brief A deterministic pseudo-random modal grammar over a three-symbol alphabet.
- *
- * Hand-picked grammars agree with the driver that was written alongside them. Random ones do not, which is what
- * makes them worth running: the alphabet is kept tiny so inputs collide with the grammar often enough to exercise
- * mode changes rather than failing at the first byte.
- */
-Mode_lexer random_mode_grammar(unsigned& seed)
-{
-    const auto next{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
-
-    const auto modes{2 + next() % 3};
-
-    Mode_builder builder;
-
-    for (std::size_t mode{0}; mode < modes; ++mode)
-    {
-        // Every mode gets one single-byte token that changes the mode. Without it most random grammars fail at the
-        // first byte, streams stay one or two tokens long, and the driver under test never sees a mode change.
-        builder.add_token(
-                mode, text(std::string(1, static_cast<char>('a' + mode % 3))), std::size_t{0}, 1,
-                Mode_action{
-                        .kind = mode % 2 == 0 ? Mode_action_kind::push : Mode_action_kind::pop,
-                        .target = (mode + 1) % modes});
-
-        const auto tokens{2 + next() % 3};
-
-        for (std::size_t token{1}; token < tokens + 1; ++token)
-        {
-            constexpr const char* atoms[]{"a", "b", "c", "ab", "bc", "ca", "abc"};
-
-            const auto pattern{text(atoms[next() % std::size(atoms)])};
-
-            Mode_action action{};
-
-            switch (next() % 5)
-            {
-            case 0:
-                action = {.kind = Mode_action_kind::push, .target = next() % modes};
-                break;
-
-            case 1:
-                action = {.kind = Mode_action_kind::pop};
-                break;
-
-            case 2:
-                action = {.kind = Mode_action_kind::go_to, .target = next() % modes};
-                break;
-
-            default:
-                break;
-            }
-
-            builder.add_token(mode, pattern, token, 1 + token % 2, action);
-        }
-    }
-
-    return builder.build();
-}
-
-/**
- * @brief Drives a mode lexer one token at a time, the shape the batch driver replaced.
- */
-Stream_t drive_per_token(const Mode_lexer& lexer, const std::string& input, std::size_t& consumed, Mode_stack& stack)
-{
-    Stream_t stream;
-
-    consumed = 0;
-
-    while (consumed < input.size())
-    {
-        const auto mode{stack.current};
-
-        const auto match{
-                lexer.tokenize<Tok>(input.cbegin() + static_cast<std::ptrdiff_t>(consumed), input.cend(), stack)};
-
-        if (!match.token || match.length == 0)
-        {
-            break;
-        }
-
-        stream.emplace_back(*match.token, match.length, mode);
-
-        consumed += match.length;
-    }
-
-    return stream;
-}
-} // namespace
 
 TEST(Mode, The_two_drivers_agree_on_random_grammars_and_inputs)
 {

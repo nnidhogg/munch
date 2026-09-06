@@ -137,6 +137,61 @@ Lexer build_lexer()
     return builder.build();
 }
 
+enum class Ctx : std::size_t
+{
+    code,
+    string,
+    comment
+};
+
+enum class Ctx_token : std::size_t
+{
+    identifier,
+    quote,
+    text,
+    open_comment,
+    close_comment,
+    space
+};
+
+/**
+ * @brief A grammar whose mode transitions live in the grammar rather than in the driver.
+ */
+munch::core::Mode_lexer contextual()
+{
+    using namespace munch::regex;
+
+    munch::core::Mode_builder builder;
+
+    builder.add_token(Ctx::code, plus(any_of(Set::alpha())), Ctx_token::identifier, 2);
+    builder.add_token(Ctx::code, any_of(Set{' '}), Ctx_token::space, 2);
+    builder.add_token(
+            Ctx::code, text("\""), Ctx_token::quote, 1,
+            {.kind = munch::core::Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::string)});
+    builder.add_token(
+            Ctx::code, text("/*"), Ctx_token::open_comment, 1,
+            {.kind = munch::core::Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::comment)});
+
+    builder.add_token(Ctx::string, text("\""), Ctx_token::quote, 1, {.kind = munch::core::Mode_action_kind::pop});
+    builder.add_token(Ctx::string, plus(any_of(Set::all() - '"')), Ctx_token::text, 2);
+
+    builder.add_token(
+            Ctx::comment, text("/*"), Ctx_token::open_comment, 1,
+            {.kind = munch::core::Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::comment)});
+    builder.add_token(
+            Ctx::comment, text("*/"), Ctx_token::close_comment, 1, {.kind = munch::core::Mode_action_kind::pop});
+    builder.add_token(Ctx::comment, any_of(Set::all()), Ctx_token::text, 2);
+
+    return builder.build();
+}
+
+enum class Rec_token : std::size_t
+{
+    identifier = 1,
+    whitespace,
+    semicolon,
+    number
+};
 } // namespace
 
 TEST_F(Tokenizer_test, Tokenize_from_string_stream)
@@ -385,57 +440,6 @@ TEST_F(Tokenizer_test, Modes)
 
     EXPECT_THROW(tokenizer.set_mode(5), std::out_of_range);
 }
-
-namespace
-{
-enum class Ctx : std::size_t
-{
-    code,
-    string,
-    comment
-};
-
-enum class Ctx_token : std::size_t
-{
-    identifier,
-    quote,
-    text,
-    open_comment,
-    close_comment,
-    space
-};
-
-/**
- * @brief A grammar whose mode transitions live in the grammar rather than in the driver.
- */
-munch::core::Mode_lexer contextual()
-{
-    using namespace munch::regex;
-
-    munch::core::Mode_builder builder;
-
-    builder.add_token(Ctx::code, plus(any_of(Set::alpha())), Ctx_token::identifier, 2);
-    builder.add_token(Ctx::code, any_of(Set{' '}), Ctx_token::space, 2);
-    builder.add_token(
-            Ctx::code, text("\""), Ctx_token::quote, 1,
-            {.kind = munch::core::Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::string)});
-    builder.add_token(
-            Ctx::code, text("/*"), Ctx_token::open_comment, 1,
-            {.kind = munch::core::Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::comment)});
-
-    builder.add_token(Ctx::string, text("\""), Ctx_token::quote, 1, {.kind = munch::core::Mode_action_kind::pop});
-    builder.add_token(Ctx::string, plus(any_of(Set::all() - '"')), Ctx_token::text, 2);
-
-    builder.add_token(
-            Ctx::comment, text("/*"), Ctx_token::open_comment, 1,
-            {.kind = munch::core::Mode_action_kind::push, .target = static_cast<std::size_t>(Ctx::comment)});
-    builder.add_token(
-            Ctx::comment, text("*/"), Ctx_token::close_comment, 1, {.kind = munch::core::Mode_action_kind::pop});
-    builder.add_token(Ctx::comment, any_of(Set::all()), Ctx_token::text, 2);
-
-    return builder.build();
-}
-} // namespace
 
 TEST(Tokenizer_modes, The_grammar_switches_modes_without_the_driver_asking)
 {
@@ -701,17 +705,6 @@ TEST(Tokenizer_modes, Forcing_a_mode_is_the_documented_recovery_hatch_after_an_e
     EXPECT_EQ(tokenizer.depth(), 1U);
     EXPECT_EQ(tokenizer.mode(), static_cast<std::size_t>(Ctx::code));
 }
-
-namespace
-{
-enum class Rec_token : std::size_t
-{
-    identifier = 1,
-    whitespace,
-    semicolon,
-    number
-};
-} // namespace
 
 TEST(Tokenizer_recovery, Recover_lands_at_the_certified_window_origin)
 {
