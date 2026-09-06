@@ -408,7 +408,7 @@ has to notice by itself that the trick is no longer sound.
 | `munch::core`                             | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
 | `munch::tools::tokenizer`                 | `Tokenizer`: streaming driver over `core::Lexer` with modes, offsets, seek, and a raw string scanner. |
 | `munch::nfa::tools` / `munch::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.                          |
-| `munch::common`                           | Shared concepts (`Iterator`, `Iterable`) used across the other modules.                               |
+| `munch::common`                           | Shared concepts (`Byte_iterable`, `Random_access_byte_iterable`, `Token_id`, `Token_sink`).                               |
 
 ## **Usage Overview**
 
@@ -851,9 +851,8 @@ clean form may refuse where the failure-anchored forms answer. The lexer-level f
 `Lexer::next_certified_evidence(input, from)`.
 
 When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored
-queries answer exactly rather than conservatively on non-nullable token sets, the qualification their
-documentation carries, because they may use what the certificates cannot: that the input ends where the
-tail ends.
+queries answer exactly rather than conservatively on non-nullable token sets, those in which no token matches the
+empty string, because they may use what the certificates cannot: that the input ends where the tail ends.
 
 ```cpp
 // Over the token set {ab, ba}: position 0 of the tail "ab" is provably a token start in every
@@ -872,10 +871,11 @@ returning a value guarantees the repaired whole tokenizes, with the empty string
 
 Two related queries describe the token set itself. `lag()` reports how far a scan can run past an accepted token before
 a rollback could occur, with `std::nullopt` as a certificate that the excursion is unbounded. `rescue_free()` is a
-one-sided gate: true guarantees that a synchronous-restart observer agrees with serial maximal munch on every input, and
-false is inconclusive, since the gate is sufficient and not necessary. On `{a, abc, bc}` it returns false though no
-rescue exists there. Like `is_split_point()`, all of these are properties certified from the compiled automaton, not
-heuristics.
+one-sided gate: true guarantees that a scheme restarting at every accept agrees with serial maximal munch on every
+input, and false is inconclusive, since the gate is sufficient and not necessary. On `{a, abc, bc}` it returns false
+though no rescue exists there, a rescue being a rollback after a failed lookahead that lets the scan continue where the
+restarting scheme would have declared the input malformed. Like `is_split_point()`, all of these are properties
+certified from the compiled automaton, not heuristics.
 
 ### **Context-Dependent Tokenization**
 
@@ -1051,7 +1051,7 @@ docs/                     SVG diagrams of example automata, performance.md (the 
                           design.md (the architectural decisions behind it), and limits.md (the library's scope,
                           guarantees, and escape hatches).
 libs/
-  common/                 Shared concepts (Iterator, Iterable) used across the other libraries.
+  common/                 Shared concepts (Byte_iterable, Random_access_byte_iterable, Token_id, Token_sink).
   regex/                  The combinator DSL: Regex nodes and their lowering to munch::nfa::Builder.
   nfa/                    NFA representation and builder (Thompson construction, epsilon closure, merge/append).
     tools/                Graphviz DOT export for NFAs.
@@ -1222,14 +1222,14 @@ surface in 1.4.0; the release the companion paper cites, v1.3.3, deliberately sh
 
 The recovery layer joined that surface in 1.6.0: `next_certified_start()`, `next_certified_evidence()`,
 `next_anchored_start()`, `minimal_repair()`, `lag()`, and `rescue_free()`, each under the contract its own
-documentation states, evidence-order answers under preserved evidence and complete-repair invariance on
-non-nullable sets.
+documentation states, evidence-order answers under preserved evidence and complete-repair invariance, the
+guarantee described under Error Recovery above that every completely tokenizable repair of the text before the
+evidence places a token boundary at the answer, on non-nullable sets.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did
 `Builder::set_token_payload()` and the three-argument `tokenize_all()` sink that delivers what it attaches. A sink
-accepting both arities is called with two, which is what it was called with before the payload existed, so an existing
-sink keeps its behaviour.
+accepting both arities is called with two.
 
 The supported platform is 64-bit Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests,
 sanitizes, and fuzzes, on x86-64 and ARM64 so both signednesses of plain `char` are exercised. Other platforms, 32-bit

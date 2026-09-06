@@ -164,7 +164,8 @@ public:
      * hand holds that occurrence, and on completely tokenizable input the promise applies to it directly; on
      * malformed input the promise carries nothing at all.
      *
-     * The decision runs the conservative cloud model over the compiled tables: every live state starts as a
+     * The decision runs the conservative cloud model over the compiled tables, a set of hypotheses about where the
+     * scan could be that only ever over-approximates the true state: every live state starts as a
      * hypothesis whose token began before the window, each byte advances hypotheses deterministically, a fresh
      * token may begin exactly where some represented history just ended one, and reading from a non-re-entrant
      * initial state begins a token at that offset. The window is certified when every surviving hypothesis
@@ -230,9 +231,10 @@ public:
      * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after
      *        leaving an accepting state, or nothing when that run is unbounded.
      *
-     * Co-accessibility is deliberately not required: a failed lookahead buffers bytes whether or not the
-     * excursion could still accept, so the measure counts every defined continuation. Zero is the premise
-     * under which a restart-style scheme executes serial maximal munch exactly; a bounded value prices the
+     * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether
+     * or not the excursion could still accept, so the measure counts every defined continuation. Zero is the
+     * premise under which a scheme restarting at every accept executes serial maximal munch exactly; a bounded
+     * value prices the
      * checkpoint a rollback-aware scheme must carry; an unbounded region, reported as nothing, carries a
      * cycle witness in the tables themselves.
      * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
@@ -242,9 +244,10 @@ public:
     /**
      * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
      *
-     * On a rescue-free token set a rollback can never rescue an input the restart abstraction declares
-     * malformed: every rollback fires into an instant dead end, so a synchronous-restart observer agrees with
-     * serial maximal munch on every input. The gate is sufficient and not necessary: on {a, abc, bc} it
+     * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting at
+     * every accept would have declared the input malformed. On a rescue-free token set every rollback fires
+     * into an instant dead end, so the two schemes agree on every input. The gate is sufficient and not
+     * necessary: on {a, abc, bc} it
      * returns false though no rescue exists there. Zero-lag sets pass vacuously; the gate is strictly weaker
      * than zero lag.
      * @return True when no stretch-opening byte starts a viable token from the initial state; false says

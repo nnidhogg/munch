@@ -37,7 +37,9 @@ public:
      * @param priority The priority for resolving conflicts within this mode (lower is higher priority).
      * @param action What the token does to the mode stack once matched; tokens stay by default. A go_to or push
      *        target may name a mode not yet registered; build() checks it once every mode is known.
-     * @throws std::invalid_argument If this token was already registered in this mode with a different action.
+     * @throws std::invalid_argument If the action kind is not one of the four, if the mode or the token is negative or
+     *         the largest representable index, or if this token was already registered in this mode with a different
+     *         action.
      */
     template <common::concepts::Token_id M, common::concepts::Token_id T>
     void add_token(
@@ -233,8 +235,7 @@ private:
     /**
      * @brief Every registered token and its normalized action, per mode.
      *
-     * A list of what was actually registered rather than a row indexed by token ID: the row had to be sized to the
-     * largest ID, so a grammar numbering a token 70000 allocated a megabyte of empty entries at construction. It
+     * A list of what was registered rather than a row indexed by token ID, so a sparse numbering costs nothing; it
      * also answers whether a token was declared at all, which a table of non-stay actions cannot.
      */
     std::vector<std::vector<std::pair<std::size_t, Mode_action>>> registered_;

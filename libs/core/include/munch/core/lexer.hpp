@@ -30,8 +30,7 @@ namespace munch::core
  * @brief The main Lexer class for tokenizing input using a DFA.
  *
  * Provides methods to tokenize input from iterators or containers, returning the matched token and length.
- * Instances are only constructible through Builder::build(), which is the sole supported path from patterns to a
- * working Lexer.
+ * Instances are obtainable through Builder::build(), the one supported path from patterns to a working Lexer.
  */
 class Lexer
 {
@@ -93,9 +92,9 @@ public:
      * @param end Iterator to the end of the input.
      * @param sink Invoked as sink(token, length) for every consumed token, in input order, or as
      *        sink(token, length, payload) where the sink accepts that and the payload is what
-     *        Builder::set_token_payload() attached. A sink accepting both is called with two, which is what it
-     *        received before payloads existed. A sink returning a value convertible to bool stops the scan by
-     *        returning false; the stopping token still counts as tokenized.
+     *        Builder::set_token_payload() attached; a sink accepting both is called with two. A sink returning a
+     *        value convertible to bool stops the scan by returning false; the stopping token still counts as
+     *        tokenized.
      * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at
      *         the returned offset: no token matched there, a zero-width token did, or the sink returned false.
      */
@@ -126,11 +125,7 @@ public:
      * @tparam Container The input container type (must offer random access).
      * @tparam Sink Callable receiving each consumed token and its length, or those and its payload.
      * @param container The input container.
-     * @param sink Invoked as sink(token, length) for every consumed token, in input order, or as
-     *        sink(token, length, payload) where the sink accepts that and the payload is what
-     *        Builder::set_token_payload() attached. A sink accepting both is called with two, which is what it
-     *        received before payloads existed. A sink returning a value convertible to bool stops the scan by
-     *        returning false; the stopping token still counts as tokenized.
+     * @param sink As for the iterator form above.
      * @return The number of input elements tokenized; anything short of the container's size means the scan stopped
      *         at the returned offset: no token matched there, a zero-width token did, or the sink returned false.
      */
@@ -148,8 +143,9 @@ public:
      * For input the serial scan tokenizes completely, splitting immediately before a safe split point produces
      * the identical token stream, so such symbols mark chunk boundaries at which one large input may be processed
      * in independent pieces; on malformed input see tokenize_all_parallel() for the weaker prefix guarantee. Only
-     * the useful subset is reported: a symbol no live state consumes is safe merely vacuously and answers false. The
-     * property is certified from the compiled transition table; see dfa::Simulator::is_split_point().
+     * the useful subset is reported: a symbol no live state consumes, a live state being one reachable from the
+     * initial state that can still reach an accepting one, is safe merely vacuously and answers false. The property
+     * is decided from the compiled transition table; the derivation is dfa::Simulator::is_split_point()'s.
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept { return simulator_.is_split_point(symbol); }
 
@@ -161,8 +157,8 @@ public:
      * those kinds are removed from both, so a caller that keeps them must use is_split_point(). The completeness
      * condition is not decoration: past the offset where the serial scan first fails, a chunk cut here can emit
      * kept tokens that scan never reaches. Note also that chunk_boundaries() and tokenize_all_parallel() plan with
-     * the exact certificate, so acting on this answer means planning boundaries yourself. See
-     * dfa::Simulator::is_split_point_ignoring().
+     * the exact certificate, so acting on this answer means planning boundaries yourself. The derivation is
+     * dfa::Simulator::is_split_point_ignoring()'s.
      * @param symbol The symbol to test.
      * @return True if the symbol can begin a token and every occurrence is safe under that weaker equivalence;
      *         symbols satisfying the condition only vacuously report false.
@@ -176,15 +172,15 @@ public:
      * @brief Decides whether the given byte string is a certified split window, returning the covering origin.
      *
      * The multi-byte generalization of is_split_point(): where the byte certificate promises that every occurrence
-     * begins a token, a certified window (W, o) promises that in every completely tokenizable input containing W,
-     * the token covering the occurrence's final byte begins exactly o bytes into it. On non-empty, non-nullable token
-     * sets the two coincide at length one; a nullable set can certify bytes while every window is refused here, and an
-     * empty token set refuses everything on both sides. The
-     * certificate is conditional on occurrence and this call does not establish that one exists; a caller that
-     * found W in its own input holds an occurrence, the promise applies to it on completely tokenizable input,
-     * and on malformed input the window promise carries nothing at all, the consequence
-     * chunk_boundaries_with_windows() documents. Refusals are model-relative and conservative, never proof that
-     * no certificate exists. Derived from the compiled transition table; see dfa::Simulator::is_split_window().
+     * begins a token, a certified window (W, o) promises that in every completely tokenizable input containing W, the
+     * token covering the occurrence's final byte begins exactly o bytes into it. On non-empty, non-nullable token sets
+     * the two coincide at length one; a nullable token set, one in which some token matches the empty string, can
+     * certify bytes while every window is refused here, and an empty token set refuses everything on both sides. The
+     * certificate is conditional on occurrence and this call does not establish that one exists; a caller that found W
+     * in its own input holds an occurrence, the promise applies to it on completely tokenizable input, and on malformed
+     * input the window promise carries nothing at all, the consequence chunk_boundaries_with_windows() documents.
+     * Refusals are model-relative and conservative, never proof that no certificate exists. Decided from the compiled
+     * transition table; the derivation is dfa::Simulator::is_split_window()'s.
      */
     [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const
     {
@@ -194,9 +190,10 @@ public:
     /**
      * @brief The byte string every certified split window provably contains, or empty when none is proved.
      *
-     * A pass-through of dfa::Simulator::mandatory_core(), where the derivation and its proof live; the
-     * window planner narrows its candidate windows to occurrences of this string whenever it is non-empty,
-     * with identical plans either way and the exhaustive walk kept as the fallback.
+     * Every certified split window of this token set contains this string with at least one byte after it, so
+     * the window planner narrows its candidate windows to the string's occurrences whenever it is non-empty, with
+     * identical plans either way; empty means no such string is proved and the exhaustive walk stands. Decided
+     * from the compiled transition table; the derivation and its proof are dfa::Simulator::mandatory_core()'s.
      * @return The proved mandatory core, or an empty view.
      */
     [[nodiscard]] std::string_view mandatory_core() const noexcept { return simulator_.mandatory_core(); }
@@ -297,19 +294,11 @@ public:
      *
      * From the later of each equal-division target and one past the previous boundary the input is walked for the first
      * occurrence of a window of two to four bytes that is_split_window() certifies, and the cut is placed at the
-     * occurrence plus the reported origin. Each decision is memoized per distinct byte string, so cloud evaluations are
-     * bounded by the distinct windows tried, while the positional walk and its memo lookups still scale with the
-     * positions examined; no representative-corpus pricing is claimed until one is measured. A nullable token set
-     * contributes no windows, since the window proof excludes it, though its byte plan, when any, stands untouched;
-     * when neither certificate offers cuts, the single whole-input chunk results.
-     *
-     * When the token set proves a mandatory core (mandatory_core()), the walk narrows to its licence: every certifying
-     * window provably contains the core with a byte after it, so candidate windows are generated around core
-     * occurrences alone, visited in the walk's own position-then-length order, and verified by the same memoized
-     * decision. The resulting plan equals the exhaustive walk's, refusals included; positions are scanned for a bare
-     * byte comparison, windows are built and certified only where the core occurs, and a tail once proved
-     * occurrence-free refuses every later target without another scan. A core too long to fit the longest window with
-     * a byte to spare refuses every target outright, and an empty core keeps the exhaustive walk.
+     * occurrence plus the reported origin. Each window decision is memoized per distinct byte string, so those
+     * decisions, the costly part, are bounded by the distinct windows tried, while the positional walk and its memo
+     * lookups scale with the positions examined. A nullable token set contributes no windows, since the window proof
+     * excludes it, though its byte plan, when any, stands untouched; when neither certificate offers cuts, the single
+     * whole-input chunk results.
      *
      * The window guarantee is conditional where the byte certificate's is not: a certified window pins the
      * covering token's origin at occurrences in completely tokenizable input, a property of the whole input
@@ -412,18 +401,18 @@ public:
      * own position, and a certified window of two to four bytes answers at its occurrence plus the certified
      * origin. Unlike the planners, byte certificates do not switch the window search off; a nullable token set
      * contributes no windows, because only the window proof excludes it, while its byte certificates, when
-     * any, stand. The answer is the first certificate met in evidence order, the walk's position order, which
-     * is not always the smallest answerable position: a window met earlier can answer a byte or two past one
-     * met later, and windows beginning before the given offset are not considered.
+     * any, stand. The answer is the first certificate met in evidence order, the order in which the walk meets
+     * the supporting evidence, which is not always the smallest answerable position: a window met earlier can
+     * answer a byte or two past one met later, and windows beginning before the given offset are not considered.
      *
-     * The contract is complete-repair invariance, not the vacuous observation that a suffix which tokenizes
-     * begins a token: in every completely tokenizable replacement of the input before the answer's supporting
-     * evidence, the answer's image begins a token of the repaired segmentation. The evidence is the certified
-     * byte itself or the whole window occurrence, beginning at most three bytes before the answer; a repair
-     * that alters the evidence forfeits the guarantee, and the existence of any tokenizable repair is not
-     * promised, so where the damage has no fix the guarantee holds vacuously. The certificate speaks for this
-     * automaton alone; under mode-driven scanning that scoping is load-bearing. When no certificate of the
-     * searched kinds and lengths exists at or after the offset, there is no answer.
+     * The contract is complete-repair invariance: in every completely tokenizable replacement of the input before the
+     * answer's supporting evidence, the answer's image begins a token of the repaired segmentation, which is more than
+     * the vacuous observation that a suffix which tokenizes begins a token. The evidence is the certified byte itself
+     * or the whole window occurrence, beginning at most three bytes before the answer; a repair that alters the
+     * evidence forfeits the guarantee, and the existence of any tokenizable repair is not promised, so where the damage
+     * has no fix the guarantee holds vacuously. The certificate speaks for this automaton alone; under mode-driven
+     * scanning that scoping is load-bearing. When no certificate of the searched kinds and lengths exists at or after
+     * the offset, there is no answer.
      * @param input The input being scanned.
      * @param from The offset the search starts at; at or past the input's size finds nothing.
      * @return The first certified token-start position, or std::nullopt when no certified byte and no certified
@@ -444,7 +433,8 @@ public:
      * (evidence_begin == start, one byte) or the whole window occurrence, and the guarantee is exactly the
      * certificate's: the repair-invariance transfer requires the evidence interval to survive whatever changed
      * and the repaired scan to commit through it. A caller comparing evidence_begin against a known-clean
-     * lower bound decides the survival half alone; the transfer to the intended input additionally needs
+     * lower bound decides the survival half alone, whether the evidence outlasted the damage; the transfer to the
+     * intended input additionally needs
      * that input's scan to reach the evidence, with the whole intended input being completely tokenizable
      * the simplest sufficient condition.
      */
@@ -514,10 +504,10 @@ public:
      * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after leaving
      * an accepting state, or nothing when that run is unbounded.
      *
-     * Co-accessibility is not required: a failed lookahead buffers bytes whether or not the excursion could
-     * still accept, so every defined continuation counts. Zero is the premise under which a restart-style
-     * scheme executes serial maximal munch exactly; a bounded value prices the checkpoint a rollback-aware
-     * scheme must carry.
+     * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether or
+     * not the excursion could still accept, so every defined continuation counts. Zero is the premise under
+     * which a scheme restarting at every accept executes serial maximal munch exactly; a bounded value prices
+     * the checkpoint a rollback-aware scheme must carry.
      * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
      */
     [[nodiscard]] std::optional<std::size_t> lag() const { return simulator_.lag(); }
@@ -525,10 +515,10 @@ public:
     /**
      * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
      *
-     * On a rescue-free token set a rollback can never rescue an input the restart abstraction declares
-     * malformed, so a synchronous-restart observer agrees with serial maximal munch on every input. The gate
-     * is sufficient and not necessary: on {a, abc, bc} it returns false though no rescue exists there, and
-     * zero-lag sets pass vacuously.
+     * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting
+     * at every accept would have declared the input malformed. On a rescue-free token set no such rollback can
+     * succeed, so the two schemes agree on every input. The gate is sufficient and not necessary: on
+     * {a, abc, bc} it returns false though no rescue exists there, and zero-lag sets pass vacuously.
      * @return True when no stretch-opening byte starts a viable token from the initial state; false says only
      * that this gate did not establish rescue-freeness.
      */
@@ -661,16 +651,16 @@ private:
     friend class Builder;
 
     /**
-     * @brief The longest window the planners try; every named certified window in the study is at most four
-     * bytes. A grammar needing longer windows degrades to fewer chunks, never to an unsafe cut. The shortest
-     * tried is two, and that bound is not a guard: the window planners run only when no exact byte certifies
-     * and the set is not nullable, where the length-one equivalence theorem makes every one-byte window
-     * refuse, so skipping length one is provably inert rather than something a test could pin.
+     * @brief The longest window the planners try, four bytes. A grammar needing longer windows degrades to
+     * fewer chunks, never to an unsafe cut. The shortest tried is two, and that bound is not a guard: the window
+     * planners run only when no exact byte certifies and the set is not nullable, where the length-one equivalence
+     * theorem makes every one-byte window refuse, so skipping length one is provably inert rather than something a test
+     * could pin.
      */
     static constexpr std::size_t longest_window_{4};
 
     /**
-     * @brief One decision per distinct byte string per plan: memoization caps cloud evaluations at the
+     * @brief One decision per distinct byte string per plan: memoization caps the window decisions at the
      * distinct windows tried, while the position loops and their lookups remain per position examined.
      */
     using Window_memo = std::map<std::string, std::optional<std::size_t>, std::less<>>;

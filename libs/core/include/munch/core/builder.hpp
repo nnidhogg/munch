@@ -97,20 +97,20 @@ public:
     void set_ignored_tokens(std::vector<std::size_t> tokens) { ignored_ = std::move(tokens); }
 
     /**
-     * @brief Attaches a word to a token, delivered to a three-argument tokenize_all() sink with every consumed
+     * @brief Attaches a payload to a token, delivered to a three-argument tokenize_all() sink with every consumed
      * token of it in the built Lexer.
      *
      * A three-argument tokenize_all() sink receives it, which is how Mode_lexer's batch driver reads a token's mode
      * action without a lookup; its per-token driver looks the action up. It rides the sink rather than tokenize()'s
-     * Match, which widening measured 2.5x.
+     * Match.
      * @tparam T The token type used with add_token().
-     * @param token The token to attach the word to.
-     * @param word The word to report, zero meaning none.
+     * @param token The token to attach the payload to.
+     * @param payload The payload to report, zero meaning none.
      */
     template <common::concepts::Token_id T>
-    void set_token_payload(const T token, const std::uint64_t word)
+    void set_token_payload(const T token, const std::uint64_t payload)
     {
-        payloads_.emplace_back(static_cast<std::size_t>(token), word);
+        payloads_.emplace_back(static_cast<std::size_t>(token), payload);
     }
 
     /**

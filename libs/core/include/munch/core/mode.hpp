@@ -60,7 +60,7 @@ struct Mode_action
  * accepting-state payload while the per-token driver looks up the stored ones, which are the non-stay actions, by
  * token ID. An absent lookup denotes a stay, the same stay the zero payload denotes on the other driver. One word is
  * what that channel carries, and making stay zero lets the common case, a token that leaves the mode alone, be a test
- * against zero.
+ * against zero. Packed_action, pack() and unpack() serve the two drivers and are not part of the stable surface.
  */
 using Packed_action = std::uint64_t;
 

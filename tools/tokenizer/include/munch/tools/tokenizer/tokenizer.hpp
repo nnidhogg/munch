@@ -103,10 +103,9 @@ public:
      * @brief Reset the reading position to the beginning of the current input, and with it the mode a mode lexer
      *        drives.
      *
-     * Where a mode lexer drives the mode, the mode a scan ended in belongs to the text just rewound past, so it
-     * returns to zero with the saved frames, however that mode was reached, set_mode() included; call set_mode()
-     * again after reset() to re-enter one deliberately. Where the caller drives the mode with several lexers
-     * instead, it is the caller's and is kept.
+     * The mode is treated exactly as load() treats it: returned to zero with the saved frames where a mode lexer
+     * drives it, however it was reached, and kept where the caller drives it; call set_mode() again after reset()
+     * to re-enter one deliberately.
      */
     void reset() noexcept;
 
@@ -121,15 +120,15 @@ public:
     /**
      * @brief Seeks to the next position the active mode's automaton certifies as a token start.
      *
-     * The certified counterpart of the manual error loop: where seek() skips by whatever rule the driver
-     * invents, recover() asks the active mode's lexer for its first certified byte or split window in evidence
-     * order at or after the position past the current one, and moves there. The contract is complete-repair
-     * invariance: in every completely tokenizable repair of the input before the answer's preserved evidence,
-     * scanning resumes at a token start of the repaired segmentation. No tokenizable repair is promised to
-     * exist, and the next read may error again. Consulting the active mode is a policy the flat theorems do
-     * not upgrade to a modal guarantee, since a repair could reach the resume point in a different mode; a
-     * forced or grammar-driven mode change is the driver's business exactly as for next(). When the search
-     * finds no certificate ahead, the position does not move.
+     * The certified counterpart of the manual error loop: where seek() skips by whatever rule the driver invents,
+     * recover() asks the active mode's lexer for its first certified byte or split window in the order the walk meets
+     * them, core::Lexer::next_certified_evidence()'s evidence order, at or after the position past the current one, and
+     * moves there. The contract is that walk's complete-repair invariance: in every completely tokenizable repair of
+     * the input before the answer's preserved evidence, scanning resumes at a token start of the repaired segmentation.
+     * No tokenizable repair is promised to exist, and the next read may error again. Consulting the active mode is a
+     * policy the flat guarantees, the README's Error Recovery section, do not upgrade to a modal guarantee, since a
+     * repair could reach the resume point in a different mode; a forced or grammar-driven mode change is the driver's
+     * business exactly as for next(). When the search finds no certificate ahead, the position does not move.
      * @return The number of bytes skipped from the current position, or std::nullopt when no certified byte and no
      *         certified window of two to four bytes lies ahead in the remaining input, the widths the search
      *         consults.
@@ -143,21 +142,22 @@ public:
      * after an error is the failure offset, and the answer carries core::Lexer::Certified_start's guarantee.
      * The scanner does not know the damage's true extent, so when the corruption reaches past the evidence,
      * the transfer to the intended input is forfeit; the returned interval is exactly what a caller needs to
-     * check that condition against knowledge of its own. Flat token sets carry the published theorems; under
-     * modes the answer is per-automaton, as for recover().
+     * check that condition against knowledge of its own. Flat token sets carry the guarantees the README's Error
+     * Recovery section states; under modes the answer is per-automaton, as for recover().
      * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
      */
     [[nodiscard]] std::optional<core::Lexer::Certified_start> recover_from_failure();
 
     /**
-     * @brief Recovery under a caller-supplied clean bound: the pristine-input guarantee.
+     * @brief Recovery under a caller-supplied clean bound, so the answer transfers to the intended input.
      *
      * The clean-anchored contract: the search starts at the later of one past the current position and
      * clean_from, so the returned evidence begins at or after clean_from by construction. When the caller's
      * bound is truly at or past the damage's end, an editor's edit span or a transport frame's boundary, the
      * evidence lies in undamaged text, which settles the survival half of core::Lexer::Certified_start's
-     * guarantee that the failure-anchored form cannot establish alone. Flat token sets carry the published
-     * theorems; under modes the answer is per-automaton, as for recover().
+     * guarantee, that the evidence outlasted the damage, which the failure-anchored form cannot establish alone.
+     * Flat token sets carry the guarantees the README's Error Recovery section states; under modes the answer is
+     * per-automaton, as for recover().
      * @param clean_from The caller's lower bound on undamaged text.
      * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
      */

@@ -27,18 +27,11 @@ namespace munch::core
  * genuinely non-regular case, since counting to an unbounded depth is what one finite automaton cannot do.
  * A construct whose terminator is chosen per occurrence, such as a heredoc naming its own delimiter, is outside
  * this: a mode's token set is fixed at build time, so that needs the Tokenizer's hand-scanning hatch. Instances are
- * only constructible through Mode_builder::build().
+ * obtainable through Mode_builder::build().
  *
  * @par Why there is no parallel entry point
- * Lexer certifies split points: bytes safe to cut at whatever precedes them, which is what lets a worker start
- * mid-input without guessing. That argument needs the scan's whole state to be recoverable from the cut position,
- * and here it is not. A worker landing on a byte would have to recover the mode and the whole saved stack as well,
- * and no single byte carries that: the same byte is a quote inside code and a terminator inside a string, and the
- * stack depth a nested comment reached is unbounded, so no finite certificate can name it. The proved obstruction is
- * narrower than "never": a single byte cannot identify the mode where two or more of them admit every byte, which is
- * sufficient for a safe cut but not necessary. A multi-byte
- * window, a checkpoint from an earlier pass, or a stackless go_to-only mode set are outside it. Parallel
- * tokenization is absent rather than present and unsound; use Lexer where the grammar admits a flat token set.
+ * A byte cannot identify the mode where two or more modes admit it, so no byte certificate names a safe cut here;
+ * use Lexer where the grammar admits a flat token set.
  */
 class Mode_lexer
 {
@@ -66,6 +59,8 @@ public:
      * @param stack The mode stack, advanced by the matched token's action.
      * @return The match. An empty token means no pattern matched, or the token's pop found nothing saved; the
      *         stack is unchanged in both cases, so a caller can report the position without losing context.
+     * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved
+     *         frame that is not.
      */
     template <common::concepts::Token_id T, common::concepts::Byte_iterator Iterator>
     [[nodiscard]] Match<T> tokenize(Iterator begin, Iterator end, Mode_stack& stack) const
@@ -109,8 +104,7 @@ public:
      * scanner once per token. Any such action ends the pass, including a push whose target is the mode already
      * being scanned. Lexer::tokenize_all()'s sink may halt the scan by returning false, so a mode-changing
      * token ends the inner pass and the outer loop resumes in the new mode. Most tokens leave the mode alone, so
-     * most of the input is scanned in the tight loop; driving one token at a time costs 12 to 18 percent even for a
-     * plain Lexer, and this recovers it.
+     * most of the input is scanned in the tight loop.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator The input iterator type.
      * @tparam Sink Callable receiving each consumed token, its length, and the mode it matched in.
@@ -138,6 +132,8 @@ public:
      * distinguishes them. The stack is left exactly as the scan left it, so `stack.current` names the mode and
      * `stack.saved.size()` the depth.
      * @param stack Receives the mode and saved frames at the stopping point; its incoming value starts the scan.
+     * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved
+     *         frame that is not.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires std::invocable<Sink&, T, std::size_t, std::size_t>
@@ -197,9 +193,8 @@ public:
 
                         stack.apply(action);
 
-                        // Continuing here when the target is the mode already being scanned, which is what a comment
-                        // nesting inside itself does, gained 8% at depth 16 and lost 12% on string-heavy input: a
-                        // constant false lets the inner scan compile knowing an action token always ends it.
+                        // Any non-stay action ends the pass, a push onto the mode already being scanned included, so
+                        // the outer loop resumes in the new mode.
                         return false;
                     })};
 
@@ -226,6 +221,8 @@ public:
 
     /**
      * @brief Tokenizes a container, reporting the mode and nesting depth the scan ended in.
+     * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved
+     *         frame that is not.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container, typename Sink>
         requires std::invocable<Sink&, T, std::size_t, std::size_t>
@@ -293,13 +290,13 @@ private:
      * @brief The action registered for a token in a mode, defaulting to stay.
      *
      * Only the per-token entry point needs it; the batch driver reads each action from the matched token's payload.
-     * Defined out of line to keep its loop out of callers that inline aggressively, which cost the Tokenizer 10%.
+     * Defined out of line to keep its loop out of callers that inline aggressively.
      */
     [[nodiscard]] Mode_action action_of(std::size_t mode, std::size_t token) const noexcept;
 
     /**
      * @brief Whether each mode has any such token, tested once per mode change and so held apart from the lists
-     *        themselves, which reaching through cost 17% on mode-change-heavy input.
+     *        themselves.
      */
     std::vector<bool> acting_;
 
@@ -312,7 +309,7 @@ private:
      * @brief Every mode-changing token in the grammar, read only by the per-token entry point.
      *
      * One flat list rather than a list per mode: a grammar has a handful of these in total, so the scan is short,
-     * and holding them per mode cost 17% on mode-change-heavy input for data the batch driver never reads.
+     * and the batch driver never reads them.
      */
     std::vector<Registered> actions_;
 };
