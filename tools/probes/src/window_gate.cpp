@@ -4,8 +4,6 @@
 // The model below is conservative and proved sound. It reports windows it can justify and refuses ones it cannot,
 // so its counts are a lower bound on what genuinely certifies, never an upper one. The proof is stated here in
 // full so the probe stands alone, with or without the companion paper that states the same model and argument.
-// A second adversarial read confirmed it on 2026-08-05,
-// independently re-deriving the representation lemma and the quotient congruence and reproducing every figure.
 //
 // Assumptions. The DFA is trimmed to its live states L, meaning reachable and co-accessible; q0 is live; no token
 // matches the empty string; and the input considered is one the scanner tokenizes completely. Note that "the scan

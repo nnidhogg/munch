@@ -79,12 +79,13 @@ public:
     }
 
     /**
-     * @brief Tokenizes a whole input in one pass, invoking the sink once per consumed token.
+     * @brief Tokenizes a whole input in one call, invoking the sink once per consumed token.
      *
      * Consumes the same positive-width tokens, IDs and lengths, as calling tokenize() repeatedly at each token
-     * boundary, invoking the sink after each and stopping when the sink returns false, but the scan state stays live
-     * across tokens, amortizing the per-call overhead. Random access is required because longest match may read past
-     * the last accepting position and must resume from it.
+     * boundary, invoking the sink after each and stopping when the sink returns false, but the loop stays in one call
+     * across tokens, amortizing the per-call overhead; the automaton restarts at each token as tokenize() does.
+     * Random access is required because longest match may read past the last accepting position and must resume
+     * from it.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator Random access iterator type.
      * @tparam Sink Callable receiving each consumed token and its length.
@@ -120,7 +121,7 @@ public:
     }
 
     /**
-     * @brief Tokenizes a whole container in one pass, invoking the sink once per consumed token.
+     * @brief Tokenizes a whole container in one call, invoking the sink once per consumed token.
      * @tparam T The token type (enum or integral).
      * @tparam Container The input container type (must offer random access).
      * @tparam Sink Callable receiving each consumed token and its length, or those and its payload.

@@ -182,7 +182,7 @@ chunked8/source  512.0 MiB, 152160096 tokens, 15 passes: best 5591.5, median 550
 ```
 
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
-`tokenize_all()` entry point, which keeps the scan state live across token boundaries, the `Tokenizer` driver,
+`tokenize_all()` entry point, which stays in one call across token boundaries, the `Tokenizer` driver,
 identifiers containing UTF-8 code points matched through byte expansion, the same input through the full Unicode XID
 identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the property adds no Unicode-specific per-byte
 work, and its runtime impact is limited to the resulting DFA and table size), the keyword-scale build cost, the XID
@@ -685,11 +685,11 @@ In both cases, the lexer returns:
 
 This API is efficient and lightweight, suitable for use in parsers or compiler front ends.
 
-To tokenize a whole input at once, `tokenize_all` scans in a single pass and invokes a sink per consumed token, keeping
-the scan state live across token boundaries; it is the fastest way to tokenize a complete input. It requires random
-access to input of byte elements, integral or `std::byte`, so a `std::string` or a `std::vector` of bytes qualifies, and
-returns the number of characters tokenized, so a result short of the input's size names the offset where the scan
-stopped: no token matched there, a zero-width token did, or the sink returned false:
+To tokenize a whole input at once, `tokenize_all` scans in a single call and invokes a sink per consumed token, paying
+the per-call overhead once; it is the fastest way to tokenize a complete input. It requires random access to input of
+byte elements, integral or `std::byte`, so a `std::string` or a `std::vector` of bytes qualifies, and returns the number
+of characters tokenized, so a result short of the input's size names the offset where the scan stopped: no token matched
+there, a zero-width token did, or the sink returned false:
 
 ```cpp
 std::vector<std::pair<Token_kind, std::size_t>> tokens;

@@ -357,12 +357,13 @@ public:
     }
 
     /**
-     * @brief Tokenizes a whole input in one pass, invoking the sink once per consumed token.
+     * @brief Tokenizes a whole input in one call, invoking the sink once per consumed token.
      *
      * Consumes the same positive-width tokens, IDs and lengths, as calling run() repeatedly at each token boundary,
-     * invoking the sink after each and stopping when the sink returns false, but the scan state stays live across
-     * tokens, amortizing the per-call overhead. Random access is required because longest match may read past the last
-     * accepting position and must resume from it. A zero-width match stops the scan rather than looping in place.
+     * invoking the sink after each and stopping when the sink returns false, but the loop stays in one call across
+     * tokens, amortizing the per-call overhead; the automaton restarts at each token as run() does. Random access is
+     * required because longest match may read past the last accepting position and must resume from it. A zero-width
+     * match stops the scan rather than looping in place.
      * @tparam Iterator Random access iterator type.
      * @tparam Sink Callable receiving each consumed token, its length, and its payload.
      * @param begin Iterator to the beginning of the input.

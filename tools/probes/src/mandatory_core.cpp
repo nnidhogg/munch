@@ -12,7 +12,7 @@
 // completed on the killing byte is too late. Families are nonempty strings by contract; a state that can
 // die with no core before the killing byte gets a refuted verdict with a reconstructed witness.
 //
-// What runs as a test. The shipped instances and the hostile counterexamples, all pinned:
+// What runs as a test. The shipped instances and the counterexamples, all pinned:
 //   - the C-like cumulative row proves the family {*/} at its comment-interior state;
 //   - a Python-like triple-quote row proves the family {three quotes} at its string-interior state;
 //   - the RFC 8259 row refutes every family at its string-interior state with a one-byte witness, since a

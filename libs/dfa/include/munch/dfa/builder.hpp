@@ -27,7 +27,8 @@ public:
     [[nodiscard]] Dfa::State_t init_state() const noexcept;
 
     /**
-     * @brief Generates and returns the next available state identifier.
+     * @brief Returns the next identifier from the builder's own counter, which does not track identifiers a
+     * caller names in add_transition or add_accept_state.
      * @return The next state identifier.
      */
     [[nodiscard]] Dfa::State_t next_state() noexcept;

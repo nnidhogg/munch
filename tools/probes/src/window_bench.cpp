@@ -8,11 +8,11 @@
 // figure from a casual run may be quoted anywhere without the collect.sh ritual on a quiet machine. The
 // assertions are the point; the throughput lines only accompany them.
 //
-// The window model mirrored below is the one window_gate.cpp states and proves in full, with a confirmed second
-// adversarial read; see that header for the representation lemma, the soundness argument, and the quotient. This
-// copy exists so the two probes stay standalone, and it is kept honest twice over: the gate asserts the model
-// against the scanner, and this probe additionally asserts that every boundary it plans lands on a token start of
-// the serial scan it then reproduces exactly.
+// The window model mirrored below is the one window_gate.cpp states and proves in full; see that header for the
+// representation lemma, the soundness argument, and the quotient. This copy exists so the two probes stay
+// standalone, and it is kept honest twice over: the gate asserts the model against the scanner, and this probe
+// additionally asserts that every boundary it plans lands on a token start of the serial scan it then reproduces
+// exactly.
 
 #include <algorithm>
 #include <chrono>

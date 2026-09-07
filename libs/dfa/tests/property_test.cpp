@@ -72,7 +72,7 @@ Dfa random_dfa(Random& random)
  * lives in.
  *
  * random_dfa() wires transitions densely, so nearly every symbol is consumed from nearly every state and almost
- * nothing certifies. That makes it a good adversarial generator and a poor source of positive cases. This one
+ * nothing certifies. That makes it a good source of refutations and a poor source of positive cases. This one
  * builds the two shapes deliberately: a run state reached from the initial state on some symbols and looping back
  * to itself on those same symbols, which is what makes advancing from the run and from the initial state agree;
  * and a state reached from the initial state on symbols nothing else consumes, which is what the exact certificate
@@ -429,7 +429,7 @@ TEST(Dfa_property_test, Trivia_modulo_certificate_survives_every_split_it_admits
 
     for (int round{0}; round < 200; ++round)
     {
-        // Run-shaped grammars supply the positive cases; the dense ones keep the adversarial coverage.
+        // Run-shaped grammars supply the positive cases; the dense ones keep the refuting coverage.
         const auto dfa{minimize(round % 2 == 0 ? random_run_dfa(random) : random_dfa(random))};
 
         const auto trivia{random_trivia(random)};
