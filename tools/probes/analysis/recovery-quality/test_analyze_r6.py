@@ -4061,6 +4061,11 @@ def run_suite(data_dir, neutered=None, only=None):
                 # still unproven and the case is a failure.
                 verdicts[case["name"]] = "REJECTED-WRONG-GUARD"
                 print(f"{case['name']} REJECTED-WRONG-GUARD (expected marker: {' + '.join(absent)})")
+                # The analyzer's last line says which guard did fire, or that none did: an analyzer killed under
+                # memory pressure or refused a write leaves a traceback or nothing, and a reader must be able to
+                # tell that from a guard that fired in the wrong place without rerunning the case.
+                last = [line for line in stderr.splitlines() if line.strip()]
+                print(f"    analyzer stderr: {last[-1] if last else '(empty, exit ' + str(status) + ')'}")
                 failures.append(case["name"])
             else:
                 verdicts[case["name"]] = "REJECTED"
