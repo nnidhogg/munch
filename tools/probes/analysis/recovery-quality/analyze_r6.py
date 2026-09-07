@@ -309,12 +309,11 @@ def main(argv=None, audit_only=False):
             else:
                 assert int(record["corruption_end"]) == int(record["p"]) + int(record["k"]), (key, record["strategy"])
 
-            # Every coordinate is bounded by the input it indexes, and that input is the source this row's own
-            # grammar runs on rather than the generic bound above: a corpus of half a mebibyte carries no
-            # coordinate at six hundred thousand, though that bound admits one. The damage start is the one
-            # column measured against the pristine source; the rest are measured against the damaged input,
-            # whose length the operation fixes. Like the geometry above, this belongs to the draw, so it is
-            # read before the absorbed rows leave.
+            # Every coordinate is bounded by the input it indexes, the source this row's own grammar runs
+            # on: a corpus of half a mebibyte carries no coordinate at six hundred thousand. The damage
+            # start is the one column measured against the pristine source; the rest are measured against
+            # the damaged input, whose length the operation fixes. Like the geometry above, this belongs to
+            # the draw, so it is read before the absorbed rows leave.
             assert record["grammar"] in GRAMMAR_SOURCE_BYTES, record["grammar"]
             source_size = GRAMMAR_SOURCE_BYTES[record["grammar"]]
             damaged_size = damaged_length(source_size, record["op"], int(record["k"]))
@@ -1159,7 +1158,7 @@ def main(argv=None, audit_only=False):
          r" [0-9]+ of the unrepairable, the vacuous share its stratification labels"),
         ("anchored tail line",
          r"exact anchored arm: [0-9]+ answers, the decider asserted at or before the walk on every"
-         r" repairable trial and refusing every unrepairable one before the anchor advances;"
+         r" repairable trial where the walk answered and refusing every unrepairable one before the anchor advances;"
          r" [0-9]+ paired answers, \d+ bytes saved on repairable trials, net displacement -?[0-9]+ bytes"
          r" over all pairs"),
         ("duplicate tail line", r"duplicate sampled positions across all cells: [0-9]+"),
@@ -1182,11 +1181,12 @@ def main(argv=None, audit_only=False):
                         line, re.ASCII), line
     oracle_line = line
     line = summary_next("determinism preamble")
-    # Revision-six summaries name the corpus seeds as a range.
+    # The harness names its two corpus seeds and the pristine oracle's sampling seed apart.
     # The seed count and the attempt budget are captured rather than discarded: both are figures the
     # archive can answer for, and both are reconciled with the other summary values at the end.
     preamble = re.fullmatch(
-        r"deterministic: corpus seeds 0x[0-9a-f]+ through 0x[0-9a-f]+, schedule seed 0x[0-9a-f]+"
+        r"deterministic: corpus seeds 0x[0-9a-f]+ and 0x[0-9a-f]+, the pristine-oracle sampling seed"
+        r" 0x[0-9a-f]+, schedule seed 0x[0-9a-f]+"
         r" and payload seed 0x[0-9a-f]+ each offset per \(row, seed, op, k\) so no two rows share"
         r" a stream, ([0-9]+) independent seeds, positions by unbiased rejection sampling, attempt"
         r" budget ([0-9]+) per incident", line, re.ASCII)

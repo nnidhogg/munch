@@ -105,10 +105,10 @@ UNKNOWN_OPERATION = "scramble"
 # so the analyzer's per-grammar source lengths cannot carry it.
 UNKNOWN_GRAMMAR = "c-like row the schedule never ran"
 
-# The inner bound's source length for a generated row, mirrored here for the same reason: the cases that
-# reach past a row's own corpus name the coordinates they write. The five generated rows run on half a
-# mebibyte each and the real-world row runs on a longer document, so those cases are staged on generated
-# rows, and the rows they use are asserted not to be the real-world one.
+# The source length of a generated row, mirrored here for the same reason: the cases that reach past a row's
+# own corpus name the coordinates they write. The five generated rows run on half a mebibyte each and the
+# real-world row runs on a longer document, so those cases are staged on generated rows, and the rows they
+# use are asserted not to be the real-world one.
 GENERATED_SOURCE_BYTES = 512 * 1024
 REAL_DOCUMENT_GRAMMAR = "json rfc 8259 lexical forms on a real-world document"
 
@@ -2006,17 +2006,12 @@ def build_cases(archive):
     direct_answer = archive.field(exact_direct_answer, "exact_at_anchor")
     exact_answer_lowered = str(int(archive.field(exact_direct_answer, "first")) - 1)
 
-    # An absorbed substitution moved bodily onto the position bound, its damage start and its span end
-    # together, so the operation's geometry still holds and only the bound is broken. The start is the
-    # first position column the spelling and bound pass reads, so it is the column the guard reports.
-
-    # Coordinates for the three cases that move an absorbed draw's damage outside the source its own grammar
+    # Coordinates for the two cases that move an absorbed draw's damage outside the source its own grammar
     # runs on. Each moves the damage start and the span end together, so the operation's geometry still holds
     # and the row stays an absorbed row in every other respect, and the start is the first coordinate the
-    # source bounds are read from, so it is the column the guard reports. The wild coordinate lies past the
-    # outer bound as well, which is therefore what refuses it. The other two are what the outer bound cannot
-    # see: a substitution's span, which must lie whole inside the source, and an insertion's seam, which may
-    # sit at the source's end and so is broken by putting it one byte past.
+    # source bounds are read from, so it is the column the guard reports. A substitution's span must lie whole
+    # inside the source; an insertion's seam may sit at the source's end and so is broken by putting it one
+    # byte past.
     past_corpus_start = str(PAST_CORPUS_COORDINATE)
     past_corpus_end = str(PAST_CORPUS_COORDINATE + int(archive.field(absorbed_substitute, "k")))
     insert_past_corpus_start = str(GENERATED_SOURCE_BYTES + 1)
@@ -2783,12 +2778,6 @@ def build_cases(archive):
         marker=(MECHANISM, 'assert (record["evidence_kind"] == "byte") == (width == 1)'),
     )
 
-    # No input this campaign reads approaches sixteen mebibytes, so a coordinate past that bound is a
-    # corrupted field rather than a large run. The absorbed row carries the damage coordinates and nothing
-    # else, and both of them move together onto the bound, so the operation's geometry still holds and the
-    # row is still an absorbed row in every other respect: only the bound is left to object, and it objects
-    # at the damage start, the first position column the spelling and bound pass reads.
-
     # Each attempt past the first advances the answer by at least one byte, so the distance between the
     # first and terminal answers bounds the attempt count from below. The count is raised one past what
     # that distance allows, on an arm the sidecar knows nothing about, outside the capped outcome whose
@@ -2818,16 +2807,11 @@ def build_cases(archive):
         ),
     )
 
-    # The generic bound is wide enough to admit coordinates no corpus in this campaign can carry, so every
-    # coordinate is held to the source its own grammar runs on besides. The three cases below move an
-    # absorbed draw's damage bodily, keeping the span equation the geometry guard reads, so the row is
-    # corrupt in exactly one respect: it names a place its own source does not have. The first is the wild
-    # coordinate, past the outer bound as well, and the outer bound is what refuses it, which is the point of
-    # keeping the case: it fixes what that bound does and does not settle. The second stays deep inside the
-    # outer bound and lands past a half-mebibyte corpus, where the outer bound has nothing to say and the
-    # source length derived for the row's grammar is the only guard left. The third breaks the insertion
-    # bound, which is one byte wider than the span operations' because an insertion consumes nothing and may
-    # sit at the source's end.
+    # Every coordinate is held to the source its own grammar runs on. The two cases below move an absorbed
+    # draw's damage bodily, keeping the span equation the geometry guard reads, so the row is corrupt in
+    # exactly one respect: it names a place its own source does not have. The first lands a substitution
+    # past a half-mebibyte corpus. The second breaks the insertion bound, which is one byte wider than the
+    # span operations' because an insertion consumes nothing and may sit at the source's end.
     case(
         "absorbed-substitution-span-past-its-grammar-source",
         campaign={
@@ -2852,12 +2836,12 @@ def build_cases(archive):
 
     # Every coordinate but the damage start indexes the damaged input rather than the source, so the length
     # they are held to is the one the operation leaves behind. The terminal answer is moved past a
-    # half-mebibyte row's damaged input, deep inside the outer bound again, on an arm the sidecar knows
-    # nothing about; and a deletion incident's mapped boundary is put at exactly the undamaged source length,
-    # which a substitution could carry and a deletion of k bytes cannot, so the case passes only if the
-    # length was derived per operation rather than taken from the source. That one is written into all eleven
-    # arms of the incident, the shared column's own convention, so the arms agree perfectly and the guard
-    # reports the first of them.
+    # half-mebibyte row's damaged input, on an arm the sidecar knows nothing about; and a deletion
+    # incident's mapped boundary is put at exactly the undamaged source length, which a substitution could
+    # carry and a deletion of k bytes cannot, so the case passes only if the length was derived per
+    # operation rather than taken from the source. That one is written into all eleven arms of the incident,
+    # the shared column's own convention, so the arms agree perfectly and the guard reports the first of
+    # them.
     case(
         "terminal-answer-past-the-damaged-input-length",
         campaign={noncertified_answered: archive.edited(noncertified_answered, terminal=past_corpus_start)},
@@ -4311,15 +4295,15 @@ def main():
             if entry["expect"] == "reject" and entry["marker"] is not None:
                 by_marker.setdefault(tuple(entry["marker"]), []).append(entry["name"])
         shared = [names for names in by_marker.values() if len(names) > 1]
-        print("--prove-metadata: the nine staged doctored declarations, a thinned critical entry, "
-              "a stratum retagged off the grid, two valid tags swapped between cases whose markers "
+        print("--prove-metadata: the nine staged doctored declarations, a thinned critical entry, a "
+              "stratum retagged off the grid, two valid tags swapped between cases whose markers "
               "differ, a critical tag retargeted onto an unrelated case with the population "
-              "preserved, an untagged guard-bearing case, a deleted ownership signature, an "
-              "altered one, a stray ownership signature, and two noncritical tags exchanged between "
-              "cases whose guards differ, each fail at their own named assertion, distinguished by "
-              "its message; %d shared-marker groups, %d cases in total, six pairs and one triple, "
-              "have members told apart by name and tag, not by marker, so a swap inside such a group "
-              "is outside what this proof shows" % (len(shared), sum(len(g) for g in shared)))
+              "preserved, an untagged guard-bearing case, a deleted ownership signature, an altered "
+              "one, a stray ownership signature, and two noncritical tags exchanged between cases "
+              "whose guards differ, each fail at their own named assertion, distinguished by its "
+              "message; %d shared-marker groups, %d cases in total, have members told apart by name "
+              "and tag, not by marker, so a swap inside such a group is outside what this proof shows"
+              % (len(shared), sum(len(g) for g in shared)))
         return 0
 
     if listing:
