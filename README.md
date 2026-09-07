@@ -709,9 +709,10 @@ example, correctly disqualifies newline, where a split-at-newline rule would sil
 chunks, sink)` scans the chunks concurrently, one thread per chunk, reaching 92.6-95.3% parallel efficiency at eight
 threads on a restricted CPU set, over a 512 MiB dense corpus that does not fit in cache, and 3.46-3.94× the serial
 throughput on four, both across two benchmark revisions on one machine; see [docs/performance.md](docs/performance.md);
-for input that tokenizes completely, the token stream is guaranteed identical to the serial scan's, and on a failure the
-per-chunk consumed lengths expose it. A token set that certifies no split points degenerates to one chunk and the serial
-scan. The sink receives `(chunk, token, length)` and runs concurrently across chunks; see
+for input that tokenizes completely, the token stream is guaranteed identical to the serial scan's; the result counts as
+a successful tokenization only when every returned per-chunk consumed length equals its chunk's size, and a short entry
+names the offset within its chunk where that scan stopped. A token set that certifies no split points degenerates to one
+chunk and the serial scan. The sink receives `(chunk, token, length)` and runs concurrently across chunks; see
 [docs/limits.md](docs/limits.md) for the contract and [docs/performance.md](docs/performance.md) for the measurements.
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
