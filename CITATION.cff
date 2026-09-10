@@ -50,3 +50,14 @@ references:
       - type: other
         value: "arXiv:2608.09761"
     url: "https://arxiv.org/abs/2608.09761"
+  - type: article
+    title: "Certified Panic Mode: Repair-Invariant Error Recovery for Maximal-Munch Lexing"
+    authors:
+      - family-names: "Nidhögg"
+        given-names: "Nicklas"
+        orcid: "https://orcid.org/0009-0006-6161-6150"
+    year: 2026
+    identifiers:
+      - type: other
+        value: "arXiv:2609.10600"
+    url: "https://arxiv.org/abs/2609.10600"
