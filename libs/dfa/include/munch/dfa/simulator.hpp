@@ -27,6 +27,10 @@ namespace munch::dfa
  * since states fit 32 bits and classes fit 8; on a 32-bit std::size_t it can, which the constructor refuses.
  * Stated as its own function with the limit as a parameter so the arithmetic is testable on every platform,
  * even where the guard itself is unreachable.
+ * @param states The number of states the table has one column for.
+ * @param classes The number of symbol equivalence classes the table has one row for.
+ * @param limit The largest representable size the table's entry count must stay within.
+ * @return True when the product of states and classes exceeds the limit.
  */
 [[nodiscard]] constexpr bool table_size_overflows(
         const std::size_t states, const std::size_t classes, const std::size_t limit) noexcept
@@ -50,6 +54,10 @@ namespace munch::dfa
  * Acceptance is tracked during the scan through a per-state flag byte rather than the accept tokens themselves:
  * the flag load depends on the new state but feeds nothing, so it stays off the state-to-state dependency chain,
  * and the matched Token is resolved exactly once after the scan.
+ *
+ * The one-line table reads stay in this header rather than the source, against the usual rule: core::Lexer's
+ * chunk_boundaries() calls is_split_point() once per byte, and moving the eight of them out cost 22% on plan/rare
+ * and 24% on plan/absent, measured at 16 MiB over fifteen passes.
  */
 class Simulator
 {
@@ -59,10 +67,17 @@ public:
      */
     struct Match
     {
+        /**
+         * @brief The token matched, or std::nullopt where nothing accepted.
+         */
         std::optional<Token> token{};
 
+        /**
+         * @brief The length of input the match consumed, zero when nothing accepted.
+         */
         std::size_t length{};
 
+        /** @brief Equal when both attempts matched the same token at the same length. */
         bool operator==(const Match&) const = default;
     };
 
@@ -118,6 +133,9 @@ public:
      * initial state cannot reach are ignored on the same grounds, since no scan can arrive in one; a Dfa built by
      * subset construction has none, but one assembled by hand may. Token sets whose runs or literals may contain any
      * byte certify no split points.
+     * @param symbol The symbol to test.
+     * @return True if every occurrence of the symbol begins a token; false for symbols that satisfy the
+     *         condition only vacuously.
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept
     {
@@ -141,8 +159,9 @@ public:
      * is_split_point() instead. And it holds only for input the serial scan tokenizes completely: past the offset
      * where that scan first fails, a chunk cut here can run on and emit kept tokens the serial scan never reaches,
      * so a boundary must lie before that offset to be covered at all.
-     * Like is_split_point(), this reports the useful subset: a symbol no live state consumes satisfies the condition
-     * only vacuously, and both maps deliberately answer false for it.
+     *
+     * Like is_split_point(), this reports the useful subset: a symbol no live state consumes satisfies the
+     * condition only vacuously, and both maps deliberately answer false for it.
      * @param symbol The symbol to test.
      * @return True if the symbol can begin a token and every occurrence is a safe split point under that weaker
      *         equivalence; false for symbols that satisfy the condition only vacuously.
@@ -164,16 +183,18 @@ public:
      * hand holds that occurrence, and on completely tokenizable input the promise applies to it directly; on
      * malformed input the promise carries nothing at all.
      *
-     * The decision runs the conservative cloud model over the compiled tables, a set of hypotheses about where the
-     * scan could be that only ever over-approximates the true state: every live state starts as a
-     * hypothesis whose token began before the window, each byte advances hypotheses deterministically, a fresh
-     * token may begin exactly where some represented history just ended one, and reading from a non-re-entrant
-     * initial state begins a token at that offset. The window is certified when every surviving hypothesis
-     * agrees on one in-window origin. A refusal is model-relative: the model deliberately refuses some windows a
-     * greedy scanner would allow, and refusal never proves that no certificate exists semantically. On
-     * non-empty, non-nullable token sets this coincides at length one with is_split_point(); nullable sets are
-     * outside the window proof and refused outright here, while the byte predicate can still certify for them,
-     * and an empty token set refuses everything on both sides.
+     * The decision runs the conservative cloud model over the compiled tables, a set of hypotheses about where
+     * the scan could be that only ever over-approximates the true state: every live state starts as a hypothesis
+     * whose token began before the window, each byte advances hypotheses deterministically, a fresh token may
+     * begin exactly where some represented history just ended one, and reading from a non-re-entrant initial
+     * state begins a token at that offset. The window is certified when every surviving hypothesis agrees on one
+     * in-window origin. A refusal is model-relative: the model deliberately refuses some windows a greedy scanner
+     * would allow, and refusal never proves that no certificate exists semantically. On non-empty, non-nullable
+     * token sets this coincides at length one with is_split_point(); nullable sets are outside the window proof
+     * and refused outright here, while the byte predicate can still certify for them, and an empty token set
+     * refuses everything on both sides.
+     * @param window The byte string to decide.
+     * @return The in-window origin every covering token begins at, or std::nullopt when the window is refused.
      */
     [[nodiscard]] std::optional<std::size_t> is_split_window(std::string_view window) const;
 
@@ -185,16 +206,6 @@ public:
     {
         return (split_points_[0] | split_points_[1] | split_points_[2] | split_points_[3]) != 0;
     }
-
-    /**
-     * @brief Returns whether some token matches the empty string, the compiled signature being an accepting
-     *        initial state.
-     *
-     * Nullable token sets sit outside the split window soundness proof, and every window is refused for them.
-     * The byte predicate instead withdraws only its initial-state exemption there, so byte certificates can
-     * remain; a planner consults this before spending any search on windows, never to discard a byte plan.
-     */
-    [[nodiscard]] bool nullable() const noexcept { return is_accepting(init_state_); }
 
     /**
      * @brief Reports whether the token set certifies any usable split point once discarded tokens are deleted.
@@ -211,16 +222,26 @@ public:
     }
 
     /**
+     * @brief Returns whether some token matches the empty string, the compiled signature being an accepting
+     *        initial state.
+     *
+     * Nullable token sets sit outside the split window soundness proof, and every window is refused for them.
+     * The byte predicate instead withdraws only its initial-state exemption there, so byte certificates can
+     * remain; a planner consults this before spending any search on windows, never to discard a byte plan.
+     * @return True when the initial state accepts, so some token matches the empty string.
+     */
+    [[nodiscard]] bool nullable() const noexcept { return is_accepting(init_state_); }
+
+    /**
      * @brief The byte string every certified split window provably contains, or empty when none is proved.
      *
-     * Derived once at construction. A live state whose every transition is live cannot be killed by any
-     * single byte, only led along a longer word to death, so any window certifying in its presence must
-     * carry that state's forced exit; the shortest
-     * exit is proposed as a core and proved mandatory by exhausting core-avoiding death words over the live
-     * tables, with the killing byte never fed to the matcher. The longest proved core is kept: every window
-     * is_split_window() certifies contains it with at least one byte following, which is what lets the
-     * planner narrow its candidate windows to occurrences of this string. Empty means no core is
-     * proved, because no such state exists, the candidate was refuted by a core-free death word, or the
+     * Derived once at construction. A live state whose every transition is live cannot be killed by any single
+     * byte, only led along a longer word to death, so any window certifying in its presence must carry that
+     * state's forced exit; the shortest exit is proposed as a core and proved mandatory by exhausting
+     * core-avoiding death words over the live tables, with the killing byte never fed to the matcher. The longest
+     * proved core is kept: every window is_split_window() certifies contains it with at least one byte following,
+     * which is what lets the planner narrow its candidate windows to occurrences of this string. Empty means no
+     * core is proved, because no such state exists, the candidate was refuted by a core-free death word, or the
      * token set is nullable; the planner then keeps its exhaustive walk, and nothing weakens: the core is an
      * accelerator's licence, never a certificate itself.
      * @return The proved mandatory core, or an empty view.
@@ -231,12 +252,11 @@ public:
      * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after
      *        leaving an accepting state, or nothing when that run is unbounded.
      *
-     * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether
-     * or not the excursion could still accept, so the measure counts every defined continuation. Zero is the
-     * premise under which a scheme restarting at every accept executes serial maximal munch exactly; a bounded
-     * value prices the
-     * checkpoint a rollback-aware scheme must carry; an unbounded region, reported as nothing, carries a
-     * cycle witness in the tables themselves.
+     * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether or
+     * not the excursion could still accept, so the measure counts every defined continuation. Zero is the premise
+     * under which a scheme restarting at every accept executes serial maximal munch exactly; a bounded value
+     * prices the checkpoint a rollback-aware scheme must carry; an unbounded region, reported as nothing, carries
+     * a cycle witness in the tables themselves.
      * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
      */
     [[nodiscard]] std::optional<std::size_t> lag() const;
@@ -245,13 +265,12 @@ public:
      * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
      *
      * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting at
-     * every accept would have declared the input malformed. On a rescue-free token set every rollback fires
-     * into an instant dead end, so the two schemes agree on every input. The gate is sufficient and not
-     * necessary: on {a, abc, bc} it
-     * returns false though no rescue exists there. Zero-lag sets pass vacuously; the gate is strictly weaker
-     * than zero lag.
-     * @return True when no stretch-opening byte starts a viable token from the initial state; false says
-     * only that this gate did not establish rescue-freeness.
+     * every accept would have declared the input malformed. On a rescue-free token set every rollback fires into
+     * an instant dead end, so the two schemes agree on every input. The gate is sufficient and not necessary: on
+     * {a, abc, bc} it returns false though no rescue exists there. Zero-lag sets pass vacuously; the gate is
+     * strictly weaker than zero lag.
+     * @return True when no stretch-opening byte starts a viable token from the initial state; false says only
+     *         that this gate did not establish rescue-freeness.
      */
     [[nodiscard]] bool rescue_free() const;
 
@@ -496,23 +515,16 @@ private:
      */
     struct Accept
     {
+        /**
+         * @brief The token the state accepts.
+         */
         Token token{0};
 
+        /**
+         * @brief The caller's opaque word for that token, zero where the constructor attached none.
+         */
         std::uint64_t payload{0};
     };
-
-    /**
-     * @brief Whether the state accepts some token; the flag test, named once.
-     */
-    [[nodiscard]] bool is_accepting(const std::size_t state) const noexcept
-    {
-        return (flags_[state] & accept_flag_) != 0;
-    }
-
-    /**
-     * @brief Whether the state is reachable and can still reach acceptance; the flag test, named once.
-     */
-    [[nodiscard]] bool is_live(const std::size_t state) const noexcept { return (flags_[state] & live_flag_) != 0; }
 
     /**
      * @brief The maximal-munch jump table over a tail.
@@ -534,6 +546,23 @@ private:
          */
         std::vector<bool> tokenizes;
     };
+
+    /**
+     * @brief Whether the state accepts some token; the flag test, named once.
+     * @param state The state to test.
+     * @return True when the state's flag byte marks it accepting.
+     */
+    [[nodiscard]] bool is_accepting(const std::size_t state) const noexcept
+    {
+        return (flags_[state] & accept_flag_) != 0;
+    }
+
+    /**
+     * @brief Whether the state is reachable and can still reach acceptance; the flag test, named once.
+     * @param state The state to test.
+     * @return True when the state's flag byte marks it live.
+     */
+    [[nodiscard]] bool is_live(const std::size_t state) const noexcept { return (flags_[state] & live_flag_) != 0; }
 
     /**
      * @brief Follows one transition of the compiled table.
@@ -614,7 +643,9 @@ private:
     [[nodiscard]] static Classes_t classify(const Dfa& dfa);
 
     /**
-     * @brief The token a state accepts, or nullopt where it accepts nothing.
+     * @brief The token a state accepts, or std::nullopt where it accepts nothing.
+     * @param state The state to resolve.
+     * @return The accepted token, or std::nullopt when the state accepts nothing.
      */
     [[nodiscard]] std::optional<Token> accepted(const std::size_t state) const
     {

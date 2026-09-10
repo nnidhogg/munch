@@ -260,210 +260,6 @@ Simulator::Simulator(
     derive_mandatory_core();
 }
 
-// Condition three of the weaker certificate asks whether every token still reachable from a state is discarded. That
-// needs no per-state set of token IDs: it is the complement of "some kept token is still reachable", which one
-// backward closure settles for every state at once.
-//
-// Two details keep this linear in the table. The closure walks the reverse index the constructor already built for
-// co-accessibility, rather than rescanning every symbol and source state for each state it reaches, which would be
-// quadratic in the state count. And whether a state accepts a discarded token is resolved once per state, rather
-// than searching the ignored list from inside the symbol loop.
-void Simulator::derive_split_points_ignoring(
-        const std::span<const std::size_t> ignored, const std::vector<bool>& reachable,
-        const std::vector<bool>& co_accessible, const std::vector<std::vector<Entry_t>>& predecessors,
-        const bool init_reentrant)
-{
-    const auto states{accept_table_.size()};
-
-    const std::set<std::size_t> discarded{ignored.begin(), ignored.end()};
-
-    std::vector<bool> accepts_discarded(states, false);
-
-    for (std::size_t state{0}; state < states; ++state)
-    {
-        accepts_discarded[state] = is_accepting(state) && discarded.contains(accept_table_[state].token.id());
-    }
-
-    std::vector<bool> reaches_kept(states, false);
-
-    std::vector<std::size_t> work;
-
-    for (std::size_t state{0}; state < states; ++state)
-    {
-        if (is_accepting(state) && !accepts_discarded[state])
-        {
-            reaches_kept[state] = true;
-
-            work.push_back(state);
-        }
-    }
-
-    while (!work.empty())
-    {
-        const auto to{work.back()};
-
-        work.pop_back();
-
-        for (const auto from : predecessors[to])
-        {
-            if (!reaches_kept[from])
-            {
-                reaches_kept[from] = true;
-
-                work.push_back(from);
-            }
-        }
-    }
-
-    const auto consumes{[this, &co_accessible](const std::size_t symbol, const std::size_t state) {
-        const auto to{table_[row_offsets_[symbol] + state]};
-
-        return to != no_state_ && co_accessible[to];
-    }};
-
-    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-    {
-        const auto safe{std::ranges::all_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {
-            if (!reachable[state] || !consumes(symbol, state) || (state == init_state_ && !init_reentrant))
-            {
-                return true;
-            }
-
-            // The left chunk must end on a complete token the caller discards, every token the severed one could
-            // still become must be discarded too, and the restart must land where the interrupted scan already is.
-            return accepts_discarded[state] && !reaches_kept[state] &&
-                   table_[row_offsets_[symbol] + state] == table_[row_offsets_[symbol] + init_state_];
-        })};
-
-        // Vacuity is judged as for the exact map: a symbol no live state consumes is useless to a caller.
-        if (safe && consumes(symbol, init_state_))
-        {
-            split_points_ignoring_[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
-        }
-    }
-}
-
-Simulator::Classes_t Simulator::classify(const Dfa& dfa)
-{
-    // The signature of a symbol is the sorted set of transitions it labels. Symbols with equal signatures would have
-    // identical table rows, which is exactly when they may share a class.
-    using Signature_t = std::vector<std::pair<Dfa::State_t, Dfa::State_t>>;
-
-    std::array<Signature_t, symbol_count_> signatures;
-
-    for (const auto& [key, to] : dfa.transitions())
-    {
-        signatures[static_cast<unsigned char>(key.second.symbol())].emplace_back(key.first, to);
-    }
-
-    std::map<Signature_t, Class_t> classes;
-
-    Classes_t result{};
-
-    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-    {
-        std::ranges::sort(signatures[symbol]);
-
-        result[symbol] =
-                classes.try_emplace(std::move(signatures[symbol]), static_cast<Class_t>(classes.size())).first->second;
-    }
-
-    return result;
-}
-
-std::optional<std::size_t> Simulator::step(const std::size_t state, const unsigned char symbol) const noexcept
-{
-    const auto to{table_[row_offsets_[symbol] + state]};
-
-    return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
-}
-
-std::optional<std::size_t> Simulator::maximal_run(
-        const std::size_t state, const std::string_view tail, const std::size_t from) const
-{
-    std::optional<std::size_t> last;
-
-    if (is_accepting(state))
-    {
-        last = from;
-    }
-
-    auto current{state};
-
-    for (std::size_t at{from}; at < tail.size(); ++at)
-    {
-        const auto next{step(current, static_cast<unsigned char>(tail[at]))};
-
-        if (!next)
-        {
-            break;
-        }
-
-        current = *next;
-
-        if (is_accepting(current))
-        {
-            last = at + 1;
-        }
-    }
-
-    return last;
-}
-
-Simulator::Jump_table Simulator::build_jump_table(const std::string_view tail) const
-{
-    Jump_table table{
-            .end = std::vector<std::optional<std::size_t>>(tail.size()),
-            .tokenizes = std::vector<bool>(tail.size() + 1)};
-
-    // The empty suffix tokenizes; walking right to left, every other suffix's answer is one lookup past its token.
-    table.tokenizes[tail.size()] = true;
-
-    for (std::size_t offset{tail.size()}; offset > 0;)
-    {
-        --offset;
-
-        table.end[offset] = maximal_run(init_state_, tail, offset);
-
-        table.tokenizes[offset] = table.end[offset].has_value() && table.tokenizes[*table.end[offset]];
-    }
-
-    return table;
-}
-
-std::vector<std::pair<std::size_t, std::string>> Simulator::crossing_entries() const
-{
-    std::map<std::size_t, std::string> seen;
-
-    std::vector<std::size_t> frontier;
-
-    // Breadth first from the initial state, so the first word to reach a state is a shortest one.
-    const auto expand{[&](const std::size_t from, const std::string& via) {
-        for (int byte{0}; byte < 256; ++byte)
-        {
-            if (const auto to{step(from, static_cast<unsigned char>(byte))};
-                to && seen.emplace(*to, via + static_cast<char>(byte)).second)
-            {
-                frontier.push_back(*to);
-            }
-        }
-    }};
-
-    expand(init_state_, std::string{});
-
-    for (std::size_t at{0}; at < frontier.size(); ++at)
-    {
-        expand(frontier[at], seen.at(frontier[at]));
-    }
-
-    return {seen.begin(), seen.end()};
-}
-
-std::optional<std::size_t> Simulator::scenario_boundary(const std::string_view tail, const std::size_t entry) const
-{
-    return maximal_run(entry, tail, 0);
-}
-
 std::optional<std::size_t> Simulator::is_split_window(const std::string_view window) const
 {
     // An accepting initial state is the compiled signature of a nullable token set, which the soundness theorem
@@ -544,289 +340,6 @@ std::optional<std::size_t> Simulator::is_split_window(const std::string_view win
     }
 
     return origin == before ? std::nullopt : std::optional{origin};
-}
-
-// The planner's accelerator licence. A live state alive on every byte survives any window that lacks its
-// forced exit, so a window certifying at all must carry that exit: the derivation proposes each such state's
-// shortest exit and keeps the longest one that survives the proof, which exhausts core-avoiding death words
-// over the live tables and refutes the candidate on the first one found. The matcher reads only the live
-// prefix; the killing byte is never fed to it, since a core completing on the killing byte is too late.
-// Refusal leaves the core empty and the planner exhaustive: the core is an accelerator's licence, never a
-// certificate. Nullable sets skip the derivation outright, because the window certificate refuses them
-// wholesale and a core would license nothing.
-void Simulator::derive_mandatory_core()
-{
-    if (nullable())
-    {
-        return;
-    }
-
-    const auto states{flags_.size()};
-
-    const auto advance_live{[this](const std::size_t state, const std::size_t symbol) -> std::optional<std::size_t> {
-        const auto to{table_[row_offsets_[symbol] + state]};
-
-        return to != no_state_ && is_live(to) ? std::optional<std::size_t>{to} : std::nullopt;
-    }};
-
-    // Shortest death words by search from the deaths backward: depth one where some byte has no live
-    // target, and each layer of the reverse traversal one byte deeper, every live transition read once. A
-    // state no death word leaves keeps infinity and proposes nothing.
-    constexpr auto infinity{std::numeric_limits<std::size_t>::max()};
-
-    std::vector<std::size_t> depth(states, infinity);
-
-    std::vector<char> entered_by(states, 0);
-
-    std::vector<std::size_t> onward(states, 0);
-
-    std::vector<std::size_t> frontier;
-
-    for (std::size_t state{0}; state < states; ++state)
-    {
-        if (!is_live(state))
-        {
-            continue;
-        }
-
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-        {
-            if (!advance_live(state, symbol))
-            {
-                depth[state] = 1;
-
-                entered_by[state] = static_cast<char>(symbol);
-
-                frontier.push_back(state);
-
-                break;
-            }
-        }
-    }
-
-    std::vector<std::vector<std::size_t>> sources(states);
-
-    for (std::size_t state{0}; state < states; ++state)
-    {
-        if (!is_live(state))
-        {
-            continue;
-        }
-
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-        {
-            const auto to{advance_live(state, symbol)};
-
-            if (to && (sources[*to].empty() || sources[*to].back() != state))
-            {
-                sources[*to].push_back(state);
-            }
-        }
-    }
-
-    for (std::size_t head{0}; head < frontier.size(); ++head)
-    {
-        const auto to{frontier[head]};
-
-        for (const auto from : sources[to])
-        {
-            if (depth[from] == infinity)
-            {
-                depth[from] = depth[to] + 1;
-
-                frontier.push_back(from);
-            }
-        }
-    }
-
-    // The death word is never stored: with the depths final, each state keeps one byte and one successor,
-    // chosen as the smallest byte stepping one layer shallower, and a word is spelled by walking the chain.
-    for (std::size_t state{0}; state < states; ++state)
-    {
-        if (!is_live(state) || depth[state] == infinity || depth[state] < 2)
-        {
-            continue;
-        }
-
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-        {
-            const auto to{advance_live(state, symbol)};
-
-            if (to && depth[*to] != infinity && depth[*to] + 1 == depth[state])
-            {
-                entered_by[state] = static_cast<char>(symbol);
-
-                onward[state] = *to;
-
-                break;
-            }
-        }
-    }
-
-    // Candidates come from input-total states of the required set: a non-re-entrant initial state is
-    // exempt, since its window hypothesis renames rather than survives. The core is the death word with the
-    // killing byte removed, and a depth of at least two is input-totality itself, since the seeding pass
-    // gave depth one to every live state missing a byte. Only the state is kept; its core is spelled when
-    // its proof runs.
-    std::vector<std::size_t> candidates;
-
-    std::size_t longest{0};
-
-    for (std::size_t state{0}; state < states; ++state)
-    {
-        if (!is_live(state) || (state == init_state_ && !init_reentrant_))
-        {
-            continue;
-        }
-
-        if (depth[state] == infinity || depth[state] < 2)
-        {
-            continue;
-        }
-
-        candidates.push_back(state);
-
-        longest = std::max(longest, depth[state] - 1);
-    }
-
-    const auto materialize{[&](const std::size_t origin) {
-        std::string core;
-
-        for (auto state{origin}; depth[state] > 1; state = onward[state])
-        {
-            core.push_back(entered_by[state]);
-        }
-
-        return core;
-    }};
-
-    // One stamped buffer serves every proof: an entry from an older search reads as unseen under the
-    // current stamp, so nothing is cleared or reallocated between candidates, and a four-byte stamp is
-    // wrap-safe because there are fewer candidates than stamps.
-    // The widths carry the wrap argument: states are capped below the 32-bit sentinel and at most one
-    // candidate proposes per state, so a stamp holds any proof ordinal, and a prefix cell must hold every
-    // matcher position a supported table can reach. Both types are pinned here, integrality included, so
-    // no narrowing or rounding representation can slip in silently.
-    using Stamp_t = std::uint32_t;
-
-    using Prefix_t = std::size_t;
-
-    static_assert(
-            std::numeric_limits<Stamp_t>::is_integer &&
-            std::numeric_limits<Stamp_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
-
-    static_assert(
-            std::numeric_limits<Prefix_t>::is_integer &&
-            std::numeric_limits<Prefix_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
-
-    std::vector<Stamp_t> seen(states * longest, 0);
-
-    // The matcher precomputed as a table per candidate, one lookup per transition: a graph search defeats
-    // the usual amortization of chained failure links, so paying them once here keeps a proof's cost at the
-    // pairs it visits.
-    std::vector<Prefix_t> matcher;
-
-    // The proof, per candidate from its own proposing state: a stack-driven reachability search over pairs
-    // of a live state and a matcher prefix, refuted the moment any reachable pair meets a byte with no live
-    // target, since the word spelled to that point is a core-avoiding death word. Pairs whose matcher
-    // completed the core are satisfied for every continuation and are not expanded; visiting order carries
-    // nothing, only the reachable set.
-    const auto proved{[&](const std::size_t origin, const std::string& core, const Stamp_t stamp) {
-        const auto length{core.size()};
-
-        std::vector<Prefix_t> fall(length, 0);
-
-        for (std::size_t at{1}; at < length; ++at)
-        {
-            auto matched{fall[at - 1]};
-
-            while (matched != 0 && core[at] != core[matched])
-            {
-                matched = fall[matched - 1];
-            }
-
-            if (core[at] == core[matched])
-            {
-                ++matched;
-            }
-
-            fall[at] = matched;
-        }
-
-        matcher.assign(length * symbol_count_, 0);
-
-        for (std::size_t at{0}; at < length; ++at)
-        {
-            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-            {
-                if (core[at] == static_cast<char>(symbol))
-                {
-                    matcher[at * symbol_count_ + symbol] = at + 1;
-                }
-                else if (at > 0)
-                {
-                    matcher[at * symbol_count_ + symbol] = matcher[fall[at - 1] * symbol_count_ + symbol];
-                }
-            }
-        }
-
-        seen[origin * length] = stamp;
-
-        std::vector<std::pair<std::size_t, std::size_t>> pending{{origin, 0}};
-
-        while (!pending.empty())
-        {
-            const auto [state, matched]{pending.back()};
-
-            pending.pop_back();
-
-            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-            {
-                const auto to{advance_live(state, symbol)};
-
-                if (!to)
-                {
-                    return false;
-                }
-
-                const auto next{matcher[matched * symbol_count_ + symbol]};
-
-                if (next == length)
-                {
-                    continue;
-                }
-
-                if (seen[*to * length + next] != stamp)
-                {
-                    seen[*to * length + next] = stamp;
-
-                    pending.emplace_back(*to, next);
-                }
-            }
-        }
-
-        return true;
-    }};
-
-    // Longest first, so the first proved candidate is the answer and every shorter proposal goes untried; a
-    // chain of nested proposals then costs one product search rather than one per link. Stability keeps the
-    // state-order tie between equally long proposals where it has always been.
-    std::ranges::stable_sort(
-            candidates, [&depth](const auto left, const auto right) { return depth[left] > depth[right]; });
-
-    // The stamp is the proof's one-based ordinal, so distinctness holds by construction rather than by
-    // increment discipline, and the ordinal never reaches the buffer's virgin zero.
-    for (const auto [at, candidate] : std::views::enumerate(candidates))
-    {
-        const auto core{materialize(candidate)};
-
-        if (proved(candidate, core, static_cast<Stamp_t>(at + 1)))
-        {
-            mandatory_core_ = core;
-
-            break;
-        }
-    }
 }
 
 std::optional<std::size_t> Simulator::lag() const
@@ -1071,6 +584,494 @@ std::optional<std::string> Simulator::minimal_repair(const std::string_view tail
     }
 
     return best;
+}
+
+std::optional<std::size_t> Simulator::step(const std::size_t state, const unsigned char symbol) const noexcept
+{
+    const auto to{table_[row_offsets_[symbol] + state]};
+
+    return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
+}
+
+std::optional<std::size_t> Simulator::maximal_run(
+        const std::size_t state, const std::string_view tail, const std::size_t from) const
+{
+    std::optional<std::size_t> last;
+
+    if (is_accepting(state))
+    {
+        last = from;
+    }
+
+    auto current{state};
+
+    for (std::size_t at{from}; at < tail.size(); ++at)
+    {
+        const auto next{step(current, static_cast<unsigned char>(tail[at]))};
+
+        if (!next)
+        {
+            break;
+        }
+
+        current = *next;
+
+        if (is_accepting(current))
+        {
+            last = at + 1;
+        }
+    }
+
+    return last;
+}
+
+Simulator::Jump_table Simulator::build_jump_table(const std::string_view tail) const
+{
+    Jump_table table{
+            .end = std::vector<std::optional<std::size_t>>(tail.size()),
+            .tokenizes = std::vector<bool>(tail.size() + 1)};
+
+    // The empty suffix tokenizes; walking right to left, every other suffix's answer is one lookup past its token.
+    table.tokenizes[tail.size()] = true;
+
+    for (std::size_t offset{tail.size()}; offset > 0;)
+    {
+        --offset;
+
+        table.end[offset] = maximal_run(init_state_, tail, offset);
+
+        table.tokenizes[offset] = table.end[offset].has_value() && table.tokenizes[*table.end[offset]];
+    }
+
+    return table;
+}
+
+std::vector<std::pair<std::size_t, std::string>> Simulator::crossing_entries() const
+{
+    std::map<std::size_t, std::string> seen;
+
+    std::vector<std::size_t> frontier;
+
+    // Breadth first from the initial state, so the first word to reach a state is a shortest one.
+    const auto expand{[&](const std::size_t from, const std::string& via) {
+        for (int byte{0}; byte < 256; ++byte)
+        {
+            if (const auto to{step(from, static_cast<unsigned char>(byte))};
+                to && seen.emplace(*to, via + static_cast<char>(byte)).second)
+            {
+                frontier.push_back(*to);
+            }
+        }
+    }};
+
+    expand(init_state_, std::string{});
+
+    for (std::size_t at{0}; at < frontier.size(); ++at)
+    {
+        expand(frontier[at], seen.at(frontier[at]));
+    }
+
+    return {seen.begin(), seen.end()};
+}
+
+std::optional<std::size_t> Simulator::scenario_boundary(const std::string_view tail, const std::size_t entry) const
+{
+    return maximal_run(entry, tail, 0);
+}
+
+Simulator::Classes_t Simulator::classify(const Dfa& dfa)
+{
+    // The signature of a symbol is the sorted set of transitions it labels. Symbols with equal signatures would have
+    // identical table rows, which is exactly when they may share a class.
+    using Signature_t = std::vector<std::pair<Dfa::State_t, Dfa::State_t>>;
+
+    std::array<Signature_t, symbol_count_> signatures;
+
+    for (const auto& [key, to] : dfa.transitions())
+    {
+        signatures[static_cast<unsigned char>(key.second.symbol())].emplace_back(key.first, to);
+    }
+
+    std::map<Signature_t, Class_t> classes;
+
+    Classes_t result{};
+
+    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    {
+        std::ranges::sort(signatures[symbol]);
+
+        result[symbol] =
+                classes.try_emplace(std::move(signatures[symbol]), static_cast<Class_t>(classes.size())).first->second;
+    }
+
+    return result;
+}
+
+// Condition three of the weaker certificate asks whether every token still reachable from a state is discarded. That
+// needs no per-state set of token IDs: it is the complement of "some kept token is still reachable", which one
+// backward closure settles for every state at once.
+//
+// Two details keep this linear in the table. The closure walks the reverse index the constructor already built for
+// co-accessibility, rather than rescanning every symbol and source state for each state it reaches, which would be
+// quadratic in the state count. And whether a state accepts a discarded token is resolved once per state, rather
+// than searching the ignored list from inside the symbol loop.
+void Simulator::derive_split_points_ignoring(
+        const std::span<const std::size_t> ignored, const std::vector<bool>& reachable,
+        const std::vector<bool>& co_accessible, const std::vector<std::vector<Entry_t>>& predecessors,
+        const bool init_reentrant)
+{
+    const auto states{accept_table_.size()};
+
+    const std::set<std::size_t> discarded{ignored.begin(), ignored.end()};
+
+    std::vector<bool> accepts_discarded(states, false);
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        accepts_discarded[state] = is_accepting(state) && discarded.contains(accept_table_[state].token.id());
+    }
+
+    std::vector<bool> reaches_kept(states, false);
+
+    std::vector<std::size_t> work;
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (is_accepting(state) && !accepts_discarded[state])
+        {
+            reaches_kept[state] = true;
+
+            work.push_back(state);
+        }
+    }
+
+    while (!work.empty())
+    {
+        const auto to{work.back()};
+
+        work.pop_back();
+
+        for (const auto from : predecessors[to])
+        {
+            if (!reaches_kept[from])
+            {
+                reaches_kept[from] = true;
+
+                work.push_back(from);
+            }
+        }
+    }
+
+    const auto consumes{[this, &co_accessible](const std::size_t symbol, const std::size_t state) {
+        const auto to{table_[row_offsets_[symbol] + state]};
+
+        return to != no_state_ && co_accessible[to];
+    }};
+
+    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    {
+        const auto safe{std::ranges::all_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {
+            if (!reachable[state] || !consumes(symbol, state) || (state == init_state_ && !init_reentrant))
+            {
+                return true;
+            }
+
+            // The left chunk must end on a complete token the caller discards, every token the severed one could
+            // still become must be discarded too, and the restart must land where the interrupted scan already is.
+            return accepts_discarded[state] && !reaches_kept[state] &&
+                   table_[row_offsets_[symbol] + state] == table_[row_offsets_[symbol] + init_state_];
+        })};
+
+        // Vacuity is judged as for the exact map: a symbol no live state consumes is useless to a caller.
+        if (safe && consumes(symbol, init_state_))
+        {
+            split_points_ignoring_[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
+        }
+    }
+}
+
+// The planner's accelerator licence. A live state alive on every byte survives any window that lacks its
+// forced exit, so a window certifying at all must carry that exit: the derivation proposes each such state's
+// shortest exit and keeps the longest one that survives the proof, which exhausts core-avoiding death words
+// over the live tables and refutes the candidate on the first one found. The matcher reads only the live
+// prefix; the killing byte is never fed to it, since a core completing on the killing byte is too late.
+// Refusal leaves the core empty and the planner exhaustive: the core is an accelerator's licence, never a
+// certificate. Nullable sets skip the derivation outright, because the window certificate refuses them
+// wholesale and a core would license nothing.
+void Simulator::derive_mandatory_core()
+{
+    if (nullable())
+    {
+        return;
+    }
+
+    const auto states{flags_.size()};
+
+    const auto advance_live{[this](const std::size_t state, const std::size_t symbol) -> std::optional<std::size_t> {
+        const auto to{table_[row_offsets_[symbol] + state]};
+
+        return to != no_state_ && is_live(to) ? std::optional<std::size_t>{to} : std::nullopt;
+    }};
+
+    // Shortest death words by search from the deaths backward: depth one where some byte has no live
+    // target, and each layer of the reverse traversal one byte deeper, every live transition read once. A
+    // state no death word leaves keeps infinity and proposes nothing.
+    constexpr auto infinity{std::numeric_limits<std::size_t>::max()};
+
+    std::vector<std::size_t> depth(states, infinity);
+
+    std::vector<char> entered_by(states, 0);
+
+    std::vector<std::size_t> onward(states, 0);
+
+    std::vector<std::size_t> frontier;
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (!is_live(state))
+        {
+            continue;
+        }
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            if (!advance_live(state, symbol))
+            {
+                depth[state] = 1;
+
+                entered_by[state] = static_cast<char>(symbol);
+
+                frontier.push_back(state);
+
+                break;
+            }
+        }
+    }
+
+    std::vector<std::vector<std::size_t>> sources(states);
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (!is_live(state))
+        {
+            continue;
+        }
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            const auto to{advance_live(state, symbol)};
+
+            if (to && (sources[*to].empty() || sources[*to].back() != state))
+            {
+                sources[*to].push_back(state);
+            }
+        }
+    }
+
+    for (std::size_t head{0}; head < frontier.size(); ++head)
+    {
+        const auto to{frontier[head]};
+
+        for (const auto from : sources[to])
+        {
+            if (depth[from] == infinity)
+            {
+                depth[from] = depth[to] + 1;
+
+                frontier.push_back(from);
+            }
+        }
+    }
+
+    // The death word is never stored: with the depths final, each state keeps one byte and one successor,
+    // chosen as the smallest byte stepping one layer shallower, and a word is spelled by walking the chain.
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (!is_live(state) || depth[state] == infinity || depth[state] < 2)
+        {
+            continue;
+        }
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            const auto to{advance_live(state, symbol)};
+
+            if (to && depth[*to] != infinity && depth[*to] + 1 == depth[state])
+            {
+                entered_by[state] = static_cast<char>(symbol);
+
+                onward[state] = *to;
+
+                break;
+            }
+        }
+    }
+
+    // Candidates come from input-total states of the required set: a non-re-entrant initial state is
+    // exempt, since its window hypothesis renames rather than survives. The core is the death word with the
+    // killing byte removed, and a depth of at least two is input-totality itself, since the seeding pass
+    // gave depth one to every live state missing a byte. Only the state is kept; its core is spelled when
+    // its proof runs.
+    std::vector<std::size_t> candidates;
+
+    std::size_t longest{0};
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (!is_live(state) || (state == init_state_ && !init_reentrant_))
+        {
+            continue;
+        }
+
+        if (depth[state] == infinity || depth[state] < 2)
+        {
+            continue;
+        }
+
+        candidates.push_back(state);
+
+        longest = std::max(longest, depth[state] - 1);
+    }
+
+    const auto materialize{[&](const std::size_t origin) {
+        std::string core;
+
+        for (auto state{origin}; depth[state] > 1; state = onward[state])
+        {
+            core.push_back(entered_by[state]);
+        }
+
+        return core;
+    }};
+
+    // One stamped buffer serves every proof: an entry from an older search reads as unseen under the
+    // current stamp, so nothing is cleared or reallocated between candidates, and a four-byte stamp is
+    // wrap-safe because there are fewer candidates than stamps.
+    //
+    // The widths carry the wrap argument: states are capped below the 32-bit sentinel and at most one
+    // candidate proposes per state, so a stamp holds any proof ordinal, and a prefix cell must hold every
+    // matcher position a supported table can reach. Both types are pinned here, integrality included, so
+    // no narrowing or rounding representation can slip in silently.
+    using Stamp_t = std::uint32_t;
+
+    using Prefix_t = std::size_t;
+
+    static_assert(
+            std::numeric_limits<Stamp_t>::is_integer &&
+            std::numeric_limits<Stamp_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
+
+    static_assert(
+            std::numeric_limits<Prefix_t>::is_integer &&
+            std::numeric_limits<Prefix_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
+
+    std::vector<Stamp_t> seen(states * longest, 0);
+
+    // The matcher precomputed as a table per candidate, one lookup per transition: a graph search defeats
+    // the usual amortization of chained failure links, so paying them once here keeps a proof's cost at the
+    // pairs it visits.
+    std::vector<Prefix_t> matcher;
+
+    // The proof, per candidate from its own proposing state: a stack-driven reachability search over pairs
+    // of a live state and a matcher prefix, refuted the moment any reachable pair meets a byte with no live
+    // target, since the word spelled to that point is a core-avoiding death word. Pairs whose matcher
+    // completed the core are satisfied for every continuation and are not expanded; visiting order carries
+    // nothing, only the reachable set.
+    const auto proved{[&](const std::size_t origin, const std::string& core, const Stamp_t stamp) {
+        const auto length{core.size()};
+
+        std::vector<Prefix_t> fall(length, 0);
+
+        for (std::size_t at{1}; at < length; ++at)
+        {
+            auto matched{fall[at - 1]};
+
+            while (matched != 0 && core[at] != core[matched])
+            {
+                matched = fall[matched - 1];
+            }
+
+            if (core[at] == core[matched])
+            {
+                ++matched;
+            }
+
+            fall[at] = matched;
+        }
+
+        matcher.assign(length * symbol_count_, 0);
+
+        for (std::size_t at{0}; at < length; ++at)
+        {
+            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+            {
+                if (core[at] == static_cast<char>(symbol))
+                {
+                    matcher[at * symbol_count_ + symbol] = at + 1;
+                }
+                else if (at > 0)
+                {
+                    matcher[at * symbol_count_ + symbol] = matcher[fall[at - 1] * symbol_count_ + symbol];
+                }
+            }
+        }
+
+        seen[origin * length] = stamp;
+
+        std::vector<std::pair<std::size_t, std::size_t>> pending{{origin, 0}};
+
+        while (!pending.empty())
+        {
+            const auto [state, matched]{pending.back()};
+
+            pending.pop_back();
+
+            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+            {
+                const auto to{advance_live(state, symbol)};
+
+                if (!to)
+                {
+                    return false;
+                }
+
+                const auto next{matcher[matched * symbol_count_ + symbol]};
+
+                if (next == length)
+                {
+                    continue;
+                }
+
+                if (seen[*to * length + next] != stamp)
+                {
+                    seen[*to * length + next] = stamp;
+
+                    pending.emplace_back(*to, next);
+                }
+            }
+        }
+
+        return true;
+    }};
+
+    // Longest first, so the first proved candidate is the answer and every shorter proposal goes untried; a
+    // chain of nested proposals then costs one product search rather than one per link. Stability keeps the
+    // state-order tie between equally long proposals where it has always been.
+    std::ranges::stable_sort(
+            candidates, [&depth](const auto left, const auto right) { return depth[left] > depth[right]; });
+
+    // The stamp is the proof's one-based ordinal, so distinctness holds by construction rather than by
+    // increment discipline, and the ordinal never reaches the buffer's virgin zero.
+    for (const auto [at, candidate] : std::views::enumerate(candidates))
+    {
+        const auto core{materialize(candidate)};
+
+        if (proved(candidate, core, static_cast<Stamp_t>(at + 1)))
+        {
+            mandatory_core_ = core;
+
+            break;
+        }
+    }
 }
 
 } // namespace munch::dfa
