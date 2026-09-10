@@ -12,30 +12,16 @@
 /tools/benchmark/rust/target
 
 # Generated files from the paper build; the figure PDFs under paper/figures are checked in on purpose
-/paper/split-points/split-points.pdf
-/paper/split-points/*.aux
-/paper/split-points/*.bbl
-/paper/split-points/*.blg
-/paper/split-points/*.fdb_latexmk
-/paper/split-points/*.fls
-/paper/split-points/*.log
-/paper/split-points/*.out
-/paper/split-windows/split-windows.pdf
-/paper/split-windows/*.aux
-/paper/split-windows/*.bbl
-/paper/split-windows/*.blg
-/paper/split-windows/*.fdb_latexmk
-/paper/split-windows/*.fls
-/paper/split-windows/*.log
-/paper/split-windows/*.out
-/paper/*.aux
-/paper/*.bbl
-/paper/*.blg
-/paper/*.fdb_latexmk
-/paper/*.fls
-/paper/*.log
-/paper/*.out
-/paper/*.toc
+/paper/**/*.aux
+/paper/**/*.bbl
+/paper/**/*.blg
+/paper/**/*.fdb_latexmk
+/paper/**/*.fls
+/paper/**/*.log
+/paper/**/*.out
+/paper/**/*.pdf
+/paper/**/*.toc
+!/paper/figures/*.pdf
 
 # Python bytecode from the probe analysis scripts.
 __pycache__/
