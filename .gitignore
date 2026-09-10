@@ -36,3 +36,7 @@
 /paper/*.log
 /paper/*.out
 /paper/*.toc
+
+# Python bytecode from the probe analysis scripts.
+__pycache__/
+*.pyc
