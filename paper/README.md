@@ -8,12 +8,12 @@ definitions, the split-invariance theorem and its malformed-input corollary, the
 the condition necessary as well as sufficient, the weaker certificate modulo the tokens a caller discards with its own
 soundness and strict-extension results, and a bibliography.
 
-`split-windows/split-windows.tex` is its companion, published as
-[arXiv:2608.09761](https://arxiv.org/abs/2608.09761) and mirrored by [docs/split_windows.md](../docs/split_windows.md):
-the generalization from certified bytes to certified windows, with the conservative cloud model and its soundness
-proof, the finite quotient that makes the search a decision procedure, the specialization theorem tying length one to
-the shipped predicate, and the strictness witnesses. Its evaluation runs as asserted probes in the test suite
-(`tools/probes/window_gate.cpp`), and `split-windows/campaign.md` names the archived collections behind its figures.
+`split-windows/split-windows.tex` is its companion, published as [arXiv:2608.09761](https://arxiv.org/abs/2608.09761)
+and mirrored by [docs/split_windows.md](../docs/split_windows.md): the generalization from certified bytes to certified
+windows, with the conservative cloud model and its soundness proof, the finite quotient that makes the search a decision
+procedure, the specialization theorem tying length one to the shipped predicate, and the strictness witnesses. Its
+evaluation runs as asserted probes in the test suite (`tools/probes/window_gate.cpp`), and `split-windows/campaign.md`
+names the archived collections behind its figures.
 
 The markdown reports are the accessible form, linked from the README and kept next to the implementation they
 describe; they carry the same claims but not every formal qualification, so where the two differ this directory is

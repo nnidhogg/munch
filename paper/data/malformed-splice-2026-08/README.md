@@ -18,10 +18,11 @@ git -C /tmp/rust-corpus checkout ab8058aa09e8c14b86b3d06c08ade66f863d22fe
 ```
 
 A depth-one clone fetches the branch tip, so if the tip has moved past the pinned commit, deepen the fetch
-with `git -C /tmp/rust-corpus fetch --depth 100 origin` before the checkout, or drop `--depth` entirely. The grammar is the consumption-complete C row stated in the probe, deliberately mismatched to Rust,
-whose plain strings span newlines; the stream is therefore malformed under the grammar, which is the
-condition the measurement exists to price. Token counts are exact integer arithmetic over deterministic
-scans, so the figures are machine-independent; `output.txt` is the run's verbatim output.
+with `git -C /tmp/rust-corpus fetch --depth 100 origin` before the checkout, or drop `--depth` entirely.
+The grammar is the consumption-complete C row stated in the probe, deliberately mismatched to Rust, whose
+plain strings span newlines; the stream is therefore malformed under the grammar, which is the condition
+the measurement exists to price. Token counts are exact integer arithmetic over deterministic scans, so the
+figures are machine-independent; `output.txt` is the run's verbatim output.
 
 The figures: the serial scan consumes 3,504,937 of 11,495,688 bytes (30.5 percent) and emits 596,401 tokens
 before failing. The window plan still recovers eight chunks; five of them report short consumption, which a

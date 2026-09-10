@@ -173,15 +173,14 @@ The experiment flattened the scan into a per-byte state machine and stepped seve
 a chunk of the same input at the same certified boundaries, predicting that the lanes' per-byte load chains would
 overlap in one core's pipeline. Measured on the source corpus against a 623.1 MiB/s serial scan, one lane ran at 373.7
 MiB/s, two lanes at 372.8, four at 193.5, and the dense corpus fared worse still, so the code was removed under the
-two-times-or-revert criterion applied to it. The control at one lane is the first lesson: the
-serial loop is fast because token-end handling sits outside the byte loop, and flattening it into per-byte checks costs
-forty percent before any interleaving begins. The flat lane count curve is the second and larger one: the prediction
-modeled the scan as one long dependency chain, but the scan resets its state to a constant at every token start, which
-cuts the chain, so on inputs averaging a few bytes per token the out-of-order window already overlaps several tokens'
-chains in the plain serial loop. The instruction-level parallelism the lanes were meant to create was already being
-harvested, and paying structure, register pressure, and branch-history interference to recreate it can only lose.
-Threads scale where lanes could not because each core brings its own registers and its own branch predictor, not just
-its own execution ports.
+two-times-or-revert criterion applied to it. The control at one lane is the first lesson: the serial loop is fast
+because token-end handling sits outside the byte loop, and flattening it into per-byte checks costs forty percent before
+any interleaving begins. The flat lane count curve is the second and larger one: the prediction modeled the scan as one
+long dependency chain, but the scan resets its state to a constant at every token start, which cuts the chain, so on
+inputs averaging a few bytes per token the out-of-order window already overlaps several tokens' chains in the plain
+serial loop. The instruction-level parallelism the lanes were meant to create was already being harvested, and paying
+structure, register pressure, and branch-history interference to recreate it can only lose. Threads scale where lanes
+could not because each core brings its own registers and its own branch predictor, not just its own execution ports.
 
 The engine comparison confirms the threaded picture across implementations rather than just within munch. With both
 lexer classes chunked the same way and validated token for token against their serial scans (`munch_benchmark_compare`

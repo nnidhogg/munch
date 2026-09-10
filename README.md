@@ -15,13 +15,13 @@
 `munch` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
 regex-like combinator DSL, compiled through Thompson construction, subset construction, and DFA minimization by Moore
 partition refinement, then executed by a cache-optimized table simulator. There are no predefined tokens or grammars.
-You describe the language, and the library builds the automaton. On
-the [comparison below](#comparison-with-other-engines), that automaton measures as the fastest of the run-time-built
-lexers measured there, in both languages and on both benchmark corpora; only compile-time code generation measures
-ahead. The compiled table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned
-in parallel with strong scaling and, for input the serial scan tokenizes completely, a provably identical token
-stream, with a serial-prefix guarantee on malformed input; none of the code-generating lexers measured here derives
-or checks such a guarantee for its own token sets.
+You describe the language, and the library builds the automaton. On the [comparison
+below](#comparison-with-other-engines), that automaton measures as the fastest of the run-time-built lexers measured
+there, in both languages and on both benchmark corpora; only compile-time code generation measures ahead. The compiled
+table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned in parallel with
+strong scaling and, for input the serial scan tokenizes completely, a provably identical token stream, with a
+serial-prefix guarantee on malformed input; none of the code-generating lexers measured here derives or checks such a
+guarantee for its own token sets.
 
 The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal munch rule every lexer lives by.
 
@@ -151,8 +151,8 @@ $ ./tools/benchmark/collect.sh ~/munch-run 1,16,128,512 15
 
 It writes `environment.txt` (CPU, visible topology, governor, memory, kernel, toolchain, and whether a hypervisor is
 present), `summary.txt`, and `observations.csv` with every timed pass of the scaling scenarios; the construction,
-planning and thread-launch rows appear in the summary only. It checks its own prerequisites first: CMake 3.20.6+, a C++23
-compiler (GCC 13+ or Clang 19+), and git with network access on the first configure, since four header-only Boost
+planning and thread-launch rows appear in the summary only. It checks its own prerequisites first: CMake 3.20.6+, a
+C++23 compiler (GCC 13+ or Clang 19+), and git with network access on the first configure, since four header-only Boost
 libraries and mdspan are cloned at pinned revisions. `-DUSE_SYSTEM_BOOST=ON` skips the Boost clones but not mdspan, so a
 fully offline configure is not supported.
 
@@ -183,18 +183,18 @@ chunked8/source  512.0 MiB, 152160096 tokens, 15 passes: best 5591.5, median 550
 ```
 
 The scenarios measure the core lexer called once per token on C-like source, the same input through the batch
-`tokenize_all()` entry point, which stays in one call across token boundaries, the `Tokenizer` driver,
-identifiers containing UTF-8 code points matched through byte expansion, the same input through the full Unicode XID
-identifier classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the property adds no Unicode-specific per-byte
-work, and its runtime impact is limited to the resulting DFA and table size), the keyword-scale build cost, the XID
-construction cost split into registration, finalization, and their total, the cost of planning chunk boundaries as
-certified bytes grow scarce, and the parallel chunked scans at certified split points on two, four, and eight threads.
-Inputs are fixed-seed and deterministic, so the bytes measured are identical across changes; that does not make timings
-comparable across a changed executable. Numbers depend on the machine, the token set, and the compiler: Clang 19
-measures within about ten percent of GCC since the accept path was pinned to a branch (see
-[docs/performance.md](docs/performance.md)). Two collections on the same bare-metal machine, at two benchmark revisions,
-disagreed by 14% on the plain serial scan and inverted its comparison with the one-chunk path, for reasons the report
-does not isolate. Rerun the benchmark on your own hardware and language before citing these numbers.
+`tokenize_all()` entry point, which stays in one call across token boundaries, the `Tokenizer` driver, identifiers
+containing UTF-8 code points matched through byte expansion, the same input through the full Unicode XID identifier
+classes (`lexer_all/xid` tracks `lexer_all/utf8` within noise: the property adds no Unicode-specific per-byte work, and
+its runtime impact is limited to the resulting DFA and table size), the keyword-scale build cost, the XID construction
+cost split into registration, finalization, and their total, the cost of planning chunk boundaries as certified bytes
+grow scarce, and the parallel chunked scans at certified split points on two, four, and eight threads. Inputs are
+fixed-seed and deterministic, so the bytes measured are identical across changes; that does not make timings comparable
+across a changed executable. Numbers depend on the machine, the token set, and the compiler: Clang 19 measures within
+about ten percent of GCC since the accept path was pinned to a branch (see [docs/performance.md](docs/performance.md)).
+Two collections on the same bare-metal machine, at two benchmark revisions, disagreed by 14% on the plain serial scan
+and inverted its comparison with the one-chunk path, for reasons the report does not isolate. Rerun the benchmark on
+your own hardware and language before citing these numbers.
 
 ### **Window-Planned Scaling**
 
@@ -223,14 +223,14 @@ windowed8/conv   512.0 MiB, 200780997 tokens, 15 passes: best 5488.9, median 512
 
 The full output and every observation are archived as `paper/data/windows-wsl-2026-08/`. This collection ran on the
 development machine under WSL2, a different setup from the bare-metal archive the transcript above quotes, so ratios
-compare within one collection and never across two: here the window plan turns an 858 MiB/s serial scan into 5124
-MiB/s at eight chunks. The plan row prices the eight-chunk plan of the one-mebibyte corpus at about a tenth of a
-millisecond; the search is local to each equal-division target rather than a pass over the input, so the plan's
-share of the total only falls as inputs grow. Two disclosures carry the
-numbers. The plan is a property of the token set together with the input: this corpus is built so the certified
-window occurs near every target, and text without such shapes degrades toward fewer chunks, never toward an unsafe
-cut. And the window guarantee is conditional on completely tokenizable input, so byte planning remains the default
-everywhere and this section prices the explicit opt-in; see the planner documentation for the exact contract.
+compare within one collection and never across two: here the window plan turns an 858 MiB/s serial scan into 5124 MiB/s
+at eight chunks. The plan row prices the eight-chunk plan of the one-mebibyte corpus at about a tenth of a millisecond;
+the search is local to each equal-division target rather than a pass over the input, so the plan's share of the total
+only falls as inputs grow. Two disclosures carry the numbers. The plan is a property of the token set together with the
+input: this corpus is built so the certified window occurs near every target, and text without such shapes degrades
+toward fewer chunks, never toward an unsafe cut. And the window guarantee is conditional on completely tokenizable
+input, so byte planning remains the default everywhere and this section prices the explicit opt-in; see the planner
+documentation for the exact contract.
 
 ### **Comparison with Other Engines**
 
@@ -407,9 +407,9 @@ has to notice by itself that the trick is no longer sound.
 | `munch::nfa`                              | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
 | `munch::dfa`                              | `Dfa` / `dfa::Builder`: DFA representation; `minimize()` (Moore partition refinement); `Simulator`.   |
 | `munch::core`                             | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
-| `munch::tools::tokenizer`                 | `Tokenizer`: resumable cursor over `core::Lexer`, offsets, seek, recovery, raw strings. `Mode_tokenizer`: the same over `core::Mode_lexer`, with modes. |
+| `munch::tools::tokenizer`                 | `Tokenizer`: resumable cursor over `core::Lexer`. `Mode_tokenizer`: the same, with modes.             |
 | `munch::nfa::tools` / `munch::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.                          |
-| `munch::common`                           | Shared concepts (`Byte_iterable`, `Random_access_byte_iterable`, `Token_id`, `Token_sink`).                               |
+| `munch::common`                           | Shared concepts (`Byte_iterable`, `Random_access_byte_iterable`, `Token_id`, `Token_sink`).           |
 
 ## **Usage Overview**
 
@@ -798,10 +798,9 @@ The three states are alternatives of one sum type, so they can also be handled e
 
 For context-dependent languages, a `Mode_tokenizer` holds several lexers as modes over the same input and switches
 between them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no practical automaton
-covers,
-such as C++ raw string literals, whose bounded delimiter makes them regular in principle but not worth a table, the
-driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`, and continues past the literal with
-`seek()`.
+covers, such as C++ raw string literals, whose bounded delimiter makes them regular in principle but not worth a table,
+the driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`, and continues past the literal
+with `seek()`.
 
 Together the two layers split by control rather than by convenience: `core::Lexer` scans, including in parallel,
 and `tools::tokenizer::Tokenizer` lets a driver decide where scanning resumes. `Mode_tokenizer` is the same cursor
@@ -853,14 +852,13 @@ byte and no certified window of two to four bytes, the widths the search consult
 does not move and the refusal is explicit. Under modes, the answer is relative to the active mode's automaton.
 The position-only form is `Lexer::next_certified_start(input, from)`, for drivers that plan without moving.
 
-The evidence itself is returned on request: `recover_from_failure()` answers with the certified start and the
-evidence interval and kind behind it, so a caller can reject an answer whose evidence overlaps text it
-distrusts, and `recover_from_clean(clean_from)` floors the search at a caller's known-clean offset (an editor
-knows its edit span), so the returned evidence is covered by construction. `recover()` stays the skip-count
-form above. All three leave the position unchanged when their own search refuses; `recover()` and
-`recover_from_failure()` search identically, while the clean floor can shrink the search domain, so the
-clean form may refuse where the failure-anchored forms answer. The lexer-level form is
-`Lexer::next_certified_evidence(input, from)`.
+The evidence itself is returned on request: `recover_from_failure()` answers with the certified start and the evidence
+interval and kind behind it, so a caller can reject an answer whose evidence overlaps text it distrusts, and
+`recover_from_clean(clean_from)` floors the search at a caller's known-clean offset (an editor knows its edit span), so
+the returned evidence is covered by construction. `recover()` stays the skip-count form above. All three leave the
+position unchanged when their own search refuses; `recover()` and `recover_from_failure()` search identically, while the
+clean floor can shrink the search domain, so the clean form may refuse where the failure-anchored forms answer. The
+lexer-level form is `Lexer::next_certified_evidence(input, from)`.
 
 When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored
 queries answer exactly rather than conservatively on non-nullable token sets, those in which no token matches the
@@ -972,9 +970,9 @@ would be a different grammar answering a different question, not because none co
 
 Both figures in each cell are medians of 15 passes from two runs of `munch_benchmark_compare 16 15`, with each corpus's
 scenarios interleaved, measured at commit `00aa889` on a clean tree. The full transcript, every timed pass of the five
-scenarios behind these tables, and the machine are archived in
-[paper/data/modes-2026-08](paper/data/modes-2026-08). The harness validates that the engines agree on every token before
-timing either, so the 5,121,241 tokens of the first corpus and the 4,859,619 of the second are the same tokens in both.
+scenarios behind these tables, and the machine are archived in [paper/data/modes-2026-08](paper/data/modes-2026-08). The
+harness validates that the engines agree on every token before timing either, so the 5,121,241 tokens of the first
+corpus and the 4,859,619 of the second are the same tokens in both.
 
 **Ratios, as ranges rather than a point: 3.02 to 3.05 where modes are optional, 2.62 to 2.70 where the tested grammar
 uses a stack to count nesting.** Those are the spreads within one session. Across three archive generations measured at
@@ -1269,13 +1267,12 @@ generated Unicode identifier tables derive from the Unicode Character Database a
 v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), installed alongside the package.
 
 The technical reports and their figures, `paper/split-points/split-points.tex`, `paper/split-windows/split-windows.tex`,
-and `paper/figures/*.pdf`, are licensed under
-[Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0), matching the
-licence they carry on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473) and
-[arXiv:2608.09761](https://arxiv.org/abs/2608.09761). The benchmark archives under `paper/data/` are released under
-[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/): they are measurements rather than authorship, and
-attribution on a throughput table serves no one. The programs that generate the figures are source code and are MIT
-like the rest of the tree.
+and `paper/figures/*.pdf`, are licensed under [Creative Commons Attribution 4.0
+International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0), matching the licence they carry on arXiv as
+[arXiv:2608.03473](https://arxiv.org/abs/2608.03473) and [arXiv:2608.09761](https://arxiv.org/abs/2608.09761). The
+benchmark archives under `paper/data/` are released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/):
+they are measurements rather than authorship, and attribution on a throughput table serves no one. The programs that
+generate the figures are source code and are MIT like the rest of the tree.
 
 ## **Author**
 

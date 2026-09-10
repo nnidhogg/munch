@@ -326,10 +326,10 @@ has no malformed-input analogue at all. The guarantee is weaker than Section 3's
 Every symbol the exact certificate admits is admitted modulo *I* for every *I*, and with *I* empty the two coincide. The
 converse fails, and not merely for want of a better proof: take the discarded tokens `ab*` and `b+` beside a kept token
 `c`, over a letter neither uses. Splitting at a `b` inside an `ab*` token is always safe modulo *I*, since the left
-piece is a shorter `ab*` and the right a `b+`, both discarded, yet condition 3 refuses it because advancing on `b`
-from inside `ab*` reaches a
-state accepting `ab*` while advancing from the initial state reaches one accepting `b+`, and those accept different
-tokens, so minimization keeps them apart. That is the price of insisting the two scans reconverge at once.
+piece is a shorter `ab*` and the right a `b+`, both discarded, yet condition 3 refuses it because advancing on `b` from
+inside `ab*` reaches a state accepting `ab*` while advancing from the initial state reaches one accepting `b+`, and
+those accept different tokens, so minimization keeps them apart. That is the price of insisting the two scans reconverge
+at once.
 
 Deciding it costs little beyond the exact condition: one more linear sweep of the compiled tables, plus ordered-set work
 logarithmic in the discarded set. Condition 2 needs no per-state set of tokens: because *I* is fixed when the automaton
@@ -353,17 +353,17 @@ and split-friendly rows recognize exactly the same byte language and differ only
 block-comment row directly after them adds one token kind to the split-friendly grammar, so those three are read
 together. The predicate already excludes vacuously certified bytes, so the column needs no further filtering.
 
-| Token set                                               | Useful certified                   | Useful modulo *I*            |
-| ------------------------------------------------------- | ---------------------------------- | ---------------------------- |
+| Token set                                               | Useful certified                   | Useful modulo *I*                     |
+| ------------------------------------------------------- | ---------------------------------- | ------------------------------------- |
 | C-like: identifiers, numbers, ws runs, operators, punct | all operator and punctuation bytes | the same, plus space, tab and newline |
-| the first row plus strings alone (no raw newline)       | none                               | `\n`                         |
-| the first row plus `//` line comments alone             | none                               | `\n`                         |
-| the first row plus `/* */` block comments alone         | none                               | the same                     |
-| JSON, the RFC 8259 lexical forms over bytes             | none                               | `\t`, `\n`, `\r`            |
-| log lines (`[^\n]+` and `\n`)                           | `\n`                               | the same                     |
-| C-like, conventional: strings, `//`, ws runs with `\n`  | none                               | `\n`                         |
-| the same language, split-friendly tokenization          | `\n`                               | the same                     |
-| the same plus block comments                            | none                               | the same                     |
+| the first row plus strings alone (no raw newline)       | none                               | `\n`                                  |
+| the first row plus `//` line comments alone             | none                               | `\n`                                  |
+| the first row plus `/* */` block comments alone         | none                               | the same                              |
+| JSON, the RFC 8259 lexical forms over bytes             | none                               | `\t`, `\n`, `\r`                      |
+| log lines (`[^\n]+` and `\n`)                           | `\n`                               | the same                              |
+| C-like, conventional: strings, `//`, ws runs with `\n`  | none                               | `\n`                                  |
+| the same language, split-friendly tokenization          | `\n`                               | the same                              |
+| the same plus block comments                            | none                               | the same                              |
 | `keyword_scale_builder()`, construction-cost grammar    | 16 of those 24 bytes               | the same, plus space, tab and newline |
 | `build_lexer(false)`, the scaling grammar               | 13 of its own 14                   | the same, plus space, tab and newline |
 
@@ -517,14 +517,13 @@ The approach trades generality for certainty: when the grammar does not cooperat
 design, and the speculation and composition families remain the applicable answers we know of. Several extensions look
 natural, and the first has since been carried out: the companion report
 [arXiv:2608.09761](https://arxiv.org/abs/2608.09761) generalizes the certificate from single bytes to short byte
-windows, certifying a cut at a fixed offset inside every occurrence of a multi-byte string, which recovers splitting
-for some grammars where no single byte certifies; the certificate of this report is exactly its length-one case. A
-hybrid plan could split at certified bytes where they exist and fall back to speculative entry elsewhere, keeping the
-guarantee where it is free and paying for it only where it is not; the certified occurrences would moreover fence the
-speculative regions, since no live state other than a non-re-entrant initial state consumes a certified symbol, so
-misprediction repair is confined to the gap before the next certified occurrence. Finally, the grammar-refactoring
-lever of Section 6 could be automated: given a token set, propose the minimal re-tokenization that makes a chosen byte
-certify.
+windows, certifying a cut at a fixed offset inside every occurrence of a multi-byte string, which recovers splitting for
+some grammars where no single byte certifies; the certificate of this report is exactly its length-one case. A hybrid
+plan could split at certified bytes where they exist and fall back to speculative entry elsewhere, keeping the guarantee
+where it is free and paying for it only where it is not; the certified occurrences would moreover fence the speculative
+regions, since no live state other than a non-re-entrant initial state consumes a certified symbol, so misprediction
+repair is confined to the gap before the next certified occurrence. Finally, the grammar-refactoring lever of Section 6
+could be automated: given a token set, propose the minimal re-tokenization that makes a chosen byte certify.
 
 ## 9 Related-work summary
 

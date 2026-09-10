@@ -22,12 +22,12 @@ governor, over 1, 16, 128 and 512 MiB corpora, each with a clean tree. The colle
 its `configure.log` and `build.log` were not archived, and `topology.txt` is not a collector output but a separate
 `lscpu -e` capture from the same session.
 
-| Directory | Placement | Commit |
+| Directory                  | Placement                       | Commit    |
 |----------------------------|---------------------------------|-----------|
-| `bare-metal-pinned-run1` | `taskset -c 0-7`, one L3 domain | `7d067c2` |
-| `bare-metal-unpinned-run1` | all 32 logical processors | `7d067c2` |
-| `bare-metal-pinned-run2` | `taskset -c 0-7`, one L3 domain | `141b12e` |
-| `bare-metal-unpinned-run2` | all 32 logical processors | `141b12e` |
+| `bare-metal-pinned-run1`   | `taskset -c 0-7`, one L3 domain | `7d067c2` |
+| `bare-metal-unpinned-run1` | all 32 logical processors       | `7d067c2` |
+| `bare-metal-pinned-run2`   | `taskset -c 0-7`, one L3 domain | `141b12e` |
+| `bare-metal-unpinned-run2` | all 32 logical processors       | `141b12e` |
 
 The placement column is author-recorded rather than artifact-certified: each `environment.txt` proves only `nproc: 8`
 from inside the mask, `topology.txt` describes the whole machine, and neither the affinity mask nor the launch command
@@ -61,11 +61,11 @@ itself, and for the Intel run to the code-identical archival child of the measur
 
 Each directory holds:
 
-| File | Contents |
-|------------------|--------------------------------------------------------------------------------|
-| `environment.txt` | machine, toolchain, governor, load, and the commit the run was taken at |
-| `topology.txt` | `lscpu -e`, which is what identifies the two L3 domains |
-| `summary.txt` | the human-readable table, best/median/worst per scenario |
+| File               | Contents                                                                                    |
+|--------------------|---------------------------------------------------------------------------------------------|
+| `environment.txt`  | machine, toolchain, governor, load, and the commit the run was taken at                     |
+| `topology.txt`     | `lscpu -e`, which is what identifies the two L3 domains                                     |
+| `summary.txt`      | the human-readable table, best/median/worst per scenario                                    |
 | `observations.csv` | every timed pass of the scaling scenarios: `run,scenario,input_mib,round,seconds,mib_per_s` |
 
 The CSV records every pass **of the ten scaling scenarios** and only those: `lexer_all` and `chunked1` through
@@ -99,12 +99,11 @@ directory still says which tree produced it.
 Kept because the README quotes its ratios and its per-token comparison. That comparison is a property of this archive
 and not of the library. Three archives are reachable from the current history, each recording in its own `summary.txt`
 the tree it measured: the one carried by commit `0e83ce6`, the one carried by `00aa889`, and this one, measured at
-`00aa889`. The two trees those earlier archives measured were rewritten when the history was squashed, which is
-why the archives are identified here by the commit that carries them. Their per-token figures disagree in sign: 4.9
-and 6.4 percent more per token for the modal grammar in the first, 6.6 and 6.4 percent less in the second, 4.0 and
-2.9 percent more here. Over all six run
-medians the flat row spans 754.5 to 865.0 MiB/s, about 15 percent, and the modal rows 725.8 to 750.1, about 3 percent,
-so the flat measurement is what moves and no per-token figure survives across generations.
+`00aa889`. The two trees those earlier archives measured were rewritten when the history was squashed, which is why the
+archives are identified here by the commit that carries them. Their per-token figures disagree in sign: 4.9 and 6.4
+percent more per token for the modal grammar in the first, 6.6 and 6.4 percent less in the second, 4.0 and 2.9 percent
+more here. Over all six run medians the flat row spans 754.5 to 865.0 MiB/s, about 15 percent, and the modal rows 725.8
+to 750.1, about 3 percent, so the flat measurement is what moves and no per-token figure survives across generations.
 
 `observations.csv` holds every timed pass of the five scenarios behind the two mode tables, which are the rows the
 README quotes. The other engine rows in `summary.txt` are summaries only.

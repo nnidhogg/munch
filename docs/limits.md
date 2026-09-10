@@ -9,10 +9,10 @@ for each. Read it when deciding whether munch fits a language, not after.
 `Lexer` matches one flat token set at every position. Real front ends need more than that: inside a string literal a
 quote terminates rather than opens, and a comment that nests needs to know how deep it is. An ordinary escaped string
 literal is regular, so a flat grammar matches it whole; what modes buy there is its interior as separate tokens.
-Arbitrary nesting is the case no flat token set reaches at all. `Mode_lexer`, built by
-`Mode_builder`, supplies it. Each mode is its own token set compiled through the ordinary `Builder`, and each token
-carries an action on a mode stack the caller owns: `stay`, `go_to`, `push`, `pop`. Nesting comes from the stack, so
-nested comments need no counter in user code.
+Arbitrary nesting is the case no flat token set reaches at all. `Mode_lexer`, built by `Mode_builder`, supplies it. Each
+mode is its own token set compiled through the ordinary `Builder`, and each token carries an action on a mode stack the
+caller owns: `stay`, `go_to`, `push`, `pop`. Nesting comes from the stack, so nested comments need no counter in user
+code.
 
 **A `Mode_lexer` has no parallel entry point.** `Lexer` can be split because a certified byte recovers the whole scan
 state: a worker starting there knows it is between tokens. With modes it would also have to recover the mode and every
@@ -40,12 +40,12 @@ either, because only the states a scan actually visits are hot and splitting the
 working set. Use `Lexer` where the grammar allows it, both for the throughput and for the parallel path; use
 `Mode_lexer` where the language genuinely needs a mode stack.
 
-Within `Mode_lexer`, scanning stays inside one mode's batch pass until a token carries any non-stay action, rather
-than re-entering the scanner once per token. Any such action ends the pass, including a push whose target is the
-mode already being scanned, which is what a comment nesting inside itself does. The `per-token` and `batched` rows of
+Within `Mode_lexer`, scanning stays inside one mode's batch pass until a token carries any non-stay action, rather than
+re-entering the scanner once per token. Any such action ends the pass, including a push whose target is the mode already
+being scanned, which is what a comment nesting inside itself does. The `per-token` and `batched` rows of
 `munch_benchmark_modes` measure what it is worth; no run of that benchmark is archived here, so no figure for it is
-quoted. A test pins only that the two drivers agree on the
-token stream, since a wall-clock bound in a unit test varies with the machine, the compiler and the sanitizers.
+quoted. A test pins only that the two drivers agree on the token stream, since a wall-clock bound in a unit test varies
+with the machine, the compiler and the sanitizers.
 
 The rest of this note describes the model each individual mode obeys.
 

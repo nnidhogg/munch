@@ -2,10 +2,10 @@
 
 Campaign records collected at clean commit bed90d6: environment.txt, summary.txt, windows.txt, windows.csv,
 modes.txt, modes.csv, and observations.csv; every CSV row additionally stamps its own run, commit, and dirty
-flag. corpus.txt is different: a byte-level corpus-statistics preview from a DEV RUN at
-commit eeb9afe with uncommitted changes present, kept for its per-file byte statistics after that run's
-throughput observations were discarded per protocol, as its own header states. No record is edited
-retroactively; this README is the only authored file here.
+flag. corpus.txt is different: a byte-level corpus-statistics preview from a *dev run* at commit eeb9afe with
+uncommitted changes present, kept for its per-file byte statistics after that run's throughput observations were
+discarded per protocol, as its own header states. No record is edited retroactively; this README is the only
+authored file here.
 
 Erratum, capture label: "at construction time" in windows.txt and corpus.txt names a timed interval that
 begins only after the automaton and lexer are built. The measured interval is post-construction enumeration of
