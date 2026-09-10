@@ -1,12 +1,15 @@
 #include "munch/core/mode_lexer.hpp"
 
+#include <stdexcept>
+#include <string>
+
 namespace munch::core
 {
-void Mode_lexer::check(const std::size_t mode) const
+Mode_lexer::Mode_lexer(std::vector<Lexer> lexers) : Mode_lexer{std::move(lexers), {}}
 {
-    if (mode >= lexers_.size())
+    if (lexers_.empty())
     {
-        throw std::out_of_range{"Mode_lexer: the mode stack names a mode this lexer does not have"};
+        throw std::invalid_argument("A mode lexer needs at least one lexer");
     }
 }
 
@@ -21,6 +24,11 @@ Mode_action Mode_lexer::action_of(const std::size_t mode, const std::size_t toke
     }
 
     return {};
+}
+
+void Mode_lexer::reject(const std::size_t mode)
+{
+    throw std::out_of_range{"Mode_lexer: mode " + std::to_string(mode) + " is not a mode of this lexer"};
 }
 
 } // namespace munch::core

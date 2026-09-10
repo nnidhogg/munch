@@ -5,6 +5,7 @@ project(munch_tokenizer)
 add_library(${PROJECT_NAME}
         src/error.cpp
         src/raw_string.cpp
+        src/mode_tokenizer.cpp
         src/tokenizer.cpp
 )
 

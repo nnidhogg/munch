@@ -1,78 +1,20 @@
 #include "munch/tools/tokenizer/tokenizer.hpp"
 
 #include <algorithm>
-#include <stdexcept>
 #include <utility>
-#include <vector>
 
 namespace munch::tools::tokenizer
 {
-Tokenizer::Tokenizer(core::Lexer lexer) : mode_{0}, offset_{0}
-{
-    lexers_.push_back(std::move(lexer));
-}
-
-Tokenizer::Tokenizer(core::Lexer lexer, std::string input) : mode_{0}, input_{std::move(input)}, offset_{0}
-{
-    lexers_.push_back(std::move(lexer));
-}
-
-Tokenizer::Tokenizer(std::vector<core::Lexer> lexers) : mode_{0}, offset_{0}, lexers_{std::move(lexers)}
-{
-    if (lexers_.empty())
-    {
-        throw std::invalid_argument("A tokenizer needs at least one lexer");
-    }
-}
-
-Tokenizer::Tokenizer(std::vector<core::Lexer> lexers, std::string input) : Tokenizer{std::move(lexers)}
-{
-    input_ = std::move(input);
-}
-
-Tokenizer::Tokenizer(core::Mode_lexer lexer) : mode_{0}, offset_{0}, automatic_{std::move(lexer)}
+Tokenizer::Tokenizer(core::Lexer lexer) : offset_{0}, lexer_{std::move(lexer)}
 {}
 
-Tokenizer::Tokenizer(core::Mode_lexer lexer, std::string input)
-    : mode_{0}, input_{std::move(input)}, offset_{0}, automatic_{std::move(lexer)}
+Tokenizer::Tokenizer(core::Lexer lexer, std::string input)
+    : input_{std::move(input)}, offset_{0}, lexer_{std::move(lexer)}
 {}
 
-void Tokenizer::load(std::string input)
+std::string_view Tokenizer::input() const noexcept
 {
-    input_ = std::move(input);
-
-    reset();
-}
-
-void Tokenizer::reset() noexcept
-{
-    offset_ = 0;
-
-    // Under a mode lexer the stack describes the text just rewound past, so it is rewound to mode 0 whatever set
-    // it, set_mode() included. Under caller-supplied lexers the current mode is the caller's and survives.
-    if (automatic_)
-    {
-        stack_.current = 0;
-
-        stack_.saved.clear();
-
-        mode_ = 0;
-    }
-}
-
-void Tokenizer::seek(const std::size_t offset) noexcept
-{
-    offset_ = std::min(offset, input_.size());
-}
-
-std::size_t Tokenizer::mode() const noexcept
-{
-    return mode_;
-}
-
-std::size_t Tokenizer::depth() const noexcept
-{
-    return stack_.saved.size();
+    return input_;
 }
 
 std::size_t Tokenizer::offset() const noexcept
@@ -80,16 +22,33 @@ std::size_t Tokenizer::offset() const noexcept
     return offset_;
 }
 
-std::string_view Tokenizer::input() const noexcept
+const core::Lexer& Tokenizer::lexer() const noexcept
 {
-    return input_;
+    return lexer_;
+}
+
+void Tokenizer::load(std::string input)
+{
+    input_ = std::move(input);
+
+    offset_ = 0;
+}
+
+void Tokenizer::reset() noexcept
+{
+    offset_ = 0;
+}
+
+void Tokenizer::seek(const std::size_t offset) noexcept
+{
+    offset_ = std::min(offset, input_.size());
 }
 
 std::optional<std::size_t> Tokenizer::recover()
 {
-    // The search starts past the current position: after an error that position is the failure offset, the
-    // scan's final committed offset where the failed token attempt began, and recovering to where the scan
-    // already stands would not be a recovery.
+    // The search starts past the current position: after an error that position is the failure offset, the scan's
+    // final committed offset where the failed token attempt began, and recovering to where the scan already stands
+    // would not be a recovery.
     const auto before{offset_};
 
     const auto found{recover_from_failure()};
@@ -104,9 +63,7 @@ std::optional<core::Lexer::Certified_start> Tokenizer::recover_from_failure()
 
 std::optional<core::Lexer::Certified_start> Tokenizer::recover_from_clean(const std::size_t clean_from)
 {
-    const auto& lexer{automatic_ ? automatic_->mode(mode_) : lexers_[mode_]};
-
-    const auto found{lexer.next_certified_evidence(input_, std::max(clean_from, offset_ + 1))};
+    const auto found{lexer_.next_certified_evidence(input_, std::max(clean_from, offset_ + 1))};
 
     if (!found)
     {

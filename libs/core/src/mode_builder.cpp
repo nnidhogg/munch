@@ -207,8 +207,6 @@ Mode_lexer Mode_builder::build() const
     // ID; the per-token driver does.
     std::vector<Mode_lexer::Registered> mode_actions;
 
-    std::vector<bool> acting(modes_.size(), false);
-
     for (std::size_t mode{0}; mode < modes_.size(); ++mode)
     {
         auto builder{modes_[mode]};
@@ -227,8 +225,6 @@ Mode_lexer Mode_builder::build() const
                 builder.set_token_payload(token, pack(action));
 
                 mode_actions.push_back({.mode = mode, .token = token, .action = pack(action)});
-
-                acting[mode] = true;
             }
         }
 
@@ -254,7 +250,7 @@ Mode_lexer Mode_builder::build() const
         }
     }
 
-    return Mode_lexer{std::move(lexers), std::move(mode_actions), std::move(acting)};
+    return Mode_lexer{std::move(lexers), std::move(mode_actions)};
 }
 
 } // namespace munch::core

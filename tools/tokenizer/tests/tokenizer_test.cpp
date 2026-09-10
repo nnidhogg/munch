@@ -5,6 +5,7 @@
 #include "munch/core/builder.hpp"
 #include "munch/core/mode_builder.hpp"
 #include "munch/regex/regex.hpp"
+#include "munch/tools/tokenizer/mode_tokenizer.hpp"
 #include "munch/tools/tokenizer/raw_string.hpp"
 
 using namespace munch;
@@ -251,7 +252,7 @@ TEST_F(Tokenizer_test, Tokenize_from_string_stream)
 
 TEST_F(Tokenizer_test, Throws_on_empty_lexer_list)
 {
-    EXPECT_THROW(Tokenizer(std::vector<Lexer>{}), std::invalid_argument);
+    EXPECT_THROW(Mode_tokenizer(std::vector<Lexer>{}), std::invalid_argument);
 }
 
 TEST_F(Tokenizer_test, Zero_width_match)
@@ -408,7 +409,7 @@ TEST_F(Tokenizer_test, Modes)
     header.add_token(plus(any_of(Set::whitespace())), Mode_token::Whitespace, 1);
     header.add_token(concat(text("<"), plus(any_of(Set::alpha() + '.')), text(">")), Mode_token::Header_name, 0);
 
-    Tokenizer tokenizer{{code.build(), header.build()}, "#include <stdio.h> done"};
+    Mode_tokenizer tokenizer{{code.build(), header.build()}, "#include <stdio.h> done"};
 
     EXPECT_EQ(tokenizer.mode(), 0u);
 
@@ -441,9 +442,9 @@ TEST_F(Tokenizer_test, Modes)
     EXPECT_THROW(tokenizer.set_mode(5), std::out_of_range);
 }
 
-TEST(Tokenizer_modes, The_grammar_switches_modes_without_the_driver_asking)
+TEST(Mode_tokenizer, The_grammar_switches_modes_without_the_driver_asking)
 {
-    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), R"(ab "cd" ef)"};
+    munch::tools::tokenizer::Mode_tokenizer tokenizer{contextual(), R"(ab "cd" ef)"};
 
     std::vector<std::pair<Ctx_token, std::size_t>> seen;
 
@@ -473,9 +474,9 @@ TEST(Tokenizer_modes, The_grammar_switches_modes_without_the_driver_asking)
     EXPECT_EQ(seen.back().second, static_cast<std::size_t>(Ctx::code));
 }
 
-TEST(Tokenizer_modes, Depth_reports_nesting_and_survives_to_the_stopping_point)
+TEST(Mode_tokenizer, Depth_reports_nesting_and_survives_to_the_stopping_point)
 {
-    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), "a /* x /* y"};
+    munch::tools::tokenizer::Mode_tokenizer tokenizer{contextual(), "a /* x /* y"};
 
     while (!tokenizer.next<Ctx_token>().end_of_input())
     {
@@ -487,9 +488,9 @@ TEST(Tokenizer_modes, Depth_reports_nesting_and_survives_to_the_stopping_point)
     EXPECT_EQ(tokenizer.depth(), 2U);
 }
 
-TEST(Tokenizer_modes, Load_rewinds_the_driven_mode_with_the_frames)
+TEST(Mode_tokenizer, Load_rewinds_the_driven_mode_with_the_frames)
 {
-    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), R"("unterminated)"};
+    munch::tools::tokenizer::Mode_tokenizer tokenizer{contextual(), R"("unterminated)"};
 
     while (!tokenizer.next<Ctx_token>().end_of_input())
     {
@@ -508,9 +509,9 @@ TEST(Tokenizer_modes, Load_rewinds_the_driven_mode_with_the_frames)
     EXPECT_EQ(tokenizer.mode(), 0U);
 }
 
-TEST(Tokenizer_modes, Reset_rewinds_the_driven_mode_with_the_position)
+TEST(Mode_tokenizer, Reset_rewinds_the_driven_mode_with_the_position)
 {
-    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), R"("unterminated)"};
+    munch::tools::tokenizer::Mode_tokenizer tokenizer{contextual(), R"("unterminated)"};
 
     while (!tokenizer.next<Ctx_token>().end_of_input())
     {
@@ -526,9 +527,38 @@ TEST(Tokenizer_modes, Reset_rewinds_the_driven_mode_with_the_position)
     EXPECT_EQ(tokenizer.depth(), 0U);
 }
 
-TEST(Tokenizer_modes, Reset_rewinds_a_mode_that_set_mode_forced)
+TEST(Mode_tokenizer, Reset_rewinds_a_caller_driven_mode_too)
 {
-    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), "ab"};
+    // One representation for both ways of getting modes: the mode is scan state whoever chose it, so a reset
+    // returns a caller-driven tokenizer to mode 0 exactly as it returns a grammar-driven one.
+    enum class Tok : std::size_t
+    {
+        Word,
+        Header_name
+    };
+
+    Builder code;
+    code.add_token(plus(any_of(Set::alpha())), Tok::Word, 0);
+    Builder header;
+    header.add_token(plus(any_of(Set::alpha() + '.')), Tok::Header_name, 0);
+
+    Mode_tokenizer tokenizer{{code.build(), header.build()}, "stdio.h"};
+    tokenizer.set_mode(std::size_t{1});
+    ASSERT_TRUE(tokenizer.next<Tok>().has_token());
+    EXPECT_EQ(tokenizer.mode(), 1u);
+
+    tokenizer.reset();
+    EXPECT_EQ(tokenizer.mode(), 0u);
+    EXPECT_EQ(tokenizer.offset(), 0u);
+    EXPECT_EQ(tokenizer.depth(), 0u);
+    const auto result{tokenizer.next<Tok>()};
+    ASSERT_TRUE(result.has_token());
+    EXPECT_EQ(result.token().kind(), Tok::Word);
+}
+
+TEST(Mode_tokenizer, Reset_rewinds_a_mode_that_set_mode_forced)
+{
+    munch::tools::tokenizer::Mode_tokenizer tokenizer{contextual(), "ab"};
 
     tokenizer.set_mode(std::size_t{1});
 
@@ -540,9 +570,9 @@ TEST(Tokenizer_modes, Reset_rewinds_a_mode_that_set_mode_forced)
     EXPECT_EQ(tokenizer.mode(), 0U);
 }
 
-TEST(Tokenizer_modes, Set_mode_still_forces_a_mode_when_the_grammar_drives_them)
+TEST(Mode_tokenizer, Set_mode_still_forces_a_mode_when_the_grammar_drives_them)
 {
-    munch::tools::tokenizer::Tokenizer tokenizer{contextual(), "abc"};
+    munch::tools::tokenizer::Mode_tokenizer tokenizer{contextual(), "abc"};
 
     tokenizer.set_mode(Ctx::comment);
 
@@ -639,7 +669,7 @@ TEST_F(Tokenizer_test, The_documented_error_loop_skips_and_resumes)
     EXPECT_EQ(error_positions, (std::vector<std::size_t>{8, 9, 13}));
 }
 
-TEST(Tokenizer_modes, Forcing_a_mode_is_the_documented_recovery_hatch_after_an_error)
+TEST(Mode_tokenizer, Forcing_a_mode_is_the_documented_recovery_hatch_after_an_error)
 {
     // set_mode()'s documentation names forcing as the recovery hatch after an error and promises the saved
     // frames are left alone. A newline is illegal inside this string mode, so the scan stops mid-string with
@@ -660,7 +690,7 @@ TEST(Tokenizer_modes, Forcing_a_mode_is_the_documented_recovery_hatch_after_an_e
 
     const std::string input{"ab \"cd\nef\" gh"};
 
-    munch::tools::tokenizer::Tokenizer tokenizer{builder.build(), input};
+    munch::tools::tokenizer::Mode_tokenizer tokenizer{builder.build(), input};
 
     ASSERT_TRUE(tokenizer.next<Ctx_token>().has_token());
     ASSERT_TRUE(tokenizer.next<Ctx_token>().has_token());
@@ -903,7 +933,7 @@ TEST(Tokenizer_recovery, Recover_consults_the_active_mode_only)
 
     digits.add_token(plus(any_of(Set::digits() + ';')), Rec_token::number, 1);
 
-    Tokenizer tokenizer{{code.build(), digits.build()}, "12?;34"};
+    Mode_tokenizer tokenizer{{code.build(), digits.build()}, "12?;34"};
 
     enum class Rec_mode : std::size_t
     {

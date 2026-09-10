@@ -55,8 +55,9 @@ The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal mu
 
   A low-level `core::Lexer` for single-shot, longest-match tokenization over an iterator range or container, and a
   `tools::tokenizer::Tokenizer` on top of it that streams a whole input into a sequence of tokens with position tracking
-  and structured errors. The tokenizer also carries the primitives real languages need: several lexers as modes over one
-  input, a seek escape hatch for hand-scanned tokens, and a scanner for C++ raw string literals.
+  and structured errors, plus a `Mode_tokenizer` for context-dependent languages that holds several lexers as modes over
+  one input. Both carry a seek escape hatch for hand-scanned tokens and a scanner for C++ raw string literals; only the
+  flat one reaches the parallel path, through `lexer()`.
 
 - **Graphviz Export for Debugging**
 
@@ -406,7 +407,7 @@ has to notice by itself that the trick is no longer sound.
 | `munch::nfa`                              | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
 | `munch::dfa`                              | `Dfa` / `dfa::Builder`: DFA representation; `minimize()` (Moore partition refinement); `Simulator`.   |
 | `munch::core`                             | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
-| `munch::tools::tokenizer`                 | `Tokenizer`: streaming driver over `core::Lexer` with modes, offsets, seek, and a raw string scanner. |
+| `munch::tools::tokenizer`                 | `Tokenizer`: resumable cursor over `core::Lexer`, offsets, seek, recovery, raw strings. `Mode_tokenizer`: the same over `core::Mode_lexer`, with modes. |
 | `munch::nfa::tools` / `munch::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.                          |
 | `munch::common`                           | Shared concepts (`Byte_iterable`, `Random_access_byte_iterable`, `Token_id`, `Token_sink`).                               |
 
@@ -598,11 +599,11 @@ const auto lexer{builder.build()};
 
 ### **Tokenization**
 
-The library provides two complementary ways to tokenize, so you can choose between performance-focused, one-shot
-matching and convenient incremental processing:
+The library provides two complementary ways to tokenize. The difference is not convenience: `core::Lexer` already
+scans a whole input, in one thread or in parallel. The difference is who controls the reading position.
 
-1. **Low-level, one-shot API** via `munch::core::Lexer`
-2. **High-level, streaming API** via `munch::tools::tokenizer::Tokenizer`
+1. **Stateless matching** via `munch::core::Lexer`, one-shot, batch, or parallel
+2. **A resumable cursor** via `munch::tools::tokenizer::Tokenizer`, for a driver that stops, looks, moves, and resumes
 
 #### **1. Core API (`munch::core::Lexer`)**
 
@@ -745,8 +746,16 @@ from the same directory.
 
 #### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
-The Tokenizer builds on the core lexer to provide a streaming-based interface. It repeatedly calls the underlying
-`core::Lexer`, handling offsets, EOF detection, and error propagation automatically.
+The Tokenizer owns the input and a reading position, and reports each read as a `Result`: a token, the end of the
+input, or an error carrying its offset. That much is a convenience, since `Lexer::tokenize_all()` also walks a whole
+input and does it faster.
+
+What the Tokenizer adds, and the reason it exists, is that the position is yours to move. A parser can stop on an
+error, ask where it stopped, move to a position the automaton certifies as a token start, and resume; or read a
+prefix token, scan a construct no automaton covers by hand through `input()`, and continue past it with `seek()`.
+None of that is reachable through `Lexer`, whose `tokenize()` is stateless and whose `tokenize_all()` pushes through
+a sink that cannot be stopped, questioned, or repositioned. If a driver never needs to move the position, it does
+not need this class.
 
 ```cpp
 using namespace munch;
@@ -787,14 +796,16 @@ for (;;)
 
 The three states are alternatives of one sum type, so they can also be handled exhaustively with `visit()`.
 
-For context-dependent languages, a `Tokenizer` can hold several lexers as modes over the same input and switch between
-them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no practical automaton covers,
+For context-dependent languages, a `Mode_tokenizer` holds several lexers as modes over the same input and switches
+between them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no practical automaton
+covers,
 such as C++ raw string literals, whose bounded delimiter makes them regular in principle but not worth a table, the
 driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`, and continues past the literal with
 `seek()`.
 
-Together, these two layers let you choose between fine-grained control (`core::Lexer`) and convenient streaming-based
-processing (`tools::tokenizer::Tokenizer`).
+Together the two layers split by control rather than by convenience: `core::Lexer` scans, including in parallel,
+and `tools::tokenizer::Tokenizer` lets a driver decide where scanning resumes. `Mode_tokenizer` is the same cursor
+over a `core::Mode_lexer`, and has no parallel entry point because a mode lexer has none.
 
 > **Note:** `Tokenizer` is not thread-safe, and `Token::lexeme()` is a `string_view` into the `Tokenizer`'s internal
 > input buffer. The view is invalidated by `load()` or by the `Tokenizer` being destroyed, so copy the lexeme to a
@@ -885,9 +896,9 @@ comment that nests needs to know how deep it is. A flat token set does reach an 
 whole; what it cannot do is report the interior as separate tokens, and it cannot count nesting to an unbounded depth at
 all. There are two ways to get context-dependence, and they differ in who decides when the context changes.
 
-`Tokenizer` holds several lexers as modes and the driver switches between them with `set_mode()`. Constructed that way
-the tokenizer never switches on its own, which suits cases where the surrounding parser knows what is coming, such as a
-header-name after `#include`.
+`Mode_tokenizer` holds several lexers as modes and the driver switches between them with `set_mode()`. Constructed that
+way the tokenizer never switches on its own, which suits cases where the surrounding parser knows what is coming, such
+as a header-name after `#include`.
 
 `Mode_lexer`, built by `Mode_builder`, declares the switches in the grammar instead. Each mode is its own token set
 compiled through the ordinary `Builder`, and each token carries an action on a mode stack: `stay`, `go_to`, `push` or
@@ -915,8 +926,12 @@ const auto consumed{lexer.tokenize_all<Token>(
         input, [](Token token, std::size_t length, std::size_t mode) { /* ... */ }, stack)};
 ```
 
-`Tokenizer` accepts a `Mode_lexer` too, so a streaming driver gets the same grammar-carried transitions: `mode()`
+`Mode_tokenizer` accepts a `Mode_lexer` too, so a driver gets the same grammar-carried transitions: `mode()`
 follows the stack, `depth()` reports the nesting, and `set_mode()` still forces a mode as an error-recovery hatch.
+Underneath, one built from plain lexers is the same thing with a `Mode_lexer` whose tokens carry no actions, so the mode
+is scan state either way: `load()` and `reset()` return it to mode 0 with the position, and a driver that wants another
+mode after a reset sets it again. The flat `Tokenizer` has none of this surface, and that is the point of the split: a
+mode lexer has no parallel entry point, so `lexer()` lives only on the side where planning a chunk is sound.
 
 Among the other measured engines, only lexertl17 carries mode transitions in the grammar itself. It is munch's nearest
 relative, a lexer built at run time from rules, and it has had start states with a next-state per rule for years, with a
@@ -1060,7 +1075,7 @@ libs/
     tools/                Graphviz DOT export for DFAs.
   core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
 tools/
-  tokenizer/              Tokenizer: streaming driver over core::Lexer with modes, seek, and a raw string scanner.
+  tokenizer/              Tokenizer and Mode_tokenizer: resumable cursors, seek, recovery, raw strings.
   benchmark/              Throughput benchmarks: core lexer, tokenizer driver, UTF-8, other engines.
 ```
 
