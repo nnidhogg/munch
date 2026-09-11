@@ -119,6 +119,36 @@ sound for the C-like tokenizations studied (Section~\ref{sec:applicability}).
 \end{itemize}
 \end{samepage}
 
+Table~\ref{tab:results} states what the paper establishes and where, so a reader can see the whole claim before the
+definitions arrive.
+
+\begin{table}[!t]
+\centering
+\begin{tabular}{p{6.2cm}p{5.1cm}l}
+\toprule
+Question & Answer & Where \\
+\midrule
+When may a chunk boundary be taken without knowing what precedes it? & No live state but a non-re-entrant $q_0$
+consumes the byte & Theorem~\ref{thm:main} \\
+Is that condition merely sufficient? & No: it is necessary as well & Theorem~\ref{thm:necessity} \\
+What does it cost to decide? & One pass over the compiled tables, then one bit per byte & Section~\ref{sec:derivation}
+\\
+Do real token sets satisfy it? & 15 token sets measured; the conventional C-like and JSON rows certify nothing exactly
+& Table~\ref{tab:applicability} \\
+Can a token set that certifies nothing be rescued? & Weakening to equality modulo discarded tokens recovers newline
+there; nine of the fifteen rows gain bytes & Section~\ref{sec:modulo} \\
+Can it be bought by design? & One line-bounded comment form suffices; barring the kinds from each other's openers buys
+nothing & Table~\ref{tab:applicability} \\
+Does it pay? & 92.6--95.3\% parallel efficiency at eight threads, $3.46$--$3.94\times$ end to end at four &
+Section~\ref{sec:evaluation} \\
+\bottomrule
+\end{tabular}
+\caption{What this paper establishes. Every row is stated and proved or measured in the section named; the two
+applicability rows are asserted for each token set by \code{figures/applicability.cpp}, and the throughput row is one
+machine and two benchmark revisions, as Section~\ref{sec:evaluation} details.}
+\label{tab:results}
+\end{table}
+
 The paper separates the result from the study around it. The result is
 Sections~\ref{sec:prelim}--\ref{sec:modulo}: the definitions, the exact certificate with its necessity proof and the
 re-entrancy subtlety, and the relaxed condition modulo discarded tokens. The study and the artifact are
