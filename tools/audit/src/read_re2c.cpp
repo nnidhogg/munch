@@ -194,7 +194,7 @@ private:
         return std::string{'\\'} + byte;
     }
 
-    return std::string(1, byte);
+    return {byte};
 }
 
 Block::Block(const std::string_view source, const std::size_t begin, const Re2c_flags flags)

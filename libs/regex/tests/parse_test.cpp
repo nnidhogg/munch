@@ -141,6 +141,53 @@ TEST(Parse, Quoted_text_is_literal_with_its_escapes_decoded)
     EXPECT_TRUE(accepts(parse("\"ab\"+"), "abab"));
 }
 
+TEST(Parse, Code_points_encode_as_utf8_in_literals_and_read_brackets_as_scalars)
+{
+    // In a literal, in quoted text and on its own: the encoding's bytes.
+    EXPECT_TRUE(
+            accepts(parse(R"(a\u{e9}b)"),
+                    "a\xc3\xa9"
+                    "b"));
+    EXPECT_TRUE(accepts(parse(R"("caf\u{E9}")"), "caf\xc3\xa9"));
+    EXPECT_TRUE(accepts(parse(R"(\u{1F600})"), "\xf0\x9f\x98\x80"));
+    EXPECT_TRUE(accepts(parse(R"(\u{41})"), "A"));
+
+    // A bracket with a code point reads every member as a scalar: one encoding, not one byte.
+    const auto latin{parse(R"([a-z\u{c0}-\u{ff}])")};
+
+    EXPECT_TRUE(accepts(latin, "q"));
+    EXPECT_TRUE(accepts(latin, "\xc3\xa9"));
+    EXPECT_FALSE(accepts(latin, "\xc3"));
+    EXPECT_FALSE(accepts(latin, "\xe2\x82\xac"));
+
+    // Any scalar, and negation over the scalars: the surrogates never encode, so they are left out.
+    const auto any{parse(R"([\u{0}-\u{10FFFF}])")};
+
+    EXPECT_TRUE(accepts(any, "\n"));
+    EXPECT_TRUE(accepts(any, "\xe2\x82\xac"));
+    EXPECT_TRUE(accepts(any, "\xf4\x8f\xbf\xbf"));
+    EXPECT_FALSE(accepts(any, "\xed\xa0\x80"));
+    EXPECT_FALSE(accepts(any, "\xc0\x80"));
+    EXPECT_FALSE(accepts(any, "\x80"));
+
+    const auto not_newline{parse(R"([^\n\u{e9}])")};
+
+    EXPECT_TRUE(accepts(not_newline, "a"));
+    EXPECT_TRUE(accepts(not_newline, "\xc3\xa8"));
+    EXPECT_FALSE(accepts(not_newline, "\n"));
+    EXPECT_FALSE(accepts(not_newline, "\xc3\xa9"));
+
+    // Without a code point the bracket stays bytes, as flex reads it.
+    EXPECT_TRUE(accepts(parse("[^\n]"), "\xc3"));
+
+    // Refused: no digits, beyond U+10FFFF, a surrogate, and a byte beyond ASCII beside a code point.
+    EXPECT_EQ(refused_at(R"(\u{})"), 0);
+    EXPECT_EQ(refused_at(R"(\u{110000})"), 0);
+    EXPECT_EQ(refused_at(R"(\u{d800})"), 0);
+    EXPECT_EQ(refused_at(R"([\xe9\u{e9}])"), 0);
+    EXPECT_EQ(refused_at(R"([\u{d800}-\u{dfff}])"), 1);
+}
+
 TEST(Parse, Definitions_expand_and_nest)
 {
     const Definitions_t definitions{

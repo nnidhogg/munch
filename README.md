@@ -72,9 +72,9 @@ The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal mu
 
 - **An Auditor for Other Generators' Scanners**
 
-  `munch-audit` reads a flex or re2c file and reports what the library decides about its token set, per start
-  condition: the certified bytes and windows, the anchor-free span, which rule blocks each candidate byte, and what it
-  would cost to certify one. See [Auditing an Existing Scanner](#auditing-an-existing-scanner).
+  `munch-audit` reads a flex, re2c or ANTLR 4 file and reports what the library decides about its token set, per
+  start condition: the certified bytes and windows, the anchor-free span, which rule blocks each candidate byte, and
+  what it would cost to certify one. See [Auditing an Existing Scanner](#auditing-an-existing-scanner).
 
 - **Graphviz Export for Debugging**
 
@@ -527,9 +527,12 @@ const auto identifier = concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::al
 The same nodes can be read from a pattern written the way a lexer generator takes it. `parse()` reads flex's
 dialect of POSIX extended regular expressions over bytes: alternation, grouping, `*`, `+`, `?` and counted `{n,m}`,
 the dot for any byte but the newline, bracket expressions with ranges, negation and the POSIX classes, escapes,
-double-quoted literals, and `{name}` expanding to a definition given alongside. What a token language cannot say is
-refused with the offset and the reason rather than approximated: the anchors, trailing context and start conditions.
-A parsed pattern and its hand-built equivalent compile to the same automaton.
+double-quoted literals, and `{name}` expanding to a definition given alongside. One escape flex has not got serves the
+readers of character-level generators: `\u{X...}` names a code point, the UTF-8 encoding of that scalar in a literal,
+and inside a bracket it turns the bracket to scalars, so `[\u{0}-\u{10FFFF}]` is any scalar and `[^\n\u{e9}]` every
+scalar but two. What a token language cannot say is refused with the offset and the reason rather than approximated:
+the anchors, trailing context and start conditions. A parsed pattern and its hand-built equivalent compile to the
+same automaton.
 
 ```cpp
 using namespace munch::regex;
@@ -538,6 +541,7 @@ const Definitions_t definitions{{"DIGIT", "[0-9]"}};
 
 const auto identifier{parse("[a-zA-Z_][a-zA-Z0-9_]*")};
 const auto number{parse("{DIGIT}+(\\.{DIGIT}+)?", definitions)};
+const auto latin{parse("[a-z\\u{c0}-\\u{ff}]")};    // one scalar, encoded: q, or é as its two bytes
 
 parse("^abc");    // throws Syntax_error at offset 0: an anchor conditions the context, not the match
 ```
@@ -1164,7 +1168,7 @@ libs/
   core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
 tools/
   tokenizer/              Tokenizer and Mode_tokenizer: resumable cursors, seek, recovery, raw strings.
-  audit/                  munch-audit: flex and re2c files read into token sets, the report, and what a byte costs.
+  audit/                  munch-audit: flex, re2c and ANTLR files read into token sets, the report, and prices.
   benchmark/              Throughput benchmarks: core lexer, tokenizer driver, UTF-8, other engines.
 ```
 
@@ -1293,9 +1297,10 @@ an exception; see [docs/limits.md](docs/limits.md).
 ## **Auditing an Existing Scanner**
 
 The decisions above apply to any token set, not only to one built with the combinators. `munch-audit` reads the file
-another generator was given, flex's `.l` or re2c's blocks inside a C or C++ source, builds the token set each start
-condition scans with, and prints what the library decides about it: the certified bytes and windows, the length of the
-stretches no certificate reaches, why every other candidate byte fails, and what it would cost to make one certify.
+another generator was given, flex's `.l`, re2c's blocks inside a C or C++ source, or an ANTLR 4 grammar, builds the
+token set each start condition scans with, and prints what the library decides about it: the certified bytes and
+windows, the length of the stretches no certificate reaches, why every other candidate byte fails, and what it would
+cost to make one certify.
 Nothing in it is estimated; every row is a decision over the compiled tables. This is the conventional C-like
 tokenization with block comments, the study's row where one token kind removes every useful certificate:
 
@@ -1337,7 +1342,7 @@ the scanner is in that condition, so a cut is safe only where the condition is k
 own (`--flex-syntax`, `--case-inverted`, `--case-insensitive` for re2c; `--returns NAME` for scanners that return
 through a macro or an assignment), `--price BYTE` prices a byte of your choice, `--windows N` bounds the window
 enumeration, and `--json` writes one document for a build to check. The rows, the options and what each reader refuses
-are in [docs/audit.md](docs/audit.md); the grammars under `tools/audit/grammars/` are the study's rows in both syntaxes.
+are in [docs/audit.md](docs/audit.md); the grammars under `tools/audit/grammars/` are the study's rows in every syntax.
 
 ## **Munch as a Research Instrument**
 

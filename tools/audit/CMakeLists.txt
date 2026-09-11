@@ -5,6 +5,7 @@ project(munch_audit)
 add_library(${PROJECT_NAME}
         src/lexer_spec.cpp
         src/price.cpp
+        src/read_antlr.cpp
         src/read_flex.cpp
         src/read_re2c.cpp
         src/report.cpp
@@ -46,6 +47,7 @@ endif ()
 
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
+            tests/read_antlr_test.cpp
             tests/read_flex_test.cpp
             tests/read_re2c_test.cpp
             tests/report_test.cpp

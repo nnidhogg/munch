@@ -60,6 +60,12 @@ private:
  * cycling. Bytes outside ASCII are literals, so a UTF-8 sequence in the pattern is the run of its bytes, and a
  * bracket lists bytes rather than characters, exactly as flex does.
  *
+ * One escape flex has not got is here for the readers of character-level generators: `\u{X...}`, one to six hex
+ * digits naming a code point, is the UTF-8 encoding of that scalar in a literal or quoted text, and inside a bracket
+ * it turns the whole bracket to scalars, every member and range read as code points, the bracket matching the
+ * encoding of one of them and negation running over the scalars; `[\u{0}-\u{10FFFF}]` is any scalar. A bracket
+ * naming a byte beyond ASCII beside a code point is refused, since no scalar is that byte.
+ *
  * What the syntax has and a token language cannot say is refused rather than approximated: the anchors, a `^`
  * opening the pattern and a `$` closing it, flex's trailing context `/`, its start-condition prefix `<s>` and
  * `<<EOF>>` are conditions on the context a match stands in, not on the match, so a pattern carrying one raises
