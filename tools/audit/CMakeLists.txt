@@ -7,6 +7,7 @@ add_library(${PROJECT_NAME}
         src/price.cpp
         src/read_antlr.cpp
         src/read_flex.cpp
+        src/read_logos.cpp
         src/read_re2c.cpp
         src/report.cpp
         src/token_set.cpp
@@ -49,6 +50,7 @@ if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/read_antlr_test.cpp
             tests/read_flex_test.cpp
+            tests/read_logos_test.cpp
             tests/read_re2c_test.cpp
             tests/report_test.cpp
     )

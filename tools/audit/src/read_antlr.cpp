@@ -938,6 +938,7 @@ Lexer_spec Grammar::read()
                  .conditions = {},
                  .action = {},
                  .token = text,
+                 .priority = std::nullopt,
                  .line = line});
     }
 
@@ -1287,6 +1288,7 @@ void Grammar::lexer_rule(Lexer_spec& spec, const std::string& mode, const bool c
                  .action =
                          alternatives.front().commands.empty() ? std::string{} : "-> " + alternatives.front().commands,
                  .token = token_of(alternatives.front().commands),
+                 .priority = std::nullopt,
                  .line = line});
 
         return;
@@ -1307,6 +1309,7 @@ void Grammar::lexer_rule(Lexer_spec& spec, const std::string& mode, const bool c
                  .conditions = mode.empty() ? std::vector<std::string>{} : std::vector{mode},
                  .action = commands.empty() ? std::string{} : "-> " + commands,
                  .token = token_of(commands),
+                 .priority = std::nullopt,
                  .line = line});
     }
 }

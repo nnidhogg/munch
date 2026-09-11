@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -250,18 +251,26 @@ Token_set token_set(const Lexer_spec& spec, const std::string_view condition)
         throw Spec_error{"%option case-insensitive is not modelled: patterns are read as written", 0};
     }
 
+    // A generator's own number, higher winning, lands below every index on the builder's lower-wins scale.
+    constexpr auto top{std::numeric_limits<std::size_t>::max() / 2};
+
     Token_set set;
 
     for (const auto index : active_rules(spec, condition))
     {
         const auto& rule{spec.rules[index]};
 
+        if (rule.priority && *rule.priority > top)
+        {
+            throw Spec_error{"the priority " + std::to_string(*rule.priority) + " lies beyond the scale", rule.line};
+        }
+
         try
         {
             set.rules.push_back(
                     {.regex = regex::parse(rule.expression, spec.definitions),
                      .id = index,
-                     .priority = index,
+                     .priority = rule.priority ? top - *rule.priority : index,
                      .discarded = !rule.token.has_value()});
         }
         catch (const regex::Syntax_error& refused)

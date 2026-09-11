@@ -322,6 +322,7 @@ std::size_t Block::read(Lexer_spec& spec, const Returning_t& returning)
                  .conditions = std::move(*named),
                  .action = std::move(code),
                  .token = std::move(token),
+                 .priority = std::nullopt,
                  .line = line});
     }
 
@@ -865,7 +866,7 @@ std::vector<Lexer_spec> read_re2c(const std::string_view source, Re2c_flags flag
 
         // re2c declares no conditions; the ones the block's rules name are the scanner's, and each is exclusive,
         // since a rule is active in a condition only by naming it or by `<*>`.
-        for (const auto& [pattern, expression, conditions, action, token, rule_line] : spec.rules)
+        for (const auto& [pattern, expression, conditions, action, token, priority, rule_line] : spec.rules)
         {
             for (const auto& name : conditions)
             {

@@ -18,6 +18,7 @@
 #include "munch/tools/audit/price.hpp"
 #include "munch/tools/audit/read_antlr.hpp"
 #include "munch/tools/audit/read_flex.hpp"
+#include "munch/tools/audit/read_logos.hpp"
 #include "munch/tools/audit/read_re2c.hpp"
 #include "munch/tools/audit/report.hpp"
 
@@ -30,12 +31,13 @@ namespace
  */
 constexpr std::string_view usage{R"(usage: munch-audit [options] FILE...
 
-Reads a flex, re2c or ANTLR 4 file and reports, per scanner and start condition, what the token set certifies: the
-bytes and windows a parallel scan may cut at, why the other candidates fail, and what certifying one would cost.
+Reads a flex, re2c, ANTLR 4 or logos file and reports, per scanner and start condition, what the token set
+certifies: the bytes and windows a parallel scan may cut at, why the other candidates fail, and what certifying one
+would cost.
 
-  --flex, --re2c, --antlr
+  --flex, --re2c, --antlr, --logos
                         read every file as this kind; otherwise a file opening a re2c block is re2c, one opening
-                        with a grammar declaration is ANTLR, the rest flex
+                        with a grammar declaration is ANTLR, one deriving Logos is logos, the rest flex
   --flex-syntax         re2c's -F: flex-style definitions, {name} references, bare letters literal
   --case-inverted       re2c's --case-inverted: "..." case-insensitive and '...' exact
   --case-insensitive    re2c's --case-insensitive: both quotes case-insensitive
@@ -56,7 +58,8 @@ enum class Kind : std::uint8_t
 {
     flex,
     re2c,
-    antlr
+    antlr,
+    logos
 };
 
 /**
@@ -226,6 +229,10 @@ struct Outcome
         {
             options.kind = Kind::antlr;
         }
+        else if (argument == "--logos")
+        {
+            options.kind = Kind::logos;
+        }
         else if (argument == "--flex-syntax")
         {
             options.re2c_flags.flex_syntax = true;
@@ -286,9 +293,9 @@ struct Outcome
 }
 
 /**
- * @brief The kind a file's text says: re2c when it opens a re2c block, which no other file does; ANTLR when its first
- *        item is a grammar declaration; flex otherwise. The name says nothing, since re2c lives in files of any
- *        extension and PHP's re2c scanners end in `.l`.
+ * @brief The kind a file's text says: re2c when it opens a re2c block, which no other file does; logos when a
+ *        derive names Logos; ANTLR when its first item is a grammar declaration; flex otherwise. The name says
+ *        nothing, since re2c lives in files of any extension and PHP's re2c scanners end in `.l`.
  * @param source The file's text.
  * @return The kind.
  */
@@ -297,6 +304,11 @@ struct Outcome
     if (source.contains("/*!re2c") || source.contains("/*!rules:re2c"))
     {
         return Kind::re2c;
+    }
+
+    if (source.contains("#[derive(") && source.contains("Logos"))
+    {
+        return Kind::logos;
     }
 
     // The first item, comments stepped over.
@@ -354,7 +366,7 @@ struct Outcome
  */
 [[nodiscard]] std::string label(const Lexer_spec& spec, const std::size_t rule)
 {
-    const auto& [pattern, expression, conditions, action, token, line]{spec.rules[rule]};
+    const auto& [pattern, expression, conditions, action, token, priority, line]{spec.rules[rule]};
 
     auto name{token && token->size() <= 40 ? *token : pattern};
 
@@ -542,6 +554,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
         {
             scanners = kind == Kind::flex  ? std::vector{read_flex(source, options.returning)} :
                        kind == Kind::antlr ? std::vector{read_antlr(source)} :
+                       kind == Kind::logos ? read_logos(source) :
                                              read_re2c(source, options.re2c_flags, options.returning);
         }
         catch (const Spec_error& error)
@@ -557,6 +570,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
                     "    {{\"path\": {}, \"kind\": \"{}\", ", json_string(path),
                     kind == Kind::flex  ? "flex" :
                     kind == Kind::antlr ? "antlr" :
+                    kind == Kind::logos ? "logos" :
                                           "re2c");
 
             if (!refused.empty())

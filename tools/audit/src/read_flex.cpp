@@ -370,6 +370,7 @@ void read_definitions(Lines& lines, Lexer_spec& file)
                 .conditions = std::move(conditions),
                 .action = {},
                 .token = std::nullopt,
+                .priority = std::nullopt,
                 .line = number};
     }
 
@@ -405,6 +406,7 @@ void read_definitions(Lines& lines, Lexer_spec& file)
             .conditions = std::move(conditions),
             .action = std::move(action),
             .token = std::move(token),
+            .priority = std::nullopt,
             .line = number};
 }
 

@@ -72,8 +72,8 @@ The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal mu
 
 - **An Auditor for Other Generators' Scanners**
 
-  `munch-audit` reads a flex, re2c or ANTLR 4 file and reports what the library decides about its token set, per
-  start condition: the certified bytes and windows, the anchor-free span, which rule blocks each candidate byte, and
+  `munch-audit` reads a flex, re2c, ANTLR 4 or logos file and reports what the library decides about its token set,
+  per start condition: the certified bytes and windows, the anchor-free span, which rule blocks each candidate byte, and
   what it would cost to certify one. See [Auditing an Existing Scanner](#auditing-an-existing-scanner).
 
 - **Graphviz Export for Debugging**
@@ -1168,7 +1168,7 @@ libs/
   core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
 tools/
   tokenizer/              Tokenizer and Mode_tokenizer: resumable cursors, seek, recovery, raw strings.
-  audit/                  munch-audit: flex, re2c and ANTLR files read into token sets, the report, and prices.
+  audit/                  munch-audit: flex, re2c, ANTLR and logos files read into token sets, the report, prices.
   benchmark/              Throughput benchmarks: core lexer, tokenizer driver, UTF-8, other engines.
 ```
 
@@ -1297,10 +1297,10 @@ an exception; see [docs/limits.md](docs/limits.md).
 ## **Auditing an Existing Scanner**
 
 The decisions above apply to any token set, not only to one built with the combinators. `munch-audit` reads the file
-another generator was given, flex's `.l`, re2c's blocks inside a C or C++ source, or an ANTLR 4 grammar, builds the
-token set each start condition scans with, and prints what the library decides about it: the certified bytes and
-windows, the length of the stretches no certificate reaches, why every other candidate byte fails, and what it would
-cost to make one certify.
+another generator was given, flex's `.l`, re2c's blocks inside a C or C++ source, an ANTLR 4 grammar, or a Rust file
+deriving logos's `Logos`, builds the token set each start condition scans with, and prints what the library decides
+about it: the certified bytes and windows, the length of the stretches no certificate reaches, why every other
+candidate byte fails, and what it would cost to make one certify.
 Nothing in it is estimated; every row is a decision over the compiled tables. This is the conventional C-like
 tokenization with block comments, the study's row where one token kind removes every useful certificate:
 
