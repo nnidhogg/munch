@@ -2,6 +2,7 @@
 #define MUNCH_TOOLS_AUDIT_INCLUDE_MUNCH_TOOLS_AUDIT_READ_ANTLR_HPP
 
 #include <string_view>
+#include <vector>
 
 #include "munch/tools/audit/lexer_spec.hpp"
 
@@ -29,11 +30,12 @@ namespace munch::tools::audit
  * rule, a semantic predicate `{...}?`, and an `import` are refused, each naming its line. Actions `{...}` inside
  * rules are skipped, since they do not change what a rule matches.
  * @param source The grammar's text.
- * @return The scanner, its line that of the `grammar` declaration.
+ * @return The one scanner the grammar declares, its line that of the `grammar` declaration; a list, as every reader
+ *         returns the scanners of its file.
  * @throws Spec_error If the grammar is not one with lexer rules, a rule is malformed, or a rule uses a construct the
  *         rewriting refuses.
  */
-[[nodiscard]] Lexer_spec read_antlr(std::string_view source);
+[[nodiscard]] std::vector<Lexer_spec> read_antlr(std::string_view source);
 
 } // namespace munch::tools::audit
 

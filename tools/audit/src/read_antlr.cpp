@@ -13,6 +13,9 @@
 #include <utility>
 #include <vector>
 
+#include "munch/tools/audit/cursor.hpp"
+#include "munch/tools/audit/expression.hpp"
+
 namespace munch::tools::audit
 {
 namespace
@@ -152,7 +155,7 @@ struct Alternative
  * read element by element and rewritten for the pattern parser as it goes; a parser rule is skipped, its literals
  * kept for the implicit tokens a combined grammar makes of them.
  */
-class Grammar
+class Grammar : public Cursor
 {
 public:
     /**
@@ -169,11 +172,6 @@ public:
     [[nodiscard]] Lexer_spec read();
 
 private:
-    /**
-     * @brief Skips blanks and comments of either C style.
-     */
-    void skip_blanks();
-
     /**
      * @brief Skips a brace block from its `{`, however nested.
      * @throws Spec_error If the block never closes.
@@ -256,117 +254,10 @@ private:
     [[nodiscard]] std::string identifier();
 
     /**
-     * @brief Whether the text at the cursor begins with the given characters.
-     * @param prefix The characters.
-     * @return True when it does.
-     */
-    [[nodiscard]] bool at(std::string_view prefix) const noexcept;
-
-    /**
-     * @brief The byte at the cursor, or nothing at the end.
-     * @return The byte.
-     */
-    [[nodiscard]] std::optional<char> peek() const noexcept;
-
-    /**
-     * @brief Consumes and returns the byte at the cursor.
-     * @param what What the syntax expected, named when the text has ended.
-     * @return The byte.
-     * @throws Spec_error At the end of the text.
-     */
-    char next(std::string_view what);
-
-    /**
-     * @brief Consumes the expected byte after blanks.
-     * @param byte The byte.
-     * @param what What it opens or closes, named when it is missing.
-     * @throws Spec_error If another byte is there.
-     */
-    void expect(char byte, std::string_view what);
-
-    /**
-     * @brief The line an offset is on, counted from one.
-     * @param offset The offset.
-     * @return The line.
-     */
-    [[nodiscard]] std::size_t line_of(std::size_t offset) const noexcept;
-
-    /**
-     * @brief Refuses the grammar at the cursor's line.
-     * @param message Why.
-     */
-    [[noreturn]] void fail(const std::string& message) const;
-
-    /**
-     * @brief The whole grammar.
-     */
-    std::string_view text_;
-
-    /**
      * @brief The literals the parser rules use, in order of first appearance, quotes included.
      */
     std::vector<std::pair<std::string, std::size_t>> parser_literals_;
-
-    /**
-     * @brief The offset of the byte under the cursor.
-     */
-    std::size_t at_{0};
 };
-
-/**
- * @brief Whether a byte is a letter with two cases.
- * @param byte The byte.
- * @return True for a to z and A to Z.
- */
-[[nodiscard]] constexpr bool is_letter(const char32_t byte) noexcept
-{
-    return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z');
-}
-
-/**
- * @brief Whether a byte can continue an identifier.
- * @param byte The byte.
- * @return True for a letter, a digit or an underscore.
- */
-[[nodiscard]] constexpr bool is_name_byte(const char byte) noexcept
-{
-    return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9') || byte == '_';
-}
-
-/**
- * @brief The UTF-8 encoding of a scalar.
- * @param scalar The scalar, at most U+10FFFF.
- * @return Its bytes.
- */
-[[nodiscard]] std::string encoded(const char32_t scalar)
-{
-    std::string bytes;
-
-    if (scalar < 0x80)
-    {
-        bytes.push_back(static_cast<char>(scalar));
-    }
-    else if (scalar < 0x800)
-    {
-        bytes.push_back(static_cast<char>(0xC0 | (scalar >> 6U)));
-        bytes.push_back(static_cast<char>(0x80 | (scalar & 0x3FU)));
-    }
-    else if (scalar < 0x10000)
-    {
-        bytes.push_back(static_cast<char>(0xE0 | (scalar >> 12U)));
-        bytes.push_back(static_cast<char>(0x80 | ((scalar >> 6U) & 0x3FU)));
-        bytes.push_back(static_cast<char>(0x80 | (scalar & 0x3FU)));
-    }
-    else
-    {
-        bytes.push_back(static_cast<char>(0xF0 | (scalar >> 18U)));
-        bytes.push_back(static_cast<char>(0x80 | ((scalar >> 12U) & 0x3FU)));
-        bytes.push_back(static_cast<char>(0x80 | ((scalar >> 6U) & 0x3FU)));
-        bytes.push_back(static_cast<char>(0x80 | (scalar & 0x3FU)));
-    }
-
-    return bytes;
-}
 
 /**
  * @brief The one scalar a literal's UTF-8 bytes encode, when they encode exactly one.
@@ -400,27 +291,6 @@ private:
 }
 
 /**
- * @brief A byte as a bracket member, escaped where the bracket syntax would read it otherwise, hex when it does not
- *        print.
- * @param byte The byte.
- * @return The member text.
- */
-[[nodiscard]] std::string member(const unsigned char byte)
-{
-    if (byte == ']' || byte == '\\' || byte == '^' || byte == '-' || byte == '[')
-    {
-        return std::string{'\\'} + static_cast<char>(byte);
-    }
-
-    if (byte < 0x20 || byte >= 0x7F)
-    {
-        return std::format(R"(\x{:02x})", byte);
-    }
-
-    return {static_cast<char>(byte)};
-}
-
-/**
  * @brief A set of ASCII bytes as a bracket, runs of three or more as ranges.
  * @param ascii The bytes.
  * @return The bracket text.
@@ -445,7 +315,7 @@ private:
             ++end;
         }
 
-        out += member(static_cast<unsigned char>(byte));
+        out += bracket_member(static_cast<unsigned char>(byte));
 
         if (end > byte + 1)
         {
@@ -454,7 +324,7 @@ private:
 
         if (end > byte)
         {
-            out += member(static_cast<unsigned char>(end));
+            out += bracket_member(static_cast<unsigned char>(end));
         }
 
         byte = end + 1;
@@ -548,36 +418,6 @@ private:
 }
 
 /**
- * @brief The bytes of a literal as the parser's quoted literal.
- * @param bytes The bytes.
- * @return The quoted text.
- */
-[[nodiscard]] std::string quoted(const std::string_view bytes)
-{
-    std::string out{'"'};
-
-    for (const auto byte : bytes)
-    {
-        const auto value{static_cast<unsigned char>(byte)};
-
-        if (byte == '"' || byte == '\\')
-        {
-            out += std::string{'\\'} + byte;
-        }
-        else if (value < 0x20 || value >= 0x7F)
-        {
-            out += std::format(R"(\x{:02x})", value);
-        }
-        else
-        {
-            out.push_back(byte);
-        }
-    }
-
-    return out + '"';
-}
-
-/**
  * @brief The bytes of a literal with every ASCII letter in both cases, one bracket per byte.
  * @param bytes The bytes.
  * @return The expression.
@@ -594,7 +434,7 @@ private:
         }
         else
         {
-            out += '[' + member(static_cast<unsigned char>(byte)) + ']';
+            out += '[' + bracket_member(static_cast<unsigned char>(byte)) + ']';
         }
     }
 
@@ -783,7 +623,7 @@ void double_case(Ascii_t& ascii)
     return std::format("({}{})", loop, label[0][final].value_or(""));
 }
 
-Grammar::Grammar(const std::string_view source) : text_{source}
+Grammar::Grammar(const std::string_view source) : Cursor{source}
 {}
 
 Lexer_spec Grammar::read()
@@ -820,15 +660,15 @@ Lexer_spec Grammar::read()
         fail("the grammar has no name");
     }
 
-    expect(';', "the grammar declaration");
+    skip_blanks();
+
+    expect(';', "';' to end the grammar declaration");
 
     spec.line = line_of(declared);
 
     auto case_insensitive{false};
 
     std::string mode;
-
-    std::vector<Lexer_spec::Rule> rules;
 
     for (skip_blanks(); peek(); skip_blanks())
     {
@@ -889,7 +729,9 @@ Lexer_spec Grammar::read()
                 fail("a mode needs a name");
             }
 
-            expect(';', "the mode line");
+            skip_blanks();
+
+            expect(';', "';' to end the mode line");
 
             spec.conditions.push_back({.name = mode, .exclusive = true});
 
@@ -948,40 +790,6 @@ Lexer_spec Grammar::read()
     return spec;
 }
 
-void Grammar::skip_blanks()
-{
-    for (;;)
-    {
-        while (peek() && (*peek() == ' ' || *peek() == '\t' || *peek() == '\n' || *peek() == '\r'))
-        {
-            ++at_;
-        }
-
-        if (at("//"))
-        {
-            while (peek() && *peek() != '\n')
-            {
-                ++at_;
-            }
-        }
-        else if (at("/*"))
-        {
-            const auto close{text_.find("*/", at_ + 2)};
-
-            if (close == std::string_view::npos)
-            {
-                fail("a comment is never closed");
-            }
-
-            at_ = close + 2;
-        }
-        else
-        {
-            return;
-        }
-    }
-}
-
 void Grammar::skip_block()
 {
     const auto opened{at_};
@@ -1021,7 +829,9 @@ void Grammar::skip_block()
 
 std::optional<bool> Grammar::options_block(std::vector<std::string>& options)
 {
-    expect('{', "the options block");
+    skip_blanks();
+
+    expect('{', "'{' to open the options block");
 
     std::optional<bool> case_insensitive;
 
@@ -1034,7 +844,9 @@ std::optional<bool> Grammar::options_block(std::vector<std::string>& options)
             fail("an option needs a name");
         }
 
-        expect('=', "the option");
+        skip_blanks();
+
+        expect('=', "'=' after the option's name");
 
         skip_blanks();
 
@@ -1045,7 +857,9 @@ std::optional<bool> Grammar::options_block(std::vector<std::string>& options)
             value.push_back(next("the option's value"));
         }
 
-        expect(';', "the option");
+        skip_blanks();
+
+        expect(';', "';' to end the option");
 
         options.push_back(
                 name + '=' +
@@ -1112,7 +926,14 @@ void Grammar::parser_rule()
 
             const std::string text{text_.substr(opened, at_ - opened)};
 
-            if (std::ranges::none_of(parser_literals_, [&text](const auto& known) { return known.first == text; }))
+            const auto known{
+                    std::ranges::any_of(parser_literals_, [&text](const std::pair<std::string, std::size_t>& seen) {
+                        const auto& [spelling, line]{seen};
+
+                        return spelling == text;
+                    })};
+
+            if (!known)
             {
                 parser_literals_.emplace_back(text, line_of(opened));
             }
@@ -1184,7 +1005,9 @@ void Grammar::lexer_rule(Lexer_spec& spec, const std::string& mode, const bool c
         }
     }
 
-    expect(':', std::format("the rule {}", name));
+    skip_blanks();
+
+    expect(':', std::format("':' after the rule {}", name));
 
     const auto alternatives{this->alternatives(caseless_rule)};
 
@@ -1371,7 +1194,9 @@ std::vector<Alternative> Grammar::alternatives(const bool case_insensitive)
             continue;
         }
 
-        expect(';', "the rule");
+        skip_blanks();
+
+        expect(';', "';' to end the rule");
 
         return read;
     }
@@ -1524,7 +1349,9 @@ Element Grammar::element(const bool case_insensitive)
 
             skip_blanks();
 
-            expect('\'', "the range's end");
+            skip_blanks();
+
+            expect('\'', "a quote to open the range's end");
 
             const auto low{decoded(bytes)};
 
@@ -1686,7 +1513,9 @@ Element Grammar::element(const bool case_insensitive)
                 continue;
             }
 
-            expect(')', "the group");
+            skip_blanks();
+
+            expect(')', "')' to close the group");
 
             break;
         }
@@ -1888,7 +1717,9 @@ Alphabet Grammar::negatable(const bool case_insensitive)
             continue;
         }
 
-        expect(')', "the negated group");
+        skip_blanks();
+
+        expect(')', "')' to close the negated group");
 
         return joined;
     }
@@ -1973,7 +1804,7 @@ std::optional<char32_t> Grammar::character(const char closing)
 
     if (digits == 0 || (!braced && digits < 4) || (braced && next("'}'") != '}') || scalar > 0x10FFFF)
     {
-        fail("a Unicode escape is \\uXXXX or \\u{X...} up to U+10FFFF");
+        fail(R"(a Unicode escape is \uXXXX or \u{X...} up to U+10FFFF)");
     }
 
     return scalar;
@@ -1991,54 +1822,11 @@ std::string Grammar::identifier()
     return name;
 }
 
-bool Grammar::at(const std::string_view prefix) const noexcept
-{
-    return text_.substr(at_).starts_with(prefix);
-}
-
-std::optional<char> Grammar::peek() const noexcept
-{
-    return at_ < text_.size() ? std::optional{text_[at_]} : std::nullopt;
-}
-
-char Grammar::next(const std::string_view what)
-{
-    if (at_ >= text_.size())
-    {
-        fail(std::format("expected {} before the end of the grammar", what));
-    }
-
-    return text_[at_++];
-}
-
-void Grammar::expect(const char byte, const std::string_view what)
-{
-    skip_blanks();
-
-    if (peek() != byte)
-    {
-        fail(std::format("expected '{}' for {}", byte, what));
-    }
-
-    ++at_;
-}
-
-std::size_t Grammar::line_of(const std::size_t offset) const noexcept
-{
-    return 1 + static_cast<std::size_t>(std::ranges::count(text_.substr(0, offset), '\n'));
-}
-
-void Grammar::fail(const std::string& message) const
-{
-    // At the end of the text the last line is named, not the one a final newline would open.
-    throw Spec_error{message, line_of(std::min(at_, text_.empty() ? 0 : text_.size() - 1))};
-}
-
 } // namespace
 
-Lexer_spec read_antlr(const std::string_view source)
+std::vector<Lexer_spec> read_antlr(const std::string_view source)
 {
-    return Grammar{source}.read();
+    return {Grammar{source}.read()};
 }
 
 } // namespace munch::tools::audit

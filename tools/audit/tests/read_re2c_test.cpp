@@ -9,8 +9,6 @@
 #include <string_view>
 #include <vector>
 
-#include "munch/tools/audit/read_flex.hpp"
-
 using namespace munch::tools::audit;
 
 namespace
@@ -64,7 +62,7 @@ TEST(Read_re2c, Reads_configurations_definitions_and_rules_with_their_dialect_re
 
     ASSERT_EQ(spec.definitions.size(), 2u);
     EXPECT_EQ(spec.definitions.at("digit"), "[0-9]");
-    EXPECT_EQ(spec.definitions.at("number"), "{digit}+(\".\"{digit}+)?");
+    EXPECT_EQ(spec.definitions.at("number"), R"({digit}+("."{digit}+)?)");
 
     // Six rules: the setup rule, the default rule and the end rule are not tokens.
     ASSERT_EQ(spec.rules.size(), 6u);
@@ -80,14 +78,14 @@ TEST(Read_re2c, Reads_configurations_definitions_and_rules_with_their_dialect_re
     EXPECT_EQ(spec.rules[1].token, std::optional<std::string>{"NUMBER"});
 
     // Transitions are kept as text and return nothing.
-    EXPECT_EQ(spec.rules[2].pattern, "\"/*\"");
+    EXPECT_EQ(spec.rules[2].pattern, R"("/*")");
     EXPECT_FALSE(spec.rules[2].token.has_value());
     EXPECT_EQ(spec.rules[3].conditions, (std::vector<std::string>{"COMMENT"}));
-    EXPECT_EQ(spec.rules[3].pattern, "\"*\" \"/\"");
-    EXPECT_EQ(spec.rules[3].expression, "\"*\"\"/\"");
+    EXPECT_EQ(spec.rules[3].pattern, R"("*" "/")");
+    EXPECT_EQ(spec.rules[3].expression, R"("*""/")");
     EXPECT_FALSE(spec.rules[3].token.has_value());
     EXPECT_EQ(spec.rules[4].pattern, "[^]");
-    EXPECT_EQ(spec.rules[4].expression, "[\\x00-\\xff]");
+    EXPECT_EQ(spec.rules[4].expression, R"([\x00-\xff])");
     EXPECT_EQ(spec.rules[5].conditions, (std::vector<std::string>{"*"}));
 
     // The conditions are the ones the rules name, INITIAL and `*` aside, each exclusive.
@@ -121,19 +119,19 @@ LNUM [0-9]+(_[0-9]+)*
     ASSERT_EQ(plain.rules.size(), 3u);
     EXPECT_EQ(plain.definitions.at("LNUM"), "[0-9]+(_[0-9]+)*");
     EXPECT_EQ(plain.rules[0].expression, "{LNUM}");
-    EXPECT_EQ(plain.rules[1].expression, "\"exit\"");
+    EXPECT_EQ(plain.rules[1].expression, R"("exit")");
     EXPECT_EQ(plain.rules[1].token, std::optional<std::string>{"EXIT"});
-    EXPECT_EQ(plain.rules[2].expression, "[aA][aA][\\n]");
+    EXPECT_EQ(plain.rules[2].expression, R"([aA][aA][\n])");
 
     const auto inverted{read_re2c(source, {.case_inverted = true}).front()};
 
     EXPECT_EQ(inverted.rules[1].expression, "[eE][xX][iI][tT]");
-    EXPECT_EQ(inverted.rules[2].expression, "[a][\\x41][\\n]");
+    EXPECT_EQ(inverted.rules[2].expression, R"([a][\x41][\n])");
 
     const auto insensitive{read_re2c(source, {.case_insensitive = true}).front()};
 
     EXPECT_EQ(insensitive.rules[1].expression, "[eE][xX][iI][tT]");
-    EXPECT_EQ(insensitive.rules[2].expression, "[aA][aA][\\n]");
+    EXPECT_EQ(insensitive.rules[2].expression, R"([aA][aA][\n])");
 
     // Set in the file, a flag holds from there on, the next block included, and a block without rules is no
     // scanner but hands its configurations on.
@@ -154,7 +152,7 @@ TEST(Read_re2c, A_defined_name_opening_a_line_is_a_rule_and_an_undefined_one_a_f
 
     ASSERT_EQ(normal.rules.size(), 2u);
     EXPECT_EQ(normal.rules[0].expression, "{digit}+");
-    EXPECT_EQ(normal.rules[1].expression, "{digit}\"x\"");
+    EXPECT_EQ(normal.rules[1].expression, R"({digit}"x")");
     EXPECT_EQ(normal.definitions.size(), 1u);
 
     // Flex syntax inferred: an undefined name opening a line with a blank and no action is a definition, a comment
@@ -237,31 +235,8 @@ bool ReadIdent() {
     EXPECT_EQ(scanners[1].definitions.at("name"), "[a-z]+");
 }
 
-TEST(Read_re2c, Every_grammar_read_through_re2c_cuts_as_its_flex_twin)
+TEST(Read_re2c, Case_insensitive_keywords_tokenize_either_way)
 {
-    for (const std::string_view name :
-         {"c-like-conventional", "c-like-split-friendly", "c-like-block-comments", "json", "log-lines"})
-    {
-        const auto from_flex{build(read_flex(grammar(std::string{name} + ".l")), "INITIAL")};
-
-        const auto from_re2c{build(read_re2c(grammar(std::string{name} + ".re")).front(), "INITIAL")};
-
-        // No input the two tokenize is cut differently, over every input rather than a sample.
-        const auto difference{from_flex.boundary_difference(from_re2c)};
-
-        EXPECT_TRUE(difference.exhaustive) << name;
-        EXPECT_TRUE(difference.witness.empty()) << name << ": " << difference.witness;
-
-        for (int value{0}; value < 256; ++value)
-        {
-            const auto byte{static_cast<char>(value)};
-
-            EXPECT_EQ(from_flex.is_split_point(byte), from_re2c.is_split_point(byte)) << name << ' ' << value;
-            EXPECT_EQ(from_flex.is_split_point_ignoring(byte), from_re2c.is_split_point_ignoring(byte))
-                    << name << ' ' << value;
-        }
-    }
-
     // The conventional twin's case-insensitive keywords tokenize either way, and lose to nothing shorter.
     const auto conventional{build(read_re2c(grammar("c-like-conventional.re")).front(), "INITIAL")};
 

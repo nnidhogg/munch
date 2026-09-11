@@ -3,6 +3,8 @@ cmake_policy(SET CMP0097 NEW)
 project(munch_audit)
 
 add_library(${PROJECT_NAME}
+        src/cursor.cpp
+        src/expression.cpp
         src/lexer_spec.cpp
         src/price.cpp
         src/read_antlr.cpp
@@ -53,6 +55,7 @@ if (MUNCH_BUILD_TESTS)
             tests/read_logos_test.cpp
             tests/read_re2c_test.cpp
             tests/report_test.cpp
+            tests/twins_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests

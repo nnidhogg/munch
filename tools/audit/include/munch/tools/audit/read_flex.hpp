@@ -2,6 +2,7 @@
 #define MUNCH_TOOLS_AUDIT_INCLUDE_MUNCH_TOOLS_AUDIT_READ_FLEX_HPP
 
 #include <string_view>
+#include <vector>
 
 #include "munch/tools/audit/lexer_spec.hpp"
 
@@ -18,14 +19,16 @@ namespace munch::tools::audit
  * the line or, when it opens a brace, to the matching close. Patterns are kept as written; regex::parse() reads them
  * against the definitions when a token set is built, so a pattern the parser refuses is refused then, with the rule's
  * line; a flex pattern is already in the syntax the parser reads, so each rule's expression is its pattern. `<<EOF>>`
- * rules are skipped, since end of input is not a token. Whether an action returns a token is read by returned().
+ * rules are skipped, since end of input is not a token. Whether an action returns a token is read by returned(). A
+ * flex file is one scanner, so the list returned holds one specification, as every reader returns the scanners of
+ * its file.
  * @param source The file's text.
  * @param returning The forms besides `return` an action returns a token through, none unless given.
- * @return What it declares.
+ * @return The one scanner the file declares.
  * @throws Spec_error If the file has no rules section, a definition has no pattern, a rule has no pattern, or a
  *         brace, quote or bracket is left open.
  */
-[[nodiscard]] Lexer_spec read_flex(std::string_view source, const Returning_t& returning = {});
+[[nodiscard]] std::vector<Lexer_spec> read_flex(std::string_view source, const Returning_t& returning = {});
 
 } // namespace munch::tools::audit
 

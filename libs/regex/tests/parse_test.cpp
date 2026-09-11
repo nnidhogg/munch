@@ -122,23 +122,23 @@ TEST(Parse, Brackets_take_ranges_negation_classes_and_the_literal_edges)
     EXPECT_TRUE(accepts(parse("[-a]+"), "-a-"));
 
     // Escapes inside brackets decode.
-    EXPECT_TRUE(accepts(parse("[\\n\\t]+"), "\n\t"));
+    EXPECT_TRUE(accepts(parse(R"([\n\t]+)"), "\n\t"));
 }
 
 TEST(Parse, Escapes_decode_named_octal_hex_and_the_byte_itself)
 {
-    EXPECT_TRUE(accepts(parse("\\n\\t\\r\\f\\v\\a\\b"), "\n\t\r\f\v\a\b"));
-    EXPECT_TRUE(accepts(parse("\\101\\x42\\x4"), "AB\x04"));
-    EXPECT_TRUE(accepts(parse("\\.\\*\\\\\\/"), ".*\\/"));
-    EXPECT_TRUE(accepts(parse("\\0"), std::string_view{"\0", 1}));
+    EXPECT_TRUE(accepts(parse(R"(\n\t\r\f\v\a\b)"), "\n\t\r\f\v\a\b"));
+    EXPECT_TRUE(accepts(parse(R"(\101\x42\x4)"), "AB\x04"));
+    EXPECT_TRUE(accepts(parse(R"(\.\*\\\/)"), R"(.*\/)"));
+    EXPECT_TRUE(accepts(parse(R"(\0)"), std::string_view{"\0", 1}));
 }
 
 TEST(Parse, Quoted_text_is_literal_with_its_escapes_decoded)
 {
-    EXPECT_TRUE(accepts(parse("\"a.b*\""), "a.b*"));
-    EXPECT_EQ(matched(parse("\"a.b*\""), "axb"), -1);
-    EXPECT_TRUE(accepts(parse("\"say \\\"hi\\\"\\n\""), "say \"hi\"\n"));
-    EXPECT_TRUE(accepts(parse("\"ab\"+"), "abab"));
+    EXPECT_TRUE(accepts(parse(R"("a.b*")"), "a.b*"));
+    EXPECT_EQ(matched(parse(R"("a.b*")"), "axb"), -1);
+    EXPECT_TRUE(accepts(parse(R"("say \"hi\"\n")"), "say \"hi\"\n"));
+    EXPECT_TRUE(accepts(parse(R"("ab"+)"), "abab"));
 }
 
 TEST(Parse, Code_points_encode_as_utf8_in_literals_and_read_brackets_as_scalars)
@@ -240,11 +240,11 @@ TEST(Parse, Refusals_name_the_offset_and_the_reason)
     EXPECT_EQ(refused_at("[abc"), 4);
     EXPECT_EQ(refused_at("[z-a]"), 1);
     EXPECT_EQ(refused_at("[[:nope:]]"), 3);
-    EXPECT_EQ(refused_at("\"open"), 5);
-    EXPECT_EQ(refused_at("\"\""), 2);
+    EXPECT_EQ(refused_at(R"("open)"), 5);
+    EXPECT_EQ(refused_at(R"("")"), 2);
     EXPECT_EQ(refused_at("a{3,1}"), 5);
     EXPECT_EQ(refused_at("a{,3}"), 1);
-    EXPECT_EQ(refused_at("\\x"), 2);
+    EXPECT_EQ(refused_at(R"(\x)"), 2);
 
     // Definitions.
     EXPECT_EQ(refused_at("{NOPE}"), 0);

@@ -3,32 +3,16 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
-#include <fstream>
-#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <vector>
 
-#include "munch/tools/audit/read_flex.hpp"
-
 using namespace munch::tools::audit;
 
 namespace
 {
-/**
- * @brief Reads a grammar file from the repository's grammar directory.
- * @param name The file's name.
- * @return Its text.
- */
-std::string grammar(const std::string_view name)
-{
-    std::ifstream stream{std::string{SOURCE_DIR} + "/tools/audit/grammars/" + std::string{name}};
-
-    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
-}
-
 /**
  * @brief The one rule of a file holding one enum with one variant carrying the given attribute.
  * @param attribute The attribute's text, `#[...]` included.
@@ -140,19 +124,19 @@ TEST(Read_logos, Reads_the_attribute_idioms_of_an_enum_deriving_Logos)
     // Two skips first, then the variants' attributes in order, one rule each.
     ASSERT_EQ(spec.rules.size(), 10u);
 
-    EXPECT_EQ(spec.rules[0].pattern, "r\"[ \\t\\n\\f]+\"");
-    EXPECT_EQ(spec.rules[0].expression, "[\\t\\n\\x0c ]+");
+    EXPECT_EQ(spec.rules[0].pattern, R"(r"[ \t\n\f]+")");
+    EXPECT_EQ(spec.rules[0].expression, R"([\t\n\x0c ]+)");
     EXPECT_FALSE(spec.rules[0].token.has_value());
     EXPECT_EQ(spec.rules[0].priority, std::optional<std::size_t>{2});
     EXPECT_EQ(spec.rules[0].line, 11u);
 
-    EXPECT_EQ(spec.rules[1].pattern, "\"//[^\\n]*\"");
+    EXPECT_EQ(spec.rules[1].pattern, R"("//[^\n]*")");
     EXPECT_FALSE(spec.rules[1].token.has_value());
     EXPECT_EQ(spec.rules[1].priority, std::optional<std::size_t>{3});
     EXPECT_EQ(spec.rules[1].line, 12u);
 
-    EXPECT_EQ(spec.rules[2].pattern, "\"fn\"");
-    EXPECT_EQ(spec.rules[2].expression, "\"fn\"");
+    EXPECT_EQ(spec.rules[2].pattern, R"("fn")");
+    EXPECT_EQ(spec.rules[2].expression, R"("fn")");
     EXPECT_EQ(spec.rules[2].token, std::optional<std::string>{"Fn"});
     EXPECT_EQ(spec.rules[2].priority, std::optional<std::size_t>{4});
     EXPECT_EQ(spec.rules[2].line, 17u);
@@ -167,9 +151,9 @@ TEST(Read_logos, Reads_the_attribute_idioms_of_an_enum_deriving_Logos)
     EXPECT_EQ(spec.rules[4].action, "|lex| lex.slice().parse().ok()");
     EXPECT_EQ(spec.rules[4].priority, std::optional<std::size_t>{5});
 
-    EXPECT_EQ(spec.rules[5].expression, "\"+\"");
+    EXPECT_EQ(spec.rules[5].expression, R"("+")");
     EXPECT_EQ(spec.rules[5].token, std::optional<std::string>{"Sign"});
-    EXPECT_EQ(spec.rules[6].expression, "\"-\"");
+    EXPECT_EQ(spec.rules[6].expression, R"("-")");
     EXPECT_EQ(spec.rules[6].token, std::optional<std::string>{"Sign"});
 
     // A callback spelled logos::skip discards, as does a closure whose whole body is logos::Skip.
@@ -190,8 +174,8 @@ TEST(Read_logos, Reads_the_attribute_idioms_of_an_enum_deriving_Logos)
     EXPECT_EQ(part.line, 44u);
     ASSERT_EQ(part.rules.size(), 2u);
     EXPECT_EQ(part.rules[0].token, std::optional<std::string>{"Text"});
-    EXPECT_EQ(part.rules[1].pattern, "r#\"\"\"#");
-    EXPECT_EQ(part.rules[1].expression, "\"\\\"\"");
+    EXPECT_EQ(part.rules[1].pattern, R"(r#"""#)");
+    EXPECT_EQ(part.rules[1].expression, R"("\"")");
 }
 
 TEST(Read_logos, The_built_lexer_ranks_as_logos_ranks)
@@ -317,9 +301,10 @@ TEST(Read_logos, Refusals_name_the_line_and_the_construct)
     EXPECT_EQ(refused(R"rs(#[token("")])rs"), 3);
     EXPECT_EQ(refused(R"rs(#[regex("(?&nope)")])rs"), 3);
 
-    // Malformed Rust around the attributes, at the line it goes wrong.
+    // Malformed Rust around the attributes, at the line it goes wrong; an enum left open is refused on the last
+    // line there is.
     EXPECT_EQ(line_of("#[derive(Logos)]\nenum T {\n    #[token(\"a\")]\n    V\n    W,\n}\n"), 5);
-    EXPECT_EQ(line_of("#[derive(Logos)]\nenum T {\n    #[token(\"a\")]\n    V,\n"), 5);
+    EXPECT_EQ(line_of("#[derive(Logos)]\nenum T {\n    #[token(\"a\")]\n    V,\n"), 4);
     EXPECT_EQ(line_of("#[derive(Logos)]\n#[logos(subpattern d = r\"[0-9]\", subpattern d = r\"x\")]\nenum T {}\n"), 2);
 
     // The message names the pattern as written and what was refused.
@@ -331,33 +316,7 @@ TEST(Read_logos, Refusals_name_the_line_and_the_construct)
     }
     catch (const Spec_error& error)
     {
-        EXPECT_NE(std::string_view{error.what()}.find("r\"\\w+\""), std::string_view::npos) << error.what();
+        EXPECT_NE(std::string_view{error.what()}.find(R"(r"\w+")"), std::string_view::npos) << error.what();
         EXPECT_NE(std::string_view{error.what()}.find("Unicode tables"), std::string_view::npos) << error.what();
-    }
-}
-
-TEST(Read_logos, Every_grammar_read_through_logos_cuts_as_its_flex_twin)
-{
-    for (const std::string_view name :
-         {"c-like-conventional", "c-like-split-friendly", "c-like-block-comments", "json", "log-lines"})
-    {
-        const auto from_flex{build(read_flex(grammar(std::string{name} + ".l")), "INITIAL")};
-
-        const auto lexers{read_logos(grammar(std::string{name} + ".rs"))};
-
-        ASSERT_EQ(lexers.size(), 1u) << name;
-
-        const auto from_logos{build(lexers.front(), "INITIAL")};
-
-        // No input the two tokenize is cut differently, over every input rather than a sample: the flex twin reads
-        // bytes where the logos one reads scalars, so they part only on input the logos one refuses.
-        const auto difference{from_flex.boundary_difference(from_logos)};
-
-        EXPECT_TRUE(difference.exhaustive) << name;
-        EXPECT_TRUE(difference.witness.empty()) << name << ": " << difference.witness;
-
-        // The newline certificate is the same answer through either reader.
-        EXPECT_EQ(from_flex.is_split_point('\n'), from_logos.is_split_point('\n')) << name;
-        EXPECT_EQ(from_flex.is_split_point_ignoring('\n'), from_logos.is_split_point_ignoring('\n')) << name;
     }
 }

@@ -749,7 +749,7 @@ std::string Reader::quoted()
 
     for (;;)
     {
-        const auto byte{next("'\"' to close the quoted text")};
+        const auto byte{next(R"('"' to close the quoted text)")};
 
         if (byte == '"')
         {
@@ -816,7 +816,7 @@ Escaped Reader::escape()
 
         if (digits == 0)
         {
-            fail("'\\x' needs a hex digit");
+            fail(R"('\x' needs a hex digit)");
         }
 
         return {.value = value, .scalar = false};

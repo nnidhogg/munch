@@ -146,6 +146,13 @@ struct Report
 };
 
 /**
+ * @brief The report's answer in one sentence: whether a cut has a certificate, of what kind, and where to read on.
+ * @param report The report.
+ * @return The sentence.
+ */
+[[nodiscard]] std::string verdict(const Report& report);
+
+/**
  * @brief Why each candidate byte that does not certify exactly fails: for every byte the start state consumes live,
  *        each token consuming it mid-token, with a shortest input reaching the consuming state.
  * @param lexer The token set.
@@ -172,13 +179,6 @@ struct Report
  * @return The report.
  */
 [[nodiscard]] Report audit(const core::Lexer& lexer, std::size_t window_limit = 3);
-
-/**
- * @brief The report's answer in one sentence: whether a cut has a certificate, of what kind, and where to read on.
- * @param report The report.
- * @return The sentence.
- */
-[[nodiscard]] std::string verdict(const Report& report);
 
 /**
  * @brief Renders a report as JSON, one object with a member per figure, token ids paired with their names.
