@@ -1148,7 +1148,8 @@ docs/                     SVG diagrams of example automata, performance.md (the 
                           guarantees, and escape hatches).
 libs/
   common/                 Shared concepts (Byte_iterable, Random_access_byte_iterable, Token_id, Token_sink).
-  regex/                  The combinator DSL: Regex nodes and their lowering to munch::nfa::Builder.
+  regex/                  The combinator DSL: Regex nodes, parse() for flex-style patterns, and their lowering to
+                          munch::nfa::Builder.
   nfa/                    NFA representation and builder (Thompson construction, epsilon closure, merge/append).
     tools/                Graphviz DOT export for NFAs.
   dfa/                    DFA representation, minimize() (Moore partition refinement), the table Simulator.
@@ -1156,6 +1157,7 @@ libs/
   core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
 tools/
   tokenizer/              Tokenizer and Mode_tokenizer: resumable cursors, seek, recovery, raw strings.
+  audit/                  The auditor: flex and re2c files read into token sets, the report, and what a byte costs.
   benchmark/              Throughput benchmarks: core lexer, tokenizer driver, UTF-8, other engines.
 ```
 

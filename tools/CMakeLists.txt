@@ -1,3 +1,6 @@
+# The auditor reads other generators' token sets into the library's decisions; it ships like the tokenizer.
+add_subdirectory(audit)
+
 if (MUNCH_BUILD_BENCHMARK)
     add_subdirectory(benchmark)
 endif ()

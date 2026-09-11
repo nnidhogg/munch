@@ -53,6 +53,7 @@ long refused_at(const std::string_view pattern, const Definitions_t& definitions
 
     return -1;
 }
+
 } // namespace
 
 TEST(Parse, Literals_merge_into_one_text_and_match_as_written)

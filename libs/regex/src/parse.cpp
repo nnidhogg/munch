@@ -773,6 +773,7 @@ void Reader::fail(const std::string& message) const
 {
     throw Syntax_error{message, at_};
 }
+
 } // namespace
 
 Syntax_error::Syntax_error(const std::string& message, const std::size_t offset)
