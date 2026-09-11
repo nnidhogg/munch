@@ -47,7 +47,7 @@ int main() { return yylex(); }
 
 TEST(Read_flex, Reads_definitions_options_conditions_and_rules_in_order)
 {
-    const auto file{read_flex(c_like)};
+    const auto file{read_flex(c_like).front()};
 
     EXPECT_EQ(file.line, 11u);
 
@@ -75,7 +75,7 @@ TEST(Read_flex, Reads_definitions_options_conditions_and_rules_in_order)
     EXPECT_NE(file.rules[1].action.find("atoi"), std::string::npos);
 
     // A '|' action takes the next rule's token.
-    EXPECT_EQ(file.rules[2].pattern, "\"==\"");
+    EXPECT_EQ(file.rules[2].pattern, R"("==")");
     EXPECT_EQ(file.rules[2].action, "|");
     EXPECT_EQ(file.rules[2].token, std::optional<std::string>{"COMPARE"});
     EXPECT_EQ(file.rules[3].token, std::optional<std::string>{"COMPARE"});
@@ -86,16 +86,16 @@ TEST(Read_flex, Reads_definitions_options_conditions_and_rules_in_order)
 
     // Prefixed rules carry their condition; the bracket with a blank inside is one pattern.
     EXPECT_EQ(file.rules[6].conditions, (std::vector<std::string>{"COMMENT"}));
-    EXPECT_EQ(file.rules[7].pattern, ".|\\n");
-    EXPECT_EQ(file.rules[8].pattern, "[ \\t\\n]+");
+    EXPECT_EQ(file.rules[7].pattern, R"(.|\n)");
+    EXPECT_EQ(file.rules[8].pattern, R"([ \t\n]+)");
     EXPECT_FALSE(file.rules[8].token.has_value());
-    EXPECT_EQ(file.rules[9].pattern, "\"//\"[^\\n]*");
+    EXPECT_EQ(file.rules[9].pattern, R"("//"[^\n]*)");
     EXPECT_FALSE(file.rules[9].token.has_value());
 }
 
 TEST(Read_flex, Active_rules_follow_the_start_conditions)
 {
-    const auto file{read_flex(c_like)};
+    const auto file{read_flex(c_like).front()};
 
     // INITIAL: every unprefixed rule, none of the COMMENT ones.
     EXPECT_EQ(active_rules(file, "INITIAL"), (std::vector<std::size_t>{0, 1, 2, 3, 4, 5, 8, 9}));
@@ -106,7 +106,7 @@ TEST(Read_flex, Active_rules_follow_the_start_conditions)
 
 TEST(Read_flex, The_built_token_set_scans_as_flex_would_and_answers_the_certificates)
 {
-    const auto file{read_flex(c_like)};
+    const auto file{read_flex(c_like).front()};
 
     const auto lexer{build(file, "INITIAL")};
 
@@ -160,16 +160,16 @@ TEST(Read_flex, Start_condition_scopes_and_code_in_actions_read_as_flex_reads_th
 %%
 )"};
 
-    const auto file{read_flex(source)};
+    const auto file{read_flex(source).front()};
 
     ASSERT_EQ(file.rules.size(), 4u);
 
     EXPECT_TRUE(file.rules[0].conditions.empty());
     EXPECT_EQ(file.rules[0].line, 9u);
     EXPECT_EQ(file.rules[1].conditions, (std::vector<std::string>{"xc"}));
-    EXPECT_EQ(file.rules[1].pattern, "\"*/\"");
+    EXPECT_EQ(file.rules[1].pattern, R"("*/")");
     EXPECT_EQ(file.rules[2].conditions, (std::vector<std::string>{"xc"}));
-    EXPECT_EQ(file.rules[2].action, "{ if (c == '{') { depth++; } puts(\"}\"); }");
+    EXPECT_EQ(file.rules[2].action, R"({ if (c == '{') { depth++; } puts("}"); })");
     EXPECT_TRUE(file.rules[3].conditions.empty());
     EXPECT_EQ(file.rules[3].token, std::optional<std::string>{"KEYWORD"});
     EXPECT_EQ(file.rules[3].action.substr(0, 22), "if (keyword(yytext)) {");
@@ -200,7 +200,7 @@ TEST(Read_flex, Refusals_name_the_line)
     EXPECT_EQ(line_of("%%\n<S abc  ;\n"), 2);
 
     // A pattern the regex parser refuses is refused when the token set is built, with the rule's line.
-    const auto file{read_flex("%%\n^abc   return X;\n")};
+    const auto file{read_flex("%%\n^abc   return X;\n").front()};
 
     try
     {

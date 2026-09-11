@@ -8,6 +8,9 @@
 #include <utility>
 #include <vector>
 
+#include "munch/tools/audit/cursor.hpp"
+#include "munch/tools/audit/expression.hpp"
+
 namespace munch::tools::audit
 {
 namespace
@@ -23,7 +26,7 @@ namespace
  * flex-syntax flag and which a name at the start of a line followed by more regex and no action on that line
  * identifies.
  */
-class Block
+class Block : public Cursor
 {
 public:
     /**
@@ -51,11 +54,6 @@ public:
     [[nodiscard]] Re2c_flags flags() const noexcept;
 
 private:
-    /**
-     * @brief Skips blanks and comments of either C style.
-     */
-    void skip_blanks();
-
     /**
      * @brief Reads a `re2c:` configuration through its `;` into the options, a flag among them into the flags.
      * @param spec The specification being filled.
@@ -105,43 +103,6 @@ private:
     [[nodiscard]] std::size_t reference_length() const noexcept;
 
     /**
-     * @brief Whether the text at the cursor begins with the given characters.
-     * @param prefix The characters.
-     * @return True when it does.
-     */
-    [[nodiscard]] bool at(std::string_view prefix) const noexcept;
-
-    /**
-     * @brief The byte at the cursor, or nothing at the end.
-     * @return The byte.
-     */
-    [[nodiscard]] std::optional<char> peek() const noexcept;
-
-    /**
-     * @brief Consumes and returns the byte at the cursor.
-     * @param what What the syntax expected, named when the block has ended.
-     * @return The byte.
-     * @throws Spec_error At the end of the block.
-     */
-    char next(std::string_view what);
-
-    /**
-     * @brief Refuses the block at the cursor's line.
-     * @param message Why.
-     */
-    [[noreturn]] void fail(const std::string& message) const;
-
-    /**
-     * @brief The whole file.
-     */
-    std::string_view text_;
-
-    /**
-     * @brief The offset of the byte under the cursor.
-     */
-    std::size_t at_;
-
-    /**
      * @brief The flags in force.
      */
     Re2c_flags flags_;
@@ -152,53 +113,8 @@ private:
     bool line_bound_{false};
 };
 
-/**
- * @brief Whether a byte can begin or continue a bare name, which outside the flex syntax refers to a definition.
- * @param byte The byte.
- * @return True for a letter, a digit or an underscore.
- */
-[[nodiscard]] constexpr bool is_name_byte(const char byte) noexcept
-{
-    return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9') || byte == '_';
-}
-
-/**
- * @brief Whether a byte is a letter with two cases, which a case-insensitive literal spells both of.
- * @param byte The byte.
- * @return True for a to z and A to Z.
- */
-[[nodiscard]] constexpr bool is_letter(const char byte) noexcept
-{
-    return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z');
-}
-
-/**
- * @brief Whether a byte is a hexadecimal digit, which a `\x` escape is followed by up to two of.
- * @param byte The byte.
- * @return True for 0 to 9, a to f and A to F.
- */
-[[nodiscard]] constexpr bool is_hex_digit(const char byte) noexcept
-{
-    return (byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f') || (byte >= 'A' && byte <= 'F');
-}
-
-/**
- * @brief A byte as a bracket member, escaped where the bracket syntax would read it otherwise.
- * @param byte The byte.
- * @return The member text.
- */
-[[nodiscard]] std::string bracket_member(const char byte)
-{
-    if (byte == ']' || byte == '\\' || byte == '^' || byte == '-' || byte == '[')
-    {
-        return std::string{'\\'} + byte;
-    }
-
-    return {byte};
-}
-
 Block::Block(const std::string_view source, const std::size_t begin, const Re2c_flags flags)
-    : text_{source}, at_{begin}, flags_{flags}
+    : Cursor{source, begin, source.size()}, flags_{flags}
 {}
 
 std::size_t Block::read(Lexer_spec& spec, const Returning_t& returning)
@@ -217,7 +133,7 @@ std::size_t Block::read(Lexer_spec& spec, const Returning_t& returning)
             continue;
         }
 
-        const auto line{1 + static_cast<std::size_t>(std::ranges::count(text_.substr(0, at_), '\n'))};
+        const auto line{this->line()};
 
         const auto at_line_start{at_ == 0 || text_[at_ - 1] == '\n'};
 
@@ -332,40 +248,6 @@ std::size_t Block::read(Lexer_spec& spec, const Returning_t& returning)
 Re2c_flags Block::flags() const noexcept
 {
     return flags_;
-}
-
-void Block::skip_blanks()
-{
-    for (;;)
-    {
-        while (peek() && (*peek() == ' ' || *peek() == '\t' || *peek() == '\n' || *peek() == '\r'))
-        {
-            ++at_;
-        }
-
-        if (at("//"))
-        {
-            while (peek() && *peek() != '\n')
-            {
-                ++at_;
-            }
-        }
-        else if (at("/*"))
-        {
-            const auto close{text_.find("*/", at_ + 2)};
-
-            if (close == std::string_view::npos)
-            {
-                fail("a comment is never closed");
-            }
-
-            at_ = close + 2;
-        }
-        else
-        {
-            return;
-        }
-    }
 }
 
 void Block::configuration(Lexer_spec& spec)
@@ -530,7 +412,7 @@ std::pair<std::string, std::string> Block::regex_text()
             // re2c closes a bracket at the first unescaped ']', a literal one being spelled '\]'.
             for (;;)
             {
-                const auto inner{next(close == '"' ? "'\"' to close the quoted text" : "']' to close the bracket")};
+                const auto inner{next(close == '"' ? R"('"' to close the quoted text)" : "']' to close the bracket")};
 
                 copied.push_back(inner);
 
@@ -752,7 +634,7 @@ std::string Block::literal(const char quote, const bool insensitive)
             continue;
         }
 
-        expression += '[' + bracket_member(byte) + ']';
+        expression += '[' + bracket_member(static_cast<unsigned char>(byte)) + ']';
     }
 
     if (expression.empty())
@@ -780,34 +662,6 @@ std::size_t Block::reference_length() const noexcept
     const auto named{end > at_ + 1 && !(text_[at_ + 1] >= '0' && text_[at_ + 1] <= '9')};
 
     return named && end < text_.size() && text_[end] == '}' ? end + 1 - at_ : 0;
-}
-
-bool Block::at(const std::string_view prefix) const noexcept
-{
-    return text_.substr(at_).starts_with(prefix);
-}
-
-std::optional<char> Block::peek() const noexcept
-{
-    return at_ < text_.size() ? std::optional{text_[at_]} : std::nullopt;
-}
-
-char Block::next(const std::string_view what)
-{
-    if (at_ >= text_.size())
-    {
-        fail("expected " + std::string{what} + " before the end of the block");
-    }
-
-    return text_[at_++];
-}
-
-void Block::fail(const std::string& message) const
-{
-    const auto line{
-            1 + static_cast<std::size_t>(std::ranges::count(text_.substr(0, std::min(at_, text_.size())), '\n'))};
-
-    throw Spec_error{message, line};
 }
 
 } // namespace

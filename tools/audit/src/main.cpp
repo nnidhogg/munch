@@ -503,11 +503,11 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 {
     const auto& [condition, refused, report, rules]{outcome};
 
-    out << std::format("        {{\"name\": {}, \"rules\": {}, ", json_string(condition), rules);
+    out << std::format(R"(        {{"name": {}, "rules": {}, )", json_string(condition), rules);
 
     if (!report)
     {
-        out << std::format("\"refused\": {}, \"report\": null}}", json_string(refused));
+        out << std::format(R"("refused": {}, "report": null}})", json_string(refused));
 
         return;
     }
@@ -520,7 +520,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
         document.insert(at + 1, "        ");
     }
 
-    out << "\"refused\": null, \"report\": " << document << '}';
+    out << R"("refused": null, "report": )" << document << '}';
 }
 
 /**
@@ -552,8 +552,8 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 
         try
         {
-            scanners = kind == Kind::flex  ? std::vector{read_flex(source, options.returning)} :
-                       kind == Kind::antlr ? std::vector{read_antlr(source)} :
+            scanners = kind == Kind::flex  ? read_flex(source, options.returning) :
+                       kind == Kind::antlr ? read_antlr(source) :
                        kind == Kind::logos ? read_logos(source) :
                                              read_re2c(source, options.re2c_flags, options.returning);
         }
@@ -567,7 +567,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
         if (options.json)
         {
             out << std::format(
-                    "    {{\"path\": {}, \"kind\": \"{}\", ", json_string(path),
+                    R"(    {{"path": {}, "kind": "{}", )", json_string(path),
                     kind == Kind::flex  ? "flex" :
                     kind == Kind::antlr ? "antlr" :
                     kind == Kind::logos ? "logos" :
@@ -575,7 +575,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 
             if (!refused.empty())
             {
-                out << std::format("\"refused\": {}, \"scanners\": []}}", json_string(refused));
+                out << std::format(R"("refused": {}, "scanners": []}})", json_string(refused));
             }
             else
             {

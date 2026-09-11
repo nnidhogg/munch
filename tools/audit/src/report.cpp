@@ -410,7 +410,7 @@ struct Consumed
  */
 [[nodiscard]] std::string json_span(const std::optional<std::size_t>& span)
 {
-    return span ? std::to_string(*span) : "\"unbounded\"";
+    return span ? std::to_string(*span) : R"("unbounded")";
 }
 
 /**
@@ -438,10 +438,38 @@ struct Consumed
  */
 [[nodiscard]] std::string json_token(const std::size_t token, const std::function<std::string(std::size_t)>& name)
 {
-    return std::format("{{\"id\": {}, \"name\": {}}}", token, quoted(name(token)));
+    return std::format(R"({{"id": {}, "name": {}}})", token, quoted(name(token)));
 }
 
 } // namespace
+
+std::string verdict(const Report& report)
+{
+    if (!report.exact.empty())
+    {
+        return std::format(
+                "{} byte{} certif{} exactly: a cut is safe at any occurrence", report.exact.size(),
+                report.exact.size() == 1 ? "" : "s", report.exact.size() == 1 ? "ies" : "y");
+    }
+
+    if (!report.modulo.empty())
+    {
+        return std::format(
+                "no byte certifies exactly; {} certif{} once the discarded tokens are deleted{}", report.modulo.size(),
+                report.modulo.size() == 1 ? "ies" : "y", report.prices.empty() ? "" : ", priced below");
+    }
+
+    if (!report.windows.empty())
+    {
+        return std::format(
+                "no byte certifies; windows do: {} up to width {}, {} once classes expand", report.windows.size(),
+                report.window_limit, report.window_count);
+    }
+
+    return std::format(
+            "nothing certifies up to width {}{}", report.window_limit,
+            report.prices.empty() ? "" : "; what certifying a byte would cost is priced below");
+}
 
 std::vector<Blame> blame(const core::Lexer& lexer)
 {
@@ -620,40 +648,12 @@ Report audit(const core::Lexer& lexer, const std::size_t window_limit)
     return report;
 }
 
-std::string verdict(const Report& report)
-{
-    if (!report.exact.empty())
-    {
-        return std::format(
-                "{} byte{} certif{} exactly: a cut is safe at any occurrence", report.exact.size(),
-                report.exact.size() == 1 ? "" : "s", report.exact.size() == 1 ? "ies" : "y");
-    }
-
-    if (!report.modulo.empty())
-    {
-        return std::format(
-                "no byte certifies exactly; {} certif{} once the discarded tokens are deleted{}", report.modulo.size(),
-                report.modulo.size() == 1 ? "ies" : "y", report.prices.empty() ? "" : ", priced below");
-    }
-
-    if (!report.windows.empty())
-    {
-        return std::format(
-                "no byte certifies; windows do: {} up to width {}, {} once classes expand", report.windows.size(),
-                report.window_limit, report.window_count);
-    }
-
-    return std::format(
-            "nothing certifies up to width {}{}", report.window_limit,
-            report.prices.empty() ? "" : "; what certifying a byte would cost is priced below");
-}
-
 std::string json(const Report& report, const std::function<std::string(std::size_t)>& name)
 {
     std::string out{"{\n"};
 
     const auto member{[&out](const std::string_view key, const std::string& value) {
-        out += std::format("{}  \"{}\": {}", out.size() == 2 ? "" : ",\n", key, value);
+        out += std::format(R"({}  "{}": {})", out.size() == 2 ? "" : ",\n", key, value);
     }};
 
     const auto list{[]<typename Items, typename One>(const Items& items, const One& one) {
@@ -684,7 +684,7 @@ std::string json(const Report& report, const std::function<std::string(std::size
     member("windows", list(report.windows, [](const Certified_window& certified) {
                const auto& [window, origin]{certified};
 
-               return std::format("{{\"window\": {}, \"origin\": {}}}", quoted(window), origin);
+               return std::format(R"({{"window": {}, "origin": {}}})", quoted(window), origin);
            }));
 
     member("window_count", std::to_string(report.window_count));
@@ -695,7 +695,7 @@ std::string json(const Report& report, const std::function<std::string(std::size
 
     member("window_span", report.windows.empty() ? "null" :
                           report.window_span     ? json_span(*report.window_span) :
-                                                   "\"undecided\"");
+                                                   R"("undecided")");
 
     member("lag", json_span(report.lag));
 
@@ -705,7 +705,7 @@ std::string json(const Report& report, const std::function<std::string(std::size
                const auto& [byte, token, after]{blamed};
 
                return std::format(
-                       "{{\"byte\": {}, \"token\": {}, \"after\": {}}}", byte, json_token(token, name), quoted(after));
+                       R"({{"byte": {}, "token": {}, "after": {}}})", byte, json_token(token, name), quoted(after));
            }));
 
     member("prices", list(report.prices, [&](const Pricing& pricing) {
@@ -715,8 +715,8 @@ std::string json(const Report& report, const std::function<std::string(std::size
                    const auto& [token, separated, separated_discarded, exact, modulo]{step};
 
                    return std::format(
-                           "{{\"token\": {}, \"separated\": {}, \"separated_discarded\": {}, \"exact\": {}, "
-                           "\"modulo\": {}}}",
+                           R"({{"token": {}, "separated": {}, "separated_discarded": {}, "exact": {}, )"
+                           R"("modulo": {}}})",
                            json_token(token, name), separated, separated_discarded, exact, modulo);
                })};
 
@@ -724,8 +724,8 @@ std::string json(const Report& report, const std::function<std::string(std::size
                        list(immovable, [&name](const std::size_t token) { return json_token(token, name); })};
 
                return std::format(
-                       "{{\"byte\": {}, \"exact_before\": {}, \"modulo_before\": {}, \"steps\": {}, \"immovable\": {}, "
-                       "\"gained\": {}}}",
+                       R"({{"byte": {}, "exact_before": {}, "modulo_before": {}, "steps": {}, "immovable": {}, )"
+                       R"("gained": {}}})",
                        byte, exact_before, modulo_before, steps_text, immovable_text, json_bytes(gained));
            }));
 

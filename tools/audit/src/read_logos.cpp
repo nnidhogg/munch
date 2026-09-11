@@ -17,6 +17,8 @@
 #include <vector>
 
 #include "munch/regex/indirect.hpp"
+#include "munch/tools/audit/cursor.hpp"
+#include "munch/tools/audit/expression.hpp"
 
 namespace munch::tools::audit
 {
@@ -377,7 +379,7 @@ struct Compiled
  * and the three kinds of delimited group. A cursor may be bounded to a span of the text, an attribute's content,
  * while still counting lines from the file's start.
  */
-class Cursor
+class Rust_cursor : public Cursor
 {
 public:
     /**
@@ -386,13 +388,13 @@ public:
      * @param begin The offset the cursor starts at.
      * @param end The offset the span ends at.
      */
-    Cursor(std::string_view text, std::size_t begin, std::size_t end);
+    Rust_cursor(std::string_view text, std::size_t begin, std::size_t end);
 
     /**
      * @brief Skips blanks and comments.
      * @throws Spec_error If a block comment is never closed.
      */
-    void skip_blanks();
+    void skip_trivia();
 
     /**
      * @brief Skips one token: a comment, a string or character literal, a delimited group with everything in it,
@@ -406,29 +408,6 @@ public:
      * @throws Spec_error If the group is left open or closed by the wrong delimiter.
      */
     void skip_group();
-
-    /**
-     * @brief Consumes the byte at the cursor if it is the one given.
-     * @param byte The byte.
-     * @return True when consumed.
-     */
-    [[nodiscard]] bool accept(char byte) noexcept;
-
-    /**
-     * @brief Consumes the byte given or refuses, naming what the syntax expected.
-     * @param byte The byte.
-     * @param what What the syntax expected.
-     * @throws Spec_error If another byte, or the end, stands here.
-     */
-    void expect(char byte, std::string_view what);
-
-    /**
-     * @brief Consumes and returns the byte at the cursor.
-     * @param what What the syntax expected, named when the span has ended.
-     * @return The byte.
-     * @throws Spec_error At the end of the span.
-     */
-    char next(std::string_view what);
 
     /**
      * @brief Consumes the word at the cursor, letters, digits, underscores and non-ASCII bytes, a raw identifier's
@@ -450,7 +429,7 @@ public:
      * @param end The offset the span ends at.
      * @return The cursor.
      */
-    [[nodiscard]] Cursor inside(std::size_t begin, std::size_t end) const noexcept;
+    [[nodiscard]] Rust_cursor inside(std::size_t begin, std::size_t end) const noexcept;
 
     /**
      * @brief The text between two offsets.
@@ -461,48 +440,11 @@ public:
     [[nodiscard]] std::string_view slice(std::size_t begin, std::size_t end) const noexcept;
 
     /**
-     * @brief Whether the text at the cursor begins with the given characters.
-     * @param prefix The characters.
-     * @return True when it does.
-     */
-    [[nodiscard]] bool at(std::string_view prefix) const noexcept;
-
-    /**
      * @brief Whether a string literal, in any of its prefixed forms, opens at the cursor.
      * @return True when one does.
      * @throws Spec_error If it is left open.
      */
     [[nodiscard]] bool at_string() const;
-
-    /**
-     * @brief The byte at the cursor, or nothing at the end of the span.
-     * @return The byte.
-     */
-    [[nodiscard]] std::optional<char> peek() const noexcept;
-
-    /**
-     * @brief The offset of the byte under the cursor.
-     * @return The offset.
-     */
-    [[nodiscard]] std::size_t offset() const noexcept;
-
-    /**
-     * @brief The line the cursor stands on, counted from one.
-     * @return The line.
-     */
-    [[nodiscard]] std::size_t line() const noexcept;
-
-    /**
-     * @brief Whether the span has ended.
-     * @return True at the end.
-     */
-    [[nodiscard]] bool done() const noexcept;
-
-    /**
-     * @brief Refuses the source at the cursor's line.
-     * @param message Why.
-     */
-    [[noreturn]] void fail(const std::string& message) const;
 
 private:
     /**
@@ -511,21 +453,6 @@ private:
      * @throws Spec_error If the literal is left open.
      */
     [[nodiscard]] std::optional<std::size_t> string_end() const;
-
-    /**
-     * @brief The whole file.
-     */
-    std::string_view text_;
-
-    /**
-     * @brief The offset of the byte under the cursor.
-     */
-    std::size_t at_;
-
-    /**
-     * @brief The offset the span ends at.
-     */
-    std::size_t end_;
 };
 
 /**
@@ -770,16 +697,6 @@ private:
 };
 
 /**
- * @brief Whether a byte is a letter with two cases.
- * @param value The byte or scalar.
- * @return True for a to z and A to Z.
- */
-[[nodiscard]] constexpr bool is_letter(const char32_t value) noexcept
-{
-    return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z');
-}
-
-/**
  * @brief Whether a byte is a decimal digit.
  * @param byte The byte.
  * @return True for 0 to 9.
@@ -787,16 +704,6 @@ private:
 [[nodiscard]] constexpr bool is_digit(const char byte) noexcept
 {
     return byte >= '0' && byte <= '9';
-}
-
-/**
- * @brief Whether a byte is a hexadecimal digit.
- * @param byte The byte.
- * @return True for 0 to 9, a to f and A to F.
- */
-[[nodiscard]] constexpr bool is_hex_digit(const char byte) noexcept
-{
-    return is_digit(byte) || (byte >= 'a' && byte <= 'f') || (byte >= 'A' && byte <= 'F');
 }
 
 /**
@@ -828,53 +735,6 @@ private:
 [[nodiscard]] constexpr unsigned hex_value(const char byte) noexcept
 {
     return static_cast<unsigned>(is_digit(byte) ? byte - '0' : (byte | 0x20) - 'a' + 10);
-}
-
-/**
- * @brief A byte as two lowercase hex digits after `\x`.
- * @param byte The byte.
- * @return The escape.
- */
-[[nodiscard]] std::string hex_escape_of(const unsigned char byte)
-{
-    constexpr std::string_view digits{"0123456789abcdef"};
-
-    return std::string{"\\x"} + digits[byte >> 4U] + digits[byte & 0xFU];
-}
-
-/**
- * @brief A scalar's UTF-8 encoding.
- * @param value The scalar.
- * @return Its bytes, one to four.
- */
-[[nodiscard]] std::string encoded(const char32_t value)
-{
-    std::string bytes;
-
-    if (value <= 0x7F)
-    {
-        bytes.push_back(static_cast<char>(value));
-    }
-    else if (value <= 0x7FF)
-    {
-        bytes.push_back(static_cast<char>(0xC0 | (value >> 6U)));
-        bytes.push_back(static_cast<char>(0x80 | (value & 0x3FU)));
-    }
-    else if (value <= 0xFFFF)
-    {
-        bytes.push_back(static_cast<char>(0xE0 | (value >> 12U)));
-        bytes.push_back(static_cast<char>(0x80 | ((value >> 6U) & 0x3FU)));
-        bytes.push_back(static_cast<char>(0x80 | (value & 0x3FU)));
-    }
-    else
-    {
-        bytes.push_back(static_cast<char>(0xF0 | (value >> 18U)));
-        bytes.push_back(static_cast<char>(0x80 | ((value >> 12U) & 0x3FU)));
-        bytes.push_back(static_cast<char>(0x80 | ((value >> 6U) & 0x3FU)));
-        bytes.push_back(static_cast<char>(0x80 | (value & 0x3FU)));
-    }
-
-    return bytes;
 }
 
 /**
@@ -961,42 +821,6 @@ private:
 }
 
 /**
- * @brief A byte as a member of a bracket expression: itself when printable and not a bracket's own character,
- *        else escaped.
- * @param byte The byte.
- * @return The text.
- */
-[[nodiscard]] std::string bracket_member(const unsigned char byte)
-{
-    if (byte == '\n')
-    {
-        return "\\n";
-    }
-
-    if (byte == '\t')
-    {
-        return "\\t";
-    }
-
-    if (byte == '\r')
-    {
-        return "\\r";
-    }
-
-    if (byte < 0x20 || byte > 0x7E)
-    {
-        return hex_escape_of(byte);
-    }
-
-    if (byte == '\\' || byte == ']' || byte == '[' || byte == '^' || byte == '-')
-    {
-        return std::string{'\\', static_cast<char>(byte)};
-    }
-
-    return std::string(1, static_cast<char>(byte));
-}
-
-/**
  * @brief Byte ranges as the members of a bracket, a run of three or more as a range.
  * @param ranges The ranges, ascending.
  * @return The members' text, without the brackets.
@@ -1021,36 +845,6 @@ private:
     }
 
     return text;
-}
-
-/**
- * @brief A run of bytes as a quoted literal, the parser's own escapes for what is not printable.
- * @param bytes The run.
- * @return The text, `"..."`.
- */
-[[nodiscard]] std::string quoted(const std::string_view bytes)
-{
-    std::string text{"\""};
-
-    for (const auto byte : bytes)
-    {
-        const auto value{static_cast<unsigned char>(byte)};
-
-        if (byte == '"' || byte == '\\')
-        {
-            text += std::string{'\\'} + byte;
-        }
-        else if (byte == '\n' || byte == '\t' || byte == '\r' || value < 0x20 || value > 0x7E)
-        {
-            text += bracket_member(value);
-        }
-        else
-        {
-            text += byte;
-        }
-    }
-
-    return text + '"';
 }
 
 /**
@@ -1477,7 +1271,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
  * @return The number.
  * @throws Spec_error If the text is not a decimal that fits.
  */
-[[nodiscard]] std::size_t unsigned_value(const std::string_view text, const Cursor& cursor)
+[[nodiscard]] std::size_t unsigned_value(const std::string_view text, const Rust_cursor& cursor)
 {
     std::size_t value{0};
 
@@ -1507,7 +1301,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
  * @return The attribute.
  * @throws Spec_error If the attribute is left open.
  */
-[[nodiscard]] Attribute read_attribute(Cursor& cursor)
+[[nodiscard]] Attribute read_attribute(Rust_cursor& cursor)
 {
     const auto line{cursor.line()};
 
@@ -1515,16 +1309,16 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 
     cursor.expect('[', "'[' to open the attribute");
 
-    cursor.skip_blanks();
+    cursor.skip_trivia();
 
     std::string path{cursor.word()};
 
-    for (cursor.skip_blanks(); cursor.at("::"); cursor.skip_blanks())
+    for (cursor.skip_trivia(); cursor.at("::"); cursor.skip_trivia())
     {
         cursor.expect(':', "':'");
         cursor.expect(':', "':'");
 
-        cursor.skip_blanks();
+        cursor.skip_trivia();
 
         path += "::" + std::string{cursor.word()};
     }
@@ -1554,7 +1348,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
         }
     }
 
-    cursor.skip_blanks();
+    cursor.skip_trivia();
 
     cursor.expect(']', "']' to close the attribute");
 
@@ -1570,11 +1364,11 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
  * @throws Spec_error If the literal is missing, an argument is one logos does not know or stands where logos
  *         refuses it, or `ignore` names a flag other than `case`.
  */
-[[nodiscard]] Definition read_definition(Cursor content)
+[[nodiscard]] Definition read_definition(Rust_cursor content)
 {
     const auto line{content.line()};
 
-    content.skip_blanks();
+    content.skip_trivia();
 
     Definition definition{
             .literal = content.literal(),
@@ -1585,7 +1379,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 
     for (std::size_t position{0};; ++position)
     {
-        content.skip_blanks();
+        content.skip_trivia();
 
         if (content.done())
         {
@@ -1594,7 +1388,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 
         content.expect(',', "',' between the attribute's arguments");
 
-        content.skip_blanks();
+        content.skip_trivia();
 
         if (content.done())
         {
@@ -1627,13 +1421,13 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 
         const std::string key{item.word()};
 
-        item.skip_blanks();
+        item.skip_trivia();
 
         if (!key.empty() && item.peek() == '=' && !item.at("=="))
         {
             item.expect('=', "'='");
 
-            item.skip_blanks();
+            item.skip_trivia();
 
             if (key == "priority")
             {
@@ -1652,7 +1446,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
         {
             auto flags{item.inside(item.offset() + 1, end)};
 
-            for (flags.skip_blanks(); !flags.done() && flags.peek() != ')'; flags.skip_blanks())
+            for (flags.skip_trivia(); !flags.done() && flags.peek() != ')'; flags.skip_trivia())
             {
                 const auto flag{flags.word()};
 
@@ -1670,7 +1464,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 
                 definition.insensitive = true;
 
-                flags.skip_blanks();
+                flags.skip_trivia();
 
                 if (!flags.accept(','))
                 {
@@ -1700,9 +1494,10 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
  * @param skips The skip definitions collected so far, added to.
  * @throws Spec_error If an entry is malformed, a subpattern is declared twice or its name would read as a count.
  */
-void read_logos_attribute(Cursor content, Lexer_spec& spec, Subpatterns_t& subpatterns, std::vector<Definition>& skips)
+void read_logos_attribute(
+        Rust_cursor content, Lexer_spec& spec, Subpatterns_t& subpatterns, std::vector<Definition>& skips)
 {
-    for (content.skip_blanks(); !content.done(); content.skip_blanks())
+    for (content.skip_trivia(); !content.done(); content.skip_trivia())
     {
         const auto begin{content.offset()};
 
@@ -1715,7 +1510,7 @@ void read_logos_attribute(Cursor content, Lexer_spec& spec, Subpatterns_t& subpa
             content.fail("expected a key in #[logos(...)]");
         }
 
-        content.skip_blanks();
+        content.skip_trivia();
 
         if (key == "skip" && content.peek() == '(')
         {
@@ -1738,11 +1533,11 @@ void read_logos_attribute(Cursor content, Lexer_spec& spec, Subpatterns_t& subpa
         {
             const std::string name{content.word()};
 
-            content.skip_blanks();
+            content.skip_trivia();
 
             content.expect('=', "'=' after the subpattern's name");
 
-            content.skip_blanks();
+            content.skip_trivia();
 
             if (name.empty() || is_digit(name.front()))
             {
@@ -1826,13 +1621,14 @@ void add_rule(
  * @return The specification.
  * @throws Spec_error If the enum is malformed or left open, or an attribute or pattern is refused.
  */
-[[nodiscard]] Lexer_spec read_enum(Cursor& cursor, const std::vector<Attribute>& attributes, const std::size_t line)
+[[nodiscard]] Lexer_spec read_enum(
+        Rust_cursor& cursor, const std::vector<Attribute>& attributes, const std::size_t line)
 {
     Lexer_spec spec;
 
     spec.line = line;
 
-    cursor.skip_blanks();
+    cursor.skip_trivia();
 
     if (cursor.word().empty())
     {
@@ -1863,7 +1659,7 @@ void add_rule(
         add_rule(spec, skip, false, std::nullopt, subpatterns);
     }
 
-    for (cursor.skip_blanks(); !cursor.accept('}'); cursor.skip_blanks())
+    for (cursor.skip_trivia(); !cursor.accept('}'); cursor.skip_trivia())
     {
         if (cursor.done())
         {
@@ -1882,7 +1678,7 @@ void add_rule(
                         read_definition(cursor.inside(attribute.begin, attribute.end)), attribute.path == "token");
             }
 
-            cursor.skip_blanks();
+            cursor.skip_trivia();
         }
 
         const std::string variant{cursor.word()};
@@ -1892,13 +1688,13 @@ void add_rule(
             cursor.fail("expected a variant's name");
         }
 
-        cursor.skip_blanks();
+        cursor.skip_trivia();
 
         if (cursor.peek() == '(' || cursor.peek() == '{')
         {
             cursor.skip_group();
 
-            cursor.skip_blanks();
+            cursor.skip_trivia();
         }
 
         if (cursor.accept('='))
@@ -1914,7 +1710,7 @@ void add_rule(
             add_rule(spec, definition, token, variant, subpatterns);
         }
 
-        cursor.skip_blanks();
+        cursor.skip_trivia();
 
         if (cursor.peek() != '}')
         {
@@ -1931,7 +1727,8 @@ void add_rule(
  * @param cursor The cursor over the file the offsets index.
  * @return The line, or std::nullopt when none does.
  */
-[[nodiscard]] std::optional<std::size_t> derives_logos(const std::vector<Attribute>& attributes, const Cursor& cursor)
+[[nodiscard]] std::optional<std::size_t> derives_logos(
+        const std::vector<Attribute>& attributes, const Rust_cursor& cursor)
 {
     for (const auto& attribute : attributes)
     {
@@ -1942,16 +1739,16 @@ void add_rule(
 
         auto list{cursor.inside(attribute.begin, attribute.end)};
 
-        for (list.skip_blanks(); !list.done(); list.skip_blanks())
+        for (list.skip_trivia(); !list.done(); list.skip_trivia())
         {
             std::string name{list.word()};
 
-            for (list.skip_blanks(); list.at("::"); list.skip_blanks())
+            for (list.skip_trivia(); list.at("::"); list.skip_trivia())
             {
                 list.expect(':', "':'");
                 list.expect(':', "':'");
 
-                list.skip_blanks();
+                list.skip_trivia();
 
                 name = std::string{list.word()};
             }
@@ -2079,11 +1876,11 @@ std::optional<char32_t> Scalar_set::single() const noexcept
     return low == high ? std::optional{low} : std::nullopt;
 }
 
-Cursor::Cursor(const std::string_view text, const std::size_t begin, const std::size_t end)
-    : text_{text}, at_{begin}, end_{end}
+Rust_cursor::Rust_cursor(const std::string_view text, const std::size_t begin, const std::size_t end)
+    : Cursor{text, begin, end}
 {}
 
-void Cursor::skip_blanks()
+void Rust_cursor::skip_trivia()
 {
     for (;;)
     {
@@ -2138,11 +1935,11 @@ void Cursor::skip_blanks()
     }
 }
 
-void Cursor::skip_token()
+void Rust_cursor::skip_token()
 {
     if (at("//") || at("/*"))
     {
-        skip_blanks();
+        skip_trivia();
 
         return;
     }
@@ -2190,7 +1987,7 @@ void Cursor::skip_token()
     }
 }
 
-void Cursor::skip_group()
+void Rust_cursor::skip_group()
 {
     const auto open{next("a group")};
 
@@ -2198,7 +1995,7 @@ void Cursor::skip_group()
 
     const auto line{this->line()};
 
-    for (skip_blanks(); !accept(close); skip_blanks())
+    for (skip_trivia(); !accept(close); skip_trivia())
     {
         if (done())
         {
@@ -2214,37 +2011,7 @@ void Cursor::skip_group()
     }
 }
 
-bool Cursor::accept(const char byte) noexcept
-{
-    if (peek() != byte)
-    {
-        return false;
-    }
-
-    ++at_;
-
-    return true;
-}
-
-void Cursor::expect(const char byte, const std::string_view what)
-{
-    if (!accept(byte))
-    {
-        fail("expected " + std::string{what});
-    }
-}
-
-char Cursor::next(const std::string_view what)
-{
-    if (at_ >= end_)
-    {
-        fail("expected " + std::string{what} + " before the end");
-    }
-
-    return text_[at_++];
-}
-
-std::string_view Cursor::word()
+std::string_view Rust_cursor::word()
 {
     const auto begin{at_};
 
@@ -2261,7 +2028,7 @@ std::string_view Cursor::word()
     return text_.substr(begin, at_ - begin);
 }
 
-Literal Cursor::literal()
+Literal Rust_cursor::literal()
 {
     const auto begin{at_};
 
@@ -2288,7 +2055,7 @@ Literal Cursor::literal()
         ++hashes;
     }
 
-    expect('"', "'\"'");
+    expect('"', R"('"')");
 
     const auto content_end{*end - hashes - 1};
 
@@ -2341,14 +2108,14 @@ Literal Cursor::literal()
 
             if (!is_hex_digit(high) || !is_hex_digit(low))
             {
-                fail("\\x needs two hex digits");
+                fail(R"(\x needs two hex digits)");
             }
 
             const auto value{hex_value(high) * 16 + hex_value(low)};
 
             if (value > 0x7F && !byte_string)
             {
-                fail("\\x in a string reaches only \\x7f; a higher scalar is written \\u{...}");
+                fail(R"(\x in a string reaches only \x7f; a higher scalar is written \u{...})");
             }
 
             literal.bytes.push_back(static_cast<char>(value));
@@ -2359,10 +2126,10 @@ Literal Cursor::literal()
         {
             if (byte_string)
             {
-                fail("a byte string has no \\u escape");
+                fail(R"(a byte string has no \u escape)");
             }
 
-            expect('{', "'{' after \\u");
+            expect('{', R"('{' after \u)");
 
             char32_t value{0};
 
@@ -2373,11 +2140,11 @@ Literal Cursor::literal()
                 value = value * 16 + hex_value(next("a hex digit"));
             }
 
-            expect('}', "'}' to close the \\u escape");
+            expect('}', R"('}' to close the \u escape)");
 
             if (digits == 0 || digits > 6 || value > last_scalar || (value >= 0xD800 && value <= 0xDFFF))
             {
-                fail("\\u{...} needs one to six hex digits naming a scalar");
+                fail(R"(\u{...} needs one to six hex digits naming a scalar)");
             }
 
             literal.bytes += encoded(value);
@@ -2394,7 +2161,7 @@ Literal Cursor::literal()
 
             break;
         default:
-            fail(std::string{"'\\"} + escaped + "' is not an escape Rust knows");
+            fail(std::string{R"('\)"} + escaped + "' is not an escape Rust knows");
         }
     }
 
@@ -2403,52 +2170,22 @@ Literal Cursor::literal()
     return literal;
 }
 
-Cursor Cursor::inside(const std::size_t begin, const std::size_t end) const noexcept
+Rust_cursor Rust_cursor::inside(const std::size_t begin, const std::size_t end) const noexcept
 {
     return {text_, begin, end};
 }
 
-std::string_view Cursor::slice(const std::size_t begin, const std::size_t end) const noexcept
+std::string_view Rust_cursor::slice(const std::size_t begin, const std::size_t end) const noexcept
 {
     return text_.substr(begin, end - begin);
 }
 
-bool Cursor::at(const std::string_view prefix) const noexcept
-{
-    return text_.substr(at_, end_ - at_).starts_with(prefix);
-}
-
-bool Cursor::at_string() const
+bool Rust_cursor::at_string() const
 {
     return string_end().has_value();
 }
 
-std::optional<char> Cursor::peek() const noexcept
-{
-    return at_ < end_ ? std::optional{text_[at_]} : std::nullopt;
-}
-
-std::size_t Cursor::offset() const noexcept
-{
-    return at_;
-}
-
-std::size_t Cursor::line() const noexcept
-{
-    return 1 + static_cast<std::size_t>(std::ranges::count(text_.substr(0, std::min(at_, text_.size())), '\n'));
-}
-
-bool Cursor::done() const noexcept
-{
-    return at_ >= end_;
-}
-
-void Cursor::fail(const std::string& message) const
-{
-    throw Spec_error{message, line()};
-}
-
-std::optional<std::size_t> Cursor::string_end() const
+std::optional<std::size_t> Rust_cursor::string_end() const
 {
     auto at{at_};
 
@@ -3042,7 +2779,7 @@ std::variant<Unit, Scalar_set> Pattern_reader::escape()
     {
         if (flags_.unicode)
         {
-            fail(std::string{"'\\"} + byte +
+            fail(std::string{R"('\)"} + byte +
                  "' in Unicode mode needs the Unicode tables the byte reading has not got; (?-u) scopes the ASCII "
                  "form, and [[:digit:]], [[:space:]] and [[:word:]] spell it");
         }
@@ -3082,7 +2819,7 @@ std::variant<Unit, Scalar_set> Pattern_reader::escape()
     case 'B':
     case '<':
     case '>':
-        fail(std::string{"the assertion '\\"} + byte +
+        fail(std::string{R"(the assertion '\)"} + byte +
              "' conditions the context a match stands in, which a token language cannot say");
     default:
         break;
@@ -3095,7 +2832,7 @@ std::variant<Unit, Scalar_set> Pattern_reader::escape()
 
     if (is_letter(static_cast<unsigned char>(byte)) || static_cast<unsigned char>(byte) >= 0x80)
     {
-        fail(std::string{"'\\"} + byte + "' is not an escape of the regex crate");
+        fail(std::string{R"('\)"} + byte + "' is not an escape of the regex crate");
     }
 
     return Unit{.value = static_cast<unsigned char>(byte), .byte = false};
@@ -3131,7 +2868,7 @@ Unit Pattern_reader::hex_escape(const char kind)
 
             if (!is_hex_digit(digit))
             {
-                fail(std::string{"'\\"} + kind + "' needs " + std::to_string(wanted) + " hex digits, or braces");
+                fail(std::string{R"('\)"} + kind + "' needs " + std::to_string(wanted) + " hex digits, or braces");
             }
 
             value = value * 16 + hex_value(digit);
@@ -3374,14 +3111,14 @@ void Pattern_reader::fail(const std::string& message) const
 
 std::vector<Lexer_spec> read_logos(const std::string_view source)
 {
-    Cursor cursor{source, 0, source.size()};
+    Rust_cursor cursor{source, 0, source.size()};
 
     std::vector<Lexer_spec> lexers;
 
     // The outer attributes read since the last item keyword, which the item they belong to consumes.
     std::vector<Attribute> pending;
 
-    for (cursor.skip_blanks(); !cursor.done(); cursor.skip_blanks())
+    for (cursor.skip_trivia(); !cursor.done(); cursor.skip_trivia())
     {
         if (cursor.at("#["))
         {
@@ -3414,7 +3151,7 @@ std::vector<Lexer_spec> read_logos(const std::string_view source)
 
         if (word == "pub")
         {
-            cursor.skip_blanks();
+            cursor.skip_trivia();
 
             if (cursor.peek() == '(')
             {

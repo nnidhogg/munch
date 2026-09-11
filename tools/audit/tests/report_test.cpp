@@ -34,7 +34,7 @@ Audited audited(const std::string_view grammar, const std::size_t window_limit =
 
     const std::string source{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 
-    auto file{read_flex(source)};
+    auto file{read_flex(source).front()};
 
     auto report{audit(token_set(file, "INITIAL"), window_limit)};
 
@@ -110,7 +110,7 @@ TEST(Report, Blame_names_the_token_that_consumes_a_candidate_mid_token)
         {
             newline_tokens.push_back(token);
 
-            EXPECT_TRUE(file.rules[token].pattern == "[ \\t\\n]+") << file.rules[token].pattern;
+            EXPECT_TRUE(file.rules[token].pattern == R"([ \t\n]+)") << file.rules[token].pattern;
 
             // A shortest input reaching the run's state is one blank, whichever the search met first.
             EXPECT_TRUE(after == " " || after == "\t") << after;
@@ -132,7 +132,7 @@ TEST(Report, Blame_names_the_token_that_consumes_a_candidate_mid_token)
 
     std::ranges::sort(bang_after);
 
-    EXPECT_EQ(bang_after, (std::vector<std::string>{"\"", "//"}));
+    EXPECT_EQ(bang_after, (std::vector<std::string>{R"(")", "//"}));
 }
 
 TEST(Report, Rendering_reads_as_the_sections)
@@ -142,7 +142,7 @@ TEST(Report, Rendering_reads_as_the_sections)
     const auto text{render(report, names(file))};
 
     EXPECT_NE(text.find("certified bytes             none"), std::string::npos);
-    EXPECT_NE(text.find("certified modulo discarded  '\\n'"), std::string::npos);
+    EXPECT_NE(text.find(R"(certified modulo discarded  '\n')"), std::string::npos);
 
     // The two rules returning nothing are what the modulo row deleted, and the page says so.
     EXPECT_EQ(report.discarded, (std::vector<std::size_t>{5, 6}));
@@ -191,17 +191,18 @@ TEST(Report, Pricing_follows_the_design_rows_of_the_study)
     EXPECT_FALSE(priced.exact_before);
     EXPECT_FALSE(priced.modulo_before);
     ASSERT_EQ(priced.steps.size(), 2u);
-    EXPECT_EQ(blocks.file.rules[priced.steps[0].token].pattern, "\"/*\"([^*]|\\*+[^*/])*\\*+\"/\"");
+    EXPECT_EQ(blocks.file.rules[priced.steps[0].token].pattern, R"("/*"([^*]|\*+[^*/])*\*+"/")");
     EXPECT_FALSE(priced.steps[0].separated);
     EXPECT_FALSE(priced.steps[0].exact);
     EXPECT_TRUE(priced.steps[0].modulo);
-    EXPECT_EQ(blocks.file.rules[priced.steps[1].token].pattern, "[ \\t\\n]+");
+    EXPECT_EQ(blocks.file.rules[priced.steps[1].token].pattern, R"([ \t\n]+)");
     EXPECT_TRUE(priced.steps[1].separated);
     EXPECT_TRUE(priced.steps[1].exact);
     EXPECT_TRUE(priced.immovable.empty());
 
     // A byte a fixed spelling holds cannot certify while that token stays: '=' against "==".
-    const auto fixed{read_flex("%%\n\"==\"      return EQUAL;\n[=]        return ASSIGN;\n[a-z]+     return WORD;\n")};
+    const auto fixed{
+            read_flex("%%\n\"==\"      return EQUAL;\n[=]        return ASSIGN;\n[a-z]+     return WORD;\n").front()};
 
     const auto equals{price(token_set(fixed, "INITIAL"), '=')};
 
@@ -228,7 +229,7 @@ TEST(Report, The_report_over_patterns_prices_the_newline_and_the_near_misses)
 
     const auto text{render(report, names(file))};
 
-    EXPECT_NE(text.find("what it would cost to certify '\\n'"), std::string::npos);
+    EXPECT_NE(text.find(R"(what it would cost to certify '\n')"), std::string::npos);
     EXPECT_NE(text.find("becomes a token of its own, discarded"), std::string::npos);
     EXPECT_NE(text.find("certifies exactly"), std::string::npos);
 }

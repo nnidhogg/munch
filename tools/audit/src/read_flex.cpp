@@ -563,7 +563,7 @@ void Lines::skip_through(const std::string_view close, const std::string_view wh
 
 } // namespace
 
-Lexer_spec read_flex(const std::string_view source, const Returning_t& returning)
+std::vector<Lexer_spec> read_flex(const std::string_view source, const Returning_t& returning)
 {
     Lexer_spec file;
 
@@ -575,7 +575,7 @@ Lexer_spec read_flex(const std::string_view source, const Returning_t& returning
 
     share_actions(file.rules);
 
-    return file;
+    return {std::move(file)};
 }
 
 } // namespace munch::tools::audit
