@@ -51,25 +51,28 @@
 
 \maketitle
 
-\begin{abstract} Table-driven DFA lexing is sequential: each transition depends on the previous byte's state. Scanning
-one input in parallel needs each chunk's entry state, which existing methods recover by simulation, speculation,
-prescanning, or overlap. We give two conditions under which none is needed. For a longest-match scanner restarting
-from $q_0$ at every token boundary, a byte $b$ is a \emph{certified split symbol} when no reachable state other than
-$q_0$ has a $b$-transition whose target can reach acceptance, and $q_0$ is not re-entrant if it has one. Every
-occurrence of such a byte in completely tokenizable input begins a token, so chunks starting there reproduce the
-serial sequence of kinds and lengths by ordered concatenation. The condition is necessary as well as sufficient, and
-fragile: one string, comment, or whitespace run can eliminate every useful certificate, and comments and whitespace
-are usually discarded. We therefore weaken the guarantee to equality after deleting a declared discarded set, and give
-a second condition, \emph{sound and more permissive, coinciding with the first when the discarded set is empty and
-strictly gaining on suitable pairs of token set and discarded set, but conservative rather than exact}, decided from the
-same tables, answered by a second constant-time one-bit query. It recovers newline for a conventional C-like
-tokenization and tab, newline and carriage return for JSON, without altering their token definitions, and refuses it
-where block comments are unrestricted. It ships as a query only: the library's planner and every measurement here use
-the exact condition, so a caller must plan boundaries itself. Splitting at exact certificates in the munch
-library~\cite{munch} reaches 92.6--95.3\% parallel efficiency at eight threads on a restricted CPU set, on a 512\,MiB
-dense corpus beyond last-level cache, and a $3.46$--$3.94\times$ end-to-end speedup at four threads, across two
-benchmark revisions on one machine. It turns delimiter-based parallel lexing from a language-specific assumption into
-a property a compiler checks.
+\begin{abstract}
+Table-driven DFA lexing is sequential: each transition depends on the previous byte's state. Scanning one input in
+parallel needs each chunk's entry state, which existing methods recover by simulation, speculation, prescanning, or
+overlap. We give two conditions under which none is needed. For a longest-match scanner restarting from $q_0$ at every
+token boundary, a byte $b$ is a \emph{certified split symbol} when no reachable state other than $q_0$ has a
+$b$-transition whose target can reach acceptance, and $q_0$ is not re-entrant if it has one. Every occurrence of such a
+byte in completely tokenizable input begins a token, so chunks starting there reproduce the serial sequence of kinds and
+lengths by ordered concatenation. For an engineer this means a scan may begin at any occurrence of such a byte, knowing
+nothing of what precedes it, and emit from there exactly what the serial scan emits; the usual practice, cutting at a
+newline and rescanning a little, gives that only when the token set happens to allow it, and the same tables decide when
+it does. The condition is necessary as well as sufficient, and fragile: one string, comment, or whitespace run can
+eliminate every useful certificate, and comments and whitespace are usually discarded. We therefore weaken the guarantee
+to equality after deleting a declared discarded set, and give a second condition, \emph{sound and more permissive,
+coinciding with the first when the discarded set is empty and strictly gaining on suitable pairs of token set and
+discarded set, but conservative rather than exact}, decided from the same tables, answered by a second constant-time
+one-bit query. It recovers newline for a conventional C-like tokenization and tab, newline and carriage return for JSON,
+without altering their token definitions, and refuses it where block comments are unrestricted. It ships as a query
+only: the library's planner and every measurement here use the exact condition, so a caller must plan boundaries itself.
+Splitting at exact certificates in the munch library~\cite{munch} reaches 92.6--95.3\% parallel efficiency at eight
+threads on a restricted CPU set, on a 512\,MiB dense corpus beyond last-level cache, and a $3.46$--$3.94\times$
+end-to-end speedup at four threads, across two benchmark revisions on one machine. It turns delimiter-based parallel
+lexing from a language-specific assumption into a property a compiler checks.
 \end{abstract}
 
 \section{Introduction}
@@ -85,6 +88,16 @@ Splitting is the obstacle. A scanner dropped at an arbitrary offset does not kno
 offset may fall inside a string literal, halfway through an identifier, or in the middle of a multi-byte operator.
 Starting from an incorrect entry state can change the emitted stream until the runs converge, and whether and when
 they converge depends on both the automaton and the input.
+
+Practice has an answer already: cut at a newline and rescan a little on each side of the cut until the two scans agree.
+It bets that a newline begins a token and pays for the bet with the rescan, and both halves fail in the places that
+matter. Inside a block comment or a string that may span lines a newline begins nothing, so a chunk entered there scans
+the rest of the comment as if it were code; and the rescan meant to repair this must run at least as far as the comment
+lasts, which nothing in the token set bounds. The certificate is the exact form of the same idea with the bet removed.
+Rather than assuming which bytes begin tokens, it asks the compiled automaton, once, at construction, and tests the
+answer in one bit per byte. Where cutting at newline was sound all along, newline is what comes back; where it was not,
+the answer is a refusal rather than a rescan, and Section~\ref{sec:applicability} shows that the usual C-like token set
+with block comments is refused, and what it would cost to change that.
 
 This report describes a property that removes the uncertainty for a useful class of token sets, rather than managing
 it. The property is a per-symbol certificate, extracted from the compiled automaton at construction time, such that
@@ -355,6 +368,17 @@ and if $\delta^+(q_0, b)$ is defined then $q_0$ is not re-entrant.
 The exemption for $q_0$ is what makes the definition useful rather than vacuous: a token may legitimately begin with
 $b$. The exemption is sound only while no input can return the automaton to $q_0$ mid-scan, which is precisely the
 re-entrancy condition. Section~\ref{sec:subtlety} shows that dropping it makes the certificate false.
+
+The definition has an instance every reader has met. Take the token set whose tokens are the encoding forms of
+UTF-8~\cite{yergeau2003utf8}, one token per form. After a byte that begins a form only continuation bytes,
+\code{0x80}--\code{0xBF}, are admitted until the form completes, and no form is a prefix of another, so no live state
+other than $q_0$ has a transition on a byte that begins a form and no transition returns to $q_0$. Every such byte,
+\code{0x00}--\code{0x7F}, \code{0xC2}--\code{0xDF}, \code{0xE0}--\code{0xEF} and \code{0xF0}--\code{0xF4}, is therefore
+certified, and no continuation byte is, since only states other than $q_0$ consume one. That is the property the RFC
+states as its design goal, ``character boundaries are easily found from anywhere in an octet stream'', recovered from
+the compiled table by a definition that knows nothing of UTF-8; \code{figures/applicability.cpp} asserts it byte for
+byte. The encoding was designed to have the property. The question this paper asks is which token sets have it without
+having been designed for it, and Section~\ref{sec:applicability} answers for fifteen of them.
 
 \begin{lemma}[Occurrences begin tokens]
 \label{lem:boundary}
@@ -1369,20 +1393,22 @@ of Berlinkov et al.~\cite{berlinkov2021partial}: under the classical complete-DF
 reading~\cite{volkov2008synchronizing}, in which a reset word must map \emph{every} state to a common state, the
 correspondence fails, and a scanner's live automaton is partial by construction.
 
-The connection is more than terminological. A code is synchronizing when it admits a word $w$ such that an occurrence
-of $ww$ lets a decoder resume independently from the position after the first $w$, which is what allows a coded
-message to be decoded in parallel~\cite{berlinkov2021partial}. Theorem~\ref{thm:main} has that shape. What is new here
-is therefore not that such a letter permits independent resumption, but what surrounds it: the re-entrancy side
-condition, which ties the reset to \emph{token boundaries under maximal munch} rather than to automaton states alone,
-so the resumed scan agrees with the serial one on token lengths and kinds and not merely on where it sits; the
-characterization of Section~\ref{sec:necessity}, which makes the condition necessary as well as sufficient on the trim
-live automaton, so that a token set certifying nothing has no byte that both occurs in a completely tokenizable input
-and universally begins a token; the derivation of the entire certified set from a compiled token set at build time,
-rather than the assumption that a distinguished word occurs; and the relaxation modulo discarded tokens, which has no
-direct counterpart in the cited synchronizing-code model, which designates no discarded output-token class. The
-equivalence behind that relaxation is not itself the novelty: ZipLex's separator construction proves a printing
-guarantee modulo inserted separator tokens~\cite{chassot2026ziplex}, but there the class marks separators inserted
-between formed tokens, where here it marks tokens a raw-input cut may sever.
+The connection is more than terminological. A code is synchronizing when it admits a word $w$ such that an occurrence of
+$ww$ lets a decoder resume independently from the position after the first $w$, which is what allows a coded message to
+be decoded in parallel~\cite{berlinkov2021partial}. Theorem~\ref{thm:main} has that shape, and UTF-8 is its everyday
+case: the encoding was designed so that any byte beginning a form resynchronizes a decoder, and
+Section~\ref{sec:certificate} recovers exactly those bytes from the compiled table. What is new here is therefore not
+that such a letter permits independent resumption, but what surrounds it: the re-entrancy side condition, which ties the
+reset to \emph{token boundaries under maximal munch} rather than to automaton states alone, so the resumed scan agrees
+with the serial one on token lengths and kinds and not merely on where it sits; the characterization of
+Section~\ref{sec:necessity}, which makes the condition necessary as well as sufficient on the trim live automaton, so
+that a token set certifying nothing has no byte that both occurs in a completely tokenizable input and universally
+begins a token; the derivation of the entire certified set from a compiled token set at build time, rather than the
+assumption that a distinguished word occurs; and the relaxation modulo discarded tokens, which has no direct counterpart
+in the cited synchronizing-code model, which designates no discarded output-token class. The equivalence behind that
+relaxation is not itself the novelty: ZipLex's separator construction proves a printing guarantee modulo inserted
+separator tokens~\cite{chassot2026ziplex}, but there the class marks separators inserted between formed tokens, where
+here it marks tokens a raw-input cut may sever.
 
 Certified split points differ from simultaneous automata in requiring no enlarged automaton and no composition, from
 speculation in requiring no guess and no repair, from $k$-locality in being a per-symbol property derived from the token

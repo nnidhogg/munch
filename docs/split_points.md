@@ -48,6 +48,16 @@ may fall inside a string, halfway through an identifier, or in the middle of a m
 computed from a wrong entry state is garbage until the scanner happens to resynchronize, and whether and when it
 resynchronizes depends on the automaton and the input.
 
+Practice has an answer already: cut at a newline and rescan a little on each side of the cut until the two scans agree.
+It bets that a newline begins a token and pays for the bet with the rescan, and both halves fail in the places that
+matter. Inside a block comment or a string that may span lines a newline begins nothing, so a chunk entered there scans
+the rest of the comment as if it were code; and the rescan meant to repair this must run at least as far as the comment
+lasts, which nothing in the token set bounds. The certificate is the exact form of the same idea with the bet removed.
+Rather than assuming which bytes begin tokens, it asks the compiled automaton, once, at construction, and tests the
+answer in one bit per byte. Where cutting at newline was sound all along, newline is what comes back; where it was not,
+the answer is a refusal rather than a rescan, and section 6 shows that the usual C-like token set with block comments is
+refused, and what it would cost to change that.
+
 ## 2 Prior approaches
 
 Published solutions accept the unknown-state problem and manage it:
@@ -173,6 +183,16 @@ Both halves of *live* are load-bearing, and both are computed rather than assume
 state no input can enter de-certify a byte every real scan treats as safe; dropping the other would let a transition
 that no token can lie on do the same. Compiled automata are reachable throughout, so the first half only bites on a
 hand-built one, which the public `Simulator` accepts.
+
+The definition has an instance every reader has met. Take the token set whose tokens are the encoding forms of UTF-8
+(RFC 3629), one token per form. After a byte that begins a form only continuation bytes, `0x80` to `0xBF`, are admitted
+until the form completes, and no form is a prefix of another, so no live state other than the initial one consumes a
+byte that begins a form and no transition returns to the initial state. Every such byte, `0x00` to `0x7F`, `0xC2` to
+`0xDF`, `0xE0` to `0xEF` and `0xF0` to `0xF4`, is therefore certified, and no continuation byte is, since only
+non-initial states consume one. That is the property the RFC states as its design goal, "character boundaries are easily
+found from anywhere in an octet stream", recovered from the compiled table by a definition that knows nothing of UTF-8;
+`paper/figures/applicability.cpp` asserts it byte for byte. The encoding was designed to have the property; the question
+section 6 answers is which token sets have it without having been designed for it.
 
 **Theorem.** Let an input be completely tokenizable by the serial longest-match scan. Splitting it immediately before
 any occurrences of certified split symbols and scanning the chunks independently, each from the initial state, produces

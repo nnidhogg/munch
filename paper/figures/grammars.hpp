@@ -263,6 +263,33 @@ Regex line_bounded_plain_block_comment()
     return concat(text("/*"), kleene(choice(body, stars_then_other)), plus(any_of(Set{'*'})), text("/"));
 }
 
+// The UTF-8 encoding forms of RFC 3629 section 4, one token per form and transcribed range for range: the
+// certificate paper uses the designed-in property that character boundaries are found from anywhere in an octet
+// stream as the instance of its theorem every reader has met, and this is the token set that claim is asserted on.
+Set octets(const int start, const int end)
+{
+    return Set::range(static_cast<char>(start), static_cast<char>(end));
+}
+
+void utf8(munch::core::Builder& builder)
+{
+    const auto tail{any_of(octets(0x80, 0xBF))};
+
+    builder.add_token(any_of(octets(0x00, 0x7F)), Token::Literal, 1);
+    builder.add_token(concat(any_of(octets(0xC2, 0xDF)), tail), Token::Literal, 1);
+    builder.add_token(
+            choice(concat(any_of(octets(0xE0, 0xE0)), any_of(octets(0xA0, 0xBF)), tail),
+                   concat(any_of(octets(0xE1, 0xEC)), tail, tail),
+                   concat(any_of(octets(0xED, 0xED)), any_of(octets(0x80, 0x9F)), tail),
+                   concat(any_of(octets(0xEE, 0xEF)), tail, tail)),
+            Token::Literal, 1);
+    builder.add_token(
+            choice(concat(any_of(octets(0xF0, 0xF0)), any_of(octets(0x90, 0xBF)), tail, tail),
+                   concat(any_of(octets(0xF1, 0xF3)), tail, tail, tail),
+                   concat(any_of(octets(0xF4, 0xF4)), any_of(octets(0x80, 0x8F)), tail, tail)),
+            Token::Literal, 1);
+}
+
 // Names an ignored set in terms of the Token enum above; the certificate itself takes plain token ids.
 std::set<std::size_t> ignoring(const std::initializer_list<Token> tokens)
 {

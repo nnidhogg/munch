@@ -12,6 +12,7 @@
  */
 
 #include <cstddef>
+#include <format>
 #include <iostream>
 #include <map>
 #include <set>
@@ -817,6 +818,41 @@ int main()
         if (!agrees)
         {
             std::cout << "         expected 0x1E certified, got: " << actual << '\n';
+
+            ++failures;
+        }
+    }
+
+    // The certificate section's worked instance: over RFC 3629's encoding forms, the certified bytes are exactly the
+    // lead bytes and no continuation byte, which is the property the RFC states as its design goal. Asserted byte
+    // for byte over all 256 rather than read off a printed list.
+    {
+        munch::core::Builder b;
+        utf8(b);
+
+        const auto lexer{b.build()};
+
+        const auto lead{[](const int value) {
+            return value <= 0x7F || (0xC2 <= value && value <= 0xDF) || (0xE0 <= value && value <= 0xEF) ||
+                   (0xF0 <= value && value <= 0xF4);
+        }};
+
+        std::string disagreeing;
+
+        for (int value{0}; value < 256; ++value)
+        {
+            if (lexer.is_split_point(static_cast<char>(value)) != lead(value))
+            {
+                disagreeing += (disagreeing.empty() ? "" : " ") + std::format("{:#04x}", value);
+            }
+        }
+
+        std::cout << (disagreeing.empty() ? "  ok   " : "  FAIL ")
+                  << "UTF-8 forms of RFC 3629: certified exactly at the lead bytes\n";
+
+        if (!disagreeing.empty())
+        {
+            std::cout << "         bytes disagreeing with the lead-byte set: " << disagreeing << '\n';
 
             ++failures;
         }
