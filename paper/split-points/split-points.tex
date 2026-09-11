@@ -126,7 +126,8 @@ Sections~\ref{sec:derivation}--\ref{sec:evaluation}: the derivation and planner 
 conditions over fifteen token sets, and the measured parallel scan. Section~\ref{sec:prior} places the certificate among
 the existing answers to the entry-state problem before the result, and Section~\ref{sec:related} returns to that
 literature after it. A companion report generalizes the certificate from single bytes to short byte
-windows~\cite{nidhogg2026splitwindows}; nothing here depends on it.
+windows~\cite{nidhogg2026splitwindows}, and a second reads the same certificates backwards, to choose the position a
+scan resumes at after an error~\cite{nidhogg2026panicmode}; nothing here depends on either.
 
 \section{Prior approaches}
 \label{sec:prior}
@@ -1418,6 +1419,33 @@ is a format-specific scan that computes which occurrences are real, where the ce
 arbitrary compiled token set, which bytes need no such computation. Reps~\cite{reps1998maximal} studies maximal-munch
 scanning itself, and the lookahead hazard noted in the discussion of state composition below is a consequence of the
 same backtracking behaviour.
+
+\paragraph{Static entry-state properties.} Ko, Jung, Han and Burgstaller~\cite{ko2014speculative} parallelize DFA
+membership by speculation and reduce the speculation they must do by reading a static property off the automaton: the
+set of states having an incoming transition on a given symbol. Where that set is a singleton, a chunk beginning after
+that symbol has its entry state pinned without a guess. The shape is this paper's, a per-symbol property of the
+compiled automaton that removes the need to know what preceded a position, and the difference is in what the property
+is taken over and what it must additionally exclude. Theirs is the whole transition relation of a membership DFA;
+Theorem~\ref{thm:main}'s is the trim live subautomaton $A^+$ of a token DFA, so states that can never accept and
+states no scan can reach are discarded before the count is taken, which admits symbols their test refuses. Against
+that, certification additionally requires that $q_0$ is not re-entrant, a maximal-munch boundary condition with no
+counterpart in a membership test, where no token boundaries exist to preserve. The two conditions are therefore
+incomparable rather than one being a weakening of the other, and the reason is that a membership test must reproduce
+an accept decision while a scanner must reproduce a token stream.
+
+\paragraph{Cut points chosen rather than forced.} Two lines outside compiler construction select positions in a byte
+stream by a bounded window and then study how often the selection fires, which is this paper's applicability question
+asked of a designed rule rather than of one a token set forces. \citet{bjorner2010chunking} call a chunking method
+local when a fixed criterion over a window of radius $h$, their horizon, decides every cutpoint, which is the
+certificate predicate under another name; they measure the displacement from a requested position to the first
+cutpoint, give its distribution rather than its mean, and compute the probability of no cutpoint in a long interval
+for four separate chunking classes. \citet{schleimer2003winnowing} define the density of a fingerprinting scheme as
+the expected fraction of positions selected, prove it asymptotically $2/(w+1)$ for window size $w$ with a lower bound
+of $1.5/(w+1)$ for local algorithms, and observe long real passages where nothing is selected. The difference is which
+way the constraint runs. There the rule is chosen and its density is the design objective, so a scheme with poor
+supply is replaced; here the token set forces the rule and its supply is whatever the grammar leaves, which is why
+Section~\ref{sec:applicability} measures certificate supply rather than tuning it. Their lower bounds do not transfer
+for the same reason: they bound what a designer can achieve, not what a given token set admits.
 
 \paragraph{Relation to state composition.} We computed it for the block-comment row of Table~\ref{tab:applicability},
 whose automaton has fourteen states, and the question needs no corpus. A line start follows a newline, so it is either
