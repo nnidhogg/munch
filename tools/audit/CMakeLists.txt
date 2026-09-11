@@ -28,8 +28,18 @@ target_link_libraries(${PROJECT_NAME}
         munch_regex
 )
 
+# The command: munch-audit FILE..., the readers and the report behind one program.
+add_executable(${PROJECT_NAME}_cli src/main.cpp)
+
+set_target_properties(${PROJECT_NAME}_cli PROPERTIES OUTPUT_NAME munch-audit)
+
+target_link_libraries(${PROJECT_NAME}_cli
+        PRIVATE
+        ${PROJECT_NAME}
+)
+
 if (MUNCH_INSTALL)
-    install(TARGETS ${PROJECT_NAME} EXPORT munch_targets)
+    install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_cli EXPORT munch_targets)
 
     install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif ()

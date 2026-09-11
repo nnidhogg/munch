@@ -331,13 +331,7 @@ void read_definitions(Lines& lines, Lexer_spec& file)
 {
     const auto number{lines.number()};
 
-    Lexer_spec::Rule rule{
-            .pattern = {},
-            .expression = {},
-            .conditions = {},
-            .action = {},
-            .token = std::nullopt,
-            .line = number};
+    std::vector<std::string> conditions;
 
     if (line.starts_with('<') && !line.starts_with("<<EOF>>"))
     {
@@ -350,7 +344,7 @@ void read_definitions(Lines& lines, Lexer_spec& file)
 
         for (const auto name : line.substr(1, close - 1) | std::views::split(','))
         {
-            rule.conditions.emplace_back(trimmed(std::string_view{name}));
+            conditions.emplace_back(trimmed(std::string_view{name}));
         }
 
         line.remove_prefix(close + 1);
@@ -358,21 +352,25 @@ void read_definitions(Lines& lines, Lexer_spec& file)
 
     const auto length{pattern_length(line, number)};
 
-    rule.pattern = std::string{line.substr(0, length)};
+    const std::string pattern{line.substr(0, length)};
 
-    rule.expression = rule.pattern;
-
-    if (rule.pattern.empty())
+    if (pattern.empty())
     {
         throw Spec_error{"a rule at the margin has no pattern", number};
     }
 
     // `<s>{` alone on the line opens a start-condition scope rather than a rule; the caller reads it as such.
-    if (rule.pattern == "{" && trimmed(line.substr(length)).empty())
+    if (pattern == "{" && trimmed(line.substr(length)).empty())
     {
         lines.advance();
 
-        return rule;
+        return Lexer_spec::Rule{
+                .pattern = pattern,
+                .expression = pattern,
+                .conditions = std::move(conditions),
+                .action = {},
+                .token = std::nullopt,
+                .line = number};
     }
 
     // The action runs to the first end of a line at which its braces balance, as flex reads it, so one that opens
@@ -394,16 +392,20 @@ void read_definitions(Lines& lines, Lexer_spec& file)
 
     lines.advance(1 + static_cast<std::size_t>(std::ranges::count(action, '\n')));
 
-    if (rule.pattern == "<<EOF>>")
+    if (pattern == "<<EOF>>")
     {
         return std::nullopt;
     }
 
-    rule.token = returned(action, returning);
+    auto token{returned(action, returning)};
 
-    rule.action = std::move(action);
-
-    return rule;
+    return Lexer_spec::Rule{
+            .pattern = pattern,
+            .expression = pattern,
+            .conditions = std::move(conditions),
+            .action = std::move(action),
+            .token = std::move(token),
+            .line = number};
 }
 
 /**

@@ -70,6 +70,12 @@ The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal mu
   one input. Both carry a seek escape hatch for hand-scanned tokens and a scanner for C++ raw string literals; only the
   flat one reaches the parallel path, through `lexer()`.
 
+- **An Auditor for Other Generators' Scanners**
+
+  `munch-audit` reads a flex or re2c file and reports what the library decides about its token set, per start
+  condition: the certified bytes and windows, the anchor-free span, which rule blocks each candidate byte, and what it
+  would cost to certify one. See [Auditing an Existing Scanner](#auditing-an-existing-scanner).
+
 - **Graphviz Export for Debugging**
 
   Any NFA or DFA the library builds can be dumped to Graphviz DOT and rendered to SVG, which is how the diagrams in this
@@ -1145,8 +1151,8 @@ check the whole pipeline against direct NFA simulation.
 
 ```
 docs/                     SVG diagrams of example automata, performance.md (the design rationale for the speed),
-                          design.md (the architectural decisions behind it), and limits.md (the library's scope,
-                          guarantees, and escape hatches).
+                          design.md (the architectural decisions behind it), limits.md (the library's scope,
+                          guarantees, and escape hatches), and audit.md (the munch-audit command and its report).
 libs/
   common/                 Shared concepts (Byte_iterable, Random_access_byte_iterable, Token_id, Token_sink).
   regex/                  The combinator DSL: Regex nodes, parse() for flex-style patterns, and their lowering to
@@ -1158,7 +1164,7 @@ libs/
   core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
 tools/
   tokenizer/              Tokenizer and Mode_tokenizer: resumable cursors, seek, recovery, raw strings.
-  audit/                  The auditor: flex and re2c files read into token sets, the report, and what a byte costs.
+  audit/                  munch-audit: flex and re2c files read into token sets, the report, and what a byte costs.
   benchmark/              Throughput benchmarks: core lexer, tokenizer driver, UTF-8, other engines.
 ```
 
@@ -1283,6 +1289,55 @@ subset construction, so every DFA it produces is minimized; smaller automata als
 simulator compiles, keeping more of them in cache. The result is minimal in the usual sense when the input automaton is
 trim; a subexpression denoting the empty language can leave states no input can reach acceptance from, so that case is
 an exception; see [docs/limits.md](docs/limits.md).
+
+## **Auditing an Existing Scanner**
+
+The decisions above apply to any token set, not only to one built with the combinators. `munch-audit` reads the file
+another generator was given, flex's `.l` or re2c's blocks inside a C or C++ source, builds the token set each start
+condition scans with, and prints what the library decides about it: the certified bytes and windows, the length of the
+stretches no certificate reaches, why every other candidate byte fails, and what it would cost to make one certify.
+Nothing in it is estimated; every row is a decision over the compiled tables. This is the conventional C-like
+tokenization with block comments, the study's row where one token kind removes every useful certificate:
+
+```
+$ munch-audit tools/audit/grammars/c-like-block-comments.l
+== tools/audit/grammars/c-like-block-comments.l
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 9, condition INITIAL: 8 rules
+verdict                     nothing certifies up to width 3; what certifying a byte would cost is priced below
+certified bytes             none
+certified modulo discarded  none
+discarded tokens            3: "//"[^\n]*, "/*"([^*]|\*+[^*/])*\*+"/", [ \t\n]+
+certified windows (<= 3)    none
+mandatory core              "*/"
+anchor-free span, bytes     unbounded
+lag                         unbounded
+rescue-free                 not established
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after """
+  "//"[^\n]*                 consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  "/*"([^*]|\*+[^*/])*\*+"/" consumes 91 candidate bytes mid-token, e.g. '*' after "/"
+  [ \t\n]+                   consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  1. "/*"([^*]|\*+[^*/])*\*+"/" no longer admits '\n'
+                              certifies once discarded tokens are deleted
+  2. [ \t\n]+                 no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+```
+
+The last section is the one a designer reads first: the two steps are the study's two designed rows, and the report
+derived them from the file rather than from the paper. A scanner with several start conditions gets one report per
+condition, and the caveat printed above them is the one that matters most for a real scanner: a certificate holds while
+the scanner is in that condition, so a cut is safe only where the condition is known. Options follow the generators'
+own (`--flex-syntax`, `--case-inverted`, `--case-insensitive` for re2c; `--returns NAME` for scanners that return
+through a macro or an assignment), `--price BYTE` prices a byte of your choice, `--windows N` bounds the window
+enumeration, and `--json` writes one document for a build to check. The rows, the options and what each reader refuses
+are in [docs/audit.md](docs/audit.md); the grammars under `tools/audit/grammars/` are the study's rows in both syntaxes.
 
 ## **Munch as a Research Instrument**
 

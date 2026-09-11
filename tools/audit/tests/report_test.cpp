@@ -146,7 +146,23 @@ TEST(Report, Rendering_reads_as_the_sections)
 
     // The two rules returning nothing are what the modulo row deleted, and the page says so.
     EXPECT_EQ(report.discarded, (std::vector<std::size_t>{5, 6}));
-    EXPECT_NE(text.find("discarded tokens            2: \"//\"[^\\n]*, [ \\t\\n]+"), std::string::npos);
+    EXPECT_NE(text.find(R"(discarded tokens            2: "//"[^\n]*, [ \t\n]+)"), std::string::npos);
+
+    // The verdict leads, and the JSON form carries the same figures under their names.
+    EXPECT_TRUE(text.starts_with("verdict                     no byte certifies exactly; 1 certifies once the "));
+
+    const auto document{json(report, names(file))};
+
+    EXPECT_NE(
+            document.find(R"("verdict": "no byte certifies exactly; 1 certifies once the discarded tokens)"),
+            std::string::npos);
+    EXPECT_NE(document.find(R"("exact": [])"), std::string::npos);
+    EXPECT_NE(document.find(R"("modulo": [10])"), std::string::npos);
+    EXPECT_NE(
+            document.find(R"("discarded": [{"id": 5, "name": "\"//\"[^\\n]*"}, {"id": 6, "name": "[ \\t\\n]+"}])"),
+            std::string::npos);
+    EXPECT_NE(document.find(R"("byte_span": "unbounded")"), std::string::npos);
+    EXPECT_NE(document.find(R"("mandatory_core": "")"), std::string::npos);
     EXPECT_NE(text.find("anchor-free span, bytes     unbounded"), std::string::npos);
     EXPECT_NE(text.find("why candidate bytes do not certify"), std::string::npos);
     EXPECT_NE(text.find("STRING"), std::string::npos);

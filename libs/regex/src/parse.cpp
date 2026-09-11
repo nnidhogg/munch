@@ -79,18 +79,18 @@ private:
      * @brief The POSIX classes a bracket expression may name.
      */
     static constexpr std::array<Posix_class, 12> classes{{
-            {"alpha", [] { return Set::alpha(); }},
-            {"digit", [] { return Set::digits(); }},
-            {"alnum", [] { return Set::alphanum(); }},
-            {"upper", [] { return Set::range('A', 'Z'); }},
-            {"lower", [] { return Set::range('a', 'z'); }},
-            {"space", [] { return Set{' ', '\t', '\n', '\r', '\f', '\v'}; }},
-            {"blank", [] { return Set{' ', '\t'}; }},
-            {"punct", [] { return Set::printable() - Set::alphanum() - Set{' '}; }},
-            {"print", [] { return Set::printable(); }},
-            {"graph", [] { return Set::printable() - Set{' '}; }},
-            {"cntrl", [] { return Set::range('\x00', '\x1F') + Set{'\x7F'}; }},
-            {"xdigit", [] { return Set::digits() + Set::range('a', 'f') + Set::range('A', 'F'); }},
+            {.name = "alpha", .bytes = [] { return Set::alpha(); }},
+            {.name = "digit", .bytes = [] { return Set::digits(); }},
+            {.name = "alnum", .bytes = [] { return Set::alphanum(); }},
+            {.name = "upper", .bytes = [] { return Set::range('A', 'Z'); }},
+            {.name = "lower", .bytes = [] { return Set::range('a', 'z'); }},
+            {.name = "space", .bytes = [] { return Set{' ', '\t', '\n', '\r', '\f', '\v'}; }},
+            {.name = "blank", .bytes = [] { return Set{' ', '\t'}; }},
+            {.name = "punct", .bytes = [] { return Set::printable() - Set::alphanum() - Set{' '}; }},
+            {.name = "print", .bytes = [] { return Set::printable(); }},
+            {.name = "graph", .bytes = [] { return Set::printable() - Set{' '}; }},
+            {.name = "cntrl", .bytes = [] { return Set::range('\x00', '\x1F') + Set{'\x7F'}; }},
+            {.name = "xdigit", .bytes = [] { return Set::digits() + Set::range('a', 'f') + Set::range('A', 'F'); }},
     }};
 
     /**

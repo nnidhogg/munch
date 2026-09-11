@@ -17,9 +17,7 @@ void exclude(regex::Regex& regex, const unsigned char byte)
     using namespace munch::regex;
 
     std::visit(
-            [byte](auto& node) {
-                using Node = std::decay_t<decltype(node)>;
-
+            [byte]<typename Node>(Node& node) {
                 if constexpr (std::is_same_v<Node, Any_of>)
                 {
                     node.set -= static_cast<char>(byte);
@@ -79,9 +77,7 @@ bool can_lose(const regex::Regex& regex, const unsigned char byte)
     using namespace munch::regex;
 
     return std::visit(
-            [byte](const auto& node) -> bool {
-                using Node = std::decay_t<decltype(node)>;
-
+            [byte]<typename Node>(const Node& node) -> bool {
                 if constexpr (std::is_same_v<Node, Any_of>)
                 {
                     return !(node.set - static_cast<char>(byte)).symbols().empty();
