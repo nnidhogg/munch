@@ -4,8 +4,10 @@ project(munch_audit)
 
 add_library(${PROJECT_NAME}
         src/lexer_spec.cpp
+        src/price.cpp
         src/read_flex.cpp
         src/read_re2c.cpp
+        src/report.cpp
         src/token_set.cpp
 )
 
@@ -36,6 +38,7 @@ if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/read_flex_test.cpp
             tests/read_re2c_test.cpp
+            tests/report_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests

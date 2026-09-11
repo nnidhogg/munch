@@ -231,6 +231,16 @@ public:
     }
 
     /**
+     * @brief The compiled machine itself, for decisions written outside this class over its read-only view.
+     *
+     * Everything the class answers is answered from these tables; a tool reading a token set from elsewhere and
+     * asking its own questions, which state consumes a byte mid-token and on the way to which token, needs the same
+     * view the library's own decisions use, and gets it here rather than through a copy.
+     * @return The simulator.
+     */
+    [[nodiscard]] const dfa::Simulator& simulator() const noexcept { return simulator_; }
+
+    /**
      * @brief The byte string every certified split window provably contains, or empty when none is proved.
      *
      * Every certified split window of this token set contains this string with at least one byte after it, so

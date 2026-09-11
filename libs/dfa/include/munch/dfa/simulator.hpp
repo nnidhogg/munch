@@ -396,7 +396,7 @@ public:
     /**
      * @brief The number of states the tables hold a column for, one past the highest state identifier.
      *
-     * With init_state(), init_reentrant(), step(), is_accepting(), is_live() and symbol_count, the read-only view of
+     * With init_state(), init_reentrant(), step(), is_accepting(), is_live(), accepted() and symbol_count, the view of
      * the compiled machine that the decisions in split_window.hpp, recovery.hpp, anchor_free_span.hpp and
      * boundary_difference.hpp are written over, so that a new decision needs nothing this class keeps private.
      * @return That count.
@@ -444,6 +444,16 @@ public:
      * @return True when the state's flag byte marks it live.
      */
     [[nodiscard]] bool is_live(const std::size_t state) const noexcept { return (flags_[state] & live_flag_) != 0; }
+
+    /**
+     * @brief The token a state accepts, or std::nullopt where it accepts nothing.
+     * @param state The state to resolve.
+     * @return The accepted token, or std::nullopt when the state accepts nothing.
+     */
+    [[nodiscard]] std::optional<Token> accepted(const std::size_t state) const
+    {
+        return is_accepting(state) ? std::optional<Token>{accept_table_[state].token} : std::nullopt;
+    }
 
 private:
     /**
@@ -536,16 +546,6 @@ private:
     [[nodiscard]] std::optional<Token> empty_match() const
     {
         return empty_state_ != no_state_ ? std::optional<Token>{accept_table_[empty_state_].token} : std::nullopt;
-    }
-
-    /**
-     * @brief The token a state accepts, or std::nullopt where it accepts nothing.
-     * @param state The state to resolve.
-     * @return The accepted token, or std::nullopt when the state accepts nothing.
-     */
-    [[nodiscard]] std::optional<Token> accepted(const std::size_t state) const
-    {
-        return is_accepting(state) ? std::optional<Token>{accept_table_[state].token} : std::nullopt;
     }
 
     /**
