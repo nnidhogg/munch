@@ -555,6 +555,28 @@ public:
     }
 
     /**
+     * @brief The longest run of positions a tokenizable input can carry with no certified byte, or nothing when
+     *        such runs are unbounded.
+     *
+     * The gap chunk_boundaries() can be asked to span. The derivation is dfa::Simulator::anchor_free_span()'s.
+     * @return The exact supremum, or std::nullopt when it is unbounded.
+     */
+    [[nodiscard]] std::optional<std::size_t> anchor_free_span() const { return simulator_.anchor_free_span(); }
+
+    /**
+     * @brief The same over a supplied inventory of certified windows, which can bound what the bytes cannot.
+     *
+     * The derivation is dfa::Simulator::anchor_free_span()'s window overload.
+     * @param inventory The certified windows and their origins, each refused by is_split_window() being an error.
+     * @return The exact supremum, or std::nullopt when it is unbounded.
+     */
+    [[nodiscard]] std::optional<std::size_t> anchor_free_span(
+            const std::span<const std::pair<std::string_view, std::size_t>> inventory) const
+    {
+        return simulator_.anchor_free_span(inventory);
+    }
+
+    /**
      * @brief Whether another token set cuts some input both tokenize differently, with a witness.
      *
      * The question a tokenizer change asks, answered from the two compiled tables rather than from a corpus, so a

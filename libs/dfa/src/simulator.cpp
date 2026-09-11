@@ -1,6 +1,7 @@
 #include "munch/dfa/simulator.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <experimental/mdspan>
@@ -583,6 +584,443 @@ std::optional<std::string> Simulator::minimal_repair(const std::string_view tail
         {
             best = via;
         }
+    }
+
+    return best;
+}
+
+std::optional<std::size_t> Simulator::anchor_free_span() const
+{
+    // The certified bytes as width-one windows at origin zero, which is what the general walk reduces to.
+    std::vector<std::string> held;
+
+    std::vector<std::pair<std::string_view, std::size_t>> inventory;
+
+    for (std::size_t value{0}; value < symbol_count_; ++value)
+    {
+        if (is_split_point(static_cast<char>(value)))
+        {
+            held.push_back(std::string(1, static_cast<char>(value)));
+        }
+    }
+
+    // No certified byte means every position is anchor-free, so the stretch is as long as inputs can be: unbounded
+    // whenever the token set matches anything at all, since a match repeats, and zero when it matches nothing.
+    if (held.empty())
+    {
+        std::vector<bool> seen(accept_table_.size(), false);
+
+        std::deque<std::size_t> reachable{init_state_};
+
+        seen[init_state_] = true;
+
+        while (!reachable.empty())
+        {
+            const auto at{reachable.front()};
+
+            reachable.pop_front();
+
+            if (is_accepting(at) && at != init_state_)
+            {
+                return std::nullopt;
+            }
+
+            for (std::size_t value{0}; value < symbol_count_; ++value)
+            {
+                if (const auto next{step(at, static_cast<unsigned char>(value))}; next && !seen[*next])
+                {
+                    seen[*next] = true;
+
+                    reachable.push_back(*next);
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    inventory.reserve(held.size());
+
+    for (const auto& window : held)
+    {
+        inventory.emplace_back(window, 0);
+    }
+
+    return anchor_free_span(inventory);
+}
+
+std::optional<std::size_t> Simulator::anchor_free_span(
+        const std::span<const std::pair<std::string_view, std::size_t>> inventory) const
+{
+    if (inventory.empty())
+    {
+        throw std::invalid_argument{"anchor_free_span: the inventory names no window"};
+    }
+
+    std::size_t longest{0};
+
+    for (const auto& [window, origin] : inventory)
+    {
+        if (window.empty() || origin >= window.size())
+        {
+            throw std::invalid_argument{"anchor_free_span: a window is empty or its origin lies outside it"};
+        }
+
+        if (is_split_window(window) != std::optional<std::size_t>{origin})
+        {
+            throw std::invalid_argument{"anchor_free_span: a window is not certified at the stated origin"};
+        }
+
+        longest = std::max(longest, window.size());
+    }
+
+    // The per-position flags ride in one word, so the buffer holds as many positions as it has bits.
+    if (longest > std::numeric_limits<std::uint64_t>::digits)
+    {
+        throw std::invalid_argument{"anchor_free_span: a window is longer than this walk can buffer"};
+    }
+
+    // The buffer only has to tell apart the bytes some window contains. Every other byte folds to one stand-in from
+    // outside the windows' alphabet, so the walk does not multiply its states by bytes no window can see.
+    std::array<char, symbol_count_> fold{};
+
+    {
+        std::set<char> present;
+
+        for (const auto& window : inventory | std::views::keys)
+        {
+            present.insert(window.begin(), window.end());
+        }
+
+        std::optional<char> stand_in;
+
+        for (std::size_t value{0}; value < symbol_count_ && !stand_in; ++value)
+        {
+            if (!present.contains(static_cast<char>(value)))
+            {
+                stand_in = static_cast<char>(value);
+            }
+        }
+
+        for (std::size_t value{0}; value < symbol_count_; ++value)
+        {
+            const auto byte{static_cast<char>(value)};
+
+            fold[value] = stand_in && !present.contains(byte) ? *stand_in : byte;
+        }
+    }
+
+    // A position waits in the buffer until no window can still reach back to it, then leaves anchored or not.
+    struct Walk
+    {
+        std::size_t reading{};
+
+        std::vector<Entry_t> closed{};
+
+        std::string recent{};
+
+        std::uint64_t flags{};
+
+        std::uint8_t filled{};
+
+        bool operator<(const Walk& rhs) const
+        {
+            return std::tie(reading, closed, recent, flags, filled) <
+                   std::tie(rhs.reading, rhs.closed, rhs.recent, rhs.flags, rhs.filled);
+        }
+    };
+
+    const auto tidy{[](std::vector<Entry_t>& states) {
+        std::ranges::sort(states);
+
+        const auto duplicates{std::ranges::unique(states)};
+
+        states.erase(duplicates.begin(), duplicates.end());
+    }};
+
+    // Exits carry whether the position that left was anchored; during warm-up nothing leaves yet.
+    enum class Exit : std::uint8_t
+    {
+        none,
+        anchored,
+        free
+    };
+
+    const auto advance{[&](const Walk& from, const bool mark, const unsigned char byte) {
+        Walk walk{from};
+
+        if (mark)
+        {
+            walk.closed.push_back(static_cast<Entry_t>(walk.reading));
+
+            walk.reading = init_state_;
+        }
+
+        const auto next{step(walk.reading, byte)};
+
+        if (!next)
+        {
+            return std::pair<std::optional<Walk>, Exit>{{}, Exit::none};
+        }
+
+        walk.reading = *next;
+
+        std::vector<Entry_t> survived;
+
+        for (const auto state : walk.closed)
+        {
+            const auto moved{step(state, byte)};
+
+            if (!moved)
+            {
+                continue;
+            }
+
+            if (is_accepting(*moved))
+            {
+                return std::pair<std::optional<Walk>, Exit>{{}, Exit::none};
+            }
+
+            survived.push_back(static_cast<Entry_t>(*moved));
+        }
+
+        tidy(survived);
+
+        walk.closed = std::move(survived);
+
+        const auto seen{walk.recent + fold[byte]};
+
+        walk.flags <<= 1U;
+
+        ++walk.filled;
+
+        for (const auto& [window, origin] : inventory)
+        {
+            if (seen.size() >= window.size() && seen.compare(seen.size() - window.size(), window.size(), window) == 0)
+            {
+                if (const auto age{window.size() - 1 - origin}; age < walk.filled)
+                {
+                    walk.flags |= std::uint64_t{1} << age;
+                }
+            }
+        }
+
+        auto exit{Exit::none};
+
+        if (walk.filled > longest - 1)
+        {
+            const auto oldest{static_cast<std::uint64_t>(walk.filled) - 1};
+
+            exit = ((walk.flags >> oldest) & 1U) != 0 ? Exit::anchored : Exit::free;
+
+            walk.flags &= ~(std::uint64_t{1} << oldest);
+
+            --walk.filled;
+        }
+
+        walk.recent = longest > 1 ? seen.substr(seen.size() - std::min(seen.size(), longest - 1)) : std::string{};
+
+        return std::pair<std::optional<Walk>, Exit>{std::move(walk), exit};
+    }};
+
+    const Walk start{.reading = init_state_, .closed = {}, .recent = {}, .flags = 0, .filled = 0};
+
+    std::map<Walk, std::vector<std::pair<Walk, Exit>>> edges{{start, {}}};
+
+    std::deque<Walk> frontier{start};
+
+    while (!frontier.empty())
+    {
+        const auto at{frontier.front()};
+
+        frontier.pop_front();
+
+        for (std::size_t value{0}; value < symbol_count_; ++value)
+        {
+            for (const auto mark : {false, true})
+            {
+                if (mark && !is_accepting(at.reading))
+                {
+                    continue;
+                }
+
+                auto [next, exit]{advance(at, mark, static_cast<unsigned char>(value))};
+
+                if (!next)
+                {
+                    continue;
+                }
+
+                edges[at].emplace_back(*next, exit);
+
+                if (const auto [entry, added]{edges.try_emplace(*next)}; added)
+                {
+                    frontier.push_back(*next);
+                }
+            }
+        }
+    }
+
+    // Only states an input can be finished from carry stretches: a run that never closes is no input's run.
+    std::set<Walk> endable;
+
+    for (const auto& state : edges | std::views::keys)
+    {
+        if (is_accepting(state.reading))
+        {
+            endable.insert(state);
+        }
+    }
+
+    for (bool growing{true}; growing;)
+    {
+        growing = false;
+
+        for (const auto& [state, out] : edges)
+        {
+            if (endable.contains(state))
+            {
+                continue;
+            }
+
+            if (std::ranges::any_of(out, [&endable](const auto& edge) { return endable.contains(edge.first); }))
+            {
+                endable.insert(state);
+
+                growing = true;
+            }
+        }
+    }
+
+    if (!endable.contains(start))
+    {
+        return 0; // no input is tokenizable at all, so no stretch exists
+    }
+
+    // A cycle of anchor-free exits among those states is a stretch with no end. Walked with an explicit stack
+    // rather than by recursion, since the product graph is as deep as it is wide.
+    std::map<Walk, int> colour;
+
+    for (const auto& root : edges | std::views::keys)
+    {
+        if (!endable.contains(root) || colour[root] != 0)
+        {
+            continue;
+        }
+
+        std::vector<std::pair<Walk, std::size_t>> stack{{root, 0}};
+
+        colour[root] = 1;
+
+        while (!stack.empty())
+        {
+            auto& [node, next] = stack.back();
+
+            const auto& out{edges.at(node)};
+
+            while (next < out.size() && (out[next].second != Exit::free || !endable.contains(out[next].first)))
+            {
+                ++next;
+            }
+
+            if (next == out.size())
+            {
+                colour[node] = 2;
+
+                stack.pop_back();
+
+                continue;
+            }
+
+            const auto target{out[next].first};
+
+            ++next;
+
+            if (colour[target] == 1)
+            {
+                return std::nullopt;
+            }
+
+            if (colour[target] == 0)
+            {
+                colour[target] = 1;
+
+                stack.emplace_back(target, 0);
+            }
+        }
+    }
+
+    // Acyclic: relax the longest anchor-free run to a fixed point. A warm-up step exits nothing and carries the run.
+    std::map<Walk, std::size_t> run;
+
+    for (const auto& state : endable)
+    {
+        run[state] = 0;
+    }
+
+    for (bool changed{true}; changed;)
+    {
+        changed = false;
+
+        for (const auto& state : endable)
+        {
+            for (const auto& [target, exit] : edges.at(state))
+            {
+                if (!endable.contains(target))
+                {
+                    continue;
+                }
+
+                const auto value{
+                        exit == Exit::anchored ? std::size_t{0} :
+                        exit == Exit::none     ? run[state] :
+                                                 run[state] + 1};
+
+                if (value > run[target])
+                {
+                    run[target] = value;
+
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    // A stretch may still be inside the buffer when the input ends, so a state that can close counts what it holds:
+    // the anchor-free positions oldest inward, continuing the run that arrived, and the longest run wholly inside.
+    auto best{std::ranges::max(run | std::views::values)};
+
+    for (const auto& state : endable)
+    {
+        if (!is_accepting(state.reading))
+        {
+            continue;
+        }
+
+        std::size_t oldest_contiguous{0};
+
+        for (auto age{state.filled}; age > 0; --age)
+        {
+            if (((state.flags >> (age - 1)) & 1U) != 0)
+            {
+                break;
+            }
+
+            ++oldest_contiguous;
+        }
+
+        std::size_t inside{0};
+
+        std::size_t current{0};
+
+        for (std::uint8_t age{0}; age < state.filled; ++age)
+        {
+            current = ((state.flags >> age) & 1U) != 0 ? 0 : current + 1;
+
+            inside = std::max(inside, current);
+        }
+
+        best = std::max({best, run.at(state) + oldest_contiguous, inside});
     }
 
     return best;

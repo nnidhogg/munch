@@ -328,6 +328,46 @@ public:
     [[nodiscard]] std::optional<std::string> minimal_repair(std::string_view tail) const;
 
     /**
+     * @brief The longest run of positions a completely tokenizable input can carry with no certified byte among
+     *        them, or nothing when such runs are unbounded.
+     *
+     * What a planner starves on. Certified bytes are where chunk_boundaries() may cut, so this is the worst gap it
+     * can be asked to span: an input exists carrying a stretch this long with nowhere to cut inside it, and none
+     * carrying a longer one. Unbounded is the common answer and is not a defect, only the statement that no finite
+     * chunk count is guaranteed for every input.
+     *
+     * Decided over the same guessed markings the other decisions use, so the stretches counted are the ones a
+     * maximal-munch scan actually produces rather than every marking the tables admit. A state from which no input
+     * can be completed is dropped first, since a stretch that never finishes is not a stretch of any input, and a
+     * cycle of uncertified positions among the states that remain is exactly an unbounded answer.
+     *
+     * The inventory is this class's certified bytes. The overload taking windows answers the same question for a
+     * caller planning with those instead, and this one is its width-one case.
+     * @return The exact supremum, or std::nullopt when it is unbounded.
+     */
+    [[nodiscard]] std::optional<std::size_t> anchor_free_span() const;
+
+    /**
+     * @brief The same, over a supplied inventory of certified windows rather than over the certified bytes.
+     *
+     * A window anchors a position inside its occurrence, at the origin, rather than at the byte just read, so a
+     * position's status is only settled once the rest of the window has arrived. The walk therefore carries the
+     * last few bytes and a flag per position still waiting, and a position leaves that buffer anchored or not once
+     * no window can still reach back to it. That is the whole difference from the byte case, which is this with a
+     * buffer of nothing.
+     *
+     * Windows matter here because a grammar that certifies no byte can still certify windows, so this can return a
+     * bound where the byte version cannot. It is a question about the supplied inventory: anchors outside it are not
+     * counted, and supplying a pair this simulator does not certify is a caller error rather than a weaker answer.
+     * @param inventory The certified windows and their origins, each refused by is_split_window() being an error.
+     * @return The exact supremum, or std::nullopt when it is unbounded.
+     * @throws std::invalid_argument If the inventory is empty, holds a window this simulator does not certify at the
+     *         stated origin, or holds one longer than the buffer this walk can carry.
+     */
+    [[nodiscard]] std::optional<std::size_t> anchor_free_span(
+            std::span<const std::pair<std::string_view, std::size_t>> inventory) const;
+
+    /**
      * @brief Whether two token sets cut some input they both tokenize into different tokens, with a witness.
      *
      * The question a tokenizer upgrade asks: does the new token set place a boundary the old one did not, on input

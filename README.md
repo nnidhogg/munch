@@ -727,6 +727,55 @@ names the offset within its chunk where that scan stopped. A token set that cert
 chunk and the serial scan. The sink receives `(chunk, token, length)` and runs concurrently across chunks; see
 [docs/limits.md](docs/limits.md) for the contract and [docs/performance.md](docs/performance.md) for the measurements.
 
+Before planning, `anchor_free_span()` says how bad the plan can get: the longest run of positions a tokenizable
+input can carry with no certified byte among them, exactly, or `std::nullopt` when such runs are unbounded. It is the
+gap `chunk_boundaries()` may be asked to span, so it is what decides whether a chunk count is achievable on every
+input or only on the inputs a corpus happened to hold. Unbounded is the common answer for a conventional grammar and
+is not a failure, only the statement that no fixed chunk count is guaranteed:
+
+```cpp
+builder.add_token(concat(text("a"), text("b"), text("c")), Token::Abc, 1);
+
+const auto lexer{builder.build()};
+
+lexer.is_split_point('a');   // true: only the initial state consumes it
+lexer.is_split_point('b');   // false: consumed mid-token, after an a
+lexer.anchor_free_span();    // 2: the interior of one token, and never longer
+```
+
+The same question can be asked of a window inventory, for a token set that certifies windows where it certifies no
+byte. Each entry pairs a window `is_split_window()` certifies with the origin it reports, and an anchor is then any
+position such a window's origin lands on. A window is only known to have landed once the bytes after its origin have
+been read, so the decision holds positions back until every window over them is settled:
+
+```cpp
+builder.add_token(concat(text("aa"), text("b")), Token::Aab, 1);
+
+const auto lexer{builder.build()};
+
+lexer.is_split_point('a');                  // false: consumed mid-token as well as first
+lexer.is_split_point('b');                  // false: consumed only after aa
+lexer.anchor_free_span();                   // std::nullopt: no byte anchors anything
+lexer.is_split_window("aab");               // 0: at its own start
+lexer.is_split_window("ba");                // 1: a b only ever ends a token
+
+const std::vector<std::pair<std::string_view, std::size_t>> inventory{{"aab", 0}, {"ba", 1}};
+
+lexer.anchor_free_span(inventory);          // 2: the interior again, now reached through windows
+```
+
+`boundary_difference(other)` asks the question a tokenizer change asks: is there any input both token sets tokenize
+that they cut into different tokens? It answers from the two compiled tables rather than from a corpus, so a negative
+covers every input, and a positive comes with one that shows it:
+
+```cpp
+const auto difference{old_lexer.boundary_difference(new_lexer)};
+
+if (!difference.exhaustive) { /* the search hit its cap: undetermined, not identical */ }
+else if (difference.witness.empty()) { /* proved: the two cut every shared input alike */ }
+else { /* difference.witness is an input they cut differently */ }
+```
+
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
 nothing. Since the tokens responsible are usually the ones a parser throws away, `set_ignored_tokens()` lets a builder
@@ -1224,7 +1273,9 @@ decides certified split windows from the compiled token set before input exists;
 byte certificates to supplied input unconditionally, and `chunk_boundaries_with_windows()` additionally recovers
 window cuts under the window certificate's completely-tokenizable condition. `boundary_difference()` compares two
 compiled token sets and decides whether any input both tokenize is cut differently, returning an input that shows it,
-so a tokenizer change can be checked against every input rather than against a corpus.
+so a tokenizer change can be checked against every input rather than against a corpus. `anchor_free_span()` prices
+the plan in advance: the longest stretch a tokenizable input can carry with no certified byte, or no origin of a
+certified window from a supplied inventory, decided bounded with its value or unbounded.
 
 **The methodology ships with the code.** The probes under `tools/probes/` show the working pattern: figures are printed
 and asserted, so a drifted number fails the build rather than a reader; oracles are exhaustive over declared finite

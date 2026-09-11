@@ -4001,3 +4001,197 @@ TEST_F(Lexer_test, A_renamed_token_does_not_count_as_a_different_cut)
 
     EXPECT_TRUE(difference.witness.empty());
 }
+
+TEST_F(Lexer_test, The_anchor_free_span_of_one_fixed_token_is_its_interior)
+{
+    // A token whose first byte only the initial state consumes certifies that byte, and every later byte of it is
+    // consumed mid-token. The uncertified run is therefore exactly the interior, whatever the token's length, which
+    // makes this a family whose answer is known in advance rather than read off the implementation.
+    enum class Kind : std::size_t
+    {
+        word = 1
+    };
+
+    for (const std::string word : {"ab", "abc", "abcd", "abcde"})
+    {
+        Builder builder;
+
+        auto pattern{text(std::string{word.front()})};
+
+        for (std::size_t at{1}; at < word.size(); ++at)
+        {
+            pattern = concat(pattern, text(std::string{word[at]}));
+        }
+
+        builder.add_token(pattern, Kind::word, 1);
+
+        const auto lexer{builder.build()};
+
+        ASSERT_TRUE(lexer.is_split_point(word.front()));
+
+        ASSERT_FALSE(lexer.is_split_point(word[1]));
+
+        const auto span{lexer.anchor_free_span()};
+
+        ASSERT_TRUE(span.has_value());
+
+        EXPECT_EQ(*span, word.size() - 1);
+    }
+}
+
+TEST_F(Lexer_test, A_token_set_certifying_every_byte_leaves_no_anchor_free_position)
+{
+    // Single-byte tokens are consumed only from the initial state, so every position of every input is an anchor and
+    // the longest run without one is empty rather than absent.
+    enum class Kind : std::size_t
+    {
+        a = 1,
+        b = 2
+    };
+
+    Builder builder;
+
+    builder.add_token(text("a"), Kind::a, 1);
+
+    builder.add_token(text("b"), Kind::b, 2);
+
+    const auto span{builder.build().anchor_free_span()};
+
+    ASSERT_TRUE(span.has_value());
+
+    EXPECT_EQ(*span, 0u);
+}
+
+TEST_F(Lexer_test, A_run_token_leaves_the_anchor_free_span_unbounded)
+{
+    // The run's own byte is consumed by its continuation state, so nothing certifies, and an input of that byte can
+    // be any length. Unbounded is the answer a conventional grammar usually gets and is reported rather than capped.
+    enum class Kind : std::size_t
+    {
+        run = 1,
+        semicolon = 2
+    };
+
+    Builder builder;
+
+    builder.add_token(plus(any_of(Set{'a'})), Kind::run, 1);
+
+    builder.add_token(text(";"), Kind::semicolon, 2);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_TRUE(lexer.is_split_point(';'));
+
+    ASSERT_FALSE(lexer.is_split_point('a'));
+
+    EXPECT_FALSE(lexer.anchor_free_span().has_value());
+}
+
+TEST_F(Lexer_test, A_window_inventory_bounds_a_span_no_certified_byte_can)
+{
+    // One token, aab. Its a is consumed mid-token and its b only from a live state, so no byte certifies and the
+    // byte form has nothing to anchor on. The windows are another matter: aab is certified at its own start, and ba
+    // at the a, since b only ever ends a token. Every input is a run of aab, so the anchor-free stretch is the two
+    // interior positions, the same interior the fixed-token family reaches through a certified first byte.
+    enum class Kind : std::size_t
+    {
+        word = 1
+    };
+
+    Builder builder;
+
+    builder.add_token(concat(text("aa"), text("b")), Kind::word, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_FALSE(lexer.is_split_point('a'));
+
+    ASSERT_FALSE(lexer.is_split_point('b'));
+
+    ASSERT_FALSE(lexer.anchor_free_span().has_value());
+
+    ASSERT_EQ(lexer.is_split_window("aab"), std::optional<std::size_t>{0});
+
+    ASSERT_EQ(lexer.is_split_window("ba"), std::optional<std::size_t>{1});
+
+    const std::vector<std::pair<std::string_view, std::size_t>> inventory{{"aab", 0}, {"ba", 1}};
+
+    const auto span{lexer.anchor_free_span(inventory)};
+
+    ASSERT_TRUE(span.has_value());
+
+    EXPECT_EQ(*span, 2u);
+}
+
+TEST_F(Lexer_test, The_window_span_counts_positions_a_window_reaches_back_to)
+{
+    // Tokens ab and bab. The inventory anchors the last a of aba, the last b of abb and bb and the middle b of bba,
+    // so an anchor is only known once the bytes after it have been read. The longest stretch is bab followed by ab,
+    // whose first three positions no window reaches: the decision has to hold positions back until the windows over
+    // them are settled, and to release them unanchored when the input ends first.
+    enum class Kind : std::size_t
+    {
+        ab = 1,
+        bab = 2
+    };
+
+    Builder builder;
+
+    builder.add_token(concat(text("a"), text("b")), Kind::ab, 1);
+
+    builder.add_token(concat(text("ba"), text("b")), Kind::bab, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_FALSE(lexer.anchor_free_span().has_value());
+
+    ASSERT_EQ(lexer.is_split_window("aba"), std::optional<std::size_t>{2});
+
+    ASSERT_EQ(lexer.is_split_window("abb"), std::optional<std::size_t>{2});
+
+    ASSERT_EQ(lexer.is_split_window("bb"), std::optional<std::size_t>{1});
+
+    ASSERT_EQ(lexer.is_split_window("bba"), std::optional<std::size_t>{1});
+
+    const std::vector<std::pair<std::string_view, std::size_t>> inventory{
+            {"aba", 2},
+            {"abb", 2},
+            {"bb", 1},
+            {"bba", 1}};
+
+    const auto span{lexer.anchor_free_span(inventory)};
+
+    ASSERT_TRUE(span.has_value());
+
+    EXPECT_EQ(*span, 3u);
+}
+
+TEST_F(Lexer_test, A_run_token_leaves_the_window_span_unbounded_too)
+{
+    // A run of a and the token ab. The a after a b starts a token, since b only ends one, so ba is certified at the
+    // a; but an input of a alone never contains a b, so the windows anchor nothing on it and the stretch is as long
+    // as the input. Windows change which inputs carry anchors, not whether every long input must.
+    enum class Kind : std::size_t
+    {
+        run = 1,
+        ab = 2
+    };
+
+    Builder builder;
+
+    builder.add_token(plus(any_of(Set{'a'})), Kind::run, 1);
+
+    builder.add_token(concat(text("a"), text("b")), Kind::ab, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_FALSE(lexer.is_split_point('a'));
+
+    ASSERT_FALSE(lexer.is_split_point('b'));
+
+    ASSERT_EQ(lexer.is_split_window("ba"), std::optional<std::size_t>{1});
+
+    const std::vector<std::pair<std::string_view, std::size_t>> inventory{{"ba", 1}};
+
+    EXPECT_FALSE(lexer.anchor_free_span(inventory).has_value());
+}
