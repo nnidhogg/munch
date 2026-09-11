@@ -750,8 +750,9 @@ chunk and the serial scan. The sink receives `(chunk, token, length)` and runs c
 Before planning, `anchor_free_span()` says how bad the plan can get: the longest run of positions a tokenizable
 input can carry with no certified byte among them, exactly, or `std::nullopt` when such runs are unbounded. It is the
 gap `chunk_boundaries()` may be asked to span, so it is what decides whether a chunk count is achievable on every
-input or only on the inputs a corpus happened to hold. Unbounded is the common answer for a conventional grammar and
-is not a failure, only the statement that no fixed chunk count is guaranteed:
+input or only on the inputs a corpus happened to hold. Unbounded is the common answer for a conventional grammar,
+since no certificate anchors a position inside a token and an identifier or a run of blanks has no longest form, and
+it is not a failure, only the statement that no fixed chunk count is guaranteed:
 
 ```cpp
 builder.add_token(concat(text("a"), text("b"), text("c")), Token::Abc, 1);

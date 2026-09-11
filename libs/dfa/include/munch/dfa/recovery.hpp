@@ -11,20 +11,6 @@
 namespace munch::dfa
 {
 /**
- * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after
- *        leaving an accepting state, or nothing when that run is unbounded.
- *
- * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether or
- * not the excursion could still accept, so the measure counts every defined continuation. Zero is the premise
- * under which a scheme restarting at every accept executes serial maximal munch exactly; a bounded value
- * prices the checkpoint a rollback-aware scheme must carry; an unbounded region, reported as nothing, carries
- * a cycle witness in the tables themselves.
- * @param simulator The compiled token set.
- * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
- */
-[[nodiscard]] std::optional<std::size_t> lag(const Simulator& simulator);
-
-/**
  * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
  *
  * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting at
@@ -60,6 +46,20 @@ namespace munch::dfa
  */
 [[nodiscard]] std::optional<std::size_t> next_anchored_start(
         const Simulator& simulator, std::string_view tail, std::size_t from);
+
+/**
+ * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after
+ *        leaving an accepting state, or nothing when that run is unbounded.
+ *
+ * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether or
+ * not the excursion could still accept, so the measure counts every defined continuation. Zero is the premise
+ * under which a scheme restarting at every accept executes serial maximal munch exactly; a bounded value
+ * prices the checkpoint a rollback-aware scheme must carry; an unbounded region, reported as nothing, carries
+ * a cycle witness in the tables themselves.
+ * @param simulator The compiled token set.
+ * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
+ */
+[[nodiscard]] std::optional<std::size_t> lag(const Simulator& simulator);
 
 /**
  * @brief A shortest repair for the tail: a byte string of minimal length whose concatenation with the

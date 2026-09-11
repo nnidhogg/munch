@@ -161,6 +161,96 @@ std::optional<std::size_t> scenario_boundary(
 
 } // namespace
 
+bool rescue_free(const Simulator& simulator)
+{
+    // As in lag(): an accepting state no input reaches cannot refute rescue-freeness.
+    for (std::size_t state{0}; state < simulator.state_count(); ++state)
+    {
+        if (!simulator.is_accepting(state) || !simulator.is_live(state))
+        {
+            continue;
+        }
+
+        for (std::size_t symbol{0}; symbol < Simulator::symbol_count; ++symbol)
+        {
+            const auto opened{simulator.step(state, static_cast<unsigned char>(symbol))};
+
+            if (!opened || simulator.is_accepting(*opened))
+            {
+                continue;
+            }
+
+            // A stretch opens on this byte; the gate needs it dead from the initial state, where dead
+            // means no transition or one that can never reach acceptance.
+            const auto entered{simulator.step(simulator.init_state(), static_cast<unsigned char>(symbol))};
+
+            if (entered && simulator.is_live(*entered))
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+std::optional<std::size_t> next_anchored_start(
+        const Simulator& simulator, const std::string_view tail, const std::size_t from)
+{
+    if (from >= tail.size())
+    {
+        return std::nullopt;
+    }
+
+    const auto table{build_jump_table(simulator, tail)};
+
+    // Every completing scenario votes for its boundary chain; a position is anchored-certified when
+    // every completing scenario contains it. No completing scenario means the tail is beyond repair and
+    // every position only vacuously invariant, which is deliberately a refusal.
+    std::vector<std::size_t> votes(tail.size(), 0);
+
+    std::size_t completing{0};
+
+    const auto vote{[&](const std::size_t first) {
+        ++completing;
+
+        for (auto at{first}; at < tail.size(); at = *table.end[at])
+        {
+            ++votes[at];
+        }
+    }};
+
+    if (table.tokenizes[0])
+    {
+        vote(0);
+    }
+
+    for (const auto& [entry, via] : crossing_entries(simulator))
+    {
+        const auto boundary{scenario_boundary(simulator, tail, entry)};
+
+        if (boundary && table.tokenizes[*boundary])
+        {
+            vote(*boundary);
+        }
+    }
+
+    if (completing == 0)
+    {
+        return std::nullopt;
+    }
+
+    for (auto at{from}; at < tail.size(); ++at)
+    {
+        if (votes[at] == completing)
+        {
+            return at;
+        }
+    }
+
+    return std::nullopt;
+}
+
 std::optional<std::size_t> lag(const Simulator& simulator)
 {
     // The post-accept nonaccepting region: nonaccepting successors of accepting states, closed under
@@ -279,96 +369,6 @@ std::optional<std::size_t> lag(const Simulator& simulator)
     }
 
     return longest;
-}
-
-bool rescue_free(const Simulator& simulator)
-{
-    // As in lag(): an accepting state no input reaches cannot refute rescue-freeness.
-    for (std::size_t state{0}; state < simulator.state_count(); ++state)
-    {
-        if (!simulator.is_accepting(state) || !simulator.is_live(state))
-        {
-            continue;
-        }
-
-        for (std::size_t symbol{0}; symbol < Simulator::symbol_count; ++symbol)
-        {
-            const auto opened{simulator.step(state, static_cast<unsigned char>(symbol))};
-
-            if (!opened || simulator.is_accepting(*opened))
-            {
-                continue;
-            }
-
-            // A stretch opens on this byte; the gate needs it dead from the initial state, where dead
-            // means no transition or one that can never reach acceptance.
-            const auto entered{simulator.step(simulator.init_state(), static_cast<unsigned char>(symbol))};
-
-            if (entered && simulator.is_live(*entered))
-            {
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-
-std::optional<std::size_t> next_anchored_start(
-        const Simulator& simulator, const std::string_view tail, const std::size_t from)
-{
-    if (from >= tail.size())
-    {
-        return std::nullopt;
-    }
-
-    const auto table{build_jump_table(simulator, tail)};
-
-    // Every completing scenario votes for its boundary chain; a position is anchored-certified when
-    // every completing scenario contains it. No completing scenario means the tail is beyond repair and
-    // every position only vacuously invariant, which is deliberately a refusal.
-    std::vector<std::size_t> votes(tail.size(), 0);
-
-    std::size_t completing{0};
-
-    const auto vote{[&](const std::size_t first) {
-        ++completing;
-
-        for (auto at{first}; at < tail.size(); at = *table.end[at])
-        {
-            ++votes[at];
-        }
-    }};
-
-    if (table.tokenizes[0])
-    {
-        vote(0);
-    }
-
-    for (const auto& [entry, via] : crossing_entries(simulator))
-    {
-        const auto boundary{scenario_boundary(simulator, tail, entry)};
-
-        if (boundary && table.tokenizes[*boundary])
-        {
-            vote(*boundary);
-        }
-    }
-
-    if (completing == 0)
-    {
-        return std::nullopt;
-    }
-
-    for (auto at{from}; at < tail.size(); ++at)
-    {
-        if (votes[at] == completing)
-        {
-            return at;
-        }
-    }
-
-    return std::nullopt;
 }
 
 std::optional<std::string> minimal_repair(const Simulator& simulator, const std::string_view tail)

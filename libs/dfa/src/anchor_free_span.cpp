@@ -56,9 +56,12 @@ public:
     /**
      * @brief Decides the anchor-free span.
      *
-     * A node from which no input can be completed is dropped first, since a stretch that never finishes is not a
-     * stretch of any input; a cycle of anchor-free exits among the nodes that remain is exactly an unbounded
-     * answer; and otherwise the longest run is a fixed point over an acyclic graph.
+     * A token of unbounded length settles it alone: no certified origin falls inside a token, since the input's own
+     * boundaries would contradict the certificate there, so such a token carries anchor-free runs as long as it is.
+     * Otherwise every token is bounded and the product graph is built, where it stays bounded too. A node from
+     * which no input can be completed is dropped first, since a stretch that never finishes is not a stretch of any
+     * input; a cycle of anchor-free exits among the nodes that remain is exactly an unbounded answer; and otherwise
+     * the longest run is a fixed point over an acyclic graph.
      * @param simulator The simulator whose tables the walk reads, the one the inventory was checked against.
      * @return The exact supremum, or std::nullopt when it is unbounded.
      */
@@ -109,18 +112,44 @@ private:
     };
 
     /**
-     * @brief The product graph: each node's out-edges with the exit each carries.
+     * @brief A node's index in the product graph, which the edges name nodes by.
      */
-    using Edges_t = std::map<Node, std::vector<std::pair<Node, Exit>>>;
+    using Index_t = std::uint32_t;
+
+    /**
+     * @brief The product graph: the nodes in the order found, the start node first, and each node's out-edges as the
+     *        node entered and the exit carried, one edge per class of bytes the walk cannot tell apart.
+     */
+    struct Graph
+    {
+        /**
+         * @brief The nodes, by index.
+         */
+        std::vector<Node> nodes;
+
+        /**
+         * @brief Each node's out-edges.
+         */
+        std::vector<std::vector<std::pair<Index_t, Exit>>> edges;
+    };
 
     /**
      * @brief Whether the token set matches any positive-length input at all.
      *
      * With no window every position is anchor-free, so the span is as long as inputs can be: unbounded whenever a
      * token matches, since a match repeats, and zero when nothing does.
+     * @param simulator The simulator whose tables the walk reads.
      * @return True when some reachable state has a transition into an accepting one.
      */
     [[nodiscard]] static bool matches_any_token(const Simulator& simulator);
+
+    /**
+     * @brief Whether some token is arbitrarily long: a cycle among the live states reachable from the start, found
+     *        depth first with an explicit stack.
+     * @param simulator The simulator whose tables the walk reads.
+     * @return True when such a cycle exists.
+     */
+    [[nodiscard]] static bool unbounded_token(const Simulator& simulator);
 
     /**
      * @brief The node every walk starts from: the initial state, nothing closed, an empty buffer.
@@ -129,10 +158,19 @@ private:
     [[nodiscard]] static Node start(const Simulator& simulator);
 
     /**
+     * @brief One byte per class of bytes the walk cannot tell apart: the same transition from every state and the
+     *        same folded byte, so one edge stands for the class.
+     * @param simulator The simulator whose tables the walk reads.
+     * @return The representatives, ascending.
+     */
+    [[nodiscard]] std::vector<unsigned char> representatives(const Simulator& simulator) const;
+
+    /**
      * @brief Builds the product graph breadth first from the start node.
+     * @param simulator The simulator whose tables the walk reads.
      * @return Every reachable node with its out-edges.
      */
-    [[nodiscard]] Edges_t explore(const Simulator& simulator) const;
+    [[nodiscard]] Graph explore(const Simulator& simulator) const;
 
     /**
      * @brief Advances the marking by one byte, optionally closing the segment being read first.
@@ -156,21 +194,23 @@ private:
     [[nodiscard]] Exit buffer(Node& node, unsigned char byte) const;
 
     /**
-     * @brief The nodes an input can be finished from: those that reach a node whose reading run accepts.
-     * @param edges The product graph.
-     * @return Those nodes.
+     * @brief The nodes an input can be finished from: those that reach a node whose reading run accepts, found by
+     *        walking the edges backwards from the accepting ones.
+     * @param simulator The simulator whose tables the walk reads.
+     * @param graph The product graph.
+     * @return One flag per node, by index.
      */
-    [[nodiscard]] static std::set<Node> endable(const Simulator& simulator, const Edges_t& edges);
+    [[nodiscard]] static std::vector<bool> endable(const Simulator& simulator, const Graph& graph);
 
     /**
      * @brief Whether the endable nodes carry a cycle of anchor-free exits, which is a stretch with no end.
      *
      * Walked with an explicit stack rather than by recursion, since the product graph is as deep as it is wide.
-     * @param edges The product graph.
+     * @param graph The product graph.
      * @param finishing The endable nodes.
      * @return True when such a cycle exists.
      */
-    [[nodiscard]] static bool has_free_cycle(const Edges_t& edges, const std::set<Node>& finishing);
+    [[nodiscard]] static bool has_free_cycle(const Graph& graph, const std::vector<bool>& finishing);
 
     /**
      * @brief The longest anchor-free run over an acyclic graph, relaxed to a fixed point.
@@ -179,12 +219,13 @@ private:
      * A stretch may still be inside the buffer when the input ends, so a node whose reading run accepts also counts
      * what it holds: the anchor-free positions oldest inward, continuing the run that arrived, and the longest run
      * wholly inside.
-     * @param edges The product graph.
+     * @param simulator The simulator whose tables the walk reads.
+     * @param graph The product graph.
      * @param finishing The endable nodes.
      * @return The supremum.
      */
     [[nodiscard]] static std::size_t longest_run(
-            const Simulator& simulator, const Edges_t& edges, const std::set<Node>& finishing);
+            const Simulator& simulator, const Graph& graph, const std::vector<bool>& finishing);
 
     /**
      * @brief What a node's buffer holds when the input ends there.
@@ -265,21 +306,26 @@ std::optional<std::size_t> Span_walk::decide(const Simulator& simulator) const
         return matches_any_token(simulator) ? std::nullopt : std::optional<std::size_t>{0};
     }
 
-    const auto edges{explore(simulator)};
-
-    const auto finishing{endable(simulator, edges)};
-
-    if (!finishing.contains(start(simulator)))
-    {
-        return 0; // no input is tokenizable at all, so no stretch exists
-    }
-
-    if (has_free_cycle(edges, finishing))
+    if (unbounded_token(simulator))
     {
         return std::nullopt;
     }
 
-    return longest_run(simulator, edges, finishing);
+    const auto graph{explore(simulator)};
+
+    const auto finishing{endable(simulator, graph)};
+
+    if (!finishing.front())
+    {
+        return 0; // no input is tokenizable at all, so no stretch exists
+    }
+
+    if (has_free_cycle(graph, finishing))
+    {
+        return std::nullopt;
+    }
+
+    return longest_run(simulator, graph, finishing);
 }
 
 bool Span_walk::matches_any_token(const Simulator& simulator)
@@ -322,52 +368,131 @@ bool Span_walk::matches_any_token(const Simulator& simulator)
     return false;
 }
 
+bool Span_walk::unbounded_token(const Simulator& simulator)
+{
+    std::vector<std::uint8_t> colour(simulator.state_count(), 0);
+
+    std::vector<std::pair<std::size_t, std::size_t>> stack{{simulator.init_state(), 0}};
+
+    colour[simulator.init_state()] = 1;
+
+    while (!stack.empty())
+    {
+        auto& [state, value]{stack.back()};
+
+        if (value == Simulator::symbol_count)
+        {
+            colour[state] = 2;
+
+            stack.pop_back();
+
+            continue;
+        }
+
+        const auto next{simulator.step(state, static_cast<unsigned char>(value++))};
+
+        if (!next || !simulator.is_live(*next))
+        {
+            continue;
+        }
+
+        if (colour[*next] == 1)
+        {
+            return true;
+        }
+
+        if (colour[*next] == 0)
+        {
+            colour[*next] = 1;
+
+            stack.emplace_back(*next, 0);
+        }
+    }
+
+    return false;
+}
+
 Span_walk::Node Span_walk::start(const Simulator& simulator)
 {
     return {.reading = simulator.init_state(), .closed = {}, .recent = {}, .flags = 0, .filled = 0};
 }
 
-Span_walk::Edges_t Span_walk::explore(const Simulator& simulator) const
+std::vector<unsigned char> Span_walk::representatives(const Simulator& simulator) const
 {
-    Edges_t edges{{start(simulator), {}}};
+    std::set<std::vector<std::size_t>> signatures;
 
-    std::deque<Node> frontier{start(simulator)};
+    std::vector<unsigned char> bytes;
 
-    while (!frontier.empty())
+    for (std::size_t value{0}; value < Simulator::symbol_count; ++value)
     {
-        const auto at{frontier.front()};
+        const auto byte{static_cast<unsigned char>(value)};
 
-        frontier.pop_front();
+        std::vector<std::size_t> signature;
 
-        for (std::size_t value{0}; value < Simulator::symbol_count; ++value)
+        signature.reserve(simulator.state_count() + 1);
+
+        for (std::size_t state{0}; state < simulator.state_count(); ++state)
+        {
+            signature.push_back(simulator.step(state, byte).value_or(simulator.state_count()));
+        }
+
+        signature.push_back(static_cast<unsigned char>(fold_[value]));
+
+        if (signatures.insert(std::move(signature)).second)
+        {
+            bytes.push_back(byte);
+        }
+    }
+
+    return bytes;
+}
+
+Span_walk::Graph Span_walk::explore(const Simulator& simulator) const
+{
+    const auto bytes{representatives(simulator)};
+
+    Graph graph{.nodes = {start(simulator)}, .edges = {{}}};
+
+    std::map<Node, Index_t> index{{start(simulator), 0}};
+
+    for (Index_t at{0}; at < graph.nodes.size(); ++at)
+    {
+        const auto node{graph.nodes[at]};
+
+        for (const auto byte : bytes)
         {
             for (const auto mark : {false, true})
             {
-                if (mark && !simulator.is_accepting(at.reading))
+                if (mark && !simulator.is_accepting(node.reading))
                 {
                     continue;
                 }
 
-                auto next{read(simulator, at, mark, static_cast<unsigned char>(value))};
+                auto next{read(simulator, node, mark, byte)};
 
                 if (!next)
                 {
                     continue;
                 }
 
-                const auto exit{buffer(*next, static_cast<unsigned char>(value))};
+                const auto exit{buffer(*next, byte)};
 
-                edges[at].emplace_back(*next, exit);
+                const auto [entry, added]{
+                        index.try_emplace(std::move(*next), static_cast<Index_t>(graph.nodes.size()))};
 
-                if (const auto [entry, added]{edges.try_emplace(*next)}; added)
+                if (added)
                 {
-                    frontier.push_back(*next);
+                    graph.nodes.push_back(entry->first);
+
+                    graph.edges.emplace_back();
                 }
+
+                graph.edges[at].emplace_back(entry->second, exit);
             }
         }
     }
 
-    return edges;
+    return graph;
 }
 
 std::optional<Span_walk::Node> Span_walk::read(
@@ -456,34 +581,45 @@ Span_walk::Exit Span_walk::buffer(Node& node, const unsigned char byte) const
     return exit;
 }
 
-std::set<Span_walk::Node> Span_walk::endable(const Simulator& simulator, const Edges_t& edges)
+std::vector<bool> Span_walk::endable(const Simulator& simulator, const Graph& graph)
 {
-    std::set<Node> finishing;
+    std::vector<std::vector<Index_t>> into(graph.nodes.size());
 
-    for (const auto& node : edges | std::views::keys)
+    for (Index_t at{0}; at < graph.nodes.size(); ++at)
     {
-        if (simulator.is_accepting(node.reading))
+        for (const auto target : graph.edges[at] | std::views::keys)
         {
-            finishing.insert(node);
+            into[target].push_back(at);
         }
     }
 
-    for (bool growing{true}; growing;)
+    std::vector<bool> finishing(graph.nodes.size(), false);
+
+    std::deque<Index_t> pending;
+
+    for (Index_t at{0}; at < graph.nodes.size(); ++at)
     {
-        growing = false;
-
-        for (const auto& [node, out] : edges)
+        if (simulator.is_accepting(graph.nodes[at].reading))
         {
-            if (finishing.contains(node))
-            {
-                continue;
-            }
+            finishing[at] = true;
 
-            if (std::ranges::any_of(out, [&finishing](const auto& edge) { return finishing.contains(edge.first); }))
-            {
-                finishing.insert(node);
+            pending.push_back(at);
+        }
+    }
 
-                growing = true;
+    while (!pending.empty())
+    {
+        const auto at{pending.front()};
+
+        pending.pop_front();
+
+        for (const auto source : into[at])
+        {
+            if (!finishing[source])
+            {
+                finishing[source] = true;
+
+                pending.push_back(source);
             }
         }
     }
@@ -491,18 +627,18 @@ std::set<Span_walk::Node> Span_walk::endable(const Simulator& simulator, const E
     return finishing;
 }
 
-bool Span_walk::has_free_cycle(const Edges_t& edges, const std::set<Node>& finishing)
+bool Span_walk::has_free_cycle(const Graph& graph, const std::vector<bool>& finishing)
 {
-    std::map<Node, int> colour;
+    std::vector<std::uint8_t> colour(graph.nodes.size(), 0);
 
-    for (const auto& root : finishing)
+    for (Index_t root{0}; root < graph.nodes.size(); ++root)
     {
-        if (colour[root] != 0)
+        if (!finishing[root] || colour[root] != 0)
         {
             continue;
         }
 
-        std::vector<std::pair<Node, std::size_t>> stack{{root, 0}};
+        std::vector<std::pair<Index_t, std::size_t>> stack{{root, 0}};
 
         colour[root] = 1;
 
@@ -510,9 +646,9 @@ bool Span_walk::has_free_cycle(const Edges_t& edges, const std::set<Node>& finis
         {
             auto& [node, next]{stack.back()};
 
-            const auto& out{edges.at(node)};
+            const auto& out{graph.edges[node]};
 
-            while (next < out.size() && (out[next].second != Exit::free || !finishing.contains(out[next].first)))
+            while (next < out.size() && (out[next].second != Exit::free || !finishing[out[next].first]))
             {
                 ++next;
             }
@@ -526,7 +662,7 @@ bool Span_walk::has_free_cycle(const Edges_t& edges, const std::set<Node>& finis
                 continue;
             }
 
-            const auto& target{out[next++].first};
+            const auto target{out[next++].first};
 
             if (colour[target] == 1)
             {
@@ -545,32 +681,29 @@ bool Span_walk::has_free_cycle(const Edges_t& edges, const std::set<Node>& finis
     return false;
 }
 
-std::size_t Span_walk::longest_run(const Simulator& simulator, const Edges_t& edges, const std::set<Node>& finishing)
+std::size_t Span_walk::longest_run(const Simulator& simulator, const Graph& graph, const std::vector<bool>& finishing)
 {
-    std::map<Node, std::size_t> run;
-
-    for (const auto& node : finishing)
-    {
-        run[node] = 0;
-    }
+    std::vector<std::size_t> run(graph.nodes.size(), 0);
 
     for (bool changed{true}; changed;)
     {
         changed = false;
 
-        for (const auto& node : finishing)
+        for (Index_t at{0}; at < graph.nodes.size(); ++at)
         {
-            for (const auto& [target, exit] : edges.at(node))
+            if (!finishing[at])
             {
-                if (!finishing.contains(target))
+                continue;
+            }
+
+            for (const auto& [target, exit] : graph.edges[at])
+            {
+                if (!finishing[target])
                 {
                     continue;
                 }
 
-                const auto value{
-                        exit == Exit::anchored ? std::size_t{0} :
-                        exit == Exit::none     ? run[node] :
-                                                 run[node] + 1};
+                const auto value{exit == Exit::anchored ? std::size_t{0} : exit == Exit::none ? run[at] : run[at] + 1};
 
                 if (value > run[target])
                 {
@@ -582,18 +715,18 @@ std::size_t Span_walk::longest_run(const Simulator& simulator, const Edges_t& ed
         }
     }
 
-    auto best{std::ranges::max(run | std::views::values)};
+    auto best{std::ranges::max(run)};
 
-    for (const auto& node : finishing)
+    for (Index_t at{0}; at < graph.nodes.size(); ++at)
     {
-        if (!simulator.is_accepting(node.reading))
+        if (!finishing[at] || !simulator.is_accepting(graph.nodes[at].reading))
         {
             continue;
         }
 
-        const auto [oldest_contiguous, inside]{held(node)};
+        const auto [oldest_contiguous, inside]{held(graph.nodes[at])};
 
-        best = std::max({best, run.at(node) + oldest_contiguous, inside});
+        best = std::max({best, run[at] + oldest_contiguous, inside});
     }
 
     return best;
