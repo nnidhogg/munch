@@ -12,16 +12,27 @@
   </a>
 </p>
 
-`munch` is a **modern C++23 library** for building fast, flexible lexical analyzers. Tokens are defined with a small
-regex-like combinator DSL, compiled through Thompson construction, subset construction, and DFA minimization by Moore
-partition refinement, then executed by a cache-optimized table simulator. There are no predefined tokens or grammars.
-You describe the language, and the library builds the automaton. On the [comparison
-below](#comparison-with-other-engines), that automaton measures as the fastest of the run-time-built lexers measured
-there, in both languages and on both benchmark corpora; only compile-time code generation measures ahead. The compiled
-table also certifies which bytes are safe chunk boundaries, so large inputs can be split and scanned in parallel with
-strong scaling and, for input the serial scan tokenizes completely, a provably identical token stream, with a
-serial-prefix guarantee on malformed input; none of the code-generating lexers measured here derives or checks such a
-guarantee for its own token sets.
+`munch` is a **modern C++23 library** for building lexical analyzers. It scans serially, and splits a large input
+across threads wherever the token set proves that splitting cannot change the token stream, so the parallel scan is
+certified rather than speculated and needs no fixup pass. Not every token set proves it, and the library says which
+do. Tokens are defined with a small regex-like combinator DSL, compiled through Thompson construction, subset
+construction, and DFA minimization by Moore partition refinement, then executed by a cache-optimized table
+simulator. There are no predefined tokens or grammars. You describe the language, and the library builds the
+automaton.
+
+The same tables answer a few questions about the token set, worked out once and then queried in constant time: which
+bytes are safe to split an input at, which short byte windows are safe when no single byte is, where a scan can resume
+after an error on a proved boundary rather than a guessed one, and whether two token sets ever cut the same input
+differently. The first two make parallel chunking safe without speculation; the last makes a tokenizer change
+checkable against every input instead of against a test corpus.
+
+It is also fast. On the [comparison below](#comparison-with-other-engines) it measures as the quickest of the
+run-time-built lexers there, on both benchmark corpora and in both languages, and is the only one of them with a
+threaded row at all; compile-time code generation measures ahead of it, and the one generator threaded there leans on a
+hand analysis of the single token set it was given. Splitting at certified boundaries scales strongly and reproduces the
+serial token stream exactly on completely tokenizable input, with a serial-prefix guarantee on malformed input. Where a
+token set certifies nothing, which several conventional grammars do, the library says so and scans serially rather than
+speculating.
 
 The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal munch rule every lexer lives by.
 
@@ -1211,7 +1222,9 @@ munch with real rewind behavior, not an approximation, and its semantics are pin
 compiled token set are first-class queries: `is_split_point()` derives certified bytes and `is_split_window()`
 decides certified split windows from the compiled token set before input exists; `chunk_boundaries()` applies the
 byte certificates to supplied input unconditionally, and `chunk_boundaries_with_windows()` additionally recovers
-window cuts under the window certificate's completely-tokenizable condition.
+window cuts under the window certificate's completely-tokenizable condition. `boundary_difference()` compares two
+compiled token sets and decides whether any input both tokenize is cut differently, returning an input that shows it,
+so a tokenizer change can be checked against every input rather than against a corpus.
 
 **The methodology ships with the code.** The probes under `tools/probes/` show the working pattern: figures are printed
 and asserted, so a drifted number fails the build rather than a reader; oracles are exhaustive over declared finite
