@@ -43,7 +43,7 @@ TEST_F(Any_of_test, Single_char)
 
     EXPECT_EQ(Simulator::run(nfa, "a"), Match(token, 1));
 
-    for (const auto set = Set::all() - single_char; auto symbol : set.symbols())
+    for (const auto set{Set::all() - single_char}; auto symbol : set.symbols())
     {
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(std::nullopt, 0));
     }
@@ -103,7 +103,7 @@ TEST_F(Any_of_test, Simulate_multiple_char)
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(token, 1));
     }
 
-    for (const auto set = Set::all() - multiple_chars; const auto symbol : set.symbols())
+    for (const auto set{Set::all() - multiple_chars}; const auto symbol : set.symbols())
     {
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(std::nullopt, 0));
     }
@@ -160,7 +160,7 @@ TEST_F(Any_of_test, Simulate_alpha_chars)
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(token, 1));
     }
 
-    for (const auto set = Set::all() - alpha_chars; const auto symbol : set.symbols())
+    for (const auto set{Set::all() - alpha_chars}; const auto symbol : set.symbols())
     {
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(std::nullopt, 0));
     }
@@ -217,7 +217,7 @@ TEST_F(Any_of_test, Simulate_digit_chars)
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(token, 1));
     }
 
-    for (const auto set = Set::all() - digit_chars; const auto symbol : set.symbols())
+    for (const auto set{Set::all() - digit_chars}; const auto symbol : set.symbols())
     {
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(std::nullopt, 0));
     }
@@ -274,7 +274,7 @@ TEST_F(Any_of_test, Simulate_alphanum_chars)
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(token, 1));
     }
 
-    for (const auto set = Set::all() - alphanum_chars; const auto symbol : set.symbols())
+    for (const auto set{Set::all() - alphanum_chars}; const auto symbol : set.symbols())
     {
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(std::nullopt, 0));
     }
@@ -331,7 +331,7 @@ TEST_F(Any_of_test, Simulate_printable_chars)
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(token, 1));
     }
 
-    for (const auto set = Set::all() - printable_chars; const auto symbol : set.symbols())
+    for (const auto set{Set::all() - printable_chars}; const auto symbol : set.symbols())
     {
         EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), Match(std::nullopt, 0));
     }

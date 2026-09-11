@@ -46,7 +46,7 @@ Nfa::States_t Nfa::epsilon_closure(const States_t& states) const
 
         queue.pop();
 
-        if (const auto iterator = transitions_.find(transition); iterator != transitions_.end())
+        if (const auto iterator{transitions_.find(transition)}; iterator != transitions_.end())
         {
             std::ranges::for_each(iterator->second, [&result, &queue](const auto state) {
                 if (result.insert(state).second)
@@ -66,7 +66,7 @@ Nfa::States_t Nfa::advance(const States_t& states, const char symbol) const
 
     for (const auto& state : states)
     {
-        if (const auto iterator = transitions_.find({state, Label{symbol}}); iterator != transitions_.end())
+        if (const auto iterator{transitions_.find({state, Label{symbol}})}; iterator != transitions_.end())
         {
             result.insert(iterator->second.begin(), iterator->second.end());
         }
@@ -88,7 +88,7 @@ std::optional<Token> Nfa::has_accept_token(const States_t& states) const
 
     const auto comparator{[](const auto& lhs, const auto& rhs) { return lhs < rhs; }};
 
-    if (auto iterator = std::ranges::min_element(view, comparator); iterator != view.end())
+    if (auto iterator{std::ranges::min_element(view, comparator)}; iterator != view.end())
     {
         return {*iterator};
     }

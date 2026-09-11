@@ -47,7 +47,7 @@ public:
         // Counted, not measured: std::distance would need begin, which a single-pass iterator invalidates.
         std::size_t consumed{0};
 
-        for (Iterator current = begin; current != end && !states.empty(); ++current)
+        for (Iterator current{begin}; current != end && !states.empty(); ++current)
         {
             ++consumed;
 
@@ -59,7 +59,7 @@ public:
                 continue;
             }
 
-            if (const auto token = nfa.has_accept_token(states); token)
+            if (const auto token{nfa.has_accept_token(states)}; token)
             {
                 result = {.token = token, .length = consumed};
             }

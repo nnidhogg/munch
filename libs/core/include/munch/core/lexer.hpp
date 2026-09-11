@@ -6,9 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <functional>
 #include <iterator>
-#include <map>
 #include <mutex>
 #include <optional>
 #include <ranges>
@@ -21,8 +19,13 @@
 #include <vector>
 
 #include "munch/common/concepts.hpp"
+#include "munch/core/window_planner.hpp"
+#include "munch/dfa/anchor_free_span.hpp"
+#include "munch/dfa/boundary_difference.hpp"
 #include "munch/dfa/dfa.hpp"
+#include "munch/dfa/recovery.hpp"
 #include "munch/dfa/simulator.hpp"
+#include "munch/dfa/split_window.hpp"
 
 namespace munch::core
 {
@@ -31,6 +34,10 @@ namespace munch::core
  *
  * Provides methods to tokenize input from iterators or containers, returning the matched token and length.
  * Instances are obtainable through Builder::build(), the one supported path from patterns to a working Lexer.
+ *
+ * The class reads top down as the scan, the certificates construction derived, the planners and the parallel scan
+ * they feed, then the recovery queries and the decisions, each of the last two a forwarder to its dfa function.
+ * The window search the planners share is Window_planner, in its own header.
  */
 class Lexer
 {
@@ -47,6 +54,41 @@ public:
         std::size_t length{};
 
         bool operator==(const Match&) const = default;
+    };
+
+    /**
+     * @brief The answer a certificate supports, together with the evidence that supports it.
+     *
+     * The start is the certified token-start position; the evidence is the certified byte itself
+     * (evidence_begin == start, one byte) or the whole window occurrence, and the guarantee is exactly the
+     * certificate's: the repair-invariance transfer requires the evidence interval to survive whatever changed
+     * and the repaired scan to commit through it. A caller comparing evidence_begin against a known-clean
+     * lower bound decides the survival half alone, whether the evidence outlasted the damage; the transfer to the
+     * intended input additionally needs
+     * that input's scan to reach the evidence, with the whole intended input being completely tokenizable
+     * the simplest sufficient condition.
+     */
+    struct Certified_start
+    {
+        /**
+         * @brief The certified token-start position, the answer.
+         */
+        std::size_t start;
+
+        /**
+         * @brief First byte of the supporting evidence.
+         */
+        std::size_t evidence_begin;
+
+        /**
+         * @brief One past the supporting evidence's last byte.
+         */
+        std::size_t evidence_end;
+
+        /**
+         * @brief True for window evidence; false for a certified byte at the start itself.
+         */
+        bool window;
     };
 
     /**
@@ -181,11 +223,11 @@ public:
      * in its own input holds an occurrence, the promise applies to it on completely tokenizable input, and on malformed
      * input the window promise carries nothing at all, the consequence chunk_boundaries_with_windows() documents.
      * Refusals are model-relative and conservative, never proof that no certificate exists. Decided from the compiled
-     * transition table; the derivation is dfa::Simulator::is_split_window()'s.
+     * transition table; the derivation is dfa::is_split_window()'s.
      */
     [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const
     {
-        return simulator_.is_split_window(window);
+        return dfa::is_split_window(simulator_, window);
     }
 
     /**
@@ -335,23 +377,7 @@ public:
 
         const auto step_remainder{usable == 0 ? std::size_t{0} : size % usable};
 
-        const auto core{simulator_.mandatory_core()};
-
-        // A proved core longer than the longest window minus its trailing byte admits no candidate at all:
-        // no window certifies at these lengths, so every target refuses, exactly as the exhaustive walk
-        // would conclude after scanning to the end of the input.
-        if (!core.empty() && core.size() + 1 > longest_window_)
-        {
-            boundaries.push_back(size);
-
-            return boundaries;
-        }
-
-        Window_memo memo;
-
-        // No core occurrence begins at or after this offset; a scan that drains the input tightens it, so
-        // targets falling in a tail already proved occurrence-free refuse without rescanning it.
-        auto barren{size};
+        Window_planner planner;
 
         std::size_t window_target{0};
 
@@ -370,11 +396,7 @@ public:
 
             const auto floor{std::max(window_target, boundaries.back() + 1)};
 
-            const auto cut{
-                    core.empty() ? window_cut(memo, begin, size, floor) :
-                                   window_cut_at_core(memo, begin, size, floor, core, barren)};
-
-            if (cut)
+            if (const auto cut{planner.cut(simulator_, begin, size, floor)})
             {
                 boundaries.push_back(*cut);
             }
@@ -393,203 +415,6 @@ public:
             const Container& container, const std::size_t chunks) const
     {
         return chunk_boundaries_with_windows(std::ranges::begin(container), std::ranges::end(container), chunks);
-    }
-
-    /**
-     * @brief Finds the first position at or after the given offset that a certificate marks as a token start.
-     *
-     * One forward walk consulting both certificate kinds at every position: a certified byte answers at its
-     * own position, and a certified window of two to four bytes answers at its occurrence plus the certified
-     * origin. Unlike the planners, byte certificates do not switch the window search off; a nullable token set
-     * contributes no windows, because only the window proof excludes it, while its byte certificates, when
-     * any, stand. The answer is the first certificate met in evidence order, the order in which the walk meets
-     * the supporting evidence, which is not always the smallest answerable position: a window met earlier can
-     * answer a byte or two past one met later, and windows beginning before the given offset are not considered.
-     *
-     * The contract is complete-repair invariance: in every completely tokenizable replacement of the input before the
-     * answer's supporting evidence, the answer's image begins a token of the repaired segmentation, which is more than
-     * the vacuous observation that a suffix which tokenizes begins a token. The evidence is the certified byte itself
-     * or the whole window occurrence, beginning at most three bytes before the answer; a repair that alters the
-     * evidence forfeits the guarantee, and the existence of any tokenizable repair is not promised, so where the damage
-     * has no fix the guarantee holds vacuously. The certificate speaks for this automaton alone; under mode-driven
-     * scanning that scoping is load-bearing. When no certificate of the searched kinds and lengths exists at or after
-     * the offset, there is no answer.
-     * @param input The input being scanned.
-     * @param from The offset the search starts at; at or past the input's size finds nothing.
-     * @return The first certified token-start position, or std::nullopt when no certified byte and no certified
-     *         window of two to four bytes lies at or after the offset, the widths the search consults.
-     */
-    [[nodiscard]] std::optional<std::size_t> next_certified_start(
-            const std::string_view input, const std::size_t from) const
-    {
-        const auto found{next_certified_evidence(input, from)};
-
-        return found ? std::optional{found->start} : std::nullopt;
-    }
-
-    /**
-     * @brief The answer a certificate supports, together with the evidence that supports it.
-     *
-     * The start is the certified token-start position; the evidence is the certified byte itself
-     * (evidence_begin == start, one byte) or the whole window occurrence, and the guarantee is exactly the
-     * certificate's: the repair-invariance transfer requires the evidence interval to survive whatever changed
-     * and the repaired scan to commit through it. A caller comparing evidence_begin against a known-clean
-     * lower bound decides the survival half alone, whether the evidence outlasted the damage; the transfer to the
-     * intended input additionally needs
-     * that input's scan to reach the evidence, with the whole intended input being completely tokenizable
-     * the simplest sufficient condition.
-     */
-    struct Certified_start
-    {
-        std::size_t start;          ///< The certified token-start position, the answer.
-        std::size_t evidence_begin; ///< First byte of the supporting evidence.
-        std::size_t evidence_end;   ///< One past the supporting evidence's last byte.
-        bool window;                ///< True for window evidence; false for a certified byte at the start itself.
-    };
-
-    /**
-     * @brief The certificate walk of next_certified_start(), reporting the supporting evidence with the answer.
-     *
-     * Same walk, same evidence order, same refusal; the position-only form above is this one with the evidence
-     * dropped. The evidence lies wholly at or after the search offset by construction, which is what makes the
-     * comparison against a caller's clean bound meaningful; the guarantee is Certified_start's.
-     * @param input The input being scanned.
-     * @param from The offset the search starts at; at or past the input's size finds nothing.
-     * @return The first certified answer in evidence order with its evidence interval, or std::nullopt.
-     */
-    [[nodiscard]] std::optional<Certified_start> next_certified_evidence(
-            const std::string_view input, const std::size_t from) const
-    {
-        const auto bytes{simulator_.has_split_points()};
-
-        const auto windows{!simulator_.nullable()};
-
-        if (!bytes && !windows)
-        {
-            return std::nullopt;
-        }
-
-        Window_memo memo;
-
-        for (std::size_t at{from}; at < input.size(); ++at)
-        {
-            if (bytes && is_split_point(input[at]))
-            {
-                return Certified_start{.start = at, .evidence_begin = at, .evidence_end = at + 1, .window = false};
-            }
-
-            if (!windows)
-            {
-                continue;
-            }
-
-            const auto limit{std::min(longest_window_, input.size() - at)};
-
-            for (std::size_t length{2}; length <= limit; ++length)
-            {
-                if (const auto origin{certified_origin(memo, input.data(), at, length)})
-                {
-                    return Certified_start{
-                            .start = at + *origin,
-                            .evidence_begin = at,
-                            .evidence_end = at + length,
-                            .window = true};
-                }
-            }
-        }
-
-        return std::nullopt;
-    }
-
-    /**
-     * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after leaving
-     * an accepting state, or nothing when that run is unbounded.
-     *
-     * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether or
-     * not the excursion could still accept, so every defined continuation counts. Zero is the premise under
-     * which a scheme restarting at every accept executes serial maximal munch exactly; a bounded value prices
-     * the checkpoint a rollback-aware scheme must carry.
-     * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
-     */
-    [[nodiscard]] std::optional<std::size_t> lag() const { return simulator_.lag(); }
-
-    /**
-     * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
-     *
-     * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting
-     * at every accept would have declared the input malformed. On a rescue-free token set no such rollback can
-     * succeed, so the two schemes agree on every input. The gate is sufficient and not necessary: on
-     * {a, abc, bc} it returns false though no rescue exists there, and zero-lag sets pass vacuously.
-     * @return True when no stretch-opening byte starts a viable token from the initial state; false says only
-     * that this gate did not establish rescue-freeness.
-     */
-    [[nodiscard]] bool rescue_free() const { return simulator_.rescue_free(); }
-
-    /**
-     * @brief The first anchored-certified start in the tail at or after the offset.
-     *
-     * The anchored counterpart of next_certified_start(), exact where the walk is merely sound: with the
-     * tail's end known to be the end of the input, every completely tokenizable repair of whatever preceded
-     * the tail places a token boundary at the returned position. That quantifier is the whole contract; the
-     * certificates' guarantee over repairs that merely reach their evidence is a different one, which this
-     * decider does not speak about. A tail beyond repair refuses rather than answering vacuously, and nullable
-     * token sets are refused outright.
-     * @param tail The preserved suffix of the input, its end the end of the input.
-     * @param from The offset the search starts at; at or past the tail's size finds nothing.
-     * @return The first anchored-certified position, or std::nullopt when none exists or no repair does.
-     */
-    [[nodiscard]] std::optional<std::size_t> next_anchored_start(
-            const std::string_view tail, const std::size_t from) const
-    {
-        return simulator_.next_anchored_start(tail, from);
-    }
-
-    /**
-     * @brief A shortest repair for the tail, empty when it already tokenizes; nothing when none exists.
-     * @param tail The preserved suffix of the input.
-     * @return A minimal repair, or std::nullopt when the tail is beyond repair or the set is nullable.
-     */
-    [[nodiscard]] std::optional<std::string> minimal_repair(const std::string_view tail) const
-    {
-        return simulator_.minimal_repair(tail);
-    }
-
-    /**
-     * @brief The longest run of positions a tokenizable input can carry with no certified byte, or nothing when
-     *        such runs are unbounded.
-     *
-     * The gap chunk_boundaries() can be asked to span. The derivation is dfa::Simulator::anchor_free_span()'s.
-     * @return The exact supremum, or std::nullopt when it is unbounded.
-     */
-    [[nodiscard]] std::optional<std::size_t> anchor_free_span() const { return simulator_.anchor_free_span(); }
-
-    /**
-     * @brief The same over a supplied inventory of certified windows, which can bound what the bytes cannot.
-     *
-     * The derivation is dfa::Simulator::anchor_free_span()'s window overload.
-     * @param inventory The certified windows and their origins, each refused by is_split_window() being an error.
-     * @return The exact supremum, or std::nullopt when it is unbounded.
-     */
-    [[nodiscard]] std::optional<std::size_t> anchor_free_span(
-            const std::span<const std::pair<std::string_view, std::size_t>> inventory) const
-    {
-        return simulator_.anchor_free_span(inventory);
-    }
-
-    /**
-     * @brief Whether another token set cuts some input both tokenize differently, with a witness.
-     *
-     * The question a tokenizer change asks, answered from the two compiled tables rather than from a corpus, so a
-     * negative covers every input instead of the ones a suite happens to hold. The derivation is
-     * dfa::Simulator::boundary_difference()'s.
-     * @param other The lexer to compare against.
-     * @param cap The largest number of product states to visit before giving up.
-     * @return The witness and whether the search was exhaustive; an empty witness means identical only when it was.
-     */
-    [[nodiscard]] dfa::Simulator::Difference boundary_difference(
-            const Lexer& other, const std::size_t cap = 1U << 20U) const
-    {
-        return simulator_.boundary_difference(other.simulator_, cap);
     }
 
     /**
@@ -684,83 +509,83 @@ public:
                 std::ranges::begin(container), std::ranges::end(container), chunks, std::move(sink));
     }
 
-private:
-    // The Builder is the only construction path: a Lexer exists exclusively over a DFA the Builder
-    // compiled, so the constructors below stay private and the friendship is the whole public door.
-    friend class Builder;
-
     /**
-     * @brief The longest window the planners try, four bytes. A grammar needing longer windows degrades to
-     * fewer chunks, never to an unsafe cut. The shortest tried is two, and that bound is not a guard: the window
-     * planners run only when no exact byte certifies and the set is not nullable, where the length-one equivalence
-     * theorem makes every one-byte window refuse, so skipping length one is provably inert rather than something a test
-     * could pin.
+     * @brief Finds the first position at or after the given offset that a certificate marks as a token start.
+     *
+     * One forward walk consulting both certificate kinds at every position: a certified byte answers at its
+     * own position, and a certified window of two to four bytes answers at its occurrence plus the certified
+     * origin. Unlike the planners, byte certificates do not switch the window search off; a nullable token set
+     * contributes no windows, because only the window proof excludes it, while its byte certificates, when
+     * any, stand. The answer is the first certificate met in evidence order, the order in which the walk meets
+     * the supporting evidence, which is not always the smallest answerable position: a window met earlier can
+     * answer a byte or two past one met later, and windows beginning before the given offset are not considered.
+     *
+     * The contract is complete-repair invariance: in every completely tokenizable replacement of the input before the
+     * answer's supporting evidence, the answer's image begins a token of the repaired segmentation, which is more than
+     * the vacuous observation that a suffix which tokenizes begins a token. The evidence is the certified byte itself
+     * or the whole window occurrence, beginning at most three bytes before the answer; a repair that alters the
+     * evidence forfeits the guarantee, and the existence of any tokenizable repair is not promised, so where the damage
+     * has no fix the guarantee holds vacuously. The certificate speaks for this automaton alone; under mode-driven
+     * scanning that scoping is load-bearing. When no certificate of the searched kinds and lengths exists at or after
+     * the offset, there is no answer.
+     * @param input The input being scanned.
+     * @param from The offset the search starts at; at or past the input's size finds nothing.
+     * @return The first certified token-start position, or std::nullopt when no certified byte and no certified
+     *         window of two to four bytes lies at or after the offset, the widths the search consults.
      */
-    static constexpr std::size_t longest_window_{4};
-
-    /**
-     * @brief One decision per distinct byte string per plan: memoization caps the window decisions at the
-     * distinct windows tried, while the position loops and their lookups remain per position examined.
-     */
-    using Window_memo = std::map<std::string, std::optional<std::size_t>, std::less<>>;
-
-    /**
-     * @brief One input element read as the scanners read it, through unsigned char, so every byte-domain
-     * element type forms the same memo key; the string constructor's implicit conversion would reject
-     * std::byte.
-     */
-    template <common::concepts::Random_access_byte_iterator Iterator>
-    [[nodiscard]] static char window_byte(Iterator begin, const std::size_t at)
+    [[nodiscard]] std::optional<std::size_t> next_certified_start(
+            const std::string_view input, const std::size_t from) const
     {
-        return static_cast<char>(static_cast<unsigned char>(begin[static_cast<std::ptrdiff_t>(at)]));
+        const auto found{next_certified_evidence(input, from)};
+
+        return found ? std::optional{found->start} : std::nullopt;
     }
 
     /**
-     * @brief The memoized window decision at one occurrence: the certified origin, if any.
+     * @brief The certificate walk of next_certified_start(), reporting the supporting evidence with the answer.
+     *
+     * Same walk, same evidence order, same refusal; the position-only form above is this one with the evidence
+     * dropped. The evidence lies wholly at or after the search offset by construction, which is what makes the
+     * comparison against a caller's clean bound meaningful; the guarantee is Certified_start's.
+     * @param input The input being scanned.
+     * @param from The offset the search starts at; at or past the input's size finds nothing.
+     * @return The first certified answer in evidence order with its evidence interval, or std::nullopt.
      */
-    template <common::concepts::Random_access_byte_iterator Iterator>
-    [[nodiscard]] std::optional<std::size_t> certified_origin(
-            Window_memo& memo, Iterator begin, const std::size_t at, const std::size_t length) const
+    [[nodiscard]] std::optional<Certified_start> next_certified_evidence(
+            const std::string_view input, const std::size_t from) const
     {
-        std::string window;
+        const auto bytes{simulator_.has_split_points()};
 
-        window.reserve(length);
+        const auto windows{!simulator_.nullable()};
 
-        for (std::size_t offset{0}; offset < length; ++offset)
+        if (!bytes && !windows)
         {
-            window.push_back(window_byte(begin, at + offset));
+            return std::nullopt;
         }
 
-        auto found{memo.find(window)};
+        Window_planner planner;
 
-        if (found == memo.end())
+        for (std::size_t at{from}; at < input.size(); ++at)
         {
-            const auto verdict{is_split_window(window)};
-
-            found = memo.emplace(std::move(window), verdict).first;
-        }
-
-        return found->second;
-    }
-
-    /**
-     * @brief The exhaustive window search: every position from the floor, lengths ascending, first
-     * certificate wins; the cut is the occurrence plus the certified origin.
-     */
-    template <common::concepts::Random_access_byte_iterator Iterator>
-    [[nodiscard]] std::optional<std::size_t> window_cut(
-            Window_memo& memo, Iterator begin, const std::size_t size, const std::size_t floor) const
-    {
-        for (auto occurrence{floor}; occurrence + 2 <= size; ++occurrence)
-        {
-            const auto limit{std::min(longest_window_, size - occurrence)};
-
-            for (std::size_t length{2}; length <= limit; ++length)
+            if (bytes && is_split_point(input[at]))
             {
-                if (const auto origin{certified_origin(memo, begin, occurrence, length)})
-                {
-                    return occurrence + *origin;
-                }
+                return Certified_start{.start = at, .evidence_begin = at, .evidence_end = at + 1, .window = false};
+            }
+
+            if (!windows)
+            {
+                continue;
+            }
+
+            if (const auto found{planner.window_at(simulator_, input.data(), input.size(), at)})
+            {
+                const auto [origin, length]{*found};
+
+                return Certified_start{
+                        .start = at + origin,
+                        .evidence_begin = at,
+                        .evidence_end = at + length,
+                        .window = true};
             }
         }
 
@@ -768,113 +593,99 @@ private:
     }
 
     /**
-     * @brief The core-filtered window search: every certifying window provably contains the core with a
-     * byte after it, so candidates exist only where the core occurs, and visiting them in the exhaustive
-     * walk's own position-then-length order gives that walk's plan, refusals included. Positions are still
-     * scanned one by one, but for a byte comparison each; windows are built and certified only at
-     * occurrences. The barren offset tightens across calls: once a scan drains the input, targets falling in
-     * a tail already proved occurrence-free refuse without rescanning it.
+     * @brief The first anchored-certified start in the tail at or after the offset.
+     *
+     * The anchored counterpart of next_certified_start(), exact where the walk is merely sound: with the
+     * tail's end known to be the end of the input, every completely tokenizable repair of whatever preceded
+     * the tail places a token boundary at the returned position. That quantifier is the whole contract; the
+     * certificates' guarantee over repairs that merely reach their evidence is a different one, which this
+     * decider does not speak about. A tail beyond repair refuses rather than answering vacuously, and nullable
+     * token sets are refused outright.
+     * @param tail The preserved suffix of the input, its end the end of the input.
+     * @param from The offset the search starts at; at or past the tail's size finds nothing.
+     * @return The first anchored-certified position, or std::nullopt when none exists or no repair does.
      */
-    template <common::concepts::Random_access_byte_iterator Iterator>
-    [[nodiscard]] std::optional<std::size_t> window_cut_at_core(
-            Window_memo& memo, Iterator begin, const std::size_t size, const std::size_t floor,
-            const std::string_view core, std::size_t& barren) const
+    [[nodiscard]] std::optional<std::size_t> next_anchored_start(
+            const std::string_view tail, const std::size_t from) const
     {
-        if (floor >= barren)
-        {
-            return std::nullopt;
-        }
-
-        const auto matches{[&](const std::size_t at) {
-            for (std::size_t offset{0}; offset < core.size(); ++offset)
-            {
-                if (window_byte(begin, at + offset) != core[offset])
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }};
-
-        std::size_t cursor{floor};
-
-        std::size_t latest{floor};
-
-        const auto next_occurrence{[&]() -> std::optional<std::size_t> {
-            for (; cursor + core.size() <= size; ++cursor)
-            {
-                if (matches(cursor))
-                {
-                    latest = cursor + 1;
-
-                    return cursor++;
-                }
-            }
-
-            barren = std::min(barren, latest);
-
-            return std::nullopt;
-        }};
-
-        std::vector<std::pair<std::size_t, std::size_t>> heap;
-
-        // A window of length in (m, longest] starting at t holds the m-byte core occurring at c, plus
-        // a byte after it, exactly when t lies in [c + m + 1 - length, c].
-        const auto ingest{[&](const std::size_t at) {
-            for (auto length{core.size() + 1}; length <= longest_window_; ++length)
-            {
-                const auto lowest{at + core.size() + 1 > length ? at + core.size() + 1 - length : std::size_t{0}};
-
-                for (auto t{std::max(floor, lowest)}; t <= at && t + length <= size; ++t)
-                {
-                    heap.emplace_back(t, length);
-
-                    std::ranges::push_heap(heap, std::greater{});
-                }
-            }
-        }};
-
-        auto pending{next_occurrence()};
-
-        std::optional<std::pair<std::size_t, std::size_t>> last;
-
-        // A pop waits until no unread occurrence can still contribute a smaller pair, which holds once
-        // the next occurrence starts past t + longest - m - 1; overlapping occurrences propose
-        // duplicate pairs, which pop adjacently and are skipped.
-        while (true)
-        {
-            while (pending && (heap.empty() || *pending <= heap.front().first + longest_window_ - core.size() - 1))
-            {
-                ingest(*pending);
-
-                pending = next_occurrence();
-            }
-
-            if (heap.empty())
-            {
-                return std::nullopt;
-            }
-
-            std::ranges::pop_heap(heap, std::greater{});
-
-            const auto candidate{heap.back()};
-
-            heap.pop_back();
-
-            if (last == std::optional{candidate})
-            {
-                continue;
-            }
-
-            last = candidate;
-
-            if (const auto origin{certified_origin(memo, begin, candidate.first, candidate.second)})
-            {
-                return candidate.first + *origin;
-            }
-        }
+        return dfa::next_anchored_start(simulator_, tail, from);
     }
+
+    /**
+     * @brief A shortest repair for the tail, empty when it already tokenizes; nothing when none exists.
+     * @param tail The preserved suffix of the input.
+     * @return A minimal repair, or std::nullopt when the tail is beyond repair or the set is nullable.
+     */
+    [[nodiscard]] std::optional<std::string> minimal_repair(const std::string_view tail) const
+    {
+        return dfa::minimal_repair(simulator_, tail);
+    }
+
+    /**
+     * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after leaving
+     * an accepting state, or nothing when that run is unbounded.
+     *
+     * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether or
+     * not the excursion could still accept, so every defined continuation counts. Zero is the premise under
+     * which a scheme restarting at every accept executes serial maximal munch exactly; a bounded value prices
+     * the checkpoint a rollback-aware scheme must carry.
+     * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
+     */
+    [[nodiscard]] std::optional<std::size_t> lag() const { return dfa::lag(simulator_); }
+
+    /**
+     * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
+     *
+     * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting
+     * at every accept would have declared the input malformed. On a rescue-free token set no such rollback can
+     * succeed, so the two schemes agree on every input. The gate is sufficient and not necessary: on
+     * {a, abc, bc} it returns false though no rescue exists there, and zero-lag sets pass vacuously.
+     * @return True when no stretch-opening byte starts a viable token from the initial state; false says only
+     * that this gate did not establish rescue-freeness.
+     */
+    [[nodiscard]] bool rescue_free() const { return dfa::rescue_free(simulator_); }
+
+    /**
+     * @brief The longest run of positions a tokenizable input can carry with no certified byte, or nothing when
+     *        such runs are unbounded.
+     *
+     * The gap chunk_boundaries() can be asked to span. The derivation is dfa::anchor_free_span()'s.
+     * @return The exact supremum, or std::nullopt when it is unbounded.
+     */
+    [[nodiscard]] std::optional<std::size_t> anchor_free_span() const { return dfa::anchor_free_span(simulator_); }
+
+    /**
+     * @brief The same over a supplied inventory of certified windows, which can bound what the bytes cannot.
+     *
+     * The derivation is dfa::anchor_free_span()'s window overload.
+     * @param inventory The certified windows and their origins, each refused by is_split_window() being an error.
+     * @return The exact supremum, or std::nullopt when it is unbounded.
+     */
+    [[nodiscard]] std::optional<std::size_t> anchor_free_span(
+            const std::span<const std::pair<std::string_view, std::size_t>> inventory) const
+    {
+        return dfa::anchor_free_span(simulator_, inventory);
+    }
+
+    /**
+     * @brief Whether another token set cuts some input both tokenize differently, with a witness.
+     *
+     * The question a tokenizer change asks, answered from the two compiled tables rather than from a corpus, so a
+     * negative covers every input instead of the ones a suite happens to hold. The derivation is
+     * dfa::boundary_difference()'s.
+     * @param other The lexer to compare against.
+     * @param cap The largest number of product states to visit before giving up.
+     * @return The witness and whether the search was exhaustive; an empty witness means identical only when it was.
+     */
+    [[nodiscard]] dfa::Difference boundary_difference(const Lexer& other, const std::size_t cap = 1U << 20U) const
+    {
+        return dfa::boundary_difference(simulator_, other.simulator_, cap);
+    }
+
+private:
+    // The Builder is the only construction path: a Lexer exists exclusively over a DFA the Builder
+    // compiled, so the constructors below stay private and the friendship is the whole public door.
+    friend class Builder;
 
     /**
      * @brief Constructs a Lexer from a DFA.

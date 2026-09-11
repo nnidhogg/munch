@@ -1106,7 +1106,7 @@ Convergence converge(
         const std::vector<std::size_t>& pristine, const Damage& y, const std::vector<std::size_t>& starts,
         const std::size_t floor)
 {
-    const auto image = [&](const std::size_t boundary) -> std::optional<std::size_t> {
+    const auto image{[&](const std::size_t boundary) -> std::optional<std::size_t> {
         if (boundary < y.low)
         {
             return boundary;
@@ -1118,7 +1118,7 @@ Convergence converge(
         }
 
         return std::nullopt;
-    };
+    }};
 
     // Walk both sorted sequences backward from their ends to the first disagreement.
     auto i{static_cast<std::ptrdiff_t>(starts.size()) - 1};

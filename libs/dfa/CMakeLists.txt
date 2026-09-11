@@ -3,11 +3,15 @@ cmake_policy(SET CMP0097 NEW)
 project(munch_dfa)
 
 add_library(${PROJECT_NAME}
+        src/anchor_free_span.cpp
+        src/boundary_difference.cpp
         src/builder.cpp
         src/dfa.cpp
         src/label.cpp
         src/minimize.cpp
+        src/recovery.cpp
         src/simulator.cpp
+        src/split_window.cpp
         src/token.cpp
 )
 

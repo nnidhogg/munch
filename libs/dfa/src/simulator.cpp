@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <deque>
 #include <experimental/mdspan>
 #include <limits>
 #include <map>
@@ -12,8 +11,6 @@
 #include <set>
 #include <stdexcept>
 #include <string>
-#include <string_view>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -95,7 +92,7 @@ Simulator::Simulator(
         throw std::runtime_error("DFA transition table size overflows std::size_t");
     }
 
-    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
     {
         row_offsets_[symbol] = classes[symbol] * states;
     }
@@ -202,7 +199,7 @@ Simulator::Simulator(
 
         pending.pop_back();
 
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
         {
             if (const auto to{table_[row_offsets_[symbol] + state]}; to != no_state_ && !reachable[to])
             {
@@ -217,7 +214,7 @@ Simulator::Simulator(
     // initial state cannot be reached again after consuming input: a nullable pattern such as kleene minimizes to
     // an accepting start state with a self-loop, where the "first byte of a token" reasoning no longer holds.
     const auto init_reentrant{
-            std::ranges::any_of(std::views::iota(std::size_t{0}, symbol_count_), [&](const std::size_t symbol) {
+            std::ranges::any_of(std::views::iota(std::size_t{0}, symbol_count), [&](const std::size_t symbol) {
                 return std::ranges::any_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {
                     return reachable[state] &&
                            table_[row_offsets_[symbol] + state] == static_cast<Entry_t>(init_state_);
@@ -242,7 +239,7 @@ Simulator::Simulator(
         return to != no_state_ && co_accessible[to];
     }};
 
-    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
     {
         const auto safe{std::ranges::all_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {
             return !reachable[state] || (state == init_state_ && !init_reentrant) || !consumes(symbol, state);
@@ -263,1017 +260,11 @@ Simulator::Simulator(
     derive_mandatory_core();
 }
 
-std::optional<std::size_t> Simulator::is_split_window(const std::string_view window) const
-{
-    // An accepting initial state is the compiled signature of a nullable token set, which the soundness theorem
-    // excludes; refuse rather than answer beyond the proved scope. The empty window certifies nothing either.
-    if (window.empty() || is_accepting(init_state_))
-    {
-        return std::nullopt;
-    }
-
-    // The pre-window origin: a hypothesis whose token began before the window. Any value no in-window offset can
-    // take serves as the marker.
-    constexpr std::size_t before{std::numeric_limits<std::size_t>::max()};
-
-    // The cloud of hypotheses (state, origin). A set, exactly as the proof's model: the seed and the rename can
-    // propose the identical pair and must coalesce.
-    std::set<std::pair<std::size_t, std::size_t>> cloud;
-
-    for (std::size_t state{0}; state < flags_.size(); ++state)
-    {
-        if (is_live(state))
-        {
-            cloud.emplace(state, before);
-        }
-    }
-
-    for (std::size_t at{0}; at < window.size(); ++at)
-    {
-        const auto row{row_offsets_[static_cast<unsigned char>(window[at])]};
-
-        // A token can only end where the automaton accepted, so a boundary before this byte is possible exactly
-        // where some tracked state accepts. The test runs on the cloud as it stands, ahead of the step.
-        const auto accepting{std::ranges::any_of(
-                cloud | std::views::keys, [this](const std::size_t state) { return is_accepting(state); })};
-
-        std::set<std::pair<std::size_t, std::size_t>> next;
-
-        for (const auto& [state, origin] : cloud)
-        {
-            if (const auto to{table_[row + state]}; to != no_state_ && is_live(to))
-            {
-                // Reading from the initial state begins a token here, so the origin is this offset rather than
-                // whatever the hypothesis carried in; valid only while nothing re-enters the initial state. A
-                // hypothesis that cannot consume the byte is an impossible history and is dropped, never
-                // restarted.
-                const auto begins{state == init_state_ && !init_reentrant_};
-
-                next.emplace(to, begins ? at : origin);
-            }
-        }
-
-        // One fresh hypothesis wherever the automaton had just accepted, the only place a token can begin. The
-        // initial cloud contains an accepting live state whenever the grammar is usable, so no first-byte special
-        // case exists.
-        if (accepting)
-        {
-            if (const auto to{table_[row + init_state_]}; to != no_state_ && is_live(to))
-            {
-                next.emplace(to, at);
-            }
-        }
-
-        // The empty cloud is absorbing: no live history crosses this window, and the walk refuses.
-        if (next.empty())
-        {
-            return std::nullopt;
-        }
-
-        cloud.swap(next);
-    }
-
-    // Certified exactly when every surviving hypothesis agrees on one in-window origin; unanimity at the
-    // pre-window marker means the window never resolves where the covering token began.
-    const auto origin{cloud.begin()->second};
-
-    if (!std::ranges::all_of(cloud | std::views::values, [origin](const std::size_t at) { return at == origin; }))
-    {
-        return std::nullopt;
-    }
-
-    return origin == before ? std::nullopt : std::optional{origin};
-}
-
-std::optional<std::size_t> Simulator::lag() const
-{
-    // The post-accept nonaccepting region: nonaccepting successors of accepting states, closed under
-    // nonaccepting transitions; a cycle inside it is the unboundedness witness, and otherwise the lag is
-    // the longest path measured in states.
-    enum class Mark : char
-    {
-        outside,
-        unresolved,
-        resolved
-    };
-
-    std::vector<Mark> mark(flags_.size(), Mark::outside);
-
-    std::vector<std::size_t> frontier;
-
-    const auto enter{[&](const std::size_t state) {
-        if (mark[state] == Mark::outside)
-        {
-            mark[state] = Mark::unresolved;
-
-            frontier.push_back(state);
-        }
-    }};
-
-    // An accepting state no input reaches opens no stretch; for an accepting state, live means reachable.
-    for (std::size_t state{0}; state < flags_.size(); ++state)
-    {
-        if (!is_accepting(state) || !is_live(state))
-        {
-            continue;
-        }
-
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-        {
-            const auto to{table_[row_offsets_[symbol] + state]};
-
-            if (to != no_state_ && !is_accepting(to))
-            {
-                enter(to);
-            }
-        }
-    }
-
-    for (std::size_t at{0}; at < frontier.size(); ++at)
-    {
-        const auto from{frontier[at]};
-
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-        {
-            const auto to{table_[row_offsets_[symbol] + from]};
-
-            if (to != no_state_ && !is_accepting(to))
-            {
-                enter(to);
-            }
-        }
-    }
-
-    // Longest path by repeated sink peeling; anything left over closes a cycle.
-    std::vector<std::size_t> depth(flags_.size(), 0);
-
-    auto remaining{frontier};
-
-    std::size_t longest{0};
-
-    for (bool shrank{true}; shrank && !remaining.empty();)
-    {
-        shrank = false;
-
-        std::vector<std::size_t> keep;
-
-        for (const auto state : remaining)
-        {
-            std::optional<std::size_t> deepest{0};
-
-            for (std::size_t symbol{0}; symbol < symbol_count_ && deepest; ++symbol)
-            {
-                const auto to{table_[row_offsets_[symbol] + state]};
-
-                if (to == no_state_ || is_accepting(to))
-                {
-                    continue;
-                }
-
-                if (mark[to] == Mark::resolved)
-                {
-                    deepest = std::max(*deepest, depth[to]);
-                }
-                else
-                {
-                    deepest = std::nullopt; // a successor still unresolved: not yet a sink
-                }
-            }
-
-            if (deepest)
-            {
-                depth[state] = 1 + *deepest;
-
-                mark[state] = Mark::resolved;
-
-                longest = std::max(longest, depth[state]);
-
-                shrank = true;
-            }
-            else
-            {
-                keep.push_back(state);
-            }
-        }
-
-        remaining = std::move(keep);
-    }
-
-    if (!remaining.empty())
-    {
-        return std::nullopt; // the leftover states close a nonaccepting cycle: unbounded
-    }
-
-    return longest;
-}
-
-bool Simulator::rescue_free() const
-{
-    // As in lag(): an accepting state no input reaches cannot refute rescue-freeness.
-    for (std::size_t state{0}; state < flags_.size(); ++state)
-    {
-        if (!is_accepting(state) || !is_live(state))
-        {
-            continue;
-        }
-
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
-        {
-            const auto opened{table_[row_offsets_[symbol] + state]};
-
-            if (opened == no_state_ || is_accepting(opened))
-            {
-                continue;
-            }
-
-            // A stretch opens on this byte; the gate needs it dead from the initial state, where dead
-            // means no transition or one that can never reach acceptance.
-            const auto entered{table_[row_offsets_[symbol] + init_state_]};
-
-            if (entered != no_state_ && is_live(entered))
-            {
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-
-std::optional<std::size_t> Simulator::next_anchored_start(const std::string_view tail, const std::size_t from) const
-{
-    // Nullable token sets sit outside the model, exactly as for is_split_window().
-    if (is_accepting(init_state_) || from >= tail.size())
-    {
-        return std::nullopt;
-    }
-
-    const auto table{build_jump_table(tail)};
-
-    // Every completing scenario votes for its boundary chain; a position is anchored-certified when
-    // every completing scenario contains it. No completing scenario means the tail is beyond repair and
-    // every position only vacuously invariant, which is deliberately a refusal.
-    std::vector<std::size_t> votes(tail.size(), 0);
-
-    std::size_t completing{0};
-
-    const auto vote{[&](const std::size_t first) {
-        ++completing;
-
-        for (auto at{first}; at < tail.size(); at = *table.end[at])
-        {
-            ++votes[at];
-        }
-    }};
-
-    if (table.tokenizes[0])
-    {
-        vote(0);
-    }
-
-    for (const auto& [entry, via] : crossing_entries())
-    {
-        const auto boundary{scenario_boundary(tail, entry)};
-
-        if (boundary && table.tokenizes[*boundary])
-        {
-            vote(*boundary);
-        }
-    }
-
-    if (completing == 0)
-    {
-        return std::nullopt;
-    }
-
-    for (auto at{from}; at < tail.size(); ++at)
-    {
-        if (votes[at] == completing)
-        {
-            return at;
-        }
-    }
-
-    return std::nullopt;
-}
-
-std::optional<std::string> Simulator::minimal_repair(const std::string_view tail) const
-{
-    if (is_accepting(init_state_))
-    {
-        return std::nullopt;
-    }
-
-    const auto table{build_jump_table(tail)};
-
-    if (table.tokenizes[0])
-    {
-        return std::string{};
-    }
-
-    // The minimal repair is a shortest path to a completing crossing entry; the entries carry shortest
-    // witnesses by construction, so the cheapest completing one is the answer, and none completing is a
-    // certificate that no repair of any length exists.
-    std::optional<std::string> best;
-
-    for (const auto& [entry, via] : crossing_entries())
-    {
-        const auto boundary{scenario_boundary(tail, entry)};
-
-        if (boundary && table.tokenizes[*boundary] && (!best || via.size() < best->size()))
-        {
-            best = via;
-        }
-    }
-
-    return best;
-}
-
-std::optional<std::size_t> Simulator::anchor_free_span() const
-{
-    // The certified bytes as width-one windows at origin zero, which is what the general walk reduces to.
-    std::vector<std::string> held;
-
-    std::vector<std::pair<std::string_view, std::size_t>> inventory;
-
-    for (std::size_t value{0}; value < symbol_count_; ++value)
-    {
-        if (is_split_point(static_cast<char>(value)))
-        {
-            held.push_back(std::string(1, static_cast<char>(value)));
-        }
-    }
-
-    // No certified byte means every position is anchor-free, so the stretch is as long as inputs can be: unbounded
-    // whenever the token set matches anything at all, since a match repeats, and zero when it matches nothing.
-    if (held.empty())
-    {
-        std::vector<bool> seen(accept_table_.size(), false);
-
-        std::deque<std::size_t> reachable{init_state_};
-
-        seen[init_state_] = true;
-
-        while (!reachable.empty())
-        {
-            const auto at{reachable.front()};
-
-            reachable.pop_front();
-
-            if (is_accepting(at) && at != init_state_)
-            {
-                return std::nullopt;
-            }
-
-            for (std::size_t value{0}; value < symbol_count_; ++value)
-            {
-                if (const auto next{step(at, static_cast<unsigned char>(value))}; next && !seen[*next])
-                {
-                    seen[*next] = true;
-
-                    reachable.push_back(*next);
-                }
-            }
-        }
-
-        return 0;
-    }
-
-    inventory.reserve(held.size());
-
-    for (const auto& window : held)
-    {
-        inventory.emplace_back(window, 0);
-    }
-
-    return anchor_free_span(inventory);
-}
-
-std::optional<std::size_t> Simulator::anchor_free_span(
-        const std::span<const std::pair<std::string_view, std::size_t>> inventory) const
-{
-    if (inventory.empty())
-    {
-        throw std::invalid_argument{"anchor_free_span: the inventory names no window"};
-    }
-
-    std::size_t longest{0};
-
-    for (const auto& [window, origin] : inventory)
-    {
-        if (window.empty() || origin >= window.size())
-        {
-            throw std::invalid_argument{"anchor_free_span: a window is empty or its origin lies outside it"};
-        }
-
-        if (is_split_window(window) != std::optional<std::size_t>{origin})
-        {
-            throw std::invalid_argument{"anchor_free_span: a window is not certified at the stated origin"};
-        }
-
-        longest = std::max(longest, window.size());
-    }
-
-    // The per-position flags ride in one word, so the buffer holds as many positions as it has bits.
-    if (longest > std::numeric_limits<std::uint64_t>::digits)
-    {
-        throw std::invalid_argument{"anchor_free_span: a window is longer than this walk can buffer"};
-    }
-
-    // The buffer only has to tell apart the bytes some window contains. Every other byte folds to one stand-in from
-    // outside the windows' alphabet, so the walk does not multiply its states by bytes no window can see.
-    std::array<char, symbol_count_> fold{};
-
-    {
-        std::set<char> present;
-
-        for (const auto& window : inventory | std::views::keys)
-        {
-            present.insert(window.begin(), window.end());
-        }
-
-        std::optional<char> stand_in;
-
-        for (std::size_t value{0}; value < symbol_count_ && !stand_in; ++value)
-        {
-            if (!present.contains(static_cast<char>(value)))
-            {
-                stand_in = static_cast<char>(value);
-            }
-        }
-
-        for (std::size_t value{0}; value < symbol_count_; ++value)
-        {
-            const auto byte{static_cast<char>(value)};
-
-            fold[value] = stand_in && !present.contains(byte) ? *stand_in : byte;
-        }
-    }
-
-    // A position waits in the buffer until no window can still reach back to it, then leaves anchored or not.
-    struct Walk
-    {
-        std::size_t reading{};
-
-        std::vector<Entry_t> closed{};
-
-        std::string recent{};
-
-        std::uint64_t flags{};
-
-        std::uint8_t filled{};
-
-        bool operator<(const Walk& rhs) const
-        {
-            return std::tie(reading, closed, recent, flags, filled) <
-                   std::tie(rhs.reading, rhs.closed, rhs.recent, rhs.flags, rhs.filled);
-        }
-    };
-
-    const auto tidy{[](std::vector<Entry_t>& states) {
-        std::ranges::sort(states);
-
-        const auto duplicates{std::ranges::unique(states)};
-
-        states.erase(duplicates.begin(), duplicates.end());
-    }};
-
-    // Exits carry whether the position that left was anchored; during warm-up nothing leaves yet.
-    enum class Exit : std::uint8_t
-    {
-        none,
-        anchored,
-        free
-    };
-
-    const auto advance{[&](const Walk& from, const bool mark, const unsigned char byte) {
-        Walk walk{from};
-
-        if (mark)
-        {
-            walk.closed.push_back(static_cast<Entry_t>(walk.reading));
-
-            walk.reading = init_state_;
-        }
-
-        const auto next{step(walk.reading, byte)};
-
-        if (!next)
-        {
-            return std::pair<std::optional<Walk>, Exit>{{}, Exit::none};
-        }
-
-        walk.reading = *next;
-
-        std::vector<Entry_t> survived;
-
-        for (const auto state : walk.closed)
-        {
-            const auto moved{step(state, byte)};
-
-            if (!moved)
-            {
-                continue;
-            }
-
-            if (is_accepting(*moved))
-            {
-                return std::pair<std::optional<Walk>, Exit>{{}, Exit::none};
-            }
-
-            survived.push_back(static_cast<Entry_t>(*moved));
-        }
-
-        tidy(survived);
-
-        walk.closed = std::move(survived);
-
-        const auto seen{walk.recent + fold[byte]};
-
-        walk.flags <<= 1U;
-
-        ++walk.filled;
-
-        for (const auto& [window, origin] : inventory)
-        {
-            if (seen.size() >= window.size() && seen.compare(seen.size() - window.size(), window.size(), window) == 0)
-            {
-                if (const auto age{window.size() - 1 - origin}; age < walk.filled)
-                {
-                    walk.flags |= std::uint64_t{1} << age;
-                }
-            }
-        }
-
-        auto exit{Exit::none};
-
-        if (walk.filled > longest - 1)
-        {
-            const auto oldest{static_cast<std::uint64_t>(walk.filled) - 1};
-
-            exit = ((walk.flags >> oldest) & 1U) != 0 ? Exit::anchored : Exit::free;
-
-            walk.flags &= ~(std::uint64_t{1} << oldest);
-
-            --walk.filled;
-        }
-
-        walk.recent = longest > 1 ? seen.substr(seen.size() - std::min(seen.size(), longest - 1)) : std::string{};
-
-        return std::pair<std::optional<Walk>, Exit>{std::move(walk), exit};
-    }};
-
-    const Walk start{.reading = init_state_, .closed = {}, .recent = {}, .flags = 0, .filled = 0};
-
-    std::map<Walk, std::vector<std::pair<Walk, Exit>>> edges{{start, {}}};
-
-    std::deque<Walk> frontier{start};
-
-    while (!frontier.empty())
-    {
-        const auto at{frontier.front()};
-
-        frontier.pop_front();
-
-        for (std::size_t value{0}; value < symbol_count_; ++value)
-        {
-            for (const auto mark : {false, true})
-            {
-                if (mark && !is_accepting(at.reading))
-                {
-                    continue;
-                }
-
-                auto [next, exit]{advance(at, mark, static_cast<unsigned char>(value))};
-
-                if (!next)
-                {
-                    continue;
-                }
-
-                edges[at].emplace_back(*next, exit);
-
-                if (const auto [entry, added]{edges.try_emplace(*next)}; added)
-                {
-                    frontier.push_back(*next);
-                }
-            }
-        }
-    }
-
-    // Only states an input can be finished from carry stretches: a run that never closes is no input's run.
-    std::set<Walk> endable;
-
-    for (const auto& state : edges | std::views::keys)
-    {
-        if (is_accepting(state.reading))
-        {
-            endable.insert(state);
-        }
-    }
-
-    for (bool growing{true}; growing;)
-    {
-        growing = false;
-
-        for (const auto& [state, out] : edges)
-        {
-            if (endable.contains(state))
-            {
-                continue;
-            }
-
-            if (std::ranges::any_of(out, [&endable](const auto& edge) { return endable.contains(edge.first); }))
-            {
-                endable.insert(state);
-
-                growing = true;
-            }
-        }
-    }
-
-    if (!endable.contains(start))
-    {
-        return 0; // no input is tokenizable at all, so no stretch exists
-    }
-
-    // A cycle of anchor-free exits among those states is a stretch with no end. Walked with an explicit stack
-    // rather than by recursion, since the product graph is as deep as it is wide.
-    std::map<Walk, int> colour;
-
-    for (const auto& root : edges | std::views::keys)
-    {
-        if (!endable.contains(root) || colour[root] != 0)
-        {
-            continue;
-        }
-
-        std::vector<std::pair<Walk, std::size_t>> stack{{root, 0}};
-
-        colour[root] = 1;
-
-        while (!stack.empty())
-        {
-            auto& [node, next] = stack.back();
-
-            const auto& out{edges.at(node)};
-
-            while (next < out.size() && (out[next].second != Exit::free || !endable.contains(out[next].first)))
-            {
-                ++next;
-            }
-
-            if (next == out.size())
-            {
-                colour[node] = 2;
-
-                stack.pop_back();
-
-                continue;
-            }
-
-            const auto target{out[next].first};
-
-            ++next;
-
-            if (colour[target] == 1)
-            {
-                return std::nullopt;
-            }
-
-            if (colour[target] == 0)
-            {
-                colour[target] = 1;
-
-                stack.emplace_back(target, 0);
-            }
-        }
-    }
-
-    // Acyclic: relax the longest anchor-free run to a fixed point. A warm-up step exits nothing and carries the run.
-    std::map<Walk, std::size_t> run;
-
-    for (const auto& state : endable)
-    {
-        run[state] = 0;
-    }
-
-    for (bool changed{true}; changed;)
-    {
-        changed = false;
-
-        for (const auto& state : endable)
-        {
-            for (const auto& [target, exit] : edges.at(state))
-            {
-                if (!endable.contains(target))
-                {
-                    continue;
-                }
-
-                const auto value{
-                        exit == Exit::anchored ? std::size_t{0} :
-                        exit == Exit::none     ? run[state] :
-                                                 run[state] + 1};
-
-                if (value > run[target])
-                {
-                    run[target] = value;
-
-                    changed = true;
-                }
-            }
-        }
-    }
-
-    // A stretch may still be inside the buffer when the input ends, so a state that can close counts what it holds:
-    // the anchor-free positions oldest inward, continuing the run that arrived, and the longest run wholly inside.
-    auto best{std::ranges::max(run | std::views::values)};
-
-    for (const auto& state : endable)
-    {
-        if (!is_accepting(state.reading))
-        {
-            continue;
-        }
-
-        std::size_t oldest_contiguous{0};
-
-        for (auto age{state.filled}; age > 0; --age)
-        {
-            if (((state.flags >> (age - 1)) & 1U) != 0)
-            {
-                break;
-            }
-
-            ++oldest_contiguous;
-        }
-
-        std::size_t inside{0};
-
-        std::size_t current{0};
-
-        for (std::uint8_t age{0}; age < state.filled; ++age)
-        {
-            current = ((state.flags >> age) & 1U) != 0 ? 0 : current + 1;
-
-            inside = std::max(inside, current);
-        }
-
-        best = std::max({best, run.at(state) + oldest_contiguous, inside});
-    }
-
-    return best;
-}
-
-Simulator::Difference Simulator::boundary_difference(const Simulator& other, const std::size_t cap) const
-{
-    // One side's position: the run of the segment being read, and the runs of segments already closed. A closed run
-    // is carried because a later accept on it proves the close was not the longest match, which is how a guessed
-    // marking is held to maximal munch without tracking how far back the last accept was.
-    struct Side
-    {
-        std::size_t reading{};
-
-        std::vector<Entry_t> closed{};
-
-        bool operator==(const Side&) const = default;
-
-        bool operator<(const Side& rhs) const
-        {
-            return reading != rhs.reading ? reading < rhs.reading : closed < rhs.closed;
-        }
-    };
-
-    using Key = std::tuple<Side, Side, bool>;
-
-    // Advances one side by a byte. False abandons the branch: either the segment being read died, so it can never
-    // close and the input can never be finished, or a closed run accepted and the marking is not the greedy one.
-    const auto advance{[](const Simulator& sim, Side& side, const unsigned char byte) {
-        const auto next{sim.step(side.reading, byte)};
-
-        if (!next)
-        {
-            return false;
-        }
-
-        side.reading = *next;
-
-        std::vector<Entry_t> survived;
-
-        for (const auto state : side.closed)
-        {
-            const auto moved{sim.step(state, byte)};
-
-            if (!moved)
-            {
-                continue;
-            }
-
-            if (sim.is_accepting(*moved))
-            {
-                return false;
-            }
-
-            survived.push_back(static_cast<Entry_t>(*moved));
-        }
-
-        std::ranges::sort(survived);
-
-        const auto duplicates{std::ranges::unique(survived)};
-
-        survived.erase(duplicates.begin(), duplicates.end());
-
-        side.closed = std::move(survived);
-
-        return true;
-    }};
-
-    // Closing a segment keeps the run that produced it alive as a closed run and starts a fresh one.
-    const auto close{[](const Simulator& sim, Side side) {
-        side.closed.push_back(static_cast<Entry_t>(side.reading));
-
-        std::ranges::sort(side.closed);
-
-        const auto duplicates{std::ranges::unique(side.closed)};
-
-        side.closed.erase(duplicates.begin(), duplicates.end());
-
-        side.reading = sim.init_state_;
-
-        return side;
-    }};
-
-    const Key start{
-            Side{.reading = init_state_, .closed = {}}, Side{.reading = other.init_state_, .closed = {}}, false};
-
-    std::map<Key, std::pair<const Key*, char>> seen{{start, {nullptr, '\0'}}};
-
-    std::deque<const Key*> frontier{&seen.begin()->first};
-
-    const auto trail{[&seen](const Key* at, const char last) {
-        std::string out{last};
-
-        for (auto step{seen.at(*at)}; step.first != nullptr; step = seen.at(*step.first))
-        {
-            out.push_back(step.second);
-        }
-
-        std::ranges::reverse(out);
-
-        return out;
-    }};
-
-    while (!frontier.empty())
-    {
-        if (seen.size() > cap)
-        {
-            return {.witness = {}, .exhaustive = false};
-        }
-
-        const auto* const at{frontier.front()};
-
-        frontier.pop_front();
-
-        for (std::size_t value{0}; value < symbol_count_; ++value)
-        {
-            const auto byte{static_cast<unsigned char>(value)};
-
-            auto mine{std::get<0>(*at)};
-
-            auto theirs{std::get<1>(*at)};
-
-            if (!advance(*this, mine, byte) || !advance(other, theirs, byte))
-            {
-                continue;
-            }
-
-            const auto mine_closes{is_accepting(mine.reading)};
-
-            const auto theirs_closes{other.is_accepting(theirs.reading)};
-
-            // The input may end here only if both sides close their last segment on this byte.
-            if (mine_closes && theirs_closes && std::get<2>(*at))
-            {
-                return {.witness = trail(at, static_cast<char>(byte)), .exhaustive = true};
-            }
-
-            for (const auto mine_closed : {false, true})
-            {
-                for (const auto theirs_closed : {false, true})
-                {
-                    if ((mine_closed && !mine_closes) || (theirs_closed && !theirs_closes))
-                    {
-                        continue;
-                    }
-
-                    const Key next{
-                            mine_closed ? close(*this, mine) : mine, theirs_closed ? close(other, theirs) : theirs,
-                            std::get<2>(*at) || mine_closed != theirs_closed};
-
-                    if (const auto [entry, added]{seen.try_emplace(next, at, static_cast<char>(byte))}; added)
-                    {
-                        frontier.push_back(&entry->first);
-                    }
-                }
-            }
-        }
-    }
-
-    return {.witness = {}, .exhaustive = true};
-}
-
 std::optional<std::size_t> Simulator::step(const std::size_t state, const unsigned char symbol) const noexcept
 {
     const auto to{table_[row_offsets_[symbol] + state]};
 
     return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
-}
-
-std::optional<std::size_t> Simulator::maximal_run(
-        const std::size_t state, const std::string_view tail, const std::size_t from) const
-{
-    std::optional<std::size_t> last;
-
-    if (is_accepting(state))
-    {
-        last = from;
-    }
-
-    auto current{state};
-
-    for (std::size_t at{from}; at < tail.size(); ++at)
-    {
-        const auto next{step(current, static_cast<unsigned char>(tail[at]))};
-
-        if (!next)
-        {
-            break;
-        }
-
-        current = *next;
-
-        if (is_accepting(current))
-        {
-            last = at + 1;
-        }
-    }
-
-    return last;
-}
-
-Simulator::Jump_table Simulator::build_jump_table(const std::string_view tail) const
-{
-    Jump_table table{
-            .end = std::vector<std::optional<std::size_t>>(tail.size()),
-            .tokenizes = std::vector<bool>(tail.size() + 1)};
-
-    // The empty suffix tokenizes; walking right to left, every other suffix's answer is one lookup past its token.
-    table.tokenizes[tail.size()] = true;
-
-    for (std::size_t offset{tail.size()}; offset > 0;)
-    {
-        --offset;
-
-        table.end[offset] = maximal_run(init_state_, tail, offset);
-
-        table.tokenizes[offset] = table.end[offset].has_value() && table.tokenizes[*table.end[offset]];
-    }
-
-    return table;
-}
-
-std::vector<std::pair<std::size_t, std::string>> Simulator::crossing_entries() const
-{
-    std::map<std::size_t, std::string> seen;
-
-    std::vector<std::size_t> frontier;
-
-    // Breadth first from the initial state, so the first word to reach a state is a shortest one.
-    const auto expand{[&](const std::size_t from, const std::string& via) {
-        for (int byte{0}; byte < 256; ++byte)
-        {
-            if (const auto to{step(from, static_cast<unsigned char>(byte))};
-                to && seen.emplace(*to, via + static_cast<char>(byte)).second)
-            {
-                frontier.push_back(*to);
-            }
-        }
-    }};
-
-    expand(init_state_, std::string{});
-
-    for (std::size_t at{0}; at < frontier.size(); ++at)
-    {
-        expand(frontier[at], seen.at(frontier[at]));
-    }
-
-    return {seen.begin(), seen.end()};
-}
-
-std::optional<std::size_t> Simulator::scenario_boundary(const std::string_view tail, const std::size_t entry) const
-{
-    return maximal_run(entry, tail, 0);
 }
 
 Simulator::Classes_t Simulator::classify(const Dfa& dfa)
@@ -1282,7 +273,7 @@ Simulator::Classes_t Simulator::classify(const Dfa& dfa)
     // identical table rows, which is exactly when they may share a class.
     using Signature_t = std::vector<std::pair<Dfa::State_t, Dfa::State_t>>;
 
-    std::array<Signature_t, symbol_count_> signatures;
+    std::array<Signature_t, symbol_count> signatures;
 
     for (const auto& [key, to] : dfa.transitions())
     {
@@ -1293,7 +284,7 @@ Simulator::Classes_t Simulator::classify(const Dfa& dfa)
 
     Classes_t result{};
 
-    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
     {
         std::ranges::sort(signatures[symbol]);
 
@@ -1365,7 +356,7 @@ void Simulator::derive_split_points_ignoring(
         return to != no_state_ && co_accessible[to];
     }};
 
-    for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+    for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
     {
         const auto safe{std::ranges::all_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {
             if (!reachable[state] || !consumes(symbol, state) || (state == init_state_ && !init_reentrant))
@@ -1430,7 +421,7 @@ void Simulator::derive_mandatory_core()
             continue;
         }
 
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
         {
             if (!advance_live(state, symbol))
             {
@@ -1454,7 +445,7 @@ void Simulator::derive_mandatory_core()
             continue;
         }
 
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
         {
             const auto to{advance_live(state, symbol)};
 
@@ -1489,7 +480,7 @@ void Simulator::derive_mandatory_core()
             continue;
         }
 
-        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
         {
             const auto to{advance_live(state, symbol)};
 
@@ -1595,19 +586,19 @@ void Simulator::derive_mandatory_core()
             fall[at] = matched;
         }
 
-        matcher.assign(length * symbol_count_, 0);
+        matcher.assign(length * symbol_count, 0);
 
         for (std::size_t at{0}; at < length; ++at)
         {
-            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+            for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
             {
                 if (core[at] == static_cast<char>(symbol))
                 {
-                    matcher[at * symbol_count_ + symbol] = at + 1;
+                    matcher[at * symbol_count + symbol] = at + 1;
                 }
                 else if (at > 0)
                 {
-                    matcher[at * symbol_count_ + symbol] = matcher[fall[at - 1] * symbol_count_ + symbol];
+                    matcher[at * symbol_count + symbol] = matcher[fall[at - 1] * symbol_count + symbol];
                 }
             }
         }
@@ -1622,7 +613,7 @@ void Simulator::derive_mandatory_core()
 
             pending.pop_back();
 
-            for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+            for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
             {
                 const auto to{advance_live(state, symbol)};
 
@@ -1631,7 +622,7 @@ void Simulator::derive_mandatory_core()
                     return false;
                 }
 
-                const auto next{matcher[matched * symbol_count_ + symbol]};
+                const auto next{matcher[matched * symbol_count + symbol]};
 
                 if (next == length)
                 {

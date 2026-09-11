@@ -205,16 +205,16 @@ TEST_F(Tokenizer_test, Tokenize_from_string_stream)
 
     Tokenizer tokenizer{lexer, input};
 
-    const auto advance = [&tokenizer](const Token_kind expect_kind, const std::string_view expect_lexeme) {
+    const auto advance{[&tokenizer](const Token_kind expect_kind, const std::string_view expect_lexeme) {
         const auto result{tokenizer.next<Token_kind>()};
         ASSERT_TRUE(result.has_token());
 
         const auto& token{result.token()};
         EXPECT_EQ(token.kind(), expect_kind);
         EXPECT_EQ(token.lexeme(), expect_lexeme);
-    };
+    }};
 
-    const auto evaluate = [&tokenizer, &advance] {
+    const auto evaluate{[&tokenizer, &advance] {
         advance(Token_kind::Boolean, "boolean");
         advance(Token_kind::Whitespace, " ");
         advance(Token_kind::Identifier, "x");
@@ -237,7 +237,7 @@ TEST_F(Tokenizer_test, Tokenize_from_string_stream)
 
         const auto eof{tokenizer.next<Token_kind>()};
         EXPECT_TRUE(eof.end_of_input());
-    };
+    }};
 
     evaluate();
 
@@ -305,7 +305,7 @@ TEST_F(Tokenizer_test, Offset_tracking)
     EXPECT_EQ(tokenizer.offset(), 0u);
 
     // After "boolean" (7 chars)
-    auto result = tokenizer.next<Token_kind>();
+    auto result{tokenizer.next<Token_kind>()};
     ASSERT_TRUE(result.has_token());
     EXPECT_EQ(result.token().kind(), Token_kind::Boolean);
     EXPECT_EQ(tokenizer.offset(), 7u);

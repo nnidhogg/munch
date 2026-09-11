@@ -4195,3 +4195,25 @@ TEST_F(Lexer_test, A_run_token_leaves_the_window_span_unbounded_too)
 
     EXPECT_FALSE(lexer.anchor_free_span(inventory).has_value());
 }
+
+TEST_F(Lexer_test, A_nullable_token_set_leaves_the_anchor_free_span_unbounded)
+{
+    // a* minimizes to an accepting, self-looping start state, so it certifies nothing and its only accepting state
+    // is the initial one. Any run of a is still one token, so inputs of every length tokenize with no anchor in
+    // them; the decision has to see the match through a transition into an accepting state rather than through
+    // an accepting state other than the initial one, which this set does not have.
+    enum class Kind : std::size_t
+    {
+        run = 1
+    };
+
+    Builder builder;
+
+    builder.add_token(kleene(text("a")), Kind::run, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_FALSE(lexer.is_split_point('a'));
+
+    EXPECT_FALSE(lexer.anchor_free_span().has_value());
+}

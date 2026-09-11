@@ -416,7 +416,7 @@ has to notice by itself that the trick is no longer sound.
 |-------------------------------------------|-------------------------------------------------------------------------------------------------------|
 | `munch::regex`                            | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...) and `Regex` → NFA lowering.  |
 | `munch::nfa`                              | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
-| `munch::dfa`                              | `Dfa` / `dfa::Builder`: DFA representation; `minimize()` (Moore partition refinement); `Simulator`.   |
+| `munch::dfa`                              | `Dfa` / `dfa::Builder`; `minimize()`; `Simulator`, and the decisions over it in their own headers.    |
 | `munch::core`                             | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
 | `munch::tools::tokenizer`                 | `Tokenizer`: resumable cursor over `core::Lexer`. `Mode_tokenizer`: the same, with modes.             |
 | `munch::nfa::tools` / `munch::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, used to render the diagrams below.                          |

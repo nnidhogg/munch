@@ -29,9 +29,9 @@ TEST_F(Graphviz_test, Graphviz_to_dot)
 
     const auto result{nfa.build()};
 
-    const std::string dot_output = Graphviz::to_dot(result);
+    const std::string dot_output{Graphviz::to_dot(result)};
 
-    const std::string expected_output =
+    const std::string expected_output{
             "digraph NFA {\n"
             "    rankdir=LR;\n"
             "    ratio=1.0;\n"
@@ -40,7 +40,7 @@ TEST_F(Graphviz_test, Graphviz_to_dot)
             "    __start__ [shape = none, label=\"\"];\n"
             "    __start__ -> 0;\n"
             "    0 -> 1 [label = \"a\"];\n"
-            "}\n";
+            "}\n"};
 
     EXPECT_EQ(dot_output, expected_output);
 }

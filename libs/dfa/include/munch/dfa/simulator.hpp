@@ -58,6 +58,12 @@ namespace munch::dfa
  * The one-line table reads stay in this header rather than the source, against the usual rule: core::Lexer's
  * chunk_boundaries() calls is_split_point() once per byte, and moving the eight of them out cost 22% on plan/rare
  * and 24% on plan/absent, measured at 16 MiB over fifteen passes.
+ *
+ * Beside the scan, the class carries what construction derives: the byte certificates and the mandatory window
+ * core. The decisions built on the compiled machine live beside it as free functions over its read-only view,
+ * state_count() through is_live(): is_split_window() in split_window.hpp, the recovery decisions in recovery.hpp,
+ * anchor_free_span() and boundary_difference() in the headers of their names, so that the machine and each decision
+ * can be read on their own and a new decision adds nothing here.
  */
 class Simulator
 {
@@ -82,24 +88,10 @@ public:
     };
 
     /**
-     * @brief What a differential search over two token sets found.
+     * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables;
+     *        the one member of the read-only view below that is a constant rather than a function.
      */
-    struct Difference
-    {
-        /**
-         * @brief An input both token sets tokenize completely and cut differently, empty when none was found.
-         */
-        std::string witness;
-
-        /**
-         * @brief Whether the search covered its whole state space rather than stopping at the cap.
-         *
-         * Reported rather than inferred because an empty witness means two different things: proved identical when
-         * the search exhausted, and undetermined when it did not. A caller that treats the second as the first would
-         * ship an unchecked assumption, which is the whole failure this decision exists to prevent.
-         */
-        bool exhaustive{};
-    };
+    static constexpr std::size_t symbol_count{1U << (sizeof(Label::Symbol_t) * 8U)};
 
     /**
      * @brief Compiles the given DFA into transition and accept tables.
@@ -194,31 +186,6 @@ public:
     }
 
     /**
-     * @brief Decides whether the given byte string is a certified split window, returning the covering origin.
-     *
-     * A certified split window (W, o) promises: in every completely tokenizable input containing W, the token
-     * covering the occurrence's final byte begins exactly o bytes into the occurrence. The certificate is
-     * conditional on occurrence; a window no completely tokenizable input contains satisfies it vacuously, and
-     * this decision does not establish that an occurrence exists. A caller that has just found W in its input at
-     * hand holds that occurrence, and on completely tokenizable input the promise applies to it directly; on
-     * malformed input the promise carries nothing at all.
-     *
-     * The decision runs the conservative cloud model over the compiled tables, a set of hypotheses about where
-     * the scan could be that only ever over-approximates the true state: every live state starts as a hypothesis
-     * whose token began before the window, each byte advances hypotheses deterministically, a fresh token may
-     * begin exactly where some represented history just ended one, and reading from a non-re-entrant initial
-     * state begins a token at that offset. The window is certified when every surviving hypothesis agrees on one
-     * in-window origin. A refusal is model-relative: the model deliberately refuses some windows a greedy scanner
-     * would allow, and refusal never proves that no certificate exists semantically. On non-empty, non-nullable
-     * token sets this coincides at length one with is_split_point(); nullable sets are outside the window proof
-     * and refused outright here, while the byte predicate can still certify for them, and an empty token set
-     * refuses everything on both sides.
-     * @param window The byte string to decide.
-     * @return The in-window origin every covering token begins at, or std::nullopt when the window is refused.
-     */
-    [[nodiscard]] std::optional<std::size_t> is_split_window(std::string_view window) const;
-
-    /**
      * @brief Reports whether the token set certifies any usable split point.
      * @return True if at least one symbol is a split point.
      */
@@ -267,125 +234,6 @@ public:
      * @return The proved mandatory core, or an empty view.
      */
     [[nodiscard]] std::string_view mandatory_core() const noexcept { return mandatory_core_; }
-
-    /**
-     * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after
-     *        leaving an accepting state, or nothing when that run is unbounded.
-     *
-     * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether or
-     * not the excursion could still accept, so the measure counts every defined continuation. Zero is the premise
-     * under which a scheme restarting at every accept executes serial maximal munch exactly; a bounded value
-     * prices the checkpoint a rollback-aware scheme must carry; an unbounded region, reported as nothing, carries
-     * a cycle witness in the tables themselves.
-     * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
-     */
-    [[nodiscard]] std::optional<std::size_t> lag() const;
-
-    /**
-     * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
-     *
-     * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting at
-     * every accept would have declared the input malformed. On a rescue-free token set every rollback fires into
-     * an instant dead end, so the two schemes agree on every input. The gate is sufficient and not necessary: on
-     * {a, abc, bc} it returns false though no rescue exists there. Zero-lag sets pass vacuously; the gate is
-     * strictly weaker than zero lag.
-     * @return True when no stretch-opening byte starts a viable token from the initial state; false says only
-     *         that this gate did not establish rescue-freeness.
-     */
-    [[nodiscard]] bool rescue_free() const;
-
-    /**
-     * @brief The first anchored-certified start in the tail at or after an offset, under the exact
-     *        complete-repair invariance contract: every completely tokenizable repair of whatever preceded
-     *        the tail places a token boundary there, the tail's end being the end of the input.
-     *
-     * The anchored decider is exact for that complete-repair question, where the certificate walk is merely
-     * sound: certificates quantify over every input containing their evidence and cannot use the end of
-     * input, while this query can, so on a repairable tail it answers at or before any certificate. The
-     * certificates' own guarantee also binds repairs whose scans merely commit through their evidence without
-     * completing, a larger set this decider does not speak about, so neither subsumes the other outright.
-     * Decided by one scenario play per reachable state, no repair enumerated. When no repair of any prefix
-     * makes the whole tokenizable, every position is vacuously invariant and this query deliberately refuses
-     * instead of answering; nullable token sets sit outside the underlying model and are refused outright, as
-     * for is_split_window().
-     * @param tail The preserved suffix of the input, its end the end of input.
-     * @param from The offset the search starts at; at or past the tail's size finds nothing.
-     * @return The first anchored-certified position, or std::nullopt when none exists or the tail is
-     *         beyond repair.
-     */
-    [[nodiscard]] std::optional<std::size_t> next_anchored_start(std::string_view tail, std::size_t from) const;
-
-    /**
-     * @brief A shortest repair for the tail: a byte string of minimal length whose concatenation with the
-     *        tail is completely tokenizable, empty when the tail already tokenizes.
-     *
-     * Existence and minimality are exact: the minimal repair is a shortest path to a completing crossing
-     * entry, and a refusal certifies that no repair of any length exists. Nullable token sets are refused,
-     * as for next_anchored_start().
-     * @param tail The preserved suffix of the input.
-     * @return A minimal repair, or std::nullopt when the tail is beyond repair.
-     */
-    [[nodiscard]] std::optional<std::string> minimal_repair(std::string_view tail) const;
-
-    /**
-     * @brief The longest run of positions a completely tokenizable input can carry with no certified byte among
-     *        them, or nothing when such runs are unbounded.
-     *
-     * What a planner starves on. Certified bytes are where chunk_boundaries() may cut, so this is the worst gap it
-     * can be asked to span: an input exists carrying a stretch this long with nowhere to cut inside it, and none
-     * carrying a longer one. Unbounded is the common answer and is not a defect, only the statement that no finite
-     * chunk count is guaranteed for every input.
-     *
-     * Decided over the same guessed markings the other decisions use, so the stretches counted are the ones a
-     * maximal-munch scan actually produces rather than every marking the tables admit. A state from which no input
-     * can be completed is dropped first, since a stretch that never finishes is not a stretch of any input, and a
-     * cycle of uncertified positions among the states that remain is exactly an unbounded answer.
-     *
-     * The inventory is this class's certified bytes. The overload taking windows answers the same question for a
-     * caller planning with those instead, and this one is its width-one case.
-     * @return The exact supremum, or std::nullopt when it is unbounded.
-     */
-    [[nodiscard]] std::optional<std::size_t> anchor_free_span() const;
-
-    /**
-     * @brief The same, over a supplied inventory of certified windows rather than over the certified bytes.
-     *
-     * A window anchors a position inside its occurrence, at the origin, rather than at the byte just read, so a
-     * position's status is only settled once the rest of the window has arrived. The walk therefore carries the
-     * last few bytes and a flag per position still waiting, and a position leaves that buffer anchored or not once
-     * no window can still reach back to it. That is the whole difference from the byte case, which is this with a
-     * buffer of nothing.
-     *
-     * Windows matter here because a grammar that certifies no byte can still certify windows, so this can return a
-     * bound where the byte version cannot. It is a question about the supplied inventory: anchors outside it are not
-     * counted, and supplying a pair this simulator does not certify is a caller error rather than a weaker answer.
-     * @param inventory The certified windows and their origins, each refused by is_split_window() being an error.
-     * @return The exact supremum, or std::nullopt when it is unbounded.
-     * @throws std::invalid_argument If the inventory is empty, holds a window this simulator does not certify at the
-     *         stated origin, or holds one longer than the buffer this walk can carry.
-     */
-    [[nodiscard]] std::optional<std::size_t> anchor_free_span(
-            std::span<const std::pair<std::string_view, std::size_t>> inventory) const;
-
-    /**
-     * @brief Whether two token sets cut some input they both tokenize into different tokens, with a witness.
-     *
-     * The question a tokenizer upgrade asks: does the new token set place a boundary the old one did not, on input
-     * both accept? Answered from the two compiled tables alone, before any corpus exists, so a negative is a
-     * statement about every input rather than about the ones a test suite happened to hold.
-     *
-     * The search walks both scans at once. Each side carries the run of the segment it is reading and the runs of
-     * segments it has already closed; a closed run is kept alive because if it later accepts, the close was not the
-     * longest match and the marking being explored is not the maximal-munch one, so the branch is abandoned. That is
-     * what makes guessing boundaries sound: the guesses that survive are exactly the greedy segmentation. A byte at
-     * which one side may close and the other may not sets the divergence flag, and the input is a witness when both
-     * sides can close their last segment with the flag already set.
-     * @param other The token set to compare against, compiled over the same byte alphabet.
-     * @param cap The largest number of product states to visit before giving up; the default is generous for the
-     *        token sets a lexer carries and the worst case is exponential in both state counts.
-     * @return The witness and whether the search was exhaustive.
-     */
-    [[nodiscard]] Difference boundary_difference(const Simulator& other, std::size_t cap = 1U << 20U) const;
 
     /**
      * @brief Runs the DFA over a range defined by iterators.
@@ -543,11 +391,63 @@ public:
         return offset;
     }
 
+    /**
+     * @brief The number of states the tables hold a column for, one past the highest state identifier.
+     *
+     * With init_state(), init_reentrant(), step(), is_accepting(), is_live() and symbol_count, the read-only view of
+     * the compiled machine that the decisions in split_window.hpp, recovery.hpp, anchor_free_span.hpp and
+     * boundary_difference.hpp are written over, so that a new decision needs nothing this class keeps private.
+     * @return That count.
+     */
+    [[nodiscard]] std::size_t state_count() const noexcept { return flags_.size(); }
+
+    /**
+     * @brief The state a scan starts in and restarts in at every token boundary.
+     * @return That state.
+     */
+    [[nodiscard]] std::size_t init_state() const noexcept { return init_state_; }
+
+    /**
+     * @brief Whether some live transition re-enters the initial state.
+     *
+     * A nullable-free token set can still re-enter its start state; when it does, arriving there no longer proves
+     * a token boundary, and both the byte certificate and the window decision withdraw the initial-state exemption.
+     * @return True when a live transition leads back to init_state().
+     */
+    [[nodiscard]] bool init_reentrant() const noexcept { return init_reentrant_; }
+
+    /**
+     * @brief Follows one transition of the compiled table.
+     *
+     * The step every anchored walk takes; the tables hold only valid states, so no bounds check is needed.
+     * @param state The state the walk stands in.
+     * @param symbol The byte read.
+     * @return The state the transition leads to, or std::nullopt where the table has none.
+     */
+    [[nodiscard]] std::optional<std::size_t> step(std::size_t state, unsigned char symbol) const noexcept;
+
+    /**
+     * @brief Whether the state accepts some token; the flag test, named once.
+     * @param state The state to test.
+     * @return True when the state's flag byte marks it accepting.
+     */
+    [[nodiscard]] bool is_accepting(const std::size_t state) const noexcept
+    {
+        return (flags_[state] & accept_flag_) != 0;
+    }
+
+    /**
+     * @brief Whether the state is reachable and can still reach acceptance; the flag test, named once.
+     * @param state The state to test.
+     * @return True when the state's flag byte marks it live.
+     */
+    [[nodiscard]] bool is_live(const std::size_t state) const noexcept { return (flags_[state] & live_flag_) != 0; }
+
 private:
     /**
      * @brief Type of a symbol equivalence class, i.e. a row index of the transition table.
      *
-     * There are at most symbol_count_ classes, so the widest index fits.
+     * There are at most symbol_count classes, so the widest index fits.
      */
     using Class_t = std::uint8_t;
 
@@ -560,31 +460,9 @@ private:
     using Entry_t = std::uint32_t;
 
     /**
-     * @brief Table entry marking the absence of a transition.
-     */
-    static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
-
-    /**
-     * @brief Per-state flag marking an accepting state.
-     */
-    static constexpr std::uint8_t accept_flag_{1};
-
-    /**
-     * @brief Per-state flag marking a live state: reachable from the initial state and able to still accept.
-     */
-    static constexpr std::uint8_t live_flag_{2};
-
-    /**
-     * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables.
-     */
-    static constexpr std::size_t symbol_count_{1U << (sizeof(Label::Symbol_t) * 8U)};
-
-    /**
      * @brief The equivalence class of each symbol value.
-     *
-     * Declared after the constants it depends on, out of size order.
      */
-    using Classes_t = std::array<Class_t, symbol_count_>;
+    using Classes_t = std::array<Class_t, symbol_count>;
 
     /**
      * @brief What a state accepts: the token, and the caller's opaque word for it.
@@ -607,110 +485,19 @@ private:
     };
 
     /**
-     * @brief The maximal-munch jump table over a tail.
-     *
-     * One entry per tail offset for where the maximal token beginning there ends, and one per offset plus the
-     * tail's end for whether the suffix beginning there tokenizes completely; built right to left, so each suffix's
-     * answer is one lookup past its own token's end.
+     * @brief Table entry marking the absence of a transition.
      */
-    struct Jump_table
-    {
-        /**
-         * @brief The committed end of the maximal token beginning at each offset, or std::nullopt where none accepts.
-         */
-        std::vector<std::optional<std::size_t>> end;
-
-        /**
-         * @brief Whether the suffix beginning at each offset tokenizes completely; the entry at the tail's size,
-         *        the empty suffix, is true.
-         */
-        std::vector<bool> tokenizes;
-    };
+    static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
 
     /**
-     * @brief Whether the state accepts some token; the flag test, named once.
-     * @param state The state to test.
-     * @return True when the state's flag byte marks it accepting.
+     * @brief Per-state flag marking an accepting state.
      */
-    [[nodiscard]] bool is_accepting(const std::size_t state) const noexcept
-    {
-        return (flags_[state] & accept_flag_) != 0;
-    }
+    static constexpr std::uint8_t accept_flag_{1};
 
     /**
-     * @brief Whether the state is reachable and can still reach acceptance; the flag test, named once.
-     * @param state The state to test.
-     * @return True when the state's flag byte marks it live.
+     * @brief Per-state flag marking a live state: reachable from the initial state and able to still accept.
      */
-    [[nodiscard]] bool is_live(const std::size_t state) const noexcept { return (flags_[state] & live_flag_) != 0; }
-
-    /**
-     * @brief Follows one transition of the compiled table.
-     *
-     * The step every anchored walk takes; the tables hold only valid states, so no bounds check is needed.
-     * @param state The state the walk stands in.
-     * @param symbol The byte read.
-     * @return The state the transition leads to, or std::nullopt where the table has none.
-     */
-    [[nodiscard]] std::optional<std::size_t> step(std::size_t state, unsigned char symbol) const noexcept;
-
-    /**
-     * @brief Runs maximal munch from a state over the tail's suffix and reports where it last accepted.
-     *
-     * The run follows transitions while the table has them and records every accept, a state accepting before it
-     * reads counting as an accept at the start.
-     * @param state The state the run starts in.
-     * @param tail The tail being walked.
-     * @param from The offset in the tail the run starts at.
-     * @return The offset one past the last accept, or std::nullopt when the run never accepts.
-     */
-    [[nodiscard]] std::optional<std::size_t> maximal_run(
-            std::size_t state, std::string_view tail, std::size_t from) const;
-
-    /**
-     * @brief Builds the maximal-munch jump table over a tail.
-     *
-     * Each offset's token end is the maximal run from the initial state there, and a suffix tokenizes exactly when
-     * its token ends where a tokenizing suffix begins, which the right-to-left order has already decided.
-     * @param tail The tail the table covers.
-     * @return The table, sized to the tail with the empty suffix's entry.
-     */
-    [[nodiscard]] Jump_table build_jump_table(std::string_view tail) const;
-
-    /**
-     * @brief Lists the states a scan can stand in when it crosses into the tail mid-token.
-     *
-     * The states reachable from the initial state by at least one transition, found breadth first so that each
-     * carries a shortest word reaching it, which doubles as the repair realizing that crossing.
-     * @return The crossing entries with their witnesses, in state order.
-     */
-    [[nodiscard]] std::vector<std::pair<std::size_t, std::string>> crossing_entries() const;
-
-    /**
-     * @brief Finds the first in-tail token boundary of one crossing scenario.
-     *
-     * The maximal run from the entry over the whole tail; its last accept is the boundary, zero when the entry
-     * itself accepts.
-     * @param tail The tail being walked.
-     * @param entry The state the scan crosses into the tail in.
-     * @return The boundary as an offset into the tail, or std::nullopt when the run never accepts.
-     */
-    [[nodiscard]] std::optional<std::size_t> scenario_boundary(std::string_view tail, std::size_t entry) const;
-
-    /**
-     * @brief Keeps the accepting-state updates on a branch rather than conditional moves.
-     *
-     * As conditional moves the updates make the accepted length data-dependent on every state load of the token,
-     * so the next token's loads cannot start until that chain resolves; as a branch, consecutive tokens overlap in
-     * the out-of-order window. An empty asm statement carries implicit volatile semantics, so it cannot be hoisted
-     * out of the branch, while having no operands and no clobbers keeps it from emitting an instruction or
-     * touching the dependency chain. Deliberately not a memory barrier. Clang 19 converts without it and loses
-     * half its throughput; GCC 13 is unaffected either way. Deliberately not always_inline: both compilers inline
-     * this at -O2 regardless, and the attribute makes gcov emit negative branch counts in coverage builds, which
-     * fails the coverage report (GCC bug 68080). This is a measured workaround, not an invariant: recheck it when
-     * the toolchain moves, and see docs/performance.md for the numbers.
-     */
-    static void prevent_if_conversion() noexcept { asm(""); }
+    static constexpr std::uint8_t live_flag_{2};
 
     /**
      * @brief Groups the symbols of the DFA into equivalence classes.
@@ -721,16 +508,6 @@ private:
      * @return The class of each symbol value, numbered densely from zero.
      */
     [[nodiscard]] static Classes_t classify(const Dfa& dfa);
-
-    /**
-     * @brief The token a state accepts, or std::nullopt where it accepts nothing.
-     * @param state The state to resolve.
-     * @return The accepted token, or std::nullopt when the state accepts nothing.
-     */
-    [[nodiscard]] std::optional<Token> accepted(const std::size_t state) const
-    {
-        return is_accepting(state) ? std::optional<Token>{accept_table_[state].token} : std::nullopt;
-    }
 
     /**
      * @brief Fills split_points_ignoring_ from the tables the constructor has already built.
@@ -749,6 +526,31 @@ private:
      * @brief Derives and proves mandatory_core() from the live tables the constructor has already built.
      */
     void derive_mandatory_core();
+
+    /**
+     * @brief The token a state accepts, or std::nullopt where it accepts nothing.
+     * @param state The state to resolve.
+     * @return The accepted token, or std::nullopt when the state accepts nothing.
+     */
+    [[nodiscard]] std::optional<Token> accepted(const std::size_t state) const
+    {
+        return is_accepting(state) ? std::optional<Token>{accept_table_[state].token} : std::nullopt;
+    }
+
+    /**
+     * @brief Keeps the accepting-state updates on a branch rather than conditional moves.
+     *
+     * As conditional moves the updates make the accepted length data-dependent on every state load of the token,
+     * so the next token's loads cannot start until that chain resolves; as a branch, consecutive tokens overlap in
+     * the out-of-order window. An empty asm statement carries implicit volatile semantics, so it cannot be hoisted
+     * out of the branch, while having no operands and no clobbers keeps it from emitting an instruction or
+     * touching the dependency chain. Deliberately not a memory barrier. Clang 19 converts without it and loses
+     * half its throughput; GCC 13 is unaffected either way. Deliberately not always_inline: both compilers inline
+     * this at -O2 regardless, and the attribute makes gcov emit negative branch counts in coverage builds, which
+     * fails the coverage report (GCC bug 68080). This is a measured workaround, not an invariant: recheck it when
+     * the toolchain moves, and see docs/performance.md for the numbers.
+     */
+    static void prevent_if_conversion() noexcept { asm(""); }
 
     /**
      * @brief The state a simulation starts in.
@@ -802,7 +604,7 @@ private:
      * Holds `class * states` rather than the class itself, so looking a transition up is an addition and a read with
      * no multiplication left on the run() loop's critical path.
      */
-    std::array<std::size_t, symbol_count_> row_offsets_;
+    std::array<std::size_t, symbol_count> row_offsets_;
 };
 
 } // namespace munch::dfa

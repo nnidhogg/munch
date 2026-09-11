@@ -10,6 +10,7 @@
 #include <string>
 
 #include "munch/dfa/builder.hpp"
+#include "munch/dfa/recovery.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
 
@@ -1888,10 +1889,10 @@ TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_accepting_states_no_input_reache
     const auto trimmed{build(false)};
     const auto islanded{build(true)};
 
-    EXPECT_EQ(trimmed.lag(), std::optional<std::size_t>{1});
-    EXPECT_TRUE(trimmed.rescue_free());
-    EXPECT_EQ(islanded.lag(), trimmed.lag());
-    EXPECT_EQ(islanded.rescue_free(), trimmed.rescue_free());
+    EXPECT_EQ(lag(trimmed), std::optional<std::size_t>{1});
+    EXPECT_TRUE(rescue_free(trimmed));
+    EXPECT_EQ(lag(islanded), lag(trimmed));
+    EXPECT_EQ(rescue_free(islanded), rescue_free(trimmed));
 }
 
 TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_an_unreachable_accepting_island)
@@ -1914,6 +1915,6 @@ TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_an_unreachable_accepting_island)
 
     const Simulator simulator{dfa.build()};
 
-    EXPECT_EQ(simulator.lag(), std::optional<std::size_t>{0});
-    EXPECT_TRUE(simulator.rescue_free());
+    EXPECT_EQ(lag(simulator), std::optional<std::size_t>{0});
+    EXPECT_TRUE(rescue_free(simulator));
 }
