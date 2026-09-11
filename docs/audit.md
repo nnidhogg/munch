@@ -1,10 +1,10 @@
 # Auditing an Existing Scanner
 
-`munch-audit` reads the file a lexer generator was given, flex's `.l` or re2c's blocks inside a C or C++ source, builds
-the token set each start condition scans with, and prints what the library decides about it: the bytes and windows a
-parallel scan may cut at, the length of the stretches no certificate reaches, why every other candidate fails, and what
-it would cost to make one certify. Nothing in the output is estimated or sampled; every figure is a decision over the
-compiled tables, the same decisions [docs/split_points.md](split_points.md) and
+`munch-audit` reads the file a lexer generator was given, flex's `.l`, re2c's blocks inside a C or C++ source, or an
+ANTLR 4 grammar, builds the token set each start condition scans with, and prints what the library decides about it: the
+bytes and windows a parallel scan may cut at, the length of the stretches no certificate reaches, why every other
+candidate fails, and what it would cost to make one certify. Nothing in the output is estimated or sampled; every figure
+is a decision over the compiled tables, the same decisions [docs/split_points.md](split_points.md) and
 [docs/split_windows.md](split_windows.md) derive, applied to a token set that was written for another generator.
 
 The tool exists because a scanner author who wants a parallel or resumable scan has a question the generator cannot
@@ -17,8 +17,9 @@ property of the token set, not of any corpus, and the report states it as such.
 munch-audit [options] FILE...
 ```
 
-A file that opens a re2c block (`/*!re2c` or `/*!rules:re2c`) is read as re2c, any other as flex; `--flex` and
-`--re2c` force the kind. The options follow the generators' own:
+A file that opens a re2c block (`/*!re2c` or `/*!rules:re2c`) is read as re2c, one whose first item is a grammar
+declaration as ANTLR, any other as flex; `--flex`, `--re2c` and `--antlr` force the kind. The options follow the
+generators' own:
 
 | Option | Meaning |
 |---|---|
@@ -158,11 +159,23 @@ the line that holds it, rather than read it as something else:
   the rewriting is kept beside the pattern as written: bare names become `{name}`, `'abc'` becomes
   `[aA][bB][cC]`, `[^]` is spelled out. Refused: the Unicode escapes `\u`, `\U` and `\X`, which need an encoding the
   byte reading has not got, and the class difference `\`.
-- both: whether an action returns a token is read from the action's text, a bare `return` or a form named with
-  `--returns`, and nothing else in the action is interpreted.
+- flex and re2c: whether an action returns a token is read from the action's text, a bare `return` or a form named
+  with `--returns`, and nothing else in the action is interpreted.
+- ANTLR 4: `lexer grammar` and combined `grammar` files, modes as the start conditions, `fragment` rules as
+  definitions, a reference to any lexer rule as `{NAME}`, commands per outermost alternative (`skip` and any
+  `channel` discard, `type(X)` renames, `mode`, `pushMode` and `popMode` are kept as text), the literals of a
+  combined grammar's parser rules as implicit tokens ahead of every explicit rule, `caseInsensitive` at the grammar
+  or on a rule, actions inside rules skipped, empty alternatives making a rule optional. ANTLR reads characters, so
+  `.`, negated sets, sets and ranges beyond ASCII are written for the parser as code point ranges, `\u{...}`, and
+  match the UTF-8 encodings. A non-greedy loop is read where it is a regular rewrite: over one set, dot or
+  character before a literal it becomes the strings avoiding that literal, the block comment's `'/*' .*? '*/'` in
+  particular; over a group none of whose alternatives can begin with the literal's first byte it is the greedy loop.
+  Refused: `import`, `-> more`, `EOF` inside a rule, semantic predicates `{...}?`, Unicode property classes
+  `\p{...}`, a rule reaching itself, and a non-greedy loop before anything but a literal or over a group that can
+  begin with it.
 
-The grammars under `tools/audit/grammars/` are the study's rows in both syntaxes, and the tests hold each `.re` file
-to its `.l` twin: the two readers must build token sets that cut no input differently, decided by
+The grammars under `tools/audit/grammars/` are the study's rows in every syntax, and the tests hold each `.re` and
+`.g4` file to its `.l` twin: the readers must build token sets that cut no input differently, decided by
 `boundary_difference()` over every input rather than a sample.
 
 ## The JSON Form

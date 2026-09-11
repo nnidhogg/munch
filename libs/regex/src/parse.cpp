@@ -1,5 +1,6 @@
 #include "munch/regex/parse.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <limits>
@@ -11,6 +12,7 @@
 #include <vector>
 
 #include "munch/regex/set.hpp"
+#include "munch/regex/utf8.hpp"
 
 namespace munch::regex
 {
@@ -31,6 +33,23 @@ struct Piece
      * @brief The regex, when it is anything else.
      */
     std::optional<Regex> regex;
+};
+
+/**
+ * @brief A decoded escape: one byte, or one scalar from a `\u{...}` escape, which a literal spells as UTF-8 and a
+ *        bracket holds as a code point.
+ */
+struct Escaped
+{
+    /**
+     * @brief The byte's or the scalar's value.
+     */
+    char32_t value;
+
+    /**
+     * @brief Whether the value is a scalar rather than a byte.
+     */
+    bool scalar;
 };
 
 /**
@@ -60,19 +79,19 @@ class Reader
 {
 public:
     /**
-     * @brief Binds the reader to a pattern and the definitions it may expand.
+     * @brief Binds the reader to a pattern.
      * @param pattern The pattern.
-     * @param definitions The named patterns.
      * @param expanding The names whose definitions are being expanded above this reader, outermost first.
      */
-    Reader(std::string_view pattern, const Definitions_t& definitions, std::vector<std::string> expanding);
+    Reader(std::string_view pattern, std::vector<std::string> expanding);
 
     /**
      * @brief Reads the whole pattern.
+     * @param definitions The named patterns `{name}` may expand to.
      * @return The regex.
      * @throws Syntax_error If anything is left over or the pattern is refused.
      */
-    [[nodiscard]] Regex read();
+    [[nodiscard]] Regex read(const Definitions_t& definitions);
 
 private:
     /**
@@ -95,35 +114,43 @@ private:
 
     /**
      * @brief An alternation: sequences separated by `|`.
+     * @param definitions The named patterns.
      * @return The regex, a choice when there is more than one sequence.
      */
-    [[nodiscard]] Regex alternation();
+    [[nodiscard]] Regex alternation(const Definitions_t& definitions);
 
     /**
      * @brief A sequence: repetitions up to a `|`, a `)` or the end, adjacent literals merged into one text node.
+     * @param definitions The named patterns.
      * @return The regex.
      * @throws Syntax_error If the sequence is empty, which the standard refuses.
      */
-    [[nodiscard]] Regex sequence();
+    [[nodiscard]] Regex sequence(const Definitions_t& definitions);
 
     /**
      * @brief An atom under its postfix operators.
+     * @param definitions The named patterns.
      * @return The piece.
      */
-    [[nodiscard]] Piece repetition();
+    [[nodiscard]] Piece repetition(const Definitions_t& definitions);
 
     /**
      * @brief One atom: a group, a bracket expression, a quoted literal, a definition, the dot, an escape or a byte.
+     * @param definitions The named patterns.
      * @return The piece, a literal for a plain or escaped byte.
      * @throws Syntax_error For an anchor, trailing context, a start condition, or an operator with nothing before it.
      */
-    [[nodiscard]] Piece atom();
+    [[nodiscard]] Piece atom(const Definitions_t& definitions);
 
     /**
      * @brief A bracket expression after its `[`, through its `]`.
-     * @return The set it names, complemented when it began with `^`.
+     *
+     * Over bytes unless a member is a code point escape, when every member is read as a scalar and the bracket
+     * matches the UTF-8 encoding of one of them; negation then runs over the scalars rather than the bytes.
+     * @return The regex it names: any_of over a set, or the encodings of the scalars.
+     * @throws Syntax_error If a range is reversed, or bytes beyond ASCII stand beside code points.
      */
-    [[nodiscard]] Set bracket();
+    [[nodiscard]] Regex bracket();
 
     /**
      * @brief A POSIX class after its `[:`, through its `:]`.
@@ -139,10 +166,12 @@ private:
     [[nodiscard]] std::string quoted();
 
     /**
-     * @brief An escape after its backslash: a named control, octal, hex, or the byte itself.
-     * @return The byte.
+     * @brief An escape after its backslash: a named control, octal, hex, a code point `\u{...}`, or the byte itself.
+     * @return The byte, or the scalar.
+     * @throws Syntax_error If a hex or code point escape has no digits, or the code point is a surrogate or beyond
+     *         U+10FFFF.
      */
-    [[nodiscard]] char escape();
+    [[nodiscard]] Escaped escape();
 
     /**
      * @brief A counted repetition after its `{`, through its `}`.
@@ -154,10 +183,11 @@ private:
     /**
      * @brief A definition reference after its `{`, through its `}`, expanded by a reader over its text.
      * @param open The offset of the `{`, where a fault inside the definition is reported.
+     * @param definitions The named patterns.
      * @return The definition's regex.
      * @throws Syntax_error If the name is unknown or its expansion cycles.
      */
-    [[nodiscard]] Regex definition(std::size_t open);
+    [[nodiscard]] Regex definition(std::size_t open, const Definitions_t& definitions);
 
     /**
      * @brief The unsigned decimal at the current position.
@@ -206,11 +236,6 @@ private:
     std::string_view pattern_;
 
     /**
-     * @brief The named patterns `{name}` may expand to.
-     */
-    const Definitions_t& definitions_;
-
-    /**
      * @brief The names being expanded above this reader, so that a definition naming one of them is a cycle.
      */
     std::vector<std::string> expanding_;
@@ -231,13 +256,80 @@ private:
     return (byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f') || (byte >= 'A' && byte <= 'F');
 }
 
-Reader::Reader(const std::string_view pattern, const Definitions_t& definitions, std::vector<std::string> expanding)
-    : pattern_{pattern}, definitions_{definitions}, expanding_{std::move(expanding)}
+/**
+ * @brief The UTF-8 encoding of a scalar.
+ * @param scalar The scalar, at most U+10FFFF.
+ * @return Its bytes.
+ */
+[[nodiscard]] std::string encoded(const char32_t scalar)
+{
+    std::string bytes;
+
+    if (scalar < 0x80)
+    {
+        bytes.push_back(static_cast<char>(scalar));
+    }
+    else if (scalar < 0x800)
+    {
+        bytes.push_back(static_cast<char>(0xC0 | (scalar >> 6U)));
+        bytes.push_back(static_cast<char>(0x80 | (scalar & 0x3FU)));
+    }
+    else if (scalar < 0x10000)
+    {
+        bytes.push_back(static_cast<char>(0xE0 | (scalar >> 12U)));
+        bytes.push_back(static_cast<char>(0x80 | ((scalar >> 6U) & 0x3FU)));
+        bytes.push_back(static_cast<char>(0x80 | (scalar & 0x3FU)));
+    }
+    else
+    {
+        bytes.push_back(static_cast<char>(0xF0 | (scalar >> 18U)));
+        bytes.push_back(static_cast<char>(0x80 | ((scalar >> 12U) & 0x3FU)));
+        bytes.push_back(static_cast<char>(0x80 | ((scalar >> 6U) & 0x3FU)));
+        bytes.push_back(static_cast<char>(0x80 | (scalar & 0x3FU)));
+    }
+
+    return bytes;
+}
+
+/**
+ * @brief The regex matching the UTF-8 encoding of one scalar from a set of ranges, the ranges sorted and merged
+ *        first and the ones holding surrogates alone dropped, since no encoding has those.
+ * @param ranges The ranges, in any order, possibly overlapping.
+ * @return The regex, or std::nullopt when nothing remains.
+ */
+[[nodiscard]] std::optional<Regex> encodings(std::vector<utf8::Code_point_range> ranges)
+{
+    std::ranges::sort(ranges, {}, &utf8::Code_point_range::first);
+
+    std::vector<utf8::Code_point_range> merged;
+
+    for (const auto& [first, last] : ranges)
+    {
+        if (first >= 0xD800 && last <= 0xDFFF)
+        {
+            continue;
+        }
+
+        if (!merged.empty() && first <= merged.back().last + 1)
+        {
+            merged.back().last = std::max(merged.back().last, last);
+        }
+        else
+        {
+            merged.push_back({.first = first, .last = last});
+        }
+    }
+
+    return merged.empty() ? std::nullopt : std::optional{utf8::ranges(merged)};
+}
+
+Reader::Reader(const std::string_view pattern, std::vector<std::string> expanding)
+    : pattern_{pattern}, expanding_{std::move(expanding)}
 {}
 
-Regex Reader::read()
+Regex Reader::read(const Definitions_t& definitions)
 {
-    auto regex{alternation()};
+    auto regex{alternation(definitions)};
 
     if (peek())
     {
@@ -247,15 +339,15 @@ Regex Reader::read()
     return regex;
 }
 
-Regex Reader::alternation()
+Regex Reader::alternation(const Definitions_t& definitions)
 {
     std::vector<Regex> branches;
 
-    branches.push_back(sequence());
+    branches.push_back(sequence(definitions));
 
     while (accept('|'))
     {
-        branches.push_back(sequence());
+        branches.push_back(sequence(definitions));
     }
 
     if (branches.size() == 1)
@@ -266,7 +358,7 @@ Regex Reader::alternation()
     return {.node = Choice{.regexes = std::move(branches)}};
 }
 
-Regex Reader::sequence()
+Regex Reader::sequence(const Definitions_t& definitions)
 {
     std::vector<Regex> parts;
 
@@ -281,7 +373,7 @@ Regex Reader::sequence()
 
     while (peek() && *peek() != '|' && *peek() != ')')
     {
-        auto [literal, regex]{repetition()};
+        auto [literal, regex]{repetition(definitions)};
 
         if (literal)
         {
@@ -310,9 +402,9 @@ Regex Reader::sequence()
     return {.node = Concat{.regexes = std::move(parts)}};
 }
 
-Piece Reader::repetition()
+Piece Reader::repetition(const Definitions_t& definitions)
 {
-    auto piece{atom()};
+    auto piece{atom(definitions)};
 
     // A literal stays one until an operator claims it; the sequence merges the ones that stay.
     const auto claim{[&piece] {
@@ -363,7 +455,7 @@ Piece Reader::repetition()
     }
 }
 
-Piece Reader::atom()
+Piece Reader::atom(const Definitions_t& definitions)
 {
     const auto open{at_};
 
@@ -373,14 +465,14 @@ Piece Reader::atom()
     {
     case '(':
     {
-        auto inner{alternation()};
+        auto inner{alternation(definitions)};
 
         expect(')', "')' to close the group");
 
         return {.literal = std::nullopt, .regex = std::move(inner)};
     }
     case '[':
-        return {.literal = std::nullopt, .regex = any_of(bracket())};
+        return {.literal = std::nullopt, .regex = bracket()};
     case '"':
     {
         auto literal{quoted()};
@@ -393,11 +485,20 @@ Piece Reader::atom()
         return {.literal = std::nullopt, .regex = text(std::move(literal))};
     }
     case '{':
-        return {.literal = std::nullopt, .regex = definition(open)};
+        return {.literal = std::nullopt, .regex = definition(open, definitions)};
     case '.':
         return {.literal = std::nullopt, .regex = any_of(Set::all() - Set{'\n'})};
     case '\\':
-        return {.literal = escape(), .regex = std::nullopt};
+    {
+        const auto [value, scalar]{escape()};
+
+        if (!scalar || value < 0x80)
+        {
+            return {.literal = static_cast<char>(value), .regex = std::nullopt};
+        }
+
+        return {.literal = std::nullopt, .regex = text(encoded(value))};
+    }
     case '*':
     case '+':
     case '?':
@@ -434,11 +535,20 @@ Piece Reader::atom()
     }
 }
 
-Set Reader::bracket()
+Regex Reader::bracket()
 {
+    const auto opened{at_ - 1};
+
     const auto negated{accept('^')};
 
     Set set;
+
+    // The members as scalars, kept beside the set until the bracket says which reading it takes.
+    std::vector<utf8::Code_point_range> ranges;
+
+    auto wide{false};
+
+    auto byte_beyond_ascii{false};
 
     // A ']' first is a member rather than the close, as the standard has it.
     auto first{true};
@@ -447,7 +557,7 @@ Set Reader::bracket()
     {
         const auto open{at_};
 
-        auto byte{next("']' to close the bracket expression")};
+        auto byte{static_cast<char32_t>(static_cast<unsigned char>(next("']' to close the bracket expression")))};
 
         if (byte == ']' && !first)
         {
@@ -458,44 +568,152 @@ Set Reader::bracket()
 
         if (byte == '[' && accept(':'))
         {
-            set += posix_class();
+            const auto members{posix_class()};
+
+            set += members;
+
+            for (const auto value : members.symbols())
+            {
+                const auto scalar{static_cast<char32_t>(static_cast<unsigned char>(value))};
+
+                ranges.push_back({.first = scalar, .last = scalar});
+            }
 
             continue;
         }
 
         if (byte == '\\')
         {
-            byte = escape();
+            const auto [value, scalar]{escape()};
+
+            byte = value;
+
+            wide = wide || scalar;
+
+            byte_beyond_ascii = byte_beyond_ascii || (!scalar && value >= 0x80);
         }
+        else
+        {
+            byte_beyond_ascii = byte_beyond_ascii || byte >= 0x80;
+        }
+
+        auto last{byte};
 
         // A '-' between two members is a range; at either edge it is itself.
         if (peek() == '-' && at_ + 1 < pattern_.size() && pattern_[at_ + 1] != ']')
         {
             ++at_;
 
-            auto last{next("the end of the range")};
+            last = static_cast<unsigned char>(next("the end of the range"));
 
             if (last == '\\')
             {
-                last = escape();
+                const auto [value, scalar]{escape()};
+
+                last = value;
+
+                wide = wide || scalar;
+
+                byte_beyond_ascii = byte_beyond_ascii || (!scalar && value >= 0x80);
+            }
+            else
+            {
+                byte_beyond_ascii = byte_beyond_ascii || last >= 0x80;
             }
 
-            if (static_cast<unsigned char>(last) < static_cast<unsigned char>(byte))
+            if (last < byte)
             {
                 at_ = open;
 
                 fail("the range ends before it starts");
             }
-
-            set += Set::range(byte, last);
-
-            continue;
         }
 
-        set += byte;
+        if (last < 0x100)
+        {
+            set += Set::range(static_cast<char>(byte), static_cast<char>(last));
+        }
+
+        ranges.push_back({.first = byte, .last = last});
     }
 
-    return negated ? Set::all() - set : set;
+    if (!wide)
+    {
+        return any_of(negated ? Set::all() - set : set);
+    }
+
+    // Read as scalars: a byte beyond ASCII is no scalar, so one beside a code point is refused.
+    if (byte_beyond_ascii)
+    {
+        at_ = opened;
+
+        fail("a bracket mixes bytes beyond ASCII with code points; write the bytes as code points");
+    }
+
+    if (negated)
+    {
+        std::vector<utf8::Code_point_range> complement;
+
+        char32_t from{0};
+
+        std::ranges::sort(ranges, {}, &utf8::Code_point_range::first);
+
+        for (const auto& [low, high] : ranges)
+        {
+            if (low > from)
+            {
+                complement.push_back({.first = from, .last = low - 1});
+            }
+
+            from = std::max(from, static_cast<char32_t>(high + 1));
+        }
+
+        if (from <= 0x10FFFF)
+        {
+            complement.push_back({.first = from, .last = 0x10FFFF});
+        }
+
+        ranges = std::move(complement);
+    }
+
+    // The ASCII part as a set, the rest as encodings.
+    Set ascii;
+
+    std::vector<utf8::Code_point_range> beyond;
+
+    for (const auto& [low, high] : ranges)
+    {
+        if (low < 0x80)
+        {
+            ascii += Set::range(static_cast<char>(low), static_cast<char>(std::min<char32_t>(high, 0x7F)));
+        }
+
+        if (high >= 0x80)
+        {
+            beyond.push_back({.first = std::max<char32_t>(low, 0x80), .last = high});
+        }
+    }
+
+    auto rest{encodings(std::move(beyond))};
+
+    if (ascii.symbols().empty())
+    {
+        if (!rest)
+        {
+            at_ = opened;
+
+            fail("the bracket names no scalar");
+        }
+
+        return std::move(*rest);
+    }
+
+    if (!rest)
+    {
+        return any_of(ascii);
+    }
+
+    return choice(any_of(ascii), std::move(*rest));
 }
 
 Set Reader::posix_class()
@@ -538,7 +756,16 @@ std::string Reader::quoted()
             break;
         }
 
-        literal.push_back(byte == '\\' ? escape() : byte);
+        if (byte != '\\')
+        {
+            literal.push_back(byte);
+
+            continue;
+        }
+
+        const auto [value, scalar]{escape()};
+
+        literal += scalar ? encoded(value) : std::string{static_cast<char>(value)};
     }
 
     if (literal.empty())
@@ -549,26 +776,26 @@ std::string Reader::quoted()
     return literal;
 }
 
-char Reader::escape()
+Escaped Reader::escape()
 {
     const auto byte{next("the escaped byte")};
 
     switch (byte)
     {
     case 'n':
-        return '\n';
+        return {.value = '\n', .scalar = false};
     case 't':
-        return '\t';
+        return {.value = '\t', .scalar = false};
     case 'r':
-        return '\r';
+        return {.value = '\r', .scalar = false};
     case 'f':
-        return '\f';
+        return {.value = '\f', .scalar = false};
     case 'v':
-        return '\v';
+        return {.value = '\v', .scalar = false};
     case 'a':
-        return '\a';
+        return {.value = '\a', .scalar = false};
     case 'b':
-        return '\b';
+        return {.value = '\b', .scalar = false};
     case 'x':
     {
         unsigned value{0};
@@ -592,7 +819,44 @@ char Reader::escape()
             fail("'\\x' needs a hex digit");
         }
 
-        return static_cast<char>(value);
+        return {.value = value, .scalar = false};
+    }
+    case 'u':
+    {
+        // A code point, \u{X...}: what flex has not got and a reader of a character-level generator writes.
+        if (!accept('{'))
+        {
+            return {.value = static_cast<unsigned char>(byte), .scalar = false};
+        }
+
+        const auto open{at_ - 3};
+
+        char32_t value{0};
+
+        std::size_t digits{0};
+
+        while (digits < 6 && peek() && is_hex_digit(*peek()))
+        {
+            const auto digit{next("a hex digit")};
+
+            value = value * 16 + static_cast<char32_t>(
+                                         digit >= 'a' ? digit - 'a' + 10 :
+                                         digit >= 'A' ? digit - 'A' + 10 :
+                                                        digit - '0');
+
+            ++digits;
+        }
+
+        expect('}', "'}' to close the code point");
+
+        if (digits == 0 || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF))
+        {
+            at_ = open;
+
+            fail("a code point escape takes one to six hex digits below U+110000 and outside the surrogates");
+        }
+
+        return {.value = value, .scalar = true};
     }
     default:
         break;
@@ -613,10 +877,10 @@ char Reader::escape()
             fail("the octal escape exceeds one byte");
         }
 
-        return static_cast<char>(value);
+        return {.value = value, .scalar = false};
     }
 
-    return byte;
+    return {.value = static_cast<unsigned char>(byte), .scalar = false};
 }
 
 std::pair<std::size_t, std::optional<std::size_t>> Reader::count()
@@ -657,7 +921,7 @@ std::pair<std::size_t, std::optional<std::size_t>> Reader::count()
     return {*min, *max};
 }
 
-Regex Reader::definition(const std::size_t open)
+Regex Reader::definition(const std::size_t open, const Definitions_t& definitions)
 {
     std::string name;
 
@@ -676,9 +940,9 @@ Regex Reader::definition(const std::size_t open)
         fail("a count needs its lower bound");
     }
 
-    const auto found{definitions_.find(name)};
+    const auto found{definitions.find(name)};
 
-    if (found == definitions_.end())
+    if (found == definitions.end())
     {
         at_ = open;
 
@@ -701,7 +965,7 @@ Regex Reader::definition(const std::size_t open)
 
     try
     {
-        return Reader{found->second, definitions_, std::move(expanding)}.read();
+        return Reader{found->second, std::move(expanding)}.read(definitions);
     }
     catch (const Syntax_error& inner)
     {
@@ -787,7 +1051,7 @@ std::size_t Syntax_error::offset() const noexcept
 
 Regex parse(const std::string_view pattern, const Definitions_t& definitions)
 {
-    return Reader{pattern, definitions, {}}.read();
+    return Reader{pattern, {}}.read(definitions);
 }
 
 } // namespace munch::regex
