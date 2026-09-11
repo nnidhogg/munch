@@ -192,9 +192,75 @@ void json(munch::core::Builder& builder)
     builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), Token::Whitespace, 2);
 }
 
+// The Zig subset, the designed-success row: the Zig language reference states "There are no multiline comments. Zig
+// has the property that each line of code can be tokenized independently", and its grammar bounds every string,
+// comment and char literal by the line. The base is the C-like one above, so the pair of rows compares with the C-like
+// pair on the one axis that differs, the design of the tokens that span lines in C. On top of it, mirroring the
+// reference's grammar: a string of non-control bytes with \\ and \" as its only two-byte forms; a quoted identifier,
+// @ followed by such a string; a multiline string, one \\ line at a time, the newline excluded; a char literal of
+// non-control bytes with \\ and \' as its two-byte forms; and a line comment, which covers the plain, doc and
+// container-doc spellings alike, since all three are // followed by non-control bytes to the end of the line. Control
+// bytes are 0x00 to 0x1F and 0x7F, the reference's non_control_utf8 exclusion.
+void zig(munch::core::Builder& builder, const bool split_friendly)
+{
+    c_like(builder, split_friendly);
+
+    auto non_control{Set::all() - Set{'\x7F'}};
+
+    for (int value{0}; value < 0x20; ++value)
+    {
+        non_control = non_control - Set{static_cast<char>(value)};
+    }
+
+    const auto string{
+            concat(text("\""), kleene(choice(text("\\\\"), text("\\\""), any_of(non_control - Set{'"'}))), text("\""))};
+
+    builder.add_token(string, Token::String, 2);
+    builder.add_token(concat(text("@"), string), Token::Identifier, 2);
+    builder.add_token(concat(text("\\\\"), kleene(any_of(non_control))), Token::String, 2);
+
+    builder.add_token(
+            concat(text("'"), kleene(choice(text("\\\\"), text("\\'"), any_of(non_control - Set{'\''}))), text("'")),
+            Token::Literal, 2);
+
+    builder.add_token(concat(text("//"), kleene(any_of(non_control))), Token::LineComment, 1);
+}
+
 Regex line_comment()
 {
     return concat(text("//"), kleene(any_of(Set::all() - Set{'\n'})));
+}
+
+// The separated repertoire: strings and both comment forms, with every body barred from holding a byte that opens
+// another of them. This is the only modification the mode study found that buys certificates while keeping all three
+// kinds, and the row exists to price it: the language loses the ability to write a slash or a quote inside a string or
+// a comment, which is what the certificate costs when it is bought by design rather than found.
+Regex separated_string()
+{
+    return concat(text("\""), kleene(any_of(Set::all() - Set{'"'} - Set{'\''} - Set{'/'} - Set{'\n'})), text("\""));
+}
+
+Regex separated_line_comment()
+{
+    return concat(text("//"), kleene(any_of(Set::all() - Set{'"'} - Set{'\''} - Set{'/'} - Set{'\n'})));
+}
+
+Regex separated_block_comment()
+{
+    const auto body{any_of(Set::all() - Set{'*'} - Set{'"'} - Set{'\''} - Set{'/'})};
+
+    const auto stars_then_other{concat(plus(any_of(Set{'*'})), body)};
+
+    return concat(text("/*"), kleene(choice(body, stars_then_other)), plus(any_of(Set{'*'})), text("/"));
+}
+
+Regex line_bounded_plain_block_comment()
+{
+    const auto body{any_of(Set::all() - Set{'*'} - Set{'\n'})};
+
+    const auto stars_then_other{concat(plus(any_of(Set{'*'})), any_of(Set::all() - Set{'*'} - Set{'/'} - Set{'\n'}))};
+
+    return concat(text("/*"), kleene(choice(body, stars_then_other)), plus(any_of(Set{'*'})), text("/"));
 }
 
 // Names an ignored set in terms of the Token enum above; the certificate itself takes plain token ids.

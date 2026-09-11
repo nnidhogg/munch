@@ -113,7 +113,7 @@ conservative rather than complete}: every exact certificate remains certified mo
 some token sets and discarded sets. It is decided from the same tables and answered by a second constant-time one-bit
 query. It recovers newline for the conventional C-like and JSON tokenizations that certify nothing exactly, and ships
 as a query rather than in the planner, so a caller wanting it places the boundaries itself (Section~\ref{sec:modulo});
-\item a controlled applicability study of eleven token sets under both conditions, showing where each condition yields
+\item a controlled applicability study of fifteen token sets under both conditions, showing where each condition yields
 useful bytes, how one added token kind can eliminate every useful exact certificate, and when line-based splitting is
 sound for the C-like tokenizations studied (Section~\ref{sec:applicability}).
 \end{itemize}
@@ -123,7 +123,7 @@ The paper separates the result from the study around it. The result is
 Sections~\ref{sec:prelim}--\ref{sec:modulo}: the definitions, the exact certificate with its necessity proof and the
 re-entrancy subtlety, and the relaxed condition modulo discarded tokens. The study and the artifact are
 Sections~\ref{sec:derivation}--\ref{sec:evaluation}: the derivation and planner as released, the applicability of both
-conditions over eleven token sets, and the measured parallel scan. Section~\ref{sec:prior} places the certificate among
+conditions over fifteen token sets, and the measured parallel scan. Section~\ref{sec:prior} places the certificate among
 the existing answers to the entry-state problem before the result, and Section~\ref{sec:related} returns to that
 literature after it. A companion report generalizes the certificate from single bytes to short byte
 windows~\cite{nidhogg2026splitwindows}; nothing here depends on it.
@@ -861,7 +861,10 @@ block comments alone & none & the same \\ JSON, the RFC 8259 lexical forms over 
 return \\ log lines: a run of non-newline bytes, and newline & newline & the same \\ C-like, conventional
 tokenization: line-bounded strings and \code{//} comments, whitespace runs including newline & none & newline \\ the
 same recognized language, split-friendly: newline its own token, spaces and tabs a separate run & newline & the same
-\\ the same plus block comments & none & the same \\ \code{keyword\_scale\_builder()}, the construction-cost grammar &
+\\ the same plus block comments & none & the same \\ the same three kinds, every body barred from the bytes that
+open another & none & the same \\ the same three kinds unrestricted, the block comment alone barred from crossing a
+line & newline & the same \\ Zig subset, conventional tokenization & none & tab and newline \\ the Zig subset,
+split-friendly & newline & tab and newline \\ \code{keyword\_scale\_builder()}, the construction-cost grammar &
 16 of those 24 bytes & the same, plus space, tab and newline \\ \code{build\_lexer(false)}, the scaling grammar & 13
 of its own 14 & the same, plus space, tab and newline \\
 \bottomrule
@@ -920,6 +923,21 @@ the one token kind in the split-friendly tokenization studied here that spans li
 which is the formal shape of both ``you cannot chunk C by lines'' and the quoted-newline problem that pushed CSV
 parsing into speculation.
 
+Four further rows price that lever, and the price is smaller than it looks. The obvious repair for the block-comment
+collapse is to stop the token kinds from colliding: bar every string and comment body from holding a byte that opens
+another of them. The row for that grammar certifies nothing, exactly or modulo, so the expensive restriction buys
+nothing at all. The row below it keeps the ordinary repertoire, strings and comments free to hold any byte, and adds
+one restriction instead, that the block comment may not cross a line. Newline certifies outright. Line-boundedness is
+therefore the lever and separation is not, and a language designer who wants a certified split byte pays for one
+line-bounded comment form rather than for the ability to write a slash inside a string.
+
+The last two rows are that choice already made. Zig's reference states that there are no multiline comments and that
+each line of code can be tokenized independently, and its multiline strings are per-line
+\code{\textbackslash\textbackslash} tokens that exclude the newline. A shipped language chose the property this section
+formalizes, for its own reasons, and the rows show what it bought: tab and newline modulo the discarded set under the
+conventional tokenization, and newline certified outright once newline is its own token. The pair beside the C-like rows
+is the same comparison the conventional and split-friendly rows draw, run on a grammar nobody designed for this paper.
+
 The JSON row of Table~\ref{tab:applicability} appears to contradict the literature, and the reconciliation is about
 the equivalence each result preserves rather than about the automaton. Prior claims that JSON may be divided at
 newline~\cite{barenghi2015parallel,li2021plex} rest on a weaker one. Barenghi et al.'s sequential lexing algorithm
@@ -944,7 +962,7 @@ certification under the \emph{exact} equivalence still needs the tokenization ch
 as the split-friendly row does.
 
 The right column of Table~\ref{tab:applicability} places the whitespace and comment tokens of each row in $I$ and
-reads the relaxed condition. Seven of the eleven rows gain bytes, and the pattern behind them is the second of the
+reads the relaxed condition. Nine of the fifteen rows gain bytes, and the pattern behind them is the second of the
 three collapse mechanisms named above: wherever whitespace is a run token the caller discards, its own bytes come
 back, because severing a whitespace run at a whitespace byte yields two whitespace runs and both are deleted. That is
 the one mechanism discarding undoes. The other two survive it. A byte a string literal or a block comment absorbs is
@@ -1041,8 +1059,8 @@ value, or even its sign, across environments and benchmark revisions.
 Everything measured here uses the exact certificate. Both \code{chunk\_boundaries()} and the parallel executor built on
 it consult the exact map, so no figure in this section reports what the relaxed condition would buy at run time.
 Section~\ref{sec:applicability} establishes which bytes it recovers, and that is a statement about token sets rather
-than about throughput; a token set that certifies nothing exactly can gain a boundary set from the relaxation, as seven
-of the eleven rows studied do and the block-comment rows do not, but turning that into a measured speedup needs a
+than about throughput; a token set that certifies nothing exactly can gain a boundary set from the relaxation, as nine
+of the fifteen rows studied do and the block-comment rows do not, but turning that into a measured speedup needs a
 planner this library does not yet ship.
 
 \paragraph{Environment A, virtualized.} An Intel Core i9-12900K, a hybrid part with eight performance cores carrying

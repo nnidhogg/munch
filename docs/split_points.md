@@ -30,7 +30,7 @@ literal, comment, or whitespace run whose interior admits the candidate byte is 
 certifying nothing, and the tokens responsible are usually the ones a parser discards. So we give a second condition,
 weakening the guarantee to equality after those tokens are deleted from both streams. It is sound and strictly more
 permissive, but conservative rather than exact, and it is decided from the same tables and answered by a second one-bit
-query. We then study which grammars certify usable symbols under each, over eleven token sets. That study grounds a
+query. We then study which grammars certify usable symbols under each, over fifteen token sets. That study grounds a
 piece of folklore: for conventional tokenizations, line-based splitting of source text is sound when no token can span a
 line, and one token kind that can, the block comment, is alone sufficient to destroy every useful certificate in the
 C-like grammar studied, under both conditions.
@@ -364,6 +364,10 @@ together. The predicate already excludes vacuously certified bytes, so the colum
 | C-like, conventional: strings, `//`, ws runs with `\n`  | none                               | `\n`                                  |
 | the same language, split-friendly tokenization          | `\n`                               | the same                              |
 | the same plus block comments                            | none                               | the same                              |
+| three kinds, bodies barred from each other's openers    | none                               | the same                              |
+| three kinds, block comment barred from crossing a line  | `\n`                               | the same                              |
+| Zig subset, conventional tokenization                   | none                               | `\t`, `\n`                            |
+| the Zig subset, split-friendly tokenization             | `\n`                               | `\t`, `\n`                            |
 | `keyword_scale_builder()`, construction-cost grammar    | 16 of those 24 bytes               | the same, plus space, tab and newline |
 | `build_lexer(false)`, the scaling grammar               | 13 of its own 14                   | the same, plus space, tab and newline |
 
@@ -403,6 +407,20 @@ with newline leaves the certificate intact (newline is then consumed only from t
 comments, the one token kind in this C-like tokenization that spans lines, destroys the certificate again, which is the
 formal shape of both "you cannot chunk C by lines" and the quoted-newline problem that pushed CSV parsing into
 speculation.
+
+Four further rows price that lever, and the price is smaller than it looks. The obvious repair for the block-comment
+collapse is to stop the kinds colliding: bar every string and comment body from holding a byte that opens another of
+them. That grammar certifies nothing, exactly or modulo, so the expensive restriction buys nothing. The row below it
+keeps the ordinary repertoire, strings and comments free to hold any byte, and adds one restriction instead, that the
+block comment may not cross a line. `\n` certifies outright. Line-boundedness is the lever and separation is not, so a
+designer who wants a certified split byte pays for one line-bounded comment form rather than for the ability to write
+a slash inside a string.
+
+The last two rows are that choice already made. Zig's reference states that there are no multiline comments and that
+each line of code can be tokenized independently, and its multiline strings are per-line `\\` tokens that exclude the
+newline. A shipped language chose the property this report formalizes, for its own reasons, and the rows show what it
+bought: `\t` and `\n` modulo the discarded set under the conventional tokenization, and `\n` certified outright once
+newline is its own token.
 
 The JSON row above appears to contradict the literature, and the reconciliation is about the equivalence each result
 preserves rather than about the automaton. Prior claims that JSON may be divided at newline (Barenghi et al. 2015,

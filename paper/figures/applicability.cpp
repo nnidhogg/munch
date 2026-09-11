@@ -617,6 +617,49 @@ int main()
     }
     {
         munch::core::Builder b;
+        // The priced-failure counterpart to the Zig rows: the same three kinds as the row above, kept, with every
+        // body barred from the bytes that open another. The mode study found this the only modification that buys
+        // certificates while keeping the repertoire, and the price is that no string or comment may hold a slash or
+        // a quote, which no language in use pays.
+        c_like(b, true);
+        b.add_token(separated_string(), Token::String, 2);
+        b.add_token(separated_line_comment(), Token::LineComment, 1);
+        b.add_token(separated_block_comment(), Token::BlockComment, 1);
+        check("the same three kinds, bodies separated from each other's openers", "none", "the same",
+              ignoring({Token::Whitespace, Token::Newline, Token::LineComment, Token::BlockComment}), b);
+    }
+    {
+        munch::core::Builder b;
+        // The cheap success, and the pair's point. The ordinary repertoire, nothing separated, with one restriction:
+        // the block comment may not cross a line. Newline certifies outright. So the lever is line-boundedness and
+        // not separation, and the price of a certificate here is multi-line comments alone, which is the choice Zig's
+        // reference states and a far smaller one than the row above pays for nothing.
+        c_like(b, true);
+        b.add_token(string_literal(), Token::String, 2);
+        b.add_token(line_comment(), Token::LineComment, 1);
+        b.add_token(line_bounded_plain_block_comment(), Token::BlockComment, 1);
+        check("the ordinary repertoire, block comment alone barred from crossing a line", "\\n", "the same",
+              ignoring({Token::Whitespace, Token::Newline, Token::LineComment, Token::BlockComment}), b);
+    }
+    // The designed-success pair: a shipped language whose reference states the property the split-friendly row
+    // constructs. Zig's strings, comments and char literals all end at the line, so newline is recovered modulo the
+    // discarded tokens in the conventional tokenization and certified outright once it is its own token, with the
+    // full string and comment repertoire present; tab, which no Zig token admits inside, comes with it modulo the
+    // whitespace run, where the C-like rows lose it to their string and comment interiors.
+    {
+        munch::core::Builder b;
+        zig(b, false);
+        check("Zig subset, conventional tokenization", "none", "\\t \\n",
+              ignoring({Token::Whitespace, Token::LineComment}), b);
+    }
+    {
+        munch::core::Builder b;
+        zig(b, true);
+        check("the Zig subset, split-friendly tokenization", "\\n", "\\t \\n",
+              ignoring({Token::Whitespace, Token::Newline, Token::LineComment}), b);
+    }
+    {
+        munch::core::Builder b;
         keyword_scale_grammar(b);
         check("keyword_scale_builder() grammar (construction cost)", "! % ( ) * , / : ; ? [ ] ^ { } ~",
               "the same, plus space, tab and newline", ignoring({Token::Whitespace}), b);
@@ -780,13 +823,13 @@ int main()
     }
 
     {
-        const auto agrees{changed == 7};
+        const auto agrees{changed == 9};
 
         std::cout << (agrees ? "\n  ok   " : "\n  FAIL ") << "rows the relaxation moves: " << changed << '\n';
 
         if (!agrees)
         {
-            std::cout << "         the report says seven\n";
+            std::cout << "         the report says nine\n";
 
             ++failures;
         }
