@@ -555,6 +555,22 @@ public:
     }
 
     /**
+     * @brief Whether another token set cuts some input both tokenize differently, with a witness.
+     *
+     * The question a tokenizer change asks, answered from the two compiled tables rather than from a corpus, so a
+     * negative covers every input instead of the ones a suite happens to hold. The derivation is
+     * dfa::Simulator::boundary_difference()'s.
+     * @param other The lexer to compare against.
+     * @param cap The largest number of product states to visit before giving up.
+     * @return The witness and whether the search was exhaustive; an empty witness means identical only when it was.
+     */
+    [[nodiscard]] dfa::Simulator::Difference boundary_difference(
+            const Lexer& other, const std::size_t cap = 1U << 20U) const
+    {
+        return simulator_.boundary_difference(other.simulator_, cap);
+    }
+
+    /**
      * @brief Tokenizes one input as concurrent chunks split at certified safe split points.
      *
      * The input is divided by chunk_boundaries() and each chunk is scanned by tokenize_all() on its own thread,

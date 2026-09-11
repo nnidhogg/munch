@@ -3887,3 +3887,117 @@ TEST_F(Lexer_test, A_sink_taking_either_arity_is_called_with_two_arguments)
 
     EXPECT_EQ(arity, 2u);
 }
+
+TEST_F(Lexer_test, A_token_set_is_proved_to_cut_exactly_as_itself)
+{
+    // The reflexive negative is the case an implementation gets wrong by reading its input once and leaving the
+    // second side empty, which answers "they differ" for every pair including a set against itself.
+    enum class Kind : std::size_t
+    {
+        pair = 1,
+        one = 2
+    };
+
+    Builder builder;
+
+    builder.add_token(concat(text("a"), text("a")), Kind::pair, 1);
+
+    builder.add_token(text("a"), Kind::one, 2);
+
+    const auto lexer{builder.build()};
+
+    const auto difference{lexer.boundary_difference(lexer)};
+
+    EXPECT_TRUE(difference.exhaustive);
+
+    EXPECT_TRUE(difference.witness.empty());
+}
+
+TEST_F(Lexer_test, Two_token_sets_over_one_language_differ_and_the_witness_shows_where)
+{
+    // Both sets accept exactly the strings of a repeated, so neither can be told from the other by what it accepts;
+    // they are told apart by where they cut, which is the property this decision is about.
+    enum class Kind : std::size_t
+    {
+        pair = 1,
+        one = 2
+    };
+
+    Builder singles;
+
+    singles.add_token(text("a"), Kind::one, 1);
+
+    const auto single{singles.build()};
+
+    Builder doubles;
+
+    doubles.add_token(concat(text("a"), text("a")), Kind::pair, 1);
+
+    doubles.add_token(text("a"), Kind::one, 2);
+
+    const auto paired{doubles.build()};
+
+    const auto difference{single.boundary_difference(paired)};
+
+    EXPECT_TRUE(difference.exhaustive);
+
+    ASSERT_FALSE(difference.witness.empty());
+
+    // The witness must be an input both tokenize, cut differently: the shortest is two bytes, one token against two.
+    const auto cuts{[](const auto& lexer, const std::string& text_) {
+        std::string marks(text_.size(), '0');
+
+        std::size_t at{0};
+
+        while (at < text_.size())
+        {
+            const auto match{lexer.template tokenize<Kind>(std::string_view{text_}.substr(at))};
+
+            if (!match.token || match.length == 0)
+            {
+                return std::string{};
+            }
+
+            marks[at] = '1';
+
+            at += match.length;
+        }
+
+        return marks;
+    }};
+
+    const auto mine{cuts(single, difference.witness)};
+
+    const auto theirs{cuts(paired, difference.witness)};
+
+    EXPECT_FALSE(mine.empty());
+
+    EXPECT_FALSE(theirs.empty());
+
+    EXPECT_NE(mine, theirs);
+}
+
+TEST_F(Lexer_test, A_renamed_token_does_not_count_as_a_different_cut)
+{
+    // Boundaries and names are separate data: the same partition under another token id is the same segmentation,
+    // and a decision that reported it as a difference would fire on every harmless rename.
+    enum class Kind : std::size_t
+    {
+        first = 1,
+        second = 2
+    };
+
+    Builder one;
+
+    one.add_token(plus(any_of(Set::alpha())), Kind::first, 1);
+
+    Builder two;
+
+    two.add_token(plus(any_of(Set::alpha())), Kind::second, 1);
+
+    const auto difference{one.build().boundary_difference(two.build())};
+
+    EXPECT_TRUE(difference.exhaustive);
+
+    EXPECT_TRUE(difference.witness.empty());
+}
