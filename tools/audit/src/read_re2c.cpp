@@ -546,8 +546,8 @@ std::pair<std::string, std::string> Block::regex_text()
                 }
             }
 
-            if (copied.find("\\u") != std::string::npos || copied.find("\\U") != std::string::npos ||
-                copied.find("\\X") != std::string::npos)
+            if (copied.find(R"(\u)") != std::string::npos || copied.find(R"(\U)") != std::string::npos ||
+                copied.find(R"(\X)") != std::string::npos)
             {
                 at_ = opened;
 
@@ -564,7 +564,7 @@ std::pair<std::string, std::string> Block::regex_text()
             pattern += copied;
 
             // re2c's [^] is any byte; the pattern parser would read the ']' as a member, so it is spelled out.
-            expression += copied == "[^]" ? std::string{"[\\x00-\\xff]"} : copied;
+            expression += copied == "[^]" ? std::string{R"([\x00-\xff])"} : copied;
 
             continue;
         }
@@ -602,7 +602,7 @@ std::pair<std::string, std::string> Block::regex_text()
 
         if (byte == '\\')
         {
-            fail("the class difference '\\\\' is not the pattern parser's");
+            fail(R"(the class difference '\' is not the pattern parser's)");
         }
 
         ++at_;
@@ -865,9 +865,9 @@ std::vector<Lexer_spec> read_re2c(const std::string_view source, Re2c_flags flag
 
         // re2c declares no conditions; the ones the block's rules name are the scanner's, and each is exclusive,
         // since a rule is active in a condition only by naming it or by `<*>`.
-        for (const auto& rule : spec.rules)
+        for (const auto& [pattern, expression, conditions, action, token, rule_line] : spec.rules)
         {
-            for (const auto& name : rule.conditions)
+            for (const auto& name : conditions)
             {
                 const auto known{std::ranges::any_of(spec.conditions, [&name](const Lexer_spec::Condition& condition) {
                     return condition.name == name;

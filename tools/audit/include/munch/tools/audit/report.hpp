@@ -102,6 +102,12 @@ struct Report
     std::vector<Certified_window> windows;
 
     /**
+     * @brief The number of certified windows once each representative stands for every byte of its class, the
+     *        windows an input can actually show.
+     */
+    std::size_t window_count{};
+
+    /**
      * @brief The proved mandatory core, empty when none is.
      */
     std::string mandatory_core;
@@ -168,7 +174,26 @@ struct Report
 [[nodiscard]] Report audit(const core::Lexer& lexer, std::size_t window_limit = 3);
 
 /**
- * @brief Renders a report as text, one section per question.
+ * @brief The report's answer in one sentence: whether a cut has a certificate, of what kind, and where to read on.
+ * @param report The report.
+ * @return The sentence.
+ */
+[[nodiscard]] std::string verdict(const Report& report);
+
+/**
+ * @brief Renders a report as JSON, one object with a member per figure, token ids paired with their names.
+ *
+ * Byte strings, the windows, the core and the blame's inputs, are JSON strings holding each byte as the code point
+ * of its value, so a reader recovers the bytes exactly; spans are numbers, or the string "unbounded", or for the
+ * window span the string "undecided" when the windows were too many.
+ * @param report The report.
+ * @param name The name to print for a token id.
+ * @return The JSON text, no trailing newline.
+ */
+[[nodiscard]] std::string json(const Report& report, const std::function<std::string(std::size_t)>& name);
+
+/**
+ * @brief Renders a report as text, the verdict first and then one section per question.
  * @param report The report.
  * @param name The name to print for a token id, the rule's returned expression or its pattern for a flex file.
  * @return The text.
