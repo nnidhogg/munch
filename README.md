@@ -414,7 +414,7 @@ has to notice by itself that the trick is no longer sound.
 
 | Module                                    | Responsibility                                                                                        |
 |-------------------------------------------|-------------------------------------------------------------------------------------------------------|
-| `munch::regex`                            | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...) and `Regex` → NFA lowering.  |
+| `munch::regex`                            | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...), `parse()`, NFA lowering.    |
 | `munch::nfa`                              | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
 | `munch::dfa`                              | `Dfa` / `dfa::Builder`; `minimize()`; `Simulator`, and the decisions over it in their own headers.    |
 | `munch::core`                             | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
@@ -514,6 +514,26 @@ using namespace munch::regex;
 
 // Identifier: [A-Za-z_][A-Za-z0-9_]*
 const auto identifier = concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_')));
+```
+
+##### **Pattern Syntax**
+
+The same nodes can be read from a pattern written the way a lexer generator takes it. `parse()` reads flex's
+dialect of POSIX extended regular expressions over bytes: alternation, grouping, `*`, `+`, `?` and counted `{n,m}`,
+the dot for any byte but the newline, bracket expressions with ranges, negation and the POSIX classes, escapes,
+double-quoted literals, and `{name}` expanding to a definition given alongside. What a token language cannot say is
+refused with the offset and the reason rather than approximated: the anchors, trailing context and start conditions.
+A parsed pattern and its hand-built equivalent compile to the same automaton.
+
+```cpp
+using namespace munch::regex;
+
+const Definitions_t definitions{{"DIGIT", "[0-9]"}};
+
+const auto identifier{parse("[a-zA-Z_][a-zA-Z0-9_]*")};
+const auto number{parse("{DIGIT}+(\\.{DIGIT}+)?", definitions)};
+
+parse("^abc");    // throws Syntax_error at offset 0: an anchor conditions the context, not the match
 ```
 
 #### **2. Builder Methods**
