@@ -97,8 +97,10 @@ A finite quotient of the model's reachable configurations, exact for them by a s
 turning breadth-first search over windows into a terminating decision procedure for the model
 (Section~\ref{sec:quotient}).
 \item
-A specialization theorem: at length one the model certifies exactly the bytes the published predicate reports;
-the multi-byte construction is that predicate's conservative continuation
+Two specializations: at length one the model certifies exactly the bytes the published predicate reports, so the
+multi-byte construction is that predicate's conservative continuation; and over a prefix code the certified windows
+are exactly the synchronizing splits of code theory whose right half sits inside one codeword, which places the
+classical case as the special case it is
 (Section~\ref{sec:specialization}).
 \item
 An evaluation over all six exact-empty rows of the prior study's applicability table, one new cumulative
@@ -439,6 +441,62 @@ asserts the agreement byte for byte on every
 grammar of the evaluation before each search; after Theorem~\ref{thm:specialization} that check verifies the
 implementation rather than the claim.
 
+\subsection{The prefix-code case}
+\label{sec:codes}
+
+The other specialization is by token set rather than by length. A \emph{prefix code} $X \subseteq \Sigma^+$ has no
+word that is a proper prefix of another, and read as a token set it is the setting where the certificate needs
+neither maximal-munch priority nor the cloud's origin bookkeeping: at any boundary at most one codeword begins, so
+the completely tokenizable inputs are exactly $X^*$, each with the one factorization the scan computes. Code theory
+has two notions of a boundary forced by bounded context. A \emph{synchronizing pair} of
+$X$~\cite{berstel2010codes} is a pair $(x, y) \in X^* \times X^*$ such that $u x y v \in X^*$ implies
+$u x \in X^*$ and $y v \in X^*$ for all $u, v \in \Sigma^*$; and, in the factor formulation of
+Fici, Romana, Sciortino and Urbina~\cite{fici2025morphisms}, a split $w = w_1 w_2$ of a factor $w$ of $X^*$ is
+\emph{synchronizing} when every occurrence of $w$ in a word of $X^*$ has a factorization boundary between $w_1$ and
+$w_2$. Neither is a certified window as it stands, since neither says which codeword covers the window's final byte,
+and the certificate says nothing about the halves being in $X^*$; the exact relation is the following.
+
+\begin{proposition}[Prefix codes]
+\label{prop:codes}
+Let $X$ be a prefix code read as a token set, and let $W$ be a window with origin $o$, split as
+$W = W_{<o}\, W_{\geq o}$ at the origin.
+\begin{enumerate}
+\item $(W, o)$ is certified if and only if the split is synchronizing and $W_{\geq o}$ is a prefix of some codeword.
+\item If $(x, y)$ is a synchronizing pair with $y$ nonempty and $y = c_1 \cdots c_m$ is its factorization into
+codewords, then
+$(xy,\ |x| + |c_1 \cdots c_{m-1}|)$ is certified. Conversely, if $(W, o)$ is certified with $W_{<o} \in X^*$ and
+$W_{\geq o} \in X$, then $(W_{<o}, W_{\geq o})$ is a synchronizing pair.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+Throughout, a completely tokenizable input is a word of $X^*$ and its token boundaries are the boundaries of its one
+factorization, since at a boundary the codeword the text spells is the only codeword that begins there.
+
+(1) If $(W, o)$ is certified, every occurrence has a boundary at offset $o$, so the split is synchronizing, and the
+codeword covering the final byte begins at $o$, so $W_{\geq o}$ lies within that codeword from its start and is a
+prefix of it. Conversely, take an occurrence of $W$ at offset $t$ in a word of $X^*$; the split being synchronizing
+puts a boundary at $t + o$, where some codeword $c'$ begins. Let $c$ be a codeword with prefix $W_{\geq o}$. Were
+$c'$ to end inside $W_{\geq o}$, it would be a proper prefix of $c$, which a prefix code forbids; so $c'$ extends
+through $W_{\geq o}$, and the token covering the final byte begins at $t + o$.
+
+(2) Let $(x, y)$ be a synchronizing pair and take an occurrence $u x y v \in X^*$. Then $u x \in X^*$ places a
+boundary before $y$, and $y v \in X^*$ with $y \in X^*$ factors from that boundary through $y$'s own codewords, since
+at each of their starts the codeword the text spells is the one $y$ contains; so $c_m$ begins at
+$|u x| + |c_1 \cdots c_{m-1}|$ and covers the final byte of $xy$. Conversely, if $(W, o)$ is certified with
+$W_{<o} \in X^*$ and $W_{\geq o} \in X$, then every $u W v \in X^*$ has a boundary at $|u| + o$, so $u W_{<o}$ is a
+concatenation of codewords and so is $W_{\geq o} v$, which is the synchronizing-pair condition.
+\end{proof}
+
+The proposition places the classical case: over a prefix code the certified windows are the synchronizing splits
+whose right half sits inside one codeword, and Berstel, Perrin and Reutenauer's pairs are the certified windows whose
+halves are themselves in the code, the origin resting on the last codeword. Everything in the studied token sets
+falls outside it. An identifier is a proper prefix of a longer identifier and \code{<} of \code{<<}, so none of the
+C-like or JSON token sets is a prefix code; over $\{\code{a}, \code{ab}, \code{b}\}$ the word \code{ab} has two
+factorizations and it is maximal munch, not the code, that picks one. There the certificate is defined through the
+scan, the origin bookkeeping of Section~\ref{sec:model} is what decides it, and the reach beyond the code case is
+exactly the reach the evaluation measures.
+
 \section{Strictness of the model}
 \label{sec:strictness}
 
@@ -609,11 +667,13 @@ Shamir~\cite{perles1963definite}; its operational form for a fixed $k$ is $k$-lo
 force a unique state, every word of length $k$ being synchronizing~\cite{holub2009parallel}. Both quantify uniformly
 over all windows and speak of states; the certificate here is per-window, speaks of token boundaries under maximal
 munch, and recovers an origin: raw-state synchronization alone does not identify the start of the covering
-maximal-munch token. The classical special case of boundary recovery is code synchronization, directly so for prefix
-codes, where left-to-right tokenization realizes the code factorization: a synchronizing pair fixes the boundary
-between its halves regardless of context, and finite synchronization delay~\cite{restivo1975synchronization} bounds
-how many codewords are required, hence a byte bound for a finite code; the $ww$-style resumption argument survives
-into the partial-DFA treatment~\cite{berlinkov2021partial}. The explicit modern bounded-window form of that special
+maximal-munch token. The classical special case of boundary recovery is code synchronization, and
+Proposition~\ref{prop:codes} states the relation exactly for prefix codes, where left-to-right tokenization realizes
+the code factorization: the certified windows are the synchronizing splits whose right half sits inside one codeword,
+and a synchronizing pair~\cite{berstel2010codes} is a certified window whose halves are in the code. Finite
+synchronization delay~\cite{restivo1975synchronization} bounds how many codewords such a pair needs, hence a byte
+bound for a finite code; the $ww$-style resumption argument survives into the partial-DFA
+treatment~\cite{berlinkov2021partial}. The explicit modern bounded-window form of that special
 case is the synchronizing morphism: a window of bounded length suffices to detect boundaries between
 codewords~\cite{fici2025morphisms}, in a morphic code-factorization setting rather than among competing prioritized
 token languages under maximal munch. Uniquely decipherable codes may share prefixes; what they guarantee is a unique
@@ -712,8 +772,10 @@ permanent. Model-positive answers are semantically certified within the stated f
 Negatives are model-relative: the model refuses windows a greedy scanner would allow, the two asserted witnesses exhibit
 the over-approximation, and the strictness corollary locates its minimum nonvacuous length at two, since at length one
 the model provably coincides with the published predicate, made exact for occurring bytes by the predecessor's necessity
-theorem. A token set in which some token matches the empty string is decided through its positive-width equivalent,
-which unrolls the accepting start state and changes no scan, so nothing is set aside on that account.
+theorem. Over a prefix code the certificate is code synchronization under another name, the synchronizing splits whose
+right half sits inside one codeword, and the studied token sets are exactly the ones that are not codes. A token set in
+which some token matches the empty string is decided through its positive-width equivalent, which unrolls the accepting
+start state and changes no scan, so nothing is set aside on that account.
 
 The generalization does what it was built for: it recovers every exact-empty row of the predecessor's table, all
 witnessed. Of the 337 random token sets certifying no byte, 322 gain a witnessed certified window with zero inconclusive

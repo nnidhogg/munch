@@ -256,6 +256,17 @@ shipped predicate; the multi-byte construction is its conservative continuation.
 agreement byte for byte on every grammar of the evaluation before each search; after the theorem that check verifies
 the implementation rather than the claim.
 
+**The prefix-code case.** The other specialization is by token set. A prefix code, no word a proper prefix of another,
+read as a token set has exactly one factorization per completely tokenizable input, so the certificate needs neither
+maximal-munch priority nor the cloud's origin bookkeeping there, and it reduces to code synchronization: `(W, o)` is
+certified exactly when the split of `W` at `o` is synchronizing in the factor sense of Fici et al., every occurrence in
+a coded word carrying a factorization boundary there, and the right half is a prefix of some codeword; and a
+synchronizing pair `(x, y)` in the sense of Berstel, Perrin and Reutenauer, one with `uxyv` coded implying `ux` and `yv`
+coded, is a certified window whose origin rests on the last codeword of `y`. The paper proves both directions. None of
+the studied token sets is a prefix code, an identifier being a proper prefix of a longer one and `<` of `<<`, and over
+`{a, ab, b}` the word `ab` has two factorizations with maximal munch picking one; that is where the certificate is
+defined through the scan rather than the code, and where the evaluation measures its reach.
+
 ## 7 What the model refuses
 
 The model refuses windows a greedy scanner would allow. The conservatism is deliberate: the seed rule uses acceptance
@@ -415,21 +426,22 @@ token languages under maximal munch.
 
 A classical antecedent of window-determines-state is the definite automaton (Perles, Rabin, Shamir 1963); its
 operational form for a fixed `k` is `k`-locality: any `k` consecutive symbols force a unique state (Holub and Štekr,
-CIAA 2009). Both quantify uniformly over all windows and speak of states; the certificate here is per-window, speaks
-of token boundaries under maximal munch, and recovers an origin: raw-state synchronization alone does not identify the
-start of the covering maximal-munch token. The classical special case of boundary recovery is code synchronization,
-directly so for prefix codes: a synchronizing pair fixes the boundary between its halves regardless of context, and
-finite synchronization delay (Restivo 1975) bounds how many codewords are required; the modern bounded-window form is
-the synchronizing morphism (Fici et al., MFCS 2025), in a morphic code-factorization setting. Uniquely decipherable
-codes may share prefixes; what they guarantee is a unique factorization, with no maximal-munch priority resolving
-overlaps between competing token languages, and that difference is where the origin machinery here earns its
-existence. The reset-word relationship is one-way and stops at length one: a useful certified byte induces a
-reset-like action on the partial live automaton with domain `{q0}` (with the re-entrancy qualification; the
-correspondence fails under the classical complete-DFA reading), but a certified window need not be a reset word of the
-token DFA at all, since over `{a, b}` the window `ab` certifies at origin 1 while its action on the partial automaton
-is empty, and a rank-one letter need not certify. Careful synchronization of partial automata is PSPACE-complete
-already over two-letter alphabets (Martyugin 2010); that is context, not a bound, and no hardness result is claimed
-for the window problem, whose per-grammar retained-key counts stayed far below the worst case throughout.
+CIAA 2009). Both quantify uniformly over all windows and speak of states; the certificate here is per-window, speaks of
+token boundaries under maximal munch, and recovers an origin: raw-state synchronization alone does not identify the
+start of the covering maximal-munch token. The classical special case of boundary recovery is code synchronization, and
+section 6 states the relation exactly for prefix codes: the certified windows are the synchronizing splits whose right
+half sits inside one codeword, and a synchronizing pair (Berstel, Perrin and Reutenauer 2010) is a certified window
+whose halves are in the code; finite synchronization delay (Restivo 1975) bounds how many codewords such a pair needs;
+the modern bounded-window form is the synchronizing morphism (Fici et al., MFCS 2025), in a morphic code-factorization
+setting. Uniquely decipherable codes may share prefixes; what they guarantee is a unique factorization, with no
+maximal-munch priority resolving overlaps between competing token languages, and that difference is where the origin
+machinery here earns its existence. The reset-word relationship is one-way and stops at length one: a useful certified
+byte induces a reset-like action on the partial live automaton with domain `{q0}` (with the re-entrancy qualification;
+the correspondence fails under the classical complete-DFA reading), but a certified window need not be a reset word of
+the token DFA at all, since over `{a, b}` the window `ab` certifies at origin 1 while its action on the partial
+automaton is empty, and a rank-one letter need not certify. Careful synchronization of partial automata is
+PSPACE-complete already over two-letter alphabets (Martyugin 2010); that is context, not a bound, and no hardness result
+is claimed for the window problem, whose per-grammar retained-key counts stayed far below the worst case throughout.
 
 Symbolic dynamics comes closest in shape: a resolving block (Adler, Coppersmith, Hassner 1983; Marcus 1985) is a block
 all of whose admissible preimages agree at a selected coordinate, an occurrence-universal lift of a local observation
@@ -484,6 +496,8 @@ overlap or splice after local retokenization.
 - M. A. Perles, M. O. Rabin, E. Shamir. *The Theory of Definite Automata.* IEEE Transactions on Electronic Computers
   EC-12(3):233-243, 1963.
 - J. Holub, Š. Štekr. *On Parallel Implementations of Deterministic Finite Automata.* CIAA 2009, LNCS 5642, 54-64.
+- J. Berstel, D. Perrin, C. Reutenauer. *Codes and Automata.* Encyclopedia of Mathematics and its Applications 129,
+  Cambridge University Press, 2010.
 - A. Restivo. *A Combinatorial Property of Codes Having Finite Synchronization Delay.* Theoretical Computer Science
   1(2):95-101, 1975.
 - M. V. Berlinkov, R. Ferens, A. Ryzhikov, M. Szykuła. *Synchronization of Strongly Connected Partial DFAs and Prefix
