@@ -118,9 +118,10 @@
 // Random grammars are the strongest check here. Hand-picked ones are what hid the origin defect, and they hid a
 // second: the model treated reading from the initial state as always beginning a token, which is false when a
 // nullable pattern makes that state re-entrant. An earlier unfiltered sweep of four hundred found 18 disagreements
-// from that one cause, and none of the named rows had a re-entrant initial state to expose it. The sweep now
-// excludes nullable grammars, since the soundness proof does not cover them, so that count is history rather than
-// something this program still reports.
+// from that one cause, and none of the named rows had a re-entrant initial state to expose it. For a time the sweep
+// excluded nullable grammars, since the soundness proof did not cover them; it now decides them as the library does,
+// through the positive-width equivalent unroll_start() compiles, whose start neither accepts nor is re-entered, and
+// counts them, so the cross-check against the shipped scanner covers the two thirds of the sample they make up.
 //
 // The same caution applies to the length-one agreement. The first seven rows certify no byte at all, so agreeing
 // with is_split_point is 0 == 0 there and proves little. Six of the seven rewinding rows have non-empty certificates,
@@ -134,6 +135,7 @@
 #include <deque>
 #include <exception>
 #include <map>
+#include <munch/dfa/unroll_start.hpp>
 #include <optional>
 #include <set>
 #include <string>
@@ -241,8 +243,9 @@ States_t trim(const Dfa& dfa)
  * @brief Whether any live transition re-enters the initial state.
  *
  * Where it does, arriving at the initial state no longer proves the scan is between tokens, so the model must not
- * rename a trajectory's origin on reaching it. A nullable pattern is one way to produce that, minimizing to an
- * accepting start state with a self-loop, but it is not the only one: any cycle back to the start does it.
+ * rename a trajectory's origin on reaching it. A nullable pattern once produced that, minimizing to an accepting
+ * start state with a self-loop; unrolling moves the loop behind a fresh start, and subset construction never loops
+ * back to the start either, so on the automata modelled here the check is a guard for hand-built ones.
  */
 bool init_reentrant(const Dfa& dfa, const States_t& live)
 {
@@ -284,10 +287,10 @@ std::optional<Cloud_t> step(
         if (const auto direct{dfa.advance(state, symbol)}; direct && live.contains(*direct))
         {
             // Reading from the initial state begins a token here, so the origin is this offset rather than whatever
-            // the trajectory carried in. That holds only while nothing re-enters the initial state: a nullable
-            // pattern minimizes to an accepting start state with a self-loop, and then arriving there no longer
-            // proves the scan is between tokens. The shipped predicate withdraws its own exemption for the same
-            // reason, so the model must too or it certifies bytes the library correctly rejects.
+            // the trajectory carried in. That holds only while nothing re-enters the initial state, since arriving
+            // there would then no longer prove the scan is between tokens. The shipped predicate withdraws its own
+            // exemption for the same reason, so the model must too or it certifies bytes the library correctly
+            // rejects.
             const auto begins{state == dfa.init_state() && !reentrant};
 
             next.emplace(*direct, begins ? at : origin);
@@ -427,7 +430,7 @@ static_assert(kSubsetBudget == 200'000, "the paper states a fixed safety thresho
  *
  * The library ports the walk this probe states and proves; they are two implementations of one model and must
  * never diverge, certificates and refusals alike. The named rows' pinned windows, the strictness refusals, the
- * legacy and vacuity grammars, the full length-one sweep of every named and every non-nullable random grammar,
+ * legacy and vacuity grammars, the full length-one sweep of every named and every random grammar,
  * and every model-positive random pair also ask the shipped decision; the check count is pinned so silently
  * skipping checks fails, and a single disagreement fails the suite. Coverage is those sites, not exhaustive
  * equivalence.
@@ -1083,10 +1086,11 @@ munch::regex::Regex random_regex(unsigned& seed, const std::size_t depth)
 }
 
 /**
- * @brief Whether this grammar is outside the soundness proof, which assumes no token matches the empty string.
+ * @brief Whether a token of this grammar matches the empty string, which the initial state accepting is exactly.
  *
- * The initial state accepting is exactly that condition. Checked at every entry point rather than only in the
- * random sweep, so a named row cannot quietly drift outside the theorem it is evidence for.
+ * The soundness proof assumes it does not, and the library meets the assumption by compiling such a grammar as
+ * its positive-width equivalent; every entry point here does the same before modelling, so the model and the
+ * shipped predicate always speak about one automaton.
  */
 bool nullable_grammar(const Dfa& dfa)
 {
@@ -1134,7 +1138,14 @@ std::size_t random_grammars(
 
         try
         {
-            const auto dfa{builder.dfa()};
+            // The generator produces nullable grammars freely, two thirds of the sample; they are decided over the
+            // positive-width equivalent the library itself compiles, and counted so the report says how many.
+            if (nullable_grammar(builder.dfa()))
+            {
+                ++nullable;
+            }
+
+            const auto dfa{munch::dfa::unroll_start(builder.dfa())};
 
             const auto lexer{builder.build()};
 
@@ -1142,16 +1153,6 @@ std::size_t random_grammars(
 
             if (live.empty())
             {
-                continue;
-            }
-
-            // The soundness proof assumes no token matches the empty string, so a grammar whose initial state
-            // accepts is outside what the theorem covers and must not be counted toward the figure the theorem
-            // backs. The generator produces them freely: two thirds of the sample.
-            if (nullable_grammar(dfa))
-            {
-                ++nullable;
-
                 continue;
             }
 
@@ -1394,15 +1395,7 @@ bool strict_refusal(
         return false;
     }
 
-    const auto dfa{builder.dfa()};
-
-    if (nullable_grammar(dfa))
-    {
-        std::printf(
-                "  %-30s REJECTED: a token matches the empty string, outside the proof\n", std::string{name}.c_str());
-
-        return false;
-    }
+    const auto dfa{munch::dfa::unroll_start(builder.dfa())};
 
     const auto lexer{builder.build()};
 
@@ -1458,15 +1451,7 @@ bool oracle_teeth(
         return false;
     }
 
-    const auto dfa{builder.dfa()};
-
-    if (nullable_grammar(dfa))
-    {
-        std::printf(
-                "  %-30s REJECTED: a token matches the empty string, outside the proof\n", std::string{name}.c_str());
-
-        return false;
-    }
+    const auto dfa{munch::dfa::unroll_start(builder.dfa())};
 
     const auto lexer{builder.build()};
 
@@ -1506,15 +1491,7 @@ bool oracle_teeth(
  */
 bool named_window_agrees(std::string_view name, const std::string& window, std::size_t expected, Builder_dbg& builder)
 {
-    const auto dfa{builder.dfa()};
-
-    if (nullable_grammar(dfa))
-    {
-        std::printf(
-                "  %-30s REJECTED: a token matches the empty string, outside the proof\n", std::string{name}.c_str());
-
-        return false;
-    }
+    const auto dfa{munch::dfa::unroll_start(builder.dfa())};
 
     const auto lexer{builder.build()};
 
@@ -1606,16 +1583,7 @@ std::string escaped(const std::string& window)
 
 bool run(const Row& row, Builder_dbg& builder)
 {
-    const auto dfa{builder.dfa()};
-
-    if (nullable_grammar(dfa))
-    {
-        std::printf(
-                "  %-30s REJECTED: a token matches the empty string, outside the proof\n",
-                std::string{row.name}.c_str());
-
-        return false;
-    }
+    const auto dfa{munch::dfa::unroll_start(builder.dfa())};
 
     const auto lexer{builder.build()};
 
@@ -2071,9 +2039,8 @@ int main()
     }
     {
         // One token that repeats. Every byte continues the run as readily as it starts one, so no window pins a
-        // boundary and the search returns nothing at any length. `a+` rather than `a*`: the soundness proof assumes
-        // no token matches the empty string, so a nullable grammar is outside what the theorem covers and makes a
-        // poor negative example. The negative here means "none under this conservative model", not "none exists".
+        // boundary and the search returns nothing at any length; `a*` would be decided as this same `a+`. The
+        // negative here means "none under this conservative model", not "none exists".
         using namespace munch::regex;
 
         Builder_dbg b;
@@ -2287,8 +2254,8 @@ int main()
             400, usable, nullable, with_certificate, rescued, witnessed_rescued, proved_none, inconclusive)};
 
     std::printf(
-            "\n  %-30s %zu disagreements over %zu non-nullable grammars, %zu with a non-empty certificate, %zu "
-            "nullable ones excluded%s\n",
+            "\n  %-30s %zu disagreements over %zu grammars, %zu with a non-empty certificate, %zu of them nullable "
+            "and decided through their positive-width equivalent%s\n",
             "random grammars", random_disagreements, usable, with_certificate, nullable,
             random_disagreements == 0 ? "" : "   <- MODEL IS WRONG");
 
@@ -2318,8 +2285,8 @@ int main()
             g_visited_total);
 
     // Printed above and asserted below, because these figures are quoted in the notes and a loose bound would let
-    // one move without anything failing. They are the non-nullable sample, which is what the soundness proof covers;
-    // two thirds of what the generator produces is nullable and is excluded rather than counted. Pinning them
+    // one move without anything failing. They are the whole sample, the two thirds of it that is nullable decided
+    // through the positive-width equivalent and counted. Pinning them
     // exactly is only meaningful because random_regex() sequences its recursive calls: while it left them as
     // function arguments the sweep depended on evaluation order and GCC and Clang produced different grammars.
     // Inconclusive must stay zero: exceeding the 200,000-key threshold means the traversal stopped before
@@ -2331,18 +2298,18 @@ int main()
             "  %-30s %zu checks against the probe's model, %zu disagreements%s\n", "shipped window decision",
             g_port_checks, g_port_disagreements, g_port_disagreements == 0 ? "" : "   <- PORT DIVERGES");
 
-    ok = g_port_disagreements == 0 && g_port_checks == 38557 && random_disagreements == 0 && usable == 134 &&
-         nullable == 266 && with_certificate == 39 && usable - with_certificate == 95 && rescued == 91 &&
-         witnessed_rescued == 91 && proved_none == 4 && inconclusive == 0 && g_exercised_total == 1'079'392 &&
+    ok = g_port_disagreements == 0 && g_port_checks == 107'198 && random_disagreements == 0 && usable == 400 &&
+         nullable == 266 && with_certificate == 63 && usable - with_certificate == 337 && rescued == 326 &&
+         witnessed_rescued == 322 && proved_none == 11 && inconclusive == 0 && g_exercised_total == 1'079'392 &&
          g_exercised_tokenizable == 418'466 && g_exercised_total - g_exercised_tokenizable == 660'926 &&
-         g_witness_disagreements == 0 && g_visited_max == 32 && g_visited_total == 878 && ok;
+         g_witness_disagreements == 0 && g_visited_max == 32 && g_visited_total == 3343 && ok;
 
     std::printf(
             "\n%s\n", ok ? "The model reproduces is_split_point at length one on six named grammars with a "
-                           "non-empty certificate and on the 134 non-nullable grammars of a 400-grammar sweep, and "
-                           "wherever it predicts an origin the shipped scanner starts the token covering the window's "
-                           "last byte exactly there. The model is proved sound, so this checks the implementation "
-                           "rather than the argument." :
+                           "non-empty certificate and on all 400 grammars of the random sweep, the 266 nullable ones "
+                           "decided through their positive-width equivalent, and wherever it predicts an origin the "
+                           "shipped scanner starts the token covering the window's last byte exactly there. The model "
+                           "is proved sound, so this checks the implementation rather than the argument." :
                            "A measurement moved. The window results must be re-derived before being relied on.");
 
     return ok ? 0 : 1;

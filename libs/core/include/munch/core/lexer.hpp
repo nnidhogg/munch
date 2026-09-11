@@ -216,9 +216,9 @@ public:
      *
      * The multi-byte generalization of is_split_point(): where the byte certificate promises that every occurrence
      * begins a token, a certified window (W, o) promises that in every completely tokenizable input containing W, the
-     * token covering the occurrence's final byte begins exactly o bytes into it. On non-empty, non-nullable token sets
-     * the two coincide at length one; a nullable token set, one in which some token matches the empty string, can
-     * certify bytes while every window is refused here, and an empty token set refuses everything on both sides. The
+     * token covering the occurrence's final byte begins exactly o bytes into it. On non-empty token sets the two
+     * coincide at length one, a nullable token set, one in which some token matches the empty string, being decided
+     * through the positive-width equivalent the simulator compiled, and an empty token set refuses everything. The
      * certificate is conditional on occurrence and this call does not establish that one exists; a caller that found W
      * in its own input holds an occurrence, the promise applies to it on completely tokenizable input, and on malformed
      * input the window promise carries nothing at all, the consequence chunk_boundaries_with_windows() documents.
@@ -339,9 +339,8 @@ public:
      * occurrence of a window of two to four bytes that is_split_window() certifies, and the cut is placed at the
      * occurrence plus the reported origin. Each window decision is memoized per distinct byte string, so those
      * decisions, the costly part, are bounded by the distinct windows tried, while the positional walk and its memo
-     * lookups scale with the positions examined. A nullable token set contributes no windows, since the window proof
-     * excludes it, though its byte plan, when any, stands untouched; when neither certificate offers cuts, the single
-     * whole-input chunk results.
+     * lookups scale with the positions examined. When neither certificate offers cuts, the single whole-input chunk
+     * results.
      *
      * The window guarantee is conditional where the byte certificate's is not: a certified window pins the
      * covering token's origin at occurrences in completely tokenizable input, a property of the whole input
@@ -364,7 +363,7 @@ public:
 
         auto boundaries{chunk_boundaries(begin, end, chunks)};
 
-        if (boundaries.size() > 2 || size < 2 || simulator_.has_split_points() || simulator_.nullable())
+        if (boundaries.size() > 2 || size < 2 || simulator_.has_split_points())
         {
             return boundaries;
         }
@@ -514,9 +513,8 @@ public:
      *
      * One forward walk consulting both certificate kinds at every position: a certified byte answers at its
      * own position, and a certified window of two to four bytes answers at its occurrence plus the certified
-     * origin. Unlike the planners, byte certificates do not switch the window search off; a nullable token set
-     * contributes no windows, because only the window proof excludes it, while its byte certificates, when
-     * any, stand. The answer is the first certificate met in evidence order, the order in which the walk meets
+     * origin. Unlike the planners, byte certificates do not switch the window search off. The answer is the first
+     * certificate met in evidence order, the order in which the walk meets
      * the supporting evidence, which is not always the smallest answerable position: a window met earlier can
      * answer a byte or two past one met later, and windows beginning before the given offset are not considered.
      *
@@ -556,13 +554,6 @@ public:
     {
         const auto bytes{simulator_.has_split_points()};
 
-        const auto windows{!simulator_.nullable()};
-
-        if (!bytes && !windows)
-        {
-            return std::nullopt;
-        }
-
         Window_planner planner;
 
         for (std::size_t at{from}; at < input.size(); ++at)
@@ -570,11 +561,6 @@ public:
             if (bytes && is_split_point(input[at]))
             {
                 return Certified_start{.start = at, .evidence_begin = at, .evidence_end = at + 1, .window = false};
-            }
-
-            if (!windows)
-            {
-                continue;
             }
 
             if (const auto found{planner.window_at(simulator_, input.data(), input.size(), at)})
@@ -599,8 +585,7 @@ public:
      * tail's end known to be the end of the input, every completely tokenizable repair of whatever preceded
      * the tail places a token boundary at the returned position. That quantifier is the whole contract; the
      * certificates' guarantee over repairs that merely reach their evidence is a different one, which this
-     * decider does not speak about. A tail beyond repair refuses rather than answering vacuously, and nullable
-     * token sets are refused outright.
+     * decider does not speak about. A tail beyond repair refuses rather than answering vacuously.
      * @param tail The preserved suffix of the input, its end the end of the input.
      * @param from The offset the search starts at; at or past the tail's size finds nothing.
      * @return The first anchored-certified position, or std::nullopt when none exists or no repair does.
@@ -614,7 +599,7 @@ public:
     /**
      * @brief A shortest repair for the tail, empty when it already tokenizes; nothing when none exists.
      * @param tail The preserved suffix of the input.
-     * @return A minimal repair, or std::nullopt when the tail is beyond repair or the set is nullable.
+     * @return A minimal repair, or std::nullopt when the tail is beyond repair.
      */
     [[nodiscard]] std::optional<std::string> minimal_repair(const std::string_view tail) const
     {

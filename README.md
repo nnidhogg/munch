@@ -920,9 +920,11 @@ position unchanged when their own search refuses; `recover()` and `recover_from_
 clean floor can shrink the search domain, so the clean form may refuse where the failure-anchored forms answer. The
 lexer-level form is `Lexer::next_certified_evidence(input, from)`.
 
-When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored
-queries answer exactly rather than conservatively on non-nullable token sets, those in which no token matches the
-empty string, because they may use what the certificates cannot: that the input ends where the tail ends.
+When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored queries answer
+exactly rather than conservatively, because they may use what the certificates cannot: that the input ends where the
+tail ends. A token set in which some token matches the empty string is decided, here and by every other query, through
+its positive-width equivalent, the same automaton entered through a start state that does not accept, which changes no
+scan.
 
 ```cpp
 // Over the token set {ab, ba}: position 0 of the tail "ab" is provably a token start in every
@@ -1299,10 +1301,10 @@ arrive in minor versions. The window layer, `is_split_window()` and `chunk_bound
 surface in 1.4.0; the release the companion paper cites, v1.3.3, deliberately ships no window-planning API.
 
 The recovery layer joined that surface in 1.6.0: `next_certified_start()`, `next_certified_evidence()`,
-`next_anchored_start()`, `minimal_repair()`, `lag()`, and `rescue_free()`, each under the contract its own
-documentation states, evidence-order answers under preserved evidence and complete-repair invariance, the
-guarantee described under Error Recovery above that every completely tokenizable repair of the text before the
-evidence places a token boundary at the answer, on non-nullable sets.
+`next_anchored_start()`, `minimal_repair()`, `lag()`, and `rescue_free()`, each under the contract its own documentation
+states, evidence-order answers under preserved evidence and complete-repair invariance, the guarantee described under
+Error Recovery above that every completely tokenizable repair of the text before the evidence places a token boundary at
+the answer.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did

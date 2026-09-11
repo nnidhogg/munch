@@ -18,19 +18,20 @@ A certified split point lets a parallel lexer cut unlexed input at a single byte
 preserved, but several conventional token sets in the predecessor's controlled study certify no byte once string,
 comment, or whitespace-run forms are included ([arXiv:2608.03473](https://arxiv.org/abs/2608.03473)). This report
 generalizes from a byte to a bounded window: a byte string after which the position where the current token began is
-known, regardless of surrounding context. The certified form is the directly usable one: the token covering the
-window's final byte begins at the reported origin. The certificate is conditional on occurrence and may be vacuous;
-every applicability figure counts only windows carrying an asserted completely tokenizable occurrence witness. A
-conservative model of a maximal-munch scanner's possible histories across a window is given and proved sound, and
-reachability in that model is decided exactly by exhausting a finite quotient of its reachable configurations, so
-every answer of the unbudgeted procedure is either a certified window with its origin or a proof that the model admits
-none. Within the stated flat, non-nullable, completely-tokenizable scope, model-positive answers are semantic
-certificates; negatives are relative to the conservative model, which deliberately refuses some windows a greedy
-scanner would allow. In a sample of 400 random token sets, 91 of the 95 non-nullable sets certifying no byte gain a
-witnessed window, with zero inconclusive searches, and every exact-empty row of the predecessor's study gains a
-witnessed window of two to four bytes. Rewind-stress rows exercised 1,079,392 executions that scanned through the
-window and contained at least one rewind, with zero disagreements against the shipped scanner. The analysis runs once
-after automaton construction, using only the compiled tables and no input.
+known, regardless of surrounding context. The certified form is the directly usable one: the token covering the window's
+final byte begins at the reported origin. The certificate is conditional on occurrence and may be vacuous; every
+applicability figure counts only windows carrying an asserted completely tokenizable occurrence witness. A conservative
+model of a maximal-munch scanner's possible histories across a window is given and proved sound, and reachability in
+that model is decided exactly by exhausting a finite quotient of its reachable configurations, so every answer of the
+unbudgeted procedure is either a certified window with its origin or a proof that the model admits none. Within the
+stated flat, completely-tokenizable scope, model-positive answers are semantic certificates; negatives are relative to
+the conservative model, which deliberately refuses some windows a greedy scanner would allow. A token set in which some
+token matches the empty string is decided through its positive-width equivalent, the same automaton entered through a
+start state that does not accept, which changes no scan. In a sample of 400 random token sets, 322 of the 337 sets
+certifying no byte gain a witnessed window, with zero inconclusive searches, and every exact-empty row of the
+predecessor's study gains a witnessed window of two to four bytes. Rewind-stress rows exercised 1,079,392 executions
+that scanned through the window and contained at least one rewind, with zero disagreements against the shipped scanner.
+The analysis runs once after automaton construction, using only the compiled tables and no input.
 
 ## 1 The problem
 
@@ -38,9 +39,9 @@ The predecessor report derives, from a compiled token set, the complete set of b
 with the serial token stream preserved, and proves the condition necessary as well as sufficient. Its sharpest
 limitation is its own applicability table: several of the studied conventional token sets certify *no* byte, because a
 single string form, comment form, or whitespace run gives some non-initial live state a transition on every candidate,
-and a fresh 400-grammar random sweep generated for this study reproduces the pattern, 95 of its 134 non-nullable sets
-certifying none. This report is about the object that refusal leaves standing: a byte *string* after which the start
-of the token covering the window's final byte is pinned, regardless of surrounding context.
+and a fresh 400-grammar random sweep generated for this study reproduces the pattern, 337 of its 400 sets certifying
+none. This report is about the object that refusal leaves standing: a byte *string* after which the start of the token
+covering the window's final byte is pinned, regardless of surrounding context.
 
 Concretely: for a token set compiled to a DFA and scanned by maximal munch, is there a window `W = w0 ... w(k-1)` and
 an offset `o` with `0 <= o < k` such that in *every* completely tokenizable input containing `W`, the token covering
@@ -54,14 +55,17 @@ the shipped scanner.
 
 ## 2 Certified split windows
 
-The scanner model is inherited from the predecessor. A token set compiles to a DFA with initial state q0; scanning is
-by maximal munch: from the current position the scanner runs the automaton as far as a transition exists, emits the
-token of the last accepting configuration passed, resumes immediately after it, and restarts in q0. An input is
-*completely tokenizable* when this process consumes it exactly. The setting is *flat*: one fixed token set compiled to
-one DFA scanned from one fixed initial state, with no lexical modes, no mode stack, and no semantic scanner state. The
-live subautomaton retains the states both reachable from q0 and co-accessible to acceptance, with only transitions
-between live states. No token matches the empty string; this exclusion is load-bearing and revisited in the
-limitations.
+The scanner model is inherited from the predecessor. A token set compiles to a DFA with initial state q0; scanning is by
+maximal munch: from the current position the scanner runs the automaton as far as a transition exists, emits the token
+of the last accepting configuration passed, resumes immediately after it, and restarts in q0. An input is *completely
+tokenizable* when this process consumes it exactly. The setting is *flat*: one fixed token set compiled to one DFA
+scanned from one fixed initial state, with no lexical modes, no mode stack, and no semantic scanner state. The live
+subautomaton retains the states both reachable from q0 and co-accessible to acceptance, with only transitions between
+live states. A token may match the empty string; the scan never emits it, so such a set is read through its
+positive-width equivalent, the same automaton entered through a fresh start state that carries the old start's
+transitions and does not accept. The two scans agree on every input, the unrolled automaton accepts exactly the nonempty
+words, and nothing enters the fresh start, so everything below may assume a start state that neither accepts nor is
+re-entered without losing generality; the library compiles every token set this way before deciding anything about it.
 
 **Definition (certified split window).** Let `W = w0 ... w(k-1)` with `k >= 1` and let `o` be an offset with
 `0 <= o < k`. The pair `(W, o)` is a *certified split window* for a token set when, for every completely tokenizable
@@ -230,9 +234,10 @@ than a complete cost model.
 
 At length one the model collapses to the published certificate, and the correspondence is exact at the level of the
 *shipped predicate*, the one that withholds vacuously certified bytes, rather than of the bare condition. Throughout
-this section the token set is non-empty and non-nullable and q0 is live. Call a byte *useful* when `delta(q0, b)` is
-defined and live; `is_split_point(b)` holds exactly when `b` is useful, no live state other than q0 has a
-`b`-transition into a live state, and q0 is not re-entrant in the live subautomaton.
+this section the token set is non-empty, read through its positive-width equivalent where a token matches the empty
+string, and q0 is live. Call a byte *useful* when `delta(q0, b)` is defined and live; `is_split_point(b)` holds exactly
+when `b` is useful, no live state other than q0 has a `b`-transition into a live state, and q0 is not re-entrant in the
+live subautomaton.
 
 **Theorem (specialization).** For every byte `b`, the model certifies `(b, 0)`, the only origin a length-one window
 admits, if and only if `is_split_point(b)` holds.
@@ -326,34 +331,35 @@ grammars without a proved core keep the exhaustive walk unchanged. Construction 
 The artifact runs the evaluation in the default test target and CI; the figures are asserted rather than merely
 printed, so a drifted number fails the test suite.
 
-Over 400 random token sets on a three-symbol alphabet, generated by the probe itself with a pinned seed and draw
-order, 266 are nullable and excluded, since the soundness proof does not cover them; of the 134 remaining, 39 certify
-at least one byte exactly. Of the 95 that certify no byte, **91 gain a certified window, and every one of the 91 is
-witnessed**: for each, the bounded search finds a completely tokenizable input containing a certified window, with the
-covering token beginning at the reported origin, verified as each input is constructed, with the all-91 aggregate
-asserted; 4 exhaust the quotient with no window under the model, and none are inconclusive or unresolved. Occurrence
-is a property of the concrete word rather than its quotient key, so the witness search continues past the shortest
-certified length instead of stopping at the first certifying word. Separate rewind-stress rows exercised 1,079,392
-generated executions that scanned through the window and contained at least one rewind, with zero disagreements
-against the shipped scanner; 418,466 of those executions tokenize their whole input completely and the remaining
-660,926 have malformed suffixes past the window, both counts asserted. This is an implementation stress check: the
-generated inputs were required to scan through the window, not to tokenize completely. The random sweep additionally
+Over 400 random token sets on a three-symbol alphabet, generated by the probe itself with a pinned seed and draw order,
+266 are nullable and are decided through their positive-width equivalent, exactly as the library compiles them; 63
+certify at least one byte exactly. Of the 337 that certify no byte, **326 gain a certified window under the model, and
+322 of those are witnessed**: for each, the bounded search finds a completely tokenizable input containing a certified
+window, with the covering token beginning at the reported origin, verified as each input is constructed, with the 322
+aggregate asserted; 4 model-positive grammars have no occurrence within the bounded witness search and are reported as
+unresolved, never as rescues; 11 exhaust the quotient with no window under the model, and none are inconclusive.
+Occurrence is a property of the concrete word rather than its quotient key, so the witness search continues past the
+shortest certified length instead of stopping at the first certifying word. Separate rewind-stress rows exercised
+1,079,392 generated executions that scanned through the window and contained at least one rewind, with zero
+disagreements against the shipped scanner; 418,466 of those executions tokenize their whole input completely and the
+remaining 660,926 have malformed suffixes past the window, both counts asserted. This is an implementation stress check:
+the generated inputs were required to scan through the window, not to tokenize completely. The random sweep additionally
 checked every certified two-byte window over the probe's generated contexts. The length-one case reproduces the
-published certificate on all 134 grammars.
+published certificate on all 400 grammars, the 266 nullable ones included.
 
-Named token sets: all six exact-empty rows of the predecessor's applicability table, five C-like variants and JSON,
-gain witnessed windows, and one new cumulative C-like variant joins them as a seventh positive row. The example
-windows show the recovery anchors: the string and line-comment rows resynchronize at a newline followed by a byte that
-must begin a token, and the block-comment rows at the byte pair `*/` followed by whitespace, in comment context the
-closer, with the origin immediately after the pair. The certificate is occurrence-universal, so it also covers
-occurrences where `*/` reads as two operator tokens; the pinned witnesses exercise exactly that reading. The
-conventional row certifies at length two: its whitespace runs include the newline, so `!` must begin a token there as
-well. The JSON row uses the RFC 8259 lexical forms over bytes and assumes UTF-8 validity; it is not a conforming JSON
-processor. How often such windows occur in real corpora is an empirical question for the measurement campaign, and no
-frequency claim is made. The non-nullable `a+` is included as the negative row: every byte continues a run as readily
-as it begins one, the model certifies no window, since absent-byte windows certify only vacuously, and the search
-exhausts its quotient, which is precisely the shape of a model-negative. Retained keys count the quotient keys the
-search kept before shortest-window stopping, one indicator of the search footprint in place of the `6^n` bound.
+Named token sets: all six exact-empty rows of the predecessor's applicability table, five C-like variants and JSON, gain
+witnessed windows, and one new cumulative C-like variant joins them as a seventh positive row. The example windows show
+the recovery anchors: the string and line-comment rows resynchronize at a newline followed by a byte that must begin a
+token, and the block-comment rows at the byte pair `*/` followed by whitespace, in comment context the closer, with the
+origin immediately after the pair. The certificate is occurrence-universal, so it also covers occurrences where `*/`
+reads as two operator tokens; the pinned witnesses exercise exactly that reading. The conventional row certifies at
+length two: its whitespace runs include the newline, so `!` must begin a token there as well. The JSON row uses the RFC
+8259 lexical forms over bytes and assumes UTF-8 validity; it is not a conforming JSON processor. How often such windows
+occur in real corpora is an empirical question for the measurement campaign, and no frequency claim is made. The run
+`a+` is included as the negative row, and `a*` would be decided as the same automaton: every byte continues a run as
+readily as it begins one, the model certifies no window, since absent-byte windows certify only vacuously, and the
+search exhausts its quotient, which is precisely the shape of a model-negative. Retained keys count the quotient keys
+the search kept before shortest-window stopping, one indicator of the search footprint in place of the `6^n` bound.
 
 | Token set                      | Shortest model-certified k | Example window at origin | Retained keys |
 |--------------------------------|----------------------------|--------------------------|---------------|
@@ -368,17 +374,15 @@ search kept before shortest-window stopping, one indicator of the search footpri
 
 ## 10 Limitations
 
-All deliberate. The soundness proof excludes token sets where a token matches the empty string; two thirds of random
-grammars are nullable and are excluded rather than counted, and nothing here says anything about them. It also speaks
-only of completely tokenizable inputs: malformed input is outside the proof, and no consumed-prefix analogue is
-claimed. Negatives are model-relative: the model refuses windows a greedy scanner would allow, so an exhausted search
-means no window *under this model*, never that none exists. The worst case is exponential and the probe is budgeted,
-though the retained keys stayed below 200 on every named row, at most 32 with mean 9.2 among the 95 no-byte grammars.
-The evaluated v1.3.3 artifact ships no window-planning API: its certificate machinery is a probe, on the principle
-that the certificate's formulation should freeze in the paper before becoming a public contract. Release 1.4.0,
-published after submission, made the formulation a public contract; that implementation lies outside the paper's
-evaluation. And no representative real-corpus evidence exists yet; window occurrence frequency is the measurement
-campaign's question.
+All deliberate. The soundness proof speaks only of completely tokenizable inputs: malformed input is outside the proof,
+and no consumed-prefix analogue is claimed. Negatives are model-relative: the model refuses windows a greedy scanner
+would allow, so an exhausted search means no window *under this model*, never that none exists. The worst case is
+exponential and the probe is budgeted, though the retained keys stayed below 200 on every named row, at most 32 with
+mean 9.9 among the 337 no-byte grammars. The evaluated v1.3.3 artifact ships no window-planning API: its certificate
+machinery is a probe, on the principle that the certificate's formulation should freeze in the paper before becoming a
+public contract. Release 1.4.0, published after submission, made the formulation a public contract; that implementation
+lies outside the paper's evaluation. And no representative real-corpus evidence exists yet; window occurrence frequency
+is the measurement campaign's question.
 
 ## 11 Related-work summary
 

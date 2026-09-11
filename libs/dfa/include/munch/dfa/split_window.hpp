@@ -25,10 +25,9 @@ namespace munch::dfa
  * begin exactly where some represented history just ended one, and reading from a non-re-entrant initial
  * state begins a token at that offset. The window is certified when every surviving hypothesis agrees on one
  * in-window origin. A refusal is model-relative: the model deliberately refuses some windows a greedy scanner
- * would allow, and refusal never proves that no certificate exists semantically. On non-empty, non-nullable
- * token sets this coincides at length one with is_split_point(); nullable sets are outside the window proof
- * and refused outright here, while the byte predicate can still certify for them, and an empty token set
- * refuses everything on both sides.
+ * would allow, and refusal never proves that no certificate exists semantically. On non-empty token sets this
+ * coincides at length one with is_split_point(), a nullable set being decided through the positive-width
+ * equivalent the simulator compiled, and an empty token set refuses everything on both sides.
  * @param simulator The compiled token set.
  * @param window The byte string to decide.
  * @return The in-window origin every covering token begins at, or std::nullopt when the window is refused.

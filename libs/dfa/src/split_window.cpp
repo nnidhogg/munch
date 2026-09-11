@@ -12,9 +12,8 @@ namespace munch::dfa
 {
 std::optional<std::size_t> is_split_window(const Simulator& simulator, const std::string_view window)
 {
-    // An accepting initial state is the compiled signature of a nullable token set, which the soundness theorem
-    // excludes; refuse rather than answer beyond the proved scope. The empty window certifies nothing either.
-    if (window.empty() || simulator.is_accepting(simulator.init_state()))
+    // The empty window certifies nothing.
+    if (window.empty())
     {
         return std::nullopt;
     }

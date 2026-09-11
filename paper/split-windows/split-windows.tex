@@ -56,10 +56,12 @@ figure counts only windows carrying an asserted completely tokenizable occurrenc
 model of a maximal-munch scanner's possible histories across a window, prove it sound, and decide reachability in that
 model exactly by exhausting a finite quotient of its reachable configurations, so every answer of the unbudgeted
 procedure is either a certified window with its origin or a proof that the model admits none. Within the stated flat,
-non-nullable, completely-tokenizable scope, model-positive answers are semantic certificates; negatives are relative
-to the conservative model, which deliberately refuses some windows a greedy scanner would allow. In a sample of 400
-random token sets, 91 of the 95 non-nullable sets certifying no byte gain a witnessed window, with zero inconclusive
-searches, and every exact-empty row of the predecessor's study gains a witnessed window of two to four bytes.
+completely-tokenizable scope, model-positive answers are semantic certificates; negatives are relative to the
+conservative model, which deliberately refuses some windows a greedy scanner would allow. A token set in which some
+token matches the empty string is decided through its positive-width equivalent, the same automaton entered through a
+start state that does not accept, which changes no scan. In a sample of 400 random token sets, 322 of the 337 sets
+certifying no byte gain a witnessed window, with zero inconclusive searches, and every exact-empty row of the
+predecessor's study gains a witnessed window of two to four bytes.
 Rewind-stress rows exercised 1{,}079{,}392 executions that scanned through the window and contained at least one
 rewind, with zero disagreements against the shipped scanner. The analysis runs once after automaton construction,
 using only the compiled tables and no input. \end{abstract}
@@ -67,14 +69,14 @@ using only the compiled tables and no input. \end{abstract}
 \section{Introduction}
 \label{sec:introduction}
 
-The predecessor of this paper derives, from a compiled token set, the complete set of bytes at which unlexed input
-can be cut with the serial token stream preserved, and proves the condition necessary as well as
-sufficient~\cite{nidhogg2026splitpoints}. Its sharpest limitation is its own applicability table: several of the
-studied conventional token sets certify \emph{no} byte, because a single string form, comment form, or whitespace run
-gives some non-initial live state a transition on every candidate, and a fresh 400-grammar random sweep
-generated for this study reproduces the pattern, 95 of its 134 non-nullable sets certifying none. This paper is
-about the object that refusal leaves standing: a byte \emph{string} after which the start of the token covering
-the window's final byte is pinned, regardless of surrounding context.
+The predecessor of this paper derives, from a compiled token set, the complete set of bytes at which unlexed input can
+be cut with the serial token stream preserved, and proves the condition necessary as well as
+sufficient~\cite{nidhogg2026splitpoints}. Its sharpest limitation is its own applicability table: several of the studied
+conventional token sets certify \emph{no} byte, because a single string form, comment form, or whitespace run gives some
+non-initial live state a transition on every candidate, and a fresh 400-grammar random sweep generated for this study
+reproduces the pattern, 337 of its 400 sets certifying none. This paper is about the object that refusal leaves
+standing: a byte \emph{string} after which the start of the token covering the window's final byte is pinned, regardless
+of surrounding context.
 
 Concretely, we ask: for a token set compiled to a DFA and scanned by maximal munch, is there a window $W = w_0 \cdots
 w_{k-1}$ and an offset $o$ with $0 \leq o < k$ such that in \emph{every} completely tokenizable input containing $W$,
@@ -122,8 +124,31 @@ An input is \emph{completely tokenizable} when this process consumes it exactly.
 one fixed token set compiled to one DFA scanned from one fixed $q_0$, with no lexical modes, no mode stack, and
 no semantic scanner state. $A^+$ denotes the live
 subautomaton: states both reachable from $q_0$ and co-accessible to acceptance, with only transitions between live
-states retained. No token matches the empty string; this exclusion is load-bearing and revisited in
-Section~\ref{sec:limitations}.
+states retained. A token may match the empty string; the scan never emits it, and the next lemma is how every
+statement below still assumes a start state that neither accepts nor is re-entered.
+
+\begin{lemma}[Positive-width equivalent]
+\label{lem:unroll}
+Let $A$ be the DFA of a token set whose start state $q_0$ accepts, and let $A'$ be $A$ with a fresh start state
+$q_0'$ that carries $q_0$'s outgoing transitions and does not accept, $q_0$ itself retained. Then the maximal-munch
+scans of $A$ and $A'$ agree on every input, $A'$ accepts exactly the nonempty words $A$ accepts, and no transition of
+$A'$ enters $q_0'$.
+\end{lemma}
+
+\begin{proof}
+A token has positive width, so a scan records an accepting configuration only after consuming a byte. From $q_0$ and
+from $q_0'$ the first byte leads to the same state, since $q_0'$ carries $q_0$'s transitions, and from there the two
+scans traverse the same states and record the same accepting positions; the emitted token and the restart offset
+therefore agree, and both scans restart in their own start state. The accepted words of $A'$ are the words of length
+at least one accepted by $A$, the empty word being lost with $q_0'$'s acceptance. No transition of $A$ targets
+$q_0'$, which is fresh, and the copied transitions target $q_0$'s successors, so nothing enters $q_0'$.
+\end{proof}
+
+Throughout, a token set whose start state accepts is read through $A'$, and the artifact compiles every token set this
+way before deciding anything about it: the unrolled automaton has one state more and the same scan, so nothing below
+loses generality by assuming that $q_0$ does not accept, and the re-entrancy condition of
+Section~\ref{sec:specialization} is then trivially met at $q_0'$ while $q_0$, now an ordinary state, is handled as any
+other.
 
 \begin{definition}[Certified split window]
 \label{def:window}
@@ -138,17 +163,16 @@ maximal-munch tokenization of $x$ that contains the byte at offset $t + k - 1$ b
 A certified split window $(W, o)$ is \emph{witnessed} when some completely tokenizable input contains $W$.
 \end{definition}
 
-Definition~\ref{def:window} quantifies over the inputs containing $W$ and is therefore vacuously true when no
-completely tokenizable input contains it, and the vacuity is not hypothetical: over $\{\code{0}, \code{00},
-\code{01}\}$ the model below certifies the window \code{1001} at origin 2, yet no completely tokenizable input
-contains \code{1001}, since every \code{1} is the tail of a greedily chosen \code{01}, a token boundary
-therefore follows the window's first byte, maximal munch must then consume \code{00}, and the final \code{1}
-sits at a boundary no token starts. The preceding argument proves non-occurrence; the artifact asserts the
-model prediction and the empty result of its bounded targeted witness search. Every applicability figure in this
-paper counts only witnessed certificates: the named rows pin their witness inputs in the artifact, and for each
-random grammar the probe constructs and verifies a concrete completely tokenizable input, with the all-91
-aggregate asserted; a certificate the bounded witness search cannot witness is reported as unresolved, never as
-a rescue.
+Definition~\ref{def:window} quantifies over the inputs containing $W$ and is therefore vacuously true when no completely
+tokenizable input contains it, and the vacuity is not hypothetical: over $\{\code{0}, \code{00}, \code{01}\}$ the model
+below certifies the window \code{1001} at origin 2, yet no completely tokenizable input contains \code{1001}, since
+every \code{1} is the tail of a greedily chosen \code{01}, a token boundary therefore follows the window's first byte,
+maximal munch must then consume \code{00}, and the final \code{1} sits at a boundary no token starts. The preceding
+argument proves non-occurrence; the artifact asserts the model prediction and the empty result of its bounded targeted
+witness search. Every applicability figure in this paper counts only witnessed certificates: the named rows pin their
+witness inputs in the artifact, and for each random grammar the probe constructs and verifies a concrete completely
+tokenizable input, with the 322 aggregate asserted; a certificate the bounded witness search cannot witness is reported
+as unresolved, never as a rescue.
 
 For $k = 1$ Definition~\ref{def:window} is the boundary guarantee of a certified split point, since the token
 containing the single byte
@@ -361,9 +385,10 @@ than a complete cost model.
 \section{Specialization to length one}
 \label{sec:specialization}
 
-At length one the model collapses to the published certificate, and the correspondence is exact at the level of
-the \emph{shipped predicate}, the one that withholds vacuously certified bytes, rather than of the bare condition.
-Throughout this section the token set is non-empty and non-nullable and $q_0$ is live.
+At length one the model collapses to the published certificate, and the correspondence is exact at the level of the
+\emph{shipped predicate}, the one that withholds vacuously certified bytes, rather than of the bare condition.
+Throughout this section the token set is non-empty, read through its positive-width equivalent where a token matches the
+empty string, and $q_0$ is live.
 
 Call a byte $b$ \emph{useful} when $\delta(q_0, b)$ is defined and live. The predicate
 \code{is\_split\_point($b$)} of~\cite{nidhogg2026splitpoints} holds exactly when $b$ is useful, no live state other
@@ -488,36 +513,35 @@ window-planning sibling, which lies outside this paper's evaluation and is not a
 The artifact runs the evaluation in the default test target and CI; the figures below are asserted rather
 than merely printed, so a drifted number fails the test suite.
 
-Over 400 random token sets on a three-symbol alphabet, generated by the probe itself with a pinned seed and
-draw order, 266 are nullable and excluded, since the soundness proof
-does not cover them; of the 134 remaining, 39 certify at least one byte exactly. Of the 95 that certify no byte,
-\textbf{91 gain a certified window, and every one of the 91 is witnessed}: for each, the bounded search finds
-a completely tokenizable input containing a certified window, with the covering token beginning at the reported
-origin, verified as each input is constructed, with the all-91 aggregate asserted; 4 exhaust the quotient with
-no window under the model, and none are inconclusive
-or unresolved. Occurrence is a property of the concrete word rather than its quotient key, so the witness search
-continues past the shortest certified length instead of stopping at the first certifying word. Separate
-rewind-stress rows exercised 1{,}079{,}392 generated executions that scanned through the window and contained
-at least one rewind, with zero disagreements against the shipped scanner; 418{,}466 of those executions
-tokenize their whole input completely and the remaining 660{,}926 have malformed suffixes past the window, both
-counts asserted. This is an implementation stress check: the generated inputs were required to scan through the
-window, not to tokenize completely. The random
-sweep additionally checked every certified two-byte window over the probe's generated contexts. The
-length-one case reproduces the published certificate on all 134 grammars.
+Over 400 random token sets on a three-symbol alphabet, generated by the probe itself with a pinned seed and draw order,
+266 are nullable and are decided through their positive-width equivalent, exactly as the artifact compiles them; 63
+certify at least one byte exactly. Of the 337 that certify no byte, \textbf{326 gain a certified window under the model,
+and 322 of those are witnessed}: for each, the bounded search finds a completely tokenizable input containing a
+certified window, with the covering token beginning at the reported origin, verified as each input is constructed, with
+the 322 aggregate asserted; 4 model-positive grammars have no occurrence within the bounded witness search and are
+reported as unresolved, never as rescues; 11 exhaust the quotient with no window under the model, and none are
+inconclusive. Occurrence is a property of the concrete word rather than its quotient key, so the witness search
+continues past the shortest certified length instead of stopping at the first certifying word. Separate rewind-stress
+rows exercised 1{,}079{,}392 generated executions that scanned through the window and contained at least one rewind,
+with zero disagreements against the shipped scanner; 418{,}466 of those executions tokenize their whole input completely
+and the remaining 660{,}926 have malformed suffixes past the window, both counts asserted. This is an implementation
+stress check: the generated inputs were required to scan through the window, not to tokenize completely. The random
+sweep additionally checked every certified two-byte window over the probe's generated contexts. The length-one case
+reproduces the published certificate on all 400 grammars, the 266 nullable ones included.
 
-Named token sets: all six exact-empty rows of the predecessor's applicability table, five C-like variants and JSON,
-gain witnessed windows, and one new cumulative C-like variant joins them as a seventh positive row.
-Table~\ref{tab:windows} shows the concrete windows, with the retained key counts, one indicator of the search
-footprint, in place of the $6^{|Q^+|}$ bound. The example windows show the recovery anchors: the string and
-line-comment rows resynchronize at a newline followed by a byte that must begin a token, and the block-comment rows at
-the byte pair \code{*/} followed by whitespace, in comment context the closer, with the origin immediately after the
-pair. The certificate is occurrence-universal, so it also covers occurrences where \code{*/} reads as two operator
-tokens; the pinned witnesses exercise exactly that reading. The conventional row certifies at length two: its
-whitespace runs include the newline, so \code{!} must begin a token there as well. The JSON row uses the RFC
-8259~\cite{bray2017json} lexical forms over bytes and assumes UTF-8 validity; it is not a conforming JSON processor.
-How often such windows occur in real corpora is an empirical question for the measurement campaign, and no frequency
-claim is made here. The non-nullable $\code{a}^+$ is included as the negative row: every byte continues a run as
-readily as it begins one, the model certifies no window, since absent-byte windows certify only vacuously under
+Named token sets: all six exact-empty rows of the predecessor's applicability table, five C-like variants and JSON, gain
+witnessed windows, and one new cumulative C-like variant joins them as a seventh positive row. Table~\ref{tab:windows}
+shows the concrete windows, with the retained key counts, one indicator of the search footprint, in place of the
+$6^{|Q^+|}$ bound. The example windows show the recovery anchors: the string and line-comment rows resynchronize at a
+newline followed by a byte that must begin a token, and the block-comment rows at the byte pair \code{*/} followed by
+whitespace, in comment context the closer, with the origin immediately after the pair. The certificate is
+occurrence-universal, so it also covers occurrences where \code{*/} reads as two operator tokens; the pinned witnesses
+exercise exactly that reading. The conventional row certifies at length two: its whitespace runs include the newline, so
+\code{!} must begin a token there as well. The JSON row uses the RFC 8259~\cite{bray2017json} lexical forms over bytes
+and assumes UTF-8 validity; it is not a conforming JSON processor. How often such windows occur in real corpora is an
+empirical question for the measurement campaign, and no frequency claim is made here. The run $\code{a}^+$ is included
+as the negative row, and $\code{a}^*$ would be decided as the same automaton: every byte continues a run as readily as
+it begins one, the model certifies no window, since absent-byte windows certify only vacuously under
 Definition~\ref{def:window}, and the search exhausts its quotient, which is precisely the shape of a model-negative.
 
 \begin{table}
@@ -659,17 +683,15 @@ and their supported successor in release 1.4.0.
 \section{Limitations}
 \label{sec:limitations}
 
-All deliberate. The soundness proof excludes token sets where a token matches the empty string; two thirds of
-random grammars are nullable and are excluded rather than counted, and nothing here says anything about them. It
-also speaks only of completely tokenizable inputs: malformed input is outside the proof, and no consumed-prefix
-analogue is claimed. Negatives are model-relative: the model refuses windows a greedy scanner would allow, so an
-exhausted search means no window \emph{under this model}, never that none exists. The worst case is exponential
-and the probe is budgeted, though the retained keys stayed below 200 on every named row, at most 32 with mean
-9.2 among the 95 no-byte grammars. The evaluated v1.3.3 artifact ships no window-planning API: its certificate
-machinery is a probe, on the principle that the certificate's formulation should freeze in this paper before
-becoming a public contract. Release 1.4.0, published after submission, made the formulation a public
-contract; that implementation lies outside this paper's evaluation. And no representative real-corpus evidence exists yet; window occurrence frequency is
-the measurement campaign's question.
+All deliberate. The soundness proof speaks only of completely tokenizable inputs: malformed input is outside the proof,
+and no consumed-prefix analogue is claimed. Negatives are model-relative: the model refuses windows a greedy scanner
+would allow, so an exhausted search means no window \emph{under this model}, never that none exists. The worst case is
+exponential and the probe is budgeted, though the retained keys stayed below 200 on every named row, at most 32 with
+mean 9.9 among the 337 no-byte grammars. The evaluated v1.3.3 artifact ships no window-planning API: its certificate
+machinery is a probe, on the principle that the certificate's formulation should freeze in this paper before becoming a
+public contract. Release 1.4.0, published after submission, made the formulation a public contract; that implementation
+lies outside this paper's evaluation. And no representative real-corpus evidence exists yet; window occurrence frequency
+is the measurement campaign's question.
 
 \section{Conclusion}
 \label{sec:conclusion}
@@ -683,29 +705,29 @@ soundness argument is a representation invariant: the final segmentation's actua
 among the hypotheses, so unanimity can only land on the truth, and maximal-munch backup never needs simulating,
 because the model tracks where tokens begin rather than where the read head wanders.
 
-The search is a decision procedure for the model, not a heuristic: a quotient of the reachable clouds, exact
-under the stated single-occupancy invariant, makes breadth-first search terminate by exhaustion, so every answer
-is a certified window with its origin or a proof that the model admits none at any length. The three-layer
-honesty is deliberate and permanent. Model-positive answers are semantically certified within the stated flat,
-non-nullable, completely-tokenizable scope. Negatives are model-relative: the model refuses
-windows a greedy scanner would allow, the two asserted witnesses exhibit the over-approximation, and the
-strictness corollary locates its minimum nonvacuous length at two, since at length one the model provably
-coincides with the published predicate, made exact for occurring bytes by the predecessor's necessity theorem.
-Nullable token sets are excluded outright, and nothing here says anything about them.
+The search is a decision procedure for the model, not a heuristic: a quotient of the reachable clouds, exact under the
+stated single-occupancy invariant, makes breadth-first search terminate by exhaustion, so every answer is a certified
+window with its origin or a proof that the model admits none at any length. The three-layer honesty is deliberate and
+permanent. Model-positive answers are semantically certified within the stated flat, completely-tokenizable scope.
+Negatives are model-relative: the model refuses windows a greedy scanner would allow, the two asserted witnesses exhibit
+the over-approximation, and the strictness corollary locates its minimum nonvacuous length at two, since at length one
+the model provably coincides with the published predicate, made exact for occurring bytes by the predecessor's necessity
+theorem. A token set in which some token matches the empty string is decided through its positive-width equivalent,
+which unrolls the accepting start state and changes no scan, so nothing is set aside on that account.
 
 The generalization does what it was built for: it recovers every exact-empty row of the predecessor's table, all
-witnessed. Of the 95 non-nullable random token sets certifying no byte, 91 gain a witnessed certified window with zero
-inconclusive searches; the predecessor's six exact-empty rows gain witnessed windows of two to four bytes, with the
-concrete windows in Table~\ref{tab:windows}. Separate rewind-stress rows exercised 1{,}079{,}392 generated executions
-that scanned through the window and contained at least one rewind, with zero disagreements against the shipped
-scanner, and the figures are printed and asserted in the artifact, so they fail the test suite if they move. What this
-paper deliberately does not deliver is the cut itself: the evaluated v1.3.3 planner uses single-byte certificates
-only, and the window-planning sibling that release 1.4.0 added after submission is outside this evaluation;
-turning a window's boundary into a parallel cut is an explicit composition with the predecessor's prefix-stability
-result, and whether windows occur often enough in real corpora to plan balanced chunks is an empirical question on
-which this paper reports and relies on no controlled evaluation; the artifact archives exploratory preview
-measurements only. That evaluation, on representative corpora with planning times, occurrence frequencies, and
-end-to-end comparisons against byte certificates, is the natural next step and is not claimed here.
+witnessed. Of the 337 random token sets certifying no byte, 322 gain a witnessed certified window with zero inconclusive
+searches; the predecessor's six exact-empty rows gain witnessed windows of two to four bytes, with the concrete windows
+in Table~\ref{tab:windows}. Separate rewind-stress rows exercised 1{,}079{,}392 generated executions that scanned
+through the window and contained at least one rewind, with zero disagreements against the shipped scanner, and the
+figures are printed and asserted in the artifact, so they fail the test suite if they move. What this paper deliberately
+does not deliver is the cut itself: the evaluated v1.3.3 planner uses single-byte certificates only, and the
+window-planning sibling that release 1.4.0 added after submission is outside this evaluation; turning a window's
+boundary into a parallel cut is an explicit composition with the predecessor's prefix-stability result, and whether
+windows occur often enough in real corpora to plan balanced chunks is an empirical question on which this paper reports
+and relies on no controlled evaluation; the artifact archives exploratory preview measurements only. That evaluation, on
+representative corpora with planning times, occurrence frequencies, and end-to-end comparisons against byte
+certificates, is the natural next step and is not claimed here.
 
 The contribution is therefore narrow and exactly bounded, in the same sense as its predecessor: not another way
 to recover context, but the certification step, extended from single bytes to bounded windows, with the origin

@@ -137,14 +137,14 @@ public:
      * before it; see core::Lexer::tokenize_all_parallel() for what survives there. For input that tokenizes
      * completely, splitting immediately before such a symbol therefore produces the identical token stream, which is
      * what makes chunked processing of one large input safe. The initial state is exempt only while no transition
-     * re-enters it; a nullable pattern such as a kleene token minimizes to an accepting, self-looping start state, and
-     * its symbols certify nothing. A symbol no live state consumes is safe only vacuously, since no input this lexer
-     * accepts contains it, and is deliberately not reported: a caller cannot use it, and searching for one scans the
-     * whole input for nothing. Transitions into states that can never accept are ignored throughout, since no emitted
-     * token can traverse one; a pattern denoting the empty language leaves exactly such states behind. States the
-     * initial state cannot reach are ignored on the same grounds, since no scan can arrive in one; a Dfa built by
-     * subset construction has none, but one assembled by hand may. Token sets whose runs or literals may contain any
-     * byte certify no split points.
+     * re-enters it; a nullable set is compiled through a fresh start state that never is, and a kleene token's own
+     * symbol is then consumed by the looping state behind it and certifies nothing. A symbol no live state consumes is
+     * safe only vacuously, since no input this lexer accepts contains it, and is deliberately not reported: a caller
+     * cannot use it, and searching for one scans the whole input for nothing. Transitions into states that can never
+     * accept are ignored throughout, since no emitted token can traverse one; a pattern denoting the empty language
+     * leaves exactly such states behind. States the initial state cannot reach are ignored on the same grounds, since
+     * no scan can arrive in one; a Dfa built by subset construction has none, but one assembled by hand may. Token sets
+     * whose runs or literals may contain any byte certify no split points.
      * @param symbol The symbol to test.
      * @return True if every occurrence of the symbol begins a token; false for symbols that satisfy the
      *         condition only vacuously.
@@ -209,15 +209,16 @@ public:
     }
 
     /**
-     * @brief Returns whether some token matches the empty string, the compiled signature being an accepting
-     *        initial state.
+     * @brief Returns whether some token matches the empty string.
      *
-     * Nullable token sets sit outside the split window soundness proof, and every window is refused for them.
-     * The byte predicate instead withdraws only its initial-state exemption there, so byte certificates can
-     * remain; a planner consults this before spending any search on windows, never to discard a byte plan.
-     * @return True when the initial state accepts, so some token matches the empty string.
+     * The tables never show it: a nullable set is compiled as its positive-width equivalent, the automaton entered
+     * through a fresh start state that does not accept, since the scan never emits an empty token and every
+     * decision's proof assumes a start state that neither accepts nor is re-entered. What remains of the empty match
+     * is what the scan reports for it, the empty input and a first byte no token matches, both answered with the
+     * token the old start state accepted and length zero.
+     * @return True when some token matches the empty string.
      */
-    [[nodiscard]] bool nullable() const noexcept { return is_accepting(init_state_); }
+    [[nodiscard]] bool nullable() const noexcept { return empty_state_ != no_state_; }
 
     /**
      * @brief The byte string every certified split window provably contains, or empty when none is proved.
@@ -228,9 +229,9 @@ public:
      * core-avoiding death words over the live tables, with the killing byte never fed to the matcher. The longest
      * proved core is kept: every window is_split_window() certifies contains it with at least one byte following,
      * which is what lets the planner narrow its candidate windows to occurrences of this string. Empty means no
-     * core is proved, because no such state exists, the candidate was refuted by a core-free death word, or the
-     * token set is nullable; the planner then keeps its exhaustive walk, and nothing weakens: the core is an
-     * accelerator's licence, never a certificate itself.
+     * core is proved, because no such state exists or the candidate was refuted by a core-free death word; the
+     * planner then keeps its exhaustive walk, and nothing weakens: the core is an accelerator's licence, never a
+     * certificate itself.
      * @return The proved mandatory core, or an empty view.
      */
     [[nodiscard]] std::string_view mandatory_core() const noexcept { return mandatory_core_; }
@@ -247,15 +248,16 @@ public:
     {
         if (begin == end)
         {
-            return {.token = accepted(init_state_), .length = 0};
+            return {.token = empty_match(), .length = 0};
         }
 
         // A 64-bit state spares the dependency chain a zero-extension per byte when indexing the tables.
         std::size_t state{init_state_};
 
-        // The last accepting state seen and the length of input it had consumed. The Token itself is resolved once
-        // after the scan, keeping its load off the per-byte dependency chain.
-        std::size_t accept_state{(flags_[state] & accept_flag_) != 0 ? state : no_state_};
+        // The last accepting state seen and the length of input it had consumed, the empty match to begin with where
+        // the set has one. The Token itself is resolved once after the scan, keeping its load off the per-byte
+        // dependency chain.
+        std::size_t accept_state{empty_state_};
 
         std::size_t accept_consumed{0};
 
@@ -320,7 +322,7 @@ public:
      *        three-argument form only; the Lexer adapts a two-argument sink. A sink returning a value convertible to
      *        bool stops the scan by returning false; the stopping token still counts.
      * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at
-     *         the returned offset: no token matched there, a zero-width token did, or the sink returned false. Input
+     *         the returned offset: no token matched there, only the empty one did, or the sink returned false. Input
      *         elements are read as unsigned char, so wider element types reduce modulo 256.
      */
     template <common::concepts::Random_access_byte_iterator Iterator, typename Sink>
@@ -336,7 +338,7 @@ public:
             // A 64-bit state spares the dependency chain a zero-extension per byte when indexing the tables.
             std::size_t state{init_state_};
 
-            std::size_t accept_state{(flags_[state] & accept_flag_) != 0 ? state : no_state_};
+            std::size_t accept_state{no_state_};
 
             std::size_t accept_consumed{0};
 
@@ -365,7 +367,7 @@ public:
                 }
             }
 
-            if (accept_state == no_state_ || accept_consumed == 0)
+            if (accept_state == no_state_)
             {
                 return offset;
             }
@@ -528,6 +530,15 @@ private:
     void derive_mandatory_core();
 
     /**
+     * @brief The token the empty string matches, or std::nullopt when no token does.
+     * @return That token.
+     */
+    [[nodiscard]] std::optional<Token> empty_match() const
+    {
+        return empty_state_ != no_state_ ? std::optional<Token>{accept_table_[empty_state_].token} : std::nullopt;
+    }
+
+    /**
      * @brief The token a state accepts, or std::nullopt where it accepts nothing.
      * @param state The state to resolve.
      * @return The accepted token, or std::nullopt when the state accepts nothing.
@@ -556,6 +567,12 @@ private:
      * @brief The state a simulation starts in.
      */
     Dfa::State_t init_state_;
+
+    /**
+     * @brief The start state of the set as given, kept only when it accepted, so the empty match is still known;
+     *        no_state_ otherwise. The compiled start state, init_state_, is then the fresh one in front of it.
+     */
+    Entry_t empty_state_{no_state_};
 
     /**
      * @brief Whether any reachable transition re-enters the initial state.

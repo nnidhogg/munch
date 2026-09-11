@@ -890,8 +890,8 @@ TEST_F(Lexer_test, Split_windows_stay_conservative_and_scoped)
     EXPECT_FALSE(plus_lexer.is_split_window("aaaaa").has_value());
     EXPECT_FALSE(plus_lexer.is_split_window("aaaaaa").has_value());
 
-    // Nullable token sets sit outside the window soundness proof and are refused outright, matching the byte
-    // predicate's withdrawal of its initial-state exemption. The empty window certifies nothing either.
+    // A nullable set is decided as its positive-width equivalent, so a* answers exactly as a+ does: "a" sits
+    // mid-run and is refused. The empty window certifies nothing either.
     Builder_dbg nullable;
 
     nullable.add_token(kleene(text("a")), Token_kind::Identifier, 1);
@@ -994,8 +994,8 @@ TEST_F(Lexer_test, Window_fallback_degrades_honestly_and_the_equality_check_has_
 
     EXPECT_EQ(exhausted, (std::vector<std::size_t>{0, runs.size()}));
 
-    // A nullable set contributes no windows, the window proof excludes it, and with no byte certificate either
-    // it takes the same degradation without any window search.
+    // A nullable set is planned as its positive-width equivalent, {a+, space}: the space certifies as a byte and
+    // no window over a run of a certifies, so on this input it takes the same degradation.
     Builder_dbg nullable;
 
     nullable.add_token(kleene(text("a")), Token_kind::Identifier, 1);
@@ -1139,7 +1139,7 @@ TEST_F(Lexer_test, Default_planning_uses_the_exact_certificate_never_the_relaxed
     }
 }
 
-TEST_F(Lexer_test, Window_refusals_pin_the_nullable_guard_and_the_live_target_filter)
+TEST_F(Lexer_test, Window_decisions_unroll_a_nullable_start_and_keep_the_live_target_filter)
 {
     enum class Token_kind : uint8_t
     {
@@ -1147,15 +1147,16 @@ TEST_F(Lexer_test, Window_refusals_pin_the_nullable_guard_and_the_live_target_fi
         Operator,
     };
 
-    // A nullable set whose initial state is not re-entrant: optional(a) accepts emptily and nothing returns to
-    // the start, so a model that merely forgot the nullable guard would certify "b" at 0. The refusal pins the
-    // guard itself, not a coincidental re-entrancy.
+    // A nullable set is decided as its positive-width equivalent: optional(a) accepts emptily, but the scan never
+    // emits the empty token, so the set scans exactly as {a, b} does, and there every b begins a token. The
+    // decision runs over the compiled tables, whose start state is the fresh unrolled one that neither accepts
+    // nor is re-entered, so the window proof's premise holds and "b" certifies at 0.
     Builder_dbg nullable;
 
     nullable.add_token(optional(text("a")), Token_kind::Identifier, 1);
     nullable.add_token(text("b"), Token_kind::Operator, 1);
 
-    EXPECT_FALSE(nullable.build().is_split_window("b").has_value());
+    EXPECT_EQ(nullable.build().is_split_window("b"), std::optional<std::size_t>{0});
 
     // The non-re-entrant rename guard, pinned by the language (ab)*a: reading "a" from the initial state must
     // not be treated as beginning a token there, because live paths re-enter the start; the completely
@@ -1239,9 +1240,8 @@ TEST_F(Lexer_test, Next_certified_start_answers_both_certificate_kinds_in_eviden
     ASSERT_TRUE(mixed_lexer.is_split_point(';'));
     EXPECT_EQ(mixed_lexer.next_certified_start("x@ abc;", 1), std::optional<std::size_t>{3});
 
-    // A nullable set keeps its byte certificates, since only the window proof excludes it: 'b' certifies over
-    // {optional a, b} because nothing re-enters the start, so recovery answers through the byte even though
-    // every window is refused.
+    // A nullable set is decided through its positive-width equivalent, here {a, b}: 'b' certifies as a byte and
+    // "bb" as a window at the second b, and the walk answers at the byte first, in evidence order.
     Builder_dbg nullable;
 
     nullable.add_token(optional(text("a")), Token_kind::Optional_a, 1);
@@ -1250,7 +1250,7 @@ TEST_F(Lexer_test, Next_certified_start_answers_both_certificate_kinds_in_eviden
     const auto nullable_lexer{nullable.build()};
 
     ASSERT_TRUE(nullable_lexer.is_split_point('b'));
-    ASSERT_FALSE(nullable_lexer.is_split_window("bb").has_value());
+    ASSERT_EQ(nullable_lexer.is_split_window("bb"), std::optional<std::size_t>{1});
     EXPECT_EQ(nullable_lexer.next_certified_start("?bb", 1), std::optional<std::size_t>{1});
 
     // A single unbounded run certifies nothing at any length.
@@ -1900,16 +1900,16 @@ TEST_F(Lexer_test, Mandatory_core_reports_the_family_verdicts_and_a_long_core_re
         EXPECT_EQ(builder.build().mandatory_core(), "");
     }
 
-    // The nullable row pins the guard itself: the comment interior would prove "*/" exactly as in the first
-    // row, but an optional token accepts emptily and the derivation must not even begin, because no window
-    // certifies anything for a nullable set and a core would claim a licence where no walk runs.
+    // The nullable row proves the same core as the first: an optional token accepts emptily, but the set is
+    // compiled as its positive-width equivalent, {a, comment}, whose comment interior forces "*/" exactly as
+    // before; the derivation runs where it once refused, and licenses what it would have licensed there.
     {
         Builder_dbg builder;
 
         builder.add_token(optional(text("a")), Token_kind::Identifier, 2);
         builder.add_token(block_comment, Token_kind::Comment, 1);
 
-        EXPECT_EQ(builder.build().mandatory_core(), "");
+        EXPECT_EQ(builder.build().mandatory_core(), "*/");
     }
 
     // Quadruple-quote strings prove a four-byte core, one byte past the longest window the planner tries, so

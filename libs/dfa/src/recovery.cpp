@@ -317,8 +317,7 @@ bool rescue_free(const Simulator& simulator)
 std::optional<std::size_t> next_anchored_start(
         const Simulator& simulator, const std::string_view tail, const std::size_t from)
 {
-    // Nullable token sets sit outside the model, exactly as for is_split_window().
-    if (simulator.is_accepting(simulator.init_state()) || from >= tail.size())
+    if (from >= tail.size())
     {
         return std::nullopt;
     }
@@ -374,11 +373,6 @@ std::optional<std::size_t> next_anchored_start(
 
 std::optional<std::string> minimal_repair(const Simulator& simulator, const std::string_view tail)
 {
-    if (simulator.is_accepting(simulator.init_state()))
-    {
-        return std::nullopt;
-    }
-
     const auto table{build_jump_table(simulator, tail)};
 
     if (table.tokenizes[0])

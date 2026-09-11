@@ -50,8 +50,8 @@ namespace munch::dfa
  * completing, a larger set this decider does not speak about, so neither subsumes the other outright.
  * Decided by one scenario play per reachable state, no repair enumerated. When no repair of any prefix
  * makes the whole tokenizable, every position is vacuously invariant and this query deliberately refuses
- * instead of answering; nullable token sets sit outside the underlying model and are refused outright, as
- * for is_split_window().
+ * instead of answering. A nullable token set is decided through the positive-width equivalent the simulator
+ * compiled, as every decision here is.
  * @param simulator The compiled token set.
  * @param tail The preserved suffix of the input, its end the end of input.
  * @param from The offset the search starts at; at or past the tail's size finds nothing.
@@ -66,8 +66,7 @@ namespace munch::dfa
  *        tail is completely tokenizable, empty when the tail already tokenizes.
  *
  * Existence and minimality are exact: the minimal repair is a shortest path to a completing crossing
- * entry, and a refusal certifies that no repair of any length exists. Nullable token sets are refused,
- * as for next_anchored_start().
+ * entry, and a refusal certifies that no repair of any length exists.
  * @param simulator The compiled token set.
  * @param tail The preserved suffix of the input.
  * @return A minimal repair, or std::nullopt when the tail is beyond repair.

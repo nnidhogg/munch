@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+#include "munch/dfa/unroll_start.hpp"
+
 namespace munch::dfa
 {
 namespace
@@ -64,10 +66,21 @@ Simulator::Simulator(const Dfa& dfa, const std::span<const std::size_t> ignored)
 {}
 
 Simulator::Simulator(
-        const Dfa& dfa, const std::span<const std::size_t> ignored,
+        const Dfa& source, const std::span<const std::size_t> ignored,
         const std::span<const std::pair<std::size_t, std::uint64_t>> payloads)
-    : init_state_{dfa.init_state()}
 {
+    // A nullable set is compiled as its positive-width equivalent; the old start state keeps its index, so the
+    // empty match it accepts can still be reported where the scan reports one.
+    const auto nullable{source.has_accept_token(source.init_state()).has_value()};
+
+    const std::optional<Dfa> unrolled{nullable ? std::optional{unroll_start(source)} : std::nullopt};
+
+    const Dfa& dfa{unrolled ? *unrolled : source};
+
+    init_state_ = dfa.init_state();
+
+    empty_state_ = nullable ? static_cast<Entry_t>(source.init_state()) : no_state_;
+
     const auto highest{highest_state(dfa)};
 
     if (highest >= no_state_ - 1)
@@ -211,8 +224,9 @@ Simulator::Simulator(
     }
 
     // A symbol only the initial state consumes can only begin a token, but the exemption is valid only while the
-    // initial state cannot be reached again after consuming input: a nullable pattern such as kleene minimizes to
-    // an accepting start state with a self-loop, where the "first byte of a token" reasoning no longer holds.
+    // initial state cannot be reached again after consuming input, where the "first byte of a token" reasoning no
+    // longer holds. A compiled start state is never re-entered, unrolling having seen to it for nullable sets and
+    // subset construction for the rest, but a hand-built Dfa may loop back to it.
     const auto init_reentrant{
             std::ranges::any_of(std::views::iota(std::size_t{0}, symbol_count), [&](const std::size_t symbol) {
                 return std::ranges::any_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {
@@ -384,15 +398,9 @@ void Simulator::derive_split_points_ignoring(
 // over the live tables and refutes the candidate on the first one found. The matcher reads only the live
 // prefix; the killing byte is never fed to it, since a core completing on the killing byte is too late.
 // Refusal leaves the core empty and the planner exhaustive: the core is an accelerator's licence, never a
-// certificate. Nullable sets skip the derivation outright, because the window certificate refuses them
-// wholesale and a core would license nothing.
+// certificate.
 void Simulator::derive_mandatory_core()
 {
-    if (nullable())
-    {
-        return;
-    }
-
     const auto states{flags_.size()};
 
     const auto advance_live{[this](const std::size_t state, const std::size_t symbol) -> std::optional<std::size_t> {

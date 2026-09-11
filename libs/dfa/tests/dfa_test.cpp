@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <optional>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -13,6 +15,7 @@
 #include "munch/dfa/recovery.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
+#include "munch/dfa/unroll_start.hpp"
 
 using namespace munch;
 using namespace munch::dfa;
@@ -160,6 +163,60 @@ TEST_F(Dfa_test, Empty_input_accepting_dfa)
     using Match = Simulator::Match;
 
     EXPECT_EQ(simulator.run(input), Match(token, 0));
+}
+
+TEST_F(Dfa_test, Unrolling_an_accepting_start_keeps_every_scan_and_the_empty_match)
+{
+    // a* as one token: the start accepts and loops on a. Unrolled, a fresh start carries the loop's entry and does
+    // not accept, the old start stays behind it as the loop, and nothing enters the fresh one; the simulator
+    // compiles the set that way, so the empty match must still come back where the scan reports one.
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+
+    const Token token{1};
+
+    dfa.add_accept_state(q0, token);
+    dfa.add_transition(q0, dfa::Label('a'), q0);
+
+    const auto built{dfa.build()};
+
+    const auto unrolled{dfa::unroll_start(built)};
+
+    EXPECT_NE(unrolled.init_state(), built.init_state());
+    EXPECT_FALSE(unrolled.has_accept_token(unrolled.init_state()).has_value());
+    EXPECT_EQ(unrolled.advance(unrolled.init_state(), 'a'), std::optional{built.init_state()});
+    EXPECT_EQ(unrolled.advance(built.init_state(), 'a'), std::optional{built.init_state()});
+    EXPECT_EQ(unrolled.transitions().size(), built.transitions().size() + 1);
+
+    for (const auto& to : unrolled.transitions() | std::views::values)
+    {
+        EXPECT_NE(to, unrolled.init_state());
+    }
+
+    const Simulator simulator{built};
+
+    using Match = Simulator::Match;
+
+    EXPECT_TRUE(simulator.nullable());
+    EXPECT_EQ(simulator.run(std::string{}), Match(token, 0));
+    EXPECT_EQ(simulator.run(std::string{"aaa"}), Match(token, 3));
+    EXPECT_EQ(simulator.run(std::string{"b"}), Match(token, 0));
+    EXPECT_FALSE(simulator.is_split_point('a'));
+
+    // A start that does not accept is returned as it is.
+    dfa::Builder plain;
+
+    const auto p0{plain.init_state()};
+    const auto p1{plain.next_state()};
+
+    plain.add_accept_state(p1, token);
+    plain.add_transition(p0, dfa::Label('a'), p1);
+
+    const auto same{dfa::unroll_start(plain.build())};
+
+    EXPECT_EQ(same.init_state(), p0);
+    EXPECT_EQ(same.transitions().size(), 1u);
 }
 
 TEST_F(Dfa_test, Any_of)

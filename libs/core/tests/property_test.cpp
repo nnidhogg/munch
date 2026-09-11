@@ -273,8 +273,9 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
 
         const auto lexer{builder.build()};
 
-        // A nullable generated pattern minimizes to an accepting, self-looping initial state, which de-certifies
-        // every byte including this one. There is nothing to splice then.
+        // A nullable generated pattern is compiled behind a fresh start state, and the old start, re-entered by the
+        // pattern's loop, is then an ordinary live state consuming 's' mid-token, which de-certifies it. There is
+        // nothing to splice then.
         if (!lexer.is_split_point('s'))
         {
             continue;

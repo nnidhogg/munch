@@ -13,6 +13,7 @@ add_library(${PROJECT_NAME}
         src/simulator.cpp
         src/split_window.cpp
         src/token.cpp
+        src/unroll_start.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
