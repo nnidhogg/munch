@@ -26,9 +26,10 @@ using Returning_t = std::vector<std::string>;
  * @brief What one scanner's specification declares, as far as a token set is concerned: its definitions, its start
  *        conditions, its options and its rules in order, whichever generator's file it was read from.
  *
- * A flex file is one scanner; a re2c file holds one per block with rules. Rule order is the priority: flex and re2c
- * take the longest match and, among rules matching it, the first in the file, which is exactly the maximal-munch
- * scan with priority by rule index that the library runs. The code sections and the actions' bodies are carried as
+ * A flex file is one scanner; a re2c file holds one per block with rules; a Rust file holds one per enum deriving
+ * Logos. Rule order is the priority: flex and re2c take the longest match and, among rules matching it, the first in
+ * the file, which is exactly the maximal-munch scan with priority by rule index that the library runs; logos ranks
+ * by a number of its own, which each of its rules carries. The code sections and the actions' bodies are carried as
  * text and never interpreted beyond the return the audit looks for.
  */
 struct Lexer_spec
@@ -68,6 +69,13 @@ struct Lexer_spec
         std::optional<std::string> token;
 
         /**
+         * @brief The priority the file's generator ranks the rule at among rules matching the same longest lexeme,
+         *        its own number with the higher winning, when the generator ranks by a number rather than by file
+         *        order, as logos does; std::nullopt when the rule's index is its priority, as flex and re2c rank.
+         */
+        std::optional<std::size_t> priority;
+
+        /**
          * @brief The line the rule begins on, counted from one, for the report.
          */
         std::size_t line;
@@ -100,7 +108,8 @@ struct Lexer_spec
     std::vector<Condition> conditions;
 
     /**
-     * @brief The file's options, each one entry, flex's `%option` words or re2c's configurations.
+     * @brief The file's options, each one entry: flex's `%option` words, re2c's configurations, or the `#[logos]`
+     *        keys besides the skips and subpatterns.
      */
     std::vector<std::string> options;
 
@@ -110,8 +119,8 @@ struct Lexer_spec
     std::vector<Rule> rules;
 
     /**
-     * @brief The line the rules begin on, counted from one: a flex file's `%%`, a re2c block's opener; what names a
-     *        scanner among a file's.
+     * @brief The line the rules begin on, counted from one: a flex file's `%%`, a re2c block's opener, a Rust enum's
+     *        derive; what names a scanner among a file's.
      */
     std::size_t line{1};
 };
@@ -183,13 +192,19 @@ private:
 [[nodiscard]] std::optional<std::size_t> brace_close(std::string_view code) noexcept;
 
 /**
- * @brief The token set a start condition scans with: every active rule is a token whose id and priority are its
- *        rule index, and the rules returning nothing are discarded.
+ * @brief The token set a start condition scans with: every active rule is a token whose id is its rule index and
+ *        whose priority is that index, or its generator's own number turned onto the builder's lower-wins scale
+ *        when the rule carries one, and the rules returning nothing are discarded.
+ *
+ * A generator's number is placed below every index at half the scale's range, so that a rule appended past the
+ * set's priorities still has room; two rules of one number tie, and the builder settles a tie by the lower id, which
+ * is file order.
  * @param spec The specification.
  * @param condition The condition, INITIAL for the default one.
  * @return The token set, its expressions parsed against the definitions.
- * @throws Spec_error If a rule's pattern is refused by regex::parse(), naming the rule's line and the reason, or the
- *         file asks for case-insensitive scanning throughout, which is not modelled.
+ * @throws Spec_error If a rule's pattern is refused by regex::parse(), naming the rule's line and the reason, a
+ *         rule's priority number lies beyond the scale, or the file asks for case-insensitive scanning throughout,
+ *         which is not modelled.
  */
 [[nodiscard]] Token_set token_set(const Lexer_spec& spec, std::string_view condition);
 

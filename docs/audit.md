@@ -1,11 +1,12 @@
 # Auditing an Existing Scanner
 
-`munch-audit` reads the file a lexer generator was given, flex's `.l`, re2c's blocks inside a C or C++ source, or an
-ANTLR 4 grammar, builds the token set each start condition scans with, and prints what the library decides about it: the
-bytes and windows a parallel scan may cut at, the length of the stretches no certificate reaches, why every other
-candidate fails, and what it would cost to make one certify. Nothing in the output is estimated or sampled; every figure
-is a decision over the compiled tables, the same decisions [docs/split_points.md](split_points.md) and
-[docs/split_windows.md](split_windows.md) derive, applied to a token set that was written for another generator.
+`munch-audit` reads the file a lexer generator was given, flex's `.l`, re2c's blocks inside a C or C++ source, an ANTLR
+4 grammar, or a Rust file whose enums derive logos's `Logos`, builds the token set each start condition scans with, and
+prints what the library decides about it: the bytes and windows a parallel scan may cut at, the length of the stretches
+no certificate reaches, why every other candidate fails, and what it would cost to make one certify. Nothing in the
+output is estimated or sampled; every figure is a decision over the compiled tables, the same decisions
+[docs/split_points.md](split_points.md) and [docs/split_windows.md](split_windows.md) derive, applied to a token set
+that was written for another generator.
 
 The tool exists because a scanner author who wants a parallel or resumable scan has a question the generator cannot
 answer: is this token set one where a cut can be certified, and if not, which rule stands in the way. The answer is a
@@ -17,9 +18,9 @@ property of the token set, not of any corpus, and the report states it as such.
 munch-audit [options] FILE...
 ```
 
-A file that opens a re2c block (`/*!re2c` or `/*!rules:re2c`) is read as re2c, one whose first item is a grammar
-declaration as ANTLR, any other as flex; `--flex`, `--re2c` and `--antlr` force the kind. The options follow the
-generators' own:
+A file that opens a re2c block (`/*!re2c` or `/*!rules:re2c`) is read as re2c, one with a derive naming `Logos` as
+logos, one whose first item is a grammar declaration as ANTLR, any other as flex; `--flex`, `--re2c`, `--antlr` and
+`--logos` force the kind. The options follow the generators' own:
 
 | Option | Meaning |
 |---|---|
@@ -37,10 +38,11 @@ The exit status is 0 when every scanner and condition audited, 1 when one was re
 ## Reading the Report
 
 Every start condition of every scanner gets one report. A flex file is one scanner; a re2c file holds one per block with
-rules, named by the line its block opens on, and a re2c file's conditions are the ones its rules name. The caveat
-printed above the reports is the one that matters most for a real scanner: a certificate holds while the scanner is in
-that start condition, so a cut is safe only where the condition is known. A scanner whose strings live in another
-condition can certify almost every byte in INITIAL and still leave a cut inside a string unsafe.
+rules, named by the line its block opens on, and a re2c file's conditions are the ones its rules name; a Rust file holds
+one per enum deriving `Logos`, named by the derive's line, with no conditions. The caveat printed above the reports is
+the one that matters most for a real scanner: a certificate holds while the scanner is in that start condition, so a cut
+is safe only where the condition is known. A scanner whose strings live in another condition can certify almost every
+byte in INITIAL and still leave a cut inside a string unsafe.
 
 This is the report for `tools/audit/grammars/c-like-split-friendly.l`, the study's split-friendly C-like tokenization,
 where the newline is a token of its own:
@@ -173,9 +175,19 @@ the line that holds it, rather than read it as something else:
   Refused: `import`, `-> more`, `EOF` inside a rule, semantic predicates `{...}?`, Unicode property classes
   `\p{...}`, a rule reaching itself, and a non-greedy loop before anything but a literal or over a group that can
   begin with it.
+- logos: every enum deriving `Logos`, its `#[logos(skip ...)]` attributes as discarded rules ahead of the variants,
+  `subpattern` definitions referenced as `(?&name)`, `#[token]` and `#[regex]` attributes with their callbacks
+  (`logos::skip` and a closure returning `logos::Skip` discard), `priority = n`, `ignore(case)` and
+  `allow_greedy`. The priority is logos's own, computed as logos 0.14 and later compute it or taken from
+  `priority = n`, higher winning, and mapped onto the builder's scale. The regex is the regex crate's in Unicode
+  mode, rewritten over the UTF-8 bytes the lexer scans: classes, the dot and negated classes as code point ranges,
+  the flags `i`, `s` and `u` with their scoping, lazy operators as their greedy forms since logos takes the longest
+  match either way. Refused: `\d`, `\w`, `\s` and `\p{...}` in Unicode mode, which need the Unicode tables, a
+  non-ASCII scalar under `i`, anchors and lookaround, the flags `x`, `m`, `U` and `R`, the class operators, and a
+  pattern matching only the empty string.
 
-The grammars under `tools/audit/grammars/` are the study's rows in every syntax, and the tests hold each `.re` and
-`.g4` file to its `.l` twin: the readers must build token sets that cut no input differently, decided by
+The grammars under `tools/audit/grammars/` are the study's rows in every syntax, and the tests hold each `.re`, `.g4`
+and `.rs` file to its `.l` twin: the readers must build token sets that cut no input differently, decided by
 `boundary_difference()` over every input rather than a sample.
 
 ## The JSON Form
