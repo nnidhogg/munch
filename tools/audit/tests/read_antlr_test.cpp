@@ -31,6 +31,7 @@ tokens { EXTRA }
 
 statement : 'if' expression 'then' statement | IDENT '=' expression ';' ;
 expression : IDENT | NUMBER ;
+catchProduction : 'if' IDENT 'then' statement ;
 
 IF      : 'if' ;
 IDENT   : LETTER (LETTER | DIGIT)* ;
@@ -50,6 +51,7 @@ mode INNER;
 
 CLOSE   : '}' -> popMode ;
 WORD    : ~[}]+ ;
+SIGN    : [+\-*] ;
 )"};
 
 } // namespace
@@ -61,8 +63,9 @@ TEST(Read_antlr, Reads_a_combined_grammar_with_its_idioms)
     EXPECT_EQ(spec.line, 1u);
     EXPECT_EQ(spec.options, (std::vector<std::string>{"language=Cpp"}));
 
-    // The parser's literals lead, except 'if', which IF spells; then the lexer rules in order, WS split in two.
-    ASSERT_EQ(spec.rules.size(), 16u);
+    // The parser's literals lead, except 'if', which IF spells; then the lexer rules in order, WS split in two. The
+    // parser rule named catchProduction is a rule, not an exception handler.
+    ASSERT_EQ(spec.rules.size(), 17u);
 
     EXPECT_EQ(spec.rules[0].pattern, "'then'");
     EXPECT_EQ(spec.rules[0].expression, R"("then")");
@@ -73,7 +76,7 @@ TEST(Read_antlr, Reads_a_combined_grammar_with_its_idioms)
 
     EXPECT_EQ(spec.rules[3].token, std::optional<std::string>{"IF"});
     EXPECT_EQ(spec.rules[3].expression, R"("if")");
-    EXPECT_EQ(spec.rules[3].line, 15u);
+    EXPECT_EQ(spec.rules[3].line, 16u);
 
     EXPECT_EQ(spec.rules[4].pattern, "LETTER (LETTER | DIGIT)*");
     EXPECT_EQ(spec.rules[4].expression, "{LETTER}({LETTER}|{DIGIT})*");
@@ -116,7 +119,8 @@ TEST(Read_antlr, Reads_a_combined_grammar_with_its_idioms)
     EXPECT_EQ(spec.definitions.at("LETTER"), "[A-Z_a-z]");
     EXPECT_EQ(spec.definitions.at("DIGIT"), "[0-9]");
     EXPECT_EQ(spec.definitions.at("IF"), R"("if")");
-    EXPECT_EQ(active_rules(spec, "INNER"), (std::vector<std::size_t>{14, 15}));
+    EXPECT_EQ(spec.rules[16].expression, R"([*+\-])");
+    EXPECT_EQ(active_rules(spec, "INNER"), (std::vector<std::size_t>{14, 15, 16}));
 }
 
 TEST(Read_antlr, Case_insensitivity_doubles_every_letter)

@@ -976,8 +976,20 @@ void Grammar::parser_rule()
         ++at_;
     }
 
-    // Exception handlers after the rule.
-    for (skip_blanks(); at("catch") || at("finally"); skip_blanks())
+    // Exception handlers after the rule: the keywords whole, since a rule may be named catchProduction.
+    const auto handler{[this] {
+        for (const std::string_view keyword : {"catch", "finally"})
+        {
+            if (at(keyword) && !(at_ + keyword.size() < end_ && is_name_byte(text_[at_ + keyword.size()])))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }};
+
+    for (skip_blanks(); handler(); skip_blanks())
     {
         std::ignore = identifier();
 
@@ -1616,12 +1628,21 @@ Alphabet Grammar::set(const bool case_insensitive)
         }
     }};
 
-    // A member waits until the next one shows whether a '-' spans them.
+    // A member waits until the next one shows whether a '-' spans them; an escaped `\-` is a member, not a span.
     std::optional<char32_t> pending;
 
-    while (const auto scalar{character(']')})
+    for (;;)
     {
-        if (pending && *scalar == '-' && peek() != ']')
+        const auto escaped{peek() == '\\'};
+
+        const auto scalar{character(']')};
+
+        if (!scalar)
+        {
+            break;
+        }
+
+        if (pending && *scalar == '-' && !escaped && peek() != ']')
         {
             const auto last{character(']')};
 
