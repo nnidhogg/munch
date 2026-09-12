@@ -670,11 +670,14 @@ munch, and recovers an origin: raw-state synchronization alone does not identify
 maximal-munch token. The classical special case of boundary recovery is code synchronization, and
 Proposition~\ref{prop:codes} states the relation exactly for prefix codes, where left-to-right tokenization realizes
 the code factorization: the certified windows are the synchronizing splits whose right half sits inside one codeword,
-and a synchronizing pair~\cite{berstel2010codes} is a certified window whose halves are in the code. Finite
-synchronization delay~\cite{restivo1975synchronization} bounds how many codewords such a pair needs, hence a byte
-bound for a finite code; the $ww$-style resumption argument survives into the partial-DFA
-treatment~\cite{berlinkov2021partial}. The explicit modern bounded-window form of that special
-case is the synchronizing morphism: a window of bounded length suffices to detect boundaries between
+and a synchronizing pair~\cite{berstel2010codes} is a certified window whose halves are in the code. The oldest
+member of that family is the comma-free code of Golomb, Gordon and Welch~\cite{golomb1958commafree}, a block code
+no codeword of which occurs across the boundary of two adjacent codewords, so that every codeword is a certified
+window with origin $0$ for the code's own factorization. Finite synchronization
+delay~\cite{restivo1975synchronization} bounds how many codewords a synchronizing pair needs, hence a byte bound for
+a finite code; the $ww$-style resumption argument survives into the partial-DFA
+treatment~\cite{berlinkov2021partial}. The explicit modern bounded-window form of that special case is the
+synchronizing morphism: a window of bounded length suffices to detect boundaries between
 codewords~\cite{fici2025morphisms}, in a morphic code-factorization setting rather than among competing prioritized
 token languages under maximal munch. Uniquely decipherable codes may share prefixes; what they guarantee is a unique
 factorization, with no maximal-munch priority resolving overlaps between competing token languages, and that
