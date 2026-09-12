@@ -827,6 +827,9 @@ void Grammar::skip_block()
 
     do
     {
+        // A comment's quotes are prose, the apostrophe of "the parser's" among them, so comments are skipped whole.
+        skip_blanks();
+
         if (!peek())
         {
             at_ = opened;
