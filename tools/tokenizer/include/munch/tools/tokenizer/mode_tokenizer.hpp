@@ -207,9 +207,9 @@ public:
      * moves there. The contract is that walk's complete-repair invariance: in every completely tokenizable repair of
      * the input before the answer's preserved evidence, scanning resumes at a token start of the repaired segmentation.
      * No tokenizable repair is promised to exist, and the next read may error again. Consulting the active mode is a
-     * policy the flat guarantees, the README's Error Recovery section, do not upgrade to a modal guarantee, since a
-     * repair could reach the resume point in a different mode; a forced or grammar-driven mode change is the driver's
-     * business exactly as for next(). When the search finds no certificate ahead, the position does not move.
+     * policy the flat guarantees, the Error Recovery section of docs/usage.md, do not upgrade to a modal guarantee,
+     * since a repair could reach the resume point in a different mode; a forced or grammar-driven mode change is the
+     * driver's business exactly as for next(). When the search finds no certificate ahead, the position does not move.
      * @return The number of bytes skipped from the current position, or std::nullopt when no certified byte and no
      *         certified window of two to four bytes lies ahead in the remaining input, the widths the search
      *         consults.

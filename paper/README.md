@@ -89,8 +89,9 @@ the two environments. It holds the best, median, and worst of each scenario rath
 with the measured checkout, machine, compiler, and command recorded in its header. The header's `tree` is the checkout
 whose benchmark produced these rows: it has the one-chunk baseline the evaluation reports and predates the interleaved
 harness. The `benchmark/split-points-2026-07` tag points at its direct child `c0e2fb6`, which changes only paper and
-documentation files, so the tagged tree builds the identical program. The paper quotes that file rather than the
-README's table, so ordinary benchmark refreshes cannot silently change what the paper claims. Reproduce it with:
+documentation files, so the tagged tree builds the identical program. The paper quotes that file rather than the table
+in `docs/benchmarks.md`, so ordinary benchmark refreshes cannot silently change what the paper claims. Reproduce it
+with:
 
 ```
 git worktree add /tmp/munch-paper 1aca0cd13837cd40ab90a32222012eabdfc6018b
