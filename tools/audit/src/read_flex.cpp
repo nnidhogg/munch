@@ -329,7 +329,7 @@ void read_definitions(Lines& lines, Lexer_spec& file)
 [[nodiscard]] std::optional<Lexer_spec::Rule> read_rule(
         Lines& lines, std::string_view line, const Returning_t& returning)
 {
-    const auto number{lines.number()};
+    auto number{lines.number()};
 
     std::vector<std::string> conditions;
 
@@ -348,6 +348,25 @@ void read_definitions(Lines& lines, Lexer_spec& file)
         }
 
         line.remove_prefix(close + 1);
+
+        // flex takes a prefix alone on its line as opening whatever the next line holds, since the newline after
+        // it yields no token: the `{` of a scope, as bison's scanners write it, or a rule.
+        if (trimmed(line).empty())
+        {
+            do
+            {
+                lines.advance();
+            } while (lines.more() && trimmed(lines.current()).empty());
+
+            if (!lines.more())
+            {
+                throw Spec_error{"the start-condition prefix ends the section", number};
+            }
+
+            line = trimmed(lines.current());
+
+            number = lines.number();
+        }
     }
 
     const auto length{pattern_length(line, number)};
