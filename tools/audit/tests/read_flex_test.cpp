@@ -135,9 +135,10 @@ TEST(Read_flex, The_built_token_set_scans_as_flex_would_and_answers_the_certific
 
 TEST(Read_flex, Start_condition_scopes_and_code_in_actions_read_as_flex_reads_them)
 {
-    // The shapes PostgreSQL's and sudo's scanners use: %top with its brace on the line after a blank, a scope whose
-    // rules are indented and whose close carries a comment, comments on lines of their own inside and outside a
-    // scope, an action whose literals and comments hold braces, and one whose brace opens after code on its line.
+    // The shapes PostgreSQL's, sudo's, flex's own and OpenSCAD's scanners use: %top with its brace on the line after
+    // a blank, a scope whose opener carries a comment, whose rules are indented and whose close carries a comment,
+    // comments on lines of their own inside and outside a scope, code blocks closed mid-line and on their own line,
+    // an action whose literals and comments hold braces, and one whose brace opens after code on its line.
     constexpr std::string_view source{R"(%top{
 #include "first.h"
 }
@@ -147,11 +148,14 @@ TEST(Read_flex, Start_condition_scopes_and_code_in_actions_read_as_flex_reads_th
 /* the comment start
  * is its own token */
 "/*"            { BEGIN(xc); }
-<xc>{
+<xc>{ /* the comment flex copies out */
     /*
      * inside the scope too
      */
+%{/* a code block
+   closed mid-line */%}
     "*/"        { BEGIN(INITIAL); /* } not a close */ }
+%{ int one_line; %}
     .           { if (c == '{') { depth++; } puts("}"); }
 } /* <xc> */
 [a-z]+          if (keyword(yytext)) {

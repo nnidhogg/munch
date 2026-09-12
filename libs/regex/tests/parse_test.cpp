@@ -210,9 +210,14 @@ TEST(Parse, The_caseless_option_folds_letters_in_texts_brackets_and_definitions)
 
     EXPECT_EQ(matched(parse("{ident}", definitions, caseless), "Foo_1 "), 5);
 
-    // Without the option the same patterns are exact.
+    // Without the option the same patterns are exact, and flex's group flag turns it on or off inside the group.
     EXPECT_FALSE(accepts(parse("select"), "SELECT"));
     EXPECT_EQ(matched(parse("[^a-c]+"), "xyzA"), 4);
+    EXPECT_EQ(matched(parse(R"((?i:"false"|"true")x)"), "TRUEx"), 5);
+    EXPECT_FALSE(accepts(parse(R"((?i:"false"|"true")x)"), "TRUEX"));
+    EXPECT_EQ(matched(parse("(?-i:ab)c", {}, caseless), "abC"), 3);
+    EXPECT_FALSE(accepts(parse("(?-i:ab)c", {}, caseless), "ABC"));
+    EXPECT_EQ(refused_at("(?s:.)"), 2);
 }
 
 TEST(Parse, Definitions_expand_and_nest)

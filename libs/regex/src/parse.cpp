@@ -500,9 +500,38 @@ Piece Reader::atom(const Definitions_t& definitions)
     {
     case '(':
     {
+        // flex's `(?i:...)` and `(?-i:...)` set the case option inside the group alone; its other flags, `s` and
+        // `x`, change what the dot and blanks mean and are not read.
+        const auto saved{options_};
+
+        if (accept('?'))
+        {
+            auto negated{false};
+
+            for (auto flag{next("a flag or ':' after '(?'")}; flag != ':'; flag = next("a flag or ':' after '(?'"))
+            {
+                if (flag == '-')
+                {
+                    negated = true;
+                }
+                else if (flag == 'i')
+                {
+                    options_.caseless = !negated;
+                }
+                else
+                {
+                    --at_;
+
+                    fail(std::string{"the group flag '"} + flag + "' is not read");
+                }
+            }
+        }
+
         auto inner{alternation(definitions)};
 
         expect(')', "')' to close the group");
+
+        options_ = saved;
 
         return {.literal = std::nullopt, .regex = std::move(inner)};
     }

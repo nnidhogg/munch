@@ -80,6 +80,9 @@ struct Parse_options
  * encoding of one of them and negation running over the scalars; `[\u{0}-\u{10FFFF}]` is any scalar. A bracket
  * naming a byte beyond ASCII beside a code point is refused, since no scalar is that byte.
  *
+ * flex's flag groups set the case option inside the group alone, `(?i:...)` on and `(?-i:...)` off; the flags `s`
+ * and `x`, which change what the dot and blanks mean, are refused.
+ *
  * What the syntax has and a token language cannot say is refused rather than approximated: the anchors, a `^`
  * opening the pattern and a `$` closing it, flex's trailing context `/`, its start-condition prefix `<s>` and
  * `<<EOF>>` are conditions on the context a match stands in, not on the match, so a pattern carrying one raises
