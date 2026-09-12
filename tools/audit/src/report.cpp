@@ -414,6 +414,52 @@ struct Consumed
 }
 
 /**
+ * @brief A shape's name, as the text and the JSON spell it.
+ * @param shape The shape.
+ * @return The name.
+ */
+[[nodiscard]] std::string_view shape_name(const Shape shape)
+{
+    switch (shape)
+    {
+    case Shape::run:
+        return "run";
+    case Shape::terminated:
+        return "terminated";
+    case Shape::delimited:
+        return "delimited";
+    case Shape::fixed:
+        return "fixed";
+    case Shape::other:
+        break;
+    }
+
+    return "other";
+}
+
+/**
+ * @brief What a shape's edit is, said to the author.
+ * @param shape The shape.
+ * @return The edit.
+ */
+[[nodiscard]] std::string_view shape_edit(const Shape shape)
+{
+    switch (shape)
+    {
+    case Shape::terminated:
+        return "leave the terminator to the token after it";
+    case Shape::delimited:
+        return "scan the body in a start condition of its own, the opener staying here";
+    case Shape::run:
+    case Shape::fixed:
+    case Shape::other:
+        break;
+    }
+
+    return "";
+}
+
+/**
  * @brief A list of bytes as a JSON array of their values.
  * @param bytes The bytes.
  * @return The JSON text.
@@ -709,24 +755,39 @@ std::string json(const Report& report, const std::function<std::string(std::size
            }));
 
     member("prices", list(report.prices, [&](const Pricing& pricing) {
-               const auto& [byte, exact_before, modulo_before, steps, immovable, gained]{pricing};
+               const auto& [byte, exact_before, modulo_before, steps, immovable, gained, choices, together]{pricing};
 
                const auto steps_text{list(steps, [&name](const Price_step& step) {
-                   const auto& [token, separated, separated_discarded, exact, modulo]{step};
+                   const auto& [token, shape, separated, separated_discarded, exact, modulo]{step};
 
                    return std::format(
-                           R"({{"token": {}, "separated": {}, "separated_discarded": {}, "exact": {}, )"
-                           R"("modulo": {}}})",
-                           json_token(token, name), separated, separated_discarded, exact, modulo);
+                           R"({{"token": {}, "shape": "{}", "separated": {}, "separated_discarded": {}, )"
+                           R"("exact": {}, "modulo": {}}})",
+                           json_token(token, name), shape_name(shape), separated, separated_discarded, exact, modulo);
                })};
 
                const auto immovable_text{
                        list(immovable, [&name](const std::size_t token) { return json_token(token, name); })};
 
+               const auto json_outcome{[](const Outcome& after) {
+                   return std::format(
+                           R"({{"exact": {}, "modulo": {}, "gained": {}}})", after.exact, after.modulo,
+                           json_bytes(after.gained));
+               }};
+
+               const auto choices_text{list(choices, [&name, &json_outcome](const Choice& choice) {
+                   const auto& [token, shape, after]{choice};
+
+                   return std::format(
+                           R"({{"token": {}, "shape": "{}", "after": {}}})", json_token(token, name), shape_name(shape),
+                           json_outcome(after));
+               })};
+
                return std::format(
                        R"({{"byte": {}, "exact_before": {}, "modulo_before": {}, "steps": {}, "immovable": {}, )"
-                       R"("gained": {}}})",
-                       byte, exact_before, modulo_before, steps_text, immovable_text, json_bytes(gained));
+                       R"("gained": {}, "choices": {}, "together": {}}})",
+                       byte, exact_before, modulo_before, steps_text, immovable_text, json_bytes(gained), choices_text,
+                       together ? json_outcome(*together) : "null");
            }));
 
     return out + "\n}";
@@ -854,7 +915,7 @@ std::string render(const Report& report, const std::function<std::string(std::si
     }
 
     // Prices: per byte, the edits in order with the certificate after each, and what cannot move.
-    for (const auto& [byte, exact_before, modulo_before, steps, immovable, gained] : report.prices)
+    for (const auto& [byte, exact_before, modulo_before, steps, immovable, gained, choices, together] : report.prices)
     {
         out += std::format("\nwhat it would cost to certify {}\n", shown(byte));
 
@@ -865,9 +926,11 @@ std::string render(const Report& report, const std::function<std::string(std::si
 
         for (std::size_t index{0}; index < steps.size(); ++index)
         {
-            const auto& [token, separated, separated_discarded, exact, modulo]{steps[index]};
+            const auto& [token, shape, separated, separated_discarded, exact, modulo]{steps[index]};
 
-            out += std::format("  {}. {:<24} no longer admits {}", index + 1, name(token), shown(byte));
+            out += std::format(
+                    "  {}. {:<24} {}no longer admits {}", index + 1, name(token), shape == Shape::run ? "the run " : "",
+                    shown(byte));
 
             if (separated)
             {
@@ -884,14 +947,42 @@ std::string render(const Report& report, const std::function<std::string(std::si
 
         for (const auto token : immovable)
         {
+            const auto offered{std::ranges::contains(choices, token, &Choice::token)};
+
             out += std::format(
-                    "  {:<26} spells {} out and cannot lose it; the byte cannot certify while it stays\n", name(token),
-                    shown(byte));
+                    "  {:<26} spells {} out and cannot be narrowed; {}\n", name(token), shown(byte),
+                    offered ? "its shape offers an edit below" : "the byte cannot certify while it stays");
         }
 
         if (!gained.empty())
         {
             out += std::format("  {:<26} {}\n", "also certified after", shown(gained));
+        }
+
+        if (!choices.empty())
+        {
+            out += std::format(
+                    "\nwhat the shapes of the tokens consuming {} offer, each edit on its own\n", shown(byte));
+        }
+
+        const auto stood{[](const Outcome& after) {
+            return std::string{
+                           after.exact  ? "certifies exactly" :
+                           after.modulo ? "certifies once discarded tokens are deleted" :
+                                          "still does not certify"} +
+                   (after.gained.empty() ? "" : "; also certified: " + shown(after.gained));
+        }};
+
+        for (const auto& [token, shape, after] : choices)
+        {
+            out += std::format("  {:<26} {}: {}\n", name(token), shape_name(shape), shape_edit(shape));
+
+            out += std::format("  {:<26} {}\n", "", stood(after));
+        }
+
+        if (together)
+        {
+            out += std::format("  {:<26} {}\n", "every shape's edit together", stood(*together));
         }
     }
 

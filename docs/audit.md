@@ -107,8 +107,13 @@ why candidate bytes do not certify
 what it would cost to certify '\n'
   1. "/*"([^*]|\*+[^*/])*\*+"/" no longer admits '\n'
                               certifies once discarded tokens are deleted
-  2. [ \t\n]+                 no longer admits '\n', and '\n' becomes a token of its own, discarded
+  2. [ \t\n]+                 the run no longer admits '\n', and '\n' becomes a token of its own, discarded
                               certifies exactly
+
+what the shapes of the tokens consuming '\n' offer, each edit on its own
+  "/*"([^*]|\*+[^*/])*\*+"/" delimited: scan the body in a start condition of its own, the opener staying here
+                             certifies once discarded tokens are deleted
+  every shape's edit together certifies exactly
 ```
 
 Row by row:
@@ -144,6 +149,15 @@ Row by row:
   certificate recompiled after each step; a rule that spells the byte out cannot lose it and is listed as
   immovable. The steps reproduce the study's designed rows: bounding the block comment to a line certifies the
   newline once discarded tokens are deleted, and splitting the whitespace run at newlines makes it exact.
+- **what the shapes of the consuming tokens offer**: the edit an author would actually make, read off each
+  token's pattern. A *run* over a class the byte is in, `[ \t\n]+`, is the step above: the byte leaves the class
+  and becomes a token of its own. A *terminated* token, `"//"[^\n]*\n`, can leave its terminator to the token
+  after it. A *delimited* token, a fixed opener followed by a body the byte is in, a block comment or a string, can
+  have its body scanned in a start condition of its own with the opener staying, which is how scanners that
+  certify most of their bytes are written. Each such edit is tried on its own token with the rest of the set as it
+  stands and its certificate reported, then every consuming token takes its own shape's edit together; a
+  terminated token's fixed newline, immovable for the narrowing above, is movable here. A token whose fixed
+  spelling holds the byte and has none of these shapes stays *fixed*.
 
 ## What Is Read, and What Is Refused
 
