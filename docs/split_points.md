@@ -1,9 +1,14 @@
 # Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens
 
-**Nicklas Nidhögg**, August 2026. Mirrors `paper/split-points/split-points.tex`, which describes munch at the v1.2.0
-release. The scaling measurements in the evaluation were taken on an earlier tree, preserved by the
-`benchmark/split-points-2026-08` tag; the composition and validation figures are asserted from the release tree under
-CI, and the certificate figures' DOT sources are regenerated there and byte-compared against the committed copies.
+**Nicklas Nidhögg**, August 2026. Mirrors `paper/split-points/split-points.tex` as it now stands, the arXiv v3 source of
+[arXiv:2608.03473](https://arxiv.org/abs/2608.03473), which describes munch at the v1.2.0 release: the paper's own
+version statements are its citation of the library, release tag `v1.2.0` archived at doi:10.5281/zenodo.21752997, and
+its applicability section's note that the pinned v1.2.0 probe carries the construction-cost grammar's transcription
+"verified by eye only", a binding later releases add mechanically. The scaling measurements in the evaluation were taken
+on an earlier tree, preserved by the `benchmark/split-points-2026-08` tag; the composition and validation figures are
+asserted from the release tree under CI, and the certificate figures' DOT sources are regenerated there and
+byte-compared against the committed copies. The tables below are produced mechanically from the paper's own tabular
+sources, never transcribed by hand.
 
 *A technical report on the mechanism behind `Lexer::is_split_point()`, `chunk_boundaries()`, and
 `tokenize_all_parallel()`. The implementation, tests, and benchmarks live in this repository; this document states the
@@ -11,42 +16,41 @@ idea precisely, relates it to prior work, and reports where it applies.*
 
 ## Abstract
 
-Scanning with a DFA is serial by construction: each transition depends on the state the previous byte produced, so in
-the straightforward table-driven scanner considered here each byte introduces a state-dependent lookup, and the chain of
-them bounds one input at roughly one load latency per byte. The standard escape is to split the input into chunks and
-scan them concurrently, but a chunk's first byte arrives with the automaton state unknown, so existing approaches either
-simulate from every state and merge (simultaneous automata), guess a state and patch up mispredictions (speculation), or
-overlap chunks and verify convergence. This report instead revisits classical delimiter-based parallel lexing and
-supplies its missing automatic certification step, implemented in munch: derive, from the compiled automaton of the
-token set itself, a set of *certified split symbols*, bytes at which, on a completely tokenizable input, every
-occurrence begins a token. Splitting immediately before such a byte preserves the token stream exactly, by construction,
-with no speculation, no overlap, no merge beyond ordered concatenation, and no duplicate tokenization when the property
-does not hold: the plan degenerates to a serial scan. We state the certificate and its one subtlety (a re-entrant
-initial state invalidates the exemption that makes it usable), show that deriving it is a linear-time analysis of the
-compiled table, prove the condition necessary as well as sufficient, and measure, with the exact certificate only and on
-a deliberately favourable corpus, 92.6-95.3% parallel efficiency at eight threads on a restricted CPU set, on a 512 MiB
-dense corpus that does not fit in cache. That certificate is exact and, for the same reason, fragile: one string
-literal, comment, or whitespace run whose interior admits the candidate byte is enough to leave a conventional token set
-certifying nothing, and the tokens responsible are usually the ones a parser discards. So we give a second condition,
-weakening the guarantee to equality after those tokens are deleted from both streams. It is sound and strictly more
-permissive, but conservative rather than exact, and it is decided from the same tables and answered by a second one-bit
-query. We then study which grammars certify usable symbols under each, over fifteen token sets. That study grounds a
-piece of folklore: for conventional tokenizations, line-based splitting of source text is sound when no token can span a
-line, and one token kind that can, the block comment, is alone sufficient to destroy every useful certificate in the
-C-like grammar studied, under both conditions.
+Table-driven DFA lexing is sequential: each transition depends on the previous byte's state. Scanning one input in
+parallel needs each chunk's entry state, which existing methods recover by simulation, speculation, prescanning, or
+overlap. We give two conditions under which none is needed. For a longest-match scanner restarting from `q0` at every
+token boundary, a byte `b` is a *certified split symbol* when no reachable state other than `q0` has a `b`-transition
+whose target can reach acceptance, and `q0` is not re-entrant if it has one. Every occurrence of such a byte in
+completely tokenizable input begins a token, so chunks starting there reproduce the serial sequence of kinds and lengths
+by ordered concatenation. For an engineer this means a scan may begin at any occurrence of such a byte, knowing nothing
+of what precedes it, and emit from there exactly what the serial scan emits; the usual practice, cutting at a newline
+and rescanning a little, gives that only when the token set happens to allow it, and the same tables decide when it
+does. The condition is necessary as well as sufficient, and fragile: one string, comment, or whitespace run can
+eliminate every useful certificate, and comments and whitespace are usually discarded. We therefore weaken the guarantee
+to equality after deleting a declared discarded set, and give a second condition, *sound and more permissive, coinciding
+with the first when the discarded set is empty and strictly gaining on suitable pairs of token set and discarded set,
+but conservative rather than exact*, decided from the same tables, answered by a second constant-time one-bit query. It
+recovers newline for a conventional C-like tokenization and tab, newline and carriage return for JSON, without altering
+their token definitions, and refuses it where block comments are unrestricted. It ships as a query only: the library's
+planner and every measurement here use the exact condition, so a caller must plan boundaries itself. Splitting at exact
+certificates in the munch library (release v1.2.0) reaches 92.6 to 95.3% parallel efficiency at eight threads on a
+restricted CPU set, on a 512 MiB dense corpus beyond last-level cache, and a 3.46 to 3.94× end-to-end speedup at four
+threads, across two benchmark revisions on one machine. It turns delimiter-based parallel lexing from a
+language-specific assumption into a property a compiler checks.
 
-## 1 The problem
+## 1 Introduction
 
-A table-compiled scanner executes, per input byte, one transition: `state = table[row(byte) + state]`. The load that
-produces the next state cannot begin before the previous state is known, so the scan is a serial dependency chain and
-its throughput is bounded by the load-to-use latency of the cache holding the table. munch's serial loop sits at that
-floor (see [performance.md](performance.md)), which means further speedup on one input must come from scanning several
-regions of it at once.
+A table-compiled scanner performs, for each byte examined during a token match, a transition of the form `state =
+table[row(byte) + state]`. Within one match the transition-table load is loop-carried: its address depends on the state
+the previous load returned, so throughput is bounded by the load-to-use latency of the cache holding the table. Token
+boundaries reset the state to `q0`, which can expose independent short matches to out-of-order execution, but the
+recurrence still limits long table walks. This work exposes additional independent chains by scanning several regions of
+one input concurrently.
 
 Splitting is the obstacle. A scanner dropped at an arbitrary offset does not know the automaton state there: the offset
-may fall inside a string, halfway through an identifier, or in the middle of a multi-byte operator. Any tokenization
-computed from a wrong entry state is garbage until the scanner happens to resynchronize, and whether and when it
-resynchronizes depends on the automaton and the input.
+may fall inside a string literal, halfway through an identifier, or in the middle of a multi-byte operator. Starting
+from an incorrect entry state can change the emitted stream until the runs converge, and whether and when they converge
+depends on both the automaton and the input.
 
 Practice has an answer already: cut at a newline and rescan a little on each side of the cut until the two scans agree.
 It bets that a newline begins a token and pays for the bet with the rescan, and both halves fail in the places that
@@ -55,620 +59,1374 @@ the rest of the comment as if it were code; and the rescan meant to repair this 
 lasts, which nothing in the token set bounds. The certificate is the exact form of the same idea with the bet removed.
 Rather than assuming which bytes begin tokens, it asks the compiled automaton, once, at construction, and tests the
 answer in one bit per byte. Where cutting at newline was sound all along, newline is what comes back; where it was not,
-the answer is a refusal rather than a rescan, and section 6 shows that the usual C-like token set with block comments is
+the answer is a refusal rather than a rescan, and Section 7 shows that the usual C-like token set with block comments is
 refused, and what it would cost to change that.
+
+This report describes a property that removes the uncertainty for a useful class of token sets, rather than managing it.
+The property is a per-symbol certificate, extracted from the compiled automaton at construction time, such that every
+occurrence of a certified byte in every completely tokenizable input begins a token. For a completely tokenizable input,
+chunk boundaries placed immediately before those occurrences need no speculation and no reconciliation: ordered
+concatenation of the chunk streams equals the serial stream.
+
+The contributions are:
+
+- a static condition on a compiled token automaton identifying the bytes at which a longest-match scanner is provably
+  between tokens, including the re-entrancy requirement without which the natural criterion is unsound (Section 4);
+- a proof that the condition is not only sufficient but necessary, once the analysis is restricted to states that an
+  input can reach and from which acceptance is still reachable, so that if no useful byte certifies, no byte occurring
+  in a completely tokenizable input is universally safe before every occurrence (Section 4.1);
+- an `O(|Q| |Σ|)` derivation over the logical compiled transition table, a boundary planner, and an exactness theorem
+  for the resulting parallel scan, implemented and released in a general-purpose lexer library (Sections 6 and 8); the
+  planner and executor decide boundaries with the exact condition, and the evaluation measures that path;
+- a second condition, weakening equality to hold only after the tokens a caller discards are deleted: *sound and
+  conservative rather than complete*: every exact certificate remains certified modulo `I`, the inclusion strict for
+  some token sets and discarded sets. It is decided from the same tables and answered by a second constant-time one-bit
+  query. It recovers newline for the conventional C-like and JSON tokenizations that certify nothing exactly, and ships
+  as a query rather than in the planner, so a caller wanting it places the boundaries itself (Section 5);
+- a controlled applicability study of fifteen token sets under both conditions, showing where each condition yields
+  useful bytes, how one added token kind can eliminate every useful exact certificate, and when line-based splitting is
+  sound for the C-like tokenizations studied (Section 7).
+
+Table 1 states what the paper establishes and where, so a reader can see the whole claim before the definitions arrive.
+
+**Table 1.** What this paper establishes. Every row is stated and proved or measured in the section named; the two
+applicability rows are asserted for each token set by `figures/applicability.cpp`, and the throughput row is one machine
+and two benchmark revisions, as Section 8 details.
+
+| Question                                                             | Answer                                                                                                    | Where     |
+|----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|-----------|
+| When may a chunk boundary be taken without knowing what precedes it? | No live state but a non-re-entrant `q0` consumes the byte                                                 | Theorem 1 |
+| Is that condition merely sufficient?                                 | No: it is necessary as well                                                                               | Theorem 2 |
+| What does it cost to decide?                                         | One pass over the compiled tables, then one bit per byte                                                  | Section 6 |
+| Do real token sets satisfy it?                                       | 15 token sets measured; the conventional C-like and JSON rows certify nothing exactly                     | Table 2   |
+| Can a token set that certifies nothing be rescued?                   | Weakening to equality modulo discarded tokens recovers newline there; nine of the fifteen rows gain bytes | Section 5 |
+| Can it be bought by design?                                          | One line-bounded comment form suffices; barring the kinds from each other's openers buys nothing          | Table 2   |
+| Does it pay?                                                         | 92.6 to 95.3% parallel efficiency at eight threads, 3.46 to 3.94× end to end at four                      | Section 8 |
+
+The paper separates the result from the study around it. The result is Sections 3 to 5: the definitions, the exact
+certificate with its necessity proof and the re-entrancy subtlety, and the relaxed condition modulo discarded tokens.
+The study and the artifact are Sections 6 to 8: the derivation and planner as released, the applicability of both
+conditions over fifteen token sets, and the measured parallel scan. Section 2 places the certificate among the existing
+answers to the entry-state problem before the result, and Section 10 returns to that literature after it. A companion
+report generalizes the certificate from single bytes to short byte windows
+([arXiv:2608.09761](https://arxiv.org/abs/2608.09761)), and a second reads the same certificates backwards, to choose
+the position a scan resumes at after an error ([arXiv:2609.10600](https://arxiv.org/abs/2609.10600)); nothing here
+depends on either.
 
 ## 2 Prior approaches
 
-Published solutions accept the unknown-state problem and manage it:
+Published solutions accept the unknown-state problem and manage it.
 
-- **Compile the simulation into the automaton.** Simultaneous finite automata (Sin'ya et al.) take a state of the
-  extended automaton to be a mapping from entry state to exit state, so one ordinary pass over a chunk yields that
-  chunk's whole transfer function; the mappings compose associatively and chunks combine in a parallel reduction. The
-  per-state simulation is paid at construction rather than at scan time, and the authors report almost no runtime
-  overhead. The cost is the size of the constructed automaton: a state is a map on states, so the worst case is n^n from
-  a DFA with n states and 2^(n^2) from an NFA, though for the expressions they survey it is usually far smaller: of the
-  more than 20,000 SNORT expressions they measure, 98.6% give a D-SFA no larger than the square of the minimal DFA, 279
-  exceed it and six exceed its cube. The reduction step also remains. Composition can also be applied directly instead
-  of compiled in, and in that form it is a classical answer: Hillis and Steele (CACM 1986) treat each character as
-  a unary function on states, observe that the induced composition is associative, and recover the state after every
-  character with one parallel-prefix operation; their worked example is lexing program text. Yang (*Computer Languages*
-  1996) shows that example needs care: the scan requires an automaton that can tell a token has begun as soon as its
-  first character is read, which holds for one-character lookahead but not in general, so an automaton needing more must
-  be transformed first. Attaching token output to transitions rather than states, as a Mealy machine does, is what makes
-  the lookahead behaviour representable, so the object composed for maximal-munch lexing is richer than a map from
-  states to states. Data-parallel finite-state
-  machines (Mytkowicz et al., ASPLOS 2014) take the same route on SIMD and multicore hardware, enumerating transitions
-  from every possible start state so that the enumeration is exactly the transition function, and citing Hillis and
-  Steele as the basis for doing so; the correct computation is selected afterwards, so nothing is guessed and nothing
-  needs repair. The cost is a factor of |Q| in work, which convergence reduces in practice, though the authors report
-  that convergence to a single state is rare. The GPU lexer of Voetter (2021) applies the same scan to recover the
-  complete state stream, the state after every input position rather than only each chunk's entry state. Holding one
-  function table per input position costs `O(|Q|n)` space, so that work precomputes the reachable compositions and
-  identifies each by an integer, reducing composition to a two-dimensional lookup: the same trade, paid in a table
-  rather than in states.
-- **Carry fewer entry states.** Composition is exact but pays for every state. A second family attacks that cost by
-  shrinking the set a chunk must carry. Single-state speculation came first: Jones et al. (HotPar 2009) observe that in
-  lexing the automaton reaches a stable state within a few characters, so prepending a short suffix of its left
-  neighbour to each chunk usually recovers the entry state, and Prabhu et al. (PLDI 2010) make the pattern explicit as
-  language constructs, prediction, validation on completion, re-execution on a miss, with lexical analysis as the
-  motivating workload. Luchaup et al. (RAID 2009) place the same wager for intrusion-detection signature matching: a
-  secondary scan enters its chunk in the DFA's start state and records its state after every character, and the
-  primary validates by running on into the chunk until the two couple. Enumerative speculation (Jiang and Agrawal,
-  PPoPP 2017) sits deliberately between the extremes:
-  rather than speculating on a single state or enumerating all of them, it speculates transitions from several states
-  chosen by a lookback over the preceding input. Reduced-interface DFAs (Borsotti et al.) attack the
-  same overhead from the automaton side, cutting the number of starting states a chunk automaton must carry by combining
-  an NFA's state reduction with deterministic transitions. The two leave different residues: a lookback speculation can
-  miss, and a miss costs a rescan, whereas a reduced-interface DFA carries its interface in full and pays instead in
-  proportion to that interface's size. Either way a chunk begins in more than one state, and that surplus is what
-  bounds the speedup.
-- **Relocate cuts to a language's separators.** Parallel lexers have long been built by cutting near equal divisions and
-  sliding each cut to a language-specific separator (Barenghi et al., Science of Computer Programming 2015). The
-  separator and the search bound are chosen by hand, and finding a separator does not by itself remove the entry-state
-  problem: the accompanying parallel lexical analysis enumerates the possible start states of a chunk rather than
-  deducing one, each worker carrying one computation per alternative and up to four at once in the worst case. So the
-  technique is separator relocation plus state enumeration, not a proof that the separator is safe. Its worked cases are
-  the direct antecedent of Section 6: newline is a sound separator for JSON, since no surviving lexeme admits it, yet it
-  is rejected in practice because generated JSON may contain none. Lua fails for a stronger reason than any certificate
-  could address: its long brackets open with `[`, then n equals signs, then `[`, and close with the matching `]`, n
-  equals signs, `]`. The two must agree on n, so the lexical grammar is not regular, the set of possible delimiters is
-  unbounded, and with it the set of possible entry states; no fixed lookahead can decide which delimiter, if any,
-  encloses a chunk. Barenghi et al. recover a workable schema only by constraining the language, admitting just `[[` and
-  `]]` for strings and requiring multi-line comments to end at a newline, after which newline does serve as their split
-  point. What is missing is a way to decide, from the token set alone, whether every relevant occurrence of a
-  proposed byte is safe to cut immediately before.
-- **Prescan for context.** Plex (Li et al., IPDPS 2021) removes the need for delimiters entirely. It derives a
-  prescanning automaton from the lexer's own DFA, embedding the backtracking cases into it, and runs that automaton over
-  the input to compute a transfer function per chunk; combining those functions determines the states each chunk's
-  thread begins from, tried in turn until one does not force a backtrack into the preceding chunk, after which the
-  chunks scan in parallel with no language-specific analysis. The price is a pass over the input; the
-  benefit is that it applies to grammars that certify nothing here.
-- **Analyse the grammar for streaming.** Deciding something about a maximal-munch token set statically, before any
-  input, is an established move rather than a new one. Yang, Tsay, and Chan (*Computer Languages, Systems &
-  Structures* 2002) decide automatically whether the longest-match rule is applicable at all for a given token set and
-  parser grammar, and identify precisely where it is not; a different question, but the same setting. StreamTok (Li,
-  Yang, and Mamouras, ASPLOS 2026) is methodologically nearer still: it also analyses such a grammar statically, and
-  also partitions grammars into those its technique serves and those it does not. What it computes differs. Its
-  maximum token neighbour distance bounds how far a longest-match decision can depend on future input, which is what
-  makes bounded-memory streaming
-  possible; it derives no separators, and parallelising it is left as future work there.
-- **Recover a restart point after an edit.** Incremental lexers (Wagner and Graham, *General Incremental Lexical
-  Analysis*) face the mirror of this question: after an edit, how far back must re-lexing begin for the result to equal
-  a full re-scan. They answer it dynamically and per edit, saving the batch machine's state with each token as it is
-  created so analysis can restart at any token boundary, and tracking lookahead dependencies as they arise rather than
-  bounding them in advance. The certificate answers a static question instead, once per token set and before any input
-  exists. An incremental divide-and-conquer lexer (Hugo and Hansson, Chalmers MSc thesis 2015) takes the other available
-  route, storing a result for every possible entry state of a fragment and composing the transition maps, which places
-  it with the all-state family rather than with boundary certification.
-- **Restrict the automaton.** Holub and Štekr's parallel DFA run is exact and efficient for *k-local* automata, where
-  any k consecutive symbols force a unique state regardless of the start. The property is uniform over the whole
-  automaton rather than per symbol, and a lexical grammar need not have it.
-- **Realign after the fact.** Parallel tokenization for LLM vocabularies faces the same boundary problem, and the
-  overlap-based answer to it, extending chunks so neighbours share a region and merging inside it, does not guarantee
-  the sequential result. LoPT (2026) remains overlap-based, matches overlap tokens by character position, and retries
-  with a doubled chunk whenever no overlap token matches; for WordPiece and BPE it proves equality with sequential
-  tokenization when every position-aligned overlap spans more characters than the longest vocabulary token.
-- **Folklore delimiters.** Data systems split logs and CSV at newlines because "records do not contain newlines",
-  adjusting the cut to the next delimiter (the widow/orphan pattern). The assumption is per-format, informal, and
-  famously unsound for CSV with quoted newlines, which is why speculative CSV parsing exists as a research topic (Ge et
-  al., SIGMOD 2019); massively parallel delimiter parsing (Stehle and Jacobsen, PVLDB 2020) attacks the same context
-  problem on GPUs. Format-specific structural scans (simdjson, Mison, Parabix) hand-derive comparable facts per format.
+**Compile the simulation into the automaton.** Simultaneous finite automata (Sin'ya, Matsuzaki and Sassa, ICPP 2013)
+take a state of the extended automaton to be a mapping from entry state to exit state, so one ordinary pass over a chunk
+yields that chunk's whole transfer function; the mappings compose associatively and chunks combine in a parallel
+reduction. The per-state simulation is therefore paid at construction rather than at scan time, and the authors report
+almost no runtime overhead. What it costs is the size of the constructed automaton: a state is a map on states, so the
+worst case is `nⁿ` from a DFA with `n` states and `2^(n²)` from an NFA, though for the expressions they survey it is
+usually far smaller: of the more than 20,000 SNORT expressions they measure, 98.6% give a D-SFA no larger than the
+square of the minimal DFA, 279 exceed it and six exceed its cube. The reduction step also remains. Composition can also
+be applied directly instead of compiled in, and in that form it is a classical answer: Hillis and Steele (Communications
+of the ACM 1986) treat each character as a unary function on states, observe that the induced composition is
+associative, and recover the state after every character with one parallel-prefix operation. Their worked example is
+lexing program text, and Yang (Computer Languages 1996) shows that the example needs care. The scan requires an
+automaton that can tell a token has begun as soon as its first character is read; that holds for one-character lookahead
+but not in general, so an automaton needing more must be transformed before the scan applies at all. Attaching token
+output to transitions rather than to states, as a Mealy machine does, is what makes the lookahead behaviour
+representable. The object composed for maximal-munch lexing is therefore richer than a map from states to states.
+Data-parallel finite-state machines (Mytkowicz, Musuvathi and Schulte, ASPLOS 2014) take the same route on SIMD and
+multicore hardware, enumerating transitions from every possible start state so that the enumeration is exactly the
+transition function, and citing Hillis and Steele as the basis for doing so; the resulting transfer function is exact;
+after the chunk summaries determine the correct entry states, the chunks are run again to produce output, so nothing is
+guessed and nothing needs repair. The cost is a factor of `|Q|` in work, which convergence reduces in practice, though
+the authors report that convergence to a single state is rare. A GPU lexer applies the same scan to recover the complete
+state stream, the state after every input position rather than only each chunk's entry state (Voetter, Leiden University
+MSc thesis 2021). Holding one function table per input position costs `O(|Q|n)` space, so that work precomputes the
+reachable compositions and identifies each by an integer, reducing composition to a two-dimensional lookup. The trade is
+the same one the simultaneous construction makes, paid in a table rather than in states.
 
-What none of these do is ask the token set's own automaton *which bytes are safe*. Lexer generators come closest: re2c
-analyses the compiled automaton to reject rules in which one user-declared end-of-input sentinel may occur before a
-lexeme ends. That is a terminal-in-lexeme test for a declared byte, a safe-after property under the model used here,
-rather than a derivation of the safe-before set; Section 9 shows the two are incomparable.
+**Carry fewer entry states.** Composition is exact but pays for every state. A second family attacks that cost by
+shrinking the set a chunk must carry. One line of work uses single-state speculation: Jones et al. (HotPar 2009) observe
+that in lexing the automaton reaches a stable state within a few characters, so prepending a short suffix of its left
+neighbour to each chunk usually recovers the entry state, and Prabhu et al. (PLDI 2010) make the pattern explicit as
+language constructs, prediction, validation on completion, re-execution on a miss, with lexical analysis as the
+motivating workload and the entry state predicted by scanning a few characters before the cut. Luchaup et al. (RAID
+2009) place the same wager for intrusion-detection signature matching: a secondary scan enters its chunk in the DFA's
+start state and records its state after every character, and the primary validates by running on into the chunk and
+comparing against that history until the two couple, so even a wrong guess usually costs only the short prefix before
+convergence. Enumerative speculation sits deliberately between the extremes: rather than speculating on a single state
+or enumerating all of them, it speculates transitions from several states chosen by a lookback over the preceding input
+(Jiang and Agrawal, PPoPP 2017). Reduced-interface DFAs (Borsotti, Breveglieri, Morzenti and Crespi Reghizzi, PPoPP
+2025) attack the same overhead from the automaton side, cutting the number of starting states a chunk automaton must
+carry by combining an NFA's state reduction with deterministic transitions. The two leave different residues: a lookback
+speculation can miss, and a miss costs a rescan, whereas a reduced-interface DFA carries its interface in full and pays
+instead in proportion to that interface's size. Both approaches may still carry more than one candidate entry state, and
+that extra work is one limit on the speedup.
 
-## 3 The certificate
+**Relocate cuts to a language's separators.** Parallel lexers have long been built by cutting near equal divisions and
+sliding each cut to a language-specific separator (Barenghi, Crespi Reghizzi, Mandrioli, Panella and Pradella, Science
+of Computer Programming 2015). The separator and the search bound are chosen by hand, and finding a separator does not
+by itself remove the entry-state problem: the accompanying parallel lexical analysis enumerates the possible start
+states of a chunk rather than deducing one, with each worker carrying one computation per alternative, at most three in
+their worked cases and four in the stated worst case, when the bounded separator search finds none. The technique is
+therefore separator relocation combined with state enumeration, not a proof that the separator is safe. Its worked cases
+are the direct antecedent of Section 7: newline preserves the JSON token stream that survives discarding, since no
+surviving lexeme admits it, yet it is rejected in practice because generated JSON may contain none (Li, Sato, Liu and
+Taura, IPDPS 2021). Lua fails for a stronger reason than any certificate could address: its long-bracket delimiters
+`[=ⁿ[` and `]=ⁿ]` must agree on `n`, so the lexical grammar is not regular, the set of possible delimiters is unbounded,
+and with it the set of possible entry states; no fixed lookahead can decide which delimiter, if any, encloses a chunk.
+Barenghi et al. recover a workable schema only by constraining the language, admitting just `[[` and `]]` for strings
+and requiring the multiline comment's closing delimiter to occur at line end, after which newline does serve as their
+split point. What is missing is a way to decide, from the token set alone, whether every relevant occurrence of a
+proposed byte is safe to cut immediately before.
 
-The setting is a lexer in the usual longest-match loop: the scanner starts in the initial state, consumes bytes
-recording the last accepting position, emits the token found there, and restarts in the initial state at the next byte.
-Tokens are positive-length: acceptance counts only after at least one byte is consumed, so an accepting initial state
-never emits the empty word and the loop always advances. `tokenize_all()` and `tokenize_all_parallel()`, the entry
-points this report is about, enforce that by treating a zero-length acceptance as no match and halting at the offset,
-which the caller sees as a short consumed count. The single-match `tokenize()` does not: on a nullable token set it
-returns a match of length zero, which a caller looping over it must reject itself, as the `Tokenizer` does. The
-composite system is therefore not just a DFA run; it is a DFA run that *resets at every token boundary*. The certificate
-exploits exactly that reset.
+**Prescan for context.** Plex (Li, Sato, Liu and Taura, IPDPS 2021) removes the need for delimiters entirely. From the
+scanner's own DFA it derives a backtrack-free prescanning automaton, runs a prescan to recover each chunk's context, and
+then scans the chunks in parallel without language-specific delimiter analysis. The price is a pass over the input; the
+benefit is that it applies to grammars that certify nothing here.
 
-**Definition.** A state can lie on an emitted token only if some input reaches it and some continuation from it still
-accepts, so the certificate is defined over those alone. Call a state *live* when both hold, and call a transition live
-when it is defined and its target is live. A byte b is a *certified split symbol* of a compiled token set when no live
-state consumes it live except, possibly, a non-re-entrant initial state. "Consumes" means the state has an outgoing
-transition on b; "re-entrant" means some nonempty input returns the automaton to the initial state along live
-transitions, equivalently that the initial state has an incoming live transition from a live state.
+**Analyse the grammar for streaming.** Deciding something about a maximal-munch token set statically, before any input,
+is an established move rather than a new one. Yang, Tsay, and Chan (Computer Languages, Systems & Structures 2002)
+decide automatically whether the longest-match rule is applicable at all for a given token set and parser grammar, and
+identify precisely the situations in which it is not; the question is different from ours, but the setting is the same.
+StreamTok (Li, Yang and Mamouras, ASPLOS 2026) is methodologically nearer still: it also analyses such a grammar
+statically and also partitions grammars into those its technique serves and those it does not. What it computes is
+different. Its maximum token neighbour distance bounds how far a longest-match decision can depend on future input,
+which is what makes bounded-memory streaming possible; it derives no input-independent split symbols or certified chunk
+boundaries, and parallelising it is left as future work there. The two analyses are complementary: StreamTok bounds the
+context needed to confirm a token, the certificate identifies positions where no preceding context is needed at all.
 
-Both halves of *live* are load-bearing, and both are computed rather than assumed. Dropping reachability would let a
-state no input can enter de-certify a byte every real scan treats as safe; dropping the other would let a transition
-that no token can lie on do the same. Compiled automata are reachable throughout, so the first half only bites on a
-hand-built one, which the public `Simulator` accepts.
+**Recover a restart point after an edit.** Incremental lexers face the mirror of this question (Wagner and Graham, UC
+Berkeley manuscript 1997): after an edit, how far back must re-lexing begin for the result to equal a full re-scan. They
+answer it dynamically and per edit, saving the batch machine's state with each token as it is created so analysis can
+restart at any token boundary, and tracking lookahead dependencies as they arise rather than bounding them in advance.
+The certificate answers a static question instead, once per token set and before any input exists, and the two are
+complementary: a restart point is a fact about one input and its history, a certified byte is a fact about the grammar.
+An incremental divide-and-conquer lexer (Hugo and Hansson, Chalmers MSc thesis 2015) takes the other route open to it,
+storing a result for every possible entry state of a fragment and composing the resulting transition maps, which places
+it with the all-state family rather than with boundary certification.
+
+**Restrict the automaton.** Holub and Štekr's parallel run (CIAA 2009) is exact and efficient for `k`-local automata, in
+which any `k` consecutive symbols force a unique state regardless of the starting state. The property is uniform over
+the whole automaton rather than per symbol, and a lexical grammar need not have it.
+
+**Realign after the fact.** Parallel tokenization for language-model vocabularies faces the same boundary problem, and
+the overlap-based answer to it, extending chunks so neighbours share a region and merging inside it, does not guarantee
+the sequential result. LoPT (Shao et al., ACL 2026) remains overlap-based, matches overlap tokens by character position,
+and retries with a doubled chunk whenever no overlap token matches. For WordPiece and BPE, its Theorem 3.1 is
+conditional on a sufficient overlap condition: equality with sequential tokenization holds when every position-aligned
+overlap spans more characters than the longest vocabulary token. TokTier (Zhang and Cao, arXiv 2026) reports, and we
+cite the finding as theirs, that LoPT's published experimental configuration "does not satisfy its safety theorem's
+stated precondition" and that their clean-room reproduction "found inputs on which the length threshold stated in its
+paper admits a boundary outside the premise of its theorem".
+
+**Assume a delimiter.** Data systems split logs and CSV at newlines because "records do not contain newlines", adjusting
+each cut to the next delimiter. The assumption is per-format and informal, and it is famously unsound for CSV, where RFC
+4180 explicitly permits CRLF inside double-quoted fields (Shafranovich, RFC 4180 2005), which is why speculative CSV
+parsing is a research topic (Ge, Li, Eilebrecht, Chandramouli and Kossmann, SIGMOD 2019); massively parallel delimiter
+parsing (Stehle and Jacobsen, PVLDB 2020) attacks the same context problem on GPUs. Parallel lexical analysis has also
+been built by choosing cut positions directly: Barve and Joshi (International Journal of Computer Applications 2014)
+take newline, whitespace and selected language constructs as pivot elements. Those pivots are chosen for the language by
+hand rather than derived from its token set, which is precisely the step the certificate supplies. Format-specific
+structural scans hand-derive comparable facts per format: Mison (Li, Katsipoulakis, Chandramouli, Goldstein and
+Kossmann, PVLDB 2017) and simdjson (Langdale and Lemire, VLDB Journal 2019) locate JSON's structural characters and mask
+away the occurrences inside strings, while Parabix (Cameron, Herdy and Lin, CASCON 2008) builds XML lexical and
+validation bit streams, a different construction aimed at a different format.
+
+Among the preceding methods surveyed here, none derives from a compiled token automaton the complete set of raw-input
+bytes safe to cut immediately before at every occurrence in a completely tokenizable input. Lexer generators come
+closest: re2c analyses the compiled automaton to reject rules in which one user-declared end-of-input sentinel may occur
+before a lexeme ends (re2c documentation, 2026). That is a terminal-in-lexeme test for a declared byte, a safe-after
+property under the model used here, rather than a derivation of the safe-before set, and Section 10 shows the two
+properties are incomparable.
+
+## 3 Preliminaries
+
+Let `Σ` be the byte alphabet. We take a compiled token set to be a deterministic automaton `A = (Q, Σ, δ, q0, τ)` with a
+partial transition function `δ : Q × Σ ⇀ Q`, an initial state `q0 ∈ Q`, and a partial accepting map `τ : Q ⇀ T`
+assigning a token to accepting states; `Q` and `T` are finite, `Σ = {0, ..., 255}`, and the single-valued `τ` already
+contains the winner of any same-length priority tie resolved during compilation, lower priority number first and lower
+token ID second. We write `δ*(q, u)` for the state reached from `q` on `u ∈ Σ*` when every transition along the way is
+defined, and say `δ*(q, u)` is undefined otherwise.
+
+The scanner is the usual longest-match loop. At offset `i` of an input `w ∈ Σ*` it starts in `q0`, consumes bytes while
+transitions are defined, remembers the last position at which `τ` was defined, emits the token found there, and restarts
+at that position in `q0`. If no accepting position is reached, the scan halts at `i`. Tokens are positive-length: an
+accepting position is eligible only after at least one symbol has been consumed, so an accepting `q0` never emits the
+empty word. If no positive-length accepting prefix exists the scan halts; emitting a length-zero match there would
+restart at the same offset forever, which is what Section 4.2 needs ruled out. The whole-input entry point, and each
+chunk-local scan used by the parallel entry point, treat a final length-zero match as failure and halt at that offset,
+one failed chunk stopping no other; the single-match entry point reports the length-zero match instead, and a caller
+looping over it must reject that itself. The composite system is therefore not a single automaton run: it is a run that
+*resets to `q0` at every token boundary*, and the certificate exploits exactly that reset.
+
+Write `tok(w)` for the sequence of (token, length) pairs the scanner emits on `w`, and `con(w)` for the scanner's final
+committed offset, equivalently the sum of the lengths in `tok(w)`; bytes inspected during failed lookahead beyond the
+last accepted prefix are not counted. Call `w` *completely tokenizable* when `con(w) = |w|`, and call an offset a *token
+boundary* of `w` when it is `0` or a cumulative sum of the emitted lengths; `con(w)` is therefore always a boundary, and
+`|w|` is one exactly when `w` is completely tokenizable.
+
+## 4 The certificate
+
+A state can lie on an emitted token only if some input reaches it and some continuation from it still accepts, and the
+certificate is defined over those alone. Write `Q⁺ = { q ∈ Q | δ*(q0, u) = q for some u ∈ Σ*, and δ*(q, v) is accepting
+for some v ∈ Σ* }` for the states that are both reachable and co-accessible, and let `δ⁺(q, a) = δ(q, a)` when that
+transition is defined and `δ(q, a) ∈ Q⁺`, and be undefined otherwise. All that follows is stated over the *live
+subautomaton* `A⁺ = (Q⁺, Σ, δ⁺, q0, τ)`. Section 4.1 shows why neither half of the restriction is cosmetic. A pattern
+denoting the empty language leaves reachable states outside `Q⁺` whose transitions would otherwise de-certify symbols
+that no token can contain; and a state no input enters can witness nothing, so admitting one would let a transition no
+scan ever takes de-certify a symbol every scan treats as safe. If `q0 ∉ Q⁺` the token set accepts nothing, and no symbol
+is useful; we assume `q0 ∈ Q⁺` throughout. One consequence is used repeatedly below: the match path of any emitted token
+lies in `A⁺` throughout, since every transition along it leads to that token's accepting position, so reasoning about
+emitted tokens may read `δ` as `δ⁺` without further comment. A second consequence is of the same kind: every `q ∈ Q⁺` is
+reachable by a path lying in `A⁺` throughout, since an intermediate state of a `δ`-path from `q0` to `q` is reachable by
+the path's prefix and co-accessible by appending the path's remainder and then an accepting continuation from `q`.
+Wherever reachability of a state in `Q⁺` is invoked below, `(δ⁺)*(q0, u) = q` may therefore be read directly.
+
+**Definition 1 (re-entrant initial state).** `q0` is *re-entrant* if `(δ⁺)*(q0, u) = q0` for some `u ∈ Σ⁺`.
+
+Because every state of `Q⁺` is reachable, Definition 1 is equivalent to `q0` having an incoming live transition from a
+state of `Q⁺`, which is how an implementation tests it.
+
+**Definition 2 (certified split symbol).** A symbol `b ∈ Σ` is *certified* if every `q ∈ Q⁺` with `δ⁺(q, b)` defined
+satisfies `q = q0`, and if `δ⁺(q0, b)` is defined then `q0` is not re-entrant.
+
+The exemption for `q0` is what makes the definition useful rather than vacuous: a token may legitimately begin with `b`.
+The exemption is sound only while no input can return the automaton to `q0` mid-scan, which is precisely the re-entrancy
+condition. Section 4.2 shows that dropping it makes the certificate false.
 
 The definition has an instance every reader has met. Take the token set whose tokens are the encoding forms of UTF-8
-(RFC 3629), one token per form. After a byte that begins a form only continuation bytes, `0x80` to `0xBF`, are admitted
-until the form completes, and no form is a prefix of another, so no live state other than the initial one consumes a
-byte that begins a form and no transition returns to the initial state. Every such byte, `0x00` to `0x7F`, `0xC2` to
-`0xDF`, `0xE0` to `0xEF` and `0xF0` to `0xF4`, is therefore certified, and no continuation byte is, since only
-non-initial states consume one. That is the property the RFC states as its design goal, "character boundaries are easily
+(Yergeau, RFC 3629 2003), one token per form. After a byte that begins a form only continuation bytes, `0x80` to `0xBF`,
+are admitted until the form completes, and no form is a prefix of another, so no live state other than `q0` has a
+transition on a byte that begins a form and no transition returns to `q0`. Every such byte, `0x00` to `0x7F`, `0xC2` to
+`0xDF`, `0xE0` to `0xEF` and `0xF0` to `0xF4`, is therefore certified, and no continuation byte is, since only states
+other than `q0` consume one. That is the property the RFC states as its design goal, "character boundaries are easily
 found from anywhere in an octet stream", recovered from the compiled table by a definition that knows nothing of UTF-8;
-`paper/figures/applicability.cpp` asserts it byte for byte. The encoding was designed to have the property; the question
-section 6 answers is which token sets have it without having been designed for it.
+`figures/applicability.cpp` asserts it byte for byte. The encoding was designed to have the property. The question this
+paper asks is which token sets have it without having been designed for it, and Section 7 answers for fifteen of them.
 
-**Theorem.** Let an input be completely tokenizable by the serial longest-match scan. Splitting it immediately before
-any occurrences of certified split symbols and scanning the chunks independently, each from the initial state, produces
-chunk streams whose ordered concatenation is exactly the serial token stream.
+**Lemma 1 (occurrences begin tokens).** Let `b` be certified and let `w` be completely tokenizable. Then every offset of
+`w` holding `b` is a token boundary of `w`.
 
-*Proof.* Consider an occurrence of a certified symbol b at offset i. Suppose, for contradiction, that i is not a token
-boundary of the serial scan. Then b is consumed after a nonempty prefix of some token; let q be the automaton state
-immediately before consuming b. Since q consumes b and b is certified, q can only be the initial state, and that
-exemption is available only while the initial state is non-re-entrant. But q was reached after a nonempty prefix, so the
-initial state would be re-entrant, a contradiction; and a non-initial q consuming b contradicts certification directly.
-So every occurrence of b begins a token, and the serial scan is in the initial state exactly at i. The same argument
-bounds the longest-match lookahead, which is what lets a chunk end where the serial scan does not. While matching the
-last token before a boundary, the serial scanner may read past the accepting position hunting for a longer match. To
-record an accepting position past the boundary it would have to consume the certified byte after a nonempty prefix along
-a live transition, which the paragraph above just ruled out. It is not obliged to stop there: a dead transition on that
-byte may exist, and the scan may read on through it, but nothing it finds afterwards can accept. Either way the last
-accepting position lies at or before the boundary, and the chunk that starts there sees exactly what the serial scan
-saw. Induction over the chunks gives stream equality. ∎
+*Proof.* Let `w_i = b` and suppose `i` is not a token boundary. Since `w` is completely tokenizable, every offset is
+either a token boundary or lies strictly inside some emitted token, so `i` lies strictly inside a token that starts at
+some `s < i`. Let `u = w_s ... w_(i-1)`, which is nonempty, and let `q = (δ⁺)*(q0, u)`, the state immediately before `b`
+is consumed. The token's match path continues through offset `i`, so `δ⁺(q, b)` is defined. By Definition 2, `q = q0`,
+hence `(δ⁺)*(q0, u) = q0` with `u` nonempty, so `q0` is re-entrant by Definition 1. But `δ⁺(q0, b) = δ⁺(q, b)` is
+defined, so Definition 2 also requires `q0` not to be re-entrant, a contradiction. ∎
 
-**Corollary (malformed input).** If the serial scan fails at some offset, every chunk before the failing one is fully
-consumed with an identical stream, and the failing chunk stops at the same relative offset; the concatenated parallel
-stream therefore has the serial stream as a prefix, but later chunks may independently emit tokens beyond the failure. A
-caller must check every chunk's consumed length, which the parallel API returns per chunk, before treating the
-concatenated output as a successful tokenization.
+**Lemma 2 (prefix stability).** Let `w` be completely tokenizable, let `s` be a token boundary of `w`, and let `v` be
+any prefix of `w` with `|v| >= s`. Then `v` and `w` emit the same tokens on `[0, s)`, and the scan of `v` reaches `s` in
+state `q0`.
 
-**The subtlety.** The initial state is exempted from "no live state consumes b live" because a token may legitimately
-begin with b. That exemption is only sound while no input can *return* the automaton to the initial state mid-scan. A
-nullable pattern breaks it: `kleene(text("a"))` minimizes to an accepting initial state with a self-loop on `a`, the
-initial state is re-entrant, and the naive certificate wrongly certifies `a`; splitting `aa` then changes the token
-stream. munch shipped exactly this bug: the fix conditions the exemption on the initial state having no incoming
-reachable live transition, so a detached edge into it de-certifies nothing, and the regression suite carries the
-counterexample and a cyclic `(ab)*c` re-entry case. The condition is not a refinement for completeness; without it the
-certificate is unsound.
+*Proof.* If `s = 0` both claims are immediate: `[0, s)` is empty and the scan of `v` starts at offset `0` in `q0`.
+Assume `s > 0`. First, no token of `w` beginning at some `s' < s` records an accepting position after `s`: longest match
+takes the last accepting position reached, so such a token would span past `s`, placing `s` strictly inside it and
+contradicting that `s` is a boundary.
 
-The three automata below are drawn by munch itself, from the minimized tables it compiles for each token set. Double
-circles are accepting states, labelled with the state number and the token identifier.
+The rest is an induction over the tokens preceding `s`. Suppose both scans begin a token at the same offset `s' < s` in
+`q0`, which holds at offset `0`. From `s'` the two scans read the same bytes, since `v` agrees with `w` byte for byte as
+far as it goes, so they traverse the same states while both inputs last, and the accepting positions they record at
+offsets up to `|v|` coincide. By the bound above every accepting position this token records in `w` lies at or before `s
+<= |v|`, so both scans record exactly the same set, take the same last member of it, and emit the same kind and length;
+truncation removed only lookahead that failed. Both then restart in `q0` at the same next offset, which is at most `s`.
+The restart offsets increase strictly, and `s` is a boundary of `w`, so the induction reaches offset `s` exactly: every
+token before `s` is emitted identically in both scans, and the scan of `v` reaches `s` in `q0`. ∎
 
-`a+` and `;`, where nothing enters state 0 and no other state consumes `;`, so `;` is certified:
+**Theorem 1 (split invariance).** Let `w` be completely tokenizable and let `0 = c_0 < c_1 < ... < c_m = |w|` be offsets
+such that each interior `c_j` holds a certified symbol. Then `tok(w) = tok(w[c_0..c_1)) · tok(w[c_1..c_2)) ···
+tok(w[c_(m-1)..c_m))`, where `·` denotes concatenation of token sequences and `w[a..b)` the corresponding slice.
+
+*Proof.* The offsets are strictly increasing, so every chunk has positive length; the argument uses this where a
+nonempty prefix before an interior boundary is taken, and a driver must supply distinct offsets to be inside the
+statement at all. For empty `w` the partition degenerates to the single offset `0`, both sides are the empty sequence,
+and the claim is trivial; assume `|w| > 0`. By Lemma 1 every interior `c_j` is a token boundary of `w`, and `c_0` and
+`c_m` are boundaries trivially. Two facts are then needed. First, the scanner is deterministic and enters each token in
+state `q0` with no state carried across boundaries, so a scan started at `c_j` begins exactly as the global scan does
+there. Second, while matching the last token of the chunk the global scan records no accepting position beyond
+`c_(j+1)`. Let `q` be the state reached on the nonempty prefix ending just before `c_(j+1)`. If `δ⁺(q, b)` were defined
+for the certified `b` at `c_(j+1)`, the argument of Lemma 1 would force `q = q0` and make `q0` re-entrant, which
+Definition 2 forbids; so it is not. Either `δ(q, b)` is undefined, and the scan stops at `c_(j+1)`, or its target lies
+outside `Q⁺`: were it inside, `q` would itself be co-accessible and `δ⁺(q, b)` would be defined. In the second case the
+scan may read on but can never reach an accepting state again. Note that the scan is therefore not required to *stop* at
+`c_(j+1)`, only to find nothing past it: lookahead may cross the boundary through transitions that lead nowhere. Either
+way the last accepting position it recorded lies at or before `c_(j+1)`, and the chunk scan, seeing the same bytes from
+the same state, records the same one, so the tokens emitted between `c_j` and `c_(j+1)` coincide. The second fact is
+needed only for interior boundaries. When `j + 1 = m` the right edge is the end of the input, which carries no symbol
+and where the global scan has no bytes left either, so the final chunk sees exactly the suffix the global scan sees,
+from the same state, and the two agree without further argument. Induction over `j` gives the claim. ∎
+
+**Lemma 3 (boundaries before the first failure).** Let `b` be certified and let `w` be any input. Every offset `i <
+con(w)` with `w_i = b` is a token boundary of the serial scan of `w`.
+
+*Proof.* Every offset below `con(w)` is either a token boundary or lies strictly inside a token the scan emitted, so if
+`i` is not a boundary it lies strictly inside a token starting at some `s < i`. The argument of Lemma 1 applies
+unchanged to that token: the state `q` reached on the nonempty `w_s ... w_(i-1)` has `δ⁺(q, b)` defined, hence `q = q0`
+by Definition 2, hence `q0` is re-entrant, which Definition 2 forbids once `δ⁺(q0, b)` is defined. Completeness of the
+tokenization is never used, only that the offsets below `con(w)` were successfully traversed. ∎
+
+**Corollary 1 (malformed input).** Take the partition of Theorem 1. If `con(w) < |w|`, let `[c_j, c_(j+1))` be the chunk
+containing the first failure, which is the chunk's own first byte when `con(w) = c_j`. By Lemma 3 every interior
+boundary below `con(w)` is a token boundary of the serial scan, so the reasoning of Theorem 1 applies to the chunks
+before it. Every chunk before `c_j` is fully consumed and contributes exactly the tokens the serial scan emits there,
+and the chunk containing the failure halts at the same offset. The serial stream is therefore a prefix of the
+concatenation, but chunks after the failure may emit tokens the serial scan never reaches. A caller must check every
+chunk's consumed length before treating the concatenation as a successful tokenization.
+
+**Proposition 1 (vacuous certificates).** If no `q ∈ Q⁺` has `δ⁺(q, b)` defined, then `b` is certified, and no
+completely tokenizable input contains `b`.
+
+*Proof.* The first claim holds because Definition 2 quantifies over an empty set. For the second, a completely
+tokenizable `w` containing `b` would have `b` consumed by some emitted token, whose match path lies in `A⁺`, so some
+state of `Q⁺` would consume `b` live. ∎
+
+Such symbols are certified but useless for planning: they cannot appear in valid input. They are also separable
+mechanically, with no further analysis. If `b` is certified then every live state consuming it is `q0`, so `b` is
+consumed live by some state exactly when `δ⁺(q0, b)` is defined:
+
+**Corollary 2 (useful certificates).** A certified `b` is non-vacuous if and only if `δ⁺(q0, b)` is defined.
+
+An implementation can therefore report the useful set with no extra analysis, by intersecting the certificate with the
+initial state's live transitions, which is what the predicate in the accompanying library reports: vacuous certificates
+never reach a caller, since a caller cannot act on one and a planner searching for one scans the whole input for
+nothing.
+
+### 4.1 The condition is also necessary
+
+Definition 2 is stated as a test, and Lemma 1 shows it is sufficient. It is also necessary, so nothing is given away by
+using it. It needs no side hypothesis beyond the standing assumption that the token set accepts some word (`q0 ∈ Q⁺`):
+the states of `Q⁺` are reachable and co-accessible by construction, which is exactly what the witness below asks of
+them, so the theorem applies to every such token set whatever automaton it was compiled from, and a token set accepting
+nothing certifies no useful symbol in the first place.
+
+**Theorem 2 (characterization).** Assume the standing `q0 ∈ Q⁺`. Then `b` is certified if and only if every occurrence
+of `b`, in every completely tokenizable input, begins a token.
+
+*Proof.* Sufficiency is Lemma 1. For necessity we show that a rejected `b` admits a witness: a completely tokenizable
+input in which an occurrence of `b` is not a token boundary. Definition 2 rejects `b` in exactly two ways.
+
+Suppose some `q ≠ q0` has `δ⁺(q, b)` defined. Then `q ∈ Q⁺` is reachable, so `(δ⁺)*(q0, u) = q` for some `u`, and `u` is
+nonempty because `q ≠ q0`. The target `δ⁺(q, b)` lies in `Q⁺` by the definition of `δ⁺`, so `(δ⁺)*(δ⁺(q, b), v)` is
+accepting for some `v`. Take `w = ubv`. Reading `w` from `q0` traverses `u` to `q`, then `b`, then `v` to an accepting
+state, so the scan from offset `0` reaches an accepting position at `|w|`, and no later one exists because the input
+ends there. Longest match therefore emits a single token spanning `w`, so `w` is completely tokenizable, and the
+occurrence of `b` at offset `|u| >= 1` begins no token.
+
+Otherwise `δ⁺(q0, b)` is defined and `q0` is re-entrant. Re-entrancy gives a nonempty `u` with `(δ⁺)*(q0, u) = q0`, and
+co-accessibility of `δ⁺(q0, b)` gives `v` as before. The same `w = ubv` is completely tokenizable and places `b` at
+offset `|u| >= 1` inside its only token. ∎
+
+Restricting to `A⁺` is what makes this work, and the restriction is not cosmetic. A pattern denoting the empty language
+leaves reachable states behind from which no accepting state can be reached. Taking `T_1 = ab · ∅` alongside `T_2 = b`,
+the compiled automaton has `q0 --a--> q2 --b--> q1` beside `q0 --b--> q3` accepting, and `q1, q2` are reachable but not
+co-accessible. Had Definition 2 been stated over `δ` rather than `δ⁺`, it would reject `b`, because the noninitial `q2`
+consumes it; yet every completely tokenizable input here is a sequence of `b` tokens in which every `b` begins one, so
+no witness exists and necessity would fail. Over `δ⁺` the offending transition is invisible, since `q1 ∉ Q⁺`, and `b`
+certifies as it should. Minimization does not remove such chains, because the minimizer used here treats a missing
+transition as distinct from one into a state that cannot accept, which is what a scanner needs: the two differ in how
+far a longest match reads before failing. That is deliberately weaker than Myhill-Nerode minimality, under which every
+state with an empty right language is equivalent.
+
+Reachability is the mirror image, and it matters for automata not produced by subset construction. Give the same `T_2 =
+b` a detached `q4 --b--> q5` with `q5` accepting. Now `q4` is co-accessible and consumes `b`, so a definition
+quantifying over co-accessible states alone would reject `b`; yet no input reaches `q4`, every completely tokenizable
+input is again a sequence of `b` tokens, and no witness exists. Requiring both halves in `Q⁺` keeps the definition
+exactly as permissive as the scans it describes.
+
+The derivation therefore computes `Q⁺` first, in two sweeps. One forward sweep from `q0` marks the reachable states and
+one reverse sweep marks those from which an accepting state remains reachable; the certificate sweep then skips every
+unmarked source and every transition whose target is unmarked, since neither can lie on an emitted token and so neither
+carries information about where tokens may begin. Because both marks are computed rather than assumed, Theorem 2 applies
+to a hand-built automaton as much as to a compiled one. Each sweep visits each table entry once and leaves the `O(|Q|
+|Σ|)` bound of Section 6 unchanged.
+
+The same restriction is what makes Corollary 2 correct. In the example `δ(q0, a)` is defined but `δ⁺(q0, a)` is not,
+since the target `q2` is not co-accessible. A test phrased over `δ` would therefore call `a` a useful certificate, yet
+no input this token set accepts contains an `a` at all; phrased over `δ⁺` it reports `a` as vacuous, which is what a
+caller needs.
+
+Consequently, for a token set compiled this way, "no useful byte certifies" is not a failure of the test: it means no
+single byte can serve as a split symbol at all under the semantics of Section 3. The applicability results of Section 7
+inherit that strength, and the negative rows there are statements about the tokenizations, not about the analysis.
+
+### 4.2 The subtlety
+
+Dropping the re-entrancy condition from Definition 2 does not merely weaken the result, it makes it false. Consider the
+token set consisting of the single nullable pattern `a*`. Minimization yields an automaton whose initial state is
+accepting and carries a self-loop on `a`; the only state consuming `a` is `q0`, so the naive certificate admits `a`.
+Splitting the input `aa` between its two bytes then yields two tokens where the serial scan, by longest match, yields
+one. The condition is therefore not a refinement for completeness but a soundness requirement.
+
+Figure 1 shows why the condition is stated as an incoming transition rather than as a self-loop. In the nullable case
+the initial state re-enters itself directly, which a self-loop test would catch. In the cyclic variant `(ab)*c` it
+re-enters through the cycle `a, b`, and no self-loop exists anywhere; the only state consuming `c` is `q0`, so a
+self-loop test would certify `c` and split `abc` in the middle of its only token. Both cases are carried as regression
+tests.
+
+**Figure 1.** Minimized automata drawn by the library described here; double circles are accepting states, labelled with
+the state number and the token identifier. In (a) nothing enters state 0, so `;` is certified: no other state consumes
+it. In (b) state 0 accepts and re-enters itself on `a`, and in (c) it is re-entered through the cycle `a, b`. In both
+counterexamples the only state consuming the candidate byte is the initial one, so dropping the re-entrancy condition
+would certify it and break longest match. The shipped predicate rejects the candidate in (b) and (c) and accepts `;` in
+(a).
+
+(a) `a+` and `;`:
 
 ![Certified split symbol](certificate_sound.svg)
 
-`a*`, where state 0 accepts and re-enters itself on `a`:
+(b) `a*`:
 
 ![Nullable re-entry](certificate_nullable.svg)
 
-`(ab)*c`, where state 0 is re-entered through the cycle `a`, `b`, with no self-loop anywhere:
+(c) `(ab)*c`:
 
 ![Cyclic re-entry](certificate_cyclic.svg)
 
-The middle and right cases are why the condition is stated as an incoming transition rather than as a self-loop. In
-both, the only state consuming the candidate byte is the initial one, so the naive rule would certify it: `a` in the
-nullable case, and `c` in the cyclic case, where certifying it would split `abc` in the middle of its only token. A
-self-loop test would catch the first and miss the second. `Lexer::is_split_point()` rejects the candidate in both and
-accepts `;` in the first.
-
-**Vacuous certificates.** A byte no live state consumes live is certified vacuously: no completely tokenizable input can
-contain it, so the theorem's implication holds trivially. Such a byte is useless to a caller, and a planner searching
-for one scans the whole input and finds nothing, so `is_split_point()` does not report it. The filter is mechanical
-rather than a matter of inspection: a certified byte is consumed live only by the initial state, so it can occur in
-valid input exactly when the initial state has a live transition on it, and the predicate reports that intersection.
-
-**The condition is also necessary.** On a *trim* automaton, one where every state is reachable and can still reach an
-accepting state, the test is not merely sufficient: a rejected byte always admits a witness. If some non-initial state
-consumes `b`, take a nonempty `u` reaching that state and a `v` carrying `delta(q,b)` to acceptance; the input `ubv` is
-one whole token, so its `b` at offset `|u|` begins nothing. If instead the initial state is re-entrant and consumes `b`,
-the same construction works with `u` returning to the initial state.
-
-Restricting to live transitions is what makes that work, and it is not cosmetic. A pattern denoting the empty language,
-such as `any_of(Set{})`, leaves reachable states behind that can never accept, and minimization keeps them because a
-partial automaton distinguishes a missing transition from a transition into a state that cannot accept. With the token
-set `"ab"` followed by the empty language, alongside a plain `"b"`, a non-initial state consumes `b` on a branch that
-matches nothing. Stated over the raw transition relation the definition would reject `b`, even though every `b` in any
-input this lexer accepts is a whole token, so necessity would fail; stated over live transitions that one is invisible,
-since its target can never accept, and `b` certifies as it should. The same restriction is what makes the useful set
-correct: in that example the initial state has a transition on `a`, but only into the dead branch, so no live transition
-on `a` exists and `a` is reported vacuous rather than usable.
-
-The reachability half of trimness is enforced the same way, and for the same reason. Necessity is stated for a trim
-automaton, so the implementation restricts to states the initial state can reach as well as to live transitions: a state
-no scan can arrive in cannot place a symbol inside a token, so letting it de-certify one would be a false negative. A
-DFA from `core::determinize()` never has such a state, because subset construction only ever emits states it reaches;
-`dfa::Simulator` accepts any `Dfa`, including one assembled by hand, so it computes reachability rather than assuming
-it. An unreachable transition back into the initial state is covered too, and would otherwise make the initial state
-look re-entrant and defeat every certificate at once.
-
-## 4 Deriving and using it
-
-The certificate is derived by a linear-time analysis of the compiled transition table at construction time. Two passes
-mark the live states: a forward worklist from the initial state marks what input can reach, and a reverse pass over an
-inverted predecessor list, seeded by the accepting states, marks what can still accept. One scan then detects
-initial-state re-entry over live transitions, and a 256-by-state sweep certifies each byte value, skipping sources that
-are unreachable and transitions whose target cannot accept. The cost is `O(states × symbols)` in time, and the same in
-auxiliary space for the predecessor list. It is paid once, at the same asymptotic order as building the tables
-themselves. The scanner's inner loop is untouched.
-
-The public surface is three functions. `is_split_point(byte)` reports whether a byte is a useful certified split symbol,
-the set defined above. `chunk_boundaries(input, chunks)` is the pure planner: it aims for equal divisions and slides
-each interior boundary forward to the next such byte, returning offsets; when the useful certified set is empty, it
-returns one chunk without scanning. `tokenize_all_parallel(input, chunks, sink)` executes the plan, one thread per
-chunk, and for completely tokenizable input the theorem guarantees that concatenating the per-chunk streams gives the
-serial stream. There is no speculation to retry, no overlap to verify, and no merge beyond concatenation.
-
-The planner's cost deserves stating: for k requested chunks it performs at most k - 1 forward searches for a certified
-byte, so its worst case is `O(kN)` over an input of N bytes when certified occurrences are rare, though k is normally a
-small hardware-thread count and the searches start at equally spaced offsets. When the certificate holds no byte at all,
-the planner returns the single whole-input chunk without scanning. A one-pass planner would reduce the worst case to
-`O(N + k)`.
-
 ## 5 Certification modulo discarded tokens
 
-The certificate above is exact, and that is what makes it fragile. One token whose interior admits the candidate byte
-disqualifies it, and a string literal, a comment, or a whitespace run that includes newline is enough. The token sets in
-Section 6 that certify nothing fail for exactly that reason.
+Fix a set `I ⊆ T` of *discarded* tokens, chosen by the caller. Write `π_I` for the map on token sequences deleting every
+pair whose token lies in `I`, and call two sequences *`I`-equivalent* when `π_I` sends them to the same sequence.
+Comparing streams modulo a designated token class is not itself new: ZipLex's separator construction proves its printing
+guarantee in exactly this form, re-lexing equal up to inserted separator tokens (Chassot and Kunčak, CAV 2026). What is
+asked here is different: which symbols of raw input may be cut at while preserving `I`-equivalence, where the cut can
+land inside an existing discarded token rather than at a seam between formed tokens.
 
-The observation this section develops is that the offending tokens are usually the ones the caller throws away. A parser
-does not see whitespace or comments. When a chunk boundary falls inside a whitespace run, the serial scan emits one
-whitespace token and the chunked scan emits two, and no consumer that discards whitespace can tell the difference. The
-exact guarantee is therefore stronger than such a caller needs.
+Being discarded is not by itself sufficient. Cutting the line comment `//ab` between its last two bytes leaves `//a` on
+the left, which is a comment and is discarded, and `b` on the right, which is an identifier and is not. What is required
+is that both halves of the severed token are discarded, and that the restarted scan rejoins the scan it interrupted.
+Write `T(q) = { τ(p) | p = (δ⁺)*(q, v) for some v ∈ Σ*, τ(p) defined }` for the tokens still reachable from `q`, noting
+`τ(q) ∈ T(q)` whenever `τ(q)` is defined.
 
-Fix a set *I* of discarded tokens, declared through `Builder::set_ignored_tokens()`, and compare token streams only
-after deleting every token whose kind lies in *I*. Being discarded is not by itself enough: cutting the line comment
-`//ab` between its last two bytes leaves `//a`, a comment and discarded, and `b`, an identifier and kept. What is needed
-is that both halves of the severed token are discarded, and that the restarted scan rejoins the one it interrupted. A
-byte *b* is **certified modulo *I*** when every live state that consumes it either is the initial state *and the initial
-state is not re-entrant*, or satisfies all three of:
+**Definition 3 (certified modulo `I`).** A symbol `b ∈ Σ` is *certified modulo `I`* if every `q ∈ Q⁺` with `δ⁺(q, b)`
+defined satisfies `A(q)` or `C(q)`, where `A(q) ≡ q = q0 and q0 is not re-entrant`, and `C(q)` holds when all three of
 
-1. it accepts, and its token lies in *I*, so the left chunk stops on a complete discarded token rather than mid-token;
-2. every token still reachable from it lies in *I*, so whatever the severed remainder becomes is discarded too;
-3. advancing on *b* from it and from the initial state reach the **same state**, so after consuming *b* the restarted
-   scan sits exactly where the interrupted one does and every later byte is scanned alike.
+1. `τ(q)` is defined,
+2. `δ⁺(q0, b)` is defined and equal to `δ⁺(q, b)`, and
+3. `T(q) ⊆ I`
 
-The third condition is the load-bearing one. It confines the disturbance to the single token containing the cut, and it
-is what keeps this a local test on the transition table rather than a question about language inclusion.
+are satisfied.
 
-The re-entrancy qualifier on the first alternative is not decoration. Without it the rule would admit `a` for a *kept*
-token `a*`, where serial scanning of `aa` emits one token of length two and split scanning emits two of length one, a
-difference the caller can see. With the token discarded the same split is safe, and the three conditions grant it: a
-re-entered initial state is allowed to consume the byte on exactly the terms every other state is.
+The two alternatives are not symmetric, and the asymmetry matters. `A(q)` is Definition 2: the initial state may consume
+`b` only while nothing returns to it mid-scan. `C(q)` is the relaxation, and it is available to *every* consuming state
+including a re-entered `q0`. Requiring `A` of `q0` unconditionally would be strictly weaker than necessary: for a
+discarded token `a*` the minimized automaton is one accepting, self-looping state, so `q0` is re-entrant and `A` fails,
+yet `C(q0)` holds and cutting between two `a`s replaces one discarded token by two, which `π_I` deletes either way.
 
-Splitting at such a byte preserves the token stream after discarded tokens are deleted from both sides, and only for
-input the serial scan tokenizes completely: unlike the exact certificate's serial-prefix result, the relaxed guarantee
-has no malformed-input analogue at all. The guarantee is weaker than Section 3's, and it must be kept distinct:
+Setting `I = ∅` recovers Definition 2 exactly, since `τ(q) ∈ T(q)` makes clause 3 unsatisfiable and only `A` survives;
+so every certified symbol is certified modulo `I` for every `I`. The three conditions of `C` do distinct work. That
+`τ(q)` is defined lets the left chunk stop at the cut with a complete token rather than mid-token. That `T(q) ⊆ I` makes
+that token and whatever the severed remainder becomes both discardable, and since `τ(q) ∈ T(q)` it also forces the left
+chunk's token to be discarded. The equality `δ⁺(q, b) = δ⁺(q0, b)` is the load-bearing condition: after consuming `b`
+the restarted scan occupies the same state as the scan it interrupted, so the two agree on every subsequent byte and the
+disturbance is confined to the single token containing the cut. Without it the definition would be a statement about
+language inclusion rather than a test on the transition table. Such a statement may still be decidable, but deciding it
+would need a construction over an augmented scanner semantics, one carrying lookahead and token output as state
+composition for maximal munch must, rather than the comparison of two table rows used here.
 
-| | exact certificate | modulo *I* |
-| --- | --- | --- |
-| preserves | the full stream of kinds and lengths | the stream after discarded tokens are deleted |
-| status | **necessary and sufficient** | **sound and strictly more permissive, but conservative** |
-| query | `is_split_point()` | `is_split_point_ignoring()` |
-| planning | used by `chunk_boundaries()` and `tokenize_all_parallel()` | not wired in; plan boundaries yourself |
+**Theorem 3 (split invariance modulo `I`).** Let `w` be completely tokenizable and let `0 = c_0 < c_1 < ... < c_m = |w|`
+be offsets such that each interior `c_j` holds a symbol certified modulo `I`. Then `π_I(tok(w)) = π_I(tok(w[c_0..c_1)) ·
+tok(w[c_1..c_2)) ··· tok(w[c_(m-1)..c_m)))`, where `·` denotes concatenation of token sequences and `w[a..b)` the
+corresponding slice.
 
-Every symbol the exact certificate admits is admitted modulo *I* for every *I*, and with *I* empty the two coincide. The
-converse fails, and not merely for want of a better proof: take the discarded tokens `ab*` and `b+` beside a kept token
-`c`, over a letter neither uses. Splitting at a `b` inside an `ab*` token is always safe modulo *I*, since the left
-piece is a shorter `ab*` and the right a `b+`, both discarded, yet condition 3 refuses it because advancing on `b` from
-inside `ab*` reaches a state accepting `ab*` while advancing from the initial state reaches one accepting `b+`, and
-those accept different tokens, so minimization keeps them apart. That is the price of insisting the two scans reconverge
-at once.
+*Proof.* For empty `w` the partition degenerates as in Theorem 1 and both images are empty; assume `|w| > 0`. By
+induction on `m` it suffices to treat one interior cut at `c` holding `b`. The induction is well founded because the
+one-cut argument below shows each chunk consumes its whole slice, so both slices are themselves completely tokenizable
+and the remaining cuts may be applied to them in turn.
 
-Deciding it costs little beyond the exact condition: one more linear sweep of the compiled tables, plus ordered-set work
-logarithmic in the discarded set. Condition 2 needs no per-state set of tokens: because *I* is fixed when the automaton
-is compiled, "every reachable token is discarded" is the complement of "some kept token is still reachable", which one
-backward closure settles for every state at once, walking the reverse index that determining co-accessibility already
-builds. The result packs into a second 256-bit map, so answering `is_split_point_ignoring()` while scanning is the same
-single bit test.
+Suppose first that `c` is a token boundary of `w`. The left slice `w[0..c)` emits the same tokens as `w` on `[0, c)` by
+Lemma 2 taken with `s = c`, which is what rules out a last token whose failed lookahead crossed `c` in `w`. The scanner
+enters every token in `q0` and carries no state across boundaries, so the chunk beginning at `c` starts in the same
+state as the scan of `w` does there and reads the same bytes. The token sequences on the two sides are therefore equal
+before `π_I` is applied, and `π_I` preserves equality.
 
-Soundness was checked as well as proved. Over 400 randomly generated token sets on a three-symbol alphabet, every string
-up to length eight was tokenized, split at every interior offset, and the filtered streams compared: no symbol the
-condition admits ever failed, and no symbol the exact certificate admits was ever lost. The same properties run against
-randomly generated automata in `libs/dfa/tests/property_test.cpp`.
+Otherwise `c` lies strictly inside an emitted token spanning `[s, e)` and carrying token `t`. Let `u = w_s ... w_(c-1)`,
+which is nonempty, and let `q = (δ⁺)*(q0, u)` be the state immediately before `b` is consumed. The token's match path
+continues through `c`, so `δ⁺(q, b)` is defined and `q` satisfies `A(q)` or `C(q)`. It cannot satisfy `A(q)`: that would
+need `q = q0` with `q0` not re-entrant, yet `(δ⁺)*(q0, u) = q0` with `u` nonempty is precisely re-entrancy. So `C(q)`
+holds, and it holds whether or not `q` happens to be a re-entered `q0`; that is the only place the generalization over
+Definition 2 is used.
 
-## 6 What certifies in practice
+Consider the chunk ending at `c`, which is the prefix `w[0..c)` with `c > s`. By Lemma 2 it emits the same tokens as `w`
+on `[0, s)` and reaches `s` in `q0`; that is what rules out an earlier token whose failed lookahead ran past `s` in `w`
+and is truncated here. The chunk then consumes `u` and arrives at `q` with the chunk exhausted. Since `τ(q)` is defined
+by condition 1, the last accepting position recorded is `c` itself, so the chunk emits the single token `τ(q)` spanning
+`[s, c)` and consumes to its end.
 
-The certificate asks the grammar for cooperation, and the interesting question is how much real grammars give. The
-following table was produced by compiling each token set with munch and reading `is_split_point` for all 256 bytes (the
-probe is a shipped program, described in the appendix). Rows two through four each add a single token kind to the
-grammar of row one rather than accumulating, so each collapse is attributable to the token kind named. The conventional
-and split-friendly rows recognize exactly the same byte language and differ only in the tokenization, and the
-block-comment row directly after them adds one token kind to the split-friendly grammar, so those three are read
-together. The predicate already excludes vacuously certified bytes, so the column needs no further filtering.
+Consider the chunk beginning at `c`. It starts in `q0` and consumes `b`, reaching `δ⁺(q0, b)`, which equals `δ⁺(q, b)`
+by condition 2, the state the scan of `w` occupies after consuming the same byte at the same offset. From there both
+runs read identical bytes from identical states, so they record identical accepting positions, and the chunk emits `t`
+spanning `[c, e)`. Both runs then stand at `e` in `q0`, and `e` is a boundary of `w`, so the remainders agree.
 
-| Token set                                               | Useful certified                   | Useful modulo *I*                     |
-| ------------------------------------------------------- | ---------------------------------- | ------------------------------------- |
-| C-like: identifiers, numbers, ws runs, operators, punct | all operator and punctuation bytes | the same, plus space, tab and newline |
-| the first row plus strings alone (no raw newline)       | none                               | `\n`                                  |
-| the first row plus `//` line comments alone             | none                               | `\n`                                  |
-| the first row plus `/* */` block comments alone         | none                               | the same                              |
-| JSON, the RFC 8259 lexical forms over bytes             | none                               | `\t`, `\n`, `\r`                      |
-| log lines (`[^\n]+` and `\n`)                           | `\n`                               | the same                              |
-| C-like, conventional: strings, `//`, ws runs with `\n`  | none                               | `\n`                                  |
-| the same language, split-friendly tokenization          | `\n`                               | the same                              |
-| the same plus block comments                            | none                               | the same                              |
-| three kinds, bodies barred from each other's openers    | none                               | the same                              |
-| three kinds, block comment barred from crossing a line  | `\n`                               | the same                              |
-| Zig subset, conventional tokenization                   | none                               | `\t`, `\n`                            |
-| the Zig subset, split-friendly tokenization             | `\n`                               | `\t`, `\n`                            |
-| `keyword_scale_builder()`, construction-cost grammar    | 16 of those 24 bytes               | the same, plus space, tab and newline |
-| `build_lexer(false)`, the scaling grammar               | 13 of its own 14                   | the same, plus space, tab and newline |
+The two sides therefore differ only in that `t` on `[s, e)` is replaced by `τ(q)` on `[s, c)` followed by `t` on `[c,
+e)`. Both `τ(q)` and `t` lie in `T(q)`, which condition 3 places inside `I`, so `π_I` deletes all three occurrences and
+the images coincide. ∎
 
-Three mechanisms explain the collapses:
+Corollary 1 has no analogue here. For input the serial scan does not tokenize completely, no `π_I`-prefix relation is
+claimed, and a caller must still check every chunk's consumed length before trusting the concatenation at all.
 
-- **Free-content tokens absorb the alphabet.** A string literal that may contain `(` makes `(` a mid-token byte,
-  de-certifying it everywhere. One token kind with a near-total interior alphabet removes almost every candidate.
-- **Run tokens de-certify their own bytes.** With whitespace tokenized as `[ \t\n]+`, the second newline of a blank line
-  is consumed by the run's continuation state, so `\n` itself is mid-token-consumable and uncertified. This is easy to
-  miss: the byte's *own* token kills it.
-- **A multi-byte token de-certifies every byte that can follow its first.** The first row spells each operator as a
-  single byte, so each is consumed only at the initial state and all twenty-four certify. The benchmark contains two
-  C-like grammars and they disagree, so the last two rows name them. `keyword_scale_builder()` in
-  `tools/benchmark/src/main.cpp` spells operators as literals including `++`, `==` and `->`, and admits a decimal point
-  inside a number; every byte occurring after the first position of some operator gains a live mid-token state, and
-  seven candidates fall that way: `=` `<` `>` `&` `|` `+` `-`. The `.` falls independently, not as an operator
-  continuation but because `decimal_float()` admits it inside a number, bringing the total to eight.
-  `build_lexer(false)` in `tools/benchmark/src/harness.cpp`, which produces the scaling table, has a smaller operator
-  set in which every multi-byte operator has `=` as its only continuation byte, so only `=` is lost and 13 of its 14
-  candidates certify. Both collapses are partial. What they show is that "operators certify" is a claim about the
-  particular literals a grammar registers, so the grammar has to be named rather than described: these two C-like
-  benchmark grammars recognize different operator and number languages, and they certify different sets. The sharper
-  claim, that certification depends on the tokenization and not on the recognized language, needs a pair recognizing the
-  same language, and the conventional and split-friendly rows below are that pair: identical accepted input, differing
-  only in whether newline is folded into the whitespace run or carries a kind of its own, and certifying nothing versus
-  certifying `\n`. The kinds therefore differ by exactly that one token, which is the change under study.
+**Proposition 2 (useful certificates modulo `I`).** Proposition 1 and Corollary 2 carry over: a symbol no live state
+consumes is certified modulo `I` for every `I` and occurs in no completely tokenizable input, and a symbol certified
+modulo `I` is non-vacuous exactly when `δ⁺(q0, b)` is defined.
+
+*Proof.* The first two claims are those of Proposition 1, whose argument does not depend on which of the two conditions
+admitted `b`: Definition 3 likewise quantifies over an empty set. For the third, every state consuming `b` live
+satisfies `A`, hence is `q0`, or satisfies `C`, whose clause 2 gives `δ⁺(q, b) = δ⁺(q0, b)`; either way some live state
+consumes `b` exactly when `δ⁺(q0, b)` is defined. ∎
+
+As in the exact setting, such symbols are certified but useless: a caller cannot act on one, and a planner searching for
+one scans the whole input for nothing. Both the library predicate and every table below therefore report the *useful*
+set, intersecting the certificate with the initial state's live transitions. This matters for reading Table 2: the JSON
+row omits the raw control bytes that no token admits, which the definitions certify vacuously, and reports only the
+bytes an input can actually contain.
+
+**Proposition 3 (strict extension).** Every certified symbol is certified modulo `I` for every `I ⊆ T`, and there are
+token sets and sets `I` for which the converse fails.
+
+*Proof.* The first claim is immediate, since Definition 3 offers `q = q0` as an alternative and its re-entrancy proviso
+is that of Definition 2. For the second, take identifiers, punctuation and a whitespace run over space and newline, with
+the whitespace token in `I`. Newline is not certified, since the state inside a whitespace run consumes it into a
+co-accessible state; it is certified modulo `I`, since that state accepts the whitespace token, reaches no other token,
+and advancing from it and from `q0` on newline both reach the run state. ∎
+
+## 6 Deriving and using the certificate
+
+The certificate is derived by a linear-time analysis of the compiled transition table at construction time. First a
+reverse pass computes co-accessibility: the table is inverted into a predecessor list, the accepting states seed a
+worklist, and each state that reaches one is marked. A forward pass from `q0` then marks the reachable states, and
+intersecting the two marks yields `Q⁺`, the trim subautomaton the results are stated over; subset construction emits
+only reachable states, but the analysis is exposed on a simulator that accepts any transition table, and an unreachable
+state left by a hand-assembled one would otherwise produce false negatives. One scan then detects whether any reachable
+entry targets `q0`, establishing re-entrancy, and a sweep over the `|Σ| × |Q|` table records, for each byte, whether any
+non-exempt reachable live state consumes it into `Q⁺`. The result is a `|Σ|`-bit set. Every pass visits each entry of
+the logical `|Σ| × |Q|` table a constant number of times, rereading a shared class row where the physical table is
+class-compressed, so the cost stays `O(|Q| |Σ|)`, with the same bound in auxiliary space for the predecessor list; it is
+paid once, at the same asymptotic order as building the table itself, and the scanner's inner loop is untouched.
+
+Three operations expose the property. A predicate reports whether a byte is a useful certified split symbol, the set of
+Corollary 2. A planner divides an input into chunks by sliding each interior boundary forward from its equal-division
+target to the next certified byte, and returns a single chunk spanning the whole input when that useful set is empty. An
+executor runs the plan, one thread per chunk, and by Theorem 1 the concatenated per-chunk streams equal the serial
+stream for completely tokenizable input, with Corollary 1 governing the rest. There is no speculation to retry, no
+overlap to verify, and no merge beyond concatenation.
+
+For `k` requested chunks the planner performs at most `k-1` forward searches, so its worst case is `O(kN)` over an input
+of `N` bytes when certified occurrences are rare; `k` is normally a small hardware-thread count, and the searches start
+at equally spaced offsets. A one-pass planner would reduce the worst case to `O(N + k)`. Section 8.2 measures the range.
+
+**Figure 2.** A certified byte is a point where the serial scan is provably between tokens: no state reachable mid-token
+consumes it into a state that can still accept, so the scan has finished its last token by that offset and restarts
+there in `q0`; failed lookahead may have read past the offset, but recorded no acceptance beyond it. A chunk may
+therefore start at that offset with no entry-state uncertainty, and the two chunks' token streams concatenate to the
+serial one. The rendering below is generated from the figure's source: one column per input byte, the serial scan's
+token extents above the input, the certified newline at offset 9 with the boundary immediately before it, and the two
+chunks that boundary produces.
+
+```
+offset   0  1  2  3  4  5  6  7  8  9  10 11 12 13 14
+input    i  n  t     x  =  4  2  ;  \n i  f  (  x  )
+tokens   |i  n  t |  |x |= |4  2 |; |\n|i  f |( |x |) |
+                                    ^ certified byte: newline
+chunk 0  |--------------------------|
+chunk 1                             |-----------------|  restarts in q0
+```
+
+### 6.1 Deciding the relaxed condition
+
+Condition 3 needs no per-state set of tokens. Because `I` is fixed when the automaton is compiled, `T(q) ⊆ I` is the
+complement of "some kept token is still reachable from `q`", which one reverse search settles for every state at once:
+seed it with the accepting states whose token lies outside `I` and close backwards along transitions, then `T(q) ⊆ I`
+exactly when `q` was not reached. Two details keep that linear. The closure walks a reverse index of the transition
+table rather than rescanning every symbol and source state for each state it reaches, which would be quadratic in the
+state count; and whether a state accepts a discarded token is resolved once per state rather than searched for from
+inside the symbol loop. The index needs no space of its own, since determining co-accessibility already builds one and
+the relaxed analysis reuses it; it is built once per class row rather than once per symbol value, so it stays the order
+of the class-compressed table actually stored rather than of an uncompressed `|Q| × |Σ|` one. The closure then costs
+`O(|Q| + E)`, where `E` counts the stored table edges, and the per-symbol test that follows costs `O(|Q| |Σ|)`. The
+implementation holds the discarded set in an ordered set, so constructing it costs `O(|I| log(1 + |I|))` and resolving
+one state's membership `O(log(1 + |I|))`, for `O(|Q| |Σ| + (|Q| + |I|) log(1 + |I|))` overall in `O(|Q| + |I|)`
+additional space, excluding the predecessor index the exact analysis already builds and this one reuses. Propagating the
+sets `T(q)` themselves would instead need `O(|Q| |T|)` storage. Testing one symbol then walks the states as the exact
+condition does, adding a membership test and one lookup of `δ⁺(q0, b)` that is constant across the walk. The outcome
+packs into a second 256-bit map, held beside the exact one, so the run-time predicate remains a single bit test and the
+search for a chunk boundary is unchanged. The relaxation is therefore free at scan time. At build time it is additional
+work rather than a substitute: a backward closure over a reverse index that is built either way, one membership test per
+state, and a second sweep of the same `|Q| |Σ|` shape as the exact one, which runs whether or not a caller ever asks the
+weaker question.
+
+One consequence constrains the interface rather than the theory. The map depends on `I`, so a lexer must be told which
+tokens the caller discards when it is built rather than being asked at each call. In practice the discarded set is fixed
+by the consuming tool when the lexer is built and does not vary with the input, so this is a mild restriction, but the
+relaxed certificate is not a drop-in query on an existing lexer, and two consumers of one grammar that discard different
+tokens, a compiler and a formatter say, hold different certificates.
+
+The condition is sound and conservative rather than exact. We tested both directions against an exhaustive oracle: over
+400 randomly generated token sets on a three-symbol alphabet, every nonempty string up to length eight that the token
+set tokenizes completely was split at every noninitial occurrence of every symbol, the initial cut being tautologically
+safe, and the `π_I` images of the spliced and serial streams compared; strings the serial scan leaves unconsumed are
+skipped before any comparison. Of the symbol and token set pairs the corpus exercised, 265 were admitted by Definition 3
+and none of them failed, and no symbol admitted by Definition 2 was ever lost, which is Proposition 3 checked
+mechanically. A further 97 pairs had no counterexample through length eight yet were rejected, so close to one such pair
+in four is refused. Those 97 are only pairs for which no counterexample exists through length eight, so they do not by
+themselves establish conservatism; raising the bound from six to eight reduced the count from 99 to 97, which shows the
+count is bound-sensitive rather than settled. What does establish conservatism is the explicit witness below. These
+counts describe one generator and are stated only because `validation.cpp` in the artifact reproduces them exactly; they
+are seeded and their draw order is pinned, so they do not vary between compilers.
+
+A proportion from a random sweep describes the generator as much as the condition, so it is worth naming a witness. Take
+the discarded tokens `ab*` and `b+` alongside a kept token `c`, over a letter neither uses. An occurrence of `b` sits in
+one of three places. At the start of a token it can only open a `b+`, so the cut falls on a token boundary and the
+spliced scan is the serial one. Inside an `ab*` token the left piece is a shorter `ab*` and the right piece is a `b+`,
+both discarded. Inside a `b+` token the cut leaves two shorter `b+` pieces, discarded as well. So every occurrence of
+`b` is safe modulo the discarded kinds, at every length. Condition 2 nonetheless fails: advancing on `b` from inside
+`ab*` reaches a state accepting `ab*`, advancing on `b` from the initial state reaches one accepting `b+`, and since
+those accept different tokens minimization keeps them apart. Insisting that the two scans reconverge at once is what
+makes the test local, and this is what it costs: the equality is necessary for this local certificate, not for semantic
+safety, which the witness retains without it. The sweep figures and this witness are both asserted by `validation.cpp`
+in the artifact, the witness in its bounded length-six form; the all-lengths claim rests on the three cases above.
+Because the automaton is minimized before the test, the state equality in condition 2 is as tight as the minimizer of
+Section 4.1 makes it, which is tighter than no minimization and weaker than Myhill-Nerode, since that minimizer keeps
+empty-right-language states apart. It is not the tightest conceivable test: a quotient treating accepting labels in `I`
+as observationally equivalent could merge states this one keeps apart, and the witness above is exactly such a pair.
+Both directions are additionally carried as property tests over randomly generated automata in the munch lexer library
+(release v1.2.0). Those are a separate and independently parameterised sweep, over a four-symbol alphabet to a shorter
+bound. Both sweeps query the shipped predicate rather than a private copy of the rule, which is deliberate: a test of a
+reimplementation would justify the reimplementation. What is independent between them is the generator and the oracle,
+so their agreement is evidence that the predicate meets the specification on two unrelated families of automata, not
+that two codings of the rule agree.
+
+## 7 Applicability
+
+The certificate asks the grammar for cooperation, and the interesting question is how much real token sets give. Table 2
+was produced by compiling each token set and reading the predicate for all 256 byte values. The predicate implements
+Corollary 2, so it excludes the vacuous certificates of Proposition 1 already and the column needs no further filtering;
+a "none" cell therefore asserts the absence of useful certificates, not of certified bytes, since a byte certified only
+vacuously, like `a` in the example after Theorem 2, is deliberately not counted. Rows two through four each add a single
+token kind to the grammar of row one rather than accumulating, so each collapse is attributable to the token kind named;
+the conventional and split-friendly rows recognize exactly the same byte language and differ only in the tokenization,
+and the block-comment row directly after them adds one token kind to the split-friendly grammar, so those three are read
+together. The program that produces the table is `figures/applicability.cpp`, archived with this report; it links the
+library and asserts every row, with one qualification for the two rows that restate grammars living in the benchmark
+tool. For the scaling grammar the probe compiles the real `build_lexer(false)` beside its transcription and checks
+agreement on all 256 certified bits and on the exact token lengths of a corpus, so the exact certified bitset and the
+sample token lengths are bound to the shipped grammar, while the modulo cell and the candidate denominator in the row's
+cell remain transcription-side. The construction-cost grammar has no such binding in the pinned v1.2.0 probe, whose
+comment calls its transcription "verified by eye only"; later releases bind that row's exact certified bitset and sample
+token lengths mechanically too, its candidate denominator and modulo cell likewise remaining transcription-side.
+
+**Table 2.** Certified bytes by token set, exactly and modulo the discarded set `I`. Three mechanisms explain the
+collapses in the middle column: free-content tokens absorb the alphabet, run tokens de-certify their own bytes, and a
+multi-byte token de-certifies the bytes it continues past. Discarding undoes exactly one of them, the second: a severed
+whitespace run leaves two whitespace runs and both are deleted, so the run-token obstruction alone is removed; a string,
+comment or kept token that also admits the byte still excludes it. The other two survive it: a state inside a string
+literal or a block comment accepts nothing, so no cut there ends the left chunk on a complete discarded token, and a
+kept multi-byte token keeps its continuation bytes lost, since the token such a cut severs is kept and cannot vanish
+from the streams. Both columns are asserted for every row by `figures/applicability.cpp`; the exact column is the
+shipped predicate, and the relaxed column is the same predicate given the row's discarded set, with four rows
+additionally confirmed by splitting a corpus. The two benchmark-grammar rows are asserted against transcriptions whose
+provenance the text details.
+
+| Token set                                                                                                    | Useful certified                   | Useful modulo `I`                     |
+|--------------------------------------------------------------------------------------------------------------|------------------------------------|---------------------------------------|
+| C-like: identifiers, numbers, whitespace runs, operators, punctuation                                        | all operator and punctuation bytes | the same, plus space, tab and newline |
+| the first row plus string literals alone (no raw newline inside)                                             | none                               | newline                               |
+| the first row plus `//` line comments alone                                                                  | none                               | newline                               |
+| the first row plus block comments alone                                                                      | none                               | the same                              |
+| JSON, the RFC 8259 lexical forms over bytes                                                                  | none                               | tab, newline, carriage return         |
+| log lines: a run of non-newline bytes, and newline                                                           | newline                            | the same                              |
+| C-like, conventional tokenization: line-bounded strings and `//` comments, whitespace runs including newline | none                               | newline                               |
+| the same recognized language, split-friendly: newline its own token, spaces and tabs a separate run          | newline                            | the same                              |
+| the same plus block comments                                                                                 | none                               | the same                              |
+| the same three kinds, every body barred from the bytes that open another                                     | none                               | the same                              |
+| the same three kinds unrestricted, the block comment alone barred from crossing a line                       | newline                            | the same                              |
+| Zig subset, conventional tokenization                                                                        | none                               | tab and newline                       |
+| the Zig subset, split-friendly                                                                               | newline                            | tab and newline                       |
+| `keyword_scale_builder()`, the construction-cost grammar                                                     | 16 of those 24 bytes               | the same, plus space, tab and newline |
+| `build_lexer(false)`, the scaling grammar                                                                    | 13 of its own 14                   | the same, plus space, tab and newline |
+
+Three mechanisms explain the collapses. First, *free-content tokens absorb the alphabet*: a string literal that may
+contain `(` makes `(` a mid-token byte and de-certifies it everywhere, so one token kind with a near-total interior
+alphabet removes almost every candidate. Second, *run tokens de-certify their own bytes*: with whitespace tokenized as a
+run over space, tab, and newline, the second newline of a blank line is consumed by the run's continuation state, so
+newline itself becomes mid-token-consumable. The byte's own token kills it, which is easy to miss.
+
+Third, and in the same family, *a multi-byte token de-certifies every byte that can follow its first*. The study's first
+row spells each operator as a single byte, so each is consumed only at the initial state and all twenty-four certify.
+Section 8 measures two different C-like grammars, and the last two rows of Table 2 name them rather than describing
+them, since they disagree. The construction-cost grammar, `keyword_scale_builder()` in `tools/benchmark/src/main.cpp`,
+spells operators as literals including `++`, `==` and `->` and admits a decimal point inside a number. Every byte
+occurring after the first position of some operator therefore has a live mid-token state on it, and seven candidates
+fall that way: `= < > & | + -`. The decimal point falls independently, not as an operator continuation but because
+`decimal_float()` admits it inside a number, bringing the total to eight. The scaling grammar, `build_lexer(false)` in
+`tools/benchmark/src/harness.cpp`, has a smaller operator set in which every multi-byte operator has `=` as its only
+continuation byte, so only `=` is lost and thirteen of its fourteen candidates certify. Both collapses are partial. What
+they show is that "operators certify" is a claim about the particular literals a grammar registers, so the grammar has
+to be named rather than described: these two C-like benchmark grammars recognize different operator and number
+languages, and they certify different sets. The sharper claim, that certification depends on the tokenization and not on
+the recognized language, needs a pair recognizing the same language, and the conventional and split-friendly rows below
+are that pair: identical accepted input, differing only in whether newline is folded into the whitespace run or carries
+a kind of its own, and certifying nothing versus certifying newline. The kinds therefore differ by exactly that one
+token, which is the change under study.
 
 All three mechanisms point at the same design lever: certification is a property of the *tokenization* rather than an
 intrinsic one, and a tokenization can sometimes be refactored without changing what is recognized at all. The
-"split-friendly" row keeps the identical C-like language but tokenizes newline as its own single-byte token, leaves
-spaces and tabs as whitespace runs, and keeps strings and comments line-bounded. The row directly above it is the same
-language under the conventional tokenization and certifies nothing, which isolates the change. Then `\n` certifies, and
-the folklore rule follows as a practical corollary: **for conventional tokenizations in which newline is its own token,
-line-based splitting is sound when no other token can contain a newline.** The automaton-level statement remains the
-exact one: "no token spans a line" is sufficient here but not necessary in general, since a token that merely begins
-with newline leaves the certificate intact (newline is then consumed only from the initial state). Adding block
-comments, the one token kind in this C-like tokenization that spans lines, destroys the certificate again, which is the
-formal shape of both "you cannot chunk C by lines" and the quoted-newline problem that pushed CSV parsing into
-speculation.
+split-friendly row of Table 2 keeps the identical C-like language but tokenizes newline as its own single-byte token,
+leaves spaces and tabs as whitespace runs, and keeps strings and line comments line-bounded. The row directly above it
+is the same language under the conventional tokenization and certifies nothing, which isolates the change. Then newline
+certifies, and the folklore rule follows as a practical corollary: for tokenizations in which newline is its own token,
+line-based splitting is sound when no other token can contain a newline. The automaton-level statement remains the exact
+one; "no token spans a line" is sufficient here but not necessary in general, since a token that merely *begins* with
+newline leaves the certificate intact. Adding block comments, the one token kind in the split-friendly tokenization
+studied here that spans lines, destroys the certificate again, which is the formal shape of both "you cannot chunk C by
+lines" and the quoted-newline problem that pushed CSV parsing into speculation.
 
 Four further rows price that lever, and the price is smaller than it looks. The obvious repair for the block-comment
-collapse is to stop the kinds colliding: bar every string and comment body from holding a byte that opens another of
-them. That grammar certifies nothing, exactly or modulo, so the expensive restriction buys nothing. The row below it
-keeps the ordinary repertoire, strings and comments free to hold any byte, and adds one restriction instead, that the
-block comment may not cross a line. `\n` certifies outright. Line-boundedness is the lever and separation is not, so a
-designer who wants a certified split byte pays for one line-bounded comment form rather than for the ability to write
-a slash inside a string.
+collapse is to stop the token kinds from colliding: bar every string and comment body from holding a byte that opens
+another of them. The row for that grammar certifies nothing, exactly or modulo, so the expensive restriction buys
+nothing at all. The row below it keeps the ordinary repertoire, strings and comments free to hold any byte, and adds one
+restriction instead, that the block comment may not cross a line. Newline certifies outright. Line-boundedness is
+therefore the lever and separation is not, and a language designer who wants a certified split byte pays for one
+line-bounded comment form rather than for the ability to write a slash inside a string.
 
 The last two rows are that choice already made. Zig's reference states that there are no multiline comments and that
 each line of code can be tokenized independently, and its multiline strings are per-line `\\` tokens that exclude the
-newline. A shipped language chose the property this report formalizes, for its own reasons, and the rows show what it
-bought: `\t` and `\n` modulo the discarded set under the conventional tokenization, and `\n` certified outright once
-newline is its own token.
+newline. A shipped language chose the property this section formalizes, for its own reasons, and the rows show what it
+bought: tab and newline modulo the discarded set under the conventional tokenization, and newline certified outright
+once newline is its own token. The pair beside the C-like rows is the same comparison the conventional and
+split-friendly rows draw, run on a grammar nobody designed for this paper.
 
-The JSON row above appears to contradict the literature, and the reconciliation is about the equivalence each result
-preserves rather than about the automaton. Prior claims that JSON may be divided at newline (Barenghi et al. 2015,
-restated by Plex) rest on a weaker one. Barenghi et al.'s scanner accumulates no whitespace character it reads outside a
-string or a comment, so whitespace is unobservable in its output; Plex restates the claim on the different ground that
-newline occurs in no lexeme, which holds only once whitespace runs are not themselves counted as lexemes. Either way the
+The JSON row of Table 2 appears to contradict the literature, and the reconciliation is about the equivalence each
+result preserves rather than about the automaton. Prior claims that JSON may be divided at newline (Barenghi et al.,
+Science of Computer Programming 2015; Li et al., IPDPS 2021) rest on a weaker one. Barenghi et al.'s sequential lexing
+algorithm appends a byte to the lexeme buffer only when it is not reading a whitespace character outside a string or a
+comment, so whitespace is unobservable in its output; Plex restates the claim on the different ground that newline
+occurs in no lexeme, which holds only once whitespace runs are not themselves counted as lexemes. Either way the
 division can split one maximal whitespace match into two discarded matches whose lengths sum to the original, leaving
-the surviving stream unchanged. The theorem here preserves something stronger, the complete sequence of emitted kinds
-and lengths, and under that semantics a newline inside a maximal whitespace token is not a certified boundary. The
-grammar studied here follows the RFC 8259 lexical forms over byte input, with the full string escapes, signed numbers
-with fraction and exponent, the three literal names, and whitespace runs emitted as tokens, so it is refused exactly as
-it should be. It is a lexer over bytes rather than a conforming JSON processor: string interiors admit any byte from
-`0x20` up except quote and backslash, so UTF-8 well-formedness, which RFC 8259 requires of JSON exchanged outside a
-closed ecosystem, is assumed of the input rather than checked here. That is orthogonal to certification, since
-validating it would only remove bytes from string interiors and so could not de-certify anything that certifies now. The
-two results do not conflict; they quantify over different streams. A scanner that discards those tokens can therefore
-split safely at newline under the weaker observable-stream equivalence, but the definition still rejects newline: the
-whitespace continuation state consumes it either way. Recovering certification itself needs the tokenization changed,
-for instance by making newline its own token as in Section 6, and Section 5 supplies the other half: the relaxed
-certificate accepts newline for JSON once whitespace is declared discarded, which is what the right column of the table
-records.
+the surviving stream unchanged. Theorem 1 preserves something stronger, the complete sequence of emitted kinds and
+lengths, and under that semantics a newline inside a maximal whitespace token is not a certified boundary. The grammar
+studied here follows the RFC 8259 lexical forms (Bray, RFC 8259 2017) over byte input, with the full string escapes,
+signed numbers with fraction and exponent, the three literal names, and whitespace runs emitted as tokens, so it is
+refused exactly as it should be. It is a lexer over bytes rather than a conforming JSON processor: string interiors
+admit any byte from `0x20` up except quote and backslash, so UTF-8 well-formedness, which RFC 8259 requires of JSON
+exchanged outside a closed ecosystem, is assumed of the input rather than checked here. That is orthogonal to
+certification, since validating it would only remove bytes from string interiors and so could not de-certify anything
+that certifies now. The two results do not conflict; they quantify over different streams, and this paper supplies both.
+Definition 2 rejects newline for JSON, since the whitespace continuation state consumes it either way, and Theorem 3
+accepts it once whitespace is declared discarded: that is precisely the JSON row of Table 2, none exactly and tab,
+newline and carriage return modulo `I`. The prior claim is therefore not merely reconciled but derived, from the token
+set rather than from a reading of the format. Recovering certification under the *exact* equivalence still needs the
+tokenization changed, by making newline its own token as the split-friendly row does.
 
-## 7 Evaluation
+The right column of Table 2 places the whitespace and comment tokens of each row in `I` and reads the relaxed condition.
+Nine of the fifteen rows gain bytes, and the pattern behind them is the second of the three collapse mechanisms named
+above: wherever whitespace is a run token the caller discards, its own bytes come back, because severing a whitespace
+run at a whitespace byte yields two whitespace runs and both are deleted. That is the one mechanism discarding undoes.
+The other two survive it. A byte a string literal or a block comment absorbs is recovered nowhere: a state inside either
+accepts nothing at all, so the left chunk cannot end there on a complete discarded token, which is the first thing `C`
+requires. A byte a kept multi-byte token continues past is likewise not recovered: the state that has consumed its first
+byte can still reach the kept token, so the third clause of `C` fails, and rightly, since severing a kept token is a
+difference the deletion preserves.
 
-The figures below come from `paper/data/bare-metal-pinned-run2/`, a full run on an AMD Ryzen 9 9950X3D under Ubuntu
-26.04 with GCC 15.2 at -O2, whose `environment.txt` records the measured commit and a clean tree. The `performance`
-governor was selected, which biases the clock toward its maximum without fixing it since boost stays enabled, the
-topology is archived beside it as `lscpu -e`, the ten scaling scenarios ran in interleaved rounds while the
-construction, planning and thread-launch scenarios ran as blocks, corpora swept 1 to 512 MiB in fixed ascending order,
-and every pass of the ten scaling scenarios is recorded individually rather than summarized; the other rows are
-summaries only. That run confines the process to the eight physical cores of one L3 domain, which excludes the SMT
-siblings and the other domain from the set the scheduler may use, so eight threads have eight distinct physical cores
-available; that constrains placement rather than fixing it, since threads may still migrate within those cores.
-`paper/data/bare-metal-unpinned-run2/` is the same measurement free to use all 32 logical processors. Citing an archive
-rather than the README's table keeps an ordinary benchmark refresh from silently changing what this report claims.
+In the exact column each outcome reports a fact about the tokenization rather than a limitation of the test, since
+Theorem 2 makes that condition necessary as well as sufficient. The modulo column carries no such licence: it is
+conservative, so a byte absent there may still be safe modulo `I` and merely refused, and only its positive entries are
+statements about the pair of token set and discarded set. Newline is recovered for the conventional C-like token set
+because line-bounded strings and `//` comments cannot contain one, so a whitespace run is the only token whose interior
+admits it. Space is recovered in no C-like row carrying strings or comments, since it sits legally inside both; the
+first row, which has neither, recovers it along with tab and newline. The JSON row is the same lexer over bytes, its
+UTF-8 caveat unchanged from above. JSON gains tab and carriage return as well as newline because RFC 8259 excludes every
+raw byte below `0x20` from string interiors, which confines all three to whitespace, while space is admitted there and
+so is not recovered. That the recovered set is exactly JSON's whitespace minus space is a consequence of the RFC's own
+exclusion, not a coincidence. The rows carrying block comments continue to hold no useful certificate, because a comment
+severed at a newline leaves `/* a` and `b */`, and both halves re-tokenize completely: in this token set they become the
+operators `/` and `*` and an identifier, six kept tokens in place of one discarded comment, which is exactly the
+difference a caller can see. The correct conclusion carries the certificate's own scope: this tokenization of a C-like
+language with unrestricted block comments cannot be split at every occurrence of a byte value chosen from the grammar
+alone, newline included, on completely tokenizable inputs, without state, overlap, speculation or repair, and the
+certificate says so. Schemes that inspect the document and split at some occurrences but not others are outside the
+claim.
 
-A third archive, `paper/data/benchmark.txt`, holds an earlier run on an Intel i9-12900K under WSL2 with GCC 13.3, over
-16 MiB corpora that fit in cache, in a fixed scenario order. It is kept because the contrast is a result in its own
-right, below. Its environment bounds what it can establish and the report states those bounds rather than adjusting for
-them: the guest sees a flattened topology, so a performance core cannot be told from an efficiency core and no thread is
-pinned; no `cpufreq` interface is exposed, so turbo residency falls as cores get busy; the machine carried an ordinary
-desktop load rather than being quiesced; and 16 MiB against a 30 MB last-level cache means the run targets warm-cache
-conditions rather than certifying residency throughout.
+Four rows are cross-checked by splitting as well as by reading the predicate: the conventional and split-friendly C-like
+pair, the split-friendly row with block comments, and JSON. On those the condition agrees with brute-force splitting on
+every candidate byte the corpus exercises, which is a declared set of sixteen bytes, the whitespace kinds plus eleven
+representative structural characters, not all 256. The conservatism measured in Section 6.1 therefore did not appear on
+the bytes tested, which is weaker than exactness on those token sets and is all the artifact checks.
 
-Two baselines answer different questions, and only one of them holds still between collections. Parallelism is measured
-against the same validating wrapper driven with one requested chunk, which plans and uses the per-chunk sink but spawns
-nothing, reaching 730.1 MiB/s. Against that baseline the certified chunked scan reaches 1434.2 MiB/s on two threads,
-2828.0 on four, and 5568.3 on eight, which is 98%, 97% and 95% parallel efficiency (95%, 93% and 93% in the other
-collection of the same placement), on a 512 MiB corpus four times the machine's last-level cache. A caller choosing
-between the serial and parallel entry points compares instead against the plain scan, which gives 3.46x at four threads
-in this run and 3.94x in the other collection with the same placement. The certificate behind every one of these plans
-costs a linear-time table analysis at build time and one boundary search per requested interior boundary at scan time.
+The practical content is narrower than a count of moved cells suggests, and more useful. The exact certificate already
+admitted newline for the split-friendly tokenization in which newline is its own token and whitespace runs exclude it.
+That is a redesign of the token set imposed on the user by the parallelization technique. Theorem 3 removes the
+imposition: the conventional whitespace rule that hand-written lexers already contain certifies newline without
+modification, so the conventional and split-friendly rows give the same answer and the redesign buys nothing for a
+caller comparing streams modulo `I`. The relaxation is better read as widening the class of token sets the method
+accepts as written than as adding split points to a fixed one.
 
-In the measured sweep, efficiency did not deteriorate when the corpus left cache: eight-chunk efficiency at 512 MiB is
-the highest of the four sizes, not the lowest, rising 80%, 92%, 94%, 95% across 1, 16, 128 and 512 MiB. The sweep never
-reaches a break-even size, since eight chunks are already 6.4x the one-chunk API at 1 MiB; what it shows is where fixed
-overhead becomes visible, at 1 MiB, where coordinating an eight-thread scan, seven spawned workers joined by the calling
-thread, costs about 40 us against a scan of roughly 1.4 ms, consistent with the drop without isolating it as its only
-cause.
+### 7.1 Framing at the producer
 
-The plain scan does not hold still, and that is why it is not the baseline the efficiencies use. Its comparison with the
-one-chunk row has taken three values. On the older WSL2 machine one chunk measured 14% *below* the plain scan, and the
-efficiencies quoted against it were correspondingly inflated to 99%, 97% and 81%. The bare-metal pinned placement was
-then collected twice: in the first collection one chunk was 5.9% *above* the plain scan at 512 MiB, winning 13 of 15
-same-round pairs; in the second it is 10.7% below, winning none of 15.
+Definitions 2 and 3 quantify over the automaton, the second also over the declared discarded set, and mention no input.
+Certification is therefore static, in the token set alone for the exact condition and in the pair of token set and `I`
+for the relaxed one, and no transformation applied when reading a document can make a byte certified that was not. This
+rules out an appealing idea directly: one cannot normalize input at read time to manufacture split points. It also
+explains why the obvious attempt is circular, since deciding which occurrences of a byte lie inside a token is the
+sequential problem that chunking was meant to avoid.
 
-Those two collections are not a controlled repeat. They were taken at different commits, and between them the benchmark
-began writing round-trip-safe CSV values and gained the four plan-and-execute scenarios that now run before the scaling
-sweep. The scaling code is unchanged but the executable is not, so these are two benchmark revisions on one machine
-rather than one experiment run twice. The largest differences are in the single-threaded rows and move the same way
-under both placements: at 512 MiB on the dense corpus the plain scan rose 14.3% pinned and 17.4% unpinned while the
-one-chunk row fell 3.7% and 3.8%. At that size the multi-chunk rows move much less, at most 0.8% dense and 1.4% source
-pinned, 1.1% and 0.6% unpinned. That stability is specific to 512 MiB: across the whole sweep multi-chunk rows move by
-as much as 5.9% pinned and 6.3% unpinned, both at 16 MiB. A single-threaded shift landing within 0.2 points, 0.17 dense
-and 0.01 source, under two different affinities looks more like the revision than the scheduler, though nothing here
-isolates which. All four collections are archived under `paper/data/`.
+What can be arranged is a guarantee about a particular document, supplied by whatever produced it. Reserve a byte `r`
+that no token admits at any noninitial position, give it a rule of its own, and require the producer to emit it only at
+token boundaries and to escape it wherever it would otherwise appear inside a token. Noninitial exclusion is the
+load-bearing clause: were some accepted token `urv` to contain `r` noninitially, a scan could consume `r` from the live
+state after `u` and the byte would not certify. Excluded everywhere but the start, the reserved byte's only live
+consumption is from `q0`, and Definition 2 admits it outright with no appeal to Theorem 3. Applied to the block-comment
+row of Table 2, whose certified set is empty under both conditions, reserving `0x1E` yields a certified split symbol,
+and a framed document splits at every occurrence with the token stream reproduced exactly, including across block
+comments spanning lines and string literals containing punctuation.
 
-The consequence is that efficiencies measured against the one-chunk baseline moved two to four points on the dense
-corpus between the collections, 92.6% to 95.3% at eight chunks, and one to two points on the source corpus, while the
-end-to-end ratio moved 12%, which is why the first is quoted as a narrow range and the second as a wide one.
+None of that construction is new. ASCII reserves `0x1E` as record separator, one of four information separators defined
+for exactly this kind of framing (Cerf, RFC 20 1969), JSON text sequences standardize precisely that byte as a record
+prefix (Williams, RFC 7464 2015), and informal newline-delimited JSON makes the same bargain in different notation
+without the reserved byte, while length-prefixed framing and columnar row groups buy random access by other means and
+are analogies rather than instances; Barenghi et al. (Science of Computer Programming 2015) reach a comparable place by
+constraining the source language instead. Chassot and Kunčak (CAV 2026) study a different but closely related
+maximal-munch boundary question for invertible lexing. Given already formed adjacent tokens, their sound R-Path relation
+checks whether the first token's text followed by the next token's first symbol remains a prefix of any rule; their
+separator construction can instead insert a separator during printing and compare the re-lexed stream modulo separator
+tokens. These operations protect known token sequences during printing and recombination; they neither locate cuts in
+raw input nor derive bytes safe at every occurrence before lexing. What the certificate contributes is the check. A
+format designer choosing a delimiter is making a claim about every token the grammar admits, and Definition 2 decides
+that claim from the compiled automaton rather than leaving it to inspection. Read this way an applicability table is not
+only a report of where the method applies but a design rule for formats intended to be chunked. A row whose exact column
+is empty is a warning, by Theorem 2, that no single-byte delimiter preserves the exact stream without changing the token
+set; an empty modulo column is only a refusal, since that condition is conservative.
 
-The planner's own cost is measured across certificate densities in the same archive: 0.1 microseconds when certified
-bytes are common, 1.02 ms when they are a megabyte apart, and 16.4 ms in the worst case of a certified byte absent from
-a 16 MiB input, the two scanning cases agreeing on about 3.3 GiB/s, which is consistent with the O(kN) bound. Those
-three come from `summary.txt` rather than the CSV, which records only the scaling scenarios.
+The limit is equally clear. A document already written cannot be reframed without reading it, so this recovers nothing
+for a compiler consuming source it did not generate. It applies where the writer cooperates, which covers generated
+code, logs, exports and interchange formats, and not to arbitrary input.
 
-That worst case is paid before any scanning begins, and on such an input the planner returns one chunk, so what follows
-is the serial scan. Stating it end to end needs planning and scanning timed on one grammar over one input, which the
-plan-only rows above do not give: they use a two-token grammar over a synthetic input while the scaling rows use the
-C-like grammar over generated source, and adding those would compare different lexers over different inputs. A separate
-scenario therefore times both phases together on the planning workload. With the certified byte absent the parallel
-entry point takes 34.5 ms against 18.2 ms for the serial one, so choosing it costs about 1.9x; with certified bytes
-every 40 bytes it takes 1.7 ms against 12.4 ms, a gain of about 7x, both ratios of one-decimal summary medians. Both
-report the same aggregate token count, 838861 tokens on the one workload and one token on the other. The penalty is a
-property of this planner, which is deliberately simple; the one-pass O(N + k) formulation would reduce it to a single
-pass over the input, an estimated 5 ms at the observed scan rate rather than a measured figure, without eliminating it.
-The distinction worth keeping is that deciding the certificate touches no input, while locating its occurrences is a
-runtime scan.
+## 8 Evaluation
 
-Correctness is enforced at three levels. The benchmark checks that the eight-chunk token stream on each corpus and size
-is identical to the serial one by exact (kind, length) comparison before the scaling rows it protects; the timed rows
-carry a lighter per-pass check of consumed chunk lengths against a recomputed plan plus a token tally, so every chunked
-row plans twice. The unit suite carries the certification counterexamples, including the re-entrant-initial-state case.
-And the fuzzer generates arbitrary grammars and inputs, checks every planned boundary against `is_split_point`,
-requires the serial stream to be a prefix of the concatenated parallel stream on every execution, and requires exact
-equality whenever the serial scan consumes the whole input; local extended fuzzing and a bounded fuzzing job on every
-CI run have found no violation.
+The evaluation reports two machines. The first is the one the method was developed on and is retained because the
+contrast with the second is itself a result: a figure that looks like a property of the API on one does not hold its
+value, or even its sign, across environments and benchmark revisions.
 
-## 8 Limitations and future work
+Everything measured here uses the exact certificate. Both `chunk_boundaries()` and the parallel executor built on it
+consult the exact map, so no figure in this section reports what the relaxed condition would buy at run time. Section 7
+establishes which bytes it recovers, and that is a statement about token sets rather than about throughput; a token set
+that certifies nothing exactly can gain a boundary set from the relaxation, as nine of the fifteen rows studied do and
+the block-comment rows do not, but turning that into a measured speedup needs a planner this library does not yet ship.
 
-The approach trades generality for certainty: when the grammar does not cooperate, it offers no usable split points, by
-design, and the speculation and composition families remain the applicable answers we know of. Several extensions look
-natural, and the first has since been carried out: the companion report
-[arXiv:2608.09761](https://arxiv.org/abs/2608.09761) generalizes the certificate from single bytes to short byte
-windows, certifying a cut at a fixed offset inside every occurrence of a multi-byte string, which recovers splitting for
-some grammars where no single byte certifies; the certificate of this report is exactly its length-one case. A hybrid
-plan could split at certified bytes where they exist and fall back to speculative entry elsewhere, keeping the guarantee
-where it is free and paying for it only where it is not; the certified occurrences would moreover fence the speculative
-regions, since no live state other than a non-re-entrant initial state consumes a certified symbol, so misprediction
-repair is confined to the gap before the next certified occurrence. Finally, the grammar-refactoring lever of Section 6
-could be automated: given a token set, propose the minimal re-tokenization that makes a chosen byte certify.
+**Environment A, virtualized.** An Intel Core i9-12900K, a hybrid part with eight performance cores carrying two-way SMT
+and eight efficiency cores, so sixteen physical cores and 24 logical processors, with 32 GiB of memory. The host is
+Windows 11 build 26200 with virtualization-based security enabled; the measurements ran under WSL 2.7.11 on kernel
+6.18.33.2-microsoft-standard-WSL2, Ubuntu 24.04.4 LTS, glibc 2.39, with all 24 logical processors and 15 GiB of memory
+visible to the guest. Compiled by GCC 13.3.0 at `-O2`. Corpora are 16 MiB and fixed-seed, scenarios run in a fixed
+order, and the archive holds summaries only (`data/benchmark.txt`), whose header records the machine, operating system,
+compiler and command; the Windows build, WSL and kernel versions, memory and topology details above are author-recorded
+rather than archived.
 
-## 9 Related-work summary
+Four properties of this environment bound what its figures establish, and we state them rather than adjust for them. The
+guest does not see the host's hybrid topology: it reports twelve cores of two threads each, so a performance core is
+indistinguishable from an efficiency core from inside the measurement. Threads are not pinned, and could not usefully be
+while that holds. The guest is given no `cpufreq` interface, so the clock is neither fixed nor observable. And the
+machine was not quiesced. The corpora also fit in cache, 16 MiB against a 30 MB last-level cache, so the run targets
+warm-cache conditions rather than certifying residency throughout.
 
-The live subautomaton is a partial DFA, and on a partial DFA a reset word is one whose action carries a non-empty set of
-states to a single state and is undefined everywhere else (Berlinkov, Ferens, Ryzhikov, and Szykuła, STACS 2021). A
-useful certified symbol meets that definition exactly: certification says no state but the initial one keeps a
-`b`-transition in the live automaton, and usefulness says the initial state has one, so the action of `b` is defined on
-the initial state alone. Every useful certificate is therefore a one-letter reset word of the live automaton, and a
-vacuous one is a letter whose action is nowhere defined. The identification is specific to Berlinkov et al.'s
-partial-DFA convention: under the classical complete-DFA reading (Volkov's survey), in which a reset word must map
-*every* state to a common state, the correspondence fails, and a scanner's live automaton is partial by construction.
+**Environment B, bare metal.** An AMD Ryzen 9 9950X3D, sixteen physical cores with two-way SMT across two L3 domains of
+eight cores each, 128 MiB of L3 in total, 59 GiB of memory, Ubuntu 26.04 on kernel 7.0.0-28-generic, compiled by GCC
+15.2.0 at `-O2`. The `performance` governor was set, which biases the clock toward its maximum but does not fix it:
+boost remains enabled, and the archived `lscpu -e` of the pinned run reported in Table 3 shows 22 distinct frequencies
+between 624 and 5711 MHz across the 32 processors at the instant it was taken. The clock is therefore observable here,
+unlike in Environment A, but not controlled. The topology is visible and archived; the ten scaling scenarios run in
+interleaved rounds reshuffled per round from a fixed seed, while the construction, planning and thread-launch scenarios
+run as blocks; and corpora sweep 1, 16, 128 and 512 MiB in that fixed ascending order. Every pass of the ten scaling
+scenarios is recorded individually in `data/bare-metal-unpinned-run2/` and `data/bare-metal-pinned-run2/`; the
+construction, planning and thread-launch figures below are summaries over 15 passes, not per-pass records.
 
-The link goes past terminology. A code is synchronizing when it admits a word `w` such that an occurrence of `ww` lets a
-decoder resume independently from the position after the first `w`, which is what lets a coded message be decoded in
-parallel. Section 3's theorem has that shape. What is new here is not that such a letter permits independent resumption,
-but what surrounds it: the re-entrancy condition, which ties the reset to *token boundaries under maximal munch* rather
-than to automaton states alone, so the resumed scan agrees on token kinds and lengths and not merely on where it sits;
-the characterization making the condition necessary as well as sufficient on the trim live automaton; the derivation of
-the whole certified set from a compiled token set at build time, rather than an assumption that some distinguished word
-occurs; and the relaxation modulo discarded tokens, which has no counterpart for codes, where there is nothing to
-discard.
+This environment is measured in two placements, each run twice, giving four archives. The unpinned runs may place
+threads on any of the 32 logical processors. The pinned run confines the process to the eight physical cores of a single
+L3 domain (`taskset -c 0-7`), which excludes the SMT siblings and the other L3 domain from the set the scheduler may
+use, so eight threads have eight distinct physical cores available to them. The archives certify the width of that mask
+but not its members: the collector recorded `nproc` as 8 from inside the affinity mask, while the archived `lscpu -e`
+describes the whole machine, and neither the mask itself nor the launch command was captured, so the specific cores, the
+single L3 domain and the SMT exclusion rest on the collection notes rather than on the artifact. The mask constrains
+placement rather than fixing it: threads remain free to migrate within those eight cores, and nothing prevents two from
+sharing one. It was not quiesced either: load averages stood at 0.55 and 1.83 before the unpinned and pinned runs of
+Tables 3 and 4. The two started two minutes apart, so the second figure is plausibly the first run's own residue, though
+the timing makes that likely rather than established; either way the machine was busy when the second run began.
 
-Certified split points differ from simultaneous automata (no enlarged automaton, no composition), from speculation (no
-guess, no re-run, exact by construction), from k-locality (the property is per-symbol and derived from the token loop's
-reset, not uniform over the automaton), from the local parsability that operator precedence languages enjoy (a property
-of the token automaton licensing a scanner to restart at a byte, rather than a property of the syntax grammar permitting
-substrings to be parsed independently using bounded surrounding context), from realignment after the fact (nothing is
-merged or realigned), and from delimiter folklore (the safe set is derived from the compiled token set rather than
-assumed per format, and the derivation correctly refuses grammars where the folklore is unsound).
+The 512 MiB corpus is four times the machine's aggregate last-level cache, and the pinned process is confined to one of
+the two L3 domains, so it exceeds whatever share is actually reachable by a comfortable margin. The archive does not
+record the two domains' capacities separately, so the sweep is read conservatively: 512 MiB is out of cache under any
+split of the 128 MiB aggregate. Before the scaling rows it protects, and in both environments, the benchmark checks that
+the eight-chunk token stream on each corpus and size is identical to the serial one by an exact (kind, length)
+comparison; the timed rows carry a lighter per-pass check, each chunk's consumed length against a recomputed plan and
+the total token count.
 
-The contribution is therefore narrow and specific. Splitting at a delimiter is classical, and the observation that it
-works for JSON but needs Lua's grammar constrained first is stated in the literature; what appears to be missing is the
-automatic certification step those choices leave implicit, namely a sound grammar-only test of whether every relevant
-occurrence of a given byte is safe to cut immediately before. Among the generators considered, re2c validates a
-user-selected end-of-input sentinel by rejecting rules in which it may occur before the end of a lexeme, a check its
-documentation records as added in release 1.3 in December 2019. That property is incomparable with the certificate
-rather than weaker: over a token set whose only token is `ab` the byte `b` passes the sentinel check because it ends the
-lexeme, yet lies inside a token and is not certified; over `ba` the byte `b` is certified, because every occurrence
-begins a token and the initial state is not re-entrant, yet it fails the sentinel check because the lexeme continues
-past it. We are not aware of an implementation that derives the complete set of symbols whose every relevant occurrence
-begins a token, nor of one that checks the initial-state condition that guarantee requires. The certificate supplies
-that test from the compiled automaton, with no hand analysis and no mandatory full-input state-composition pass, and the
-study in Section 6 turns the same machinery into a statement about which token sets admit such bytes at all. The
-analysis is not only sound: restricted to the states an input can reach and from which acceptance is still reachable,
-the condition is necessary too, so a rejected byte always admits an input placing it inside a token. We are not aware of
-prior work stating this condition, in particular the re-entrancy requirement, as a static per-symbol property of the
-token DFA, though its components (synchronization, delimiter splitting, chunked scanning) are all classical. We checked
-that claim against the parallel lexing and parallel DFA literature, the theory of synchronizing automata and
-synchronizing codes, incremental lexical analysis, verified invertible lexing (Chassot and Kunčak, CAV 2026), and the
-recent work on sequential (Reps 1998; Li and Mamouras 2025) and streaming (Li, Yang, and Mamouras, ASPLOS 2026)
-tokenization. Each answers a neighbouring question: where to restart after an edit, which words reset an automaton and
-how long such a word must be, whether a code admits a word after which decoding may resume independently, whether
-printing a token sequence, plainly or with inserted separators, re-lexes to the same tokens exactly or modulo the
-separator class, how to avoid repeated rescanning, how to recover a chunk's entry state after the fact. The question
-here is which single bytes a given maximal-munch token set renders safe in advance, together with the token-length
-guarantee that makes the answer usable, and that framing was not found in those sources.
+Both corpora are favourable to the method by construction, and the scaling figures should be read with that in mind.
+Neither contains a string literal or a comment, the two constructs that absorb the alphabet and empty the certificate,
+and the grammar driving them certifies 13 of its 14 operator and punctuation candidates. What follows therefore measures
+how the parallel machinery scales on a token set the certificate suits, and is not evidence about how often a token set
+does suit it; Table 2 is what speaks to that, and eight of its fifteen rows admit no exact certificate at all. The two
+questions are separate, and a grammar can pass the first while failing the second: a certificate admitting a byte the
+corpus never carries yields no parallelism, as automatically generated JSON without newlines already shows.
+
+### 8.1 Scaling
+
+Table 3 reports median throughput on Environment B, pinned, which is the most constrained configuration measured:
+visible topology, eight physical CPUs of one L3 domain with the SMT siblings excluded, a clock biased to maximum, and a
+corpus sweep that leaves the cache. Two baselines matter, they answer different questions, and only one of them turns
+out to hold still between collections. The parallelism itself is measured against the same validating wrapper driven
+with one requested chunk, which plans, uses the per-chunk sink, and spawns nothing. Because the per-pass validation
+recomputes the plan, every chunked row, this baseline included, plans twice per pass; planning at bytes as frequent as
+these costs a fraction of a microsecond (Table 4) against milliseconds to hundreds of milliseconds of scanning, so the
+ratios are unaffected and the comparison against the plain scan is conservative. Against the one-chunk baseline the
+certified splitting reaches 1.96×, 3.87×, and 7.63× on the 512 MiB dense corpus, or 98%, 97% and 95% parallel
+efficiency; the other collection of the same placement gives 95%, 93% and 93%. A user choosing between the serial and
+parallel entry points compares instead against the plain scan, and gains 3.46× at four chunks in this collection and
+3.94× in the other collection with the same placement; end to end here means the benchmark wrapper as described above,
+validation path and second planning pass included. Conflating the two, as an end-to-end table alone would, charges
+parallelization for the sink and inherits an unstable denominator.
+
+**Table 3.** Median throughput in MiB/s on Environment B with the process confined to an eight-CPU affinity mask, one L3
+domain per the collection notes, second run. The one-chunk column is the parallel API without parallelism, and is the
+baseline the parallel efficiencies use; the plain-scan column does not hold still between collections and is discussed
+below.
+
+| Corpus                | size    | plain scan | 1 chunk | 2 chunks | 4 chunks | 8 chunks |
+|-----------------------|---------|-----------:|--------:|---------:|---------:|---------:|
+| dense (1.83 B/token)  | 1 MiB   |      767.5 |   728.5 |   1436.1 |   2780.4 |   4685.9 |
+|                       | 16 MiB  |      771.5 |   686.9 |   1374.3 |   2679.5 |   5074.6 |
+|                       | 128 MiB |      788.4 |   722.8 |   1432.1 |   2782.3 |   5420.4 |
+|                       | 512 MiB |      818.0 |   730.1 |   1434.2 |   2828.0 |   5568.3 |
+| source (3.53 B/token) | 512 MiB |      757.5 |   711.1 |   1415.0 |   2763.0 |   5500.5 |
+
+In the measured sweep, on this machine, efficiency did not deteriorate as the input footprint exceeded the aggregate
+last-level cache capacity. The 512 MiB corpus is four times the machine's 128 MiB of last-level cache, and its
+eight-chunk efficiency, 95.3%, is the highest of the four sizes rather than the lowest: the figures are 80.4%, 92.3%,
+93.7% and 95.3% at 1, 16, 128 and 512 MiB, so efficiency rises with input size and keeps rising across the cache
+boundary rather than stepping down at it. The sweep does not locate a break-even input size, because it never reaches
+one: even at the smallest size measured, eight chunks are 6.43× the one-chunk API. What it shows is where fixed overhead
+becomes visible, at 1 MiB, where efficiency falls to 80.4%; coordinating an eight-thread scan, seven spawned workers
+joined by the calling thread, costs about 40 μs against a scan of roughly 1.4 ms, which is consistent with the drop
+without isolating coordination as its only cause.
+
+**Observed differences between affinity runs.** Measured unpinned, free to use all 32 logical processors, the same sweep
+shows lower eight-chunk efficiency from 95% to 93% at 512 MiB and from 80% to 68% at 1 MiB in the second revision, a gap
+of twelve points at 1 MiB and under three at 512. It does not narrow monotonically: the gap is narrowest at 128 MiB, one
+point, and widens again at 512. The first revision has the same shape one level down, 92.6% to 88.5% at 512 MiB, so the
+placement cost there is four points rather than three. The two- and four-chunk figures move by about 2.2 points or less
+at 128 and 512 MiB and by more at the smaller sizes. One hypothesis is SMT: with eight threads free on 32 logical
+processors, some pairs share a physical core. We do not claim it, and cannot from this data. For each benchmark revision
+there is one run per placement, taken at different times rather than as replicated interleaved conditions, and a gap
+also appears at two chunks where collisions should be rare. Attributing it would need paired repeated runs, or
+per-thread CPU residence recorded during the scan. What the two runs support is narrower: on these runs the restricted
+CPU set had the higher eight-chunk efficiency, though not always the higher absolute eight-chunk throughput, and
+certified splitting delivered most of its benefit in both.
+
+**The two collections are not a controlled repeat.** Environment B was collected twice in each placement, but the two
+collections were taken at different commits: between them the benchmark began writing round-trip-safe CSV values and
+gained the four plan-and-execute scenarios that now run before the scaling sweep. The scaling code itself is unchanged,
+but the executable, its layout, and what executes before the measurement are not. These are therefore two benchmark
+revisions on one machine rather than repeated runs of one experiment, and the difference between them cannot be
+attributed to the machine.
+
+The largest differences are in the single-threaded rows, and their direction is the same under both placements. At 512
+MiB on the dense corpus the plain scan rose 14.3% pinned and 17.4% unpinned, while the one-chunk row fell 3.7% and 3.8%
+respectively. At that size the multi-chunk rows move much less: about 0.8% on the dense corpus pinned and about 1.4% on
+the source corpus, 1.1% and 0.6% unpinned. That stability is specific to 512 MiB and does not hold across the sweep,
+where multi-chunk rows move by as much as 5.9% pinned and 6.3% unpinned, both at 16 MiB. A single-threaded shift that
+lands within 0.2 points under two different affinities, 0.17 on the dense corpus and 0.01 on the source one, looks more
+like a property of the revision than of the scheduler, though nothing here isolates which.
+
+One estimator is used throughout, and it is worth naming because a second one is available and does not always agree.
+Every ratio quoted here divides one scenario's median throughput by another's, medians taken over that scenario's
+passes; it is not the median of the per-round paired ratios, which would weight rounds equally rather than summarizing
+each scenario first. The ratios are recomputed from the archived per-scenario medians rather than printed and asserted
+by the harness, so the archive carries the checkable numbers and the divisions are ours. The two do diverge: at 512 MiB
+pinned, two chunks over one is 1.96× as a ratio of medians and 1.99× as a median of paired ratios. The paired view
+appears below only as same-round win counts; paired medians are not reported.
+
+The comparison between the plain scan and the one-chunk row is the quantity this moves. It has now taken three values:
+14% *below* on Environment A, 5.9% *above* in the first Environment B collection at 512 MiB, winning 13 of 15 same-round
+pairs, and 10.7% below in the second, reported in Table 3, winning none of 15. We report that rather than explain it.
+The consequence for the figures above is that efficiencies measured against the one-chunk baseline moved by two to four
+points between the collections, 93% to 95% at eight chunks, while the end-to-end ratio, which divides by the plain scan,
+moved by 12%. That is why the first is quoted as a range of a few points and the second as a range of nearly half a
+turn.
+
+### 8.2 Planning cost
+
+Table 4 measures the planner alone, over a 16 MiB input divided into eight chunks, as certified bytes grow scarce. The
+certified byte is newline; the inputs place newlines every 40 bytes, every 1 MiB, and never, and the last row uses a
+token set that certifies nothing at all. Scarcity is not a contrived case: Plex gives automatically generated JSON,
+which usually lacks newline characters, as the reason splitting there is infeasible (Li et al., IPDPS 2021), and
+Barenghi et al. make the general point that a language need not offer any separator identifiable from a bounded window
+at all (Science of Computer Programming 2015).
+
+**Table 4.** Boundary planning for `k = 8` over 16 MiB on Environment B, pinned. The two scanning rows show similar
+effective scan rates, 3.35 and 3.34 GiB/s, consistent with the `O(kN)` bound; the last row is the empty-certificate fast
+path. Each pass repeats the plan until the sample outlasts the clock, so the sub-microsecond rows measure planning
+rather than timer resolution. The bytes-scanned column is derived from the search geometry rather than instrumented:
+seven interior boundary searches of half a megabyte each give `7 × 0.5 = 3.5` MiB, and with the byte absent the searches
+from the boundaries at `2, 4, ..., 14` MiB each run to the end of the input, `14 + 12 + ... + 2 = 56` MiB.
+
+| Certificate density    | chunks planned | median     | bytes scanned     |
+|------------------------|---------------:|------------|-------------------|
+| newline every 40 bytes |              8 | 0.1 μs     | < 1 KiB           |
+| newline every 1 MiB    |              8 | 1021.0 μs  | 3.5 MiB (derived) |
+| certified byte absent  |              1 | 16365.5 μs | 56 MiB (derived)  |
+| nothing certified      |              1 | 0.0 μs     | 0                 |
+
+The two middle rows cross-check each other: 3.5 MiB scanned in 1.02 ms and 56 MiB in 16.4 ms give similar effective scan
+rates, which is consistent with the `O(kN)` bound and indicates that the planner's cost is dominated by the forward
+searches rather than by anything else it does. Even its worst case, a certificate whose byte never occurs in a 16 MiB
+input, costs 16.4 ms once; a caller planning a much smaller chunk count, or planning once and scanning repeatedly, pays
+proportionally less. The empty-certificate case is answered without touching the input.
+
+That worst case is a cost the caller pays before any scanning begins, and on such an input the planner returns a single
+chunk, so the scan that follows is the serial one. Stating it end to end needs planning and scanning timed on one
+grammar over one input, which the earlier planning rows do not provide: they use a two-token grammar over a synthetic
+input while the scaling rows use the C-like grammar over generated source, and adding those would compare different
+lexers over different inputs. A separate scenario therefore times both phases together on the planning workload. With
+the certified byte absent, the parallel entry point takes 34.5 ms against 18.2 ms for the serial one, so choosing it
+costs about 1.9×; with certified bytes every 40 bytes it takes 1.7 ms against 12.4 ms, a gain of about 7×, both ratios
+of one-decimal summary medians. Both report the same aggregate token count, 838861 tokens on the one workload and one
+token on the other. The penalty is a property of the planner as implemented, not of the certificate. The planner here is
+deliberately simple, one forward search per boundary, and the one-pass `O(N + k)` formulation above would reduce that
+worst case to a single pass over the input, an estimated 5 ms at the observed scan rate rather than a measured figure,
+without eliminating it; the distinction it draws attention to is that *deciding* the certificate needs no input at all,
+while *locating* its occurrences is a runtime scan whose cost depends on how often the byte actually appears.
+
+### 8.3 Correctness
+
+Three levels of evidence support the implementation, and they check different things. The benchmark's preflight compares
+the serial stream against planned chunks scanned independently, exactly and token for token, at eight chunks on each
+corpus and size, before the scaling rows it protects. The unit suite carries the counterexamples of Section 4.2,
+including the nullable and cyclic re-entry cases. A fuzzer generates arbitrary token sets and inputs, checks every
+planned boundary against the predicate, and exercises the actual parallel executor, comparing the concatenated stream
+against the serial one on every execution; equality is asserted for inputs the serial scan consumes completely, and
+prefix equality for malformed ones, matching the theorem's scope. The pinned workflow configures a bounded fuzzing job
+on every continuous-integration run. No violation has been reported by those jobs or by longer local runs; because their
+logs are not archived, those outcome claims are author reports rather than checkable artifact claims.
+
+## 9 Limitations and future work
+
+The result is scoped to one fixed token automaton restarting from one fixed initial state. A scanner carrying state the
+automaton does not represent falls outside it: lexer modes, indentation stacks, semantic predicates, and hand-written
+scanning for constructs the regular grammar cannot express all carry information across token boundaries, and to remain
+within the present theorem such finite external state must be folded into an enlarged automaton; otherwise it must be
+recovered or communicated at chunk starts, or conservatively fenced into regions the plan does not cross. The theorem
+also specifies the concatenated token sequence, not callback interleaving: the sink must tolerate concurrent calls, and
+order-sensitive effects need per-chunk buffering followed by ordered replay.
+
+The approach trades generality for certainty. When the grammar does not cooperate it offers no usable split points, by
+design, and the composition and speculation families of Section 2 remain the applicable answers we know of. Several
+extensions look natural, and the first has since been carried out: a companion report generalizes the certificate from
+single bytes to short byte windows, certifying a cut at a fixed offset inside every occurrence of a multi-byte string,
+which recovers splitting for some grammars where no single byte certifies
+([arXiv:2608.09761](https://arxiv.org/abs/2608.09761)); the certificate of this paper is exactly its length-one case. A
+hybrid plan could split at certified bytes where they exist and fall back to speculative entry elsewhere, keeping the
+guarantee where it is free and paying for it only where it is not. On completely tokenizable input, a candidate scan
+begun in a live state cannot emit a token crossing the cut immediately before a certified occurrence, since an emitted
+token's match path lies in live states and only a non-re-entrant `q0` consumes the certified symbol among them. If such
+a scan commits emitted tokens past the occurrence, it places a boundary there; the serial scan places the same boundary,
+and at it both restart in `q0`, so their continuations agree when run over the same remaining input. Whether a concrete
+speculative protocol can exploit this to confine misprediction repair to the gap before the next certified occurrence is
+future work, as is the distribution of such gaps over representative corpora. The grammar-refactoring lever of Section 7
+could be automated: under a stated observational equivalence and edit-cost metric, search for a minimum-cost
+re-tokenization that makes a chosen byte usefully certify. The certificate is also orthogonal to a separate worst-case
+cost of naive longest-match scanning: some token sets and inputs cause failed lookahead that grows at successive token
+starts, producing `Θ(N²)` work, while bounded failed lookahead stays linear. Where sufficiently frequent certified
+points divide that work into reasonably balanced chunks, fixed-`k` parallel execution can reduce its coefficient, but
+each chunk retains the same quadratic worst case, and sparse or absent certificates provide no relief: over the tokens
+`a`, `a+b` and `;` on input `a^N`, the semicolon certifies yet never occurs, so the planner returns one chunk. The
+quadratic pathology can be removed with per-position information, obtained either during the scan or before it: Reps
+keeps the backtracking loop but tabulates the state and position pairs that have already failed, so no doomed transition
+is repeated (TOPLAS 1998), while the uniform-tokenization algorithms precompute what each suffix admits in an initial
+right-to-left pass (Li and Mamouras, OOPSLA 2025). Finally, the evaluation rests on two x86-64 machines, one Alder Lake
+under virtualization and one Zen 5 on bare metal, with threads constrained only to a CPU set rather than pinned
+individually; a non-x86 architecture, and per-thread placement, would strengthen the scaling claims and the
+implementation's portability evidence, though not the architecture-independent theorem.
+
+## 10 Related work
+
+**Reset words and synchronizing codes.** The live subautomaton `A⁺` is a partial DFA, and on a partial DFA a reset word
+is one whose action carries a non-empty set of states to a single state and is undefined elsewhere (Berlinkov, Ferens,
+Ryzhikov and Szykuła, STACS 2021). A useful certified symbol satisfies that definition. Certification says that no state
+other than `q0` has a `b`-transition surviving in `A⁺`, and usefulness says `q0` has one, so the action of `b` on `A⁺`
+is defined on `{q0}` alone and carries it to `δ⁺(q0, b)`. Every useful certificate is therefore a one-letter reset word
+of `A⁺` whose action domain is `{q0}`; a vacuous one is a letter whose action is nowhere defined. The converse need not
+hold: certification additionally requires that `q0` is not re-entrant, a maximal-munch boundary condition absent from
+the reset-word definition. The identification is specific to the partial-DFA convention of Berlinkov et al. (STACS
+2021): under the classical complete-DFA reading (Volkov, LATA 2008), in which a reset word must map *every* state to a
+common state, the correspondence fails, and a scanner's live automaton is partial by construction.
+
+The connection is more than terminological. A code is synchronizing when it admits a word `w` such that an occurrence of
+`ww` lets a decoder resume independently from the position after the first `w`, which is what allows a coded message to
+be decoded in parallel (Berlinkov et al., STACS 2021). Theorem 1 has that shape, and UTF-8 is its everyday case: the
+encoding was designed so that any byte beginning a form resynchronizes a decoder, and Section 4 recovers exactly those
+bytes from the compiled table. What is new here is therefore not that such a letter permits independent resumption, but
+what surrounds it: the re-entrancy side condition, which ties the reset to *token boundaries under maximal munch* rather
+than to automaton states alone, so the resumed scan agrees with the serial one on token lengths and kinds and not merely
+on where it sits; the characterization of Section 4.1, which makes the condition necessary as well as sufficient on the
+trim live automaton, so that a token set certifying nothing has no byte that both occurs in a completely tokenizable
+input and universally begins a token; the derivation of the entire certified set from a compiled token set at build
+time, rather than the assumption that a distinguished word occurs; and the relaxation modulo discarded tokens, which has
+no direct counterpart in the cited synchronizing-code model, which designates no discarded output-token class. The
+equivalence behind that relaxation is not itself the novelty: ZipLex's separator construction proves a printing
+guarantee modulo inserted separator tokens (Chassot and Kunčak, CAV 2026), but there the class marks separators inserted
+between formed tokens, where here it marks tokens a raw-input cut may sever.
+
+Certified split points differ from simultaneous automata in requiring no enlarged automaton and no composition, from
+speculation in requiring no guess and no repair, from `k`-locality in being a per-symbol property derived from the token
+loop's reset rather than a uniform property of the automaton, from the local parsability that operator precedence
+languages enjoy (Barenghi et al., Science of Computer Programming 2015) in being a property of the token automaton that
+licenses a scanner to restart at a byte rather than a property of the syntax grammar that permits substrings to be
+parsed independently using bounded surrounding context, from realignment after the fact in merging nothing, and from
+delimiter folklore in deriving the safe set from the compiled token set rather than assuming it per format. The
+derivation also correctly refuses the grammars for which the folklore is unsound. The contribution is therefore narrow
+and specific. Relocating cuts to candidate separators is classical. Barenghi et al. split JSON at whitespace with
+explicit ambiguity resolution, observe newline as a safer but potentially sparse alternative, and constrain Lua before
+using newline as a split character. What appears to remain missing is an automatic grammar-only test deciding when a
+byte permits direct restart from `q0`. Among the surveyed generators, re2c (Trofimovich, Software Impacts 2020)
+validates a user-selected end-of-input sentinel by rejecting rules in which it may occur before the end of a lexeme, a
+check its documentation records as added in release 1.3 in December 2019 (re2c documentation, 2026). That is a
+terminal-in-lexeme test for one declared byte; under the completely-tokenizable-input model used here it is a safe-after
+property, and it is genuine static analysis of the compiled automaton rather than a convention. It is incomparable with
+the certificate rather than weaker. Over a token set whose only token is `ab`, the byte `b` passes the sentinel check
+because it ends the lexeme, yet it lies inside a token and is not certified; over `ba`, the byte `b` certifies, because
+every occurrence begins a token and the initial state is not re-entrant, yet it fails the sentinel check because the
+lexeme continues past it. We are not aware of an implementation that derives the complete set of symbols whose every
+relevant occurrence begins a token, nor of one that checks the initial-state condition that guarantee requires. The
+certificate supplies that test from the compiled automaton, with no hand analysis and no input-dependent
+context-recovery pass, and the study of Section 7 turns the same machinery into a statement about which token sets admit
+such bytes at all. The analysis is not merely sound. Theorem 2 shows the condition is also necessary once the analysis
+is restricted to `A⁺`, which is what the derivation of Section 4.1 does, so on a compiled token set the *condition*
+rejects a byte exactly when a witness input exists that places it inside a token. The shipped predicate is deliberately
+narrower: it also withholds vacuously certified bytes, which the condition admits and for which no witness exists,
+because no input the token set accepts contains them and a caller could never find one to split at. That matters for
+reading Section 7: an empty exact-certificate entry is a fact about the tokenization, not a limit of the analysis, while
+a modulo-column negative remains conservative and therefore inconclusive.
+
+We are not aware of prior work stating this condition, in particular the re-entrancy requirement, as a static per-symbol
+property of the token DFA, though its components are all classical. We checked that claim against the parallel lexing
+and parallel finite-automata literature, the theory of synchronizing automata and synchronizing codes, incremental
+lexical analysis, verified invertible lexing (Chassot and Kunčak, CAV 2026), and the recent work on sequential (Reps,
+TOPLAS 1998; Li and Mamouras, OOPSLA 2025) and streaming (Li, Yang and Mamouras, ASPLOS 2026) tokenization. Each answers
+a neighbouring question: where to restart after an edit, which words reset an automaton and how long such a word must
+be, whether a code admits a word after which decoding may resume independently, whether printing a token sequence,
+plainly or with inserted separators, re-lexes to the same tokens exactly or modulo the separator class, how to avoid
+repeated rescanning, how to recover a chunk's entry state after the fact (Voetter, Leiden University MSc thesis 2021).
+The question here is which single bytes a given maximal-munch token set renders safe in advance, together with the
+token-length guarantee that makes the answer usable, and we did not find it posed in those terms.
+
+Mytkowicz et al. (ASPLOS 2014) enumerate every possible start state and select the correct computation afterwards, so
+convergence reduces redundant work rather than repairing a guess; the relaxed certificate instead removes the need to
+consider more than one state. Sin'ya et al. (ICPP 2013) study the size of the simultaneous finite automaton, giving
+worst-case bounds and empirical data, which is the dual question to ours: they bound the cost of carrying many states,
+we give a condition under which none need be carried. Plex (IPDPS 2021) arrives in the same territory from the other
+side. It reports splitting JSON at newline as prior work, on the stated ground that newline is a delimiter "not allowed
+in any lexeme", and then abandons delimiters altogether: a prescanning automaton derived from the scanner builds a
+transfer function per chunk, and combining them determines the states each chunk's thread begins from, which it tries in
+turn, falling through whenever one would force a backtrack into the preceding chunk. Its contribution therefore belongs
+with the composition family above rather than with the equivalence weakened here, and what this paper adds is the
+certification: an exact characterization deciding, for an arbitrary token set, when a delimiter byte is sound, and for
+an arbitrary discarded set a certificate that is sound but deliberately conservative, so a refusal there does not
+decide. Structural prescans for JSON, such as Mison (PVLDB 2017) and simdjson (VLDB Journal 2019), do not exploit a fact
+like the one Table 2 records. They search for structural characters, the object and array brackets and `:` among them,
+all of which may legally occur inside a JSON string, and then suppress the occurrences that do by deriving a string mask
+from the quote and backslash positions; Mison's Algorithm 1 constructs exactly that mask, and simdjson performs the same
+masking branchlessly. Theirs is a format-specific scan that computes which occurrences are real, where the certificate
+instead decides, for an arbitrary compiled token set, which bytes need no such computation. Reps (TOPLAS 1998) studies
+maximal-munch scanning itself, and the lookahead hazard noted in the discussion of state composition below is a
+consequence of the same backtracking behaviour.
+
+**Static entry-state properties.** Ko, Jung, Han and Burgstaller (International Journal of Parallel Programming 2014)
+parallelize DFA membership by speculation and reduce the speculation they must do by reading a static property off the
+automaton: the set of states having an incoming transition on a given symbol. Where that set is a singleton, a chunk
+beginning after that symbol has its entry state pinned without a guess. The shape is this paper's, a per-symbol property
+of the compiled automaton that removes the need to know what preceded a position, and the difference is in what the
+property is taken over and what it must additionally exclude. Theirs is the whole transition relation of a membership
+DFA; Theorem 1's is the trim live subautomaton `A⁺` of a token DFA, so states that can never accept and states no scan
+can reach are discarded before the count is taken, which admits symbols their test refuses. Against that, certification
+additionally requires that `q0` is not re-entrant, a maximal-munch boundary condition with no counterpart in a
+membership test, where no token boundaries exist to preserve. The two conditions are therefore incomparable rather than
+one being a weakening of the other, and the reason is that a membership test must reproduce an accept decision while a
+scanner must reproduce a token stream.
+
+**Cut points chosen rather than forced.** Two lines outside compiler construction select positions in a byte stream by a
+bounded window and then study how often the selection fires, which is this paper's applicability question asked of a
+designed rule rather than of one a token set forces. Bjørner, Blass and Gurevich (Journal of Computer and System
+Sciences 2010) call a chunking method local when a fixed criterion over a window of radius `h`, their horizon, decides
+every cutpoint, which is the certificate predicate under another name; they measure the displacement from a requested
+position to the first cutpoint, give its distribution rather than its mean, and compute the probability of no cutpoint
+in a long interval for four separate chunking classes. Schleimer, Wilkerson and Aiken (SIGMOD 2003) define the density
+of a fingerprinting scheme as the expected fraction of positions selected, prove it asymptotically `2/(w+1)` for window
+size `w` with a lower bound of `1.5/(w+1)` for local algorithms, and observe long real passages where nothing is
+selected. The difference is which way the constraint runs. There the rule is chosen and its density is the design
+objective, so a scheme with poor supply is replaced; here the token set forces the rule and its supply is whatever the
+grammar leaves, which is why Section 7 measures certificate supply rather than tuning it. Their lower bounds do not
+transfer for the same reason: they bound what a designer can achieve, not what a given token set admits.
+
+**Relation to state composition.** We computed it for the block-comment row of Table 2, whose automaton has fourteen
+states, and the question needs no corpus. A line start follows a newline, so it is either a token boundary, needing no
+state at all, or the scan sits in the target of a newline transition out of a live reachable state, and the token
+continues only if that target has an outgoing transition. Collecting those targets yields every mid-token context that
+can arise on any input whatsoever. For this token set there is exactly one, the interior of a block comment: every
+in-comment state moves to the same target on a newline, and the initial state produces a complete newline token that
+cannot continue. A line start therefore presents one of two entry contexts, that state and the boundary, against an
+automaton of fourteen. The conventional tokenization gives three rather than two, since a whitespace run may also be
+open across a line start; neither is close to the state count, which is the point.
+
+Most line starts are already token boundaries, though nothing short of the scan identifies which. On a corpus of 400
+generated documents no failed lookahead after a token's final accepted position crossed a line end; that is the exact
+counter `composition.cpp` implements, bytes read and discarded beyond the last acceptance never including a newline.
+That is a property of the corpus rather than of the token set: it is an assumption required by schemes composing only
+scanner states, and a token set with longer lookahead could violate it on inputs the corpus does not contain. Both
+counts are asserted by `composition.cpp` in the artifact, which also checks that the contexts a corpus realizes lie
+inside the structural bound, and that they are the states this section names.
+
+The comparison should be drawn narrowly, and narrowly is all this measurement supports. What is established is a
+structural upper bound on the *entry contexts* a line start can present, two here and three for the conventional
+tokenization. That is not the domain a prefix scan for maximal-munch lexing composes over. Yang (Computer Languages
+1996) gives the reason: such a scan must represent token output and lookahead behaviour, not merely a map from states to
+states, and an automaton unable to recognize a token's start from its first character must be transformed before the
+scan applies. The counts here bound the state component of that object and say nothing about the rest. Nothing here
+implements a prefix scan or measures its time, memory, function representation or output handling, so this is not
+evidence about the cost of composition as a whole. Composition is also available wherever the certificate reports
+nothing, which is the larger class.
+
+What the certificate offers is the absence of a mandatory full-input state-composition pass, and the claim needs care
+because chunks are not serialized. Mytkowicz et al. (ASPLOS 2014) dispatch every chunk in parallel during a first phase
+to build its transfer function, resolve the entry states from those, and dispatch the chunks again. Every byte is
+therefore visited before any chunk can be scanned *from its resolved entry state* or emit final output. A certified byte
+needs none of that: a boundary is found by scanning forward from the ideal offset until one is hit, a distance that
+depends on the input and that Section 8.2 measures as certified bytes grow scarce, and each chunk is scanned once. That
+difference does not amortize when the number of chunks is small, or when only part of the input is to be scanned, and it
+is the reason the two are complementary rather than competing.
+
+## 11 Conclusion
+
+A byte `b` is a certified split symbol of a compiled token set when no reachable state other than `q0` has a
+`b`-transition whose target can reach acceptance, and, if `q0` has one, `q0` is not re-entrant. Every occurrence of such
+a byte in a completely tokenizable input begins a token, so chunk boundaries placed there preserve the token stream
+exactly, with no speculation, no overlapping chunk scans, and no merge beyond ordered concatenation. The re-entrancy
+clause is what makes this true rather than nearly true: without it the natural incoming-transition criterion certifies
+`a` for the token set `a*` and splits `aa` into two tokens where the scanner yields one.
+
+The condition is necessary as well as sufficient once the analysis is restricted to states an input can reach and from
+which acceptance is still reachable, so a token set with no useful certified byte has no byte that both occurs in a
+completely tokenizable input and universally begins a token, rather than merely defeating the test; the relaxed
+condition may still recover one modulo a discarded set. Deriving the certificate is a linear-time sweep of the
+transition table at construction time, and the same sweep decides which certified bytes can occur in valid input at all.
+That makes the applicability question mechanical, and the method is fragile: a single token kind with a near-total
+interior alphabet, such as a block comment, removes every useful certificate from an otherwise cooperative C-like
+grammar. On the favorable scaling grammar and 512 MiB dense corpus, where useful exact certificates are frequent,
+exact-certificate splitting reached 92.6 to 95.3% eight-way efficiency against the one-chunk wrapper, and a 3.46 to
+3.94× four-chunk ratio against the plain scan, benchmark-wrapper end to end, across the two revisions in the
+restricted-CPU-set placement. Both are conventionally rounded ranges on one machine; the unrestricted placement reaches
+88.5% at eight chunks on the earlier revision. Neither is a confidence interval: the per-scenario best-to-worst spreads
+over the median behind them reach about 8.8% and 14.5% on the two eight-chunk rows at 512 MiB. The wider end-to-end
+range comes from the serial baseline used as its denominator: at 512 MiB the multi-chunk rows move far less between the
+revisions than that baseline does; Section 8 reports that separately.
+
+The contribution is therefore narrow and exactly bounded: not another way to lex in parallel, but the automaton-derived
+certification step that prior delimiter-based systems have handled through language-specific reasoning.
+
+Weakening the guarantee from token stream equality to equality after deleting discarded tokens recovers split points
+that the exact certificate must reject, with the same constant-time one-bit query. At construction it adds a backward
+closure and a second `O(|Q| |Σ|)` sweep, plus `O((|Q| + |I|) log(1 + |I|))` ordered-set work. The recovered cases
+include ones that matter in practice: the conventional C-like token set studied here and a JSON lexer both gain newline
+without any change to their token definitions, which removes a token set redesign that the exact method had imposed on
+its users. An explicit witness establishes that the relaxation is conservative; in the fixed seeded sweep it rejected 97
+of 362 exercised pairs, 26.8%, having no counterexample through length eight. Separately, on four application token sets
+it agreed with brute-force splitting on all sixteen declared candidate bytes. The relaxed result remains a precomputed
+one-bit query; the shipped planner and every throughput measurement use the exact certificate.
+
+Two boundaries are worth restating, because both were initially unclear to us. Certification depends only on the token
+set, for the relaxed condition also on the declared discarded set, and never on a particular input, so a read-time
+transformation cannot make an uncertified byte certified under the unchanged token set. A cooperating format and
+producer can instead reserve a byte, exclude or escape it within tokens, and emit it only at boundaries, which rescues
+even a token set containing block comments. And prefix-scan composition, the general alternative, need carry only two
+line-start entry contexts in its state component for the measured split-friendly block-comment grammar. That count
+bounds the state domain alone, not the object such a scan composes: a maximal-munch prefix scan must also carry
+lookahead and token output (Yang, Computer Languages 1996). So the state domain is not where the two approaches differ,
+the certificate's structural distinction is the absence of a mandatory context-recovery pass over the whole input, and
+what composition costs in full is not measured here; the planner's own forward searches can themselves degenerate to
+`O(kN)` aggregate search work when certified bytes are scarce, which Section 8.2 measures.
 
 ## References
 
-- re2c project. *re2c documentation.* Warnings, https://re2c.org/manual/basics/warnings/warnings.html; Changelog,
-  https://re2c.org/releases/changelog/changelog.html. Accessed 3 August 2026.
-- U. Trofimovich. *RE2C: A lexer generator based on lookahead-TDFA.* Software Impacts 6:100027, 2020.
-  doi:10.1016/j.simpa.2020.100027.
-- R. Sin'ya, K. Matsuzaki, M. Sassa. *Simultaneous Finite Automata: An Efficient Data-Parallel Model for Regular
-  Expression Matching.* ICPP 2013. arXiv:1405.0562.
-- T. Mytkowicz, M. Musuvathi, W. Schulte. *Data-Parallel Finite-State Machines.* ASPLOS 2014.
+- N. Nidhögg. *munch: a lexical analysis library based on automata theory, version
+  1.2.0.* Release tag `v1.2.0`, archived at doi:10.5281/zenodo.21752997, 2026.
+- N. Nidhögg. *Certified Split Windows for Parallel Lexing: Recovering
+  Boundaries Where No Byte Certifies.* Preprint, arXiv:2608.09761, 2026.
+- N. Nidhögg. *Certified Panic Mode: Repair-Invariant Error Recovery
+  for Maximal-Munch Lexing.* Preprint, arXiv:2609.10600, 2026.
+- R. Sin'ya, K. Matsuzaki, M. Sassa. *Simultaneous Finite Automata: An Efficient Data-Parallel
+  Model for Regular Expression Matching.* ICPP 2013, 220-229. Preprint: arXiv:1405.0562.
+- W. D. Hillis, G. L. Steele, Jr. *Data Parallel Algorithms.* Communications of the ACM 29(12):1170-1183, 1986.
+- W. Yang. *Mealy Machines Are a Better Model of Lexical Analyzers.* Computer Languages 22(1):27-38, 1996.
+- T. Mytkowicz, M. Musuvathi, W. Schulte. *Data-Parallel Finite-State Machines.* ASPLOS 2014, 529-542.
+- R. Voetter. *Parallel Lexing, Parsing and Semantic Analysis on the GPU.* MSc thesis, Leiden University, 2021.
 - C. G. Jones, R. Liu, L. Meyerovich, K. Asanović, R. Bodík. *Parallelizing the Web Browser.* HotPar 2009.
 - P. Prabhu, G. Ramalingam, K. Vaswani. *Safe Programmable Speculative Parallelism.* PLDI 2010, 50-61.
-- D. Luchaup, R. Smith, C. Estan, S. Jha. *Multi-byte Regular Expression Matching with Speculation.* RAID 2009,
-  LNCS 5758, 284-303.
-- P. Jiang, G. Agrawal. *Combining SIMD and Many/Multi-core Parallelism for Finite State Machines with Enumerative
-  Speculation.* PPoPP 2017.
-- S. Chassot, V. Kunčak. *Formally Verified Linear-Time Invertible Lexing.* CAV 2026, LNCS 16683, 141-164.
-  Extended version with the separator-token appendix: arXiv:2510.18479.
-- A. Barenghi, S. Crespi Reghizzi, D. Mandrioli, F. Panella, M. Pradella. *Parallel parsing made practical.* Science of
-  Computer Programming 112:195-226, 2015.
-- L. Li, S. Sato, Q. Liu, K. Taura. *Plex: Scaling Parallel Lexing with Backtrack-Free Prescanning.* IPDPS 2021.
+- D. Luchaup, R. Smith, C. Estan, S. Jha. *Multi-byte Regular
+  Expression Matching with Speculation.* RAID 2009, LNCS 5758, 284-303.
+- P. Jiang, G. Agrawal. *Combining SIMD and Many/Multi-core Parallelism for
+  Finite State Machines with Enumerative Speculation.* PPoPP 2017, 179-191.
+- A. Borsotti, L. Breveglieri, A. Morzenti, S. Crespi Reghizzi. *Minimizing Speculation Overhead
+  in a Parallel Recognizer for Regular Texts.* PPoPP 2025, 569-572. Preprint: arXiv:2412.14975.
+- A. Barenghi, S. Crespi Reghizzi, D. Mandrioli, F. Panella, M. Pradella. *Parallel
+  parsing made practical.* Science of Computer Programming 112:195-226, 2015.
+- L. Li, S. Sato, Q. Liu, K. Taura. *Plex: Scaling Parallel
+  Lexing with Backtrack-Free Prescanning.* IPDPS 2021, 693-702.
+- W. Yang, C.-W. Tsay, J.-T. Chan. *On the Applicability of the Longest-Match Rule
+  in Lexical Analysis.* Computer Languages, Systems & Structures 28(3):273-288, 2002.
 - A. W. Li, Y. Yang, K. Mamouras. *Static Analysis for Efficient Streaming Tokenization.* ASPLOS 2026, 1880-1896.
-- T. Reps. *"Maximal-munch" Tokenization in Linear Time.* ACM TOPLAS 20(2):259-273, 1998.
-- A. W. Li, K. Mamouras. *Efficient Algorithms for the Uniform Tokenization Problem.* PACMPL 9(OOPSLA1), 2025.
-- T. A. Wagner, S. L. Graham. *General Incremental Lexical Analysis.* Manuscript, UC Berkeley, 1997.
-  https://harmonia.cs.berkeley.edu/papers/twagner-lexing.pdf
-- J. Hugo, K. Hansson. *A Generator of Incremental Divide-and-Conquer Lexers.* MSc thesis, Chalmers, 2015.
-- J. Holub, Š. Štekr. *On Parallel Implementations of Deterministic Finite Automata.* CIAA 2009.
-- C. Ge, Y. Li, et al. *Speculative Distributed CSV Data Parsing for Big Data Analytics.* SIGMOD 2019.
-- E. Stehle, H.-A. Jacobsen. *ParPaRaw: Massively Parallel Parsing of Delimiter-Separated Raw Data.* VLDB 2020.
-- G. Langdale, D. Lemire. *Parsing Gigabytes of JSON per Second.* VLDB Journal 2019 (simdjson).
-- Y. Li et al. *Mison: A Fast JSON Parser for Data Analytics.* VLDB 2017.
-- R. D. Cameron, K. S. Herdy, D. Lin. *High Performance XML Parsing Using Parallel Bit Stream Technology.* CASCON 2008
-  (Parabix).
-- W. Shao, L. Zheng, P. Wang, P. Zheng, J. Li, Y. Fan. *LoPT: Lossless Parallel Tokenization Acceleration for Long
-  Context Inference of Large Language Model.* ACL 2026, 33107-33122. Preprint: arXiv:2511.04952.
-- M. V. Volkov. *Synchronizing Automata and the Černý Conjecture.* LATA 2008, 11-27.
-- M. V. Berlinkov, R. Ferens, A. Ryzhikov, M. Szykuła. *Synchronizing Strongly Connected Partial DFAs.* STACS 2021,
-  12:1-12:16.
-- A. Borsotti, L. Breveglieri, A. Morzenti, S. Crespi Reghizzi. *Minimizing Speculation Overhead in a Parallel
-  Recognizer for Regular Texts.* PPoPP 2025, 569-572.
+- T. A. Wagner, S. L. Graham. *General Incremental Lexical Analysis.* Manuscript, University
+  of California, Berkeley, 1997. https://harmonia.cs.berkeley.edu/papers/twagner-lexing.pdf
+- J. Hugo, K. Hansson. *A Generator of Incremental Divide-and-Conquer Lexers: A Tool to Generate an
+  Incremental Lexer from a Lexical Specification.* MSc thesis, Chalmers University of Technology, 2015.
+- J. Holub, Š. Štekr. *On Parallel Implementations of Deterministic Finite Automata.* CIAA 2009, LNCS 5642, 54-64.
+- W. Shao, L. Zheng, P. Wang, P. Zheng, J. Li, Y. Fan. *LoPT: Lossless Parallel Tokenization Acceleration
+  for Long Context Inference of Large Language Model.* ACL 2026, 33107-33122. Preprint: arXiv:2511.04952.
+- Z. Zhang, Z. Cao. *TokTier: Exact Stateful CPU+GPU Tokenization
+  for Agentic LLM Serving.* Preprint, arXiv:2607.29678, 2026.
+- Y. Shafranovich. *Common Format and MIME Type for Comma-Separated Values (CSV) Files.* RFC 4180, October 2005.
+- C. Ge, Y. Li, E. Eilebrecht, B. Chandramouli, D. Kossmann. *Speculative
+  Distributed CSV Data Parsing for Big Data Analytics.* SIGMOD 2019, 883-899.
+- E. Stehle, H.-A. Jacobsen. *ParPaRaw: Massively Parallel Parsing of
+  Delimiter-Separated Raw Data.* Proceedings of the VLDB Endowment 13(5):616-628, 2020.
+- A. Barve, B. K. Joshi. *Parallel Lexical Analysis of Multiple Files on Multi-Core
+  Machines.* International Journal of Computer Applications 96(16):22-24, 2014.
+- Y. Li, N. R. Katsipoulakis, B. Chandramouli, J. Goldstein, D. Kossmann. *Mison: A Fast
+  JSON Parser for Data Analytics.* Proceedings of the VLDB Endowment 10(10):1118-1129, 2017.
+- G. Langdale, D. Lemire. *Parsing Gigabytes of JSON per Second.* The VLDB Journal 28(6):941-960, 2019.
+- R. D. Cameron, K. S. Herdy, D. Lin. *High Performance XML Parsing Using
+  Parallel Bit Stream Technology.* CASCON 2008, article 17, 222-235.
+- re2c project. *re2c documentation.* Warnings, https://re2c.org/manual/basics/warnings/warnings.html; Changelog,
+  https://re2c.org/releases/changelog/changelog.html. Accessed 3 August 2026;
+  release 1.3, 14 December 2019, records "Added warning: `-Wsentinel-in-midrule`".
+- F. Yergeau. *UTF-8, a transformation format of ISO 10646.* RFC 3629, STD 63, November 2003.
+- S. Chassot, V. Kunčak. *Formally Verified Linear-Time Invertible Lexing.* CAV 2026, LNCS
+  16683, 141-164. Extended version with the separator-token appendix: arXiv:2510.18479.
 - T. Bray (Ed.). *The JavaScript Object Notation (JSON) Data Interchange Format.* RFC 8259, STD 90, December 2017.
-- W. D. Hillis, G. L. Steele, Jr. *Data parallel algorithms.* Communications of the ACM 29(12), 1986, pp. 1170-1183.
-- W. Yang. *Mealy Machines Are a Better Model of Lexical Analyzers.* Computer Languages 22(1), 1996, pp. 27-38.
-- W. Yang, C.-W. Tsay, J.-T. Chan. *On the Applicability of the Longest-Match Rule in Lexical Analysis.* Computer
-  Languages, Systems & Structures 28, 2002, pp. 273-288.
-- R. Voetter. *Parallel Lexing, Parsing and Semantic Analysis on the GPU.* MSc thesis, Leiden University, 2021.
+- V. Cerf. *ASCII format for Network Interchange.* RFC 20, 1969.
+- N. Williams. *JavaScript Object Notation (JSON) Text Sequences.* RFC 7464, 2015.
+- M. V. Berlinkov, R. Ferens, A. Ryzhikov, M. Szykuła. *Synchronizing
+  Strongly Connected Partial DFAs.* STACS 2021, LIPIcs 187, 12:1-12:16.
+- M. V. Volkov. *Synchronizing Automata and the Černý Conjecture.* LATA 2008, LNCS 5196, 11-27.
+- U. Trofimovich. *RE2C: A lexer generator based on lookahead-TDFA.* Software Impacts 6:100027, 2020.
+- T. Reps. *"Maximal-munch" Tokenization in Linear Time.* ACM
+  Transactions on Programming Languages and Systems 20(2):259-273, 1998.
+- A. W. Li, K. Mamouras. *Efficient Algorithms for the Uniform Tokenization Problem.*
+  Proceedings of the ACM on Programming Languages 9(OOPSLA1), article 133, 1492-1518, 2025.
+- Y. Ko, M. Jung, Y.-S. Han, B. Burgstaller. *A Speculative Parallel DFA Membership Test for Multicore,
+  SIMD and Cloud Computing Environments.* International Journal of Parallel Programming, 2014.
+- N. Bjørner, A. Blass, Y. Gurevich. *Content-dependent chunking for differential compression,
+  the local maximum approach.* Journal of Computer and System Sciences 76(3-4):154-203, 2010.
+- S. Schleimer, D. S. Wilkerson, A. Aiken. *Winnowing: local
+  algorithms for document fingerprinting.* SIGMOD 2003, 76-85.
 
 ## Appendix: the applicability probe
 
-The table in Section 6 is produced by `paper/figures/applicability.cpp`, which uses only the public API: it builds each
+The table in Section 7 is produced by `paper/figures/applicability.cpp`, which uses only the public API: it builds each
 token set with `core::Builder`, reads `Lexer::is_split_point()` for every byte value, and asserts the result against the
 published row, exiting non-zero if any row disagrees. The grammars are those listed, with `Set::all()`-derived interiors
 carrying the exclusions the source shows: a string admits any byte but `"` and newline, a line comment any byte but
