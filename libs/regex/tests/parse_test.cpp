@@ -188,6 +188,33 @@ TEST(Parse, Code_points_encode_as_utf8_in_literals_and_read_brackets_as_scalars)
     EXPECT_EQ(refused_at(R"([\u{d800}-\u{dfff}])"), 1);
 }
 
+TEST(Parse, The_caseless_option_folds_letters_in_texts_brackets_and_definitions)
+{
+    constexpr Parse_options caseless{.caseless = true};
+
+    EXPECT_EQ(matched(parse("select", {}, caseless), "SeLeCt"), 6);
+    EXPECT_EQ(matched(parse(R"("a_1b")", {}, caseless), "A_1B"), 4);
+    EXPECT_FALSE(accepts(parse(R"("a_1b")", {}, caseless), "A-1B"));
+    EXPECT_EQ(matched(parse("(ab|cd)*e?", {}, caseless), "ABcDCdE"), 7);
+    EXPECT_EQ(matched(parse("x{2,3}", {}, caseless), "xXxX"), 3);
+    EXPECT_EQ(matched(parse(R"(\x41+)", {}, caseless), "aAa"), 3);
+
+    // Both cases are members before the negation, and the case classes name every letter.
+    EXPECT_EQ(matched(parse("[a-c]+", {}, caseless), "AbCx"), 3);
+    EXPECT_EQ(matched(parse("[^a-c]+", {}, caseless), "xyzA"), 3);
+    EXPECT_EQ(matched(parse("[[:upper:]]+", {}, caseless), "Hello"), 5);
+    EXPECT_EQ(matched(parse("[0-9_]+", {}, caseless), "0_9a"), 3);
+    EXPECT_EQ(matched(parse(R"([^\u{e9}a])", {}, caseless), "A"), -1);
+
+    const Definitions_t definitions{{"ident", "[a-z_][a-z0-9_]*"}};
+
+    EXPECT_EQ(matched(parse("{ident}", definitions, caseless), "Foo_1 "), 5);
+
+    // Without the option the same patterns are exact.
+    EXPECT_FALSE(accepts(parse("select"), "SELECT"));
+    EXPECT_EQ(matched(parse("[^a-c]+"), "xyzA"), 4);
+}
+
 TEST(Parse, Definitions_expand_and_nest)
 {
     const Definitions_t definitions{

@@ -244,12 +244,11 @@ std::optional<std::size_t> brace_close(const std::string_view code) noexcept
 
 Token_set token_set(const Lexer_spec& spec, const std::string_view condition)
 {
-    if (std::ranges::any_of(spec.options, [](const std::string& option) {
-            return option == "case-insensitive" || option == "caseless" || option == "i";
-        }))
-    {
-        throw Spec_error{"%option case-insensitive is not modelled: patterns are read as written", 0};
-    }
+    // flex's `%option case-insensitive` folds every letter of every pattern, definitions included; re2c and the
+    // others spell the folding in the pattern itself.
+    const auto caseless{std::ranges::any_of(spec.options, [](const std::string& option) {
+        return option == "case-insensitive" || option == "caseless" || option == "i";
+    })};
 
     // A generator's own number, higher winning, lands below every index on the builder's lower-wins scale.
     constexpr auto top{std::numeric_limits<std::size_t>::max() / 2};
@@ -268,7 +267,7 @@ Token_set token_set(const Lexer_spec& spec, const std::string_view condition)
         try
         {
             set.rules.push_back(
-                    {.regex = regex::parse(rule.expression, spec.definitions),
+                    {.regex = regex::parse(rule.expression, spec.definitions, {.caseless = caseless}),
                      .id = index,
                      .priority = rule.priority ? top - *rule.priority : index,
                      .discarded = !rule.token.has_value()});

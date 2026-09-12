@@ -152,9 +152,9 @@ the line that holds it, rather than read it as something else:
 
 - flex: definitions, `%s` and `%x`, `%option`, `%{ %}` and `%top{ }` blocks, start-condition scopes `<s>{ }` with
   indented rules, the `{` on the prefix's line or the next as bison's scanners write it, `|` shared actions,
-  actions running to the first line end at which their braces balance, `<<EOF>>` rules (not tokens). Refused: `^`
-  and `$` anchors and `/` trailing context, which condition a match on its context and are no token language, and
-  `%option case-insensitive`, which is not modelled.
+  actions running to the first line end at which their braces balance, `<<EOF>>` rules (not tokens), and
+  `%option case-insensitive`, every letter of every parsed pattern folded to either case. Refused: `^` and `$`
+  anchors and `/` trailing context, which condition a match on its context and are no token language.
 - re2c: `/*!re2c` and `/*!rules:re2c` blocks, closed as re2c closes them (a star-slash inside a literal, a class,
   an action or a comment is content), `re2c:` configurations recorded as options and the case and flex-syntax flags
   among them honoured, `name = regex;` and flex-style definitions, conditions and `<*>`, `=>` and `:=>` transitions,

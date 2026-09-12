@@ -205,6 +205,26 @@ TEST(Read_flex, A_start_condition_prefix_alone_on_its_line_opens_the_next)
     EXPECT_EQ(file.rules[1].line, 9u);
 }
 
+TEST(Read_flex, Case_insensitive_scanners_fold_every_letter_of_every_pattern)
+{
+    // PostgreSQL's scanner: the option folds keywords, definitions expanded into patterns, and classes alike.
+    constexpr std::string_view source{R"(%option case-insensitive
+ident  [a-z_][a-z0-9_]*
+%%
+select      return SELECT;
+{ident}     return IDENT;
+[ \t\n]+    ;
+%%
+)"};
+
+    const auto lexer{build(read_flex(source).front(), "INITIAL")};
+
+    EXPECT_EQ(lexer.tokenize<std::size_t>(std::string{"SeLeCt"}).token, std::optional<std::size_t>{0});
+    EXPECT_EQ(lexer.tokenize<std::size_t>(std::string{"SELECTs"}).token, std::optional<std::size_t>{1});
+    EXPECT_EQ(lexer.tokenize<std::size_t>(std::string{"Foo_1 "}).length, 5u);
+    EXPECT_EQ(lexer.tokenize<std::size_t>(std::string{"\t x"}).token, std::optional<std::size_t>{2});
+}
+
 TEST(Read_flex, Refusals_name_the_line)
 {
     const auto line_of{[](const std::string_view source) {
