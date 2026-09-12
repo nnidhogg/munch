@@ -132,15 +132,18 @@ TEST(Read_antlr, Case_insensitivity_doubles_every_letter)
 
 TEST(Read_antlr, Sets_beyond_ascii_and_negated_groups_read_as_scalars)
 {
+    // A negated group may hold a range with blanks around its operator, as Clojure's grammar writes one.
     const auto spec{read_antlr("lexer grammar U;\nLATIN : [a-z\\u00C0-\\u00FF]+ ;\nSPAN : '\\u0300'..'\\u036F' ;\n"
-                               "REST : ~('\\r' | '\\n' | [ \\t]) ;\nBOM : '\\uFEFF' ;\n")
+                               "REST : ~('\\r' | '\\n' | [ \\t]) ;\nBOM : '\\uFEFF' ;\n"
+                               "HEAD : ~('0' .. '9' | '^' | '\\u00C0'..'\\u00FF') ;\n")
                             .front()};
 
-    ASSERT_EQ(spec.rules.size(), 4u);
+    ASSERT_EQ(spec.rules.size(), 5u);
     EXPECT_EQ(spec.rules[0].expression, R"([\u{61}-\u{7a}\u{c0}-\u{ff}]+)");
     EXPECT_EQ(spec.rules[1].expression, R"([\u{300}-\u{36f}])");
     EXPECT_EQ(spec.rules[2].expression, R"([\u{0}-\u{8}\u{b}-\u{c}\u{e}-\u{1f}\u{21}-\u{7f}\u{80}-\u{10ffff}])");
     EXPECT_EQ(spec.rules[3].expression, R"("\xef\xbb\xbf")");
+    EXPECT_EQ(spec.rules[4].expression, R"([\u{0}-\u{2f}\u{3a}-\u{5d}\u{5f}-\u{7f}\u{80}-\u{bf}\u{100}-\u{10ffff}])");
 
     // Built, the scalars match as their encodings.
     const auto lexer{build(spec, "INITIAL")};
