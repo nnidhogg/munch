@@ -61,6 +61,42 @@ std::string quoted(const std::string_view bytes)
     return text + '"';
 }
 
+std::string bracket(const regex::Set& set)
+{
+    std::string text{'['};
+
+    for (unsigned first{0}; first < 256; ++first)
+    {
+        if (!set.symbols().contains(static_cast<char>(first)))
+        {
+            continue;
+        }
+
+        auto last{first};
+
+        while (last + 1 < 256 && set.symbols().contains(static_cast<char>(last + 1)))
+        {
+            ++last;
+        }
+
+        text += bracket_member(static_cast<unsigned char>(first));
+
+        if (last > first + 1)
+        {
+            text += '-';
+        }
+
+        if (last > first)
+        {
+            text += bracket_member(static_cast<unsigned char>(last));
+        }
+
+        first = last;
+    }
+
+    return text + ']';
+}
+
 std::string bracket_member(const unsigned char byte)
 {
     switch (byte)

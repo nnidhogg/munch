@@ -4,6 +4,8 @@
 #include <string>
 #include <string_view>
 
+#include "munch/regex/set.hpp"
+
 namespace munch::tools::audit
 {
 /**
@@ -20,6 +22,13 @@ namespace munch::tools::audit
  * @return The text, quotes included.
  */
 [[nodiscard]] std::string quoted(std::string_view bytes);
+
+/**
+ * @brief A set of bytes as the parser's bracket expression, its runs written as ranges.
+ * @param set The set, not empty.
+ * @return The bracket.
+ */
+[[nodiscard]] std::string bracket(const regex::Set& set);
 
 /**
  * @brief A byte as a member of the parser's bracket expression: escaped where the bracket syntax would read it
