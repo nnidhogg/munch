@@ -15,13 +15,13 @@ procedure, the specialization theorem tying length one to the shipped predicate,
 evaluation runs as asserted probes in the test suite (`tools/probes/window_gate.cpp`), and `split-windows/campaign.md`
 names the archived collections behind its figures.
 
-`panic-mode/panic-mode.tex` is the third, published as
-[arXiv:2609.10600](https://arxiv.org/abs/2609.10600): the recovery point chosen by theorem rather than by convention,
-where a position is sound when every prefix repair whose scan commits through the certificate's evidence places a token
-boundary there, with the dichotomy locating exactly when that quantifier is strictly stronger than complete repair, the
+`panic-mode/panic-mode.tex` is the third, published as [arXiv:2609.10600](https://arxiv.org/abs/2609.10600) and mirrored
+by [docs/panic_mode.md](../docs/panic_mode.md): the recovery point chosen by theorem rather than by convention, where a
+position is sound when every prefix repair whose scan commits through the certificate's evidence places a token boundary
+there, with the dichotomy locating exactly when that quantifier is strictly stronger than complete repair, the
 evidence-returning form that lets a caller judge whether a certified boundary transfers to the input it meant, and the
-corruption study measuring recovery quality beside the classical skip-one and delimiter conventions. The procedure
-ships in the library as `Lexer::next_certified_evidence()` and the tokenizer's `recover()` family.
+corruption study measuring recovery quality beside the classical skip-one and delimiter conventions. The procedure ships
+in the library as `Lexer::next_certified_evidence()` and the tokenizer's `recover()` family.
 
 The markdown reports are the accessible form, linked from the README and kept next to the implementation they
 describe; they carry the same claims but not every formal qualification, so where the two differ this directory is
