@@ -291,6 +291,53 @@ TEST(Read_re2c, A_class_difference_becomes_the_bracket_of_the_bytes_left)
     EXPECT_EQ(spec.rules[3].pattern, R"([ \t\n]+)");
 }
 
+TEST(Read_re2c, Rules_blocks_are_libraries_the_use_directive_merges_and_tags_and_empty_rules_are_no_tokens)
+{
+    // re2c's own lexer: a named rules block holding a definition, local blocks using it, a use block, a tag in a
+    // pattern, and the empty rule with and without trailing context.
+    constexpr std::string_view source{R"(/*!rules:re2c:char_lit
+    re2c:flags:utf-8 = 1;
+    esc = [\\];
+    char_lit = esc [x] [0-9a-f]{2} | [^];
+*/
+/*!local:re2c
+    !use:char_lit;
+    char_lit [']  { return Ret::OK; }
+    ""            { return Ret::OK; }
+*/
+/*!re2c
+    ":"? "=>" @p [a-z]+ #q  { return ARROW; }
+    "" / [ ]                { return NOTHING; }
+    [ ]+                    { return SPACE; }
+*/
+/*!use:re2c:char_lit
+    char_lit [`]  { return Ret::OK; }
+*/
+)"};
+
+    const auto scanners{read_re2c(source)};
+
+    ASSERT_EQ(scanners.size(), 3u);
+
+    EXPECT_EQ(scanners[0].line, 6u);
+    ASSERT_EQ(scanners[0].rules.size(), 1u);
+    EXPECT_EQ(scanners[0].rules[0].expression, "{char_lit}[']");
+    EXPECT_EQ(scanners[0].definitions.at("char_lit"), R"({esc}[x][0-9a-f]{2}|[\x00-\xff])");
+    EXPECT_EQ(scanners[0].options, (std::vector<std::string>{"flags:utf-8=1"}));
+
+    EXPECT_EQ(scanners[1].line, 11u);
+    ASSERT_EQ(scanners[1].rules.size(), 2u);
+    EXPECT_EQ(scanners[1].rules[0].pattern, R"(":"? "=>" @p [a-z]+ #q)");
+    EXPECT_EQ(scanners[1].rules[0].expression, R"(":"?"=>"[a-z]+)");
+    EXPECT_EQ(scanners[1].rules[1].token, std::optional<std::string>{"SPACE"});
+    EXPECT_FALSE(scanners[1].definitions.contains("esc"));
+
+    EXPECT_EQ(scanners[2].line, 16u);
+    ASSERT_EQ(scanners[2].rules.size(), 1u);
+    EXPECT_EQ(scanners[2].rules[0].expression, "{char_lit}[`]");
+    EXPECT_EQ(scanners[2].definitions.at("esc"), R"([\\])");
+}
+
 TEST(Read_re2c, Refusals_name_the_line)
 {
     const auto line_of{[](const std::string_view source) {
@@ -311,7 +358,12 @@ TEST(Read_re2c, Refusals_name_the_line)
     EXPECT_EQ(line_of("/*!re2c\n [a-z] \\ [a-z] { return X; }\n*/"), 2);
     EXPECT_EQ(line_of("/*!re2c\n [a-z] \\ \"ab\" { return X; }\n*/"), 2);
     EXPECT_EQ(line_of("/*!re2c\n \\ [a-z] { return X; }\n*/"), 2);
+    EXPECT_EQ(line_of("/*!re2c\n !use:missing;\n [a-z] { return X; }\n*/"), 2);
+    EXPECT_EQ(line_of("/*!re2c\n !include \"other.re\";\n*/"), 2);
     EXPECT_EQ(line_of("/*!re2c\n \"\\u00e9\" { return X; }\n*/"), 2);
+    EXPECT_EQ(line_of("/*!re2c\n [\\u00e9] { return X; }\n*/"), 2);
+    EXPECT_EQ(line_of("/*!re2c\n \"\\\\u\" [0-9a-fA-F]{4} { return X; }\n*/"), -1);
+    EXPECT_EQ(line_of("/*!re2c\n [\\\\u] { return X; }\n*/"), -1);
     EXPECT_EQ(line_of("/*!re2c\n '\\X00e9' { return X; }\n*/"), 2);
     EXPECT_EQ(line_of("/*!re2c\n { return X; }\n*/"), 2);
     EXPECT_EQ(line_of("/*!re2c\n [a-z]+\n*/"), 3);
