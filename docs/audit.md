@@ -156,15 +156,17 @@ the line that holds it, rather than read it as something else:
   balance, `<<EOF>>` rules (not tokens), `%option case-insensitive`, every letter of every parsed pattern folded to
   either case, and `(?i:...)` groups. Refused: `^` and `$` anchors and `/` trailing context, which condition a
   match on its context and are no token language, and the `s` and `x` group flags.
-- re2c: `/*!re2c`, `/*!rules:re2c` and `/*!local:re2c` blocks, closed as re2c closes them (a star-slash inside a
-  literal, a class, an action or a comment is content), `re2c:` configurations recorded as options (a quoted value
-  may hold a `;`) and the case and flex-syntax flags among them honoured, `name = regex;` and flex-style
-  definitions, conditions and `<*>`, `=>` and `:=>` transitions, `:=` actions, the default, end and setup rules (not
-  tokens). The dialect is rewritten for the pattern parser and the rewriting is kept beside the pattern as written:
-  bare names become `{name}`, `'abc'` becomes `[aA][bB][cC]`, `[^]` is spelled out, and a class difference `A \ B`,
-  its operands brackets, one-byte literals, alternations of those or names defined as those, becomes the bracket
-  of the bytes left. Refused: the Unicode escapes `\u`, `\U` and `\X`, which need an encoding the byte reading
-  has not got.
+- re2c: `/*!re2c`, `/*!local:re2c`, `/*!rules:re2c` and `/*!use:re2c` blocks, named or not, closed as re2c closes
+  them (a star-slash inside a literal, a class, an action or a comment is content); a rules block is a library the
+  `!use:name;` directive and a use block merge, definitions, configurations and rules, and is no scanner itself;
+  `re2c:` configurations recorded as options (a quoted value may hold a `;`) and the case and flex-syntax flags
+  among them honoured, `name = regex;` and flex-style definitions, conditions and `<*>`, `=>` and `:=>` transitions,
+  `:=` actions, tags `@name` and `#name` (dropped, they match nothing), the default, end, setup and empty `""` rules
+  (not tokens). The dialect is rewritten for the pattern parser and the rewriting is kept beside the pattern as
+  written: bare names become `{name}`, `'abc'` becomes `[aA][bB][cC]`, `[^]` is spelled out, and a class difference
+  `A \ B`, its operands brackets, one-byte literals, alternations of those or names defined as those, becomes the
+  bracket of the bytes left. Refused: `!include`, whose file is not there to read, and the Unicode escapes `\u`,
+  `\U` and `\X`, which need an encoding the byte reading has not got.
 - flex and re2c: whether an action returns a token is read from the action's text, a bare `return` or a form named
   with `--returns`, and nothing else in the action is interpreted.
 - ANTLR 4: `lexer grammar` and combined `grammar` files, modes as the start conditions, `fragment` rules as

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -64,6 +65,30 @@ namespace
 }
 
 /**
+ * @brief The blocks read so far by name, a `rules:re2c:name` block or any other block opened with a name, which a
+ *        later `!use:name;` merges into the block using it: its definitions, its configurations and its rules.
+ */
+using Library_t = std::map<std::string, Lexer_spec, std::less<>>;
+
+/**
+ * @brief Merges a used block into the block using it: definitions the user has not got, and every configuration and
+ *        rule, the rules in the order the used block gave them.
+ * @param used The block named by the directive.
+ * @param spec The specification being filled.
+ */
+void merge(const Lexer_spec& used, Lexer_spec& spec)
+{
+    for (const auto& [name, body] : used.definitions)
+    {
+        spec.definitions.emplace(name, body);
+    }
+
+    spec.options.insert(spec.options.end(), used.options.begin(), used.options.end());
+
+    spec.rules.insert(spec.rules.end(), used.rules.begin(), used.rules.end());
+}
+
+/**
  * @brief A cursor over one re2c block, from just past its opener to the comment close that ends it.
  *
  * The block is read item by item: a configuration, a definition or a rule, each ending where re2c's own grammar ends
@@ -88,11 +113,12 @@ public:
     /**
      * @brief Reads every item of the block into the specification, through the block's close.
      * @param spec The specification being filled.
+     * @param library The named blocks read so far, which a `!use:name;` item merges into the specification.
      * @param returning The forms besides `return` an action returns a token through.
      * @return The offset just past the close.
-     * @throws Spec_error If an item is malformed or left open, or the block never closes.
+     * @throws Spec_error If an item is malformed or left open, a used block is unknown, or the block never closes.
      */
-    [[nodiscard]] std::size_t read(Lexer_spec& spec, const Returning_t& returning);
+    [[nodiscard]] std::size_t read(Lexer_spec& spec, const Library_t& library, const Returning_t& returning);
 
     /**
      * @brief The flags in force when the block closed, for the next block: a configuration or the evidence of the
@@ -167,7 +193,7 @@ Block::Block(const std::string_view source, const std::size_t begin, const Re2c_
     : Cursor{source, begin, source.size()}, flags_{flags}
 {}
 
-std::size_t Block::read(Lexer_spec& spec, const Returning_t& returning)
+std::size_t Block::read(Lexer_spec& spec, const Library_t& library, const Returning_t& returning)
 {
     for (skip_blanks(); !at("*/"); skip_blanks())
     {
@@ -181,6 +207,38 @@ std::size_t Block::read(Lexer_spec& spec, const Returning_t& returning)
             configuration(spec);
 
             continue;
+        }
+
+        if (at("!use:"))
+        {
+            at_ += 5;
+
+            std::string name;
+
+            while (peek() && is_name_byte(*peek()))
+            {
+                name.push_back(next("a block name"));
+            }
+
+            skip_blanks();
+
+            expect(';', "';' to end the use directive");
+
+            const auto found{library.find(name)};
+
+            if (found == library.end())
+            {
+                fail("the used block '" + name + "' is not above this one");
+            }
+
+            merge(found->second, spec);
+
+            continue;
+        }
+
+        if (at("!include"))
+        {
+            fail("the block includes a file, which is not here to read");
         }
 
         const auto line{this->line()};
@@ -274,8 +332,13 @@ std::size_t Block::read(Lexer_spec& spec, const Returning_t& returning)
 
         auto code{action()};
 
-        // The default rule, the end rule and setup rules, which have no regex at all, are not tokens.
-        if (!named || pattern == "*" || pattern == "$")
+        // The default rule, the end rule and setup rules, which have no regex at all, are not tokens, and neither is
+        // the empty rule `""`, with or without trailing context, which consumes nothing where nothing else matches.
+        const auto empty{
+                (pattern.starts_with("\"\"") || pattern.starts_with("''")) &&
+                (pattern.size() == 2 || pattern.find_first_not_of(' ', 2) == pattern.find('/', 2))};
+
+        if (!named || pattern == "*" || pattern == "$" || empty)
         {
             continue;
         }
@@ -559,12 +622,22 @@ std::pair<std::string, std::string> Block::regex_text(const regex::Definitions_t
                 }
             }
 
-            if (copied.find(R"(\u)") != std::string::npos || copied.find(R"(\U)") != std::string::npos ||
-                copied.find(R"(\X)") != std::string::npos)
+            // An escape's first byte is the backslash, so `\\u` is a backslash and a letter, not a code point.
+            for (std::size_t index{0}; index + 1 < copied.size(); ++index)
             {
-                at_ = opened;
+                if (copied[index] != '\\')
+                {
+                    continue;
+                }
 
-                fail("a Unicode escape needs an encoding the byte reading has not got");
+                if (copied[index + 1] == 'u' || copied[index + 1] == 'U' || copied[index + 1] == 'X')
+                {
+                    at_ = opened;
+
+                    fail("a Unicode escape needs an encoding the byte reading has not got");
+                }
+
+                ++index;
             }
 
             if (copied == "[]")
@@ -621,6 +694,21 @@ std::pair<std::string, std::string> Block::regex_text(const regex::Definitions_t
             expression += flags_.flex_syntax ? name : '{' + name + '}';
 
             atom_done(begin);
+
+            continue;
+        }
+
+        // A tag, `@name` or `#name`, marks a position and matches nothing; kept as written and dropped from the
+        // expression.
+        if ((byte == '@' || byte == '#') && at_ + 1 < end_ && is_name_byte(text_[at_ + 1]))
+        {
+            const auto begin{at_};
+
+            for (++at_; peek() && is_name_byte(*peek()); ++at_)
+            {
+            }
+
+            pattern += text_.substr(begin, at_ - begin);
 
             continue;
         }
@@ -844,18 +932,26 @@ std::vector<Lexer_spec> read_re2c(const std::string_view source, Re2c_flags flag
     // What one block leaves for the next: the definitions and the configurations, never the rules.
     Lexer_spec carried;
 
+    // The blocks a later one may use by name; the unnamed rules block under the empty name.
+    Library_t library;
+
     for (auto at{source.find("/*!")}; at != std::string_view::npos; at = source.find("/*!", at))
     {
         const auto rest{source.substr(at + 3)};
 
-        // A local block reads the definitions and configurations so far and passes none of its own on.
+        // A local block reads the definitions and configurations so far and passes none of its own on; a rules
+        // block is a library for the blocks that use it and no scanner itself; a use block opens by using one.
         const auto local{rest.starts_with("local:re2c")};
 
+        const auto rules{rest.starts_with("rules:re2c")};
+
+        const auto use{rest.starts_with("use:re2c")};
+
         const auto opener{
-                rest.starts_with("re2c")       ? std::size_t{4} :
-                rest.starts_with("rules:re2c") ? std::size_t{10} :
-                local                          ? std::size_t{10} :
-                                                 0};
+                rest.starts_with("re2c") ? std::size_t{4} :
+                rules || local           ? std::size_t{10} :
+                use                      ? std::size_t{8} :
+                                           0};
 
         const auto line{1 + static_cast<std::size_t>(std::ranges::count(source.substr(0, at), '\n'))};
 
@@ -874,15 +970,45 @@ std::vector<Lexer_spec> read_re2c(const std::string_view source, Re2c_flags flag
             continue;
         }
 
+        // The block's name, `rules:re2c:name`, when it has one.
+        std::string name;
+
+        auto begin{at + 3 + opener};
+
+        if (source.substr(begin).starts_with(':'))
+        {
+            for (++begin; begin < source.size() && is_name_byte(source[begin]); ++begin)
+            {
+                name.push_back(source[begin]);
+            }
+        }
+
         Lexer_spec spec{carried};
 
         spec.line = line;
 
-        Block block{source, at + 3 + opener, flags};
+        if (use)
+        {
+            const auto found{library.find(name)};
 
-        at = block.read(spec, returning);
+            if (found == library.end())
+            {
+                throw Spec_error{"the used block '" + name + "' is not above this one", line};
+            }
 
-        if (!local)
+            merge(found->second, spec);
+        }
+
+        Block block{source, begin, flags};
+
+        at = block.read(spec, library, returning);
+
+        if (rules || !name.empty())
+        {
+            library.insert_or_assign(name, spec);
+        }
+
+        if (!local && !rules)
         {
             flags = block.flags();
 
@@ -891,7 +1017,7 @@ std::vector<Lexer_spec> read_re2c(const std::string_view source, Re2c_flags flag
             carried.options = spec.options;
         }
 
-        if (spec.rules.empty())
+        if (spec.rules.empty() || rules)
         {
             continue;
         }
