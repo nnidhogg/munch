@@ -277,7 +277,7 @@ private:
 
         std::size_t token{0};
 
-        Packed_action action{0};
+        Packed_action_t action{0};
     };
 
     /**

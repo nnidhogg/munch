@@ -60,24 +60,24 @@ struct Mode_action
  * accepting-state payload while the per-token driver looks up the stored ones, which are the non-stay actions, by
  * token ID. An absent lookup denotes a stay, the same stay the zero payload denotes on the other driver. One word is
  * what that channel carries, and making stay zero lets the common case, a token that leaves the mode alone, be a test
- * against zero. Packed_action, pack() and unpack() serve the two drivers and are not part of the stable surface.
+ * against zero. Packed_action_t, pack() and unpack() serve the two drivers and are not part of the stable surface.
  */
-using Packed_action = std::uint64_t;
+using Packed_action_t = std::uint64_t;
 
 /**
  * @brief Packs an action, mapping every stay to zero whatever target it names.
  */
-[[nodiscard]] constexpr Packed_action pack(const Mode_action& action) noexcept
+[[nodiscard]] constexpr Packed_action_t pack(const Mode_action& action) noexcept
 {
     return action.kind == Mode_action_kind::stay ?
                    0 :
-                   static_cast<Packed_action>(action.kind) | static_cast<Packed_action>(action.target) << 2U;
+                   static_cast<Packed_action_t>(action.kind) | static_cast<Packed_action_t>(action.target) << 2U;
 }
 
 /**
  * @brief Unpacks an action, the inverse of pack(); zero denotes a stay, which is never stored and never unpacked.
  */
-[[nodiscard]] constexpr Mode_action unpack(const Packed_action packed) noexcept
+[[nodiscard]] constexpr Mode_action unpack(const Packed_action_t packed) noexcept
 {
     return {.kind = static_cast<Mode_action_kind>(packed & 3U), .target = static_cast<std::size_t>(packed >> 2U)};
 }
