@@ -177,6 +177,34 @@ TEST(Read_flex, Start_condition_scopes_and_code_in_actions_read_as_flex_reads_th
     EXPECT_EQ(active_rules(file, "xc"), (std::vector<std::size_t>{1, 2}));
 }
 
+TEST(Read_flex, A_start_condition_prefix_alone_on_its_line_opens_the_next)
+{
+    // Bison's scanners put the scope's brace on the line after the prefix, and flex, whose newline there yields no
+    // token, reads a rule after such a prefix the same way.
+    constexpr std::string_view source{R"(%x a b
+%%
+<INITIAL,a,b>
+{
+  ","    { return COMMA; }
+}
+<b>
+
+  "x"    return X;
+%%
+)"};
+
+    const auto file{read_flex(source).front()};
+
+    ASSERT_EQ(file.rules.size(), 2u);
+
+    EXPECT_EQ(file.rules[0].conditions, (std::vector<std::string>{"INITIAL", "a", "b"}));
+    EXPECT_EQ(file.rules[0].pattern, R"(",")");
+    EXPECT_EQ(file.rules[0].line, 5u);
+    EXPECT_EQ(file.rules[1].conditions, (std::vector<std::string>{"b"}));
+    EXPECT_EQ(file.rules[1].token, std::optional<std::string>{"X"});
+    EXPECT_EQ(file.rules[1].line, 9u);
+}
+
 TEST(Read_flex, Refusals_name_the_line)
 {
     const auto line_of{[](const std::string_view source) {
