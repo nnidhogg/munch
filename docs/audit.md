@@ -150,11 +150,12 @@ Row by row:
 The readers take the file as the generator would and refuse what the byte-level token language cannot express, with
 the line that holds it, rather than read it as something else:
 
-- flex: definitions, `%s` and `%x`, `%option`, `%{ %}` and `%top{ }` blocks, start-condition scopes `<s>{ }` with
-  indented rules, the `{` on the prefix's line or the next as bison's scanners write it, `|` shared actions,
-  actions running to the first line end at which their braces balance, `<<EOF>>` rules (not tokens), and
-  `%option case-insensitive`, every letter of every parsed pattern folded to either case. Refused: `^` and `$`
-  anchors and `/` trailing context, which condition a match on its context and are no token language.
+- flex: definitions, `%s` and `%x`, `%option`, `%{ %}` blocks closed wherever a line holds `%}`, `%top{ }` blocks,
+  start-condition scopes `<s>{ }` with indented rules, the `{` on the prefix's line or the next as bison's scanners
+  write it and a comment after it, `|` shared actions, actions running to the first line end at which their braces
+  balance, `<<EOF>>` rules (not tokens), `%option case-insensitive`, every letter of every parsed pattern folded to
+  either case, and `(?i:...)` groups. Refused: `^` and `$` anchors and `/` trailing context, which condition a
+  match on its context and are no token language, and the `s` and `x` group flags.
 - re2c: `/*!re2c`, `/*!rules:re2c` and `/*!local:re2c` blocks, closed as re2c closes them (a star-slash inside a
   literal, a class, an action or a comment is content), `re2c:` configurations recorded as options (a quoted value
   may hold a `;`) and the case and flex-syntax flags among them honoured, `name = regex;` and flex-style

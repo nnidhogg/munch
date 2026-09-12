@@ -57,11 +57,20 @@ public:
 
     /**
      * @brief Skips lines through the first whose trimmed text is the given one, which a block delimiter is.
-     * @param close The delimiter line, `%}` for a code block.
+     * @param close The delimiter line, `}` for a %top block.
      * @param what What was open, named when the file ends first.
      * @throws Spec_error If the file ends before the delimiter.
      */
     void skip_through(std::string_view close, std::string_view what);
+
+    /**
+     * @brief Moves to the first line holding the given mark anywhere, the line under the cursor included, which is
+     *        how flex closes a `%{` block: at the line that holds `%}`, wherever on it.
+     * @param mark The mark, `%}`.
+     * @param what What was open, named when the file ends first.
+     * @throws Spec_error If the file ends before the mark.
+     */
+    void skip_to(std::string_view mark, std::string_view what);
 
 private:
     /**
@@ -241,9 +250,9 @@ void read_definitions(Lines& lines, Lexer_spec& file)
             return;
         }
 
-        if (text == "%{")
+        if (text.starts_with("%{"))
         {
-            lines.skip_through("%}", "a %{ code block");
+            lines.skip_to("%}", "a %{ code block");
 
             continue;
         }
@@ -378,8 +387,15 @@ void read_definitions(Lines& lines, Lexer_spec& file)
         throw Spec_error{"a rule at the margin has no pattern", number};
     }
 
-    // `<s>{` alone on the line opens a start-condition scope rather than a rule; the caller reads it as such.
-    if (pattern == "{" && trimmed(line.substr(length)).empty())
+    // `<s>{` alone on the line, or followed by a comment, which flex reads as code to copy out and drop, opens a
+    // start-condition scope rather than a rule; the caller reads it as such.
+    const auto after_brace{trimmed(line.substr(length))};
+
+    const auto commented{
+            after_brace.starts_with("//") ||
+            (after_brace.starts_with("/*") && after_brace.ends_with("*/") && after_brace.size() >= 4)};
+
+    if (pattern == "{" && (after_brace.empty() || commented))
     {
         lines.advance();
 
@@ -453,9 +469,11 @@ void read_rules(Lines& lines, Lexer_spec& file, const Returning_t& returning)
             return;
         }
 
-        if (text == "%{")
+        if (text.starts_with("%{"))
         {
-            lines.skip_through("%}", "a %{ code block");
+            lines.skip_to("%}", "a %{ code block");
+
+            lines.advance();
 
             continue;
         }
@@ -572,6 +590,22 @@ void Lines::skip_through(const std::string_view close, const std::string_view wh
     for (advance(); more(); advance())
     {
         if (trimmed(current()) == close)
+        {
+            return;
+        }
+    }
+
+    throw Spec_error{std::string{what} + " is never closed", opened};
+}
+
+void Lines::skip_to(const std::string_view mark, const std::string_view what)
+{
+    const auto opened{number()};
+
+    // The opening line counts, so that `%{ code %}` on one line is that line.
+    for (; more(); advance())
+    {
+        if (current().contains(mark))
         {
             return;
         }
