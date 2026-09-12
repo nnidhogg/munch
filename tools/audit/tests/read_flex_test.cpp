@@ -29,7 +29,7 @@ ID       [a-zA-Z_][a-zA-Z0-9_]*
 {ID}            { return IDENT; }
 {DIGIT}+        { yylval.number = atoi(yytext);
                   return NUMBER; }
-"=="            |
+"=="            | /* shares COMPARE, the comment notwithstanding */
 "!="            { return COMPARE; }
 [-+*/=<>]       return OPERATOR;
 "/*"            BEGIN(COMMENT);
@@ -76,7 +76,7 @@ TEST(Read_flex, Reads_definitions_options_conditions_and_rules_in_order)
 
     // A '|' action takes the next rule's token.
     EXPECT_EQ(file.rules[2].pattern, R"("==")");
-    EXPECT_EQ(file.rules[2].action, "|");
+    EXPECT_EQ(file.rules[2].action, "| /* shares COMPARE, the comment notwithstanding */");
     EXPECT_EQ(file.rules[2].token, std::optional<std::string>{"COMPARE"});
     EXPECT_EQ(file.rules[3].token, std::optional<std::string>{"COMPARE"});
 
@@ -179,6 +179,37 @@ TEST(Read_flex, Start_condition_scopes_and_code_in_actions_read_as_flex_reads_th
     EXPECT_EQ(file.rules[3].action.substr(0, 22), "if (keyword(yytext)) {");
 
     EXPECT_EQ(active_rules(file, "xc"), (std::vector<std::size_t>{1, 2}));
+}
+
+TEST(Read_flex, Scopes_nest_and_a_prefixed_rule_inside_one_is_active_in_both)
+{
+    // flex's own scanner nests scopes and prefixes rules inside them; flex 2.6.4, run on this grammar, fires x in A
+    // and B, y in A, B and C, and z in A alone.
+    constexpr std::string_view source{R"(%x A B C
+%%
+<A>{
+  <B>"x"   return X;
+  <B,C>{
+    "y"    return Y;
+  }
+  "z"      return Z;
+}
+"w"        return W;
+%%
+)"};
+
+    const auto file{read_flex(source).front()};
+
+    ASSERT_EQ(file.rules.size(), 4u);
+
+    EXPECT_EQ(file.rules[0].conditions, (std::vector<std::string>{"B", "A"}));
+    EXPECT_EQ(file.rules[1].conditions, (std::vector<std::string>{"A", "B", "C"}));
+    EXPECT_EQ(file.rules[2].conditions, (std::vector<std::string>{"A"}));
+    EXPECT_TRUE(file.rules[3].conditions.empty());
+    EXPECT_EQ(active_rules(file, "A"), (std::vector<std::size_t>{0, 1, 2}));
+    EXPECT_EQ(active_rules(file, "B"), (std::vector<std::size_t>{0, 1}));
+    EXPECT_EQ(active_rules(file, "C"), (std::vector<std::size_t>{1}));
+    EXPECT_EQ(active_rules(file, "INITIAL"), (std::vector<std::size_t>{3}));
 }
 
 TEST(Read_flex, A_start_condition_prefix_alone_on_its_line_opens_the_next)

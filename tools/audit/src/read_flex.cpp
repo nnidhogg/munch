@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -455,8 +456,11 @@ void read_rules(Lines& lines, Lexer_spec& file, const Returning_t& returning)
 {
     // A start-condition scope, `<s>{` on a line of its own through a line opening with `}`, prefixes every rule
     // inside it, and flex lets those rules be indented, so inside a scope an indented line is a rule rather than
-    // code.
-    std::vector<std::string> scope;
+    // code. Scopes nest, and a rule inside one with a prefix of its own is active in the scope's conditions and its
+    // own alike: flex keeps every open scope's names on one stack and a rule takes the whole stack.
+    std::vector<std::string> scoped;
+
+    std::vector<std::size_t> opened;
 
     while (lines.more())
     {
@@ -478,9 +482,11 @@ void read_rules(Lines& lines, Lexer_spec& file, const Returning_t& returning)
             continue;
         }
 
-        if (!scope.empty() && text.starts_with('}'))
+        if (!opened.empty() && text.starts_with('}'))
         {
-            scope.clear();
+            scoped.resize(opened.back());
+
+            opened.pop_back();
 
             lines.advance();
 
@@ -500,27 +506,32 @@ void read_rules(Lines& lines, Lexer_spec& file, const Returning_t& returning)
             continue;
         }
 
-        if (scope.empty() ? is_code(line) : text.empty())
+        if (opened.empty() ? is_code(line) : text.empty())
         {
             lines.advance();
 
             continue;
         }
 
-        auto rule{read_rule(lines, scope.empty() ? line : text, returning)};
+        auto rule{read_rule(lines, opened.empty() ? line : text, returning)};
 
         if (rule && rule->pattern == "{" && rule->action.empty())
         {
-            scope = std::move(rule->conditions);
+            opened.push_back(scoped.size());
+
+            std::ranges::move(rule->conditions, std::back_inserter(scoped));
 
             continue;
         }
 
         if (rule)
         {
-            if (!scope.empty())
+            for (const auto& name : scoped)
             {
-                rule->conditions = scope;
+                if (!std::ranges::contains(rule->conditions, name))
+                {
+                    rule->conditions.push_back(name);
+                }
             }
 
             file.rules.push_back(std::move(*rule));
@@ -529,7 +540,8 @@ void read_rules(Lines& lines, Lexer_spec& file, const Returning_t& returning)
 }
 
 /**
- * @brief Gives every `|` action the token of the first rule below it that has an action of its own.
+ * @brief Gives every `|` action the token of the first rule below it that has an action of its own; flex takes a
+ *        `|` and whatever follows it on the line, a comment usually, as that continuation.
  * @param rules The rules, in file order.
  */
 void share_actions(std::vector<Lexer_spec::Rule>& rules)
@@ -538,7 +550,7 @@ void share_actions(std::vector<Lexer_spec::Rule>& rules)
     {
         --at;
 
-        if (rules[at - 1].action == "|")
+        if (rules[at - 1].action.starts_with('|'))
         {
             rules[at - 1].token = rules[at].token;
         }
