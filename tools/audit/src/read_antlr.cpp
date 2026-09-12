@@ -459,6 +459,35 @@ void double_case(Ascii_t& ascii)
 }
 
 /**
+ * @brief The characters of a range, `'a'..'z'`, as an alphabet.
+ * @param low The first character.
+ * @param high The last, no lower than the first.
+ * @param case_insensitive Whether the letters among them double their case.
+ * @return The alphabet.
+ */
+[[nodiscard]] Alphabet spanning(const char32_t low, const char32_t high, const bool case_insensitive)
+{
+    Alphabet alphabet;
+
+    for (auto value{low}; value <= std::min<char32_t>(high, 0x7F); ++value)
+    {
+        alphabet.ascii.set(value);
+    }
+
+    if (high >= 0x80)
+    {
+        alphabet.beyond.push_back({.first = std::max<char32_t>(low, 0x80), .last = high});
+    }
+
+    if (case_insensitive)
+    {
+        double_case(alphabet.ascii);
+    }
+
+    return alphabet;
+}
+
+/**
  * @brief Whether an expression is one unit a suffix applies to as it stands: one bracket, one group, one reference
  *        or a quoted literal of one byte, so that it needs no grouping of its own.
  * @param expression The expression.
@@ -1349,8 +1378,6 @@ Element Grammar::element(const bool case_insensitive)
 
             skip_blanks();
 
-            skip_blanks();
-
             expect('\'', "a quote to open the range's end");
 
             const auto low{decoded(bytes)};
@@ -1364,22 +1391,7 @@ Element Grammar::element(const bool case_insensitive)
                 fail("a character range takes one character at each end, the end no lower than the start");
             }
 
-            Alphabet alphabet;
-
-            for (auto value{*low}; value <= std::min<char32_t>(*high, 0x7F); ++value)
-            {
-                alphabet.ascii.set(value);
-            }
-
-            if (*high >= 0x80)
-            {
-                alphabet.beyond.push_back({.first = std::max<char32_t>(*low, 0x80), .last = *high});
-            }
-
-            if (case_insensitive)
-            {
-                double_case(alphabet.ascii);
-            }
+            auto alphabet{spanning(*low, *high, case_insensitive)};
 
             element.expression = step(alphabet);
 
@@ -1669,23 +1681,30 @@ Alphabet Grammar::negatable(const bool case_insensitive)
             fail("'~' before a literal takes one character");
         }
 
-        Alphabet alphabet;
+        skip_blanks();
 
-        if (*scalar < 0x80)
+        // A range inside the negation, ~('0'..'9' | '^'), as Clojure's grammar writes it.
+        if (!at(".."))
         {
-            alphabet.ascii.set(*scalar);
-
-            if (case_insensitive)
-            {
-                double_case(alphabet.ascii);
-            }
-        }
-        else
-        {
-            alphabet.beyond.push_back({.first = *scalar, .last = *scalar});
+            return spanning(*scalar, *scalar, case_insensitive);
         }
 
-        return alphabet;
+        at_ += 2;
+
+        skip_blanks();
+
+        expect('\'', "a quote to open the range's end");
+
+        const auto high{decoded(literal())};
+
+        if (!high || *high < *scalar)
+        {
+            at_ = opened;
+
+            fail("a character range takes one character at each end, the end no lower than the start");
+        }
+
+        return spanning(*scalar, *high, case_insensitive);
     }
 
     if (peek() != '(')
