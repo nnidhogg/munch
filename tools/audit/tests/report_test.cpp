@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "munch/regex/parse.hpp"
 #include "munch/tools/audit/price.hpp"
 #include "munch/tools/audit/read_flex.hpp"
 #include "munch/tools/audit/token_set.hpp"
@@ -209,6 +210,79 @@ TEST(Report, Pricing_follows_the_design_rows_of_the_study)
     EXPECT_FALSE(equals.exact_before);
     EXPECT_EQ(equals.immovable, (std::vector<std::size_t>{0}));
     EXPECT_TRUE(equals.steps.empty());
+}
+
+TEST(Report, Shapes_name_the_edit_an_author_would_make_and_each_is_tried_on_its_own)
+{
+    // The whitespace run is a run; the block comment is delimited; the line comment ending in its newline is
+    // terminated (and delimited too, terminated winning the name); the two-byte spelling is fixed.
+    const auto blocks{audited("c-like-block-comments.l").file};
+
+    const auto rule{[&blocks](const std::string_view pattern) {
+        return std::ranges::find(blocks.rules, pattern, &Lexer_spec::Rule::pattern)->expression;
+    }};
+
+    EXPECT_EQ(shape_of(munch::regex::parse(rule(R"([ \t\n]+)")), '\n'), Shape::run);
+    EXPECT_EQ(shape_of(munch::regex::parse(rule(R"("/*"([^*]|\*+[^*/])*\*+"/")")), '\n'), Shape::delimited);
+    EXPECT_EQ(shape_of(munch::regex::parse(R"("//"[^\n]*\n)"), '\n'), Shape::terminated);
+    EXPECT_EQ(shape_of(munch::regex::parse(R"("==")"), '='), Shape::fixed);
+    EXPECT_EQ(shape_of(munch::regex::parse(R"([a-z]+|"\n")"), '\n'), Shape::other);
+
+    // A string and a line comment ending in its newline both consume the newline mid-token; the whitespace run, which
+    // excludes it, does not. Each shape's edit alone leaves the other consumer, both together buy the byte.
+    constexpr std::string_view with_comment{R"(%%
+[a-z]+                 return WORD;
+\"[^"]*\"              return STRING;
+"//"[^\n]*\n           ;
+[ \t]+                 ;
+\n                     return NEWLINE;
+)"};
+
+    const auto strings{read_flex(with_comment).front()};
+
+    const auto priced{price(token_set(strings, "INITIAL"), '\n')};
+
+    EXPECT_FALSE(priced.exact_before);
+    ASSERT_EQ(priced.steps.size(), 1u);
+    EXPECT_EQ(priced.steps[0].shape, Shape::delimited);
+
+    // The narrowing cannot take the newline out of the comment's fixed terminator, so it is immovable there; the
+    // choices can: the string's delimited edit and the comment's terminated and delimited edits, each alone.
+    EXPECT_EQ(priced.immovable, (std::vector<std::size_t>{2}));
+    ASSERT_EQ(priced.choices.size(), 3u);
+    EXPECT_EQ(priced.choices[0].token, 1u);
+    EXPECT_EQ(priced.choices[0].shape, Shape::delimited);
+    EXPECT_FALSE(priced.choices[0].after.exact);
+    EXPECT_EQ(priced.choices[1].token, 2u);
+    EXPECT_EQ(priced.choices[1].shape, Shape::terminated);
+    EXPECT_FALSE(priced.choices[1].after.exact);
+    EXPECT_EQ(priced.choices[2].token, 2u);
+    EXPECT_EQ(priced.choices[2].shape, Shape::delimited);
+
+    // Taken together, the string cut to its quote and the comment stopping short of its newline, the byte certifies.
+    ASSERT_TRUE(priced.together.has_value());
+    EXPECT_TRUE(priced.together->exact);
+
+    // With the comment already stopping short of the newline, the string's edit alone buys the byte.
+    constexpr std::string_view without_comment{R"(%%
+[a-z]+                 return WORD;
+\"[^"]*\"              return STRING;
+[ \t]+                 ;
+\n                     return NEWLINE;
+)"};
+
+    const auto alone{read_flex(without_comment).front()};
+
+    const auto bought{price(token_set(alone, "INITIAL"), '\n')};
+
+    ASSERT_EQ(bought.choices.size(), 1u);
+    EXPECT_EQ(bought.choices[0].shape, Shape::delimited);
+    EXPECT_TRUE(bought.choices[0].after.exact);
+    EXPECT_FALSE(bought.choices[0].after.gained.empty());
+
+    const auto text{render(audit(token_set(alone, "INITIAL")), names(alone))};
+
+    EXPECT_NE(text.find("delimited: scan the body in a start condition of its own"), std::string::npos);
 }
 
 TEST(Report, The_report_over_patterns_prices_the_newline_and_the_near_misses)
