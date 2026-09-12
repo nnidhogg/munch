@@ -198,11 +198,12 @@ and `.rs` file to its `.l` twin: the readers must build token sets that cut no i
 
 ## The JSON Form
 
-With `--json` the run is one document: an array `files`, each with its `path`, `kind`, a `refused` message or null,
-and its `scanners`, each with the `line` it opens on and its `conditions`, each with `name`, `rules`, `refused` or
-null, and the `report`. A report carries the same figures as the text under the row names above, `verdict`, `exact`
-and `modulo` as arrays of byte values, `discarded`, `windows` with their origins, `window_count`, `mandatory_core`,
-`byte_span` and `window_span` as numbers or the string `unbounded` (the window span also `undecided` when the
-windows were too many, and null when there were none), `lag`, `rescue_free`, `blame` and `prices`, tokens given as
-their id and name. Byte strings are JSON strings holding each byte as the code point of its value, so a reader
-recovers the bytes exactly.
+With `--json` the run is one document: an array `files`, each with its `path`, `kind`, a `refused` message or null, and
+its `scanners`, each with the `line` it opens on, its `definitions` and its `rules` as the reader read them (each rule's
+`line`, `pattern` as written, `conditions`, `action` and `token` or null, the account to hold against the generator's
+own), and its `conditions`, each with `name`, `rules`, `refused` or null, and the `report`. A report carries the same
+figures as the text under the row names above, `verdict`, `exact` and `modulo` as arrays of byte values, `discarded`,
+`windows` with their origins, `window_count`, `mandatory_core`, `byte_span` and `window_span` as numbers or the string
+`unbounded` (the window span also `undecided` when the windows were too many, and null when there were none), `lag`,
+`rescue_free`, `blame` and `prices`, tokens given as their id and name. Byte strings are JSON strings holding each byte
+as the code point of its value, so a reader recovers the bytes exactly.

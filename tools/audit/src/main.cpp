@@ -495,6 +495,46 @@ void write_text(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 }
 
 /**
+ * @brief Writes a scanner's definitions and rules as the JSON of what the reader read: the named patterns, then
+ *        each rule's line, pattern as written, start conditions, action and token, so that a reading can be held to
+ *        the generator's own account of the file.
+ * @param out The stream.
+ * @param spec The scanner.
+ */
+void write_rules(std::ostream& out, const Lexer_spec& spec)
+{
+    out << "\"definitions\": {";
+
+    for (auto first{true}; const auto& [name, body] : spec.definitions)
+    {
+        out << (first ? "" : ", ") << json_string(name) << ": " << json_string(body);
+
+        first = false;
+    }
+
+    out << "}, \"rules\": [";
+
+    for (std::size_t index{0}; index < spec.rules.size(); ++index)
+    {
+        const auto& [pattern, expression, conditions, action, token, priority, line]{spec.rules[index]};
+
+        std::string named;
+
+        for (const auto& condition : conditions)
+        {
+            named += (named.empty() ? "" : ", ") + json_string(condition);
+        }
+
+        out << (index == 0 ? "\n        " : ",\n        ")
+            << std::format(
+                       R"({{"line": {}, "pattern": {}, "conditions": [{}], "action": {}, "token": {}}})", line,
+                       json_string(pattern), named, json_string(action), token ? json_string(*token) : "null");
+    }
+
+    out << (spec.rules.empty() ? "]" : "\n      ]");
+}
+
+/**
  * @brief Writes one condition's outcome as the JSON object of a scanner's condition list.
  * @param out The stream.
  * @param spec The scanner.
@@ -603,7 +643,11 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 
             if (options.json)
             {
-                out << std::format("      {{\"line\": {}, \"conditions\": [\n", spec.line);
+                out << std::format("      {{\"line\": {}, ", spec.line);
+
+                write_rules(out, spec);
+
+                out << ", \"conditions\": [\n";
             }
 
             for (std::size_t slot{0}; slot < conditions.size(); ++slot)
