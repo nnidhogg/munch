@@ -23,6 +23,7 @@ constexpr std::string_view idioms{R"(grammar Idioms;
 options { language = Cpp; }
 
 @lexer::members {
+    /** The parser's own count, as Spark's grammar comments it: the apostrophe is prose. */
     int nesting = 0; // braces { inside } code
 }
 
@@ -66,13 +67,13 @@ TEST(Read_antlr, Reads_a_combined_grammar_with_its_idioms)
     EXPECT_EQ(spec.rules[0].pattern, "'then'");
     EXPECT_EQ(spec.rules[0].expression, R"("then")");
     EXPECT_EQ(spec.rules[0].token, std::optional<std::string>{"'then'"});
-    EXPECT_EQ(spec.rules[0].line, 11u);
+    EXPECT_EQ(spec.rules[0].line, 12u);
     EXPECT_EQ(spec.rules[1].pattern, "'='");
     EXPECT_EQ(spec.rules[2].pattern, "';'");
 
     EXPECT_EQ(spec.rules[3].token, std::optional<std::string>{"IF"});
     EXPECT_EQ(spec.rules[3].expression, R"("if")");
-    EXPECT_EQ(spec.rules[3].line, 14u);
+    EXPECT_EQ(spec.rules[3].line, 15u);
 
     EXPECT_EQ(spec.rules[4].pattern, "LETTER (LETTER | DIGIT)*");
     EXPECT_EQ(spec.rules[4].expression, "{LETTER}({LETTER}|{DIGIT})*");
