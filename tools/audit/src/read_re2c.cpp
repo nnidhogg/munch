@@ -6,8 +6,12 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "munch/regex/parse.hpp"
+#include "munch/regex/regex.hpp"
+#include "munch/regex/set.hpp"
 #include "munch/tools/audit/cursor.hpp"
 #include "munch/tools/audit/expression.hpp"
 
@@ -15,6 +19,50 @@ namespace munch::tools::audit
 {
 namespace
 {
+/**
+ * @brief The bytes a regex names when it is a class: a bracket, a one-byte literal, or an alternation of classes,
+ *        which is what re2c lets the operands of its class difference be.
+ * @param regex The regex.
+ * @return The bytes, or std::nullopt when the regex is no class.
+ */
+[[nodiscard]] std::optional<regex::Set> class_of(const regex::Regex& regex)
+{
+    return std::visit(
+            []<typename Node>(const Node& node) -> std::optional<regex::Set> {
+                if constexpr (std::is_same_v<Node, regex::Any_of>)
+                {
+                    return node.set;
+                }
+                else if constexpr (std::is_same_v<Node, regex::Text>)
+                {
+                    return node.text.size() == 1 ? std::optional{regex::Set{node.text.front()}} : std::nullopt;
+                }
+                else if constexpr (std::is_same_v<Node, regex::Choice>)
+                {
+                    regex::Set all;
+
+                    for (const auto& branch : node.regexes)
+                    {
+                        const auto bytes{class_of(branch)};
+
+                        if (!bytes)
+                        {
+                            return std::nullopt;
+                        }
+
+                        all += *bytes;
+                    }
+
+                    return all;
+                }
+                else
+                {
+                    return std::nullopt;
+                }
+            },
+            regex.node);
+}
+
 /**
  * @brief A cursor over one re2c block, from just past its opener to the comment close that ends it.
  *
@@ -72,11 +120,13 @@ private:
      *
      * The text as written and the text rewritten for the pattern parser are both returned, the rewriting done token
      * by token: bare names become `{name}` unless the flex syntax makes them literals, quoted literals other than an
-     * exact double-quoted one become bracket sequences, blanks are dropped.
+     * exact double-quoted one become bracket sequences, blanks are dropped, and a class difference `A \ B` becomes
+     * the bracket of the bytes left, its operands parsed against the definitions so far.
+     * @param definitions The definitions read so far, which a difference's operand may name.
      * @return The pattern as written and its expression, both empty when an action follows at once.
      * @throws Spec_error If a quote or bracket is left open, or the regex uses a refused construct.
      */
-    [[nodiscard]] std::pair<std::string, std::string> regex_text();
+    [[nodiscard]] std::pair<std::string, std::string> regex_text(const regex::Definitions_t& definitions);
 
     /**
      * @brief Reads an action starting at the cursor: a brace block, or `:=` and the rest of the line, a `=> c` or
@@ -174,7 +224,7 @@ std::size_t Block::read(Lexer_spec& spec, const Returning_t& returning)
 
                 line_bound_ = true;
 
-                auto [body, expression]{regex_text()};
+                auto [body, expression]{regex_text(spec.definitions)};
 
                 line_bound_ = false;
 
@@ -191,14 +241,14 @@ std::size_t Block::read(Lexer_spec& spec, const Returning_t& returning)
             }
         }
 
-        auto [pattern, expression]{regex_text()};
+        auto [pattern, expression]{regex_text(spec.definitions)};
 
         // re2c's own definition: a name, `=`, its body and `;`. The name was read as regex text, one bare name.
         if (peek() == '=' && !at("=>"))
         {
             ++at_;
 
-            auto [body, body_expression]{regex_text()};
+            auto [body, body_expression]{regex_text(spec.definitions)};
 
             if (body.empty())
             {
@@ -252,9 +302,23 @@ Re2c_flags Block::flags() const noexcept
 
 void Block::configuration(Lexer_spec& spec)
 {
-    const auto end{text_.find(';', at_)};
+    // The value may be a quoted string holding a ';' of its own, as a YYFILL definition usually does.
+    auto end{at_};
 
-    if (end == std::string_view::npos)
+    while (end < end_ && text_[end] != ';')
+    {
+        if (text_[end] == '"' || text_[end] == '\'')
+        {
+            for (const auto quote{text_[end++]}; end < end_ && text_[end] != quote; ++end)
+            {
+                end += text_[end] == '\\' ? 1 : 0;
+            }
+        }
+
+        ++end;
+    }
+
+    if (end >= end_)
     {
         fail("a configuration is never closed with ';'");
     }
@@ -327,11 +391,73 @@ std::optional<std::vector<std::string>> Block::conditions()
     return setup ? std::nullopt : std::optional{std::move(names)};
 }
 
-std::pair<std::string, std::string> Block::regex_text()
+std::pair<std::string, std::string> Block::regex_text(const regex::Definitions_t& definitions)
 {
     std::string pattern;
 
     std::string expression;
+
+    // The atoms of the expression at each depth of parentheses, by where each begins, and at each depth the atom a
+    // class difference is waiting to subtract the next one from: re2c's `A \ B` over classes, which the pattern
+    // parser has not got, is resolved to one bracket as soon as B is complete.
+    struct Level
+    {
+        std::size_t opened;
+
+        std::vector<std::size_t> atoms;
+
+        std::optional<std::pair<std::size_t, std::size_t>> difference;
+    };
+
+    std::vector<Level> levels{{.opened = 0, .atoms = {}, .difference = std::nullopt}};
+
+    const auto atom_done{[this, &expression, &levels, &definitions](const std::size_t begin) {
+        auto& [opened, atoms, difference]{levels.back()};
+
+        if (!difference)
+        {
+            atoms.push_back(begin);
+
+            return;
+        }
+
+        const auto [left_begin, left_end]{*difference};
+
+        const auto bytes_of{[this, &definitions](const std::string_view operand) {
+            try
+            {
+                const auto bytes{class_of(regex::parse(operand, definitions))};
+
+                if (!bytes)
+                {
+                    fail("the class difference's operand '" + std::string{operand} + "' is no class");
+                }
+
+                return *bytes;
+            }
+            catch (const regex::Syntax_error& refused)
+            {
+                fail("the class difference's operand '" + std::string{operand} + "' is refused: " + refused.what());
+            }
+        }};
+
+        const auto left{bytes_of(std::string_view{expression}.substr(left_begin, left_end - left_begin))};
+
+        const auto right{bytes_of(std::string_view{expression}.substr(left_end))};
+
+        const auto remaining{left - right};
+
+        if (remaining.symbols().empty())
+        {
+            fail("the class difference leaves no byte");
+        }
+
+        expression.erase(left_begin);
+
+        expression += bracket(remaining);
+
+        difference.reset();
+    }};
 
     for (;;)
     {
@@ -363,11 +489,15 @@ std::pair<std::string, std::string> Block::regex_text()
         {
             const auto length{reference_length()};
 
+            const auto begin{expression.size()};
+
             pattern += text_.substr(at_, length);
 
             expression += text_.substr(at_, length);
 
             at_ += length;
+
+            atom_done(begin);
 
             continue;
         }
@@ -446,8 +576,12 @@ std::pair<std::string, std::string> Block::regex_text()
 
             pattern += copied;
 
+            const auto begin{expression.size()};
+
             // re2c's [^] is any byte; the pattern parser would read the ']' as a member, so it is spelled out.
             expression += copied == "[^]" ? std::string{R"([\x00-\xff])"} : copied;
+
+            atom_done(begin);
 
             continue;
         }
@@ -462,7 +596,11 @@ std::pair<std::string, std::string> Block::regex_text()
 
             pattern += text_.substr(opened, at_ - opened);
 
+            const auto begin{expression.size()};
+
             expression += rewritten;
+
+            atom_done(begin);
 
             continue;
         }
@@ -478,21 +616,54 @@ std::pair<std::string, std::string> Block::regex_text()
 
             pattern += name;
 
+            const auto begin{expression.size()};
+
             expression += flags_.flex_syntax ? name : '{' + name + '}';
+
+            atom_done(begin);
 
             continue;
         }
 
         if (byte == '\\')
         {
-            fail(R"(the class difference '\' is not the pattern parser's)");
+            if (levels.back().atoms.empty())
+            {
+                fail("the class difference has no class before it");
+            }
+
+            levels.back().difference = {levels.back().atoms.back(), expression.size()};
+
+            ++at_;
+
+            pattern.push_back(byte);
+
+            continue;
         }
 
         ++at_;
 
         pattern.push_back(byte);
 
+        if (byte == '(')
+        {
+            levels.push_back({.opened = expression.size(), .atoms = {}, .difference = std::nullopt});
+        }
+
         expression.push_back(byte);
+
+        if (byte == ')' && levels.size() > 1)
+        {
+            const auto begin{levels.back().opened};
+
+            levels.pop_back();
+
+            atom_done(begin);
+        }
+        else if (byte == '.')
+        {
+            atom_done(expression.size() - 1);
+        }
     }
 
     while (!pattern.empty() && pattern.back() == ' ')
@@ -677,9 +848,13 @@ std::vector<Lexer_spec> read_re2c(const std::string_view source, Re2c_flags flag
     {
         const auto rest{source.substr(at + 3)};
 
+        // A local block reads the definitions and configurations so far and passes none of its own on.
+        const auto local{rest.starts_with("local:re2c")};
+
         const auto opener{
                 rest.starts_with("re2c")       ? std::size_t{4} :
                 rest.starts_with("rules:re2c") ? std::size_t{10} :
+                local                          ? std::size_t{10} :
                                                  0};
 
         const auto line{1 + static_cast<std::size_t>(std::ranges::count(source.substr(0, at), '\n'))};
@@ -707,11 +882,14 @@ std::vector<Lexer_spec> read_re2c(const std::string_view source, Re2c_flags flag
 
         at = block.read(spec, returning);
 
-        flags = block.flags();
+        if (!local)
+        {
+            flags = block.flags();
 
-        carried.definitions = spec.definitions;
+            carried.definitions = spec.definitions;
 
-        carried.options = spec.options;
+            carried.options = spec.options;
+        }
 
         if (spec.rules.empty())
         {

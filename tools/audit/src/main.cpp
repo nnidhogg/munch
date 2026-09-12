@@ -301,7 +301,7 @@ struct Outcome
  */
 [[nodiscard]] Kind kind_of(const std::string_view source) noexcept
 {
-    if (source.contains("/*!re2c") || source.contains("/*!rules:re2c"))
+    if (source.contains("/*!re2c") || source.contains("/*!rules:re2c") || source.contains("/*!local:re2c"))
     {
         return Kind::re2c;
     }

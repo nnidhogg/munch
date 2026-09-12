@@ -213,16 +213,28 @@ Token ReadToken() {
     */
 }
 bool ReadIdent() {
-    /*!re2c
+    /*!local:re2c
+        digits = [0-9]+;
         name        { return true; }
+        *           { return false; }
+    */
+}
+bool ReadNumber() {
+    /*!re2c
+        digits      { return true; }
         *           { return false; }
     */
 }
 )"};
 
+    // The local block reads the definitions so far and passes none of its own on, so the last block's `digits` is a
+    // bare name, no definition.
     const auto scanners{read_re2c(source)};
 
-    ASSERT_EQ(scanners.size(), 2u);
+    ASSERT_EQ(scanners.size(), 3u);
+
+    EXPECT_EQ(scanners[2].line, 19u);
+    EXPECT_FALSE(scanners[2].definitions.contains("digits"));
 
     EXPECT_EQ(scanners[0].line, 6u);
     EXPECT_EQ(scanners[0].rules.size(), 2u);
@@ -233,6 +245,7 @@ bool ReadIdent() {
     EXPECT_EQ(scanners[1].rules.size(), 1u);
     EXPECT_EQ(scanners[1].rules[0].expression, "{name}");
     EXPECT_EQ(scanners[1].definitions.at("name"), "[a-z]+");
+    EXPECT_EQ(scanners[1].definitions.at("digits"), "[0-9]+");
 }
 
 TEST(Read_re2c, Case_insensitive_keywords_tokenize_either_way)
@@ -243,6 +256,39 @@ TEST(Read_re2c, Case_insensitive_keywords_tokenize_either_way)
     EXPECT_EQ(conventional.tokenize<std::size_t>(std::string{"WHILE"}).length, 5u);
     EXPECT_EQ(conventional.tokenize<std::size_t>(std::string{"while"}).token, std::optional<std::size_t>{0});
     EXPECT_EQ(conventional.tokenize<std::size_t>(std::string{"whilex"}).token, std::optional<std::size_t>{1});
+}
+
+TEST(Read_re2c, A_class_difference_becomes_the_bracket_of_the_bytes_left)
+{
+    // The forms re2c's own lexer, PHP's and yasm's use: a definition minus a bracket, [^] minus an alternation of
+    // classes and one-byte literals, a parenthesised difference, and a chain; the pattern keeps the operator.
+    constexpr std::string_view source{R"(/*!re2c
+    any = [\000-\377];
+    eol = [\n];
+    naked_char = [^] \ ("\000" | eol | [ \t]);
+    naked = (naked_char \ ['"]) naked_char*;
+    ";" (any \ [\000])*  { return COMMENT; }
+    naked                { return NAKED; }
+    [a-z] \ [aeiou] \ [x-z] { return CONSONANT; }
+    re2c:define:YYFILL = 'if (!fill()) return error("no; input");';
+    [ \t\n]+ { continue; }
+*/
+)"};
+
+    const auto spec{read_re2c(source).front()};
+
+    EXPECT_EQ(spec.definitions.at("naked_char"), R"([\x01-\x08\x0b-\x1f!-\xff])");
+    EXPECT_EQ(spec.definitions.at("naked"), R"(([\x01-\x08\x0b-\x1f!#-&(-\xff]){naked_char}*)");
+
+    ASSERT_EQ(spec.rules.size(), 4u);
+    EXPECT_EQ(spec.rules[0].pattern, R"(";" (any \ [\000])*)");
+    EXPECT_EQ(spec.rules[0].expression, R"(";"([\x01-\xff])*)");
+    EXPECT_EQ(spec.rules[2].pattern, R"([a-z] \ [aeiou] \ [x-z])");
+    EXPECT_EQ(spec.rules[2].expression, "[b-df-hj-np-tvw]");
+
+    // The configuration's value carries a ';' inside its quotes without ending the configuration there.
+    ASSERT_EQ(spec.options.size(), 1u);
+    EXPECT_EQ(spec.rules[3].pattern, R"([ \t\n]+)");
 }
 
 TEST(Read_re2c, Refusals_name_the_line)
@@ -262,7 +308,9 @@ TEST(Read_re2c, Refusals_name_the_line)
 
     EXPECT_EQ(line_of("/*!re2c\n [a-z]+ { return X;\n"), 2);
     EXPECT_EQ(line_of("/*!re2c\n digit = [0-9]\n*/"), 3);
-    EXPECT_EQ(line_of("/*!re2c\n [a-z] \\ [aeiou] { return X; }\n*/"), 2);
+    EXPECT_EQ(line_of("/*!re2c\n [a-z] \\ [a-z] { return X; }\n*/"), 2);
+    EXPECT_EQ(line_of("/*!re2c\n [a-z] \\ \"ab\" { return X; }\n*/"), 2);
+    EXPECT_EQ(line_of("/*!re2c\n \\ [a-z] { return X; }\n*/"), 2);
     EXPECT_EQ(line_of("/*!re2c\n \"\\u00e9\" { return X; }\n*/"), 2);
     EXPECT_EQ(line_of("/*!re2c\n '\\X00e9' { return X; }\n*/"), 2);
     EXPECT_EQ(line_of("/*!re2c\n { return X; }\n*/"), 2);

@@ -18,9 +18,9 @@ property of the token set, not of any corpus, and the report states it as such.
 munch-audit [options] FILE...
 ```
 
-A file that opens a re2c block (`/*!re2c` or `/*!rules:re2c`) is read as re2c, one with a derive naming `Logos` as
-logos, one whose first item is a grammar declaration as ANTLR, any other as flex; `--flex`, `--re2c`, `--antlr` and
-`--logos` force the kind. The options follow the generators' own:
+A file that opens a re2c block (`/*!re2c`, `/*!rules:re2c` or `/*!local:re2c`) is read as re2c, one with a derive
+naming `Logos` as logos, one whose first item is a grammar declaration as ANTLR, any other as flex; `--flex`,
+`--re2c`, `--antlr` and `--logos` force the kind. The options follow the generators' own:
 
 | Option | Meaning |
 |---|---|
@@ -155,13 +155,15 @@ the line that holds it, rather than read it as something else:
   actions running to the first line end at which their braces balance, `<<EOF>>` rules (not tokens), and
   `%option case-insensitive`, every letter of every parsed pattern folded to either case. Refused: `^` and `$`
   anchors and `/` trailing context, which condition a match on its context and are no token language.
-- re2c: `/*!re2c` and `/*!rules:re2c` blocks, closed as re2c closes them (a star-slash inside a literal, a class,
-  an action or a comment is content), `re2c:` configurations recorded as options and the case and flex-syntax flags
-  among them honoured, `name = regex;` and flex-style definitions, conditions and `<*>`, `=>` and `:=>` transitions,
-  `:=` actions, the default, end and setup rules (not tokens). The dialect is rewritten for the pattern parser and
-  the rewriting is kept beside the pattern as written: bare names become `{name}`, `'abc'` becomes
-  `[aA][bB][cC]`, `[^]` is spelled out. Refused: the Unicode escapes `\u`, `\U` and `\X`, which need an encoding the
-  byte reading has not got, and the class difference `\`.
+- re2c: `/*!re2c`, `/*!rules:re2c` and `/*!local:re2c` blocks, closed as re2c closes them (a star-slash inside a
+  literal, a class, an action or a comment is content), `re2c:` configurations recorded as options (a quoted value
+  may hold a `;`) and the case and flex-syntax flags among them honoured, `name = regex;` and flex-style
+  definitions, conditions and `<*>`, `=>` and `:=>` transitions, `:=` actions, the default, end and setup rules (not
+  tokens). The dialect is rewritten for the pattern parser and the rewriting is kept beside the pattern as written:
+  bare names become `{name}`, `'abc'` becomes `[aA][bB][cC]`, `[^]` is spelled out, and a class difference `A \ B`,
+  its operands brackets, one-byte literals, alternations of those or names defined as those, becomes the bracket
+  of the bytes left. Refused: the Unicode escapes `\u`, `\U` and `\X`, which need an encoding the byte reading
+  has not got.
 - flex and re2c: whether an action returns a token is read from the action's text, a bare `return` or a form named
   with `--returns`, and nothing else in the action is interpreted.
 - ANTLR 4: `lexer grammar` and combined `grammar` files, modes as the start conditions, `fragment` rules as
