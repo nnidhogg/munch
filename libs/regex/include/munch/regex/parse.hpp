@@ -48,6 +48,20 @@ private:
 };
 
 /**
+ * @brief What a pattern is read under besides its syntax.
+ */
+struct Parse_options
+{
+    /**
+     * @brief Whether every ASCII letter matches in either case, flex's `%option case-insensitive`: a letter in a
+     *        literal or a quoted text becomes the set of its two cases, and a bracket holds both cases of every
+     *        letter it names before any negation, so `[^a-c]` excludes the capitals too and `[[:upper:]]` is every
+     *        letter, as flex folds them.
+     */
+    bool caseless{false};
+};
+
+/**
  * @brief Reads a pattern written in the syntax lexer generators take, flex's dialect of POSIX extended regular
  *        expressions, into the same nodes the combinators build.
  *
@@ -77,10 +91,11 @@ private:
  * hand-built one compile to the same automaton.
  * @param pattern The pattern.
  * @param definitions The named patterns `{name}` may expand to; a name not among them is refused.
+ * @param options What the pattern is read under, the definitions it expands included.
  * @return The regex.
  * @throws Syntax_error If the pattern is refused, with the offset and the reason.
  */
-[[nodiscard]] Regex parse(std::string_view pattern, const Definitions_t& definitions = {});
+[[nodiscard]] Regex parse(std::string_view pattern, const Definitions_t& definitions = {}, Parse_options options = {});
 
 } // namespace munch::regex
 

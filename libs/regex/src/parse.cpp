@@ -82,8 +82,9 @@ public:
      * @brief Binds the reader to a pattern.
      * @param pattern The pattern.
      * @param expanding The names whose definitions are being expanded above this reader, outermost first.
+     * @param options What the pattern is read under.
      */
-    Reader(std::string_view pattern, std::vector<std::string> expanding);
+    Reader(std::string_view pattern, std::vector<std::string> expanding, Parse_options options);
 
     /**
      * @brief Reads the whole pattern.
@@ -166,6 +167,14 @@ private:
     [[nodiscard]] std::string quoted();
 
     /**
+     * @brief The regex of a run of literal bytes: one text node, or under the caseless option the run with each
+     *        letter widened to the set of its two cases and the bytes between letters kept as text.
+     * @param run The bytes.
+     * @return The regex.
+     */
+    [[nodiscard]] Regex literal(std::string run) const;
+
+    /**
      * @brief An escape after its backslash: a named control, octal, hex, a code point `\u{...}`, or the byte itself.
      * @return The byte, or the scalar.
      * @throws Syntax_error If a hex or code point escape has no digits, or the code point is a surrogate or beyond
@@ -241,10 +250,36 @@ private:
     std::vector<std::string> expanding_;
 
     /**
+     * @brief What the pattern is read under.
+     */
+    Parse_options options_;
+
+    /**
      * @brief The offset of the next byte to read.
      */
     std::size_t at_{0};
 };
+
+/**
+ * @brief The other case of an ASCII letter, or the byte itself when it is no letter, tested directly so no locale is
+ *        consulted.
+ * @param byte The byte.
+ * @return The byte with its case swapped.
+ */
+[[nodiscard]] constexpr char swapped(const char byte) noexcept
+{
+    if (byte >= 'a' && byte <= 'z')
+    {
+        return static_cast<char>(byte - 'a' + 'A');
+    }
+
+    if (byte >= 'A' && byte <= 'Z')
+    {
+        return static_cast<char>(byte - 'A' + 'a');
+    }
+
+    return byte;
+}
 
 /**
  * @brief Whether a byte is a hexadecimal digit, tested directly so no locale is consulted.
@@ -323,8 +358,8 @@ private:
     return merged.empty() ? std::nullopt : std::optional{utf8::ranges(merged)};
 }
 
-Reader::Reader(const std::string_view pattern, std::vector<std::string> expanding)
-    : pattern_{pattern}, expanding_{std::move(expanding)}
+Reader::Reader(const std::string_view pattern, std::vector<std::string> expanding, const Parse_options options)
+    : pattern_{pattern}, expanding_{std::move(expanding)}, options_{options}
 {}
 
 Regex Reader::read(const Definitions_t& definitions)
@@ -364,10 +399,10 @@ Regex Reader::sequence(const Definitions_t& definitions)
 
     std::string run;
 
-    const auto flush{[&parts, &run] {
+    const auto flush{[this, &parts, &run] {
         if (!run.empty())
         {
-            parts.push_back(text(std::exchange(run, {})));
+            parts.push_back(literal(std::exchange(run, {})));
         }
     }};
 
@@ -407,10 +442,10 @@ Piece Reader::repetition(const Definitions_t& definitions)
     auto piece{atom(definitions)};
 
     // A literal stays one until an operator claims it; the sequence merges the ones that stay.
-    const auto claim{[&piece] {
+    const auto claim{[this, &piece] {
         if (piece.literal)
         {
-            piece.regex = text(std::string(1, *piece.literal));
+            piece.regex = literal({*piece.literal});
 
             piece.literal.reset();
         }
@@ -482,7 +517,7 @@ Piece Reader::atom(const Definitions_t& definitions)
             return {.literal = literal.front(), .regex = std::nullopt};
         }
 
-        return {.literal = std::nullopt, .regex = text(std::move(literal))};
+        return {.literal = std::nullopt, .regex = this->literal(std::move(literal))};
     }
     case '{':
         return {.literal = std::nullopt, .regex = definition(open, definitions)};
@@ -637,6 +672,24 @@ Regex Reader::bracket()
         ranges.push_back({.first = byte, .last = last});
     }
 
+    // Under the caseless option both cases of every letter are members before any negation, as flex folds them.
+    if (options_.caseless)
+    {
+        const Set letters{set};
+
+        for (const auto symbol : letters.symbols())
+        {
+            if (swapped(symbol) != symbol)
+            {
+                const auto other{static_cast<char32_t>(static_cast<unsigned char>(swapped(symbol)))};
+
+                set += swapped(symbol);
+
+                ranges.push_back({.first = other, .last = other});
+            }
+        }
+    }
+
     if (!wide)
     {
         return any_of(negated ? Set::all() - set : set);
@@ -774,6 +827,52 @@ std::string Reader::quoted()
     }
 
     return literal;
+}
+
+Regex Reader::literal(std::string run) const
+{
+    if (!options_.caseless)
+    {
+        return text(std::move(run));
+    }
+
+    std::vector<Regex> pieces;
+
+    std::string plain;
+
+    for (const auto byte : run)
+    {
+        if (swapped(byte) == byte)
+        {
+            plain += byte;
+
+            continue;
+        }
+
+        if (!plain.empty())
+        {
+            pieces.push_back(text(std::exchange(plain, {})));
+        }
+
+        pieces.push_back(any_of(Set{byte, swapped(byte)}));
+    }
+
+    if (pieces.empty())
+    {
+        return text(std::move(plain));
+    }
+
+    if (!plain.empty())
+    {
+        pieces.push_back(text(std::move(plain)));
+    }
+
+    if (pieces.size() == 1)
+    {
+        return std::move(pieces.front());
+    }
+
+    return {.node = Concat{.regexes = std::move(pieces)}};
 }
 
 Escaped Reader::escape()
@@ -965,7 +1064,7 @@ Regex Reader::definition(const std::size_t open, const Definitions_t& definition
 
     try
     {
-        return Reader{found->second, std::move(expanding)}.read(definitions);
+        return Reader{found->second, std::move(expanding), options_}.read(definitions);
     }
     catch (const Syntax_error& inner)
     {
@@ -1049,9 +1148,9 @@ std::size_t Syntax_error::offset() const noexcept
     return offset_;
 }
 
-Regex parse(const std::string_view pattern, const Definitions_t& definitions)
+Regex parse(const std::string_view pattern, const Definitions_t& definitions, const Parse_options options)
 {
-    return Reader{pattern, {}}.read(definitions);
+    return Reader{pattern, {}, options}.read(definitions);
 }
 
 } // namespace munch::regex
