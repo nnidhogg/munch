@@ -1,10 +1,9 @@
 # **Why Munch Is Fast**
 
-The [README's Performance section](../README.md#performance) documents the mechanisms and the measured numbers. This
-note explains why a library this small can outrun engines orders of magnitude larger: it gets to cheat in a way
-general-purpose engines cannot. It knows the entire matching problem before the first byte of input arrives, and it
-spends all of its complexity at build time so that almost nothing is left to do per byte. The size is not a paradox; it
-is the mechanism.
+[benchmarks.md](benchmarks.md) documents the mechanisms and the measured numbers. This note explains why a library this
+small can outrun engines orders of magnitude larger: it gets to cheat in a way general-purpose engines cannot. It knows
+the entire matching problem before the first byte of input arrives, and it spends all of its complexity at build time so
+that almost nothing is left to do per byte. The size is not a paradox; it is the mechanism.
 
 ## **The Problem Is Radically Narrower**
 
@@ -12,9 +11,9 @@ General regex engines solve a huge problem: capture groups, backreferences, look
 searching, submatch extraction. Those features force runtime interpretation of pattern structure, and every one of them
 costs something at every match call. munch solves exactly one problem: longest-match, anchored, byte-oriented
 tokenization with a token set fixed before matching begins. The code paths that make general engines slow at lexing
-simply do not exist here. In the README's comparison, where the corpus averages under two bytes per token, most of the
-gap to the general-purpose engines is *them paying for generality*, re-entering a full match API at every token
-boundary.
+simply do not exist here. In the comparison of [benchmarks.md](benchmarks.md), where the corpus averages under two bytes
+per token, most of the gap to the general-purpose engines is *them paying for generality*, re-entering a full match API
+at every token boundary.
 
 ## **Every Decision Is Made Once, in `build()`**
 
@@ -42,17 +41,17 @@ no data-dependent branching beyond the dead-state exit and the accept check.
 
 ## **Data Beats Code**
 
-CTRE, the closest competitor in the README's benchmark, also compiles the token set ahead of time, but it compiles the
-*regex structure* into code: the alternation over token kinds still exists at runtime as branches to try, and which
-alternative matched must be discovered per token. Determinization erases the alternation entirely. A data-driven table
-walk has no alternation branches to mispredict, and the equivalence classes keep the table small enough that memory
-latency does not take back what branch elimination won.
+CTRE, the closest competitor in the benchmark, also compiles the token set ahead of time, but it compiles the *regex
+structure* into code: the alternation over token kinds still exists at runtime as branches to try, and which alternative
+matched must be discovered per token. Determinization erases the alternation entirely. A data-driven table walk has no
+alternation branches to mispredict, and the equivalence classes keep the table small enough that memory latency does not
+take back what branch elimination won.
 
 ## **What Beats It, and What That Buys**
 
 Lexer-specialized code generators beat this design, and the margin grows with token length. logos, the Rust lexer
-generator, is measured in tools/benchmark/rust on byte-identical ports of the README's two benchmark corpora, validated
-to produce the same token stream to the token: across measurement sessions it runs from under ten percent to roughly a
+generator, is measured in tools/benchmark/rust on byte-identical ports of the benchmark's two corpora, validated to
+produce the same token stream to the token: across measurement sessions it runs from under ten percent to roughly a
 quarter ahead of the whole-input `tokenize_all()` entry point on dense input and forty to sixty percent ahead on
 source-shaped input, and CTRE overtakes on the source-shaped corpus as well; re2c occupies the same class for C. munch's
 own throughput is nearly identical on both corpus shapes, which is the table model's signature: it pays per byte, so
@@ -184,13 +183,13 @@ could not because each core brings its own registers and its own branch predicto
 
 The engine comparison confirms the threaded picture across implementations rather than just within munch. With both
 lexer classes chunked the same way and validated token for token against their serial scans (`munch_benchmark_compare`
-and the Rust driver, 16 MiB, best of fifteen, the README's archived transcript), munch goes from 577.0 MiB/s serial to
-2035.0 on four threads and 3755.4 on eight on the dense corpus, and from 563.8 to 2075.6 and 3873.3 on the source
-corpus, while logos goes from 728.0 to 2708.0 and 5148.9, and from 891.1 to 3462.0 and 6141.5. Both classes scale
-strongly, close to linear at four threads and sublinearly at eight, so threading multiplies the serial verdict instead
-of reordering it, and the meaningful difference between the rows is epistemic: munch's chunk boundaries are certified by
-`is_split_point()` from the compiled table for whatever token set was built, while the logos rows rest on a hand-written
-safety analysis of this one token set that the generated lexer can neither produce nor check.
+and the Rust driver, 16 MiB, best of fifteen, the archived transcript of [benchmarks.md](benchmarks.md)), munch goes
+from 577.0 MiB/s serial to 2035.0 on four threads and 3755.4 on eight on the dense corpus, and from 563.8 to 2075.6 and
+3873.3 on the source corpus, while logos goes from 728.0 to 2708.0 and 5148.9, and from 891.1 to 3462.0 and 6141.5. Both
+classes scale strongly, close to linear at four threads and sublinearly at eight, so threading multiplies the serial
+verdict instead of reordering it, and the meaningful difference between the rows is epistemic: munch's chunk boundaries
+are certified by `is_split_point()` from the compiled table for whatever token set was built, while the logos rows rest
+on a hand-written safety analysis of this one token set that the generated lexer can neither produce nor check.
 
 Measuring this added one mechanism worth recording. The first version of the threaded comparison scenario let each
 worker update its slot in a shared array of sixteen-byte tallies once per token, which put four workers' write targets
