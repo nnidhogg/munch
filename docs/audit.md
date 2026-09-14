@@ -94,7 +94,7 @@ certified windows (<= 3)    none
 mandatory core              "*/"
 anchor-free span, bytes     unbounded
 lag                         unbounded
-rescue-free                 not established
+rescue-free                 no: the scan rolls back and continues on "/*"
 
 why candidate bytes do not certify
   IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
@@ -138,9 +138,9 @@ Row by row:
   certificate among them, the gap a chunk plan may be asked to span. Unbounded is the common answer, since no
   certificate anchors a position inside a token and an identifier or a run of blanks has no longest form; it is
   finite only when every long input is forced to carry a certificate.
-- **lag** and **rescue-free**: the recovery figures, how far a scan resumed at a certified byte can trail the true
-  token stream before it agrees with it, and whether the token set admits no input on which a resumed scan needs a
-  rescue.
+- **lag** and **rescue-free**: the recovery figures, how far a scan resumed at a certified byte can trail the true token
+  stream before it agrees with it, and whether the token set admits no completely tokenizable input on which the scan
+  reads past a token's end and rolls back, decided exactly, the shortest such input shown when one exists.
 - **why candidate bytes do not certify**: for every byte the start state consumes, each rule that also consumes it
   in the middle of a token, with a shortest input after which it does. This is the row a designer reads first: the
   token named is the one to change.
@@ -220,5 +220,6 @@ own), and its `conditions`, each with `name`, `rules`, `refused` or null, and th
 figures as the text under the row names above, `verdict`, `exact` and `modulo` as arrays of byte values, `discarded`,
 `windows` with their origins, `window_count`, `mandatory_core`, `byte_span` and `window_span` as numbers or the string
 `unbounded` (the window span also `undecided` when the windows were too many, and null when there were none), `lag`,
-`rescue_free`, `blame` and `prices`, tokens given as their id and name. Byte strings are JSON strings holding each byte
-as the code point of its value, so a reader recovers the bytes exactly.
+`rescue_free` as true, false or null when the search stopped at its cap, `rescue_witness` as the shortest completely
+tokenizable input on which the scan rolls back or null, `blame` and `prices`, tokens given as their id and name. Byte
+strings are JSON strings holding each byte as the code point of its value, so a reader recovers the bytes exactly.

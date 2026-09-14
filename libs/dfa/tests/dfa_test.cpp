@@ -1915,7 +1915,7 @@ TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_accepting_states_no_input_reache
     // after the accepted a, opened by b, which starts no token: lag one, rescue-free. The islanded table adds an
     // accepting state no input reaches whose successor cycles on itself: under decider loops that skipped only
     // non-accepting states, the cycle witnessed unbounded lag, and its opener a, restarting live from q0,
-    // refuted rescue-freeness, although no scan can ever stand in the island.
+    // refuted rescue-freeness under the gate that preceded rescue(), although no scan can ever stand in the island.
     const auto build{[](const bool with_island) {
         dfa::Builder dfa;
 
@@ -1947,16 +1947,18 @@ TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_accepting_states_no_input_reache
     const auto islanded{build(true)};
 
     EXPECT_EQ(lag(trimmed), std::optional<std::size_t>{1});
-    EXPECT_TRUE(rescue_free(trimmed));
+    EXPECT_TRUE(rescue(trimmed).witness.empty());
+    EXPECT_TRUE(rescue(trimmed).exhaustive);
     EXPECT_EQ(lag(islanded), lag(trimmed));
-    EXPECT_EQ(rescue_free(islanded), rescue_free(trimmed));
+    EXPECT_EQ(rescue(islanded).witness, rescue(trimmed).witness);
 }
 
 TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_an_unreachable_accepting_island)
 {
     // A table with an unreachable accepting island: initial state 0, accepting {1, 2}, 0 -a-> 1, 2 -a-> 3, 3 -a-> 3.
-    // The token language is {a}; the island at 2 changed lag() from zero to unbounded and rescue_free() from true to
-    // false before accepting seeds were restricted to reachable states.
+    // The token language is {a}; the island at 2 changed lag() from zero to unbounded, and the gate that preceded
+    // rescue() from true to false, before accepting seeds were restricted to reachable states; the search rescue()
+    // runs starts at the initial state and never sees the island.
     dfa::Builder dfa;
 
     const auto q0{dfa.init_state()};
@@ -1973,5 +1975,6 @@ TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_an_unreachable_accepting_island)
     const Simulator simulator{dfa.build()};
 
     EXPECT_EQ(lag(simulator), std::optional<std::size_t>{0});
-    EXPECT_TRUE(rescue_free(simulator));
+    EXPECT_TRUE(rescue(simulator).witness.empty());
+    EXPECT_TRUE(rescue(simulator).exhaustive);
 }

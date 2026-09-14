@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "munch/core/lexer.hpp"
+#include "munch/dfa/recovery.hpp"
 #include "munch/tools/audit/price.hpp"
 #include "munch/tools/audit/token_set.hpp"
 
@@ -129,9 +130,10 @@ struct Report
     std::optional<std::size_t> lag;
 
     /**
-     * @brief Whether the rescue-freeness gate passed.
+     * @brief The rescue search: a shortest completely tokenizable input on which the scan rolls back, empty when
+     *        none exists or the search stopped at its cap, and which of the two.
      */
-    bool rescue_free{};
+    dfa::Rescue rescue;
 
     /**
      * @brief Why each candidate byte that does not certify exactly fails, one entry per byte and token.

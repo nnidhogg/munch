@@ -629,16 +629,35 @@ public:
     [[nodiscard]] std::optional<std::size_t> lag() const { return dfa::lag(simulator_); }
 
     /**
-     * @brief Whether every byte that opens a post-accept nonaccepting stretch is dead from the initial state.
+     * @brief Whether some completely tokenizable input makes the scan roll back, with a witness.
      *
-     * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting
-     * at every accept would have declared the input malformed. On a rescue-free token set no such rollback can
-     * succeed, so the two schemes agree on every input. The gate is sufficient and not necessary: on
-     * {a, abc, bc} it returns false though no rescue exists there, and zero-lag sets pass vacuously.
-     * @return True when no stretch-opening byte starts a viable token from the initial state; false says only
-     * that this gate did not establish rescue-freeness.
+     * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting at
+     * every accept would have declared the input malformed: a token of a completely tokenizable input whose scan
+     * read past the token's end before rolling back to it. Decided exactly, by the same boundary-guessing search
+     * as boundary_difference(), the witness the shortest such input: {a, abb, b, c} is rescued on ab, where the
+     * scan of a reads the b before rolling back, while {a, abc, bc} is rescue-free with lag one, since every
+     * completely tokenizable continuation of the stretch after a closes the longer token abc instead.
+     * @param cap The largest number of search states to hold before giving up, dfa::rescue_cap unless told.
+     * @return The witness and whether the search settled the question; an empty witness from an exhaustive search
+     *         proves the token set rescue-free.
      */
-    [[nodiscard]] bool rescue_free() const { return dfa::rescue_free(simulator_); }
+    [[nodiscard]] dfa::Rescue rescue(const std::size_t cap = dfa::rescue_cap) const
+    {
+        return dfa::rescue(simulator_, cap);
+    }
+
+    /**
+     * @brief Whether the token set is rescue-free, so that a scheme restarting at every accept emits the tokens of
+     * serial maximal munch on every completely tokenizable input.
+     * @return True when rescue() found no witness in an exhaustive search; false when a witness exists or the
+     *         search stopped at its cap, which rescue() tells apart.
+     */
+    [[nodiscard]] bool rescue_free() const
+    {
+        const auto found{rescue()};
+
+        return found.exhaustive && found.witness.empty();
+    }
 
     /**
      * @brief The longest run of positions a tokenizable input can carry with no certified byte, or nothing when

@@ -228,7 +228,8 @@ The recovery layer joined that surface in 1.6.0: `next_certified_start()`, `next
 `next_anchored_start()`, `minimal_repair()`, `lag()`, and `rescue_free()`, each under the contract its own documentation
 states, evidence-order answers under preserved evidence and complete-repair invariance, the guarantee described under
 [Error Recovery](docs/usage.md#error-recovery) that every completely tokenizable repair of the text before the evidence
-places a token boundary at the answer.
+places a token boundary at the answer. `rescue()`, the exact rescue decision with its witness, is on master and joins
+that surface in the next minor version; `rescue_free()` answers it as one bit.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did

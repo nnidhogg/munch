@@ -19,11 +19,12 @@ struct Difference
     std::string witness;
 
     /**
-     * @brief Whether the search covered its whole state space rather than stopping at the cap.
+     * @brief Whether the search settled the question, by exhausting its state space or by finding the witness,
+     *        rather than stopping at the cap.
      *
      * Reported rather than inferred because an empty witness means two different things: proved identical when
-     * the search exhausted, and undetermined when it did not. A caller that treats the second as the first would
-     * ship an unchecked assumption, which is the whole failure this decision exists to prevent.
+     * the search exhausted, and undetermined when the cap stopped it. A caller that treats the second as the first
+     * would ship an unchecked assumption, which is the whole failure this decision exists to prevent.
      */
     bool exhaustive{};
 };
@@ -43,7 +44,7 @@ struct Difference
  * sides can close their last segment with the flag already set.
  * @param simulator The compiled token set the comparison starts from.
  * @param other The token set to compare against, compiled over the same byte alphabet.
- * @param cap The largest number of product states to visit before giving up; the default is generous for the
+ * @param cap The largest number of product states to hold before giving up; the default is generous for the
  *        token sets a lexer carries and the worst case is exponential in both state counts.
  * @return The witness and whether the search was exhaustive.
  */

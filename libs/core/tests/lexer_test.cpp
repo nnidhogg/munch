@@ -1371,8 +1371,7 @@ TEST_F(Lexer_test, Lag_and_rescue_freeness_decide_the_rollback_shape)
     };
 
     // {a, abc}: one stretch of one state after the accepted a, opened by b, which starts no token: lag
-    // one, rescue-free. The pair is the canonical sufficient-not-necessary witness: not zero-lag, yet the
-    // restart abstraction is exact on it.
+    // one, rescue-free. Not zero-lag, yet the restart abstraction is exact on it.
     Builder_dbg toy;
 
     toy.add_token(text("a"), Token_kind::A, 2);
@@ -1382,6 +1381,23 @@ TEST_F(Lexer_test, Lag_and_rescue_freeness_decide_the_rollback_shape)
 
     EXPECT_EQ(toy_lexer.lag(), std::optional<std::size_t>{1});
     EXPECT_TRUE(toy_lexer.rescue_free());
+
+    // {a, abc, bc}: the stretch after a opens on b, which starts the token bc from the initial state, so a gate
+    // reading the tables alone cannot tell this set from a rescuable one; but every completely tokenizable
+    // continuation of that stretch begins with bc, whose c closes abc instead, so the scan never rolls back to a.
+    // The exact decision says so.
+    Builder_dbg guarded;
+
+    guarded.add_token(text("a"), Token_kind::A, 2);
+    guarded.add_token(text("abc"), Token_kind::B, 1);
+    guarded.add_token(text("bc"), Token_kind::C, 2);
+
+    const auto guarded_lexer{guarded.build()};
+
+    EXPECT_EQ(guarded_lexer.lag(), std::optional<std::size_t>{1});
+    EXPECT_TRUE(guarded_lexer.rescue_free());
+    EXPECT_TRUE(guarded_lexer.rescue().exhaustive);
+    EXPECT_TRUE(guarded_lexer.rescue().witness.empty());
 
     // {a, ab*c, b, x}: the b-loop after the accepted a is a post-accept nonaccepting cycle, the executed
     // unboundedness certificate; the decider must refuse a number rather than invent one.
@@ -1396,8 +1412,10 @@ TEST_F(Lexer_test, Lag_and_rescue_freeness_decide_the_rollback_shape)
 
     EXPECT_FALSE(classic_lexer.lag().has_value());
 
-    // {a, abb, b, c}: bounded lag but rescuable, since the stretch opener b starts a viable token; the
-    // gate must see through liveness, not just definedness.
+    // {a, abb, b, c}: bounded lag but rescuable: on ab the scan of a reads the b, the input ends, and the
+    // rollback to a leaves b as the next token, where a scheme restarting at every accept stands in the stretch
+    // with nothing to emit. The witness is that shortest input, and a search capped below its own size says
+    // nothing rather than something.
     Builder_dbg rescuable;
 
     rescuable.add_token(text("a"), Token_kind::A, 2);
@@ -1409,6 +1427,10 @@ TEST_F(Lexer_test, Lag_and_rescue_freeness_decide_the_rollback_shape)
 
     EXPECT_EQ(rescuable_lexer.lag(), std::optional<std::size_t>{1});
     EXPECT_FALSE(rescuable_lexer.rescue_free());
+    EXPECT_EQ(rescuable_lexer.rescue().witness, "ab");
+    EXPECT_TRUE(rescuable_lexer.rescue().exhaustive);
+    EXPECT_FALSE(rescuable_lexer.rescue(1).exhaustive);
+    EXPECT_TRUE(rescuable_lexer.rescue(1).witness.empty());
 
     // Two single-byte tokens: no stretch exists, lag zero, rescue-free vacuously.
     Builder_dbg flat;

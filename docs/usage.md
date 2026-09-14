@@ -593,12 +593,16 @@ A tail beyond repair makes `next_anchored_start()` refuse rather than answer vac
 returning a value guarantees the repaired whole tokenizes, with the empty string meaning the tail already does.
 
 Two related queries describe the token set itself. `lag()` reports how far a scan can run past an accepted token before
-a rollback could occur, with `std::nullopt` as a certificate that the excursion is unbounded. `rescue_free()` is a
-one-sided gate: true guarantees that a scheme restarting at every accept agrees with serial maximal munch on every
-input, and false is inconclusive, since the gate is sufficient and not necessary. On `{a, abc, bc}` it returns false
-though no rescue exists there, a rescue being a rollback after a failed lookahead that lets the scan continue where the
-restarting scheme would have declared the input malformed. Like `is_split_point()`, all of these are properties
-certified from the compiled automaton, not heuristics.
+a rollback could occur, with `std::nullopt` as a certificate that the excursion is unbounded. `rescue()` decides exactly
+whether some completely tokenizable input makes the scan roll back, a rescue being a rollback after a failed lookahead
+that lets the scan continue where a scheme restarting at every accept would have declared the input malformed, and
+returns the shortest such input with whether its search was exhaustive: on `{a, abb, b, c}` the witness is `ab`, where
+the scan of `a` reads the `b` before rolling back, and `{a, abc, bc}` is rescue-free though a stretch opens after `a`,
+since every completely tokenizable continuation closes `abc` instead. `rescue_free()` is that decision as one bit: true
+exactly when the exhaustive search found no witness, so that the restarting scheme emits the tokens of serial maximal
+munch on every completely tokenizable input, and false either when a witness exists or when the search stopped at its
+cap, which `rescue()` tells apart. Like `is_split_point()`, all of these are properties certified from the compiled
+automaton, not heuristics.
 
 ## **Context-Dependent Tokenization**
 

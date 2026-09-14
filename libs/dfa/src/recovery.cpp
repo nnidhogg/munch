@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "boundary_guess.hpp"
+
 namespace munch::dfa
 {
 namespace
@@ -161,37 +163,47 @@ std::optional<std::size_t> scenario_boundary(
 
 } // namespace
 
-bool rescue_free(const Simulator& simulator)
+Rescue rescue(const Simulator& simulator, const std::size_t cap)
 {
-    // As in lag(): an accepting state no input reaches cannot refute rescue-freeness.
-    for (std::size_t state{0}; state < simulator.state_count(); ++state)
-    {
-        if (!simulator.is_accepting(state) || !simulator.is_live(state))
+    // A key of the search: the scan's position, and whether some closed run has survived a byte, which is the
+    // rollback looked for. A run that survives its first byte raises the flag; one that survived earlier leaves it
+    // raised, so the two need no telling apart.
+    using Key = std::pair<guess::Position, bool>;
+
+    const Key start{guess::Position{.reading = simulator.init_state(), .closed = {}}, false};
+
+    const auto expand{[&simulator](const Key& at, const unsigned char byte, std::vector<Key>& successors) {
+        auto position{at.first};
+
+        if (!guess::advance(simulator, position, byte))
         {
-            continue;
+            return false;
         }
 
-        for (std::size_t symbol{0}; symbol < Simulator::symbol_count; ++symbol)
+        const auto rescued{at.second || !position.closed.empty()};
+
+        const auto closes{simulator.is_accepting(position.reading)};
+
+        // The input may end here when the segment being read closes on this byte; with a rollback behind it, that
+        // is the witness, and the closed runs still alive never accepted, as every kept branch requires.
+        if (closes && rescued)
         {
-            const auto opened{simulator.step(state, static_cast<unsigned char>(symbol))};
-
-            if (!opened || simulator.is_accepting(*opened))
-            {
-                continue;
-            }
-
-            // A stretch opens on this byte; the gate needs it dead from the initial state, where dead
-            // means no transition or one that can never reach acceptance.
-            const auto entered{simulator.step(simulator.init_state(), static_cast<unsigned char>(symbol))};
-
-            if (entered && simulator.is_live(*entered))
-            {
-                return false;
-            }
+            return true;
         }
-    }
 
-    return true;
+        successors.emplace_back(position, rescued);
+
+        if (closes)
+        {
+            successors.emplace_back(guess::close(simulator, position), rescued);
+        }
+
+        return false;
+    }};
+
+    const auto found{guess::search(start, cap, expand)};
+
+    return {.witness = found.witness, .exhaustive = found.exhaustive};
 }
 
 std::optional<std::size_t> next_anchored_start(
