@@ -628,7 +628,7 @@ Report audit(const core::Lexer& lexer, const std::size_t window_limit)
             .byte_span = lexer.anchor_free_span(),
             .window_span = std::nullopt,
             .lag = lexer.lag(),
-            .rescue_free = lexer.rescue_free(),
+            .rescue = lexer.rescue(),
             .blame = {},
             .prices = {}};
 
@@ -745,7 +745,9 @@ std::string json(const Report& report, const std::function<std::string(std::size
 
     member("lag", json_span(report.lag));
 
-    member("rescue_free", report.rescue_free ? "true" : "false");
+    member("rescue_free", !report.rescue.exhaustive ? "null" : report.rescue.witness.empty() ? "true" : "false");
+
+    member("rescue_witness", report.rescue.witness.empty() ? "null" : quoted(report.rescue.witness));
 
     member("blame", list(report.blame, [&name](const Blame& blamed) {
                const auto& [byte, token, after]{blamed};
@@ -883,7 +885,12 @@ std::string render(const Report& report, const std::function<std::string(std::si
 
     line("lag", shown(report.lag));
 
-    line("rescue-free", report.rescue_free ? "yes" : "not established");
+    line("rescue-free",
+         !report.rescue.exhaustive ?
+                 std::format("not decided: the search passed {} states", dfa::rescue_cap) :
+         report.rescue.witness.empty() ?
+                 "yes" :
+                 std::format("no: the scan rolls back and continues on {}", shown(report.rescue.witness)));
 
     // Blame: grouped by token, the bytes it de-certifies and the shortest input after which it consumes one.
     if (!report.blame.empty())
