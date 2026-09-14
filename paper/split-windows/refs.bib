@@ -113,8 +113,13 @@
   title  = {munch},
   year   = {2026},
   doi    = {10.5281/zenodo.21842344},
-  note   = {Release tag \texttt{v1.3.3}, archived at \doi{10.5281/zenodo.21842344}; a lexical analysis library
-            based on automata theory, and the probes reported here ship in this release}
+  note   = {Release tag \texttt{v1.3.3}, archived at \doi{10.5281/zenodo.21842344}; a lexical analysis library based on
+            automata theory. The artifact evaluated here is that release, with its single-byte decision and a
+            single-byte planner this paper does not evaluate; release v1.4.0 added the window decision
+            \texttt{is\_split\_window()}, which the revised sweep cross-checks, and the window planner, which is not
+            evaluated here; the 400-set sweep as revised here is the output of
+            \texttt{tools/probes/src/window\_gate.cpp} at commit 707a79941472885a260c0bc96e615dd2fb5e99d2 of the public
+            repository, after release \texttt{v1.6.0}}
 }
 
 @incollection{kaplan2005tokenizing,
