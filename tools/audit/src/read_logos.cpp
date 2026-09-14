@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "munch/regex/indirect.hpp"
+#include "munch/regex/unicode.hpp"
 #include "munch/tools/audit/cursor.hpp"
 #include "munch/tools/audit/expression.hpp"
 
@@ -553,10 +554,10 @@ private:
     [[nodiscard]] Scalar_set posix_class();
 
     /**
-     * @brief An escape after its backslash: a unit, or a class for `\d`, `\s`, `\w` and their negations.
+     * @brief An escape after its backslash: a unit, or a class for `\d`, `\s`, `\w` and their negations, the ASCII
+     *        forms under `(?-u)` and the crate's Unicode forms, Nd, White_Space and the word class, otherwise.
      * @return The unit or the class.
-     * @throws Spec_error For an anchor, a Unicode class, a Perl class in Unicode mode, or an escape the crate does
-     *         not have.
+     * @throws Spec_error For an anchor, a `\p{...}` property class, or an escape the crate does not have.
      */
     [[nodiscard]] std::variant<Unit, Scalar_set> escape();
 
@@ -607,7 +608,7 @@ private:
      * @param members The members.
      * @param negated Whether the class is complemented, after folding, as the crate orders it.
      * @return The node.
-     * @throws Spec_error If the class ends up empty, or folding it needs the Unicode tables.
+     * @throws Spec_error If the class ends up empty, or folding it needs a case table the library has not got.
      */
     [[nodiscard]] Node class_node(Scalar_set members, bool negated);
 
@@ -2777,42 +2778,53 @@ std::variant<Unit, Scalar_set> Pattern_reader::escape()
     case 'S':
     case 'W':
     {
-        if (flags_.unicode)
-        {
-            fail(std::string{R"('\)"} + byte +
-                 "' in Unicode mode needs the Unicode tables the byte reading has not got; (?-u) scopes the ASCII "
-                 "form, and [[:digit:]], [[:space:]] and [[:word:]] spell it");
-        }
-
         const auto negated{byte == 'D' || byte == 'S' || byte == 'W'};
 
         const auto kind{static_cast<char>(byte | 0x20)};
 
         Scalar_set members;
 
-        if (kind == 'd' || kind == 'w')
+        if (flags_.unicode)
         {
-            members.add('0', '9');
-        }
+            // The crate's Unicode forms: Nd, White_Space and the word class, from the library's tables of the pinned
+            // database, so that the reader and a pattern built through unicode::word() never disagree.
+            const auto property{
+                    kind == 'd' ? regex::unicode::Property::decimal_digit :
+                    kind == 's' ? regex::unicode::Property::white_space :
+                                  regex::unicode::Property::word};
 
-        if (kind == 'w')
-        {
-            members.add('A', 'Z');
-            members.add('a', 'z');
-            members.add('_', '_');
+            for (const auto& range : regex::unicode::ranges(property))
+            {
+                members.add(range.first, range.last);
+            }
         }
-
-        if (kind == 's')
+        else
         {
-            members.add('\t', '\r');
-            members.add(' ', ' ');
+            if (kind == 'd' || kind == 'w')
+            {
+                members.add('0', '9');
+            }
+
+            if (kind == 'w')
+            {
+                members.add('A', 'Z');
+                members.add('a', 'z');
+                members.add('_', '_');
+            }
+
+            if (kind == 's')
+            {
+                members.add('\t', '\r');
+                members.add(' ', ' ');
+            }
         }
 
         return negated ? universe().minus(members) : members;
     }
     case 'p':
     case 'P':
-        fail("a Unicode class needs the Unicode tables the byte reading has not got");
+        fail("a Unicode property class needs tables the library has not got: only the digit, space and word classes "
+             "are supplied");
     case 'A':
     case 'z':
     case 'b':

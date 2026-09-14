@@ -44,13 +44,14 @@ namespace munch::tools::audit
  * still its UTF-8 and a class or `\xHH` a byte, though logos's own check refuses what could match outside UTF-8
  * unless the enum declares `utf8 = false`.
  *
- * What the byte reading cannot say exactly is refused rather than approximated, naming the rule's line: the
- * classes `\d`, `\w`, `\s`, their negations and `\p{...}` in Unicode mode, which need the Unicode tables, their
- * `(?-u)` forms and the ASCII `[[:digit:]]` family being read; a non-ASCII scalar under `i`, whose case folding is
- * not modelled; the anchors `^`, `$`, `\A`, `\z`, `\b`, `\B` and lookaround, which condition the context a match
- * stands in, as regex::parse() refuses flex's; the flags `x`, `m`, `U` and `R`; the class operators `&&`, `--` and
- * `~~`; `ignore(ascii_case)`, which logos itself no longer accepts; and a pattern matching only the empty string,
- * which logos refuses to compile.
+ * What the byte reading cannot say exactly is refused rather than approximated, naming the rule's line: the property
+ * classes `\p{...}`, whose tables the library has not got, where `\d`, `\w`, `\s` and their negations are read in
+ * Unicode mode as the crate's classes over the library's pinned tables, Nd, White_Space and the word class, and under
+ * `(?-u)` as their ASCII forms beside the `[[:digit:]]` family; a non-ASCII scalar under `i`, whose case folding is not
+ * modelled; the anchors `^`, `$`, `\A`, `\z`, `\b`, `\B` and lookaround, which condition the context a match stands in,
+ * as regex::parse() refuses flex's; the flags `x`, `m`, `U` and `R`; the class operators `&&`, `--` and `~~`;
+ * `ignore(ascii_case)`, which logos itself no longer accepts; and a pattern matching only the empty string, which logos
+ * refuses to compile.
  *
  * The priority is logos's own, kept on the rule as the number logos ranks by, higher winning among rules matching
  * the same longest lexeme, and mapped by token_set() onto the builder's scale. A token's is twice its byte length.

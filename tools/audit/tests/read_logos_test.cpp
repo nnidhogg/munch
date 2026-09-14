@@ -278,10 +278,9 @@ TEST(Read_logos, Refusals_name_the_line_and_the_construct)
         return line_of("#[derive(Logos)]\nenum T {\n" + std::string{attribute} + "\n    V,\n}\n");
     }};
 
-    // Needing the Unicode tables: the Perl and Unicode classes, and a non-ASCII scalar under `i`.
-    EXPECT_EQ(refused(R"rs(#[regex(r"\d+")])rs"), 3);
-    EXPECT_EQ(refused(R"rs(#[regex(r"[\w]")])rs"), 3);
+    // Needing tables the library has not got: the property classes, and a non-ASCII scalar under `i`.
     EXPECT_EQ(refused(R"rs(#[regex(r"\p{Letter}")])rs"), 3);
+    EXPECT_EQ(refused(R"rs(#[regex(r"[\P{L}]")])rs"), 3);
     EXPECT_EQ(refused(R"rs(#[regex(r"(?i)é")])rs"), 3);
     EXPECT_EQ(refused(R"rs(#[token("élan", ignore(case))])rs"), 3);
 
@@ -310,13 +309,31 @@ TEST(Read_logos, Refusals_name_the_line_and_the_construct)
     // The message names the pattern as written and what was refused.
     try
     {
-        std::ignore = read_logos("#[derive(Logos)]\nenum T {\n    #[regex(r\"\\w+\")]\n    V,\n}\n");
+        std::ignore = read_logos("#[derive(Logos)]\nenum T {\n    #[regex(r\"\\p{L}+\")]\n    V,\n}\n");
 
-        FAIL() << "a Unicode word class must be refused";
+        FAIL() << "a Unicode property class must be refused";
     }
     catch (const Spec_error& error)
     {
-        EXPECT_NE(std::string_view{error.what()}.find(R"(r"\w+")"), std::string_view::npos) << error.what();
-        EXPECT_NE(std::string_view{error.what()}.find("Unicode tables"), std::string_view::npos) << error.what();
+        EXPECT_NE(std::string_view{error.what()}.find(R"(r"\p{L}+")"), std::string_view::npos) << error.what();
+        EXPECT_NE(std::string_view{error.what()}.find("property class"), std::string_view::npos) << error.what();
     }
+}
+
+TEST(Read_logos, Unicode_perl_classes_are_the_crates_over_the_pinned_tables)
+{
+    // `\s` is White_Space: the ASCII run, the next line, the no-break space and the other separators, twenty-five
+    // scalars in all, written out; `\d` is Nd and `\w` the word class, whose first rows past ASCII are the
+    // Arabic-Indic digits and the feminine ordinal indicator, and whose negations begin at the null byte.
+    EXPECT_EQ(
+            rule_of(R"rs(#[regex(r"\s+")])rs").expression,
+            R"([\t-\r \u{85}\u{a0}\u{1680}\u{2000}-\u{200a}\u{2028}-\u{2029}\u{202f}\u{205f}\u{3000}]+)");
+    EXPECT_TRUE(rule_of(R"rs(#[regex(r"\d+")])rs").expression.starts_with(R"([0-9\u{660}-\u{669}\u{6f0}-\u{6f9})"));
+    EXPECT_TRUE(rule_of(R"rs(#[regex(r"[\w]")])rs").expression.starts_with(R"([0-9A-Z_a-z\u{aa}\u{b5}\u{ba})"));
+    EXPECT_TRUE(rule_of(R"rs(#[regex(r"\D")])rs").expression.starts_with(R"([\x00-/:-\x7f\u{80}-\u{65f})"));
+    EXPECT_TRUE(
+            rule_of(R"rs(#[regex(r"[^\s]")])rs").expression.starts_with(R"([\x00-\x08\x0e-\x1f!-\x7f\u{80}-\u{84})"));
+
+    // Under `(?-u)` the same escapes are their ASCII forms, as before.
+    EXPECT_EQ(rule_of(R"rs(#[regex(r"(?-u)\w+")])rs").expression, "[0-9A-Z_a-z]+");
 }

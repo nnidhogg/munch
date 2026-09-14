@@ -202,9 +202,10 @@ the line that holds it, rather than read it as something else:
   `priority = n`, higher winning, and mapped onto the builder's scale. The regex is the regex crate's in Unicode
   mode, rewritten over the UTF-8 bytes the lexer scans: classes, the dot and negated classes as code point ranges,
   the flags `i`, `s` and `u` with their scoping, lazy operators as their greedy forms since logos takes the longest
-  match either way. Refused: `\d`, `\w`, `\s` and `\p{...}` in Unicode mode, which need the Unicode tables, a
-  non-ASCII scalar under `i`, anchors and lookaround, the flags `x`, `m`, `U` and `R`, the class operators, and a
-  pattern matching only the empty string.
+  match either way, and `\d`, `\w` and `\s` in Unicode mode as the crate's classes over the library's pinned
+  Unicode tables, Nd, White_Space and the word class. Refused: `\p{...}`, whose property tables the library has not
+  got, a non-ASCII scalar under `i`, anchors and lookaround, the flags `x`, `m`, `U` and `R`, the class operators,
+  and a pattern matching only the empty string.
 
 The grammars under `tools/audit/grammars/` are the study's rows in every syntax, and the tests hold each `.re`, `.g4`
 and `.rs` file to its `.l` twin: the readers must build token sets that cut no input differently, decided by

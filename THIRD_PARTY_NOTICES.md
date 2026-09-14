@@ -2,8 +2,9 @@
 
 ## Unicode Character Database
 
-The XID identifier tables in `libs/regex/src/xid_ranges.inc` are generated from the Unicode Character
-Database and are used under the Unicode License v3. The complete notice follows.
+The XID identifier tables in `libs/regex/src/xid_ranges.inc` and the digit, white-space and word class tables in
+`libs/regex/src/class_ranges.inc` are generated from the Unicode Character Database and are used under the Unicode
+License v3. The complete notice follows.
 
     UNICODE LICENSE V3
     
