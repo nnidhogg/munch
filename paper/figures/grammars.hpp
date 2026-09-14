@@ -70,7 +70,9 @@ Regex block_comment()
     return concat(text("/*"), kleene(choice(not_star, stars_then_other)), plus(any_of(Set{'*'})), text("/"));
 }
 
-void c_like(munch::core::Builder& builder, const bool split_friendly)
+// The blank set is the whitespace run's bytes other than newline: space and tab for the C-like rows, space alone for
+// the Zig subset, whose reference's skip rule admits space and newline only.
+void c_like(munch::core::Builder& builder, const bool split_friendly, const Set& blank = Set{' ', '\t'})
 {
     builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::Identifier, 2);
     builder.add_token(plus(any_of(Set::digits())), Token::Number, 2);
@@ -81,11 +83,11 @@ void c_like(munch::core::Builder& builder, const bool split_friendly)
     {
         // Newline is its own token and the whitespace run cannot contain one, which is the whole difference.
         builder.add_token(text("\n"), Token::Newline, 2);
-        builder.add_token(plus(any_of(Set{' ', '\t'})), Token::Whitespace, 2);
+        builder.add_token(plus(any_of(blank)), Token::Whitespace, 2);
     }
     else
     {
-        builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::Whitespace, 2);
+        builder.add_token(plus(any_of(blank + '\n')), Token::Whitespace, 2);
     }
 }
 
@@ -192,38 +194,68 @@ void json(munch::core::Builder& builder)
     builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), Token::Whitespace, 2);
 }
 
-// The Zig subset, the designed-success row: the Zig language reference states "There are no multiline comments. Zig
-// has the property that each line of code can be tokenized independently", and its grammar bounds every string,
-// comment and char literal by the line. The base is the C-like one above, so the pair of rows compares with the C-like
-// pair on the one axis that differs, the design of the tokens that span lines in C. On top of it, mirroring the
-// reference's grammar: a string of non-control bytes with \\ and \" as its only two-byte forms; a quoted identifier,
-// @ followed by such a string; a multiline string, one \\ line at a time, the newline excluded; a char literal of
-// non-control bytes with \\ and \' as its two-byte forms; and a line comment, which covers the plain, doc and
-// container-doc spellings alike, since all three are // followed by non-control bytes to the end of the line. Control
-// bytes are 0x00 to 0x1F and 0x7F, the reference's non_control_utf8 exclusion.
+// The Zig subset, the designed-success row: the Zig language reference states that there are no multiline comments and
+// that "each line of code can be tokenized out of context", and this subset reads every string, comment and char
+// literal one line at a time. The subset is adapted from the released 0.16.0 reference's grammar appendix, read as a
+// token set over the C-like base above, with the adaptations stated here. Transcribed are the appendix's byte classes,
+// non_control_ascii the bytes 0x20 to 0x7E, non_control_utf8 the bytes 0x20 to 0xFF, and multibyte_utf8 the well-formed
+// two- to four-byte sequences its table lists, and from them the bodies: a string of string_char bodies, each a
+// multibyte_utf8 sequence, a strict escape, \x with two hex digits, \u{ hex+ } or \ before one of n r \ t ' ", or a
+// non_control_ascii byte that is neither backslash nor the quote, so that a lone backslash, a lone high byte and the
+// delete byte are not string bytes; a quoted identifier, @ followed by such a string; a char literal of exactly one
+// char_char, the same bodies over ' in place of "; a line string, \\ followed by non_control_utf8 bytes; and a line
+// comment, // followed by non_control_utf8 bytes. Adapted are the tokens around those bodies: the whitespace run is
+// reduced to the two bytes the skip rule admits, space and newline, and is read as tokens of its own, one run when
+// split_friendly is false and newline apart from the space runs when it is true, as is the line comment, where the
+// grammar folds skip, whitespace and line comments alike, into every token's tail and gives a line string and a doc
+// comment, of either spelling, a trailing run of space and newline bytes of their own besides, so here the newline that
+// ends a line string is outside its token, and a multiline string and a doc comment, each of which the grammar groups
+// over consecutive lines into one token, are read one line at a time; and the plain, doc and container-doc comment
+// spellings, which the grammar tells apart, are one token here, since as byte strings they are together every line
+// beginning //. In its byte classes the subset follows the appendix rather than the language of conforming source: the
+// source-encoding section forbids the delete byte and malformed UTF-8 everywhere, which the appendix's line bodies
+// admit, and so do the subset's. Tab, which the reference's source encoding admits as a token separator, and carriage
+// return, which it admits only immediately before a line feed, occur in no rule of the grammar appendix and so in no
+// token of this subset; they are certified vacuously and withheld.
 void zig(munch::core::Builder& builder, const bool split_friendly)
 {
-    c_like(builder, split_friendly);
+    c_like(builder, split_friendly, Set{' '});
 
-    auto non_control{Set::all() - Set{'\x7F'}};
+    const auto bytes{[](const int low, const int high) {
+        return any_of(Set::range(static_cast<char>(low), static_cast<char>(high)));
+    }};
 
-    for (int value{0}; value < 0x20; ++value)
-    {
-        non_control = non_control - Set{static_cast<char>(value)};
-    }
+    const auto non_control_ascii{Set::range('\x20', '\x7E')};
+    const auto non_control_utf8{Set::range('\x20', '\xFF')};
 
-    const auto string{
-            concat(text("\""), kleene(choice(text("\\\\"), text("\\\""), any_of(non_control - Set{'"'}))), text("\""))};
+    const auto multibyte_utf8{
+            choice(concat(bytes(0xF4, 0xF4), bytes(0x80, 0x8F), bytes(0x80, 0xBF), bytes(0x80, 0xBF)),
+                   concat(bytes(0xF1, 0xF3), bytes(0x80, 0xBF), bytes(0x80, 0xBF), bytes(0x80, 0xBF)),
+                   concat(bytes(0xF0, 0xF0), bytes(0x90, 0xBF), bytes(0x80, 0xBF), bytes(0x80, 0xBF)),
+                   concat(bytes(0xEE, 0xEF), bytes(0x80, 0xBF), bytes(0x80, 0xBF)),
+                   concat(bytes(0xED, 0xED), bytes(0x80, 0x9F), bytes(0x80, 0xBF)),
+                   concat(bytes(0xE1, 0xEC), bytes(0x80, 0xBF), bytes(0x80, 0xBF)),
+                   concat(bytes(0xE0, 0xE0), bytes(0xA0, 0xBF), bytes(0x80, 0xBF)),
+                   concat(bytes(0xC2, 0xDF), bytes(0x80, 0xBF)))};
+
+    const auto hex{any_of(Set::digits() + Set{'a', 'b', 'c', 'd', 'e', 'f', 'A', 'B', 'C', 'D', 'E', 'F'})};
+
+    const auto escape{
+            choice(concat(text("\\x"), hex, hex), concat(text("\\u{"), plus(hex), text("}")),
+                   concat(text("\\"), any_of(Set{'n', 'r', '\\', 't', '\'', '"'})))};
+
+    const auto body{[&](const char quote) {
+        return choice(multibyte_utf8, escape, any_of(non_control_ascii - Set{quote} - Set{'\\'}));
+    }};
+
+    const auto string{concat(text("\""), kleene(body('"')), text("\""))};
 
     builder.add_token(string, Token::String, 2);
     builder.add_token(concat(text("@"), string), Token::Identifier, 2);
-    builder.add_token(concat(text("\\\\"), kleene(any_of(non_control))), Token::String, 2);
+    builder.add_token(concat(text("\\\\"), kleene(any_of(non_control_utf8))), Token::String, 2);
+    builder.add_token(concat(text("'"), body('\''), text("'")), Token::Literal, 2);
 
-    builder.add_token(
-            concat(text("'"), kleene(choice(text("\\\\"), text("\\'"), any_of(non_control - Set{'\''}))), text("'")),
-            Token::Literal, 2);
-
-    builder.add_token(concat(text("//"), kleene(any_of(non_control))), Token::LineComment, 1);
+    builder.add_token(concat(text("//"), kleene(any_of(non_control_utf8))), Token::LineComment, 1);
 }
 
 Regex line_comment()
@@ -232,22 +264,22 @@ Regex line_comment()
 }
 
 // The separated repertoire: strings and both comment forms, with every body barred from holding a byte that opens
-// another of them. This is the only modification the mode study found that buys certificates while keeping all three
-// kinds, and the row exists to price it: the language loses the ability to write a slash or a quote inside a string or
-// a comment, which is what the certificate costs when it is bought by design rather than found.
+// another of them, the obvious repair for the block-comment collapse. The row exists to price it, and the applicability
+// table records that it buys no useful certificate: the language loses the ability to write a slash or a quote inside
+// a string or a comment and gains nothing for it.
 Regex separated_string()
 {
-    return concat(text("\""), kleene(any_of(Set::all() - Set{'"'} - Set{'\''} - Set{'/'} - Set{'\n'})), text("\""));
+    return concat(text("\""), kleene(any_of(Set::all() - Set{'"'} - Set{'/'} - Set{'\n'})), text("\""));
 }
 
 Regex separated_line_comment()
 {
-    return concat(text("//"), kleene(any_of(Set::all() - Set{'"'} - Set{'\''} - Set{'/'} - Set{'\n'})));
+    return concat(text("//"), kleene(any_of(Set::all() - Set{'"'} - Set{'/'} - Set{'\n'})));
 }
 
 Regex separated_block_comment()
 {
-    const auto body{any_of(Set::all() - Set{'*'} - Set{'"'} - Set{'\''} - Set{'/'})};
+    const auto body{any_of(Set::all() - Set{'*'} - Set{'"'} - Set{'/'})};
 
     const auto stars_then_other{concat(plus(any_of(Set{'*'})), body)};
 
@@ -264,8 +296,9 @@ Regex line_bounded_plain_block_comment()
 }
 
 // The UTF-8 encoding forms of RFC 3629 section 4, one token per form and transcribed range for range: the
-// certificate paper uses the designed-in property that character boundaries are found from anywhere in an octet
-// stream as the instance of its theorem every reader has met, and this is the token set that claim is asserted on.
+// certificate paper uses the characteristic the RFC lists, that character boundaries are found from anywhere in an
+// octet stream, as the instance of its theorem every reader has met, and this is the token set that claim is
+// asserted on, for the useful certificates; the bytes no form contains are certified vacuously and withheld.
 Set octets(const int start, const int end)
 {
     return Set::range(static_cast<char>(start), static_cast<char>(end));

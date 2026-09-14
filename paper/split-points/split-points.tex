@@ -60,19 +60,19 @@ $b$-transition whose target can reach acceptance, and $q_0$ is not re-entrant if
 byte in completely tokenizable input begins a token, so chunks starting there reproduce the serial sequence of kinds and
 lengths by ordered concatenation. For an engineer this means a scan may begin at any occurrence of such a byte, knowing
 nothing of what precedes it, and emit from there exactly what the serial scan emits; the usual practice, cutting at a
-newline and rescanning a little, gives that only when the token set happens to allow it, and the same tables decide when
-it does. The condition is necessary as well as sufficient, and fragile: one string, comment, or whitespace run can
-eliminate every useful certificate, and comments and whitespace are usually discarded. We therefore weaken the guarantee
-to equality after deleting a declared discarded set, and give a second condition, \emph{sound and more permissive,
-coinciding with the first when the discarded set is empty and strictly gaining on suitable pairs of token set and
-discarded set, but conservative rather than exact}, decided from the same tables, answered by a second constant-time
-one-bit query. It recovers newline for a conventional C-like tokenization and tab, newline and carriage return for JSON,
-without altering their token definitions, and refuses it where block comments are unrestricted. It ships as a query
-only: the library's planner and every measurement here use the exact condition, so a caller must plan boundaries itself.
-Splitting at exact certificates in the munch library~\cite{munch} reaches 92.6--95.3\% parallel efficiency at eight
-threads on a restricted CPU set, on a 512\,MiB dense corpus beyond last-level cache, and a $3.46$--$3.94\times$
-end-to-end speedup at four threads, across two benchmark revisions on one machine. It turns delimiter-based parallel
-lexing from a language-specific assumption into a property a compiler checks.
+newline and rescanning until two scans agree, restarts with no such guarantee and repairs afterwards, and the same
+tables decide when the newline needed no repair. The condition is necessary as well as sufficient, and fragile: one
+string, comment, or whitespace run can eliminate every useful certificate, and comments and whitespace are usually
+discarded. We therefore weaken the guarantee to equality after deleting a declared discarded set, and give a second
+condition, \emph{sound and more permissive, coinciding with the first when the discarded set is empty and strictly
+gaining on suitable pairs of token set and discarded set, but conservative rather than exact}, decided from the same
+tables, answered by a second constant-time one-bit query. It recovers newline for a conventional C-like tokenization and
+tab, newline and carriage return for JSON, without altering their token definitions, and refuses it where block comments
+are unrestricted. It ships as a query only: the library's planner and every measurement here use the exact condition, so
+a caller must plan boundaries itself. Splitting at exact certificates in the munch library~\cite{munch} reaches
+92.6--95.3\% parallel efficiency at eight threads on a restricted CPU set, on a 512\,MiB dense corpus beyond last-level
+cache, and a $3.46$--$3.94\times$ end-to-end speedup at four threads, across two benchmark revisions on one machine. It
+turns delimiter-based parallel lexing from a language-specific assumption into a property a compiler checks.
 \end{abstract}
 
 \section{Introduction}
@@ -90,14 +90,15 @@ Starting from an incorrect entry state can change the emitted stream until the r
 they converge depends on both the automaton and the input.
 
 Practice has an answer already: cut at a newline and rescan a little on each side of the cut until the two scans agree.
-It bets that a newline begins a token and pays for the bet with the rescan, and both halves fail in the places that
-matter. Inside a block comment or a string that may span lines a newline begins nothing, so a chunk entered there scans
-the rest of the comment as if it were code; and the rescan meant to repair this must run at least as far as the comment
-lasts, which nothing in the token set bounds. The certificate is the exact form of the same idea with the bet removed.
-Rather than assuming which bytes begin tokens, it asks the compiled automaton, once, at construction, and tests the
-answer in one bit per byte. Where cutting at newline was sound all along, newline is what comes back; where it was not,
-the answer is a refusal rather than a rescan, and Section~\ref{sec:applicability} shows that the usual C-like token set
-with block comments is refused, and what it would cost to change that.
+It bets that a newline begins a token and pays for the bet with the rescan, and where it matters the bet loses and the
+repair has no bound. Inside a block comment or a string that may span lines a newline begins nothing, so a chunk entered
+there scans the rest of the comment as if it were code; and the rescan meant to repair this may have to run back to the
+comment's opener or forward to its terminator, neither distance bounded by anything in the token set. The certificate is
+the exact form of the same idea with the bet removed. Rather than assuming which bytes begin tokens, it asks the
+compiled automaton, once, at construction, and tests the answer in one bit per byte. Where cutting at newline was sound
+all along, newline is what comes back; where it was not, the answer is a refusal rather than a rescan, and
+Section~\ref{sec:applicability} shows that the usual C-like token set with block comments is refused, and what it would
+cost to change that.
 
 This report describes a property that removes the uncertainty for a useful class of token sets, rather than managing
 it. The property is a per-symbol certificate, extracted from the compiled automaton at construction time, such that
@@ -138,39 +139,32 @@ definitions arrive.
 \begin{table}[!t]
 \centering
 \begin{tabular}{p{6.2cm}p{5.1cm}l}
-\toprule
-Question & Answer & Where \\
-\midrule
-When may a chunk boundary be taken without knowing what precedes it? & No live state but a non-re-entrant $q_0$
-consumes the byte & Theorem~\ref{thm:main} \\
-Is that condition merely sufficient? & No: it is necessary as well & Theorem~\ref{thm:necessity} \\
-What does it cost to decide? & One pass over the compiled tables, then one bit per byte & Section~\ref{sec:derivation}
-\\
-Do real token sets satisfy it? & 15 token sets measured; the conventional C-like and JSON rows certify nothing exactly
-& Table~\ref{tab:applicability} \\
-Can a token set that certifies nothing be rescued? & Weakening to equality modulo discarded tokens recovers newline
-there; nine of the fifteen rows gain bytes & Section~\ref{sec:modulo} \\
-Can it be bought by design? & One line-bounded comment form suffices; barring the kinds from each other's openers buys
-nothing & Table~\ref{tab:applicability} \\
-Does it pay? & 92.6--95.3\% parallel efficiency at eight threads, $3.46$--$3.94\times$ end to end at four &
-Section~\ref{sec:evaluation} \\
-\bottomrule
+\toprule Question & Answer & Where \\ \midrule When may a chunk boundary be taken without knowing what precedes it? & No
+live state but a non-re-entrant $q_0$ has a live transition on the byte & Theorem~\ref{thm:main} \\ Is that condition
+merely sufficient? & No: it is necessary as well & Theorem~\ref{thm:necessity} \\ What does it cost to decide? & Time
+linear in the compiled tables, then one bit per byte & Section~\ref{sec:derivation} \\ Do real token sets satisfy it? &
+15 token sets measured; the conventional C-like and JSON rows certify no useful byte exactly &
+Table~\ref{tab:applicability} \\ Can a token set that certifies no useful byte be rescued? & Weakening to equality
+modulo discarded tokens recovers newline there; eight of the fifteen rows gain bytes & Section~\ref{sec:modulo},
+Table~\ref{tab:applicability} \\ Can it be bought by design? & In the studied grammar, where the block comment is the
+one token spanning lines, once newline is its own token a line-bounded block comment suffices; barring the kinds from
+each other's openers buys nothing & Table~\ref{tab:applicability} \\ Does it pay? & 92.6--95.3\% parallel efficiency at
+eight threads, $3.46$--$3.94\times$ end to end at four & Section~\ref{sec:evaluation} \\ \bottomrule
 \end{tabular}
-\caption{What this paper establishes. Every row is stated and proved or measured in the section named; the two
-applicability rows are asserted for each token set by \code{figures/applicability.cpp}, and the throughput row is one
+\caption{What this paper establishes. Every row is stated and proved or measured at the location named; the
+applicability results are asserted cell by cell by \code{figures/applicability.cpp}, and the throughput row is one
 machine and two benchmark revisions, as Section~\ref{sec:evaluation} details.}
 \label{tab:results}
 \end{table}
 
-The paper separates the result from the study around it. The result is
-Sections~\ref{sec:prelim}--\ref{sec:modulo}: the definitions, the exact certificate with its necessity proof and the
-re-entrancy subtlety, and the relaxed condition modulo discarded tokens. The study and the artifact are
-Sections~\ref{sec:derivation}--\ref{sec:evaluation}: the derivation and planner as released, the applicability of both
-conditions over fifteen token sets, and the measured parallel scan. Section~\ref{sec:prior} places the certificate among
-the existing answers to the entry-state problem before the result, and Section~\ref{sec:related} returns to that
-literature after it. A companion report generalizes the certificate from single bytes to short byte
-windows~\cite{nidhogg2026splitwindows}, and a second reads the same certificates backwards, to choose the position a
-scan resumes at after an error~\cite{nidhogg2026panicmode}; nothing here depends on either.
+The paper separates the result from the study around it. The result is Sections~\ref{sec:prelim}--\ref{sec:modulo}: the
+definitions, the exact certificate with its necessity proof and the re-entrancy subtlety, and the relaxed condition
+modulo discarded tokens. The study and the artifact are Sections~\ref{sec:derivation}--\ref{sec:evaluation}: the
+derivation and planner as released, the applicability of both conditions over fifteen token sets, and the measured
+parallel scan. Section~\ref{sec:prior} places the certificate among the existing answers to the entry-state problem
+before the result, and Section~\ref{sec:related} returns to that literature after it. A companion report generalizes the
+certificate from single bytes to short byte windows~\cite{nidhogg2026splitwindows}, and a second reuses the same
+certificates to choose where a scan resumes after an error~\cite{nidhogg2026panicmode}; nothing here depends on either.
 
 \section{Prior approaches}
 \label{sec:prior}
@@ -374,11 +368,12 @@ UTF-8~\cite{yergeau2003utf8}, one token per form. After a byte that begins a for
 \code{0x80}--\code{0xBF}, are admitted until the form completes, and no form is a prefix of another, so no live state
 other than $q_0$ has a transition on a byte that begins a form and no transition returns to $q_0$. Every such byte,
 \code{0x00}--\code{0x7F}, \code{0xC2}--\code{0xDF}, \code{0xE0}--\code{0xEF} and \code{0xF0}--\code{0xF4}, is therefore
-certified, and no continuation byte is, since only states other than $q_0$ consume one. That is the property the RFC
-states as its design goal, ``character boundaries are easily found from anywhere in an octet stream'', recovered from
-the compiled table by a definition that knows nothing of UTF-8; \code{figures/applicability.cpp} asserts it byte for
-byte. The encoding was designed to have the property. The question this paper asks is which token sets have it without
-having been designed for it, and Section~\ref{sec:applicability} answers for fifteen of them.
+certified, and no continuation byte is, since only states other than $q_0$ consume one; the bytes no form contains,
+\code{0xC0}, \code{0xC1} and \code{0xF5}--\code{0xFF}, are certified vacuously, and the shipped predicate withholds them
+as Corollary~\ref{cor:useful} says. That is the property the RFC lists among the encoding's characteristics, ``character
+boundaries are easily found from anywhere in an octet stream'', recovered from the compiled table by a definition that
+knows nothing of UTF-8; \code{figures/applicability.cpp} asserts it byte for byte. The question this paper asks is which
+token sets have that property, and Section~\ref{sec:applicability} answers for fifteen of them.
 
 \begin{lemma}[Occurrences begin tokens]
 \label{lem:boundary}
@@ -913,16 +908,15 @@ modulo $I$ \\ \midrule C-like: identifiers, numbers, whitespace runs, operators,
 punctuation bytes & the same, plus space, tab and newline \\ the first row plus string literals alone (no raw newline
 inside) & none & newline \\ the first row plus \code{//} line comments alone & none & newline \\ the first row plus
 block comments alone & none & the same \\ JSON, the RFC 8259 lexical forms over bytes & none & tab, newline, carriage
-return \\ log lines: a run of non-newline bytes, and newline & newline & the same \\ C-like, conventional
-tokenization: line-bounded strings and \code{//} comments, whitespace runs including newline & none & newline \\ the
-same recognized language, split-friendly: newline its own token, spaces and tabs a separate run & newline & the same
-\\ the same plus block comments & none & the same \\ the same three kinds, every body barred from the bytes that
-open another & none & the same \\ the same three kinds unrestricted, the block comment alone barred from crossing a
-line & newline & the same \\ Zig subset, conventional tokenization & none & tab and newline \\ the Zig subset,
-split-friendly & newline & tab and newline \\ \code{keyword\_scale\_builder()}, the construction-cost grammar &
-16 of those 24 bytes & the same, plus space, tab and newline \\ \code{build\_lexer(false)}, the scaling grammar & 13
-of its own 14 & the same, plus space, tab and newline \\
-\bottomrule
+return \\ log lines: a run of non-newline bytes, and newline & newline & the same \\ C-like, conventional tokenization:
+line-bounded strings and \code{//} comments, whitespace runs including newline & none & newline \\ the same recognized
+language, split-friendly: newline its own token, spaces and tabs a separate run & newline & the same \\ the same plus
+block comments & none & the same \\ the same three kinds, every body barred from the bytes that open another & none &
+the same \\ the same three kinds with their ordinary bodies, the block comment alone barred from crossing a line &
+newline & the same \\ Zig subset, conventional tokenization & none & newline \\ the Zig subset, split-friendly & newline
+& the same \\ \code{keyword\_scale\_builder()}, the construction-cost grammar & 16 of those 24 bytes & the same, plus
+space, tab and newline \\ \code{build\_lexer(false)}, the scaling grammar & 13 of its own 14 & the same, plus space, tab
+and newline \\ \bottomrule
 \end{tabular}
 \caption{Certified bytes by token
 set, exactly and modulo the discarded set $I$. Three mechanisms explain the collapses in the middle column:
@@ -980,18 +974,36 @@ parsing into speculation.
 
 Four further rows price that lever, and the price is smaller than it looks. The obvious repair for the block-comment
 collapse is to stop the token kinds from colliding: bar every string and comment body from holding a byte that opens
-another of them. The row for that grammar certifies nothing, exactly or modulo, so the expensive restriction buys
-nothing at all. The row below it keeps the ordinary repertoire, strings and comments free to hold any byte, and adds
-one restriction instead, that the block comment may not cross a line. Newline certifies outright. Line-boundedness is
-therefore the lever and separation is not, and a language designer who wants a certified split byte pays for one
-line-bounded comment form rather than for the ability to write a slash inside a string.
+another of them. The row for that grammar certifies no useful byte, exactly or modulo, so the expensive restriction buys
+nothing at all. The row below it restores the ordinary string and comment rules, whose bodies may hold one another's
+opening bytes, and adds one restriction instead, that the block comment may not cross a line; both rows sit on the
+split-friendly base, where newline is already a token of its own. Newline certifies outright. Line-boundedness is
+therefore the lever and separation is not, and a language designer who wants a certified split byte pays for newline as
+a token and one line-bounded comment form rather than for the ability to write a slash inside a string.
 
-The last two rows are that choice already made. Zig's reference states that there are no multiline comments and that
-each line of code can be tokenized independently, and its multiline strings are per-line
-\code{\textbackslash\textbackslash} tokens that exclude the newline. A shipped language chose the property this section
-formalizes, for its own reasons, and the rows show what it bought: tab and newline modulo the discarded set under the
-conventional tokenization, and newline certified outright once newline is its own token. The pair beside the C-like rows
-is the same comparison the conventional and split-friendly rows draw, run on a grammar nobody designed for this paper.
+The last two rows are that choice already made. Zig's reference~\cite{zig2026reference} states that there are no
+multiline comments and that each line of code can be tokenized out of context, and its multiline strings are written one
+\code{\textbackslash\textbackslash} line at a time. The subset is adapted from the released 0.16.0 reference's grammar
+appendix over the C-like base of the rows above, with the adaptations stated. Transcribed are its byte classes, the
+well-formed UTF-8 sequences its table lists, printable ASCII in string and character bodies and every byte from space
+upward in line bodies, and from them the bodies of its strings, quoted identifiers, character literals, line comments
+and line strings, with the strict escapes and the one-character literal that grammar has. Adapted are the tokens around
+those bodies: the whitespace bytes of its \code{skip} rule, space and newline, are read as tokens of their own, one
+whitespace run in the conventional row and newline apart from the space runs in the split-friendly row, and so are the
+line comments, where the grammar folds \code{skip}, whitespace and line comments alike, into every token's tail and
+gives a line string and a doc comment, of either spelling, a trailing run of space and newline bytes of their own
+besides, so here a line string ends at the newline, the run after its body left outside it, and a multiline string and a
+doc comment, each of which the grammar groups over consecutive lines into one token, are read one line at a time; and
+the plain, doc and container-doc comment spellings, which the grammar tells apart, are one token here, since as byte
+strings they are together every line beginning \code{//}. In its byte classes the subset follows the appendix rather
+than the language of conforming source: the reference's source-encoding section forbids the delete byte and malformed
+UTF-8 everywhere, which the appendix's line bodies admit, and so do the subset's. Tab, which the reference's source
+encoding admits as a token separator, and carriage return, which it admits only immediately before a line feed, occur in
+no rule of that appendix, so they occur in no token of the subset and are certified vacuously and withheld. A shipped
+language chose the property this section formalizes, for its own reasons, and the rows show what it bought: newline
+modulo the discarded set under the conventional tokenization, and newline certified outright once newline is its own
+token. The pair beside the C-like rows is the same comparison the conventional and split-friendly rows draw, run on a
+subset adapted from a shipped language's grammar rather than designed for the property.
 
 The JSON row of Table~\ref{tab:applicability} appears to contradict the literature, and the reconciliation is about
 the equivalence each result preserves rather than about the automaton. Prior claims that JSON may be divided at
@@ -1016,15 +1028,15 @@ therefore not merely reconciled but derived, from the token set rather than from
 certification under the \emph{exact} equivalence still needs the tokenization changed, by making newline its own token
 as the split-friendly row does.
 
-The right column of Table~\ref{tab:applicability} places the whitespace and comment tokens of each row in $I$ and
-reads the relaxed condition. Nine of the fifteen rows gain bytes, and the pattern behind them is the second of the
-three collapse mechanisms named above: wherever whitespace is a run token the caller discards, its own bytes come
-back, because severing a whitespace run at a whitespace byte yields two whitespace runs and both are deleted. That is
-the one mechanism discarding undoes. The other two survive it. A byte a string literal or a block comment absorbs is
-recovered nowhere: a state inside either accepts nothing at all, so the left chunk cannot end there on a complete
-discarded token, which is the first thing $C$ requires. A byte a kept multi-byte token continues past is likewise not
-recovered: the state that has consumed its first byte can still reach the kept token, so the third clause of $C$
-fails, and rightly, since severing a kept token is a difference the deletion preserves.
+The right column of Table~\ref{tab:applicability} places the whitespace and comment tokens of each row in $I$ and reads
+the relaxed condition. Eight of the fifteen rows gain bytes, and the pattern behind them is the second of the three
+collapse mechanisms named above: wherever whitespace is a run token the caller discards, its own bytes come back,
+because severing a whitespace run at a whitespace byte yields two whitespace runs and both are deleted. That is the one
+mechanism discarding undoes. The other two survive it. A byte a string literal or a block comment absorbs is recovered
+nowhere: a state inside either accepts nothing at all, so the left chunk cannot end there on a complete discarded token,
+which is the first thing $C$ requires. A byte a kept multi-byte token continues past is likewise not recovered: the
+state that has consumed its first byte can still reach the kept token, so the third clause of $C$ fails, and rightly,
+since severing a kept token is a difference the deletion preserves.
 
 In the exact column each outcome reports a fact about the tokenization rather than a limitation of the test, since
 Theorem~\ref{thm:necessity} makes that condition necessary as well as sufficient. The modulo column carries no such
@@ -1036,21 +1048,21 @@ inside both; the first row, which has neither, recovers it along with tab and ne
 over bytes, its UTF-8 caveat unchanged from above. JSON gains tab and carriage return as well as newline because RFC
 8259 excludes every raw byte below \code{0x20} from string interiors, which confines all three to whitespace, while
 space is admitted there and so is not recovered. That the recovered set is exactly JSON's whitespace minus space is a
-consequence of the RFC's own exclusion, not a coincidence. The rows carrying block comments continue to hold no useful
-certificate, because a comment severed at a newline leaves \code{/*\,a} and \code{b\,*/}, and both halves re-tokenize
-completely: in this token set they become the operators \code{/} and \code{*} and an identifier, six kept tokens in
-place of one discarded comment, which is exactly the difference a caller can see. The correct conclusion carries the
-certificate's own scope: this tokenization of a C-like language with unrestricted block comments cannot be split at
-every occurrence of a byte value chosen from the grammar alone, newline included, on completely tokenizable inputs,
-without state, overlap, speculation or repair, and the certificate says so. Schemes that inspect the document and split
-at some occurrences but not others are outside the claim.
+consequence of the RFC's own exclusion, not a coincidence. The rows carrying unrestricted block comments continue to
+hold no useful certificate, because a comment severed at a newline leaves \code{/*\,a} and \code{b\,*/}, and both halves
+re-tokenize completely: in this token set they become the operators \code{/} and \code{*} and an identifier, six kept
+tokens in place of one discarded comment, which is exactly the difference a caller can see. The correct conclusion
+carries the certificate's own scope: this tokenization of a C-like language with unrestricted block comments cannot be
+split at every occurrence of a byte value chosen from the grammar alone, newline included, on completely tokenizable
+inputs, without state, overlap, speculation or repair, and the certificate says so. Schemes that inspect the document
+and split at some occurrences but not others are outside the claim.
 
-Four rows are cross-checked by splitting as well as by reading the predicate: the conventional and split-friendly
-C-like pair, the split-friendly row with block comments, and JSON. On those the condition agrees with brute-force
-splitting on every candidate byte the corpus exercises, which is a declared set of sixteen bytes, the whitespace kinds
-plus eleven representative structural characters, not all 256. The conservatism measured in Section~\ref{sec:decide}
-therefore did not appear on the bytes tested, which is weaker than exactness on those token sets and is all the
-artifact checks.
+Four rows are cross-checked by splitting as well as by reading the predicate: the conventional and split-friendly C-like
+pair, the split-friendly row with block comments, and JSON. On those the condition agrees with brute-force splitting on
+every candidate byte the corpus exercises, which is a declared set of sixteen bytes, the four whitespace bytes, eleven
+representative structural characters and the letter \code{t}, not all 256. The conservatism measured in
+Section~\ref{sec:decide} therefore did not appear on the bytes tested, which is weaker than exactness on those token
+sets and is all the artifact checks.
 
 The practical content is narrower than a count of moved cells suggests, and more useful. The exact certificate already
 admitted newline for the split-friendly tokenization in which newline is its own token and whitespace runs exclude it.
@@ -1114,9 +1126,9 @@ value, or even its sign, across environments and benchmark revisions.
 Everything measured here uses the exact certificate. Both \code{chunk\_boundaries()} and the parallel executor built on
 it consult the exact map, so no figure in this section reports what the relaxed condition would buy at run time.
 Section~\ref{sec:applicability} establishes which bytes it recovers, and that is a statement about token sets rather
-than about throughput; a token set that certifies nothing exactly can gain a boundary set from the relaxation, as nine
-of the fifteen rows studied do and the block-comment rows do not, but turning that into a measured speedup needs a
-planner this library does not yet ship.
+than about throughput; a token set that certifies no useful byte exactly can gain a boundary set from the relaxation, as
+five of the eight such rows do and the block-comment rows do not, eight of the fifteen gaining bytes in all, but turning
+that into a measured speedup needs a planner this library does not yet ship.
 
 \paragraph{Environment A, virtualized.} An Intel Core i9-12900K, a hybrid part with eight performance cores carrying
 two-way SMT and eight efficiency cores, so sixteen physical cores and 24 logical processors, with 32\,GiB of memory.
@@ -1169,10 +1181,10 @@ the total token count.
 
 Both corpora are favourable to the method by construction, and the scaling figures should be read with that in mind.
 Neither contains a string literal or a comment, the two constructs that absorb the alphabet and empty the certificate,
-and the grammar driving them certifies 13 of its 14 operator and punctuation candidates. What follows therefore
-measures how the parallel machinery scales on a token set the certificate suits, and is not evidence about how often a
-token set does suit it; Table~\ref{tab:applicability} is what speaks to that, and eight of its fifteen rows admit no
-exact certificate at all. The two questions are separate, and a grammar can pass the first while failing the second: a
+and the grammar driving them certifies 13 of its 14 operator and punctuation candidates. What follows therefore measures
+how the parallel machinery scales on a token set the certificate suits, and is not evidence about how often a token set
+does suit it; Table~\ref{tab:applicability} is what speaks to that, and eight of its fifteen rows admit no useful exact
+certificate at all. The two questions are separate, and a grammar can pass the first while failing the second: a
 certificate admitting a byte the corpus never carries yields no parallelism, as automatically generated JSON without
 newlines already shows.
 
@@ -1396,19 +1408,19 @@ correspondence fails, and a scanner's live automaton is partial by construction.
 The connection is more than terminological. A code is synchronizing when it admits a word $w$ such that an occurrence of
 $ww$ lets a decoder resume independently from the position after the first $w$, which is what allows a coded message to
 be decoded in parallel~\cite{berlinkov2021partial}. Theorem~\ref{thm:main} has that shape, and UTF-8 is its everyday
-case: the encoding was designed so that any byte beginning a form resynchronizes a decoder, and
-Section~\ref{sec:certificate} recovers exactly those bytes from the compiled table. What is new here is therefore not
-that such a letter permits independent resumption, but what surrounds it: the re-entrancy side condition, which ties the
-reset to \emph{token boundaries under maximal munch} rather than to automaton states alone, so the resumed scan agrees
-with the serial one on token lengths and kinds and not merely on where it sits; the characterization of
-Section~\ref{sec:necessity}, which makes the condition necessary as well as sufficient on the trim live automaton, so
-that a token set certifying nothing has no byte that both occurs in a completely tokenizable input and universally
-begins a token; the derivation of the entire certified set from a compiled token set at build time, rather than the
-assumption that a distinguished word occurs; and the relaxation modulo discarded tokens, which has no direct counterpart
-in the cited synchronizing-code model, which designates no discarded output-token class. The equivalence behind that
-relaxation is not itself the novelty: ZipLex's separator construction proves a printing guarantee modulo inserted
-separator tokens~\cite{chassot2026ziplex}, but there the class marks separators inserted between formed tokens, where
-here it marks tokens a raw-input cut may sever.
+case: any byte beginning a form resynchronizes a decoder, and Section~\ref{sec:certificate} recovers exactly those bytes
+as the useful certificates from the compiled table. What is new here is therefore not that such a letter permits
+independent resumption, but what surrounds it: the re-entrancy side condition, which ties the reset to \emph{token
+boundaries under maximal munch} rather than to automaton states alone, so the resumed scan agrees with the serial one on
+token lengths and kinds and not merely on where it sits; the characterization of Section~\ref{sec:necessity}, which
+makes the condition necessary as well as sufficient on the trim live automaton, so that a token set certifying no useful
+byte has no byte that both occurs in a completely tokenizable input and universally begins a token; the derivation of
+the entire certified set from a compiled token set at build time, rather than the assumption that a distinguished word
+occurs; and the relaxation modulo discarded tokens, which has no direct counterpart in the cited synchronizing-code
+model, which designates no discarded output-token class. The equivalence behind that relaxation is not itself the
+novelty: ZipLex's separator construction proves a printing guarantee modulo inserted separator
+tokens~\cite{chassot2026ziplex}, but there the class marks separators inserted between formed tokens, where here it
+marks tokens a raw-input cut may sever.
 
 Certified split points differ from simultaneous automata in requiring no enlarged automaton and no composition, from
 speculation in requiring no guess and no repair, from $k$-locality in being a per-symbol property derived from the token
@@ -1477,31 +1489,43 @@ scanning itself, and the lookahead hazard noted in the discussion of state compo
 same backtracking behaviour.
 
 \paragraph{Static entry-state properties.} Ko, Jung, Han and Burgstaller~\cite{ko2014speculative} parallelize DFA
-membership by speculation and reduce the speculation they must do by reading a static property off the automaton: the
-set of states having an incoming transition on a given symbol. Where that set is a singleton, a chunk beginning after
-that symbol has its entry state pinned without a guess. The shape is this paper's, a per-symbol property of the
-compiled automaton that removes the need to know what preceded a position, and the difference is in what the property
-is taken over and what it must additionally exclude. Theirs is the whole transition relation of a membership DFA;
-Theorem~\ref{thm:main}'s is the trim live subautomaton $A^+$ of a token DFA, so states that can never accept and
-states no scan can reach are discarded before the count is taken, which admits symbols their test refuses. Against
-that, certification additionally requires that $q_0$ is not re-entrant, a maximal-munch boundary condition with no
-counterpart in a membership test, where no token boundaries exist to preserve. The two conditions are therefore
-incomparable rather than one being a weakening of the other, and the reason is that a membership test must reproduce
-an accept decision while a scanner must reproduce a token stream.
+membership by speculation and reduce the speculation from a static property of the automaton: for each symbol, the set
+of non-error states that some transition on that symbol enters. A chunk is then matched from the states in the set for
+the last symbol of the preceding chunk, its reverse lookahead symbol, and where that set is a singleton that state is
+the sole non-error candidate, the actual entry state being it or the error sink of their complete automaton, at which
+the match has already failed. The certificate is a condition on the other end of the transitions: it asks which live
+states have a transition on the byte at all, and admits the byte when $q_0$ is the only one and is not re-entrant. On
+one trim automaton, completed by a single error sink for their construction, the useful certificate is the stronger of
+the two, since a useful certified byte, one only $q_0$ consumes, has by determinism one live target, so their set is a
+singleton whenever the byte is usefully certified, and a vacuously certified byte, one no token contains, has the empty
+set, while the converse fails: over the single token \code{ab} the byte \code{b} has one target and begins no token.
+What separates the two is what each must reproduce. A membership test needs the state after the symbol, so the sole
+non-error candidate is all it needs; a restart from $q_0$ that knows nothing of what precedes needs a token boundary
+before the byte, which is why the certificate speaks of sources, requires that $q_0$ is not re-entrant, and is taken
+over the trim live automaton $A^+$, where an untrimmed presentation's dead and unreachable states, and any equivalent
+copies of live states it carries, can only enlarge their count.
 
-\paragraph{Cut points chosen rather than forced.} Two lines outside compiler construction select positions in a byte
-stream by a bounded window and then study how often the selection fires, which is this paper's applicability question
-asked of a designed rule rather than of one a token set forces. \citet{bjorner2010chunking} call a chunking method
-local when a fixed criterion over a window of radius $h$, their horizon, decides every cutpoint, which is the
-certificate predicate under another name; they measure the displacement from a requested position to the first
-cutpoint, give its distribution rather than its mean, and compute the probability of no cutpoint in a long interval
-for four separate chunking classes. \citet{schleimer2003winnowing} define the density of a fingerprinting scheme as
-the expected fraction of positions selected, prove it asymptotically $2/(w+1)$ for window size $w$ with a lower bound
-of $1.5/(w+1)$ for local algorithms, and observe long real passages where nothing is selected. The difference is which
-way the constraint runs. There the rule is chosen and its density is the design objective, so a scheme with poor
-supply is replaced; here the token set forces the rule and its supply is whatever the grammar leaves, which is why
-Section~\ref{sec:applicability} measures certificate supply rather than tuning it. Their lower bounds do not transfer
-for the same reason: they bound what a designer can achieve, not what a given token set admits.
+\paragraph{Cut points chosen rather than forced.} Two lines outside compiler construction, content-defined chunking and
+document fingerprinting, choose positions in a byte stream by rules of their own, with objectives other than lexical
+safety. \citet{bjorner2010chunking} call a chunking method local when the cutpoints of every file are exactly the
+positions whose $h$-vicinity, the $2h + 1$ entries around the position, lies in a chosen criterion set; a nonempty
+useful certified set is the case $h = 0$ of that shape, a rule the token set imposes rather than one a designer picks,
+and a local rule need not respect token boundaries at all. Over files whose entries are drawn independently and
+uniformly, they define the slack of two files that agree from a point onward as the distance from that point to their
+first common cutpoint, analyze its expectation normalized by the expected chunk length for all but the local maximum
+method, whose slack they write they could not estimate accurately, and bound the probability that a long interval
+carries no cutpoint, across four chunking methods, the local maximum method's figures under their assumption that no two
+positions tie. \citet{schleimer2003winnowing} define the density of a fingerprinting scheme as the expected fraction of
+the hashes computed that it selects, under a given input distribution; assuming independent, uniformly distributed
+hashes with ties negligible they prove winnowing's density asymptotically $2/(w+1)$ for window size $w$, and a lower
+bound of $1.5/(w+1)$ for every local algorithm, one that selects a position from each window of $w$ hashes by that
+window's contents alone. The longest fingerprint-free run their Web experiment reports belongs to the competing $0 \bmod
+p$ selector; winnowing selects in every window by construction. Neither result transfers here: a certified set is under
+no obligation to select in every window, so the coverage the lower bound assumes need not hold, and the density results
+rest on an independence model where this paper asks only which bytes a given token set admits. There the rule is chosen
+and judged by what it selects, density under coverage for winnowing, slack and cutpoint-free tails at matched expected
+chunk lengths for the chunking methods; here the token set forces the rule, Section~\ref{sec:applicability} inventories
+what it admits, and how often those bytes occur is a property of the input, not of the grammar.
 
 \paragraph{Relation to state composition.} We computed it for the block-comment row of Table~\ref{tab:applicability},
 whose automaton has fourteen states, and the question needs no corpus. A line start follows a newline, so it is either
