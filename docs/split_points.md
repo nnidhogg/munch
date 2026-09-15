@@ -1365,10 +1365,10 @@ that the exact certificate must reject, with the same constant-time one-bit quer
 closure and a second `O(|Q| |Σ|)` sweep, plus `O((|Q| + |I|) log(1 + |I|))` ordered-set work. The recovered cases
 include ones that matter in practice: the conventional C-like token set studied here and a JSON lexer both gain newline
 without any change to their token definitions, which removes a token set redesign that the exact method had imposed on
-its users. An explicit witness establishes that the relaxation is conservative; in the fixed seeded sweep it rejected 97
-of 362 exercised pairs, 26.8%, having no counterexample through length eight. Separately, on four application token sets
-it agreed with brute-force splitting on all sixteen declared candidate bytes. The relaxed result remains a precomputed
-one-bit query; the shipped planner and every throughput measurement use the exact certificate.
+its users. An explicit witness establishes that the relaxation is conservative; in the fixed seeded sweep it rejected
+97, or 26.8%, of the 362 exercised pairs that have no counterexample through length eight. Separately, on four
+application token sets it agreed with brute-force splitting on all sixteen declared candidate bytes. The relaxed result
+remains a precomputed one-bit query; the shipped planner and every throughput measurement use the exact certificate.
 
 Two boundaries are worth restating, because both were initially unclear to us. Certification depends only on the token
 set, for the relaxed condition also on the declared discarded set, and never on a particular input, so a read-time
