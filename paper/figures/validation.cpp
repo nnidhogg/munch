@@ -198,7 +198,7 @@ std::vector<Verdict> oracle(
             continue;
         }
 
-        // exempted the cut before the final byte from every check.
+        // The cut before the first byte is a boundary of every scan and is exempted from every check.
         for (std::size_t at{1}; at < text.size(); ++at)
         {
             auto& verdict{verdicts[static_cast<unsigned char>(text[at])]};
