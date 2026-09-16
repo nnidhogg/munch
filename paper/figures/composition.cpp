@@ -1,5 +1,5 @@
 /*
- * Asserts the composition measurement of paper/split-points.tex, which compares the certificate against
+ * Asserts the composition measurement of paper/split-points/split-points.tex, which compares the certificate against
  * reconstructing the scan state at each line start by a parallel prefix scan.
  *
  * The number that decides whether such a scan is cheap is how many distinct states can occur at a line start, since
