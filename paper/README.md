@@ -12,8 +12,8 @@ soundness and strict-extension results, and a bibliography.
 and mirrored by [docs/split_windows.md](../docs/split_windows.md): the generalization from certified bytes to certified
 windows, with the conservative cloud model and its soundness proof, the finite quotient that makes the search a decision
 procedure, the specialization theorem tying length one to the shipped predicate, and the strictness witnesses. Its
-evaluation runs as asserted probes in the test suite (`tools/probes/window_gate.cpp`), and `split-windows/campaign.md`
-names the archived collections behind its figures.
+evaluation runs as asserted probes in the test suite (`tools/probes/src/window_gate.cpp`), and
+`split-windows/campaign.md` names the archived collections behind its figures.
 
 `panic-mode/panic-mode.tex` is the third, published as [arXiv:2609.10600](https://arxiv.org/abs/2609.10600) and mirrored
 by [docs/panic_mode.md](../docs/panic_mode.md): the recovery point chosen by theorem rather than by convention, where a
