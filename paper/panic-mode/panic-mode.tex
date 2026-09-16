@@ -301,8 +301,7 @@ A tokenizable repair commits its whole input, $\con(y) = |y|$, so it is evidence
 and its committed segmentation is its segmentation.
 \end{proof}
 
-The corollary is the quantification an earlier version of this paper proved directly, and it is the weaker
-claim. For an anchor $c$ and evidence $\window{x}{q}{q+w}$, write
+The corollary is the weaker claim. For an anchor $c$ and evidence $\window{x}{q}{q+w}$, write
 \begin{gather*}
 \Rcomp(x, c) = \{\, r \in \Sigma^* : \con(r \cdot \suffix{x}{c}) = |r| + |x| - c \,\}, \\
 \Rreach(x, c; q, w) = \{\, r \in \Sigma^* : \con(r \cdot \suffix{x}{c}) \ge |r| + q + w - c \,\},
@@ -427,21 +426,19 @@ $\Rreach$'s inhabitation, which the campaign does not decide.
 
 \subsection{Non-claims}
 
-Four fences, each deliberate. A repair that modifies the suffix at or after the anchor falls outside the repair
-relation proved here: the definition quantifies over prefix repairs only, and for the window theorem the anchor
-must additionally sit at or before the occurrence; the theorems say nothing about such an edit either way,
-though one that happens to preserve the evidence still faces the occurrence-universal certificate. The existence
-of an evidence-reaching repair is not claimed; where no scan of any repair commits through the evidence, the
-guarantee holds vacuously. That boundary is strictly tighter than the complete-tokenizability version an earlier
-draft drew, and the residual asymmetry between the certificate kinds narrows with it: a byte answer's evidence
-is the answer itself, so whenever the damaged suffix admits a first commit at all, that commit witnesses content
-for the anchor placed at the answer. A window with positive origin instead rests on evidence beginning before
-the resume position, which no scan anchored at the answer reads, so its guarantee can bind repairs the resumed
-scan never exhibits. The answer is the first certificate in evidence order, not the smallest answerable
-position: a window met earlier can answer a byte or two past one met later. And on a suffix no repair can save
-to the end of input, the theorems still bind every repair whose scan commits through the evidence, but the driver itself
-promises termination and nothing else, each resume strictly advancing until the input ends or the search
-refuses.
+Four fences, each deliberate. A repair that modifies the suffix at or after the anchor falls outside the repair relation
+proved here: the definition quantifies over prefix repairs only, and for the window theorem the anchor must additionally
+sit at or before the occurrence; the theorems say nothing about such an edit either way, though one that happens to
+preserve the evidence still faces the occurrence-universal certificate. The existence of an evidence-reaching repair is
+not claimed; where no scan of any repair commits through the evidence, the guarantee holds vacuously. That boundary is
+strictly tighter than one drawn at complete tokenizability, and the residual asymmetry between the certificate kinds
+narrows with it: a byte answer's evidence is the answer itself, so whenever the damaged suffix admits a first commit at
+all, that commit witnesses content for the anchor placed at the answer. A window with positive origin instead rests on
+evidence beginning before the resume position, which no scan anchored at the answer reads, so its guarantee can bind
+repairs the resumed scan never exhibits. The answer is the first certificate in evidence order, not the smallest
+answerable position: a window met earlier can answer a byte or two past one met later. And on a suffix no repair can
+save to the end of input, the theorems still bind every repair whose scan commits through the evidence, but the driver
+itself promises termination and nothing else, each resume strictly advancing until the input ends or the search refuses.
 
 \section{The search}
 \label{sec:search}
@@ -558,7 +555,7 @@ The campaign: \code{tools/probes/src/recovery\_quality.cpp} of munch release \co
 per cell, three independent seeds, every seed fixed, so the whole experiment is deterministic. This is the sixth
 campaign revision; the third through fifth revisions' archives remain pinned records, superseded rather than
 overwritten: the fourth's convergence metric measured its divergence region from the first resume instead of the
-corruption end, the fifth corrected that for lost boundaries but not for spurious starts, and this revision
+corruption end, the fifth corrected that for lost boundaries but not for spurious starts, and the sixth
 corrects both defects, each quantified in its successor's record. The full CSV (twenty-eight columns: the
 trial's failure offset, corruption end, first mapped boundary, repairability and minimal-repair length, the
 decider's direct answer at the blind anchor, then per arm the first and terminal positions with landing flags,
@@ -592,44 +589,44 @@ grammar over the real-world document above. Trials the grammar absorbs without a
 $37{,}264$ of the campaign's $81{,}000$ damage draws, leaving $43{,}736$ broken scans. Damage positions are drawn by
 unbiased rejection sampling from the full span, clear of both corpus edges by at least sixty-four bytes, independently
 per seed and per row, no two rows sharing a schedule or a payload stream; $43$ draws repeated an earlier position within
-their own cell, counted rather than excluded. One past a final delimiter is the end-of-input offset in this revision, a
-completed resume rather than a refusal, so the placements answer together everywhere and the paired regression asserts
-they differ by exactly the delimiter on every trial. Eleven arms run under one completed-incident driver: after every
-failure the arm proposes a resume, the scan continues from it, and the incident ends at the end of input, at a refusal,
-or at a budget of one hundred attempts, the terminal outcome recorded per trial. All blind arms search from one past the
-failure offset, the same progress contract the driver keeps; the two oracle arms floor their search at the corruption
-end, modeling a caller told the operation-designated start of the guaranteed-untouched suffix, and are taken up with the trust discussion. The arms, returned offsets
-byte-exact: certified recovery, the walk's answer with its evidence interval archived per trial; certified-clean, the
-same walk under the oracle floor; exact, the library's anchored decider (\code{next\_anchored\_start}, documented as
-exact for complete-repair invariance on non-nullable sets, that contract taken here as documented and not proved, its
-proof in a separate unposted draft on certified repair and in neither posted companion)
-run as a procedure, the anchor advancing past a tail the decider refuses until a certificate holds; exact-clean, the
-decider under the oracle floor; skip-one, the search start itself, the lexical panic baseline; the raw delimiter
-conventions in both placements, newline-past and semicolon-past one past the delimiter's offset (the archives record
-them under the historic names newline and semicolon), newline-at and semicolon-at at the delimiter's own offset, with an
-in-harness regression failing if the two are interchanged; and the fresh-restart token-filtered pair, token-newline and
-token-semicolon, the classical two-phase reading made concrete at the lexical layer: skip until a fresh scan makes
-progress, discard its emitted tokens through the first designated synchronizer, the delimiter's own punctuation token or
-an all-whitespace token carrying the newline, and resume one past it. The filter is relative to the restarted scan, not
-the pristine one: a restart inside an original string or comment can reclassify interior text, so context blindness is
-reduced, never abolished. Positions throughout are byte offsets, named apart: $d$ the damage start (the archive's
-\code{p} column), $e$ the corruption end (the operation-designated start of the guaranteed-untouched suffix, as defined
-above), $f = \mathrm{con}(y)$ the failure offset, the answer the resumed slice's first byte; an answer lands when it
-equals the shift-mapped image of a pristine boundary outside the damaged window. Detection lag is real and measured: the
-signed lag $f - d$ has median $0$ and 99th percentile $17$ over the range $[-436, 78]$, negative when a token opened
-before the damage dies at it, and $f$ lies before $e$ on $40{,}401$ of the $43{,}736$ broken-scan trials. Metrics per
-arm and trial: the first answer's position and landing, the terminal position and its landing where it lies inside the
-input, the terminal outcome (completed, refused, or capped), attempts per incident, mean signed overshoot from the first
-mapped boundary at or past the corruption end, its absolute view the tables' overshoot column, and, for completed
-incidents, convergence: the signed distance from the corruption end to where the resumed token-boundary stream and the
-mapped pristine boundary stream agree forever after, token starts compared and never token identities, with the mapped
-boundaries from the corruption end to that point counted lost and the non-landing emitted starts in the divergence
-region counted spurious. Landing and overshoot score each arm's first answer per incident, skip-one's first one-byte
-step included; repeated skipping surfaces in the attempts column. Every trial is additionally stratified by
-repairability at the blind anchor, the routine-reported verdict of the shipped \code{minimal\_repair} with every
-returned repair witness-verified by scanning, so an answer on a tail no repair can complete is labeled as such while
-remaining in the pooled averages. Positive labels carry their witnesses; negative labels rest on one unproved input,
-stated formally so every later claim can name what it consumes:
+their own cell, counted rather than excluded. One past a final delimiter is the end-of-input offset in the sixth
+revision, a completed resume rather than a refusal, so the placements answer together everywhere and the paired
+regression asserts they differ by exactly the delimiter on every trial. Eleven arms run under one completed-incident
+driver: after every failure the arm proposes a resume, the scan continues from it, and the incident ends at the end of
+input, at a refusal, or at a budget of one hundred attempts, the terminal outcome recorded per trial. All blind arms
+search from one past the failure offset, the same progress contract the driver keeps; the two oracle arms floor their
+search at the corruption end, modeling a caller told the operation-designated start of the guaranteed-untouched suffix,
+and are taken up with the trust discussion. The arms, returned offsets byte-exact: certified recovery, the walk's answer
+with its evidence interval archived per trial; certified-clean, the same walk under the oracle floor; exact, the
+library's anchored decider (\code{next\_anchored\_start}, documented as exact for complete-repair invariance on
+non-nullable sets, that contract taken here as documented and not proved, its proof in a separate unposted draft on
+certified repair and in neither posted companion) run as a procedure, the anchor advancing past a tail the decider
+refuses until a certificate holds; exact-clean, the decider under the oracle floor; skip-one, the search start itself,
+the lexical panic baseline; the raw delimiter conventions in both placements, newline-past and semicolon-past one past
+the delimiter's offset (the archives record them under the historic names newline and semicolon), newline-at and
+semicolon-at at the delimiter's own offset, with an in-harness regression failing if the two are interchanged; and the
+fresh-restart token-filtered pair, token-newline and token-semicolon, the classical two-phase reading made concrete at
+the lexical layer: skip until a fresh scan makes progress, discard its emitted tokens through the first designated
+synchronizer, the delimiter's own punctuation token or an all-whitespace token carrying the newline, and resume one past
+it. The filter is relative to the restarted scan, not the pristine one: a restart inside an original string or comment
+can reclassify interior text, so context blindness is reduced, never abolished. Positions throughout are byte offsets,
+named apart: $d$ the damage start (the archive's \code{p} column), $e$ the corruption end (the operation-designated
+start of the guaranteed-untouched suffix, as defined above), $f = \mathrm{con}(y)$ the failure offset, the answer the
+resumed slice's first byte; an answer lands when it equals the shift-mapped image of a pristine boundary outside the
+damaged window. Detection lag is real and measured: the signed lag $f - d$ has median $0$ and 99th percentile $17$ over
+the range $[-436, 78]$, negative when a token opened before the damage dies at it, and $f$ lies before $e$ on $40{,}401$
+of the $43{,}736$ broken-scan trials. Metrics per arm and trial: the first answer's position and landing, the terminal
+position and its landing where it lies inside the input, the terminal outcome (completed, refused, or capped), attempts
+per incident, mean signed overshoot from the first mapped boundary at or past the corruption end, its absolute view the
+tables' overshoot column, and, for completed incidents, convergence: the signed distance from the corruption end to
+where the resumed token-boundary stream and the mapped pristine boundary stream agree forever after, token starts
+compared and never token identities, with the mapped boundaries from the corruption end to that point counted lost and
+the non-landing emitted starts in the divergence region counted spurious. Landing and overshoot score each arm's first
+answer per incident, skip-one's first one-byte step included; repeated skipping surfaces in the attempts column. Every
+trial is additionally stratified by repairability at the blind anchor, the routine-reported verdict of the shipped
+\code{minimal\_repair} with every returned repair witness-verified by scanning, so an answer on a tail no repair can
+complete is labeled as such while remaining in the pooled averages. Positive labels carry their witnesses; negative
+labels rest on one unproved input, stated formally so every later claim can name what it consumes:
 
 \begin{assumption}[Negative-label exactness, the label premise]
 \label{ass:labels}
@@ -1081,7 +1078,7 @@ $\window{y}{0}{1}$ the repair \code{b} commits \code{ba} and dies having reached
 committed boundary at the answer's image, so the decider's answer is not evidence-reaching-invariant for that
 interval. With the whole tail as evidence, reaching and completing already coincide, which is the decider's own
 reading. The comparison below is therefore between two guarantees, not two implementations of one. The campaign
-binds them where their properties overlap, and this revision tests both directions on the decider's direct call
+binds them where their properties overlap, and the sixth revision tests both directions on the decider's direct call
 at the blind anchor itself, its answer an archived column, never the advancing procedure: the direct call
 answered every one of the $26{,}928$ routine-labeled-repairable trials at or before the walk, never once later,
 which is not a coincidence of these rows:
@@ -1199,7 +1196,7 @@ real-world document, the damage model is synthetic throughout, and real edit tra
 are broken-scan counts and vary with absorption, and pooled rates carry Wilson intervals while individual cells
 remain small in the absorbed strata; the third revision's schedule generator emitted fifteen-bit values, its
 positions on a multiplicatively spread lattice of $32{,}768$ offsets per cell, disclosed in that archive's
-record, and this revision replaces it with unbiased rejection sampling over the full span, three independent
+record, and the sixth replaces it with unbiased rejection sampling over the full span, three independent
 seeds with every row's schedule and payload streams seeded apart, per-seed figures printed beside the pooled
 ones and $43$ within-cell repeated draws counted; every arm now runs to a terminal outcome under one driver, so
 the completed-incident view is a reported column rather than a gap, with a budget of one hundred attempts that
@@ -1222,8 +1219,6 @@ boundary streams, dropped tokens included, so it credits agreement rather than n
 spurious columns carry the divergence region's content. One grammar tried for the byte path refused to
 participate at all: a log-line lexer, whose tokens are a run of non-newline bytes and the newline itself,
 tokenizes every byte string, so no corruption can break its scan and recovery never fires.
-
-\FloatBarrier
 
 \section{Related work}
 
@@ -1392,10 +1387,9 @@ Claims end where the certificates do.
 \Needspace*{8\baselineskip}
 \section*{Tools}
 
-Large language models were part of the workflow: drafting and revising the manuscript, verifying citations
-against primary records, and reviewing the accompanying implementation. The author checked each
-suggestion by direct derivation or against primary sources, the implementation, executable tests, and artifact
-assertions, and is responsible for all content.
+Large language models assisted with drafting, with checking citations against primary records and with reviewing the
+implementation; the author verified each suggestion by derivation, against primary sources, or against the
+implementation, its tests and the archived artifacts, and is responsible for all content.
 
 \begingroup
 \setlength{\bibsep}{2pt}

@@ -198,16 +198,16 @@ at `|r| + (p - c)`, for `p` and `c` as in either theorem.
 *Proof.* A tokenizable repair commits its whole input, `con(y) = |y|`, so it is evidence-reaching for any evidence, and
 its committed segmentation is its segmentation. ∎
 
-The corollary is the quantification an earlier version of this paper proved directly, and it is the weaker claim. For an
-anchor `c` and evidence `x[q..q+w)`, write `R_complete(x, c) = { r in Σ* : con(r · x[c..]) = |r| + |x| - c }` and
-`R_reach(x, c; q, w) = { r in Σ* : con(r · x[c..]) >= |r| + q + w - c }`, the parameters fixed per instance and dropped
-hereafter, with `w` the evidence width throughout: `R_reach` for the evidence-reaching repairs at an anchor and
-`R_complete` for the completely tokenizable ones: `R_complete ⊆ R_reach` always, the corollary binds only `R_complete`,
-the theorems bind all of `R_reach`. The inclusion can be strict, and the witness is small. Over `{ab, ;}` on the damaged
-text `ab;#`, anchored at zero on the certified semicolon's evidence `[2, 3)`: no repair completes the tail, the byte `#`
-being tokenizable in no context, so `R_complete` is empty and the corollary holds vacuously; yet the identity repair
-commits `ab` and `;` through the evidence, so `R_reach` is inhabited and the theorem binds it with force, a committed
-interior boundary at the image of position two in every reaching repair.
+The corollary is the weaker claim. For an anchor `c` and evidence `x[q..q+w)`, write `R_complete(x, c) = { r in Σ* :
+con(r · x[c..]) = |r| + |x| - c }` and `R_reach(x, c; q, w) = { r in Σ* : con(r · x[c..]) >= |r| + q + w - c }`, the
+parameters fixed per instance and dropped hereafter, with `w` the evidence width throughout: `R_reach` for the
+evidence-reaching repairs at an anchor and `R_complete` for the completely tokenizable ones: `R_complete ⊆ R_reach`
+always, the corollary binds only `R_complete`, the theorems bind all of `R_reach`. The inclusion can be strict, and the
+witness is small. Over `{ab, ;}` on the damaged text `ab;#`, anchored at zero on the certified semicolon's evidence `[2,
+3)`: no repair completes the tail, the byte `#` being tokenizable in no context, so `R_complete` is empty and the
+corollary holds vacuously; yet the identity repair commits `ab` and `;` through the evidence, so `R_reach` is inhabited
+and the theorem binds it with force, a committed interior boundary at the image of position two in every reaching
+repair.
 
 The anchor constraint is `c <= q`, not `c <= p`: a repair may not touch the window's own bytes, which lie partly before
 the resynchronization point whenever the origin is positive; at origin zero the two constraints coincide. The searching
@@ -292,15 +292,14 @@ proved here: the definition quantifies over prefix repairs only, and for the win
 sit at or before the occurrence; the theorems say nothing about such an edit either way, though one that happens to
 preserve the evidence still faces the occurrence-universal certificate. The existence of an evidence-reaching repair is
 not claimed; where no scan of any repair commits through the evidence, the guarantee holds vacuously. That boundary is
-strictly tighter than the complete-tokenizability version an earlier draft drew, and the residual asymmetry between the
-certificate kinds narrows with it: a byte answer's evidence is the answer itself, so whenever the damaged suffix admits
-a first commit at all, that commit witnesses content for the anchor placed at the answer. A window with positive origin
-instead rests on evidence beginning before the resume position, which no scan anchored at the answer reads, so its
-guarantee can bind repairs the resumed scan never exhibits. The answer is the first certificate in evidence order, not
-the smallest answerable position: a window met earlier can answer a byte or two past one met later. And on a suffix no
-repair can save to the end of input, the theorems still bind every repair whose scan commits through the evidence, but
-the driver itself promises termination and nothing else, each resume strictly advancing until the input ends or the
-search refuses.
+strictly tighter than one drawn at complete tokenizability, and the residual asymmetry between the certificate kinds
+narrows with it: a byte answer's evidence is the answer itself, so whenever the damaged suffix admits a first commit at
+all, that commit witnesses content for the anchor placed at the answer. A window with positive origin instead rests on
+evidence beginning before the resume position, which no scan anchored at the answer reads, so its guarantee can bind
+repairs the resumed scan never exhibits. The answer is the first certificate in evidence order, not the smallest
+answerable position: a window met earlier can answer a byte or two past one met later. And on a suffix no repair can
+save to the end of input, the theorems still bind every repair whose scan commits through the evidence, but the driver
+itself promises termination and nothing else, each resume strictly advancing until the input ends or the search refuses.
 
 ## 4 The search
 
@@ -399,7 +398,7 @@ The campaign: `tools/probes/src/recovery_quality.cpp` of munch release `v1.6.0`,
 independent seeds, every seed fixed, so the whole experiment is deterministic. This is the sixth campaign revision; the
 third through fifth revisions' archives remain pinned records, superseded rather than overwritten: the fourth's
 convergence metric measured its divergence region from the first resume instead of the corruption end, the fifth
-corrected that for lost boundaries but not for spurious starts, and this revision corrects both defects, each quantified
+corrected that for lost boundaries but not for spurious starts, and the sixth corrects both defects, each quantified
 in its successor's record. The full CSV (twenty-eight columns: the trial's failure offset, corruption end, first mapped
 boundary, repairability and minimal-repair length, the decider's direct answer at the blind anchor, then per arm the
 first and terminal positions with landing flags, the evidence interval and kind, the terminal outcome, attempts, the
@@ -432,7 +431,7 @@ document above. Trials the grammar absorbs without a scan failure are counted an
 81,000 damage draws, leaving 43,736 broken scans. Damage positions are drawn by unbiased rejection sampling from the
 full span, clear of both corpus edges by at least sixty-four bytes, independently per seed and per row, no two rows
 sharing a schedule or a payload stream; 43 draws repeated an earlier position within their own cell, counted rather than
-excluded. One past a final delimiter is the end-of-input offset in this revision, a completed resume rather than a
+excluded. One past a final delimiter is the end-of-input offset in the sixth revision, a completed resume rather than a
 refusal, so the placements answer together everywhere and the paired regression asserts they differ by exactly the
 delimiter on every trial. Eleven arms run under one completed-incident driver: after every failure the arm proposes a
 resume, the scan continues from it, and the incident ends at the end of input, at a refusal, or at a budget of one
@@ -724,8 +723,8 @@ one-byte evidence `y[0..1)` the repair `b` commits `ba` and dies having reached 
 boundary at the answer's image, so the decider's answer is not evidence-reaching-invariant for that interval. With the
 whole tail as evidence, reaching and completing already coincide, which is the decider's own reading. The comparison
 below is therefore between two guarantees, not two implementations of one. The campaign binds them where their
-properties overlap, and this revision tests both directions on the decider's direct call at the blind anchor itself, its
-answer an archived column, never the advancing procedure: the direct call answered every one of the 26,928
+properties overlap, and the sixth revision tests both directions on the decider's direct call at the blind anchor
+itself, its answer an archived column, never the advancing procedure: the direct call answered every one of the 26,928
 routine-labeled-repairable trials at or before the walk, never once later, which is not a coincidence of these rows:
 
 **Proposition 3 (the decider never answers later than the walk).** Fix a non-nullable token set and an anchor `c`.
@@ -866,7 +865,7 @@ newline-at cell is a true zero. A blank cell is one the generated body prints wi
 the damage model is synthetic throughout, and real edit traces were not studied; cell sizes are broken-scan counts and
 vary with absorption, and pooled rates carry Wilson intervals while individual cells remain small in the absorbed
 strata; the third revision's schedule generator emitted fifteen-bit values, its positions on a multiplicatively spread
-lattice of 32,768 offsets per cell, disclosed in that archive's record, and this revision replaces it with unbiased
+lattice of 32,768 offsets per cell, disclosed in that archive's record, and the sixth replaces it with unbiased
 rejection sampling over the full span, three independent seeds with every row's schedule and payload streams seeded
 apart, per-seed figures printed beside the pooled ones and 43 within-cell repeated draws counted; every arm now runs to
 a terminal outcome under one driver, so the completed-incident view is a reported column rather than a gap, with a
