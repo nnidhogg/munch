@@ -46,25 +46,23 @@
 
 \maketitle
 
-\begin{abstract} A certified split point lets a parallel lexer cut unlexed input at a single byte with the serial
-token stream provably preserved, but several conventional token sets in the predecessor's controlled study certify no
-byte once string, comment, or whitespace-run forms are included (arXiv:2608.03473). We generalize from a byte to a
-bounded window: a byte string after which the position where the current token began is known, regardless of
-surrounding context. We certify the directly usable form of that recovery: the token covering the window's final byte
-begins at the reported origin. The certificate is conditional on occurrence and may be vacuous; every applicability
-figure counts only windows carrying an asserted completely tokenizable occurrence witness. We give a conservative
-model of a maximal-munch scanner's possible histories across a window, prove it sound, and decide reachability in that
-model exactly by exhausting a finite quotient of its reachable configurations, so every answer of the unbudgeted
-procedure is either a certified window with its origin or a proof that the model admits none. Within the stated flat,
-completely-tokenizable scope, model-positive answers are semantic certificates; negatives are relative to the
-conservative model, which deliberately refuses some windows a greedy scanner would allow. A token set in which some
-token matches the empty string is decided through its positive-width equivalent, the same automaton entered through a
-start state that does not accept, which changes no scan. In a sample of 400 random token sets, 322 of the 337 sets
-certifying no byte gain a witnessed window, with zero inconclusive searches, and every exact-empty row of the
-predecessor's study gains a witnessed window of two to four bytes.
-Rewind-stress rows exercised 1{,}079{,}392 executions that scanned through the window and contained at least one
-rewind, with zero disagreements against the shipped scanner. The analysis runs once after automaton construction,
-using only the compiled tables and no input. \end{abstract}
+\begin{abstract} A certified split point lets a parallel lexer cut unlexed input at a single byte with the serial token
+stream provably preserved, but several conventional token sets in the predecessor's controlled study certify no byte
+once string, comment, or whitespace-run forms are included (arXiv:2608.03473). We generalize from a byte to a bounded
+window: a byte string after which the position where the current token began is known, regardless of surrounding
+context. We certify the directly usable form of that recovery: the token covering the window's final byte begins at the
+reported origin. The certificate is conditional on occurrence and may be vacuous; every applicability figure counts only
+windows carrying an asserted completely tokenizable occurrence witness. We give a conservative model of a maximal-munch
+scanner's possible histories across a window, prove it sound, and decide reachability in that model exactly by
+exhausting a finite quotient of its reachable configurations, so every answer of the unbudgeted procedure is either a
+certified window with its origin or a proof that the model admits none. Within the stated flat, completely-tokenizable
+scope, model-positive answers are semantic certificates; negatives are relative to the conservative model, which
+deliberately refuses some windows a greedy scanner would allow. A token set in which some token matches the empty string
+is decided through its positive-width equivalent, the same automaton entered through a start state that does not accept,
+which changes no scan. In a sample of 400 random token sets, 322 of the 337 sets certifying no byte gain a witnessed
+window, with zero inconclusive searches, and every exact-empty row of the predecessor's study gains a witnessed window
+of two to four bytes. The analysis runs once after automaton construction, using only the compiled tables and no input.
+\end{abstract}
 
 \section{Introduction}
 \label{sec:introduction}
@@ -98,10 +96,9 @@ turning breadth-first search over windows into a terminating decision procedure 
 (Section~\ref{sec:quotient}).
 \item
 Two specializations: at length one the model certifies exactly the bytes the published predicate reports, so the
-multi-byte construction is that predicate's conservative continuation; and over a prefix code the certified windows
-are exactly the synchronizing splits of code theory whose right half sits inside one codeword, which places the
-classical case as the special case it is
-(Section~\ref{sec:specialization}).
+multi-byte construction is that predicate's conservative continuation; and over a prefix code the certified windows that
+occur are exactly the synchronizing splits of code theory whose right half sits inside one codeword, which places the
+classical case as the special case it is (Section~\ref{sec:specialization}).
 \item
 An evaluation over all six exact-empty rows of the prior study's applicability table, one new cumulative
 variant, and 400 random token sets generated for this paper: the witnessed rescue rate where no byte certifies,
@@ -113,21 +110,21 @@ the window lengths that suffice for the studied C-like and JSON tokenizations, a
 
 The probe decides certificates and model-search results offline from the compiled tables after automaton construction;
 the occurrence witnesses and scanner checks are generated executions against the shipped scanner. Every empirical
-aggregate and table entry reported here is printed and asserted by the probe in the munch repository~\cite{munch}: a
-drifted number fails the test suite.
+aggregate and table entry reported here is printed and asserted by the probe in the munch repository~\cite{munch}, the
+named rows at release v1.3.3 and the random sweep at the later commit Section~\ref{sec:evaluation} names: a drifted
+number fails the test suite.
 
 \section{Preliminaries}
 \label{sec:preliminaries}
 
 We inherit the scanner model of~\cite{nidhogg2026splitpoints}. A token set compiles to a DFA $A$ with initial state
-$q_0$; scanning is by maximal munch: from the current position the scanner runs $A$ as far as a transition exists,
-emits the token of the last accepting configuration passed, resumes immediately after it, and restarts in $q_0$.
-An input is \emph{completely tokenizable} when this process consumes it exactly. The setting is \emph{flat}:
-one fixed token set compiled to one DFA scanned from one fixed $q_0$, with no lexical modes, no mode stack, and
-no semantic scanner state. $A^+$ denotes the live
-subautomaton: states both reachable from $q_0$ and co-accessible to acceptance, with only transitions between live
-states retained. A token may match the empty string; the scan never emits it, and the next lemma is how every
-statement below still assumes a start state that neither accepts nor is re-entered.
+$q_0$; scanning is by maximal munch: from the current position the scanner runs $A$ as far as a transition exists, emits
+the token of the last accepting configuration passed, resumes immediately after it, and restarts in $q_0$. An input is
+\emph{completely tokenizable} when this process consumes it exactly. The setting is \emph{flat}: one fixed token set
+compiled to one DFA scanned from one fixed $q_0$, with no lexical modes, no mode stack, and no semantic scanner state.
+$A^+$ denotes the live subautomaton: states both reachable from $q_0$ and co-accessible to acceptance, with only
+transitions between live states retained. A token may match the empty string; the scan never emits it, and the next
+lemma is how every statement below still assumes a start state that does not accept.
 
 \begin{lemma}[Positive-width equivalent]
 \label{lem:unroll}
@@ -138,19 +135,21 @@ $A'$ enters $q_0'$.
 \end{lemma}
 
 \begin{proof}
-A token has positive width, so a scan records an accepting configuration only after consuming a byte. From $q_0$ and
+Under the scan's convention only an accepting configuration reached after consuming a byte determines an emitted token,
+so every emitted token has positive width and a scan records an acceptance only after consuming a byte. From $q_0$ and
 from $q_0'$ the first byte leads to the same state, since $q_0'$ carries $q_0$'s transitions, and from there the two
 scans traverse the same states and record the same accepting positions; the emitted token and the restart offset
-therefore agree, and both scans restart in their own start state. The accepted words of $A'$ are the words of length
-at least one accepted by $A$, the empty word being lost with $q_0'$'s acceptance. No transition of $A$ targets
-$q_0'$, which is fresh, and the copied transitions target $q_0$'s successors, so nothing enters $q_0'$.
+therefore agree, and both scans restart in their own start state. The accepted words of $A'$ are the words of length at
+least one accepted by $A$, the empty word being lost because $q_0'$ does not inherit $q_0$'s acceptance. No transition
+of $A$ targets $q_0'$, which is fresh, and the copied transitions target $q_0$'s successors, so nothing enters $q_0'$.
 \end{proof}
 
-Throughout, a token set whose start state accepts is read through $A'$, and the artifact compiles every token set this
-way before deciding anything about it: the unrolled automaton has one state more and the same scan, so nothing below
-loses generality by assuming that $q_0$ does not accept, and the re-entrancy condition of
-Section~\ref{sec:specialization} is then trivially met at $q_0'$ while $q_0$, now an ordinary state, is handled as any
-other.
+Throughout, a token set whose start state accepts is read through $A'$, and the artifact compiles every such token set
+this way before deciding anything about it, a set whose start does not accept passing through unchanged: the unrolled
+automaton has one state more and the same scan, so nothing below loses generality by assuming that $q_0$ does not
+accept; from here on $A$ and $q_0$ name the automaton so read and its start, $q_0'$ for a nullable set. For a nullable
+set the fresh start is never re-entered; for any other, the re-entrancy of $q_0$ remains the separate condition
+Section~\ref{sec:specialization} treats.
 
 \begin{definition}[Certified split window]
 \label{def:window}
@@ -172,9 +171,9 @@ every \code{1} is the tail of a greedily chosen \code{01}, a token boundary ther
 maximal munch must then consume \code{00}, and the final \code{1} sits at a boundary no token starts. The preceding
 argument proves non-occurrence; the artifact asserts the model prediction and the empty result of its bounded targeted
 witness search. Every applicability figure in this paper counts only witnessed certificates: the named rows pin their
-witness inputs in the artifact, and for each random grammar the probe constructs and verifies a concrete completely
-tokenizable input, with the 322 aggregate asserted; a certificate the bounded witness search cannot witness is reported
-as unresolved, never as a rescue.
+witness inputs in the artifact, and for each of the 322 witnessed random grammars the probe constructs and verifies a
+concrete completely tokenizable input, with the 322 aggregate asserted; a certificate the bounded witness search cannot
+witness is reported as unresolved, never as a rescue.
 
 For $k = 1$ Definition~\ref{def:window} is the boundary guarantee of a certified split point, since the token
 containing the single byte
@@ -384,8 +383,11 @@ inconclusive once the retained key count exceeds a fixed threshold of 200{,}000 
 zero inconclusive searches, and the retained key counts it reports are one indicator of the search footprint rather
 than a complete cost model.
 
-\section{Specialization to length one}
+\section{Specializations}
 \label{sec:specialization}
+
+\subsection{Length one}
+\label{sec:length-one}
 
 At length one the model collapses to the published certificate, and the correspondence is exact at the level of the
 \emph{shipped predicate}, the one that withholds vacuously certified bytes, rather than of the bare condition.
@@ -458,8 +460,8 @@ and the certificate says nothing about the halves being in $X^*$; the exact rela
 
 \begin{proposition}[Prefix codes]
 \label{prop:codes}
-Let $X$ be a prefix code read as a token set, and let $W$ be a window with origin $o$, split as
-$W = W_{<o}\, W_{\geq o}$ at the origin.
+Let $X$ be a prefix code read as a token set, and let $W$ be a window occurring in some word of $X^*$, with
+origin $o$, split as $W = W_{<o}\, W_{\geq o}$ at the origin.
 \begin{enumerate}
 \item $(W, o)$ is certified if and only if the split is synchronizing and $W_{\geq o}$ is a prefix of some codeword.
 \item If $(x, y)$ is a synchronizing pair with $y$ nonempty and $y = c_1 \cdots c_m$ is its factorization into
@@ -488,14 +490,18 @@ $W_{<o} \in X^*$ and $W_{\geq o} \in X$, then every $u W v \in X^*$ has a bounda
 concatenation of codewords and so is $W_{\geq o} v$, which is the synchronizing-pair condition.
 \end{proof}
 
-The proposition places the classical case: over a prefix code the certified windows are the synchronizing splits
-whose right half sits inside one codeword, and Berstel, Perrin and Reutenauer's pairs are the certified windows whose
-halves are themselves in the code, the origin resting on the last codeword. Everything in the studied token sets
-falls outside it. An identifier is a proper prefix of a longer identifier and \code{<} of \code{<<}, so none of the
-C-like or JSON token sets is a prefix code; over $\{\code{a}, \code{ab}, \code{b}\}$ the word \code{ab} has two
-factorizations and it is maximal munch, not the code, that picks one. There the certificate is defined through the
-scan, the origin bookkeeping of Section~\ref{sec:model} is what decides it, and the reach beyond the code case is
-exactly the reach the evaluation measures.
+The proposition places the classical case: over a prefix code the certified windows that occur are the synchronizing
+splits whose right half sits inside one codeword; a synchronizing pair of Berstel, Perrin and Reutenauer with a nonempty
+right component is a certified window on its concatenation, the origin at the start of the right component's last
+codeword; and a certified window whose left half is in $X^*$ and whose right half is a codeword is a synchronizing pair.
+The occurrence hypothesis sets the vacuous case of Definition~\ref{def:window} aside: a window no word of $X^*$ contains
+is certified whatever its right half spells. The named token sets of Section~\ref{sec:evaluation} fall outside the code
+case: an identifier is a proper prefix of a longer identifier, so no C-like token set is a prefix code, and the JSON
+number \code{1} is a proper prefix of \code{11}, so JSON is not one either; over $\{\code{a}, \code{ab}, \code{b}\}$ the
+word \code{ab} has two factorizations and it is maximal munch, not the code, that picks one. The random sample of
+Section~\ref{sec:evaluation} is drawn without that restriction and contains prefix codes, which the proposition covers.
+Beyond the code case the certificate is defined through the scan, the origin bookkeeping of Section~\ref{sec:model} is
+what decides it, and that reach is what the evaluation measures.
 
 \section{Strictness of the model}
 \label{sec:strictness}
@@ -557,13 +563,14 @@ Negatives in every table of this paper are claims about the model, never about t
 \section{From a boundary to a parallel cut}
 \label{sec:cut}
 
-At every occurrence at offset $t$ in a completely tokenizable input, a certified window $(W, o)$ yields a true
-boundary $t + o$ of the final segmentation. Turning a boundary into a parallel cut is the predecessor's territory: its
-prefix-stability result is what licenses a worker to scan from a known boundary and agree with the serial stream
-around the cut~\cite{nidhogg2026splitpoints}. The division of labour is exact: this paper establishes that $t + o$ is
-a boundary; the predecessor establishes what a scan starting at a boundary preserves. The v1.3.3 artifact evaluated
-here plans with single-byte certificates only; release 1.4.0, published after submission, added an explicit
-window-planning sibling, which lies outside this paper's evaluation and is not a claim of this paper.
+At every occurrence at offset $t$ in a completely tokenizable input, a certified window $(W, o)$ yields a true boundary
+$t + o$ of the final segmentation. Turning a boundary into a parallel cut is the predecessor's territory: its
+prefix-stability result is what licenses a worker to scan from a known boundary and agree with the serial stream around
+the cut~\cite{nidhogg2026splitpoints}. The division of labour is exact: this paper establishes that $t + o$ is a
+boundary; the predecessor establishes what a scan starting at a boundary preserves. The v1.3.3 artifact evaluated here
+plans with single-byte certificates only; release 1.4.0 added the window decision as a public contract, which the
+revised sweep cross-checks against its model, and a window-planning sibling, which lies outside this paper's evaluation
+and is not a claim of this paper.
 
 \section{Evaluation}
 \label{sec:evaluation}
@@ -571,21 +578,24 @@ window-planning sibling, which lies outside this paper's evaluation and is not a
 The artifact runs the evaluation in the default test target and CI; the figures below are asserted rather
 than merely printed, so a drifted number fails the test suite.
 
-Over 400 random token sets on a three-symbol alphabet, generated by the probe itself with a pinned seed and draw order,
-266 are nullable and are decided through their positive-width equivalent, exactly as the artifact compiles them; 63
-certify at least one byte exactly. Of the 337 that certify no byte, \textbf{326 gain a certified window under the model,
-and 322 of those are witnessed}: for each, the bounded search finds a completely tokenizable input containing a
-certified window, with the covering token beginning at the reported origin, verified as each input is constructed, with
-the 322 aggregate asserted; 4 model-positive grammars have no occurrence within the bounded witness search and are
-reported as unresolved, never as rescues; 11 exhaust the quotient with no window under the model, and none are
-inconclusive. Occurrence is a property of the concrete word rather than its quotient key, so the witness search
-continues past the shortest certified length instead of stopping at the first certifying word. Separate rewind-stress
-rows exercised 1{,}079{,}392 generated executions that scanned through the window and contained at least one rewind,
-with zero disagreements against the shipped scanner; 418{,}466 of those executions tokenize their whole input completely
-and the remaining 660{,}926 have malformed suffixes past the window, both counts asserted. This is an implementation
-stress check: the generated inputs were required to scan through the window, not to tokenize completely. The random
-sweep additionally checked every certified two-byte window over the probe's generated contexts. The length-one case
-reproduces the published certificate on all 400 grammars, the 266 nullable ones included.
+The random sweep is the output of \code{tools/probes/src/window\_gate.cpp} at munch commit
+\code{707a79941472885a260c0bc96e615dd2fb5e99d2}, the commit at which the positive-width equivalent entered the library;
+the v1.3.3 release the rest of this evaluation describes excludes the nullable sets and asserts the earlier counts. Over
+400 random token sets on a three-symbol alphabet, generated by the probe itself with a pinned seed and draw order, 266
+are nullable and are decided through their positive-width equivalent, exactly as the artifact compiles them; 63 certify
+at least one byte exactly. Of the 337 that certify no byte, \textbf{326 gain a certified window under the model, and 322
+of those are witnessed}: for each, the bounded search finds a completely tokenizable input containing a certified
+window, with the covering token beginning at the reported origin, verified as each input is constructed, with the 322
+aggregate asserted; 4 model-positive grammars have no occurrence within the bounded witness search and are reported as
+unresolved, never as rescues; 11 exhaust the quotient with no window under the model, and none are inconclusive.
+Occurrence is a property of the concrete word rather than its quotient key, so the witness search continues past the
+shortest certified length instead of stopping at the first certifying word. Separate rewind-stress rows exercised
+1{,}079{,}392 generated executions that scanned through the window and contained at least one rewind, with zero
+disagreements against the shipped scanner; 418{,}466 of those executions tokenize their whole input completely and the
+remaining 660{,}926 have malformed suffixes past the window, both counts asserted. This is an implementation stress
+check: the generated inputs were required to scan through the window, not to tokenize completely. The random sweep
+additionally checked every certified two-byte window over the probe's generated contexts. The length-one case reproduces
+the published certificate on all 400 grammars, the 266 nullable ones included.
 
 Named token sets: all six exact-empty rows of the predecessor's applicability table, five C-like variants and JSON, gain
 witnessed windows, and one new cumulative C-like variant joins them as a seventh positive row. Table~\ref{tab:windows}
@@ -640,57 +650,56 @@ Mamouras~\cite{li2026streaming}, which statically computes a grammar's maximum t
 resulting bounded lookahead to emit a sequential maximal-munch stream without backtracking; their scan advances from a
 known token boundary, so the window decides maximality rather than recovering the origin of the token covering an
 arbitrary occurrence, and parallelization is left there as future work. On the formal side of the same setting, ZipLex
-formally verifies linear-time invertible maximal-munch lexing, with an abstraction capturing the separability of
-tokens in a sequence~\cite{chassot2026ziplex}, and Li and Mamouras formalize the uniform tokenization problem and give
-$O(mn)$-time algorithms, linear in text length $n$ for a fixed grammar of size $m$, precomputing what each suffix
-admits in a right-to-left pass before tokenizing from the input's start~\cite{li2025uniform}; neither line of work
-derives an occurrence-universal raw-window certificate or recovers the covering token's origin from an arbitrary
-occurrence without scanning from a known boundary. Lester's boxing check anticipates the flavor at a known join: every
-lexer state possible after the first analyzed string must either already emit a token, making the following character
-irrelevant to that string's lexing, or emit the same token immediately on every character that may begin the second,
-so the join is a lexeme boundary and concatenation preserves token boundaries, stated compactly in the position paper
-and in full in the journal treatment~\cite{lester2013boxing, lester2016flow}; the check is per-join over two analyzed
-fragments rather than a certificate over every occurrence of a grammar-derived word, and it does not recover a
-covering origin. Recent LLM-tokenizer work addresses input-specific seams instead: LoPT validates position-aligned
-tokenizations of overlapping chunks and adjusts chunk length where needed~\cite{shao2026lopt}, and for BPE, recent
-work bounds the streaming delay of ordered merge rules from a known beginning~\cite{mamouras2026bpedelay} or maintains
-the tokenization incrementally over every prefix~\cite{jiang2026incremental}; Hayase, Liu, Smith, and Oh enumerate,
-for a byte prefix of BPE-tokenized text, the tokenizations whose last token straddles the prefix end, a valid covering
-tree over one concrete input~\cite{hayase2025bytesampler}. The certificate here is grammar-derived and
-occurrence-universal rather than input-relative and enumerative, and it fixes one origin for every occurrence. The
-parsing side of that pipeline is active again: cyclic operator precedence grammars~\cite{chiari2025cyclic} admit
-parallel-suitable chunking of flat unbounded terminal-string substructures, with precedence relations defined between
-adjacent terminals; in a conventional pipeline those terminals are lexer output, so that application presupposes
-tokenization, though the formalism itself is not restricted to pre-tokenized input. A classical antecedent of
-window-determines-state is the definite automaton, studied in depth by Perles, Rabin, and
-Shamir~\cite{perles1963definite}; its operational form for a fixed $k$ is $k$-locality: any $k$ consecutive symbols
-force a unique state, every word of length $k$ being synchronizing~\cite{holub2009parallel}. Both quantify uniformly
-over all windows and speak of states; the certificate here is per-window, speaks of token boundaries under maximal
-munch, and recovers an origin: raw-state synchronization alone does not identify the start of the covering
-maximal-munch token. The classical special case of boundary recovery is code synchronization, and
-Proposition~\ref{prop:codes} states the relation exactly for prefix codes, where left-to-right tokenization realizes
-the code factorization: the certified windows are the synchronizing splits whose right half sits inside one codeword,
-and a synchronizing pair~\cite{berstel2010codes} is a certified window whose halves are in the code. The oldest
-member of that family is the comma-free code of Golomb, Gordon and Welch~\cite{golomb1958commafree}, a block code
-no codeword of which occurs across the boundary of two adjacent codewords, so that every codeword is a certified
-window with origin $0$ for the code's own factorization. Finite synchronization
-delay~\cite{restivo1975synchronization} bounds how many codewords a synchronizing pair needs, hence a byte bound for
-a finite code; the $ww$-style resumption argument survives into the partial-DFA
-treatment~\cite{berlinkov2021partial}. The explicit modern bounded-window form of that special case is the
-synchronizing morphism: a window of bounded length suffices to detect boundaries between
-codewords~\cite{fici2025morphisms}, in a morphic code-factorization setting rather than among competing prioritized
-token languages under maximal munch. Uniquely decipherable codes may share prefixes; what they guarantee is a unique
-factorization, with no maximal-munch priority resolving overlaps between competing token languages, and that
-difference is where the origin machinery here earns its existence. The relationship to reset words is one-way and
-stops at length one: a useful certified byte induces a reset-like action on the partial live automaton with domain
-$\{q_0\}$, under the stated re-entrancy qualification, a correspondence that fails under the classical complete-DFA
-reading~\cite{volkov2008synchronizing}. It does not extend: a certified window need not be a reset word of the token
-DFA at all, since over $\{\code{a}, \code{b}\}$ the window \code{ab} certifies at origin 1 while the action of
+formally verifies linear-time invertible maximal-munch lexing, with an abstraction capturing the separability of tokens
+in a sequence~\cite{chassot2026ziplex}, and Li and Mamouras formalize the uniform tokenization problem and give
+$O(mn)$-time algorithms, linear in text length $n$ for a fixed grammar of size $m$, precomputing what each suffix admits
+in a right-to-left pass before tokenizing from the input's start~\cite{li2025uniform}; neither line of work derives an
+occurrence-universal raw-window certificate or recovers the covering token's origin from an arbitrary occurrence without
+scanning from a known boundary. Lester's boxing check anticipates the flavor at a known join: every lexer state possible
+after the first analyzed string must either already emit a token, making the following character irrelevant to that
+string's lexing, or emit the same token immediately on every character that may begin the second, so the join is a
+lexeme boundary and concatenation preserves token boundaries, stated compactly in the position paper and in full in the
+journal treatment~\cite{lester2013boxing, lester2016flow}; the check is per-join over two analyzed fragments rather than
+a certificate over every occurrence of a grammar-derived word, and it does not recover a covering origin. Recent
+LLM-tokenizer work addresses input-specific seams instead: LoPT validates position-aligned tokenizations of overlapping
+chunks and adjusts chunk length where needed~\cite{shao2026lopt}, and for BPE, recent work bounds the streaming delay of
+ordered merge rules from a known beginning~\cite{mamouras2026bpedelay} or maintains the tokenization incrementally over
+every prefix~\cite{jiang2026incremental}; Hayase, Liu, Smith, and Oh enumerate, for a byte prefix of BPE-tokenized text,
+the tokenizations whose last token straddles the prefix end, a valid covering tree over one concrete
+input~\cite{hayase2025bytesampler}. The certificate here is grammar-derived and occurrence-universal rather than
+input-relative and enumerative, and it fixes one origin for every occurrence. The parsing side of that pipeline is
+active again: cyclic operator precedence grammars~\cite{chiari2025cyclic} admit parallel-suitable chunking of flat
+unbounded terminal-string substructures, with precedence relations defined between adjacent terminals; in a conventional
+pipeline those terminals are lexer output, so that application presupposes tokenization, though the formalism itself is
+not restricted to pre-tokenized input. A classical antecedent of window-determines-state is the definite automaton,
+studied in depth by Perles, Rabin, and Shamir~\cite{perles1963definite}; its operational form for a fixed $k$ is
+$k$-locality: any $k$ consecutive symbols force a unique state, every word of length $k$ being
+synchronizing~\cite{holub2009parallel}. Both quantify uniformly over all windows and speak of states; the certificate
+here is per-window, speaks of token boundaries under maximal munch, and recovers an origin: raw-state synchronization
+alone does not identify the start of the covering maximal-munch token. The classical special case of boundary recovery
+is code synchronization, and Proposition~\ref{prop:codes} states the relation exactly for prefix codes, where
+left-to-right tokenization realizes the code factorization: the certified windows that occur are the synchronizing
+splits whose right half sits inside one codeword, and a synchronizing pair~\cite{berstel2010codes} with a nonempty right
+component yields, on its concatenation, a certified window whose origin is the start of the right component's last
+codeword. An early member of that family is the comma-free code of Golomb, Gordon and Welch~\cite{golomb1958commafree},
+a block code no codeword of which occurs across the boundary of two adjacent codewords, so that every codeword is a
+certified window with origin $0$ for the code's own factorization. Finite synchronization
+delay~\cite{restivo1975synchronization} bounds how many codewords a synchronizing pair needs, hence a byte bound for a
+finite code; the $ww$-style resumption argument survives into the partial-DFA treatment~\cite{berlinkov2021partial}. The
+explicit modern bounded-window form of that special case is the synchronizing morphism: a window of bounded length
+suffices to detect boundaries between codewords~\cite{fici2025morphisms}, in a morphic code-factorization setting rather
+than among competing prioritized token languages under maximal munch. Uniquely decipherable codes may share prefixes;
+what they guarantee is a unique factorization, with no maximal-munch priority resolving overlaps between competing token
+languages, and that difference is where the origin machinery here earns its existence. The relationship to reset words
+is one-way and stops at length one: a useful certified byte induces a reset-like action on the partial live automaton
+with domain $\{q_0\}$, under the stated re-entrancy qualification, a correspondence that fails under the classical
+complete-DFA reading~\cite{volkov2008synchronizing}. It does not extend: a certified window need not be a reset word of
+the token DFA at all, since over $\{\code{a}, \code{b}\}$ the window \code{ab} certifies at origin 1 while the action of
 \code{ab} on the partial automaton is empty, and a rank-one letter need not certify, since over the token language
 $\code{b}^*\code{a}$ the letter \code{b} can act with rank one while $q_0$ is re-entrant and \code{b} occurs inside
-tokens. Certified windows synchronize token-origin information in an enriched cloud model; they need not synchronize
-the raw token DFA. The complexity of the neighborhood is known: checking careful synchronizability of a partial
-automaton, and finding a shortest carefully synchronizing word, are PSPACE-complete already over two-letter
+tokens. Certified windows synchronize token-origin information in an enriched cloud model; they need not synchronize the
+raw token DFA. The complexity of the neighborhood is known: checking careful synchronizability of a partial automaton,
+and finding a shortest carefully synchronizing word, are PSPACE-complete already over two-letter
 alphabets~\cite{martyugin2010careful}, careful meaning the word stays defined from every state and maps all states to
 one; that is context, not a bound, and no hardness result is claimed for the window problem here, whose per-grammar
 retained-key counts, one footprint indicator rather than a cost model, stayed far below the worst case throughout.
@@ -750,9 +759,13 @@ All deliberate. The soundness proof speaks only of completely tokenizable inputs
 and no consumed-prefix analogue is claimed. Negatives are model-relative: the model refuses windows a greedy scanner
 would allow, so an exhausted search means no window \emph{under this model}, never that none exists. The worst case is
 exponential and the probe is budgeted, though the retained keys stayed below 200 on every named row, at most 32 with
-mean 9.9 among the 337 no-byte grammars. The evaluated v1.3.3 artifact ships no window-planning API: its certificate
-machinery is a probe, on the principle that the certificate's formulation should freeze in this paper before becoming a
-public contract. Release 1.4.0, published after submission, made the formulation a public contract; that implementation
+mean 9.9 among the 337 no-byte grammars. The evaluated v1.3.3 artifact ships no window-planning API, and its probe
+excludes the nullable sets, so the sweep of Section~\ref{sec:evaluation} is reproduced at the later commit named there;
+its certificate machinery is a probe, on the principle that the certificate's formulation should freeze in this paper
+before becoming a public contract. Release 1.4.0 made the formulation a public contract, \code{is\_split\_window()},
+which the sweep at the later commit asks beside its own model at the coverage its source states, every one-byte answer
+of the named rows and of the 400 random token sets, every model-positive random two-byte answer and the named
+certificates and refusals, the count of those checks pinned; the window planner that release added beside the decision
 lies outside this paper's evaluation. And no representative real-corpus evidence exists yet; window occurrence frequency
 is the measurement campaign's question.
 
@@ -775,10 +788,10 @@ permanent. Model-positive answers are semantically certified within the stated f
 Negatives are model-relative: the model refuses windows a greedy scanner would allow, the two asserted witnesses exhibit
 the over-approximation, and the strictness corollary locates its minimum nonvacuous length at two, since at length one
 the model provably coincides with the published predicate, made exact for occurring bytes by the predecessor's necessity
-theorem. Over a prefix code the certificate is code synchronization under another name, the synchronizing splits whose
-right half sits inside one codeword, and the studied token sets are exactly the ones that are not codes. A token set in
-which some token matches the empty string is decided through its positive-width equivalent, which unrolls the accepting
-start state and changes no scan, so nothing is set aside on that account.
+theorem. Over a prefix code the certificate is code synchronization under another name, the occurring certified windows
+being the synchronizing splits whose right half sits inside one codeword, and the named token sets studied here are not
+codes. A token set in which some token matches the empty string is decided through its positive-width equivalent, which
+unrolls the accepting start state and changes no scan, so nothing is set aside on that account.
 
 The generalization does what it was built for: it recovers every exact-empty row of the predecessor's table, all
 witnessed. Of the 337 random token sets certifying no byte, 322 gain a witnessed certified window with zero inconclusive
@@ -786,13 +799,13 @@ searches; the predecessor's six exact-empty rows gain witnessed windows of two t
 in Table~\ref{tab:windows}. Separate rewind-stress rows exercised 1{,}079{,}392 generated executions that scanned
 through the window and contained at least one rewind, with zero disagreements against the shipped scanner, and the
 figures are printed and asserted in the artifact, so they fail the test suite if they move. What this paper deliberately
-does not deliver is the cut itself: the evaluated v1.3.3 planner uses single-byte certificates only, and the
-window-planning sibling that release 1.4.0 added after submission is outside this evaluation; turning a window's
-boundary into a parallel cut is an explicit composition with the predecessor's prefix-stability result, and whether
-windows occur often enough in real corpora to plan balanced chunks is an empirical question on which this paper reports
-and relies on no controlled evaluation; the artifact archives exploratory preview measurements only. That evaluation, on
-representative corpora with planning times, occurrence frequencies, and end-to-end comparisons against byte
-certificates, is the natural next step and is not claimed here.
+does not deliver is the cut itself: the v1.3.3 artifact evaluated here ships a planner over single-byte certificates
+only, itself not evaluated here, and the window planner that release 1.4.0 added beside the decision is outside this
+evaluation; turning a window's boundary into a parallel cut is an explicit composition with the predecessor's
+prefix-stability result, and whether windows occur often enough in real corpora to plan balanced chunks is an empirical
+question on which this paper reports and relies on no controlled evaluation; the artifact archives exploratory preview
+measurements only. That evaluation, on representative corpora with planning times, occurrence frequencies, and
+end-to-end comparisons against byte certificates, is the natural next step and is not claimed here.
 
 The contribution is therefore narrow and exactly bounded, in the same sense as its predecessor: not another way
 to recover context, but the certification step, extended from single bytes to bounded windows, with the origin
@@ -802,10 +815,9 @@ applies at length one, and no general implication extends to longer windows.
 
 \section*{Tools}
 
-Large language models were part of the workflow: drafting and revising the manuscript, verifying citations against
-primary records, and adversarially reviewing the accompanying implementation. The author checked each suggestion by
-direct derivation or against primary sources, the implementation, executable tests, and artifact assertions, and is
-responsible for all content.
+Large language models assisted with drafting, with checking citations against primary records and with reviewing the
+implementation; the author verified each suggestion by derivation, against primary sources, or against the
+implementation, its tests and the archived artifacts, and is responsible for all content.
 
 \bibliographystyle{plainnat}
 \bibliography{refs}
