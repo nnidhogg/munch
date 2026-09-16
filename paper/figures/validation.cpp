@@ -1,5 +1,5 @@
 /*
- * Asserts the validation figures of paper/split-points.tex, in the section deciding the relaxed condition.
+ * Asserts the validation figures of paper/split-points/split-points.tex, in the section deciding the relaxed condition.
  *
  * Two kinds of claim are made there and they deserve different treatment.
  *
