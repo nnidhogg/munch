@@ -286,7 +286,8 @@ std::vector<std::string> documents(const std::vector<std::string>& pieces, const
     return corpus;
 }
 
-// The bytes worth asking about: whitespace, plus the operator and punctuation bytes a C-like or JSON row uses.
+// The bytes worth asking about, sixteen in all: the four whitespace bytes, eleven operator and punctuation bytes a
+// C-like or JSON row uses, and the letter t.
 const std::string& oracle_candidates()
 {
     static const std::string candidates{" \t\n\r+;(),:[]{}-t"};
@@ -317,7 +318,7 @@ std::string surviving_modulo(
                 continue; // the guarantee is stated only for input that tokenizes completely
             }
 
-            // exempted the cut before the final byte from every check.
+            // The cut before the first byte is a boundary of every scan and is exempted from every check.
             for (std::size_t at{1}; at < text.size(); ++at)
             {
                 if (text[at] != candidate)
@@ -619,9 +620,9 @@ int main()
     {
         munch::core::Builder b;
         // The priced-failure counterpart to the Zig rows: the same three kinds as the row above, kept, with every
-        // body barred from the bytes that open another. The mode study found this the only modification that buys
-        // certificates while keeping the repertoire, and the price is that no string or comment may hold a slash or
-        // a quote, which no language in use pays.
+        // body barred from the bytes that open another. The row exists to price the obvious repair, and the price
+        // buys nothing: no useful byte certifies exactly or modulo, while the language has lost the slash and the quote
+        // inside strings and comments.
         c_like(b, true);
         b.add_token(separated_string(), Token::String, 2);
         b.add_token(separated_line_comment(), Token::LineComment, 1);
@@ -632,9 +633,10 @@ int main()
     {
         munch::core::Builder b;
         // The cheap success, and the pair's point. The ordinary repertoire, nothing separated, with one restriction:
-        // the block comment may not cross a line. Newline certifies outright. So the lever is line-boundedness and
-        // not separation, and the price of a certificate here is multi-line comments alone, which is the choice Zig's
-        // reference states and a far smaller one than the row above pays for nothing.
+        // the block comment may not cross a line, on the split-friendly base where newline is already its own token.
+        // Newline certifies outright. So the lever is line-boundedness and not separation, and the price of a
+        // certificate here is multi-line comments, which is the choice Zig's reference states and a far smaller one
+        // than the row above pays for nothing.
         c_like(b, true);
         b.add_token(string_literal(), Token::String, 2);
         b.add_token(line_comment(), Token::LineComment, 1);
@@ -643,20 +645,24 @@ int main()
               ignoring({Token::Whitespace, Token::Newline, Token::LineComment, Token::BlockComment}), b);
     }
     // The designed-success pair: a shipped language whose reference states the property the split-friendly row
-    // constructs. Zig's strings, comments and char literals all end at the line, so newline is recovered modulo the
-    // discarded tokens in the conventional tokenization and certified outright once it is its own token, with the
-    // full string and comment repertoire present; tab, which no Zig token admits inside, comes with it modulo the
-    // whitespace run, where the C-like rows lose it to their string and comment interiors.
+    // constructs. As the subset reads them, one line at a time where the 0.16.0 grammar appendix groups a multiline
+    // string or a doc comment over consecutive lines into one token, Zig's strings, comments and char literals all end
+    // at the line, so newline is recovered modulo the discarded tokens in the conventional tokenization and certified
+    // outright once it is its own token, with the appendix's string, comment and char-literal bodies present; in its
+    // byte classes the subset follows the appendix, not the language of conforming source, whose encoding rules forbid
+    // bytes the appendix's line bodies admit. Tab and carriage return occur in no rule of that appendix and so in no
+    // token of the subset adapted from it, so they are certified vacuously and withheld; space stays inside the strings
+    // and comments.
     {
         munch::core::Builder b;
         zig(b, false);
-        check("Zig subset, conventional tokenization", "none", "\\t \\n",
-              ignoring({Token::Whitespace, Token::LineComment}), b);
+        check("Zig subset, conventional tokenization", "none", "\\n", ignoring({Token::Whitespace, Token::LineComment}),
+              b);
     }
     {
         munch::core::Builder b;
         zig(b, true);
-        check("the Zig subset, split-friendly tokenization", "\\n", "\\t \\n",
+        check("the Zig subset, split-friendly tokenization", "\\n", "the same",
               ignoring({Token::Whitespace, Token::Newline, Token::LineComment}), b);
     }
     {
@@ -823,9 +829,9 @@ int main()
         }
     }
 
-    // The certificate section's worked instance: over RFC 3629's encoding forms, the certified bytes are exactly the
-    // lead bytes and no continuation byte, which is the property the RFC states as its design goal. Asserted byte
-    // for byte over all 256 rather than read off a printed list.
+    // The certificate section's worked instance: over RFC 3629's encoding forms, the useful certified bytes are exactly
+    // the lead bytes and no continuation byte, which is the property the RFC lists among UTF-8's characteristics.
+    // Asserted byte for byte over all 256 rather than read off a printed list.
     {
         munch::core::Builder b;
         utf8(b);
@@ -848,7 +854,7 @@ int main()
         }
 
         std::cout << (disagreeing.empty() ? "  ok   " : "  FAIL ")
-                  << "UTF-8 forms of RFC 3629: certified exactly at the lead bytes\n";
+                  << "UTF-8 forms of RFC 3629: usefully certified exactly at the lead bytes\n";
 
         if (!disagreeing.empty())
         {
@@ -859,13 +865,13 @@ int main()
     }
 
     {
-        const auto agrees{changed == 9};
+        const auto agrees{changed == 8};
 
         std::cout << (agrees ? "\n  ok   " : "\n  FAIL ") << "rows the relaxation moves: " << changed << '\n';
 
         if (!agrees)
         {
-            std::cout << "         the report says nine\n";
+            std::cout << "         the report says eight\n";
 
             ++failures;
         }
