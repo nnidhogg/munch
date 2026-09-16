@@ -14,8 +14,8 @@
 # The program is deterministic, stdlib-only, and asserts the schema it reads: 28 columns, known strategies,
 # known outcomes, and every coordinate inside the input its own row's grammar and operation describe. Wilson
 # intervals are descriptive conditional-on-draw summaries; the rows draw disjoint schedule and payload streams
-# by construction in this revision, and per-seed figures are printed in the archived summary beside the pooled
-# ones.
+# by construction in this campaign revision, and per-seed figures are printed in the archived summary beside
+# the pooled ones.
 
 import csv
 import io
@@ -1118,9 +1118,9 @@ def main(argv=None, audit_only=False):
     SUMMARY_HEADER_LINE = ("  op           k  strategy        answers  refuse   t-ref  f-land"
                            "   t-land complete capped attempts     conv   lost   spur overshoot")
     SUMMARY_POOLED_LINE = "  pooled over all cells and seeds, Wilson 95% intervals"
-    # The pristine oracle is the one campaign fact no archived row carries, so this revision's
-    # verdict is pinned rather than reconciled: it passed clean over the whole sweep, and a summary
-    # reporting a violation, or a differently sized sweep, is not this archive.
+    # The pristine oracle is the one campaign fact no archived row carries, so this campaign
+    # revision's verdict is pinned rather than reconciled: it passed clean over the whole sweep, and
+    # a summary reporting a violation, or a differently sized sweep, is not this archive.
     SUMMARY_ORACLE_LINE = "pristine oracle: 0 violations over 6 rows x 512 samples"
     SUMMARY_GRAMMAR_ORDER = (
         "c-like conventional with strings and line comments",
