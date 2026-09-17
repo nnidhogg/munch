@@ -216,7 +216,8 @@ check the whole pipeline against direct NFA simulation.
 ## **Versioning and Stability**
 
 munch follows semantic versioning. The stable surface is what this README and [docs/usage.md](docs/usage.md) document:
-the regex combinators with `Set`, `utf8::range`, `utf8::ranges`, and the `unicode` XID classes, `core::Builder` with
+the regex combinators with `Set`, `regex::parse()` reading a generator's pattern into them, `utf8::range`,
+`utf8::ranges`, and the `unicode` XID classes, `core::Builder` with
 `add_token()`, `build()`, `diagnose()`, `set_state_limit()`, and `set_ignored_tokens()`, `core::determinize()`,
 `core::Lexer` with `Match`, `tokenize()`, `tokenize_all()`, `is_split_point()`, `is_split_point_ignoring()`,
 `chunk_boundaries()`, and `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the
@@ -228,21 +229,34 @@ The recovery layer joined that surface in 1.6.0: `next_certified_start()`, `next
 `next_anchored_start()`, `minimal_repair()`, `lag()`, and `rescue_free()`, each under the contract its own documentation
 states, evidence-order answers under preserved evidence and complete-repair invariance, the guarantee described under
 [Error Recovery](docs/usage.md#error-recovery) that every completely tokenizable repair of the text before the evidence
-places a token boundary at the answer. `rescue()`, the exact rescue decision with its witness, is on master and joins
-that surface in the next minor version; `rescue_free()` answers it as one bit.
+places a token boundary at the answer.
+
+Three decisions joined that surface in 2.0.0: `rescue()`, the exact rescue decision with its witness, which
+`rescue_free()` answers as one bit, false also when the search stopped at its cap, the two cases `rescue()` tells apart;
+`anchor_free_span()`, the exact supremum of the stretch no certified byte reaches or, given an inventory of windows, no
+window of that inventory; and `boundary_difference()`, whether two token sets cut any shared input differently, with the
+shortest witness under its cap. So did `regex::parse()` and the `munch-audit` command with the readers under it for
+flex, re2c, ANTLR 4 and logos files, whose report is those decisions applied to another generator's token set; the
+readers accept what a token language can say and refuse the rest by name. Decisions over a nullable token set are made
+on its positive-width equivalent, and `rescue_free()` answers exactly where 1.6.0 documented it as sufficient only.
+
+2.0.0 is a major version for one move. The moded tokenizer is `Mode_tokenizer`, with the constructors from a
+`Mode_lexer` or a list of lexers and the `set_mode()`, `depth()` and `mode()` that `Tokenizer` carried before, and
+`Tokenizer` reads one `Lexer`: the pure lexer has its tokenizer and the moded lexer its own. A moded user renames the
+type and changes nothing else.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
-`Mode_action` with its four kinds, the `Tokenizer` constructors taking a `Mode_lexer`, and `depth()`. So did
+`Mode_action` with its four kinds, the moded tokenizer's constructors taking a `Mode_lexer`, and `depth()`. So did
 `Builder::set_token_payload()` and the three-argument `tokenize_all()` sink that delivers what it attaches. A sink
 accepting both arities is called with two.
 
-The supported platform is 64-bit Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds, tests,
-sanitizes, and fuzzes, on x86-64 and ARM64 so both signednesses of plain `char` are exercised. Other platforms, 32-bit
-ones included, may work but carry no promise; macOS specifically is known not to build, because Apple's libc++ ships
-no `std::jthread` on any Xcode through 26 and the parallel scan keeps `jthread`, so that door opens when Apple ships
-P0660. Semantic versioning covers source compatibility only. munch builds as static libraries by default and honours
-`BUILD_SHARED_LIBS`; either way the result is meant to be compiled by the consumer, so no ABI stability is promised
-between any two versions.
+The supported platform is 64-bit Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds and tests on
+x86-64 and ARM64, so both signednesses of plain `char` are exercised, and sanitizes and fuzzes on x86-64. Other
+platforms, 32-bit ones included, may work but carry no promise; macOS specifically is known not to build, because
+Apple's libc++ ships no `std::jthread` on any Xcode through 26 and the parallel scan keeps `jthread`, so that door opens
+when Apple ships P0660. Semantic versioning covers source compatibility only. munch builds as static libraries by
+default and honours `BUILD_SHARED_LIBS`; either way the result is meant to be compiled by the consumer, so no ABI
+stability is promised between any two versions.
 
 The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
