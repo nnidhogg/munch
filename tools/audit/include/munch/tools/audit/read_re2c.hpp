@@ -55,9 +55,9 @@ struct Re2c_flags
  * stays the literal it is; a case-insensitive literal `'abc'` becomes `[aA][bB][cC]` and an exact one in single quotes
  * a bracket sequence too; `[^]`, any byte, is spelled out; blanks between tokens are dropped; a double-quoted literal,
  * a bracket expression, a `{name}` reference, the dot, grouping, alternation and the postfix operators are already the
- * parser's. Unicode escapes `\u`, `\U` and `\X` and the class difference `\` are refused, since the first need an
- * encoding the byte reading has not got and the second is not the parser's. Whether an action returns a token is read
- * by returned().
+ * parser's. Unicode escapes `\u`, `\U` and `\X` are refused, since they need an encoding the byte reading has not
+ * got; a class difference `A \ B` becomes the bracket of the bytes left, its operands parsed against the definitions so
+ * far. Whether an action returns a token is read by returned().
  * @param source The file's text.
  * @param flags The command line's flags, none unless given.
  * @param returning The forms besides `return` an action returns a token through, none unless given.

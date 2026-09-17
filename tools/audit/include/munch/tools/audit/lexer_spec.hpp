@@ -198,13 +198,13 @@ private:
  *
  * A generator's number is placed below every index at half the scale's range, so that a rule appended past the
  * set's priorities still has room; two rules of one number tie, and the builder settles a tie by the lower id, which
- * is file order.
+ * is file order. A file that asks for case-insensitive scanning throughout, flex's `case-insensitive` or `caseless`
+ * option, has every letter of every pattern folded by the parser's caseless option, definitions included.
  * @param spec The specification.
  * @param condition The condition, INITIAL for the default one.
  * @return The token set, its expressions parsed against the definitions.
- * @throws Spec_error If a rule's pattern is refused by regex::parse(), naming the rule's line and the reason, a
- *         rule's priority number lies beyond the scale, or the file asks for case-insensitive scanning throughout,
- *         which is not modelled.
+ * @throws Spec_error If a rule's pattern is refused by regex::parse(), naming the rule's line and the reason, or a
+ *         rule's priority number lies beyond the scale.
  */
 [[nodiscard]] Token_set token_set(const Lexer_spec& spec, std::string_view condition);
 
