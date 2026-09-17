@@ -43,3 +43,9 @@ jobs:
         with:
           name: split-windows
           path: paper/split-windows/split-windows.pdf
+
+      - name: Upload the panic-mode report
+        uses: actions/upload-artifact@v4
+        with:
+          name: panic-mode
+          path: paper/panic-mode/panic-mode.pdf
