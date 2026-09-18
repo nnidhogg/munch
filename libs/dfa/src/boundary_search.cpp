@@ -312,9 +312,9 @@ Rescue rescue(const Simulator& simulator, const std::size_t cap)
         return {.successors = successors, .ends = false};
     }};
 
-    const auto found{search(start, cap, expand)};
+    const auto [witness, exhaustive]{search(start, cap, expand)};
 
-    return {.witness = found.witness, .exhaustive = found.exhaustive};
+    return {.witness = witness, .exhaustive = exhaustive};
 }
 
 Difference boundary_difference(const Simulator& simulator, const Simulator& other, const std::size_t cap)
@@ -372,9 +372,9 @@ Difference boundary_difference(const Simulator& simulator, const Simulator& othe
         return {.successors = successors, .ends = false};
     }};
 
-    const auto found{search(start, cap, expand)};
+    const auto [witness, exhaustive]{search(start, cap, expand)};
 
-    return {.witness = found.witness, .exhaustive = found.exhaustive};
+    return {.witness = witness, .exhaustive = exhaustive};
 }
 
 } // namespace munch::dfa
