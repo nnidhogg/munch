@@ -374,19 +374,19 @@ public:
 
             offset += accept_consumed;
 
-            const auto& accept{accept_table_[accept_state]};
+            const auto& [token, payload]{accept_table_[accept_state]};
 
             if constexpr (std::convertible_to<
                                   std::invoke_result_t<Sink&, const Token&, std::size_t, std::uint64_t>, bool>)
             {
-                if (!sink(accept.token, accept_consumed, accept.payload))
+                if (!sink(token, accept_consumed, payload))
                 {
                     return offset;
                 }
             }
             else
             {
-                sink(accept.token, accept_consumed, accept.payload);
+                sink(token, accept_consumed, payload);
             }
         }
 

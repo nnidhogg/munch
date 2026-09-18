@@ -178,6 +178,7 @@ private:
      * Closing first is what puts a window's origin at the start of a token, which is what the certificate says
      * about it. A closed run that reaches acceptance refutes the guess and kills the node; one with no transition
      * is simply forgotten.
+     * @param simulator The simulator whose tables the walk reads.
      * @param node The node advanced from.
      * @param mark Whether the segment being read closes before the byte.
      * @param byte The byte read.

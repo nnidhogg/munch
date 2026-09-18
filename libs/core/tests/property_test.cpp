@@ -35,6 +35,8 @@ private:
  * The budget bounds the total expanded length: counted repetitions multiply the length of their sub-pattern, and an
  * unbounded repetition followed by a long fixed tail needs a DFA exponential in that tail, so unbudgeted generation
  * makes subset construction explode.
+ * @param random The source of every draw.
+ * @param depth The nesting still allowed: at zero a leaf is drawn, a text or a set.
  * @param budget The remaining expanded-length allowance, decremented as the regex grows.
  */
 Regex random_regex(Random& random, const int depth, int& budget)
