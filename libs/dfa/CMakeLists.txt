@@ -4,7 +4,7 @@ project(munch_dfa)
 
 add_library(${PROJECT_NAME}
         src/anchor_free_span.cpp
-        src/boundary_difference.cpp
+        src/boundary_search.cpp
         src/builder.cpp
         src/dfa.cpp
         src/label.cpp
