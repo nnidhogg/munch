@@ -1150,3 +1150,54 @@ TEST(Report, The_report_over_patterns_prices_the_newline_and_the_near_misses)
     EXPECT_NE(text.find("becomes a token of its own, discarded"), std::string::npos);
     EXPECT_NE(text.find("certifies exactly"), std::string::npos);
 }
+
+TEST(Report, A_json_string_escapes_the_quote_the_backslash_and_the_controls_and_passes_utf8_through)
+{
+    // The quote and the backslash by their short escapes, every control by its backslash-u form, both ends of that
+    // range pinned; 0x7F and a UTF-8 sequence stand as they are, since the text is UTF-8 and a byte string is rendered
+    // elsewhere as the code points of its bytes.
+    const std::vector<std::pair<std::string_view, std::string>> cases{
+            {"", R"("")"},
+            {"plain", R"("plain")"},
+            {R"(a"b\c)", R"("a\"b\\c")"},
+            {"\n\t\r", R"("\u000a\u0009\u000d")"},
+            {std::string_view{"\0\x1F", 2}, R"("\u0000\u001f")"},
+            {"\x7F", "\"\x7F\""},
+            {"\xC3\xA9", "\"\xC3\xA9\""},
+            {"\xE2\x82\xAC\xF0\x9F\x98\x80", "\"\xE2\x82\xAC\xF0\x9F\x98\x80\""}};
+
+    for (const auto& [text, json] : cases)
+    {
+        EXPECT_EQ(json_string(text), json) << json;
+    }
+
+    // A byte that is part of no well-formed UTF-8 sequence, a lone continuation byte, a lead byte its file ends
+    // inside, an overlong encoding, a surrogate or a code point past U+10FFFF, is escaped as the code point of its
+    // value, so a path or a name of any bytes still makes a JSON document.
+    const std::vector<std::pair<std::string_view, std::string>> malformed{
+            {"\xA9", R"("\u00a9")"},
+            {"\xC3", R"("\u00c3")"},
+            {"\xC0\x80", R"("\u00c0\u0080")"},
+            {"\xED\xA0\x80", R"("\u00ed\u00a0\u0080")"},
+            {"\xF4\x90\x80\x80", R"("\u00f4\u0090\u0080\u0080")"},
+            {"a\xFF"
+             "b",
+             R"("a\u00ffb")"}};
+
+    for (const auto& [text, json] : malformed)
+    {
+        EXPECT_EQ(json_string(text), json) << json;
+    }
+
+    // A token's name is text, rendered as such wherever the report names a token, so a name in UTF-8 reads the
+    // same under `blame` and `prices` as under the rules, where a byte string would be escaped byte by byte.
+    const Token_set accented{
+            .rules = {
+                    {.regex = munch::regex::parse("a+"), .id = 0, .priority = 0, .discarded = false},
+                    {.regex = munch::regex::parse("b"), .id = 1, .priority = 1, .discarded = false}}};
+
+    const auto document{json(audit(accented), [](const std::size_t) { return std::string{"\xC3\x89"}; })};
+
+    EXPECT_NE(document.find("\"name\": \"\xC3\x89\""), std::string::npos);
+    EXPECT_EQ(document.find(R"(\u00c3)"), std::string::npos);
+}

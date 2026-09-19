@@ -3,14 +3,16 @@
 `munch-audit` reads the file a lexer generator was given, flex's `.l`, re2c's blocks inside a C or C++ source, an ANTLR
 4 grammar, or a Rust file whose enums derive logos's `Logos`, builds the token set each start condition scans with, and
 prints what the library decides about it: the bytes and windows a parallel scan may cut at, the length of the stretches
-no certificate reaches, why every other candidate fails, and what it would cost to make one certify. Nothing in the
-output is estimated or sampled; every figure is a decision over the compiled tables, the same decisions
-[docs/split_points.md](split_points.md) and [docs/split_windows.md](split_windows.md) derive, applied to a token set
-that was written for another generator.
+no certificate reaches, why every other candidate fails, what it would cost to make one certify, and, given an input,
+how many cuts the certificates offer on it. Nothing in the output is estimated or sampled; every figure is a decision
+over the compiled tables, the same decisions [docs/split_points.md](split_points.md) and
+[docs/split_windows.md](split_windows.md) derive, applied to a token set that was written for another generator.
 
 The tool exists because a scanner author who wants a parallel or resumable scan has a question the generator cannot
 answer: is this token set one where a cut can be certified, and if not, which rule stands in the way. The answer is a
-property of the token set, not of any corpus, and the report states it as such.
+property of the token set, not of any corpus, and the report states it as such. How often a certified cut then occurs
+in the input a scanner will meet is a property of that input, and `--input` measures it on a file, stated as a
+measurement.
 
 ## Running It
 
@@ -19,8 +21,9 @@ munch-audit [options] FILE...
 ```
 
 A file that opens a re2c block (`/*!re2c`, `/*!rules:re2c` or `/*!local:re2c`) is read as re2c, one with a derive
-naming `Logos` as logos, one whose first item is a grammar declaration as ANTLR, any other as flex; `--flex`,
-`--re2c`, `--antlr` and `--logos` force the kind. The options follow the generators' own:
+naming `Logos` as logos, one whose first item is a grammar declaration as ANTLR, any other as flex, the text read as
+code for that, so that a string literal or a comment quoting an opener or a derive says nothing of the kind;
+`--flex`, `--re2c`, `--antlr` and `--logos` force the kind. The options follow the generators' own:
 
 | Option | Meaning |
 |---|---|
@@ -32,9 +35,12 @@ naming `Logos` as logos, one whose first item is a grammar declaration as ANTLR,
 | `--condition NAME` | Audit this start condition only. Repeatable. Without it every condition with rules is audited, INITIAL first. |
 | `--windows N` | The longest window tried, 3 unless given; 4 is the planners' own limit. The enumeration tries every string of byte-class representatives up to this width, so it is the one cost that grows with the grammar. |
 | `--price BYTE` | Price this byte as well as the newline and the near misses. A character, `\n`, `\t`, `\r`, `\0` or `0xHH`. Repeatable. |
+| `--input FILE` | Measure the certified-anchor supply on this file: how many of its positions the certificates cut at, per kibibyte, and the gaps between them. One file, measured under every report. |
 | `--json` | One JSON document for the whole run instead of text. |
 
-The exit status is 0 when every scanner and condition audited, 1 when one was refused, 2 on a command-line error.
+The exit status is 0 when every scanner and condition audited, 1 when one was refused, a file the reading finds no
+scanner in being refused as such, and 2 on a command-line error, a `--condition` no scanner of the files has among
+them. The output is written whole once every file is audited, so an error leaves no part of a document behind.
 
 ## Reading the Report
 
@@ -181,6 +187,31 @@ the figures they governed begin.
   stands and its certificate reported, then every consuming token takes its own shape's edit together; a terminated
   token's fixed newline, immovable for the narrowing above, is movable here. A token whose fixed spelling holds the byte
   and has none of these shapes stays *fixed*.
+- **certified-anchor supply on FILE**: with `--input`, the section that measures what the report's certificates come to
+  on real input, the guarantee a parallel scanner lives on: how often a certified anchor occurs and how long the
+  stretches between anchors are. An anchor is an interior position of the file at which a certificate places a token
+  boundary, a position before a certified byte or the origin of an occurrence of a certified window, the file's two ends
+  left out since neither is a cut, each position counted once. One row per inventory, the bytes certified exactly, the
+  bytes certified modulo discarded tokens, and the exact bytes together with the certified windows, the last present
+  when the report found windows, each giving the anchors, the anchors per kibibyte, and the gaps between consecutive
+  anchors as their median, ninetieth and ninety-ninth percentile and maximum in bytes, the percentile being the order
+  statistic at floor(q n) capped at the last, the certified-splitting paper's convention, whose supply table this
+  section is the audit's counterpart of; the runs before the first anchor and after the last are in no gap, and fewer
+  than two anchors leave none, which the row says. Every anchor is a decision over the compiled tables applied to the
+  file's bytes, the windows matched through the byte classes their representatives stand for, and nothing is sampled.
+  The windows are the conservative model's, so where a longer match would settle a boundary the model does not, the
+  window row undercounts what an exact decision would certify: its anchors and its anchors per kibibyte are a lower
+  bound on that decision's, every window this model certifies being one an exact decision certifies too. The gaps
+  bound that decision's in neither direction and are measurements of this inventory alone: an anchor the model misses
+  usually parts a gap and shortens the longest, but one before the first anchor or after the last turns a run the row
+  does not count, the input's own edge, into a gap it does count, which can raise the maximum and move every quantile
+  with it. What a certificate promises at an anchor, a token boundary of the serial scan, and for the modulo row a
+  boundary of that scan once its discarded tokens are deleted, it promises on input the token set tokenizes
+  completely, so the section's first row says how far the condition's serial scan of the file goes: through the whole
+  file, and every anchor is a boundary, the modulo row's once discarded tokens are deleted, or to the offset it stops
+  at, no token matching there, and the rows count the occurrences as they stand and promise no boundary, the exact
+  byte row alone keeping the serial-prefix relation `tokenize_all_parallel()` states for malformed input, which the
+  window rows have not got.
 
 ## What Is Read, and What Is Refused
 
@@ -509,4 +540,9 @@ numbers or the string `unbounded` (the window span also `undecided` when the win
 were none), `lag`, `rescue_free` as true, false or null when the search stopped at its cap, `rescue_witness` as the
 shortest completely tokenizable input on which the scan rolls back or null, `blame` and `prices`, tokens given as their
 id and name. Byte strings are JSON strings holding each byte as the code point of its value, so a reader recovers the
-bytes exactly.
+bytes exactly; names, paths and messages are text, their UTF-8 passed through and a byte that is part of no well-formed
+sequence escaped as the code point of its value, so the document is JSON whatever the file holds. With `--input` each
+condition carries a `supply` object beside its `report`, absent otherwise: the `input` named, its `bytes` and the bytes
+the serial scan `tokenized`, the same number when the file tokenizes completely, and under `exact`, `modulo` and
+`windows`, the last null when the report found no window, the `anchors`, the `per_kibibyte` figure and `gap_p50`,
+`gap_p90`, `gap_p99` and `gap_max`, each null where the anchors leave no gap.

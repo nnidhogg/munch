@@ -73,8 +73,9 @@ The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal mu
 - **An Auditor for Other Generators' Scanners**
 
   `munch-audit` reads a flex, re2c, ANTLR 4 or logos file and reports what the library decides about its token set,
-  per start condition: the certified bytes and windows, the anchor-free span, which rule blocks each candidate byte, and
-  what it would cost to certify one. See [docs/audit.md](docs/audit.md).
+  per start condition: the certified bytes and windows, the anchor-free span, which rule blocks each candidate byte,
+  what it would cost to certify one, and, given an input, how often the certificates cut it. See
+  [docs/audit.md](docs/audit.md).
 
 - **Graphviz Export for Debugging**
 
