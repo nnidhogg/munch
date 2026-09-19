@@ -23,8 +23,9 @@ namespace munch::tools::tokenizer
  * modes never switch on their own and the driver switches them explicitly with set_mode(), which suits a parser that
  * knows what is coming. Constructed from a core::Mode_lexer, the grammar carries the switches instead: each token
  * declares its effect on a mode stack, so nested comments and string escapes need no bookkeeping from the driver.
- * Either way the mode is scan state: mode() reads it, depth() reports the nesting the stack has reached, and load()
- * and reset() rewind it to zero with the position.
+ * Under a mode lexer the mode is scan state, and load() and reset() rewind it to zero with the position; under
+ * caller-supplied lexers it is the caller's choice and survives them. mode() reads it either way, and depth() reports
+ * the nesting the stack has reached.
  *
  * There is no accessor for the lexer here, and no parallel entry point, because a mode lexer has none. A worker
  * starting mid-input would have to recover the mode and every saved frame, and `docs/limits.md` records both what is
@@ -175,18 +176,21 @@ public:
     /**
      * @brief Replace the input text and start over.
      *
-     * The mode is scan state and returns to zero with the saved frames, since both describe nesting in input that
-     * is being replaced: keeping either would scan a fresh buffer inside a half open string literal it never
-     * entered. That holds however the current mode was reached, set_mode() included, since nothing records who
-     * chose it; call set_mode() again after load() to re-enter one deliberately.
+     * Under a mode lexer the mode is scan state and returns to zero with the saved frames, since both describe
+     * nesting in input that is being replaced: keeping either would scan a fresh buffer inside a half open string
+     * literal it never entered. That holds however the current mode was reached, set_mode() included, since nothing
+     * records who chose it; call set_mode() again after load() to re-enter one deliberately. Where the caller drives
+     * the mode with several lexers, the mode is the caller's choice and not the input's, so it survives with its
+     * frames.
      */
     void load(std::string input);
 
     /**
-     * @brief Reset the reading position to the beginning of the current input, and with it the mode.
+     * @brief Reset the reading position to the beginning of the current input; a grammar-driven mode rewinds with
+     *        it, a caller-driven one survives.
      *
-     * The mode is treated exactly as load() treats it: returned to zero with the saved frames, however it was
-     * reached; call set_mode() again after reset() to re-enter one deliberately.
+     * The mode is treated exactly as load() treats it: returned to zero with the saved frames under a mode lexer,
+     * however it was reached, and kept where the caller drives it.
      */
     void reset() noexcept;
 
@@ -244,6 +248,14 @@ public:
 
 private:
     /**
+     * @brief The one constructor the four public ones delegate to.
+     * @param lexer The mode lexer.
+     * @param input Input text to tokenize.
+     * @param caller_driven Whether the caller switches modes itself, in which case reset() and load() keep the mode.
+     */
+    Mode_tokenizer(core::Mode_lexer lexer, std::string input, bool caller_driven);
+
+    /**
      * @brief The input text being tokenized.
      */
     std::string input_;
@@ -262,6 +274,11 @@ private:
      * @brief The mode and saved frames, advanced by each token's declared action.
      */
     core::Mode_stack stack_;
+
+    /**
+     * @brief Whether the caller drives the modes, so that reset() and load() leave the mode and its frames alone.
+     */
+    bool caller_driven_;
 };
 
 } // namespace munch::tools::tokenizer

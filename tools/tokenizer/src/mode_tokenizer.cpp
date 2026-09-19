@@ -6,18 +6,23 @@
 
 namespace munch::tools::tokenizer
 {
-Mode_tokenizer::Mode_tokenizer(std::vector<core::Lexer> lexers) : Mode_tokenizer{core::Mode_lexer{std::move(lexers)}}
+Mode_tokenizer::Mode_tokenizer(std::vector<core::Lexer> lexers)
+    : Mode_tokenizer{core::Mode_lexer{std::move(lexers)}, std::string{}, true}
 {}
 
 Mode_tokenizer::Mode_tokenizer(std::vector<core::Lexer> lexers, std::string input)
-    : Mode_tokenizer{core::Mode_lexer{std::move(lexers)}, std::move(input)}
+    : Mode_tokenizer{core::Mode_lexer{std::move(lexers)}, std::move(input), true}
 {}
 
-Mode_tokenizer::Mode_tokenizer(core::Mode_lexer lexer) : offset_{0}, lexer_{std::move(lexer)}
+Mode_tokenizer::Mode_tokenizer(core::Mode_lexer lexer) : Mode_tokenizer{std::move(lexer), std::string{}, false}
 {}
 
 Mode_tokenizer::Mode_tokenizer(core::Mode_lexer lexer, std::string input)
-    : input_{std::move(input)}, offset_{0}, lexer_{std::move(lexer)}
+    : Mode_tokenizer{std::move(lexer), std::move(input), false}
+{}
+
+Mode_tokenizer::Mode_tokenizer(core::Mode_lexer lexer, std::string input, const bool caller_driven)
+    : input_{std::move(input)}, offset_{0}, lexer_{std::move(lexer)}, caller_driven_{caller_driven}
 {}
 
 std::string_view Mode_tokenizer::input() const noexcept
@@ -44,16 +49,19 @@ void Mode_tokenizer::load(std::string input)
 {
     input_ = std::move(input);
 
-    offset_ = 0;
-
-    stack_ = core::Mode_stack{};
+    reset();
 }
 
 void Mode_tokenizer::reset() noexcept
 {
     offset_ = 0;
 
-    stack_ = core::Mode_stack{};
+    // Under a mode lexer the stack describes the text just rewound past, so it is rewound to mode 0 whatever set
+    // it, set_mode() included. Under caller-supplied lexers the current mode is the caller's and survives.
+    if (!caller_driven_)
+    {
+        stack_ = core::Mode_stack{};
+    }
 }
 
 void Mode_tokenizer::seek(const std::size_t offset) noexcept

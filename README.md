@@ -240,10 +240,13 @@ flex, re2c, ANTLR 4 and logos files, whose report is those decisions applied to 
 readers accept what a token language can say and refuse the rest by name. Decisions over a nullable token set are made
 on its positive-width equivalent, and `rescue_free()` answers exactly where 1.6.0 documented it as sufficient only.
 
-2.0.0 is a major version for one move. The moded tokenizer is `Mode_tokenizer`, with the constructors from a
-`Mode_lexer` or a list of lexers and the `set_mode()`, `depth()` and `mode()` that `Tokenizer` carried before, and
-`Tokenizer` reads one `Lexer`: the pure lexer has its tokenizer and the moded lexer its own. A moded user renames the
-type and changes nothing else.
+2.0.0 is a major version for one move and one weakened bound. The moded tokenizer is `Mode_tokenizer`, with the
+constructors from a `Mode_lexer` or a list of lexers and the `set_mode()`, `depth()` and `mode()` that `Tokenizer`
+carried before, and `Tokenizer` reads one `Lexer`: the pure lexer has its tokenizer and the moded lexer its own. A moded
+user renames the type, includes `mode_tokenizer.hpp`, and changes nothing else: a caller-driven mode still survives
+`reset()` and `load()`, and a grammar-driven one still rewinds with them. The bound: `set_state_limit()` promised a
+transition table within the cap times the classes times four bytes, and it now allows one column more for a nullable
+token set, whose positive-width equivalent adds a state determinization never discovers.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the moded tokenizer's constructors taking a `Mode_lexer`, and `depth()`. So did
