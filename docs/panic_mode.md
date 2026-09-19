@@ -198,21 +198,21 @@ at `|r| + (p - c)`, for `p` and `c` as in either theorem.
 *Proof.* A tokenizable repair commits its whole input, `con(y) = |y|`, so it is evidence-reaching for any evidence, and
 its committed segmentation is its segmentation. ∎
 
-The corollary is the weaker claim. For an anchor `c` and evidence `x[q..q+w)`, write `R_complete(x, c) = { r in Σ* :
-con(r · x[c..]) = |r| + |x| - c }` and `R_reach(x, c; q, w) = { r in Σ* : con(r · x[c..]) >= |r| + q + w - c }`, the
-parameters fixed per instance and dropped hereafter, with `w` the evidence width throughout: `R_reach` for the
-evidence-reaching repairs at an anchor and `R_complete` for the completely tokenizable ones: `R_complete ⊆ R_reach`
-always, the corollary binds only `R_complete`, the theorems bind all of `R_reach`. The inclusion can be strict, and the
-witness is small. Over `{ab, ;}` on the damaged text `ab;#`, anchored at zero on the certified semicolon's evidence `[2,
-3)`: no repair completes the tail, the byte `#` being tokenizable in no context, so `R_complete` is empty and the
-corollary holds vacuously; yet the identity repair commits `ab` and `;` through the evidence, so `R_reach` is inhabited
-and the theorem binds it with force, a committed interior boundary at the image of position two in every reaching
-repair.
+The corollary is the weaker claim. For an anchor `c` and evidence `x[q..q+w)`, write `R_complete(x, c) = { r in Σ*
+: con(r · x[c..]) = |r| + |x| - c }` and `R_reach(x, c; q, w) = { r in Σ* : con(r · x[c..]) >= |r| + q + w - c }`,
+the parameters fixed per instance and dropped hereafter, with `w` the evidence width throughout: `R_reach` for the
+evidence-reaching repairs at an anchor and `R_complete` for the completely tokenizable ones: `R_complete ⊆
+R_reach` always, the corollary binds only `R_complete`, the theorems bind all of `R_reach`. The inclusion can be
+strict, and the witness is small. Over `{ab, ;}` on the damaged text `ab;#`, anchored at zero on the certified
+semicolon's evidence `[2, 3)`: no repair completes the tail, the byte `#` being tokenizable in no context, so
+`R_complete` is empty and the corollary holds vacuously; yet the identity repair commits `ab` and `;` through the
+evidence, so `R_reach` is inhabited and the theorem binds it with force, a committed interior boundary at the
+image of position two in every reaching repair.
 
-The anchor constraint is `c <= q`, not `c <= p`: a repair may not touch the window's own bytes, which lie partly before
-the resynchronization point whenever the origin is positive; at origin zero the two constraints coincide. The searching
-algorithm satisfies the constraint by construction, since it only reports occurrences lying wholly in the unmodified
-suffix.
+The anchor constraint is `c <= q`, not `c <= p`: a repair may not touch the window's own bytes, which lie
+partly before the resynchronization point whenever the origin is positive; at origin zero the two constraints
+coincide. The searching algorithm satisfies the constraint by construction, since it only reports occurrences
+lying wholly in the unmodified suffix.
 
 **Lemma 2 (progress).** A driver that alternates scanning with recovery, stopping at the input's end or when the
 recovery search refuses, terminates after at most `|x|` advancing iterations.
@@ -237,8 +237,8 @@ One more consequence closes the loop between invariance and the vacuity question
 tokenizable repair anchored at `c` exists.
 
 **Corollary 2 (recovery succeeds where repair exists).** If `x` is repairable at `c` and `p` is a repair-invariant
-resynchronization point for `x` anchored at `c` relative to some evidence `x[q..q+w)` with `c <= q`, then `x[p..]` is
-completely tokenizable.
+resynchronization point for `x` anchored at `c` relative to some evidence `x[q..q+w)` with `c <= q`, then
+`x[p..]` is completely tokenizable.
 
 *Proof.* Take any tokenizable repair `y = r · x[c..]`; it commits its whole input, so it is evidence-reaching, a token
 of `y` begins at `|r| + (p - c)`, and the tokens of `y` from that boundary on are a complete tokenization of `y`'s
@@ -248,9 +248,9 @@ So where a complete repair exists, a repair-invariant answer does not merely sta
 everything that remains. Nonvacuity alone does not buy this: an evidence-reaching repair can commit through the evidence
 and still fail later, so the complete-tokenizability conclusion needs the complete-repair premise, exactly as stated.
 
-The converse direction closes the loop the evaluation needs, because it gives a necessary condition for the strengthened
-quantifier to outrun the corollary's at a given anchor: the answer's own resumed suffix must fail to tokenize
-completely.
+The converse direction closes the loop the evaluation needs, because it gives a necessary condition for
+the strengthened quantifier to outrun the corollary's at a given anchor: the answer's own resumed suffix
+must fail to tokenize completely.
 
 **Proposition 1 (reaching collapses to completing at a surviving answer).** Let `p` be a repair-invariant
 resynchronization point for `y` anchored at `c`, relative to evidence `y[q..q+w)` with `c <= q`, and suppose `y[p..]` is
@@ -375,44 +375,43 @@ states the contract in its API documentation and in the repository's top-level r
 `Lexer::next_certified_start(input, from)`, is a position-only query on one automaton, documented with the
 complete-repair corollary's contract, the evidence-returning `next_certified_evidence(input, from)` beside it carrying
 the interval and kind behind each answer; it knows nothing about errors or drivers. The behavior,
-`Tokenizer::recover()`, belongs to the driver: a failed `next()` does not advance the reading position, since guessing a
-skip would invent tokens, and the driver then chooses among stopping, seeking by its own rule, or `recover()`, which
+`Tokenizer::recover()`, belongs to the driver: a failed `next()` does not advance the reading position, since guessing
+a skip would invent tokens, and the driver then chooses among stopping, seeking by its own rule, or `recover()`, which
 asks the active mode's lexer for the first certified start at or after the position one past the current one and moves
 there, returning the skip count. When no certificate among the searched kinds and lengths lies ahead, the position does
 not move and the refusal is explicit. Two sibling forms return the evidence itself: `recover_from_failure()` answers
-with the certified start and its evidence interval, and `recover_from_clean(clean_from)` floors the search at a caller's
-known-clean offset, the returned evidence covered by construction, the interface the trust discussion of Section 6
-measures. The fail-closed tests pin each half at its own layer. At the lexer, fixtures pin both certificate kinds
-answered in evidence order, the nullable set answering through its certified byte with no window consulted, and the
-unbounded run refusing outright. At the driver, a mutant that ignored the window origin would move to the uncertified
-occurrence rather than to occurrence plus origin, and a named fixture kills it; the refusal path and the exact skip
-counts are pinned; and a fixture holds recovery to the active mode's automaton alone. The evaluation's harness adds the
-strongest check: on every trial, an answer whose supporting evidence lies wholly in the preserved suffix is checked by
-an executable landing assertion against the repair the pristine corpus itself supplies, and every such check in the
-campaign passed.
+with the certified start and its evidence interval, and `recover_from_clean(clean_from)` floors the search at a
+caller's known-clean offset, the returned evidence covered by construction, the interface the trust discussion of
+Section 6 measures. The fail-closed tests pin each half at its own layer. At the lexer, fixtures pin both certificate
+kinds answered in evidence order, the nullable set answering through its certified byte with no window consulted, and
+the unbounded run refusing outright. At the driver, a mutant that ignored the window origin would move to the
+uncertified occurrence rather than to occurrence plus origin, and a named fixture kills it; the refusal path and the
+exact skip counts are pinned; and a fixture holds recovery to the active mode's automaton alone. The evaluation's
+harness adds the strongest check: on every trial, an answer whose supporting evidence lies wholly in the preserved
+suffix is checked by an executable landing assertion against the repair the pristine corpus itself supplies, and every
+such check in the campaign passed.
 
 ## 6 Evaluation
 
-The campaign: `tools/probes/src/recovery_quality.cpp` of munch release `v1.6.0`, invoked as
-`munch_recovery_quality 512 500 out.csv twitter.json 3`: 512 KiB of corpus per generated row, 500 trials per cell, three
-independent seeds, every seed fixed, so the whole experiment is deterministic. This is the sixth campaign revision; the
-third through fifth revisions' archives remain pinned records, superseded rather than overwritten: the fourth's
-convergence metric measured its divergence region from the first resume instead of the corruption end, the fifth
-corrected that for lost boundaries but not for spurious starts, and the sixth corrects both defects, each quantified
-in its successor's record. The full CSV (twenty-eight columns: the trial's failure offset, corruption end, first mapped
-boundary, repairability and minimal-repair length, the decider's direct answer at the blind anchor, then per arm the
-first and terminal positions with landing flags, the evidence interval and kind, the terminal outcome, attempts, the
-per-move covered and landed counts, and the convergence triple), the probe's own summary, the five generated corpora,
-two checked-in analysis programs that derive this section's CSV-borne figures from the archive (the pristine-oracle pass
-and the within-cell repeat count are the harness summary's own attestations, archived beside it with the move sidecar),
-and a pinned reproduction script with the artifact hashes are deposited as a standalone record at
-doi:10.5281/zenodo.22178507; every campaign statistic and mapped-oracle count this section reports recomputes from that
-deposit, the pinned munch source tree the script checks out and verifies against the bundled harness snapshot, and the
-pinned simdjson corpus the script fetches and holds to its recorded digest. The real-document row reads the simdjson
-benchmark corpus `twitter.json` verbatim (631,515 bytes, byte-identical to `jsonexamples/twitter.json` at the simdjson
-repository's release v3.10.1, SHA-256 30721e49..., the full digest in the data notes and verified by the reproduction
-script), held to the same complete-tokenizability assertion, the same damage protocol, and the same oracle as the
-generated rows.
+The campaign: `tools/probes/src/recovery_quality.cpp` of munch release `v1.6.0`, invoked as `munch_recovery_quality 512
+500 out.csv twitter.json 3`: 512 KiB of corpus per generated row, 500 trials per cell, three independent seeds, every
+seed fixed, so the whole experiment is deterministic. This is the sixth campaign revision; the third through fifth
+revisions' archives remain pinned records, superseded rather than overwritten: the fourth's convergence metric measured
+its divergence region from the first resume instead of the corruption end, the fifth corrected that for lost boundaries
+but not for spurious starts, and the sixth corrects both defects, each quantified in its successor's record. The full
+CSV (twenty-eight columns: the trial's failure offset, corruption end, first mapped boundary, repairability and
+minimal-repair length, the decider's direct answer at the blind anchor, then per arm the first and terminal positions
+with landing flags, the evidence interval and kind, the terminal outcome, attempts, the per-move covered and landed
+counts, and the convergence triple), the probe's own summary, the five generated corpora, two checked-in analysis
+programs that derive this section's CSV-borne figures from the archive (the pristine-oracle pass and the within-cell
+repeat count are the harness summary's own attestations, archived beside it with the move sidecar), and a pinned
+reproduction script with the artifact hashes are deposited as a standalone record at doi:10.5281/zenodo.22178507; every
+campaign statistic and mapped-oracle count this section reports recomputes from that deposit, the pinned munch source
+tree the script checks out and verifies against the bundled harness snapshot, and the pinned simdjson corpus the script
+fetches and holds to its recorded digest. The real-document row reads the simdjson benchmark corpus `twitter.json`
+verbatim (631,515 bytes, byte-identical to `jsonexamples/twitter.json` at the simdjson repository's release v3.10.1,
+SHA-256 30721e49..., the full digest in the data notes and verified by the reproduction script), held to the same
+complete-tokenizability assertion, the same damage protocol, and the same oracle as the generated rows.
 
 Quality, not throughput. A pristine corpus `x`, completely tokenizable by its row's grammar and asserted so, is damaged
 at a position by one of three operations at `k ∈ {1, 4, 16}`: substituting `k` bytes with pseudo-random bytes, deleting
@@ -586,11 +585,11 @@ byte certifies exactly, exercises the byte path at scale. It also lands worst, 6
 61.5], and the covered split decomposes that rate, within the one row and campaign schedule, grouped by the returned
 certificate's kind, an observed stratification rather than a controlled contrast: of the row's 2,408 byte-evidence
 answers, 2,213 rest on evidence not wholly in the preserved suffix, 91.9 percent, and none of them land, while of its
-5,469 window answers 1,277 are uncovered, 23.3 percent, and 376 land. All 4,387 evidence-covered answers of the row pass
-the asserted landing check every time. The within-row contrast is an observed association, not a randomized comparison,
-but it no longer leans on the cross-row one, where evidence length is confounded with grammar and corpus; one reading
-consistent with it is that a single byte is far easier for damage to produce than a two-to-four-byte occurrence with the
-right context.
+5,469 window answers 1,277 are uncovered, 23.3 percent, and 376 land. All 4,387 evidence-covered answers of the row
+pass the asserted landing check every time. The within-row contrast is an observed association, not a randomized
+comparison, but it no longer leans on the cross-row one, where evidence length is confounded with grammar and corpus;
+one reading consistent with it is that a single byte is far easier for damage to produce than a two-to-four-byte
+occurrence with the right context.
 
 **The mechanism behind coverage, from the archive.** Coverage has a proved part and an observed part: the identity is
 proved algebraically, and the archive recomputes the observed bins while checking every archived row against it.
@@ -687,32 +686,32 @@ percent. Skip-one never refuses and lands rarely, 10.0% pooled, the opposite fai
 
 **The vacuity fence, stratified and then fenced again.** Every trial carries the verdict of the shipped
 `minimal_repair`, the routine's reported answer to whether any repair completes the blind tail: 26,928 routine-labeled
-repairable against 16,808 routine-labeled beyond repair, and the walk answered every one of the latter, 38.4 percent of
-its first answers. Assumption 1, the label premise, is the one unproved input this stratum consumes, and every claim
-resting on it below names it. Under the label premise the complete-repair reading of Corollary 1 leaves those answers
-claiming nothing at the blind anchor, the vacuity question that reading forces, and for 13,522 of them the strengthened
-semantics is proved to fare no better: its quantifier coincides with the complete-repair one without that assumption, so
-under the same premise it is empty exactly where that one is; the rest stay undetermined in content, as follows. Every
-certified answer's evidence lies at or after its blind search anchor, so Proposition 1 needs only one further premise
-per trial, a one-attempt completed resumed scan, and 13,522 of the 16,808 supply it: the 12,023 whose evidence the
-damage spared and 1,499 more on evidence not wholly in the preserved suffix. At all 13,522 blind anchors the two
-quantifiers therefore coincide, and under the label premise both are empty. Coincidence is in fact established far more
-widely, and without invoking Assumption 1: on the 26,928 trials the routine labels repairable, every returned repair was
-witness-verified by scanning, so `R_complete` is inhabited by exhibition and Corollary 3 forces the two sets equal there
-independently of Assumption 1. Equality therefore holds at 40,450 of the campaign's 43,736 answers, 92.5 percent, and
-only the 3,286 remain candidates for strict inclusion at all; what the label premise buys is not the equality but the
-reading of the equal sets as empty. The remaining 3,286, whose first resumed scans failed downstream, are the only
-answers this campaign leaves undetermined in content at the blind anchor under the label premise: their soundness
-stands, and whether `R_reach` is inhabited there does not. Coverage never entered that argument; what coverage decides
-is the transfer: the 12,023 covered answers all landed, guaranteed at the corruption-end anchor where the pristine
-corpus is a complete repair, the same guarantee the known-clean arms exercise by construction, while the 1,499 uncovered
-collapses carry no such transfer and land 1,066 times as a measurement, not a theorem. For uncovered evidence the
-corruption-end anchor is not a weaker fallback but no anchor at all, the evidence beginning before it, outside the
-definition's domain, though each such answer stays governed by the walk's soundness theorem at its own blind anchor. The
-deployment reading is the honest one: every returned answer is sound at its blind anchor, and coverage decides which
-answers additionally carry Proposition 2's pristine transfer, the 12,023 against the 1,499. The failure offset cannot
-draw that line; the returned evidence interval can, which is exactly why the evidence-returning form of the interface
-returns it.
+repairable against 16,808 routine-labeled beyond repair, and the walk answered every one of the latter, 38.4 percent
+of its first answers. Assumption 1, the label premise, is the one unproved input this stratum consumes, and every
+claim resting on it below names it. Under the label premise the complete-repair reading of Corollary 1 leaves those
+answers claiming nothing at the blind anchor, the vacuity question that reading forces, and for 13,522 of them the
+strengthened semantics is proved to fare no better: its quantifier coincides with the complete-repair one without that
+assumption, so under the same premise it is empty exactly where that one is; the rest stay undetermined in content, as
+follows. Every certified answer's evidence lies at or after its blind search anchor, so Proposition 1 needs only one
+further premise per trial, a one-attempt completed resumed scan, and 13,522 of the 16,808 supply it: the 12,023 whose
+evidence the damage spared and 1,499 more on evidence not wholly in the preserved suffix. At all 13,522 blind anchors
+the two quantifiers therefore coincide, and under the label premise both are empty. Coincidence is in fact established
+far more widely, and without invoking Assumption 1: on the 26,928 trials the routine labels repairable, every returned
+repair was witness-verified by scanning, so `R_complete` is inhabited by exhibition and Corollary 3 forces the two
+sets equal there independently of Assumption 1. Equality therefore holds at 40,450 of the campaign's 43,736 answers,
+92.5 percent, and only the 3,286 remain candidates for strict inclusion at all; what the label premise buys is not the
+equality but the reading of the equal sets as empty. The remaining 3,286, whose first resumed scans failed downstream,
+are the only answers this campaign leaves undetermined in content at the blind anchor under the label premise: their
+soundness stands, and whether `R_reach` is inhabited there does not. Coverage never entered that argument; what
+coverage decides is the transfer: the 12,023 covered answers all landed, guaranteed at the corruption-end anchor where
+the pristine corpus is a complete repair, the same guarantee the known-clean arms exercise by construction, while the
+1,499 uncovered collapses carry no such transfer and land 1,066 times as a measurement, not a theorem. For uncovered
+evidence the corruption-end anchor is not a weaker fallback but no anchor at all, the evidence beginning before it,
+outside the definition's domain, though each such answer stays governed by the walk's soundness theorem at its own
+blind anchor. The deployment reading is the honest one: every returned answer is sound at its blind anchor, and
+coverage decides which answers additionally carry Proposition 2's pristine transfer, the 12,023 against the 1,499. The
+failure offset cannot draw that line; the returned evidence interval can, which is exactly why the evidence-returning
+form of the interface returns it.
 
 **The anchored decider, a different-property comparator.** The second machine in the campaign is the library's anchored
 decider, whose documented contract is exactness for complete-repair invariance on non-nullable sets: with the tail's end

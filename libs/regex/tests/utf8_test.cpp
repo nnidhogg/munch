@@ -114,8 +114,8 @@ TEST(Utf8_test, Surrogates_excised_from_spanning_range)
 
 TEST(Utf8_test, Membership_sweep)
 {
-    // Every code point around the range bounds and the two-to-three byte encoding boundary is accepted exactly when
-    // it lies inside the range.
+    // Every code point around the range bounds and the two-to-three byte encoding boundary is accepted exactly
+    // when it lies inside the range.
     const auto nfa{make_nfa(utf8::range(0x600, 0x900))};
 
     for (char32_t code_point{0x500}; code_point <= 0xA00; ++code_point)

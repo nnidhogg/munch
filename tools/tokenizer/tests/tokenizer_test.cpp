@@ -808,10 +808,9 @@ TEST(Tokenizer_recovery, Recover_from_failure_returns_the_window_evidence_interv
 
 TEST(Tokenizer_recovery, Recover_from_clean_floors_the_search_and_covers_the_evidence)
 {
-    // The blind search answers at the first semicolon, inside what the caller knows is damaged; the
-    // clean-anchored search starts at the caller's clean offset and answers there, its byte evidence at or
-    // past the floor by construction. The two arms differ on the same input, which is the interface split's
-    // whole point.
+    // The blind search answers at the first semicolon, inside what the caller knows is damaged; the clean-anchored
+    // search starts at the caller's clean offset and answers there, its byte evidence at or past the floor by
+    // construction. The two arms differ on the same input, which is the interface split's whole point.
     core::Builder builder;
 
     builder.add_token(text("ab"), Rec_token::identifier, 1);
@@ -869,9 +868,8 @@ TEST(Tokenizer_recovery, Recover_from_clean_refuses_without_moving)
 
 TEST(Tokenizer_recovery, Recover_uses_certified_bytes_and_promises_nothing_past_resynchronization)
 {
-    // The semicolon is a certified byte, so recovery lands on it directly; the suffix then errors again, which
-    // is the documented weaker contract on malformed input, and a search past the last byte finds nothing and
-    // moves nothing.
+    // The semicolon is a certified byte, so recovery lands on it directly; the suffix then errors again, which is the
+    // documented weaker contract on malformed input, and a search past the last byte finds nothing and moves nothing.
     core::Builder builder;
 
     builder.add_token(text("a"), Rec_token::identifier, 1);

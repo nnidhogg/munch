@@ -24,14 +24,12 @@
 // Every rho_j is live: reachable by construction, and co-accessible because its token ends at some e >= t+j in an
 // accepting state with x[t+j .. e) carrying rho_j there.
 //
-// Base, j = 1. If sigma_1 < t then omega_1 is "before", the state p = delta*(q0, x[sigma_1 .. t)) is live and so
-// lies in C_0, which is all of L paired with "before", and the direct branch carries it to (rho_1, before) with the
-// origin intact. The begins rename cannot interfere for the same reason it cannot in the step: p has consumed at
-// least one byte, so p = q0 only if a non-empty live path returns to q0, which makes init_reentrant true and begins
-// false. If
-// sigma_1 = t then rho_1 = delta(q0, w_0) and the seed fires, because C_0 is all of L and contains at least one
-// live accepting state: the grammar has a token, and that token's accepting state is reachable and trivially
-// co-accessible.
+// Base, j = 1. If sigma_1 < t then omega_1 is "before", the state p = delta*(q0, x[sigma_1 .. t)) is live and so lies
+// in C_0, which is all of L paired with "before", and the direct branch carries it to (rho_1, before) with the origin
+// intact. The begins rename cannot interfere for the same reason it cannot in the step: p has consumed at least one
+// byte, so p = q0 only if a non-empty live path returns to q0, which makes init_reentrant true and begins false. If
+// sigma_1 = t then rho_1 = delta(q0, w_0) and the seed fires, because C_0 is all of L and contains at least one live
+// accepting state: the grammar has a token, and that token's accepting state is reachable and trivially co-accessible.
 //
 // Step, j to j+1. Two cases for the byte at t+j.
 //
@@ -56,14 +54,13 @@
 // Backup never appears in the argument. The model tracks where tokens begin rather than what the scanner reads, so
 // a boundary backup later exposes was already seeded when the accepting position justifying it was crossed.
 //
-// It replaced an earlier model whose transition restarted a trajectory whenever it could not consume the byte,
-// in place of the acceptance-gated seed. That variant is refuted, not merely unproved: over tokens
-// {a, abc, bx, x} and the window "abx" its cloud collapses to one trajectory per step and ends certifying
-// origin 2, yet the input "abx" itself tokenizes as a|bx with the covering token beginning at offset 1, a
-// false certificate at a witnessed occurrence. A trajectory that cannot consume a byte is an impossible
-// history rather than a token boundary, and restarting it manufactures support no execution justifies. The
-// legacy regression in main() keeps that refutation executable, so this account can never drift back into
-// folklore unnoticed.
+// It replaced an earlier model whose transition restarted a trajectory whenever it could not consume the byte, in
+// place of the acceptance-gated seed. That variant is refuted, not merely unproved: over tokens {a, abc, bx, x} and
+// the window "abx" its cloud collapses to one trajectory per step and ends certifying origin 2, yet the input "abx"
+// itself tokenizes as a|bx with the covering token beginning at offset 1, a false certificate at a witnessed
+// occurrence. A trajectory that cannot consume a byte is an impossible history rather than a token boundary, and
+// restarting it manufactures support no execution justifies. The legacy regression in main() keeps that refutation
+// executable, so this account can never drift back into folklore unnoticed.
 //
 // The repair: drop the failure restart, and seed one fresh trajectory at the window's first byte and thereafter
 // only where some tracked state accepts, because a token can only end where the automaton accepted. The cloud then
@@ -85,27 +82,25 @@
 // which the current token's start is known whatever preceded it. A certified byte is the length-one case, so the
 // search must reproduce is_split_point() exactly at that length, and this program asserts that before searching.
 //
-// The model. A worker cutting blind knows only that the scan is in one of the trim states, so the cloud starts as
-// all of them carrying a token that began before the window. Reading a byte maps that uncertainty forward: a state
+// The model. A worker cutting blind knows only that the scan is in one of the trim states, so the cloud starts as all
+// of them carrying a token that began before the window. Reading a byte maps that uncertainty forward: a state
 // consuming the byte into a trim state does so and keeps its token's start offset, and a state that cannot is an
 // impossible history and is dropped. Separately, one fresh trajectory is seeded at the window's first byte and
-// thereafter wherever some tracked state accepts, because a token can only begin where the previous one ended and
-// one can only end where the automaton accepted. The cloud therefore represents every way the input can be cut into
-// token words, not only the greedy way, which is what makes it independent of backup and also what makes it
-// conservative. The window is certified when every surviving trajectory agrees on a start offset inside it.
-// Agreement on the state alone is not enough, since learning that the scan is inside a string literal is knowledge
-// rather than a boundary.
+// thereafter wherever some tracked state accepts, because a token can only begin where the previous one ended and one
+// can only end where the automaton accepted. The cloud therefore represents every way the input can be cut into token
+// words, not only the greedy way, which is what makes it independent of backup and also what makes it conservative.
+// The window is certified when every surviving trajectory agrees on a start offset inside it. Agreement on the state
+// alone is not enough, since learning that the scan is inside a string literal is knowledge rather than a boundary.
 //
-// Longest-match backup is what makes the model non-obvious. A token that cannot extend does not end at the byte
-// that killed it; the scan rewinds to the last accepting position and re-reads. The model never simulates that,
-// because it tracks where tokens begin rather than what the scanner reads: a boundary backup later exposes was
-// seeded when the accepting position justifying it was crossed. That is the proof's step for a byte beginning a
-// token, and it is why the failure restart had to go rather than be repaired. backup_disagreements() is therefore
-// a check on the implementation rather than evidence for the model, and it asserts the scanner never disagrees. Its
-// prefixes cover (state, distance past the last accepting position) pairs, each optionally preceded by an accepted
-// word so the last boundary sits at varying distances before the window, which is what decides where a rewind lands.
-// The prefix count is reported per row, since a coverage widening that widens nothing looks exactly like one that
-// works.
+// Longest-match backup is what makes the model non-obvious. A token that cannot extend does not end at the byte that
+// killed it; the scan rewinds to the last accepting position and re-reads. The model never simulates that, because it
+// tracks where tokens begin rather than what the scanner reads: a boundary backup later exposes was seeded when the
+// accepting position justifying it was crossed. That is the proof's step for a byte beginning a token, and it is why
+// the failure restart had to go rather than be repaired. backup_disagreements() is therefore a check on the
+// implementation rather than evidence for the model, and it asserts the scanner never disagrees. Its prefixes cover
+// (state, distance past the last accepting position) pairs, each optionally preceded by an accepted word so the last
+// boundary sits at varying distances before the window, which is what decides where a rewind lands. The prefix count
+// is reported per row, since a coverage widening that widens nothing looks exactly like one that works.
 //
 // A backup check over inputs that never rewind proves nothing, so each row declares whether its own check exercises
 // a rewind and that declaration is asserted. The first seven rows do not, which is a fact about the inputs this
@@ -296,10 +291,9 @@ std::optional<Cloud_t> step(
             next.emplace(*direct, begins ? at : origin);
         }
 
-        // No restart when a trajectory dies. A state that cannot consume the byte is an impossible history, not
-        // a token boundary; the discarded variant that restarted here is refuted by the executable legacy
-        // regression in main(): over {a, abc, bx, x} and "abx" it certifies origin 2 where the scanner cuts at
-        // 0 and 1.
+        // No restart when a trajectory dies. A state that cannot consume the byte is an impossible history, not a
+        // token boundary; the discarded variant that restarted here is refuted by the executable legacy regression in
+        // main(): over {a, abc, bx, x} and "abx" it certifies origin 2 where the scanner cuts at 0 and 1.
     }
 
     // One fresh trajectory wherever the automaton had just accepted, which is the only place a token can begin.
@@ -417,10 +411,9 @@ std::optional<std::size_t> predicted(
     return certified(cloud) ? std::optional{cloud.begin()->second} : std::nullopt;
 }
 
-// The finite quotient is what terminates the search, so this threshold is a safety net rather than the bound.
-// Whether it was exceeded is reported, so "no window under this model" is never confused with "none found in
-// time". One shared constant, pinned to the figure the paper states, so it cannot drift in one caller and not
-// the other.
+// The finite quotient is what terminates the search, so this threshold is a safety net rather than the bound. Whether
+// it was exceeded is reported, so "no window under this model" is never confused with "none found in time". One shared
+// constant, pinned to the figure the paper states, so it cannot drift in one caller and not the other.
 constexpr std::size_t kSubsetBudget{200'000};
 
 static_assert(kSubsetBudget == 200'000, "the paper states a fixed safety threshold of 200,000 keys");
@@ -428,12 +421,11 @@ static_assert(kSubsetBudget == 200'000, "the paper states a fixed safety thresho
 /**
  * @brief Cross-checks of the shipped core::Lexer::is_split_window() against this probe's model, and disagreements.
  *
- * The library ports the walk this probe states and proves; they are two implementations of one model and must
- * never diverge, certificates and refusals alike. The named rows' pinned windows, the strictness refusals, the
- * legacy and vacuity grammars, the full length-one sweep of every named and every random grammar,
- * and every model-positive random pair also ask the shipped decision; the check count is pinned so silently
- * skipping checks fails, and a single disagreement fails the suite. Coverage is those sites, not exhaustive
- * equivalence.
+ * The library ports the walk this probe states and proves; they are two implementations of one model and must never
+ * diverge, certificates and refusals alike. The named rows' pinned windows, the strictness refusals, the legacy and
+ * vacuity grammars, the full length-one sweep of every named and every random grammar, and every model-positive random
+ * pair also ask the shipped decision; the check count is pinned so silently skipping checks fails, and a single
+ * disagreement fails the suite. Coverage is those sites, not exhaustive equivalence.
  */
 std::size_t g_port_checks{0};
 
@@ -945,9 +937,8 @@ std::size_t backup_disagreements(
     }
 
     // Every prefix above ends mid-token starting from the initial state. Prepending an accepted word varies the
-    // potential boundary distance ahead of the window: it does not place a boundary, because under maximal munch
-    // the concatenation can extend that word rather than end it. Without this the prefix set exercises one such
-    // distance.
+    // potential boundary distance ahead of the window: it does not place a boundary, because under maximal munch the
+    // concatenation can extend that word rather than end it. Without this the prefix set exercises one such distance.
     std::vector<std::string> completed{""};
 
     for (const auto& [key, head] : prefix)
@@ -1486,8 +1477,7 @@ bool oracle_teeth(
  * @brief Asserts that a named window this grammar would otherwise never be checked at agrees with the scanner.
  *
  * run() only checks the windows the search reports, so a grammar whose shortest window is one byte never exercises a
- * longer one. The window that refuted the old restart step is three bytes long, and this is what keeps it under
- * test.
+ * longer one. The window that refuted the old restart step is three bytes long, and this is what keeps it under test.
  */
 bool named_window_agrees(std::string_view name, const std::string& window, std::size_t expected, Builder_dbg& builder)
 {
@@ -1529,10 +1519,9 @@ bool named_window_agrees(std::string_view name, const std::string& window, std::
             window.c_str(), at ? ("origin " + std::to_string(*at)).c_str() : "refused", disagreements, exercised,
             disagreements == 0 ? "" : "   <- MODEL IS WRONG");
 
-    // A refusal is a fine outcome for a conservative model in general, but not here: this window is the one the
-    // gated step exists to certify, and the failure-restart step certifies it at the wrong origin. Pinning the
-    // origin as well as the agreement is what stops a model that certifies the window at the wrong offset from
-    // passing.
+    // A refusal is a fine outcome for a conservative model in general, but not here: this window is the one the gated
+    // step exists to certify, and the failure-restart step certifies it at the wrong origin. Pinning the origin as
+    // well as the agreement is what stops a model that certifies the window at the wrong offset from passing.
     return disagreements == 0 && exercised > 0 && at && *at == expected;
 }
 
@@ -1644,9 +1633,9 @@ bool run(const Row& row, Builder_dbg& builder)
     const auto covered{row.rewinds_expected == (exercised > 0)};
 
     // Reporting "no window" counts only when the search exhausted the quotient space rather than exceeding the
-    // key threshold, which would be inconclusive. Even exhausted it means none under this conservative model, never
-    // none in the maximal-munch sense: the quotient decides the model exactly, but the model refuses windows a greedy
-    // scanner would allow.
+    // key threshold, which would be inconclusive. Even exhausted it means none under this conservative model,
+    // never none in the maximal-munch sense: the quotient decides the model exactly, but the model refuses
+    // windows a greedy scanner would allow.
     const auto conclusive{shortest != 0 || exhausted};
 
     // Prefer a readable witness for the paper's table when one exists; the search's byte order surfaces

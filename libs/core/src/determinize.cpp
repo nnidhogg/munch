@@ -106,9 +106,9 @@ public:
     /**
      * @brief Runs the construction and returns the accepting candidates of every reachable subset instead.
      *
-     * The single traversal serves both construction and diagnostics, so diagnostics see exactly the subsets the
-     * build discovers by definition rather than by a mirrored reimplementation; the DFA built along the way is
-     * simply not kept.
+     * The single traversal serves both construction and diagnostics, so diagnostics see exactly the
+     * subsets the build discovers by definition rather than by a mirrored reimplementation; the DFA built
+     * along the way is simply not kept.
      */
     [[nodiscard]] std::vector<std::vector<munch::nfa::Token>> candidates()
     {

@@ -311,8 +311,8 @@ hence `(δ⁺)*(q0, u) = q0` with `u` nonempty, so `q0` is re-entrant by Definit
 defined, so Definition 2 also requires `q0` not to be re-entrant, a contradiction. ∎
 
 **Lemma 2 (prefix stability).** Let `w` be completely tokenizable, let `s` be a token boundary of `w`, and let `v` be
-any prefix of `w` with `|v| >= s`. Then `v` and `w` emit the same tokens on `[0, s)`, and the scan of `v` reaches `s` in
-state `q0`.
+any prefix of `w` with `|v| >= s`. Then `v` and `w` emit the same tokens on `[0, s)`, and the scan of
+`v` reaches `s` in state `q0`.
 
 *Proof.* If `s = 0` both claims are immediate: `[0, s)` is empty and the scan of `v` starts at offset `0` in `q0`.
 Assume `s > 0`. First, no token of `w` beginning at some `s' < s` records an accepting position after `s`: longest match
@@ -381,10 +381,10 @@ consumed live by some state exactly when `δ⁺(q0, b)` is defined:
 
 **Corollary 2 (useful certificates).** A certified `b` is non-vacuous if and only if `δ⁺(q0, b)` is defined.
 
-An implementation can therefore report the useful set with no extra analysis, by intersecting the certificate with the
-initial state's live transitions, which is what the predicate in the accompanying library reports: vacuous certificates
-never reach a caller, since a caller cannot act on one and a planner searching for one scans the whole input for
-nothing.
+An implementation can therefore report the useful set with no extra analysis, by intersecting the certificate
+with the initial state's live transitions, which is what the predicate in the accompanying library reports:
+vacuous certificates never reach a caller, since a caller cannot act on one and a planner searching for one
+scans the whole input for nothing.
 
 ### 4.1 The condition is also necessary
 
@@ -435,10 +435,10 @@ carries information about where tokens may begin. Because both marks are compute
 to a hand-built automaton as much as to a compiled one. Each sweep visits each table entry once and leaves the `O(|Q|
 |Σ|)` bound of Section 6 unchanged.
 
-The same restriction is what makes Corollary 2 correct. In the example `δ(q0, a)` is defined but `δ⁺(q0, a)` is not,
-since the target `q2` is not co-accessible. A test phrased over `δ` would therefore call `a` a useful certificate, yet
-no input this token set accepts contains an `a` at all; phrased over `δ⁺` it reports `a` as vacuous, which is what a
-caller needs.
+The same restriction is what makes Corollary 2 correct. In the example `δ(q0, a)` is defined but `δ⁺(q0, a)` is
+not, since the target `q2` is not co-accessible. A test phrased over `δ` would therefore call `a` a useful
+certificate, yet no input this token set accepts contains an `a` at all; phrased over `δ⁺` it reports `a` as
+vacuous, which is what a caller needs.
 
 Consequently, for a token set compiled this way, "no useful byte certifies" is not a failure of the test: it means no
 single byte can serve as a split symbol at all under the semantics of Section 3. The applicability results of Section 7
@@ -452,18 +452,18 @@ accepting and carries a self-loop on `a`; the only state consuming `a` is `q0`, 
 Splitting the input `aa` between its two bytes then yields two tokens where the serial scan, by longest match, yields
 one. The condition is therefore not a refinement for completeness but a soundness requirement.
 
-Figure 1 shows why the condition is stated as an incoming transition rather than as a self-loop. In the nullable case
-the initial state re-enters itself directly, which a self-loop test would catch. In the cyclic variant `(ab)*c` it
-re-enters through the cycle `a, b`, and no self-loop exists anywhere; the only state consuming `c` is `q0`, so a
-self-loop test would certify `c` and split `abc` in the middle of its only token. Both cases are carried as regression
-tests.
+Figure 1 shows why the condition is stated as an incoming transition rather than as a self-loop. In the
+nullable case the initial state re-enters itself directly, which a self-loop test would catch. In the cyclic
+variant `(ab)*c` it re-enters through the cycle `a, b`, and no self-loop exists anywhere; the only state
+consuming `c` is `q0`, so a self-loop test would certify `c` and split `abc` in the middle of its only token.
+Both cases are carried as regression tests.
 
 **Figure 1.** Minimized automata drawn by the library described here; double circles are accepting states, labelled with
-the state number and the token identifier. In (a) nothing enters state 0, so `;` is certified: no other state consumes
-it. In (b) state 0 accepts and re-enters itself on `a`, and in (c) it is re-entered through the cycle `a, b`. In both
-counterexamples the only state consuming the candidate byte is the initial one, so dropping the re-entrancy condition
-would certify it and break longest match. The shipped predicate rejects the candidate in (b) and (c) and accepts `;` in
-(a).
+the state number and the token identifier. In (a) nothing enters state 0, so `;` is certified: no other state
+consumes it. In (b) state 0 accepts and re-enters itself on `a`, and in (c) it is re-entered through the cycle `a,
+b`. In both counterexamples the only state consuming the candidate byte is the initial one, so dropping the
+re-entrancy condition would certify it and break longest match. The shipped predicate rejects the candidate in (b)
+and (c) and accepts `;` in (a).
 
 (a) `a+` and `;`:
 
@@ -519,9 +519,9 @@ would need a construction over an augmented scanner semantics, one carrying look
 composition for maximal munch must, rather than the comparison of two table rows used here.
 
 **Theorem 3 (split invariance modulo `I`).** Let `w` be completely tokenizable and let `0 = c_0 < c_1 < ... < c_m = |w|`
-be offsets such that each interior `c_j` holds a symbol certified modulo `I`. Then `π_I(tok(w)) = π_I(tok(w[c_0..c_1)) ·
-tok(w[c_1..c_2)) ··· tok(w[c_(m-1)..c_m)))`, where `·` denotes concatenation of token sequences and `w[a..b)` the
-corresponding slice.
+be offsets such that each interior `c_j` holds a symbol certified modulo `I`. Then `π_I(tok(w)) =
+π_I(tok(w[c_0..c_1)) · tok(w[c_1..c_2)) ··· tok(w[c_(m-1)..c_m)))`, where `·` denotes concatenation of token
+sequences and `w[a..b)` the corresponding slice.
 
 *Proof.* For empty `w` the partition degenerates as in Theorem 1 and both images are empty; assume `|w| > 0`. By
 induction on `m` it suffices to treat one interior cut at `c` holding `b`. The induction is well founded because the
@@ -639,14 +639,14 @@ of the class-compressed table actually stored rather than of an uncompressed `|Q
 `O(|Q| + E)`, where `E` counts the stored table edges, and the per-symbol test that follows costs `O(|Q| |Σ|)`. The
 implementation holds the discarded set in an ordered set, so constructing it costs `O(|I| log(1 + |I|))` and resolving
 one state's membership `O(log(1 + |I|))`, for `O(|Q| |Σ| + (|Q| + |I|) log(1 + |I|))` overall in `O(|Q| + |I|)`
-additional space, excluding the predecessor index the exact analysis already builds and this one reuses. Propagating the
-sets `T(q)` themselves would instead need `O(|Q| |T|)` storage. Testing one symbol then walks the states as the exact
-condition does, adding a membership test and one lookup of `δ⁺(q0, b)` that is constant across the walk. The outcome
-packs into a second 256-bit map, held beside the exact one, so the run-time predicate remains a single bit test and the
-search for a chunk boundary is unchanged. The relaxation is therefore free at scan time. At build time it is additional
-work rather than a substitute: a backward closure over a reverse index that is built either way, one membership test per
-state, and a second sweep of the same `|Q| |Σ|` shape as the exact one, which runs whether or not a caller ever asks the
-weaker question.
+additional space, excluding the predecessor index the exact analysis already builds and this one reuses. Propagating
+the sets `T(q)` themselves would instead need `O(|Q| |T|)` storage. Testing one symbol then walks the states as the
+exact condition does, adding a membership test and one lookup of `δ⁺(q0, b)` that is constant across the walk. The
+outcome packs into a second 256-bit map, held beside the exact one, so the run-time predicate remains a single bit test
+and the search for a chunk boundary is unchanged. The relaxation is therefore free at scan time. At build time it is
+additional work rather than a substitute: a backward closure over a reverse index that is built either way, one
+membership test per state, and a second sweep of the same `|Q| |Σ|` shape as the exact one, which runs whether or not a
+caller ever asks the weaker question.
 
 One consequence constrains the interface rather than the theory. The map depends on `I`, so a lexer must be told which
 tokens the caller discards when it is built rather than being asked at each call. In practice the discarded set is fixed
@@ -846,17 +846,17 @@ statements about the pair of token set and discarded set. Newline is recovered f
 because line-bounded strings and `//` comments cannot contain one, so a whitespace run is the only token whose interior
 admits it. Space is recovered in no C-like row carrying strings or comments, since it sits legally inside both; the
 first row, which has neither, recovers it along with tab and newline. The JSON row is the same lexer over bytes, its
-UTF-8 caveat unchanged from above. JSON gains tab and carriage return as well as newline because RFC 8259 excludes every
-raw byte below `0x20` from string interiors, which confines all three to whitespace, while space is admitted there and
-so is not recovered. That the recovered set is exactly JSON's whitespace minus space is a consequence of the RFC's own
-exclusion, not a coincidence. The rows carrying unrestricted block comments continue to hold no useful certificate,
-because a comment severed at a newline leaves `/* a` and `b */`, and both halves re-tokenize completely: in this token
-set they become the operators `/` and `*` and an identifier, six kept tokens in place of one discarded comment, which is
-exactly the difference a caller can see. The correct conclusion carries the certificate's own scope: this tokenization
-of a C-like language with unrestricted block comments cannot be split at every occurrence of a byte value chosen from
-the grammar alone, newline included, on completely tokenizable inputs, without state, overlap, speculation or repair,
-and the certificate says so. Schemes that inspect the document and split at some occurrences but not others are outside
-the claim.
+UTF-8 caveat unchanged from above. JSON gains tab and carriage return as well as newline because RFC 8259 excludes
+every raw byte below `0x20` from string interiors, which confines all three to whitespace, while space is admitted
+there and so is not recovered. That the recovered set is exactly JSON's whitespace minus space is a consequence of the
+RFC's own exclusion, not a coincidence. The rows carrying unrestricted block comments continue to hold no useful
+certificate, because a comment severed at a newline leaves `/* a` and `b */`, and both halves re-tokenize completely:
+in this token set they become the operators `/` and `*` and an identifier, six kept tokens in place of one discarded
+comment, which is exactly the difference a caller can see. The correct conclusion carries the certificate's own scope:
+this tokenization of a C-like language with unrestricted block comments cannot be split at every occurrence of a byte
+value chosen from the grammar alone, newline included, on completely tokenizable inputs, without state, overlap,
+speculation or repair, and the certificate says so. Schemes that inspect the document and split at some occurrences but
+not others are outside the claim.
 
 Four rows are cross-checked by splitting as well as by reading the predicate: the conventional and split-friendly C-like
 pair, the split-friendly row with block comments, and JSON. On those the condition agrees with brute-force splitting on
@@ -998,9 +998,9 @@ validation path and second planning pass included. Conflating the two, as an end
 parallelization for the sink and inherits an unstable denominator.
 
 **Table 3.** Median throughput in MiB/s on Environment B with the process confined to an eight-CPU affinity mask, one L3
-domain per the collection notes, second run. The one-chunk column is the parallel API without parallelism, and is the
-baseline the parallel efficiencies use; the plain-scan column does not hold still between collections and is discussed
-below.
+domain per the collection notes, second run. The one-chunk column is the parallel API without parallelism,
+and is the baseline the parallel efficiencies use; the plain-scan column does not hold still between
+collections and is discussed below.
 
 | Corpus                | size    | plain scan | 1 chunk | 2 chunks | 4 chunks | 8 chunks |
 |-----------------------|---------|-----------:|--------:|---------:|---------:|---------:|
@@ -1056,13 +1056,13 @@ by the harness, so the archive carries the checkable numbers and the divisions a
 pinned, two chunks over one is 1.96× as a ratio of medians and 1.99× as a median of paired ratios. The paired view
 appears below only as same-round win counts; paired medians are not reported.
 
-The comparison between the plain scan and the one-chunk row is the quantity this moves. It has now taken three values:
-14% *below* on Environment A, 5.9% *above* in the first Environment B collection at 512 MiB, winning 13 of 15 same-round
-pairs, and 10.7% below in the second, reported in Table 3, winning none of 15. We report that rather than explain it.
-The consequence for the figures above is that efficiencies measured against the one-chunk baseline moved by two to four
-points between the collections, 93% to 95% at eight chunks, while the end-to-end ratio, which divides by the plain scan,
-moved by 12%. That is why the first is quoted as a range of a few points and the second as a range of nearly half a
-turn.
+The comparison between the plain scan and the one-chunk row is the quantity this moves. It has now taken three
+values: 14% *below* on Environment A, 5.9% *above* in the first Environment B collection at 512 MiB, winning 13 of
+15 same-round pairs, and 10.7% below in the second, reported in Table 3, winning none of 15. We report that rather
+than explain it. The consequence for the figures above is that efficiencies measured against the one-chunk baseline
+moved by two to four points between the collections, 93% to 95% at eight chunks, while the end-to-end ratio, which
+divides by the plain scan, moved by 12%. That is why the first is quoted as a range of a few points and the second
+as a range of nearly half a turn.
 
 ### 8.2 Planning cost
 
@@ -1274,22 +1274,22 @@ Bjørner, Blass and Gurevich (Journal of Computer and System Sciences 2010) call
 cutpoints of every file are exactly the positions whose `h`-vicinity, the `2h + 1` entries around the position, lies in
 a chosen criterion set; a nonempty useful certified set is the case `h = 0` of that shape, a rule the token set imposes
 rather than one a designer picks, and a local rule need not respect token boundaries at all. Over files whose entries
-are drawn independently and uniformly, they define the slack of two files that agree from a point onward as the distance
-from that point to their first common cutpoint, analyze its expectation normalized by the expected chunk length for all
-but the local maximum method, whose slack they write they could not estimate accurately, and bound the probability that
-a long interval carries no cutpoint, across four chunking methods, the local maximum method's figures under their
-assumption that no two positions tie. Schleimer, Wilkerson and Aiken (SIGMOD 2003) define the density of a
-fingerprinting scheme as the expected fraction of the hashes computed that it selects, under a given input distribution;
-assuming independent, uniformly distributed hashes with ties negligible they prove winnowing's density asymptotically
-`2/(w+1)` for window size `w`, and a lower bound of `1.5/(w+1)` for every local algorithm, one that selects a position
-from each window of `w` hashes by that window's contents alone. The longest fingerprint-free run their Web experiment
-reports belongs to the competing `0 mod p` selector; winnowing selects in every window by construction. Neither result
-transfers here: a certified set is under no obligation to select in every window, so the coverage the lower bound
-assumes need not hold, and the density results rest on an independence model where this paper asks only which bytes a
-given token set admits. There the rule is chosen and judged by what it selects, density under coverage for winnowing,
-slack and cutpoint-free tails at matched expected chunk lengths for the chunking methods; here the token set forces the
-rule, Section 7 inventories what it admits, and how often those bytes occur is a property of the input, not of the
-grammar.
+are drawn independently and uniformly, they define the slack of two files that agree from a point onward as the
+distance from that point to their first common cutpoint, analyze its expectation normalized by the expected chunk
+length for all but the local maximum method, whose slack they write they could not estimate accurately, and bound the
+probability that a long interval carries no cutpoint, across four chunking methods, the local maximum method's figures
+under their assumption that no two positions tie. Schleimer, Wilkerson and Aiken (SIGMOD 2003) define the density of a
+fingerprinting scheme as the expected fraction of the hashes computed that it selects, under a given input
+distribution; assuming independent, uniformly distributed hashes with ties negligible they prove winnowing's density
+asymptotically `2/(w+1)` for window size `w`, and a lower bound of `1.5/(w+1)` for every local algorithm, one that
+selects a position from each window of `w` hashes by that window's contents alone. The longest fingerprint-free run
+their Web experiment reports belongs to the competing `0 mod p` selector; winnowing selects in every window by
+construction. Neither result transfers here: a certified set is under no obligation to select in every window, so the
+coverage the lower bound assumes need not hold, and the density results rest on an independence model where this paper
+asks only which bytes a given token set admits. There the rule is chosen and judged by what it selects, density under
+coverage for winnowing, slack and cutpoint-free tails at matched expected chunk lengths for the chunking methods; here
+the token set forces the rule, Section 7 inventories what it admits, and how often those bytes occur is a property of
+the input, not of the grammar.
 
 **Relation to state composition.** We computed it for the block-comment row of Table 2, whose automaton has fourteen
 states, and the question needs no corpus. A line start follows a newline, so it is either a token boundary, needing no

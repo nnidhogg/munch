@@ -125,9 +125,9 @@ public:
     /**
      * @brief Returns a new Builder recognizing the union of this and another Builder's NFA.
      *
-     * A fresh start state is created with ε-transitions to both operands' initial states (Thompson union), so the
-     * union stays correct even when an operand's initial state has incoming transitions. Both operands' accept
-     * states are kept.
+     * A fresh start state is created with ε-transitions to both operands' initial states (Thompson union),
+     * so the union stays correct even when an operand's initial state has incoming transitions. Both
+     * operands' accept states are kept.
      * @param other The Builder to merge.
      * @return A new Builder representing the merged NFA.
      * @throws std::runtime_error If renumbering the merged operand would overflow the identifier range, or if

@@ -200,10 +200,10 @@ the base. If the byte at `t+j` begins a token, the previous token ended at `t+j`
 that state is `ρ_j`, in `C_j` by hypothesis, so the seed fires and emits exactly
 `(δ(q0, w_j), j) = (ρ_(j+1), ω_(j+1))`. ∎
 
-The lemma is containment, not equality: the cloud may carry hypotheses no execution realizes. That is harmless in one
-direction and load-bearing in the other: at a realized occurrence in a completely tokenizable input, surplus hypotheses
-can only preserve the actual origin's unanimity or destroy unanimity; they cannot manufacture unanimity at a false
-origin.
+The lemma is containment, not equality: the cloud may carry hypotheses no execution realizes. That is harmless
+in one direction and load-bearing in the other: at a realized occurrence in a completely tokenizable input,
+surplus hypotheses can only preserve the actual origin's unanimity or destroy unanimity; they cannot
+manufacture unanimity at a false origin.
 
 **Theorem 1 (soundness).** If `C_k ≠ ∅` and every pair of `C_k` carries the same origin `o ≠ before`, then `(W, o)` is a
 certified split window.
@@ -365,12 +365,12 @@ at `t + o`, where some codeword `c'` begins. Let `c` be a codeword with prefix `
 it would be a proper prefix of `c`, which a prefix code forbids; so `c'` extends through `W_≥o`, and the token covering
 the final byte begins at `t + o`.
 
-(2) Let `(x, y)` be a synchronizing pair and take an occurrence `u x y v ∈ X*`. Then `u x ∈ X*` places a boundary before
-`y`, and `y v ∈ X*` with `y ∈ X*` factors from that boundary through `y`'s own codewords, since at each of their starts
-the codeword the text spells is the one `y` contains; so `cm` begins at `|u x| + |c1 ... c(m-1)|` and covers the final
-byte of `xy`. Conversely, if `(W, o)` is certified with `W_<o ∈ X*` and `W_≥o ∈ X`, then every `u W v ∈ X*` has a
-boundary at `|u| + o`, so `u W_<o` is a concatenation of codewords and so is `W_≥o v`, which is the synchronizing-pair
-condition. ∎
+(2) Let `(x, y)` be a synchronizing pair and take an occurrence `u x y v ∈ X*`. Then `u x ∈ X*` places a boundary
+before `y`, and `y v ∈ X*` with `y ∈ X*` factors from that boundary through `y`'s own codewords, since at each of
+their starts the codeword the text spells is the one `y` contains; so `cm` begins at `|u x| + |c1 ... c(m-1)|` and
+covers the final byte of `xy`. Conversely, if `(W, o)` is certified with `W_<o ∈ X*` and `W_≥o ∈ X`, then every `u W v
+∈ X*` has a boundary at `|u| + o`, so `u W_<o` is a concatenation of codewords and so is `W_≥o v`, which is the
+synchronizing-pair condition. ∎
 
 The proposition places the classical case: over a prefix code the certified windows that occur are the synchronizing
 splits whose right half sits inside one codeword; a synchronizing pair of Berstel, Perrin and Reutenauer with a nonempty
@@ -386,15 +386,15 @@ Section 3 is what decides it, and that reach is what the evaluation measures.
 
 ## 7 Strictness of the model
 
-The model refuses windows a greedy scanner would allow. The conservatism is deliberate: the seed rule uses acceptance as
-the only license a token needs to begin, which over-approximates greedy behaviour by design, and this section exhibits
-one source of conservatism and shows that nonvacuous strictness begins at length two. Both witnesses below are asserted
-artifact rows: the assertion checks that the model refuses the window *and* that an exhaustive oracle over every
-completely tokenizable input up to a length bound finds, at every occurrence, the token covering the window's final byte
-beginning at the claimed origin, with the occurrence count pinned exactly. The covering-token check is the property of
-Definition 1; checking merely that some token begins at the origin passes false covering-origin witnesses, such as
-`{a, abx, b, x}` at `ab`, where the input `ab` tokenizes as `a|b` while the fixed boundary at the occurrence remains a
-safe cut.
+The model refuses windows a greedy scanner would allow. The conservatism is deliberate: the seed rule uses acceptance
+as the only license a token needs to begin, which over-approximates greedy behaviour by design, and this section
+exhibits one source of conservatism and shows that nonvacuous strictness begins at length two. Both witnesses below
+are asserted artifact rows: the assertion checks that the model refuses the window *and* that an exhaustive oracle
+over every completely tokenizable input up to a length bound finds, at every occurrence, the token covering the
+window's final byte beginning at the claimed origin, with the occurrence count pinned exactly. The covering-token
+check is the property of Definition 1; checking merely that some token begins at the origin passes false
+covering-origin witnesses, such as `{a, abx, b, x}` at `ab`, where the input `ab` tokenizes as `a|b` while the fixed
+boundary at the occurrence remains a safe cut.
 
 *Witness one.* Over `{a, ab, b}` the window `ab` is semantically certified at origin 0, and universally so, not merely
 to the oracle's bound: the byte `a` occurs only as a token's first byte, so a token begins at every occurrence offset
@@ -404,11 +404,11 @@ after `a`, the cloud is the single pair carrying origin 0, but `a` is a token, s
 trajectory at origin 1, the segmentation `a|b` that greedy scanning never chooses, and unanimity is lost.
 
 *Witness two.* Over `{ab, abc, c}` the window `abc` is semantically certified at origin 0, again universally: `a` occurs
-only token-initially, so a token begins at `t`, and maximal munch prefers `abc` over `ab` there. The oracle confirms it
-over all inputs to length 12 with 932 occurrences and zero violations. Both witnesses instantiate the same `(u, uv, v)`
-shape; they differ in prefix depth rather than mechanism, the competing origin arriving one byte in for the first and
-two bytes in for the second, where the accepting proper prefix `ab` seeds `c`, the segmentation `ab|c` that maximal
-munch forgoes.
+only token-initially, so a token begins at `t`, and maximal munch prefers `abc` over `ab` there. The oracle
+confirms it over all inputs to length 12 with 932 occurrences and zero violations. Both witnesses instantiate the
+same `(u, uv, v)` shape; they differ in prefix depth rather than mechanism, the competing origin arriving one byte
+in for the first and two bytes in for the second, where the accepting proper prefix `ab` seeds `c`, the
+segmentation `ab|c` that maximal munch forgoes.
 
 Both witnesses have length at least two, and that is not an accident of the examples.
 
@@ -418,11 +418,11 @@ hypothesis is necessary: a byte no completely tokenizable input contains satisfi
 model refuses its emptied cloud, and such vacuous disagreements are not strictness.
 
 *Proof.* Since `b` occurs, the final segmentation's covering token consumes it at that occurrence, a transition from a
-live state into a live state, so if only `q0` has a live-target `b`-transition and `q0` is not re-entrant, the predicate
-reports `b` and, by Theorem 3, the model certifies `(b, 0)`, contrary to assumption. So the exact condition of the
-predecessor fails for `b`, and its necessity theorem constructs a completely tokenizable input placing an occurrence of
-`b` strictly inside a token; at that occurrence the token containing `b` begins before it, so `(b, 0)` is not
-certified. ∎
+live state into a live state, so if only `q0` has a live-target `b`-transition and `q0` is not re-entrant, the
+predicate reports `b` and, by Theorem 3, the model certifies `(b, 0)`, contrary to assumption. So the exact
+condition of the predecessor fails for `b`, and its necessity theorem constructs a completely tokenizable input
+placing an occurrence of `b` strictly inside a token; at that occurrence the token containing `b` begins before it,
+so `(b, 0)` is not certified. ∎
 
 Non-vacuous conservatism is therefore a strictly multi-byte phenomenon: at length one the model is exact for occurring
 bytes, and the shortest strict refusals have length two, a bound witness one attains. The `{a, abx, b, x}` family of

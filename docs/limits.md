@@ -7,12 +7,12 @@ for each. Read it when deciding whether munch fits a language, not after.
 ## **Modes: What a Flat Token Set Cannot Say**
 
 `Lexer` matches one flat token set at every position. Real front ends need more than that: inside a string literal a
-quote terminates rather than opens, and a comment that nests needs to know how deep it is. An ordinary escaped string
-literal is regular, so a flat grammar matches it whole; what modes buy there is its interior as separate tokens.
-Arbitrary nesting is the case no flat token set reaches at all. `Mode_lexer`, built by `Mode_builder`, supplies it. Each
-mode is its own token set compiled through the ordinary `Builder`, and each token carries an action on a mode stack the
-caller owns: `stay`, `go_to`, `push`, `pop`. Nesting comes from the stack, so nested comments need no counter in user
-code.
+quote terminates rather than opens, and a comment that nests needs to know how deep it is. An ordinary escaped
+string literal is regular, so a flat grammar matches it whole; what modes buy there is its interior as separate
+tokens. Arbitrary nesting is the case no flat token set reaches at all. `Mode_lexer`, built by `Mode_builder`,
+supplies it. Each mode is its own token set compiled through the ordinary `Builder`, and each token carries an
+action on a mode stack the caller owns: `stay`, `go_to`, `push`, `pop`. Nesting comes from the stack, so nested
+comments need no counter in user code.
 
 **A `Mode_lexer` has no parallel entry point.** `Lexer` can be split because a certified byte recovers the whole scan
 state: a worker starting there knows it is between tokens. With modes it would also have to recover the mode and every
@@ -142,11 +142,11 @@ rejected by construction). The consequences:
 - A `core::Lexer` is immutable after `Builder::build()` and safe to share across threads; `tokenize()` is `const` and
   touches no shared mutable state.
 - `tokenize_all_parallel()` uses one execution thread per chunk, spawning N-1 workers and scanning the last chunk on the
-  calling thread, and joins the workers before returning. The sink is invoked in input order within a chunk but
-  concurrently across chunks, so it must tolerate concurrent calls for different chunk indices; per-chunk state indexed
-  by the chunk achieves that without locking, and hot per-chunk accumulators belong on their own cache lines. There is
-  no early-stop form, and a token set that certifies no split points yields a single chunk, i.e. the serial scan on the
-  calling thread.
+calling thread, and joins the workers before returning. The sink is invoked in input order within a chunk but
+concurrently across chunks, so it must tolerate concurrent calls for different chunk indices; per-chunk state
+indexed by the chunk achieves that without locking, and hot per-chunk accumulators belong on their own cache
+lines. There is no early-stop form, and a token set that certifies no split points yields a single chunk, i.e. the
+serial scan on the calling thread.
 - A `Tokenizer` is a stateful cursor and is not thread-safe. Use one per thread, or one per input.
 - `Token::lexeme()` is a `string_view` into the owning `Tokenizer`'s buffer, invalidated by `load()` or by the
   `Tokenizer`'s destruction. Copy it to a `std::string` if the token outlives either.

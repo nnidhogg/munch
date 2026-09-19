@@ -67,11 +67,11 @@ Subset construction builds the DFA for `choice(text("let"), text("set"))` with a
 
 ![DFA before minimization](minimization_before.svg)
 
-Subset construction cannot merge these branches itself: it identifies states reached by the same input prefixes, and
-these alternatives share none. Their redundancy lies in the shared suffix, i.e. in their futures, which is exactly what
-minimization examines: it merges every pair of states no remaining input can distinguish. The two accept states are
-interchangeable, and so are the interior states of the two branches pair by pair, collapsing the automaton into a single
-shared chain:
+Subset construction cannot merge these branches itself: it identifies states reached by the same input prefixes,
+and these alternatives share none. Their redundancy lies in the shared suffix, i.e. in their futures, which is
+exactly what minimization examines: it merges every pair of states no remaining input can distinguish. The two
+accept states are interchangeable, and so are the interior states of the two branches pair by pair, collapsing the
+automaton into a single shared chain:
 
 ![DFA after minimization](minimization_after.svg)
 

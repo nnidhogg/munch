@@ -368,9 +368,9 @@ template <typename Expand>
 
 Rescue rescue(const Simulator& simulator, const std::size_t cap)
 {
-    // The key marks a branch once some closed run has survived a byte, which is the rollback looked for. A run that
-    // survives its first byte raises the mark; one that survived earlier leaves it raised, so the two need no telling
-    // apart.
+    // The key marks a branch once some closed run has survived a byte, which is the rollback looked for.
+    // A run that survives its first byte raises the mark; one that survived earlier leaves it raised, so
+    // the two need no telling apart.
     const Key start{
             .scans = {Position{.reading = simulator.init_state(), .closed = {}}},
             .matched = 0,
@@ -492,8 +492,8 @@ Occurrence window_occurrence(const Simulator& simulator, const std::string_view 
             .at_origin = false,
             .marked = window.empty()};
 
-    // Two buffers for the whole search, cleared per byte: the matcher's moves, and the keys handed back as the step's
-    // view.
+    // Two buffers for the whole search, cleared per byte: the matcher's moves, and the keys
+    // handed back as the step's view.
     std::vector<std::size_t> matches;
 
     std::vector<Key> successors;
@@ -581,8 +581,8 @@ Counterexample window_counterexample(
             .at_origin = origin == 0,
             .marked = false};
 
-    // Two buffers for the whole search, cleared per byte: the matcher's moves, and the keys handed back as the step's
-    // view.
+    // Two buffers for the whole search, cleared per byte: the matcher's moves, and the keys
+    // handed back as the step's view.
     std::vector<std::size_t> matches;
 
     std::vector<Key> successors;

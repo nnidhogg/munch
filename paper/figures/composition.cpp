@@ -2,9 +2,9 @@
  * Asserts the composition measurement of paper/split-points/split-points.tex, which compares the certificate against
  * reconstructing the scan state at each line start by a parallel prefix scan.
  *
- * The number that decides whether such a scan is cheap is how many distinct states can occur at a line start, since
- * that is the domain the per-line transition functions range over. Two things are computed here, and the report
- * should quote the first:
+ * The number that decides whether such a scan is cheap is how many distinct states can occur at a line start,
+ * since that is the domain the per-line transition functions range over. Two things are computed here, and the
+ * report should quote the first:
  *
  *   1. A structural bound, read off the automaton with no corpus at all. A line start is either a token boundary or
  *      sits mid-token having just consumed a newline, so the mid-token contexts are contained in the targets of the

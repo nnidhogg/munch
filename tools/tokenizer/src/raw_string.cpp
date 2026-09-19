@@ -60,8 +60,8 @@ std::expected<std::size_t, Error> scan_raw_string(const std::string_view input, 
         return std::unexpected{Error{"Unterminated raw string literal", offset}};
     }
 
-    // The literal closes at ')' delimiter '"'; repeating the delimiter makes any other content, including `)"`,
-    // plain characters.
+    // The literal closes at ')' delimiter '"'; repeating the delimiter makes any other content,
+    // including `)"`, plain characters.
     std::string closing{")"};
     closing += input.substr(delimiter_start, position - delimiter_start);
     closing += '"';

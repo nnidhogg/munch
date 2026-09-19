@@ -35,11 +35,10 @@ namespace munch::dfa
 /**
  * @brief The same, over a supplied inventory of certified windows rather than over the certified bytes.
  *
- * A window anchors a position inside its occurrence, at the origin, rather than at the byte just read, so a
- * position's status is only settled once the rest of the window has arrived. The walk therefore carries the
- * last few bytes and a flag per position still waiting, and a position leaves that buffer anchored or not once
- * no window can still reach back to it. That is the whole difference from the byte case, which is this with a
- * buffer of nothing.
+ * A window anchors a position inside its occurrence, at the origin, rather than at the byte just read, so a position's
+ * status is only settled once the rest of the window has arrived. The walk therefore carries the last few bytes and a
+ * flag per position still waiting, and a position leaves that buffer anchored or not once no window can still reach
+ * back to it. That is the whole difference from the byte case, which is this with a buffer of nothing.
  *
  * Windows matter here because a grammar that certifies no byte can still certify windows, so this can return a
  * bound where the byte version cannot. It is a question about the supplied inventory: anchors outside it are not

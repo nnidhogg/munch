@@ -31,8 +31,8 @@ using namespace munch::tools::benchmark;
  * @brief The token set of harness.hpp as one alternation per kind, for the engines that take a regex string.
  *
  * Multi-character operators precede their single-character prefixes and keywords precede identifiers, so engines
- * with first-match alternation semantics produce the same tokenization as munch's longest-match, priority-resolved
- * one on the generated corpus.
+ * with first-match alternation semantics produce the same tokenization as munch's longest-match,
+ * priority-resolved one on the generated corpus.
  */
 constexpr char pattern[]{
         "([ \\t\\n]+)|(if|else|while|return|int)|([A-Za-z_][A-Za-z0-9_]*)|([0-9]+)"
@@ -134,14 +134,13 @@ std::size_t pow31(std::size_t exponent)
 /**
  * @brief Tokenizes the input in parallel chunks through the library's tokenize_all_parallel entry point.
  *
- * The per-chunk checksums are spliced in stream order, so the tally equals the serial scan's exactly when the
- * chunked token stream is identical, and the validation against the reference stays as strict as for every other
- * scenario.
+ * The per-chunk checksums are spliced in stream order, so the tally equals the serial scan's exactly when the chunked
+ * token stream is identical, and the validation against the reference stays as strict as for every other scenario.
  */
 Tally run_munch_threaded(const munch::core::Lexer& lexer, const std::string& input, const std::size_t chunks)
 {
-    // One tally per cache line, as the entry point's contract asks: adjacent per-chunk tallies would false-share
-    // across the worker threads.
+    // One tally per cache line, as the entry point's contract asks: adjacent per-chunk tallies would
+    // false-share across the worker threads.
     struct alignas(64) Padded
     {
         Tally tally;
@@ -780,10 +779,10 @@ bool compare_nested(const std::size_t mebibytes, const int passes, const char* c
 /**
  * @brief Compares munch's modes against lexertl's start states on a corpus where modes are optional.
  *
- * Kept apart from the tables above rather than folded in, because the streams are deliberately different: a mode
- * grammar scans string interiors and so emits more tokens than a flat grammar that treats a literal as one token.
- * Validating against munch's flat stream would fail by construction, so the two mode engines validate against each
- * other instead.
+ * Kept apart from the tables above rather than folded in, because the streams are deliberately different: a
+ * mode grammar scans string interiors and so emits more tokens than a flat grammar that treats a literal as
+ * one token. Validating against munch's flat stream would fail by construction, so the two mode engines
+ * validate against each other instead.
  * @return True if both engines tokenized the corpus completely and agreed on every token.
  */
 bool compare_modes(const std::size_t mebibytes, const int passes, const char* const observations)

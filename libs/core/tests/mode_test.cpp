@@ -977,9 +977,9 @@ TEST(Mode, Far_apart_token_ids_match_and_carry_their_actions)
 {
     Mode_builder builder;
 
-    // A row indexed by token value, in the builder as well as at runtime, made one parser-style code size the whole
-    // table per mode. Both are lists of what was registered now, so an id far from the others matches and acts as a
-    // small one does.
+    // A row indexed by token value, in the builder as well as at runtime, made one parser-style code size the
+    // whole table per mode. Both are lists of what was registered now, so an id far from the others matches
+    // and acts as a small one does.
     builder.add_token(Mode::code, text("a"), std::size_t{0}, 1);
 
     builder.add_token(

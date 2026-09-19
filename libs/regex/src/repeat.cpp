@@ -115,8 +115,8 @@ namespace
      *                /                \
      * (S) --ε--> ... ((regex n)) --ε-->
      *
-     * At least zero occurrences is the Kleene star; branching keeps the iota below well-formed, as its bound may not
-     * lie before its start.
+     * At least zero occurrences is the Kleene star; branching keeps the iota below well-formed, as its bound
+     * may not lie before its start.
      */
     if (min == 0)
     {

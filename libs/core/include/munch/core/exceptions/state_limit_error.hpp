@@ -17,6 +17,7 @@ class State_limit_error : public std::runtime_error
 public:
     /**
      * @brief Constructs the error from the limit that was exceeded.
+     * @param limit The cap determinization ran into.
      */
     explicit State_limit_error(std::size_t limit);
 

@@ -22,13 +22,27 @@ class Indirect
 public:
     /**
      * @brief Boxes a value.
+     * @param value The value to own.
      */
     explicit Indirect(T value) : value_{std::make_unique<T>(std::move(value))} {}
 
+    /**
+     * @brief Copies the boxed value into a box of its own; a valueless source yields a valueless copy.
+     * @param other The box to copy.
+     */
     Indirect(const Indirect& other) : value_{other.value_ ? std::make_unique<T>(*other.value_) : nullptr} {}
 
+    /**
+     * @brief Takes the box over, leaving the source valueless.
+     * @param other The box to move from.
+     */
     Indirect(Indirect&& other) noexcept = default;
 
+    /**
+     * @brief Replaces the boxed value with a copy of another box's; a valueless source leaves this one valueless.
+     * @param other The box to copy.
+     * @return This box.
+     */
     Indirect& operator=(const Indirect& other)
     {
         value_ = other.value_ ? std::make_unique<T>(*other.value_) : nullptr;
@@ -36,8 +50,16 @@ public:
         return *this;
     }
 
+    /**
+     * @brief Takes another box over, leaving it valueless.
+     * @param other The box to move from.
+     * @return This box.
+     */
     Indirect& operator=(Indirect&& other) noexcept = default;
 
+    /**
+     * @brief Destroys the boxed value, if any.
+     */
     ~Indirect() = default;
 
     /**

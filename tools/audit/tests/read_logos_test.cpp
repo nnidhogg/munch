@@ -575,8 +575,8 @@ TEST(Read_logos, A_subpattern_is_read_in_the_mode_of_the_pattern_referencing_it)
             first_rule(R"rs(any = ".")rs", R"rs(#[regex(b"x(?&any)")])rs").expression,
             rule_of(R"rs(#[regex(b"x.")])rs").expression);
 
-    // In its own mode under no flag the reference keeps the definition's name and priority, the definition compiled
-    // in that mode.
+    // In its own mode under no flag the reference keeps the definition's name and priority, the
+    // definition compiled in that mode.
     const auto own{read_logos(R"rs(#[derive(Logos)]
 #[logos(subpattern hi = b"\xc3\xa9")]
 enum T {
@@ -650,12 +650,11 @@ enum T {
 
 TEST(Read_logos, A_subpattern_is_substituted_as_text_before_the_priority_is_computed)
 {
-    // logos pastes a subpattern's text into the pattern before the crate parses it, so the crate's merging of
-    // adjacent literals runs across the reference: the UTF-8 of one scalar split between the pattern and the
-    // subpattern is one scalar and counts two, while a run that is UTF-8 on its own and not once joined counts its
-    // bytes. logos 0.15.1's conflict hint names each of these priorities one higher, `priority = 3` for the first
-    // and third and `priority = 7` for the second, and a capture around the reference keeps the runs apart, four,
-    // which lets that pair build.
+    // logos pastes a subpattern's text into the pattern before the crate parses it, so the crate's merging of adjacent
+    // literals runs across the reference: the UTF-8 of one scalar split between the pattern and the subpattern is one
+    // scalar and counts two, while a run that is UTF-8 on its own and not once joined counts its bytes. logos 0.15.1's
+    // conflict hint names each of these priorities one higher, `priority = 3` for the first and third and `priority =
+    // 7` for the second, and a capture around the reference keeps the runs apart, four, which lets that pair build.
     const auto first_rule{[](const std::string_view definitions, const std::string_view attribute) {
         return read_logos(
                        "#[derive(Logos)]\n" + std::string{definitions} + "enum T {\n" + std::string{attribute} +
@@ -1315,8 +1314,8 @@ TEST(Read_logos, A_callback_result_is_read_against_the_variants_payload)
     EXPECT_EQ(token_of(R"rs(#[token("x", |_| Err(()))])rs", "V(u64)"), v);
     EXPECT_EQ(token_of(R"rs(#[token("x", |_| None)])rs", "V"), v);
 
-    // What the crate refuses for the variant's payload is refused at the rule's line, in a closure and by a function's
-    // return type alike.
+    // What the crate refuses for the variant's payload is refused at the rule's line, in a closure and by a
+    // function's return type alike.
     EXPECT_EQ(refused_at(R"rs(#[token("x", |_| logos::Skip)])rs", "V(u64)"), 5);
     EXPECT_EQ(refused_at(R"rs(#[token("x", |_| Ok(logos::Skip))])rs", "V(u64)"), 5);
     EXPECT_EQ(refused_at(R"rs(#[token("x", |_| T::Other)])rs", "V(u64)"), 5);
@@ -2305,9 +2304,9 @@ TEST(Read_logos, What_the_crate_refuses_of_attributes_and_variants_is_refused)
     EXPECT_EQ(line_of(enum_of("#[derive(Logos)]\n#[logos(source = str, source = str)]\n", word)), 2);
     EXPECT_EQ(line_of(enum_of("#[derive(Logos)]\n#[logos(error = ())]\n#[logos(error = ())]\n", word)), 3);
 
-    // The generics: "S can only have one type assigned to it", "S is not a declared type parameter", "Generic type
-    // parameter without a concrete type", "Logos types can only have one lifetime" and "Logos doesn't support const
-    // generics."
+    // The generics: "S can only have one type assigned to it", "S is not a declared type parameter",
+    // "Generic type parameter without a concrete type", "Logos types can only have one lifetime" and "Logos
+    // doesn't support const generics."
     EXPECT_EQ(
             line_of("#[derive(Logos)]\n#[logos(type S = u8, type S = u16)]\nenum T<S> {\n    #[regex(\"[a-w]+\", |_| "
                     "1)]\n    Word(S),\n}\n"),

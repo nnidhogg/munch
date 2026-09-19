@@ -1,9 +1,9 @@
 # **Performance**
 
-The measured numbers: what `tools/benchmark` reports, how the runs are collected and archived, how the parallel scan
-scales at certified bytes and at certified windows, and how munch compares with other engines.
-[performance.md](performance.md) explains why the numbers come out as they do and [design.md](design.md) the decisions
-behind that.
+The measured numbers: what `tools/benchmark` reports, how the runs are collected and archived, how the
+parallel scan scales at certified bytes and at certified windows, and how munch compares with other
+engines. [performance.md](performance.md) explains why the numbers come out as they do and
+[design.md](design.md) the decisions behind that.
 
 `core::Lexer::tokenize` advances the DFA through `dfa::Simulator::run`, which turns matching a character into one table
 read on the hot path:
@@ -12,15 +12,14 @@ read on the hot path:
   no per-digit tokens) share one row of the transition table. The table therefore needs one row per class the automaton
   actually distinguishes rather than one per possible `char` value.
 - **A flat `(class, state)` table**, viewed as a 2D `mdspan`, replaces the `unordered_map<(state, Label), state>` the
-  DFA itself is built and inspected through. The class of the next symbol is known before the current state is, so the
-  row offset is computed off the state-to-state dependency chain that would otherwise limit how fast `run()` can
-  advance.
+DFA itself is built and inspected through. The class of the next symbol is known before the current state is, so the
+row offset is computed off the state-to-state dependency chain that would otherwise limit how fast `run()` can advance.
 - **Narrow table entries** (`uint32_t` state indices, `uint8_t` class indices) keep more of the table resident in cache
   than the `size_t`-keyed hash map would.
 
-The design rationale, i.e. why a library this small outruns engines orders of magnitude larger, is written up in
-[docs/performance.md](performance.md); the architectural decisions behind it are collected in
-[docs/design.md](design.md).
+The design rationale, i.e. why a library this small outruns engines orders of magnitude larger, is
+written up in [docs/performance.md](performance.md); the architectural decisions behind it are
+collected in [docs/design.md](design.md).
 
 Measured with `tools/benchmark` (Release build, GCC 15.2 on an AMD Ryzen 9 9950X3D, Ubuntu 26.04) over generated
 pseudo-code. Every scenario reports its best, median, and worst pass: the best estimates the least-interrupted cost of

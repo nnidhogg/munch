@@ -273,8 +273,8 @@ TEST_F(Dfa_test, Dense_numbering_makes_the_state_count_the_identifier_unrolling_
 
     const auto built{dfa.build()};
 
-    // The identifiers a definition names anywhere: its initial state, both ends of every transition, and every
-    // accept state.
+    // The identifiers a definition names anywhere: its initial state, both ends of every
+    // transition, and every accept state.
     const auto named{[](const Dfa& automaton) {
         std::set<Dfa::State_t> states{automaton.init_state()};
 
@@ -1271,10 +1271,9 @@ TEST_F(Dfa_test, Mandatory_core_failure_table_chains_two_borders_in_construction
 
 TEST_F(Dfa_test, Mandatory_core_seeding_reads_both_ends_of_the_alphabet)
 {
-    // The killer consumes every byte except one, placed at either end of the alphabet, so its death is
-    // visible only to a seeding pass covering the full symbol range; a pass starting one byte late misses
-    // the zero case and one stopping a byte early misses the last, each forfeiting the core the hub's
-    // escape plainly proves.
+    // The killer consumes every byte except one, placed at either end of the alphabet, so its death is visible only to
+    // a seeding pass covering the full symbol range; a pass starting one byte late misses the zero case and one
+    // stopping a byte early misses the last, each forfeiting the core the hub's escape plainly proves.
     const auto build{[](const int missing) {
         dfa::Builder dfa;
 
@@ -1487,11 +1486,10 @@ TEST_F(Dfa_test, Mandatory_core_stays_empty_when_the_killing_byte_itself_complet
 
     const Token token{1};
 
-    // The refuting shape for the order of the two checks: the second escape 'z' leads to a state that dies
-    // exactly on 'a', so the death word "za" carries the proposed core only as its own killing byte. Too
-    // late is not carried: a certified window built on this table could end on the core with nothing after
-    // it, so the proof must refuse, and a matcher that reads the killing byte before noticing the death
-    // would wrongly accept.
+    // The refuting shape for the order of the two checks: the second escape 'z' leads to a state that dies exactly on
+    // 'a', so the death word "za" carries the proposed core only as its own killing byte. Too late is not carried: a
+    // certified window built on this table could end on the core with nothing after it, so the proof must refuse, and
+    // a matcher that reads the killing byte before noticing the death would wrongly accept.
     dfa.add_accept_state(q1, token);
 
     dfa.add_transition(q0, dfa::Label('s'), q1);

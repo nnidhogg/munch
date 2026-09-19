@@ -6,8 +6,8 @@ in the draft's evaluation may quote a number that did not come through this prot
 ## Requirements
 
 - A quiet machine: no browser, no other users, performance governor, and ideally bare metal. The dev box (the
-  README's i9-12900K under WSL2) is acceptable for README rows; the paper prefers the bare-metal ritual used for
-  arXiv:2608.03473.
+README's i9-12900K under WSL2) is acceptable for README rows; the paper prefers the bare-metal
+ritual used for arXiv:2608.03473.
 - A tagged release containing `munch_window_bench`, so the version DOI the paper pins can name a tree that holds
   the instrument. This gates the campaign on the release after v1.3.0.
 - A clean checkout of that tag: the CSV carries commit and dirty on every row, and dirty rows are unusable.

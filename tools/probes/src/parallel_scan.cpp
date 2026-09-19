@@ -9,13 +9,12 @@
 // (window, origin) pairs over byte classes; the byte classifier below is built from the very sets
 // grammars.hpp defines, so the two derivations cannot drift apart silently.
 //
-// The probe runs the conventional C-like row exactly as the study composes it, scans the corpus
-// sequentially, derives the anchor positions from the table, verifies every anchor lands on the
-// sequential boundary set, then for each worker count snaps ideal cuts to their nearest anchors, scans
-// every chunk in its own thread against the shared lexer, and requires the concatenated boundary stream
-// byte-identical to the sequential one. Equality is asserted, not reported: a disagreement is a failed
-// run. Wall-clock figures are printed on lines prefixed "timing:" and are machine-dependent by nature;
-// every other line is stable.
+// The probe runs the conventional C-like row exactly as the study composes it, scans the corpus sequentially, derives
+// the anchor positions from the table, verifies every anchor lands on the sequential boundary set, then for each
+// worker count snaps ideal cuts to their nearest anchors, scans every chunk in its own thread against the shared
+// lexer, and requires the concatenated boundary stream byte-identical to the sequential one. Equality is asserted, not
+// reported: a disagreement is a failed run. Wall-clock figures are printed on lines prefixed "timing:" and are
+// machine-dependent by nature; every other line is stable.
 //
 // Usage: munch_parallel_scan <corpus file> <anchor table file> [worker counts...]
 
@@ -297,7 +296,7 @@ int main(const int argc, const char** argv)
 
     std::string classes(corpus.size(), '\0');
 
-    std::transform(corpus.begin(), corpus.end(), classes.begin(), byte_class);
+    std::ranges::transform(corpus, classes.begin(), byte_class);
 
     const auto anchors{anchor_positions(classes, windows)};
 
@@ -345,7 +344,7 @@ int main(const int argc, const char** argv)
         {
             const auto ideal{corpus.size() * k / workers};
 
-            const auto after{std::lower_bound(anchors.begin(), anchors.end(), ideal)};
+            const auto after{std::ranges::lower_bound(anchors, ideal)};
 
             std::size_t nearest{after != anchors.end() ? *after : anchors.back()};
 

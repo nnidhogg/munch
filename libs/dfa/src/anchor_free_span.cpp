@@ -176,8 +176,8 @@ private:
      * @brief Advances the marking by one byte, optionally closing the segment being read first.
      *
      * Closing first is what puts a window's origin at the start of a token, which is what the certificate says
-     * about it. A closed run that reaches acceptance refutes the guess and kills the node; one with no transition
-     * is simply forgotten.
+     * about it. A closed run that reaches acceptance refutes the guess and kills the node; one with no
+     * transition is simply forgotten.
      * @param simulator The simulator whose tables the walk reads.
      * @param node The node advanced from.
      * @param mark Whether the segment being read closes before the byte.
@@ -216,10 +216,10 @@ private:
     /**
      * @brief The longest anchor-free run over an acyclic graph, relaxed to a fixed point.
      *
-     * A warm-up edge retires nothing and carries the run along; an anchored exit resets it; a free one extends it.
-     * A stretch may still be inside the buffer when the input ends, so a node whose reading run accepts also counts
-     * what it holds: the anchor-free positions oldest inward, continuing the run that arrived, and the longest run
-     * wholly inside.
+     * A warm-up edge retires nothing and carries the run along; an anchored exit resets it; a free one extends
+     * it. A stretch may still be inside the buffer when the input ends, so a node whose reading run accepts
+     * also counts what it holds: the anchor-free positions oldest inward, continuing the run that arrived, and
+     * the longest run wholly inside.
      * @param simulator The simulator whose tables the walk reads.
      * @param graph The product graph.
      * @param finishing The endable nodes.

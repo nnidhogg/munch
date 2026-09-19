@@ -66,6 +66,8 @@ using Packed_action_t = std::uint64_t;
 
 /**
  * @brief Packs an action, mapping every stay to zero whatever target it names.
+ * @param action The action to pack.
+ * @return The packed action, zero for a stay.
  */
 [[nodiscard]] constexpr Packed_action_t pack(const Mode_action& action) noexcept
 {
@@ -76,6 +78,8 @@ using Packed_action_t = std::uint64_t;
 
 /**
  * @brief Unpacks an action, the inverse of pack(); zero denotes a stay, which is never stored and never unpacked.
+ * @param packed A packed action other than zero.
+ * @return The action it packs.
  */
 [[nodiscard]] constexpr Mode_action unpack(const Packed_action_t packed) noexcept
 {

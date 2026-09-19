@@ -176,12 +176,12 @@ public:
     /**
      * @brief Replace the input text and start over.
      *
-     * Under a mode lexer the mode is scan state and returns to zero with the saved frames, since both describe
-     * nesting in input that is being replaced: keeping either would scan a fresh buffer inside a half open string
-     * literal it never entered. That holds however the current mode was reached, set_mode() included, since nothing
-     * records who chose it; call set_mode() again after load() to re-enter one deliberately. Where the caller drives
-     * the mode with several lexers, the mode is the caller's choice and not the input's, so it survives with its
-     * frames.
+     * Under a mode lexer the mode is scan state and returns to zero with the saved frames, since both describe nesting
+     * in input that is being replaced: keeping either would scan a fresh buffer inside a half open string literal it
+     * never entered. That holds however the current mode was reached, set_mode() included, since nothing records who
+     * chose it; call set_mode() again after load() to re-enter one deliberately. Where the caller drives the mode with
+     * several lexers, the mode is the caller's choice and not the input's, so it survives with its frames.
+     * @param input The new input text.
      */
     void load(std::string input);
 
@@ -199,6 +199,7 @@ public:
      *
      * The escape hatch for tokens no automaton can recognize, such as C++ raw string literals: a driver reads the
      * prefix token, scans the remainder by hand, and seeks past it before reading on.
+     * @param offset The byte offset to continue reading from.
      */
     void seek(std::size_t offset) noexcept;
 

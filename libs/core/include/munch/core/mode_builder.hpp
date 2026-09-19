@@ -183,6 +183,11 @@ private:
      *
      * A negative value becomes an enormous unsigned one, and the `+ 1` used to size the per-mode rows then wraps to
      * zero, so the very next index is out of bounds on an empty vector. Caught here rather than discovered there.
+     * @tparam V The caller's mode or token type, an enum or an integral type.
+     * @param value The value to convert.
+     * @param what What the value names, for the message of the rejection.
+     * @return The index.
+     * @throws std::invalid_argument If the value is negative or beyond what an index can hold.
      */
     template <typename V>
     [[nodiscard]] static std::size_t as_index(const V value, const char* const what)

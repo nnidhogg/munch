@@ -595,12 +595,12 @@ private:
 /**
  * @brief A recursive-descent reader over one pattern in the regex crate's syntax, producing the node tree.
  *
- * The grammar is the crate's: an alternation of concatenations, a concatenation of repeated atoms, an atom a group,
- * a class, the dot, an escape or a scalar. The flags travel with the reader and are saved and restored around every
- * group, so that `(?i)` reaches to the end of the group it stands in and no further, as the crate scopes it. A
- * scalar under `i` becomes the class of its cases, which is what the crate's translation makes of it and what logos
- * therefore counts. A subpattern reference becomes a Reference node carrying the flags in force, resolved once the
- * whole pattern is read.
+ * The grammar is the crate's: an alternation of concatenations, a concatenation of repeated atoms, an atom a
+ * group, a class, the dot, an escape or a scalar. The flags travel with the reader and are saved and restored
+ * around every group, so that `(?i)` reaches to the end of the group it stands in and no further, as the crate
+ * scopes it. A scalar under `i` becomes the class of its cases, which is what the crate's translation makes of it
+ * and what logos therefore counts. A subpattern reference becomes a Reference node carrying the flags in force,
+ * resolved once the whole pattern is read.
  */
 class Pattern_reader
 {
@@ -2049,8 +2049,8 @@ void check_dot_repetitions(const Node& node, const std::string& written, const s
 
     // Emptiness is a rule's matter, decided once the subpatterns are pasted in: logos 0.15.1 panics on an empty
     // token and compiles an empty regex into a rule matching no input, so neither is a rule to read, while an empty
-    // definition is valid and adds nothing to the patterns referencing it (logos-codegen 0.15.1, parser/subpattern.rs
-    // and graph/regex.rs).
+    // definition is valid and adds nothing to the patterns referencing it (logos-codegen 0.15.1,
+    // parser/subpattern.rs and graph/regex.rs).
     if (kind != Pattern_kind::definition && std::holds_alternative<Empty>(whole.kind))
     {
         throw Spec_error{
@@ -4135,14 +4135,14 @@ struct Value
  * result the crate admits there skipping or failing.
  *
  * The callback also holds the lexer, and may move it: logos 0.15.1's Lexer moves its cursor through `bump` alone among
- * its public methods, and through `bump_unchecked`, `trivia`, `error`, `end` and `set` of its `internal::LexerInternal`
- * trait, which a callback can reach by importing it (logos 0.15.1, src/lexer.rs and src/internal.rs), while `slice`,
- * `span`, `remainder` and `source` and the `extras` field read it and `clone` copies it. A match the callback extends
- * or empties is not the pattern's, so a body, a closure's or the named function's, is read only where its lexer
- * parameter is used through the reading members alone; one naming `bump`, `bump_unchecked` or `trivia` as a method on
- * anything, or using the parameter any other way, passing it to a function or a macro, calling another method on it or
- * binding it to a name, is refused by name, and so is a function declared without a body, whose use of the lexer is
- * out of sight.
+ * its public methods, and through `bump_unchecked`, `trivia`, `error`, `end` and `set` of its
+ * `internal::LexerInternal` trait, which a callback can reach by importing it (logos 0.15.1, src/lexer.rs and
+ * src/internal.rs), while `slice`, `span`, `remainder` and `source` and the `extras` field read it and `clone` copies
+ * it. A match the callback extends or empties is not the pattern's, so a body, a closure's or the named function's, is
+ * read only where its lexer parameter is used through the reading members alone; one naming `bump`, `bump_unchecked`
+ * or `trivia` as a method on anything, or using the parameter any other way, passing it to a function or a macro,
+ * calling another method on it or binding it to a name, is refused by name, and so is a function declared without a
+ * body, whose use of the lexer is out of sight.
  */
 class Callback_reader
 {
@@ -4909,8 +4909,8 @@ Value Callback_reader::classify(const std::string_view text) const
         return {.kind = Value::Kind::arm_skip, .variant = {}};
     }
 
-    // A literal, or a unit struct spelled as the payload's own type, which the blanket conversion takes as the payload
-    // whatever the type is.
+    // A literal, or a unit struct spelled as the payload's own type, which the blanket conversion takes as the
+    // payload whatever the type is.
     if (compact == "true" || compact == "false" || is_digit(compact.front()) || compact.starts_with('"') ||
         compact.starts_with('\'') || compact.starts_with("b\"") || compact.starts_with("b'") ||
         compact.starts_with("r\"") || compact.starts_with("r#") || compact.starts_with("br\"") ||
@@ -5858,8 +5858,8 @@ void read_attributes(Rust_cursor& cursor, std::vector<Attribute>& attributes)
  * parser/skip.rs and parser/nested.rs): a second `priority`, "Resetting previously set priority"; a second callback,
  * positional or named, "Callback has been already set"; `priority(...)` and `callback(...)`, which expect `= value`;
  * an argument logos does not know, an unknown nested attribute; and any argument after `ignore(...)`, since the crate
- * leaves the comma after the group unread and reads what follows as an unnamed argument out of place, "Expected a named
- * argument at this position".
+ * leaves the comma after the group unread and reads what follows as an unnamed argument out of place, "Expected a
+ * named argument at this position".
  * @param content A cursor over the content.
  * @param attribute The attribute's name, `token`, `regex` or `skip`, for refusals.
  * @param skip Whether the content is a `skip(...)`'s, on which logos 0.15.1 knows no `ignore` and calls it an
@@ -6200,8 +6200,8 @@ void read_logos_attribute(
 
             const auto option{key + (rest.starts_with('=') || rest.starts_with('(') ? "" : " ") + rest};
 
-            // The shape each key takes, and the keys the crate takes once: `extras`, `error` and `source`, and the
-            // type of each parameter.
+            // The shape each key takes, and the keys the crate takes once: `extras`, `error` and `source`, and
+            // the type of each parameter.
             const auto shaped{
                     key == "crate"      ? assigned :
                     key == "error"      ? assigned || group_valued :
@@ -6700,8 +6700,8 @@ void note_assumed(const Attribute& attribute, const Rust_cursor& cursor, std::ve
             }
             else if (attribute.path == "error")
             {
-                // The error variant of logos 0.12 and before; 0.13 and later refuse the attribute (logos-codegen
-                // 0.15.1, lib.rs).
+                // The error variant of logos 0.12 and before; 0.13 and later refuse the attribute
+                // (logos-codegen 0.15.1, lib.rs).
                 throw Spec_error{
                         "logos 0.15.1 refuses #[error]: Since 0.13 Logos no longer requires the #[error] variant",
                         attribute.line};

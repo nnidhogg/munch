@@ -5,8 +5,8 @@
  *
  * The first two are properties: no symbol the relaxed condition admits ever fails to split, and no symbol the exact
  * condition admits is ever lost. Those are checked here over random token sets against an EXHAUSTIVE oracle, every
- * string up to a bounded length on a three-symbol alphabet, so no symbol can be judged safe merely because a sampled
- * corpus never exercised it.
+ * string up to a bounded length on a three-symbol alphabet, so no symbol can be judged safe merely because a
+ * sampled corpus never exercised it.
  *
  * The third is that the condition is conservative. A percentage from a random sweep says as much about the generator
  * as about the condition, so the sweep counts are asserted for reproducibility while the report leans on a named

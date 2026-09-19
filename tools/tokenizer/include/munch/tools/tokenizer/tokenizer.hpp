@@ -126,6 +126,7 @@ public:
 
     /**
      * @brief Replace the input text and start over.
+     * @param input The new input text.
      */
     void load(std::string input);
 
@@ -139,6 +140,7 @@ public:
      *
      * The escape hatch for tokens no automaton can recognize, such as C++ raw string literals: a driver reads the
      * prefix token, scans the remainder by hand, and seeks past it before reading on.
+     * @param offset The byte offset to continue reading from.
      */
     void seek(std::size_t offset) noexcept;
 

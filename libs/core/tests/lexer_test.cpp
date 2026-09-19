@@ -1983,8 +1983,8 @@ TEST_F(Lexer_test, Lag_and_rescue_freeness_decide_the_rollback_shape)
 
     // {a, abc, bc}: the stretch after a opens on b, which starts the token bc from the initial state, so a gate
     // reading the tables alone cannot tell this set from a rescuable one; but every completely tokenizable
-    // continuation of that stretch begins with bc, whose c closes abc instead, so the scan never rolls back to a.
-    // The exact decision says so.
+    // continuation of that stretch begins with bc, whose c closes abc instead, so the scan never rolls back to
+    // a. The exact decision says so.
     Builder_dbg guarded;
 
     guarded.add_token(text("a"), Token_kind::A, 2);
@@ -2433,8 +2433,8 @@ TEST_F(Lexer_test, Complete_c_like_grammar_with_block_comments_windows_end_to_en
     // The conventional row extended with multiline block comments. A newline may now sit inside a comment, so
     // every newline-anchored window dies, and only the four-byte family around the comment closer survives: a
     // guard byte ahead of */ against reading the star as an opener's star, and a newline on one side to defeat
-    // line comments and strings. The origin lands directly after the closer, the study's four-byte mechanism
-    // inside a complete grammar.
+    // line comments and strings. The origin lands directly after the closer, the study's four-byte
+    // mechanism inside a complete grammar.
     Builder_dbg builder;
 
     builder.add_token(identifier_regex(), Token_kind::Identifier, 2);
@@ -2960,9 +2960,8 @@ TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses
 
     EXPECT_EQ(tight_plan, (std::vector<std::size_t>{0, 4, tight.size()}));
 
-    // An occurrence one byte in, tried at the longest window length: the candidate range's lower end
-    // saturates at zero here, and a raw subtraction would wrap, skip the only certifying window, and lose
-    // the cut.
+    // An occurrence one byte in, tried at the longest window length: the candidate range's lower end saturates at zero
+    // here, and a raw subtraction would wrap, skip the only certifying window, and lose the cut.
     const std::string wrap{"q;xx "};
 
     const auto wrap_plan{lexer.chunk_boundaries_with_windows(wrap, 5)};
@@ -2971,9 +2970,8 @@ TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses
 
     EXPECT_EQ(wrap_plan, (std::vector<std::size_t>{0, 4, wrap.size()}));
 
-    // A later target landing exactly on the last recorded occurrence: the barren cache holds the offset
-    // one past it, so an endpoint recorded a byte tighter wrongly swallows the occurrence itself and the
-    // cut it certifies.
+    // A later target landing exactly on the last recorded occurrence: the barren cache holds the offset one past it,
+    // so an endpoint recorded a byte tighter wrongly swallows the occurrence itself and the cut it certifies.
     const std::string edge{"qx;b ;a;@ x  q@"};
 
     const auto edge_plan{lexer.chunk_boundaries_with_windows(edge, 6)};
@@ -3517,8 +3515,8 @@ TEST_F(Lexer_test, Diagnose_reports_shadowed_keywords_as_dead)
 
     Builder_dbg builder;
 
-    // The identifier pattern outranks the keyword, so "if" always tokenizes as an identifier and the keyword can
-    // never win any input.
+    // The identifier pattern outranks the keyword, so "if" always tokenizes as an identifier and the
+    // keyword can never win any input.
     builder.add_token(identifier_regex(), Token_kind::Identifier, 1);
     builder.add_token(text("if"), Token_kind::Keyword_if, 2);
     builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
@@ -4037,9 +4035,9 @@ TEST_F(Lexer_test, Xid_membership_matches_the_generated_tables_at_every_boundary
     }
 }
 
-// Two ideal offsets can walk forward onto the same certified byte. Resuming the next search from the ideal offset
-// rediscovers it, drops it as a duplicate, and never reaches the certified byte after it, silently costing a chunk
-// the input can support.
+// Two ideal offsets can walk forward onto the same certified byte. Resuming the next search from the ideal
+// offset rediscovers it, drops it as a duplicate, and never reaches the certified byte after it, silently
+// costing a chunk the input can support.
 TEST_F(Lexer_test, Chunk_boundaries_finds_adjacent_certified_bytes)
 {
     enum class Token_kind : uint8_t
@@ -4377,10 +4375,10 @@ TEST_F(Lexer_test, Every_entry_point_scans_std_byte_input_like_char_input)
     EXPECT_EQ(nfa_from_bytes.length, nfa_from_text.length);
 }
 
-// The dependent probes for the byte-domain assertions below: a requires-expression over concrete types is checked
-// as ordinary code, so viability is asked through these instead. One probe per public overload, because a
-// combined expression proves only that at least one call rejects a type, and a single overload could then
-// quietly lose its constraint.
+// The dependent probes for the byte-domain assertions below: a requires-expression over concrete types is
+// checked as ordinary code, so viability is asked through these instead. One probe per public overload,
+// because a combined expression proves only that at least one call rejects a type, and a single overload could
+// then quietly lose its constraint.
 template <typename Container>
 concept Single_scan_over =
         requires(const Lexer& lexer, const Container& container) { lexer.template tokenize<int>(container); };
@@ -4835,8 +4833,8 @@ TEST_F(Lexer_test, The_segmentation_cap_is_a_ceiling_on_the_states_the_search_ho
         ++holds;
     }
 
-    // Every byte of the witness but the last admits at least one state, and the search settled with the witness at
-    // the cap.
+    // Every byte of the witness but the last admits at least one state, and the search settled
+    // with the witness at the cap.
     EXPECT_GE(holds, 4U);
     EXPECT_EQ(one.segmentation_difference(two, holds).witness, "abcd");
 
@@ -4994,8 +4992,8 @@ TEST_F(Lexer_test, Segmentation_difference_agrees_with_the_research_oracle_on_ev
         }
     }
 
-    // The oracle's own counts: 225 census pairs, 204 separating on the domain and 6 on the boundary, and 64 sweep
-    // pairs, 50 and 6.
+    // The oracle's own counts: 225 census pairs, 204 separating on the domain and 6 on the boundary,
+    // and 64 sweep pairs, 50 and 6.
     EXPECT_EQ(decided, 289U);
     EXPECT_EQ(domains, 254U);
     EXPECT_EQ(boundaries, 12U);

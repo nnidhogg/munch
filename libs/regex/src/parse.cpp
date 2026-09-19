@@ -354,10 +354,10 @@ private:
 /**
  * @brief The members the case option adds for one bracket member or range, as flex folds them.
  *
- * flex swaps the case of a member letter, and of both ends of a range, adding the range the swapped ends span, so an
- * ambiguous range such as [A-t] gains the empty range a to T and keeps its numeric span exactly, which is what the
- * table under Patterns calls the literal range, and a range whose end has no case at all, [_-{] or [@-C], folds no
- * letter.
+ * flex swaps the case of a member letter, and of both ends of a range, adding the range the swapped ends
+ * span, so an ambiguous range such as [A-t] gains the empty range a to T and keeps its numeric span exactly,
+ * which is what the table under Patterns calls the literal range, and a range whose end has no case at all,
+ * [_-{] or [@-C], folds no letter.
  *
  * A range reaching past ASCII has no swapped end, since only the code point escape flex has not got writes one: the
  * folding there runs over the range's ASCII intersection, which ends past every letter, so the other case of every

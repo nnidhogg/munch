@@ -125,9 +125,8 @@ public:
      *
      * Consumes the same positive-width tokens, IDs and lengths, as calling tokenize() repeatedly at each token
      * boundary, invoking the sink after each and stopping when the sink returns false, but the loop stays in one call
-     * across tokens, amortizing the per-call overhead; the automaton restarts at each token as tokenize() does.
-     * Random access is required because longest match may read past the last accepting position and must resume
-     * from it.
+     * across tokens, amortizing the per-call overhead; the automaton restarts at each token as tokenize() does. Random
+     * access is required because longest match may read past the last accepting position and must resume from it.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator Random access iterator type.
      * @tparam Sink Callable receiving each consumed token and its length.
@@ -189,19 +188,21 @@ public:
      * the useful subset is reported: a symbol no live state consumes, a live state being one reachable from the
      * initial state that can still reach an accepting one, is safe merely vacuously and answers false. The property
      * is decided from the compiled transition table; the derivation is dfa::Simulator::is_split_point()'s.
+     * @param symbol The symbol to test.
+     * @return True if every occurrence of the symbol begins a token and some live state consumes it.
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept { return simulator_.is_split_point(symbol); }
 
     /**
      * @brief Reports whether the symbol is a safe split point once the discarded tokens are deleted.
      *
-     * Never smaller than is_split_point(), and equal to it unless the builder was told which tokens are discarded.
-     * For input the serial scan tokenizes completely, chunks cut here reproduce the serial stream once tokens of
-     * those kinds are removed from both, so a caller that keeps them must use is_split_point(). The completeness
-     * condition is not decoration: past the offset where the serial scan first fails, a chunk cut here can emit
-     * kept tokens that scan never reaches. Note also that chunk_boundaries() and tokenize_all_parallel() plan with
-     * the exact certificate, so acting on this answer means planning boundaries yourself. The derivation is
-     * dfa::Simulator::is_split_point_ignoring()'s.
+     * Never smaller than is_split_point(), and equal to it unless the builder was told which tokens are
+     * discarded. For input the serial scan tokenizes completely, chunks cut here reproduce the serial stream once
+     * tokens of those kinds are removed from both, so a caller that keeps them must use is_split_point(). The
+     * completeness condition is not decoration: past the offset where the serial scan first fails, a chunk cut
+     * here can emit kept tokens that scan never reaches. Note also that chunk_boundaries() and
+     * tokenize_all_parallel() plan with the exact certificate, so acting on this answer means planning boundaries
+     * yourself. The derivation is dfa::Simulator::is_split_point_ignoring()'s.
      * @param symbol The symbol to test.
      * @return True if the symbol can begin a token and every occurrence is safe under that weaker equivalence;
      *         symbols satisfying the condition only vacuously report false.
@@ -224,6 +225,8 @@ public:
      * input the window promise carries nothing at all, the consequence chunk_boundaries_with_windows() documents.
      * Refusals are model-relative and conservative, never proof that no certificate exists. Decided from the compiled
      * transition table; the derivation is dfa::is_split_window()'s.
+     * @param window The byte string to decide.
+     * @return The in-window origin every covering token begins at, or std::nullopt when the window is refused.
      */
     [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const
     {
@@ -336,8 +339,8 @@ public:
         // certify vacuously, and searching for one scans to the end of the input and finds nothing.
         const auto any_certified{simulator_.has_split_points()};
 
-        // A chunk needs at least one byte, so asking for more chunks than bytes only adds iterations that can find
-        // nothing.
+        // A chunk needs at least one byte, so asking for more chunks than bytes only adds
+        // iterations that can find nothing.
         const auto usable{std::min(chunks, size)};
 
         // The ideal offsets are size * index / usable, but that product overflows for a large input divided very
@@ -387,6 +390,10 @@ public:
 
     /**
      * @brief Computes chunk boundaries for parallel tokenization of a whole container.
+     * @tparam Container The input container type (must offer random access).
+     * @param container The input container.
+     * @param chunks As for the iterator form above.
+     * @return As for the iterator form above.
      */
     template <common::concepts::Random_access_byte_iterable Container>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries(const Container& container, const std::size_t chunks) const
@@ -398,12 +405,12 @@ public:
      * @brief Computes chunk boundaries like chunk_boundaries(), additionally recovering cuts from certified
      *        split windows where the token set certifies no usable byte.
      *
-     * From the later of each equal-division target and one past the previous boundary the input is walked for the first
-     * occurrence of a window of two to four bytes that is_split_window() certifies, and the cut is placed at the
-     * occurrence plus the reported origin. Each window decision is memoized per distinct byte string, so those
-     * decisions, the costly part, are bounded by the distinct windows tried, while the positional walk and its memo
-     * lookups scale with the positions examined. When neither certificate offers cuts, the single whole-input chunk
-     * results.
+     * From the later of each equal-division target and one past the previous boundary the input is walked for
+     * the first occurrence of a window of two to four bytes that is_split_window() certifies, and the cut is
+     * placed at the occurrence plus the reported origin. Each window decision is memoized per distinct byte
+     * string, so those decisions, the costly part, are bounded by the distinct windows tried, while the
+     * positional walk and its memo lookups scale with the positions examined. When neither certificate offers
+     * cuts, the single whole-input chunk results.
      *
      * The window guarantee is conditional where the byte certificate's is not: a certified window pins the
      * covering token's origin at occurrences in completely tokenizable input, a property of the whole input
@@ -471,6 +478,10 @@ public:
 
     /**
      * @brief Range overload of chunk_boundaries_with_windows(begin, end, chunks).
+     * @tparam Container The input container type (must offer random access).
+     * @param container The input container.
+     * @param chunks As for the iterator form above.
+     * @return As for the iterator form above.
      */
     template <common::concepts::Random_access_byte_iterable Container>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
@@ -561,6 +572,13 @@ public:
 
     /**
      * @brief Tokenizes a whole container as concurrent chunks split at certified safe split points.
+     * @tparam T The token type (enum or integral).
+     * @tparam Container The input container type (must offer random access).
+     * @tparam Sink Callable receiving the chunk, each consumed token and its length.
+     * @param container The input container.
+     * @param chunks As for the iterator form above.
+     * @param sink As for the iterator form above.
+     * @return As for the iterator form above.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container, typename Sink>
         requires std::invocable<Sink&, std::size_t, T, std::size_t>
@@ -737,9 +755,9 @@ public:
     /**
      * @brief Whether another token set cuts some input both tokenize differently, with a witness.
      *
-     * The question a tokenizer change asks, answered from the two compiled tables rather than from a corpus, so a
-     * negative covers every input instead of the ones a suite happens to hold. The derivation is
-     * dfa::boundary_difference()'s.
+     * The question a tokenizer change asks, answered from the two compiled tables rather than from a
+     * corpus, so a negative covers every input instead of the ones a suite happens to hold. The
+     * derivation is dfa::boundary_difference()'s.
      * @param other The lexer to compare against.
      * @param cap The largest number of product states to hold before giving up, dfa::difference_cap unless told.
      * @return The witness and whether the search was exhaustive; an empty witness means identical only when it was.
@@ -796,6 +814,9 @@ private:
 
     /**
      * @brief Compiles a DFA, attaching a caller's word to every match of the named tokens.
+     * @param dfa The compiled DFA.
+     * @param ignored The IDs of tokens the caller deletes before using the stream.
+     * @param payloads Token ID and word pairs; a token named more than once keeps the last word given.
      */
     Lexer(const dfa::Dfa& dfa, const std::span<const std::size_t> ignored,
           const std::span<const std::pair<std::size_t, std::uint64_t>> payloads)

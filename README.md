@@ -14,11 +14,10 @@
 
 `munch` is a **modern C++23 library** for building lexical analyzers. It scans serially, and splits a large input
 across threads wherever the token set proves that splitting cannot change the token stream, so the parallel scan is
-certified rather than speculated and needs no fixup pass. Not every token set proves it, and the library says which
-do. Tokens are defined with a small regex-like combinator DSL, compiled through Thompson construction, subset
-construction, and DFA minimization by Moore partition refinement, then executed by a cache-optimized table
-simulator. There are no predefined tokens or grammars. You describe the language, and the library builds the
-automaton.
+certified rather than speculated and needs no fixup pass. Not every token set proves it, and the library says which do.
+Tokens are defined with a small regex-like combinator DSL, compiled through Thompson construction, subset construction,
+and DFA minimization by Moore partition refinement, then executed by a cache-optimized table simulator. There are no
+predefined tokens or grammars. You describe the language, and the library builds the automaton.
 
 It is also fast. On the [engine comparison](docs/benchmarks.md#comparison-with-other-engines) it measures as the
 quickest of the run-time-built lexers there, C++ and Rust alike, on both benchmark corpora, and is the only one of them

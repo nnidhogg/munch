@@ -1,10 +1,9 @@
 // A standalone probe over munch's public certificate walk and its anchored comparator machinery.
 //
-// It is crosscheck_scan.cpp widened, not replaced: the SET, Q, T and END commands answer byte for
-// byte what crosscheck_scan.cpp answers, so crosscheck_scan.py keeps working against either binary,
-// and two commands are added for Lexer::next_anchored_start() and Lexer::minimal_repair(). Nothing
-// is asserted here; crosscheck_anchor.py owns every verdict and compares against its own reference
-// model.
+// It is crosscheck_scan.cpp widened, not replaced: the SET, Q, T and END commands answer byte for byte what
+// crosscheck_scan.cpp answers, so crosscheck_scan.py keeps working against either binary, and two commands are added
+// for Lexer::next_anchored_start() and Lexer::minimal_repair(). Nothing is asserted here; crosscheck_anchor.py owns
+// every verdict and compares against its own reference model.
 //
 // Protocol, line oriented on stdin, one field per whitespace-separated word:
 //

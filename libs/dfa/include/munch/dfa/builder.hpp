@@ -70,12 +70,25 @@ public:
     [[nodiscard]] Dfa build() &&;
 
 private:
+    /**
+     * @brief The initial state of the DFA under construction.
+     */
     Dfa::State_t init_state_;
 
+    /**
+     * @brief The next identifier next_state() hands out, one past the last it gave; identifiers a caller names are
+     *        not counted.
+     */
     Dfa::State_t next_state_;
 
+    /**
+     * @brief The transitions under construction, from a state and a label to a state.
+     */
     Dfa::Transitions_t transitions_;
 
+    /**
+     * @brief The accept states under construction, each with the token it accepts.
+     */
     Dfa::Accept_states_t accept_states_;
 };
 

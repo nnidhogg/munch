@@ -12,18 +12,24 @@ namespace munch::regex::utf8
  */
 struct Code_point_range
 {
+    /**
+     * @brief The first code point of the range.
+     */
     char32_t first;
 
+    /**
+     * @brief The last code point of the range, inclusive.
+     */
     char32_t last;
 };
 
 /**
  * @brief Creates a regex matching one code point from an inclusive range, encoded as UTF-8.
  *
- * The range is expanded into the byte sequences of its code points, so the automaton stays byte-oriented and no part
- * of the engine needs to know about wide characters. Surrogates (U+D800 to U+DFFF) are excluded from the range, and
- * ill-formed input such as overlong encodings, stray continuation bytes, or code points beyond U+10FFFF is rejected
- * by construction.
+ * The range is expanded into the byte sequences of its code points, so the automaton stays byte-oriented and no
+ * part of the engine needs to know about wide characters. Surrogates (U+D800 to U+DFFF) are excluded from the
+ * range, and ill-formed input such as overlong encodings, stray continuation bytes, or code points beyond
+ * U+10FFFF is rejected by construction.
  * @param first The first code point of the range.
  * @param last The last code point of the range, at most U+10FFFF.
  * @return The created regex.

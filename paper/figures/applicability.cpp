@@ -489,9 +489,9 @@ int main()
 {
     int failures{0};
 
-    // The candidate bytes of each benchmark grammar: every distinct byte occurring in an operator or punctuation
-    // literal it registers. Written out rather than derived, so a wrong count in the paper cannot match a wrong count
-    // here by construction.
+    // The candidate bytes of each benchmark grammar: every distinct byte occurring in an operator or
+    // punctuation literal it registers. Written out rather than derived, so a wrong count in the paper cannot
+    // match a wrong count here by construction.
     const std::string keyword_scale_candidates{"=!<>&|+-*/%~^(){}[];,.:?"};
     const std::string scaling_candidates{"=!<>+-*/(){};,"};
 
@@ -646,13 +646,13 @@ int main()
     }
     // The designed-success pair: a shipped language whose reference states the property the split-friendly row
     // constructs. As the subset reads them, one line at a time where the 0.16.0 grammar appendix groups a multiline
-    // string or a doc comment over consecutive lines into one token, Zig's strings, comments and char literals all end
-    // at the line, so newline is recovered modulo the discarded tokens in the conventional tokenization and certified
-    // outright once it is its own token, with the appendix's string, comment and char-literal bodies present; in its
-    // byte classes the subset follows the appendix, not the language of conforming source, whose encoding rules forbid
-    // bytes the appendix's line bodies admit. Tab and carriage return occur in no rule of that appendix and so in no
-    // token of the subset adapted from it, so they are certified vacuously and withheld; space stays inside the strings
-    // and comments.
+    // string or a doc comment over consecutive lines into one token, Zig's strings, comments and char literals all
+    // end at the line, so newline is recovered modulo the discarded tokens in the conventional tokenization and
+    // certified outright once it is its own token, with the appendix's string, comment and char-literal bodies
+    // present; in its byte classes the subset follows the appendix, not the language of conforming source, whose
+    // encoding rules forbid bytes the appendix's line bodies admit. Tab and carriage return occur in no rule of that
+    // appendix and so in no token of the subset adapted from it, so they are certified vacuously and withheld; space
+    // stays inside the strings and comments.
     {
         munch::core::Builder b;
         zig(b, false);
