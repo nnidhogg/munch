@@ -36,6 +36,9 @@ struct Optional
  */
 struct Exact
 {
+    /**
+     * @brief The number of occurrences, exactly.
+     */
     std::size_t count;
 };
 
@@ -44,6 +47,9 @@ struct Exact
  */
 struct At_least
 {
+    /**
+     * @brief The fewest occurrences allowed.
+     */
     std::size_t min;
 };
 
@@ -52,7 +58,14 @@ struct At_least
  */
 struct Range
 {
+    /**
+     * @brief The fewest occurrences allowed.
+     */
     std::size_t min;
+
+    /**
+     * @brief The most occurrences allowed, inclusive.
+     */
     std::size_t max;
 };
 

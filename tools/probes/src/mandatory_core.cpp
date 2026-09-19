@@ -466,9 +466,8 @@ int main()
     // yet ab is a death word from q avoiding c. The checker must refute K = {c} with exactly that witness,
     // and the repaired table, where s survives b, must prove it.
     {
-        // States 0 = q, 1 = s, 2 = t. Both S-states loop on every byte not named, so the only death in the
-        // whole table is s on b: exactly the counterexample's shape, an internal death bypassing every c-bearing
-        // first-exit word.
+        // States 0 = q, 1 = s, 2 = t. Both S-states loop on every byte not named, so the only death in the whole table
+        // is s on b: exactly the counterexample's shape, an internal death bypassing every c-bearing first-exit word.
         const auto synthetic{[](const bool repaired) {
             return View{
                     .states = 3,
@@ -509,9 +508,8 @@ int main()
 
         const auto fixed{check(synthetic(true), 0, {"c"})};
 
-        // Repairing s removes the table's only death, so the premise holds vacuously: a state with no death
-        // words constrains nothing, and the checker must say so rather than hunt for cores that need not
-        // exist.
+        // Repairing s removes the table's only death, so the premise holds vacuously: a state with no death words
+        // constrains nothing, and the checker must say so rather than hunt for cores that need not exist.
         expect(fixed.proved, "a table with no death words must prove any family vacuously");
     }
 

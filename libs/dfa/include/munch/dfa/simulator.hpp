@@ -227,15 +227,14 @@ public:
     /**
      * @brief The byte string every certified split window provably contains, or empty when none is proved.
      *
-     * Derived once at construction. A live state whose every transition is live cannot be killed by any single
-     * byte, only led along a longer word to death, so any window certifying in its presence must carry that
-     * state's forced exit; the shortest exit is proposed as a core and proved mandatory by exhausting
-     * core-avoiding death words over the live tables, with the killing byte never fed to the matcher. The longest
-     * proved core is kept: every window is_split_window() certifies contains it with at least one byte following,
-     * which is what lets the planner narrow its candidate windows to occurrences of this string. Empty means no
-     * core is proved, because no such state exists or the candidate was refuted by a core-free death word; the
-     * planner then keeps its exhaustive walk, and nothing weakens: the core is an accelerator's licence, never a
-     * certificate itself.
+     * Derived once at construction. A live state whose every transition is live cannot be killed by any single byte,
+     * only led along a longer word to death, so any window certifying in its presence must carry that state's forced
+     * exit; the shortest exit is proposed as a core and proved mandatory by exhausting core-avoiding death words over
+     * the live tables, with the killing byte never fed to the matcher. The longest proved core is kept: every window
+     * is_split_window() certifies contains it with at least one byte following, which is what lets the planner narrow
+     * its candidate windows to occurrences of this string. Empty means no core is proved, because no such state exists
+     * or the candidate was refuted by a core-free death word; the planner then keeps its exhaustive walk, and nothing
+     * weakens: the core is an accelerator's licence, never a certificate itself.
      * @return The proved mandatory core, or an empty view.
      */
     [[nodiscard]] std::string_view mandatory_core() const noexcept { return mandatory_core_; }
@@ -258,9 +257,9 @@ public:
         // A 64-bit state spares the dependency chain a zero-extension per byte when indexing the tables.
         std::size_t state{init_state_};
 
-        // The last accepting state seen and the length of input it had consumed, the empty match to begin with where
-        // the set has one. The Token itself is resolved once after the scan, keeping its load off the per-byte
-        // dependency chain.
+        // The last accepting state seen and the length of input it had consumed, the empty match to begin
+        // with where the set has one. The Token itself is resolved once after the scan, keeping its load off
+        // the per-byte dependency chain.
         std::size_t accept_state{empty_state_};
 
         std::size_t accept_consumed{0};

@@ -13,8 +13,8 @@ namespace munch::nfa
 /**
  * @brief Represents a non-deterministic finite automaton (NFA).
  *
- * Provides methods for querying states, transitions, and accept states, as well as advancing the NFA and computing
- * epsilon closures.
+ * Provides methods for querying states, transitions, and accept states, as well as advancing the NFA
+ * and computing epsilon closures.
  */
 class Nfa
 {
@@ -27,8 +27,8 @@ public:
     /**
      * @brief Ordered set of NFA states.
      *
-     * Using std::set ensures deterministic iteration order so state-sets can be safely used as keys during DFA subset
-     * construction.
+     * Using std::set ensures deterministic iteration order so state-sets can be safely used as keys
+     * during DFA subset construction.
      */
     using States_t = std::set<State_t>;
 

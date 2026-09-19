@@ -83,8 +83,8 @@ concept Random_access_byte_iterable = Random_access_iterable<T> && Byte<std::ran
 /**
  * @brief Concept that checks if a type can name a token: an enumeration or an integral type.
  *
- * Every tokenizing entry point takes its token type through this concept, in place of a requires clause repeated
- * at each declaration.
+ * Every tokenizing entry point takes its token type through this concept, in place of a requires clause
+ * repeated at each declaration.
  * @tparam T The type to check.
  */
 template <typename T>

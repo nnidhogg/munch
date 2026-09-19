@@ -19,9 +19,9 @@ struct End_of_input
 /**
  * @brief The outcome of reading one token: a token, the end of the input, or a lexical error.
  *
- * The three outcomes are alternatives of one sum type rather than nested layers, so a caller tells them apart with a
- * single query, or handles them exhaustively with visit(). The constructors convert implicitly, letting each outcome
- * be returned as itself.
+ * The three outcomes are alternatives of one sum type rather than nested layers, so a caller tells them apart with
+ * a single query, or handles them exhaustively with visit(). The constructors convert implicitly, letting each
+ * outcome be returned as itself.
  * @tparam T The token kind type (enum or integral).
  */
 template <typename T>

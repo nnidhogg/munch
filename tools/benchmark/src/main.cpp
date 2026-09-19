@@ -265,9 +265,9 @@ void measure_build(const int passes)
 /**
  * @brief Builds the benchmark lexer with the identifier class drawn from the XID properties.
  *
- * The same grammar as the UTF-8 lexer with the hand-rolled Greek range replaced by the full Unicode identifier
- * definition, so both scenarios tokenize the Greek input to the identical stream and the throughput difference
- * isolates the class size.
+ * The same grammar as the UTF-8 lexer with the hand-rolled Greek range replaced by the full Unicode
+ * identifier definition, so both scenarios tokenize the Greek input to the identical stream and the
+ * throughput difference isolates the class size.
  */
 munch::core::Lexer build_xid_lexer()
 {
@@ -506,9 +506,9 @@ bool measure_planning(const int passes)
 
                 milliseconds.reserve(static_cast<std::size_t>(passes));
 
-                // One counter per chunk, each on its own cache line: a shared counter would be a data race, and an
-                // unpadded array would put the workers' increments on the same line and charge the parallel case for
-                // false sharing.
+                // One counter per chunk, each on its own cache line: a shared counter would be a data race,
+                // and an unpadded array would put the workers' increments on the same line and charge the
+                // parallel case for false sharing.
                 struct alignas(64) Counter
                 {
                     std::size_t value{0};

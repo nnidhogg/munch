@@ -18,8 +18,8 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
         return std::nullopt;
     }
 
-    // The pre-window origin: a hypothesis whose token began before the window. Any value no in-window offset can
-    // take serves as the marker.
+    // The pre-window origin: a hypothesis whose token began before the window. Any value no in-window offset
+    // can take serves as the marker.
     constexpr std::size_t before{std::numeric_limits<std::size_t>::max()};
 
     // The cloud of hypotheses (state, origin). A set, exactly as the proof's model: the seed and the rename can
@@ -52,17 +52,15 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
             {
                 // Reading from the initial state begins a token here, so the origin is this offset rather than
                 // whatever the hypothesis carried in; valid only while nothing re-enters the initial state. A
-                // hypothesis that cannot consume the byte is an impossible history and is dropped, never
-                // restarted.
+                // hypothesis that cannot consume the byte is an impossible history and is dropped, never restarted.
                 const auto begins{state == simulator.init_state() && !simulator.init_reentrant()};
 
                 next.emplace(*to, begins ? at : origin);
             }
         }
 
-        // One fresh hypothesis wherever the automaton had just accepted, the only place a token can begin. The
-        // initial cloud contains an accepting live state whenever the grammar is usable, so no first-byte special
-        // case exists.
+        // One fresh hypothesis wherever the automaton had just accepted, the only place a token can begin. The initial
+        // cloud contains an accepting live state whenever the grammar is usable, so no first-byte special case exists.
         if (accepting)
         {
             if (const auto to{simulator.step(simulator.init_state(), byte)}; to && simulator.is_live(*to))

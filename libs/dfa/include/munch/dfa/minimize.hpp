@@ -8,15 +8,15 @@ namespace munch::dfa
 /**
  * @brief Returns an equivalent DFA with no two states interchangeable under its transition structure.
  *
- * States are merged when no input distinguishes them, using Moore partition refinement: states start out grouped by
- * their accept token, and groups are split until every pair of states in a group agrees, symbol by symbol, on the
- * group of the state it moves to. States accepting different tokens are never merged, so the token reported for any
- * input is unchanged.
+ * States are merged when no input distinguishes them, using Moore partition refinement: states start out
+ * grouped by their accept token, and groups are split until every pair of states in a group agrees, symbol by
+ * symbol, on the group of the state it moves to. States accepting different tokens are never merged, so the
+ * token reported for any input is unchanged.
  *
- * The refinement runs over a partial transition function and treats a missing transition as distinct from one into a
- * state that cannot accept, which is what the scanner needs: the two differ in how far a longest match reads before
- * failing. That is weaker than Myhill-Nerode minimality, under which every state with an empty right language is
- * equivalent.
+ * The refinement runs over a partial transition function and treats a missing transition as distinct from one
+ * into a state that cannot accept, which is what the scanner needs: the two differ in how far a longest match
+ * reads before failing. That is weaker than Myhill-Nerode minimality, under which every state with an empty
+ * right language is equivalent.
  *
  * The result is minimal in the usual sense whenever the input is trim: every state reachable from the initial
  * state, and every state co-accessible, meaning some continuation from it accepts. Neither is checked or repaired

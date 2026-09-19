@@ -34,11 +34,10 @@ struct Certified_window
 /**
  * @brief Why a candidate byte does not certify: a token consumes it mid-token.
  *
- * The byte is a candidate because the initial state consumes it, so it can begin a token; it fails because some
- * live state consumes it too, on the way to the token named here, after the input given, which is a shortest one
- * reaching that state. What is exempt is the entry into the initial state before any input, not the state: where a
- * nonempty input returns to it, the scan stands in it mid-token, and the input given is then a shortest one that
- * returns.
+ * The byte is a candidate because the initial state consumes it, so it can begin a token; it fails because some live
+ * state consumes it too, on the way to the token named here, after the input given, which is a shortest one reaching
+ * that state. What is exempt is the entry into the initial state before any input, not the state: where a nonempty
+ * input returns to it, the scan stands in it mid-token, and the input given is then a shortest one that returns.
  */
 struct Blame
 {
@@ -165,10 +164,10 @@ struct Report
  * @brief Why each candidate byte that does not certify exactly fails: for every byte the start state consumes live,
  *        each token consuming it mid-token, with a shortest input reaching the consuming state.
  *
- * Every token whose match path holds the byte is named, not only the shortest of them: the state a shorter token
- * accepts in is where a longer token's scan stands after the same bytes, so a longer token's accepting state lying
- * beyond a shorter one's makes both consume the byte mid-token, and an author who narrows only the shorter one has
- * not freed the byte.
+ * Every token whose match path holds the byte is named, not only the shortest of them: the state a shorter
+ * token accepts in is where a longer token's scan stands after the same bytes, so a longer token's accepting
+ * state lying beyond a shorter one's makes both consume the byte mid-token, and an author who narrows only the
+ * shorter one has not freed the byte.
  *
  * A re-entrant start state blames itself, after a shortest nonempty input that returns to it: the exemption belongs
  * to the entry before any input, where a byte begins a token, and a start state an input reaches again stands
@@ -223,9 +222,9 @@ struct Report
  * @brief Renders a scanner's options as the report's own row, the one that says what the reading was governed by.
  *
  * The options are the file's: flex's `%option` words, re2c's configurations, the `#[logos]` keys, and what a reader
- * notes of its own, the Unicode version a logos scanner's classes were taken from among them. Several of them change
- * the language a rule matches, `case-insensitive` and `encoding:utf8` among them, so the report names them beside
- * the figures they governed.
+ * notes of its own, the Unicode version a logos scanner's classes were taken from among them. Several of them
+ * change the language a rule matches, `case-insensitive` and `encoding:utf8` among them, so the report names them
+ * beside the figures they governed.
  * @param options The scanner's options, in the order the reader recorded them.
  * @return The row, its newline included; empty when the scanner declared none.
  */

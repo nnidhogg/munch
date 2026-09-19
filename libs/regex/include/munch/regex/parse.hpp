@@ -20,9 +20,9 @@ using Definitions_t = std::map<std::string, std::string, std::less<>>;
 /**
  * @brief A pattern the parser refuses, with the offset it was refused at.
  *
- * Every refusal names what was found and what the syntax admits there, and the offset indexes the pattern as given;
- * for a fault inside a definition the offset is that of the {name} in the pattern that expanded it, and the message
- * names the definition.
+ * Every refusal names what was found and what the syntax admits there, and the offset indexes the pattern as
+ * given; for a fault inside a definition the offset is that of the {name} in the pattern that expanded it, and the
+ * message names the definition.
  */
 class Syntax_error : public std::invalid_argument
 {
@@ -74,18 +74,18 @@ struct Parse_options
  *        expressions, into the same nodes the combinators build.
  *
  * The syntax is the one a flex or re2c rule body is written in, read over bytes as those tools read it: alternation
- * with `|`, grouping with parentheses, the postfix operators `*`, `+`, `?` and the counted `{n}`, `{n,}` and `{n,m}`; a
- * dot for any byte but the newline; bracket expressions with ranges, negation, the POSIX classes such as `[:alpha:]`
- * and their negations such as `[:^alpha:]`, which run over every byte as flex negates them, a `[:` in any other shape
- * being the `[` and the `:` as members, as flex lexes them, and a leading `]` or an edge `-` taken literally; flex's
- * class operators, `[a-z]{-}[aeiou]` for the difference of two brackets and `[a-z]{+}[0-9]` for their union, left
- * associative and binding tighter than the postfix operators; escapes `\n`, `\t`, `\r`, `\f`, `\v`, `\a`, `\b`, octal
- * `\ooo` and hex `\xhh`, and any other escaped byte standing for itself; a double-quoted literal, its escapes decoded;
- * and `{name}` expanding to a definition, itself parsed in the same syntax, definitions nesting but never cycling, the
- * expansion enclosed in parentheses as flex encloses it, so a `^`, `$` or `<` inside a definition is a byte and a
- * postfix operator after the reference repeats the whole expansion. Bytes outside ASCII are literals, so a UTF-8
- * sequence in the pattern is the run of its bytes, and a bracket lists bytes rather than characters, exactly as flex
- * does.
+ * with `|`, grouping with parentheses, the postfix operators `*`, `+`, `?` and the counted `{n}`, `{n,}` and `{n,m}`;
+ * a dot for any byte but the newline; bracket expressions with ranges, negation, the POSIX classes such as
+ * `[:alpha:]` and their negations such as `[:^alpha:]`, which run over every byte as flex negates them, a `[:` in any
+ * other shape being the `[` and the `:` as members, as flex lexes them, and a leading `]` or an edge `-` taken
+ * literally; flex's class operators, `[a-z]{-}[aeiou]` for the difference of two brackets and `[a-z]{+}[0-9]` for
+ * their union, left associative and binding tighter than the postfix operators; escapes `\n`, `\t`, `\r`, `\f`, `\v`,
+ * `\a`, `\b`, octal `\ooo` and hex `\xhh`, and any other escaped byte standing for itself; a double-quoted literal,
+ * its escapes decoded; and `{name}` expanding to a definition, itself parsed in the same syntax, definitions nesting
+ * but never cycling, the expansion enclosed in parentheses as flex encloses it, so a `^`, `$` or `<` inside a
+ * definition is a byte and a postfix operator after the reference repeats the whole expansion. Bytes outside ASCII
+ * are literals, so a UTF-8 sequence in the pattern is the run of its bytes, and a bracket lists bytes rather than
+ * characters, exactly as flex does.
  *
  * One escape flex has not got is here for the readers of character-level generators: `\u{X...}`, one to six hex
  * digits naming a code point, is the UTF-8 encoding of that scalar in a literal or quoted text, and inside a bracket

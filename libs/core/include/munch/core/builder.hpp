@@ -71,11 +71,11 @@ public:
     /**
      * @brief Declares the tokens the caller discards before using the stream.
      *
-     * Only affects Lexer::is_split_point_ignoring(), which certifies split points under the weaker equivalence that
-     * deletes these tokens from both streams before comparing, and only for input the serial scan tokenizes
-     * completely; the relaxed certificate has no malformed-input guarantee at all. The exact certificate is
-     * unaffected, so declaring a set never weakens a guarantee a caller was already relying on; it only makes the
-     * relaxed one available.
+     * Only affects Lexer::is_split_point_ignoring(), which certifies split points under the weaker equivalence
+     * that deletes these tokens from both streams before comparing, and only for input the serial scan
+     * tokenizes completely; the relaxed certificate has no malformed-input guarantee at all. The exact
+     * certificate is unaffected, so declaring a set never weakens a guarantee a caller was already relying on;
+     * it only makes the relaxed one available.
      * @tparam T The token type used with add_token().
      * @param tokens The tokens to treat as discarded.
      */
@@ -100,9 +100,9 @@ public:
      * @brief Attaches a payload to a token, delivered to a three-argument tokenize_all() sink with every consumed
      * token of it in the built Lexer.
      *
-     * A three-argument tokenize_all() sink receives it, which is how Mode_lexer's batch driver reads a token's mode
-     * action without a lookup; its per-token driver looks the action up. It rides the sink rather than tokenize()'s
-     * Match.
+     * A three-argument tokenize_all() sink receives it, which is how Mode_lexer's batch driver reads a
+     * token's mode action without a lookup; its per-token driver looks the action up. It rides the sink
+     * rather than tokenize()'s Match.
      * @tparam T The token type used with add_token().
      * @param token The token to attach the payload to.
      * @param payload The payload to report, zero meaning none.
@@ -125,6 +125,7 @@ public:
      * within the cap times the number of symbol classes times four bytes per entry, one column more for a nullable
      * token set: a set matching the empty string is compiled as its positive-width equivalent, whose fresh start state
      * determinization never discovered and the cap therefore never counted.
+     * @param limit The most states determinization may discover, zero for no cap.
      */
     void set_state_limit(const std::size_t limit) noexcept { state_limit_ = limit; }
 
@@ -137,8 +138,8 @@ public:
     /**
      * @brief Diagnoses the registered grammar; see Diagnostics.
      *
-     * Walks the merged automaton once and leaves the builder untouched, so it can be called before build(), after
-     * it, or not at all.
+     * Walks the merged automaton once and leaves the builder untouched, so it can be called before
+     * build(), after it, or not at all.
      */
     [[nodiscard]] Diagnostics diagnose() const;
 

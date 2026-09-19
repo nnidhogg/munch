@@ -138,9 +138,9 @@ void keyword_scale_grammar(munch::core::Builder& builder)
     }
 }
 
-// The grammar of build_lexer(false) in tools/benchmark/src/harness.cpp, which produces the scaling table. Its operators
-// are also multi-byte literals, but every one of them has '=' as its only continuation byte, so '=' is the only
-// candidate lost.
+// The grammar of build_lexer(false) in tools/benchmark/src/harness.cpp, which produces the scaling table.
+// Its operators are also multi-byte literals, but every one of them has '=' as its only continuation byte,
+// so '=' is the only candidate lost.
 void scaling_grammar(munch::core::Builder& builder)
 {
     builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::Whitespace, 2);

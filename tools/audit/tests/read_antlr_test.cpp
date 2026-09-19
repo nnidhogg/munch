@@ -540,8 +540,8 @@ TEST(Read_antlr, A_range_under_case_insensitivity_folds_by_its_ends_as_ANTLR_fol
     EXPECT_EQ(expression_of("~[b-y]"), R"([\u{0}-\u{41}\u{5a}-\u{61}\u{7a}-\u{7f}\u{80}-\u{10ffff}])");
     EXPECT_EQ(expression_of("~('A'..'t' | 'x')"), R"([\u{0}-\u{40}\u{75}-\u{77}\u{79}-\u{7f}\u{80}-\u{10ffff}])");
 
-    // Built, `[A-t]` cuts "uUa" into a byte for B and two for A, as antlr 4.13.2 does, and so does the rule's own
-    // option.
+    // Built, `[A-t]` cuts "uUa" into a byte for B and two for A, as antlr 4.13.2 does, and
+    // so does the rule's own option.
     constexpr std::string_view mixed{"lexer grammar R;\noptions { caseInsensitive = true; }\nA : [A-t] ;\nB : . ;\n"};
 
     const auto lexer{build(read_antlr(mixed).front(), "INITIAL")};

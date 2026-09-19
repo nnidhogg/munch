@@ -601,10 +601,10 @@ struct Standing
 /**
  * @brief What the `%option` words read so far leave standing of the settings that decide what a rule matches.
  *
- * flex sets every option before it parses a rule, so what governs the file is what the last word naming a setting
- * left standing: `%option caseless` and then `%option nocaseless` scans case-sensitively. Each `no` before a name
- * flips the setting's sense, and the case setting has off-spellings of its own, `caseful` and `case-sensitive`,
- * which a `no` turns back on.
+ * flex sets every option before it parses a rule, so what governs the file is what the last word naming a
+ * setting left standing: `%option caseless` and then `%option nocaseless` scans case-sensitively. Each `no`
+ * before a name flips the setting's sense, and the case setting has off-spellings of its own, `caseful` and
+ * `case-sensitive`, which a `no` turns back on.
  */
 
 /**
@@ -1299,9 +1299,8 @@ void read_definitions(Lines& lines, Lexer_spec& file, Settings& settings, Macros
  * a rule's action there in the literal's state and never closes the code it emits for it, so that the m4 it runs stops
  * with an end of file in string, which is refused by name, while a scope's opener or close line, whose code flex
  * copies out as no rule's action, ends there like any other line. There is no state for a `//` comment, so a brace
- * after one on the line counts and a quote there opens a literal. An action opening with `%{` is a code block
- * instead, read in a state of its own with no comments or literals, which runs to the end of the first line holding
- * `%}`.
+ * after one on the line counts and a quote there opens a literal. An action opening with `%{` is a code block instead,
+ * read in a state of its own with no comments or literals, which runs to the end of the first line holding `%}`.
  * @param code The stretch of C the action opens, from its first byte to the end of the file.
  * @param number The line the action begins on, for the refusals.
  * @param rule Whether the code is a rule's action rather than the code on a scope's opener or close line.
@@ -1599,9 +1598,9 @@ struct Scope
 
     std::vector<Scope> opened;
 
-    // The section opens with a prologue, where an indented line is code flex copies into the scanner ahead of the
-    // rules, which ends at the first line at the margin; from then on flex reads an indented line as a rule, in a
-    // scope or out of one.
+    // The section opens with a prologue, where an indented line is code flex copies into the scanner ahead of
+    // the rules, which ends at the first line at the margin; from then on flex reads an indented line as a
+    // rule, in a scope or out of one.
     auto prologue{true};
 
     while (lines.more())

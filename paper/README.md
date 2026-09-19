@@ -23,9 +23,8 @@ evidence-returning form that lets a caller judge whether a certified boundary tr
 corruption study measuring recovery quality beside the classical skip-one and delimiter conventions. The procedure ships
 in the library as `Lexer::next_certified_evidence()` and the tokenizer's `recover()` family.
 
-The markdown reports are the accessible form, linked from the README and kept next to the implementation they
-describe; they carry the same claims but not every formal qualification, so where the two differ this directory is
-authoritative.
+The markdown reports are the accessible form, linked from the README and kept next to the implementation they describe;
+they carry the same claims but not every formal qualification, so where the two differ this directory is authoritative.
 
 ## Building
 
@@ -84,14 +83,14 @@ of the same two placements at an earlier commit, kept because the paper reports 
 bare-metal trees are preserved by the `benchmark/split-points-2026-08-run1` and `benchmark/split-points-2026-08` tags;
 `benchmark/split-points-2026-07` preserves the Intel run's code-identical archival tree, as described below.
 
-`data/benchmark.txt` is the earlier virtualized run, retained because the paper draws a result from the contrast between
-the two environments. It holds the best, median, and worst of each scenario rather than the individual observations,
-with the measured checkout, machine, compiler, and command recorded in its header. The header's `tree` is the checkout
-whose benchmark produced these rows: it has the one-chunk baseline the evaluation reports and predates the interleaved
-harness. The `benchmark/split-points-2026-07` tag points at its direct child `c0e2fb6`, which changes only paper and
-documentation files, so the tagged tree builds the identical program. The paper quotes that file rather than the table
-in `docs/benchmarks.md`, so ordinary benchmark refreshes cannot silently change what the paper claims. Reproduce it
-with:
+`data/benchmark.txt` is the earlier virtualized run, retained because the paper draws a result from the contrast
+between the two environments. It holds the best, median, and worst of each scenario rather than the individual
+observations, with the measured checkout, machine, compiler, and command recorded in its header. The header's `tree`
+is the checkout whose benchmark produced these rows: it has the one-chunk baseline the evaluation reports and
+predates the interleaved harness. The `benchmark/split-points-2026-07` tag points at its direct child `c0e2fb6`,
+which changes only paper and documentation files, so the tagged tree builds the identical program. The paper quotes
+that file rather than the table in `docs/benchmarks.md`, so ordinary benchmark refreshes cannot silently change what
+the paper claims. Reproduce it with:
 
 ```
 git worktree add /tmp/munch-paper 1aca0cd13837cd40ab90a32222012eabdfc6018b

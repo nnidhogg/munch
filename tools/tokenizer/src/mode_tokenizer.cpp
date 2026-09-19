@@ -72,8 +72,8 @@ void Mode_tokenizer::seek(const std::size_t offset) noexcept
 std::optional<std::size_t> Mode_tokenizer::recover()
 {
     // The search starts past the current position: after an error that position is the failure offset, the scan's
-    // final committed offset where the failed token attempt began, and recovering to where the scan already stands
-    // would not be a recovery.
+    // final committed offset where the failed token attempt began, and recovering to where the scan already
+    // stands would not be a recovery.
     const auto before{offset_};
 
     const auto found{recover_from_failure()};

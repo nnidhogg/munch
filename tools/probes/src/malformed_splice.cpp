@@ -1,7 +1,6 @@
-// Pins the malformed-input caveat of the window planner: full per-chunk consumption does not imply the
-// serial scan succeeds, so window plans require the completely-tokenizable precondition or downstream
-// validation. The recovery report's motivation quotes a measurement of this hazard, and this probe is the
-// program behind it.
+// Pins the malformed-input caveat of the window planner: full per-chunk consumption does not imply the serial scan
+// succeeds, so window plans require the completely-tokenizable precondition or downstream validation. The recovery
+// report's motivation quotes a measurement of this hazard, and this probe is the program behind it.
 //
 // The hazard. chunk_boundaries_with_windows() documents that on malformed input a window cut can land inside
 // a token of the serial scan's doomed suffix, and the concatenated chunk streams then contain tokens the
@@ -11,12 +10,11 @@
 // a failure needs an explicit restart contract, which is what certified recovery supplies; this probe
 // measures what ignoring the flags costs.
 //
-// What runs as a test. A deterministic generated corpus is broken by one unconsumable byte near its front,
-// so the serial scan stops there. The window plan still recovers all eight chunks; the chunk holding the
-// damage reports short consumption, which a caller checking per-chunk counts would catch, while the other
-// seven consume fully and silently, and the spliced token count dwarfs the serial one. The probe asserts
-// exactly that shape with both counts pinned; the caveat is thereby a checked behavior rather than a
-// documentation sentence.
+// What runs as a test. A deterministic generated corpus is broken by one unconsumable byte near its front, so the
+// serial scan stops there. The window plan still recovers all eight chunks; the chunk holding the damage reports short
+// consumption, which a caller checking per-chunk counts would catch, while the other seven consume fully and silently,
+// and the spliced token count dwarfs the serial one. The probe asserts exactly that shape with both counts pinned; the
+// caveat is thereby a checked behavior rather than a documentation sentence.
 //
 // Campaign mode. With a directory argument the probe concatenates the given extension's files in sorted
 // order, applies the consumption-complete C row (deliberately mismatched to languages whose strings span
@@ -217,8 +215,8 @@ int main(const int argc, const char** argv)
         return 0;
     }
 
-    // The pinned self-test: one unconsumable byte near the front, the serial scan stops, the spliced chunks
-    // do not notice.
+    // The pinned self-test: one unconsumable byte near the front, the serial scan stops, the
+    // spliced chunks do not notice.
     auto corpus{generated_c(256 * 1024)};
 
     // The damaged byte must sit at top level, not inside a comment or string interior, which absorb control

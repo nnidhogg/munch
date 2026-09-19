@@ -146,8 +146,8 @@ std::vector<std::pair<std::size_t, std::string>> crossing_entries(const Simulato
 /**
  * @brief Finds the first in-tail token boundary of one crossing scenario.
  *
- * The maximal run from the entry over the whole tail; its last accept is the boundary, zero when the entry
- * itself accepts.
+ * The maximal run from the entry over the whole tail; its last accept is the boundary, zero
+ * when the entry itself accepts.
  * @param simulator The compiled token set.
  * @param tail The tail being walked.
  * @param entry The state the scan crosses into the tail in.

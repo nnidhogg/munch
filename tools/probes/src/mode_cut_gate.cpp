@@ -87,8 +87,7 @@ constexpr std::size_t kStartableInEveryMode{79};
  * Content is matched one byte at a time rather than as a run, and escapes name their permitted characters instead of
  * admitting any byte. Both choices matter: an earlier formulation using run tokens and an over-general escape rule
  * reported zero bytes at condition 1, which was an artifact, since a run token de-certifies its own bytes. This
- * formulation is the one most favourable to finding a safe cut, so a negative result here is not a modelling
- * accident.
+ * formulation is the one most favourable to finding a safe cut, so a negative result here is not a modelling accident.
  */
 Mode_lexer build()
 {

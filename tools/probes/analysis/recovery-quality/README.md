@@ -5,8 +5,7 @@ archive (`tools/probes/src/recovery_quality.cpp`, pinned per campaign revision i
 travel with the archive).
 
 - `analyze_r6.py` audits the revision-six archive fail-closed and emits the figures the accompanying
-  paper quotes: the stats ledger, the pooled table body taken up verbatim, and the landing-figure
-  coordinates.
+paper quotes: the stats ledger, the pooled table body taken up verbatim, and the landing-figure coordinates.
 - `analyze_r6_mechanism.py` emits the coverage-mechanism figures: the overhang law with the travel
   premise it rests on checked per row, its binned rates, the certificate-shape split, per-operation and
   per-size coverage, the uncovered geometry, and the bare row's within-row decomposition, and writes the

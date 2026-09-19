@@ -29,9 +29,9 @@ its `configure.log` and `build.log` were not archived, and `topology.txt` is not
 | `bare-metal-pinned-run2`   | `taskset -c 0-7`, one L3 domain | `141b12e` |
 | `bare-metal-unpinned-run2` | all 32 logical processors       | `141b12e` |
 
-The placement column is author-recorded rather than artifact-certified: each `environment.txt` proves only `nproc: 8`
-from inside the mask, `topology.txt` describes the whole machine, and neither the affinity mask nor the launch command
-was captured.
+The placement column is author-recorded rather than artifact-certified: each `environment.txt` proves only
+`nproc: 8` from inside the mask, `topology.txt` describes the whole machine, and neither the affinity mask nor
+the launch command was captured.
 
 The paper's tables report run 2, which was taken at the later commit, records observations at round-trip precision, and
 carries the plan-and-execute scenario that run 1 predates. Run 1 is retained as a measurement of the same machine and
@@ -98,13 +98,13 @@ still says which tree produced it.
 
 Kept because `docs/usage.md` quotes its ratios and its per-token comparison. That comparison is a property of this
 archive and not of the library. Three archives are reachable from the current history, each recording in its own
-`summary.txt` the tree it measured: the one carried by commit `0e83ce6`, the one carried by `00aa889`, and this one,
-measured at `00aa889`. The two trees those earlier archives measured were rewritten when the history was squashed, which
-is why the archives are identified here by the commit that carries them. Their per-token figures disagree in sign: 4.9
-and 6.4 percent more per token for the modal grammar in the first, 6.6 and 6.4 percent less in the second, 4.0 and 2.9
-percent more here. Over all six run medians the flat row spans 754.5 to 865.0 MiB/s, about 15 percent, and the modal
-rows 725.8 to 750.1, about 3 percent, so the flat measurement is what moves and no per-token figure survives across
-generations.
+`summary.txt` the tree it measured: the one carried by commit `0e83ce6`, the one carried by `00aa889`, and this
+one, measured at `00aa889`. The two trees those earlier archives measured were rewritten when the history was
+squashed, which is why the archives are identified here by the commit that carries them. Their per-token figures
+disagree in sign: 4.9 and 6.4 percent more per token for the modal grammar in the first, 6.6 and 6.4 percent less
+in the second, 4.0 and 2.9 percent more here. Over all six run medians the flat row spans 754.5 to 865.0 MiB/s,
+about 15 percent, and the modal rows 725.8 to 750.1, about 3 percent, so the flat measurement is what moves and no
+per-token figure survives across generations.
 
 `observations.csv` holds every timed pass of the five scenarios behind the two mode tables, which are the rows
 `docs/usage.md` quotes. The other engine rows in `summary.txt` are summaries only.

@@ -17,11 +17,10 @@
 // generators cover the corpus, the damage positions, and the damage payloads, so every run of this program
 // performs the identical experiment.
 //
-// Ground truth. The token boundaries of the damaged input's own segmentation past the seam are unknowable without
-// a repair oracle, so the study uses the seed note's definition: ground truth is the boundary set B of the
-// pristine corpus, mapped into damaged coordinates. Each operation leaves a suffix of x intact, y[end..] equals
-// x[c..] for the corruption end named below, and boundaries inside the damaged window have no image and are
-// dropped:
+// Ground truth. The token boundaries of the damaged input's own segmentation past the seam are unknowable without a
+// repair oracle, so the study uses the seed note's definition: ground truth is the boundary set B of the pristine
+// corpus, mapped into damaged coordinates. Each operation leaves a suffix of x intact, y[end..] equals x[c..] for the
+// corruption end named below, and boundaries inside the damaged window have no image and are dropped:
 //
 //   substitute: y agrees with x outside [p, p+k); end = p + k, images shift by 0.
 //   delete:     y[p..] equals x[p+k..);       end = p,     images past the cut shift by -k.
@@ -978,9 +977,8 @@ Incident run_incident(
     {
         const auto start{arm.clean ? std::max(clean_floor, fail + 1) : fail + 1};
 
-        // An exhausted search start ends the incident as completed, a driver convention for scoring; the
-        // library primitives refuse at end of input instead. No certified arm reached this branch in the
-        // archived campaigns.
+        // An exhausted search start ends the incident as completed, a driver convention for scoring; the library
+        // primitives refuse at end of input instead. No certified arm reached this branch in the archived campaigns.
         if (start >= input.size())
         {
             incident.terminal = input.size();
@@ -1167,8 +1165,8 @@ Convergence converge(
 
     Convergence result{};
 
-    // Full agreement down to the floor on both sides converges at the floor; no common suffix converges
-    // only at the end of input.
+    // Full agreement down to the floor on both sides converges at the floor; no common suffix
+    // converges only at the end of input.
     const auto exhausted_pristine{[&] {
         while (j >= 0)
         {
@@ -1218,8 +1216,7 @@ Convergence converge(
         }
     }
 
-    // The empty-region regression: convergence at the corruption end leaves no room
-    // for either count.
+    // The empty-region regression: convergence at the corruption end leaves no room for either count.
     if (result.at <= y.end && (result.lost != 0 || result.spurious != 0))
     {
         std::fprintf(stderr, "CONVERGENCE REGION VIOLATION\n");
@@ -1680,9 +1677,8 @@ int main(const int argc, const char** argv)
                         {
                             ++repairable_total;
 
-                            // The witness is executed, not trusted: the returned repair prepended to the
-                            // tail must scan to the end of input, turning the repairable label into a
-                            // per-trial fact.
+                            // The witness is executed, not trusted: the returned repair prepended to the tail must
+                            // scan to the end of input, turning the repairable label into a per-trial fact.
                             const auto witness{*repair + std::string{tail}};
 
                             if (failure_offset(row.lexer, witness) != witness.size())
@@ -1923,11 +1919,10 @@ int main(const int argc, const char** argv)
                             {
                                 ++exact_pairs;
 
-                                // Nonnegative by the order assertion on repairable trials, and measured
-                                // against the decider's direct answer at the blind anchor, never the
-                                // advancing procedure; on unrepairable trials the advanced anchor can land
-                                // past the walk's vacuous answer, so the net crosses zero and is kept
-                                // signed.
+                                // Nonnegative by the order assertion on repairable trials, and measured against the
+                                // decider's direct answer at the blind anchor, never the advancing procedure; on
+                                // unrepairable trials the advanced anchor can land past the walk's vacuous answer, so
+                                // the net crosses zero and is kept signed.
                                 if (repair && direct_at)
                                 {
                                     exact_saved_bytes += *incidents[0].first - *direct_at;
@@ -1938,9 +1933,8 @@ int main(const int argc, const char** argv)
                             }
                         }
 
-                        // The exact clean arm's answers must land: the pristine prefix is a repair of what
-                        // precedes the preserved suffix, so an anchored-invariant position lies on a mapped
-                        // pristine boundary.
+                        // The exact clean arm's answers must land: the pristine prefix is a repair of what precedes
+                        // the preserved suffix, so an anchored-invariant position lies on a mapped pristine boundary.
                         if (incidents[3].first && *incidents[3].first < y.input.size() &&
                             !landed(row.begins, y, *incidents[3].first))
                         {

@@ -42,6 +42,7 @@ core::Lexer build_lexer(bool greek_identifiers);
  *
  * Shared between the construction-cost benchmark and the applicability figure, so the published row is asserted
  * against the grammar the benchmark compiles rather than against a transcription verified by eye.
+ * @param builder The builder the tokens are added to.
  */
 void keyword_scale_tokens(core::Builder& builder);
 
@@ -159,6 +160,12 @@ bool measure(const char* name, const std::size_t bytes, const int passes, Pass&&
 
 /**
  * @brief Measures a pass whose result is its own token count.
+ * @tparam Pass Callable running one pass and returning its token count.
+ * @param name The scenario name to report.
+ * @param bytes The input size the pass consumes.
+ * @param passes The number of timed passes.
+ * @param pass The pass to measure.
+ * @return True if every pass tokenized the input completely and consistently.
  */
 template <typename Pass>
 bool measure(const char* name, const std::size_t bytes, const int passes, Pass&& pass)
@@ -171,8 +178,19 @@ bool measure(const char* name, const std::size_t bytes, const int passes, Pass&&
  */
 struct Scenario
 {
+    /**
+     * @brief The scenario name to report.
+     */
     const char* name;
+
+    /**
+     * @brief The input size the pass consumes.
+     */
     std::size_t bytes;
+
+    /**
+     * @brief One pass, returning its token count.
+     */
     std::function<std::size_t()> pass;
 };
 

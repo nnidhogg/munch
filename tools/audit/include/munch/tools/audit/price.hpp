@@ -185,10 +185,10 @@ struct Pricing
      * @brief The edits in the order they were made, each with the certificate after it; empty when nothing had to
      *        change.
      *
-     * After each step the consumers are read again from the recompiled table and the first not yet answered, in rule
-     * order, the order the set lists them, which for a set read from a file is the file's and not the order of the ids,
-     * is narrowed next; a token an earlier edit exposed is taken as soon as it is first in that order, and no token is
-     * answered twice.
+     * After each step the consumers are read again from the recompiled table and the first not yet answered, in
+     * rule order, the order the set lists them, which for a set read from a file is the file's and not the order
+     * of the ids, is narrowed next; a token an earlier edit exposed is taken as soon as it is first in that order,
+     * and no token is answered twice.
      */
     std::vector<Price_step> steps;
 

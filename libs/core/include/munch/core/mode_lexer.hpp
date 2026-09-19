@@ -150,6 +150,12 @@ public:
      * the diagnosis: an unterminated string and an unrecognized byte in code both stop, and only the mode
      * distinguishes them. The stack is left exactly as the scan left it, so `stack.current` names the mode and
      * `stack.saved.size()` the depth.
+     * @tparam T The token type (enum or integral).
+     * @tparam Iterator Random access iterator type.
+     * @tparam Sink Callable receiving each consumed token, its length and its mode.
+     * @param begin Iterator to the beginning of the input.
+     * @param end Iterator to the end of the input.
+     * @param sink Invoked as sink(token, length, mode) for every consumed token, in input order.
      * @param stack Receives the mode and saved frames at the stopping point; its incoming value starts the scan.
      * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved
      *         frame that is not.
@@ -231,6 +237,12 @@ public:
 
     /**
      * @brief Tokenizes a container, driving its own mode stack.
+     * @tparam T The token type (enum or integral).
+     * @tparam Container The input container type (must offer random access).
+     * @tparam Sink Callable receiving each consumed token, its length and its mode.
+     * @param container The input container.
+     * @param sink As for the iterator form above.
+     * @return As for the iterator form above.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container, typename Sink>
         requires std::invocable<Sink&, T, std::size_t, std::size_t>
@@ -241,6 +253,13 @@ public:
 
     /**
      * @brief Tokenizes a container, reporting the mode and nesting depth the scan ended in.
+     * @tparam T The token type (enum or integral).
+     * @tparam Container The input container type (must offer random access).
+     * @tparam Sink Callable receiving each consumed token, its length and its mode.
+     * @param container The input container.
+     * @param sink As for the iterator form above.
+     * @param stack As for the iterator form above.
+     * @return As for the iterator form above.
      * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved
      *         frame that is not.
      */
@@ -318,6 +337,9 @@ private:
      *
      * Only the per-token entry point needs it; the batch driver reads each action from the matched token's payload.
      * Defined out of line to keep its loop out of callers that inline aggressively.
+     * @param mode The mode the token was matched in.
+     * @param token The token matched.
+     * @return The action, a stay unless one was registered.
      */
     [[nodiscard]] Mode_action action_of(std::size_t mode, std::size_t token) const noexcept;
 

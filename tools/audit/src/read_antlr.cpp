@@ -908,14 +908,13 @@ constexpr char32_t last_surrogate{0xDFFF};
  * @brief Adds a range of characters, a set's member or span or a `'a'..'z'`, to an alphabet, folded as ANTLR folds
  *        a range under `caseInsensitive`.
  *
- * ANTLR folds each range by its two ends alone (LexerATNFactory.checkRangeAndAddToSet over
- * RangeBorderCharactersData): where neither end changes case or the ends differ in case, one being a letter of the
- * other case or no letter, or the copies of the ends in lower and in upper case are not one width apart, the range
- * stands as written; otherwise the copy in lower case and the copy in upper case are both added. So `[a-z]` and `'q'`
- * gain `A-Z` and `Q`, while `[A-t]`, `[0-Z]` and `[a-]` admit exactly what they spell, the letters inside them
- * folded no further, which ANTLR's warning 185 remarks on for the first two; the set is not closed under case.
- * Beyond ASCII, where ANTLR's case mappings are Unicode's, the range is added as written, the caller refusing such
- * a range under the option.
+ * ANTLR folds each range by its two ends alone (LexerATNFactory.checkRangeAndAddToSet over RangeBorderCharactersData):
+ * where neither end changes case or the ends differ in case, one being a letter of the other case or no letter, or the
+ * copies of the ends in lower and in upper case are not one width apart, the range stands as written; otherwise the
+ * copy in lower case and the copy in upper case are both added. So `[a-z]` and `'q'` gain `A-Z` and `Q`, while
+ * `[A-t]`, `[0-Z]` and `[a-]` admit exactly what they spell, the letters inside them folded no further, which ANTLR's
+ * warning 185 remarks on for the first two; the set is not closed under case. Beyond ASCII, where ANTLR's case
+ * mappings are Unicode's, the range is added as written, the caller refusing such a range under the option.
  * @param alphabet The alphabet, widened on return.
  * @param first The first character.
  * @param last The last, no lower than the first.
@@ -1281,11 +1280,11 @@ constexpr std::string_view surprise{"syntax error: ')' came as a complete surpri
  *        the first point the terminator can follow, so its body holds no occurrence of the terminator and does not
  *        end where the terminator would complete one, ANTLR's fewest characters that still let the rest match.
  *
- * Built as the automaton that tracks the longest prefix of the terminator ending at the byte just read, the steps
- * that would reach the whole terminator dropped, and then written out by eliminating its states one by one. A state
- * the terminator overlaps into an earlier occurrence is no end of the body, which is what keeps `.*? 'aa'` from
- * matching `aaa`. The terminator is ASCII, so a scalar beyond ASCII never extends a prefix and takes every state
- * back to the start.
+ * Built as the automaton that tracks the longest prefix of the terminator ending at the byte just read, the
+ * steps that would reach the whole terminator dropped, and then written out by eliminating its states one by
+ * one. A state the terminator overlaps into an earlier occurrence is no end of the body, which is what keeps
+ * `.*? 'aa'` from matching `aaa`. The terminator is ASCII, so a scalar beyond ASCII never extends a prefix and
+ * takes every state back to the start.
  * @param terminator The terminator's bytes, at least one and every one ASCII.
  * @param alphabet What the loop admits.
  * @return The expression, grouped.
@@ -2922,8 +2921,7 @@ void Grammar::lexer_rule(Lexer_spec& spec, const std::string& mode, const bool c
     const auto typed{aliased || tokens_.contains(name)};
 
     // The whole rule is what a reference to it expands to, and it matches the empty string when one of its
-    // alternatives does, which is what a closure over a reference to it needs; an empty alternative makes it
-    // optional.
+    // alternatives does, which is what a closure over a reference to it needs; an empty alternative makes it optional.
     std::string whole;
 
     auto filled{0UZ};

@@ -328,11 +328,10 @@ struct Consumed
  * @brief The tokens reachable from each state: those the accepting states reachable from it accept, which are the
  *        tokens a match path through it can still be on its way to.
  *
- * Every reachable accepting state counts, not the nearest one, because an accepting state lies on the way to
- * longer tokens' accepting states: with the rules a[\nx] and a[\nx]b, the state accepting the shorter one is
- * where the scan of the longer one stands after the same bytes, so both tokens consume those bytes mid-token.
- * Once per state rather than once per state and byte, since the blame asks the same question of a state for
- * every byte that reaches it.
+ * Every reachable accepting state counts, not the nearest one, because an accepting state lies on the way to longer
+ * tokens' accepting states: with the rules a[\nx] and a[\nx]b, the state accepting the shorter one is where the scan
+ * of the longer one stands after the same bytes, so both tokens consume those bytes mid-token. Once per state rather
+ * than once per state and byte, since the blame asks the same question of a state for every byte that reaches it.
  * @param simulator The tables.
  * @return The token ids per state, ascending, empty for a state no accepting state is reachable from.
  */
@@ -1111,9 +1110,9 @@ std::string render(const Report& report, const std::function<std::string(std::si
                     offered ? "its shape offers an edit below" : "the byte cannot certify while it stays");
         }
 
-        // The tokens the narrowing is not applied to and has no verdict about: some word of the token holds the byte
-        // fixed only where a token may begin with it, so the impossibility above would be a claim the procedure has
-        // not earned.
+        // The tokens the narrowing is not applied to and has no verdict about: some word of the token holds
+        // the byte fixed only where a token may begin with it, so the impossibility above would be a claim
+        // the procedure has not earned.
         for (const auto token : undecided)
         {
             out += std::format(

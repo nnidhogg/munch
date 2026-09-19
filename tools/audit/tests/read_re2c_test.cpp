@@ -210,8 +210,8 @@ TEST(Read_re2c, A_second_default_rule_for_a_condition_is_refused_and_a_used_one_
             "/*!rules:re2c:base\n<a, b> * { return 1; }\n*/\n"
             "/*!re2c\n<a> * { return 2; }\n!use:base;\n<a> \"x\" { return 3; }\n<b> \"x\" { return 4; }\n*/\n")};
 
-    // The default rules stand last in the order they were read, the block's own `<a> *` and then the used one, left
-    // with b alone.
+    // The default rules stand last in the order they were read, the block's own `<a> *` and then the
+    // used one, left with b alone.
     ASSERT_EQ(conditions.size(), 1u);
     ASSERT_EQ(conditions.front().rules.size(), 4u);
     EXPECT_EQ(conditions.front().rules[2].conditions, (std::vector<std::string>{"a"}));
@@ -604,9 +604,9 @@ TEST(Read_re2c, A_flex_style_definition_stands_wherever_its_name_does_and_admits
 
     constexpr Re2c_flags flex{.flex_syntax = true};
 
-    // re2c 3.1 -F reads a name followed by a blank as a definition wherever the name stands, indented or after a rule
-    // on the same line: it scans, under the first block, the byte E9 as 1 and a as 2, and under the second a as 3, b
-    // as 1 and c as 4.
+    // re2c 3.1 -F reads a name followed by a blank as a definition wherever the name stands, indented or after
+    // a rule on the same line: it scans, under the first block, the byte E9 as 1 and a as 2, and under the
+    // second a as 3, b as 1 and c as 4.
     const auto indented{
             read_re2c("/*!re2c\n    accent [\\xe9]\n    {accent} { return 1; }\n    * { return 2; }\n*/\n", flex)};
 
@@ -778,8 +778,8 @@ bool ReadNumber() {
 }
 )"};
 
-    // The local block reads the definitions so far and passes none of its own on, so the last block's `digits` is a
-    // bare name, no definition.
+    // The local block reads the definitions so far and passes none of its own on, so the last block's `digits`
+    // is a bare name, no definition.
     const auto scanners{read_re2c(source)};
 
     ASSERT_EQ(scanners.size(), 3u);
@@ -1364,8 +1364,8 @@ TEST(Read_re2c, A_definition_another_block_uses_is_translated_again_under_that_b
     EXPECT_EQ(turned_off.front().definitions.at("point"), R"([\x00-\xff])");
     EXPECT_EQ(build(turned_off.front(), "INITIAL").tokenize<std::size_t>(std::string{"\xc3\xa9"}).length, 1u);
 
-    // A flex-style definition is read again under the flex syntax its own line is the evidence of, its regex
-    // ending where its line does.
+    // A flex-style definition is read again under the flex syntax its own line is the evidence of, its
+    // regex ending where its line does.
     const auto flex{read_re2c("/*!re2c\nDIGIT [0-9]\n*/\n/*!re2c\n{DIGIT}+ { return N; }\n*/\n")};
 
     ASSERT_EQ(flex.size(), 1u);

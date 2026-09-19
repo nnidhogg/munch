@@ -1141,15 +1141,14 @@ struct Verdict
     bool bounded{};
 };
 
-// The subset decider under the bare-state dynamics the zero-lag lemma licenses: members advance through
-// live transitions, a dying accepting member restarts at the current byte through the initial state, a
-// dying non-accepting member is an eliminated hypothesis. The quantities are state-granular: a direct
-// arrival and a restart arrival at the same state merge although their current tokens began at different
-// places, so sustained width and floors are lower bounds on origin-distinguished readings. The licence
-// direction is unaffected, a floor of two or more is a real wall, while a smaller floor does not conclude
-// the absence of an origin-level wall. Sustained width is the largest subset on a cycle, the floor of a
-// node is the least width its forward closure reaches, and the wall floor is the largest floor any
-// reachable node carries.
+// The subset decider under the bare-state dynamics the zero-lag lemma licenses: members advance through live
+// transitions, a dying accepting member restarts at the current byte through the initial state, a dying non-accepting
+// member is an eliminated hypothesis. The quantities are state-granular: a direct arrival and a restart arrival at the
+// same state merge although their current tokens began at different places, so sustained width and floors are lower
+// bounds on origin-distinguished readings. The licence direction is unaffected, a floor of two or more is a real wall,
+// while a smaller floor does not conclude the absence of an origin-level wall. Sustained width is the largest subset
+// on a cycle, the floor of a node is the least width its forward closure reaches, and the wall floor is the largest
+// floor any reachable node carries.
 Verdict decide(const Table& table)
 {
     std::vector<std::size_t> start;
@@ -2700,10 +2699,9 @@ int main()
     }
 
     {
-        // Both caps sit exactly at their thresholds from the admitted side: five rotating bare phases
-        // beside a string interior make six kernel subsets of width two, and a six-member rotation makes
-        // one subset of width six; both must synthesize, so a cap tightened to refuse its own boundary
-        // fails these rows.
+        // Both caps sit exactly at their thresholds from the admitted side: five rotating bare phases beside a string
+        // interior make six kernel subsets of width two, and a six-member rotation makes one subset of width six; both
+        // must synthesize, so a cap tightened to refuse its own boundary fails these rows.
         Table phases;
 
         phases.states = 8;
@@ -2908,10 +2906,9 @@ int main()
     }
 
     {
-        // The factorial's own lower bound: five width-four blocks put the true assignment count at
-        // twenty-four to the fourth, refused, while a factorial started one term late counts twelve to
-        // the fourth and admits the search, which then synthesizes the consistent shift labeling and
-        // fails this row.
+        // The factorial's own lower bound: five width-four blocks put the true assignment count at twenty-four to the
+        // fourth, refused, while a factorial started one term late counts twelve to the fourth and admits the search,
+        // which then synthesizes the consistent shift labeling and fails this row.
         Table quads;
 
         quads.states = 21;
@@ -3003,10 +3000,9 @@ int main()
     }
 
     {
-        // The decider's own threshold, distinguished from the synthesizer's: eight killable states give
-        // at least two hundred fifty-six subsets, past the decider's bound and far under the
-        // synthesizer's, so a decider bound restored to the larger constant completes unbounded and
-        // fails this row.
+        // The decider's own threshold, distinguished from the synthesizer's: eight killable states give at least two
+        // hundred fifty-six subsets, past the decider's bound and far under the synthesizer's, so a decider bound
+        // restored to the larger constant completes unbounded and fails this row.
         Table small_powerset;
 
         small_powerset.states = 10;

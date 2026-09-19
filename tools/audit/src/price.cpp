@@ -484,8 +484,8 @@ namespace
 /**
  * @brief Whether a sequence opens with a fixed word the byte is not in, followed by a body it is in.
  *
- * The opener is read by what it matches, as the terminator is, so `[x][ab]*` and `x{1}[ab]*` are delimited as
- * `"x"[ab]*` is.
+ * The opener is read by what it matches, as the terminator is, so `[x][ab]*` and `x{1}[ab]*`
+ * are delimited as `"x"[ab]*` is.
  * @param regex The pattern.
  * @param byte The byte.
  * @return True when it does.

@@ -43,11 +43,10 @@ Simulator::Simulator(
         const Dfa& source, const std::span<const std::size_t> ignored,
         const std::span<const std::pair<std::size_t, std::uint64_t>> payloads)
 {
-    // One table column per state the definition spans. A hand-built DFA may number states sparsely, up to a
-    // highest identifier no count holds, which the DFA reports as a count of zero: neither that nor a count
-    // reaching the entry width's sentinel can index a table. The definition is refused as given, before it is
-    // unrolled: unroll_start() enters the automaton through the count, which is one of the DFA's own states where
-    // the count is the wrap.
+    // One table column per state the definition spans. A hand-built DFA may number states sparsely, up to a highest
+    // identifier no count holds, which the DFA reports as a count of zero: neither that nor a count reaching the entry
+    // width's sentinel can index a table. The definition is refused as given, before it is unrolled: unroll_start()
+    // enters the automaton through the count, which is one of the DFA's own states where the count is the wrap.
     const auto indexable{[](const std::size_t states) {
         if (states == 0 || states >= no_state_)
         {
@@ -133,9 +132,9 @@ Simulator::Simulator(
     // not be allowed to de-certify anything. Mark the states from which acceptance is still reachable.
     std::vector<std::vector<Entry_t>> predecessors(states);
 
-    // Once per class row, not once per symbol value. The table is compressed by symbol equivalence class, so walking
-    // all 256 values would push the same edge once per symbol sharing a class and leave the index larger than the
-    // table it indexes.
+    // Once per class row, not once per symbol value. The table is compressed by symbol equivalence class, so
+    // walking all 256 values would push the same edge once per symbol sharing a class and leave the index
+    // larger than the table it indexes.
     const std::set<std::size_t> rows{row_offsets_.begin(), row_offsets_.end()};
 
     for (const auto row : rows)
@@ -376,13 +375,12 @@ void Simulator::derive_split_points_ignoring(
     }
 }
 
-// The planner's accelerator licence. A live state alive on every byte survives any window that lacks its
-// forced exit, so a window certifying at all must carry that exit: the derivation proposes each such state's
-// shortest exit and keeps the longest one that survives the proof, which exhausts core-avoiding death words
-// over the live tables and refutes the candidate on the first one found. The matcher reads only the live
-// prefix; the killing byte is never fed to it, since a core completing on the killing byte is too late.
-// Refusal leaves the core empty and the planner exhaustive: the core is an accelerator's licence, never a
-// certificate.
+// The planner's accelerator licence. A live state alive on every byte survives any window that lacks its forced exit,
+// so a window certifying at all must carry that exit: the derivation proposes each such state's shortest exit and
+// keeps the longest one that survives the proof, which exhausts core-avoiding death words over the live tables and
+// refutes the candidate on the first one found. The matcher reads only the live prefix; the killing byte is never fed
+// to it, since a core completing on the killing byte is too late. Refusal leaves the core empty and the planner
+// exhaustive: the core is an accelerator's licence, never a certificate.
 void Simulator::derive_mandatory_core()
 {
     const auto states{flags_.size()};
@@ -487,11 +485,10 @@ void Simulator::derive_mandatory_core()
         }
     }
 
-    // Candidates come from input-total states of the required set: a non-re-entrant initial state is
-    // exempt, since its window hypothesis renames rather than survives. The core is the death word with the
-    // killing byte removed, and a depth of at least two is input-totality itself, since the seeding pass
-    // gave depth one to every live state missing a byte. Only the state is kept; its core is spelled when
-    // its proof runs.
+    // Candidates come from input-total states of the required set: a non-re-entrant initial state is exempt, since its
+    // window hypothesis renames rather than survives. The core is the death word with the killing byte removed, and a
+    // depth of at least two is input-totality itself, since the seeding pass gave depth one to every live state
+    // missing a byte. Only the state is kept; its core is spelled when its proof runs.
     std::vector<std::size_t> candidates;
 
     std::size_t longest{0};
@@ -546,9 +543,8 @@ void Simulator::derive_mandatory_core()
 
     std::vector<Stamp_t> seen(states * longest, 0);
 
-    // The matcher precomputed as a table per candidate, one lookup per transition: a graph search defeats
-    // the usual amortization of chained failure links, so paying them once here keeps a proof's cost at the
-    // pairs it visits.
+    // The matcher precomputed as a table per candidate, one lookup per transition: a graph search defeats the usual
+    // amortization of chained failure links, so paying them once here keeps a proof's cost at the pairs it visits.
     std::vector<Prefix_t> matcher;
 
     // The proof, per candidate from its own proposing state: a stack-driven reachability search over pairs

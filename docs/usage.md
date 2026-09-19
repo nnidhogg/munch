@@ -580,10 +580,10 @@ for (;;)
 The three states are alternatives of one sum type, so they can also be handled exhaustively with `visit()`.
 
 For context-dependent languages, a `Mode_tokenizer` holds several lexers as modes over the same input and switches
-between them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no practical automaton
-covers, such as C++ raw string literals, whose bounded delimiter makes them regular in principle but not worth a table,
-the driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`, and continues past the literal
-with `seek()`.
+between them with `set_mode()`, as a driver does for header-names after `#include`. For tokens no practical
+automaton covers, such as C++ raw string literals, whose bounded delimiter makes them regular in principle but not
+worth a table, the driver reads a prefix token, scans by hand using `input()` and `scan_raw_string()`, and continues
+past the literal with `seek()`.
 
 Together the two layers split by control rather than by convenience: `core::Lexer` scans, including in parallel,
 and `tools::tokenizer::Tokenizer` lets a driver decide where scanning resumes. `Mode_tokenizer` is the same cursor
@@ -643,11 +643,11 @@ position unchanged when their own search refuses; `recover()` and `recover_from_
 clean floor can shrink the search domain, so the clean form may refuse where the failure-anchored forms answer. The
 lexer-level form is `Lexer::next_certified_evidence(input, from)`.
 
-When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored queries answer
-exactly rather than conservatively, because they may use what the certificates cannot: that the input ends where the
-tail ends. A token set in which some token matches the empty string is decided, here and by every other query, through
-its positive-width equivalent, the same automaton entered through a start state that does not accept, which changes no
-scan.
+When the remainder in hand is the whole rest of the input, a truncated or damaged file tail, the anchored queries
+answer exactly rather than conservatively, because they may use what the certificates cannot: that the input ends
+where the tail ends. A token set in which some token matches the empty string is decided, here and by every other
+query, through its positive-width equivalent, the same automaton entered through a start state that does not
+accept, which changes no scan.
 
 ```cpp
 // Over the token set {ab, ba}: position 0 of the tail "ab" is provably a token start in every
@@ -722,15 +722,15 @@ that is the point of the split: a mode lexer has no parallel entry point, so `le
 planning a chunk is sound.
 
 Among the other measured engines, only lexertl17 carries mode transitions in the grammar itself. It is munch's nearest
-relative, a lexer built at run time from rules, and it has had start states with a next-state per rule for years, with a
-stack behind them: `enums.hpp` carries `push_dfa` and `pop_dfa` bits and `lookup.hpp` pushes and pops start states,
+relative, a lexer built at run time from rules, and it has had start states with a next-state per rule for years, with
+a stack behind them: `enums.hpp` carries `push_dfa` and `pop_dfa` bits and `lookup.hpp` pushes and pops start states,
 underflow included. **Its mode support is therefore the same expressive class as munch's, not a weaker one, and nesting
-is as available there as here.** The difference the table below reports is throughput, not reach. logos reaches the same
-end from the caller's side rather than the grammar's: `Lexer::morph` turns a lexer for one token type into a lexer for
-another over the same input, which is context-dependent lexing driven by user code rather than by a per-rule transition.
-The general-purpose regex engines have no mode concept at all, so a caller would switch patterns by hand, which measures
-their per-match cost rather than their mode support and is what the tables of [benchmarks.md](benchmarks.md) already
-report.
+is as available there as here.** The difference the table below reports is throughput, not reach. logos reaches the
+same end from the caller's side rather than the grammar's: `Lexer::morph` turns a lexer for one token type into a lexer
+for another over the same input, which is context-dependent lexing driven by user code rather than by a per-rule
+transition. The general-purpose regex engines have no mode concept at all, so a caller would switch patterns by hand,
+which measures their per-match cost rather than their mode support and is what the tables of
+[benchmarks.md](benchmarks.md) already report.
 
 Mode support is an extension the grammar opts into, so the comparison comes in layers: input where modes are optional,
 and input where the tested grammar uses a stack to count nesting.
@@ -766,11 +766,11 @@ The harness validates that the engines agree on every token before timing either
 corpus and the 4,859,619 of the second are the same tokens in both.
 
 **Ratios, as ranges rather than a point: 3.02 to 3.05 where modes are optional, 2.62 to 2.70 where the tested grammar
-uses a stack to count nesting.** Those are the spreads within one session. Across three archive generations measured at
-different commits, the optional-mode ratio spans about 2 percent and the nested ratio about 7 percent; those movements
-conflate executable changes with environmental variation. Read them as observations, not as a trend: the two corpora
-differ in token density, grammar and mechanism at once, so the difference between them is not attributable to any one of
-those.
+uses a stack to count nesting.** Those are the spreads within one session. Across three archive generations measured
+at different commits, the optional-mode ratio spans about 2 percent and the nested ratio about 7 percent; those
+movements conflate executable changes with environmental variation. Read them as observations, not as a trend: the
+two corpora differ in token density, grammar and mechanism at once, so the difference between them is not
+attributable to any one of those.
 
 **What modes cost against a flat grammar, in this archive.** The mode grammar emits 11.1% more tokens for the same bytes
 and takes 15.5% and 14.3% longer, so its cost per token is 3 to 4 percent *higher*. Read that as a fact about this

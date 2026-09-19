@@ -619,9 +619,9 @@ TEST(Report, A_byte_no_token_begins_with_is_given_one_before_it_is_priced)
 
 TEST(Report, Steps_follow_the_order_of_the_rules_and_not_of_their_ids)
 {
-    // Both openers consume the newline before any edit, so both are answered before any other, in the order the set
-    // lists them: the rule with id 9 stands first. Ordering by id took the rule with id 2 first, against what the
-    // page promises of the steps.
+    // Both openers consume the newline before any edit, so both are answered before any other, in the order the
+    // set lists them: the rule with id 9 stands first. Ordering by id took the rule with id 2 first, against what
+    // the page promises of the steps.
     const Token_set set{
             .rules = {
                     {.regex = munch::regex::parse(R"(\n)"), .id = 5, .priority = 0, .discarded = false},

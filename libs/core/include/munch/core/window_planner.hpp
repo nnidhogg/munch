@@ -171,10 +171,10 @@ private:
      *        so candidates exist only where the core occurs, and visiting them in the exhaustive walk's own
      *        position-then-length order gives that walk's plan, refusals included.
      *
-     * Positions are still scanned one by one, but for a byte comparison each; windows are built and certified only
-     * at occurrences. A proved core longer than the longest window minus its trailing byte admits no candidate at
-     * all, so every target refuses at once, exactly as the exhaustive walk would conclude after scanning to the end
-     * of the input.
+     * Positions are still scanned one by one, but for a byte comparison each; windows are built and certified
+     * only at occurrences. A proved core longer than the longest window minus its trailing byte admits no
+     * candidate at all, so every target refuses at once, exactly as the exhaustive walk would conclude after
+     * scanning to the end of the input.
      * @tparam Iterator Random access iterator type.
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.

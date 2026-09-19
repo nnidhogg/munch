@@ -70,8 +70,8 @@ TEST(Read_flex, Reads_definitions_options_conditions_and_rules_in_order)
     EXPECT_EQ(file.conditions.front().name, "COMMENT");
     EXPECT_TRUE(file.conditions.front().exclusive);
 
-    // Ten rules of the file's and flex's default rule after them: the <<EOF>> rule is not one, and the code after
-    // the second %% is not read.
+    // Ten rules of the file's and flex's default rule after them: the <<EOF>> rule is not one, and the code
+    // after the second %% is not read.
     ASSERT_EQ(file.rules.size(), 11u);
     EXPECT_EQ(file.rules[10].pattern, R"(.|\n)");
     EXPECT_EQ(file.rules[10].line, 24u);
@@ -266,8 +266,8 @@ b   return 2;
     EXPECT_EQ(read_flex("%x S\n%%\n<S>{\na   return 1;\n} /* <S> */\nb   return 2;\n").front().rules.size(), 3u);
     EXPECT_EQ(read_flex("%x S\n%%\n<S>{\n  a   return 1;\n  } /* done */\nb   return 2;\n").front().rules.size(), 3u);
 
-    // A second close on the close's line is code, so the outer scope stays open, which flex refuses as it does the
-    // reading.
+    // A second close on the close's line is code, so the outer scope stays open, which flex
+    // refuses as it does the reading.
     EXPECT_THROW(std::ignore = read_flex("%x S T\n%%\n<S>{\n<T>{\na   return 1;\n} }\nb   return 2;\n"), Spec_error);
 
     // A comment at the margin of the rules section, after the first %% or between rules, in a scope or out of one,
@@ -431,8 +431,8 @@ TEST(Read_flex, An_action_ends_where_flex_s_action_scanner_ends_it)
     // Outside a literal a backslash before the newline is no splice: the action ends there.
     EXPECT_EQ(patterns("a   return 1; \\\nb   return 2;\n"), R"(a b .|\n)");
 
-    // A stray close counts below zero and the action still ends at its line; flex builds the scanner, though the C
-    // it emits does not compile.
+    // A stray close counts below zero and the action still ends at its line; flex builds the scanner, though the
+    // C it emits does not compile.
     EXPECT_EQ(patterns("a   return 1; }\nb   return 2;\n"), R"(a b .|\n)");
 
     // A `|` line is taken unread, a brace after the bar counting for nothing.
@@ -1099,8 +1099,8 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
     EXPECT_EQ(refusal(rules("abc    | REJECT\nabd    return 7;")), "");
 
     // A condition change is not a call of these: flex 2.6.4 returns 7, 8 and 6 for "abb" under this scanner, the
-    // tokens where the rules put them, and the reading takes the actions as any other, the caveat over every report
-    // covering the condition.
+    // tokens where the rules put them, and the reading takes the actions as any other, the caveat over every
+    // report covering the condition.
     constexpr std::string_view states{R"(%option noyywrap nodefault stack
 %x S
 %%

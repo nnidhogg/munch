@@ -53,20 +53,20 @@ Lexer-specialized code generators beat this design, and the margin grows with to
 generator, is measured in tools/benchmark/rust on byte-identical ports of the benchmark's two corpora, validated to
 produce the same token stream to the token: across measurement sessions it runs from under ten percent to roughly a
 quarter ahead of the whole-input `tokenize_all()` entry point on dense input and forty to sixty percent ahead on
-source-shaped input, and CTRE overtakes on the source-shaped corpus as well; re2c occupies the same class for C. munch's
-own throughput is nearly identical on both corpus shapes, which is the table model's signature: it pays per byte, so
-token length neither helps nor hurts it, while generated code consumes multi-byte runs. Within munch's own class the
-lead survives falsification: even with regex-automata steelmanned through its low-level automaton walk rather than its
-search API, munch measures about one and a half times ahead on the dense corpus and forty percent on the source one in
-the archived session, and further ahead of lexertl. They win by escaping the one cost the table model cannot shed: a
-table walk performs one dependent load per input byte, a serial chain of L1 latencies, while generated code fuses
-multi-byte consumption into the matcher, comparing whole keywords at once and eating identifier runs without a per-byte
-state step.
+source-shaped input, and CTRE overtakes on the source-shaped corpus as well; re2c occupies the same class for C.
+munch's own throughput is nearly identical on both corpus shapes, which is the table model's signature: it pays per
+byte, so token length neither helps nor hurts it, while generated code consumes multi-byte runs. Within munch's own
+class the lead survives falsification: even with regex-automata steelmanned through its low-level automaton walk
+rather than its search API, munch measures about one and a half times ahead on the dense corpus and forty percent on
+the source one in the archived session, and further ahead of lexertl. They win by escaping the one cost the table
+model cannot shed: a table walk performs one dependent load per input byte, a serial chain of L1 latencies, while
+generated code fuses multi-byte consumption into the matcher, comparing whole keywords at once and eating identifier
+runs without a per-byte state step.
 
-That chain is untouchable from inside the loop, and this was measured rather than assumed: packing the accept flag into
-the transition entry put one extra mask on the chain and lost about ten percent, and consuming self-loop runs against a
-per-state bitmask lost far more, because realistic runs are a few bytes long and every run ended in a mispredicted exit
-branch.
+That chain is untouchable from inside the loop, and this was measured rather than assumed: packing the accept
+flag into the transition entry put one extra mask on the chain and lost about ten percent, and consuming
+self-loop runs against a per-state bitmask lost far more, because realistic runs are a few bytes long and every
+run ended in a mispredicted exit branch.
 
 The SIMD form of that run consumer was then built, measured, and reverted as well. The build certified at construction
 time every state whose self-loop bytes form at most four contiguous ranges, probed ahead of the cursor to filter out
@@ -83,10 +83,10 @@ structurally long and the short-run gamble cannot arise; a lexical token set of 
 contains no such state. The conclusion is the same one the interleaving experiment reached from the other side: the
 table model wins by making no data-dependent bets, and every acceleration is a bet.
 
-What could still close the gap is a code-generating backend, and that trades away the property this design exists for:
-the code generators freeze the token set at compile time, while munch builds lexers at run time from ordinary values,
-which is what lets a driver hold several lexers as modes, and lets a language be defined by data rather than by a build
-step.
+What could still close the gap is a code-generating backend, and that trades away the property this design
+exists for: the code generators freeze the token set at compile time, while munch builds lexers at run time from
+ordinary values, which is what lets a driver hold several lexers as modes, and lets a language be defined by
+data rather than by a build step.
 
 ## **Branches, Not Conditional Moves, on the Accept Path**
 
@@ -192,22 +192,22 @@ are certified by `is_split_point()` from the compiled table for whatever token s
 on a hand-written safety analysis of this one token set that the generated lexer can neither produce nor check.
 
 Measuring this added one mechanism worth recording. The first version of the threaded comparison scenario let each
-worker update its slot in a shared array of sixteen-byte tallies once per token, which put four workers' write targets
-on one cache line; the false sharing cost about a third of the four-thread scaling, 1505.9 MiB/s against the 2302.0
-measured after each worker accumulated locally and stored its tally once. A parallel scan is only as scalable as its
-least private write, and a sink that writes shared memory per token quietly rejoins the threads the chunking was meant
-to separate.
+worker update its slot in a shared array of sixteen-byte tallies once per token, which put four workers' write
+targets on one cache line; the false sharing cost about a third of the four-thread scaling, 1505.9 MiB/s against
+the 2302.0 measured after each worker accumulated locally and stored its tally once. A parallel scan is only as
+scalable as its least private write, and a sink that writes shared memory per token quietly rejoins the threads the
+chunking was meant to separate.
 
 ## **The Theory Is Old; the Discipline Is the Feature**
 
 None of this is novel. Determinization is Rabin and Scott (1959), the NFA construction is Thompson (1968), and "a
-minimal DFA is the optimal single-pass recognizer for a regular language" is textbook. The minimizer here refines over a
-partial transition function, so it is minimal in that setting rather than in the Myhill-Nerode sense; the difference
-shows only where a subexpression denotes the empty language, leaving states no input can reach acceptance from. See
-[limits.md](limits.md). What this library does is implement the sixty-year-old right answer without compromise, which is
-only possible by refusing every feature that would break the model: no captures, no backreferences, no unanchored
-search. Where a construct is impractical for a single table, such as C++ raw string literals, whose bounded delimiter is
-regular in principle but ruinous to encode, the answer is a hand-written scanner beside the automaton (the tokenizer's
-`seek()` escape hatch and `scan_raw_string()`), never a compromise inside the engine. That refusal is the performance.
-The full inventory of what the library refuses, guarantees, and provides escape hatches for is in
-[limits.md](limits.md).
+minimal DFA is the optimal single-pass recognizer for a regular language" is textbook. The minimizer here refines
+over a partial transition function, so it is minimal in that setting rather than in the Myhill-Nerode sense; the
+difference shows only where a subexpression denotes the empty language, leaving states no input can reach acceptance
+from. See [limits.md](limits.md). What this library does is implement the sixty-year-old right answer without
+compromise, which is only possible by refusing every feature that would break the model: no captures, no
+backreferences, no unanchored search. Where a construct is impractical for a single table, such as C++ raw string
+literals, whose bounded delimiter is regular in principle but ruinous to encode, the answer is a hand-written scanner
+beside the automaton (the tokenizer's `seek()` escape hatch and `scan_raw_string()`), never a compromise inside the
+engine. That refusal is the performance. The full inventory of what the library refuses, guarantees, and provides
+escape hatches for is in [limits.md](limits.md).

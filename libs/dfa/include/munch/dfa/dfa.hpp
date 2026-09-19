@@ -77,17 +77,15 @@ public:
     /**
      * @brief Returns the number of states the DFA's identifiers span: one past the highest of them.
      *
-     * The subset construction numbers states densely from zero, so for a DFA it produced this is the number of
-     * states; dfa::Builder takes the identifiers a caller names, so for a DFA built by hand it is the span they
-     * cover. Either way it is an identifier no state uses, which is what unroll_start() enters the automaton
-     * through. Counted once at construction, since every consumer of the definition needs it: the Simulator sizes
-     * its tables by it.
+     * The subset construction numbers states densely from zero, so for a DFA it produced this is the number of states;
+     * dfa::Builder takes the identifiers a caller names, so for a DFA built by hand it is the span they cover. Either
+     * way it is an identifier no state uses, which is what unroll_start() enters the automaton through. Counted once
+     * at construction, since every consumer of the definition needs it: the Simulator sizes its tables by it.
      *
      * It is neither of those where the span is not representable: a hand-built DFA naming a state at the largest
-     * std::size_t spans one past it, and what this returns is then the wrap, zero, which is no count of anything
-     * and may well be a state that DFA uses, its start among them. The Simulator refuses such a definition rather
-     * than indexing a table by that zero, and a caller reading this as an unused identifier owes a representable
-     * span.
+     * std::size_t spans one past it, and what this returns is then the wrap, zero, which is no count of anything and
+     * may well be a state that DFA uses, its start among them. The Simulator refuses such a definition rather than
+     * indexing a table by that zero, and a caller reading this as an unused identifier owes a representable span.
      * @return The state count.
      */
     [[nodiscard]] State_t state_count() const noexcept;
@@ -120,12 +118,24 @@ public:
     [[nodiscard]] std::optional<Token> has_accept_token(State_t state) const;
 
 private:
+    /**
+     * @brief The initial state.
+     */
     State_t init_state_;
 
+    /**
+     * @brief One past the highest state identifier named, what state_count() reports; zero where that count wrapped.
+     */
     State_t state_count_;
 
+    /**
+     * @brief The transitions, from a state and a label to a state.
+     */
     Transitions_t transitions_;
 
+    /**
+     * @brief The accept states, each with the token it accepts.
+     */
     Accept_states_t accept_states_;
 };
 

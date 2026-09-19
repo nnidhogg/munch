@@ -653,9 +653,9 @@ struct Unreadable_definition
  *        `!use:` directive brought in yields to the block's own in every condition the block's own stands in, since
  *        the using block's default rule overrides the used block's wherever the two stand.
  *
- * A default rule in every condition, `<*> *` or one naming no condition, and one naming conditions are rules of
- * different conditions to re2c, so the two stand together, and a used one of either kind yields only to an own one
- * of the same kind.
+ * A default rule in every condition, `<*> *` or one naming no condition, and one naming conditions are
+ * rules of different conditions to re2c, so the two stand together, and a used one of either kind yields
+ * only to an own one of the same kind.
  * @param spec The specification the block filled, its rules in the order they were read.
  * @param first The index into spec.rules of the block's first rule, the ones before it being another block's, which
  *        read this one through a `!use:` directive and settles its own once it is read.
@@ -2447,11 +2447,11 @@ void Block::configuration(Lexer_spec& spec)
     std::erase_if(option, [](const char byte) { return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r'; });
 
     // The flags that change the reading are honoured when set in the file, under every spelling the manual's
-    // configuration list gives them: the canonical name and its `flags:` aliases. A configuration governs the whole
-    // block wherever in it it stands, and the last assignment is the one that governs, so what is set here is what
-    // the block leaves and the next pass reads every pattern of it under; nothing here changes this pass. There is
-    // no configuration for the flex syntax, `re2c:flags:F` being a configuration re2c rejects, so only the command
-    // line brings that one.
+    // configuration list gives them: the canonical name and its `flags:` aliases. A configuration governs the
+    // whole block wherever in it it stands, and the last assignment is the one that governs, so what is set here
+    // is what the block leaves and the next pass reads every pattern of it under; nothing here changes this pass.
+    // There is no configuration for the flex syntax, `re2c:flags:F` being a configuration re2c rejects, so only
+    // the command line brings that one.
     const auto set{[&option](const auto& names) -> std::optional<bool> {
         for (const auto name : names)
         {
@@ -2667,8 +2667,8 @@ std::tuple<std::string, std::string, std::optional<Class>> Block::regex_text(con
         ++level.atoms;
     }};
 
-    // The term ends as the right operand of the difference a `\` opened: the class of the code points left replaces
-    // the text of both operands.
+    // The term ends as the right operand of the difference a `\` opened: the class of the code points left
+    // replaces the text of both operands.
     const auto resolve{[this, &expression, &levels]() {
         auto& level{levels.back()};
 
@@ -3055,9 +3055,8 @@ std::tuple<std::string, std::string, std::optional<Class>> Block::regex_text(con
             continue;
         }
 
-        // The class difference: the term before it is the left operand, a chain's earlier difference resolved
-        // first, and the term after it, whose text joins the left one's until the resolution replaces both, is the
-        // right one.
+        // The class difference: the term before it is the left operand, a chain's earlier difference resolved first,
+        // and the term after it, whose text joins the left one's until the resolution replaces both, is the right one.
         if (byte == '\\')
         {
             if (levels.back().atoms == 0)
@@ -3640,8 +3639,8 @@ std::vector<Lexer_spec> read_re2c(
             // turns UTF-8 on. One this block's flags cannot read waits for the block to name it.
             std::vector<Unreadable_definition> unreadable;
 
-            // The classes among the definitions, which a class difference takes its operands from, are the pass's
-            // as the definitions are.
+            // The classes among the definitions, which a class difference takes its operands from, are the
+            // pass's as the definitions are.
             Classes_t classes;
 
             // Each pass begins from what the blocks above this one left, as each pass rereads this block alone.
@@ -3773,8 +3772,8 @@ std::vector<Lexer_spec> read_re2c(
 
             carried_options = spec.options;
 
-            // A name this block declared again keeps the place it had, since a definition's own regex may name the
-            // ones declared before it.
+            // A name this block declared again keeps the place it had, since a definition's own regex may name
+            // the ones declared before it.
             for (const auto& site : block_sites)
             {
                 const auto known{std::ranges::find(carried_definitions, site.name, &Definition_site::name)};
