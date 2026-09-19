@@ -359,6 +359,27 @@ TEST(Report, A_window_count_no_size_t_holds_is_reported_as_the_bound_it_passed)
     EXPECT_NE(json(wide, name).find(R"("window_count": "more than 18446744073709551615")"), std::string::npos);
 }
 
+TEST(Report, The_options_that_governed_the_reading_reach_both_forms_of_the_report)
+{
+    // A flex file's `%option` words, in the reader's own order, as the row the report prints under the scanner and
+    // as the array its JSON account carries; a scanner that declares none prints no row at all.
+    const auto [file, report]{audited("c-like-split-friendly.l")};
+
+    EXPECT_EQ(file.options, (std::vector<std::string>{"noyywrap", "nodefault"}));
+    EXPECT_EQ(options_row(file.options), "options                     noyywrap, nodefault\n");
+    EXPECT_EQ(options_json(file.options), R"(["noyywrap", "nodefault"])");
+
+    EXPECT_EQ(options_row({}), "");
+    EXPECT_EQ(options_json({}), "[]");
+
+    // Several options are one row, comma-separated; what a logos reading notes of the Unicode version its classes
+    // came from is one of them, so the page says which language was analysed.
+    const std::vector<std::string> several{"unicode-classes=16.0.0", "extras=Extras"};
+
+    EXPECT_EQ(options_row(several), "options                     unicode-classes=16.0.0, extras=Extras\n");
+    EXPECT_EQ(options_json(several), R"(["unicode-classes=16.0.0", "extras=Extras"])");
+}
+
 TEST(Report, Pricing_follows_the_design_rows_of_the_study)
 {
     // The conventional row: one edit, the whitespace run loses the newline and the newline becomes a discarded

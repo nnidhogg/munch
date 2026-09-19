@@ -199,6 +199,49 @@ TEST(Read_re2c, The_forms_the_caller_names_return_tokens_as_return_does)
     EXPECT_FALSE(named.rules[5].token.has_value());
 }
 
+TEST(Read_re2c, Whether_an_action_returns_is_read_past_its_comments_and_literals)
+{
+    // re2c 3.1 on "a\nb" returns 1, 2 and 1 for the first scanner, the whitespace rule returning 2 whatever its
+    // comment says, and 1 and 1 for the second, whose whitespace rule holds its return in a literal and restarts;
+    // so the first scanner has no discarded token and the newline certifies neither exactly nor modulo discarded
+    // tokens, while the second discards its whitespace and the newline certifies modulo the discarded tokens.
+    constexpr std::string_view commented{R"(/*!re2c
+        [ \t\n]+  { /* return; */ return 2; }
+        [ab]      { return 1; }
+        *         { return 9; }
+    */
+)"};
+
+    constexpr std::string_view quoted{R"(/*!re2c
+        [ \t\n]+  { const char *m = "return 2;"; (void)m; goto restart; }
+        [ab]      { return 1; }
+        *         { return 9; }
+    */
+)"};
+
+    const auto with_comment{read_re2c(commented).front()};
+
+    ASSERT_EQ(with_comment.rules.size(), 3u);
+    EXPECT_EQ(with_comment.rules[0].token, std::optional<std::string>{"2"});
+    EXPECT_FALSE(token_set(with_comment, "INITIAL").rules[0].discarded);
+
+    const auto commented_lexer{build(with_comment, "INITIAL")};
+
+    EXPECT_FALSE(commented_lexer.is_split_point('\n'));
+    EXPECT_FALSE(commented_lexer.is_split_point_ignoring('\n'));
+
+    const auto with_literal{read_re2c(quoted).front()};
+
+    ASSERT_EQ(with_literal.rules.size(), 3u);
+    EXPECT_FALSE(with_literal.rules[0].token.has_value());
+    EXPECT_TRUE(token_set(with_literal, "INITIAL").rules[0].discarded);
+
+    const auto quoted_lexer{build(with_literal, "INITIAL")};
+
+    EXPECT_FALSE(quoted_lexer.is_split_point('\n'));
+    EXPECT_TRUE(quoted_lexer.is_split_point_ignoring('\n'));
+}
+
 TEST(Read_re2c, Each_block_with_rules_is_a_scanner_of_its_own)
 {
     // ninja's shape: one function per block, the definitions declared once and used by the later blocks.

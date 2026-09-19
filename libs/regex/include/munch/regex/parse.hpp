@@ -54,9 +54,11 @@ struct Parse_options
 {
     /**
      * @brief Whether every ASCII letter matches in either case, flex's `%option case-insensitive`: a letter in a
-     *        literal or a quoted text becomes the set of its two cases, and a bracket holds both cases of every
-     *        letter it names before any negation, so `[^a-c]` excludes the capitals too and `[[:upper:]]` is every
-     *        letter, as flex folds them.
+     *        literal or a quoted text becomes the set of its two cases, and a bracket folds member by member
+     *        before any negation, a letter gaining its other case and a range the range its swapped ends span, so
+     *        `[^a-c]` excludes the capitals too, `[[:upper:]]` is every letter, and the ambiguous `[A-t]`, whose
+     *        swapped ends run backwards, keeps its numeric span, as flex folds them. A range reaching past ASCII,
+     *        which only a code point escape writes, folds over its ASCII intersection.
      */
     bool caseless{false};
 };
@@ -66,13 +68,18 @@ struct Parse_options
  *        expressions, into the same nodes the combinators build.
  *
  * The syntax is the one a flex or re2c rule body is written in, read over bytes as those tools read it: alternation
- * with `|`, grouping with parentheses, the postfix operators `*`, `+`, `?` and the counted `{n}`, `{n,}` and `{n,m}`;
- * a dot for any byte but the newline; bracket expressions with ranges, negation, the POSIX classes such as
- * `[:alpha:]`, and a leading `]` or an edge `-` taken literally; escapes `\n`, `\t`, `\r`, `\f`, `\v`, `\a`, `\b`,
- * octal `\ooo` and hex `\xhh`, and any other escaped byte standing for itself; a double-quoted literal, its escapes
- * decoded; and `{name}` expanding to a definition, itself parsed in the same syntax, definitions nesting but never
- * cycling. Bytes outside ASCII are literals, so a UTF-8 sequence in the pattern is the run of its bytes, and a
- * bracket lists bytes rather than characters, exactly as flex does.
+ * with `|`, grouping with parentheses, the postfix operators `*`, `+`, `?` and the counted `{n}`, `{n,}` and `{n,m}`; a
+ * dot for any byte but the newline; bracket expressions with ranges, negation, the POSIX classes such as `[:alpha:]`
+ * and their negations such as `[:^alpha:]`, which run over every byte as flex negates them, a `[:` in any other shape
+ * being the `[` and the `:` as members, as flex lexes them, and a leading `]` or an edge `-` taken literally; flex's
+ * class operators, `[a-z]{-}[aeiou]` for the difference of two brackets and `[a-z]{+}[0-9]` for their union, left
+ * associative and binding tighter than the postfix operators; escapes `\n`, `\t`, `\r`, `\f`, `\v`, `\a`, `\b`, octal
+ * `\ooo` and hex `\xhh`, and any other escaped byte standing for itself; a double-quoted literal, its escapes decoded;
+ * and `{name}` expanding to a definition, itself parsed in the same syntax, definitions nesting but never cycling, the
+ * expansion enclosed in parentheses as flex encloses it, so a `^`, `$` or `<` inside a definition is a byte and a
+ * postfix operator after the reference repeats the whole expansion. Bytes outside ASCII are literals, so a UTF-8
+ * sequence in the pattern is the run of its bytes, and a bracket lists bytes rather than characters, exactly as flex
+ * does.
  *
  * One escape flex has not got is here for the readers of character-level generators: `\u{X...}`, one to six hex
  * digits naming a code point, is the UTF-8 encoding of that scalar in a literal or quoted text, and inside a bracket
@@ -86,8 +93,11 @@ struct Parse_options
  * What the syntax has and a token language cannot say is refused rather than approximated: the anchors, a `^`
  * opening the pattern and a `$` closing it, flex's trailing context `/`, its start-condition prefix `<s>` and
  * `<<EOF>>` are conditions on the context a match stands in, not on the match, so a pattern carrying one raises
- * rather than matching something else; a `^` or `$` anywhere else is the byte, as flex reads it. Empty alternatives
- * and groups are refused as the standard refuses them.
+ * rather than matching something else; a `^`, `$` or `<` anywhere else is the byte, as flex reads it, so `a<b` is
+ * three bytes and only a `<` opening the pattern is a prefix, while `<<EOF>>` is refused wherever it stands. A
+ * definition whose text opens with `^` or closes with `$` is refused at its reference, since flex splices that one
+ * bare, so its edge is the rule's and no operator reaches the expansion. Empty alternatives and groups are refused
+ * as the standard refuses them, and so is a bracket left naming nothing.
  *
  * The result is exactly what the combinators would have built: runs of literal bytes become one text node, brackets
  * and the dot become any_of over a set, and the operators become the repeat nodes, so a parsed pattern and a
