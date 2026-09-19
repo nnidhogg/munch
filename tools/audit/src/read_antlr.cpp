@@ -6,8 +6,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <map>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -24,6 +26,18 @@ namespace
  * @brief The last scalar there is.
  */
 constexpr char32_t last_scalar{0x10FFFF};
+
+/**
+ * @brief Why a character beyond ASCII is refused where `caseInsensitive` is in force.
+ *
+ * ANTLR's option rewrites every character to both of its cases, one code point each, `[äéöüß]` matching
+ * `äéöüßÄÉÖÜß` (antlr4/doc/options.md), and the library carries the Unicode property tables but no case mappings,
+ * so folding such a character is not something this reading can do; folding its ASCII neighbours alone would
+ * analyse another language than the lexer's.
+ */
+constexpr std::string_view unfoldable{
+        "a character beyond ASCII under caseInsensitive needs the Unicode case mappings, which the byte reading has "
+        "not got"};
 
 /**
  * @brief The ASCII bytes, one bit each.
@@ -64,6 +78,123 @@ struct Alphabet
 };
 
 /**
+ * @brief The characters a match of something can begin with, when they are known: the ASCII bytes one by one, and
+ *        whether any scalar beyond ASCII is among them, which ones not being kept.
+ */
+struct Beginning
+{
+    /**
+     * @brief The ASCII bytes a match can begin with.
+     */
+    Ascii_t ascii;
+
+    /**
+     * @brief Whether a match can begin with a scalar beyond ASCII.
+     */
+    bool beyond;
+
+    /**
+     * @brief Adds the characters another can begin with.
+     * @param other The other.
+     */
+    void join(const Beginning& other) noexcept
+    {
+        ascii |= other.ascii;
+
+        beyond = beyond || other.beyond;
+    }
+
+    /**
+     * @brief Whether one character may begin both this and another, two scalars beyond ASCII taken to be one.
+     * @param other The other.
+     * @return True when one may.
+     */
+    [[nodiscard]] bool overlaps(const Beginning& other) const noexcept
+    {
+        return (ascii & other.ascii).any() || (beyond && other.beyond);
+    }
+};
+
+/**
+ * @brief Whether something matches the empty string, as a formula over the rules it reaches: it does when every
+ *        rule of one term does, so a term of no rule is yes and no term at all is no.
+ *
+ * A rule's own answer waits for the whole grammar, since a rule may reference one written below it, and the
+ * closures ANTLR rejects are the ones whose body can match the empty string.
+ */
+using Nullable_t = std::vector<std::vector<std::string>>;
+
+/**
+ * @brief One command after a rule's `->`: its name and the argument its parens hold.
+ */
+struct Command
+{
+    /**
+     * @brief The name, `skip`, `more`, `type`, `channel`, `mode`, `pushMode` or `popMode`.
+     */
+    std::string name;
+
+    /**
+     * @brief What the parens hold, a token or a mode name or a number, empty when the command takes none.
+     */
+    std::string argument;
+
+    /**
+     * @brief The offset of the name within the clause, which names the command's own line in a refusal.
+     */
+    std::size_t offset;
+
+    /**
+     * @brief The offset within the clause of a `)` closing parens that hold nothing, `skip()` and `type( )`, which
+     *        ANTLR's parser rejects as a syntax error at that `)`; nothing when the parens hold something or there
+     *        are none.
+     */
+    std::optional<std::size_t> empty_parens;
+};
+
+/**
+ * @brief A quoted literal as read: its bytes, and whether ANTLR takes it as one character where it needs one.
+ */
+struct Literal
+{
+    /**
+     * @brief The bytes, each character's UTF-8 encoding, a surrogate pair's the scalar the pair encodes.
+     */
+    std::string bytes;
+
+    /**
+     * @brief Whether ANTLR reads the literal as one character where a range's end or a negated literal needs one
+     *        (CharSupport.getCharValueFromGrammarCharLiteral): one character of the basic multilingual plane written
+     *        out, or one escape of any kind. A character beyond that plane written out and a surrogate pair of two
+     *        escapes are two UTF-16 units to it, and its error 144 calls the literal multi-character, as it calls the
+     *        empty one.
+     */
+    bool single;
+};
+
+/**
+ * @brief One closure of a rule, `*` or `+` in either form: the rule it stands in, its line, and whether its body
+ *        matches the empty string, which ANTLR rejects as its error 153.
+ */
+struct Closure
+{
+    /**
+     * @brief The rule the closure stands in, which the refusal names as ANTLR names it.
+     */
+    std::string rule;
+
+    /**
+     * @brief The line the closure's body opens on.
+     */
+    std::size_t line;
+
+    /**
+     * @brief Whether the body matches the empty string.
+     */
+    Nullable_t body;
+};
+
+/**
  * @brief One element of an alternative: its rewritten atom, what the atom admits when it is a set, the literal it
  *        spells when it is one, and its suffix.
  */
@@ -80,15 +211,40 @@ struct Element
     std::optional<std::string> literal;
 
     /**
+     * @brief The atom's text as written, quotes included, when it is a quoted literal, folded or not: what ANTLR
+     *        matches a parser rule's literal against in a combined grammar. Empty for any other atom.
+     */
+    std::string spelling;
+
+    /**
      * @brief What the atom admits, when it is a set, `.`, or a one-character literal.
      */
     std::optional<Alphabet> alphabet;
 
     /**
-     * @brief The ASCII bytes a match of the atom can begin with, when they are known: a literal's first byte, a
+     * @brief The characters a match of the atom can begin with, when they are known: a literal's first character, a
      *        set's members, a group's alternatives' firsts; unknown for a reference.
      */
-    std::optional<Ascii_t> first;
+    std::optional<Beginning> first;
+
+    /**
+     * @brief Whether the atom matches the empty string, the suffix not yet applied.
+     */
+    Nullable_t nullable;
+
+    /**
+     * @brief Whether every match of the atom has one and the same length in bytes, which a literal's have and a set
+     *        reaching past U+007F has not, its scalars being one to four bytes: what the alignment of a non-greedy
+     *        loop's iterations rests on.
+     */
+    bool one_length;
+
+    /**
+     * @brief The number of characters every match of the atom has, when they all have one, the suffix not yet
+     *        applied: a literal's count of scalars, one for a set, a range or the dot, nothing for an inert action,
+     *        a group's where its alternatives agree; unknown for a reference and where they do not.
+     */
+    std::optional<std::size_t> characters;
 
     /**
      * @brief The suffix, `?`, `*`, `+`, or nothing.
@@ -102,7 +258,7 @@ struct Element
 };
 
 /**
- * @brief One sequence of elements as read: its expression, and the ASCII bytes a match can begin with, when known.
+ * @brief One sequence of elements as read: its expression, and what its matches begin with and measure, when known.
  */
 struct Sequence
 {
@@ -112,14 +268,42 @@ struct Sequence
     std::string expression;
 
     /**
-     * @brief The ASCII bytes a match can begin with, when every element that can begin one says which.
+     * @brief The characters a match can begin with, when every element that can begin one says which.
      */
-    std::optional<Ascii_t> first;
+    std::optional<Beginning> first;
+
+    /**
+     * @brief The number of characters every match has, when every element's matches have one and no suffix varies
+     *        it; unknown otherwise.
+     */
+    std::optional<std::size_t> characters;
+
+    /**
+     * @brief Whether an element of the sequence carries a non-greedy suffix.
+     */
+    bool lazy;
 
     /**
      * @brief Whether the sequence has no element, an empty alternative.
      */
     bool empty;
+
+    /**
+     * @brief Whether the sequence matches the empty string.
+     */
+    Nullable_t nullable;
+
+    /**
+     * @brief The one literal's text as written when the sequence is that literal alone, or that literal and one
+     *        inert action after it, the two shapes of an alternative ANTLR's own patterns for a rule spelling a
+     *        parser literal match; empty otherwise.
+     */
+    std::string spelling;
+
+    /**
+     * @brief Whether an inert action follows the literal the spelling names.
+     */
+    bool acted;
 };
 
 /**
@@ -143,9 +327,31 @@ struct Alternative
     std::string commands;
 
     /**
+     * @brief The offset in the grammar the commands' text begins at, from which a refusal of a command names the
+     *        command's own line as ANTLR names it; the alternative's own offset when it has none.
+     */
+    std::size_t clause;
+
+    /**
+     * @brief The one literal's text as written when the alternative is that literal alone or with one inert action
+     *        after it, as the sequence has it; empty otherwise.
+     */
+    std::string spelling;
+
+    /**
+     * @brief Whether an inert action follows the literal the spelling names.
+     */
+    bool acted;
+
+    /**
      * @brief Whether the alternative has no element, which makes the rule match the empty string too.
      */
     bool empty;
+
+    /**
+     * @brief Whether the alternative matches the empty string, an empty one and `'a'?` alike.
+     */
+    Nullable_t nullable;
 };
 
 /**
@@ -179,11 +385,25 @@ private:
     void skip_block();
 
     /**
+     * @brief Skips a parser rule's argument block from its `[`, the arguments, `returns`, `locals`, a rule
+     *        reference's arguments or a `catch` clause's, as ANTLR's lexer reads an ARG_ACTION: brackets nest, a
+     *        `"..."` or a `'...'` inside is skipped whole, a backslash escaping the byte after it, and no comment is
+     *        recognised, so a `]` inside a quoted string is no closer and one inside what looks like a comment is.
+     * @throws Spec_error If the block never closes.
+     */
+    void skip_argument();
+
+    /**
      * @brief Reads the `options { name = value; ... }` block after its keyword, recording the options.
      * @param options Where the options go.
      * @return Whether `caseInsensitive` was set among them.
      */
     [[nodiscard]] std::optional<bool> options_block(std::vector<std::string>& options);
+
+    /**
+     * @brief Reads the `channels { NAME, ... }` block after its keyword, recording the names.
+     */
+    void channels_block();
 
     /**
      * @brief Skips a parser rule from its name through its `;` and the `catch` and `finally` blocks after it,
@@ -209,9 +429,11 @@ private:
     /**
      * @brief Reads one sequence of elements, up to `|`, `)`, `->` or `;`, and composes their expression.
      * @param case_insensitive Whether letters double their case.
+     * @param outermost Whether this sequence is a whole alternative of a rule rather than a group's inside, which
+     *        is what a non-greedy loop needs, since ANTLR stops one where the rest of the whole rule matches.
      * @return The sequence.
      */
-    [[nodiscard]] Sequence sequence(bool case_insensitive);
+    [[nodiscard]] Sequence sequence(bool case_insensitive, bool outermost);
 
     /**
      * @brief Reads one element: an atom and its suffix.
@@ -221,10 +443,12 @@ private:
     [[nodiscard]] Element element(bool case_insensitive);
 
     /**
-     * @brief Reads a quoted literal after its opening quote, through the closing one, decoding its escapes.
-     * @return The bytes.
+     * @brief Reads a quoted literal after its opening quote, through the closing one, decoding its escapes; a high
+     *        surrogate escape and a low one after it are the one character the pair encodes, and a surrogate standing
+     *        alone is refused.
+     * @return The literal.
      */
-    [[nodiscard]] std::string literal();
+    [[nodiscard]] Literal literal();
 
     /**
      * @brief Reads a set after its `[`, through the `]`.
@@ -257,7 +481,92 @@ private:
      * @brief The literals the parser rules use, in order of first appearance, quotes included.
      */
     std::vector<std::pair<std::string, std::size_t>> parser_literals_;
+
+    /**
+     * @brief The literals the lexer rules spell in a shape ANTLR maps a parser literal onto, as written, and how
+     *        many rules spell each: one makes the parser's literal that rule's token, two make it ANTLR's error 126.
+     */
+    std::map<std::string, std::size_t, std::less<>> aliases_;
+
+    /**
+     * @brief The channels the grammar's `channels` block declares, which a channel command may name.
+     */
+    std::set<std::string, std::less<>> channels_;
+
+    /**
+     * @brief The rules whose body was read with a non-greedy loop in it, and the line each opens on.
+     *
+     * ANTLR stops such a loop where the rest of the surrounding lexical rule matches, and a rule another rule
+     * references is inlined into that one, whose rest reaches past it; the reading is exact only while nothing
+     * references the rule, which read() checks once the whole grammar is in.
+     */
+    std::vector<std::pair<std::string, std::size_t>> lazy_rules_;
+
+    /**
+     * @brief The closures read, each with the rule it stands in, so that a body reaching a rule written further
+     *        down is decided once the whole grammar is in.
+     */
+    std::vector<Closure> closures_;
+
+    /**
+     * @brief Whether each rule matches the empty string, as the formula over the rules it reaches.
+     */
+    std::map<std::string, Nullable_t, std::less<>> nullability_;
+
+    /**
+     * @brief The rule being read, which a closure is recorded under.
+     */
+    std::string rule_;
+
+    /**
+     * @brief Whether the rule being read holds a non-greedy loop, which lexer_rule() records with its name.
+     */
+    bool lazy_{false};
 };
+
+/**
+ * @brief The first surrogate, the last high one, the first low one and the last: the code points UTF-16 spends on
+ *        pairs, which no character is and no UTF-8 input decodes to.
+ */
+constexpr char32_t first_surrogate{0xD800};
+
+constexpr char32_t last_high_surrogate{0xDBFF};
+
+constexpr char32_t first_low_surrogate{0xDC00};
+
+constexpr char32_t last_surrogate{0xDFFF};
+
+/**
+ * @brief Whether a scalar is a surrogate.
+ * @param scalar The scalar.
+ * @return True when it is.
+ */
+[[nodiscard]] constexpr bool surrogate(const char32_t scalar) noexcept
+{
+    return scalar >= first_surrogate && scalar <= last_surrogate;
+}
+
+/**
+ * @brief The UTF-16 code units a span of UTF-8 text holds, which is how ANTLR's lexer, reading the grammar into Java
+ *        strings, measures it: one per character up to U+FFFF, two per character beyond.
+ * @param text The text.
+ * @param begin The span's first offset.
+ * @param end The offset past its last.
+ * @return The count.
+ */
+[[nodiscard]] std::size_t units(const std::string_view text, const std::size_t begin, const std::size_t end)
+{
+    std::size_t count{0};
+
+    for (const auto byte : text.substr(begin, end - begin))
+    {
+        const auto value{static_cast<unsigned char>(byte)};
+
+        count += (value & 0xC0U) == 0x80U ? 0 : value >= 0xF0 ? 2 : 1;
+    }
+
+    return count;
+}
 
 /**
  * @brief The one scalar a literal's UTF-8 bytes encode, when they encode exactly one.
@@ -442,49 +751,280 @@ private:
 }
 
 /**
- * @brief Adds the other case of every letter in a set.
- * @param ascii The set, widened on return.
+ * @brief Adds a range of characters, a set's member or span or a `'a'..'z'`, to an alphabet, folded as ANTLR folds
+ *        a range under `caseInsensitive`.
+ *
+ * ANTLR folds each range by its two ends alone (LexerATNFactory.checkRangeAndAddToSet over
+ * RangeBorderCharactersData): where neither end changes case or the ends differ in case, one being a letter of the
+ * other case or no letter, or the copies of the ends in lower and in upper case are not one width apart, the range
+ * stands as written; otherwise the copy in lower case and the copy in upper case are both added. So `[a-z]` and `'q'`
+ * gain `A-Z` and `Q`, while `[A-t]`, `[0-Z]` and `[a-]` admit exactly what they spell, the letters inside them
+ * folded no further, which ANTLR's warning 185 remarks on for the first two; the set is not closed under case.
+ * Beyond ASCII, where ANTLR's case mappings are Unicode's, the range is added as written, the caller refusing such
+ * a range under the option.
+ * @param alphabet The alphabet, widened on return.
+ * @param first The first character.
+ * @param last The last, no lower than the first.
+ * @param case_insensitive Whether the option is in force.
  */
-void double_case(Ascii_t& ascii)
+void admit(Alphabet& alphabet, const char32_t first, const char32_t last, const bool case_insensitive)
 {
-    for (std::size_t byte{'A'}; byte <= 'Z'; ++byte)
-    {
-        if (ascii.test(byte) || ascii.test(byte | 0x20U))
+    const auto add{[&alphabet](const char32_t low, const char32_t high) {
+        for (auto value{low}; value <= std::min<char32_t>(high, 0x7F); ++value)
         {
-            ascii.set(byte);
-
-            ascii.set(byte | 0x20U);
+            alphabet.ascii.set(value);
         }
+
+        if (high >= 0x80)
+        {
+            alphabet.beyond.push_back({.first = std::max<char32_t>(low, 0x80), .last = high});
+        }
+    }};
+
+    const auto lower{[](const char32_t value) {
+        return value >= 'A' && value <= 'Z' ? static_cast<char32_t>(value | 0x20U) : value;
+    }};
+
+    const auto upper{[](const char32_t value) {
+        return value >= 'a' && value <= 'z' ? static_cast<char32_t>(value & ~0x20U) : value;
+    }};
+
+    const auto lower_first{lower(first)};
+
+    const auto upper_first{upper(first)};
+
+    const auto lower_last{lower(last)};
+
+    const auto upper_last{upper(last)};
+
+    const auto mixed{(lower_first == first) != (lower_last == last)};
+
+    const auto single{
+            (lower_first == upper_first && lower_last == upper_last) || mixed ||
+            lower_last + upper_first != upper_last + lower_first};
+
+    if (!case_insensitive || single)
+    {
+        add(first, last);
+
+        return;
     }
+
+    add(lower_first, lower_last);
+
+    add(upper_first, upper_last);
 }
 
 /**
  * @brief The characters of a range, `'a'..'z'`, as an alphabet.
  * @param low The first character.
  * @param high The last, no lower than the first.
- * @param case_insensitive Whether the letters among them double their case.
+ * @param case_insensitive Whether the range folds as ANTLR folds one under `caseInsensitive`.
  * @return The alphabet.
  */
 [[nodiscard]] Alphabet spanning(const char32_t low, const char32_t high, const bool case_insensitive)
 {
     Alphabet alphabet;
 
-    for (auto value{low}; value <= std::min<char32_t>(high, 0x7F); ++value)
-    {
-        alphabet.ascii.set(value);
-    }
-
-    if (high >= 0x80)
-    {
-        alphabet.beyond.push_back({.first = std::max<char32_t>(low, 0x80), .last = high});
-    }
-
-    if (case_insensitive)
-    {
-        double_case(alphabet.ascii);
-    }
+    admit(alphabet, low, high, case_insensitive);
 
     return alphabet;
+}
+
+/**
+ * @brief Whether a channel command's argument names a channel other than the default one, the one a parser reads,
+ *        resolved as ANTLR resolves it (LexerATNFactory.getChannelConstantValue): `HIDDEN` and
+ *        `DEFAULT_TOKEN_CHANNEL` are its constants one and zero, another of its reserved names is its error 172, a
+ *        name the grammar's `channels` block declares is a channel from two up, and anything else is read as a
+ *        decimal number, `00` and `000` being zero and the default channel and every other number a channel of its
+ *        own, a number beyond its int or a name nothing declares being its error 177, each in its words.
+ * @param argument The argument as written.
+ * @param declared The channels the grammar declares.
+ * @param line The command's line, which a refusal names.
+ * @return True when the token goes to a channel a parser does not read.
+ * @throws Spec_error As ANTLR's errors 172 and 177 refuse the argument.
+ */
+[[nodiscard]] bool hidden(
+        const std::string& argument, const std::set<std::string, std::less<>>& declared, const std::size_t line)
+{
+    if (argument == "HIDDEN")
+    {
+        return true;
+    }
+
+    if (argument == "DEFAULT_TOKEN_CHANNEL")
+    {
+        return false;
+    }
+
+    for (const std::string_view reserved : {"DEFAULT_MODE", "SKIP", "MORE", "EOF", "MAX_CHAR_VALUE", "MIN_CHAR_VALUE"})
+    {
+        if (argument == reserved)
+        {
+            throw Spec_error{"cannot use or declare channel with reserved name " + argument, line};
+        }
+    }
+
+    if (declared.contains(argument))
+    {
+        return true;
+    }
+
+    // Integer.parseInt: the digits, leading zeros dropped, up to 2147483647.
+    constexpr std::string_view largest{"2147483647"};
+
+    const auto digits{std::string_view{argument}.substr(std::min(argument.find_first_not_of('0'), argument.size()))};
+
+    const auto numeric{!argument.empty() && std::ranges::all_of(argument, [](const char byte) {
+        return byte >= '0' && byte <= '9';
+    })};
+
+    if (numeric && (digits.size() < largest.size() || (digits.size() == largest.size() && digits <= largest)))
+    {
+        return !digits.empty();
+    }
+
+    throw Spec_error{argument + " is not a recognized channel name", line};
+}
+
+/**
+ * @brief The commands a `->` clause holds, as their names and arguments, blanks and comments dropped.
+ *
+ * ANTLR reads a clause with the lexer it reads the grammar with, so a comment inside one is no part of any command:
+ * a clause of `skip` and a block comment after it is the skip command, and comparing the clause's text as written
+ * would make it a command of another name and leave the token in the stream. The blanks and comments inside the
+ * parens go the same way, so a type command with them around its token names that token.
+ * @param text The clause as written, its `->` excluded.
+ * @return The commands in order.
+ */
+[[nodiscard]] std::vector<Command> commands_of(const std::string_view text)
+{
+    std::vector<Command> commands;
+
+    Cursor cursor{text};
+
+    for (cursor.skip_blanks(); !cursor.done(); cursor.skip_blanks())
+    {
+        const auto offset{cursor.offset()};
+
+        std::string name;
+
+        while (cursor.peek() && is_name_byte(*cursor.peek()))
+        {
+            name.push_back(cursor.next("a command name"));
+        }
+
+        if (name.empty())
+        {
+            // Nothing a command begins with, a stray comma or a paren of its own: stepped over.
+            std::ignore = cursor.next("a command name");
+
+            continue;
+        }
+
+        cursor.skip_blanks();
+
+        std::string argument;
+
+        std::optional<std::size_t> empty_parens;
+
+        if (cursor.accept('('))
+        {
+            for (cursor.skip_blanks(); cursor.peek() && *cursor.peek() != ')'; cursor.skip_blanks())
+            {
+                argument.push_back(cursor.next("')' to close the command's argument"));
+            }
+
+            const auto closing{cursor.offset()};
+
+            if (cursor.accept(')') && argument.empty())
+            {
+                empty_parens = closing;
+            }
+        }
+
+        commands.push_back(
+                {.name = std::move(name),
+                 .argument = std::move(argument),
+                 .offset = offset,
+                 .empty_parens = empty_parens});
+
+        cursor.skip_blanks();
+
+        std::ignore = cursor.accept(',');
+    }
+
+    return commands;
+}
+
+/**
+ * @brief The formula of something that never matches the empty string.
+ * @return No term.
+ */
+[[nodiscard]] Nullable_t never_empty()
+{
+    return {};
+}
+
+/**
+ * @brief The formula of something that matches the empty string whatever the rules do.
+ * @return One term of no rule.
+ */
+[[nodiscard]] Nullable_t always_empty()
+{
+    return {{}};
+}
+
+/**
+ * @brief Whether a formula holds, given the rules known to match the empty string.
+ * @param formula The formula.
+ * @param nullable The rules that match the empty string, none for the answer a formula gives on its own.
+ * @return True when one term's every rule is among them.
+ */
+[[nodiscard]] bool matches_empty(const Nullable_t& formula, const std::set<std::string, std::less<>>& nullable)
+{
+    return std::ranges::any_of(formula, [&nullable](const std::vector<std::string>& term) {
+        return std::ranges::all_of(term, [&nullable](const std::string& name) { return nullable.contains(name); });
+    });
+}
+
+/**
+ * @brief The formula of a match of either of two, an alternation's: their terms together.
+ * @param left One formula.
+ * @param right The other.
+ * @return The disjunction, one term of no rule where either holds on its own.
+ */
+[[nodiscard]] Nullable_t either_empty(Nullable_t left, const Nullable_t& right)
+{
+    left.insert(left.end(), right.begin(), right.end());
+
+    return matches_empty(left, {}) ? always_empty() : left;
+}
+
+/**
+ * @brief The formula of a match of both of two, a sequence's: every term of the one joined with every term of the
+ *        other, so that a term holds when all the rules it gathered do.
+ * @param left One formula.
+ * @param right The other.
+ * @return The conjunction, one term of no rule where both hold on their own.
+ */
+[[nodiscard]] Nullable_t both_empty(const Nullable_t& left, const Nullable_t& right)
+{
+    Nullable_t joined;
+
+    for (const auto& outer : left)
+    {
+        for (const auto& inner : right)
+        {
+            auto term{outer};
+
+            term.insert(term.end(), inner.begin(), inner.end());
+
+            joined.push_back(std::move(term));
+        }
+    }
+
+    return matches_empty(joined, {}) ? always_empty() : joined;
 }
 
 /**
@@ -538,12 +1078,102 @@ void double_case(Ascii_t& ascii)
 }
 
 /**
- * @brief The regex over an alphabet of every string with no occurrence of a terminator inside, which is what a
- *        non-greedy loop before that terminator matches: it stops at the first occurrence.
+ * @brief Whether the body of an action provably does nothing the token stream can see: blanks and comments only, so
+ *        that no call runs at all.
  *
- * Built as the automaton that tracks the longest prefix of the terminator ending at the byte just read, the one
- * that reaching the whole terminator would leave, and then written out by eliminating its states one by one. The
- * terminator is ASCII, so a scalar beyond ASCII never extends a prefix and takes every state back to the start.
+ * Any statement in an action may reach the lexer's own state, `more()`, `skip()`, `setType()` and `setText()` among
+ * the calls ANTLR's runtime offers, and a call to a member of the grammar's own `@members` block may reach them
+ * indirectly, so nothing but an empty body is inert.
+ * @param text The grammar's text.
+ * @param begin The offset just past the action's `{`.
+ * @param end The offset of its `}`.
+ * @return True when the body holds nothing but blanks and comments.
+ */
+[[nodiscard]] bool inert(const std::string_view text, const std::size_t begin, const std::size_t end)
+{
+    try
+    {
+        Cursor body{text, begin, end};
+
+        body.skip_blanks();
+
+        return body.done();
+    }
+    catch (const Spec_error&)
+    {
+        // A comment left open inside the body is no proof of anything.
+        return false;
+    }
+}
+
+/**
+ * @brief The one string the rest of a sequence spells, when every element of it is an exact ASCII literal that
+ *        matches once: what ANTLR's fewest-characters rule stops a non-greedy loop before it at.
+ *
+ * An inert action matches nothing and is stepped over. Anything else, a set, a group, a reference, a suffixed
+ * element or a literal with a letter under `caseInsensitive` or a byte beyond ASCII, leaves the rest more than one
+ * string and the loop with no rewrite the automaton below can build.
+ * @param elements The sequence's elements.
+ * @param from The index of the first element after the loop.
+ * @return The bytes, or std::nullopt when the rest is not one fixed ASCII string.
+ */
+[[nodiscard]] std::optional<std::string> rest_spelling(const std::vector<Element>& elements, const std::size_t from)
+{
+    std::string bytes;
+
+    for (const auto& [expression, literal, spelling, alphabet, first, nullable, one_length, characters, suffix, lazy] :
+         elements | std::views::drop(from))
+    {
+        if (expression.empty())
+        {
+            continue;
+        }
+
+        const auto ascii{literal && std::ranges::none_of(*literal, [](const char byte) {
+                             return static_cast<unsigned char>(byte) >= 0x80;
+                         })};
+
+        if (!ascii || suffix != 0)
+        {
+            return std::nullopt;
+        }
+
+        bytes += *literal;
+    }
+
+    return bytes.empty() ? std::nullopt : std::optional{std::move(bytes)};
+}
+
+/**
+ * @brief Whether the loop's body, having read the terminator's first `length` bytes and nothing longer of it, is
+ *        already past the point ANTLR's loop stops at, because the terminator appended there spells an occurrence of
+ *        itself that begins inside the body.
+ *
+ * Appending the terminator after a prefix of it of length j spells an occurrence beginning j bytes early exactly
+ * when the terminator's own bytes from j on are its first bytes, that is when j is a period of it. `'aa'` after one
+ * `a` is the case: the body's `a` and the terminator's first `a` are an occurrence of `aa`, so ANTLR's fewest
+ * characters stopped a byte earlier and the body may not end there. The longest prefix the body ends in is the only
+ * one to test: a shorter prefix the body also ends in is a suffix of the longest one, and a periodic terminator's
+ * suffix of that kind makes the longest one a period too.
+ * @param terminator The terminator's bytes.
+ * @param length The length of the longest prefix of the terminator the body ends with, below the whole of it.
+ * @return True when the terminator completes that prefix into an occurrence of itself.
+ */
+[[nodiscard]] bool overlapped(const std::string_view terminator, const std::size_t length)
+{
+    return length > 0 && terminator.substr(length) == terminator.substr(0, terminator.size() - length);
+}
+
+/**
+ * @brief The regex over an alphabet of every string a non-greedy loop before a terminator matches: the loop stops at
+ *        the first point the terminator can follow, so its body holds no occurrence of the terminator and does not
+ *        end where the terminator would complete one, ANTLR's fewest characters that still let the rest match.
+ *
+ * Built as the automaton that tracks the longest prefix of the terminator ending at the byte just read, the steps
+ * that would reach the whole terminator dropped, and then written out by eliminating its states one by one. A state
+ * the terminator overlaps into an earlier occurrence is no end of the body, which is what keeps `.*? 'aa'` from
+ * matching `aaa`. The terminator is ASCII, so a scalar beyond ASCII never extends a prefix and takes every state
+ * back to the start.
  * @param terminator The terminator's bytes, at least one and every one ASCII.
  * @param alphabet What the loop admits.
  * @return The expression, grouped.
@@ -602,10 +1232,12 @@ void double_case(Ascii_t& ascii)
 
         for (std::size_t to{0}; to < states; ++to)
         {
-            if (onto[to].any())
+            if (!onto[to].any())
             {
-                join(label[from][to], bracket(onto[to]));
+                continue;
             }
+
+            join(label[from][to], bracket(onto[to]));
         }
 
         if (!alphabet.beyond.empty())
@@ -613,7 +1245,10 @@ void double_case(Ascii_t& ascii)
             join(label[from][0], step(Alphabet{.ascii = {}, .beyond = alphabet.beyond}));
         }
 
-        join(label[from][final], "");
+        if (!overlapped(terminator, from))
+        {
+            join(label[from][final], "");
+        }
     }
 
     // Elimination of every state but the start and the final one.
@@ -649,7 +1284,33 @@ void double_case(Ascii_t& ascii)
 
     const auto loop{label[0][0] ? std::format("({})*", *label[0][0]) : std::string{}};
 
-    return std::format("({}{})", loop, label[0][final].value_or(""));
+    const auto rest{label[0][final].value_or("")};
+
+    // Where the body can only be empty, `'a'*? 'aa'` over the one character the terminator begins with, the loop
+    // contributes nothing and the terminator alone is the match; an empty group is no pattern the parser reads.
+    return loop.empty() && rest.empty() ? std::string{} : std::format("({}{})", loop, rest);
+}
+
+/**
+ * @brief The words of ANTLR's error 144 for a literal a range's end or a negation needs one character of and does not
+ *        get: a multi-character literal, an empty one, a character beyond the basic multilingual plane written out, or
+ *        a surrogate pair of two escapes, the last two being two UTF-16 units to it.
+ * @param spelling The literal as written, quotes included.
+ * @return The message.
+ */
+[[nodiscard]] std::string multi_character(const std::string_view spelling)
+{
+    return "multi-character literals are not allowed in lexer sets: " + std::string{spelling};
+}
+
+/**
+ * @brief The words of ANTLR's error 174 for a range whose end is below its start and for an empty set.
+ * @param spelling The range or set as written.
+ * @return The message.
+ */
+[[nodiscard]] std::string empty_range(const std::string_view spelling)
+{
+    return "string literals and sets cannot be empty: " + std::string{spelling};
 }
 
 Grammar::Grammar(const std::string_view source) : Cursor{source}
@@ -681,6 +1342,9 @@ Lexer_spec Grammar::read()
     {
         fail("a parser grammar has no lexer rules");
     }
+
+    // Only a lexer grammar may declare modes, so where the rules come from decides whether a `mode` line is ANTLR.
+    const auto lexer_only{keyword.ends_with("lexer")};
 
     skip_blanks();
 
@@ -733,11 +1397,24 @@ Lexer_spec Grammar::read()
             continue;
         }
 
-        if (word == "tokens" || word == "channels")
+        if (word == "tokens")
         {
             skip_blanks();
 
             skip_block();
+
+            continue;
+        }
+
+        if (word == "channels")
+        {
+            // Only a lexer grammar may declare channels, ANTLR's error 164 in a combined one.
+            if (!lexer_only)
+            {
+                fail("custom channels are not supported in combined grammars");
+            }
+
+            channels_block();
 
             continue;
         }
@@ -749,6 +1426,12 @@ Lexer_spec Grammar::read()
 
         if (word == "mode")
         {
+            if (!lexer_only)
+            {
+                fail("lexical modes are only allowed in lexer grammars, so a combined grammar declaring one is no "
+                     "ANTLR grammar");
+            }
+
             skip_blanks();
 
             mode = identifier();
@@ -779,20 +1462,86 @@ Lexer_spec Grammar::read()
         }
     }
 
+    // A rule matches the empty string when one of its alternatives does, and an alternative through the rules it
+    // reaches, so the answer is the least fixed point over the grammar: nothing nullable, then whatever the
+    // formulas add, until they add nothing. A closure over a body that matches it is ANTLR's error 153.
+    std::set<std::string, std::less<>> nullable;
+
+    for (auto growing{true}; growing;)
+    {
+        growing = false;
+
+        for (const auto& [name, formula] : nullability_)
+        {
+            if (!nullable.contains(name) && matches_empty(formula, nullable))
+            {
+                nullable.insert(name);
+
+                growing = true;
+            }
+        }
+    }
+
+    for (const auto& [rule, line, body] : closures_)
+    {
+        if (matches_empty(body, nullable))
+        {
+            throw Spec_error{
+                    "the rule " + rule +
+                            " contains a closure with at least one alternative that can match the empty string, "
+                            "which ANTLR rejects",
+                    line};
+        }
+    }
+
+    // A rule another rule references is inlined into that one, whose rest reaches past it, and a non-greedy loop
+    // stops where the rest of the surrounding rule matches; so a rule holding such a loop is read only while
+    // nothing references it, which the whole grammar has to be in to say.
+    for (const auto& [name, line] : lazy_rules_)
+    {
+        const auto reference{'{' + name + '}'};
+
+        const auto referenced{
+                std::ranges::any_of(
+                        spec.rules,
+                        [&reference](const Lexer_spec::Rule& rule) { return rule.expression.contains(reference); }) ||
+                std::ranges::any_of(spec.definitions, [&reference, &name](const auto& definition) {
+                    return definition.first != name && definition.second.contains(reference);
+                })};
+
+        if (referenced)
+        {
+            throw Spec_error{
+                    "the rule " + name +
+                            " holds a non-greedy loop and another rule references it, so what ANTLR stops the loop "
+                            "at is the rest of that rule and not of this one",
+                    line};
+        }
+    }
+
     // The literals the parser rules use are implicit tokens ahead of every explicit rule, unless a rule spells
-    // exactly that literal already.
+    // exactly that literal in a shape ANTLR maps it onto, when the parser's literal is that rule's token; two rules
+    // spelling it leave ANTLR no token to map it onto, and it rejects the parser's use of the literal.
     std::vector<Lexer_spec::Rule> implicit;
 
     for (const auto& [text, line] : parser_literals_)
     {
-        const auto spelled{std::ranges::any_of(spec.rules, [&text](const Lexer_spec::Rule& rule) {
-            return rule.pattern == text && rule.conditions.empty();
-        })};
+        const auto aliased{aliases_.find(text)};
+
+        if (aliased != aliases_.end() && aliased->second > 1)
+        {
+            throw Spec_error{
+                    "two lexer rules spell " + text +
+                            ", so ANTLR maps it onto neither and rejects the parser's use of it: cannot create "
+                            "implicit token for string literal in non-combined grammar: " +
+                            text,
+                    line};
+        }
 
         const auto placed{
                 std::ranges::any_of(implicit, [&text](const Lexer_spec::Rule& rule) { return rule.pattern == text; })};
 
-        if (spelled || placed)
+        if (aliased != aliases_.end() || placed)
         {
             continue;
         }
@@ -801,7 +1550,15 @@ Lexer_spec Grammar::read()
 
         ++reader.at_;
 
-        const auto bytes{reader.literal()};
+        const auto bytes{reader.literal().bytes};
+
+        const auto beyond{
+                std::ranges::any_of(bytes, [](const char one) { return static_cast<unsigned char>(one) >= 0x80; })};
+
+        if (case_insensitive && beyond)
+        {
+            throw Spec_error{std::string{unfoldable}, line};
+        }
 
         implicit.push_back(
                 {.pattern = text,
@@ -859,6 +1616,43 @@ void Grammar::skip_block()
     } while (depth > 0);
 }
 
+void Grammar::skip_argument()
+{
+    const auto opened{at_};
+
+    std::size_t depth{0};
+
+    do
+    {
+        if (!peek())
+        {
+            at_ = opened;
+
+            fail("an argument block never closes");
+        }
+
+        const auto byte{next("']'")};
+
+        if (byte == '\'' || byte == '"')
+        {
+            while (peek() && *peek() != byte)
+            {
+                at_ += *peek() == '\\' ? 2 : 1;
+            }
+
+            ++at_;
+        }
+        else if (byte == '[')
+        {
+            ++depth;
+        }
+        else if (byte == ']')
+        {
+            --depth;
+        }
+    } while (depth > 0);
+}
+
 std::optional<bool> Grammar::options_block(std::vector<std::string>& options)
 {
     skip_blanks();
@@ -882,24 +1676,46 @@ std::optional<bool> Grammar::options_block(std::vector<std::string>& options)
 
         skip_blanks();
 
-        std::string value;
+        // ANTLR reads the value with the lexer it reads the grammar with, one token: a name, dotted or not, a
+        // number, a quoted string or a brace block, the blanks and comments around it no part of it.
+        const auto begin{at_};
 
-        while (peek() && *peek() != ';' && *peek() != '}')
+        if (peek() == '\'')
         {
-            value.push_back(next("the option's value"));
+            ++at_;
+
+            std::ignore = literal();
+        }
+        else if (peek() == '{')
+        {
+            skip_block();
+        }
+        else
+        {
+            while (peek() && (is_name_byte(*peek()) || *peek() == '.'))
+            {
+                ++at_;
+            }
+        }
+
+        const std::string value{text_.substr(begin, at_ - begin)};
+
+        if (value.empty())
+        {
+            fail("an option needs a value");
         }
 
         skip_blanks();
 
         expect(';', "';' to end the option");
 
-        options.push_back(
-                name + '=' +
-                std::string{std::string_view{value} | std::views::take(value.find_last_not_of(" \t\r\n") + 1)});
+        options.push_back(name + '=' + value);
 
-        if (name == "caseInsensitive")
+        // ANTLR takes `true` and `false` and no other spelling, `TRUE` among them: another value is its warning 84
+        // and sets nothing, so the grammar's option stays off and a rule's option leaves the grammar's in force.
+        if (name == "caseInsensitive" && (value == "true" || value == "false"))
         {
-            case_insensitive = options.back().ends_with("true");
+            case_insensitive = value == "true";
         }
     }
 
@@ -908,9 +1724,35 @@ std::optional<bool> Grammar::options_block(std::vector<std::string>& options)
     return case_insensitive;
 }
 
+void Grammar::channels_block()
+{
+    skip_blanks();
+
+    expect('{', "'{' to open the channels block");
+
+    for (skip_blanks(); peek() != '}'; skip_blanks())
+    {
+        const auto name{identifier()};
+
+        if (name.empty())
+        {
+            fail("a channel needs a name");
+        }
+
+        channels_.insert(name);
+
+        skip_blanks();
+
+        std::ignore = accept(',');
+    }
+
+    ++at_;
+}
+
 void Grammar::parser_rule()
 {
-    // Through the `;` that ends the rule, blocks and literals stepped over, the literals kept.
+    // Through the `;` that ends the rule, actions and argument blocks stepped over as ANTLR's lexer reads them, the
+    // literals kept: a quoted `]` inside an argument block closes nothing, so `r[const char* s="]'x'"]` uses no 'x'.
     for (;;)
     {
         skip_blanks();
@@ -929,21 +1771,16 @@ void Grammar::parser_rule()
             break;
         }
 
-        if (byte == '{' || byte == '[')
+        if (byte == '{')
         {
-            if (byte == '[')
-            {
-                while (peek() && *peek() != ']')
-                {
-                    ++at_;
-                }
+            skip_block();
 
-                ++at_;
-            }
-            else
-            {
-                skip_block();
-            }
+            continue;
+        }
+
+        if (byte == '[')
+        {
+            skip_argument();
 
             continue;
         }
@@ -997,12 +1834,7 @@ void Grammar::parser_rule()
 
         if (peek() == '[')
         {
-            while (peek() && *peek() != ']')
-            {
-                ++at_;
-            }
-
-            ++at_;
+            skip_argument();
 
             skip_blanks();
         }
@@ -1035,7 +1867,9 @@ void Grammar::lexer_rule(Lexer_spec& spec, const std::string& mode, const bool c
 
     skip_blanks();
 
-    if (at("options"))
+    const auto optioned{at("options")};
+
+    if (optioned)
     {
         std::ignore = identifier();
 
@@ -1053,17 +1887,52 @@ void Grammar::lexer_rule(Lexer_spec& spec, const std::string& mode, const bool c
 
     expect(':', std::format("':' after the rule {}", name));
 
+    lazy_ = false;
+
+    rule_ = name;
+
     const auto alternatives{this->alternatives(caseless_rule)};
 
-    // The whole rule is what a reference to it expands to; an empty alternative makes it optional.
+    if (lazy_)
+    {
+        lazy_rules_.emplace_back(name, line_of(opened));
+    }
+
+    // In a combined grammar ANTLR maps a parser rule's literal onto the lexer rule that spells it, and what spells
+    // it is what ANTLR's own tree patterns match: a rule that is no fragment and carries no options, of one
+    // alternative that is the literal alone, the literal and one action, or the literal and one or two commands of
+    // which at most one takes an argument; the grammar's comments are in no pattern. A rule of any other shape
+    // spelling the literal leaves the parser's literal an implicit token of its own, placed ahead of the rule.
+    if (const auto& [pattern, expression, commands, clause, spelling, acted, empty, nullable]{alternatives.front()};
+        !fragment && !optioned && alternatives.size() == 1 && !spelling.empty())
+    {
+        const auto read{commands_of(commands)};
+
+        const auto called{
+                std::ranges::count_if(read, [](const Command& command) { return !command.argument.empty(); })};
+
+        if (read.empty() || (!acted && read.size() <= 2 && called <= 1))
+        {
+            ++aliases_[spelling];
+        }
+    }
+
+    // The whole rule is what a reference to it expands to, and it matches the empty string when one of its
+    // alternatives does, which is what a closure over a reference to it needs; an empty alternative makes it
+    // optional.
     std::string whole;
 
     auto filled{0UZ};
 
     auto optional{false};
 
-    for (const auto& [pattern, expression, commands, empty] : alternatives)
+    auto nullable{never_empty()};
+
+    for (const auto& [pattern, expression, commands, clause, spelling, acted, empty, alternative_nullable] :
+         alternatives)
     {
+        nullable = either_empty(std::move(nullable), alternative_nullable);
+
         if (empty)
         {
             optional = true;
@@ -1090,100 +1959,146 @@ void Grammar::lexer_rule(Lexer_spec& spec, const std::string& mode, const bool c
 
     spec.definitions.insert_or_assign(name, whole);
 
+    nullability_.insert_or_assign(name, std::move(nullable));
+
     if (fragment)
     {
         return;
     }
 
-    const auto shared{std::ranges::all_of(alternatives, [&alternatives](const Alternative& alternative) {
-        return alternative.commands == alternatives.front().commands;
-    })};
+    // A command ends the rule's single outermost alternative, so a rule of several alternatives carries none: one
+    // rule is one token however many alternatives it has.
+    const auto commanded{std::ranges::any_of(
+            alternatives, [](const Alternative& alternative) { return !alternative.commands.empty(); })};
+
+    if (alternatives.size() > 1 && commanded)
+    {
+        at_ = opened;
+
+        fail(std::format(
+                "a command must be the last element of the single outermost alternative of a lexer rule, so the "
+                "commands on the alternatives of {} are no ANTLR grammar",
+                name));
+    }
 
     const auto line{line_of(opened)};
 
-    const auto token_of{[&name, this](const std::string_view commands) -> std::optional<std::string> {
-        std::optional<std::string> token{name};
+    // `skip` and `type(X)` both set the token's type and a channel sets a field of its own, the rightmost command
+    // for a field winning in either case: `-> channel(HIDDEN), type(B)` leaves a token named B on the hidden
+    // channel, which a parser never sees, and `-> skip, type(B)` leaves B in the stream, the type overriding the
+    // skip, which is what ANTLR's warning 179 on the pair says of it. A channel command naming the default
+    // channel, by name or as zero in any spelling, leaves the token where a parser reads it.
+    const auto token_of{[&name, this](const Alternative& alternative) -> std::optional<std::string> {
+        auto channelled{false};
 
-        for (const auto part : commands | std::views::split(','))
+        std::optional<std::string> type{name};
+
+        for (const auto& [command, argument, offset, empty_parens] : commands_of(alternative.commands))
         {
-            std::string_view command{part};
+            const auto line{line_of(alternative.clause + offset)};
 
-            while (!command.empty() && (command.front() == ' ' || command.front() == '\t' || command.front() == '\n'))
+            // ANTLR's parser takes a command's parens with something inside or no parens at all, so `skip()` and
+            // `type( )` are its syntax error at the `)`, in its words, before any command is looked at.
+            if (empty_parens)
             {
-                command.remove_prefix(1);
+                throw Spec_error{
+                        "syntax error: ')' came as a complete surprise to me while matching a lexer rule",
+                        line_of(alternative.clause + *empty_parens)};
             }
 
-            while (!command.empty() && (command.back() == ' ' || command.back() == '\t' || command.back() == '\n'))
+            // ANTLR knows seven commands and no other, three taking no argument and four taking one, and rejects a
+            // grammar naming anything else as its errors 149, 150 and 151, in its own words. The seven with their
+            // first letter capitalised, `Skip`, name the code templates of ANTLR's targets, `LexerSkipCommand`,
+            // which ANTLR expands into an action the generated lexer runs and its own interpreter leaves out; they
+            // pass its argument checks under their own spelling.
+            const auto templated{
+                    command == "Skip" || command == "More" || command == "PopMode" || command == "Type" ||
+                    command == "Channel" || command == "Mode" || command == "PushMode"};
+
+            auto lowered{command};
+
+            if (templated)
             {
-                command.remove_suffix(1);
+                lowered.front() = static_cast<char>(lowered.front() | 0x20);
             }
 
-            if (command == "skip" || command.starts_with("channel"))
+            const auto plain{lowered == "skip" || lowered == "more" || lowered == "popMode"};
+
+            const auto called{lowered == "type" || lowered == "channel" || lowered == "mode" || lowered == "pushMode"};
+
+            if (!plain && !called)
             {
-                token = std::nullopt;
+                throw Spec_error{
+                        "lexer command " + command + " does not exist or is not supported by the current target", line};
             }
-            else if (command.starts_with("type"))
+
+            if (called && argument.empty())
             {
-                const auto open{command.find('(')};
+                throw Spec_error{"missing argument for lexer command " + command, line};
+            }
 
-                const auto close{command.find(')')};
+            if (plain && !argument.empty())
+            {
+                throw Spec_error{"lexer command " + command + " does not take any arguments", line};
+            }
 
-                token = std::string{command.substr(open + 1, close - open - 1)};
+            if (templated)
+            {
+                throw Spec_error{
+                        "lexer command " + command +
+                                " names a code template of ANTLR's target, expanded into an action the generated "
+                                "lexer runs and ANTLR's own interpreter leaves out, so what the token stream holds "
+                                "is the target's to say",
+                        line};
+            }
+
+            if (command == "skip")
+            {
+                type = std::nullopt;
+            }
+            else if (command == "type")
+            {
+                type = argument;
+            }
+            else if (command == "channel")
+            {
+                channelled = hidden(argument, channels_, line);
             }
             else if (command == "more")
             {
-                fail("'-> more' joins the match onto the next token's, which the byte reading cannot express");
+                throw Spec_error{
+                        "'-> more' joins the match onto the next token's, which the byte reading cannot express", line};
             }
         }
 
-        return token;
+        return channelled ? std::nullopt : type;
     }};
 
-    if (shared)
+    std::string pattern;
+
+    for (const auto& [text, expression, commands, clause, spelling, acted, empty, alternative_nullable] : alternatives)
     {
-        std::string pattern;
-
-        for (const auto& [text, expression, commands, empty] : alternatives)
-        {
-            pattern += (pattern.empty() ? "" : " | ") + text;
-        }
-
-        spec.rules.push_back(
-                {.pattern = std::move(pattern),
-                 .expression = whole,
-                 .conditions = mode.empty() ? std::vector<std::string>{} : std::vector{mode},
-                 .action =
-                         alternatives.front().commands.empty() ? std::string{} : "-> " + alternatives.front().commands,
-                 .token = token_of(alternatives.front().commands),
-                 .priority = std::nullopt,
-                 .line = line});
-
-        return;
+        pattern += (pattern.empty() ? "" : " | ") + text;
     }
 
-    // Alternatives with different commands are ranked as ANTLR ranks them, first alternative first; an empty one is
-    // no token.
-    for (const auto& [pattern, expression, commands, empty] : alternatives)
-    {
-        if (empty)
-        {
-            continue;
-        }
+    const auto& commands{alternatives.front().commands};
 
-        spec.rules.push_back(
-                {.pattern = pattern,
-                 .expression = expression,
-                 .conditions = mode.empty() ? std::vector<std::string>{} : std::vector{mode},
-                 .action = commands.empty() ? std::string{} : "-> " + commands,
-                 .token = token_of(commands),
-                 .priority = std::nullopt,
-                 .line = line});
-    }
+    spec.rules.push_back(
+            {.pattern = std::move(pattern),
+             .expression = whole,
+             .conditions = mode.empty() ? std::vector<std::string>{} : std::vector{mode},
+             .action = commands.empty() ? std::string{} : "-> " + commands,
+             .token = token_of(alternatives.front()),
+             .priority = std::nullopt,
+             .line = line});
 }
 
 std::vector<Alternative> Grammar::alternatives(const bool case_insensitive)
 {
     std::vector<Alternative> read;
+
+    // What the alternatives read so far can begin with, unknown once one of them cannot say.
+    std::optional<Beginning> earlier{Beginning{}};
 
     for (;;)
     {
@@ -1191,7 +2106,30 @@ std::vector<Alternative> Grammar::alternatives(const bool case_insensitive)
 
         const auto opened{at_};
 
-        auto [expression, first, empty]{sequence(case_insensitive)};
+        auto [expression, first, characters, lazy, empty, nullable, spelling, acted]{sequence(case_insensitive, true)};
+
+        // ANTLR's lexer follows the rule's alternatives at once, in their order, and the first path to reach the
+        // rule's end stops every later path that has passed a non-greedy decision: `'ab' | 'a' .*? 'c'` on "abc"
+        // ends at the second character, where `'a' .*? 'c' | 'ab'` takes all three. An earlier alternative that no
+        // character begins together with this one is dead before the loop's decision is reached, so the loop is
+        // read where every earlier alternative is such.
+        if (lazy && !(earlier && first && !earlier->overlaps(*first)))
+        {
+            throw Spec_error{
+                    "a non-greedy loop is read only where no earlier alternative of the rule can begin with the same "
+                    "character, since ANTLR takes the alternatives in order and an earlier one reaching the rule's "
+                    "end stops the loop, which the byte reading cannot express",
+                    line_of(opened)};
+        }
+
+        if (earlier && first)
+        {
+            earlier->join(*first);
+        }
+        else
+        {
+            earlier = std::nullopt;
+        }
 
         std::string pattern{text_.substr(opened, at_ - opened)};
 
@@ -1203,6 +2141,8 @@ std::vector<Alternative> Grammar::alternatives(const bool case_insensitive)
 
         std::string commands;
 
+        auto clause{opened};
+
         if (at("->"))
         {
             at_ += 2;
@@ -1211,7 +2151,11 @@ std::vector<Alternative> Grammar::alternatives(const bool case_insensitive)
 
             const auto begin{at_};
 
-            while (peek() && *peek() != ';' && *peek() != '|')
+            clause = begin;
+
+            // A comment between the commands is the grammar's and may hold a `;` or a `|` of its own, so the
+            // clause ends at the first of those the reading stands on rather than at the first in the text.
+            for (skip_blanks(); peek() && *peek() != ';' && *peek() != '|'; skip_blanks())
             {
                 ++at_;
             }
@@ -1229,7 +2173,11 @@ std::vector<Alternative> Grammar::alternatives(const bool case_insensitive)
                 {.pattern = std::move(pattern),
                  .expression = std::move(expression),
                  .commands = std::move(commands),
-                 .empty = empty});
+                 .clause = clause,
+                 .spelling = std::move(spelling),
+                 .acted = acted,
+                 .empty = empty,
+                 .nullable = std::move(nullable)});
 
         if (peek() == '|')
         {
@@ -1246,7 +2194,7 @@ std::vector<Alternative> Grammar::alternatives(const bool case_insensitive)
     }
 }
 
-Sequence Grammar::sequence(const bool case_insensitive)
+Sequence Grammar::sequence(const bool case_insensitive, const bool outermost)
 {
     std::vector<Element> elements;
 
@@ -1255,8 +2203,10 @@ Sequence Grammar::sequence(const bool case_insensitive)
         elements.push_back(element(case_insensitive));
     }
 
-    // What the sequence can begin with: every element up to and including the first mandatory one.
-    std::optional<Ascii_t> first{Ascii_t{}};
+    // What the sequence can begin with: every element up to and including the first that cannot match the empty
+    // string, an element under `?` or `*` and a group with an empty alternative among those that can; one whose
+    // emptiness waits on a rule leaves the answer unknown, as a reference does.
+    std::optional<Beginning> first{Beginning{}};
 
     for (const auto& element : elements)
     {
@@ -1265,26 +2215,46 @@ Sequence Grammar::sequence(const bool case_insensitive)
             continue;
         }
 
-        if (!element.first)
+        const auto skippable{element.suffix == '?' || element.suffix == '*' || matches_empty(element.nullable, {})};
+
+        if (!element.first || (!skippable && !element.nullable.empty()))
         {
             first = std::nullopt;
 
             break;
         }
 
-        *first |= *element.first;
+        first->join(*element.first);
 
-        if (element.suffix != '?' && element.suffix != '*')
+        if (!skippable)
         {
             break;
         }
     }
 
+    // How many characters a match has, when every element's matches have one length and no suffix varies it.
+    const auto measured{[&elements](const std::size_t count) -> std::optional<std::size_t> {
+        std::size_t total{0};
+
+        for (const auto& element : elements | std::views::take(count))
+        {
+            if (!element.characters || element.suffix != 0)
+            {
+                return std::nullopt;
+            }
+
+            total += *element.characters;
+        }
+
+        return total;
+    }};
+
     std::string out;
 
     for (std::size_t index{0}; index < elements.size(); ++index)
     {
-        const auto& [expression, literal, alphabet, begins, suffix, lazy]{elements[index]};
+        const auto& [expression, literal, spelling, alphabet, begins, nullable, one_length, characters, suffix, lazy]{
+                elements[index]};
 
         if (!lazy)
         {
@@ -1294,27 +2264,60 @@ Sequence Grammar::sequence(const bool case_insensitive)
             continue;
         }
 
-        // A non-greedy loop stops at the first point where what follows matches, so before a literal it matches
-        // whatever holds no occurrence of the literal; before anything else it is not a regular rewrite.
-        const auto next{index + 1 < elements.size() ? elements[index + 1].literal : std::nullopt};
+        // A non-greedy loop stops at the fewest characters that still let the rest of the rule match, so what it
+        // stops at is the whole rest of the rule, not the element after it: the rest is a regular rewrite only where
+        // it spells one ASCII string, and `.*? 'a' 'b'` stops at `ab`, not at `a`. Inside a group the rest of the
+        // rule reaches past what this sequence holds, `('a' .*? 'b') 'c'` stopping at `bc` and not at `b`, so the
+        // loop is read in an outermost alternative alone.
+        lazy_ = true;
 
-        if (!next || next->empty())
+        if (!outermost)
         {
-            fail("a non-greedy loop is read only before a literal, which is where it stops");
+            fail("a non-greedy loop is read only in an outermost alternative of a rule, since ANTLR stops it where "
+                 "the rest of the whole rule matches, which reaches past the group it stands in");
         }
 
-        if (std::ranges::any_of(*next, [](const char byte) { return static_cast<unsigned char>(byte) >= 0x80; }))
+        const auto next{rest_spelling(elements, index + 1)};
+
+        if (!next)
         {
-            fail("a non-greedy loop before a literal beyond ASCII is not modelled");
+            fail("a non-greedy loop is read only where the rest of the rule spells one ASCII string, which is where "
+                 "ANTLR stops the loop; the fewest characters that let the rest match are no regular rewrite here");
+        }
+
+        // ANTLR's lexer follows every path through the rule at once, in the order the alternatives before the loop
+        // give them, and the first path to reach the rule's end stops every later path that has passed the loop's
+        // decision. Where the elements before the loop match one length in characters, every path reaches the
+        // decision at the same character and the order decides nothing; where they do not, `('a'|'aa') .*? 'a'` on
+        // "aaa", the path through 'a' ends at the second character and stops the path through 'aa' there, while
+        // `('aa'|'a') .*? 'a'` takes all three, a difference the greedy rewrite of the group cannot keep.
+        if (!measured(index))
+        {
+            fail("a non-greedy loop is read only after elements whose every match has one length in characters, "
+                 "since ANTLR takes the paths through the elements before it in order and the first to reach the "
+                 "rule's end stops the loop on every later one, which the byte reading cannot express where the "
+                 "paths reach the loop at different characters");
         }
 
         const auto opener{static_cast<unsigned char>(next->front())};
 
         if (suffix == '?')
         {
-            if (!begins || begins->test(opener))
+            // The bypass of a non-greedy option comes first among the paths, and the body's alternatives after it
+            // in order; so the body may not begin the rest, which the bypass would end the rule with at once, and
+            // its alternatives must reach the rest at one character together, `('x'|'xa')?? 'a'` on "xaa" stopping
+            // after "xa" where `('xa'|'x')?? 'a'` takes all three.
+            if (!begins || begins->ascii.test(opener))
             {
-                fail("a non-greedy option before a literal it could begin is not modelled");
+                fail("a non-greedy option before a string it could begin is not modelled");
+            }
+
+            if (!elements[index].characters)
+            {
+                fail("a non-greedy option is read over a body whose every match has one length in characters, since "
+                     "ANTLR takes the body's alternatives in order and the first to reach the rule's end stops the "
+                     "others, which the byte reading cannot express where they reach the rest at different "
+                     "characters");
             }
 
             out += atomic(expression) ? expression + "?" : std::format("({})?", expression);
@@ -1322,29 +2325,58 @@ Sequence Grammar::sequence(const bool case_insensitive)
             continue;
         }
 
-        const auto unit{atomic(expression) ? expression : "(" + expression + ")"};
-
-        // Over one set the loop is the strings avoiding the literal; over a group none of whose alternatives can
-        // begin with the literal's first byte, the loop stops where a greedy one does, since neither can step over
-        // that byte.
+        // Over one set, the dot or one character the loop is the strings that stop at the rest. Over a body of
+        // one length, a literal of several characters folded or not, the iterations are aligned to that length, and
+        // where the rest cannot begin with the body's first byte no repetition of it can hold the rest, so the
+        // greedy loop is the same language. Over a body of several lengths it is neither: ANTLR stops the loop at
+        // the fewest characters that let the rest match and takes a group's alternatives in order, so
+        // `('x'|'xa')*? 'a'` stops on "xaa" after "xa" while `('xa'|'x')*? 'a'` takes all three, a difference no
+        // greedy rewrite over the group can keep.
         if (alphabet)
         {
-            const auto free{avoiding(*next, *alphabet)};
+            // A `+?` loop reads its first character whatever follows, since it cannot stop before it has one, and
+            // the rest of its body is the `*?` body from there on.
+            const auto unit{atomic(expression) ? expression : "(" + expression + ")"};
 
-            out += suffix == '+' ? unit + free : free;
+            const auto body{avoiding(*next, *alphabet)};
+
+            out += suffix == '+' ? unit + body : body;
         }
-        else if (begins && !begins->test(opener))
+        else if (one_length && begins && !begins->ascii.test(opener))
         {
-            out += unit + suffix;
+            out += atomic(expression) ? expression + suffix : std::format("({}){}", expression, suffix);
         }
         else
         {
-            fail("a non-greedy loop is read only over a set, a dot, one character, or a group that cannot begin with "
-                 "the literal it stops at");
+            fail("a non-greedy loop is read over a set, a dot, one character, or a literal of one length whose first "
+                 "byte the rest cannot begin with; over any other body ANTLR stops it at the fewest characters that "
+                 "let the rest match, a group's alternatives taken in order, which the byte reading cannot express");
         }
     }
 
-    return {.expression = std::move(out), .first = first, .empty = elements.empty()};
+    // The sequence matches the empty string when every element can, and an element under `?` or `*` always can.
+    auto nullable{always_empty()};
+
+    for (const auto& element : elements)
+    {
+        nullable = both_empty(
+                nullable, element.suffix == '?' || element.suffix == '*' ? always_empty() : element.nullable);
+    }
+
+    // ANTLR's patterns for a rule spelling a parser literal match the literal alone, unsuffixed, or the literal and
+    // one action after it; an inert action is the only kind read this far.
+    const auto acted{elements.size() == 2 && elements.back().expression.empty()};
+
+    const auto spelled{(elements.size() == 1 || acted) && elements.front().suffix == 0};
+
+    return {.expression = std::move(out),
+            .first = first,
+            .characters = measured(elements.size()),
+            .lazy = std::ranges::any_of(elements, &Element::lazy),
+            .empty = elements.empty(),
+            .nullable = std::move(nullable),
+            .spelling = spelled ? elements.front().spelling : std::string{},
+            .acted = acted};
 }
 
 Element Grammar::element(const bool case_insensitive)
@@ -1354,8 +2386,12 @@ Element Grammar::element(const bool case_insensitive)
     Element element{
             .expression = {},
             .literal = std::nullopt,
+            .spelling = {},
             .alphabet = std::nullopt,
             .first = std::nullopt,
+            .nullable = never_empty(),
+            .one_length = false,
+            .characters = std::nullopt,
             .suffix = 0,
             .lazy = false};
 
@@ -1363,8 +2399,14 @@ Element Grammar::element(const bool case_insensitive)
 
     if (byte == '{')
     {
-        // An action, which changes nothing a rule matches; a predicate would, and is refused.
+        // An action, which ANTLR runs at this point of the match and whose code can make the rule produce another
+        // token than its own, `{more();}` joining the match onto the next token's and `{setType(X);}` renaming it;
+        // only a body of blanks and comments runs nothing and is inert. A predicate conditions the match itself.
+        const auto body{at_ + 1};
+
         skip_block();
+
+        const auto closed{at_ - 1};
 
         skip_blanks();
 
@@ -1375,6 +2417,19 @@ Element Grammar::element(const bool case_insensitive)
             fail("a semantic predicate conditions the match on code, which a token language cannot say");
         }
 
+        if (!inert(text_, body, closed))
+        {
+            at_ = opened;
+
+            fail("an action inside a rule runs code that can change the token the rule produces, more() and "
+                 "setType() among them, which the byte reading cannot model; only blanks and comments are inert");
+        }
+
+        // An inert action matches nothing at all, so it never stands in the way of an empty match.
+        element.nullable = always_empty();
+
+        element.characters = 0;
+
         return element;
     }
 
@@ -1382,33 +2437,58 @@ Element Grammar::element(const bool case_insensitive)
     {
         ++at_;
 
-        auto bytes{literal()};
+        auto [bytes, single]{literal()};
+
+        const std::string spelling{text_.substr(opened, at_ - opened)};
 
         skip_blanks();
 
         if (at(".."))
         {
-            // A range of characters, 'a'..'z'.
+            // A range of characters, 'a'..'z': each end one character as ANTLR reads one, its error 144 otherwise,
+            // and the end no lower than the start, its error 174 otherwise.
             at_ += 2;
 
             skip_blanks();
 
+            const auto second{at_};
+
             expect('\'', "a quote to open the range's end");
 
-            const auto low{decoded(bytes)};
+            const auto end{literal()};
 
-            const auto high{decoded(literal())};
+            const std::string end_spelling{text_.substr(second, at_ - second)};
 
-            if (!low || !high || *high < *low)
+            if (!single || !end.single)
             {
                 at_ = opened;
 
-                fail("a character range takes one character at each end, the end no lower than the start");
+                fail(multi_character(single ? end_spelling : spelling));
+            }
+
+            const auto low{decoded(bytes)};
+
+            const auto high{decoded(end.bytes)};
+
+            if (*high < *low)
+            {
+                at_ = opened;
+
+                fail(empty_range(spelling + ".." + end_spelling));
+            }
+
+            if (case_insensitive && *high >= 0x80)
+            {
+                at_ = opened;
+
+                fail(std::string{unfoldable});
             }
 
             auto alphabet{spanning(*low, *high, case_insensitive)};
 
             element.expression = step(alphabet);
+
+            element.one_length = alphabet.beyond.empty();
 
             element.alphabet = std::move(alphabet);
         }
@@ -1419,6 +2499,16 @@ Element Grammar::element(const bool case_insensitive)
                 at_ = opened;
 
                 fail("an empty literal matches nothing");
+            }
+
+            const auto beyond{
+                    std::ranges::any_of(bytes, [](const char one) { return static_cast<unsigned char>(one) >= 0x80; })};
+
+            if (case_insensitive && beyond)
+            {
+                at_ = opened;
+
+                fail(std::string{unfoldable});
             }
 
             const auto lettered{std::ranges::any_of(
@@ -1435,37 +2525,30 @@ Element Grammar::element(const bool case_insensitive)
                 element.literal = bytes;
             }
 
-            element.first = Ascii_t{};
+            element.spelling = spelling;
+
+            // Every match of a literal is the literal, folded or not, so they all have its length, in bytes and in
+            // characters, of which every byte but a continuation byte begins one.
+            element.one_length = true;
+
+            element.characters = static_cast<std::size_t>(std::ranges::count_if(
+                    bytes, [](const char one) { return (static_cast<unsigned char>(one) & 0xC0U) != 0x80U; }));
+
+            // A literal's characters fold one by one, each as a range of itself.
+            element.first = Beginning{};
 
             if (const auto lead{static_cast<unsigned char>(bytes.front())}; lead < 0x80)
             {
-                element.first->set(lead);
-
-                if (case_insensitive)
-                {
-                    double_case(*element.first);
-                }
+                element.first->ascii = spanning(lead, lead, case_insensitive).ascii;
+            }
+            else
+            {
+                element.first->beyond = true;
             }
 
             if (const auto scalar{decoded(bytes)})
             {
-                Alphabet alphabet;
-
-                if (*scalar < 0x80)
-                {
-                    alphabet.ascii.set(*scalar);
-
-                    if (case_insensitive)
-                    {
-                        double_case(alphabet.ascii);
-                    }
-                }
-                else
-                {
-                    alphabet.beyond.push_back({.first = *scalar, .last = *scalar});
-                }
-
-                element.alphabet = std::move(alphabet);
+                element.alphabet = spanning(*scalar, *scalar, case_insensitive);
             }
         }
     }
@@ -1475,7 +2558,28 @@ Element Grammar::element(const bool case_insensitive)
 
         auto alphabet{set(case_insensitive)};
 
+        // A set of nothing but surrogates is ANTLR's transition no UTF-8 input decodes a code point for, which its
+        // lexer never takes; the byte reading has no set that never matches, so it refuses.
+        if (alphabet.ascii.none() && alphabet.beyond.empty())
+        {
+            const std::string spelling{text_.substr(opened, at_ - opened)};
+
+            at_ = opened;
+
+            fail("the set " + spelling +
+                 " holds nothing but surrogates, which no UTF-8 input decodes to, so ANTLR's lexer never matches it");
+        }
+
+        if (case_insensitive && !alphabet.beyond.empty())
+        {
+            at_ = opened;
+
+            fail(std::string{unfoldable});
+        }
+
         element.expression = step(alphabet);
+
+        element.one_length = alphabet.beyond.empty();
 
         element.alphabet = std::move(alphabet);
     }
@@ -1485,9 +2589,20 @@ Element Grammar::element(const bool case_insensitive)
 
         skip_blanks();
 
-        element.alphabet = complement(negatable(case_insensitive));
+        const auto negated{negatable(case_insensitive)};
+
+        if (case_insensitive && !negated.beyond.empty())
+        {
+            at_ = opened;
+
+            fail(std::string{unfoldable});
+        }
+
+        element.alphabet = complement(negated);
 
         element.expression = step(*element.alphabet);
+
+        element.one_length = element.alphabet->beyond.empty();
     }
     else if (byte == '.')
     {
@@ -1500,6 +2615,8 @@ Element Grammar::element(const bool case_insensitive)
         element.expression = step(all);
 
         element.alphabet = std::move(all);
+
+        element.one_length = false;
     }
     else if (byte == '(')
     {
@@ -1509,11 +2626,17 @@ Element Grammar::element(const bool case_insensitive)
 
         auto optional{false};
 
-        element.first = Ascii_t{};
+        element.first = Beginning{};
 
-        for (;;)
+        // The alternatives' lengths agree until one differs or is unknown, the first alternative setting the mark.
+        auto agreed{true};
+
+        for (auto alternatives{0UZ};; ++alternatives)
         {
-            const auto [expression, first, empty]{sequence(case_insensitive)};
+            const auto [expression, first, characters, lazy, empty, nullable, spelling, acted]{
+                    sequence(case_insensitive, false)};
+
+            element.nullable = either_empty(std::move(element.nullable), nullable);
 
             if (empty)
             {
@@ -1526,12 +2649,19 @@ Element Grammar::element(const bool case_insensitive)
 
             if (element.first && first)
             {
-                *element.first |= *first;
+                element.first->join(*first);
             }
             else
             {
                 element.first = std::nullopt;
             }
+
+            if (alternatives == 0)
+            {
+                element.characters = characters;
+            }
+
+            agreed = agreed && characters && element.characters == characters;
 
             if (peek() == '|')
             {
@@ -1554,6 +2684,11 @@ Element Grammar::element(const bool case_insensitive)
             fail("a group with only empty alternatives matches nothing but the empty string");
         }
 
+        if (!agreed)
+        {
+            element.characters = std::nullopt;
+        }
+
         // An empty alternative makes the group optional.
         element.expression = optional ? "(" + inner + ")?" : "(" + inner + ")";
     }
@@ -1574,11 +2709,16 @@ Element Grammar::element(const bool case_insensitive)
         }
 
         element.expression = "{" + name + "}";
+
+        element.nullable = {{name}};
     }
 
+    // A set, a range, the dot, a negation and a one-character literal all match one character.
     if (element.alphabet)
     {
-        element.first = element.alphabet->ascii;
+        element.first = Beginning{.ascii = element.alphabet->ascii, .beyond = !element.alphabet->beyond.empty()};
+
+        element.characters = 1;
     }
 
     skip_blanks();
@@ -1595,19 +2735,115 @@ Element Grammar::element(const bool case_insensitive)
         }
     }
 
+    // ANTLR rejects a closure whose body can match the empty string, `('b' | )*` and a star over a nullable rule
+    // among them, as its error 153. A body that reaches no rule answers here; one that reaches a rule waits for
+    // read(), since the rule it reaches may be written further down.
+    if (element.suffix == '*' || element.suffix == '+')
+    {
+        if (matches_empty(element.nullable, {}))
+        {
+            at_ = opened;
+
+            fail(std::format(
+                    "the rule {} contains a closure with at least one alternative that can match the empty string, "
+                    "which ANTLR rejects",
+                    rule_));
+        }
+
+        closures_.push_back({.rule = rule_, .line = line_of(opened), .body = element.nullable});
+    }
+
     return element;
 }
 
-std::string Grammar::literal()
+Literal Grammar::literal()
 {
+    const auto quote{at_ - 1};
+
     std::string bytes;
 
-    while (const auto scalar{character('\'')})
+    // ANTLR reads the literal into a UTF-16 string and walks it by code point (CharSupport and
+    // LexerATNFactory.stringLiteral), so a high surrogate escape and a low one after it, `'\uD83D\uDE00'`, are the
+    // one character the pair encodes, and a surrogate on its own is a transition on a code point no UTF-8 input
+    // decodes to, which its lexer never takes: the byte reading has no literal that never matches, so it refuses.
+    std::optional<char32_t> high;
+
+    auto pieces{0UZ};
+
+    auto wide{false};
+
+    const auto lone{[this](const char32_t scalar) {
+        fail(std::format(
+                R"(the literal holds a lone surrogate, \u{:04X}, which no UTF-8 input decodes to, so ANTLR's lexer )"
+                R"(never matches it; a high surrogate and a low one after it are the character the pair encodes)",
+                static_cast<std::uint32_t>(scalar)));
+    }};
+
+    for (;;)
     {
+        const auto written{peek() != '\\'};
+
+        const auto braced{at("\\u{")};
+
+        const auto scalar{character('\'')};
+
+        if (!scalar)
+        {
+            break;
+        }
+
+        // ANTLR's lexer counts a braced escape's digits from the literal's opening quote rather than from the escape
+        // (ANTLRLexer.g's UNICODE_EXTENDED_ESC), so one whose closing brace stands twelve or more UTF-16 units past
+        // the quote, `'abcdef\u{41}'` and a second braced escape in one literal, is its error 156, in its words: the
+        // literal from its quote through the closing brace.
+        if (braced && units(text_, quote, at_ - 1) >= 12)
+        {
+            const std::string sequence{text_.substr(quote, at_ - quote)};
+
+            at_ = quote;
+
+            fail("invalid escape sequence " + sequence);
+        }
+
+        ++pieces;
+
+        wide = wide || (written && *scalar > 0xFFFF);
+
+        if (high && *scalar >= first_low_surrogate && *scalar <= last_surrogate)
+        {
+            bytes += encoded(0x10000 + ((*high - first_surrogate) << 10U) + (*scalar - first_low_surrogate));
+
+            high = std::nullopt;
+
+            continue;
+        }
+
+        if (high)
+        {
+            lone(*high);
+        }
+
+        if (*scalar >= first_surrogate && *scalar <= last_high_surrogate)
+        {
+            high = *scalar;
+
+            continue;
+        }
+
+        if (surrogate(*scalar))
+        {
+            lone(*scalar);
+        }
+
         bytes += encoded(*scalar);
     }
 
-    return bytes;
+    if (high)
+    {
+        lone(*high);
+    }
+
+    return {.bytes = std::move(bytes), .single = pieces == 1 && !wide};
 }
 
 Alphabet Grammar::set(const bool case_insensitive)
@@ -1616,20 +2852,20 @@ Alphabet Grammar::set(const bool case_insensitive)
 
     Alphabet alphabet;
 
-    const auto admit{[&alphabet](const char32_t first, const char32_t last) {
-        for (auto value{first}; value <= std::min<char32_t>(last, 0x7F); ++value)
+    // Each member and each span folds on its own, as ANTLR folds them: `[xA-t9]` gains `X` and nothing of `A-t`.
+    // A member or a span of nothing but surrogates is ANTLR's member no UTF-8 input decodes to, which its lexer never
+    // matches, and is left out; a span reaching past them keeps what lies on either side. A member waits until the
+    // next one shows whether a '-' spans them; an escaped `\-` is a member, not a span.
+    const auto take{[&alphabet, case_insensitive](const char32_t first, const char32_t last) {
+        if (!(surrogate(first) && surrogate(last)))
         {
-            alphabet.ascii.set(value);
-        }
-
-        if (last >= 0x80)
-        {
-            alphabet.beyond.push_back({.first = std::max<char32_t>(first, 0x80), .last = last});
+            admit(alphabet, first, last, case_insensitive);
         }
     }};
 
-    // A member waits until the next one shows whether a '-' spans them; an escaped `\-` is a member, not a span.
     std::optional<char32_t> pending;
+
+    auto written{false};
 
     for (;;)
     {
@@ -1642,6 +2878,8 @@ Alphabet Grammar::set(const bool case_insensitive)
             break;
         }
 
+        written = true;
+
         if (pending && *scalar == '-' && !escaped && peek() != ']')
         {
             const auto last{character(']')};
@@ -1653,7 +2891,7 @@ Alphabet Grammar::set(const bool case_insensitive)
                 fail("a set range needs an end no lower than its start");
             }
 
-            admit(*pending, *last);
+            take(*pending, *last);
 
             pending = std::nullopt;
 
@@ -1662,7 +2900,7 @@ Alphabet Grammar::set(const bool case_insensitive)
 
         if (pending)
         {
-            admit(*pending, *pending);
+            take(*pending, *pending);
         }
 
         pending = *scalar;
@@ -1670,12 +2908,14 @@ Alphabet Grammar::set(const bool case_insensitive)
 
     if (pending)
     {
-        admit(*pending, *pending);
+        take(*pending, *pending);
     }
 
-    if (case_insensitive)
+    if (!written)
     {
-        double_case(alphabet.ascii);
+        at_ = opened;
+
+        fail(empty_range("[]"));
     }
 
     return alphabet;
@@ -1696,39 +2936,57 @@ Alphabet Grammar::negatable(const bool case_insensitive)
     {
         ++at_;
 
-        const auto scalar{decoded(literal())};
+        // One character as ANTLR reads one, its error 144 otherwise.
+        const auto [bytes, single]{literal()};
 
-        if (!scalar)
+        const std::string spelling{text_.substr(opened, at_ - opened)};
+
+        if (!single)
         {
             at_ = opened;
 
-            fail("'~' before a literal takes one character");
+            fail(multi_character(spelling));
         }
+
+        const auto scalar{*decoded(bytes)};
 
         skip_blanks();
 
         // A range inside the negation, ~('0'..'9' | '^'), as Clojure's grammar writes it.
         if (!at(".."))
         {
-            return spanning(*scalar, *scalar, case_insensitive);
+            return spanning(scalar, scalar, case_insensitive);
         }
 
         at_ += 2;
 
         skip_blanks();
 
+        const auto second{at_};
+
         expect('\'', "a quote to open the range's end");
 
-        const auto high{decoded(literal())};
+        const auto end{literal()};
 
-        if (!high || *high < *scalar)
+        const std::string end_spelling{text_.substr(second, at_ - second)};
+
+        if (!end.single)
         {
             at_ = opened;
 
-            fail("a character range takes one character at each end, the end no lower than the start");
+            fail(multi_character(end_spelling));
         }
 
-        return spanning(*scalar, *high, case_insensitive);
+        const auto high{*decoded(end.bytes)};
+
+        if (high < scalar)
+        {
+            at_ = opened;
+
+            fail(empty_range(spelling + ".." + end_spelling));
+        }
+
+        return spanning(scalar, high, case_insensitive);
     }
 
     if (peek() != '(')
@@ -1801,6 +3059,9 @@ std::optional<char32_t> Grammar::character(const char closing)
 
     const auto escaped{next("the escaped character")};
 
+    // The escapes ANTLR takes: in a literal, its lexer's ESC_SEQ, \b \t \n \f \r \' \\ and the two Unicode forms;
+    // in a set, EscapeSequenceParsing's, \b \t \n \f \r \\ \] \- \p{...} \P{...} and the two Unicode forms. Any
+    // other is its error 156, in its words: `'\q'`, `'\]'` and `[\']` among them.
     switch (escaped)
     {
     case 'n':
@@ -1813,15 +3074,54 @@ std::optional<char32_t> Grammar::character(const char closing)
         return '\b';
     case 'f':
         return '\f';
-    case 'u':
+    case '\\':
+        return '\\';
+    case '\'':
+        if (closing == '\'')
+        {
+            return '\'';
+        }
+
+        break;
+    case ']':
+    case '-':
+        if (closing == ']')
+        {
+            return static_cast<unsigned char>(escaped);
+        }
+
         break;
     case 'p':
     case 'P':
-        --at_;
+        if (closing == ']')
+        {
+            --at_;
 
-        fail("a Unicode property class needs tables the byte reading has not got");
+            fail("a Unicode property class needs tables the byte reading has not got");
+        }
+
+        break;
     default:
-        return static_cast<unsigned char>(escaped);
+        break;
+    }
+
+    if (escaped != 'u')
+    {
+        // The sequence as written, the escaped character whole where it is more than one byte.
+        const auto begin{at_ - 2};
+
+        auto end{at_};
+
+        while (end < end_ && (static_cast<unsigned char>(text_[end]) & 0xC0U) == 0x80U)
+        {
+            ++end;
+        }
+
+        const std::string sequence{text_.substr(begin, end - begin)};
+
+        at_ = begin;
+
+        fail("invalid escape sequence " + sequence);
     }
 
     // \uXXXX, or \u{X...} of one to six digits.

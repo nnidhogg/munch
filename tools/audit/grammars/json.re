@@ -20,7 +20,6 @@ int lex(const char* YYCURSOR)
         "-"? ("0" | [1-9] digit*) ("." digit+)? ([eE] [-+]? digit+)?  { return NUMBER; }
         ["] (unescaped | escape)* ["]                              { return STRING; }
         [ \t\n\r]+                                                 { continue; }
-        *                                                          { return ERROR; }
         $                                                          { return END; }
     */
 }

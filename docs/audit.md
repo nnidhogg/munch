@@ -292,93 +292,126 @@ the line that holds it, rather than read it as something else:
   `fragment` rules as definitions, a reference to any lexer rule as `{NAME}`, a rule's commands, which end its single
   outermost alternative and are read as the names and arguments ANTLR's own lexer reads there, the grammar's blanks and
   comments between them no part of any command (`skip` and `type(X)` both set the token's type and a `channel` other
-  than the default one, which `DEFAULT_TOKEN_CHANNEL` and zero name, sets a field of its own, the rightmost command for
-  a field winning, so a hidden channel and a type together leave a renamed token a parser never sees; `mode`, `pushMode`
-  and `popMode` are kept as text), so that a rule of several alternatives is one token whatever they are, the literals
-  of a combined grammar's parser rules as implicit tokens ahead of every explicit rule, unless a lexer rule spells the
-  literal in a shape ANTLR maps it onto, a rule of no options and one alternative that is the literal alone, the literal
-  and one action, or the literal and one or two commands of which at most one takes an argument, whatever comments stand
-  in the rule, when the parser's literal is that rule's token, skipped or renamed as the rule says, an option's value as
-  the one token ANTLR's lexer reads there, a name, a number, a string or a brace block, the comments beside it no part
-  of it, `caseInsensitive` at the grammar or on a rule doubling every ASCII letter's case, `true` and `false` the
-  spellings ANTLR takes for it and any other its warning 84 that sets nothing, empty alternatives making a rule
+  than the default one sets a field of its own, the rightmost command for a field winning, so a hidden channel and a
+  type together leave a renamed token a parser never sees, the channel's argument resolved as ANTLR resolves it,
+  `HIDDEN` and `DEFAULT_TOKEN_CHANNEL` its constants, a name a lexer grammar's `channels` block declares a channel of
+  its own and anything else a decimal number, `00` being zero and the default channel; `mode`, `pushMode` and `popMode`
+  are kept as text), so that a rule of several alternatives is one token whatever they are, the literals of a combined
+  grammar's parser rules as implicit tokens ahead of every explicit rule, a parser rule's argument block `[...]` skipped
+  as ANTLR's lexer reads one, brackets nested and a quoted string whole, so a literal inside one is none, unless a lexer
+  rule spells the literal in a shape ANTLR maps it onto, a rule of no options and one alternative that is the literal
+  alone, the literal and one action, or the literal and one or two commands of which at most one takes an argument,
+  whatever comments stand in the rule, when the parser's literal is that rule's token, skipped or renamed as the rule
+  says, an option's value as the one token ANTLR's lexer reads there, a name, a number, a string or a brace block, the
+  comments beside it no part of it, `caseInsensitive` at the grammar or on a rule folding as ANTLR folds, a literal's
+  ASCII letters and a set's members each in both cases and a range by its two ends alone, `[a-z]` gaining `A-Z` while
+  `[A-t]` and `[0-Z]`, whose ends differ in case or are no letters, admit exactly what they spell, `true` and `false`
+  the spellings ANTLR takes for it and any other its warning 84 that sets nothing, empty alternatives making a rule
   optional. ANTLR reads characters, so `.`, negated sets, sets and ranges beyond ASCII are written for the parser as
-  code point ranges, `\u{...}`, and match the UTF-8 encodings. A non-greedy loop is read where the rest of the rule
-  spells one ASCII string and the loop stands in an outermost alternative of a rule nothing else references, which is
-  where the rest of the rule is the rest the loop can see, after elements whose every match has one length in characters
-  and in an alternative no earlier alternative of the rule can begin with the same character as, what an alternative can
-  begin with reaching past every element of it that can match the empty string, since ANTLR follows the paths through a
-  rule in the order its alternatives give them and the first path to reach the rule's end stops every later one that has
-  passed the loop's decision, `('a'|'aa') .*? 'a'` and `'ab' | 'a' .*? 'c'` ending where their shorter path does;
-  ANTLR's fewest characters that still let the rest match are then what stops it: over one set, dot or character the
-  loop becomes the strings that hold no occurrence of that string and do not end where the string's own bytes would
-  complete one, the overlap that keeps `.*? 'aa'` from matching `aaa`, the block comment's `'/*' .*? '*/'` reading as
-  ever, and where the body can only be empty the string matches alone; over a literal of one length whose first byte
-  that string cannot begin with, its letters folded or not, the iterations are aligned to that length and the greedy
-  loop is the same language; `+?` reads one character before the rest can stop it; and a non-greedy option whose body
-  cannot begin the rest and has one length in characters is the greedy one. Refused: `import`, `-> more`, a command
+  code point ranges, `\u{...}`, and match the UTF-8 encodings; a high surrogate escape and a low one after it in a
+  literal are the character the pair encodes, as ANTLR joins them, and a surrogate on its own, a code point no UTF-8
+  input decodes to, is left out of a set as the member ANTLR never matches. A non-greedy loop is read where the rest of
+  the rule spells one ASCII string and the loop stands in an outermost alternative of a rule nothing else references,
+  which is where the rest of the rule is the rest the loop can see, after elements whose every match has one length in
+  characters and in an alternative no earlier alternative of the rule can begin with the same character as, what an
+  alternative can begin with reaching past every element of it that can match the empty string, since ANTLR follows the
+  paths through a rule in the order its alternatives give them and the first path to reach the rule's end stops every
+  later one that has passed the loop's decision, `('a'|'aa') .*? 'a'` and `'ab' | 'a' .*? 'c'` ending where their
+  shorter path does; ANTLR's fewest characters that still let the rest match are then what stops it: over one set, dot
+  or character the loop becomes the strings that hold no occurrence of that string and do not end where the string's own
+  bytes would complete one, the overlap that keeps `.*? 'aa'` from matching `aaa`, the block comment's `'/*' .*? '*/'`
+  reading as ever, and where the body can only be empty the string matches alone; over a literal of one length whose
+  first byte that string cannot begin with, its letters folded or not, the iterations are aligned to that length and the
+  greedy loop is the same language; `+?` reads one character before the rest can stop it; and a non-greedy option whose
+  body cannot begin the rest and has one length in characters is the greedy one. Refused: `import`, `-> more`, a command
   ANTLR has not got or one of its seven given an argument it takes none of or none where it takes one, its errors 149,
-  150 and 151 in its own words at the command's line, one of the seven with its first letter capitalised, `Skip`, which
-  names a code template of ANTLR's target that the generated lexer runs as an action and ANTLR's own interpreter leaves
-  out, a parser literal two lexer rules spell, its error 126, `EOF` inside a rule, semantic predicates `{...}?`, an
-  action inside a rule whose body is anything but blanks and comments, since ANTLR runs it where it stands and its code
-  may produce another token than the rule's own, Unicode property classes `\p{...}`, a character beyond ASCII named
-  under `caseInsensitive`, whose Unicode case mappings the library has not got, the forms ANTLR itself rejects, a
-  command on the alternatives of a rule with several, a `mode` line in a combined grammar and a closure, `*` or `+` in
-  either form, whose body can match the empty string, which is its error 153 and runs through every rule the body
-  reaches, a rule reaching itself, and a non-greedy loop before a rest of any other shape, one whose rest reaches past
-  the sequence it stands in, inside a group or in a rule another rule inlines, one after elements of more than one
-  length or of a length unknown, a reference among them, one in an alternative an earlier alternative can begin with the
-  same character as, one over a body of several lengths, a group among them, whose alternatives ANTLR takes in order,
-  stopping at the fewest characters of them all, which `('x'|'xa')*? 'a'` and `('xa'|'x')*? 'a'` answer differently on
-  "xaa" and no greedy loop over the group tells apart, and a non-greedy option over such a body, `('x'|'xa')?? 'a'` and
-  `('xa'|'x')?? 'a'` answering the same way, or before a string its body could begin, which the bypass ANTLR tries first
-  ends the rule with at once.
+  150 and 151 in its own words at the command's line, a command with parens holding nothing, `skip()`, the syntax error
+  its parser reports at the `)`, a channel named by another reserved name, `SKIP`, its error 172, by a number beyond its
+  int or by a name nothing declares, its error 177, and a `channels` block in a combined grammar, its error 164, each in
+  its words, one of the seven with its first letter capitalised, `Skip`, which names a code template of ANTLR's target
+  that the generated lexer runs as an action and ANTLR's own interpreter leaves out, a parser literal two lexer rules
+  spell, its error 126, a literal holding a surrogate on its own or a set holding nothing else, which ANTLR's lexer
+  never matches, a range's end or a negated literal ANTLR's error 144 calls multi-character, a pair of escapes or a
+  character beyond the basic multilingual plane written out among them, a range whose end is below its start or an empty
+  set, its error 174, an escape ANTLR has not got, `'\q'`, or a braced Unicode escape whose closing brace stands twelve
+  or more UTF-16 units into its literal, which its lexer counts from the quote, its error 156, each in its words, `EOF`
+  inside a rule, semantic predicates `{...}?`, an action inside a rule whose body is anything but blanks and comments,
+  since ANTLR runs it where it stands and its code may produce another token than the rule's own, Unicode property
+  classes `\p{...}`, a character beyond ASCII named under `caseInsensitive`, whose Unicode case mappings the library has
+  not got, the forms ANTLR itself rejects, a command on the alternatives of a rule with several, a `mode` line in a
+  combined grammar and a closure, `*` or `+` in either form, whose body can match the empty string, which is its error
+  153 and runs through every rule the body reaches, a rule reaching itself, and a non-greedy loop before a rest of any
+  other shape, one whose rest reaches past the sequence it stands in, inside a group or in a rule another rule inlines,
+  one after elements of more than one length or of a length unknown, a reference among them, one in an alternative an
+  earlier alternative can begin with the same character as, one over a body of several lengths, a group among them,
+  whose alternatives ANTLR takes in order, stopping at the fewest characters of them all, which `('x'|'xa')*? 'a'` and
+  `('xa'|'x')*? 'a'` answer differently on "xaa" and no greedy loop over the group tells apart, and a non-greedy option
+  over such a body, `('x'|'xa')?? 'a'` and `('xa'|'x')?? 'a'` answering the same way, or before a string its body could
+  begin, which the bypass ANTLR tries first ends the rule with at once.
 - logos: every enum deriving `Logos`, its `#[logos(skip ...)]` attributes as discarded rules ahead of the variants,
   `subpattern` definitions referenced as `(?&name)`, each read in the mode and under the flags of the pattern
   referencing it, since logos substitutes the definition's text before the crate parses it, so a byte string's
   subpattern referenced from a string pattern is over scalars, its `\xHH` the scalar U+00HH, and a string's referenced
   from a byte pattern is over bytes, `#[token]` and `#[regex]` attributes with their callbacks, `priority = n`,
-  `ignore(case)` or `ignore(ascii_case)`. A callback discards the match when logos's `CallbackResult` for its type does,
-  `Skip`, `Result<Skip, E>` and the `Skip` arms of `Filter` and `FilterResult`, and otherwise leaves the variant's token
-  or an error at the same boundary, or the token it returns itself; the reading has the text, not the types, so it reads
-  `logos::skip`, a function the file defines by its return type as spelled, any type but those and `Self` in one of the
-  enum's impl blocks being a payload, and, where that type is `Filter`, `FilterResult` or the enum, by its body, and a
-  closure by every result its body produces, through blocks, returns, ifs and matches, each of which must be visibly a
-  skip, a constructor of the enum, or `Some`, `None`, `Ok`, `Err`, a literal, `()` or an `Emit` or `Error` arm; a
-  callback the file does not define, a result the text does not show and results that skip on one path and emit on
-  another are refused by name, since the rule's token is then decided at run time or out of sight. `ignore(case)` hands
-  the pattern to the regex crate's case-insensitive parse, Unicode-aware in a string pattern and ASCII-only in a byte
-  string, while `ignore(ascii_case)` parses the pattern as it stands and folds the ASCII letters of the compiled tree
-  afterwards, a class gaining the other case of its ASCII members and a literal being taken apart one piece per byte,
-  except in a byte string, where logos hands it the same parse as the other flag; logos refuses the two flags together.
-  The priority is logos's own, computed as logos 0.14 and later compute it or taken from `priority = n`, higher winning,
-  and mapped onto the builder's scale; a literal counts two per character, and two per byte where the run is not UTF-8
-  as strictly as Rust's own validation reads it, an encoded surrogate, an overlong form and a scalar above U+10FFFF
-  being bytes rather than characters, since logos asks `std::str::from_utf8` and counts bytes where it fails. An ignore
-  flag takes a `#[token]` out of the literals: logos escapes the literal for the regex crate and compiles that regex, so
-  the priority comes from its tree like any other regex's, and the escaping writes a byte string's byte beyond ASCII out
-  as the characters of its `\xNN` escape and escapes the backslash again, which is why `#[token(b"\xC3\xA9",
-  ignore(case))]` matches those eight characters and never the two bytes. The regex is the regex crate's in Unicode
-  mode, rewritten over the UTF-8 bytes the lexer scans: classes, the dot and negated classes as code point ranges, the
-  flags `i`, `s` and `u` with their scoping, and `\d`, `\w` and `\s` in Unicode mode as the crate's classes, Nd,
-  White_Space and the word class, over the tables of the Unicode version the regex-syntax logos is locked to was
-  generated from rather than the library's own pinned one, since the audited language is the scanner's; the report's
-  options name that version, `unicode-classes=16.0.0` for logos 0.15.1. Refused: `\p{...}`, whose property tables the
-  library has not got, a non-ASCII scalar under `i`, anchors and lookaround, the flags `x`, `m`, `U` and `R`, the class
-  operators, the lazy operators, which logos 0.15.1 refuses as unsupported non-greedy parsing, a `*` or `+` over the dot
-  under `s` or over a class of every scalar or every byte, an alternation of classes the regex crate merges into one
-  among them, which logos 0.15.1 refuses as consuming the source to its end, while the plain dot, a captured one and
-  `[\x00-\x{D7FF}\x{E000}-\x{10FFFF}]`, two ranges to the crate where its dot is one, pass as they pass the crate, an
-  `allow_greedy` argument, which logos 0.15.1 does not know and calls an unknown nested attribute, as it calls an
-  `ignore` flag on a skip, any `#[logos(...)]` key beyond the eight it knows and an entry after a `skip(...)` or
-  `error(...)` in one attribute, a byte beyond ASCII written or admitted under `(?-u)` in a string pattern, a nested
-  class checked on its own, which the regex crate refuses as able to match invalid UTF-8, a pattern matching only the
-  empty string, and an unbounded repetition whose body can begin with a byte that may also follow it, which logos 0.15.1
-  compiles into a scanner matching no input at all, its graph deciding a repetition's end on one byte: the flex spelling
-  of the block comment is one of those, so the `.rs` grammars spell it with a loop that cannot begin with a star, the
-  same language and the one the crate scans, while a bounded repetition, which the crate unrolls, is read however its
-  boundary falls.
+  `ignore(case)` or `ignore(ascii_case)`. A callback's result is read against the variant's payload as logos's
+  `CallbackResult` converts the pair: for a variant without a payload, `Skip`, `Result<Skip, E>` and the `Skip` arms of
+  `Filter` and `FilterResult` discard the match, `()`, `bool`, `Option<()>`, `Result<(), E>` and the `Emit` and `Error`
+  arms leave the variant's token or an error at the same boundary, and the enum returned is the token itself; for a
+  variant with a payload, a value of the payload's type, bare or in `Some`, `Ok` or an `Emit` arm, is the payload and
+  the variant's token, so a `Skip` returned to a variant carrying `Skip` emits it and the `Skip` arms alone still skip;
+  the reading has the text, not the types, its blanks and comments dropped as Rust's lexer drops them and every name
+  read as the file binds it, through a `use` import or rename, a `type` alias, the path `#[logos(crate = ...)]` gives
+  the crate and the items the file defines, so it reads `logos::skip`, a function the file defines by its return type,
+  any type but those and `Self` in one of the enum's impl blocks being a payload, and, where that type is `Filter`,
+  `FilterResult` or the enum, by its body, and a closure by every result its body produces, through blocks, returns, ifs
+  and matches, each of which must be visibly a skip, a constructor of the enum naming one of its variants, or `Some`,
+  `None`, `Ok`, `Err`, a literal, `()` or an `Emit` or `Error` arm; a callback the file does not define, a result the
+  text does not show, results that skip on one path and emit on another, and a result the crate refuses for the
+  variant's payload, a `Skip` to `V(u64)`, the enum or `()` to a variant with a payload or a literal to one without, are
+  refused by name, since the rule's token is then decided at run time or out of sight. The callback also holds the
+  lexer, whose `bump` extends the match and whose internal `bump_unchecked`, `trivia`, `error`, `end` and `set` move it
+  too, so a body, a closure's, a named function's or a skip's, is read only where its lexer parameter is used through
+  `slice`, `span`, `remainder`, `source`, `extras` and `clone`; one naming `bump`, `bump_unchecked` or `trivia` as a
+  method, or using the parameter any other way, is refused by name, as is a function declared without a body.
+  `ignore(case)` hands the pattern to the regex crate's case-insensitive parse, Unicode-aware in a string pattern and
+  ASCII-only in a byte string, while `ignore(ascii_case)` parses the pattern as it stands and folds the ASCII letters of
+  the compiled tree afterwards, a class gaining the other case of its ASCII members and a literal being taken apart one
+  piece per byte, except in a byte string, where logos hands it the same parse as the other flag; logos refuses the two
+  flags together. The priority is logos's own, computed as logos 0.14 and later compute it, over the pattern with its
+  subpatterns pasted in as text, which is what the crate parses, merging adjacent literals across a reference, or taken
+  from `priority = n`, higher winning, and mapped onto the builder's scale; a literal counts two per character, and two
+  per byte where the run is not UTF-8 as strictly as Rust's own validation reads it, an encoded surrogate, an overlong
+  form and a scalar above U+10FFFF being bytes rather than characters, since logos asks `std::str::from_utf8` and counts
+  bytes where it fails, so that a scalar whose UTF-8 is split between a pattern and a subpattern is one scalar and a run
+  the pasting joins into invalid UTF-8 is bytes. An ignore flag takes a `#[token]` out of the literals: logos escapes
+  the literal for the regex crate and compiles that regex, so the priority comes from its tree like any other regex's,
+  and the escaping writes a byte string's byte beyond ASCII out as the characters of its `\xNN` escape and escapes the
+  backslash again, which is why `#[token(b"\xC3\xA9", ignore(case))]` matches those eight characters and never the two
+  bytes. The regex is the regex crate's in Unicode mode, rewritten over the UTF-8 bytes the lexer scans: classes, the
+  dot and negated classes as code point ranges, the flags `i`, `s` and `u` with their scoping, and `\d`, `\w` and `\s`
+  in Unicode mode as the crate's classes, Nd, White_Space and the word class, over the tables of the Unicode version the
+  regex-syntax logos is locked to was generated from rather than the library's own pinned one, since the audited
+  language is the scanner's; the report's options name that version, `unicode-classes=16.0.0` for logos 0.15.1. Refused:
+  `\p{...}`, whose property tables the library has not got, a non-ASCII scalar under `i`, anchors and lookaround, the
+  flags `x`, `m`, `U` and `R`, the class operators, the lazy operators, which logos 0.15.1 refuses as unsupported
+  non-greedy parsing, a `*` or `+` over the dot under `s` or over a class of every scalar or every byte, an alternation
+  of classes the regex crate merges into one among them, which logos 0.15.1 refuses as consuming the source to its end,
+  while the plain dot, a captured one and `[\x00-\x{D7FF}\x{E000}-\x{10FFFF}]`, two ranges to the crate where its dot is
+  one, pass as they pass the crate, an `allow_greedy` argument, which logos 0.15.1 does not know and calls an unknown
+  nested attribute, as it calls an `ignore` flag on a skip, any `#[logos(...)]` key beyond the eight it knows, an entry
+  after a `skip(...)` or `error(...)` in one attribute, a bare key, a key with a value of another shape than it takes,
+  `extras`, `error`, `source` or the type of one parameter given twice, `#[logos]`, `#[token]` or `#[regex]` without its
+  parentheses or with nothing in them, a second `priority` or callback in one attribute, `priority(...)`, any argument
+  after `ignore(...)`, the legacy `#[error]` attribute, a variant with several or named fields, a second lifetime, a
+  const generic and a type parameter without its `type T = ...` or a `type` for none, each as the crate refuses it, a
+  byte beyond ASCII written or admitted under `(?-u)` in a string pattern, a nested class checked on its own, which the
+  regex crate refuses as able to match invalid UTF-8, a token or regex matching only the empty string once its
+  subpatterns are pasted in, which logos 0.15.1 panics on as a token and compiles into a rule matching no input as a
+  regex, while an empty `subpattern` definition is valid and adds nothing to the patterns referencing it, and an
+  unbounded repetition whose body can begin with a byte that may also follow it, which logos 0.15.1 compiles into a
+  scanner matching no input at all, its graph deciding a repetition's end on one byte: the flex spelling of the block
+  comment is one of those, so the `.rs` grammars spell it with a loop that cannot begin with a star, the same language
+  and the one the crate scans, while a bounded repetition, which the crate unrolls, is read however its boundary falls.
 
 The grammars under `tools/audit/grammars/` are the study's rows in every syntax, and the tests hold each `.re`, `.g4`
 and `.rs` file to its `.l` twin: the readers must build token sets that cut no input differently, decided by

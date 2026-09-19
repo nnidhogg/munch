@@ -23,7 +23,6 @@ int lex(const char* YYCURSOR)
         "//" [^\n]*                          { continue; }
         "/*" ([^*] | "*"+ [^*\/])* "*"+ "/"  { continue; }
         [ \t\n]+                             { continue; }
-        *                                    { return ERROR; }
         $                                    { return END; }
     */
 }

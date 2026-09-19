@@ -11,7 +11,6 @@ int lex(const char* YYCURSOR)
 
         [^\n]+       { return LINE; }
         "\n"         { return NEWLINE; }
-        *            { return ERROR; }
         $            { return END; }
     */
 }

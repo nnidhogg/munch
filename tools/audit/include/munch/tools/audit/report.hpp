@@ -215,6 +215,25 @@ struct Report
  */
 [[nodiscard]] std::string render(const Report& report, const std::function<std::string(std::size_t)>& name);
 
+/**
+ * @brief Renders a scanner's options as the report's own row, the one that says what the reading was governed by.
+ *
+ * The options are the file's: flex's `%option` words, re2c's configurations, the `#[logos]` keys, and what a reader
+ * notes of its own, the Unicode version a logos scanner's classes were taken from among them. Several of them change
+ * the language a rule matches, `case-insensitive` and `encoding:utf8` among them, so the report names them beside
+ * the figures they governed.
+ * @param options The scanner's options, in the order the reader recorded them.
+ * @return The row, its newline included; empty when the scanner declared none.
+ */
+[[nodiscard]] std::string options_row(const std::vector<std::string>& options);
+
+/**
+ * @brief Renders a scanner's options as the JSON array of its account, each option one string.
+ * @param options The scanner's options, in the order the reader recorded them.
+ * @return The JSON text, `[]` when the scanner declared none.
+ */
+[[nodiscard]] std::string options_json(const std::vector<std::string>& options);
+
 } // namespace munch::tools::audit
 
 #endif // MUNCH_TOOLS_AUDIT_INCLUDE_MUNCH_TOOLS_AUDIT_REPORT_HPP

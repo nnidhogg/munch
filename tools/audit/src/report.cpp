@@ -1137,4 +1137,33 @@ std::string render(const Report& report, const std::function<std::string(std::si
     return out;
 }
 
+std::string options_row(const std::vector<std::string>& options)
+{
+    if (options.empty())
+    {
+        return {};
+    }
+
+    std::string named;
+
+    for (const auto& option : options)
+    {
+        named += (named.empty() ? "" : ", ") + option;
+    }
+
+    return std::format("{:<28}{}\n", "options", named);
+}
+
+std::string options_json(const std::vector<std::string>& options)
+{
+    std::string out{'['};
+
+    for (const auto& option : options)
+    {
+        out += (out.size() == 1 ? "" : ", ") + quoted(option);
+    }
+
+    return out + ']';
+}
+
 } // namespace munch::tools::audit

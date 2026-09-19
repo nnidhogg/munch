@@ -24,7 +24,6 @@ int lex(const char* YYCURSOR)
         ["] [^"\n]* ["]              { return STRING; }
         "//" [^\n]*                  { continue; }
         [ \t\n]+                     { continue; }
-        *                            { return ERROR; }
         $                            { return END; }
     */
 }

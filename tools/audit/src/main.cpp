@@ -454,6 +454,9 @@ void write_text(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
     out << std::format(
             "-- scanner at line {}, condition {}: {} rule{}\n", spec.line, condition, rules, rules == 1 ? "" : "s");
 
+    // What the reading was governed by, before the figures it governed.
+    out << options_row(spec.options);
+
     if (!report)
     {
         out << "refused: " << refused << "\n\n";
@@ -495,15 +498,15 @@ void write_text(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 }
 
 /**
- * @brief Writes a scanner's definitions and rules as the JSON of what the reader read: the named patterns, then
- *        each rule's line, pattern as written, start conditions, action and token, so that a reading can be held to
- *        the generator's own account of the file.
+ * @brief Writes a scanner's options, definitions and rules as the JSON of what the reader read: the options that
+ *        governed the reading, the named patterns, then each rule's line, pattern as written, start conditions,
+ *        action and token, so that a reading can be held to the generator's own account of the file.
  * @param out The stream.
  * @param spec The scanner.
  */
 void write_rules(std::ostream& out, const Lexer_spec& spec)
 {
-    out << "\"definitions\": {";
+    out << "\"options\": " << options_json(spec.options) << ", \"definitions\": {";
 
     for (auto first{true}; const auto& [name, body] : spec.definitions)
     {
