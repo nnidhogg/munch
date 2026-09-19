@@ -1,7 +1,5 @@
 #include "munch/dfa/unroll_start.hpp"
 
-#include <algorithm>
-#include <ranges>
 #include <utility>
 
 namespace munch::dfa
@@ -13,20 +11,10 @@ Dfa unroll_start(const Dfa& dfa)
         return dfa;
     }
 
-    // One past the highest state in use, so the fresh start collides with nothing.
-    auto start{dfa.init_state()};
-
-    for (const auto& [key, to] : dfa.transitions())
-    {
-        start = std::max({start, key.first, to});
-    }
-
-    for (const auto& state : dfa.accept_states() | std::views::keys)
-    {
-        start = std::max(start, state);
-    }
-
-    ++start;
+    // One past the highest identifier in use, which no state uses while the span is representable, and which the
+    // automaton returned spans one past again: the header asks the caller for both. The subset construction numbers
+    // densely and never comes near the bound; a hand-built DFA owes it itself.
+    const auto start{dfa.state_count()};
 
     auto transitions{dfa.transitions()};
 

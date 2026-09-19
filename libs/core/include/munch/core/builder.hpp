@@ -122,7 +122,9 @@ public:
      * longest match re-reads after a failed longer match; see docs/limits.md. Zero, the default,
      * means unlimited. This caps determinization only: regex tree size, NFA expansion from large repetition counts, and
      * the number of registered patterns are the caller's to bound. The dominant allocation, the transition table, stays
-     * within the cap times the number of symbol classes times four bytes per entry.
+     * within the cap times the number of symbol classes times four bytes per entry, one column more for a nullable
+     * token set: a set matching the empty string is compiled as its positive-width equivalent, whose fresh start state
+     * determinization never discovered and the cap therefore never counted.
      */
     void set_state_limit(const std::size_t limit) noexcept { state_limit_ = limit; }
 

@@ -10,7 +10,13 @@ namespace munch::dfa
 /**
  * @brief Builder class for constructing DFA objects.
  *
- * Allows incremental construction of a DFA by adding states, transitions, and accept states.
+ * Allows incremental construction of a DFA by adding states, transitions, and accept states. The identifiers are the
+ * caller's: next_state() hands out a dense sequence from zero, but add_transition() and add_accept_state() take any
+ * identifier, so a DFA built here is densely numbered only where every identifier came from next_state(), as the
+ * subset construction's do, and Dfa::state_count() is the span of the identifiers used either way. A caller naming
+ * its own identifiers keeps the highest of them below the largest std::size_t, so that the span, one past it, is
+ * representable, which is what unroll_start() asks of a definition; the Simulator asks less of it still, a span its
+ * table entries index, below 2^32 - 1.
  */
 class Builder
 {

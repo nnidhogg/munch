@@ -31,32 +31,6 @@ namespace
 template <typename Entry>
 using Table_view_t = std::mdspan<Entry, std::dextents<std::size_t, 2>>;
 
-/**
- * @brief Returns the highest state identifier the DFA uses.
- *
- * The caller derives the table column count as one past this value; returning the identifier itself, rather than the
- * count, lets the caller reject an oversized DFA before the increment, which would wrap for a hand-built DFA whose
- * highest state is the largest std::size_t.
- * @param dfa The DFA whose states are inspected.
- * @return The highest state identifier used by the DFA.
- */
-std::size_t highest_state(const Dfa& dfa)
-{
-    auto highest{dfa.init_state()};
-
-    for (const auto& [key, to] : dfa.transitions())
-    {
-        highest = std::max({highest, key.first, to});
-    }
-
-    for (const auto& state : dfa.accept_states() | std::views::keys)
-    {
-        highest = std::max(highest, state);
-    }
-
-    return highest;
-}
-
 } // namespace
 
 Simulator::Simulator(const Dfa& dfa) : Simulator{dfa, {}}
@@ -69,6 +43,20 @@ Simulator::Simulator(
         const Dfa& source, const std::span<const std::size_t> ignored,
         const std::span<const std::pair<std::size_t, std::uint64_t>> payloads)
 {
+    // One table column per state the definition spans. A hand-built DFA may number states sparsely, up to a
+    // highest identifier no count holds, which the DFA reports as a count of zero: neither that nor a count
+    // reaching the entry width's sentinel can index a table. The definition is refused as given, before it is
+    // unrolled: unroll_start() enters the automaton through the count, which is one of the DFA's own states where
+    // the count is the wrap.
+    const auto indexable{[](const std::size_t states) {
+        if (states == 0 || states >= no_state_)
+        {
+            throw std::runtime_error("DFA has too many states to be indexed by a transition table entry");
+        }
+    }};
+
+    indexable(source.state_count());
+
     // A nullable set is compiled as its positive-width equivalent; the old start state keeps its index, so the
     // empty match it accepts can still be reported where the scan reports one.
     const auto nullable{source.has_accept_token(source.init_state()).has_value()};
@@ -81,14 +69,10 @@ Simulator::Simulator(
 
     empty_state_ = nullable ? static_cast<Entry_t>(source.init_state()) : no_state_;
 
-    const auto highest{highest_state(dfa)};
+    // The fresh start is one more state, which may be the one the source stayed under the sentinel by.
+    const auto states{dfa.state_count()};
 
-    if (highest >= no_state_ - 1)
-    {
-        throw std::runtime_error("DFA has too many states to be indexed by a transition table entry");
-    }
-
-    const auto states{highest + 1};
+    indexable(states);
 
     const auto classes{classify(dfa)};
 
@@ -225,8 +209,8 @@ Simulator::Simulator(
 
     // A symbol only the initial state consumes can only begin a token, but the exemption is valid only while the
     // initial state cannot be reached again after consuming input, where the "first byte of a token" reasoning no
-    // longer holds. A compiled start state is never re-entered, unrolling having seen to it for nullable sets and
-    // subset construction for the rest, but a hand-built Dfa may loop back to it.
+    // longer holds. A compiled start state can be re-entered, `[\n]*b` returning to it on every newline, and
+    // unrolling separates only an accepting start, so the test below decides for compiled and hand-built tables alike.
     const auto init_reentrant{
             std::ranges::any_of(std::views::iota(std::size_t{0}, symbol_count), [&](const std::size_t symbol) {
                 return std::ranges::any_of(std::views::iota(std::size_t{0}, states), [&](const std::size_t state) {

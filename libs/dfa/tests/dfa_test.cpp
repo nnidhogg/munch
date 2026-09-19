@@ -7,6 +7,7 @@
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -217,6 +218,88 @@ TEST_F(Dfa_test, Unrolling_an_accepting_start_keeps_every_scan_and_the_empty_mat
 
     EXPECT_EQ(same.init_state(), p0);
     EXPECT_EQ(same.transitions().size(), 1u);
+
+    // So is a start that does not accept but is returned to, [a]*b looping on a: what is never re-entered is the
+    // fresh start alone, and the compiled start's re-entrancy is the Simulator's to report and every decision's to
+    // allow for.
+    dfa::Builder looping;
+
+    const auto r0{looping.init_state()};
+    const auto r1{looping.next_state()};
+
+    looping.add_accept_state(r1, token);
+    looping.add_transition(r0, dfa::Label('a'), r0);
+    looping.add_transition(r0, dfa::Label('b'), r1);
+
+    const auto looped{looping.build()};
+
+    const auto kept{dfa::unroll_start(looped)};
+
+    EXPECT_EQ(kept.init_state(), r0);
+    EXPECT_EQ(kept.advance(kept.init_state(), 'a'), std::optional{r0});
+    EXPECT_EQ(kept.transitions().size(), 2u);
+
+    const Simulator compiled{looped};
+
+    EXPECT_FALSE(compiled.nullable());
+    EXPECT_TRUE(compiled.init_reentrant());
+    EXPECT_FALSE(compiled.is_split_point('a'));
+    EXPECT_FALSE(compiled.is_split_point('b'));
+}
+
+TEST_F(Dfa_test, Dense_numbering_makes_the_state_count_the_identifier_unrolling_enters_through)
+{
+    // A builder numbers states densely from zero, so a DFA's state count is both how many states it has and the
+    // first identifier none of them uses. Unrolling an accepting start is entitled to that identifier for its fresh
+    // start, and the unrolled automaton spans one state more.
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+
+    const Token token{1};
+
+    dfa.add_accept_state(q0, token);
+    dfa.add_accept_state(q2, token);
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+    dfa.add_transition(q1, dfa::Label('b'), q2);
+
+    const auto built{dfa.build()};
+
+    // The identifiers a definition names anywhere: its initial state, both ends of every transition, and every
+    // accept state.
+    const auto named{[](const Dfa& automaton) {
+        std::set<Dfa::State_t> states{automaton.init_state()};
+
+        for (const auto& [key, to] : automaton.transitions())
+        {
+            states.insert(key.first);
+
+            states.insert(to);
+        }
+
+        for (const auto& state : automaton.accept_states() | std::views::keys)
+        {
+            states.insert(state);
+        }
+
+        return states;
+    }};
+
+    const auto states{named(built)};
+
+    ASSERT_FALSE(states.empty());
+
+    EXPECT_EQ(built.state_count(), states.size());
+    EXPECT_EQ(built.state_count(), *states.rbegin() + 1);
+
+    const auto unrolled{dfa::unroll_start(built)};
+
+    EXPECT_EQ(unrolled.init_state(), built.state_count());
+    EXPECT_FALSE(states.contains(unrolled.init_state()));
+    EXPECT_EQ(unrolled.state_count(), built.state_count() + 1);
+    EXPECT_EQ(named(unrolled).size(), states.size() + 1);
 }
 
 TEST_F(Dfa_test, Any_of)
@@ -1855,13 +1938,54 @@ TEST_F(Dfa_test, Accelerated_runs_extend_accepting_tokens)
     }
 }
 
-TEST_F(Dfa_test, Oversized_state_identifier_throws_before_the_count_wraps)
+TEST_F(Dfa_test, A_state_count_the_largest_identifier_wrapped_is_refused)
 {
-    // A hand-built DFA may number states sparsely; the largest possible identifier used to wrap the state count to
-    // zero and slip past the size guard into out-of-bounds table writes instead of the promised exception.
+    // A hand-built DFA may number states sparsely; the largest possible identifier wraps the state count to zero in
+    // the definition itself, and the Simulator used to take that zero as a size and write its tables out of bounds.
+    // What is observed here is the refusal: the count wrapped when the Dfa was built, and the constructor throws
+    // rather than index anything by it.
     const Dfa dfa{std::numeric_limits<std::size_t>::max(), {}, {}};
 
+    EXPECT_EQ(dfa.state_count(), 0U);
     EXPECT_THROW((Simulator{dfa}), std::runtime_error);
+}
+
+TEST_F(Dfa_test, A_span_no_count_holds_names_a_state_and_is_no_identifier_to_unroll_through)
+{
+    // The precondition both contracts state: unroll_start() enters the automaton through Dfa::state_count(), which
+    // is an identifier no state uses only while the span of the identifiers is representable. A definition naming a
+    // state at the largest std::size_t spans one past it, the count is then the wrap, and zero is a state that
+    // definition names, here its accepting start, so the count is neither a count nor free. The Simulator refuses
+    // such a definition as given, before unrolling it, which is why no compiled decision meets one; the test
+    // observes the refusal, and that the count it refuses is the wrap.
+    constexpr auto highest{std::numeric_limits<Dfa::State_t>::max()};
+
+    const Token token{1};
+
+    const Dfa sparse{0, {{Dfa::Key_t{0, dfa::Label('a')}, highest}}, {{0, token}}};
+
+    EXPECT_EQ(sparse.state_count(), 0U);
+    EXPECT_TRUE(sparse.has_accept_token(sparse.state_count()).has_value());
+    EXPECT_THROW((Simulator{sparse}), std::runtime_error);
+
+    // One below it, the span is representable and the fresh start free, but the unrolled automaton spans one past
+    // the largest std::size_t and reports the wrap as its count: the precondition is the span plus one, and the
+    // Simulator refuses this definition too, its count reaching the table entry's sentinel.
+    const Dfa edge{0, {{Dfa::Key_t{0, dfa::Label('a')}, highest - 1}}, {{0, token}}};
+
+    EXPECT_EQ(edge.state_count(), highest);
+
+    const auto unrolled{dfa::unroll_start(edge)};
+
+    EXPECT_EQ(unrolled.init_state(), highest);
+    EXPECT_FALSE(unrolled.has_accept_token(unrolled.init_state()).has_value());
+    EXPECT_EQ(unrolled.state_count(), 0U);
+    EXPECT_THROW((Simulator{edge}), std::runtime_error);
+
+    // Two below, the bound holds: the unrolled automaton spans exactly the largest std::size_t.
+    const Dfa within{0, {{Dfa::Key_t{0, dfa::Label('a')}, highest - 2}}, {{0, token}}};
+
+    EXPECT_EQ(dfa::unroll_start(within).state_count(), highest);
 }
 
 TEST_F(Dfa_test, Graphviz_accepts_a_bare_filename)
