@@ -169,11 +169,11 @@ inputs and threads; building per input or per request is a design mistake the li
 
 ## **The Escape Hatches**
 
-Real languages exceed the model in places. The `Tokenizer` carries the primitives to handle them beside the automaton
+Real languages exceed the model in places. The tokenizers carry the primitives to handle them beside the automaton
 instead of corrupting the engine:
 
-- **Modes.** A `Tokenizer` can hold several lexers over one input and switch with `set_mode()`, the way a driver
-  switches to a header-name lexer after `#include`. An unknown mode throws `std::out_of_range`.
+- **Modes.** A `Mode_tokenizer` can hold several lexers over one input and switch with `set_mode()`, the way a
+  driver switches to a header-name lexer after `#include`. An unknown mode throws `std::out_of_range`.
 - **Hand scanning.** `input()` exposes the buffer and `seek()` moves the cursor, so a driver can recognize a construct
   by hand and drop back into the automaton after it.
 - **Raw string literals.** C++ bounds the raw-string delimiter to at most 16 characters, so the construct is regular in

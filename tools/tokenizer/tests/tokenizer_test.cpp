@@ -527,10 +527,10 @@ TEST(Mode_tokenizer, Reset_rewinds_the_driven_mode_with_the_position)
     EXPECT_EQ(tokenizer.depth(), 0U);
 }
 
-TEST(Mode_tokenizer, Reset_rewinds_a_caller_driven_mode_too)
+TEST(Mode_tokenizer, Reset_and_load_keep_a_caller_driven_mode)
 {
-    // One representation for both ways of getting modes: the mode is scan state whoever chose it, so a reset
-    // returns a caller-driven tokenizer to mode 0 exactly as it returns a grammar-driven one.
+    // Where the caller drives the modes the current mode is its choice and not the input's, so a reset and a load
+    // keep it, where they rewind a grammar-driven one.
     enum class Tok : std::size_t
     {
         Word,
@@ -548,12 +548,17 @@ TEST(Mode_tokenizer, Reset_rewinds_a_caller_driven_mode_too)
     EXPECT_EQ(tokenizer.mode(), 1u);
 
     tokenizer.reset();
-    EXPECT_EQ(tokenizer.mode(), 0u);
+    EXPECT_EQ(tokenizer.mode(), 1u);
     EXPECT_EQ(tokenizer.offset(), 0u);
-    EXPECT_EQ(tokenizer.depth(), 0u);
-    const auto result{tokenizer.next<Tok>()};
-    ASSERT_TRUE(result.has_token());
-    EXPECT_EQ(result.token().kind(), Tok::Word);
+    const auto after_reset{tokenizer.next<Tok>()};
+    ASSERT_TRUE(after_reset.has_token());
+    EXPECT_EQ(after_reset.token().kind(), Tok::Header_name);
+
+    tokenizer.load("string.h");
+    EXPECT_EQ(tokenizer.mode(), 1u);
+    const auto after_load{tokenizer.next<Tok>()};
+    ASSERT_TRUE(after_load.has_token());
+    EXPECT_EQ(after_load.token().kind(), Tok::Header_name);
 }
 
 TEST(Mode_tokenizer, Reset_rewinds_a_mode_that_set_mode_forced)

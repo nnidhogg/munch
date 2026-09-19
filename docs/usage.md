@@ -30,7 +30,7 @@ cmake --install munch/build --prefix /your/prefix
 ```
 
 ```cmake
-find_package(munch 1.0 CONFIG REQUIRED)
+find_package(munch 2.0 CONFIG REQUIRED)
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE munch::munch)
@@ -641,12 +641,13 @@ const auto consumed{lexer.tokenize_all<Token>(
         input, [](Token token, std::size_t length, std::size_t mode) { /* ... */ }, stack)};
 ```
 
-`Mode_tokenizer` accepts a `Mode_lexer` too, so a driver gets the same grammar-carried transitions: `mode()`
-follows the stack, `depth()` reports the nesting, and `set_mode()` still forces a mode as an error-recovery hatch.
-Underneath, one built from plain lexers is the same thing with a `Mode_lexer` whose tokens carry no actions, so the mode
-is scan state either way: `load()` and `reset()` return it to mode 0 with the position, and a driver that wants another
-mode after a reset sets it again. The flat `Tokenizer` has none of this surface, and that is the point of the split: a
-mode lexer has no parallel entry point, so `lexer()` lives only on the side where planning a chunk is sound.
+`Mode_tokenizer` accepts a `Mode_lexer` too, so a driver gets the same grammar-carried transitions: `mode()` follows the
+stack, `depth()` reports the nesting, and `set_mode()` still forces a mode as an error-recovery hatch. Underneath, one
+built from plain lexers is the same thing with a `Mode_lexer` whose tokens carry no actions, and the two differ in one
+place: under a `Mode_lexer` the mode is scan state, so `load()` and `reset()` return it to mode 0 with the position,
+while under plain lexers it is the caller's choice and survives them. The flat `Tokenizer` has none of this surface, and
+that is the point of the split: a mode lexer has no parallel entry point, so `lexer()` lives only on the side where
+planning a chunk is sound.
 
 Among the other measured engines, only lexertl17 carries mode transitions in the grammar itself. It is munch's nearest
 relative, a lexer built at run time from rules, and it has had start states with a next-state per rule for years, with a
@@ -688,8 +689,8 @@ would be a different grammar answering a different question, not because none co
 
 Both figures in each cell are medians of 15 passes from two runs of `munch_benchmark_compare 16 15`, with each corpus's
 scenarios interleaved, measured at commit `00aa889` on a clean tree. The full transcript, every timed pass of the five
-scenarios behind these tables, and the machine are archived in [paper/data/modes-2026-08](../paper/data/modes-2026-08). The
-harness validates that the engines agree on every token before timing either, so the 5,121,241 tokens of the first
+scenarios behind these tables, and the machine are archived in [paper/data/modes-2026-08](../paper/data/modes-2026-08).
+The harness validates that the engines agree on every token before timing either, so the 5,121,241 tokens of the first
 corpus and the 4,859,619 of the second are the same tokens in both.
 
 **Ratios, as ranges rather than a point: 3.02 to 3.05 where modes are optional, 2.62 to 2.70 where the tested grammar
