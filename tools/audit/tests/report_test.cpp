@@ -136,6 +136,30 @@ TEST(Report, Every_certified_window_of_the_conventional_row_occurs)
     EXPECT_TRUE(lexer.window_occurrence("\n#").witness.empty());
 }
 
+TEST(Report, Every_certified_window_of_the_conventional_row_is_exact)
+{
+    // The report certifies its windows through the conservative model, and the certified-splitting paper's decision
+    // holds each against every completely tokenizable input: an exhaustive search with no counterexample proves the
+    // certificate exact at its origin, which every window certified at width 3 on the conventional row is. The
+    // window the model refuses and no input holds has no counterexample either, its certificate being vacuous.
+    const auto [file, report]{audited("c-like-conventional.l")};
+
+    const auto lexer{build(file, "INITIAL")};
+
+    ASSERT_FALSE(report.windows.empty());
+
+    for (const auto& [window, origin] : report.windows)
+    {
+        const auto [witness, exhaustive]{lexer.window_counterexample(window, origin)};
+
+        ASSERT_TRUE(exhaustive) << window;
+        EXPECT_TRUE(witness.empty()) << window << " failed by " << witness;
+    }
+
+    EXPECT_TRUE(lexer.window_counterexample("\n#", 1).exhaustive);
+    EXPECT_TRUE(lexer.window_counterexample("\n#", 1).witness.empty());
+}
+
 TEST(Report, Blame_names_the_token_that_consumes_a_candidate_mid_token)
 {
     const auto [file, report]{audited("c-like-conventional.l")};

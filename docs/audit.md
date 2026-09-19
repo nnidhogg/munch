@@ -90,7 +90,7 @@ a certificate holds while the scanner is in its start condition, so a cut needs 
 
 -- scanner at line 9, condition INITIAL: 8 rules
 options                     noyywrap, nodefault
-verdict                     nothing certifies up to width 3; what certifying a byte would cost is priced below
+verdict                     no byte certifies, and no window up to width 3 in the model; what certifying a byte would cost is priced below
 certified bytes             none
 certified modulo discarded  none
 discarded tokens            3: "//"[^\n]*, "/*"([^*]|\*+[^*/])*\*+"/", [ \t\n]+

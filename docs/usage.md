@@ -436,6 +436,28 @@ lexer.window_occurrence("1001");            // {"", true}: no completely tokeniz
 lexer.window_occurrence("001");             // {"0001", true}: 00 then 01
 ```
 
+`window_counterexample(window, origin)` holds the certificate itself against every completely tokenizable input. A
+counterexample is such an input holding an occurrence of the window whose covering token begins elsewhere than the origin,
+and the decision is exact: it searches for one by the same boundary-guessing search as `window_occurrence()`, with one
+bit beside the matcher for whether the latest token start sits at the origin, and returns the shortest counterexample or,
+from an exhaustive search, the proof that none exists. A window `is_split_window()` certifies has no counterexample at the
+origin it reports, and a window it refuses is refused relative to its conservative model, which this call settles
+either way; a window `window_occurrence()` places in no input has no counterexample at any origin, its certificate being
+vacuous. The cap is the same ceiling, and the empty window and an origin outside the window are refused as no
+certificate at all:
+
+```cpp
+builder.add_token(text("a"), Token::Identifier, 1);
+builder.add_token(text("ab"), Token::Keyword, 1);
+builder.add_token(text("b"), Token::Operator, 1);
+
+const auto lexer{builder.build()};
+
+lexer.is_split_window("ab");                // std::nullopt: the model refuses it
+lexer.window_counterexample("ab", 0);            // {"", true}: no input fails it, the certificate is exact
+lexer.window_counterexample("ab", 1);            // {"ab", true}: ab itself, one token beginning at offset 0
+```
+
 `boundary_difference(other)` asks the question a tokenizer change asks: is there any input both token sets tokenize
 that they cut into different tokens? It answers from the two compiled tables rather than from a corpus, so a negative
 covers every input, and a positive comes with one that shows it:

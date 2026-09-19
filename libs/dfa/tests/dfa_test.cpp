@@ -2,9 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -13,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/recovery.hpp"
@@ -20,6 +23,7 @@
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/dfa/unroll_start.hpp"
 #include "munch/dfa/window_occurrence.hpp"
+#include "munch/dfa/window_violation.hpp"
 
 using namespace munch;
 using namespace munch::dfa;
@@ -2167,4 +2171,79 @@ TEST_F(Dfa_test, Window_occurrence_places_a_window_in_a_tokenizable_input_or_pro
 
     EXPECT_TRUE(window_occurrence(simulator, "aab").witness.empty());
     EXPECT_TRUE(window_occurrence(simulator, "aab").exhaustive);
+}
+
+TEST_F(Dfa_test, Window_counterexample_finds_the_input_a_certificate_fails_on_or_proves_it_exact)
+{
+    // {aa} built by hand: q0 -a-> q1 -a-> q2 accepting. Its completely tokenizable inputs are the even runs of a, so
+    // an occurrence of a window of a's is covered from its own start at an even position and from one byte before
+    // at an odd one: no origin certifies a or aa, and the b no input holds is certified at every origin vacuously.
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+    dfa.add_transition(q1, dfa::Label('a'), q2);
+    dfa.add_accept_state(q2, dfa::Token{1});
+
+    const Simulator simulator{dfa.build()};
+
+    // Whether a witness is what it claims: a completely tokenizable input under the machine itself holding an
+    // occurrence of the window whose final byte is covered by a token beginning elsewhere than the origin.
+    const auto fails{[&simulator](const std::string& witness, const std::string_view window, const std::size_t origin) {
+        std::vector<std::size_t> starts;
+
+        for (std::size_t at{0}; at < witness.size();)
+        {
+            const auto [token, length]{simulator.run(std::string_view{witness}.substr(at))};
+
+            if (!token || length == 0)
+            {
+                return false;
+            }
+
+            starts.push_back(at);
+
+            at += length;
+        }
+
+        for (auto at{witness.find(window)}; at != std::string::npos; at = witness.find(window, at + 1))
+        {
+            const auto covering{std::ranges::upper_bound(starts, at + window.size() - 1)};
+
+            if (*std::prev(covering) != at + origin)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }};
+
+    const auto [odd, odd_settled]{window_counterexample(simulator, "a", 0)};
+
+    EXPECT_TRUE(odd_settled);
+    EXPECT_EQ(odd, "aa");
+    EXPECT_TRUE(fails(odd, "a", 0));
+
+    const auto [shifted, shifted_settled]{window_counterexample(simulator, "aa", 0)};
+
+    EXPECT_TRUE(shifted_settled);
+    EXPECT_EQ(shifted, "aaaa");
+    EXPECT_TRUE(fails(shifted, "aa", 0));
+
+    EXPECT_EQ(window_counterexample(simulator, "aa", 1).witness, "aa");
+    EXPECT_TRUE(window_counterexample(simulator, "aa", 1).exhaustive);
+    EXPECT_TRUE(fails("aa", "aa", 1));
+
+    const auto [none, none_settled]{window_counterexample(simulator, "b", 0)};
+
+    EXPECT_TRUE(none_settled);
+    EXPECT_TRUE(none.empty());
+
+    // The empty window has no final byte to cover, and an origin outside the window names none of its bytes.
+    EXPECT_THROW(static_cast<void>(window_counterexample(simulator, "", 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(window_counterexample(simulator, "aa", 2)), std::invalid_argument);
 }

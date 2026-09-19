@@ -231,12 +231,17 @@ states, evidence-order answers under preserved evidence and complete-repair inva
 [Error Recovery](docs/usage.md#error-recovery) that every completely tokenizable repair of the text before the evidence
 places a token boundary at the answer.
 
-Four decisions joined that surface in 2.0.0: `rescue()`, the exact rescue decision with its witness, which
+Five decisions joined that surface in 2.0.0: `rescue()`, the exact rescue decision with its witness, which
 `rescue_free()` answers as one bit, false also when the search stopped at its cap, the two cases `rescue()` tells apart;
 `anchor_free_span()`, the exact supremum of the stretch no certified byte reaches or, given an inventory of windows, no
 window of that inventory; `boundary_difference()`, whether two token sets cut any shared input differently, with the
-shortest witness under its cap; and `window_occurrence()`, whether a window occurs in some completely tokenizable input,
-with the shortest such input under its cap, which tells a certified window from one certified vacuously. So did
+shortest witness under its cap; `window_occurrence()`, whether a window occurs in some nonempty completely tokenizable
+input, with the shortest such input under its cap, which tells a certified window from one certified vacuously;
+`window_counterexample()`, whether some completely tokenizable input fails a window certificate, with the shortest such
+input under its cap, which proves a certificate exact where `is_split_window()` answers for its model; and
+`segmentation_difference()`, whether two token sets are the same segmentation function, domains and cuts alike, with
+the shortest input they segment differently under its cap and the half it falls in. The five that search are declared
+together in `munch/dfa/boundary_search.hpp`, one search over guessed token boundaries answering all of them. So did
 `regex::parse()` and the `munch-audit` command with the readers under it for flex, re2c, ANTLR 4 and logos files, whose
 report is those decisions applied to another generator's token set; the readers accept what a token language can say and
 refuse the rest by name. Decisions over a nullable token set are made on its positive-width equivalent, and

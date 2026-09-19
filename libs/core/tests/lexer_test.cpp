@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -118,6 +119,47 @@ std::vector<std::size_t> reference_window_walk(
     boundaries.push_back(size);
 
     return boundaries;
+}
+
+/**
+ * @brief Whether a witness is what window_counterexample() claims: a completely tokenizable input holding an occurrence
+ * of the window whose final byte is covered by a token beginning elsewhere than the origin, checked as the research
+ * oracle checks its own, by scanning the witness and reading the covering token's start off the scan.
+ * @param lexer The token set.
+ * @param witness The input claimed.
+ * @param window The window of the certificate.
+ * @param origin The origin of the certificate.
+ * @return True when the witness tokenizes completely and some occurrence of the window in it fails the certificate.
+ */
+bool fails(const Lexer& lexer, const std::string_view witness, const std::string_view window, const std::size_t origin)
+{
+    std::vector<std::size_t> starts;
+
+    std::size_t next{0};
+
+    const auto consumed{lexer.tokenize_all<std::size_t>(witness, [&](const std::size_t, const std::size_t length) {
+        starts.push_back(next);
+
+        next += length;
+    })};
+
+    if (consumed != witness.size())
+    {
+        return false;
+    }
+
+    // The token covering a byte begins at the last start at or before it; the first start is zero, so one exists.
+    for (auto at{witness.find(window)}; at != std::string_view::npos; at = witness.find(window, at + 1))
+    {
+        const auto covering{std::prev(std::ranges::upper_bound(starts, at + window.size() - 1))};
+
+        if (*covering != at + origin)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 } // namespace
@@ -1158,6 +1200,247 @@ TEST_F(Lexer_test, The_occurrence_cap_is_a_ceiling_on_the_states_the_search_hold
     // it exhausts says nothing about it.
     EXPECT_FALSE(lexer.window_occurrence("1001", 1).exhaustive);
     EXPECT_TRUE(lexer.window_occurrence("1001").exhaustive);
+}
+
+TEST_F(Lexer_test, Window_counterexample_settles_what_the_model_refuses_and_proves_what_it_certifies)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Keyword,
+        Number,
+        Operator,
+    };
+
+    // The strictness witness of the split-windows report: over {a, ab, b} the window ab is certified at origin 0 in
+    // every completely tokenizable input, since a begins a token wherever it occurs and maximal munch then takes
+    // ab, and the conservative model refuses it. The exact decision proves the certificate from an exhausted
+    // search, and the window occurs, in ab itself, so the certificate the model missed is about an input. At origin
+    // 1 that very input is the counterexample.
+    Builder_dbg strict;
+
+    strict.add_token(text("a"), Token_kind::Identifier, 1);
+    strict.add_token(text("ab"), Token_kind::Keyword, 1);
+    strict.add_token(text("b"), Token_kind::Operator, 1);
+
+    const auto strict_lexer{strict.build()};
+
+    ASSERT_FALSE(strict_lexer.is_split_window("ab").has_value());
+
+    const auto [proved, settled]{strict_lexer.window_counterexample("ab", 0)};
+
+    EXPECT_TRUE(settled);
+    EXPECT_TRUE(proved.empty());
+    EXPECT_EQ(strict_lexer.window_occurrence("ab").witness, "ab");
+
+    const auto [shifted, decided]{strict_lexer.window_counterexample("ab", 1)};
+
+    EXPECT_TRUE(decided);
+    EXPECT_EQ(shifted, "ab");
+    EXPECT_TRUE(fails(strict_lexer, shifted, "ab", 1));
+
+    // The vacuous certificate: over {0, 00, 01} the model certifies 1001 at origin 2 and no completely tokenizable
+    // input contains the window, so no input fails it at any origin, and the search proves as much at every one.
+    // The window 001 occurs, in 0001 as 00 then 01, which covers the 1 from offset 1: exact there, and failed at
+    // origin 0 by that shortest input.
+    Builder_dbg vacuous;
+
+    vacuous.add_token(text("0"), Token_kind::Identifier, 1);
+    vacuous.add_token(text("00"), Token_kind::Keyword, 1);
+    vacuous.add_token(text("01"), Token_kind::Operator, 1);
+
+    const auto vacuous_lexer{vacuous.build()};
+
+    ASSERT_EQ(vacuous_lexer.is_split_window("1001"), std::optional<std::size_t>{2});
+    ASSERT_TRUE(vacuous_lexer.window_occurrence("1001").witness.empty());
+
+    for (std::size_t origin{0}; origin < 4; ++origin)
+    {
+        const auto [none, exhausted]{vacuous_lexer.window_counterexample("1001", origin)};
+
+        EXPECT_TRUE(exhausted) << origin;
+        EXPECT_TRUE(none.empty()) << origin;
+    }
+
+    EXPECT_TRUE(vacuous_lexer.window_counterexample("001", 1).witness.empty());
+    EXPECT_TRUE(vacuous_lexer.window_counterexample("001", 1).exhaustive);
+    EXPECT_EQ(vacuous_lexer.window_counterexample("001", 0).witness, "0001");
+    EXPECT_TRUE(fails(vacuous_lexer, "0001", "001", 0));
+
+    // The refutation grammar: abx is certified at origin 1 and has no counterexample there, and the refused ab is
+    // refused rightly at both origins, abx covering the b from offset 1 and abc from offset 0, each the shortest
+    // counterexample.
+    Builder_dbg refutation;
+
+    refutation.add_token(text("a"), Token_kind::Identifier, 2);
+    refutation.add_token(text("abc"), Token_kind::Keyword, 1);
+    refutation.add_token(text("bx"), Token_kind::Number, 2);
+    refutation.add_token(text("x"), Token_kind::Operator, 2);
+
+    const auto refutation_lexer{refutation.build()};
+
+    ASSERT_EQ(refutation_lexer.is_split_window("abx"), std::optional<std::size_t>{1});
+    EXPECT_TRUE(refutation_lexer.window_counterexample("abx", 1).witness.empty());
+    EXPECT_TRUE(refutation_lexer.window_counterexample("abx", 1).exhaustive);
+
+    ASSERT_FALSE(refutation_lexer.is_split_window("ab").has_value());
+
+    const auto [elsewhere, found]{refutation_lexer.window_counterexample("ab", 0)};
+
+    EXPECT_TRUE(found);
+    EXPECT_EQ(elsewhere, "abx");
+    EXPECT_TRUE(fails(refutation_lexer, elsewhere, "ab", 0));
+    EXPECT_EQ(refutation_lexer.window_counterexample("ab", 1).witness, "abc");
+    EXPECT_TRUE(fails(refutation_lexer, "abc", "ab", 1));
+
+    // Neither the empty window nor an origin outside the window is a certificate.
+    EXPECT_THROW(static_cast<void>(refutation_lexer.window_counterexample("", 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(refutation_lexer.window_counterexample("ab", 2)), std::invalid_argument);
+}
+
+TEST_F(Lexer_test, Window_counterexample_agrees_with_the_research_oracles_on_every_small_certificate)
+{
+    enum class Token_kind : uint8_t
+    {
+        First,
+        Second,
+        Third,
+    };
+
+    // The four regex token sets certified_inventory_regex.py decides against the bounded enumeration of
+    // offline_certification.py, with every (window, origin) pair over {a, b} to length three the oracles refute and
+    // the length of the shortest counterexample the enumeration found; every other pair is certified by both.
+    struct Universe
+    {
+        std::string_view name;
+
+        std::vector<Regex> tokens;
+
+        std::vector<std::tuple<std::string_view, std::size_t, std::size_t>> refuted;
+    };
+
+    // The oracles' verdicts, as the program printed them.
+    const std::vector<Universe> universes{
+            {.name = "{a+b, a}",
+             .tokens = {concat(plus(text("a")), text("b")), text("a")},
+             .refuted = {{"a", 0, 3},   {"b", 0, 2},   {"aa", 0, 2},  {"aa", 1, 3},  {"ab", 0, 3},
+                         {"ab", 1, 2},  {"ba", 0, 3},  {"aaa", 0, 3}, {"aaa", 1, 3}, {"aaa", 2, 4},
+                         {"aab", 0, 4}, {"aab", 1, 3}, {"aab", 2, 3}, {"aba", 0, 3}, {"aba", 1, 3},
+                         {"baa", 0, 4}, {"baa", 1, 4}, {"baa", 2, 5}, {"bab", 0, 4}, {"bab", 2, 4}}},
+            {.name = "{ab, a, b}",
+             .tokens = {concat(text("a"), text("b")), text("a"), text("b")},
+             .refuted = {{"b", 0, 2},   {"aa", 0, 2},  {"ab", 1, 2},  {"ba", 0, 2},  {"bb", 0, 2},  {"aaa", 0, 3},
+                         {"aaa", 1, 3}, {"aab", 0, 3}, {"aab", 2, 3}, {"aba", 0, 3}, {"aba", 1, 3}, {"abb", 0, 3},
+                         {"abb", 1, 3}, {"baa", 0, 3}, {"baa", 1, 3}, {"bab", 0, 3}, {"bab", 2, 3}, {"bba", 0, 3},
+                         {"bba", 1, 3}, {"bbb", 0, 3}, {"bbb", 1, 3}}},
+            {.name = "{a+, b}",
+             .tokens = {plus(text("a")), text("b")},
+             .refuted = {{"a", 0, 2},   {"aa", 0, 3},  {"aa", 1, 2},  {"ab", 0, 2},  {"ba", 0, 2},  {"bb", 0, 2},
+                         {"aaa", 0, 4}, {"aaa", 1, 3}, {"aaa", 2, 3}, {"aab", 0, 3}, {"aab", 1, 3}, {"aba", 0, 3},
+                         {"aba", 1, 3}, {"abb", 0, 3}, {"abb", 1, 3}, {"baa", 0, 3}, {"baa", 2, 3}, {"bab", 0, 3},
+                         {"bab", 1, 3}, {"bba", 0, 3}, {"bba", 1, 3}, {"bbb", 0, 3}, {"bbb", 1, 3}}},
+            {.name = "{a|ab, b}",
+             .tokens = {choice(text("a"), concat(text("a"), text("b"))), text("b")},
+             .refuted = {{"b", 0, 2},   {"aa", 0, 2},  {"ab", 1, 2},  {"ba", 0, 2},  {"bb", 0, 2},  {"aaa", 0, 3},
+                         {"aaa", 1, 3}, {"aab", 0, 3}, {"aab", 2, 3}, {"aba", 0, 3}, {"aba", 1, 3}, {"abb", 0, 3},
+                         {"abb", 1, 3}, {"baa", 0, 3}, {"baa", 1, 3}, {"bab", 0, 3}, {"bab", 2, 3}, {"bba", 0, 3},
+                         {"bba", 1, 3}, {"bbb", 0, 3}, {"bbb", 1, 3}}}};
+
+    const std::vector<std::string_view> windows{"a",   "b",   "aa",  "ab",  "ba",  "bb",  "aaa",
+                                                "aab", "aba", "abb", "baa", "bab", "bba", "bbb"};
+
+    std::size_t decided{0};
+
+    for (const auto& [name, tokens, refuted] : universes)
+    {
+        Builder_dbg builder;
+
+        for (std::size_t index{0}; index < tokens.size(); ++index)
+        {
+            builder.add_token(tokens[index], static_cast<Token_kind>(index), 1);
+        }
+
+        const auto lexer{builder.build()};
+
+        for (const auto window : windows)
+        {
+            for (std::size_t origin{0}; origin < window.size(); ++origin)
+            {
+                const auto [witness, exhaustive]{lexer.window_counterexample(window, origin)};
+
+                const auto expected{std::ranges::find_if(refuted, [window, origin](const auto& row) {
+                    return std::get<0>(row) == window && std::get<1>(row) == origin;
+                })};
+
+                ASSERT_TRUE(exhaustive) << name << ' ' << window << ' ' << origin;
+                EXPECT_EQ(!witness.empty(), expected != refuted.end()) << name << ' ' << window << ' ' << origin;
+
+                // Both searches find a shortest counterexample, so the lengths agree even where the witnesses need not;
+                // the witness is checked as the oracle checks its own, by scanning it and reading off the covering
+                // token's start at an occurrence.
+                if (expected != refuted.end())
+                {
+                    EXPECT_EQ(witness.size(), std::get<2>(*expected)) << name << ' ' << window << ' ' << origin;
+                    EXPECT_TRUE(fails(lexer, witness, window, origin)) << name << ' ' << window << ' ' << origin;
+                }
+
+                ++decided;
+            }
+        }
+    }
+
+    // The oracles' own count: 136 decisions across four regex token sets.
+    EXPECT_EQ(decided, 136U);
+}
+
+TEST_F(Lexer_test, The_counterexample_cap_is_a_ceiling_on_the_states_the_search_holds)
+{
+    enum class Token_kind : uint8_t
+    {
+        Zero,
+        Pair,
+        One,
+    };
+
+    // Over {0, 00, 01} the certificate (001, 0) is failed by 0001. The cap is the most states the search may hold,
+    // so every cap below the smallest one that settles the question answers nothing rather than something, and every
+    // cap from it on answers the same witness; zero holds nothing, not even the state the search starts in.
+    Builder builder;
+
+    builder.add_token(text("0"), Token_kind::Zero, 1);
+    builder.add_token(text("00"), Token_kind::Pair, 1);
+    builder.add_token(text("01"), Token_kind::One, 1);
+
+    const auto lexer{builder.build()};
+
+    EXPECT_FALSE(lexer.window_counterexample("001", 0, 0).exhaustive);
+    EXPECT_TRUE(lexer.window_counterexample("001", 0, 0).witness.empty());
+
+    std::size_t holds{1};
+
+    while (!lexer.window_counterexample("001", 0, holds).exhaustive)
+    {
+        ASSERT_TRUE(lexer.window_counterexample("001", 0, holds).witness.empty()) << "cap " << holds;
+
+        ++holds;
+    }
+
+    // Every byte of the witness admits at least one state, and the search settled with the witness at the cap.
+    EXPECT_GE(holds, 4U);
+    EXPECT_EQ(lexer.window_counterexample("001", 0, holds).witness, "0001");
+
+    for (std::size_t cap{holds}; cap <= holds + 8; ++cap)
+    {
+        const auto [witness, exhaustive]{lexer.window_counterexample("001", 0, cap)};
+
+        EXPECT_TRUE(exhaustive) << "cap " << cap;
+        EXPECT_EQ(witness, "0001") << "cap " << cap;
+    }
+
+    // A certificate is proved exact only by an exhausted search, and a cap that stops the search before it
+    // exhausts says nothing about it.
+    EXPECT_FALSE(lexer.window_counterexample("1001", 2, 1).exhaustive);
+    EXPECT_TRUE(lexer.window_counterexample("1001", 2).exhaustive);
 }
 
 TEST_F(Lexer_test, Window_fallback_plans_parallel_cuts_where_no_byte_certifies)

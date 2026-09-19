@@ -151,7 +151,9 @@ struct Report
 };
 
 /**
- * @brief The report's answer in one sentence: whether a cut has a certificate, of what kind, and where to read on.
+ * @brief The report's answer in one sentence: whether a cut has a certificate, of what kind, and where to read on. A
+ *        certificate found is a certificate; none found among the windows is the conservative model's finding up to
+ *        the width tried, which the sentence says, since the exact decision may certify a window the model refuses.
  * @param report The report.
  * @return The sentence.
  */
