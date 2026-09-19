@@ -141,17 +141,20 @@ const auto identifier = concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::al
 
 #### **Pattern Syntax**
 
-The same nodes can be read from a pattern written the way a lexer generator takes it. `parse()` reads flex's
-dialect of POSIX extended regular expressions over bytes: alternation, grouping, `*`, `+`, `?` and counted `{n,m}`,
-the dot for any byte but the newline, bracket expressions with ranges, negation and the POSIX classes, escapes,
-double-quoted literals, and `{name}` expanding to a definition given alongside. One escape flex has not got serves the
-readers of character-level generators: `\u{X...}` names a code point, the UTF-8 encoding of that scalar in a literal,
-and inside a bracket it turns the bracket to scalars, so `[\u{0}-\u{10FFFF}]` is any scalar and `[^\n\u{e9}]` every
-scalar but two. What a token language cannot say is refused with the offset and the reason rather than approximated:
-the anchors, trailing context and start conditions. A parsed pattern and its hand-built equivalent compile to the
-same automaton.
+The same nodes can be read from a pattern written the way a lexer generator takes it. `parse()` reads flex's dialect
+of POSIX extended regular expressions over bytes: alternation, grouping, `*`, `+`, `?` and counted `{n,m}`, the dot
+for any byte but the newline, bracket expressions with ranges, negation, the POSIX classes and their `[:^digit:]`
+negations, flex's class operators `[a-z]{-}[aeiou]` and `[a-z]{+}[0-9]` between two brackets, escapes, double-quoted
+literals, and `{name}` expanding to a definition given alongside, parenthesised as flex parenthesises it. One escape
+flex has not got serves the readers of character-level generators: `\u{X...}` names a code point, the UTF-8 encoding
+of that scalar in a literal, and inside a bracket it turns the bracket to scalars, so `[\u{0}-\u{10FFFF}]` is any
+scalar and `[^\n\u{e9}]` every scalar but two. What a token language cannot say is refused with the offset and the
+reason rather than approximated: the anchors, trailing context and a start-condition prefix, which only a `<`
+opening the pattern is. A parsed pattern and its hand-built equivalent compile to the same automaton.
 
 ```cpp
+#include <munch/regex/parse.hpp>
+
 using namespace munch::regex;
 
 const Definitions_t definitions{{"DIGIT", "[0-9]"}};

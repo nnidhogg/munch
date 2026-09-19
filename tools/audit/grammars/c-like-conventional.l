@@ -2,7 +2,7 @@
  * operator byte, one punctuation byte, line-bounded strings without escapes, line comments, and a whitespace run
  * that folds the newline in. Rules returning nothing are the tokens a parser never sees. */
 
-%option noyywrap
+%option noyywrap nodefault
 
 ID       [a-zA-Z_][a-zA-Z0-9_]*
 DIGIT    [0-9]

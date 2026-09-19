@@ -40,11 +40,11 @@ bool accepts(const Regex& regex, const std::string_view input)
 /**
  * @brief The offset a refused pattern is refused at, or -1 when it is accepted.
  */
-long refused_at(const std::string_view pattern, const Definitions_t& definitions = {})
+long refused_at(const std::string_view pattern, const Definitions_t& definitions = {}, const Parse_options options = {})
 {
     try
     {
-        std::ignore = parse(pattern, definitions);
+        std::ignore = parse(pattern, definitions, options);
     }
     catch (const Syntax_error& error)
     {
@@ -116,6 +116,23 @@ TEST(Parse, Brackets_take_ranges_negation_classes_and_the_literal_edges)
     EXPECT_TRUE(accepts(parse("[[:xdigit:]]+"), "0aF9"));
     EXPECT_TRUE(accepts(parse("[[:space:]]+"), " \t\n\r"));
 
+    // A '^' before the name negates a class, over every byte and not ASCII alone, as flex negates it.
+    EXPECT_TRUE(accepts(parse("[[:^digit:]]+"), "a \xff"));
+    EXPECT_EQ(matched(parse("[[:^digit:]]+"), "1"), -1);
+    EXPECT_EQ(matched(parse("[[:^alpha:]]+"), "1_a"), 2);
+    EXPECT_EQ(refused_at("[[:^nope:]]"), 3);
+
+    // A negated class names the bytes beyond ASCII, which are no scalars, so it cannot stand beside a code point.
+    EXPECT_EQ(refused_at(R"([[:^digit:]\u{100}])"), 0);
+
+    // Only the shape flex lexes as a class is one, so a '[:' of any other shape is the '[' and the ':' as members;
+    // flex 2.6.4 matches each of these as asserted.
+    EXPECT_EQ(matched(parse("[[:al]pha:]"), "apha:]"), 6);
+    EXPECT_EQ(matched(parse("[[:alpha]]"), "a]"), 2);
+    EXPECT_EQ(matched(parse("[[::]]"), ":]"), 2);
+    EXPECT_EQ(matched(parse("[[:al1pha:]]"), "a]"), 2);
+    EXPECT_EQ(matched(parse("[[:^^alpha:]]"), "^]"), 2);
+
     // A leading ']' and an edge '-' are members.
     EXPECT_TRUE(accepts(parse("[]a]+"), "]a]"));
     EXPECT_TRUE(accepts(parse("[a-]+"), "-a-"));
@@ -123,6 +140,32 @@ TEST(Parse, Brackets_take_ranges_negation_classes_and_the_literal_edges)
 
     // Escapes inside brackets decode.
     EXPECT_TRUE(accepts(parse(R"([\n\t]+)"), "\n\t"));
+}
+
+TEST(Parse, Class_operators_take_the_difference_and_the_union_of_two_brackets)
+{
+    // flex's {-} and {+}: left associative, each taking a bracket on its right, and binding tighter than a postfix
+    // operator, so flex 2.6.4 matches 'bcd' of "bcd0" with the third pattern here.
+    EXPECT_TRUE(accepts(parse("[a-z]{-}[aeiou]"), "b"));
+    EXPECT_EQ(matched(parse("[a-z]{-}[aeiou]"), "a"), -1);
+    EXPECT_EQ(matched(parse("[a-z]{-}[aeiou]+"), "bcd0"), 3);
+    EXPECT_TRUE(accepts(parse("[a-z]{+}[0-9]"), "0"));
+    EXPECT_TRUE(accepts(parse("[a-z]{+}[0-9]"), "a"));
+    EXPECT_TRUE(accepts(parse("[abc]{-}[b]{-}[c]"), "a"));
+    EXPECT_EQ(matched(parse("[abc]{-}[b]{-}[c]"), "b"), -1);
+    EXPECT_TRUE(accepts(parse("[[:alnum:]]{-}[[:digit:]]"), "a"));
+    EXPECT_EQ(matched(parse("[[:alnum:]]{-}[[:digit:]]"), "1"), -1);
+    EXPECT_TRUE(accepts(parse("[a-z]{-}[^a-c]"), "b"));
+
+    // The right side must be a bracket, as flex's grammar has it; a bracket of code points has no byte set to
+    // combine; a difference that empties the class matches nothing, which is refused rather than left to match
+    // nothing silently; and the operators are no definition name.
+    EXPECT_EQ(refused_at("[a-z]{-}x"), 5);
+    EXPECT_EQ(refused_at(R"([a-z]{-}[\u{61}])"), 5);
+    EXPECT_EQ(refused_at(R"([\u{61}]{-}[a])"), 8);
+    EXPECT_EQ(refused_at("[a-c]{-}[a-c]"), 0);
+    EXPECT_EQ(refused_at("{-}a"), 0);
+    EXPECT_EQ(refused_at("{+}a"), 0);
 }
 
 TEST(Parse, Escapes_decode_named_octal_hex_and_the_byte_itself)
@@ -204,6 +247,24 @@ TEST(Parse, The_caseless_option_folds_letters_in_texts_brackets_and_definitions)
     EXPECT_EQ(matched(parse("[^a-c]+", {}, caseless), "xyzA"), 3);
     EXPECT_EQ(matched(parse("[[:upper:]]+", {}, caseless), "Hello"), 5);
     EXPECT_EQ(matched(parse("[0-9_]+", {}, caseless), "0_9a"), 3);
+
+    // A range folds by swapping both its ends, so the ambiguous [A-t], whose swapped ends run backwards, keeps its
+    // numeric span, and a range whose ends have no case folds no letter at all, as flex 2.6.4 reads them.
+    EXPECT_EQ(matched(parse("[A-t]+", {}, caseless), "ABat[u"), 5);
+    EXPECT_EQ(matched(parse("[a-t]+", {}, caseless), "aTz"), 2);
+    EXPECT_EQ(matched(parse("[@-C]+", {}, caseless), "@Cabc"), 2);
+
+    // A range reaching past ASCII folds over its ASCII intersection, among the members and so under a negation too.
+    EXPECT_EQ(matched(parse(R"([\u{61}-\u{ff}])", {}, caseless), "A"), 1);
+    EXPECT_EQ(matched(parse(R"([\u{61}-\u{100}])", {}, caseless), "A"), 1);
+    EXPECT_EQ(matched(parse(R"([\u{61}-\u{100}])", {}, caseless), "\xc4\x80"), 2);
+    EXPECT_EQ(matched(parse(R"([^\u{61}-\u{100}])", {}, caseless), "A"), -1);
+    EXPECT_EQ(matched(parse(R"([^\u{61}-\u{100}])", {}, caseless), "0"), 1);
+
+    // flex calls a negated case class ambiguous under the option and leaves it matching nothing, so it is refused.
+    EXPECT_EQ(refused_at("[[:^lower:]]", {}, caseless), 3);
+    EXPECT_EQ(refused_at("[[:^upper:]]", {}, caseless), 3);
+    EXPECT_EQ(matched(parse("[[:^lower:]]", {}, {}), "A"), 1);
     EXPECT_EQ(matched(parse(R"([^\u{e9}a])", {}, caseless), "A"), -1);
 
     const Definitions_t definitions{{"ident", "[a-z_][a-z0-9_]*"}};
@@ -236,6 +297,20 @@ TEST(Parse, Definitions_expand_and_nest)
     // A definition under an operator repeats as a group would.
     EXPECT_TRUE(accepts(parse("{DIGIT}{2}", definitions), "12"));
     EXPECT_EQ(matched(parse("{DIGIT}{2}", definitions), "123"), 2);
+
+    // flex encloses an expansion in parentheses, so an alternation inside a definition stays one atom and a '^',
+    // '$' or '<' inside one is a byte.
+    EXPECT_TRUE(accepts(parse("{ALT}c", {{"ALT", "a|b"}}), "ac"));
+    EXPECT_EQ(matched(parse("{ALT}c", {{"ALT", "a|b"}}), "a"), -1);
+    EXPECT_TRUE(accepts(parse("{MID}", {{"MID", "a^b$c"}}), "a^b$c"));
+    EXPECT_TRUE(accepts(parse("{SCON}", {{"SCON", "<X>a"}}), "<X>a"));
+
+    // flex splices a definition opening with '^' or closing with '$' without those parentheses, so its anchor is
+    // the rule's: flex 2.6.4 matches "abc" at a line's start for {CARET} with CARET = ^abc, and refuses a{CARET}.
+    EXPECT_EQ(refused_at("{CARET}", {{"CARET", "^abc"}}), 0);
+    EXPECT_EQ(refused_at("a{CARET}", {{"CARET", "^abc"}}), 1);
+    EXPECT_EQ(refused_at("{DOLLAR}", {{"DOLLAR", "abc$"}}), 0);
+    EXPECT_TRUE(accepts(parse("{HEAD}", {{"HEAD", "$abc"}}), "$abc"));
 }
 
 TEST(Parse, A_parsed_pattern_builds_what_the_combinators_build)
@@ -253,14 +328,23 @@ TEST(Parse, A_parsed_pattern_builds_what_the_combinators_build)
 
 TEST(Parse, Refusals_name_the_offset_and_the_reason)
 {
-    // Anchors, trailing context and start conditions are context, not language; a '$' inside a pattern and a '^'
-    // past its start are bytes, as flex reads them.
+    // Anchors, trailing context and start conditions are context, not language; a '$' inside a pattern, a '^' past
+    // its start and a '<' past its start are bytes, as flex reads them.
     EXPECT_EQ(refused_at("^abc"), 0);
     EXPECT_EQ(refused_at("abc$"), 3);
     EXPECT_TRUE(accepts(parse("$[0-9a-f]+"), "$ff"));
     EXPECT_TRUE(accepts(parse("a^b"), "a^b"));
+    EXPECT_TRUE(accepts(parse("a<b"), "a<b"));
+    EXPECT_TRUE(accepts(parse("(<a)"), "<a"));
+    EXPECT_TRUE(accepts(parse("a<=b|a>=b"), "a<=b"));
+    EXPECT_TRUE(accepts(parse("a<<b"), "a<<b"));
     EXPECT_EQ(refused_at("ab/c"), 2);
     EXPECT_EQ(refused_at("<S>ab"), 0);
+
+    // <<EOF>> is a token flex's scanner reads wherever it stands, and refuses away from a rule's start.
+    EXPECT_EQ(refused_at("<<EOF>>"), 0);
+    EXPECT_EQ(refused_at("a<<EOF>>"), 1);
+    EXPECT_EQ(refused_at("{END}", {{"END", "a<<EOF>>"}}), 0);
 
     // Structure.
     EXPECT_EQ(refused_at(""), 0);
@@ -272,10 +356,15 @@ TEST(Parse, Refusals_name_the_offset_and_the_reason)
     EXPECT_EQ(refused_at("[abc"), 4);
     EXPECT_EQ(refused_at("[z-a]"), 1);
     EXPECT_EQ(refused_at("[[:nope:]]"), 3);
+    EXPECT_EQ(refused_at("[[:digit"), 8);
+
+    // A bracket left naming no byte matches nothing, where flex warns that the rule cannot be matched.
+    EXPECT_EQ(refused_at(R"([^\x00-\xff])"), 0);
     EXPECT_EQ(refused_at(R"("open)"), 5);
     EXPECT_EQ(refused_at(R"("")"), 2);
     EXPECT_EQ(refused_at("a{3,1}"), 5);
     EXPECT_EQ(refused_at("a{,3}"), 1);
+    EXPECT_EQ(refused_at("a{1x}"), 3);
     EXPECT_EQ(refused_at(R"(\x)"), 2);
 
     // Definitions.
@@ -292,5 +381,18 @@ TEST(Parse, Refusals_name_the_offset_and_the_reason)
     catch (const Syntax_error& error)
     {
         EXPECT_NE(std::string_view{error.what()}.find("in definition 'BAD'"), std::string_view::npos);
+    }
+
+    // A refusal names the byte standing where the syntax wanted another, not the expectation alone.
+    try
+    {
+        std::ignore = parse("a{1x}");
+
+        FAIL() << "a count holding a stray byte must be refused";
+    }
+    catch (const Syntax_error& error)
+    {
+        EXPECT_EQ(error.offset(), 3u);
+        EXPECT_NE(std::string_view{error.what()}.find("got 'x'"), std::string_view::npos);
     }
 }

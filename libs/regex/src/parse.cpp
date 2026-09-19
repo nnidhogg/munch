@@ -69,6 +69,28 @@ struct Posix_class
 };
 
 /**
+ * @brief One bracket expression's members with its negation applied: over bytes, or over scalars when a code point
+ *        escape turned the bracket wide, which is the reading flex's class operators have no answer for.
+ */
+struct Members
+{
+    /**
+     * @brief The members as bytes, when the bracket is read over bytes.
+     */
+    Set bytes;
+
+    /**
+     * @brief The members as code point ranges, when the bracket is read over scalars.
+     */
+    std::vector<utf8::Code_point_range> scalars;
+
+    /**
+     * @brief Whether the bracket is read over scalars rather than over bytes.
+     */
+    bool wide;
+};
+
+/**
  * @brief A recursive-descent reader over one pattern, producing the regex as it goes.
  *
  * The grammar is the usual one: an alternation of sequences, a sequence of repetitions, a repetition an atom under
@@ -139,26 +161,55 @@ private:
      * @brief One atom: a group, a bracket expression, a quoted literal, a definition, the dot, an escape or a byte.
      * @param definitions The named patterns.
      * @return The piece, a literal for a plain or escaped byte.
-     * @throws Syntax_error For an anchor, trailing context, a start condition, or an operator with nothing before it.
+     * @throws Syntax_error For an anchor, trailing context, a start-condition prefix at the pattern's start, or an
+     *         operator with nothing before it.
      */
     [[nodiscard]] Piece atom(const Definitions_t& definitions);
 
     /**
-     * @brief A bracket expression after its `[`, through its `]`.
+     * @brief A bracket expression after its `[`, through its `]`, with the class operators that follow it.
      *
      * Over bytes unless a member is a code point escape, when every member is read as a scalar and the bracket
-     * matches the UTF-8 encoding of one of them; negation then runs over the scalars rather than the bytes.
+     * matches the UTF-8 encoding of one of them; negation then runs over the scalars rather than the bytes. flex's
+     * class operators `{-}` and `{+}`, the difference and the union, each take a further bracket on their right and
+     * bind tighter than every postfix operator, so the operator repeats the whole combined class.
      * @return The regex it names: any_of over a set, or the encodings of the scalars.
-     * @throws Syntax_error If a range is reversed, or bytes beyond ASCII stand beside code points.
+     * @throws Syntax_error If a range is reversed, bytes beyond ASCII stand beside code points, a class operator
+     *         has no bracket on its right or combines brackets of code points, or nothing is left to match.
      */
     [[nodiscard]] Regex bracket();
 
     /**
-     * @brief A POSIX class after its `[:`, through its `:]`.
-     * @return The bytes it names.
-     * @throws Syntax_error If the name is not one of the twelve.
+     * @brief One bracket expression's members after its `[`, through its `]`, its negation applied.
+     * @return The members, over bytes or over scalars.
+     * @throws Syntax_error If a range is reversed, or bytes beyond ASCII stand beside code points.
+     */
+    [[nodiscard]] Members bracket_members();
+
+    /**
+     * @brief The regex matching one member of a bracket.
+     * @param members The members, their negation and the class operators already applied.
+     * @param opened The offset of the `[` they were read from, which an empty bracket is refused at.
+     * @return The regex: any_of over the bytes, or the encodings of the scalars.
+     * @throws Syntax_error If the members are empty, so that nothing can match.
+     */
+    [[nodiscard]] Regex matching(const Members& members, std::size_t opened);
+
+    /**
+     * @brief A POSIX class after its `[:`, through its `:]`, negated when a `^` opens its name.
+     * @return The bytes it names, or every other byte when it is negated.
+     * @throws Syntax_error If the name is not one of the twelve, or a negated case class stands under the case
+     *         option, which flex calls ambiguous.
      */
     [[nodiscard]] Set posix_class();
+
+    /**
+     * @brief Whether a POSIX class stands at an offset: `[:`, an optional negating `^`, letters and `:]`, which is
+     *        the only shape flex lexes as a class, its CCL_EXPR.
+     * @param at The offset of the `[`.
+     * @return True when a class stands there.
+     */
+    [[nodiscard]] bool class_stands(std::size_t at) const noexcept;
 
     /**
      * @brief A double-quoted literal after its opening quote, through the closing one.
@@ -199,6 +250,13 @@ private:
     [[nodiscard]] Regex definition(std::size_t open, const Definitions_t& definitions);
 
     /**
+     * @brief Whether this reader reads a definition's expansion, which flex encloses in parentheses, so that the
+     *        pattern's edges are not the rule's and nothing standing only at a rule's edge stands at them.
+     * @return True inside an expansion.
+     */
+    [[nodiscard]] bool expansion() const noexcept;
+
+    /**
      * @brief The unsigned decimal at the current position.
      * @return The number, or std::nullopt when no digit stands here.
      * @throws Syntax_error If the number does not fit.
@@ -227,9 +285,10 @@ private:
     [[nodiscard]] bool accept(char byte) noexcept;
 
     /**
-     * @brief Consumes the byte given or refuses, naming what the syntax expected.
+     * @brief Consumes the byte given or refuses, naming what the syntax expected and what stands there instead.
      * @param byte The byte required.
      * @param what What the syntax expected.
+     * @throws Syntax_error If the byte is not the one required, or the pattern has ended.
      */
     void expect(char byte, std::string_view what);
 
@@ -261,24 +320,87 @@ private:
 };
 
 /**
- * @brief The other case of an ASCII letter, or the byte itself when it is no letter, tested directly so no locale is
+ * @brief Whether a scalar is an ASCII letter, which is what the case option folds, tested directly so no locale is
  *        consulted.
- * @param byte The byte.
- * @return The byte with its case swapped.
+ * @param scalar The scalar.
+ * @return True for a to z and A to Z.
  */
-[[nodiscard]] constexpr char swapped(const char byte) noexcept
+[[nodiscard]] constexpr bool has_case(const char32_t scalar) noexcept
 {
-    if (byte >= 'a' && byte <= 'z')
+    return (scalar >= 'a' && scalar <= 'z') || (scalar >= 'A' && scalar <= 'Z');
+}
+
+/**
+ * @brief The other case of an ASCII letter, or the scalar itself when it is no letter, tested directly so no locale
+ *        is consulted.
+ * @param scalar The scalar.
+ * @return The scalar with its case swapped.
+ */
+[[nodiscard]] constexpr char32_t swapped(const char32_t scalar) noexcept
+{
+    if (scalar >= 'a' && scalar <= 'z')
     {
-        return static_cast<char>(byte - 'a' + 'A');
+        return scalar - 'a' + 'A';
     }
 
-    if (byte >= 'A' && byte <= 'Z')
+    if (scalar >= 'A' && scalar <= 'Z')
     {
-        return static_cast<char>(byte - 'A' + 'a');
+        return scalar - 'A' + 'a';
     }
 
-    return byte;
+    return scalar;
+}
+
+/**
+ * @brief The members the case option adds for one bracket member or range, as flex folds them.
+ *
+ * flex swaps the case of a member letter, and of both ends of a range, adding the range the swapped ends span, so an
+ * ambiguous range such as [A-t] gains the empty range a to T and keeps its numeric span exactly, which is what the
+ * table under Patterns calls the literal range, and a range whose end has no case at all, [_-{] or [@-C], folds no
+ * letter.
+ *
+ * A range reaching past ASCII has no swapped end, since only the code point escape flex has not got writes one: the
+ * folding there runs over the range's ASCII intersection, which ends past every letter, so the other case of every
+ * ASCII letter the range holds is a member and `[\u{61}-\u{100}]` folds exactly as `[\u{61}-\u{7f}]` does.
+ * @param low The member, or the first of the range.
+ * @param high The member again, or the last of the range.
+ * @param wide Whether the bracket reads its members as scalars, the one reading a range reaches past ASCII in.
+ * @return The ranges to add, empty when the folding adds none.
+ */
+[[nodiscard]] std::vector<utf8::Code_point_range> folded(const char32_t low, const char32_t high, const bool wide)
+{
+    constexpr std::array<utf8::Code_point_range, 2> cases{{{.first = 'a', .last = 'z'}, {.first = 'A', .last = 'Z'}}};
+
+    if (wide && high > 0x7F)
+    {
+        std::vector<utf8::Code_point_range> ranges;
+
+        for (const auto& [first, last] : cases)
+        {
+            if (low <= last)
+            {
+                ranges.push_back({.first = swapped(std::max(low, first)), .last = swapped(last)});
+            }
+        }
+
+        return ranges;
+    }
+
+    if (!has_case(low) || !has_case(high))
+    {
+        return {};
+    }
+
+    const auto first{swapped(low)};
+
+    const auto last{swapped(high)};
+
+    if (last < first)
+    {
+        return {};
+    }
+
+    return {{.first = first, .last = last}};
 }
 
 /**
@@ -591,6 +713,14 @@ Piece Reader::atom(const Definitions_t& definitions)
 
         fail("trailing context conditions what follows a match, which a token language cannot say");
     case '<':
+        // A start-condition prefix stands at the start of the rule's pattern and nowhere else, so a '<' past it, or
+        // anywhere inside an expansion, is the byte a comparison operator spells; <<EOF>> is a token flex's scanner
+        // reads wherever it stands, and refuses away from the start.
+        if (!pattern_.substr(open).starts_with("<<EOF>>") && (open != 0 || expansion()))
+        {
+            return {.literal = byte, .regex = std::nullopt};
+        }
+
         --at_;
 
         fail("a start condition or <<EOF>> is the rule's, not the pattern's, and is read by the rule reader");
@@ -603,6 +733,46 @@ Regex Reader::bracket()
 {
     const auto opened{at_ - 1};
 
+    auto members{bracket_members()};
+
+    // flex's class operators, `{-}` for the difference and `{+}` for the union, each taking a bracket on its right
+    // and left associative, so `[abc]{-}[b]{-}[c]` is `[a]`.
+    while (peek() == '{' && at_ + 2 < pattern_.size() && (pattern_[at_ + 1] == '-' || pattern_[at_ + 1] == '+') &&
+           pattern_[at_ + 2] == '}')
+    {
+        const auto operator_at{at_};
+
+        const auto difference{pattern_[at_ + 1] == '-'};
+
+        at_ += 3;
+
+        if (!accept('['))
+        {
+            at_ = operator_at;
+
+            fail(std::string{"flex's class "} + (difference ? "difference" : "union") +
+                 " takes a bracket expression on its right");
+        }
+
+        const auto right{bracket_members()};
+
+        if (members.wide || right.wide)
+        {
+            at_ = operator_at;
+
+            fail("flex's class operators combine brackets of bytes, which a bracket of code points is not");
+        }
+
+        members.bytes = difference ? members.bytes - right.bytes : members.bytes + right.bytes;
+    }
+
+    return matching(members, opened);
+}
+
+Members Reader::bracket_members()
+{
+    const auto opened{at_ - 1};
+
     const auto negated{accept('^')};
 
     Set set;
@@ -610,12 +780,22 @@ Regex Reader::bracket()
     // The members as scalars, kept beside the set until the bracket says which reading it takes.
     std::vector<utf8::Code_point_range> ranges;
 
+    // One member or range, held both ways, since which reading the bracket takes is known only at its close.
+    const auto add{[&set, &ranges](const char32_t low, const char32_t high) {
+        if (high < 0x100)
+        {
+            set += Set::range(static_cast<char>(low), static_cast<char>(high));
+        }
+
+        ranges.push_back({.first = low, .last = high});
+    }};
+
     auto wide{false};
 
     auto byte_beyond_ascii{false};
 
-    // A ']' first is a member rather than the close, as the standard has it.
-    auto first{true};
+    // A ']' leading the bracket is a member rather than the close, as the standard has it.
+    auto leading{true};
 
     for (;;)
     {
@@ -623,24 +803,27 @@ Regex Reader::bracket()
 
         auto byte{static_cast<char32_t>(static_cast<unsigned char>(next("']' to close the bracket expression")))};
 
-        if (byte == ']' && !first)
+        if (byte == ']' && !leading)
         {
             break;
         }
 
-        first = false;
+        leading = false;
 
-        if (byte == '[' && accept(':'))
+        // Only the shape flex lexes as a class is one, so a `[:` of any other shape leaves the `[` an ordinary
+        // member: flex reads `[[:al]pha:]` as the bracket `[[:al]` and the text `pha:]` after it.
+        if (byte == '[' && class_stands(open) && accept(':'))
         {
             const auto members{posix_class()};
-
-            set += members;
 
             for (const auto value : members.symbols())
             {
                 const auto scalar{static_cast<char32_t>(static_cast<unsigned char>(value))};
 
-                ranges.push_back({.first = scalar, .last = scalar});
+                // A negated class names the bytes beyond ASCII too, and those are no scalars either.
+                byte_beyond_ascii = byte_beyond_ascii || scalar >= 0x80;
+
+                add(scalar, scalar);
             }
 
             continue;
@@ -693,35 +876,29 @@ Regex Reader::bracket()
             }
         }
 
-        if (last < 0x100)
-        {
-            set += Set::range(static_cast<char>(byte), static_cast<char>(last));
-        }
-
-        ranges.push_back({.first = byte, .last = last});
+        add(byte, last);
     }
 
-    // Under the caseless option both cases of every letter are members before any negation, as flex folds them.
+    // Under the caseless option both cases of every letter are members before any negation, as flex folds them,
+    // member by member and range by range rather than over the members as a whole.
     if (options_.caseless)
     {
-        const Set letters{set};
+        const auto named{ranges};
 
-        for (const auto symbol : letters.symbols())
+        for (const auto& [low, high] : named)
         {
-            if (swapped(symbol) != symbol)
+            const auto others{folded(low, high, wide)};
+
+            for (const auto& [first, last] : others)
             {
-                const auto other{static_cast<char32_t>(static_cast<unsigned char>(swapped(symbol)))};
-
-                set += swapped(symbol);
-
-                ranges.push_back({.first = other, .last = other});
+                add(first, last);
             }
         }
     }
 
     if (!wide)
     {
-        return any_of(negated ? Set::all() - set : set);
+        return {.bytes = negated ? Set::all() - set : set, .scalars = {}, .wide = false};
     }
 
     // Read as scalars: a byte beyond ASCII is no scalar, so one beside a code point is refused.
@@ -758,12 +935,31 @@ Regex Reader::bracket()
         ranges = std::move(complement);
     }
 
+    return {.bytes = {}, .scalars = std::move(ranges), .wide = true};
+}
+
+Regex Reader::matching(const Members& members, const std::size_t opened)
+{
+    const auto& [bytes, scalars, wide]{members};
+
+    if (!wide)
+    {
+        if (bytes.symbols().empty())
+        {
+            at_ = opened;
+
+            fail("the bracket names no byte");
+        }
+
+        return any_of(bytes);
+    }
+
     // The ASCII part as a set, the rest as encodings.
     Set ascii;
 
     std::vector<utf8::Code_point_range> beyond;
 
-    for (const auto& [low, high] : ranges)
+    for (const auto& [low, high] : scalars)
     {
         if (low < 0x80)
         {
@@ -802,6 +998,10 @@ Set Reader::posix_class()
 {
     const auto open{at_};
 
+    // flex negates a class by a '^' before its name, `[:^digit:]`, over every byte rather than over ASCII alone,
+    // since its CCL_NEG_EXPR drops the isascii() test its CCL_EXPR makes.
+    const auto negated{accept('^')};
+
     std::string name;
 
     while (peek() && *peek() != ':')
@@ -814,15 +1014,45 @@ Set Reader::posix_class()
 
     for (const auto& [known, bytes] : classes)
     {
-        if (known == name)
+        if (known != name)
         {
-            return bytes();
+            continue;
         }
+
+        // flex calls a negated case class ambiguous under the case option and leaves it empty, so the rule holding
+        // one cannot match; it is refused by name rather than read as something that matches.
+        if (negated && options_.caseless && (name == "upper" || name == "lower"))
+        {
+            at_ = open;
+
+            fail("'[:^" + name + ":]' is ambiguous in a case-insensitive scanner, which flex leaves matching nothing");
+        }
+
+        return negated ? Set::all() - bytes() : bytes();
     }
 
     at_ = open;
 
-    fail("unknown class '" + name + "'");
+    fail("unknown class '" + std::string{negated ? "^" : ""} + name + "'");
+}
+
+bool Reader::class_stands(const std::size_t at) const noexcept
+{
+    if (!pattern_.substr(at).starts_with("[:"))
+    {
+        return false;
+    }
+
+    auto past{at + (pattern_.substr(at).starts_with("[:^") ? 3U : 2U)};
+
+    const auto name{past};
+
+    while (past < pattern_.size() && has_case(static_cast<char32_t>(static_cast<unsigned char>(pattern_[past]))))
+    {
+        ++past;
+    }
+
+    return past > name && pattern_.substr(past).starts_with(":]");
 }
 
 std::string Reader::quoted()
@@ -871,7 +1101,9 @@ Regex Reader::literal(std::string run) const
 
     for (const auto byte : run)
     {
-        if (swapped(byte) == byte)
+        const auto scalar{static_cast<char32_t>(static_cast<unsigned char>(byte))};
+
+        if (!has_case(scalar))
         {
             plain += byte;
 
@@ -883,7 +1115,7 @@ Regex Reader::literal(std::string run) const
             pieces.push_back(text(std::exchange(plain, {})));
         }
 
-        pieces.push_back(any_of(Set{byte, swapped(byte)}));
+        pieces.push_back(any_of(Set{byte, static_cast<char>(swapped(scalar))}));
     }
 
     if (pieces.empty())
@@ -1068,6 +1300,15 @@ Regex Reader::definition(const std::size_t open, const Definitions_t& definition
         fail("a count needs its lower bound");
     }
 
+    // {-} and {+} are flex's class operators, which combine bracket expressions and are read after one.
+    if (name == "-" || name == "+")
+    {
+        at_ = open;
+
+        fail(std::string{"flex's class "} + (name == "-" ? "difference" : "union") + " '{" + name +
+             "}' combines bracket expressions, and none stands before it");
+    }
+
     const auto found{definitions.find(name)};
 
     if (found == definitions.end())
@@ -1087,6 +1328,18 @@ Regex Reader::definition(const std::size_t open, const Definitions_t& definition
         }
     }
 
+    // flex splices a definition opening with '^' or closing with '$' without the parentheses it gives every other
+    // expansion, so the definition's edge becomes the rule's, where a '^' anchors it and a '$' is its trailing
+    // context, and no postfix operator after the reference reaches the whole expansion.
+    if (found->second.starts_with('^') || found->second.ends_with('$'))
+    {
+        at_ = open;
+
+        fail(std::string{"definition '"} + name +
+             (found->second.starts_with('^') ? "' opens with '^'" : "' closes with '$'") +
+             ", which flex splices bare, so the reference is no atom and its edge is the rule's");
+    }
+
     auto expanding{expanding_};
 
     expanding.push_back(name);
@@ -1100,6 +1353,11 @@ Regex Reader::definition(const std::size_t open, const Definitions_t& definition
         throw Syntax_error{
                 "in definition '" + name + "' at offset " + std::to_string(inner.offset()) + ": " + inner.what(), open};
     }
+}
+
+bool Reader::expansion() const noexcept
+{
+    return !expanding_.empty();
 }
 
 std::optional<std::size_t> Reader::number()
@@ -1155,10 +1413,19 @@ bool Reader::accept(const char byte) noexcept
 
 void Reader::expect(const char byte, const std::string_view what)
 {
-    if (!accept(byte))
+    if (accept(byte))
     {
-        fail("expected " + std::string{what});
+        return;
     }
+
+    // A refusal names what was found as well as what the syntax admits, so the byte stands in the message unless
+    // the pattern has ended before it.
+    if (const auto found{peek()})
+    {
+        fail("expected " + std::string{what} + ", got '" + *found + "'");
+    }
+
+    fail("expected " + std::string{what} + " before the end of the pattern");
 }
 
 void Reader::fail(const std::string& message) const
