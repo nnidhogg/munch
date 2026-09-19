@@ -141,23 +141,34 @@ Row by row:
 - **lag** and **rescue-free**: the recovery figures, how far a scan resumed at a certified byte can trail the true token
   stream before it agrees with it, and whether the token set admits no completely tokenizable input on which the scan
   reads past a token's end and rolls back, decided exactly, the shortest such input shown when one exists.
-- **why candidate bytes do not certify**: for every byte the start state consumes, each rule that also consumes it
-  in the middle of a token, with a shortest input after which it does. This is the row a designer reads first: the
-  token named is the one to change.
-- **what it would cost to certify a byte**: the one edit the analysis knows, excluding the byte from a rule's
-  character sets so that the rule can no longer run across it, applied rule by rule in file order with the
-  certificate recompiled after each step; a rule that spells the byte out cannot lose it and is listed as
-  immovable. The steps reproduce the study's designed rows: bounding the block comment to a line certifies the
-  newline once discarded tokens are deleted, and splitting the whitespace run at newlines makes it exact.
+- **why candidate bytes do not certify**: for every byte the start state consumes, each rule that also consumes it in
+  the middle of a token, with a shortest input after which it does; a start state that some nonempty input returns to is
+  blamed for what it consumes on re-entry, the exemption being the entry before any input and not the state. This is the
+  row a designer reads first: the token named is the one to change.
+- **what it would cost to certify a byte**: the one edit the analysis knows, excluding the byte from a rule's character
+  sets so that the rule can no longer run across it, applied one step at a time: after each step the certificate is
+  recompiled and the consumers read again from the recompiled table, and the first of them not yet answered, in rule
+  order, the order the set lists its rules and the file's for a set read from one, is narrowed next, so a rule an
+  earlier edit exposes is priced as soon as it is first in that order and no rule is answered twice; the steps are
+  listed in the order made. A byte no token begins with, which neither certificate reports since no occurrence of it can
+  begin a token, is given a token of its own before any other edit, visible, and priced from there. A rule that cannot
+  lose the byte, every word of it holding the byte in a fixed spelling or a class of the one byte, takes no step: it is
+  listed as immovable when every word holds such an occurrence past the token's first byte, since no narrowing frees a
+  fixed occurrence and the byte cannot certify while the token stays in any narrowed form, and as undecided when some
+  word holds the byte fixed only as the token's first byte, where a token may begin with it, since the narrowing is not
+  applied there and decides nothing about it. The steps reproduce the study's designed rows: bounding the block comment
+  to a line certifies the newline once discarded tokens are deleted, and splitting the whitespace run at newlines makes
+  it exact.
 - **what the shapes of the consuming tokens offer**: the edit an author would actually make, read off each
   token's pattern. A *run* over a class the byte is in, `[ \t\n]+`, is the step above: the byte leaves the class
-  and becomes a token of its own. A *terminated* token, `"//"[^\n]*\n`, can leave its terminator to the token
-  after it. A *delimited* token, a fixed opener followed by a body the byte is in, a block comment or a string, can
-  have its body scanned in a start condition of its own with the opener staying, which is how scanners that
-  certify most of their bytes are written. Each such edit is tried on its own token with the rest of the set as it
-  stands and its certificate reported, then every consuming token takes its own shape's edit together; a
-  terminated token's fixed newline, immovable for the narrowing above, is movable here. A token whose fixed
-  spelling holds the byte and has none of these shapes stays *fixed*.
+  and becomes a token of its own. A *terminated* token, `"//"[^\n]*\n`, can leave its terminator to the token after
+  it, the terminator being whatever matches the one byte and nothing else, `\n`, `[\n]` or `\n{1}` alike. A
+  *delimited* token, a fixed opener followed by a body the byte is in, a block comment or a string, can have its body
+  scanned in a start condition of its own with the opener staying, which is how scanners that certify most of their
+  bytes are written; the opener too is whatever matches one fixed word, `"x"`, `[x]` or `x{1}` alike. Each such edit
+  is tried on its own token with the rest of the set as it stands and its certificate reported, then every consuming
+  token takes its own shape's edit together; a terminated token's fixed newline, immovable for the narrowing above,
+  is movable here. A token whose fixed spelling holds the byte and has none of these shapes stays *fixed*.
 
 ## What Is Read, and What Is Refused
 

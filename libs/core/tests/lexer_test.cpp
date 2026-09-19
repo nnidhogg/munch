@@ -4054,7 +4054,12 @@ TEST_F(Lexer_test, Two_token_sets_over_one_language_differ_and_the_witness_shows
 
     ASSERT_FALSE(difference.witness.empty());
 
-    // The witness must be an input both tokenize, cut differently: the shortest is two bytes, one token against two.
+    // The witness is a shortest one, which here leaves no choice: one byte both sets cut alike, and two bytes are
+    // one token against two. Every longer input of a bytes is a differing input too, so only the value itself
+    // holds the search to reading inputs by length.
+    EXPECT_EQ(difference.witness, "aa");
+
+    // The witness must be an input both tokenize and cut differently.
     const auto cuts{[](const auto& lexer, const std::string& text_) {
         std::string marks(text_.size(), '0');
 

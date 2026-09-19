@@ -38,6 +38,11 @@ struct Token_rule
 
 /**
  * @brief A token set held as patterns rather than as tables, so that it can be edited and compiled again.
+ *
+ * Each id names one rule: the compiled set reports a match by its id, the pricing finds the rule to edit by the id the
+ * blame names and takes the first that carries it, and the report names tokens by it, so a set giving two rules one
+ * id is priced as though the second were the first. Every reader numbers rules by their index; a set assembled by
+ * hand owes the uniqueness itself.
  */
 struct Token_set
 {
@@ -49,7 +54,7 @@ struct Token_set
 
 /**
  * @brief Excludes one byte from every character set of a regex, in place, dropping the alternatives of a choice
- *        that cannot lose it.
+ *        that cannot lose it and deleting a repetition that may run zero times whose sub-pattern cannot.
  *
  * This is the one edit the cost analysis knows, and it is the edit behind every designed row of the split-points
  * study: a newline excluded from a comment's interior bounds the comment to a line, excluded from a string's
@@ -72,7 +77,9 @@ void exclude(regex::Regex& regex, unsigned char byte);
  *        matches something, which fails exactly where the byte is part of a fixed spelling the pattern needs.
  *
  * A character set can lose the byte while another member remains; a fixed spelling cannot lose a byte it holds; a
- * concatenation or repetition can lose it when its parts can; a choice can while one alternative can.
+ * concatenation or repetition can lose it when its parts can; a choice can while one alternative can. A repetition
+ * that may run zero times, a star, an optional or a counted one with a minimum of zero, can lose the byte whatever
+ * its sub-pattern spells, by running no times: excluding the newline from `a[\n]*b` leaves `ab` matching.
  * @param regex The pattern.
  * @param byte The byte.
  * @return True when exclude() would leave a pattern matching something.

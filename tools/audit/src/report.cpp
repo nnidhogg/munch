@@ -5,6 +5,7 @@
 #include <deque>
 #include <format>
 #include <functional>
+#include <limits>
 #include <map>
 #include <optional>
 #include <ranges>
@@ -144,6 +145,58 @@ struct Consumed
 }
 
 /**
+ * @brief How many byte strings the certified windows stand for once every representative expands to its class.
+ *
+ * A window stands for the product of its bytes' class sizes, and the windows an input can show are the sum over
+ * the windows. Both are counted checked, since the count outgrows what holds it: eight bytes of one class of 256,
+ * the widest window the command accepts, already stand for 2^64 strings, and a wrapped sum would be printed as a
+ * fact. A byte class always has a member, so the products below divide by no zero.
+ * @param windows The certified windows over class representatives.
+ * @param classes The byte classes.
+ * @return The count, or std::nullopt when it is more than a std::size_t can hold.
+ */
+[[nodiscard]] std::optional<std::size_t> expansion_count(
+        const std::vector<Certified_window>& windows, const std::vector<std::vector<unsigned char>>& classes)
+{
+    constexpr auto most{std::numeric_limits<std::size_t>::max()};
+
+    std::map<unsigned char, std::size_t> class_size;
+
+    for (const auto& members : classes)
+    {
+        class_size[representative(members)] = members.size();
+    }
+
+    std::size_t total{0};
+
+    for (const auto& [window, origin] : windows)
+    {
+        std::size_t count{1};
+
+        for (const auto byte : window)
+        {
+            const auto size{class_size.at(static_cast<unsigned char>(byte))};
+
+            if (count > most / size)
+            {
+                return std::nullopt;
+            }
+
+            count *= size;
+        }
+
+        if (total > most - count)
+        {
+            return std::nullopt;
+        }
+
+        total += count;
+    }
+
+    return total;
+}
+
+/**
  * @brief The certified windows with every class expanded to its member bytes, the inventory the span is decided
  *        over, or std::nullopt when there would be more than the cap.
  * @param windows The windows over representatives.
@@ -231,43 +284,94 @@ struct Consumed
 }
 
 /**
- * @brief The token the nearest accepting state from a state accepts: the token a match path through the state is
- *        on its way to.
+ * @brief A shortest nonempty input after which the scan stands in the initial state again.
+ *
+ * A shortest such input is a shortest input reaching a state that steps into the initial state, one byte longer,
+ * so the inputs already found decide it without a walk of its own. It exists exactly where a reachable state steps
+ * back into the initial state, which is what Simulator::init_reentrant() says of the tables.
  * @param simulator The tables.
- * @param from The state.
- * @return The token id, or std::nullopt when no accepting state is reachable.
+ * @param inputs A shortest input per state, empty for the initial state.
+ * @return The input, std::nullopt when no input returns to the initial state.
  */
-[[nodiscard]] std::optional<std::size_t> token_ahead(const dfa::Simulator& simulator, const std::size_t from)
+[[nodiscard]] std::optional<std::string> shortest_re_entry(
+        const dfa::Simulator& simulator, const std::vector<std::optional<std::string>>& inputs)
 {
-    std::vector<bool> seen(simulator.state_count(), false);
+    std::optional<std::string> shortest;
 
-    std::deque<std::size_t> pending{from};
-
-    seen[from] = true;
-
-    while (!pending.empty())
+    for (std::size_t state{0}; state < simulator.state_count(); ++state)
     {
-        const auto at{pending.front()};
-
-        pending.pop_front();
-
-        if (const auto token{simulator.accepted(at)})
+        if (!inputs[state])
         {
-            return token->id();
+            continue;
         }
 
         for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
         {
-            if (const auto to{simulator.step(at, static_cast<unsigned char>(value))}; to && !seen[*to])
+            if (simulator.step(state, static_cast<unsigned char>(value)) != simulator.init_state())
             {
-                seen[*to] = true;
+                continue;
+            }
 
-                pending.push_back(*to);
+            auto returning{*inputs[state] + static_cast<char>(value)};
+
+            if (!shortest || returning.size() < shortest->size())
+            {
+                shortest = std::move(returning);
             }
         }
     }
 
-    return std::nullopt;
+    return shortest;
+}
+
+/**
+ * @brief The tokens reachable from each state: those the accepting states reachable from it accept, which are the
+ *        tokens a match path through it can still be on its way to.
+ *
+ * Every reachable accepting state counts, not the nearest one, because an accepting state lies on the way to
+ * longer tokens' accepting states: with the rules a[\nx] and a[\nx]b, the state accepting the shorter one is
+ * where the scan of the longer one stands after the same bytes, so both tokens consume those bytes mid-token.
+ * Once per state rather than once per state and byte, since the blame asks the same question of a state for
+ * every byte that reaches it.
+ * @param simulator The tables.
+ * @return The token ids per state, ascending, empty for a state no accepting state is reachable from.
+ */
+[[nodiscard]] std::vector<std::set<std::size_t>> tokens_ahead(const dfa::Simulator& simulator)
+{
+    std::vector<std::set<std::size_t>> ahead(simulator.state_count());
+
+    for (std::size_t from{0}; from < simulator.state_count(); ++from)
+    {
+        std::vector<bool> seen(simulator.state_count(), false);
+
+        std::deque<std::size_t> pending{from};
+
+        seen[from] = true;
+
+        while (!pending.empty())
+        {
+            const auto at{pending.front()};
+
+            pending.pop_front();
+
+            if (const auto token{simulator.accepted(at)})
+            {
+                ahead[from].insert(token->id());
+            }
+
+            for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
+            {
+                if (const auto to{simulator.step(at, static_cast<unsigned char>(value))}; to && !seen[*to])
+                {
+                    seen[*to] = true;
+
+                    pending.push_back(*to);
+                }
+            }
+        }
+    }
+
+    return ahead;
 }
 
 /**
@@ -364,6 +468,16 @@ struct Consumed
 }
 
 /**
+ * @brief A window count as the report prints it: the number, or the bound the count passed when none holds it.
+ * @param count The count, std::nullopt when it is more than a std::size_t can hold.
+ * @return The rendering.
+ */
+[[nodiscard]] std::string counted(const std::optional<std::size_t>& count)
+{
+    return count ? std::to_string(*count) : std::format("more than {}", std::numeric_limits<std::size_t>::max());
+}
+
+/**
  * @brief Whether every byte of a window is printable ASCII, which makes it the better example.
  * @param window The window.
  * @return True when it is.
@@ -411,6 +525,16 @@ struct Consumed
 [[nodiscard]] std::string json_span(const std::optional<std::size_t>& span)
 {
     return span ? std::to_string(*span) : R"("unbounded")";
+}
+
+/**
+ * @brief A window count as JSON: the number, or the bound it passed as a string.
+ * @param count The count, std::nullopt when it is more than a std::size_t can hold.
+ * @return The JSON text.
+ */
+[[nodiscard]] std::string json_count(const std::optional<std::size_t>& count)
+{
+    return count ? std::to_string(*count) : quoted(counted(count));
 }
 
 /**
@@ -509,7 +633,7 @@ std::string verdict(const Report& report)
     {
         return std::format(
                 "no byte certifies; windows do: {} up to width {}, {} once classes expand", report.windows.size(),
-                report.window_limit, report.window_count);
+                report.window_limit, counted(report.window_count));
     }
 
     return std::format(
@@ -522,6 +646,13 @@ std::vector<Blame> blame(const core::Lexer& lexer)
     const auto& simulator{lexer.simulator()};
 
     const auto inputs{shortest_inputs(simulator)};
+
+    const auto ahead{tokens_ahead(simulator)};
+
+    // The initial state is exempt on the entry before any input alone, where a byte may begin a token. Where a
+    // nonempty input returns to it, the scan stands in it mid-token, so it blames like any other state, after that
+    // input rather than after none.
+    const auto re_entry{shortest_re_entry(simulator, inputs)};
 
     std::vector<Blame> blame;
 
@@ -541,7 +672,9 @@ std::vector<Blame> blame(const core::Lexer& lexer)
 
         for (std::size_t state{0}; state < simulator.state_count(); ++state)
         {
-            if (state == simulator.init_state() || !simulator.is_live(state) || !inputs[state])
+            const auto& reached{state == simulator.init_state() ? re_entry : inputs[state]};
+
+            if (!reached || !simulator.is_live(state))
             {
                 continue;
             }
@@ -553,18 +686,14 @@ std::vector<Blame> blame(const core::Lexer& lexer)
                 continue;
             }
 
-            const auto token{token_ahead(simulator, *to)};
-
-            if (!token)
+            for (const auto token : ahead[*to])
             {
-                continue;
-            }
+                const auto found{shortest_by_token.find(token)};
 
-            const auto found{shortest_by_token.find(*token)};
-
-            if (found == shortest_by_token.end() || inputs[state]->size() < found->second.size())
-            {
-                shortest_by_token.insert_or_assign(*token, *inputs[state]);
+                if (found == shortest_by_token.end() || reached->size() < found->second.size())
+                {
+                    shortest_by_token.insert_or_assign(token, *reached);
+                }
             }
         }
 
@@ -623,7 +752,7 @@ Report audit(const core::Lexer& lexer, const std::size_t window_limit)
             .classes = 0,
             .window_limit = window_limit,
             .windows = {},
-            .window_count = 0,
+            .window_count = std::nullopt,
             .mandatory_core = std::string{lexer.mandatory_core()},
             .byte_span = lexer.anchor_free_span(),
             .window_span = std::nullopt,
@@ -653,24 +782,7 @@ Report audit(const core::Lexer& lexer, const std::size_t window_limit)
 
     report.windows = certified_windows(lexer, classes, window_limit);
 
-    std::map<unsigned char, std::size_t> class_size;
-
-    for (const auto& members : classes)
-    {
-        class_size[representative(members)] = members.size();
-    }
-
-    for (const auto& [window, origin] : report.windows)
-    {
-        std::size_t count{1};
-
-        for (const auto byte : window)
-        {
-            count *= class_size.at(static_cast<unsigned char>(byte));
-        }
-
-        report.window_count += count;
-    }
+    report.window_count = expansion_count(report.windows, classes);
 
     if (!report.windows.empty())
     {
@@ -733,7 +845,7 @@ std::string json(const Report& report, const std::function<std::string(std::size
                return std::format(R"({{"window": {}, "origin": {}}})", quoted(window), origin);
            }));
 
-    member("window_count", std::to_string(report.window_count));
+    member("window_count", json_count(report.window_count));
 
     member("mandatory_core", quoted(report.mandatory_core));
 
@@ -757,9 +869,7 @@ std::string json(const Report& report, const std::function<std::string(std::size
            }));
 
     member("prices", list(report.prices, [&](const Pricing& pricing) {
-               const auto& [byte, exact_before, modulo_before, steps, immovable, gained, choices, together]{pricing};
-
-               const auto steps_text{list(steps, [&name](const Price_step& step) {
+               const auto steps_text{list(pricing.steps, [&name](const Price_step& step) {
                    const auto& [token, shape, separated, separated_discarded, exact, modulo]{step};
 
                    return std::format(
@@ -769,7 +879,10 @@ std::string json(const Report& report, const std::function<std::string(std::size
                })};
 
                const auto immovable_text{
-                       list(immovable, [&name](const std::size_t token) { return json_token(token, name); })};
+                       list(pricing.immovable, [&name](const std::size_t token) { return json_token(token, name); })};
+
+               const auto undecided_text{
+                       list(pricing.undecided, [&name](const std::size_t token) { return json_token(token, name); })};
 
                const auto json_outcome{[](const Outcome& after) {
                    return std::format(
@@ -777,7 +890,7 @@ std::string json(const Report& report, const std::function<std::string(std::size
                            json_bytes(after.gained));
                }};
 
-               const auto choices_text{list(choices, [&name, &json_outcome](const Choice& choice) {
+               const auto choices_text{list(pricing.choices, [&name, &json_outcome](const Choice& choice) {
                    const auto& [token, shape, after]{choice};
 
                    return std::format(
@@ -786,10 +899,12 @@ std::string json(const Report& report, const std::function<std::string(std::size
                })};
 
                return std::format(
-                       R"({{"byte": {}, "exact_before": {}, "modulo_before": {}, "steps": {}, "immovable": {}, )"
-                       R"("gained": {}, "choices": {}, "together": {}}})",
-                       byte, exact_before, modulo_before, steps_text, immovable_text, json_bytes(gained), choices_text,
-                       together ? json_outcome(*together) : "null");
+                       R"({{"byte": {}, "exact_before": {}, "modulo_before": {}, "given": {}, "steps": {}, )"
+                       R"("immovable": {}, "undecided": {}, "gained": {}, "choices": {}, "together": {}}})",
+                       pricing.byte, pricing.exact_before, pricing.modulo_before,
+                       pricing.given ? json_outcome(*pricing.given) : "null", steps_text, immovable_text,
+                       undecided_text, json_bytes(pricing.gained), choices_text,
+                       pricing.together ? json_outcome(*pricing.together) : "null");
            }));
 
     return out + "\n}";
@@ -852,7 +967,7 @@ std::string render(const Report& report, const std::function<std::string(std::si
              report.windows.empty() ? "none" :
                                       std::format(
                                               "{} over {} byte classes, {} once classes expand", summary,
-                                              report.classes, report.window_count));
+                                              report.classes, counted(report.window_count)));
 
         // The examples: printable windows first, since a reader recognises those.
         auto examples{report.windows};
@@ -922,13 +1037,34 @@ std::string render(const Report& report, const std::function<std::string(std::si
     }
 
     // Prices: per byte, the edits in order with the certificate after each, and what cannot move.
-    for (const auto& [byte, exact_before, modulo_before, steps, immovable, gained, choices, together] : report.prices)
+    for (const auto& pricing : report.prices)
     {
+        const auto& [byte, exact_before, modulo_before, given, steps, immovable, undecided, gained, choices, together]{
+                pricing};
+
+        const auto stood{[](const Outcome& after) {
+            return std::string{
+                           after.exact  ? "certifies exactly" :
+                           after.modulo ? "certifies once discarded tokens are deleted" :
+                                          "still does not certify"} +
+                   (after.gained.empty() ? "" : "; also certified: " + shown(after.gained));
+        }};
+
         out += std::format("\nwhat it would cost to certify {}\n", shown(byte));
 
         if (modulo_before)
         {
             out += "  certifies already once discarded tokens are deleted; the steps below make it exact\n";
+        }
+
+        // A byte no token begins with has nothing to certify until one does; the token given is the first edit.
+        if (given)
+        {
+            out += std::format(
+                    "  {:<26} neither certificate reports it; it is given a token of its own before any edit\n",
+                    std::format("no token begins with {}", shown(byte)));
+
+            out += std::format("  {:<26} {}\n", "", stood(*given));
         }
 
         for (std::size_t index{0}; index < steps.size(); ++index)
@@ -961,6 +1097,19 @@ std::string render(const Report& report, const std::function<std::string(std::si
                     offered ? "its shape offers an edit below" : "the byte cannot certify while it stays");
         }
 
+        // The tokens the narrowing is not applied to and has no verdict about: some word of the token holds the byte
+        // fixed only where a token may begin with it, so the impossibility above would be a claim the procedure has
+        // not earned.
+        for (const auto token : undecided)
+        {
+            out += std::format(
+                    "  {:<26} spells {} out, on some path only as its first byte, where a token may begin with it\n",
+                    name(token), shown(byte));
+
+            out += std::format(
+                    "  {:<26} {}\n", "", "no narrowing applies to a fixed spelling, so this edit decides nothing");
+        }
+
         if (!gained.empty())
         {
             out += std::format("  {:<26} {}\n", "also certified after", shown(gained));
@@ -971,14 +1120,6 @@ std::string render(const Report& report, const std::function<std::string(std::si
             out += std::format(
                     "\nwhat the shapes of the tokens consuming {} offer, each edit on its own\n", shown(byte));
         }
-
-        const auto stood{[](const Outcome& after) {
-            return std::string{
-                           after.exact  ? "certifies exactly" :
-                           after.modulo ? "certifies once discarded tokens are deleted" :
-                                          "still does not certify"} +
-                   (after.gained.empty() ? "" : "; also certified: " + shown(after.gained));
-        }};
 
         for (const auto& [token, shape, after] : choices)
         {
