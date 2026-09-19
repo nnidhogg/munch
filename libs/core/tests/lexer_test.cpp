@@ -1444,6 +1444,61 @@ TEST_F(Lexer_test, Lag_and_rescue_freeness_decide_the_rollback_shape)
     EXPECT_TRUE(flat_lexer.rescue_free());
 }
 
+TEST_F(Lexer_test, A_search_cap_is_a_ceiling_on_the_states_a_decision_holds)
+{
+    enum class Token_kind : uint8_t
+    {
+        A,
+        Abc,
+        B,
+        C,
+        A0c,
+        Hex,
+    };
+
+    // {a, abc, b, c} is rescued on "ab": the scan of a reads the b, the input ends, and the rollback to a leaves b
+    // as the next token. The tokens a0c and 0x add a live successor on '0', a byte before 'b', to the position the
+    // search reaches after the a, so the expansion that finds the witness admits a state before it answers.
+    //
+    // The cap is the most states the search may hold, so an answer is always one the cap paid for: the witness
+    // comes back first at the cap that equals the thirteen states holding it takes, and every smaller cap answers
+    // nothing rather than something. A cap tested once per expansion instead of at every admission reported this
+    // witness at twelve while holding those thirteen states.
+    Builder builder;
+
+    builder.add_token(text("a"), Token_kind::A, 2);
+    builder.add_token(text("abc"), Token_kind::Abc, 1);
+    builder.add_token(text("b"), Token_kind::B, 2);
+    builder.add_token(text("c"), Token_kind::C, 2);
+    builder.add_token(text("a0c"), Token_kind::A0c, 1);
+    builder.add_token(text("0x"), Token_kind::Hex, 1);
+
+    const auto lexer{builder.build()};
+
+    constexpr std::size_t holds{13};
+
+    for (std::size_t cap{0}; cap < holds; ++cap)
+    {
+        const auto found{lexer.rescue(cap)};
+
+        EXPECT_FALSE(found.exhaustive) << "cap " << cap;
+        EXPECT_TRUE(found.witness.empty()) << "cap " << cap;
+    }
+
+    for (std::size_t cap{holds}; cap <= holds + 8; ++cap)
+    {
+        const auto found{lexer.rescue(cap)};
+
+        EXPECT_TRUE(found.exhaustive) << "cap " << cap;
+        EXPECT_EQ(found.witness, "ab") << "cap " << cap;
+    }
+
+    // Zero holds nothing, not even the state a search starts in, so neither decision settles anything under it.
+    EXPECT_FALSE(lexer.rescue(0).exhaustive);
+    EXPECT_FALSE(lexer.boundary_difference(lexer, 0).exhaustive);
+    EXPECT_TRUE(lexer.boundary_difference(lexer, 0).witness.empty());
+}
+
 TEST_F(Lexer_test, Anchored_starts_answer_where_certificates_cannot)
 {
     enum class Token_kind : uint8_t
@@ -3113,6 +3168,40 @@ TEST_F(Lexer_test, State_limit_stops_an_exploding_construction)
 
     ASSERT_TRUE(token.has_value());
     EXPECT_EQ(length, 13U);
+}
+
+TEST_F(Lexer_test, The_state_limit_counts_what_determinization_discovers_and_a_nullable_set_compiles_one_more)
+{
+    enum class Token_kind : uint8_t
+    {
+        Only,
+    };
+
+    // The cap counts the states subset construction discovers. A nullable set is then compiled as its positive-width
+    // equivalent, one state larger, so the table the cap bounds is one column wider than the cap: optional(a) under
+    // a cap of two discovers two states and compiles three. A set of positive width compiles what it discovered and
+    // no more, which is the table the promise in set_state_limit() bounds.
+    Builder nullable;
+
+    nullable.add_token(optional(text("a")), Token_kind::Only, 1);
+
+    nullable.set_state_limit(2);
+
+    const auto nullable_lexer{nullable.build()};
+
+    EXPECT_TRUE(nullable_lexer.simulator().nullable());
+    EXPECT_EQ(nullable_lexer.simulator().state_count(), 3U);
+
+    Builder positive;
+
+    positive.add_token(text("a"), Token_kind::Only, 1);
+
+    positive.set_state_limit(2);
+
+    const auto positive_lexer{positive.build()};
+
+    EXPECT_FALSE(positive_lexer.simulator().nullable());
+    EXPECT_EQ(positive_lexer.simulator().state_count(), 2U);
 }
 
 TEST_F(Lexer_test, Oversized_nfa_state_identifier_throws_before_the_count_wraps)

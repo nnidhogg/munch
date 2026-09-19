@@ -47,9 +47,11 @@ namespace munch::dfa
  * Compiles the DFA it is constructed from into flat tables indexed by state and input symbol, so that advancing on an
  * input character is a single table read instead of a hash lookup. Symbols the automaton never distinguishes share a
  * table row: each input character is first mapped to its equivalence class, shrinking the table from one row per
- * symbol value to one per class, which keeps far more of it in cache. The tables assume states are numbered densely
- * from zero, as the subset construction numbers them; a sparsely numbered DFA still works but wastes a table column
- * per unused identifier.
+ * symbol value to one per class, which keeps far more of it in cache. The tables have one column per identifier in
+ * the span Dfa::state_count() reports: a DFA numbered densely from zero, as the subset construction numbers them,
+ * fills them, and one numbered sparsely, as dfa::Builder allows, still works but wastes a table column per unused
+ * identifier. A definition whose span no count holds, one naming a state at the largest std::size_t, the constructor
+ * refuses before it unrolls or sizes anything.
  *
  * Acceptance is tracked during the scan through a per-state flag byte rather than the accept tokens themselves:
  * the flag load depends on the new state but feeds nothing, so it stays off the state-to-state dependency chain,
@@ -213,9 +215,10 @@ public:
      *
      * The tables never show it: a nullable set is compiled as its positive-width equivalent, the automaton entered
      * through a fresh start state that does not accept, since the scan never emits an empty token and every
-     * decision's proof assumes a start state that neither accepts nor is re-entered. What remains of the empty match
-     * is what the scan reports for it, the empty input and a first byte no token matches, both answered with the
-     * token the old start state accepted and length zero.
+     * decision's proof assumes a start state that does not accept. The fresh start is never re-entered either; the
+     * start of a set that is not nullable is compiled as it is and may be, which init_reentrant() reports and every
+     * decision allows for. What remains of the empty match is what the scan reports for it, the empty input and a
+     * first byte no token matches, both answered with the token the old start state accepted and length zero.
      * @return True when some token matches the empty string.
      */
     [[nodiscard]] bool nullable() const noexcept { return empty_state_ != no_state_; }

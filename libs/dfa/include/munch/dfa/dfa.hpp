@@ -75,6 +75,24 @@ public:
     [[nodiscard]] State_t init_state() const noexcept;
 
     /**
+     * @brief Returns the number of states the DFA's identifiers span: one past the highest of them.
+     *
+     * The subset construction numbers states densely from zero, so for a DFA it produced this is the number of
+     * states; dfa::Builder takes the identifiers a caller names, so for a DFA built by hand it is the span they
+     * cover. Either way it is an identifier no state uses, which is what unroll_start() enters the automaton
+     * through. Counted once at construction, since every consumer of the definition needs it: the Simulator sizes
+     * its tables by it.
+     *
+     * It is neither of those where the span is not representable: a hand-built DFA naming a state at the largest
+     * std::size_t spans one past it, and what this returns is then the wrap, zero, which is no count of anything
+     * and may well be a state that DFA uses, its start among them. The Simulator refuses such a definition rather
+     * than indexing a table by that zero, and a caller reading this as an unused identifier owes a representable
+     * span.
+     * @return The state count.
+     */
+    [[nodiscard]] State_t state_count() const noexcept;
+
+    /**
      * @brief Returns the transition table of the DFA.
      * @return Reference to the transitions map.
      */
@@ -103,6 +121,8 @@ public:
 
 private:
     State_t init_state_;
+
+    State_t state_count_;
 
     Transitions_t transitions_;
 

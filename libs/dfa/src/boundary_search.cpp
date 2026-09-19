@@ -219,7 +219,8 @@ void dedup(std::vector<State_t>& states)
  *        byte in turn, the keys it reaches recorded with the byte that led there, until an input ends as a witness or
  *        no key is left. Bytes are explored in order and keys by length, so a witness is a shortest one.
  * @param start The key before any byte.
- * @param cap The largest number of keys to hold before giving up.
+ * @param cap The most keys the search may hold at once, the start key among them: a key that would pass the ceiling
+ *        is never admitted and the search gives up instead. A cap of zero holds nothing, not even the start.
  * @param expand Given a key and a byte, the keys the byte leads to and whether the input may end on that byte as the
  *        witness looked for, as a Step.
  * @return The witness and whether the question was settled: an empty witness with the search exhausted is a proof
@@ -228,17 +229,18 @@ void dedup(std::vector<State_t>& states)
 template <typename Expand>
 [[nodiscard]] Outcome search(const Key& start, const std::size_t cap, Expand expand)
 {
+    // The start key is held like any other, so a cap of zero affords no search at all.
+    if (cap == 0)
+    {
+        return {.witness = {}, .exhaustive = false};
+    }
+
     Seen seen{{start, Parent{.from = nullptr, .byte = '\0'}}};
 
     std::deque<const Key*> frontier{&seen.begin()->first};
 
     while (!frontier.empty())
     {
-        if (seen.size() > cap)
-        {
-            return {.witness = {}, .exhaustive = false};
-        }
-
         const auto* const at{frontier.front()};
 
         frontier.pop_front();
@@ -256,12 +258,22 @@ template <typename Expand>
 
             for (auto& next : step.successors)
             {
-                if (const auto [entry, added]{
-                            seen.try_emplace(std::move(next), Parent{.from = at, .byte = static_cast<char>(byte)})};
-                    added)
+                if (seen.contains(next))
                 {
-                    frontier.push_back(&entry->first);
+                    continue;
                 }
+
+                // Admitting an unseen key is where the search grows, so the ceiling is checked here and nowhere
+                // else: the key is not admitted, and the question stays open.
+                if (seen.size() >= cap)
+                {
+                    return {.witness = {}, .exhaustive = false};
+                }
+
+                const auto [admitted, inserted]{
+                        seen.try_emplace(std::move(next), Parent{.from = at, .byte = static_cast<char>(byte)})};
+
+                frontier.push_back(&admitted->first);
             }
         }
     }

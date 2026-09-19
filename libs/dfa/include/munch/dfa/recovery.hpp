@@ -55,7 +55,9 @@ inline constexpr std::size_t rescue_cap{1U << 20U};
  * looked for. The search starts at the initial state and reaches every position a scan can stand in, so the
  * accepting states no input reaches never enter it.
  * @param simulator The compiled token set.
- * @param cap The largest number of search states to hold before giving up.
+ * @param cap The most search states to hold at once, a ceiling rather than a budget spent afterwards: a state
+ *        beyond it is never held, and the search gives up instead of admitting it, so an answer is always one
+ *        the cap paid for. Zero holds nothing, not even the state the search starts in, and settles nothing.
  * @return The witness, the shortest one, and whether the search settled the question; an empty witness from
  *         an exhaustive search proves the token set rescue-free.
  */

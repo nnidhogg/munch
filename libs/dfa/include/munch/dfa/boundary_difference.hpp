@@ -44,8 +44,11 @@ struct Difference
  * sides can close their last segment with the flag already set.
  * @param simulator The compiled token set the comparison starts from.
  * @param other The token set to compare against, compiled over the same byte alphabet.
- * @param cap The largest number of product states to hold before giving up; the default is generous for the
- *        token sets a lexer carries and the worst case is exponential in both state counts.
+ * @param cap The most product states to hold at once, a ceiling rather than a budget spent afterwards: a state
+ *        beyond it is never held, and the search gives up instead of admitting it, so an answer is always one the
+ *        cap paid for. Zero holds nothing, not even the state the search starts in, and settles nothing. The
+ *        default is generous for the token sets a lexer carries and the worst case is exponential in both state
+ *        counts.
  * @return The witness and whether the search was exhaustive.
  */
 [[nodiscard]] Difference boundary_difference(
