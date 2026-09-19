@@ -5,7 +5,7 @@ use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq)]
 pub enum Token {
-    #[regex(r"[^\n]+", allow_greedy = true)]
+    #[regex(r"[^\n]+")]
     Line,
 
     #[token("\n")]

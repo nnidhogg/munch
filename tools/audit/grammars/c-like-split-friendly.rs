@@ -4,7 +4,7 @@
 use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq)]
-#[logos(skip("//[^\n]*", allow_greedy = true))]
+#[logos(skip r"//[^\n]*")]
 #[logos(skip "\n")]
 #[logos(skip r"[ \t]+")]
 pub enum Token {

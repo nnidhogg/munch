@@ -61,6 +61,12 @@ struct Parse_options
      *        which only a code point escape writes, folds over its ASCII intersection.
      */
     bool caseless{false};
+
+    /**
+     * @brief Whether a bracket range whose end precedes its start, `[z-a]`, spans the same members as `[a-z]`, as
+     *        re2c reads one, rather than being refused, as flex refuses one.
+     */
+    bool ranges_either_way{false};
 };
 
 /**

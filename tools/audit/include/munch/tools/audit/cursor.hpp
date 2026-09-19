@@ -2,12 +2,23 @@
 #define MUNCH_TOOLS_AUDIT_INCLUDE_MUNCH_TOOLS_AUDIT_CURSOR_HPP
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
 
 namespace munch::tools::audit
 {
+/**
+ * @brief Where a `//` comment ends: at the newline, as C reads one, or at a carriage return as well, as ANTLR's lexer
+ *        reads one.
+ */
+enum class Line_comment_end : std::uint8_t
+{
+    newline,
+    newline_or_return,
+};
+
 /**
  * @brief A cursor over a span of a file's text: the reading primitives every reader of a generator's file shares,
  *        one byte looked at or taken, a prefix tested, a byte accepted or required, the line the cursor is on, and
@@ -26,14 +37,17 @@ public:
      * @param text The whole file.
      * @param begin The offset the cursor starts at.
      * @param end The offset the span ends at, the text's size for the rest of it.
+     * @param line_comment_end Where a `//` comment ends, at the newline unless given.
      */
-    Cursor(std::string_view text, std::size_t begin, std::size_t end);
+    Cursor(std::string_view text, std::size_t begin, std::size_t end,
+           Line_comment_end line_comment_end = Line_comment_end::newline);
 
     /**
      * @brief Binds the cursor to the whole text.
      * @param text The whole file.
+     * @param line_comment_end Where a `//` comment ends, at the newline unless given.
      */
-    explicit Cursor(std::string_view text);
+    explicit Cursor(std::string_view text, Line_comment_end line_comment_end = Line_comment_end::newline);
 
     /**
      * @brief Consumes and returns the byte under the cursor.
@@ -124,6 +138,8 @@ protected:
      * @brief The offset the span ends at.
      */
     std::size_t end_;
+
+    Line_comment_end line_comment_end_;
 };
 
 } // namespace munch::tools::audit

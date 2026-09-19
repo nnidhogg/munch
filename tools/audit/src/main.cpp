@@ -49,7 +49,8 @@ would cost.
   --price BYTE          price this byte as well, written as a character, \n \t \r \0, or 0xHH; may repeat
   --json                one JSON document instead of text
 
-Exit status is 0 when every scanner and condition audited, 1 when one was refused, 2 on a command-line error.
+Exit status is 0 when every scanner and condition audited, 1 when one was refused, a file with no scanner among
+them, 2 on a command-line error, a --condition no scanner has or no rule stands in among them.
 )"};
 
 /**
@@ -313,14 +314,18 @@ struct Outcome
         return Kind::logos;
     }
 
-    // The first item, comments stepped over.
+    // The first item, comments and byte order marks stepped over, as ANTLR's lexer steps over both.
     auto at{0UZ};
 
     for (;;)
     {
         at = std::min(source.find_first_not_of(" \t\r\n", at), source.size());
 
-        if (source.substr(at).starts_with("//"))
+        if (source.substr(at).starts_with("\xEF\xBB\xBF"))
+        {
+            at += 3;
+        }
+        else if (source.substr(at).starts_with("//"))
         {
             at = std::min(source.find('\n', at), source.size());
         }
@@ -455,6 +460,9 @@ void write_text(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
     out << std::format(
             "-- scanner at line {}, condition {}: {} rule{}\n", spec.line, condition, rules, rules == 1 ? "" : "s");
 
+    // What the reading was governed by, before the figures it governed.
+    out << options_row(spec.options);
+
     if (!report)
     {
         out << "refused: " << refused << "\n\n";
@@ -496,15 +504,15 @@ void write_text(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 }
 
 /**
- * @brief Writes a scanner's definitions and rules as the JSON of what the reader read: the named patterns, then
- *        each rule's line, pattern as written, start conditions, action and token, so that a reading can be held to
- *        the generator's own account of the file.
+ * @brief Writes a scanner's options, definitions and rules as the JSON of what the reader read: the options that
+ *        governed the reading, the named patterns, then each rule's line, pattern as written, start conditions,
+ *        action and token, so that a reading can be held to the generator's own account of the file.
  * @param out The stream.
  * @param spec The scanner.
  */
 void write_rules(std::ostream& out, const Lexer_spec& spec)
 {
-    out << "\"definitions\": {";
+    out << "\"options\": " << options_json(spec.options) << ", \"definitions\": {";
 
     for (auto first{true}; const auto& [name, body] : spec.definitions)
     {
@@ -574,6 +582,31 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 [[nodiscard]] bool run(const Options& options, std::ostream& out)
 {
     auto every{true};
+
+    // The conditions asked for that no scanner of any file has, which is a command line naming nothing, and among
+    // them the ones some scanner has with no rule in them, which is a command line naming no token set.
+    std::set<std::string> unmatched(options.conditions.begin(), options.conditions.end());
+
+    std::set<std::string> empty;
+
+    const auto note_empty{[&options, &empty](const Lexer_spec& spec) {
+        const auto audited{conditions_of(spec, options)};
+
+        for (const auto& name : options.conditions)
+        {
+            const auto has{name == "INITIAL" || std::ranges::any_of(spec.conditions, [&name](const auto& condition) {
+                               return condition.name == name;
+                           })};
+
+            if (has && !std::ranges::contains(audited, name))
+            {
+                empty.insert(name);
+            }
+        }
+    }};
+
+    // An empty input is measured like any other: it holds no anchor, which the supply says.
+    const auto input{options.input.empty() ? std::nullopt : std::optional{contents(options.input)}};
 
     if (options.json)
     {
@@ -651,11 +684,34 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
                     path);
         }
 
-        for (std::size_t which{0}; which < scanners.size(); ++which)
+        // A refused file's conditions are still the file's, so a --condition naming one of them named something,
+        // whatever the refusal was.
+        if (!refused.empty())
+        {
+            for (const auto& spec : scanners)
+            {
+                for (const auto& name : conditions_of(spec, options))
+                {
+                    unmatched.erase(name);
+                }
+
+                note_empty(spec);
+            }
+        }
+
+        // A refused file has written its refusal and closed its object, so its scanners are not serialised after it.
+        for (std::size_t which{0}; which < (refused.empty() ? scanners.size() : 0); ++which)
         {
             const auto& spec{scanners[which]};
 
             const auto conditions{conditions_of(spec, options)};
+
+            for (const auto& name : conditions)
+            {
+                unmatched.erase(name);
+            }
+
+            note_empty(spec);
 
             if (options.json)
             {
@@ -704,6 +760,22 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
     if (options.json)
     {
         out << "  ]\n}\n";
+    }
+
+    if (!unmatched.empty())
+    {
+        const auto& name{*unmatched.begin()};
+
+        throw std::invalid_argument{
+                empty.contains(name) ?
+                        std::format(
+                                "--condition {} names a condition no rule stands in, so there is no token set to "
+                                "audit under it",
+                                name) :
+                        std::format(
+                                "--condition {} names a condition no scanner of the files has, so nothing was "
+                                "audited under it",
+                                name)};
     }
 
     return every;

@@ -355,6 +355,14 @@ TEST(Parse, Refusals_name_the_offset_and_the_reason)
     EXPECT_EQ(refused_at("*a"), 0);
     EXPECT_EQ(refused_at("[abc"), 4);
     EXPECT_EQ(refused_at("[z-a]"), 1);
+
+    // Told that a range runs either way, as re2c reads one, the parser spans its members instead.
+    constexpr Parse_options either_way{.caseless = false, .ranges_either_way = true};
+
+    EXPECT_EQ(refused_at("[z-a]", {}, either_way), -1);
+    EXPECT_TRUE(accepts(parse("[z-a]+", {}, either_way), "abz"));
+    EXPECT_FALSE(accepts(parse("[z-a]", {}, either_way), "-"));
+    EXPECT_TRUE(accepts(parse(R"([\x7a-\x61])", {}, either_way), "m"));
     EXPECT_EQ(refused_at("[[:nope:]]"), 3);
     EXPECT_EQ(refused_at("[[:digit"), 8);
 

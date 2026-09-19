@@ -12,6 +12,7 @@ int lex(const char* YYCURSOR)
     /*!re2c
         re2c:define:YYCTYPE = char;
         re2c:yyfill:enable = 0;
+        re2c:eof = 0;
 
         digit = [0-9];
         id    = [a-zA-Z_] [a-zA-Z0-9_]*;
@@ -24,7 +25,6 @@ int lex(const char* YYCURSOR)
         ["] [^"\n]* ["]              { return STRING; }
         "//" [^\n]*                  { continue; }
         [ \t\n]+                     { continue; }
-        *                            { return ERROR; }
         $                            { return END; }
     */
 }

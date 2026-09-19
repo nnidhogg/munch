@@ -6,7 +6,7 @@
 use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq)]
-#[logos(skip("//[^\n]*", allow_greedy = true))]
+#[logos(skip r"//[^\n]*")]
 #[logos(skip r"[ \t\n]+")]
 pub enum Token {
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
