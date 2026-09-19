@@ -34,8 +34,10 @@ struct Certified_window
  * @brief Why a candidate byte does not certify: a token consumes it mid-token.
  *
  * The byte is a candidate because the initial state consumes it, so it can begin a token; it fails because some
- * live state other than the initial one consumes it too, on the way to the token named here, after the input
- * given, which is a shortest one reaching that state.
+ * live state consumes it too, on the way to the token named here, after the input given, which is a shortest one
+ * reaching that state. What is exempt is the entry into the initial state before any input, not the state: where a
+ * nonempty input returns to it, the scan stands in it mid-token, and the input given is then a shortest one that
+ * returns.
  */
 struct Blame
 {
@@ -104,9 +106,10 @@ struct Report
 
     /**
      * @brief The number of certified windows once each representative stands for every byte of its class, the
-     *        windows an input can actually show.
+     *        windows an input can actually show; std::nullopt when they are more than a count can hold, where the
+     *        report says so with the bound rather than printing the number a wrap left behind.
      */
-    std::size_t window_count{};
+    std::optional<std::size_t> window_count{};
 
     /**
      * @brief The proved mandatory core, empty when none is.
@@ -157,6 +160,16 @@ struct Report
 /**
  * @brief Why each candidate byte that does not certify exactly fails: for every byte the start state consumes live,
  *        each token consuming it mid-token, with a shortest input reaching the consuming state.
+ *
+ * Every token whose match path holds the byte is named, not only the shortest of them: the state a shorter token
+ * accepts in is where a longer token's scan stands after the same bytes, so a longer token's accepting state lying
+ * beyond a shorter one's makes both consume the byte mid-token, and an author who narrows only the shorter one has
+ * not freed the byte.
+ *
+ * A re-entrant start state blames itself, after a shortest nonempty input that returns to it: the exemption belongs
+ * to the entry before any input, where a byte begins a token, and a start state an input reaches again stands
+ * mid-token there like any other. The library's byte certificate withdraws that exemption on the same condition,
+ * Simulator::init_reentrant(), so the blame names a consumer for every candidate the certificate refuses.
  * @param lexer The token set.
  * @return The blame, by byte then token.
  */

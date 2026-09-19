@@ -24,15 +24,20 @@ enum class Shape : std::uint8_t
     run,
 
     /**
-     * @brief A body ending in the byte, `"//"[^\n]*\n`, the byte nowhere else in it: the terminator can be left to
-     *        the token after it.
+     * @brief A body ending in the byte, `"//"[^\n]*\n`, the byte nowhere else in it and the token's last component
+     *        the terminator itself: the terminator can be left to the token after it, which is the edit priced, so
+     *        a last component admitting more than the byte, the `"xb"` of `[a]"xb"` or the `[xb]` of `[a][xb]`,
+     *        is no terminated token here. The terminator is read by what it matches, not by its spelling: `\n`,
+     *        `[\n]`, `\n{1}`, `[cd]{0}\n` and `\n[cd]{0}`, whose repetition of exactly zero is the empty word, are one
+     *        terminator.
      */
     terminated,
 
     /**
      * @brief A fixed opener followed by a body the byte is in, a block comment from its slash-star or a string from
      *        its quote: the body can be scanned in a start condition of its own, the opener alone staying in this
-     *        one.
+     *        one. The opener is read by what it matches, as the terminator is: `"x"`, `[x]`, `x{1}` and `[cd]{0}"x"`
+     *        are one opener.
      */
     delimited,
 
@@ -111,7 +116,8 @@ struct Price_step
     bool separated;
 
     /**
-     * @brief Whether that token of its own is discarded, as the token it was taken from was.
+     * @brief Whether that token of its own is discarded, as the token it was taken from was; false where none was
+     *        separated, whatever the narrowed token is.
      */
     bool separated_discarded;
 
@@ -132,9 +138,22 @@ struct Price_step
  *
  * The necessity theorem is what makes the answer complete rather than a suggestion: a byte certifies exactly when
  * no live state but a non-re-entrant start consumes it, so every token consuming it mid-token has to change, and
- * the only change the analysis makes is to exclude the byte from the token's character sets. A token whose fixed
- * spelling holds the byte cannot be narrowed and is listed as immovable; while any remains, the byte cannot certify
- * without removing the token.
+ * the only change the analysis makes is to exclude the byte from the token's character sets. A token that cannot
+ * lose the byte, every word of it holding the byte in a text or a class of the one byte, takes no step. It is
+ * listed as immovable when every word of it holds such a fixed occurrence past the word's first byte: an edit that
+ * keeps any of its words keeps that occurrence, so while the token remains in any narrowed form the byte cannot
+ * certify. Where some word holds the byte fixed only as its first byte, the occurrence a token begins with, nothing
+ * follows about the byte: such a token is listed as undecided, and the report says the procedure decides nothing
+ * rather than that the byte cannot certify.
+ *
+ * Which tokens consume the byte is read from the tables again after every edit, since narrowing one token leaves
+ * the byte to any token whose match it had won, and the steps run on until the byte certifies or every token the
+ * byte is left to has been answered, by a step or by an obstruction.
+ *
+ * A byte no token begins with is reported by neither certificate, since no occurrence of it can begin a token, and
+ * no narrowing changes that: it is given a token of its own before any other edit and priced from there, the
+ * language gaining the byte's token rather than losing the byte, so that the tokens consuming it mid-token are
+ * answered as for any other byte.
  */
 struct Pricing
 {
@@ -154,14 +173,42 @@ struct Pricing
     bool modulo_before;
 
     /**
-     * @brief The edits, in rule order, each with the certificate after it; empty when nothing had to change.
+     * @brief Where the byte stands once given a token of its own, before any other edit, when no token of the set
+     *        begins with it; absent where one does.
+     *
+     * The token given is visible, since no token of the set says what it would be discarded as, and it stays through
+     * every step, so no step separates the byte again.
+     */
+    std::optional<Outcome> given;
+
+    /**
+     * @brief The edits in the order they were made, each with the certificate after it; empty when nothing had to
+     *        change.
+     *
+     * After each step the consumers are read again from the recompiled table and the first not yet answered, in rule
+     * order, the order the set lists them, which for a set read from a file is the file's and not the order of the ids,
+     * is narrowed next; a token an earlier edit exposed is taken as soon as it is first in that order, and no token is
+     * answered twice.
      */
     std::vector<Price_step> steps;
 
     /**
-     * @brief The tokens that consume the byte in a fixed spelling and so cannot lose it.
+     * @brief The tokens every word of which holds the byte fixed past its first byte, `[x]\n[x]` or `\n{2}`, which
+     *        no narrowing frees: the byte cannot certify while one of them stays.
      */
     std::vector<std::size_t> immovable;
+
+    /**
+     * @brief The tokens the narrowing is not applied to and decides nothing about: those that cannot lose the byte
+     *        while some word of them holds it fixed only as its first byte.
+     *
+     * The narrowing is defined where a pattern can lose the byte, which a fixed occurrence cannot, so these tokens
+     * take no step. Nothing follows about the byte either: the occurrence that word holds is the one a token begins
+     * with, which the initial state consumes before any input, and an edit this analysis does not make, the class
+     * of `\n[\nx]`, `[\n][\nx]`, `\n{1}[\nx]` or `(\n[xy])[\nx]` narrowed to `[x]`, or an alternative of
+     * `(\n[\nx]|\ny)` dropped, can keep the word and certify the byte.
+     */
+    std::vector<std::size_t> undecided;
 
     /**
      * @brief The other bytes that certify exactly after every step and did not before.
@@ -193,11 +240,15 @@ struct Pricing
 /**
  * @brief Prices one byte over a token set.
  *
- * Every token the blame names for the byte is narrowed in rule order, the set compiled again after each, and the
- * byte's certificates read off; a byte that no token can match any more after a narrowing is given a token of its
- * own, discarded when the token it was taken from was, since the language should lose the token's reach, never the
- * byte. Beside the steps, each consuming token's shape is read and the edit it names tried on its own: a delimited
- * token cut down to its opener, a terminated one to its body. The set given is not changed.
+ * The tokens consuming the byte are narrowed one step at a time: the set is compiled again after every edit, the
+ * consumers read from it again, and the first not yet answered in rule order, the order the set lists them, is
+ * narrowed next, so that a token an earlier narrowing exposes is narrowed as well, and the byte's certificates are
+ * read off after every step; a byte that no token can match any more after a narrowing is given a token of its own,
+ * discarded when the token it was taken from was, since the language should lose the token's reach, never the byte,
+ * and a byte no token begins with is given one, visible, before any other edit; the token given carries the smallest
+ * id no rule of the set carries, whatever their ids are, and no step names it. Beside the steps, each consuming
+ * token's shape is read and the edit it names tried on its own: a delimited token cut down to its opener, a terminated
+ * one to its body. The set given is not changed.
  * @param set The token set.
  * @param byte The byte.
  * @return The pricing.

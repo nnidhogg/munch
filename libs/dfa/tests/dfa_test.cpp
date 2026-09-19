@@ -2074,7 +2074,12 @@ TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_accepting_states_no_input_reache
     EXPECT_TRUE(rescue(trimmed).witness.empty());
     EXPECT_TRUE(rescue(trimmed).exhaustive);
     EXPECT_EQ(lag(islanded), lag(trimmed));
+
+    // Both halves of the answer must survive the island: an empty witness says the set is rescue-free only from a
+    // search that settled the question, so the islanded table has to report the exhaustion the trimmed one does.
     EXPECT_EQ(rescue(islanded).witness, rescue(trimmed).witness);
+    EXPECT_EQ(rescue(islanded).exhaustive, rescue(trimmed).exhaustive);
+    EXPECT_TRUE(rescue(islanded).exhaustive);
 }
 
 TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_an_unreachable_accepting_island)
