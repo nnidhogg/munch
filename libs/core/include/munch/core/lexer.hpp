@@ -27,6 +27,7 @@
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/split_window.hpp"
 #include "munch/dfa/window_occurrence.hpp"
+#include "munch/dfa/window_violation.hpp"
 
 namespace munch::core
 {
@@ -250,6 +251,35 @@ public:
             const std::string_view window, const std::size_t cap = dfa::occurrence_cap) const
     {
         return dfa::window_occurrence(simulator_, window, cap);
+    }
+
+    /**
+     * @brief Whether the window certificate (W, o) is failed by some completely tokenizable input, with one that
+     *        does.
+     *
+     * The certificate promises that in every completely tokenizable input containing W, the token covering the
+     * occurrence's final byte begins exactly o bytes into it; a counterexample is a completely tokenizable input
+     * holding an occurrence whose covering token begins elsewhere, and an exhaustive search that finds none proves the
+     * certificate exact over every completely tokenizable input. Where is_split_window() decides the certificate
+     * through its conservative model, this call decides it outright: a window it certifies at o has no counterexample
+     * at o, a window it refuses is settled here either way, with the witness where the refusal was right and a proof
+     * where it was conservative, and a window window_occurrence() places in no input has no counterexample at any
+     * origin, its certificate being vacuous. Decided by the same boundary-guessing search as window_occurrence(), with
+     * one bit beside the matcher for whether the latest token start sits at the origin, the witness the shortest
+     * failing input: over {a, abc, bx, x} the window ab is refused, and its refusal is right at both origins, abx
+     * covering the b from offset 1 and abc from offset 0. The derivation is dfa::window_counterexample()'s.
+     * @param window The byte string of the certificate, non-empty.
+     * @param origin The offset into the window the certificate places the covering token's start at, inside it.
+     * @param cap The largest number of search states to hold before giving up, dfa::counterexample_cap unless told.
+     * @return The witness and whether the search settled the question; an empty witness from an exhaustive search
+     *         proves that no completely tokenizable input fails the certificate.
+     * @throws std::invalid_argument If the window is empty or the origin lies outside it, neither being a certificate.
+     */
+    [[nodiscard]] dfa::Counterexample window_counterexample(
+            const std::string_view window, const std::size_t origin,
+            const std::size_t cap = dfa::counterexample_cap) const
+    {
+        return dfa::window_counterexample(simulator_, window, origin, cap);
     }
 
     /**

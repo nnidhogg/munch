@@ -650,8 +650,10 @@ std::string verdict(const Report& report)
                 report.window_limit, counted(report.window_count));
     }
 
+    // The windows are the conservative model's, so their absence up to the width is the model's finding and no proof
+    // that the exact decision certifies none.
     return std::format(
-            "nothing certifies up to width {}{}", report.window_limit,
+            "no byte certifies, and no window up to width {} in the model{}", report.window_limit,
             report.prices.empty() ? "" : "; what certifying a byte would cost is priced below");
 }
 

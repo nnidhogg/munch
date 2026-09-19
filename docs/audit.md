@@ -90,7 +90,7 @@ a certificate holds while the scanner is in its start condition, so a cut needs 
 
 -- scanner at line 9, condition INITIAL: 8 rules
 options                     noyywrap, nodefault
-verdict                     nothing certifies up to width 3; what certifying a byte would cost is priced below
+verdict                     no byte certifies, and no window up to width 3 in the model; what certifying a byte would cost is priced below
 certified bytes             none
 certified modulo discarded  none
 discarded tokens            3: "//"[^\n]*, "/*"([^*]|\*+[^*/])*\*+"/", [ \t\n]+
@@ -127,8 +127,8 @@ Row by row:
 scanner declares none. Several of them decide what a rule matches, flex's `case-insensitive`, re2c's
 `encoding:utf8` and the Unicode version a logos scanner's classes were taken from among them, so they stand where
 the figures they governed begin.
-- **verdict**: the answer in one sentence, with where to read on; where it finds no window it says so of the model
-  the windows are decided in, up to the width tried, since `window_counterexample()` may certify a window the conservative
+- **verdict**: the answer in one sentence, with where to read on; where it finds no window it says so of the model the
+  windows are decided in, up to the width tried, since `window_counterexample()` may certify a window the conservative
   model refuses.
 - **certified bytes**: the bytes every occurrence of which begins a token, in every input the condition tokenizes. A
   parallel scan may cut before any occurrence with no coordination, the byte certificate of

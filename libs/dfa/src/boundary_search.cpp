@@ -5,6 +5,7 @@
 #include <deque>
 #include <map>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -14,18 +15,19 @@
 #include "munch/dfa/recovery.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/window_occurrence.hpp"
+#include "munch/dfa/window_violation.hpp"
 
 namespace munch::dfa
 {
 namespace
 {
-// The one search every boundary-guessing decision runs, and the three decisions that run it: rescue(),
-// boundary_difference() and window_occurrence() each ask whether some completely tokenizable input makes an event
-// happen, and all answer it by reading an input byte by byte while guessing where its tokens end, breadth first, so
-// that the witness found is a shortest one. They are three instances of one search over one key, differing only in
-// how many scans they walk, what raises the key's mark and what else a branch's future depends on, which is why they
-// live in one unit: the search, its key and the moves over it are private to this file, and a decision added later
-// joins them here rather than being handed them across a header.
+// The one search every boundary-guessing decision runs, and the four decisions that run it: rescue(),
+// boundary_difference(), window_occurrence() and window_violation() each ask whether some completely tokenizable
+// input makes an event happen, and all answer it by reading an input byte by byte while guessing where its tokens
+// end, breadth first, so that the witness found is a shortest one. They are four instances of one search over one
+// key, differing only in how many scans they walk, what raises the key's mark and what else a branch's future depends
+// on, which is why they live in one unit: the search, its key and the moves over it are private to this file, and a
+// decision added later joins them here rather than being handed them across a header.
 //
 // The other recovery decisions, which walk the compiled machine rather than guessed inputs, stay in recovery.cpp.
 
@@ -55,22 +57,28 @@ struct Position
 
 /**
  * @brief A key of the search: the positions of the scans in progress, how far a window matcher beside them has
- *        read, and whether the event searched for has happened on this branch.
+ *        read, whether the latest token start sits at the origin of the occurrence it is reading, and whether the
+ *        event searched for has happened on this branch.
  *
  * The decisions share this key because they share what a branch's future depends on: where each scan stands, and
  * whether the event has already happened, since after it a branch only has to reach a close. The event is one bit
  * rather than a record of where it happened, so two branches agreeing on the scans and the bit have the same futures
  * and are searched once. rescue() walks one scan and marks a branch once a closed run has survived a byte;
  * boundary_difference() walks two and marks a branch once the two markings have diverged; window_occurrence() walks
- * one beside a matcher that guesses where its window's occurrence begins and reads the window from there, and marks
- * a branch once the whole window has been read. The matcher's progress is the one thing besides the scans a future
- * depends on, so it is in the key, zero for the decisions that match nothing.
+ * one beside a matcher that guesses where its window's occurrence begins and reads the window from there, and marks a
+ * branch once the whole window has been read; window_counterexample() walks the same matcher and marks a branch once
+ * the whole window has been read with the covering token beginning elsewhere than the origin; segmentation_difference()
+ * walks two scans over one guessed marking, either of them dead, and marks nothing, its event ending the input where
+ * it happens. The matcher's progress and the origin bit are the two things besides the scans a future depends on, so
+ * they are in the key, zero and clear for the decisions that match nothing or ask no origin.
  */
 struct Key
 {
     std::vector<Position> scans{};
 
     std::size_t matched{};
+
+    bool at_origin{};
 
     bool marked{};
 
@@ -299,6 +307,7 @@ Rescue rescue(const Simulator& simulator, const std::size_t cap)
     const Key start{
             .scans = {Position{.reading = simulator.init_state(), .closed = {}}},
             .matched = 0,
+            .at_origin = false,
             .marked = false};
 
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
@@ -325,11 +334,12 @@ Rescue rescue(const Simulator& simulator, const std::size_t cap)
             return {.successors = successors, .ends = true};
         }
 
-        successors.push_back(Key{.scans = {position}, .matched = 0, .marked = rescued});
+        successors.push_back(Key{.scans = {position}, .matched = 0, .at_origin = false, .marked = rescued});
 
         if (closes)
         {
-            successors.push_back(Key{.scans = {close(simulator, position)}, .matched = 0, .marked = rescued});
+            successors.push_back(
+                    Key{.scans = {close(simulator, position)}, .matched = 0, .at_origin = false, .marked = rescued});
         }
 
         return {.successors = successors, .ends = false};
@@ -348,6 +358,7 @@ Difference boundary_difference(const Simulator& simulator, const Simulator& othe
                     {Position{.reading = simulator.init_state(), .closed = {}},
                      Position{.reading = other.init_state(), .closed = {}}},
             .matched = 0,
+            .at_origin = false,
             .marked = false};
 
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
@@ -391,6 +402,7 @@ Difference boundary_difference(const Simulator& simulator, const Simulator& othe
                 successors.push_back(
                         Key{.scans = {mine_next, theirs_next},
                             .matched = 0,
+                            .at_origin = false,
                             .marked = at.marked || mine_closed != theirs_closed});
             }
         }
@@ -410,6 +422,7 @@ Occurrence window_occurrence(const Simulator& simulator, const std::string_view 
     const Key start{
             .scans = {Position{.reading = simulator.init_state(), .closed = {}}},
             .matched = 0,
+            .at_origin = false,
             .marked = window.empty()};
 
     // Two buffers for the whole search, cleared per byte: the matcher's moves, and the keys handed back as the step's
@@ -464,11 +477,121 @@ Occurrence window_occurrence(const Simulator& simulator, const std::string_view 
                 return {.successors = successors, .ends = true};
             }
 
-            successors.push_back(Key{.scans = {position}, .matched = matched, .marked = marked});
+            successors.push_back(Key{.scans = {position}, .matched = matched, .at_origin = false, .marked = marked});
 
             if (closes)
             {
-                successors.push_back(Key{.scans = {close(simulator, position)}, .matched = matched, .marked = marked});
+                successors.push_back(
+                        Key{.scans = {close(simulator, position)},
+                            .matched = matched,
+                            .at_origin = false,
+                            .marked = marked});
+            }
+        }
+
+        return {.successors = successors, .ends = false};
+    }};
+
+    const auto [witness, exhaustive]{search(start, cap, expand)};
+
+    return {.witness = witness, .exhaustive = exhaustive};
+}
+
+Counterexample window_counterexample(
+        const Simulator& simulator, const std::string_view window, const std::size_t origin, const std::size_t cap)
+{
+    if (window.empty() || origin >= window.size())
+    {
+        throw std::invalid_argument{"window_counterexample: the window is empty or its origin lies outside it"};
+    }
+
+    // The key holds one scan, how far the matcher has read into the occurrence it guessed, and whether the latest
+    // token start sits at the origin, the next byte counted as the occurrence's first while none has begun; it marks
+    // a branch once the whole window has been read with the bit clear. The input's first byte begins a token.
+    const Key start{
+            .scans = {Position{.reading = simulator.init_state(), .closed = {}}},
+            .matched = 0,
+            .at_origin = origin == 0,
+            .marked = false};
+
+    // Two buffers for the whole search, cleared per byte: the matcher's moves, and the keys handed back as the step's
+    // view.
+    std::vector<std::size_t> matches;
+
+    std::vector<Key> successors;
+
+    const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
+        matches.clear();
+
+        successors.clear();
+
+        auto position{at.scans.front()};
+
+        if (!advance(simulator, position, byte))
+        {
+            return {.successors = successors, .ends = false};
+        }
+
+        const auto closes{simulator.is_accepting(position.reading)};
+
+        // The matcher's moves on the byte, as window_occurrence() makes them: outside the occurrence it stays outside,
+        // and begins one where the byte is the window's first; inside, it reads the window's next byte or the guess
+        // was wrong; through, it stays through.
+        if (at.marked)
+        {
+            matches.push_back(at.matched);
+        }
+        else if (at.matched == 0)
+        {
+            matches.push_back(0);
+
+            if (static_cast<unsigned char>(window.front()) == byte)
+            {
+                matches.push_back(1);
+            }
+        }
+        else if (static_cast<unsigned char>(window[at.matched]) == byte)
+        {
+            matches.push_back(at.matched + 1);
+        }
+
+        for (const auto matched : matches)
+        {
+            const auto through{matched == window.size()};
+
+            // The window's final byte read with the bit set is an occurrence the certificate covers, and the guess is
+            // dropped; read with it clear, the occurrence is the counterexample.
+            if (through && at.at_origin)
+            {
+                continue;
+            }
+
+            const auto marked{at.marked || through};
+
+            // The input may end here when the counterexample is established and the segment being read closes on this
+            // byte; the closed runs still alive never accepted, as every kept branch requires.
+            if (marked && closes)
+            {
+                return {.successors = successors, .ends = true};
+            }
+
+            // Without a close the next byte begins no token, so the bit carries on inside the occurrence and clears
+            // outside it; a close begins a token at the next byte, which sits at the origin exactly when the matcher
+            // has read that many bytes. Past the counterexample it stays clear either way, the window being longer than
+            // the origin, so that the branches agree.
+            successors.push_back(
+                    Key{.scans = {position},
+                        .matched = matched,
+                        .at_origin = matched > 0 && at.at_origin,
+                        .marked = marked});
+
+            if (closes)
+            {
+                successors.push_back(
+                        Key{.scans = {close(simulator, position)},
+                            .matched = matched,
+                            .at_origin = matched == origin,
+                            .marked = marked});
             }
         }
 
