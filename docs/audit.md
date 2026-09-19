@@ -52,6 +52,7 @@ where the newline is a token of its own:
 a certificate holds while the scanner is in its start condition, so a cut needs the condition known
 
 -- scanner at line 9, condition INITIAL: 8 rules
+options                     noyywrap, nodefault
 verdict                     1 byte certifies exactly: a cut is safe at any occurrence
 certified bytes             '\n'
 certified modulo discarded  '\n'
@@ -76,6 +77,7 @@ why candidate bytes do not certify
   STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after """
   "//"[^\n]*                 consumes 90 candidate bytes mid-token, e.g. '/' after "/"
   [ \t]+                     consumes 2 candidate bytes mid-token, e.g. '\t' after "\t"
+
 ```
 
 And this is `tools/audit/grammars/c-like-block-comments.l`, the conventional tokenization with block comments, which
@@ -86,6 +88,7 @@ the split-points paper found sufficient to remove every useful certificate:
 a certificate holds while the scanner is in its start condition, so a cut needs the condition known
 
 -- scanner at line 9, condition INITIAL: 8 rules
+options                     noyywrap, nodefault
 verdict                     nothing certifies up to width 3; what certifying a byte would cost is priced below
 certified bytes             none
 certified modulo discarded  none
@@ -114,10 +117,15 @@ what the shapes of the tokens consuming '\n' offer, each edit on its own
   "/*"([^*]|\*+[^*/])*\*+"/" delimited: scan the body in a start condition of its own, the opener staying here
                              certifies once discarded tokens are deleted
   every shape's edit together certifies exactly
+
 ```
 
 Row by row:
 
+- **options**: the options the reading was governed by, the file's own and what a reader notes of its own, absent when a
+  scanner declares none. Several of them decide what a rule matches, flex's `case-insensitive`, re2c's `encoding:utf8`
+  and the Unicode version a logos scanner's classes were taken from among them, so they stand where the figures they
+  governed begin.
 - **verdict**: the answer in one sentence, with where to read on.
 - **certified bytes**: the bytes every occurrence of which begins a token, in every input the condition tokenizes. A
   parallel scan may cut before any occurrence with no coordination, the byte certificate of
@@ -126,8 +134,8 @@ Row by row:
   are deleted from both streams. A byte certified here but not above certifies the parser's token stream while the
   raw stream may differ in where whitespace or comments are split.
 - **discarded tokens**: which rules were read as returning nothing, so that a misread action is visible on the page
-  rather than folded silently into the row above. Name the forms with `--returns` when a scanner returns through
-  macros or an assignment.
+  rather than folded silently into the row above; a flex scanner without `%option nodefault` has flex's default rule
+  among them, printed as `.|\n`. Name the forms with `--returns` when a scanner returns through macros or an assignment.
 - **certified windows**: the byte strings whose every occurrence has a token boundary at a fixed offset inside them,
   the window certificate of [docs/split_windows.md](split_windows.md); a cut falls back to these where no byte
   certifies. Counted over byte classes, bytes the tables cannot tell apart, and then once every class stands for all
@@ -175,48 +183,202 @@ Row by row:
 The readers take the file as the generator would and refuse what the byte-level token language cannot express, with
 the line that holds it, rather than read it as something else:
 
-- flex: definitions, `%s` and `%x`, `%option`, `%{ %}` blocks closed wherever a line holds `%}`, `%top{ }` blocks,
-  start-condition scopes `<s>{ }` with indented rules, the `{` on the prefix's line or the next as bison's scanners
-  write it and a comment after it, `|` shared actions, actions running to the first line end at which their braces
-  balance, `<<EOF>>` rules (not tokens), `%option case-insensitive`, every letter of every parsed pattern folded to
-  either case, and `(?i:...)` groups. Refused: `^` and `$` anchors and `/` trailing context, which condition a
-  match on its context and are no token language, and the `s` and `x` group flags.
-- re2c: `/*!re2c`, `/*!local:re2c`, `/*!rules:re2c` and `/*!use:re2c` blocks, named or not, closed as re2c closes
-  them (a star-slash inside a literal, a class, an action or a comment is content); a rules block is a library the
-  `!use:name;` directive and a use block merge, definitions, configurations and rules, and is no scanner itself;
-  `re2c:` configurations recorded as options (a quoted value may hold a `;`) and the case and flex-syntax flags
-  among them honoured, `name = regex;` and flex-style definitions, conditions and `<*>`, `=>` and `:=>` transitions,
-  `:=` actions, tags `@name` and `#name` (dropped, they match nothing), the default, end, setup and empty `""` rules
-  (not tokens). The dialect is rewritten for the pattern parser and the rewriting is kept beside the pattern as
-  written: bare names become `{name}`, `'abc'` becomes `[aA][bB][cC]`, `[^]` is spelled out, and a class difference
-  `A \ B`, its operands brackets, one-byte literals, alternations of those or names defined as those, becomes the
-  bracket of the bytes left. Refused: `!include`, whose file is not there to read, and the Unicode escapes `\u`,
-  `\U` and `\X`, which need an encoding the byte reading has not got.
-- flex and re2c: whether an action returns a token is read from the action's text, a bare `return` or a form named
-  with `--returns`, and nothing else in the action is interpreted.
-- ANTLR 4: `lexer grammar` and combined `grammar` files, modes as the start conditions, `fragment` rules as
-  definitions, a reference to any lexer rule as `{NAME}`, commands per outermost alternative (`skip` and any
-  `channel` discard, `type(X)` renames, `mode`, `pushMode` and `popMode` are kept as text), the literals of a
-  combined grammar's parser rules as implicit tokens ahead of every explicit rule, `caseInsensitive` at the grammar
-  or on a rule, actions inside rules skipped, empty alternatives making a rule optional. ANTLR reads characters, so
-  `.`, negated sets, sets and ranges beyond ASCII are written for the parser as code point ranges, `\u{...}`, and
-  match the UTF-8 encodings. A non-greedy loop is read where it is a regular rewrite: over one set, dot or
-  character before a literal it becomes the strings avoiding that literal, the block comment's `'/*' .*? '*/'` in
-  particular; over a group none of whose alternatives can begin with the literal's first byte it is the greedy loop.
-  Refused: `import`, `-> more`, `EOF` inside a rule, semantic predicates `{...}?`, Unicode property classes
-  `\p{...}`, a rule reaching itself, and a non-greedy loop before anything but a literal or over a group that can
-  begin with it.
+- flex: definitions, `%s` and `%x`, `%option` lines word by word, a quoted value one word with the name it follows
+  whatever blanks it holds and the word after its closing quote the next, a blank between them or none, as flex lexes
+  them, `%{ %}` blocks closed wherever a line holds `%}`, `%top{ }` blocks, the section delimiters as flex lexes them,
+  `%%` at the margin with anything after it on the line dropped, a comment usually, while an indented `%%` is code in
+  the first section and a rule in the second, the rules section's prologue of indented code, which flex copies into the
+  scanner ahead of the rules and which the first line at the margin ends, and from there a rule on every line, indented
+  or not, as flex reads them, start-condition scopes `<s>{ }`, the `{` on the prefix's line or the next as bison's
+  scanners write it and after it, as after the `}` closing the scope, whatever code its line holds, which flex copies
+  out and drops, read to the end an action is read to, so that a comment or a brace block there runs on to a later line,
+  indented comments, which are such code too, `|` shared actions, whose line flex takes unread, actions running to the
+  first line end at which their braces balance, a stray close counting below zero, as flex 2.6.4's action scanner reads
+  one: a brace inside a `/* */` comment or a string or character literal not counting, the literal ending at its closing
+  quote or at its line's end, whichever comes first, a backslash before the newline carrying it on to the next line as C
+  splices lines, a `//` comment hiding nothing, since that scanner has no state for one, so that a brace after it on the
+  line counts and a quote there opens a literal, and an action opening with `%{` running to the end of the first line
+  holding `%}`, no comment or literal read inside it, and `<<EOF>>` rules (not tokens). After the file's rules stands
+  flex's default rule, the one it adds once the section is read, which matches one byte where no rule of the file's does
+  and echoes it: read as the rule `.|\n` in every start condition, at the lowest priority and returning nothing, so that
+  such a byte is a one-byte discarded token wherever the scanner stands and every byte begins a token, with the line the
+  rules section ends on; `%option nodefault` drops it, since under it such a byte stops the scanner with a fatal error,
+  which is what a token set answers of itself where no rule matches, and `%option default` restores it. The grammars
+  under `tools/audit/grammars/` say `nodefault`, being the study's token sets, which have no such rule. A rule's pattern
+  ends at the first blank outside a quote and a bracket expression, whose own first `]` is a member and whose
+  `[:class:]` is one token, so that the blank of `[[:alpha:] ]+` is a member and `[^^]` is every byte but the caret; a
+  `[:` in any other shape is the `[` and the `:` as members, as flex lexes them, which leaves `[[:al]pha:]` the bracket
+  `[[:al]` and the text `pha:]`. Since flex sets every option before it parses a rule, a setting is the one the last
+  `%option` word naming it leaves standing: `caseless`, `case-insensitive`, `nocaseful` and `nocase-sensitive` turn the
+  case option on and `caseful`, `case-sensitive`, `nocaseless` and `nocase-insensitive` turn it off, each further `no`
+  flipping the sense again as flex lexes one, and under it every letter of every parsed pattern folds to either case, as
+  `(?i:...)` groups do inside themselves. Refused: `^` and `$` anchors and `/` trailing context, which condition a match
+  on its context and are no token language; a comment at the margin of the rules section, whose slash flex reads as the
+  start of a rule and refuses as unrecognized, where flex's manual asks for an indented one; a start-condition scope
+  never closed, a parse error to flex; the `s` and `x` group flags; a quote left open on an `%option`, `%s` or `%x`
+  line, which flex refuses; a rule's action leaving a quote open at the end of a line where its braces balance, which
+  flex ends the action at inside the literal without closing the code it emits for it, so that the m4 it runs stops with
+  an end of file in string, and a brace, comment or `%{` block left open at the end of the file, which flex refuses as
+  an end of file inside an action; `%option lex-compat` and `%option posix-compat`, flags of their own of which either
+  suffices, under which a counted repetition binds the whole expression before it, so that `ab{3}` matches `ababab`; the
+  options that leave flex building its tables over the 128 bytes of ASCII, `%option 7bit` and a `full` or `fast` table
+  with the equivalence classes off, under which flex refuses outright a pattern that names a byte above 127, while the
+  reading here is over all 256; an action that moves the bounds of its match or reruns it, which the token language has
+  no place for, named with its line: `yymore()`, which appends the next match to this one, `REJECT`, which drops the
+  match for the next rule's, `yyless()`, which gives the end of the match back to be matched again, `unput()`, which
+  pushes a byte onto the input, and `input()` or `yyinput()`, which consume bytes no rule matched, the action read as C
+  reads it, a comment or a literal holding none of them, a call being a whole word followed by a parenthesis and not
+  reached as a member, `REJECT` a whole word in capitals as flex takes it, and a `|` line taken unread as flex takes it;
+  and `%option reject` and `%option yymore`, which declare such a use where flex cannot see it, through a macro or code
+  of the file's own. `BEGIN`, `yy_push_state`, `yy_pop_state` and `yy_top_state` change the start condition and nothing
+  else, which the caveat above every report covers, so an action calling them is read as any other.
+- re2c: `/*!re2c`, `/*!local:re2c`, `/*!rules:re2c` and `/*!use:re2c` blocks, named or not, closed as re2c closes them
+  (a star-slash inside a literal, a class, an action or a comment is content); a rules block is a library the
+  `!use:name;` directive and a use block merge, definitions, configurations and rules, and is no scanner itself; a use
+  block with no name of its own takes the most recent rules block, named or not, and the name in its opener is the block
+  it uses; a used block is read again where it is used, under the flags in force there, since re2c compiles a rules
+  block's regexes at every point of use: one rules block can be a scanner under one encoding and another under another,
+  and a configuration of the using block governs the rules it takes as well as the ones it writes, while a use block's
+  own names and configurations stay in it as a local block's do; a definition another block uses is translated again
+  there, out of the regex as written and under that block's own flags, for the same reason, so a definition of `[^]`
+  written where the encoding was ASCII admits one byte in its own block and a whole code point in a block that turns
+  UTF-8 on, and a flex-style definition is read under the flex syntax wherever it is used, while one another block
+  declared that this block's flags cannot read at all is refused where a rule of this block reaches it, directly or
+  through the definitions the rule names, and nowhere else, one no rule reaches being left out, an alias of it that no
+  rule names along with it, and one the block itself declares is read where it stands and refused there; `re2c:`
+  configurations recorded as options (a quoted value may hold a `;`) and honoured under the canonical name and the
+  `flags:` aliases the manual's configuration list gives, the case flags and the encoding among them; a configuration
+  governs the whole block wherever in it it stands, as re2c scopes it, and of two assignments to one name the last is
+  the one that governs, so every pattern of a block is translated under what its configurations leave and a rule
+  standing above an assignment reads under it like the rest, while the flex syntax has no configuration and comes from
+  the command line or from the evidence of a definition written that way; `name = regex;` and flex-style definitions, a
+  name followed by a blank and regex to the end of the line wherever the name stands, as re2c -F reads them, a `{` after
+  the blank making the name a rule's literal instead and an action on the definition's line refused as the syntax error
+  re2c answers it with, conditions and `<*>`, whose rules re2c appends to each condition's own, so that they rank below
+  a condition's own rules wherever they stand and are placed after every rule naming a condition, `=>` transitions, the
+  `:=> c` shortcut rule, which carries no code and ends with its condition, `:=` actions, whose code runs on to the
+  first line that begins with a character other than a blank, tags `@name` and `#name` (dropped, they match nothing),
+  the default rule `*`, which re2c runs where no other rule matches, over one byte under ASCII and UTF-8 alike, where
+  `[^]` is a whole code point, and at the lowest priority wherever it stands, so it is read as the class of every byte
+  and placed after every other rule of its scanner, a `<*> *` after a named condition's own default rule, which beats it
+  there, a second one of a block's own for a condition it already gave one refused as re2c refuses it and one a `!use:`
+  directive or a use block brought in yielding to the block's own in every condition the own one stands in, and the end,
+  setup and empty `""` rules (not tokens); a scanner's rules name conditions or name none, never both, one holding a
+  rule of each kind, a used block's rules counted, refused as re2c refuses it, which cannot mix conditions with normal
+  rules, at the first rule naming none. The dialect is rewritten for the pattern parser and the rewriting is kept beside
+  the pattern as written: bare names become `{name}`, `'abc'` becomes `[aA][bB][cC]`, `[^]` is spelled out as the bytes
+  it admits, and a class difference `A \ B` becomes the class of the code points left, its operands the char sets re2c
+  takes there, a bracket, the dot, a one-character literal, a name defined as one of these or a group of alternatives
+  that each are, and on either side the whole term as re2c's grammar has it, so that a concatenation, a repetition or a
+  two-character literal beside one, `[a-z] \ [x] [y]` or `[a-z] \ "xy"`, is refused as re2c refuses it, which can only
+  difference char sets. Under the UTF-8 encoding a pattern names code points and the scanner reads their encodings, so a
+  class, the dot, `[^]`, which is any code point and not any byte, and a class difference, subtracted over code points
+  before any encoding, so that `[^] \ [\x00-\x7f]` is every code point beyond ASCII, become the code point ranges they
+  admit, written as `\u{...}` members with the three bytes of the surrogates beside them where the set holds those,
+  which re2c's default encoding policy encodes like any other code point; an all-ASCII class or literal stands as it is,
+  its encoding being itself. Refused: `!include`, whose file is not there to read; the Unicode escapes `\u`, `\U` and
+  `\X`, which need an encoding the byte reading has not got, and a braced hexadecimal escape `\x{...}`, which re2c has
+  no form for and answers with a syntax error, its own being `\xHH`; the encodings a reading over bytes cannot follow,
+  wherever they come from, a configuration or the flags the caller passes, each with its own reason, EBCDIC giving a
+  byte another code point than ASCII does and UCS-2, UTF-16 and UTF-32 having a code unit of more than one byte; an
+  `encoding-policy` other than the default, which leaves the surrogates matched otherwise; and a byte beyond ASCII
+  written straight into the source under UTF-8, since the code points it stands for are the `--input-encoding` option's
+  to say and no file carries it. What a command line asks for beyond those flags is beyond the reading: an
+  `--encoding-policy` there is taken to be the default one, as an `--input-encoding` is taken to be ASCII.
+- flex and re2c: whether an action returns a token is read from the action's text, a bare `return` or a form named with
+  `--returns`, and, for a flex action, whether it makes one of the calls named above; nothing else in the action is
+  interpreted.
+- ANTLR 4: `lexer grammar` and combined `grammar` files, modes as the start conditions, a lexer grammar's alone,
+  `fragment` rules as definitions, a reference to any lexer rule as `{NAME}`, a rule's commands, which end its single
+  outermost alternative and are read as the names and arguments ANTLR's own lexer reads there, the grammar's blanks and
+  comments between them no part of any command (`skip` and `type(X)` both set the token's type and a `channel` other
+  than the default one, which `DEFAULT_TOKEN_CHANNEL` and zero name, sets a field of its own, the rightmost command for
+  a field winning, so a hidden channel and a type together leave a renamed token a parser never sees; `mode`, `pushMode`
+  and `popMode` are kept as text), so that a rule of several alternatives is one token whatever they are, the literals
+  of a combined grammar's parser rules as implicit tokens ahead of every explicit rule, unless a lexer rule spells the
+  literal in a shape ANTLR maps it onto, a rule of no options and one alternative that is the literal alone, the literal
+  and one action, or the literal and one or two commands of which at most one takes an argument, whatever comments stand
+  in the rule, when the parser's literal is that rule's token, skipped or renamed as the rule says, an option's value as
+  the one token ANTLR's lexer reads there, a name, a number, a string or a brace block, the comments beside it no part
+  of it, `caseInsensitive` at the grammar or on a rule doubling every ASCII letter's case, `true` and `false` the
+  spellings ANTLR takes for it and any other its warning 84 that sets nothing, empty alternatives making a rule
+  optional. ANTLR reads characters, so `.`, negated sets, sets and ranges beyond ASCII are written for the parser as
+  code point ranges, `\u{...}`, and match the UTF-8 encodings. A non-greedy loop is read where the rest of the rule
+  spells one ASCII string and the loop stands in an outermost alternative of a rule nothing else references, which is
+  where the rest of the rule is the rest the loop can see, after elements whose every match has one length in characters
+  and in an alternative no earlier alternative of the rule can begin with the same character as, what an alternative can
+  begin with reaching past every element of it that can match the empty string, since ANTLR follows the paths through a
+  rule in the order its alternatives give them and the first path to reach the rule's end stops every later one that has
+  passed the loop's decision, `('a'|'aa') .*? 'a'` and `'ab' | 'a' .*? 'c'` ending where their shorter path does;
+  ANTLR's fewest characters that still let the rest match are then what stops it: over one set, dot or character the
+  loop becomes the strings that hold no occurrence of that string and do not end where the string's own bytes would
+  complete one, the overlap that keeps `.*? 'aa'` from matching `aaa`, the block comment's `'/*' .*? '*/'` reading as
+  ever, and where the body can only be empty the string matches alone; over a literal of one length whose first byte
+  that string cannot begin with, its letters folded or not, the iterations are aligned to that length and the greedy
+  loop is the same language; `+?` reads one character before the rest can stop it; and a non-greedy option whose body
+  cannot begin the rest and has one length in characters is the greedy one. Refused: `import`, `-> more`, a command
+  ANTLR has not got or one of its seven given an argument it takes none of or none where it takes one, its errors 149,
+  150 and 151 in its own words at the command's line, one of the seven with its first letter capitalised, `Skip`, which
+  names a code template of ANTLR's target that the generated lexer runs as an action and ANTLR's own interpreter leaves
+  out, a parser literal two lexer rules spell, its error 126, `EOF` inside a rule, semantic predicates `{...}?`, an
+  action inside a rule whose body is anything but blanks and comments, since ANTLR runs it where it stands and its code
+  may produce another token than the rule's own, Unicode property classes `\p{...}`, a character beyond ASCII named
+  under `caseInsensitive`, whose Unicode case mappings the library has not got, the forms ANTLR itself rejects, a
+  command on the alternatives of a rule with several, a `mode` line in a combined grammar and a closure, `*` or `+` in
+  either form, whose body can match the empty string, which is its error 153 and runs through every rule the body
+  reaches, a rule reaching itself, and a non-greedy loop before a rest of any other shape, one whose rest reaches past
+  the sequence it stands in, inside a group or in a rule another rule inlines, one after elements of more than one
+  length or of a length unknown, a reference among them, one in an alternative an earlier alternative can begin with the
+  same character as, one over a body of several lengths, a group among them, whose alternatives ANTLR takes in order,
+  stopping at the fewest characters of them all, which `('x'|'xa')*? 'a'` and `('xa'|'x')*? 'a'` answer differently on
+  "xaa" and no greedy loop over the group tells apart, and a non-greedy option over such a body, `('x'|'xa')?? 'a'` and
+  `('xa'|'x')?? 'a'` answering the same way, or before a string its body could begin, which the bypass ANTLR tries first
+  ends the rule with at once.
 - logos: every enum deriving `Logos`, its `#[logos(skip ...)]` attributes as discarded rules ahead of the variants,
-  `subpattern` definitions referenced as `(?&name)`, `#[token]` and `#[regex]` attributes with their callbacks
-  (`logos::skip` and a closure returning `logos::Skip` discard), `priority = n`, `ignore(case)` and
-  `allow_greedy`. The priority is logos's own, computed as logos 0.14 and later compute it or taken from
-  `priority = n`, higher winning, and mapped onto the builder's scale. The regex is the regex crate's in Unicode
-  mode, rewritten over the UTF-8 bytes the lexer scans: classes, the dot and negated classes as code point ranges,
-  the flags `i`, `s` and `u` with their scoping, lazy operators as their greedy forms since logos takes the longest
-  match either way, and `\d`, `\w` and `\s` in Unicode mode as the crate's classes over the library's pinned
-  Unicode tables, Nd, White_Space and the word class. Refused: `\p{...}`, whose property tables the library has not
-  got, a non-ASCII scalar under `i`, anchors and lookaround, the flags `x`, `m`, `U` and `R`, the class operators,
-  and a pattern matching only the empty string.
+  `subpattern` definitions referenced as `(?&name)`, each read in the mode and under the flags of the pattern
+  referencing it, since logos substitutes the definition's text before the crate parses it, so a byte string's
+  subpattern referenced from a string pattern is over scalars, its `\xHH` the scalar U+00HH, and a string's referenced
+  from a byte pattern is over bytes, `#[token]` and `#[regex]` attributes with their callbacks, `priority = n`,
+  `ignore(case)` or `ignore(ascii_case)`. A callback discards the match when logos's `CallbackResult` for its type does,
+  `Skip`, `Result<Skip, E>` and the `Skip` arms of `Filter` and `FilterResult`, and otherwise leaves the variant's token
+  or an error at the same boundary, or the token it returns itself; the reading has the text, not the types, so it reads
+  `logos::skip`, a function the file defines by its return type as spelled, any type but those and `Self` in one of the
+  enum's impl blocks being a payload, and, where that type is `Filter`, `FilterResult` or the enum, by its body, and a
+  closure by every result its body produces, through blocks, returns, ifs and matches, each of which must be visibly a
+  skip, a constructor of the enum, or `Some`, `None`, `Ok`, `Err`, a literal, `()` or an `Emit` or `Error` arm; a
+  callback the file does not define, a result the text does not show and results that skip on one path and emit on
+  another are refused by name, since the rule's token is then decided at run time or out of sight. `ignore(case)` hands
+  the pattern to the regex crate's case-insensitive parse, Unicode-aware in a string pattern and ASCII-only in a byte
+  string, while `ignore(ascii_case)` parses the pattern as it stands and folds the ASCII letters of the compiled tree
+  afterwards, a class gaining the other case of its ASCII members and a literal being taken apart one piece per byte,
+  except in a byte string, where logos hands it the same parse as the other flag; logos refuses the two flags together.
+  The priority is logos's own, computed as logos 0.14 and later compute it or taken from `priority = n`, higher winning,
+  and mapped onto the builder's scale; a literal counts two per character, and two per byte where the run is not UTF-8
+  as strictly as Rust's own validation reads it, an encoded surrogate, an overlong form and a scalar above U+10FFFF
+  being bytes rather than characters, since logos asks `std::str::from_utf8` and counts bytes where it fails. An ignore
+  flag takes a `#[token]` out of the literals: logos escapes the literal for the regex crate and compiles that regex, so
+  the priority comes from its tree like any other regex's, and the escaping writes a byte string's byte beyond ASCII out
+  as the characters of its `\xNN` escape and escapes the backslash again, which is why `#[token(b"\xC3\xA9",
+  ignore(case))]` matches those eight characters and never the two bytes. The regex is the regex crate's in Unicode
+  mode, rewritten over the UTF-8 bytes the lexer scans: classes, the dot and negated classes as code point ranges, the
+  flags `i`, `s` and `u` with their scoping, and `\d`, `\w` and `\s` in Unicode mode as the crate's classes, Nd,
+  White_Space and the word class, over the tables of the Unicode version the regex-syntax logos is locked to was
+  generated from rather than the library's own pinned one, since the audited language is the scanner's; the report's
+  options name that version, `unicode-classes=16.0.0` for logos 0.15.1. Refused: `\p{...}`, whose property tables the
+  library has not got, a non-ASCII scalar under `i`, anchors and lookaround, the flags `x`, `m`, `U` and `R`, the class
+  operators, the lazy operators, which logos 0.15.1 refuses as unsupported non-greedy parsing, a `*` or `+` over the dot
+  under `s` or over a class of every scalar or every byte, an alternation of classes the regex crate merges into one
+  among them, which logos 0.15.1 refuses as consuming the source to its end, while the plain dot, a captured one and
+  `[\x00-\x{D7FF}\x{E000}-\x{10FFFF}]`, two ranges to the crate where its dot is one, pass as they pass the crate, an
+  `allow_greedy` argument, which logos 0.15.1 does not know and calls an unknown nested attribute, as it calls an
+  `ignore` flag on a skip, any `#[logos(...)]` key beyond the eight it knows and an entry after a `skip(...)` or
+  `error(...)` in one attribute, a byte beyond ASCII written or admitted under `(?-u)` in a string pattern, a nested
+  class checked on its own, which the regex crate refuses as able to match invalid UTF-8, a pattern matching only the
+  empty string, and an unbounded repetition whose body can begin with a byte that may also follow it, which logos 0.15.1
+  compiles into a scanner matching no input at all, its graph deciding a repetition's end on one byte: the flex spelling
+  of the block comment is one of those, so the `.rs` grammars spell it with a loop that cannot begin with a star, the
+  same language and the one the crate scans, while a bounded repetition, which the crate unrolls, is read however its
+  boundary falls.
 
 The grammars under `tools/audit/grammars/` are the study's rows in every syntax, and the tests hold each `.re`, `.g4`
 and `.rs` file to its `.l` twin: the readers must build token sets that cut no input differently, decided by
@@ -225,12 +387,14 @@ and `.rs` file to its `.l` twin: the readers must build token sets that cut no i
 ## The JSON Form
 
 With `--json` the run is one document: an array `files`, each with its `path`, `kind`, a `refused` message or null, and
-its `scanners`, each with the `line` it opens on, its `definitions` and its `rules` as the reader read them (each rule's
-`line`, `pattern` as written, `conditions`, `action` and `token` or null, the account to hold against the generator's
-own), and its `conditions`, each with `name`, `rules`, `refused` or null, and the `report`. A report carries the same
-figures as the text under the row names above, `verdict`, `exact` and `modulo` as arrays of byte values, `discarded`,
-`windows` with their origins, `window_count`, `mandatory_core`, `byte_span` and `window_span` as numbers or the string
-`unbounded` (the window span also `undecided` when the windows were too many, and null when there were none), `lag`,
-`rescue_free` as true, false or null when the search stopped at its cap, `rescue_witness` as the shortest completely
-tokenizable input on which the scan rolls back or null, `blame` and `prices`, tokens given as their id and name. Byte
-strings are JSON strings holding each byte as the code point of its value, so a reader recovers the bytes exactly.
+its `scanners`, each with the `line` it opens on, its `options` as the array the row above prints, its `definitions` and
+its `rules` as the reader read them (each rule's `line`, `pattern` as written, `conditions`, `action` and `token` or
+null, the account to hold against the generator's own; flex's default rule stands last among them, with the line its
+rules section ends on), and its `conditions`, each with `name`, `rules`, `refused` or null, and the `report`. A report
+carries the same figures as the text under the row names above, `verdict`, `exact` and `modulo` as arrays of byte
+values, `discarded`, `windows` with their origins, `window_count`, `mandatory_core`, `byte_span` and `window_span` as
+numbers or the string `unbounded` (the window span also `undecided` when the windows were too many, and null when there
+were none), `lag`, `rescue_free` as true, false or null when the search stopped at its cap, `rescue_witness` as the
+shortest completely tokenizable input on which the scan rolls back or null, `blame` and `prices`, tokens given as their
+id and name. Byte strings are JSON strings holding each byte as the code point of its value, so a reader recovers the
+bytes exactly.

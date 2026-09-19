@@ -114,6 +114,15 @@ struct Lexer_spec
     std::vector<std::string> options;
 
     /**
+     * @brief What the patterns are read under besides their syntax: what the file's options leave standing of the
+     *        settings the parser has, the case folding flex's `%option caseless` asks of every pattern among them.
+     *
+     * A reader that spells such a setting into the patterns themselves, as re2c's and logos's do with their case
+     * flags, leaves the parser's defaults here.
+     */
+    regex::Parse_options parse{};
+
+    /**
      * @brief The rules, in file order.
      */
     std::vector<Rule> rules;
@@ -174,16 +183,6 @@ private:
 [[nodiscard]] core::Lexer build(const Lexer_spec& spec, std::string_view condition);
 
 /**
- * @brief Where a flex action ends: the first end of a line at which its braces balance, string and character
- *        literals and comments skipped, which is how flex reads one whether it opens with a brace or reaches one
- *        later on its line.
- * @param code The stretch of C the action opens.
- * @return The offset of that line's newline, or the stretch's size when it ends balanced; std::nullopt when a brace
- *         is left open.
- */
-[[nodiscard]] std::optional<std::size_t> action_end(std::string_view code) noexcept;
-
-/**
  * @brief Where the brace block opening a stretch of C closes, string and character literals and comments skipped,
  *        which is how re2c reads an action.
  * @param code The stretch, its first byte the opening brace.
@@ -198,8 +197,8 @@ private:
  *
  * A generator's number is placed below every index at half the scale's range, so that a rule appended past the
  * set's priorities still has room; two rules of one number tie, and the builder settles a tie by the lower id, which
- * is file order. A file that asks for case-insensitive scanning throughout, flex's `case-insensitive` or `caseless`
- * option, has every letter of every pattern folded by the parser's caseless option, definitions included.
+ * is file order. Every pattern is read under the spec's parse options, so a file that asks for case-insensitive
+ * scanning throughout has every letter of every pattern folded, definitions included.
  * @param spec The specification.
  * @param condition The condition, INITIAL for the default one.
  * @return The token set, its expressions parsed against the definitions.
