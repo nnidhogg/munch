@@ -50,14 +50,15 @@ public:
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.
      * @param size The input's size.
-     * @param at The position the window begins at.
+     * @param at The position the window begins at; at or past the input's size finds nothing, as the searches
+     *        beginning at an offset have it, so the length available is a length and never a difference that wrapped.
      * @return The certified origin and the window's length, or std::nullopt when no window there certifies.
      */
     template <common::concepts::Random_access_byte_iterator Iterator>
     [[nodiscard]] std::optional<std::pair<std::size_t, std::size_t>> window_at(
             const dfa::Simulator& simulator, Iterator begin, const std::size_t size, const std::size_t at)
     {
-        const auto limit{std::min(longest_window, size - at)};
+        const auto limit{at < size ? std::min(longest_window, size - at) : 0UZ};
 
         for (std::size_t length{2}; length <= limit; ++length)
         {
@@ -77,13 +78,19 @@ public:
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.
      * @param size The input's size.
-     * @param floor The position the search starts at.
+     * @param floor The position the search starts at; at or past the input's size no window begins at or after it,
+     *        so the search finds nothing, as the search at one position has it.
      * @return The cut, or std::nullopt when no window at or after the floor certifies.
      */
     template <common::concepts::Random_access_byte_iterator Iterator>
     [[nodiscard]] std::optional<std::size_t> cut(
             const dfa::Simulator& simulator, Iterator begin, const std::size_t size, const std::size_t floor)
     {
+        if (floor >= size)
+        {
+            return std::nullopt;
+        }
+
         return simulator.mandatory_core().empty() ? exhaustive(simulator, begin, size, floor) :
                                                     at_core(simulator, begin, size, floor);
     }

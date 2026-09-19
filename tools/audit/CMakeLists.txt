@@ -51,6 +51,8 @@ endif ()
 
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
+            tests/cursor_test.cpp
+            tests/expression_test.cpp
             tests/read_antlr_test.cpp
             tests/read_flex_test.cpp
             tests/read_logos_test.cpp
