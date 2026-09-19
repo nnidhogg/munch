@@ -26,6 +26,7 @@
 #include "munch/dfa/recovery.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/split_window.hpp"
+#include "munch/dfa/window_occurrence.hpp"
 
 namespace munch::core
 {
@@ -228,6 +229,27 @@ public:
     [[nodiscard]] std::optional<std::size_t> is_split_window(const std::string_view window) const
     {
         return dfa::is_split_window(simulator_, window);
+    }
+
+    /**
+     * @brief Whether the given byte string occurs in some completely tokenizable input, with one that contains it.
+     *
+     * The question is_split_window() leaves open: its certificate is conditional on occurrence, so a window no
+     * completely tokenizable input contains is certified vacuously and anchors nothing, and this call splits the two
+     * readings. A certified window whose witness comes back is an occurring certificate; one an exhaustive search
+     * finds no witness for is a vacuous one. Decided exactly, by the same boundary-guessing search as rescue() and
+     * boundary_difference() with a window matcher beside the scan, the witness the shortest such input: over
+     * {0, 00, 01} the window 1001 is certified at origin 2 and occurs in no completely tokenizable input, while 001
+     * occurs in 0001. The derivation is dfa::window_occurrence()'s.
+     * @param window The byte string to find.
+     * @param cap The largest number of search states to hold before giving up, dfa::occurrence_cap unless told.
+     * @return The witness and whether the search settled the question; an empty witness from an exhaustive search
+     *         proves that no completely tokenizable input contains the window.
+     */
+    [[nodiscard]] dfa::Occurrence window_occurrence(
+            const std::string_view window, const std::size_t cap = dfa::occurrence_cap) const
+    {
+        return dfa::window_occurrence(simulator_, window, cap);
     }
 
     /**

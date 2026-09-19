@@ -415,6 +415,27 @@ const std::vector<std::pair<std::string_view, std::size_t>> inventory{{"aab", 0}
 lexer.anchor_free_span(inventory);          // 2: the interior again, now reached through windows
 ```
 
+A window certificate is conditional on occurrence: it promises where the covering token begins in every completely
+tokenizable input containing the window, and a window no such input contains satisfies it vacuously, so
+`is_split_window()` may certify a window that anchors nothing. `window_occurrence(window)` splits the two readings. It
+decides exactly whether some completely tokenizable input contains the window, by the same boundary-guessing search as
+`rescue()` and `boundary_difference()` with a window matcher beside the scan, and a positive answer comes with a
+shortest such input; a certified window with a witness is an occurring certificate, one an exhaustive search finds no
+witness for is a vacuous one, and the cap is a ceiling as for the other two searches, so an answer under it is always
+one the cap paid for and a search it stops settles nothing:
+
+```cpp
+builder.add_token(text("0"), Token::Zero, 1);
+builder.add_token(text("00"), Token::Pair, 1);
+builder.add_token(text("01"), Token::One, 1);
+
+const auto lexer{builder.build()};
+
+lexer.is_split_window("1001");              // 2: certified, and vacuously so
+lexer.window_occurrence("1001");            // {"", true}: no completely tokenizable input contains it
+lexer.window_occurrence("001");             // {"0001", true}: 00 then 01
+```
+
 `boundary_difference(other)` asks the question a tokenizer change asks: is there any input both token sets tokenize
 that they cut into different tokens? It answers from the two compiled tables rather than from a corpus, so a negative
 covers every input, and a positive comes with one that shows it:

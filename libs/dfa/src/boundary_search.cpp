@@ -6,23 +6,26 @@
 #include <map>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "munch/dfa/boundary_difference.hpp"
 #include "munch/dfa/recovery.hpp"
 #include "munch/dfa/simulator.hpp"
+#include "munch/dfa/window_occurrence.hpp"
 
 namespace munch::dfa
 {
 namespace
 {
-// The one search every boundary-guessing decision runs, and the two decisions that run it: rescue() and
-// boundary_difference() each ask whether some completely tokenizable input makes an event happen, and both answer it
-// by reading an input byte by byte while guessing where its tokens end, breadth first, so that the witness found is a
-// shortest one. They are two instances of one search over one key, differing only in how many scans they walk and
-// what raises the key's mark, which is why they live in one unit: the search, its key and the moves over it are
-// private to this file, and a decision added later joins them here rather than being handed them across a header.
+// The one search every boundary-guessing decision runs, and the three decisions that run it: rescue(),
+// boundary_difference() and window_occurrence() each ask whether some completely tokenizable input makes an event
+// happen, and all answer it by reading an input byte by byte while guessing where its tokens end, breadth first, so
+// that the witness found is a shortest one. They are three instances of one search over one key, differing only in
+// how many scans they walk, what raises the key's mark and what else a branch's future depends on, which is why they
+// live in one unit: the search, its key and the moves over it are private to this file, and a decision added later
+// joins them here rather than being handed them across a header.
 //
 // The other recovery decisions, which walk the compiled machine rather than guessed inputs, stay in recovery.cpp.
 
@@ -51,18 +54,23 @@ struct Position
 };
 
 /**
- * @brief A key of the search: the positions of the scans in progress, and whether the event searched for has
- *        happened on this branch.
+ * @brief A key of the search: the positions of the scans in progress, how far a window matcher beside them has
+ *        read, and whether the event searched for has happened on this branch.
  *
  * The decisions share this key because they share what a branch's future depends on: where each scan stands, and
  * whether the event has already happened, since after it a branch only has to reach a close. The event is one bit
  * rather than a record of where it happened, so two branches agreeing on the scans and the bit have the same futures
  * and are searched once. rescue() walks one scan and marks a branch once a closed run has survived a byte;
- * boundary_difference() walks two and marks a branch once the two markings have diverged.
+ * boundary_difference() walks two and marks a branch once the two markings have diverged; window_occurrence() walks
+ * one beside a matcher that guesses where its window's occurrence begins and reads the window from there, and marks
+ * a branch once the whole window has been read. The matcher's progress is the one thing besides the scans a future
+ * depends on, so it is in the key, zero for the decisions that match nothing.
  */
 struct Key
 {
     std::vector<Position> scans{};
+
+    std::size_t matched{};
 
     bool marked{};
 
@@ -288,7 +296,10 @@ Rescue rescue(const Simulator& simulator, const std::size_t cap)
     // The key marks a branch once some closed run has survived a byte, which is the rollback looked for. A run that
     // survives its first byte raises the mark; one that survived earlier leaves it raised, so the two need no telling
     // apart.
-    const Key start{.scans = {Position{.reading = simulator.init_state(), .closed = {}}}, .marked = false};
+    const Key start{
+            .scans = {Position{.reading = simulator.init_state(), .closed = {}}},
+            .matched = 0,
+            .marked = false};
 
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
     std::vector<Key> successors;
@@ -314,11 +325,11 @@ Rescue rescue(const Simulator& simulator, const std::size_t cap)
             return {.successors = successors, .ends = true};
         }
 
-        successors.push_back(Key{.scans = {position}, .marked = rescued});
+        successors.push_back(Key{.scans = {position}, .matched = 0, .marked = rescued});
 
         if (closes)
         {
-            successors.push_back(Key{.scans = {close(simulator, position)}, .marked = rescued});
+            successors.push_back(Key{.scans = {close(simulator, position)}, .matched = 0, .marked = rescued});
         }
 
         return {.successors = successors, .ends = false};
@@ -336,6 +347,7 @@ Difference boundary_difference(const Simulator& simulator, const Simulator& othe
             .scans =
                     {Position{.reading = simulator.init_state(), .closed = {}},
                      Position{.reading = other.init_state(), .closed = {}}},
+            .matched = 0,
             .marked = false};
 
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
@@ -377,7 +389,86 @@ Difference boundary_difference(const Simulator& simulator, const Simulator& othe
                 const auto theirs_next{theirs_closed ? close(other, theirs) : theirs};
 
                 successors.push_back(
-                        Key{.scans = {mine_next, theirs_next}, .marked = at.marked || mine_closed != theirs_closed});
+                        Key{.scans = {mine_next, theirs_next},
+                            .matched = 0,
+                            .marked = at.marked || mine_closed != theirs_closed});
+            }
+        }
+
+        return {.successors = successors, .ends = false};
+    }};
+
+    const auto [witness, exhaustive]{search(start, cap, expand)};
+
+    return {.witness = witness, .exhaustive = exhaustive};
+}
+
+Occurrence window_occurrence(const Simulator& simulator, const std::string_view window, const std::size_t cap)
+{
+    // The key holds one scan and how far the matcher has read into the occurrence it guessed, and marks a branch once
+    // the whole window has been read; the empty window has been read before any byte.
+    const Key start{
+            .scans = {Position{.reading = simulator.init_state(), .closed = {}}},
+            .matched = 0,
+            .marked = window.empty()};
+
+    // Two buffers for the whole search, cleared per byte: the matcher's moves, and the keys handed back as the step's
+    // view.
+    std::vector<std::size_t> matches;
+
+    std::vector<Key> successors;
+
+    const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
+        matches.clear();
+
+        successors.clear();
+
+        auto position{at.scans.front()};
+
+        if (!advance(simulator, position, byte))
+        {
+            return {.successors = successors, .ends = false};
+        }
+
+        const auto closes{simulator.is_accepting(position.reading)};
+
+        // The matcher's moves on the byte: outside the occurrence it stays outside, and begins one where the byte is
+        // the window's first; inside, it reads the window's next byte or the guess was wrong; through, it stays
+        // through. Outside and beginning are both open on the window's first byte, which is the guess.
+        if (at.marked)
+        {
+            matches.push_back(at.matched);
+        }
+        else if (at.matched == 0)
+        {
+            matches.push_back(0);
+
+            if (static_cast<unsigned char>(window.front()) == byte)
+            {
+                matches.push_back(1);
+            }
+        }
+        else if (static_cast<unsigned char>(window[at.matched]) == byte)
+        {
+            matches.push_back(at.matched + 1);
+        }
+
+        for (const auto matched : matches)
+        {
+            const auto marked{matched == window.size()};
+
+            // The input may end here when the whole window has been read and the segment being read closes on this
+            // byte; the closed runs still alive never accepted, as every kept branch requires.
+            if (marked && closes)
+            {
+                return {.successors = successors, .ends = true};
+            }
+
+            successors.push_back(Key{.scans = {position}, .matched = matched, .marked = marked});
+
+            if (closes)
+            {
+                successors.push_back(Key{.scans = {close(simulator, position)}, .matched = matched, .marked = marked});
             }
         }
 
