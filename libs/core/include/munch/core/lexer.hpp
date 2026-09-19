@@ -24,6 +24,7 @@
 #include "munch/dfa/boundary_difference.hpp"
 #include "munch/dfa/dfa.hpp"
 #include "munch/dfa/recovery.hpp"
+#include "munch/dfa/segmentation_difference.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/split_window.hpp"
 #include "munch/dfa/window_occurrence.hpp"
@@ -746,6 +747,32 @@ public:
     [[nodiscard]] dfa::Difference boundary_difference(const Lexer& other, const std::size_t cap = 1U << 20U) const
     {
         return dfa::boundary_difference(simulator_, other.simulator_, cap);
+    }
+
+    /**
+     * @brief Whether another token set is a different segmentation function, with an input the two segment
+     *        differently and the half it falls in.
+     *
+     * Full equivalence, the whole of it: the two sets tokenize the same inputs completely and cut every one of them
+     * alike, which boundary_difference() decides only the second half of. A token set's segmentation function is the
+     * set of marked runs its scan accepts, one marking per input of the domain, so two sets are fully equivalent
+     * exactly when those languages are equal, and the decision is that language equality, by the same
+     * boundary-guessing search as boundary_difference() with one guessed marking fed to both scans at once, the
+     * witness the bytes of the shortest marked run exactly one side accepts. The half is a fact about the witness: a
+     * domain witness one set tokenizes completely and the other does not, a boundary witness both do and cut apart,
+     * and a boundary witness here is a boundary_difference() witness, while an exhaustive negative here is one there
+     * too. The witnesses need not agree: over {a} against {aa} the shortest marked run only one side accepts is a,
+     * the domain witness, where boundary_difference() returns aa, one token against two. The derivation is
+     * dfa::segmentation_difference()'s.
+     * @param other The lexer to compare against.
+     * @param cap The largest number of product states to hold before giving up, dfa::segmentation_cap unless told.
+     * @return The witness, the half it falls in, and whether the search settled the question; an empty witness from
+     *         an exhaustive search proves the two token sets the same segmentation function.
+     */
+    [[nodiscard]] dfa::Separation segmentation_difference(
+            const Lexer& other, const std::size_t cap = dfa::segmentation_cap) const
+    {
+        return dfa::segmentation_difference(simulator_, other.simulator_, cap);
     }
 
 private:

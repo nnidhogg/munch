@@ -13,6 +13,7 @@
 #include <map>
 #include <optional>
 #include <ranges>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -23,6 +24,7 @@
 #include "munch/common/concepts.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/determinize.hpp"
+#include "munch/dfa/segmentation_difference.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/nfa/simulator.hpp"
@@ -160,6 +162,60 @@ bool fails(const Lexer& lexer, const std::string_view witness, const std::string
     }
 
     return false;
+}
+
+/**
+ * @brief The marking a token set gives an input, as the research oracle reads it off its reference scan: one bit per
+ *        byte, set where a token boundary follows the byte, the final bit clear; nothing when the input leaves the
+ *        domain.
+ * @param lexer The token set.
+ * @param input The input.
+ * @return The marking, or std::nullopt when the scan does not consume every byte.
+ */
+std::optional<std::string> marking(const Lexer& lexer, const std::string_view input)
+{
+    std::string marks(input.size(), '0');
+
+    std::size_t next{0};
+
+    const auto consumed{lexer.tokenize_all<std::size_t>(input, [&](const std::size_t, const std::size_t length) {
+        next += length;
+
+        if (next < input.size())
+        {
+            marks[next - 1] = '1';
+        }
+    })};
+
+    if (consumed != input.size())
+    {
+        return std::nullopt;
+    }
+
+    return marks;
+}
+
+/**
+ * @brief Whether a separation is what segmentation_difference() claims of it: a domain witness one token set
+ *        tokenizes completely and the other does not, a boundary witness both do and mark apart.
+ * @param lexer The token set the comparison started from.
+ * @param other The token set compared against.
+ * @param witness The input claimed.
+ * @param half The half claimed.
+ * @return True when the two scans of the witness bear the claim out.
+ */
+bool separates(const Lexer& lexer, const Lexer& other, const std::string_view witness, const dfa::Separation_half half)
+{
+    const auto mine{marking(lexer, witness)};
+
+    const auto theirs{marking(other, witness)};
+
+    if (half == dfa::Separation_half::domain)
+    {
+        return mine.has_value() != theirs.has_value();
+    }
+
+    return mine.has_value() && theirs.has_value() && *mine != *theirs;
 }
 
 } // namespace
@@ -4659,6 +4715,290 @@ TEST_F(Lexer_test, A_renamed_token_does_not_count_as_a_different_cut)
     EXPECT_TRUE(difference.exhaustive);
 
     EXPECT_TRUE(difference.witness.empty());
+}
+
+TEST_F(Lexer_test, Segmentation_difference_separates_token_sets_where_boundary_difference_sees_no_difference)
+{
+    enum class Kind : std::size_t
+    {
+        first = 1,
+        second = 2,
+        third = 3
+    };
+
+    // {a} against {a, b}: the two cut every shared input alike, the shared inputs being the runs of a, so the boundary
+    // half is proved empty, and b separates them at once, an input one tokenizes and the other does not.
+    Builder singles;
+
+    singles.add_token(text("a"), Kind::first, 1);
+
+    const auto single{singles.build()};
+
+    Builder letters;
+
+    letters.add_token(text("a"), Kind::first, 1);
+    letters.add_token(text("b"), Kind::second, 1);
+
+    const auto letter{letters.build()};
+
+    EXPECT_TRUE(single.boundary_difference(letter).exhaustive);
+    EXPECT_TRUE(single.boundary_difference(letter).witness.empty());
+
+    const auto [domain, domain_half, domain_settled]{single.segmentation_difference(letter)};
+
+    EXPECT_TRUE(domain_settled);
+    EXPECT_EQ(domain, "b");
+    EXPECT_EQ(domain_half, dfa::Separation_half::domain);
+    EXPECT_TRUE(separates(single, letter, domain, dfa::Separation_half::domain));
+
+    // The same partition under other token ids is the same segmentation function: an exhaustive search with no
+    // witness, and no half to name.
+    Builder renamed;
+
+    renamed.add_token(text("a"), Kind::third, 1);
+
+    const auto [none, no_half, settled]{single.segmentation_difference(renamed.build())};
+
+    EXPECT_TRUE(settled);
+    EXPECT_TRUE(none.empty());
+    EXPECT_FALSE(no_half.has_value());
+
+    // {a} against {aa}: the shortest marked run only one side accepts is a, the domain witness, where the boundary
+    // route returns aa, one token against two; the two routes need not agree on the witness or its half.
+    Builder pairs;
+
+    pairs.add_token(concat(text("a"), text("a")), Kind::first, 1);
+
+    const auto pair{pairs.build()};
+
+    EXPECT_EQ(single.segmentation_difference(pair).witness, "a");
+    EXPECT_EQ(single.segmentation_difference(pair).half, dfa::Separation_half::domain);
+    EXPECT_TRUE(separates(single, pair, "a", dfa::Separation_half::domain));
+    EXPECT_EQ(single.boundary_difference(pair).witness, "aa");
+
+    // {a, b} against {a, ab, b}: every input of a's and b's tokenizes under both, and ab is cut apart, two tokens
+    // against one; a boundary witness here is a boundary_difference() witness.
+    Builder keywords;
+
+    keywords.add_token(text("a"), Kind::first, 1);
+    keywords.add_token(concat(text("a"), text("b")), Kind::second, 1);
+    keywords.add_token(text("b"), Kind::third, 1);
+
+    const auto keyword{keywords.build()};
+
+    const auto [boundary, boundary_half, boundary_settled]{letter.segmentation_difference(keyword)};
+
+    EXPECT_TRUE(boundary_settled);
+    EXPECT_EQ(boundary, "ab");
+    EXPECT_EQ(boundary_half, dfa::Separation_half::boundary);
+    EXPECT_TRUE(separates(letter, keyword, boundary, dfa::Separation_half::boundary));
+    EXPECT_EQ(letter.boundary_difference(keyword).witness, "ab");
+}
+
+TEST_F(Lexer_test, The_segmentation_cap_is_a_ceiling_on_the_states_the_search_holds)
+{
+    enum class Kind : std::size_t
+    {
+        first = 1,
+        second = 2
+    };
+
+    // {ab, abcd} against {ab, abce}: ab is one token under both, no run of three bytes is accepted by either, and
+    // abcd is the first marked run only one side accepts. The cap is the most states the search may hold, so every
+    // cap below the smallest one that settles the question answers nothing rather than something, and every cap from
+    // it on answers the same witness; zero holds nothing, not even the state the search starts in.
+    Builder ones;
+
+    ones.add_token(concat(text("a"), text("b")), Kind::first, 1);
+    ones.add_token(concat(text("ab"), text("cd")), Kind::second, 1);
+
+    const auto one{ones.build()};
+
+    Builder twos;
+
+    twos.add_token(concat(text("a"), text("b")), Kind::first, 1);
+    twos.add_token(concat(text("ab"), text("ce")), Kind::second, 1);
+
+    const auto two{twos.build()};
+
+    EXPECT_FALSE(one.segmentation_difference(two, 0).exhaustive);
+    EXPECT_TRUE(one.segmentation_difference(two, 0).witness.empty());
+    EXPECT_FALSE(one.segmentation_difference(two, 0).half.has_value());
+
+    std::size_t holds{1};
+
+    while (!one.segmentation_difference(two, holds).exhaustive)
+    {
+        ASSERT_TRUE(one.segmentation_difference(two, holds).witness.empty()) << "cap " << holds;
+        ASSERT_FALSE(one.segmentation_difference(two, holds).half.has_value()) << "cap " << holds;
+
+        ++holds;
+    }
+
+    // Every byte of the witness but the last admits at least one state, and the search settled with the witness at
+    // the cap.
+    EXPECT_GE(holds, 4U);
+    EXPECT_EQ(one.segmentation_difference(two, holds).witness, "abcd");
+
+    for (std::size_t cap{holds}; cap <= holds + 8; ++cap)
+    {
+        const auto [witness, half, exhaustive]{one.segmentation_difference(two, cap)};
+
+        EXPECT_TRUE(exhaustive) << "cap " << cap;
+        EXPECT_EQ(witness, "abcd") << "cap " << cap;
+        EXPECT_EQ(half, dfa::Separation_half::domain) << "cap " << cap;
+    }
+
+    // Two sets are proved one segmentation function only by an exhausted search, and a cap that stops the search
+    // before it exhausts says nothing about them.
+    EXPECT_FALSE(one.segmentation_difference(one, 1).exhaustive);
+    EXPECT_TRUE(one.segmentation_difference(one).exhaustive);
+}
+
+TEST_F(Lexer_test, Segmentation_difference_agrees_with_the_research_oracle_on_every_literal_pair)
+{
+    enum class Token_kind : uint8_t
+    {
+        First,
+        Second,
+        Third,
+    };
+
+    // The two literal pools the research oracle decides by language equality: the fifteen one- and two-token subsets
+    // of {a, b, ab, ba, aa} that segmentation_equivalence.py's census runs over, and the eight sets of
+    // finitely_verifiable.py's full-equivalence sweep. Each matrix cell is the oracle's verdict on the row set against
+    // the column set, as the program printed it: = for one segmentation function, otherwise the half the witness
+    // falls in, d for domain and b for boundary, and the length of the shortest marked run only one side accepts.
+    struct Pool
+    {
+        std::string_view name;
+
+        std::vector<std::vector<std::string_view>> sets;
+
+        std::vector<std::string_view> verdicts;
+    };
+
+    const std::vector<std::string_view> census{
+            " = d1 d1 d1 d1 d1 d2 d2 b2 d1 d1 d1 d1 d1 d1", // {a}
+            "d1  = d1 d1 d1 d1 d1 d1 d1 d2 d2 d2 d1 d1 d1", // {b}
+            "d1 d1  = d2 d2 d1 d1 d1 d1 d1 d1 d1 d2 d2 d2", // {ab}
+            "d1 d1 d2  = d2 d1 d1 d1 d1 d1 d1 d1 d2 d2 d2", // {ba}
+            "d1 d1 d2 d2  = d1 d1 d1 d1 d1 d1 d1 d2 d2 d2", // {aa}
+            "d1 d1 d1 d1 d1  = d1 d1 d1 d1 d1 d1 d1 d1 d1", // {a, b}
+            "d2 d1 d1 d1 d1 d1  = d2 b2 d1 d1 d1 d1 d1 d1", // {a, ab}
+            "d2 d1 d1 d1 d1 d1 d2  = b2 d1 d1 d1 d1 d1 d1", // {a, ba}
+            "b2 d1 d1 d1 d1 d1 b2 b2  = d1 d1 d1 d1 d1 d1", // {a, aa}
+            "d1 d2 d1 d1 d1 d1 d1 d1 d1  = d2 d2 d1 d1 d1", // {b, ab}
+            "d1 d2 d1 d1 d1 d1 d1 d1 d1 d2  = d2 d1 d1 d1", // {b, ba}
+            "d1 d2 d1 d1 d1 d1 d1 d1 d1 d2 d2  = d1 d1 d1", // {b, aa}
+            "d1 d1 d2 d2 d2 d1 d1 d1 d1 d1 d1 d1  = d2 d2", // {ab, ba}
+            "d1 d1 d2 d2 d2 d1 d1 d1 d1 d1 d1 d1 d2  = d2", // {ab, aa}
+            "d1 d1 d2 d2 d2 d1 d1 d1 d1 d1 d1 d1 d2 d2  =", // {ba, aa}
+    };
+
+    const std::vector<std::string_view> sweep{
+            " = d1 d1 d1 d2 d1 d1 b2", // {a}
+            "d1  = d1 d1 d1 d2 d1 d1", // {b}
+            "d1 d1  = d1 d1 d1 b2 d1", // {a, b}
+            "d1 d1 d1  = d1 d1 d1 d1", // {ab}
+            "d2 d1 d1 d1  = d1 d1 b2", // {a, ab}
+            "d1 d2 d1 d1 d1  = d1 d1", // {ab, b}
+            "d1 d1 b2 d1 d1 d1  = d1", // {a, ab, b}
+            "b2 d1 d1 d1 b2 d1 d1  =", // {aa, a}
+    };
+
+    const std::vector<Pool> pools{
+            {.name = "census",
+             .sets =
+                     {{"a"},
+                      {"b"},
+                      {"ab"},
+                      {"ba"},
+                      {"aa"},
+                      {"a", "b"},
+                      {"a", "ab"},
+                      {"a", "ba"},
+                      {"a", "aa"},
+                      {"b", "ab"},
+                      {"b", "ba"},
+                      {"b", "aa"},
+                      {"ab", "ba"},
+                      {"ab", "aa"},
+                      {"ba", "aa"}},
+             .verdicts = census},
+            {.name = "sweep",
+             .sets = {{"a"}, {"b"}, {"a", "b"}, {"ab"}, {"a", "ab"}, {"ab", "b"}, {"a", "ab", "b"}, {"aa", "a"}},
+             .verdicts = sweep}};
+
+    // A literal token set as the oracle spells it, one text token per literal.
+    const auto build{[](const std::vector<std::string_view>& tokens) {
+        Builder builder;
+
+        for (std::size_t index{0}; index < tokens.size(); ++index)
+        {
+            builder.add_token(text(std::string{tokens[index]}), static_cast<Token_kind>(index), 1);
+        }
+
+        return builder.build();
+    }};
+
+    std::size_t decided{0};
+
+    std::size_t domains{0};
+
+    std::size_t boundaries{0};
+
+    for (const auto& [name, sets, verdicts] : pools)
+    {
+        std::vector<Lexer> lexers;
+
+        for (const auto& tokens : sets)
+        {
+            lexers.push_back(build(tokens));
+        }
+
+        for (std::size_t row{0}; row < sets.size(); ++row)
+        {
+            std::istringstream cells{std::string{verdicts[row]}};
+
+            for (std::size_t column{0}; column < sets.size(); ++column)
+            {
+                std::string cell;
+
+                ASSERT_TRUE(cells >> cell) << name << ' ' << row << ' ' << column;
+
+                const auto [witness, half, exhaustive]{lexers[row].segmentation_difference(lexers[column])};
+
+                ASSERT_TRUE(exhaustive) << name << ' ' << row << ' ' << column;
+                EXPECT_EQ(witness.empty(), cell == "=") << name << ' ' << row << ' ' << column;
+                EXPECT_EQ(half.has_value(), cell != "=") << name << ' ' << row << ' ' << column;
+
+                // Both searches find a shortest witness, so the lengths agree even where the witnesses need not,
+                // and the half is a fact about the witness both read the same way; the witness is checked as the
+                // oracle checks its own, by scanning it under both sets.
+                if (cell != "=")
+                {
+                    const auto expected{cell[0] == 'd' ? dfa::Separation_half::domain : dfa::Separation_half::boundary};
+
+                    EXPECT_EQ(witness.size(), static_cast<std::size_t>(cell[1] - '0'))
+                            << name << ' ' << row << ' ' << column;
+                    EXPECT_EQ(half, expected) << name << ' ' << row << ' ' << column;
+                    EXPECT_TRUE(separates(lexers[row], lexers[column], witness, expected))
+                            << name << ' ' << row << ' ' << column;
+
+                    (expected == dfa::Separation_half::domain ? domains : boundaries) += 1;
+                }
+
+                ++decided;
+            }
+        }
+    }
+
+    // The oracle's own counts: 225 census pairs, 204 separating on the domain and 6 on the boundary, and 64 sweep
+    // pairs, 50 and 6.
+    EXPECT_EQ(decided, 289U);
+    EXPECT_EQ(domains, 254U);
+    EXPECT_EQ(boundaries, 12U);
 }
 
 TEST_F(Lexer_test, The_anchor_free_span_of_one_fixed_token_is_its_interior)

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -13,6 +14,7 @@
 
 #include "munch/dfa/boundary_difference.hpp"
 #include "munch/dfa/recovery.hpp"
+#include "munch/dfa/segmentation_difference.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/window_occurrence.hpp"
 #include "munch/dfa/window_violation.hpp"
@@ -21,10 +23,10 @@ namespace munch::dfa
 {
 namespace
 {
-// The one search every boundary-guessing decision runs, and the four decisions that run it: rescue(),
-// boundary_difference(), window_occurrence() and window_violation() each ask whether some completely tokenizable
+// The one search every boundary-guessing decision runs, and the five decisions that run it: rescue(),
+// boundary_difference(), window_occurrence(), window_violation() and segmentation_difference() each ask whether some
 // input makes an event happen, and all answer it by reading an input byte by byte while guessing where its tokens
-// end, breadth first, so that the witness found is a shortest one. They are four instances of one search over one
+// end, breadth first, so that the witness found is a shortest one. They are five instances of one search over one
 // key, differing only in how many scans they walk, what raises the key's mark and what else a branch's future depends
 // on, which is why they live in one unit: the search, its key and the moves over it are private to this file, and a
 // decision added later joins them here rather than being handed them across a header.
@@ -207,6 +209,82 @@ void dedup(std::vector<State_t>& states)
     position.reading = simulator.init_state();
 
     return position;
+}
+
+/**
+ * @brief The dead position the marked-language product adjoins on a side: the state one past the table, which no scan
+ *        stands in, with no closed runs. A side that has died stays dead, and advance() and close() are never asked
+ *        of it.
+ * @param simulator The compiled token set the side scans.
+ * @return The dead position.
+ */
+[[nodiscard]] Position dead(const Simulator& simulator)
+{
+    return {.reading = simulator.state_count(), .closed = {}};
+}
+
+/**
+ * @brief Whether a position is the dead one.
+ * @param simulator The compiled token set the position scans.
+ * @param position The position.
+ * @return True when the side has died.
+ */
+[[nodiscard]] bool is_dead(const Simulator& simulator, const Position& position)
+{
+    return position.reading == simulator.state_count();
+}
+
+/**
+ * @brief Reads one marked symbol, a byte with or without a close, into a position: the byte advances it, and the close
+ *        closes the segment being read, which must accept. A side that cannot read the symbol dies, and a dead side
+ *        stays dead.
+ * @param simulator The compiled token set the position scans.
+ * @param position The position, moved in place.
+ * @param byte The byte read.
+ * @param closes Whether a token boundary follows the byte.
+ * @return True when the side is alive after the symbol, false when it is dead.
+ */
+[[nodiscard]] bool read_marked(
+        const Simulator& simulator, Position& position, const unsigned char byte, const bool closes)
+{
+    if (is_dead(simulator, position) || !advance(simulator, position, byte) ||
+        (closes && !simulator.is_accepting(position.reading)))
+    {
+        position = dead(simulator);
+
+        return false;
+    }
+
+    if (closes)
+    {
+        position = close(simulator, position);
+    }
+
+    return true;
+}
+
+/**
+ * @brief Whether the token set tokenizes an input completely, by the scan itself: maximal munch from every token
+ *        boundary to the end.
+ * @param simulator The compiled token set.
+ * @param input The input.
+ * @return True when the scan consumes every byte.
+ */
+[[nodiscard]] bool tokenizes(const Simulator& simulator, const std::string_view input)
+{
+    for (std::size_t at{0}; at < input.size();)
+    {
+        const auto [token, length]{simulator.run(input.substr(at))};
+
+        if (!token || length == 0)
+        {
+            return false;
+        }
+
+        at += length;
+    }
+
+    return true;
 }
 
 /**
@@ -601,6 +679,72 @@ Counterexample window_counterexample(
     const auto [witness, exhaustive]{search(start, cap, expand)};
 
     return {.witness = witness, .exhaustive = exhaustive};
+}
+
+Separation segmentation_difference(const Simulator& simulator, const Simulator& other, const std::size_t cap)
+{
+    // The key holds the two scans' positions, mine first, either of them dead, and marks nothing: the event, that
+    // exactly one side accepts the marked run, ends the input where it happens. Both sides accept the empty run.
+    const Key start{
+            .scans =
+                    {Position{.reading = simulator.init_state(), .closed = {}},
+                     Position{.reading = other.init_state(), .closed = {}}},
+            .matched = 0,
+            .at_origin = false,
+            .marked = false};
+
+    // One buffer for the whole search: cleared per byte, handed back as the step's view.
+    std::vector<Key> successors;
+
+    const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
+        successors.clear();
+
+        // The two marked symbols the byte makes, without a close and with one, each read into both sides at once.
+        for (const auto closes : {false, true})
+        {
+            auto mine{at.scans[0]};
+
+            auto theirs{at.scans[1]};
+
+            const auto mine_alive{read_marked(simulator, mine, byte, closes)};
+
+            const auto theirs_alive{read_marked(other, theirs, byte, closes)};
+
+            if (!mine_alive && !theirs_alive)
+            {
+                continue;
+            }
+
+            const auto mine_accepts{mine_alive && simulator.is_accepting(mine.reading)};
+
+            const auto theirs_accepts{theirs_alive && other.is_accepting(theirs.reading)};
+
+            // The input ends here when exactly one side accepts the marked run read so far.
+            if (mine_accepts != theirs_accepts)
+            {
+                return {.successors = successors, .ends = true};
+            }
+
+            successors.push_back(Key{.scans = {mine, theirs}, .matched = 0, .at_origin = false, .marked = false});
+        }
+
+        return {.successors = successors, .ends = false};
+    }};
+
+    const auto [witness, exhaustive]{search(start, cap, expand)};
+
+    if (witness.empty())
+    {
+        return {.witness = witness, .half = std::nullopt, .exhaustive = exhaustive};
+    }
+
+    // The half is a fact about the witness: the side accepting the run tokenizes its bytes completely, and the other
+    // side either does not, or does and cuts them apart.
+    const auto half{
+            tokenizes(simulator, witness) && tokenizes(other, witness) ? Separation_half::boundary :
+                                                                         Separation_half::domain};
+
+    return {.witness = witness, .half = half, .exhaustive = exhaustive};
 }
 
 } // namespace munch::dfa

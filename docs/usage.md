@@ -470,6 +470,27 @@ else if (difference.witness.empty()) { /* proved: the two cut every shared input
 else { /* difference.witness is an input they cut differently */ }
 ```
 
+`segmentation_difference(other)` asks the whole question: are the two token sets the same segmentation function, the
+same inputs tokenized completely and every one of them cut alike? A token set's segmentation function is the set of
+marked runs its scan accepts, an input's bytes each with or without a boundary after it, one marking per input of the
+domain, so two sets are the same function exactly when those languages are equal, and the decision is that language
+equality: the same boundary-guessing search as `boundary_difference()` with one guessed marking fed to both scans at
+once, the witness the bytes of the shortest marked run only one side accepts. The half the witness falls in is a fact
+about it, read off the two scans: a domain witness one set tokenizes completely and the other does not, a boundary
+witness both do and cut apart, which makes it a `boundary_difference()` witness too, while an exhaustive negative here
+is one there as well. The two routes need not agree on the witness: over `{a}` against `{aa}` the shortest marked run
+only one side accepts is `a`, the domain witness, where `boundary_difference()` returns `aa`, one token against two.
+The cap is the same ceiling:
+
+```cpp
+const auto [witness, half, exhaustive]{old_lexer.segmentation_difference(new_lexer)};
+
+if (!exhaustive) { /* the search hit its cap: undetermined, not the same function */ }
+else if (witness.empty()) { /* proved: the same inputs, cut the same way, over every input */ }
+else if (half == dfa::Separation_half::domain) { /* one set tokenizes the witness completely, the other does not */ }
+else { /* both tokenize the witness and cut it differently */ }
+```
+
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
 nothing. Since the tokens responsible are usually the ones a parser throws away, `set_ignored_tokens()` lets a builder

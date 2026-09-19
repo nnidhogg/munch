@@ -231,7 +231,7 @@ states, evidence-order answers under preserved evidence and complete-repair inva
 [Error Recovery](docs/usage.md#error-recovery) that every completely tokenizable repair of the text before the evidence
 places a token boundary at the answer.
 
-Five decisions joined that surface in 2.0.0: `rescue()`, the exact rescue decision with its witness, which
+Six decisions joined that surface in 2.0.0: `rescue()`, the exact rescue decision with its witness, which
 `rescue_free()` answers as one bit, false also when the search stopped at its cap, the two cases `rescue()` tells apart;
 `anchor_free_span()`, the exact supremum of the stretch no certified byte reaches or, given an inventory of windows, no
 window of that inventory; `boundary_difference()`, whether two token sets cut any shared input differently, with the
