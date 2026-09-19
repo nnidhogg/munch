@@ -21,14 +21,11 @@
 #include "munch/common/concepts.hpp"
 #include "munch/core/window_planner.hpp"
 #include "munch/dfa/anchor_free_span.hpp"
-#include "munch/dfa/boundary_difference.hpp"
+#include "munch/dfa/boundary_search.hpp"
 #include "munch/dfa/dfa.hpp"
 #include "munch/dfa/recovery.hpp"
-#include "munch/dfa/segmentation_difference.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/split_window.hpp"
-#include "munch/dfa/window_occurrence.hpp"
-#include "munch/dfa/window_violation.hpp"
 
 namespace munch::core
 {
@@ -234,7 +231,8 @@ public:
     }
 
     /**
-     * @brief Whether the given byte string occurs in some completely tokenizable input, with one that contains it.
+     * @brief Whether the given byte string occurs in some nonempty completely tokenizable input, with one that
+     *        contains it.
      *
      * The question is_split_window() leaves open: its certificate is conditional on occurrence, so a window no
      * completely tokenizable input contains is certified vacuously and anchors nothing, and this call splits the two
@@ -242,11 +240,13 @@ public:
      * finds no witness for is a vacuous one. Decided exactly, by the same boundary-guessing search as rescue() and
      * boundary_difference() with a window matcher beside the scan, the witness the shortest such input: over
      * {0, 00, 01} the window 1001 is certified at origin 2 and occurs in no completely tokenizable input, while 001
-     * occurs in 0001. The derivation is dfa::window_occurrence()'s.
+     * occurs in 0001. The question is asked over nonempty inputs, the empty input, which contains the empty window
+     * alone, being no input a cut could fall in, so the empty window has a shortest token as its witness and, under
+     * a token set with no positive-width token, none. The derivation is dfa::window_occurrence()'s.
      * @param window The byte string to find.
      * @param cap The largest number of search states to hold before giving up, dfa::occurrence_cap unless told.
      * @return The witness and whether the search settled the question; an empty witness from an exhaustive search
-     *         proves that no completely tokenizable input contains the window.
+     *         proves that no nonempty completely tokenizable input contains the window.
      */
     [[nodiscard]] dfa::Occurrence window_occurrence(
             const std::string_view window, const std::size_t cap = dfa::occurrence_cap) const
@@ -741,10 +741,11 @@ public:
      * negative covers every input instead of the ones a suite happens to hold. The derivation is
      * dfa::boundary_difference()'s.
      * @param other The lexer to compare against.
-     * @param cap The largest number of product states to visit before giving up.
+     * @param cap The largest number of product states to hold before giving up, dfa::difference_cap unless told.
      * @return The witness and whether the search was exhaustive; an empty witness means identical only when it was.
      */
-    [[nodiscard]] dfa::Difference boundary_difference(const Lexer& other, const std::size_t cap = 1U << 20U) const
+    [[nodiscard]] dfa::Difference boundary_difference(
+            const Lexer& other, const std::size_t cap = dfa::difference_cap) const
     {
         return dfa::boundary_difference(simulator_, other.simulator_, cap);
     }

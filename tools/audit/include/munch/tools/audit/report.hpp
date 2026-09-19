@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "munch/core/lexer.hpp"
-#include "munch/dfa/recovery.hpp"
+#include "munch/dfa/boundary_search.hpp"
 #include "munch/tools/audit/price.hpp"
 #include "munch/tools/audit/token_set.hpp"
 

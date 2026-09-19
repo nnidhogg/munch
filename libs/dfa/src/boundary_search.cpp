@@ -1,3 +1,5 @@
+#include "munch/dfa/boundary_search.hpp"
+
 #include <algorithm>
 #include <compare>
 #include <cstddef>
@@ -12,26 +14,13 @@
 #include <utility>
 #include <vector>
 
-#include "munch/dfa/boundary_difference.hpp"
-#include "munch/dfa/recovery.hpp"
-#include "munch/dfa/segmentation_difference.hpp"
 #include "munch/dfa/simulator.hpp"
-#include "munch/dfa/window_occurrence.hpp"
-#include "munch/dfa/window_violation.hpp"
 
 namespace munch::dfa
 {
 namespace
 {
-// The one search every boundary-guessing decision runs, and the five decisions that run it: rescue(),
-// boundary_difference(), window_occurrence(), window_violation() and segmentation_difference() each ask whether some
-// input makes an event happen, and all answer it by reading an input byte by byte while guessing where its tokens
-// end, breadth first, so that the witness found is a shortest one. They are five instances of one search over one
-// key, differing only in how many scans they walk, what raises the key's mark and what else a branch's future depends
-// on, which is why they live in one unit: the search, its key and the moves over it are private to this file, and a
-// decision added later joins them here rather than being handed them across a header.
-//
-// The other recovery decisions, which walk the compiled machine rather than guessed inputs, stay in recovery.cpp.
+// Implements boundary_search.hpp: the search, its key and the moves over it are private to this unit.
 
 /**
  * @brief A state as the search stores it: the width of the Simulator's table entry, which bounds the states a

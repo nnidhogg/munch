@@ -17,15 +17,12 @@
 #include <string_view>
 #include <vector>
 
-#include "munch/dfa/boundary_difference.hpp"
+#include "munch/dfa/boundary_search.hpp"
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/recovery.hpp"
-#include "munch/dfa/segmentation_difference.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/dfa/unroll_start.hpp"
-#include "munch/dfa/window_occurrence.hpp"
-#include "munch/dfa/window_violation.hpp"
 
 using namespace munch;
 using namespace munch::dfa;
@@ -2173,6 +2170,35 @@ TEST_F(Dfa_test, Window_occurrence_places_a_window_in_a_tokenizable_input_or_pro
 
     EXPECT_TRUE(window_occurrence(simulator, "aab").witness.empty());
     EXPECT_TRUE(window_occurrence(simulator, "aab").exhaustive);
+
+    // The question is over nonempty inputs: the empty window has the shortest token, aa, as its witness here, and
+    // under a token set accepting nothing, or the empty string alone, it occurs in no nonempty input, the empty
+    // input that contains it being no input a cut could fall in.
+    const auto [any, any_settled]{window_occurrence(simulator, "")};
+
+    EXPECT_TRUE(any_settled);
+    EXPECT_EQ(any, "aa");
+
+    dfa::Builder nothing;
+
+    const auto lone{nothing.init_state()};
+
+    nothing.add_transition(lone, dfa::Label('a'), lone);
+
+    const Simulator accepts_nothing{nothing.build()};
+
+    EXPECT_TRUE(window_occurrence(accepts_nothing, "").witness.empty());
+    EXPECT_TRUE(window_occurrence(accepts_nothing, "").exhaustive);
+
+    dfa::Builder epsilon;
+
+    epsilon.add_accept_state(epsilon.init_state(), dfa::Token{1});
+
+    const Simulator accepts_epsilon{epsilon.build()};
+
+    EXPECT_TRUE(accepts_epsilon.nullable());
+    EXPECT_TRUE(window_occurrence(accepts_epsilon, "").witness.empty());
+    EXPECT_TRUE(window_occurrence(accepts_epsilon, "").exhaustive);
 }
 
 TEST_F(Dfa_test, Window_counterexample_finds_the_input_a_certificate_fails_on_or_proves_it_exact)
