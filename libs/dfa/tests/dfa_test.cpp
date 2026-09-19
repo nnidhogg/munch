@@ -17,8 +17,10 @@
 #include <string_view>
 #include <vector>
 
+#include "munch/dfa/boundary_difference.hpp"
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/recovery.hpp"
+#include "munch/dfa/segmentation_difference.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/dfa/unroll_start.hpp"
@@ -2246,4 +2248,78 @@ TEST_F(Dfa_test, Window_counterexample_finds_the_input_a_certificate_fails_on_or
     // The empty window has no final byte to cover, and an origin outside the window names none of its bytes.
     EXPECT_THROW(static_cast<void>(window_counterexample(simulator, "", 0)), std::invalid_argument);
     EXPECT_THROW(static_cast<void>(window_counterexample(simulator, "aa", 2)), std::invalid_argument);
+}
+
+TEST_F(Dfa_test, Segmentation_difference_separates_two_token_sets_by_domain_or_by_boundary_or_proves_them_one)
+{
+    // Three token sets over one letter built by hand: {a} is q0 -a-> q1 accepting; {aa} is q0 -a-> q1 -a-> q2
+    // accepting; {aa, a} is the same chain with q1 accepting too. {a} and {aa, a} tokenize every run of a's and cut
+    // the even ones apart, {aa} tokenizes the even runs alone: the first pair separates on the boundary half, the
+    // other two on the domain half, and each set is one segmentation function with itself.
+    const auto build{[](const bool pair, const bool single) {
+        dfa::Builder dfa;
+
+        const auto q0{dfa.init_state()};
+        const auto q1{dfa.next_state()};
+
+        dfa.add_transition(q0, dfa::Label('a'), q1);
+
+        if (single)
+        {
+            dfa.add_accept_state(q1, dfa::Token{1});
+        }
+
+        if (pair)
+        {
+            const auto q2{dfa.next_state()};
+
+            dfa.add_transition(q1, dfa::Label('a'), q2);
+            dfa.add_accept_state(q2, dfa::Token{2});
+        }
+
+        return Simulator{dfa.build()};
+    }};
+
+    const auto single{build(false, true)};
+    const auto pair{build(true, false)};
+    const auto both{build(true, true)};
+
+    const auto one_function_with_itself{[](const Simulator& simulator) {
+        const auto [witness, half, exhaustive]{segmentation_difference(simulator, simulator)};
+
+        EXPECT_TRUE(exhaustive);
+        EXPECT_TRUE(witness.empty());
+        EXPECT_FALSE(half.has_value());
+    }};
+
+    one_function_with_itself(single);
+    one_function_with_itself(pair);
+    one_function_with_itself(both);
+
+    // The contract's example: the shortest marked run only one side accepts is a with no boundary, which {a} accepts
+    // and {aa} does not, where the boundary route's witness is aa, one token against two.
+    const auto [domain, domain_half, domain_settled]{segmentation_difference(single, pair)};
+
+    EXPECT_TRUE(domain_settled);
+    EXPECT_EQ(domain, "a");
+    EXPECT_EQ(domain_half, Separation_half::domain);
+    EXPECT_EQ(boundary_difference(single, pair).witness, "aa");
+    EXPECT_EQ(segmentation_difference(pair, single).witness, "a");
+    EXPECT_EQ(segmentation_difference(pair, single).half, Separation_half::domain);
+
+    // A boundary witness is a boundary_difference() witness: both sides tokenize aa and cut it apart.
+    const auto [boundary, boundary_half, boundary_settled]{segmentation_difference(single, both)};
+
+    EXPECT_TRUE(boundary_settled);
+    EXPECT_EQ(boundary, "aa");
+    EXPECT_EQ(boundary_half, Separation_half::boundary);
+    EXPECT_EQ(boundary_difference(single, both).witness, "aa");
+
+    EXPECT_EQ(segmentation_difference(pair, both).witness, "a");
+    EXPECT_EQ(segmentation_difference(pair, both).half, Separation_half::domain);
+
+    // Zero holds nothing, not even the state the search starts in, and settles nothing.
+    EXPECT_FALSE(segmentation_difference(single, pair, 0).exhaustive);
+    EXPECT_TRUE(segmentation_difference(single, pair, 0).witness.empty());
+    EXPECT_FALSE(segmentation_difference(single, pair, 0).half.has_value());
 }

@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "munch/dfa/segmentation_difference.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/regex/parse.hpp"
 #include "munch/regex/regex.hpp"
@@ -158,6 +159,33 @@ TEST(Report, Every_certified_window_of_the_conventional_row_is_exact)
 
     EXPECT_TRUE(lexer.window_counterexample("\n#", 1).exhaustive);
     EXPECT_TRUE(lexer.window_counterexample("\n#", 1).witness.empty());
+}
+
+TEST(Report, The_conventional_and_split_friendly_rows_separate_on_the_boundary_half)
+{
+    // The two rows of the split-points study tokenize the same inputs and differ in their whitespace treatment alone,
+    // the split-friendly row making the newline its own token, so full equivalence decided directly separates them on
+    // the boundary half: the shortest marked run only one side accepts is a whitespace byte then a newline, one token
+    // under the conventional row and two under the split-friendly one, the minimal disagreement the certified-splitting
+    // paper's auditor synthesizes. A boundary witness is a boundary_difference() witness, and the conventional row
+    // against itself is one segmentation function over every input.
+    const auto conventional{build(audited("c-like-conventional.l").file, "INITIAL")};
+
+    const auto friendly{build(audited("c-like-split-friendly.l").file, "INITIAL")};
+
+    const auto [witness, half, exhaustive]{conventional.segmentation_difference(friendly)};
+
+    ASSERT_TRUE(exhaustive);
+    EXPECT_EQ(witness, "\t\n");
+    EXPECT_EQ(half, munch::dfa::Separation_half::boundary);
+    EXPECT_EQ(conventional.boundary_difference(friendly).witness.size(), witness.size());
+    EXPECT_EQ(friendly.segmentation_difference(conventional).half, munch::dfa::Separation_half::boundary);
+
+    const auto [none, no_half, settled]{conventional.segmentation_difference(conventional)};
+
+    EXPECT_TRUE(settled);
+    EXPECT_TRUE(none.empty());
+    EXPECT_FALSE(no_half.has_value());
 }
 
 TEST(Report, Blame_names_the_token_that_consumes_a_candidate_mid_token)

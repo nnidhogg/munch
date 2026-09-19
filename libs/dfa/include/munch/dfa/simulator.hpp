@@ -401,8 +401,8 @@ public:
      *
      * With init_state(), init_reentrant(), step(), is_accepting(), is_live(), accepted() and symbol_count, the view of
      * the compiled machine that the decisions in split_window.hpp, recovery.hpp, anchor_free_span.hpp,
-     * boundary_difference.hpp, window_occurrence.hpp and window_violation.hpp are written over, so that a new
-     * decision needs nothing this class keeps private.
+     * boundary_difference.hpp, window_occurrence.hpp, window_violation.hpp and segmentation_difference.hpp are
+     * written over, so that a new decision needs nothing this class keeps private.
      * @return That count.
      */
     [[nodiscard]] std::size_t state_count() const noexcept { return flags_.size(); }
