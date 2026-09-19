@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -9,10 +10,13 @@
 #include <iostream>
 #include <iterator>
 #include <optional>
+#include <set>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #include "munch/tools/audit/lexer_spec.hpp"
@@ -22,6 +26,7 @@
 #include "munch/tools/audit/read_logos.hpp"
 #include "munch/tools/audit/read_re2c.hpp"
 #include "munch/tools/audit/report.hpp"
+#include "munch/tools/audit/supply.hpp"
 
 namespace munch::tools::audit
 {
@@ -47,6 +52,8 @@ would cost.
   --condition NAME      audit this start condition only; may repeat
   --windows N           the longest window tried, 3 unless given; 4 is the planners' own limit
   --price BYTE          price this byte as well, written as a character, \n \t \r \0, or 0xHH; may repeat
+  --input FILE          measure the certified-anchor supply on this file: how many positions its certificates cut
+                        at, per kibibyte, and the gaps between them
   --json                one JSON document instead of text
 
 Exit status is 0 when every scanner and condition audited, 1 when one was refused, a file with no scanner among
@@ -100,6 +107,11 @@ struct Options
     std::vector<std::string> files;
 
     /**
+     * @brief The path of the input the certified-anchor supply is measured on, none when empty.
+     */
+    std::string input;
+
+    /**
      * @brief The longest window tried.
      */
     std::size_t window_limit{3};
@@ -129,6 +141,11 @@ struct Outcome
      * @brief The report, when the token set was built.
      */
     std::optional<Report> report;
+
+    /**
+     * @brief The report's certified-anchor supply on the input, when one was given and the report built.
+     */
+    std::optional<Supply> supply;
 
     /**
      * @brief How many rules the condition holds.
@@ -169,7 +186,7 @@ struct Outcome
         return 0;
     }
 
-    if (text.starts_with("0x") && text.size() <= 4)
+    if (text.starts_with("0x") && text.size() >= 3 && text.size() <= 4)
     {
         auto value{0U};
 
@@ -259,18 +276,24 @@ struct Outcome
         {
             const auto text{value()};
 
-            const auto limit{std::atoi(std::string{text}.c_str())};
+            std::size_t limit{0};
 
-            if (limit < 1 || limit > 8)
+            const auto [end, error]{std::from_chars(text.data(), text.data() + text.size(), limit)};
+
+            if (error != std::errc{} || end != text.data() + text.size() || limit < 1 || limit > 8)
             {
                 throw std::invalid_argument{std::format("--windows takes 1 to 8, not '{}'", text)};
             }
 
-            options.window_limit = static_cast<std::size_t>(limit);
+            options.window_limit = limit;
         }
         else if (argument == "--price")
         {
             options.priced.push_back(parse_byte(value()));
+        }
+        else if (argument == "--input")
+        {
+            options.input = value();
         }
         else if (argument == "--json")
         {
@@ -295,55 +318,336 @@ struct Outcome
 }
 
 /**
- * @brief The kind a file's text says: re2c when it opens a re2c block, which no other file does; logos when a
- *        derive names Logos; ANTLR when its first item is a grammar declaration; flex otherwise. The name says
- *        nothing, since re2c lives in files of any extension and PHP's re2c scanners end in `.l`.
+ * @brief The kind a file's text says: ANTLR when its first item is a grammar declaration; logos when a derive names
+ *        Logos; re2c when it opens a re2c block, which no other file does; flex otherwise. The name says nothing,
+ *        since re2c lives in files of any extension and PHP's re2c scanners end in `.l`. Each question is asked of
+ *        the text in the language it asks about, since the three do not lex alike: Rust nests its block comments
+ *        and writes a lifetime where C writes a character literal, so a marker inside a nested comment or after a
+ *        lifetime opens nothing, and an ANTLR character set holding a re2c opener is the set's bytes. A literal,
+ *        comment and a raw string hold no marker in any of them.
  * @param source The file's text.
  * @return The kind.
  */
 [[nodiscard]] Kind kind_of(const std::string_view source) noexcept
 {
-    if (source.contains("/*!re2c") || source.contains("/*!rules:re2c") || source.contains("/*!local:re2c") ||
-        source.contains("/*!use:re2c"))
+    constexpr std::string_view blanks{" \t\r\n"};
+
+    constexpr auto npos{std::string_view::npos};
+
+    const auto is_name{[](const char byte) {
+        return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9') ||
+               byte == '_';
+    }};
+
+    // Where a comment or a literal opening at `at` ends, read as the named language reads it: a block comment at
+    // its close, Rust's nesting so that an inner `/*` takes another `*/` to close; a line comment at the line's
+    // end, or at a carriage return where the language ends one there; a quoted literal at its closing quote, an
+    // escaped byte carried; and a raw string, `r"..."`, `r#"..."#` or C++'s `R"d(...)d"`, at the delimiter that
+    // closes it, no escape read. Rust's `'` opens a literal only when one byte or an escape closes it, since
+    // `'static` is a lifetime and not a literal that swallows the text after it.
+    const auto ends{[&](const std::size_t at, const bool rust) -> std::optional<std::size_t> {
+        const auto rest{source.substr(at)};
+
+        if (rest.starts_with("/*"))
+        {
+            auto depth{1};
+
+            for (auto scan{at + 2}; scan + 1 < source.size();)
+            {
+                if (rust && source.substr(scan).starts_with("/*"))
+                {
+                    ++depth;
+
+                    scan += 2;
+                }
+                else if (source.substr(scan).starts_with("*/"))
+                {
+                    --depth;
+
+                    scan += 2;
+
+                    if (depth == 0)
+                    {
+                        return scan;
+                    }
+                }
+                else
+                {
+                    ++scan;
+                }
+            }
+
+            return source.size();
+        }
+
+        if (rest.starts_with("//"))
+        {
+            return std::min(source.find_first_of(rust ? "\n" : "\n\r", at), source.size());
+        }
+
+        // A `'` after a name byte is C++'s digit separator, `1'000`, and opens no literal.
+        if (rest.starts_with('\'') && !(at > 0 && is_name(source[at - 1])))
+        {
+            const auto shut{rest.starts_with("'\\") ? rest.find('\'', 3) : rest.find('\'', 2)};
+
+            if (rust && (shut == npos || shut > 4))
+            {
+                return at + 1;
+            }
+
+            return shut == npos ? source.size() : at + shut + 1;
+        }
+
+        if (rest.starts_with('"'))
+        {
+            auto end{at + 1};
+
+            for (; end < source.size() && source[end] != '"' && source[end] != '\n'; ++end)
+            {
+                end += source[end] == '\\' ? 1 : 0;
+            }
+
+            return std::min(end + 1, source.size());
+        }
+
+        // A raw string, which the two languages write differently and which both passes read either way, since the
+        // pass looking for a marker does not yet know the language it is looking in: C++ takes the delimiter of
+        // `R"d(...)d"`, an encoding prefix allowed before the `R`, and closes at its `)d"`; Rust counts the hashes
+        // of `r#"..."#`. An embedded quote closes neither, which is what a marker hides behind.
+        const auto raw{[&]() -> std::size_t {
+            for (const std::string_view mark : {"u8R\"", "uR\"", "UR\"", "LR\"", "R\""})
+            {
+                if (rest.starts_with(mark))
+                {
+                    return mark.size() - 1;
+                }
+            }
+
+            return 0UZ;
+        }()};
+
+        if (raw > 0 && !(at > 0 && is_name(source[at - 1])))
+        {
+            const auto open{rest.find('(', raw + 1)};
+
+            // C++ writes the delimiter without blanks, parentheses or a backslash, and in sixteen bytes at most,
+            // so a quote that opens none of that is the ordinary string the branch above reads.
+            const auto delimiter{open == npos ? std::string_view{} : rest.substr(raw + 1, open - raw - 1)};
+
+            if (open != npos && delimiter.size() <= 16 && delimiter.find_first_of(" \t\r\n()\\") == npos)
+            {
+                const auto shut{std::string{')'} + std::string{delimiter} + '"'};
+
+                const auto close{source.find(shut, at + open)};
+
+                return close == npos ? source.size() : close + shut.size();
+            }
+        }
+
+        const auto prefix{rust ? (rest.starts_with("br") ? 2UZ : rest.starts_with('r') ? 1UZ : 0UZ) : 0UZ};
+
+        if (prefix == 0 || (at > 0 && is_name(source[at - 1])))
+        {
+            return std::nullopt;
+        }
+
+        const auto hashes{rest.find_first_not_of('#', prefix)};
+
+        if (hashes == npos || rest[hashes] != '"')
+        {
+            return std::nullopt;
+        }
+
+        for (auto close{source.find('"', at + hashes + 1)}; close != npos; close = source.find('"', close + 1))
+        {
+            const auto after{source.substr(close + 1, hashes - prefix)};
+
+            if (after.size() == hashes - prefix && after.find_first_not_of('#') == npos)
+            {
+                return close + 1 + after.size();
+            }
+        }
+
+        return source.size();
+    }};
+
+    // The first item, blanks, comments and byte order marks stepped over, as ANTLR's lexer steps over them.
+    const auto trivia{[&](std::size_t at) {
+        for (;;)
+        {
+            at = std::min(source.find_first_not_of(blanks, at), source.size());
+
+            if (source.substr(at).starts_with("\xEF\xBB\xBF"))
+            {
+                at += 3;
+            }
+            else if (source.substr(at).starts_with("//") || source.substr(at).starts_with("/*"))
+            {
+                at = *ends(at, false);
+            }
+            else
+            {
+                return at;
+            }
+        }
+    }};
+
+    // The position after the keyword when it stands at `at` and a blank or a comment follows it, so that `grammarx`
+    // is no declaration; nothing otherwise.
+    const auto word{[&](const std::size_t at, const std::string_view keyword) -> std::optional<std::size_t> {
+        const auto end{at + keyword.size()};
+
+        if (!source.substr(at).starts_with(keyword) || end >= source.size())
+        {
+            return std::nullopt;
+        }
+
+        const auto follows{source.substr(end)};
+
+        return blanks.contains(follows.front()) || follows.starts_with("//") || follows.starts_with("/*") ?
+                       std::optional{end} :
+                       std::nullopt;
+    }};
+
+    auto at{trivia(0)};
+
+    if (const auto lexer{word(at, "lexer")})
     {
-        return Kind::re2c;
+        at = trivia(*lexer);
+    }
+    else if (const auto parser{word(at, "parser")})
+    {
+        at = trivia(*parser);
     }
 
-    if (source.contains("#[derive(") && source.contains("Logos"))
+    if (word(at, "grammar"))
     {
-        return Kind::logos;
+        return Kind::antlr;
     }
 
-    // The first item, comments and byte order marks stepped over, as ANTLR's lexer steps over both.
-    auto at{0UZ};
+    // Past the blanks and comments after a position, for the pieces of an attribute, which Rust lets stand apart.
+    const auto past{[&](std::size_t from, const bool rust) {
+        for (from = std::min(source.find_first_not_of(blanks, from), source.size());
+             from < source.size() && (source.substr(from).starts_with("//") || source.substr(from).starts_with("/*"));
+             from = std::min(source.find_first_not_of(blanks, *ends(from, rust)), source.size()))
+        {
+        }
 
-    for (;;)
+        return from;
+    }};
+
+    // A derive naming Logos, the file read as Rust: `#`, `[`, the word `derive` or the `cfg_attr` that applies one,
+    // and its list, with blanks and comments allowed between every two of them, and Logos the last segment of one of
+    // the list's paths. Whether a `cfg_attr` predicate holds is the reader's reading and not this choice of reader:
+    // a Rust file is read by the Rust reader either way, which then says what the derive it applies scans.
+    for (std::size_t scan{0}; scan < source.size();)
     {
-        at = std::min(source.find_first_not_of(" \t\r\n", at), source.size());
+        if (const auto end{ends(scan, true)})
+        {
+            scan = *end > scan ? *end : scan + 1;
 
-        if (source.substr(at).starts_with("\xEF\xBB\xBF"))
-        {
-            at += 3;
+            continue;
         }
-        else if (source.substr(at).starts_with("//"))
+
+        if (!source.substr(scan).starts_with('#'))
         {
-            at = std::min(source.find('\n', at), source.size());
+            ++scan;
+
+            continue;
         }
-        else if (source.substr(at).starts_with("/*"))
+
+        auto open{past(scan + 1, true)};
+
+        if (open >= source.size() || source[open] != '[')
         {
-            at = std::min(source.find("*/", at + 2), source.size() - 2) + 2;
+            ++scan;
+
+            continue;
         }
-        else
+
+        open = past(open + 1, true);
+
+        const auto applies{source.substr(open).starts_with("cfg_attr")};
+
+        if (!applies && !source.substr(open).starts_with("derive"))
         {
-            break;
+            ++scan;
+
+            continue;
         }
+
+        open = past(open + (applies ? 8 : 6), true);
+
+        // The list's own closing parenthesis, the ones inside a comment or a string of it passed over, so that
+        // `#[derive(/* ) */ Logos)]` names Logos as the attribute Rust reads there does.
+        const auto close{[&]() -> std::size_t {
+            if (open >= source.size() || source[open] != '(')
+            {
+                return npos;
+            }
+
+            for (auto scan{open}, depth{0UZ}; scan < source.size();)
+            {
+                if (const auto past{ends(scan, true)}; past && *past > scan)
+                {
+                    scan = *past;
+
+                    continue;
+                }
+
+                depth += source[scan] == '(' ? 1 : source[scan] == ')' ? -1 : 0;
+
+                if (source[scan] == ')' && depth == 0)
+                {
+                    return scan;
+                }
+
+                ++scan;
+            }
+
+            return npos;
+        }()};
+
+        const auto list{close == npos ? std::string_view{} : source.substr(open, close - open)};
+
+        // A `cfg_attr` that applies no derive names no scanner, whatever else its list holds.
+        if (applies && list.find("derive") == npos)
+        {
+            ++scan;
+
+            continue;
+        }
+
+        for (auto found{list.find("Logos")}; found != npos; found = list.find("Logos", found + 5))
+        {
+            const auto after{found + 5 < list.size() ? list[found + 5] : ' '};
+
+            if (!is_name(list[found - 1]) && !is_name(after))
+            {
+                return Kind::logos;
+            }
+        }
+
+        ++scan;
     }
 
-    const auto head{source.substr(at)};
+    // A re2c block's opener, the file read as C, which is what a re2c block lives in.
+    for (std::size_t scan{0}; scan < source.size();)
+    {
+        const auto rest{source.substr(scan)};
 
-    return head.starts_with("grammar ") || head.starts_with("lexer grammar ") || head.starts_with("parser grammar ") ?
-                   Kind::antlr :
-                   Kind::flex;
+        if (rest.starts_with("/*!re2c") || rest.starts_with("/*!rules:re2c") || rest.starts_with("/*!local:re2c") ||
+            rest.starts_with("/*!use:re2c"))
+        {
+            return Kind::re2c;
+        }
+
+        const auto end{ends(scan, false)};
+
+        scan = end && *end > scan ? *end : scan + 1;
+    }
+
+    return Kind::flex;
 }
 
 /**
@@ -379,20 +683,31 @@ struct Outcome
 
     if (name.size() > 60)
     {
-        name = name.substr(0, 57) + "...";
+        // The cut falls before a code point's first byte, so a multibyte name keeps whole characters.
+        auto cut{57UZ};
+
+        while ((static_cast<unsigned char>(name[cut]) & 0xC0) == 0x80)
+        {
+            --cut;
+        }
+
+        name = name.substr(0, cut) + "...";
     }
 
     return name;
 }
 
 /**
- * @brief Audits one start condition of a scanner.
+ * @brief Audits one start condition of a scanner, and measures the report's supply on the input when one was given.
  * @param spec The scanner.
  * @param condition The condition's name.
  * @param options The command line.
+ * @param input The input the supply is measured on, none when none was given.
  * @return The outcome.
  */
-[[nodiscard]] Outcome audit_condition(const Lexer_spec& spec, const std::string& condition, const Options& options)
+[[nodiscard]] Outcome audit_condition(
+        const Lexer_spec& spec, const std::string& condition, const Options& options,
+        const std::optional<std::string>& input)
 {
     const auto rules{active_rules(spec, condition).size()};
 
@@ -414,11 +729,23 @@ struct Outcome
             }
         }
 
-        return Outcome{.condition = condition, .refused = {}, .report = std::move(report), .rules = rules};
+        auto measured{input ? std::optional{supply(report, compile(set), *input)} : std::nullopt};
+
+        return Outcome{
+                .condition = condition,
+                .refused = {},
+                .report = std::move(report),
+                .supply = std::move(measured),
+                .rules = rules};
     }
     catch (const Spec_error& error)
     {
-        return Outcome{.condition = condition, .refused = error.what(), .report = std::nullopt, .rules = rules};
+        return Outcome{
+                .condition = condition,
+                .refused = error.what(),
+                .report = std::nullopt,
+                .supply = std::nullopt,
+                .rules = rules};
     }
 }
 
@@ -453,9 +780,9 @@ struct Outcome
  * @param spec The scanner.
  * @param outcome The outcome.
  */
-void write_text(std::ostream& out, const Lexer_spec& spec, const Outcome& outcome)
+void write_text(std::ostream& out, const Lexer_spec& spec, const Outcome& outcome, const std::string_view input)
 {
-    const auto& [condition, refused, report, rules]{outcome};
+    const auto& [condition, refused, report, supply, rules]{outcome};
 
     out << std::format(
             "-- scanner at line {}, condition {}: {} rule{}\n", spec.line, condition, rules, rules == 1 ? "" : "s");
@@ -470,37 +797,14 @@ void write_text(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
         return;
     }
 
-    out << render(*report, [&spec](const std::size_t rule) { return label(spec, rule); }) << '\n';
-}
+    out << render(*report, [&spec](const std::size_t rule) { return label(spec, rule); });
 
-/**
- * @brief Text as a JSON string, the quote, the backslash and the controls escaped.
- * @param text The text.
- * @return The JSON text, quotes included.
- */
-[[nodiscard]] std::string json_string(const std::string_view text)
-{
-    std::string out{'"'};
-
-    for (const auto byte : text)
+    if (supply)
     {
-        const auto value{static_cast<unsigned char>(byte)};
-
-        if (byte == '"' || byte == '\\')
-        {
-            out += std::string{'\\'} + byte;
-        }
-        else if (value < 0x20)
-        {
-            out += std::format(R"(\u{:04x})", value);
-        }
-        else
-        {
-            out.push_back(byte);
-        }
+        out << supply_section(*supply, input);
     }
 
-    return out + '"';
+    out << '\n';
 }
 
 /**
@@ -544,14 +848,16 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
 }
 
 /**
- * @brief Writes one condition's outcome as the JSON object of a scanner's condition list.
+ * @brief Writes one condition's outcome as the JSON object of a scanner's condition list, the supply on the input
+ *        beside the report when one was measured.
  * @param out The stream.
  * @param spec The scanner.
  * @param outcome The outcome.
+ * @param input The input the supply was measured on, empty when none was given.
  */
-void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcome)
+void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcome, const std::string_view input)
 {
-    const auto& [condition, refused, report, rules]{outcome};
+    const auto& [condition, refused, report, supply, rules]{outcome};
 
     out << std::format(R"(        {{"name": {}, "rules": {}, )", json_string(condition), rules);
 
@@ -570,7 +876,14 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
         document.insert(at + 1, "        ");
     }
 
-    out << R"("refused": null, "report": )" << document << '}';
+    out << R"("refused": null, "report": )" << document;
+
+    if (supply)
+    {
+        out << R"(, "supply": )" << supply_json(*supply, input);
+    }
+
+    out << '}';
 }
 
 /**
@@ -654,6 +967,29 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
             every = false;
         }
 
+        // A scanner with no rule at all tokenizes nothing, so it certifies nothing and an empty report would say
+        // otherwise: an empty flex rules section under `%option nodefault`, and an enum deriving Logos with no
+        // variant, are files of that shape, and one such scanner beside others is refused with its line, since the
+        // report would pass it over in silence.
+        if (const auto empty{std::ranges::find_if(scanners, [](const Lexer_spec& spec) { return spec.rules.empty(); })};
+            refused.empty() && empty != scanners.end())
+        {
+            refused = std::format("the scanner at line {} has no rule, so it tokenizes nothing", empty->line);
+
+            every = false;
+        }
+
+        // A file the reading finds no scanner in audits nothing, which is no success.
+        if (scanners.empty() && refused.empty())
+        {
+            refused = kind == Kind::flex  ? "the file declares no scanner: no rules section" :
+                      kind == Kind::antlr ? "the file declares no scanner: no lexer rule" :
+                      kind == Kind::logos ? "the file declares no scanner: no enum deriving Logos" :
+                                            "the file declares no scanner: no re2c block with rules";
+
+            every = false;
+        }
+
         if (options.json)
         {
             out << std::format(
@@ -724,19 +1060,19 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 
             for (std::size_t slot{0}; slot < conditions.size(); ++slot)
             {
-                const auto outcome{audit_condition(spec, conditions[slot], options)};
+                const auto outcome{audit_condition(spec, conditions[slot], options, input)};
 
                 every = every && outcome.report.has_value();
 
                 if (options.json)
                 {
-                    write_json(out, spec, outcome);
+                    write_json(out, spec, outcome, options.input);
 
                     out << (slot + 1 < conditions.size() ? ",\n" : "\n");
                 }
                 else
                 {
-                    write_text(out, spec, outcome);
+                    write_text(out, spec, outcome, options.input);
                 }
             }
 
@@ -795,7 +1131,14 @@ int main(const int argc, char** argv)
     {
         const auto options{parse_options(arguments)};
 
-        return run(options, std::cout) ? EXIT_SUCCESS : EXIT_FAILURE;
+        // Written whole once every file is audited, so that an error leaves no part of a document behind.
+        std::ostringstream out;
+
+        const auto every{run(options, out)};
+
+        std::cout << out.str();
+
+        return every ? EXIT_SUCCESS : EXIT_FAILURE;
     }
     catch (const std::invalid_argument& error)
     {

@@ -622,7 +622,7 @@ struct Consumed
  */
 [[nodiscard]] std::string json_token(const std::size_t token, const std::function<std::string(std::size_t)>& name)
 {
-    return std::format(R"({{"id": {}, "name": {}}})", token, quoted(name(token)));
+    return std::format(R"({{"id": {}, "name": {}}})", token, json_string(name(token)));
 }
 
 } // namespace
@@ -765,7 +765,7 @@ Report audit(const core::Lexer& lexer, const std::size_t window_limit)
             .exact = {},
             .modulo = {},
             .discarded = {},
-            .classes = 0,
+            .classes = {},
             .window_limit = window_limit,
             .windows = {},
             .window_count = std::nullopt,
@@ -792,17 +792,15 @@ Report audit(const core::Lexer& lexer, const std::size_t window_limit)
         }
     }
 
-    const auto classes{byte_classes(simulator)};
+    report.classes = byte_classes(simulator);
 
-    report.classes = classes.size();
+    report.windows = certified_windows(lexer, report.classes, window_limit);
 
-    report.windows = certified_windows(lexer, classes, window_limit);
-
-    report.window_count = expansion_count(report.windows, classes);
+    report.window_count = expansion_count(report.windows, report.classes);
 
     if (!report.windows.empty())
     {
-        if (const auto inventory{expanded(report.windows, classes)})
+        if (const auto inventory{expanded(report.windows, report.classes)})
         {
             std::vector<std::pair<std::string_view, std::size_t>> views;
 
@@ -851,7 +849,7 @@ std::string json(const Report& report, const std::function<std::string(std::size
 
     member("discarded", list(report.discarded, [&name](const std::size_t token) { return json_token(token, name); }));
 
-    member("byte_classes", std::to_string(report.classes));
+    member("byte_classes", std::to_string(report.classes.size()));
 
     member("window_limit", std::to_string(report.window_limit));
 
@@ -983,7 +981,7 @@ std::string render(const Report& report, const std::function<std::string(std::si
              report.windows.empty() ? "none" :
                                       std::format(
                                               "{} over {} byte classes, {} once classes expand", summary,
-                                              report.classes, counted(report.window_count)));
+                                              report.classes.size(), counted(report.window_count)));
 
         // The examples: printable windows first, since a reader recognises those.
         auto examples{report.windows};
@@ -1176,10 +1174,76 @@ std::string options_json(const std::vector<std::string>& options)
 
     for (const auto& option : options)
     {
-        out += (out.size() == 1 ? "" : ", ") + quoted(option);
+        out += (out.size() == 1 ? "" : ", ") + json_string(option);
     }
 
     return out + ']';
+}
+
+std::string json_string(const std::string_view text)
+{
+    // The length of the well-formed UTF-8 sequence at an index, zero when none stands there: a lead byte of the
+    // shape 110xxxxx, 1110xxxx or 11110xxx followed by as many continuation bytes 10xxxxxx as its shape says, the
+    // overlong, surrogate and beyond-U+10FFFF encodings excluded as the standard excludes them.
+    const auto sequence{[text](const std::size_t at) -> std::size_t {
+        const auto lead{static_cast<unsigned char>(text[at])};
+
+        const auto length{
+                lead < 0x80                 ? 1UZ :
+                lead >= 0xC2 && lead < 0xE0 ? 2UZ :
+                lead >= 0xE0 && lead < 0xF0 ? 3UZ :
+                lead >= 0xF0 && lead < 0xF5 ? 4UZ :
+                                              0UZ};
+
+        if (length == 0 || at + length > text.size())
+        {
+            return 0;
+        }
+
+        for (std::size_t index{1}; index < length; ++index)
+        {
+            if ((static_cast<unsigned char>(text[at + index]) & 0xC0) != 0x80)
+            {
+                return 0;
+            }
+        }
+
+        const auto second{static_cast<unsigned char>(text[at + (length > 1 ? 1 : 0)])};
+
+        const auto malformed{
+                (lead == 0xE0 && second < 0xA0) || (lead == 0xED && second >= 0xA0) ||
+                (lead == 0xF0 && second < 0x90) || (lead == 0xF4 && second >= 0x90)};
+
+        return malformed ? 0 : length;
+    }};
+
+    std::string out{'"'};
+
+    for (std::size_t at{0}; at < text.size();)
+    {
+        const auto byte{text[at]};
+
+        const auto value{static_cast<unsigned char>(byte)};
+
+        const auto length{sequence(at)};
+
+        if (byte == '"' || byte == '\\')
+        {
+            out += std::string{'\\'} + byte;
+        }
+        else if (value < 0x20 || length == 0)
+        {
+            out += std::format(R"(\u{:04x})", value);
+        }
+        else
+        {
+            out += text.substr(at, length);
+        }
+
+        at += std::max(length, 1UZ);
+    }
+
+    return out + '"';
 }
 
 } // namespace munch::tools::audit

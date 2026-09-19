@@ -5,6 +5,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "munch/core/lexer.hpp"
@@ -90,9 +91,10 @@ struct Report
     std::vector<std::size_t> discarded;
 
     /**
-     * @brief The number of byte classes the windows were enumerated over.
+     * @brief The byte classes the windows were enumerated over, bytes every state moves alike on, each ascending and
+     *        the classes in order of their lowest byte; every byte is in one of them.
      */
-    std::size_t classes{};
+    std::vector<std::vector<unsigned char>> classes;
 
     /**
      * @brief The width the window enumeration went up to.
@@ -235,6 +237,16 @@ struct Report
  * @return The JSON text, `[]` when the scanner declared none.
  */
 [[nodiscard]] std::string options_json(const std::vector<std::string>& options);
+
+/**
+ * @brief Text as a JSON string, the quote, the backslash and the controls escaped; a byte beyond ASCII stands as it
+ *        is where it is part of a well-formed UTF-8 sequence, the text being UTF-8, and is escaped as the code point
+ *        of its value where it is not, so that the document is JSON whatever bytes a path or a name holds; a byte
+ *        string's rendering in the report escapes every such byte as the code point of its value.
+ * @param text The text.
+ * @return The JSON text, quotes included.
+ */
+[[nodiscard]] std::string json_string(std::string_view text);
 
 } // namespace munch::tools::audit
 
