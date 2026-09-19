@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -649,4 +650,68 @@ TEST_F(Nfa_test, Graphviz_accepts_a_bare_filename)
     EXPECT_TRUE(std::filesystem::exists(bare));
 
     std::filesystem::remove(bare);
+}
+
+TEST_F(Nfa_test, A_label_is_a_symbol_or_epsilon_and_the_two_tests_are_each_others_negation)
+{
+    // The two kinds the variant holds, and the one symbol value a reader might mistake for a sentinel: a NUL
+    // symbol is a symbol like any other.
+    EXPECT_TRUE(Label{'a'}.is_symbol());
+    EXPECT_FALSE(Label{'a'}.is_epsilon());
+
+    EXPECT_TRUE(Label{'\0'}.is_symbol());
+    EXPECT_FALSE(Label{'\0'}.is_epsilon());
+
+    EXPECT_TRUE(Label::epsilon().is_epsilon());
+    EXPECT_FALSE(Label::epsilon().is_symbol());
+}
+
+TEST_F(Nfa_test, Epsilon_closure_follows_epsilon_transitions_transitively_and_no_symbol_transition)
+{
+    // q0 -ε-> q1 -ε-> q2 -a-> q3 -ε-> q4, with q1 also -ε-> q0 so the chain cycles: the closure of q0 is the three
+    // states before the symbol, the closure of q3 the two after it, and a set's closure is the union of its
+    // members' closures, the given states included whether or not any epsilon leaves them.
+    Builder builder;
+
+    const auto q0{builder.init_state()};
+    const auto q1{builder.next_state()};
+    const auto q2{builder.next_state()};
+    const auto q3{builder.next_state()};
+    const auto q4{builder.next_state()};
+
+    builder.add_epsilon_transition(q0, q1);
+    builder.add_epsilon_transition(q1, q2);
+    builder.add_epsilon_transition(q1, q0);
+    builder.add_transition(q2, Label{'a'}, q3);
+    builder.add_epsilon_transition(q3, q4);
+    builder.add_accept_state(q4, Token{1, 1});
+
+    const auto nfa{builder.build()};
+
+    EXPECT_EQ(nfa.epsilon_closure({q0}), Nfa::States_t({q0, q1, q2}));
+    EXPECT_EQ(nfa.epsilon_closure({q2}), Nfa::States_t({q2}));
+    EXPECT_EQ(nfa.epsilon_closure({q3}), Nfa::States_t({q3, q4}));
+    EXPECT_EQ(nfa.epsilon_closure({q2, q3}), Nfa::States_t({q2, q3, q4}));
+    EXPECT_EQ(nfa.epsilon_closure({}), Nfa::States_t{});
+}
+
+TEST_F(Nfa_test, Set_accept_states_replaces_the_whole_accept_map_and_returns_the_builder)
+{
+    // One state accepted before the call is gone after it; the map given is the map kept, a tokenless entry
+    // included, and the reference returned is the builder itself, so the next call chains onto the same object.
+    Builder builder;
+
+    const auto q0{builder.init_state()};
+    const auto q1{builder.next_state()};
+    const auto q2{builder.next_state()};
+
+    builder.add_accept_state(q0, Token{1, 1});
+
+    Builder& chained{builder.set_accept_states({{q1, Token{2, 1}}, {q2, std::nullopt}})};
+
+    EXPECT_EQ(&chained, &builder);
+
+    const Nfa::Accept_states_t expected{{q1, Token{2, 1}}, {q2, std::nullopt}};
+
+    EXPECT_EQ(builder.accept_states(), expected);
 }

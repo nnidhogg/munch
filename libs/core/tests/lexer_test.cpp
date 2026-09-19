@@ -24,6 +24,7 @@
 #include "munch/common/concepts.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/determinize.hpp"
+#include "munch/core/window_planner.hpp"
 #include "munch/dfa/boundary_search.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
@@ -5213,4 +5214,129 @@ TEST_F(Lexer_test, A_nullable_token_set_leaves_the_anchor_free_span_unbounded)
     ASSERT_FALSE(lexer.is_split_point('a'));
 
     EXPECT_FALSE(lexer.anchor_free_span().has_value());
+}
+
+TEST_F(Lexer_test, A_token_payload_reaches_the_three_argument_sink_as_the_last_word_given_and_zero_where_none_was)
+{
+    // Three tokens: the word gets a payload, the number gets one twice so the last word must win, and the space
+    // gets none, which the sink sees as zero; a three-argument sink is the only place the payload surfaces.
+    enum class Kind : std::size_t
+    {
+        word = 1,
+        number = 2,
+        space = 3
+    };
+
+    Builder builder;
+
+    builder.add_token(plus(any_of(Set::alpha())), Kind::word, 1);
+    builder.add_token(plus(any_of(Set::digits())), Kind::number, 1);
+    builder.add_token(text(" "), Kind::space, 1);
+
+    builder.set_token_payload(Kind::word, 7);
+    builder.set_token_payload(Kind::number, 11);
+    builder.set_token_payload(Kind::number, 13);
+
+    const auto lexer{builder.build()};
+
+    std::vector<std::pair<Kind, std::uint64_t>> seen;
+
+    const std::string input{"ab 12 c"};
+
+    const auto consumed{lexer.tokenize_all<Kind>(
+            input,
+            [&seen](const Kind kind, std::size_t, const std::uint64_t payload) { seen.emplace_back(kind, payload); })};
+
+    EXPECT_EQ(consumed, input.size());
+
+    const std::vector<std::pair<Kind, std::uint64_t>> expected{
+            {Kind::word, 7},
+            {Kind::space, 0},
+            {Kind::number, 13},
+            {Kind::space, 0},
+            {Kind::word, 7}};
+
+    EXPECT_EQ(seen, expected);
+}
+
+TEST_F(Lexer_test, A_state_limit_error_carries_its_limit_in_the_message_and_the_accessor)
+{
+    // Constructed directly rather than through an exploding grammar, so the test says what the type promises on
+    // its own: a std::runtime_error whose text names the cap and whose accessor returns it.
+    const State_limit_error error{42};
+
+    EXPECT_EQ(error.limit(), 42U);
+    EXPECT_NE(std::string_view{error.what()}.find("42"), std::string_view::npos);
+
+    const std::runtime_error& base{error};
+
+    EXPECT_EQ(std::string_view{base.what()}, std::string_view{error.what()});
+}
+
+TEST_F(Lexer_test, Window_at_tries_lengths_ascending_from_two_and_the_first_certificate_wins)
+{
+    // Over {a+, b} a window ending in b certifies with the b as its origin and one of a alone refuses, since the run
+    // may have begun before the window: at the start of abb the two-byte window already certifies, so its origin and
+    // length come back although the three-byte one certifies too; at the start of aab the two-byte window refuses and
+    // the three-byte one answers; a run of a refuses at every length, and one byte left fits no window at all.
+    enum class Kind : std::size_t
+    {
+        run = 1,
+        b = 2
+    };
+
+    Builder builder;
+
+    builder.add_token(plus(text("a")), Kind::run, 1);
+    builder.add_token(text("b"), Kind::b, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_TRUE(lexer.is_split_window("ab").has_value());
+    ASSERT_TRUE(lexer.is_split_window("abb").has_value());
+    ASSERT_FALSE(lexer.is_split_window("aa").has_value());
+
+    using Found = std::optional<std::pair<std::size_t, std::size_t>>;
+
+    Window_planner planner;
+
+    const auto window_at{[&](const std::string_view input, const std::size_t at) {
+        return planner.window_at(lexer.simulator(), input.data(), input.size(), at);
+    }};
+
+    EXPECT_EQ(window_at("abb", 0), Found({1, 2}));
+    EXPECT_EQ(window_at("aab", 0), Found({2, 3}));
+    EXPECT_EQ(window_at("aaaaa", 0), std::nullopt);
+    EXPECT_EQ(window_at("ab", 1), std::nullopt);
+
+    // At or past the input's size the search finds nothing, as the searches beginning at an offset have it: the
+    // length available is a length there and not a difference that wrapped, which would read past the input.
+    EXPECT_EQ(window_at("ab", 2), std::nullopt);
+    EXPECT_EQ(window_at("a", 2), std::nullopt);
+    EXPECT_EQ(window_at("abb", 9), std::nullopt);
+    EXPECT_EQ(window_at("", 1), std::nullopt);
+
+    // The same search over an input shorter than the bytes behind it, which a caller holding one buffer and reading
+    // a part of it gives: the size is one, the position two, and the bytes at the position are live. A length that
+    // wrapped reads them and certifies a window the input does not hold, so this case parts the wrap from a length
+    // of zero by what it answers rather than by what a sanitizer reports.
+    const std::string behind{"xxabbbb"};
+
+    EXPECT_EQ(planner.cut(lexer.simulator(), behind.data(), 1, 2), std::nullopt);
+
+    EXPECT_EQ(planner.window_at(lexer.simulator(), behind.data(), 1, 2), std::nullopt);
+
+    // The search from a floor answers at or after it, so a floor at or past the size finds nothing rather than the
+    // first cut in the input: the walk's own bound, the floor plus two, is a position there and not a sum that
+    // wrapped, which would begin the walk again at zero and answer below the floor. The library's own caller holds
+    // its floor at the size at most, so nothing here reached it; the public function bounds the floor nowhere.
+    const auto cut{[&](const std::string_view input, const std::size_t floor) {
+        return planner.cut(lexer.simulator(), input.data(), input.size(), floor);
+    }};
+
+    EXPECT_EQ(cut("ab", 0), std::optional<std::size_t>{1});
+    EXPECT_EQ(cut("ab", 2), std::nullopt);
+    EXPECT_EQ(cut("ab", 5), std::nullopt);
+    EXPECT_EQ(cut("ab", std::numeric_limits<std::size_t>::max()), std::nullopt);
+    EXPECT_EQ(cut("", std::numeric_limits<std::size_t>::max()), std::nullopt);
 }

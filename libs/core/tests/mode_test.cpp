@@ -1096,3 +1096,29 @@ TEST(Mode, The_two_drivers_agree_for_action_counts_to_three_at_dense_and_sparse_
         }
     }
 }
+
+TEST(Mode, Unpack_inverts_pack_on_every_stored_kind_and_only_a_stay_packs_to_zero)
+{
+    // The three kinds the drivers store, each at target zero, at a small target and at one wider than the two
+    // kind bits leave in a 32-bit word, so the round trip is pinned at the width the channel carries; a stay packs
+    // to zero whatever target it names, which is why no stored action can be mistaken for one.
+    for (const auto kind : {Mode_action_kind::go_to, Mode_action_kind::push, Mode_action_kind::pop})
+    {
+        for (const std::size_t target : {std::size_t{0}, std::size_t{5}, std::size_t{1} << 40U})
+        {
+            const Mode_action action{.kind = kind, .target = target};
+
+            const auto packed{pack(action)};
+
+            EXPECT_NE(packed, 0U);
+
+            const auto [unpacked_kind, unpacked_target]{unpack(packed)};
+
+            EXPECT_EQ(unpacked_kind, kind);
+            EXPECT_EQ(unpacked_target, target);
+        }
+    }
+
+    EXPECT_EQ(pack(Mode_action{.kind = Mode_action_kind::stay, .target = 0}), 0U);
+    EXPECT_EQ(pack(Mode_action{.kind = Mode_action_kind::stay, .target = 5}), 0U);
+}

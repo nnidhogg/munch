@@ -2347,3 +2347,148 @@ TEST_F(Dfa_test, Segmentation_difference_separates_two_token_sets_by_domain_or_b
     EXPECT_TRUE(segmentation_difference(single, pair, 0).witness.empty());
     EXPECT_FALSE(segmentation_difference(single, pair, 0).half.has_value());
 }
+
+TEST_F(Dfa_test, Has_split_points_ignoring_holds_wherever_the_exact_test_does_and_on_the_sets_the_relaxation_rescues)
+{
+    // {a+, b} certifies b exactly, so both tests are true. a* alone re-enters its start on every a, which the exact
+    // certificate refuses, and the relaxed one admits a only once the token is discarded: the exact test then
+    // reports nothing to search for on precisely the set the relaxation exists to rescue.
+    dfa::Builder exact;
+
+    const auto p0{exact.init_state()};
+    const auto p1{exact.next_state()};
+    const auto p2{exact.next_state()};
+
+    exact.add_accept_state(p1, Token{1});
+    exact.add_accept_state(p2, Token{2});
+    exact.add_transition(p0, dfa::Label('a'), p1);
+    exact.add_transition(p1, dfa::Label('a'), p1);
+    exact.add_transition(p0, dfa::Label('b'), p2);
+
+    const Simulator certified{exact.build(), std::vector<std::size_t>{}};
+
+    EXPECT_TRUE(certified.has_split_points());
+    EXPECT_TRUE(certified.has_split_points_ignoring());
+
+    dfa::Builder run;
+
+    const auto q0{run.init_state()};
+
+    run.add_accept_state(q0, Token{1});
+    run.add_transition(q0, dfa::Label('a'), q0);
+
+    const Simulator kept{run.build(), std::vector<std::size_t>{}};
+
+    EXPECT_FALSE(kept.has_split_points());
+    EXPECT_FALSE(kept.has_split_points_ignoring());
+
+    const Simulator discarded{run.build(), std::vector<std::size_t>{1}};
+
+    EXPECT_FALSE(discarded.has_split_points());
+    EXPECT_TRUE(discarded.has_split_points_ignoring());
+}
+
+TEST_F(Dfa_test, Is_accepting_is_the_flag_alone_and_a_nullable_sets_fresh_start_never_carries_it)
+{
+    // q0 -a-> q1 accepting, q1 -b-> q2 accepting, q0 -c-> q3 which accepts nothing and leads nowhere, and an
+    // island q4 -a-> q5 accepting that no input reaches: the flag answers for every state the tables hold a
+    // column for, reachable or not.
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+    const auto q4{dfa.next_state()};
+    const auto q5{dfa.next_state()};
+
+    dfa.add_accept_state(q1, Token{1});
+    dfa.add_accept_state(q2, Token{2});
+    dfa.add_accept_state(q5, Token{3});
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+    dfa.add_transition(q1, dfa::Label('b'), q2);
+    dfa.add_transition(q0, dfa::Label('c'), q3);
+    dfa.add_transition(q4, dfa::Label('a'), q5);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_FALSE(simulator.is_accepting(q0));
+    EXPECT_TRUE(simulator.is_accepting(q1));
+    EXPECT_TRUE(simulator.is_accepting(q2));
+    EXPECT_FALSE(simulator.is_accepting(q3));
+    EXPECT_FALSE(simulator.is_accepting(q4));
+    EXPECT_TRUE(simulator.is_accepting(q5));
+
+    // A start that accepts the empty word is compiled behind a fresh start that does not, so the state a scan
+    // starts in never accepts; the old start keeps its flag under its own identifier.
+    dfa::Builder nullable;
+
+    const auto r0{nullable.init_state()};
+    const auto r1{nullable.next_state()};
+
+    nullable.add_accept_state(r0, Token{1});
+    nullable.add_accept_state(r1, Token{2});
+    nullable.add_transition(r0, dfa::Label('a'), r1);
+
+    const Simulator unrolled{nullable.build()};
+
+    EXPECT_TRUE(unrolled.nullable());
+    EXPECT_NE(unrolled.init_state(), r0);
+    EXPECT_FALSE(unrolled.is_accepting(unrolled.init_state()));
+    EXPECT_TRUE(unrolled.is_accepting(r0));
+}
+
+TEST_F(Dfa_test, Is_live_needs_a_state_reachable_from_the_start_that_can_still_reach_acceptance)
+{
+    // The same shape: q3 is reached by c and can never accept, q4 and q5 can accept but nothing reaches them, so
+    // each fails one half of the conjunction and only the a b route is live.
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+    const auto q4{dfa.next_state()};
+    const auto q5{dfa.next_state()};
+
+    dfa.add_accept_state(q1, Token{1});
+    dfa.add_accept_state(q2, Token{2});
+    dfa.add_accept_state(q5, Token{3});
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+    dfa.add_transition(q1, dfa::Label('b'), q2);
+    dfa.add_transition(q0, dfa::Label('c'), q3);
+    dfa.add_transition(q4, dfa::Label('a'), q5);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_TRUE(simulator.is_live(q0));
+    EXPECT_TRUE(simulator.is_live(q1));
+    EXPECT_TRUE(simulator.is_live(q2));
+    EXPECT_FALSE(simulator.is_live(q3));
+    EXPECT_FALSE(simulator.is_live(q4));
+    EXPECT_FALSE(simulator.is_live(q5));
+}
+
+TEST_F(Dfa_test, Accepted_resolves_the_token_of_an_accepting_state_and_nothing_for_any_other)
+{
+    // Two accepting states with different tokens, one reached and one on an island, beside a dead state and the
+    // start: the token follows the flag, so the island's state resolves like a reached one.
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+    const auto q3{dfa.next_state()};
+
+    dfa.add_accept_state(q1, Token{1});
+    dfa.add_accept_state(q3, Token{3});
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+    dfa.add_transition(q0, dfa::Label('c'), q2);
+
+    const Simulator simulator{dfa.build()};
+
+    EXPECT_EQ(simulator.accepted(q0), std::nullopt);
+    EXPECT_EQ(simulator.accepted(q1), std::optional{Token{1}});
+    EXPECT_EQ(simulator.accepted(q2), std::nullopt);
+    EXPECT_EQ(simulator.accepted(q3), std::optional{Token{3}});
+}
