@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -11,12 +12,14 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/recovery.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/dfa/unroll_start.hpp"
+#include "munch/dfa/window_occurrence.hpp"
 
 using namespace munch;
 using namespace munch::dfa;
@@ -2106,4 +2109,62 @@ TEST_F(Dfa_test, Lag_and_rescue_freeness_ignore_an_unreachable_accepting_island)
     EXPECT_EQ(lag(simulator), std::optional<std::size_t>{0});
     EXPECT_TRUE(rescue(simulator).witness.empty());
     EXPECT_TRUE(rescue(simulator).exhaustive);
+}
+
+TEST_F(Dfa_test, Window_occurrence_places_a_window_in_a_tokenizable_input_or_proves_it_in_none)
+{
+    // {aa} built by hand: q0 -a-> q1 -a-> q2 accepting. Its completely tokenizable inputs are the even runs of a, so
+    // every window of a's occurs, the odd ones in a run one longer, and no window holding a b occurs anywhere: the
+    // separating example of the certified-splitting paper, where the unrestricted certificate of b at width one is
+    // vacuous and the occurring inventory is empty.
+    dfa::Builder dfa;
+
+    const auto q0{dfa.init_state()};
+    const auto q1{dfa.next_state()};
+    const auto q2{dfa.next_state()};
+
+    dfa.add_transition(q0, dfa::Label('a'), q1);
+    dfa.add_transition(q1, dfa::Label('a'), q2);
+    dfa.add_accept_state(q2, dfa::Token{1});
+
+    const Simulator simulator{dfa.build()};
+
+    // Whether a witness tokenizes completely under the machine itself.
+    const auto tokenizes{[&simulator](const std::string& witness) {
+        std::size_t at{0};
+
+        while (at < witness.size())
+        {
+            const auto [token, length]{simulator.run(std::string_view{witness}.substr(at))};
+
+            if (!token || length == 0)
+            {
+                return false;
+            }
+
+            at += length;
+        }
+
+        return true;
+    }};
+
+    const auto [odd, odd_settled]{window_occurrence(simulator, "aaa")};
+
+    EXPECT_TRUE(odd_settled);
+    EXPECT_EQ(odd, "aaaa");
+    EXPECT_TRUE(tokenizes(odd));
+
+    const auto [even, even_settled]{window_occurrence(simulator, "aa")};
+
+    EXPECT_TRUE(even_settled);
+    EXPECT_EQ(even, "aa");
+    EXPECT_TRUE(tokenizes(even));
+
+    const auto [none, none_settled]{window_occurrence(simulator, "b")};
+
+    EXPECT_TRUE(none_settled);
+    EXPECT_TRUE(none.empty());
+
+    EXPECT_TRUE(window_occurrence(simulator, "aab").witness.empty());
+    EXPECT_TRUE(window_occurrence(simulator, "aab").exhaustive);
 }

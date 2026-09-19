@@ -231,14 +231,16 @@ states, evidence-order answers under preserved evidence and complete-repair inva
 [Error Recovery](docs/usage.md#error-recovery) that every completely tokenizable repair of the text before the evidence
 places a token boundary at the answer.
 
-Three decisions joined that surface in 2.0.0: `rescue()`, the exact rescue decision with its witness, which
+Four decisions joined that surface in 2.0.0: `rescue()`, the exact rescue decision with its witness, which
 `rescue_free()` answers as one bit, false also when the search stopped at its cap, the two cases `rescue()` tells apart;
 `anchor_free_span()`, the exact supremum of the stretch no certified byte reaches or, given an inventory of windows, no
-window of that inventory; and `boundary_difference()`, whether two token sets cut any shared input differently, with the
-shortest witness under its cap. So did `regex::parse()` and the `munch-audit` command with the readers under it for
-flex, re2c, ANTLR 4 and logos files, whose report is those decisions applied to another generator's token set; the
-readers accept what a token language can say and refuse the rest by name. Decisions over a nullable token set are made
-on its positive-width equivalent, and `rescue_free()` answers exactly where 1.6.0 documented it as sufficient only.
+window of that inventory; `boundary_difference()`, whether two token sets cut any shared input differently, with the
+shortest witness under its cap; and `window_occurrence()`, whether a window occurs in some completely tokenizable input,
+with the shortest such input under its cap, which tells a certified window from one certified vacuously. So did
+`regex::parse()` and the `munch-audit` command with the readers under it for flex, re2c, ANTLR 4 and logos files, whose
+report is those decisions applied to another generator's token set; the readers accept what a token language can say and
+refuse the rest by name. Decisions over a nullable token set are made on its positive-width equivalent, and
+`rescue_free()` answers exactly where 1.6.0 documented it as sufficient only.
 
 2.0.0 is a major version for one move and one weakened bound. The moded tokenizer is `Mode_tokenizer`, with the
 constructors from a `Mode_lexer` or a list of lexers and the `set_mode()`, `depth()` and `mode()` that `Tokenizer`

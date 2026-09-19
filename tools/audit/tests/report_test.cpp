@@ -17,6 +17,7 @@
 #include "munch/regex/parse.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/set.hpp"
+#include "munch/tools/audit/lexer_spec.hpp"
 #include "munch/tools/audit/price.hpp"
 #include "munch/tools/audit/read_flex.hpp"
 #include "munch/tools/audit/read_re2c.hpp"
@@ -103,6 +104,36 @@ TEST(Report, Windows_and_the_core_answer_where_bytes_do_not)
     // Every real row has an unbounded byte span: an identifier of any length carries no anchor.
     EXPECT_FALSE(conventional.report.byte_span.has_value());
     EXPECT_FALSE(blocks.report.byte_span.has_value());
+}
+
+TEST(Report, Every_certified_window_of_the_conventional_row_occurs)
+{
+    // The certified-splitting paper splits a row's certificates into occurring and vacuous ones, a vacuous window
+    // being one no completely tokenizable input contains. Over the conventional row read as bytes every certified
+    // window occurs, and the decision places each in an input that tokenizes completely and contains it: the
+    // conservative model refuses a window no live history crosses, so the vacuous certificates the paper's class
+    // abstraction reports for this row, a newline followed by a byte only a string or a line comment holds, come
+    // back here refused rather than certified, and occurring nowhere.
+    const auto [file, report]{audited("c-like-conventional.l")};
+
+    const auto lexer{build(file, "INITIAL")};
+
+    ASSERT_FALSE(report.windows.empty());
+
+    for (const auto& [window, origin] : report.windows)
+    {
+        const auto [witness, exhaustive]{lexer.window_occurrence(window)};
+
+        ASSERT_TRUE(exhaustive) << window;
+        ASSERT_FALSE(witness.empty()) << window;
+        EXPECT_NE(witness.find(window), std::string::npos) << window;
+        EXPECT_EQ(lexer.tokenize_all<std::size_t>(witness, [](const std::size_t, const std::size_t) {}), witness.size())
+                << window;
+    }
+
+    EXPECT_FALSE(lexer.is_split_window("\n#").has_value());
+    EXPECT_TRUE(lexer.window_occurrence("\n#").exhaustive);
+    EXPECT_TRUE(lexer.window_occurrence("\n#").witness.empty());
 }
 
 TEST(Report, Blame_names_the_token_that_consumes_a_candidate_mid_token)

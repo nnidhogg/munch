@@ -900,6 +900,266 @@ TEST_F(Lexer_test, Split_windows_stay_conservative_and_scoped)
     EXPECT_FALSE(plus_lexer.is_split_window("").has_value());
 }
 
+TEST_F(Lexer_test, Window_occurrence_splits_vacuous_certificates_from_occurring_ones)
+{
+    enum class Token_kind : uint8_t
+    {
+        Identifier,
+        Keyword,
+        Number,
+        Operator,
+    };
+
+    // Whether a witness is what it claims: a completely tokenizable input containing the window.
+    const auto contains_and_tokenizes{[](const Lexer& lexer, const std::string& witness,
+                                         const std::string_view window) {
+        const auto consumed{lexer.tokenize_all<Token_kind>(witness, [](const Token_kind, const std::size_t) {})};
+
+        return consumed == witness.size() && witness.find(window) != std::string::npos;
+    }};
+
+    // The vacuous certificate of the conservative model: over {0, 00, 01} the window 1001 is certified at origin 2,
+    // and no completely tokenizable input contains it, since the 1 ends a token, 00 is then the longest match, and
+    // no token begins with the 1 after it. The decision proves as much, from an exhausted search, while 001 occurs
+    // in 0001, the shortest input holding it: 001 itself tokenizes 00 and stops, and 0001 is 00 then 01.
+    Builder_dbg vacuous;
+
+    vacuous.add_token(text("0"), Token_kind::Identifier, 1);
+    vacuous.add_token(text("00"), Token_kind::Keyword, 1);
+    vacuous.add_token(text("01"), Token_kind::Operator, 1);
+
+    const auto vacuous_lexer{vacuous.build()};
+
+    ASSERT_EQ(vacuous_lexer.is_split_window("1001"), std::optional<std::size_t>{2});
+
+    const auto [none, settled]{vacuous_lexer.window_occurrence("1001")};
+
+    EXPECT_TRUE(settled);
+    EXPECT_TRUE(none.empty());
+
+    const auto [witness, exhaustive]{vacuous_lexer.window_occurrence("001")};
+
+    EXPECT_TRUE(exhaustive);
+    EXPECT_EQ(witness, "0001");
+    EXPECT_TRUE(contains_and_tokenizes(vacuous_lexer, witness, "001"));
+
+    // The refutation grammar's certificate is an occurring one: abx is certified at origin 1 and is itself a
+    // completely tokenizable input, a|bx, so it is its own shortest witness.
+    Builder_dbg refutation;
+
+    refutation.add_token(text("a"), Token_kind::Identifier, 2);
+    refutation.add_token(text("abc"), Token_kind::Keyword, 1);
+    refutation.add_token(text("bx"), Token_kind::Number, 2);
+    refutation.add_token(text("x"), Token_kind::Operator, 2);
+
+    const auto refutation_lexer{refutation.build()};
+
+    ASSERT_EQ(refutation_lexer.is_split_window("abx"), std::optional<std::size_t>{1});
+
+    const auto [occurring, decided]{refutation_lexer.window_occurrence("abx")};
+
+    EXPECT_TRUE(decided);
+    EXPECT_EQ(occurring, "abx");
+    EXPECT_TRUE(contains_and_tokenizes(refutation_lexer, occurring, "abx"));
+
+    // A window is_split_window() refuses is decided too: ab is refused over this set and occurs in abc, and a
+    // window over bytes no token uses occurs nowhere.
+    EXPECT_FALSE(refutation_lexer.is_split_window("ab").has_value());
+    EXPECT_EQ(refutation_lexer.window_occurrence("ab").witness, "abc");
+    EXPECT_TRUE(refutation_lexer.window_occurrence("ab").exhaustive);
+    EXPECT_TRUE(refutation_lexer.window_occurrence("q").witness.empty());
+    EXPECT_TRUE(refutation_lexer.window_occurrence("q").exhaustive);
+
+    // The empty window is contained in every input; its witness is a shortest token, never the empty input, so
+    // that an empty witness keeps meaning none.
+    EXPECT_EQ(refutation_lexer.window_occurrence("").witness, "a");
+    EXPECT_TRUE(refutation_lexer.window_occurrence("").exhaustive);
+}
+
+TEST_F(Lexer_test, Window_occurrence_agrees_with_the_research_oracle_on_every_small_window)
+{
+    enum class Token_kind : uint8_t
+    {
+        First,
+        Second,
+        Third,
+    };
+
+    // One of the five regex token sets occurring_windows.py validates against bounded enumeration, with the
+    // windows over {a, b} up to length three the oracle finds occurring and the length of the witness it found.
+    struct Universe
+    {
+        std::string_view name;
+
+        std::vector<Regex> tokens;
+
+        std::vector<std::pair<std::string_view, std::size_t>> occurring;
+    };
+
+    // The oracle's verdicts, as the program printed them: the occurring windows of each universe with the length of
+    // the witness, every other window of the fourteen occurring in no completely tokenizable input.
+    const std::vector<Universe> universes{
+            {.name = "{a+b, a}",
+             .tokens = {concat(plus(text("a")), text("b")), text("a")},
+             .occurring =
+                     {{"a", 1},
+                      {"b", 2},
+                      {"aa", 2},
+                      {"ab", 2},
+                      {"ba", 3},
+                      {"aaa", 3},
+                      {"aab", 3},
+                      {"aba", 3},
+                      {"baa", 4},
+                      {"bab", 4}}},
+            {.name = "{ab, a, b}",
+             .tokens = {concat(text("a"), text("b")), text("a"), text("b")},
+             .occurring =
+                     {{"a", 1},
+                      {"b", 1},
+                      {"aa", 2},
+                      {"ab", 2},
+                      {"ba", 2},
+                      {"bb", 2},
+                      {"aaa", 3},
+                      {"aab", 3},
+                      {"aba", 3},
+                      {"abb", 3},
+                      {"baa", 3},
+                      {"bab", 3},
+                      {"bba", 3},
+                      {"bbb", 3}}},
+            {.name = "{a+, b}",
+             .tokens = {plus(text("a")), text("b")},
+             .occurring =
+                     {{"a", 1},
+                      {"b", 1},
+                      {"aa", 2},
+                      {"ab", 2},
+                      {"ba", 2},
+                      {"bb", 2},
+                      {"aaa", 3},
+                      {"aab", 3},
+                      {"aba", 3},
+                      {"abb", 3},
+                      {"baa", 3},
+                      {"bab", 3},
+                      {"bba", 3},
+                      {"bbb", 3}}},
+            {.name = "{a|ab, b}",
+             .tokens = {choice(text("a"), concat(text("a"), text("b"))), text("b")},
+             .occurring =
+                     {{"a", 1},
+                      {"b", 1},
+                      {"aa", 2},
+                      {"ab", 2},
+                      {"ba", 2},
+                      {"bb", 2},
+                      {"aaa", 3},
+                      {"aab", 3},
+                      {"aba", 3},
+                      {"abb", 3},
+                      {"baa", 3},
+                      {"bab", 3},
+                      {"bba", 3},
+                      {"bbb", 3}}},
+            {.name = "{aa}", .tokens = {concat(text("a"), text("a"))}, .occurring = {{"a", 2}, {"aa", 2}, {"aaa", 4}}}};
+
+    const std::vector<std::string_view> windows{"a",   "b",   "aa",  "ab",  "ba",  "bb",  "aaa",
+                                                "aab", "aba", "abb", "baa", "bab", "bba", "bbb"};
+
+    std::size_t decided{0};
+
+    for (const auto& [name, tokens, occurring] : universes)
+    {
+        Builder_dbg builder;
+
+        for (std::size_t index{0}; index < tokens.size(); ++index)
+        {
+            builder.add_token(tokens[index], static_cast<Token_kind>(index), 1);
+        }
+
+        const auto lexer{builder.build()};
+
+        for (const auto window : windows)
+        {
+            const auto [witness, exhaustive]{lexer.window_occurrence(window)};
+
+            const auto expected{std::ranges::find(occurring, window, &std::pair<std::string_view, std::size_t>::first)};
+
+            ASSERT_TRUE(exhaustive) << name << ' ' << window;
+            EXPECT_EQ(!witness.empty(), expected != occurring.end()) << name << ' ' << window;
+
+            // Both searches find a shortest witness, so the lengths agree even where the witnesses need not; the
+            // witness is checked as the oracle checks its own, by tokenizing it and finding the window in it.
+            if (expected != occurring.end())
+            {
+                EXPECT_EQ(witness.size(), expected->second) << name << ' ' << window;
+                EXPECT_NE(witness.find(window), std::string::npos) << name << ' ' << window;
+                EXPECT_EQ(
+                        lexer.tokenize_all<Token_kind>(witness, [](const Token_kind, const std::size_t) {}),
+                        witness.size())
+                        << name << ' ' << window;
+            }
+
+            ++decided;
+        }
+    }
+
+    // The oracle's own count: 70 windows across five regex token sets.
+    EXPECT_EQ(decided, 70U);
+}
+
+TEST_F(Lexer_test, The_occurrence_cap_is_a_ceiling_on_the_states_the_search_holds)
+{
+    enum class Token_kind : uint8_t
+    {
+        Zero,
+        Pair,
+        One,
+    };
+
+    // Over {0, 00, 01} the window 001 occurs in 0001. The cap is the most states the search may hold, so every cap
+    // below the smallest one that settles the question answers nothing rather than something, and every cap from it
+    // on answers the same witness; zero holds nothing, not even the state the search starts in.
+    Builder builder;
+
+    builder.add_token(text("0"), Token_kind::Zero, 1);
+    builder.add_token(text("00"), Token_kind::Pair, 1);
+    builder.add_token(text("01"), Token_kind::One, 1);
+
+    const auto lexer{builder.build()};
+
+    EXPECT_FALSE(lexer.window_occurrence("001", 0).exhaustive);
+    EXPECT_TRUE(lexer.window_occurrence("001", 0).witness.empty());
+
+    std::size_t holds{1};
+
+    while (!lexer.window_occurrence("001", holds).exhaustive)
+    {
+        ASSERT_TRUE(lexer.window_occurrence("001", holds).witness.empty()) << "cap " << holds;
+
+        ++holds;
+    }
+
+    // Every byte of the witness admits at least one state, and the search settled with the witness at the cap.
+    EXPECT_GE(holds, 4U);
+    EXPECT_EQ(lexer.window_occurrence("001", holds).witness, "0001");
+
+    for (std::size_t cap{holds}; cap <= holds + 8; ++cap)
+    {
+        const auto [witness, exhaustive]{lexer.window_occurrence("001", cap)};
+
+        EXPECT_TRUE(exhaustive) << "cap " << cap;
+        EXPECT_EQ(witness, "0001") << "cap " << cap;
+    }
+
+    // A window occurring nowhere is proved so only by an exhausted search, and a cap that stops the search before
+    // it exhausts says nothing about it.
+    EXPECT_FALSE(lexer.window_occurrence("1001", 1).exhaustive);
+    EXPECT_TRUE(lexer.window_occurrence("1001").exhaustive);
+}
+
 TEST_F(Lexer_test, Window_fallback_plans_parallel_cuts_where_no_byte_certifies)
 {
     enum class Token_kind : uint8_t
