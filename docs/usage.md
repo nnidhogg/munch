@@ -418,11 +418,13 @@ lexer.anchor_free_span(inventory);          // 2: the interior again, now reache
 A window certificate is conditional on occurrence: it promises where the covering token begins in every completely
 tokenizable input containing the window, and a window no such input contains satisfies it vacuously, so
 `is_split_window()` may certify a window that anchors nothing. `window_occurrence(window)` splits the two readings. It
-decides exactly whether some completely tokenizable input contains the window, by the same boundary-guessing search as
-`rescue()` and `boundary_difference()` with a window matcher beside the scan, and a positive answer comes with a
-shortest such input; a certified window with a witness is an occurring certificate, one an exhaustive search finds no
-witness for is a vacuous one, and the cap is a ceiling as for the other two searches, so an answer under it is always
-one the cap paid for and a search it stops settles nothing:
+decides exactly whether some nonempty completely tokenizable input contains the window, by the same boundary-guessing
+search as `rescue()` and `boundary_difference()` with a window matcher beside the scan, and a positive answer comes
+with a shortest such input; a certified window with a witness is an occurring certificate, one an exhaustive search
+finds no witness for is a vacuous one, and the cap is a ceiling as for the other two searches, so an answer under it is
+always one the cap paid for and a search it stops settles nothing. The empty input, which contains the empty window
+alone, is no input a cut could fall in and is never a witness, so the empty window has a shortest token as its
+witness, or none under a token set with no positive-width token:
 
 ```cpp
 builder.add_token(text("0"), Token::Zero, 1);
@@ -490,6 +492,9 @@ else if (witness.empty()) { /* proved: the same inputs, cut the same way, over e
 else if (half == dfa::Separation_half::domain) { /* one set tokenizes the witness completely, the other does not */ }
 else { /* both tokenize the witness and cut it differently */ }
 ```
+
+These four decisions and `rescue()` under Error Recovery are declared together in `munch/dfa/boundary_search.hpp`, five
+instances of one search over guessed token boundaries, each forwarded by `core::Lexer`.
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying

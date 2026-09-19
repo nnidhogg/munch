@@ -24,7 +24,7 @@
 #include "munch/common/concepts.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/determinize.hpp"
-#include "munch/dfa/segmentation_difference.hpp"
+#include "munch/dfa/boundary_search.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/nfa/simulator.hpp"

@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "munch/dfa/segmentation_difference.hpp"
+#include "munch/dfa/boundary_search.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/regex/parse.hpp"
 #include "munch/regex/regex.hpp"
