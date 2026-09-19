@@ -294,6 +294,61 @@ jobs:
       - name: Verify the checked-in tables match
         run: git diff --exit-code libs/regex/src/xid_ranges.inc
 
+  class-data:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Two databases: the version the library pins for its own classes, and the version the regex-syntax that logos
+      # is locked to was generated from, which is the language the audit's logos reader must model.
+      - name: Fetch the pinned Unicode databases
+        run: |
+          mkdir -p ucd/17.0.0 ucd/16.0.0
+          curl -sSf -o ucd/17.0.0/DerivedCoreProperties.txt \
+                https://www.unicode.org/Public/17.0.0/ucd/DerivedCoreProperties.txt
+          curl -sSf -o ucd/17.0.0/PropList.txt \
+                https://www.unicode.org/Public/17.0.0/ucd/PropList.txt
+          curl -sSf -o ucd/17.0.0/DerivedGeneralCategory.txt \
+                https://www.unicode.org/Public/17.0.0/ucd/extracted/DerivedGeneralCategory.txt
+          curl -sSf -o ucd/16.0.0/DerivedCoreProperties.txt \
+                https://www.unicode.org/Public/16.0.0/ucd/DerivedCoreProperties.txt
+          curl -sSf -o ucd/16.0.0/PropList.txt \
+                https://www.unicode.org/Public/16.0.0/ucd/PropList.txt
+          curl -sSf -o ucd/16.0.0/DerivedGeneralCategory.txt \
+                https://www.unicode.org/Public/16.0.0/ucd/extracted/DerivedGeneralCategory.txt
+          cd ucd/17.0.0
+          echo "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08  DerivedCoreProperties.txt" \
+                | sha256sum -c -
+          echo "130dcddcaadaf071008bdfce1e7743e04fdfbc910886f017d9f9ac931d8c64dd  PropList.txt" \
+                | sha256sum -c -
+          echo "d62e5bab70ca74f099343f71224fa051cb1fdd61a1ab45c0488c44cfc0b6102e  DerivedGeneralCategory.txt" \
+                | sha256sum -c -
+          cd ../16.0.0
+          echo "39d35161f2954497f69e08bdb9e701493f476a3d30222de20028feda36c1dabd  DerivedCoreProperties.txt" \
+                | sha256sum -c -
+          echo "53d614508e2a0b2305a8aa21cd60d993de9326cdf65993660dfcce4503548583  PropList.txt" \
+                | sha256sum -c -
+          echo "7676ab755a41ef82108460238569e60ad65c191ddafe61b36c6765ec1353f293  DerivedGeneralCategory.txt" \
+                | sha256sum -c -
+
+      - name: Regenerate the class tables
+        run: |
+          python3 tools/unicode/generate_classes.py --version 17.0.0 \
+                ucd/17.0.0/DerivedCoreProperties.txt ucd/17.0.0/PropList.txt \
+                ucd/17.0.0/DerivedGeneralCategory.txt
+          python3 tools/unicode/generate_classes.py --version 16.0.0 \
+                ucd/16.0.0/DerivedCoreProperties.txt ucd/16.0.0/PropList.txt \
+                ucd/16.0.0/DerivedGeneralCategory.txt tools/audit/src/logos_class_ranges.inc
+
+      # The checked-in tables of both versions must be exactly what their databases generate.
+      - name: Verify the checked-in tables match
+        run: git diff --exit-code libs/regex/src/class_ranges.inc tools/audit/src/logos_class_ranges.inc
+
   install-consumer:
     runs-on: ubuntu-24.04
 

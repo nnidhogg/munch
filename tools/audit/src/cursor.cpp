@@ -10,11 +10,14 @@
 
 namespace munch::tools::audit
 {
-Cursor::Cursor(const std::string_view text, const std::size_t begin, const std::size_t end)
-    : text_{text}, at_{begin}, end_{end}
+Cursor::Cursor(
+        const std::string_view text, const std::size_t begin, const std::size_t end,
+        const Line_comment_end line_comment_end)
+    : text_{text}, at_{begin}, end_{end}, line_comment_end_{line_comment_end}
 {}
 
-Cursor::Cursor(const std::string_view text) : Cursor{text, 0, text.size()}
+Cursor::Cursor(const std::string_view text, const Line_comment_end line_comment_end)
+    : Cursor{text, 0, text.size(), line_comment_end}
 {}
 
 char Cursor::next(const std::string_view what)
@@ -55,7 +58,7 @@ void Cursor::skip_blanks()
 
         if (at("//"))
         {
-            while (peek() && *peek() != '\n')
+            while (peek() && *peek() != '\n' && (line_comment_end_ == Line_comment_end::newline || *peek() != '\r'))
             {
                 ++at_;
             }

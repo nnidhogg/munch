@@ -33,9 +33,10 @@ using Returning_t = std::vector<std::string>;
  *
  * A flex file is one scanner; a re2c file holds one per block with rules; a Rust file holds one per enum deriving
  * Logos. Rule order is the priority: flex and re2c take the longest match and, among rules matching it, the first in
- * the file, which is exactly the maximal-munch scan with priority by rule index that the library runs; logos ranks
- * by a number of its own, which each of its rules carries. The code sections and the actions' bodies are carried as
- * text and never interpreted beyond the return the audit looks for.
+ * the file, which is exactly the maximal-munch scan with priority by rule index that the library runs, so a reader
+ * whose generator ranks some rules otherwise than by their place, as re2c ranks its `<*>` and default rules, lists
+ * them where that rank puts them; logos ranks by a number of its own, which each of its rules carries. The code
+ * sections and the actions' bodies are carried as text and never interpreted beyond the return the audit looks for.
  */
 struct Lexer_spec
 {
@@ -108,7 +109,8 @@ struct Lexer_spec
     regex::Definitions_t definitions;
 
     /**
-     * @brief The start conditions besides INITIAL: the ones a flex file declares, the ones a re2c file's rules name.
+     * @brief The start conditions besides INITIAL: the ones a flex file declares, the ones a re2c file's rules name,
+     *        INITIAL among them where a re2c rule names it, inclusive.
      */
     std::vector<Condition> conditions;
 
@@ -128,7 +130,9 @@ struct Lexer_spec
     regex::Parse_options parse{};
 
     /**
-     * @brief The rules, in file order.
+     * @brief The rules, in the order their generator ranks them, which is file order except where a reader says
+     *        otherwise: the re2c reader places the `<*>` rules after the rules naming a condition and the default
+     *        rules after them all, as re2c ranks those wherever in the block they stand.
      */
     std::vector<Rule> rules;
 
@@ -475,7 +479,7 @@ struct Include_directive
 [[nodiscard]] Token_set token_set(const Lexer_spec& spec, std::string_view condition);
 
 /**
- * @brief The rules active in a start condition, in file order.
+ * @brief The rules active in a start condition, in the order the specification lists them.
  *
  * A rule naming no condition is active in INITIAL and in every inclusive condition; a rule naming a condition is
  * active in it; a rule naming `*` is active everywhere.

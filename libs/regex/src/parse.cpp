@@ -868,6 +868,11 @@ Members Reader::bracket_members()
                 byte_beyond_ascii = byte_beyond_ascii || last >= 0x80;
             }
 
+            if (last < byte && options_.ranges_either_way)
+            {
+                std::swap(byte, last);
+            }
+
             if (last < byte)
             {
                 at_ = open;

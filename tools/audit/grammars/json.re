@@ -9,6 +9,7 @@ int lex(const char* YYCURSOR)
     /*!re2c
         re2c:define:YYCTYPE = char;
         re2c:yyfill:enable = 0;
+        re2c:eof = 0;
 
         digit     = [0-9];
         hex       = [0-9a-fA-F];
@@ -20,7 +21,6 @@ int lex(const char* YYCURSOR)
         "-"? ("0" | [1-9] digit*) ("." digit+)? ([eE] [-+]? digit+)?  { return NUMBER; }
         ["] (unescaped | escape)* ["]                              { return STRING; }
         [ \t\n\r]+                                                 { continue; }
-        *                                                          { return ERROR; }
         $                                                          { return END; }
     */
 }
