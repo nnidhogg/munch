@@ -225,3 +225,28 @@ if (MUNCH_BUILD_TESTS)
             COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/analysis/recovery-crosscheck/crosscheck_anchor.py
             $<TARGET_FILE:munch_crosscheck_anchor>)
 endif ()
+
+# Recomputes the certified-splitting paper's emitted figures from the library's own decisions, the token sets rebuilt
+# as the paper's programs build them and digest-checked; analysis/paper4-recompute/compare.py holds the output
+# against the committed emissions line by line. The corpora are not redistributed, so the test entry runs the
+# sections that need none: the UTF-8 shape's sync distance and the wide cutoff sweep.
+add_executable(munch_paper4_recompute src/paper4_recompute.cpp)
+
+target_include_directories(munch_paper4_recompute
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+)
+
+target_link_libraries(munch_paper4_recompute
+        PRIVATE
+        munch_core
+        munch_audit
+)
+
+if (MUNCH_BUILD_TESTS)
+    # The offline sections, pinned by paper4_offline.sh: the UTF-8 shape's sync distance and the wide cutoff sweep's
+    # counts, the paper's figures the library decides in a fraction of a second with no corpus.
+    add_test(NAME munch_paper4_recompute_offline
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/paper4_offline.sh $<TARGET_FILE:munch_paper4_recompute>
+                    ${CMAKE_CURRENT_BINARY_DIR}/paper4-offline)
+endif ()
