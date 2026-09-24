@@ -149,13 +149,16 @@ namespace
 [[nodiscard]] nfa::Builder to_range(const Regex& regex, const std::size_t min, const std::size_t max)
 {
     /**
-     * Matches a range of occurrences of a sub-pattern.
+     * Matches a range of occurrences of a sub-pattern: the first `min` copies are required, and the state reached
+     * after each further copy accepts, so the scan may stop at any count in the range.
      *
-     * (S) --ε--> ... (regex n) --ε--> ... --ε--> ((regex m))
-     *                         \          \                 /
-     *                          \          \ ------ε-----> /
-     *                           \                        /
-     *                            \ ---------ε---------> /
+     * (S) --ε--> ... ((regex n)) --ε--> ... --ε--> ((regex m))
+     *
+     * The state reached after `k` copies is made an accepting state of its own, as the optional repetition makes
+     * its skipped start one. An epsilon from there into the accepting state of a later copy would accept the same
+     * words and more: that state is inside the sub-pattern and carries the sub-pattern's own outgoing transitions,
+     * so a scan taking the epsilon could go on consuming through them and the machine would admit a suffix of the
+     * body that the pattern does not, `b` under `(ab+){0,1}` among them.
      */
     nfa::Builder S;
 
@@ -171,11 +174,7 @@ namespace
         S = S.append(to_nfa(regex));
     });
 
-    std::ranges::for_each(pending, [&S](const auto pending_state) {
-        std::ranges::for_each(std::views::keys(S.accept_states()), [&S, pending_state](const auto accept_state) {
-            S.add_epsilon_transition(pending_state, accept_state);
-        });
-    });
+    std::ranges::for_each(pending, [&S](const auto pending_state) { S.add_accept_state(pending_state); });
 
     return S;
 }
