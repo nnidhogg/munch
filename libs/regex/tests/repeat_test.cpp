@@ -255,6 +255,123 @@ TEST_F(Repeat_test, A_range_over_a_body_that_ends_in_a_repetition_admits_no_suff
     EXPECT_EQ(Simulator::run(bounded, "abab"), Match(token, 4));
 }
 
+TEST_F(Repeat_test, Every_repetition_agrees_with_its_expansion_on_every_body_and_input_enumerated)
+{
+    using namespace testing;
+
+    // A range between two counts is the choice of the concatenations of each count; an exact repetition is the
+    // concatenation of that many copies; at least n is n copies then any number; a plus is a copy then any number;
+    // an optional is nothing or a copy; a star is nothing or a plus. Each is compared with what it must equal under
+    // longest match, over bodies whose last atom repeats, is optional or is nullable, and over every input over
+    // three bytes up to a length, since the range's own defect stood for a year in a suite whose bodies were one
+    // byte long. Against the old construction this case reports thousands of mismatches.
+    const auto a{text('a')}, b{text('b')}, c{text('c')};
+
+    const std::vector<Regex> bodies{
+            a,
+            concat(a, b),
+            plus(a),
+            concat(a, plus(b)),
+            concat(a, optional(b)),
+            choice(a, b),
+            kleene(concat(a, b)),
+            concat(kleene(a), b),
+            choice(a, concat(a, b)),
+            concat(optional(b), a),
+            optional(a),
+            kleene(a),
+            range(concat(a, optional(b)), 0, 2),
+            kleene(concat(plus(a), b)),
+            choice(concat(a, plus(b)), c)};
+
+    std::vector<std::string> inputs{""};
+
+    for (std::size_t length{1}; length <= 5; ++length)
+    {
+        std::vector<std::string> next;
+
+        for (const auto& shorter : inputs)
+        {
+            if (shorter.size() == length - 1)
+            {
+                for (const char byte : {'a', 'b', 'c'})
+                {
+                    next.push_back(shorter + byte);
+                }
+            }
+        }
+
+        inputs.insert(inputs.end(), next.begin(), next.end());
+    }
+
+    const auto power{[](const Regex& body, const std::size_t n) {
+        auto out{exact(body, 0)};
+
+        for (std::size_t i{0}; i < n; ++i)
+        {
+            out = i == 0 ? body : concat(out, body);
+        }
+
+        return out;
+    }};
+
+    const auto any_count{[&power](const Regex& body, const std::size_t lo, const std::size_t hi) {
+        auto out{power(body, lo)};
+
+        for (std::size_t k{lo + 1}; k <= hi; ++k)
+        {
+            out = choice(out, power(body, k));
+        }
+
+        return out;
+    }};
+
+    const Token token{1, 1};
+
+    const auto agree{[&](const Regex& left, const Regex& right, const std::string& name) {
+        const auto one{to_nfa(left).set_accept_token(token).build()};
+
+        const auto other{to_nfa(right).set_accept_token(token).build()};
+
+        for (const auto& input : inputs)
+        {
+            EXPECT_EQ(Simulator::run(one, input), Simulator::run(other, input)) << name << " on \"" << input << '"';
+        }
+    }};
+
+    for (std::size_t which{0}; which < bodies.size(); ++which)
+    {
+        const auto& body{bodies[which]};
+
+        const auto name{"body " + std::to_string(which)};
+
+        for (std::size_t lo{0}; lo <= 2; ++lo)
+        {
+            for (std::size_t hi{lo}; hi <= 3; ++hi)
+            {
+                agree(range(body, lo, hi), any_count(body, lo, hi), name + " range");
+            }
+        }
+
+        for (std::size_t n{0}; n <= 3; ++n)
+        {
+            agree(exact(body, n), power(body, n), name + " exact");
+
+            agree(at_least(body, n), concat(power(body, n), kleene(body)), name + " at least");
+        }
+
+        agree(plus(body), concat(body, kleene(body)), name + " plus");
+
+        agree(optional(body), choice(exact(body, 0), body), name + " optional");
+
+        agree(kleene(body), choice(exact(body, 0), plus(body)), name + " kleene");
+
+        agree(range(range(body, 0, 1), 1, 2), any_count(range(body, 0, 1), 1, 2), name + " nested range");
+
+        agree(concat(c, range(body, 0, 2), c), concat(c, any_count(body, 0, 2), c), name + " range inside");
+    }
+}
+
 TEST_F(Repeat_test, Copies_are_independent_values)
 {
     // The Indirect gives Repeat value semantics: copying a pattern deep-copies its child, so both the original and the
