@@ -49,6 +49,9 @@ would cost.
   --case-insensitive    re2c's --case-insensitive: both quotes case-insensitive
   --returns NAME        a form besides return an action returns a token through, NAME(x), NAME = x or NAME alone;
                         may repeat
+  --include DIR         a directory the scanner's includes are looked for in, as the compiler's -I names it: an
+                        angle-bracket include is looked for there alone, a quoted one beside the file including it
+                        first; may repeat
   --condition NAME      audit this start condition only; may repeat
   --windows N           the longest window tried, 3 unless given; 4 is the planners' own limit
   --price BYTE          price this byte as well, written as a character, \n \t \r \0, or 0xHH; may repeat
@@ -105,6 +108,11 @@ struct Options
      * @brief The files.
      */
     std::vector<std::string> files;
+
+    /**
+     * @brief The directories an include is looked for in, as the compiler's `-I` names them, in order.
+     */
+    std::vector<std::string> include_dirs;
 
     /**
      * @brief The path of the input the certified-anchor supply is measured on, none when empty.
@@ -267,6 +275,10 @@ struct Outcome
         else if (argument == "--returns")
         {
             options.returning.emplace_back(value());
+        }
+        else if (argument == "--include")
+        {
+            options.include_dirs.emplace_back(value());
         }
         else if (argument == "--condition")
         {
@@ -940,20 +952,47 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 
         try
         {
-            // A file the code includes by a quoted name is read beside the file audited, as a compiler run there
-            // would find it; one not there is refused by the reader.
-            const Include_reader_t includes{[&path](const std::string_view name) -> std::optional<std::string> {
-                const auto beside{std::filesystem::path{path}.parent_path() / std::string{name}};
+            // A file the code includes is read as a compiler resolves it: a quoted name beside the file including it
+            // and then on the include path, an angle-bracket name on the include path alone; a quoted one not
+            // found is refused by the reader, an angle-bracket one not found taken for a system header's.
+            const Include_reader_t includes{
+                    [&path, &options](
+                            const std::string_view name, const std::string_view from,
+                            const Include_form form) -> std::optional<Included> {
+                        std::vector<std::filesystem::path> where;
 
-                std::ifstream in{beside, std::ios::binary};
+                        if (form == Include_form::quoted)
+                        {
+                            const auto including{
+                                    from.empty() ? std::filesystem::path{path} : std::filesystem::path{from}};
 
-                if (!in)
-                {
-                    return std::nullopt;
-                }
+                            where.push_back(including.parent_path());
+                        }
 
-                return std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-            }};
+                        for (const auto& dir : options.include_dirs)
+                        {
+                            where.emplace_back(dir);
+                        }
+
+                        for (const auto& dir : where)
+                        {
+                            const auto file{dir / std::string{name}};
+
+                            std::ifstream in{file, std::ios::binary};
+
+                            if (in)
+                            {
+                                return Included{
+                                        .text =
+                                                std::string{
+                                                        std::istreambuf_iterator<char>{in},
+                                                        std::istreambuf_iterator<char>{}},
+                                        .path = file.string()};
+                            }
+                        }
+
+                        return std::nullopt;
+                    }};
 
             scanners = kind == Kind::flex  ? read_flex(source, options.returning, includes) :
                        kind == Kind::antlr ? read_antlr(source) :
