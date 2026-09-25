@@ -46,9 +46,13 @@ would cost.
                         with a grammar declaration is ANTLR, one deriving Logos is logos, the rest flex
   --flex-syntax         re2c's -F: flex-style definitions, {name} references, bare letters literal
   --case-inverted       re2c's --case-inverted: "..." case-insensitive and '...' exact
-  --case-insensitive    re2c's --case-insensitive: both quotes case-insensitive
+  --case-insensitive    re2c's --case-insensitive: both quotes case-insensitive; flex's -i: the case option on,
+                        the file's own %option words overriding it
   --returns NAME        a form besides return an action returns a token through, NAME(x), NAME = x or NAME alone;
                         may repeat
+  --include DIR         a directory the scanner's includes are looked for in, as the compiler's -I names it: an
+                        angle-bracket include is looked for there alone, a quoted one beside the file including it
+                        first; may repeat
   --condition NAME      audit this start condition only; may repeat
   --windows N           the longest window tried, 3 unless given; 4 is the planners' own limit
   --price BYTE          price this byte as well, written as a character, \n \t \r \0, or 0xHH; may repeat
@@ -87,6 +91,11 @@ struct Options
     Re2c_flags re2c_flags;
 
     /**
+     * @brief flex's `-i`, for its files: the case option on before the file's own `%option` words.
+     */
+    bool flex_case_insensitive{false};
+
+    /**
      * @brief The forms besides `return` an action returns a token through.
      */
     Returning_t returning;
@@ -105,6 +114,11 @@ struct Options
      * @brief The files.
      */
     std::vector<std::string> files;
+
+    /**
+     * @brief The directories an include is looked for in, as the compiler's `-I` names them, in order.
+     */
+    std::vector<std::string> include_dirs;
 
     /**
      * @brief The path of the input the certified-anchor supply is measured on, none when empty.
@@ -263,10 +277,16 @@ struct Outcome
         else if (argument == "--case-insensitive")
         {
             options.re2c_flags.case_insensitive = true;
+
+            options.flex_case_insensitive = true;
         }
         else if (argument == "--returns")
         {
             options.returning.emplace_back(value());
+        }
+        else if (argument == "--include")
+        {
+            options.include_dirs.emplace_back(value());
         }
         else if (argument == "--condition")
         {
@@ -762,7 +782,10 @@ struct Outcome
 
     for (const auto& [name, exclusive] : spec.conditions)
     {
-        names.push_back(name);
+        if (!std::ranges::contains(names, name))
+        {
+            names.push_back(name);
+        }
     }
 
     std::erase_if(names, [&](const std::string& name) {
@@ -902,14 +925,28 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 
     std::set<std::string> empty;
 
-    const auto note_empty{[&options, &empty](const Lexer_spec& spec) {
+    // Whether some file was refused: its refusal is the answer then, and a --condition it left unmatched is not a
+    // second one.
+    auto any_refused{false};
+
+    const auto note_empty{[&options, &empty](const Lexer_spec& spec, const Kind kind) {
         const auto audited{conditions_of(spec, options)};
+
+        // INITIAL is every scanner's default condition but a re2c scanner's whose rules name conditions, which
+        // has none.
+        const auto initial{
+                kind != Kind::re2c ||
+                std::ranges::any_of(spec.rules, [](const Lexer_spec::Rule& rule) { return rule.conditions.empty(); }) ||
+                std::ranges::any_of(spec.conditions, [](const Lexer_spec::Condition& condition) {
+                    return condition.name == "INITIAL";
+                })};
 
         for (const auto& name : options.conditions)
         {
-            const auto has{name == "INITIAL" || std::ranges::any_of(spec.conditions, [&name](const auto& condition) {
-                               return condition.name == name;
-                           })};
+            const auto has{
+                    (name == "INITIAL" && initial) ||
+                    std::ranges::any_of(
+                            spec.conditions, [&name](const auto& condition) { return condition.name == name; })};
 
             if (has && !std::ranges::contains(audited, name))
             {
@@ -940,22 +977,50 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 
         try
         {
-            // A file the code includes by a quoted name is read beside the file audited, as a compiler run there
-            // would find it; one not there is refused by the reader.
-            const Include_reader_t includes{[&path](const std::string_view name) -> std::optional<std::string> {
-                const auto beside{std::filesystem::path{path}.parent_path() / std::string{name}};
+            // A file the code includes is read as a compiler resolves it: a quoted name beside the file including it
+            // and then on the include path, an angle-bracket name on the include path alone; a quoted one not
+            // found is refused by the reader, an angle-bracket one not found taken for a system header's.
+            const Include_reader_t includes{
+                    [&path, &options](
+                            const std::string_view name, const std::string_view from,
+                            const Include_form form) -> std::optional<Included> {
+                        std::vector<std::filesystem::path> where;
 
-                std::ifstream in{beside, std::ios::binary};
+                        if (form == Include_form::quoted)
+                        {
+                            const auto including{
+                                    from.empty() ? std::filesystem::path{path} : std::filesystem::path{from}};
 
-                if (!in)
-                {
-                    return std::nullopt;
-                }
+                            where.push_back(including.parent_path());
+                        }
 
-                return std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-            }};
+                        for (const auto& dir : options.include_dirs)
+                        {
+                            where.emplace_back(dir);
+                        }
 
-            scanners = kind == Kind::flex  ? read_flex(source, options.returning, includes) :
+                        for (const auto& dir : where)
+                        {
+                            const auto file{dir / std::string{name}};
+
+                            std::ifstream in{file, std::ios::binary};
+
+                            if (in)
+                            {
+                                return Included{
+                                        .text =
+                                                std::string{
+                                                        std::istreambuf_iterator<char>{in},
+                                                        std::istreambuf_iterator<char>{}},
+                                        .path = file.string()};
+                            }
+                        }
+
+                        return std::nullopt;
+                    }};
+
+            scanners = kind == Kind::flex ?
+                               read_flex(source, options.returning, includes, options.flex_case_insensitive) :
                        kind == Kind::antlr ? read_antlr(source) :
                        kind == Kind::logos ? read_logos(source) :
                                              read_re2c(source, options.re2c_flags, options.returning, includes);
@@ -965,6 +1030,8 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
             refused = error.what();
 
             every = false;
+
+            any_refused = true;
         }
 
         // A scanner with no rule at all tokenizes nothing, so it certifies nothing and an empty report would say
@@ -977,6 +1044,8 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
             refused = std::format("the scanner at line {} has no rule, so it tokenizes nothing", empty->line);
 
             every = false;
+
+            any_refused = true;
         }
 
         // A file the reading finds no scanner in audits nothing, which is no success.
@@ -988,6 +1057,8 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
                                             "the file declares no scanner: no re2c block with rules";
 
             every = false;
+
+            any_refused = true;
         }
 
         if (options.json)
@@ -1031,7 +1102,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
                     unmatched.erase(name);
                 }
 
-                note_empty(spec);
+                note_empty(spec, kind);
             }
         }
 
@@ -1047,7 +1118,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
                 unmatched.erase(name);
             }
 
-            note_empty(spec);
+            note_empty(spec, kind);
 
             if (options.json)
             {
@@ -1098,7 +1169,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
         out << "  ]\n}\n";
     }
 
-    if (!unmatched.empty())
+    if (!unmatched.empty() && !any_refused)
     {
         const auto& name{*unmatched.begin()};
 
