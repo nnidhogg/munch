@@ -774,7 +774,10 @@ struct Outcome
 
     for (const auto& [name, exclusive] : spec.conditions)
     {
-        names.push_back(name);
+        if (!std::ranges::contains(names, name))
+        {
+            names.push_back(name);
+        }
     }
 
     std::erase_if(names, [&](const std::string& name) {
@@ -914,14 +917,28 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 
     std::set<std::string> empty;
 
-    const auto note_empty{[&options, &empty](const Lexer_spec& spec) {
+    // Whether some file was refused: its refusal is the answer then, and a --condition it left unmatched is not a
+    // second one.
+    auto any_refused{false};
+
+    const auto note_empty{[&options, &empty](const Lexer_spec& spec, const Kind kind) {
         const auto audited{conditions_of(spec, options)};
+
+        // INITIAL is every scanner's default condition but a re2c scanner's whose rules name conditions, which
+        // has none.
+        const auto initial{
+                kind != Kind::re2c ||
+                std::ranges::any_of(spec.rules, [](const Lexer_spec::Rule& rule) { return rule.conditions.empty(); }) ||
+                std::ranges::any_of(spec.conditions, [](const Lexer_spec::Condition& condition) {
+                    return condition.name == "INITIAL";
+                })};
 
         for (const auto& name : options.conditions)
         {
-            const auto has{name == "INITIAL" || std::ranges::any_of(spec.conditions, [&name](const auto& condition) {
-                               return condition.name == name;
-                           })};
+            const auto has{
+                    (name == "INITIAL" && initial) ||
+                    std::ranges::any_of(
+                            spec.conditions, [&name](const auto& condition) { return condition.name == name; })};
 
             if (has && !std::ranges::contains(audited, name))
             {
@@ -1004,6 +1021,8 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
             refused = error.what();
 
             every = false;
+
+            any_refused = true;
         }
 
         // A scanner with no rule at all tokenizes nothing, so it certifies nothing and an empty report would say
@@ -1016,6 +1035,8 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
             refused = std::format("the scanner at line {} has no rule, so it tokenizes nothing", empty->line);
 
             every = false;
+
+            any_refused = true;
         }
 
         // A file the reading finds no scanner in audits nothing, which is no success.
@@ -1027,6 +1048,8 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
                                             "the file declares no scanner: no re2c block with rules";
 
             every = false;
+
+            any_refused = true;
         }
 
         if (options.json)
@@ -1070,7 +1093,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
                     unmatched.erase(name);
                 }
 
-                note_empty(spec);
+                note_empty(spec, kind);
             }
         }
 
@@ -1086,7 +1109,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
                 unmatched.erase(name);
             }
 
-            note_empty(spec);
+            note_empty(spec, kind);
 
             if (options.json)
             {
@@ -1137,7 +1160,7 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
         out << "  ]\n}\n";
     }
 
-    if (!unmatched.empty())
+    if (!unmatched.empty() && !any_refused)
     {
         const auto& name{*unmatched.begin()};
 
