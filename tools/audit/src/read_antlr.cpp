@@ -1542,9 +1542,8 @@ Lexer_spec Grammar::read()
 
             // A `lexer::members` action is the lexer's wherever it stands, and an unscoped `members` action is
             // written into both classes a combined grammar generates, the lexer's among them, as ANTLR's grammar
-            // documentation has it; only a `parser::members` action leaves the lexer alone. The twelfth bundle
-            // read this the other way, on a recollection rather than the document, and accepted a combined
-            // grammar whose unscoped members override the lexer's own nextToken.
+            // documentation has it; only a `parser::members` action leaves the lexer alone, so a combined grammar's
+            // unscoped members override the lexer's own nextToken as a `lexer::members` action does.
             // The actions written into the lexer class: `members` under every target, and the C++ target's
             // `declarations`, which its template writes inside the class in the header; its `definitions` go to
             // the source file at namespace scope, where a function is no method of the lexer's. Every action's

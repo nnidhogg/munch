@@ -2535,7 +2535,7 @@ int main()
     }
 
     {
-        // The assignments-budget witness, graduated from banked to pinned by the read that specified it:
+        // The assignments-budget witness, pinned as specified:
         // one non-accepting initial state and six accepting blocks of width six, where byte (t, r, k)
         // sends block i member m to block t member (m + k i) mod 6, encoded as death plus restart when
         // the image member equals r. The closure holds 217 elements, far under its budget, while the
