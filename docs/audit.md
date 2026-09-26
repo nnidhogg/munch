@@ -527,6 +527,10 @@ The grammars under `tools/audit/grammars/` are the study's rows in every syntax,
 and `.rs` file to its `.l` twin: the readers must build token sets that cut no input differently, decided by
 `boundary_difference()` over every input rather than a sample.
 
+Code in the generator's own language, C, C++, Rust, Java or C#, inside actions, hooks, members and included headers is
+read as far as the text decides, as the rules above state, and an action the text does not decide is refused by name,
+with its line and the reason.
+
 ## The JSON Form
 
 With `--json` the run is one document: an array `files`, each with its `path`, `kind`, a `refused` message or null, and
