@@ -4,9 +4,9 @@
 #include <limits>
 #include <optional>
 #include <ranges>
-#include <set>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace munch::dfa
 {
@@ -23,14 +23,21 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
     constexpr std::size_t before{std::numeric_limits<std::size_t>::max()};
 
     // The cloud of hypotheses (state, origin). A set, exactly as the proof's model: the seed and the rename can
-    // propose the identical pair and must coalesce.
-    std::set<std::pair<std::size_t, std::size_t>> cloud;
+    // propose the identical pair and must coalesce. Held as a sorted vector without duplicates, the same set without a
+    // node allocated per hypothesis per byte; the next cloud's storage is kept across bytes for the same reason.
+    std::vector<std::pair<std::size_t, std::size_t>> cloud;
+
+    std::vector<std::pair<std::size_t, std::size_t>> next;
+
+    cloud.reserve(simulator.state_count());
+
+    next.reserve(simulator.state_count() + 1);
 
     for (std::size_t state{0}; state < simulator.state_count(); ++state)
     {
         if (simulator.is_live(state))
         {
-            cloud.emplace(state, before);
+            cloud.emplace_back(state, before);
         }
     }
 
@@ -44,7 +51,7 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
             return simulator.is_accepting(state);
         })};
 
-        std::set<std::pair<std::size_t, std::size_t>> next;
+        next.clear();
 
         for (const auto& [state, origin] : cloud)
         {
@@ -55,7 +62,7 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
                 // hypothesis that cannot consume the byte is an impossible history and is dropped, never restarted.
                 const auto begins{state == simulator.init_state() && !simulator.init_reentrant()};
 
-                next.emplace(*to, begins ? at : origin);
+                next.emplace_back(*to, begins ? at : origin);
             }
         }
 
@@ -65,7 +72,7 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
         {
             if (const auto to{simulator.step(simulator.init_state(), byte)}; to && simulator.is_live(*to))
             {
-                next.emplace(*to, at);
+                next.emplace_back(*to, at);
             }
         }
 
@@ -74,6 +81,12 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
         {
             return std::nullopt;
         }
+
+        std::ranges::sort(next);
+
+        const auto duplicates{std::ranges::unique(next)};
+
+        next.erase(duplicates.begin(), duplicates.end());
 
         cloud.swap(next);
     }
