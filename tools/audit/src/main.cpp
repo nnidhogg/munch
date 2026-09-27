@@ -59,9 +59,17 @@ would cost.
   --input FILE          measure the certified-anchor supply on this file: how many positions its certificates cut
                         at, per kibibyte, and the gaps between them
   --json                one JSON document instead of text
+  --require-certified BYTE
+                        require every audited scanner and condition to certify this byte exactly, written as for
+                        --price; may repeat
+  --require-certified-modulo BYTE
+                        require it certified once the discarded tokens are deleted, the report's certified modulo
+                        discarded row; may repeat
 
-Exit status is 0 when every scanner and condition audited, 1 when one was refused, a file with no scanner among
-them, 2 on a command-line error, a --condition no scanner has or no rule stands in among them.
+Exit status is 0 when every scanner and condition audited and met every requirement, 1 when one was refused, a file
+with no scanner among them, whatever the requirements found, 2 on a command-line error, a --condition no scanner has
+or no rule stands in among them, and 3 when every one audited and one did not certify a byte required of it, each
+such byte named on standard error after the whole report.
 )"};
 
 /**
@@ -73,6 +81,27 @@ enum class Kind : std::uint8_t
     re2c,
     antlr,
     logos
+};
+
+/**
+ * @brief A byte the command line requires every audited scanner and condition to certify.
+ */
+struct Requirement
+{
+    /**
+     * @brief The byte.
+     */
+    unsigned char byte{};
+
+    /**
+     * @brief Whether the byte need certify only once the discarded tokens are deleted, rather than exactly.
+     */
+    bool modulo{};
+
+    /**
+     * @brief The byte as the command line spelled it, which the line naming an unmet requirement repeats.
+     */
+    std::string text;
 };
 
 /**
@@ -134,6 +163,11 @@ struct Options
      * @brief Whether the output is JSON rather than text.
      */
     bool json{false};
+
+    /**
+     * @brief The bytes every audited scanner and condition must certify, in the order given.
+     */
+    std::vector<Requirement> required;
 };
 
 /**
@@ -165,6 +199,40 @@ struct Outcome
      * @brief How many rules the condition holds.
      */
     std::size_t rules{};
+};
+
+/**
+ * @brief What a run found besides the report it wrote: whether every scanner and condition audited, and which
+ *        requirements the audited ones did not meet.
+ */
+struct Findings
+{
+    /**
+     * @brief Whether every scanner and condition audited.
+     */
+    bool every{true};
+
+    /**
+     * @brief One line per requirement an audited condition did not meet, naming the file, the scanner, the condition
+     *        and the byte, in the order the report reaches them.
+     */
+    std::vector<std::string> unmet;
+};
+
+/**
+ * @brief What reading one file found: its scanners, and why the file was refused when it was.
+ */
+struct Reading
+{
+    /**
+     * @brief The scanners the reading found, none when the reader refused the file.
+     */
+    std::vector<Lexer_spec> scanners;
+
+    /**
+     * @brief Why the file was refused, empty when it was not.
+     */
+    std::string refused;
 };
 
 /**
@@ -319,6 +387,15 @@ struct Outcome
         {
             options.json = true;
         }
+        else if (argument == "--require-certified" || argument == "--require-certified-modulo")
+        {
+            const auto text{value()};
+
+            options.required.push_back(Requirement{
+                    .byte = parse_byte(text),
+                    .modulo = argument == "--require-certified-modulo",
+                    .text = std::string{text}});
+        }
         else if (argument.starts_with("--"))
         {
             throw std::invalid_argument{std::format("unknown option {}", argument)};
@@ -379,21 +456,24 @@ struct Outcome
                     ++depth;
 
                     scan += 2;
-                }
-                else if (source.substr(scan).starts_with("*/"))
-                {
-                    --depth;
 
-                    scan += 2;
-
-                    if (depth == 0)
-                    {
-                        return scan;
-                    }
+                    continue;
                 }
-                else
+
+                if (!source.substr(scan).starts_with("*/"))
                 {
                     ++scan;
+
+                    continue;
+                }
+
+                --depth;
+
+                scan += 2;
+
+                if (depth == 0)
+                {
+                    return scan;
                 }
             }
 
@@ -910,14 +990,263 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 }
 
 /**
+ * @brief A file a scanner's code includes, looked for as a compiler resolves it: a quoted name beside the file
+ *        including it and then on the include path, an angle-bracket name on the include path alone. A quoted one not
+ *        found is refused by the reader, an angle-bracket one not found taken for a system header's.
+ * @param name The name the include gives.
+ * @param from The path of the file holding the include, empty when it is the file named on the command line.
+ * @param form How the include spells the name.
+ * @param path The path of the file named on the command line.
+ * @param include_dirs The include path, in order.
+ * @return The file's text and path, none when it is found nowhere.
+ */
+[[nodiscard]] std::optional<Included> find_include(
+        const std::string_view name, const std::string_view from, const Include_form form, const std::string& path,
+        const std::vector<std::string>& include_dirs)
+{
+    std::vector<std::filesystem::path> where;
+
+    if (form == Include_form::quoted)
+    {
+        const auto including{from.empty() ? std::filesystem::path{path} : std::filesystem::path{from}};
+
+        where.push_back(including.parent_path());
+    }
+
+    for (const auto& dir : include_dirs)
+    {
+        where.emplace_back(dir);
+    }
+
+    for (const auto& dir : where)
+    {
+        const auto file{dir / std::string{name}};
+
+        std::ifstream in{file, std::ios::binary};
+
+        if (!in)
+        {
+            continue;
+        }
+
+        return Included{
+                .text = std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}},
+                .path = file.string()};
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief Reads one file's scanners with its includes resolved, and refuses a file the reading finds no scanner in or a
+ *        scanner with no rule in. A scanner with no rule at all tokenizes nothing, so it certifies nothing and an empty
+ *        report would say otherwise: an empty flex rules section under `%option nodefault`, and an enum deriving Logos
+ *        with no variant, are files of that shape, and one such scanner beside others is refused with its line, since
+ *        the report would pass it over in silence.
+ * @param path The file's path.
+ * @param source The file's text.
+ * @param kind The kind the file is read as.
+ * @param options The command line.
+ * @return The scanners, and why the file was refused, empty when it was not.
+ */
+[[nodiscard]] Reading read_scanners(
+        const std::string& path, const std::string_view source, const Kind kind, const Options& options)
+{
+    const Include_reader_t includes{
+            [&path, &options](const std::string_view name, const std::string_view from, const Include_form form) {
+                return find_include(name, from, form, path, options.include_dirs);
+            }};
+
+    std::vector<Lexer_spec> scanners;
+
+    try
+    {
+        scanners = kind == Kind::flex  ? read_flex(source, options.returning, includes, options.flex_case_insensitive) :
+                   kind == Kind::antlr ? read_antlr(source) :
+                   kind == Kind::logos ? read_logos(source) :
+                                         read_re2c(source, options.re2c_flags, options.returning, includes);
+    }
+    catch (const Spec_error& error)
+    {
+        return Reading{.scanners = {}, .refused = error.what()};
+    }
+
+    if (const auto empty{std::ranges::find_if(scanners, [](const Lexer_spec& spec) { return spec.rules.empty(); })};
+        empty != scanners.end())
+    {
+        auto refused{std::format("the scanner at line {} has no rule, so it tokenizes nothing", empty->line)};
+
+        return Reading{.scanners = std::move(scanners), .refused = std::move(refused)};
+    }
+
+    // A file the reading finds no scanner in audits nothing, which is no success.
+    if (scanners.empty())
+    {
+        return Reading{
+                .scanners = {},
+                .refused = kind == Kind::flex  ? "the file declares no scanner: no rules section" :
+                           kind == Kind::antlr ? "the file declares no scanner: no lexer rule" :
+                           kind == Kind::logos ? "the file declares no scanner: no enum deriving Logos" :
+                                                 "the file declares no scanner: no re2c block with rules"};
+    }
+
+    return Reading{.scanners = std::move(scanners), .refused = {}};
+}
+
+/**
+ * @brief Audits one scanner's conditions and writes its part of the report, checking every requirement against each
+ *        condition's report.
+ * @param out The stream.
+ * @param path The path of the file the scanner is in.
+ * @param spec The scanner.
+ * @param options The command line.
+ * @param input The input the supply is measured on, none when none was given.
+ * @param last Whether the scanner is its file's last, whose JSON object no comma follows.
+ * @return Whether every condition audited, and the requirements the audited ones did not meet.
+ */
+[[nodiscard]] Findings audit_scanner(
+        std::ostream& out, const std::string& path, const Lexer_spec& spec, const Options& options,
+        const std::optional<std::string>& input, const bool last)
+{
+    const auto conditions{conditions_of(spec, options)};
+
+    Findings findings;
+
+    if (options.json)
+    {
+        out << std::format("      {{\"line\": {}, ", spec.line);
+
+        write_rules(out, spec);
+
+        out << ", \"conditions\": [\n";
+    }
+
+    for (std::size_t slot{0}; slot < conditions.size(); ++slot)
+    {
+        const auto outcome{audit_condition(spec, conditions[slot], options, input)};
+
+        findings.every = findings.every && outcome.report.has_value();
+
+        // A requirement is checked where the report stands; a refused condition's refusal is its answer.
+        for (const auto& [byte, modulo, text] : options.required)
+        {
+            if (!outcome.report ||
+                std::ranges::binary_search(modulo ? outcome.report->modulo : outcome.report->exact, byte))
+            {
+                continue;
+            }
+
+            findings.unmet.push_back(std::format(
+                    "{}, scanner at line {}, condition {}: '{}' is not certified{}", path, spec.line, conditions[slot],
+                    text, modulo ? " modulo discarded" : ""));
+        }
+
+        if (!options.json)
+        {
+            write_text(out, spec, outcome, options.input);
+
+            continue;
+        }
+
+        write_json(out, spec, outcome, options.input);
+
+        out << (slot + 1 < conditions.size() ? ",\n" : "\n");
+    }
+
+    if (options.json)
+    {
+        out << (last ? "      ]}\n" : "      ]},\n");
+    }
+
+    return findings;
+}
+
+/**
+ * @brief Audits one file's scanners and writes its part of the report: its path, then its refusal when it was refused
+ *        and its scanners when it was not.
+ * @param out The stream.
+ * @param path The file's path.
+ * @param kind The kind the file was read as.
+ * @param reading The file's scanners, and why it was refused, empty when it was not.
+ * @param options The command line.
+ * @param input The input the supply is measured on, none when none was given.
+ * @param last Whether the file is the last on the command line, whose JSON object no comma follows.
+ * @return Whether every scanner and condition audited, false for a refused file, and the requirements the audited
+ *         ones did not meet.
+ */
+[[nodiscard]] Findings audit_file(
+        std::ostream& out, const std::string& path, const Kind kind, const Reading& reading, const Options& options,
+        const std::optional<std::string>& input, const bool last)
+{
+    const auto& [scanners, refused]{reading};
+
+    if (!options.json)
+    {
+        out << (refused.empty() ?
+                        std::format(
+                                "== {}\na certificate holds while the scanner is in its start condition, so a cut "
+                                "needs the condition known\n\n",
+                                path) :
+                        std::format("== {}\nrefused: {}\n\n", path, refused));
+    }
+    else
+    {
+        out << std::format(
+                R"(    {{"path": {}, "kind": "{}", "refused": {}, "scanners": [)", json_string(path),
+                kind == Kind::flex  ? "flex" :
+                kind == Kind::antlr ? "antlr" :
+                kind == Kind::logos ? "logos" :
+                                      "re2c",
+                refused.empty() ? std::string{"null"} : json_string(refused));
+    }
+
+    const auto separator{last ? "\n" : ",\n"};
+
+    // A refused file's scanners are not audited, so its list stays empty.
+    if (!refused.empty())
+    {
+        if (options.json)
+        {
+            out << "]}" << separator;
+        }
+
+        return Findings{.every = false, .unmet = {}};
+    }
+
+    if (options.json)
+    {
+        out << '\n';
+    }
+
+    Findings findings;
+
+    for (std::size_t which{0}; which < scanners.size(); ++which)
+    {
+        const auto [every, unmet]{
+                audit_scanner(out, path, scanners[which], options, input, which + 1 == scanners.size())};
+
+        findings.every = findings.every && every;
+
+        findings.unmet.insert(findings.unmet.end(), unmet.begin(), unmet.end());
+    }
+
+    if (options.json)
+    {
+        out << "    ]}" << separator;
+    }
+
+    return findings;
+}
+
+/**
  * @brief Audits every file, writing as it goes.
  * @param options The command line.
  * @param out The stream.
- * @return Whether every scanner and condition audited.
+ * @return Whether every scanner and condition audited, and the requirements the audited ones did not meet.
  */
-[[nodiscard]] bool run(const Options& options, std::ostream& out)
+[[nodiscard]] Findings run(const Options& options, std::ostream& out)
 {
-    auto every{true};
+    Findings findings;
 
     // The conditions asked for that no scanner of any file has, which is a command line naming nothing, and among
     // them the ones some scanner has with no rule in them, which is a command line naming no token set.
@@ -971,197 +1300,28 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
 
         const auto kind{options.kind.value_or(kind_of(source))};
 
-        std::vector<Lexer_spec> scanners;
+        const auto reading{read_scanners(path, source, kind, options)};
 
-        std::string refused;
+        any_refused = any_refused || !reading.refused.empty();
 
-        try
+        for (const auto& spec : reading.scanners)
         {
-            // A file the code includes is read as a compiler resolves it: a quoted name beside the file including it
-            // and then on the include path, an angle-bracket name on the include path alone; a quoted one not
-            // found is refused by the reader, an angle-bracket one not found taken for a system header's.
-            const Include_reader_t includes{
-                    [&path, &options](
-                            const std::string_view name, const std::string_view from,
-                            const Include_form form) -> std::optional<Included> {
-                        std::vector<std::filesystem::path> where;
-
-                        if (form == Include_form::quoted)
-                        {
-                            const auto including{
-                                    from.empty() ? std::filesystem::path{path} : std::filesystem::path{from}};
-
-                            where.push_back(including.parent_path());
-                        }
-
-                        for (const auto& dir : options.include_dirs)
-                        {
-                            where.emplace_back(dir);
-                        }
-
-                        for (const auto& dir : where)
-                        {
-                            const auto file{dir / std::string{name}};
-
-                            std::ifstream in{file, std::ios::binary};
-
-                            if (in)
-                            {
-                                return Included{
-                                        .text =
-                                                std::string{
-                                                        std::istreambuf_iterator<char>{in},
-                                                        std::istreambuf_iterator<char>{}},
-                                        .path = file.string()};
-                            }
-                        }
-
-                        return std::nullopt;
-                    }};
-
-            scanners = kind == Kind::flex ?
-                               read_flex(source, options.returning, includes, options.flex_case_insensitive) :
-                       kind == Kind::antlr ? read_antlr(source) :
-                       kind == Kind::logos ? read_logos(source) :
-                                             read_re2c(source, options.re2c_flags, options.returning, includes);
-        }
-        catch (const Spec_error& error)
-        {
-            refused = error.what();
-
-            every = false;
-
-            any_refused = true;
-        }
-
-        // A scanner with no rule at all tokenizes nothing, so it certifies nothing and an empty report would say
-        // otherwise: an empty flex rules section under `%option nodefault`, and an enum deriving Logos with no
-        // variant, are files of that shape, and one such scanner beside others is refused with its line, since the
-        // report would pass it over in silence.
-        if (const auto empty{std::ranges::find_if(scanners, [](const Lexer_spec& spec) { return spec.rules.empty(); })};
-            refused.empty() && empty != scanners.end())
-        {
-            refused = std::format("the scanner at line {} has no rule, so it tokenizes nothing", empty->line);
-
-            every = false;
-
-            any_refused = true;
-        }
-
-        // A file the reading finds no scanner in audits nothing, which is no success.
-        if (scanners.empty() && refused.empty())
-        {
-            refused = kind == Kind::flex  ? "the file declares no scanner: no rules section" :
-                      kind == Kind::antlr ? "the file declares no scanner: no lexer rule" :
-                      kind == Kind::logos ? "the file declares no scanner: no enum deriving Logos" :
-                                            "the file declares no scanner: no re2c block with rules";
-
-            every = false;
-
-            any_refused = true;
-        }
-
-        if (options.json)
-        {
-            out << std::format(
-                    R"(    {{"path": {}, "kind": "{}", )", json_string(path),
-                    kind == Kind::flex  ? "flex" :
-                    kind == Kind::antlr ? "antlr" :
-                    kind == Kind::logos ? "logos" :
-                                          "re2c");
-
-            if (!refused.empty())
-            {
-                out << std::format(R"("refused": {}, "scanners": []}})", json_string(refused));
-            }
-            else
-            {
-                out << "\"refused\": null, \"scanners\": [\n";
-            }
-        }
-        else if (!refused.empty())
-        {
-            out << std::format("== {}\nrefused: {}\n\n", path, refused);
-        }
-        else
-        {
-            out << std::format(
-                    "== {}\na certificate holds while the scanner is in its start condition, so a cut needs the "
-                    "condition known\n\n",
-                    path);
-        }
-
-        // A refused file's conditions are still the file's, so a --condition naming one of them named something,
-        // whatever the refusal was.
-        if (!refused.empty())
-        {
-            for (const auto& spec : scanners)
-            {
-                for (const auto& name : conditions_of(spec, options))
-                {
-                    unmatched.erase(name);
-                }
-
-                note_empty(spec, kind);
-            }
-        }
-
-        // A refused file has written its refusal and closed its object, so its scanners are not serialised after it.
-        for (std::size_t which{0}; which < (refused.empty() ? scanners.size() : 0); ++which)
-        {
-            const auto& spec{scanners[which]};
-
-            const auto conditions{conditions_of(spec, options)};
-
-            for (const auto& name : conditions)
+            // A refused file's conditions are still the file's, so a --condition naming one of them named something,
+            // whatever the refusal was.
+            for (const auto& name : conditions_of(spec, options))
             {
                 unmatched.erase(name);
             }
 
             note_empty(spec, kind);
-
-            if (options.json)
-            {
-                out << std::format("      {{\"line\": {}, ", spec.line);
-
-                write_rules(out, spec);
-
-                out << ", \"conditions\": [\n";
-            }
-
-            for (std::size_t slot{0}; slot < conditions.size(); ++slot)
-            {
-                const auto outcome{audit_condition(spec, conditions[slot], options, input)};
-
-                every = every && outcome.report.has_value();
-
-                if (options.json)
-                {
-                    write_json(out, spec, outcome, options.input);
-
-                    out << (slot + 1 < conditions.size() ? ",\n" : "\n");
-                }
-                else
-                {
-                    write_text(out, spec, outcome, options.input);
-                }
-            }
-
-            if (options.json)
-            {
-                out << (which + 1 < scanners.size() ? "      ]},\n" : "      ]}\n");
-            }
         }
 
-        if (options.json && refused.empty())
-        {
-            out << "    ]}";
-        }
+        const auto [every, unmet]{
+                audit_file(out, path, kind, reading, options, input, index + 1 == options.files.size())};
 
-        if (options.json)
-        {
-            out << (index + 1 < options.files.size() ? ",\n" : "\n");
-        }
+        findings.every = findings.every && every;
+
+        findings.unmet.insert(findings.unmet.end(), unmet.begin(), unmet.end());
     }
 
     if (options.json)
@@ -1169,23 +1329,23 @@ void write_json(std::ostream& out, const Lexer_spec& spec, const Outcome& outcom
         out << "  ]\n}\n";
     }
 
-    if (!unmatched.empty() && !any_refused)
+    if (unmatched.empty() || any_refused)
     {
-        const auto& name{*unmatched.begin()};
-
-        throw std::invalid_argument{
-                empty.contains(name) ?
-                        std::format(
-                                "--condition {} names a condition no rule stands in, so there is no token set to "
-                                "audit under it",
-                                name) :
-                        std::format(
-                                "--condition {} names a condition no scanner of the files has, so nothing was "
-                                "audited under it",
-                                name)};
+        return findings;
     }
 
-    return every;
+    const auto& name{*unmatched.begin()};
+
+    throw std::invalid_argument{
+            empty.contains(name) ?
+                    std::format(
+                            "--condition {} names a condition no rule stands in, so there is no token set to audit "
+                            "under it",
+                            name) :
+                    std::format(
+                            "--condition {} names a condition no scanner of the files has, so nothing was audited "
+                            "under it",
+                            name)};
 }
 
 } // namespace
@@ -1205,11 +1365,18 @@ int main(const int argc, char** argv)
         // Written whole once every file is audited, so that an error leaves no part of a document behind.
         std::ostringstream out;
 
-        const auto every{run(options, out)};
+        const auto [every, unmet]{run(options, out)};
 
         std::cout << out.str();
 
-        return every ? EXIT_SUCCESS : EXIT_FAILURE;
+        // The unmet requirements after the report, one line each; a refusal outranks them, since a refused
+        // condition's requirements could not be checked.
+        for (const auto& line : unmet)
+        {
+            std::cerr << "munch-audit: " << line << '\n';
+        }
+
+        return !every ? EXIT_FAILURE : unmet.empty() ? EXIT_SUCCESS : 3;
     }
     catch (const std::invalid_argument& error)
     {

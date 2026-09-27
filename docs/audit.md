@@ -36,10 +36,33 @@ that, so that a string literal or a comment quoting an opener or a derive says n
 | `--price BYTE` | Price this byte as well as the newline and the near misses. A character, `\n`, `\t`, `\r`, `\0` or `0xHH`. Repeatable. |
 | `--input FILE` | Measure the certified-anchor supply on this file: how many of its positions the certificates cut at, per kibibyte, and the gaps between them. One file, measured under every report. |
 | `--json` | One JSON document for the whole run instead of text. |
+| `--require-certified BYTE` | Require every audited scanner and condition to certify this byte exactly, the report's `certified bytes` row. The byte is written as for `--price`. Repeatable. |
+| `--require-certified-modulo BYTE` | Require every audited scanner and condition to certify this byte once the discarded tokens are deleted, the report's `certified modulo discarded` row, which an exact certificate meets as well. Repeatable. |
 
-The exit status is 0 when every scanner and condition audited, 1 when one was refused, a file the reading finds no
-scanner in being refused as such, and 2 on a command-line error, a `--condition` no scanner of the files has among them.
-The output is written whole once every file is audited, so an error leaves no part of a document behind.
+The exit status is 0 when every scanner and condition audited and met every requirement. It is 1 when one was refused, a
+file the reading finds no scanner in being refused as such; this holds whatever the requirements found, since a refused
+condition's requirements cannot be checked. It is 2 on a command-line error, such as a `--condition` no scanner of the
+files has or a byte option whose value spells no byte. It is 3 when every one audited and one did not certify a byte
+required of it. The output is written whole once every file is audited, so an error leaves no part of a document behind.
+A requirement changes nothing in the output, the JSON document included. Each requirement an audited condition did not
+meet is named on standard error after the report, in one line giving the file, the scanner's line, the condition and the
+byte as the command line spelled it; these lines are written under a refusal too, for the conditions that did audit.
+
+### Asserting a Certificate in CI
+
+A project whose parallel or resumable scan relies on a certificate can hold its grammar to it, so that an edit losing
+the certificate fails the build rather than the scan. JSON's whitespace certifies once the discarded tokens are deleted,
+so its CI would run
+
+```
+munch-audit --require-certified-modulo '\t' --require-certified-modulo '\n' --require-certified-modulo '\r' \
+    tools/audit/grammars/json.l
+```
+
+which exits 0 while the three bytes certify. A rule that later consumes one of them mid-token, a string admitting a raw
+newline for instance, makes it exit 3 with a line such as `munch-audit: tools/audit/grammars/json.l, scanner at line 11,
+condition INITIAL: '\n' is not certified modulo discarded`, the full report above it saying which token now stands in
+the way.
 
 ## Reading the Report
 

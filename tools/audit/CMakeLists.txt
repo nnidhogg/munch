@@ -53,6 +53,7 @@ if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/cursor_test.cpp
             tests/expression_test.cpp
+            tests/main_test.cpp
             tests/read_antlr_test.cpp
             tests/read_flex_test.cpp
             tests/read_logos_test.cpp
@@ -70,5 +71,12 @@ if (MUNCH_BUILD_TESTS)
 
     add_test(NAME ${PROJECT_NAME}_tests COMMAND ${PROJECT_NAME}_tests)
 
-    target_compile_definitions(${PROJECT_NAME}_tests PRIVATE SOURCE_DIR="${MUNCH_SOURCE_DIR}")
+    # The command's own tests run the program built beside them.
+    add_dependencies(${PROJECT_NAME}_tests ${PROJECT_NAME}_cli)
+
+    target_compile_definitions(${PROJECT_NAME}_tests
+            PRIVATE
+            SOURCE_DIR="${MUNCH_SOURCE_DIR}"
+            MUNCH_AUDIT="$<TARGET_FILE:${PROJECT_NAME}_cli>"
+    )
 endif ()
