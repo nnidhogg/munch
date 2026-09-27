@@ -632,8 +632,17 @@ Piece Reader::atom(const Definitions_t& definitions)
 
             for (auto flag{next("a flag or ':' after '(?'")}; flag != ':'; flag = next("a flag or ':' after '(?'"))
             {
+                // flex takes one '-' among the flags, everything after it turned off; a second is its "bad
+                // character" error, `(?i--i:` and `(?-i-s:` both, so it is refused here too.
                 if (flag == '-')
                 {
+                    if (negated)
+                    {
+                        --at_;
+
+                        fail("a second '-' among the group flags, which flex refuses");
+                    }
+
                     negated = true;
                 }
                 else if (flag == 'i')

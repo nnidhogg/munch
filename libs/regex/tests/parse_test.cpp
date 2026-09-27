@@ -279,6 +279,12 @@ TEST(Parse, The_caseless_option_folds_letters_in_texts_brackets_and_definitions)
     EXPECT_EQ(matched(parse("(?-i:ab)c", {}, caseless), "abC"), 3);
     EXPECT_FALSE(accepts(parse("(?-i:ab)c", {}, caseless), "ABC"));
     EXPECT_EQ(refused_at("(?s:.)"), 2);
+
+    // flex takes one '-' among the flags, applying them in order, and refuses a second as a bad character.
+    EXPECT_FALSE(accepts(parse("(?i-i:a)"), "A"));
+    EXPECT_TRUE(accepts(parse("(?-:a)"), "a"));
+    EXPECT_EQ(refused_at("(?i--i:a)"), 4);
+    EXPECT_EQ(refused_at("(?-i-i:a)"), 4);
 }
 
 TEST(Parse, Definitions_expand_and_nest)
