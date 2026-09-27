@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <compare>
@@ -217,6 +218,185 @@ bool separates(const Lexer& lexer, const Lexer& other, const std::string_view wi
     }
 
     return mine.has_value() && theirs.has_value() && *mine != *theirs;
+}
+
+/**
+ * @brief Whether a witness is what boundary_counterexample() or crossing_counterexample() claims: a completely
+ *        tokenizable input holding an occurrence of the window crossed by a token at the gap, or cut there, checked by
+ *        scanning the witness and reading the boundaries off the scan, the token starts and the input's end.
+ * @param lexer The token set.
+ * @param witness The input claimed.
+ * @param window The window asked about.
+ * @param gap The gap of the window asked about.
+ * @param cut Whether the occurrence claimed has a boundary at the gap, as against crossing_counterexample(), rather
+ *        than a token crossing it, as against boundary_counterexample().
+ * @return True when the witness tokenizes completely and some occurrence of the window in it is cut at the gap exactly
+ *         when claimed.
+ */
+bool shows(
+        const Lexer& lexer, const std::string_view witness, const std::string_view window, const std::size_t gap,
+        const bool cut)
+{
+    std::vector<std::size_t> boundaries;
+
+    std::size_t next{0};
+
+    const auto consumed{lexer.tokenize_all<std::size_t>(witness, [&](const std::size_t, const std::size_t length) {
+        boundaries.push_back(next);
+
+        next += length;
+    })};
+
+    if (consumed != witness.size())
+    {
+        return false;
+    }
+
+    boundaries.push_back(witness.size());
+
+    for (auto at{witness.find(window)}; at != std::string_view::npos; at = witness.find(window, at + 1))
+    {
+        if (std::ranges::binary_search(boundaries, at + gap) == cut)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @brief The token starts maximal munch gives an input over a set of literal tokens, computed from the literals
+ *        themselves rather than by any compiled machine: from every start the longest literal the input continues
+ *        with is taken.
+ * @param tokens The literals, non-empty and distinct.
+ * @param input The input.
+ * @return One flag per byte, set where a token begins, or std::nullopt when the scan stops before the end.
+ */
+std::optional<std::vector<bool>> munch_starts(const std::vector<std::string>& tokens, const std::string_view input)
+{
+    std::vector<bool> starts(input.size(), false);
+
+    for (std::size_t at{0}; at < input.size();)
+    {
+        std::size_t longest{0};
+
+        for (const auto& token : tokens)
+        {
+            if (token.size() > longest && input.substr(at).starts_with(token))
+            {
+                longest = token.size();
+            }
+        }
+
+        if (longest == 0)
+        {
+            return std::nullopt;
+        }
+
+        starts[at] = true;
+
+        at += longest;
+    }
+
+    return starts;
+}
+
+/**
+ * @brief Every string over an alphabet from length one up to a bound, shorter strings first and each length in the
+ *        alphabet's order.
+ * @param alphabet The bytes the strings are made of.
+ * @param longest The longest length enumerated.
+ * @return The strings.
+ */
+std::vector<std::string> words(const std::string_view alphabet, const std::size_t longest)
+{
+    std::vector<std::string> out;
+
+    std::vector<std::string> layer{""};
+
+    for (std::size_t length{1}; length <= longest; ++length)
+    {
+        std::vector<std::string> next;
+
+        for (const auto& prefix : layer)
+        {
+            for (const auto byte : alphabet)
+            {
+                next.push_back(prefix + byte);
+            }
+        }
+
+        out.insert(out.end(), next.begin(), next.end());
+
+        layer = std::move(next);
+    }
+
+    return out;
+}
+
+/**
+ * @brief Every set of one to a given number of distinct literals drawn from a pool, in the pool's order.
+ * @param pool The literals drawn from.
+ * @param largest The most literals a set holds.
+ * @return The sets.
+ */
+std::vector<std::vector<std::string>> literal_sets(const std::vector<std::string>& pool, const std::size_t largest)
+{
+    std::vector<std::vector<std::string>> out;
+
+    std::vector<std::vector<std::size_t>> layer{{}};
+
+    for (std::size_t size{1}; size <= largest; ++size)
+    {
+        std::vector<std::vector<std::size_t>> next;
+
+        for (const auto& chosen : layer)
+        {
+            for (auto index{chosen.empty() ? 0 : chosen.back() + 1}; index < pool.size(); ++index)
+            {
+                auto extended{chosen};
+
+                extended.push_back(index);
+
+                out.emplace_back();
+
+                for (const auto picked : extended)
+                {
+                    out.back().push_back(pool[picked]);
+                }
+
+                next.push_back(std::move(extended));
+            }
+        }
+
+        layer = std::move(next);
+    }
+
+    return out;
+}
+
+/**
+ * @brief A lexer over a set of literal tokens, one text token per literal at one priority, the kinds the literals'
+ *        indices.
+ * @param tokens The literals, non-empty and distinct.
+ * @return The lexer.
+ */
+Lexer literal_lexer(const std::vector<std::string>& tokens)
+{
+    enum class Literal : std::uint8_t
+    {
+        first
+    };
+
+    Builder builder;
+
+    for (std::size_t index{0}; index < tokens.size(); ++index)
+    {
+        builder.add_token(text(tokens[index]), static_cast<Literal>(index), 1);
+    }
+
+    return builder.build();
 }
 
 } // namespace
@@ -1351,8 +1531,8 @@ TEST_F(Lexer_test, Window_counterexample_settles_what_the_model_refuses_and_prov
     EXPECT_TRUE(fails(refutation_lexer, "abc", "ab", 1));
 
     // Neither the empty window nor an origin outside the window is a certificate.
-    EXPECT_THROW(static_cast<void>(refutation_lexer.window_counterexample("", 0)), std::invalid_argument);
-    EXPECT_THROW(static_cast<void>(refutation_lexer.window_counterexample("ab", 2)), std::invalid_argument);
+    EXPECT_THROW(std::ignore = refutation_lexer.window_counterexample("", 0), std::invalid_argument);
+    EXPECT_THROW(std::ignore = refutation_lexer.window_counterexample("ab", 2), std::invalid_argument);
 }
 
 TEST_F(Lexer_test, Window_counterexample_agrees_with_the_research_oracles_on_every_small_certificate)
@@ -1498,6 +1678,334 @@ TEST_F(Lexer_test, The_counterexample_cap_is_a_ceiling_on_the_states_the_search_
     // exhausts says nothing about it.
     EXPECT_FALSE(lexer.window_counterexample("1001", 2, 1).exhaustive);
     EXPECT_TRUE(lexer.window_counterexample("1001", 2).exhaustive);
+}
+
+TEST_F(Lexer_test, Boundary_profile_finds_boundaries_where_no_covering_origin_is_fixed)
+{
+    // Over {0, 1, x, 001x, 011x} the window 0011 occurs in 0011 itself, cut 0|0|1|1, and in 0011x, cut 0|011x: gaps 0
+    // and 1 are boundaries at every occurrence, while the token covering the final byte begins at offset 3 on the one
+    // and at offset 1 on the other, so no certificate holds of the window at any origin. Gaps 2, 3 and 4 are cut in
+    // 0011 and crossed in 0011x.
+    const auto lexer{literal_lexer({"0", "1", "x", "001x", "011x"})};
+
+    EXPECT_EQ(lexer.window_occurrence("0011").witness, "0011");
+
+    for (std::size_t origin{0}; origin < 4; ++origin)
+    {
+        const auto [witness, exhaustive]{lexer.window_counterexample("0011", origin)};
+
+        EXPECT_TRUE(exhaustive) << origin;
+        EXPECT_TRUE(fails(lexer, witness, "0011", origin)) << origin;
+    }
+
+    EXPECT_EQ(lexer.window_counterexample("0011", 1).witness, "0011");
+    EXPECT_EQ(lexer.window_counterexample("0011", 3).witness, "0011x");
+
+    const auto profile{lexer.boundary_profile("0011")};
+
+    ASSERT_EQ(profile.size(), 5U);
+
+    const std::vector<dfa::Gap> expected{dfa::Gap::must, dfa::Gap::must, dfa::Gap::may, dfa::Gap::may, dfa::Gap::may};
+
+    for (std::size_t gap{0}; gap < profile.size(); ++gap)
+    {
+        const auto& [verdict, crossed, cut]{profile[gap]};
+
+        EXPECT_EQ(verdict, expected[gap]) << gap;
+        EXPECT_TRUE(crossed.exhaustive && cut.exhaustive) << gap;
+        EXPECT_EQ(cut.witness, "0011") << gap;
+        EXPECT_TRUE(shows(lexer, cut.witness, "0011", gap, true)) << gap;
+        EXPECT_EQ(crossed.witness, verdict == dfa::Gap::must ? "" : "0011x") << gap;
+
+        if (!crossed.witness.empty())
+        {
+            EXPECT_TRUE(shows(lexer, crossed.witness, "0011", gap, false)) << gap;
+        }
+
+        // Each verdict holds the two single-gap decisions.
+        EXPECT_EQ(crossed.witness, lexer.boundary_counterexample("0011", gap).witness) << gap;
+        EXPECT_EQ(cut.witness, lexer.crossing_counterexample("0011", gap).witness) << gap;
+    }
+
+    // The cap is the same ceiling as for the other searches: zero holds nothing, one holds only the state the search
+    // starts in, and neither settles anything.
+    EXPECT_FALSE(lexer.boundary_counterexample("0011", 0, 0).exhaustive);
+    EXPECT_FALSE(lexer.boundary_counterexample("0011", 2, 1).exhaustive);
+    EXPECT_TRUE(lexer.boundary_counterexample("0011", 2, 1).witness.empty());
+    EXPECT_FALSE(lexer.crossing_counterexample("0011", 4, 1).exhaustive);
+    EXPECT_TRUE(std::ranges::all_of(lexer.boundary_profile("0011", 1), [](const dfa::Gap_verdict& gap) {
+        return gap.verdict == dfa::Gap::undetermined;
+    }));
+
+    // The empty window has no gap and a gap past the window's end names none of its gaps.
+    EXPECT_THROW(std::ignore = lexer.boundary_counterexample("", 0), std::invalid_argument);
+    EXPECT_THROW(std::ignore = lexer.boundary_counterexample("0011", 5), std::invalid_argument);
+    EXPECT_THROW(std::ignore = lexer.crossing_counterexample("0011", 5), std::invalid_argument);
+    EXPECT_THROW(std::ignore = lexer.boundary_profile(""), std::invalid_argument);
+}
+
+TEST_F(Lexer_test, Boundary_profile_agrees_with_a_brute_force_maximal_munch_oracle)
+{
+    // Every set of one to three literals over {a, b} of length one to three, and every window over {a, b} of length one
+    // to four at every gap, the one after its final byte included. The oracle scans every input to length ten by
+    // maximal munch over the literals themselves and records, per gap, the shortest input holding an occurrence crossed
+    // there and the shortest holding one cut there, the input's end a cut. The profile must be exhaustive and read the
+    // records: must where only a cut was seen, never where only a crossing was, may where both were and absent where
+    // the window never occurred, which must be exactly where window_occurrence() places it nowhere, with every witness
+    // as short as the oracle's. Every witness falls inside the oracle's bound, which bounds the check: a verdict whose
+    // shortest refutation were longer than ten would pass here.
+    constexpr std::size_t bound{10};
+
+    const auto windows{words("ab", 4)};
+
+    const auto inputs{words("ab", bound)};
+
+    std::size_t decided{0};
+
+    std::map<dfa::Gap, std::size_t> tally;
+
+    for (const auto& tokens : literal_sets(words("ab", 3), 3))
+    {
+        const auto lexer{literal_lexer(tokens)};
+
+        const auto name{std::ranges::fold_left(tokens, std::string{}, [](std::string out, const std::string& token) {
+            return std::move(out) + token + ' ';
+        })};
+
+        // The shortest input length per window, gap and whether the gap was cut.
+        std::map<std::tuple<std::string_view, std::size_t, bool>, std::size_t> shortest;
+
+        // Notes the input's length at every gap of every occurrence of the window in it, unless a shorter one was seen.
+        const auto note{[&](const std::string& input, const std::vector<bool>& starts, const std::string_view window) {
+            for (auto at{input.find(window)}; at != std::string::npos; at = input.find(window, at + 1))
+            {
+                for (std::size_t gap{0}; gap <= window.size(); ++gap)
+                {
+                    const auto cut{at + gap == input.size() || starts[at + gap]};
+
+                    shortest.try_emplace({window, gap, cut}, input.size());
+                }
+            }
+        }};
+
+        for (const auto& input : inputs)
+        {
+            const auto starts{munch_starts(tokens, input)};
+
+            if (!starts)
+            {
+                continue;
+            }
+
+            for (const auto& window : windows)
+            {
+                note(input, *starts, window);
+            }
+        }
+
+        const auto length{[&](const std::string_view window, const std::size_t gap, const bool cut) {
+            const auto found{shortest.find({window, gap, cut})};
+
+            return found == shortest.end() ? 0 : found->second;
+        }};
+
+        for (const auto& window : windows)
+        {
+            const auto profile{lexer.boundary_profile(window)};
+
+            const auto occurrence{lexer.window_occurrence(window)};
+
+            ASSERT_EQ(profile.size(), window.size() + 1) << name << window;
+            ASSERT_TRUE(occurrence.exhaustive) << name << window;
+
+            for (std::size_t gap{0}; gap < profile.size(); ++gap)
+            {
+                const auto& [verdict, crossed, cut]{profile[gap]};
+
+                const auto crossing{length(window, gap, false)};
+
+                const auto cutting{length(window, gap, true)};
+
+                const auto expected{
+                        crossing == 0 && cutting == 0 ? dfa::Gap::absent :
+                        crossing == 0                 ? dfa::Gap::must :
+                        cutting == 0                  ? dfa::Gap::never :
+                                                        dfa::Gap::may};
+
+                ++decided;
+
+                ++tally[verdict];
+
+                ASSERT_TRUE(crossed.exhaustive && cut.exhaustive) << name << window << ' ' << gap;
+                EXPECT_EQ(verdict, expected) << name << window << ' ' << gap;
+                EXPECT_EQ(verdict == dfa::Gap::absent, occurrence.witness.empty()) << name << window << ' ' << gap;
+                EXPECT_EQ(crossed.witness.size(), crossing) << name << window << ' ' << gap;
+                EXPECT_EQ(cut.witness.size(), cutting) << name << window << ' ' << gap;
+
+                if (!crossed.witness.empty())
+                {
+                    EXPECT_TRUE(shows(lexer, crossed.witness, window, gap, false)) << name << window << ' ' << gap;
+                }
+
+                if (!cut.witness.empty())
+                {
+                    EXPECT_TRUE(shows(lexer, cut.witness, window, gap, true)) << name << window << ' ' << gap;
+                }
+            }
+        }
+    }
+
+    // 469 token sets, 128 gaps each, and every verdict but undetermined reached.
+    EXPECT_EQ(decided, 469U * 128U);
+
+    for (const auto verdict : {dfa::Gap::must, dfa::Gap::never, dfa::Gap::may, dfa::Gap::absent})
+    {
+        EXPECT_GT(tally[verdict], 0U) << static_cast<std::size_t>(verdict);
+    }
+}
+
+TEST_F(Lexer_test, A_window_certificate_holds_exactly_where_its_origin_is_must_and_every_later_gap_never)
+{
+    enum class Token_kind : uint8_t
+    {
+        First,
+        Second,
+        Third,
+    };
+
+    // The token covering the final byte begins at o exactly when gap o is a boundary and gaps o + 1 to |W| - 1 are not,
+    // occurrence by occurrence, so the certificate (W, o) holds exactly when the profile is must at o and never at
+    // every later gap inside the window, a window occurring nowhere holding every certificate vacuously with every gap
+    // absent. Checked over the four regex token sets of the research oracles and every set of one to three literals
+    // over {a, b} of length one to three, at every window over {a, b} of length one to four and every origin; a window
+    // is_split_window() certifies holds the profile's certificate at the origin it reports, and some origins are must
+    // without a certificate.
+    std::vector<Lexer> lexers;
+
+    for (const auto& tokens : std::vector<std::vector<Regex>>{
+                 {concat(plus(text("a")), text("b")), text("a")},
+                 {concat(text("a"), text("b")), text("a"), text("b")},
+                 {plus(text("a")), text("b")},
+                 {choice(text("a"), concat(text("a"), text("b"))), text("b")}})
+    {
+        Builder builder;
+
+        for (std::size_t index{0}; index < tokens.size(); ++index)
+        {
+            builder.add_token(tokens[index], static_cast<Token_kind>(index), 1);
+        }
+
+        lexers.push_back(builder.build());
+    }
+
+    for (const auto& tokens : literal_sets(words("ab", 3), 3))
+    {
+        lexers.push_back(literal_lexer(tokens));
+    }
+
+    std::size_t certified{0};
+
+    std::size_t uncertified{0};
+
+    for (std::size_t index{0}; index < lexers.size(); ++index)
+    {
+        const auto& lexer{lexers[index]};
+
+        for (const auto& window : words("ab", 4))
+        {
+            const auto model{lexer.is_split_window(window)};
+
+            const auto profile{lexer.boundary_profile(window)};
+
+            // A verdict is read with absent standing for both claims, which hold of a window occurring nowhere.
+            const auto is{[&](const std::size_t gap, const dfa::Gap verdict) {
+                return profile[gap].verdict == verdict || profile[gap].verdict == dfa::Gap::absent;
+            }};
+
+            for (std::size_t origin{0}; origin < window.size(); ++origin)
+            {
+                const auto [counterexample, settled]{lexer.window_counterexample(window, origin)};
+
+                const auto later{std::ranges::all_of(std::views::iota(origin + 1, window.size()), [&](const auto gap) {
+                    return is(gap, dfa::Gap::never);
+                })};
+
+                const auto holds{is(origin, dfa::Gap::must) && later};
+
+                ASSERT_TRUE(settled) << index << ' ' << window << ' ' << origin;
+                EXPECT_EQ(counterexample.empty(), holds) << index << ' ' << window << ' ' << origin;
+
+                if (model == origin)
+                {
+                    EXPECT_TRUE(holds) << index << ' ' << window << ' ' << origin;
+                }
+
+                certified += holds ? 1 : 0;
+
+                uncertified += is(origin, dfa::Gap::must) && !holds ? 1 : 0;
+            }
+        }
+    }
+
+    EXPECT_GT(certified, 0U);
+    EXPECT_GT(uncertified, 0U);
+}
+
+TEST_F(Lexer_test, Must_and_never_gaps_stay_so_when_the_window_is_extended_on_either_side)
+{
+    // Every occurrence of an extension of W holds an occurrence of W, so a verdict quantified over every occurrence
+    // carries over at the shifted gap: a gap that is a boundary at every occurrence of W is one at every occurrence of
+    // the extension, a gap crossed at every occurrence stays crossed, and a window occurring nowhere has no occurring
+    // extension. An extension may occur nowhere itself, every gap of it absent, which both claims allow. May carries
+    // nothing, an extension selecting the occurrences on one side of it. Checked over every set of one or two literals
+    // over {a, b} of length one to three, every window over {a, b} of length one to three and each of its four one-byte
+    // extensions, at every gap, shifted by one on the left and unshifted on the right.
+    std::size_t carried{0};
+
+    std::size_t sharpened{0};
+
+    // Compares every gap of the window's profile with the extension's at the gap shifted right by the given amount.
+    const auto compare{[&](const std::vector<dfa::Gap_verdict>& profile, const std::vector<dfa::Gap_verdict>& extension,
+                           const std::size_t shift, const std::string& label) {
+        for (std::size_t gap{0}; gap < profile.size(); ++gap)
+        {
+            const auto verdict{profile[gap].verdict};
+
+            const auto extended{extension[gap + shift].verdict};
+
+            if (verdict == dfa::Gap::may)
+            {
+                sharpened += extended == dfa::Gap::must || extended == dfa::Gap::never ? 1 : 0;
+
+                continue;
+            }
+
+            EXPECT_TRUE(extended == verdict || extended == dfa::Gap::absent) << label << ' ' << gap;
+
+            ++carried;
+        }
+    }};
+
+    for (const auto& tokens : literal_sets(words("ab", 3), 2))
+    {
+        const auto lexer{literal_lexer(tokens)};
+
+        for (const auto& window : words("ab", 3))
+        {
+            const auto profile{lexer.boundary_profile(window)};
+
+            for (const auto byte : std::string_view{"ab"})
+            {
+                const auto label{tokens.front() + ' ' + byte + ' ' + window};
+
+                compare(profile, lexer.boundary_profile(byte + window), 1, label);
+                compare(profile, lexer.boundary_profile(window + byte), 0, label);
+            }
+        }
+    }
+
+    EXPECT_GT(carried, 0U);
+    EXPECT_GT(sharpened, 0U);
 }
 
 TEST_F(Lexer_test, Window_fallback_plans_parallel_cuts_where_no_byte_certifies)
@@ -3742,13 +4250,13 @@ TEST_F(Lexer_test, State_limit_stops_an_exploding_construction)
 
     builder.set_state_limit(256);
 
-    EXPECT_THROW(static_cast<void>(builder.build()), State_limit_error);
-    EXPECT_THROW(static_cast<void>(builder.diagnose()), State_limit_error);
+    EXPECT_THROW(std::ignore = builder.build(), State_limit_error);
+    EXPECT_THROW(std::ignore = builder.diagnose(), State_limit_error);
 
     // The error carries the limit and stays catchable as std::runtime_error for existing call sites.
     try
     {
-        static_cast<void>(builder.build());
+        std::ignore = builder.build();
 
         FAIL() << "build() must throw";
     }
@@ -3809,7 +4317,7 @@ TEST_F(Lexer_test, Oversized_nfa_state_identifier_throws_before_the_count_wraps)
     // empty table, and crash in the walk instead of the promised rejection.
     const nfa::Nfa nfa{std::numeric_limits<std::size_t>::max(), {}, {}};
 
-    EXPECT_THROW(static_cast<void>(determinize(nfa)), std::runtime_error);
+    EXPECT_THROW(std::ignore = determinize(nfa), std::runtime_error);
 }
 
 TEST_F(Lexer_test, State_limit_leaves_reasonable_grammars_untouched)

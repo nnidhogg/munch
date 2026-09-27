@@ -5,33 +5,36 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "munch/dfa/simulator.hpp"
 
 /**
  * @brief The decisions that ask whether some completely tokenizable input makes an event happen, and the one search
- *        that answers them: rescue(), boundary_difference(), window_occurrence(), window_counterexample() and
- *        segmentation_difference().
+ *        that answers them: rescue(), boundary_difference(), window_occurrence(), window_counterexample(),
+ *        boundary_counterexample(), crossing_counterexample() and segmentation_difference().
  *
  * Each asks after an event, a scan rolling back, two token sets cutting a shared input apart, a window occurring, a
- * certificate being failed, two token sets segmenting an input differently, and all answer it the same way: the
- * input is built byte by byte, breadth first, while guessing where its tokens end, every closed segment's run kept
- * alive because a later accept on it proves the close was not the longest match. The guesses that survive are
- * exactly the maximal-munch segmentation, which is what makes guessing boundaries sound. A witness is therefore a
- * shortest input on which the event happens, and the cap is a ceiling on the states held rather than a budget spent
- * afterwards, so an answer is always one the cap paid for and a search the cap stops settles nothing, which every
- * result reports as exhaustive rather than leaving to be inferred from an empty witness.
+ * certificate being failed, a window occurring with no boundary at a gap, a window occurring with one there, two token
+ * sets segmenting an input differently, and all answer it the same way: the input is built byte by byte, breadth first,
+ * while guessing where its tokens end, every closed segment's run kept alive because a later accept on it proves the
+ * close was not the longest match. The guesses that survive are exactly the maximal-munch segmentation, which is what
+ * makes guessing boundaries sound. A witness is therefore a shortest input on which the event happens, and the cap is a
+ * ceiling on the states held rather than a budget spent afterwards, so an answer is always one the cap paid for and a
+ * search the cap stops settles nothing, which every result reports as exhaustive rather than leaving to be inferred
+ * from an empty witness.
  *
- * They are five instances of one search over one key, differing only in how many scans they walk, what raises the
- * key's mark and what else a branch's future depends on, which is why they are declared together here and
- * implemented in one unit, boundary_search.cpp: the search, its key and the moves over it are private to that file,
- * and a decision added later joins them there rather than being handed them across a header. The header reads as the
- * tree's classes do, the types first, the caps after them and the functions last, so that the five results stand side
- * by side, one shape with Separation adding the half, before the five contracts that produce them. The sixth
- * relative, anchor_free_span(), is not here: it walks the compiled machine rather than guessed inputs, building the
- * graph of positions the same guessed marking reaches and taking a longest anchor-free run or a cycle in it, so it has
- * neither witness nor cap and keeps its own header. The recovery queries in recovery.hpp walk the compiled machine
- * over a given tail and guess nothing.
+ * They are seven instances of one search over one key, differing only in how many scans they walk, what raises the
+ * key's mark and what else a branch's future depends on, which is why they are declared together here and implemented
+ * in one unit, boundary_search.cpp: the search, its key and the moves over it are private to that file, and a decision
+ * added later joins them there rather than being handed them across a header. The header reads as the tree's classes
+ * do, the types first, the caps after them and the functions last, so that the results stand side by side, one shape
+ * with Separation adding the half and Gap_verdict pairing two refutations under a verdict, before the seven contracts
+ * that produce them, with boundary_profile() beside the two it asks at every gap of a window. The eighth relative,
+ * anchor_free_span(), is not here: it walks the compiled machine rather than guessed inputs, building the graph of
+ * positions the same guessed marking reaches and taking a longest anchor-free run or a cycle in it, so it has neither
+ * witness nor cap and keeps its own header. The recovery queries in recovery.hpp walk the compiled machine over a given
+ * tail and guess nothing.
  */
 namespace munch::dfa
 {
@@ -123,6 +126,89 @@ struct Counterexample
 };
 
 /**
+ * @brief What the search for an occurrence of a window refuting a claim about one of its gaps found.
+ */
+struct Refutation
+{
+    /**
+     * @brief A completely tokenizable input containing an occurrence of the window at which the gap is not what the
+     *        claim says, crossed by a token against boundary_counterexample() and a boundary against
+     *        crossing_counterexample(), the shortest one; empty when none was found.
+     */
+    std::string witness;
+
+    /**
+     * @brief Whether the search settled the question, by exhausting its state space or by finding the witness,
+     *        rather than stopping at the cap.
+     *
+     * Reported rather than inferred because an empty witness means two different things: the claim proved of every
+     * occurrence when the search exhausted, and undetermined when the cap stopped it. A caller that treats the second
+     * as the first would cut inside a token at some occurrence, which is the whole failure a boundary claim exists to
+     * exclude.
+     */
+    bool exhaustive{};
+};
+
+/**
+ * @brief The verdict on one gap of a window over every occurrence of it in every completely tokenizable input.
+ *
+ * Gap g of a window sits before its byte g, and gap |W| right after its final byte. The gap is a boundary at an
+ * occurrence when a token begins there or the input ends there, so the gap after the window is one exactly when a token
+ * closes on the window's final byte. The verdict reads the two refutations of the gap together: an occurrence crossed
+ * at the gap refutes must, one cut there refutes never, and a window occurring nowhere refutes neither.
+ */
+enum class Gap : std::size_t
+{
+    /**
+     * @brief A boundary at every occurrence, and the window occurs.
+     */
+    must,
+
+    /**
+     * @brief A boundary at no occurrence, and the window occurs.
+     */
+    never,
+
+    /**
+     * @brief A boundary at some occurrences and at others not, with a witness for each side.
+     */
+    may,
+
+    /**
+     * @brief No nonempty completely tokenizable input contains the window, so both claims hold vacuously; every gap of
+     *        the window has this verdict at once, which is the answer window_occurrence() gives of it.
+     */
+    absent,
+
+    /**
+     * @brief A search the cap stopped left the verdict open; a witness either search found still refutes its side.
+     */
+    undetermined
+};
+
+/**
+ * @brief What boundary_profile() found at one gap of a window: the verdict and the two refutations it reads.
+ */
+struct Gap_verdict
+{
+    /**
+     * @brief The verdict on the gap.
+     */
+    Gap verdict{};
+
+    /**
+     * @brief What boundary_counterexample() found: an input with an occurrence a token crosses at the gap, refuting
+     *        must.
+     */
+    Refutation crossed;
+
+    /**
+     * @brief What crossing_counterexample() found: an input with an occurrence cut at the gap, refuting never.
+     */
+    Refutation cut;
+};
+
+/**
  * @brief The half of full equivalence a separating input falls in.
  *
  * Full equivalence has two halves, the domains coinciding and the segmentations agreeing on the common domain, and an
@@ -191,6 +277,13 @@ inline constexpr std::size_t occurrence_cap{1U << 20U};
  *        the token sets a lexer carries, where the worst case is exponential in the state count.
  */
 inline constexpr std::size_t counterexample_cap{1U << 20U};
+
+/**
+ * @brief The number of search states boundary_counterexample() and crossing_counterexample() hold before giving up
+ *        unless told otherwise, and each search of boundary_profile(), generous for the token sets a lexer carries,
+ *        where the worst case is exponential in the state count.
+ */
+inline constexpr std::size_t refutation_cap{1U << 20U};
 
 /**
  * @brief The number of search states segmentation_difference() holds before giving up unless told otherwise,
@@ -325,6 +418,94 @@ inline constexpr std::size_t segmentation_cap{1U << 20U};
         const Simulator& simulator, std::string_view window, std::size_t origin, std::size_t cap = counterexample_cap);
 
 /**
+ * @brief Decides whether the gap g is a boundary at every occurrence of the window W, returning a completely
+ *        tokenizable input holding an occurrence a token crosses there.
+ *
+ * Gap g sits before byte g of the occurrence, and gap |W| right after its final byte; it is a boundary when a token
+ * begins there or the input ends there. A boundary at every occurrence is the weaker of the two guarantees a window can
+ * give a cut: a certificate (W, o) places the start of the token covering the final byte, which is a token start, so a
+ * window window_counterexample() proves exact at o has a boundary at gap o of every occurrence, while such a boundary
+ * asks nothing of the tokens after it and exists where no covering origin is fixed. Over {0, 1, x, 001x, 011x} the
+ * window 0011 has a boundary at gaps 0 and 1 of every occurrence, 0011x cutting it 0|011x and 0011 itself 0|0|1|1, so
+ * its covering origin is 1 on the one and 3 on the other and no certificate holds. The gap after the window adds what
+ * no offset inside it can: over {ab} the window b has a boundary right after it at every occurrence and none before it.
+ * The claim is monotone: every occurrence of an extension of W holds an occurrence of W, so a boundary at every
+ * occurrence of W stays one in the extension at its shifted gap. The relation to window_occurrence() is the vacuous
+ * reading window_counterexample() has: a window no completely tokenizable input contains has no counterexample at any
+ * gap, so a proved claim anchors something only where that decision places the window.
+ *
+ * Decided by the same boundary-guessing search as window_counterexample(), with the matcher and the bit beside it, the
+ * bit here recording whether the gap is a boundary rather than whether the latest token start sits at the origin: set
+ * at a guessed boundary when the matcher has read g bytes of the occurrence, or at the input's start when g is zero,
+ * since the first byte begins a token, and kept from then on through every later byte of it, closed or not. A gap
+ * inside the window is settled when the window's final byte is read, and the gap after it one step later, when the
+ * final byte closes its token or does not; the occurrence refutes the claim with the bit clear, and the input is a
+ * witness once a segment then closes, which the closed runs kept alive hold to maximal munch, the input's end among the
+ * closes. An occurrence read through with the bit set conforms, and its branch is dropped while the branches on which
+ * the matcher waits for a later occurrence carry on. A witness is therefore a shortest refuting input, and never empty.
+ * The search starts at the initial state and reaches every position a scan can stand in, so the accepting states no
+ * input reaches never enter it, and a nullable token set is decided through the positive-width equivalent the simulator
+ * compiled, as every decision here is.
+ * @param simulator The compiled token set.
+ * @param window The byte string whose occurrences are asked about, non-empty.
+ * @param gap The gap of the window at which a boundary must sit, from zero to the window's length.
+ * @param cap The most search states to hold at once, a ceiling rather than a budget spent afterwards: a state
+ *        beyond it is never held, and the search gives up instead of admitting it, so an answer is always one the
+ *        cap paid for. Zero holds nothing, not even the state the search starts in, and settles nothing.
+ * @return The witness, the shortest one, and whether the search settled the question; an empty witness from an
+ *         exhaustive search proves the gap a boundary at every occurrence.
+ * @throws std::invalid_argument If the window is empty or the gap lies past its end, neither naming a gap of it.
+ */
+[[nodiscard]] Refutation boundary_counterexample(
+        const Simulator& simulator, std::string_view window, std::size_t gap, std::size_t cap = refutation_cap);
+
+/**
+ * @brief Decides whether a token crosses the gap g at every occurrence of the window W, returning a completely
+ *        tokenizable input holding an occurrence cut there.
+ *
+ * The other side of boundary_counterexample(): the gap is a boundary at no occurrence, a token beginning before it and
+ * ending after it every time, and a counterexample is an occurrence at which the gap is a boundary, the input's end
+ * counting as one for the gap after the window. The claim is monotone in the same way, a gap crossed at every
+ * occurrence of W staying crossed at every occurrence of an extension at its shifted gap, and a window no completely
+ * tokenizable input contains has no counterexample at any gap. Together the two claims are what a certificate is: the
+ * token covering the final byte begins at o exactly when gap o is a boundary and every later gap inside the window is
+ * crossed, so (W, o) holds exactly when boundary_counterexample() proves gap o and this decision proves every gap from
+ * o + 1 to |W| - 1.
+ *
+ * Decided by the same search as boundary_counterexample(), with the bit read the other way: the occurrence refutes the
+ * claim when the gap's bit is set once the gap is settled, and conforms, its branch dropped, when it is clear. The gap
+ * after the window is cut when the final byte closes its token, the input ending right there among the ways it can. A
+ * witness is a shortest refuting input, and never empty.
+ * @param simulator The compiled token set.
+ * @param window The byte string whose occurrences are asked about, non-empty.
+ * @param gap The gap of the window a token must cross, from zero to the window's length.
+ * @param cap The most search states to hold at once, as boundary_counterexample() reads it.
+ * @return The witness, the shortest one, and whether the search settled the question; an empty witness from an
+ *         exhaustive search proves the gap crossed at every occurrence.
+ * @throws std::invalid_argument If the window is empty or the gap lies past its end, neither naming a gap of it.
+ */
+[[nodiscard]] Refutation crossing_counterexample(
+        const Simulator& simulator, std::string_view window, std::size_t gap, std::size_t cap = refutation_cap);
+
+/**
+ * @brief Decides every gap of a window, before each of its bytes and after the last, returning each gap's verdict.
+ *
+ * Two searches per gap, boundary_counterexample() and crossing_counterexample(), each under the cap on its own, so a
+ * gap the cap stops is undetermined without the others being so. The verdict is must when only the first exhausts
+ * without a witness, never when only the second does, may when both find one, and absent when neither does, which
+ * happens at every gap at once and exactly when the window occurs in no nonempty completely tokenizable input, since
+ * every occurrence refutes one side at each gap. Over {0, 1, x, 001x, 011x} the window 0011 is must at gaps 0 and 1 and
+ * may at 2, 3 and 4; over {ab} the window b is never at gap 0 and must at gap 1.
+ * @param simulator The compiled token set.
+ * @param window The byte string whose gaps are decided, non-empty.
+ * @param cap The most search states each search holds at once, as boundary_counterexample() reads it.
+ * @return One verdict per gap of the window, the gap's index, |W| + 1 of them.
+ * @throws std::invalid_argument If the window is empty, which has no occurrence to hold a gap in.
+ */
+[[nodiscard]] std::vector<Gap_verdict> boundary_profile(
+        const Simulator& simulator, std::string_view window, std::size_t cap = refutation_cap);
+
+/**
  * @brief Decides whether two token sets are the same segmentation function, returning an input they segment
  *        differently.
  *
@@ -349,15 +530,15 @@ inline constexpr std::size_t segmentation_cap{1U << 20U};
  * run is a with no boundary, which {a} accepts and {aa} does not, the domain witness a, while boundary_difference()
  * returns aa, one token against two.
  *
- * Decided by the same boundary-guessing search as rescue(), boundary_difference(), window_occurrence() and
- * window_counterexample(): the input is built byte by byte, breadth first, with every closed segment's run kept alive,
- * a closed run that accepts abandoning that side, so that the runs a side survives are exactly its maximal-munch
- * markings. Here the guessed marking is one and fed to both scans at once, a side that cannot read a marked symbol
- * dying rather than abandoning the branch, and the input is a witness at the first marked symbol after which exactly
- * one side accepts. The empty input is in every domain, so the witness is never empty and an empty one means none.
- * The search starts at the initial states and reaches every position a scan can stand in, so the accepting states no
- * input reaches never enter it, and a nullable token set is decided through the positive-width equivalent the
- * simulator compiled, as every decision here is.
+ * Decided by the same boundary-guessing search as rescue(), boundary_difference(), window_occurrence(),
+ * window_counterexample(), boundary_counterexample() and crossing_counterexample(): the input is built byte by byte,
+ * breadth first, with every closed segment's run kept alive, a closed run that accepts abandoning that side, so that
+ * the runs a side survives are exactly its maximal-munch markings. Here the guessed marking is one and fed to both
+ * scans at once, a side that cannot read a marked symbol dying rather than abandoning the branch, and the input is a
+ * witness at the first marked symbol after which exactly one side accepts. The empty input is in every domain, so the
+ * witness is never empty and an empty one means none. The search starts at the initial states and reaches every
+ * position a scan can stand in, so the accepting states no input reaches never enter it, and a nullable token set is
+ * decided through the positive-width equivalent the simulator compiled, as every decision here is.
  * @param simulator The compiled token set the comparison starts from.
  * @param other The token set to compare against, compiled over the same byte alphabet.
  * @param cap The most product states to hold at once, a ceiling rather than a budget spent afterwards: a state

@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "munch/dfa/boundary_search.hpp"
@@ -2270,8 +2271,155 @@ TEST_F(Dfa_test, Window_counterexample_finds_the_input_a_certificate_fails_on_or
     EXPECT_TRUE(none.empty());
 
     // The empty window has no final byte to cover, and an origin outside the window names none of its bytes.
-    EXPECT_THROW(static_cast<void>(window_counterexample(simulator, "", 0)), std::invalid_argument);
-    EXPECT_THROW(static_cast<void>(window_counterexample(simulator, "aa", 2)), std::invalid_argument);
+    EXPECT_THROW(std::ignore = window_counterexample(simulator, "", 0), std::invalid_argument);
+    EXPECT_THROW(std::ignore = window_counterexample(simulator, "aa", 2), std::invalid_argument);
+}
+
+TEST_F(Dfa_test, Boundary_profile_finds_the_input_a_gap_is_crossed_or_cut_on_or_proves_it_must_or_never)
+{
+    // {aa} and {ab} built by hand, each a chain q0 -> q1 -> q2 with q2 accepting. Under {aa} the completely tokenizable
+    // inputs are the even runs of a, so every gap of a window of a's falls at an odd position of some occurrence and
+    // none is a boundary at every occurrence; under {ab} they are the runs of ab, where every a begins a token and no b
+    // does.
+    const auto build{[](const char second) {
+        dfa::Builder dfa;
+
+        const auto q0{dfa.init_state()};
+        const auto q1{dfa.next_state()};
+        const auto q2{dfa.next_state()};
+
+        dfa.add_transition(q0, dfa::Label('a'), q1);
+        dfa.add_transition(q1, dfa::Label(second), q2);
+        dfa.add_accept_state(q2, dfa::Token{1});
+
+        return Simulator{dfa.build()};
+    }};
+
+    const auto even{build('a')};
+
+    const auto alternating{build('b')};
+
+    // Whether a witness is what it claims: a completely tokenizable input under the machine itself holding an
+    // occurrence of the window with no token beginning at the offset.
+    const auto misses{[](const Simulator& simulator, const std::string& witness, const std::string_view window,
+                         const std::size_t offset) {
+        std::vector<std::size_t> starts;
+
+        for (std::size_t at{0}; at < witness.size();)
+        {
+            const auto [token, length]{simulator.run(std::string_view{witness}.substr(at))};
+
+            if (!token || length == 0)
+            {
+                return false;
+            }
+
+            starts.push_back(at);
+
+            at += length;
+        }
+
+        for (auto at{witness.find(window)}; at != std::string::npos; at = witness.find(window, at + 1))
+        {
+            if (!std::ranges::binary_search(starts, at + offset))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }};
+
+    const auto [odd, odd_settled]{boundary_counterexample(even, "a", 0)};
+
+    EXPECT_TRUE(odd_settled);
+    EXPECT_EQ(odd, "aa");
+    EXPECT_TRUE(misses(even, odd, "a", 0));
+
+    const auto [shifted, shifted_settled]{boundary_counterexample(even, "aa", 0)};
+
+    EXPECT_TRUE(shifted_settled);
+    EXPECT_EQ(shifted, "aaaa");
+    EXPECT_TRUE(misses(even, shifted, "aa", 0));
+
+    EXPECT_EQ(boundary_counterexample(even, "aa", 1).witness, "aa");
+    EXPECT_TRUE(misses(even, "aa", "aa", 1));
+
+    // Under {ab} the a of ba is a boundary at every occurrence and the b refuted by the shortest input holding ba.
+    const auto [kept, kept_settled]{boundary_counterexample(alternating, "ba", 1)};
+
+    EXPECT_TRUE(kept_settled);
+    EXPECT_TRUE(kept.empty());
+
+    EXPECT_EQ(boundary_counterexample(alternating, "ba", 0).witness, "abab");
+    EXPECT_TRUE(misses(alternating, "abab", "ba", 0));
+
+    // The profile decides every gap both ways, the gap after the window included. Under {ab} the window ab is must at 0
+    // and 2 and never at 1, and ba, whose a is always followed by the b closing its token, is never at 0 and 2 and must
+    // at 1.
+    const auto ab_profile{boundary_profile(alternating, "ab")};
+
+    ASSERT_EQ(ab_profile.size(), 3U);
+    EXPECT_EQ(ab_profile[0].verdict, Gap::must);
+    EXPECT_EQ(ab_profile[0].cut.witness, "ab");
+    EXPECT_EQ(ab_profile[1].verdict, Gap::never);
+    EXPECT_EQ(ab_profile[1].crossed.witness, "ab");
+    EXPECT_EQ(ab_profile[2].verdict, Gap::must);
+    EXPECT_EQ(ab_profile[2].cut.witness, "ab");
+
+    const auto reversed{boundary_profile(alternating, "ba")};
+
+    ASSERT_EQ(reversed.size(), 3U);
+    EXPECT_EQ(reversed[0].verdict, Gap::never);
+    EXPECT_EQ(reversed[0].crossed.witness, "abab");
+    EXPECT_EQ(reversed[1].verdict, Gap::must);
+    EXPECT_EQ(reversed[1].cut.witness, "abab");
+    EXPECT_EQ(reversed[2].verdict, Gap::never);
+    EXPECT_EQ(reversed[2].crossed.witness, "abab");
+
+    // The gap after the window adds what no offset inside it can: under {ab} the window b has no boundary before it at
+    // any occurrence, and one right after it at every occurrence, the next token's start or the input's end, which ab
+    // itself shows.
+    const auto [after, after_settled]{boundary_counterexample(alternating, "b", 1)};
+
+    EXPECT_TRUE(after_settled);
+    EXPECT_TRUE(after.empty());
+
+    const auto [closing, closing_settled]{crossing_counterexample(alternating, "b", 1)};
+
+    EXPECT_TRUE(closing_settled);
+    EXPECT_EQ(closing, "ab");
+
+    const auto single{boundary_profile(alternating, "b")};
+
+    ASSERT_EQ(single.size(), 2U);
+    EXPECT_EQ(single[0].verdict, Gap::never);
+    EXPECT_EQ(single[0].crossed.witness, "ab");
+    EXPECT_TRUE(single[0].cut.witness.empty());
+    EXPECT_EQ(single[1].verdict, Gap::must);
+    EXPECT_TRUE(single[1].crossed.witness.empty());
+    EXPECT_EQ(single[1].cut.witness, "ab");
+
+    // A window no completely tokenizable input contains has no counterexample at any gap, either way, and the profile
+    // tells it apart as absent at every gap.
+    const auto [none, none_settled]{boundary_counterexample(even, "b", 0)};
+
+    EXPECT_TRUE(none_settled);
+    EXPECT_TRUE(none.empty());
+
+    const auto missing{boundary_profile(even, "b")};
+
+    ASSERT_EQ(missing.size(), 2U);
+    EXPECT_TRUE(std::ranges::all_of(missing, [](const Gap_verdict& gap) { return gap.verdict == Gap::absent; }));
+
+    // The empty window has no gap, and a gap past the window's end names none of its gaps; the gap right after the
+    // window is one.
+    EXPECT_THROW(std::ignore = boundary_counterexample(even, "", 0), std::invalid_argument);
+    EXPECT_THROW(std::ignore = boundary_counterexample(even, "aa", 3), std::invalid_argument);
+    EXPECT_THROW(std::ignore = crossing_counterexample(even, "", 0), std::invalid_argument);
+    EXPECT_THROW(std::ignore = crossing_counterexample(even, "aa", 3), std::invalid_argument);
+    EXPECT_THROW(std::ignore = boundary_profile(even, ""), std::invalid_argument);
+    EXPECT_TRUE(boundary_counterexample(even, "aa", 2).exhaustive);
 }
 
 TEST_F(Dfa_test, Segmentation_difference_separates_two_token_sets_by_domain_or_by_boundary_or_proves_them_one)

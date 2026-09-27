@@ -460,6 +460,43 @@ lexer.window_counterexample("ab", 0);            // {"", true}: no input fails i
 lexer.window_counterexample("ab", 1);            // {"ab", true}: ab itself, one token beginning at offset 0
 ```
 
+`boundary_counterexample(window, gap)` asks for the weaker guarantee. Gap `g` of a window sits before its byte `g`, and
+gap `|W|` right after its final byte; the gap is a boundary at an occurrence when a token begins there or the input ends
+there. The decision asks whether the gap is a boundary at every occurrence of the window in every completely tokenizable
+input, whatever covers the final byte, and a worker can cut at such a gap and rescan the window's suffix. A certificate
+places a token start, so a window `window_counterexample()` proves exact at an origin has a boundary at that gap of
+every occurrence, while such a boundary can exist where no covering origin is fixed. The decision is the same search
+with the bit recording whether the gap is a boundary, and it returns the shortest input holding an occurrence a token
+crosses at the gap or, from an exhaustive search, the proof that none exists. `crossing_counterexample(window, gap)`
+decides the other side, whether a token crosses the gap at every occurrence, and returns the shortest input holding an
+occurrence cut there. The two sides together are the certificate: `(W, o)` holds exactly when gap `o` is a boundary at
+every occurrence and every later gap inside the window is crossed at every occurrence. The gap after the window adds
+what no offset inside it can: over `{ab}` the window `b` is crossed at gap 0 and cut at gap 1 at every occurrence.
+`boundary_profile(window)` decides every gap both ways, two searches per gap each under the cap on its own, and gives
+each gap a verdict: `must`, `never` or `may` when the window occurs, `absent` at every gap when it occurs in no nonempty
+completely tokenizable input, as `window_occurrence()` would report, and `undetermined` where the cap stopped a search.
+Must and never are monotone, a gap keeping its verdict in every extension of the window at the shifted gap unless the
+extension occurs nowhere, while may carries nothing. The cap, the empty window and a gap past the window's end are
+handled as for `window_counterexample()`:
+
+```cpp
+builder.add_token(text("0"), Token::Zero, 1);
+builder.add_token(text("1"), Token::One, 1);
+builder.add_token(text("x"), Token::Mark, 1);
+builder.add_token(text("001x"), Token::Low, 1);
+builder.add_token(text("011x"), Token::High, 1);
+
+const auto lexer{builder.build()};
+
+lexer.window_counterexample("0011", 1);     // {"0011", true}: 0|0|1|1 covers the final byte from offset 3
+lexer.window_counterexample("0011", 3);     // {"0011x", true}: 0|011x covers it from offset 1
+lexer.boundary_counterexample("0011", 1);   // {"", true}: a token begins there at every occurrence
+lexer.boundary_counterexample("0011", 2);   // {"0011x", true}: gap 2 falls inside 011x
+lexer.crossing_counterexample("0011", 4);   // {"0011", true}: the input ends right after the window
+lexer.boundary_profile("0011");             // must at gaps 0 and 1, may at 2, 3 and 4
+lexer.boundary_profile("0011")[4].verdict;  // Gap::may: 0011x crosses gap 4 and 0011 ends there
+```
+
 `boundary_difference(other)` asks the question a tokenizer change asks: is there any input both token sets tokenize
 that they cut into different tokens? It answers from the two compiled tables rather than from a corpus, so a negative
 covers every input, and a positive comes with one that shows it:

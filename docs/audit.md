@@ -147,7 +147,12 @@ Row by row:
 - **certified windows**: the byte strings whose every occurrence has a token boundary at a fixed offset inside them, the
   window certificate of [docs/split_windows.md](split_windows.md); a cut falls back to these where no byte certifies.
   Counted over byte classes, bytes the tables cannot tell apart, and then once every class stands for all its members;
-  the examples prefer printable bytes and each names its origin, the offset the boundary sits at.
+  the examples prefer printable bytes and each names its origin, the offset the boundary sits at. The row counts the
+  covering-origin certificate `is_split_window()` decides, where the origin is also where the token covering the
+  window's final byte begins. A window can have a boundary at a fixed gap of every occurrence while that covering origin
+  varies, the weaker guarantee `boundary_counterexample()` decides exactly with the shortest input refuting it, and
+  `boundary_profile()` decides every gap of a window that way and the other; such a window is not counted here, and a
+  cut at it rescans the window's suffix rather than resuming at the covering token.
 - **mandatory core**: a byte string every certifying window provably contains, when there is one, which is where a
   planner looks for windows in an input.
 - **anchor-free span, bytes and windows**: the longest run of positions a tokenizable input can carry with no

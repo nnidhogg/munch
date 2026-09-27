@@ -287,6 +287,76 @@ public:
     }
 
     /**
+     * @brief Whether the gap g is a token boundary at every occurrence of the window W in every completely tokenizable
+     *        input, with an input holding an occurrence a token crosses there.
+     *
+     * Gap g sits before byte g of the occurrence and gap |W| right after its final byte, and a boundary is a token
+     * start or the input's end. It is the weaker guarantee beside the window certificate: a certificate places the
+     * start of the token covering the final byte, so a window window_counterexample() proves exact at o has a boundary
+     * at gap o of every occurrence, while such a boundary asks nothing of the tokens after it and holds where no
+     * covering origin is fixed. A worker cutting there rescans the window's suffix rather than resuming at the covering
+     * token. Decided by the same boundary-guessing search as window_counterexample(), the bit beside the matcher
+     * recording whether the gap is a boundary, the witness the shortest refuting input: over {0, 1, x, 001x, 011x} no
+     * certificate holds of the window 0011 at any origin, its final byte covered from offset 1 in 0011x and from offset
+     * 3 in 0011, while gaps 0 and 1 are boundaries at every occurrence and 0011x refutes gaps 2, 3 and 4. The claim is
+     * monotone, a boundary at every occurrence of W staying one in every extension of it at the shifted gap, and a
+     * window window_occurrence() places in no input has no counterexample at any gap. The derivation is
+     * dfa::boundary_counterexample()'s.
+     * @param window The byte string whose occurrences are asked about, non-empty.
+     * @param gap The gap of the window at which a boundary must sit, from zero to the window's length.
+     * @param cap The largest number of search states to hold before giving up, dfa::refutation_cap unless told.
+     * @return The witness and whether the search settled the question; an empty witness from an exhaustive search
+     *         proves the gap a boundary at every occurrence.
+     * @throws std::invalid_argument If the window is empty or the gap lies past its end, neither naming a gap of it.
+     */
+    [[nodiscard]] dfa::Refutation boundary_counterexample(
+            const std::string_view window, const std::size_t gap, const std::size_t cap = dfa::refutation_cap) const
+    {
+        return dfa::boundary_counterexample(simulator_, window, gap, cap);
+    }
+
+    /**
+     * @brief Whether a token crosses the gap g at every occurrence of the window W in every completely tokenizable
+     *        input, with an input holding an occurrence cut there.
+     *
+     * The other side of boundary_counterexample(), decided by the same search with the gap's bit read the other way,
+     * the input's end counting as a boundary for the gap after the window. The two claims together are the window
+     * certificate: (W, o) holds exactly when gap o is a boundary at every occurrence and every later gap inside the
+     * window is crossed at every occurrence. The claim is monotone in the same way. The derivation is
+     * dfa::crossing_counterexample()'s.
+     * @param window The byte string whose occurrences are asked about, non-empty.
+     * @param gap The gap of the window a token must cross, from zero to the window's length.
+     * @param cap The largest number of search states to hold before giving up, dfa::refutation_cap unless told.
+     * @return The witness and whether the search settled the question; an empty witness from an exhaustive search
+     *         proves the gap crossed at every occurrence.
+     * @throws std::invalid_argument If the window is empty or the gap lies past its end, neither naming a gap of it.
+     */
+    [[nodiscard]] dfa::Refutation crossing_counterexample(
+            const std::string_view window, const std::size_t gap, const std::size_t cap = dfa::refutation_cap) const
+    {
+        return dfa::crossing_counterexample(simulator_, window, gap, cap);
+    }
+
+    /**
+     * @brief Every gap of the window decided both ways, each gap's verdict.
+     *
+     * Two searches per gap under the cap on their own, boundary_counterexample() and crossing_counterexample(): the
+     * verdict is must, never or may when the window occurs, absent at every gap when it occurs in no nonempty
+     * completely tokenizable input, and undetermined where the cap stopped a search. The derivation is
+     * dfa::boundary_profile()'s.
+     * @param window The byte string whose gaps are decided, non-empty.
+     * @param cap The largest number of search states each search holds before giving up, dfa::refutation_cap unless
+     *        told.
+     * @return One verdict per gap of the window, the gap's index, |W| + 1 of them.
+     * @throws std::invalid_argument If the window is empty, which has no occurrence to hold a gap in.
+     */
+    [[nodiscard]] std::vector<dfa::Gap_verdict> boundary_profile(
+            const std::string_view window, const std::size_t cap = dfa::refutation_cap) const
+    {
+        return dfa::boundary_profile(simulator_, window, cap);
+    }
+
+    /**
      * @brief The compiled machine itself, for decisions written outside this class over its read-only view.
      *
      * Everything the class answers is answered from these tables; a tool reading a token set from elsewhere and

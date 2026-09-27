@@ -9,9 +9,10 @@ public contract. The supported API arrived in release 1.4.0, two days before the
 the empty string is inside the paper's scope: Lemma 1 decides it through its positive-width equivalent, the same
 automaton entered through a start state that does not accept, which changes no scan, and the random sweep decides its
 266 nullable sets that way rather than setting them aside. The mandatory core section is this document's addition alone:
-release 1.5.0 derives that machinery on top of the same certificates, and no version of the paper contains it. Every
-empirical aggregate below is printed and asserted by the probes, so a drifted number fails the test suite; the table
-below is produced mechanically from the paper's own tabular source, never transcribed by hand.
+release 1.5.0 derives that machinery on top of the same certificates, and no version of the paper contains it. The
+paragraph on gap verdicts closing Section 2 is likewise this document's addition, a decision release 2.1.0 adds beside
+the certificate. Every empirical aggregate below is printed and asserted by the probes, so a drifted number fails the
+test suite; the table below is produced mechanically from the paper's own tabular source, never transcribed by hand.
 
 *A technical report on the certificate behind the window layer. The implementation, tests, and probes live in this
 repository; this document states the idea precisely, relates it to prior work, and reports what it recovers.*
@@ -136,6 +137,23 @@ covering-origin certification is stricter than locating some safe boundary, and 
 extra segmentations and may refuse even a true covering-origin certificate. Note also what the definition does not
 require: it says nothing about the tokens overlapping the window's earlier bytes, and it does not require the boundary
 to be the only one inside the window.
+
+The weakest guarantee has an exact decision of its own, which release 2.1.0 adds and no version of the paper contains.
+Gap `g` of `W`, for `g` from 0 to `|W|`, sits before byte `g` of an occurrence, gap `|W|` right after its final byte,
+and it is a boundary at an occurrence at offset `t` when `t + g` is a token start or the end of the input. Over every
+occurrence of `W` in every completely tokenizable input the gap is *must* when it is a boundary at every occurrence,
+*never* when it is one at none, and *may* when both happen. A certified split window `(W, o)` has gap `o` must, since
+the covering token's start is a token start, and the converse fails, as `{a, abx, b, x}` at `ab` shows above and
+`{0, 1, x, 001x, 011x}` at `0011` shows with two must gaps: gaps 0 and 1 are must, yet the covering origin is 3 in
+`0011`, cut `0|0|1|1`, and 1 in `0011x`, cut `0|011x`, so no origin certifies the window. The certificate is exactly the
+conjunction the profile states: `(W, o)` holds when gap `o` is must and gaps `o + 1` to `|W| - 1` are never, since the
+covering token begins at `o` of an occurrence exactly when `o` is a boundary and no later gap inside the window is. Must
+and never are monotone, since every occurrence of an extension of `W` holds an occurrence of `W`, so each stays in every
+extension at the shifted gap unless the extension occurs nowhere. `boundary_counterexample()` refutes must and
+`crossing_counterexample()` refutes never, both by the boundary-guessing search `window_counterexample()` uses for
+Definition 1 with a bit beside the window matcher recording whether the gap is a boundary, settled one step after the
+final byte for the gap after the window; `boundary_profile()` reads the two at every gap and reports a window no input
+contains as absent. No figure in this document counts gap verdicts.
 
 ## 3 The model
 
