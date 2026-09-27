@@ -530,8 +530,9 @@ else if (half == dfa::Separation_half::domain) { /* one set tokenizes the witnes
 else { /* both tokenize the witness and cut it differently */ }
 ```
 
-These four decisions and `rescue()` under Error Recovery are declared together in `munch/dfa/boundary_search.hpp`, five
-instances of one search over guessed token boundaries, each forwarded by `core::Lexer`.
+These six decisions and `rescue()` under Error Recovery are declared together in `munch/dfa/boundary_search.hpp`, seven
+instances of one search over guessed token boundaries, with `boundary_profile()` beside the two it asks at every gap,
+and each is forwarded by `core::Lexer`.
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
