@@ -304,17 +304,17 @@ enum class Pattern_at
 /**
  * @brief The first negated POSIX class in a pattern, `[:^alpha:]`, or nothing.
  *
- * flex fills a class with its ASCII members whatever locale it runs under, its CCL_EXPR testing isascii() first,
- * and fills the negation without that test, so `[[:^alpha:]]` drops the letters of the locale flex ran under beside
- * the ASCII ones: flex 2.6.4 under fr_FR.ISO8859-1 leaves `\xE9` out of it, where under the C locale it is a
- * member. The file does not decide the locale, so the class is refused by name.
+ * flex fills a class with its ASCII members whatever locale it runs under, its CCL_EXPR testing isascii() first, and
+ * fills the negation without that test, so `[[:^alpha:]]` drops the letters of the locale flex ran under beside the
+ * ASCII ones: flex 2.6.4 under fr_FR.ISO8859-1 leaves `\xE9` out of it, where under the C locale it is a member. The
+ * file does not decide the locale, so the class is refused by name.
  * @param pattern The pattern or definition text.
  * @return The class as written, or nothing.
  */
 [[nodiscard]] std::optional<std::string> negated_class(const std::string_view pattern) noexcept
 {
-    // The states pattern_length() walks: a quote opens text only outside a bracket, where inside one it is a
-    // member, `[^"[:^print:]]` holding the quote and then the class.
+    // The states pattern_length() walks: a quote opens text only outside a bracket, where inside one it is a member,
+    // `[^"[:^print:]]` holding the quote and then the class.
     auto state{Pattern_at::pattern};
 
     for (std::size_t at{0}; at < pattern.size(); ++at)
@@ -437,8 +437,8 @@ enum class Pattern_at
             continue;
         }
 
-        // The flags apply in order, as flex applies them, a `-` turning off every flag after it: `(?i-i:` and
-        // `(?-ii:` fold nothing, flex 2.6.4 taking neither over the other case.
+        // The flags apply in order, as flex applies them, a `-` turning off every flag after it: `(?i-i:` and `(?-ii:`
+        // fold nothing, flex 2.6.4 taking neither over the other case.
         auto on{true};
 
         auto folds{false};
@@ -476,11 +476,10 @@ enum class Pattern_at
 /**
  * @brief The first byte beyond ASCII a pattern spells, written out, as `\xHH` or as an octal escape, or nothing.
  *
- * Under the case option flex folds every byte of a pattern with the C library's case functions under the locale it
- * runs under, so a byte beyond ASCII gains its other case there and not under the C locale: flex 2.6.4 under
- * fr_FR.ISO8859-1 with `\xE9 return 7;` before `\xC9 return 8;` returns 7 on `\xC9`, where the C locale returns
- * 8, and a bracket member folds the same way. The file does not decide the locale, so such a pattern is refused by
- * name under the case option.
+ * Under the case option flex folds every byte of a pattern with the C library's case functions under the locale it runs
+ * under, so a byte beyond ASCII gains its other case there and not under the C locale: flex 2.6.4 under fr_FR.ISO8859-1
+ * with `\xE9 return 7;` before `\xC9 return 8;` returns 7 on `\xC9`, where the C locale returns 8, and a bracket member
+ * folds the same way. The file does not decide the locale, so such a pattern is refused by name under the case option.
  * @param pattern The pattern or definition text.
  * @return The byte as written, or nothing.
  */
@@ -554,10 +553,10 @@ enum class Pattern_at
 /**
  * @brief Where a pattern ends on a rule line: the first blank outside a quote and a bracket, escapes honoured.
  *
- * A bracket expression holds no bracket of its own, so the scan tracks which state of one it stands in rather than
- * a depth: a `]` closes the bracket unless it is its first member, `[]a]` and `[^]a]`, a `^` negates the bracket
- * only where it opens one, so the second caret of `[^^]` is a member, and a `[:class:]` is one token whose `]` is
- * no close, which is what keeps the blank of `[[:alpha:] ]+` inside the pattern.
+ * A bracket expression holds no bracket of its own, so the scan tracks which state of one it stands in rather than a
+ * depth: a `]` closes the bracket unless it is its first member, `[]a]` and `[^]a]`, a `^` negates the bracket only
+ * where it opens one, so the second caret of `[^^]` is a member, and a `[:class:]` is one token whose `]` is no close,
+ * which is what keeps the blank of `[[:alpha:] ]+` inside the pattern.
  * @param line The rule line, its `<...>` prefix already removed.
  * @param number The line number, for the error.
  * @return The pattern's length.
@@ -655,10 +654,10 @@ struct Standing
 /**
  * @brief What the `%option` words read so far leave standing of the settings that decide what a rule matches.
  *
- * flex sets every option before it parses a rule, so what governs the file is what the last word naming a
- * setting left standing: `%option caseless` and then `%option nocaseless` scans case-sensitively. Each `no`
- * before a name flips the setting's sense, and the case setting has off-spellings of its own, `caseful` and
- * `case-sensitive`, which a `no` turns back on.
+ * flex sets every option before it parses a rule, so what governs the file is what the last word naming a setting left
+ * standing: `%option caseless` and then `%option nocaseless` scans case-sensitively. Each `no` before a name flips the
+ * setting's sense, and the case setting has off-spellings of its own, `caseful` and `case-sensitive`, which a `no`
+ * turns back on.
  */
 
 /**
@@ -774,9 +773,9 @@ struct Settings
  */
 void take(Settings& settings, const std::string_view word, const std::size_t line)
 {
-    // flex lexes a `no` inside the word as a token of its own that flips the sense, and no option's name begins
-    // with one, so `nonocaseless` sets the case option and `nononocaseless` clears it again. A `no` standing as a
-    // word of its own reaches no name and says nothing, which is where the sense begins afresh for each word.
+    // flex lexes a `no` inside the word as a token of its own that flips the sense, and no option's name begins with
+    // one, so `nonocaseless` sets the case option and `nononocaseless` clears it again. A `no` standing as a word of
+    // its own reaches no name and says nothing, which is where the sense begins afresh for each word.
     auto sense{true};
 
     auto name{word};
@@ -866,8 +865,8 @@ void refuse_unmodelled(const Settings& settings)
                 settings.narrowed->line};
     }
 
-    // The two options exist for a use flex cannot see, through a macro or code of the file's own, and such a use is
-    // out of the reading's sight too.
+    // The two options exist for a use flex cannot see, through a macro or code of the file's own, and such a use is out
+    // of the reading's sight too.
     if (settings.reject)
     {
         throw Spec_error{
@@ -955,6 +954,16 @@ constexpr std::array stateful{
                 .does = "discards a buffer's remaining input, so the next token is not matched against the input's "
                         "next bytes"},
         Stateful{
+                .name = "yy_init_buffer",
+                .call = true,
+                .does = "flushes and reinitializes a buffer, discarding its remaining input, so the next token is not "
+                        "matched against the input's next bytes"},
+        Stateful{
+                .name = "yy_delete_buffer",
+                .call = true,
+                .does = "frees a buffer, and freeing the current one leaves the scan without its remaining input, so "
+                        "the next token is not matched against the input's next bytes"},
+        Stateful{
                 .name = "yyrestart",
                 .call = true,
                 .does = "restarts the scan on another input, so the next token is not matched against the input's "
@@ -1038,11 +1047,10 @@ constexpr std::array stateful{
             return before > 0 && tokens[before - 1].text == "(";
         }};
 
-        // A member of the name on anything, called or parenthesised to be called, `(self->yyinput)()`, is the
-        // call: flex's C++ scanners write `this->yyinput()`, and an alias of `this`, `auto* self = this;
-        // self->yyinput();`, is the same call under a name the text does not resolve, so `self->yyinput()` and
-        // `s.input()` alike are refused by name; a member of that name read and not called, `yylval.input = 1`, is
-        // none.
+        // A member of the name on anything, called or parenthesised to be called, `(self->yyinput)()`, is the call:
+        // flex's C++ scanners write `this->yyinput()`, and an alias of `this`, `auto* self = this; self->yyinput();`,
+        // is the same call under a name the text does not resolve, so `self->yyinput()` and `s.input()` alike are
+        // refused by name; a member of that name read and not called, `yylval.input = 1`, is none.
         const auto through_member{
                 index > 0 && (tokens[index - 1].text == "." || tokens[index - 1].text == "->") && !of_this(index - 1)};
 
@@ -1050,8 +1058,8 @@ constexpr std::array stateful{
 
         for (const auto& [name, call, does] : stateful)
         {
-            // The calls that push a byte onto the input or take one from it, which change what is scanned next
-            // wherever they stand; the others move a match, which an action without one cannot do.
+            // The calls that push a byte onto the input or take one from it, which change what is scanned next wherever
+            // they stand; the others move a match, which an action without one cannot do.
             const auto injecting{name == "unput" || name == "input" || name == "yyinput"};
 
             if (word != name || (through_member && !called && !closed) || (injecting_only && !injecting))
@@ -1091,6 +1099,8 @@ constexpr std::string_view meaningful_words[]{
         "yyterminate",
         "YY_FLUSH_BUFFER",
         "yy_flush_buffer",
+        "yy_init_buffer",
+        "yy_delete_buffer",
         "yyrestart",
         "yy_scan_string",
         "yy_scan_bytes",
@@ -1104,9 +1114,9 @@ constexpr std::string_view meaningful_words[]{
  *        before every rule's own action, so a call in it is a call in every action: under `#define YY_USER_ACTION
  *        input();` flex 2.6.4 takes "aab" through `a+` and `b` as the one token 7, the b consumed by the hook.
  *
- * The directive is found as C reads it, token by token as c_tokens() reads them, so a comment between its words and
- * a line splice inside one are no hiding place, and its replacement runs to the end of the line and on past a
- * backslash before the newline; a comment naming the macro defines nothing.
+ * The directive is found as C reads it, token by token as c_tokens() reads them, so a comment between its words and a
+ * line splice inside one are no hiding place, and its replacement runs to the end of the line and on past a backslash
+ * before the newline; a comment naming the macro defines nothing.
  * @param code A stretch of the definitions section's C.
  * @param macros The macros the file defines, whose opaque ones the hook may not use.
  * @param returning The forms besides `return` an action returns a token through, which the hook may not hold.
@@ -1120,8 +1130,8 @@ constexpr std::string_view meaningful_words[]{
 
     for (std::size_t at{0}; at + 2 < tokens.size(); ++at)
     {
-        // flex writes `YY_BREAK` after every action as well, a `break` by default, so a definition of it of the
-        // file's own runs after every action too, and what it does there is out of this reading's sight.
+        // flex writes `YY_BREAK` after every action as well, a `break` by default, so a definition of it of the file's
+        // own runs after every action too, and what it does there is out of this reading's sight.
         if (tokens[at].text == "#" && tokens[at + 1].text == "define" && tokens[at + 2].text == "YY_BREAK")
         {
             return std::pair{
@@ -1143,9 +1153,9 @@ constexpr std::string_view meaningful_words[]{
 
         const auto line{static_cast<std::size_t>(std::ranges::count(code.substr(0, tokens[at].at), '\n'))};
 
-        // The hook runs before the rule's own action, so a return in it returns before the action can, a `break`
-        // or a `continue` ends the rule's case without the action, and a `goto` leaves for somewhere out of sight:
-        // flex 2.6.4 under `#define YY_USER_ACTION return 9;` returns 9 for every match of `a+ return 7;`.
+        // The hook runs before the rule's own action, so a return in it returns before the action can, a `break` or a
+        // `continue` ends the rule's case without the action, and a `goto` leaves for somewhere out of sight: flex
+        // 2.6.4 under `#define YY_USER_ACTION return 9;` returns 9 for every match of `a+ return 7;`.
         for (const auto& token : c_tokens(replacement))
         {
             const auto leaves{
@@ -1211,12 +1221,12 @@ void read_definitions(Lines& lines, Lexer_spec& file, Settings& settings, Macros
             return;
         }
 
-        // The section's code, a `%{` block, a `%top` block or an indented line, is flex's to copy through, and
-        // holds one thing the token language is not blind to: a YY_USER_ACTION that moves the match.
-        // The macros a stretch defines are taken now and the hook it defines is read once the section is: a helper
-        // the hook calls may be defined in a later block, and the generated scanner expands the hook where it runs,
-        // under every definition the section leaves. Reading each stretch as it arrives had let a hook slip through
-        // whose helper stood below it.
+        // The section's code, a `%{` block, a `%top` block or an indented line, is flex's to copy through, and holds
+        // one thing the token language is not blind to: a YY_USER_ACTION that moves the match. The macros a stretch
+        // defines are taken now and the hook it defines is read once the section is: a helper the hook calls may be
+        // defined in a later block, and the generated scanner expands the hook where it runs, under every definition
+        // the section leaves. Reading each stretch as it arrives had let a hook slip through whose helper stood below
+        // it.
         const auto hooked{[&macros, &copied](const std::string_view code, const std::size_t first) {
             take_macros(code, macros);
 
@@ -1307,8 +1317,8 @@ void read_definitions(Lines& lines, Lexer_spec& file, Settings& settings, Macros
             continue; // %array, %pointer and the like say nothing about the token set
         }
 
-        // A definition: a name at the margin, blanks, and the pattern to the end of the line, a comment there
-        // included, since flex takes the definition to the line's end and reads such a comment as part of it.
+        // A definition: a name at the margin, blanks, and the pattern to the end of the line, a comment there included,
+        // since flex takes the definition to the line's end and reads such a comment as part of it.
         const auto split{text.find_first_of(" \t")};
 
         const auto name{text.substr(0, split)};
@@ -1351,10 +1361,10 @@ void read_definitions(Lines& lines, Lexer_spec& file, Settings& settings, Macros
  * escape carrying the byte after it and a backslash before the newline carrying the literal on to the next line, as C
  * splices lines; a literal the line's end closes leaves the action open where a brace is, and where none is, flex ends
  * a rule's action there in the literal's state and never closes the code it emits for it, so that the m4 it runs stops
- * with an end of file in string, which is refused by name, while a scope's opener or close line, whose code flex
- * copies out as no rule's action, ends there like any other line. There is no state for a `//` comment, so a brace
- * after one on the line counts and a quote there opens a literal. An action opening with `%{` is a code block instead,
- * read in a state of its own with no comments or literals, which runs to the end of the first line holding `%}`.
+ * with an end of file in string, which is refused by name, while a scope's opener or close line, whose code flex copies
+ * out as no rule's action, ends there like any other line. There is no state for a `//` comment, so a brace after one
+ * on the line counts and a quote there opens a literal. An action opening with `%{` is a code block instead, read in a
+ * state of its own with no comments or literals, which runs to the end of the first line holding `%}`.
  * @param code The stretch of C the action opens, from its first byte to the end of the file.
  * @param number The line the action begins on, for the refusals.
  * @param rule Whether the code is a rule's action rather than the code on a scope's opener or close line.
@@ -1513,8 +1523,8 @@ void read_definitions(Lines& lines, Lexer_spec& file, Settings& settings, Macros
 
         line.remove_prefix(close + 1);
 
-        // flex takes a prefix alone on its line as opening whatever the next line holds, since the newline after
-        // it yields no token: the `{` of a scope, as bison's scanners write it, or a rule.
+        // flex takes a prefix alone on its line as opening whatever the next line holds, since the newline after it
+        // yields no token: the `{` of a scope, as bison's scanners write it, or a rule.
         if (trimmed(line).empty())
         {
             do
@@ -1542,9 +1552,9 @@ void read_definitions(Lines& lines, Lexer_spec& file, Settings& settings, Macros
         throw Spec_error{"a rule at the margin has no pattern", number};
     }
 
-    // The action runs to the first end of a line at which its braces balance, as flex reads it, so one that opens
-    // a brace anywhere on its line continues to the matching close, however many lines that takes; a `|` action is
-    // the bar and whatever follows it on its line, which flex takes unread, so no brace or quote there counts.
+    // The action runs to the first end of a line at which its braces balance, as flex reads it, so one that opens a
+    // brace anywhere on its line continues to the matching close, however many lines that takes; a `|` action is the
+    // bar and whatever follows it on its line, which flex takes unread, so no brace or quote there counts.
     const auto tail{trimmed(line.substr(length))};
 
     const auto rest{lines.rest()};
@@ -1556,9 +1566,8 @@ void read_definitions(Lines& lines, Lexer_spec& file, Settings& settings, Macros
                                     action_end(rest.substr(opened), number, pattern != "{")};
 
     // `<s>{` opens a start-condition scope rather than a rule, and what follows the brace on its line is code flex
-    // copies out and drops, read to the same end an action is read to: a comment closing on a later line runs the
-    // code on to that line, as flex 2.6.4 permits, and nothing on those lines is a rule. The caller reads the scope
-    // as such.
+    // copies out and drops, read to the same end an action is read to: a comment closing on a later line runs the code
+    // on to that line, as flex 2.6.4 permits, and nothing on those lines is a rule. The caller reads the scope as such.
     if (pattern == "{")
     {
         lines.advance(1 + static_cast<std::size_t>(std::ranges::count(rest.substr(opened, end), '\n')));
@@ -1584,9 +1593,8 @@ void read_definitions(Lines& lines, Lexer_spec& file, Settings& settings, Macros
         action = std::string{trimmed(action.substr(2, action.find("%}") - 2))};
     }
 
-    // A `|` line is taken unread, as flex takes it, so what follows the bar is no call; an `<<EOF>>` action runs
-    // where no match is, so what it calls moves no match, until a `|` rule above shares it, which share_actions()
-    // checks.
+    // A `|` line is taken unread, as flex takes it, so what follows the bar is no call; an `<<EOF>>` action runs where
+    // no match is, so what it calls moves no match, until a `|` rule above shares it, which share_actions() checks.
     const auto unread{action.starts_with('|') || pattern == "<<EOF>>"};
 
     if (const auto use{unread ? std::nullopt : stateful_use(action, false)})
@@ -1595,8 +1603,8 @@ void read_definitions(Lines& lines, Lexer_spec& file, Settings& settings, Macros
     }
 
     // What an `<<EOF>>` action pushes onto the input is scanned after it, whatever rule matched before: flex takes
-    // `<<EOF>> { unput('a'); return 9; }` on "b" through 8, 9, 7, 9, 7, the a arriving from the action. The calls
-    // that move a match are another rule's concern, since an end-of-input action has none.
+    // `<<EOF>> { unput('a'); return 9; }` on "b" through 8, 9, 7, 9, 7, the a arriving from the action. The calls that
+    // move a match are another rule's concern, since an end-of-input action has none.
     if (pattern == "<<EOF>>")
     {
         if (const auto use{stateful_use(action, true)})
@@ -1645,16 +1653,16 @@ struct Scope
 [[nodiscard]] std::size_t read_rules(
         Lines& lines, Lexer_spec& file, const Returning_t& returning, Macros_t& macros, std::vector<Copied>& copied)
 {
-    // A start-condition scope, `<s>{` on a line of its own through a line opening with `}`, prefixes every rule
-    // inside it. Scopes nest, and a rule inside one with a prefix of its own is active in the scope's conditions and
-    // its own alike: flex keeps every open scope's names on one stack and a rule takes the whole stack.
+    // A start-condition scope, `<s>{` on a line of its own through a line opening with `}`, prefixes every rule inside
+    // it. Scopes nest, and a rule inside one with a prefix of its own is active in the scope's conditions and its own
+    // alike: flex keeps every open scope's names on one stack and a rule takes the whole stack.
     std::vector<std::string> scoped;
 
     std::vector<Scope> opened;
 
-    // The section opens with a prologue, where an indented line is code flex copies into the scanner ahead of
-    // the rules, which ends at the first line at the margin; from then on flex reads an indented line as a
-    // rule, in a scope or out of one.
+    // The section opens with a prologue, where an indented line is code flex copies into the scanner ahead of the
+    // rules, which ends at the first line at the margin; from then on flex reads an indented line as a rule, in a scope
+    // or out of one.
     auto prologue{true};
 
     while (lines.more())
@@ -1670,8 +1678,8 @@ struct Scope
 
         if (text.starts_with("%{"))
         {
-            // A code block in the rules section is copied into the scanner as the definitions' blocks are, ahead
-            // of every action, so a YY_USER_ACTION defined there is the same hook and refused by the same name.
+            // A code block in the rules section is copied into the scanner as the definitions' blocks are, ahead of
+            // every action, so a YY_USER_ACTION defined there is the same hook and refused by the same name.
             const auto first{lines.number()};
 
             const auto before{lines.rest()};
@@ -1736,8 +1744,8 @@ struct Scope
         if (prologue ? is_code(line) : text.empty())
         {
             // The indented code before the first rule is flex's to copy into the scanner, where it stands ahead of
-            // every action, so it holds the one thing the token language is not blind to just as the definitions
-            // do: a YY_USER_ACTION that moves the match. The lines it splices are read with it.
+            // every action, so it holds the one thing the token language is not blind to just as the definitions do: a
+            // YY_USER_ACTION that moves the match. The lines it splices are read with it.
             if (prologue)
             {
                 const auto first{lines.number()};
@@ -1788,8 +1796,8 @@ struct Scope
         }
     }
 
-    // flex reads the rest of the section as the scope's body and hits a parse error at its end, so a scope left
-    // open is refused here rather than read as if its `}` stood at the section's end.
+    // flex reads the rest of the section as the scope's body and hits a parse error at its end, so a scope left open is
+    // refused here rather than read as if its `}` stood at the section's end.
     if (!opened.empty())
     {
         throw Spec_error{"a start-condition scope is never closed", opened.back().line};
@@ -1929,14 +1937,14 @@ std::vector<Lexer_spec> read_flex(
 
     Lines lines{source};
 
-    // The command line's `-i` is the case option's setting before the definitions section speaks: flex 2.6.4 with
-    // `-i` and `%option caseful` scans case-sensitively, the file's word standing last.
+    // The command line's `-i` is the case option's setting before the definitions section speaks: flex 2.6.4 with `-i`
+    // and `%option caseful` scans case-sensitively, the file's word standing last.
     Settings settings;
 
     settings.caseless = case_insensitive;
 
-    // Recorded as the first option word, so that the file's own words stand after it and the token set is built
-    // under whichever stands last, as flex settles the option.
+    // Recorded as the first option word, so that the file's own words stand after it and the token set is built under
+    // whichever stands last, as flex settles the option.
     if (case_insensitive)
     {
         file.options.emplace_back("case-insensitive");
@@ -1956,13 +1964,12 @@ std::vector<Lexer_spec> read_flex(
 
     share_actions(file.rules);
 
-    // The hook and the actions are read for what the file's macros could put in them only now, with every
-    // definition the scanner is compiled under collected, wherever it stood; and a conditional in any of them
-    // is refused rather than decided.
-    // A file the copied code includes defines what the file's own code would: `YY_USER_ACTION`, `YY_BREAK` and the
-    // macros the actions use. Its text is read as copied code of the file's, its own includes after it and beside
-    // it, or the include is refused where no reader reaches the file, since what it defines is out of sight; an
-    // include in angle brackets the reader does not find names a system header, which defines nothing of the
+    // The hook and the actions are read for what the file's macros could put in them only now, with every definition
+    // the scanner is compiled under collected, wherever it stood; and a conditional in any of them is refused rather
+    // than decided. A file the copied code includes defines what the file's own code would: `YY_USER_ACTION`,
+    // `YY_BREAK` and the macros the actions use. Its text is read as copied code of the file's, its own includes after
+    // it and beside it, or the include is refused where no reader reaches the file, since what it defines is out of
+    // sight; an include in angle brackets the reader does not find names a system header, which defines nothing of the
     // scanner's, and one named by a macro is out of sight.
     std::deque<std::string> texts;
 
@@ -2035,10 +2042,10 @@ std::vector<Lexer_spec> read_flex(
         }
     }
 
-    // The case option is the one the definitions section left standing, and a `(?i:` group turns it on inside
-    // itself, for the definitions it names too; the file is held to the option where either stands, since a byte
-    // a group folds may stand in a definition the group names, so once the file folds case anywhere every byte
-    // beyond ASCII in it is refused, the refusal naming what folds.
+    // The case option is the one the definitions section left standing, and a `(?i:` group turns it on inside itself,
+    // for the definitions it names too; the file is held to the option where either stands, since a byte a group folds
+    // may stand in a definition the group names, so once the file folds case anywhere every byte beyond ASCII in it is
+    // refused, the refusal naming what folds.
     std::optional<std::string> group;
 
     for (const auto& [name, pattern] : file.definitions)
@@ -2106,9 +2113,9 @@ std::vector<Lexer_spec> read_flex(
             throw Spec_error{"the action " + *use, rule.line};
         }
 
-        // flex defines `YY_BREAK` as `break;` and writes it after every action; an action spelling it itself leaves
-        // the rule's case on that path with the match discarded, as a `break` of its own would: flex 2.6.4 with
-        // `a+ { if (yyleng == 1) YY_BREAK; return 7; }` before `b return 8;` returns 8 alone on "ab".
+        // flex defines `YY_BREAK` as `break;` and writes it after every action; an action spelling it itself leaves the
+        // rule's case on that path with the match discarded, as a `break` of its own would: flex 2.6.4 with `a+ { if
+        // (yyleng == 1) YY_BREAK; return 7; }` before `b return 8;` returns 8 alone on "ab".
         for (const auto& token : c_tokens(rule.action))
         {
             if (token.text == "YY_BREAK")
@@ -2129,9 +2136,9 @@ std::vector<Lexer_spec> read_flex(
     // An `<<EOF>>` rule matches no byte; it stayed until here for the action a `|` rule above it shares.
     std::erase_if(file.rules, [](const Lexer_spec::Rule& rule) { return rule.pattern == "<<EOF>>"; });
 
-    // flex adds the default rule once the section is read, after every rule of the file's, unless `%option
-    // nodefault` stands, under which a byte no rule matches stops the scanner with a fatal error, which is what a
-    // token set answers of itself where no rule matches.
+    // flex adds the default rule once the section is read, after every rule of the file's, unless `%option nodefault`
+    // stands, under which a byte no rule matches stops the scanner with a fatal error, which is what a token set
+    // answers of itself where no rule matches.
     if (settings.default_rule)
     {
         add_default_rule(file, end);

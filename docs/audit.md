@@ -10,9 +10,8 @@ over the compiled tables, the same decisions [docs/split_points.md](split_points
 
 The tool exists because a scanner author who wants a parallel or resumable scan has a question the generator cannot
 answer: is this token set one where a cut can be certified, and if not, which rule stands in the way. The answer is a
-property of the token set, not of any corpus, and the report states it as such. How often a certified cut then occurs
-in the input a scanner will meet is a property of that input, and `--input` measures it on a file, stated as a
-measurement.
+property of the token set, not of any corpus, and the report states it as such. How often a certified cut then occurs in
+the input a scanner will meet is a property of that input, and `--input` measures it on a file, stated as a measurement.
 
 ## Running It
 
@@ -20,10 +19,10 @@ measurement.
 munch-audit [options] FILE...
 ```
 
-A file that opens a re2c block (`/*!re2c`, `/*!rules:re2c` or `/*!local:re2c`) is read as re2c, one with a derive
-naming `Logos` as logos, one whose first item is a grammar declaration as ANTLR, any other as flex, the text read as
-code for that, so that a string literal or a comment quoting an opener or a derive says nothing of the kind;
-`--flex`, `--re2c`, `--antlr` and `--logos` force the kind. The options follow the generators' own:
+A file that opens a re2c block (`/*!re2c`, `/*!rules:re2c` or `/*!local:re2c`) is read as re2c, one with a derive naming
+`Logos` as logos, one whose first item is a grammar declaration as ANTLR, any other as flex, the text read as code for
+that, so that a string literal or a comment quoting an opener or a derive says nothing of the kind; `--flex`, `--re2c`,
+`--antlr` and `--logos` force the kind. The options follow the generators' own:
 
 | Option | Meaning |
 |---|---|
@@ -39,8 +38,8 @@ code for that, so that a string literal or a comment quoting an opener or a deri
 | `--json` | One JSON document for the whole run instead of text. |
 
 The exit status is 0 when every scanner and condition audited, 1 when one was refused, a file the reading finds no
-scanner in being refused as such, and 2 on a command-line error, a `--condition` no scanner of the files has among
-them. The output is written whole once every file is audited, so an error leaves no part of a document behind.
+scanner in being refused as such, and 2 on a command-line error, a `--condition` no scanner of the files has among them.
+The output is written whole once every file is audited, so an error leaves no part of a document behind.
 
 ## Reading the Report
 
@@ -87,8 +86,8 @@ why candidate bytes do not certify
 
 ```
 
-And this is `tools/audit/grammars/c-like-block-comments.l`, the conventional tokenization with block comments, which
-the split-points paper found sufficient to remove every useful certificate:
+And this is `tools/audit/grammars/c-like-block-comments.l`, the conventional tokenization with block comments, which the
+split-points paper found sufficient to remove every useful certificate:
 
 ```
 == tools/audit/grammars/c-like-block-comments.l
@@ -130,9 +129,9 @@ what the shapes of the tokens consuming '\n' offer, each edit on its own
 Row by row:
 
 - **options**: the options the reading was governed by, the file's own and what a reader notes of its own, absent when a
-scanner declares none. Several of them decide what a rule matches, flex's `case-insensitive`, re2c's
-`encoding:utf8` and the Unicode version a logos scanner's classes were taken from among them, so they stand where
-the figures they governed begin.
+  scanner declares none. Several of them decide what a rule matches, flex's `case-insensitive`, re2c's `encoding:utf8`
+  and the Unicode version a logos scanner's classes were taken from among them, so they stand where the figures they
+  governed begin.
 - **verdict**: the answer in one sentence, with where to read on; where it finds no window it says so of the model the
   windows are decided in, up to the width tried, since `window_counterexample()` may certify a window the conservative
   model refuses.
@@ -140,21 +139,21 @@ the figures they governed begin.
   parallel scan may cut before any occurrence with no coordination, the byte certificate of
   [docs/split_points.md](split_points.md).
 - **certified modulo discarded**: the same once the tokens a parser never sees, the ones whose actions return nothing,
-  are deleted from both streams. A byte certified here but not above certifies the parser's token stream while the
-  raw stream may differ in where whitespace or comments are split.
+  are deleted from both streams. A byte certified here but not above certifies the parser's token stream while the raw
+  stream may differ in where whitespace or comments are split.
 - **discarded tokens**: which rules were read as returning nothing, so that a misread action is visible on the page
   rather than folded silently into the row above; a flex scanner without `%option nodefault` has flex's default rule
   among them, printed as `.|\n`. Name the forms with `--returns` when a scanner returns through macros or an assignment.
-- **certified windows**: the byte strings whose every occurrence has a token boundary at a fixed offset inside them,
-  the window certificate of [docs/split_windows.md](split_windows.md); a cut falls back to these where no byte
-  certifies. Counted over byte classes, bytes the tables cannot tell apart, and then once every class stands for all
-  its members; the examples prefer printable bytes and each names its origin, the offset the boundary sits at.
+- **certified windows**: the byte strings whose every occurrence has a token boundary at a fixed offset inside them, the
+  window certificate of [docs/split_windows.md](split_windows.md); a cut falls back to these where no byte certifies.
+  Counted over byte classes, bytes the tables cannot tell apart, and then once every class stands for all its members;
+  the examples prefer printable bytes and each names its origin, the offset the boundary sits at.
 - **mandatory core**: a byte string every certifying window provably contains, when there is one, which is where a
   planner looks for windows in an input.
 - **anchor-free span, bytes and windows**: the longest run of positions a tokenizable input can carry with no
   certificate among them, the gap a chunk plan may be asked to span. Unbounded is the common answer, since no
-  certificate anchors a position inside a token and an identifier or a run of blanks has no longest form; it is
-  finite only when every long input is forced to carry a certificate.
+  certificate anchors a position inside a token and an identifier or a run of blanks has no longest form; it is finite
+  only when every long input is forced to carry a certificate.
 - **lag** and **rescue-free**: the recovery figures, how far a scan resumed at a certified byte can trail the true token
   stream before it agrees with it, and whether the token set admits no completely tokenizable input on which the scan
   reads past a token's end and rolls back, decided exactly, the shortest such input shown when one exists.
@@ -176,17 +175,17 @@ the figures they governed begin.
   applied there and decides nothing about it. The steps reproduce the study's designed rows: bounding the block comment
   to a line certifies the newline once discarded tokens are deleted, and splitting the whitespace run at newlines makes
   it exact.
-- **what the shapes of the consuming tokens offer**: the edit an author would actually make, read off each
-  token's pattern. A *run* over a class the byte is in, `[ \t\n]+`, is the step above: the byte leaves the class and
-  becomes a token of its own. A *terminated* token, `"//"[^\n]*\n`, can leave its terminator to the token after it, the
-  terminator being whatever matches the one byte and nothing else, `\n`, `[\n]`, `\n{1}` or `[cd]{0}\n` alike, a
-  repetition of exactly zero being the empty word whatever it repeats. A *delimited* token, a fixed opener followed by a
-  body the byte is in, a block comment or a string, can have its body scanned in a start condition of its own with the
-  opener staying, which is how scanners that certify most of their bytes are written; the opener too is whatever matches
-  one fixed word, `"x"`, `[x]` or `x{1}` alike. Each such edit is tried on its own token with the rest of the set as it
-  stands and its certificate reported, then every consuming token takes its own shape's edit together; a terminated
-  token's fixed newline, immovable for the narrowing above, is movable here. A token whose fixed spelling holds the byte
-  and has none of these shapes stays *fixed*.
+- **what the shapes of the consuming tokens offer**: the edit an author would actually make, read off each token's
+  pattern. A *run* over a class the byte is in, `[ \t\n]+`, is the step above: the byte leaves the class and becomes a
+  token of its own. A *terminated* token, `"//"[^\n]*\n`, can leave its terminator to the token after it, the terminator
+  being whatever matches the one byte and nothing else, `\n`, `[\n]`, `\n{1}` or `[cd]{0}\n` alike, a repetition of
+  exactly zero being the empty word whatever it repeats. A *delimited* token, a fixed opener followed by a body the byte
+  is in, a block comment or a string, can have its body scanned in a start condition of its own with the opener staying,
+  which is how scanners that certify most of their bytes are written; the opener too is whatever matches one fixed word,
+  `"x"`, `[x]` or `x{1}` alike. Each such edit is tried on its own token with the rest of the set as it stands and its
+  certificate reported, then every consuming token takes its own shape's edit together; a terminated token's fixed
+  newline, immovable for the narrowing above, is movable here. A token whose fixed spelling holds the byte and has none
+  of these shapes stays *fixed*.
 - **certified-anchor supply on FILE**: with `--input`, the section that measures what the report's certificates come to
   on real input, the guarantee a parallel scanner lives on: how often a certified anchor occurs and how long the
   stretches between anchors are. An anchor is an interior position of the file at which a certificate places a token
@@ -201,22 +200,22 @@ the figures they governed begin.
   file's bytes, the windows matched through the byte classes their representatives stand for, and nothing is sampled.
   The windows are the conservative model's, so where a longer match would settle a boundary the model does not, the
   window row undercounts what an exact decision would certify: its anchors and its anchors per kibibyte are a lower
-  bound on that decision's, every window this model certifies being one an exact decision certifies too. The gaps
-  bound that decision's in neither direction and are measurements of this inventory alone: an anchor the model misses
-  usually parts a gap and shortens the longest, but one before the first anchor or after the last turns a run the row
-  does not count, the input's own edge, into a gap it does count, which can raise the maximum and move every quantile
-  with it. What a certificate promises at an anchor, a token boundary of the serial scan, and for the modulo row a
-  boundary of that scan once its discarded tokens are deleted, it promises on input the token set tokenizes
-  completely, so the section's first row says how far the condition's serial scan of the file goes: through the whole
-  file, and every anchor is a boundary, the modulo row's once discarded tokens are deleted, or to the offset it stops
-  at, no token matching there, and the rows count the occurrences as they stand and promise no boundary, the exact
-  byte row alone keeping the serial-prefix relation `tokenize_all_parallel()` states for malformed input, which the
-  window rows have not got.
+  bound on that decision's, every window this model certifies being one an exact decision certifies too. The gaps bound
+  that decision's in neither direction and are measurements of this inventory alone: an anchor the model misses usually
+  parts a gap and shortens the longest, but one before the first anchor or after the last turns a run the row does not
+  count, the input's own edge, into a gap it does count, which can raise the maximum and move every quantile with it.
+  What a certificate promises at an anchor, a token boundary of the serial scan, and for the modulo row a boundary of
+  that scan once its discarded tokens are deleted, it promises on input the token set tokenizes completely, so the
+  section's first row says how far the condition's serial scan of the file goes: through the whole file, and every
+  anchor is a boundary, the modulo row's once discarded tokens are deleted, or to the offset it stops at, no token
+  matching there, and the rows count the occurrences as they stand and promise no boundary, the exact byte row alone
+  keeping the serial-prefix relation `tokenize_all_parallel()` states for malformed input, which the window rows have
+  not got.
 
 ## What Is Read, and What Is Refused
 
-The readers take the file as the generator would and refuse what the byte-level token language cannot express, with
-the line that holds it, rather than read it as something else:
+The readers take the file as the generator would and refuse what the byte-level token language cannot express, with the
+line that holds it, rather than read it as something else:
 
 - flex: definitions, `%s` and `%x`, `%option` lines word by word, a quoted value one word with the name it follows
   whatever blanks it holds and the word after its closing quote the next, a blank between them or none, as flex lexes
@@ -276,15 +275,15 @@ the line that holds it, rather than read it as something else:
   which appends the next match to this one, `REJECT`, which drops the match for the next rule's, `yyless()`, which gives
   the end of the match back to be matched again, `unput()`, which pushes a byte onto the input, `input()` or
   `yyinput()`, which consume bytes no rule matched, `yyterminate()`, which ends the scan with no token, and the calls
-  and the `YY_FLUSH_BUFFER` that switch, push, pop, flush or restart a buffer, `yy_scan_string()` and `yyrestart()`
-  among them, after which the next token is not matched against the input's next bytes, the action read as C reads it,
-  token by token, a comment or a literal holding none of them, a call being a whole word whose next token is a
-  parenthesis, whatever blanks or comments stand between, through a member of anything alike, `this->yyinput()`, an
-  alias's `self->yyinput()` and `(self->yyinput)()`, `REJECT` a whole word in capitals as flex takes it, and a `|` line
-  taken unread as flex takes it; and `%option reject` and `%option yymore`, which declare such a use where flex cannot
-  see it, through a macro or code of the file's own. `BEGIN`, `yy_push_state`, `yy_pop_state` and `yy_top_state` change
-  the start condition and nothing else, which the caveat above every report covers, so an action calling them is read as
-  any other.
+  and the `YY_FLUSH_BUFFER` that switch, push, pop, flush, reinitialize, delete or restart a buffer, `yy_scan_string()`,
+  `yy_init_buffer()` and `yyrestart()` among them, after which the next token is not matched against the input's next
+  bytes, the action read as C reads it, token by token, a comment or a literal holding none of them, a call being a
+  whole word whose next token is a parenthesis, whatever blanks or comments stand between, through a member of anything
+  alike, `this->yyinput()`, an alias's `self->yyinput()` and `(self->yyinput)()`, `REJECT` a whole word in capitals as
+  flex takes it, and a `|` line taken unread as flex takes it; and `%option reject` and `%option yymore`, which declare
+  such a use where flex cannot see it, through a macro or code of the file's own. `BEGIN`, `yy_push_state`,
+  `yy_pop_state` and `yy_top_state` change the start condition and nothing else, which the caveat above every report
+  covers, so an action calling them is read as any other.
 - re2c: `/*!re2c`, `/*!local:re2c`, `/*!rules:re2c` and `/*!use:re2c` blocks, named or not, closed as re2c closes them
   (a star-slash inside a literal, a class, an action or a comment is content); a rules block is a library the
   `!use:name;` directive and a use block merge, definitions, configurations and rules, and is no scanner itself; a use
@@ -358,12 +357,12 @@ the line that holds it, rather than read it as something else:
   makes one of the calls named above, and for a re2c action whether it moves one of the scan pointers, `YYCURSOR`,
   `YYMARKER` or `YYCTXMARKER` under whatever names the block's configurations give them, which leaves the next token
   beginning elsewhere than where the match ended, or hands one on, by its address, a reference bound to it or a call it
-  is passed to, or indexes the array a pointer is configured in by an expression the reading does not evaluate, each
-  of which is refused; and how the action leaves, since re2c writes the actions one after another and control falls
-  from an action's end into the next rule's: an action returns on every path, or leaves by `continue` or by a `goto`
-  to a label before the block from which nothing but the block follows, which rescans and discards the match, or by
-  a `break` after a stored token, and any other end, a `break`, a `goto` elsewhere or no jump at all, is refused.
-  Nothing else in the action is interpreted.
+  is passed to, or indexes the array a pointer is configured in by an expression the reading does not evaluate, each of
+  which is refused; and how the action leaves, since re2c writes the actions one after another and control falls from an
+  action's end into the next rule's: an action returns on every path, or leaves by `continue` or by a `goto` to a label
+  before the block from which nothing but the block follows, which rescans and discards the match, or by a `break` after
+  a stored token, and any other end, a `break`, a `goto` elsewhere or no jump at all, is refused. Nothing else in the
+  action is interpreted.
 - ANTLR 4: `lexer grammar` and combined `grammar` files, modes as the start conditions, a lexer grammar's alone, a byte
   order mark as a blank wherever it stands outside a literal, a set or an action, as ANTLR's lexer drops one, `fragment`
   rules as definitions, a reference to any lexer rule as `{NAME}`, a rule's commands, which end its single outermost

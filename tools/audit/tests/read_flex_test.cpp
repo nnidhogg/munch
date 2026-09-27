@@ -70,8 +70,8 @@ TEST(Read_flex, Reads_definitions_options_conditions_and_rules_in_order)
     EXPECT_EQ(file.conditions.front().name, "COMMENT");
     EXPECT_TRUE(file.conditions.front().exclusive);
 
-    // Ten rules of the file's and flex's default rule after them: the <<EOF>> rule is not one, and the code
-    // after the second %% is not read.
+    // Ten rules of the file's and flex's default rule after them: the <<EOF>> rule is not one, and the code after the
+    // second %% is not read.
     ASSERT_EQ(file.rules.size(), 11u);
     EXPECT_EQ(file.rules[10].pattern, R"(.|\n)");
     EXPECT_EQ(file.rules[10].line, 24u);
@@ -133,9 +133,9 @@ TEST(Read_flex, The_built_token_set_scans_as_flex_would_and_answers_the_certific
     EXPECT_EQ(
             tokens, (std::vector<std::pair<std::size_t, std::size_t>>{{0, 3}, {8, 1}, {2, 2}, {8, 1}, {1, 2}, {8, 1}}));
 
-    // The conventional C-like shape: the line comment admits every byte but the newline and the whitespace run
-    // folds the newline in, so nothing certifies exactly, and newline certifies once the discarded rules, the
-    // ones returning nothing, are deleted.
+    // The conventional C-like shape: the line comment admits every byte but the newline and the whitespace run folds
+    // the newline in, so nothing certifies exactly, and newline certifies once the discarded rules, the ones returning
+    // nothing, are deleted.
     for (int value{0}; value < 256; ++value)
     {
         EXPECT_FALSE(lexer.is_split_point(static_cast<char>(value))) << value;
@@ -146,8 +146,8 @@ TEST(Read_flex, The_built_token_set_scans_as_flex_would_and_answers_the_certific
 
 TEST(Read_flex, Start_condition_scopes_and_code_in_actions_read_as_flex_reads_them)
 {
-    // The shapes PostgreSQL's, sudo's, flex's own and OpenSCAD's scanners use: %top with its brace on the line after
-    // a blank, a scope whose opener carries a comment, whose rules are indented and whose close carries a comment,
+    // The shapes PostgreSQL's, sudo's, flex's own and OpenSCAD's scanners use: %top with its brace on the line after a
+    // blank, a scope whose opener carries a comment, whose rules are indented and whose close carries a comment,
     // indented comments on lines of their own inside and outside a scope, as flex's manual asks for them, code blocks
     // closed mid-line and on their own line, an action whose literals and comments hold braces, and one whose brace
     // opens after code on its line. flex 2.6.4 builds this file.
@@ -195,8 +195,8 @@ TEST(Read_flex, Start_condition_scopes_and_code_in_actions_read_as_flex_reads_th
 
 TEST(Read_flex, A_scope_opener_s_line_is_code_flex_copies_out_however_far_its_comment_runs)
 {
-    // flex 2.6.4, run on this file, copies the comment out whole, its second line included, and scans "a" as 1 in S
-    // and "b" as 2 in INITIAL, neither in the other condition: nothing on the comment's lines is a rule.
+    // flex 2.6.4, run on this file, copies the comment out whole, its second line included, and scans "a" as 1 in S and
+    // "b" as 2 in INITIAL, neither in the other condition: nothing on the comment's lines is a rule.
     constexpr std::string_view comment{R"(%option noyywrap
 %x S
 %%
@@ -231,8 +231,8 @@ b   return 2;
 
 TEST(Read_flex, A_scope_s_close_line_is_code_flex_copies_out_however_far_its_comment_or_brace_block_runs)
 {
-    // flex 2.6.4, run on this file, copies the comment out whole and returns 2 for b while echoing w and x: nothing
-    // on the comment's lines is a rule.
+    // flex 2.6.4, run on this file, copies the comment out whole and returns 2 for b while echoing w and x: nothing on
+    // the comment's lines is a rule.
     constexpr std::string_view comment{R"(%option noyywrap
 %x S
 %%
@@ -266,13 +266,13 @@ b   return 2;
     EXPECT_EQ(read_flex("%x S\n%%\n<S>{\na   return 1;\n} /* <S> */\nb   return 2;\n").front().rules.size(), 3u);
     EXPECT_EQ(read_flex("%x S\n%%\n<S>{\n  a   return 1;\n  } /* done */\nb   return 2;\n").front().rules.size(), 3u);
 
-    // A second close on the close's line is code, so the outer scope stays open, which flex
-    // refuses as it does the reading.
+    // A second close on the close's line is code, so the outer scope stays open, which flex refuses as it does the
+    // reading.
     EXPECT_THROW(std::ignore = read_flex("%x S T\n%%\n<S>{\n<T>{\na   return 1;\n} }\nb   return 2;\n"), Spec_error);
 
-    // A comment at the margin of the rules section, after the first %% or between rules, in a scope or out of one,
-    // is refused: flex 2.6.4 reads its slash as the start of a rule and stops with "unrecognized rule", where its
-    // manual asks for the comment to be indented.
+    // A comment at the margin of the rules section, after the first %% or between rules, in a scope or out of one, is
+    // refused: flex 2.6.4 reads its slash as the start of a rule and stops with "unrecognized rule", where its manual
+    // asks for the comment to be indented.
     const auto line_of{[](const std::string_view source) {
         try
         {
@@ -313,9 +313,9 @@ TEST(Read_flex, A_negated_POSIX_class_is_refused_by_name_and_a_positive_one_is_r
         return std::string{};
     }};
 
-    // flex fills `[:alpha:]` with its ASCII members whatever locale it runs under, and `[:^alpha:]` under that
-    // locale, flex 2.6.4 under fr_FR.ISO8859-1 leaving `\xE9` out of it where the C locale keeps it: the negation
-    // is refused by name, in a rule and in a definition, and the class itself is read.
+    // flex fills `[:alpha:]` with its ASCII members whatever locale it runs under, and `[:^alpha:]` under that locale,
+    // flex 2.6.4 under fr_FR.ISO8859-1 leaving `\xE9` out of it where the C locale keeps it: the negation is refused by
+    // name, in a rule and in a definition, and the class itself is read.
     EXPECT_EQ(
             refusal_of("%%\n[[:^alpha:]]   return 7;\n\\xE9   return 8;\n"),
             "line 2: the pattern holds [:^alpha:], which flex fills under the locale it runs under, dropping the "
@@ -332,9 +332,9 @@ TEST(Read_flex, A_negated_POSIX_class_is_refused_by_name_and_a_positive_one_is_r
     EXPECT_TRUE(refusal_of("%%\n[\"'][[:^alpha:]]   return 7;\n").contains("holds [:^alpha:]"));
     EXPECT_TRUE(refusal_of("DEF [^\"[:^print:]]\n%%\n{DEF}+   return 7;\n").contains("'DEF' holds [:^print:]"));
 
-    // Under the case option flex folds a byte beyond ASCII under its locale, flex 2.6.4 under fr_FR.ISO8859-1
-    // giving `\xE9` its other case `\xC9` where the C locale gives none: such a byte is refused by name under
-    // the option, written out, as `\xHH` or as an octal escape, in a rule and in a definition, and read otherwise.
+    // Under the case option flex folds a byte beyond ASCII under its locale, flex 2.6.4 under fr_FR.ISO8859-1 giving
+    // `\xE9` its other case `\xC9` where the C locale gives none: such a byte is refused by name under the option,
+    // written out, as `\xHH` or as an octal escape, in a rule and in a definition, and read otherwise.
     EXPECT_EQ(
             refusal_of("%option case-insensitive\n%%\n\\xE9   return 7;\n\\xC9   return 8;\n"),
             "line 3: the pattern spells the byte \\xE9 under the case option, which flex folds under the locale it "
@@ -350,9 +350,9 @@ TEST(Read_flex, A_negated_POSIX_class_is_refused_by_name_and_a_positive_one_is_r
     EXPECT_TRUE(refusal_of("%option caseless\n%option nocaseless\n%%\n\\xE9   return 7;\n").empty());
 
     // A `(?i:` group folds case inside itself, under the same locale, flex 2.6.4 under fr_FR.ISO8859-1 taking
-    // `(?i:a|\xE9)+` over `a\xC9` as one token where the C locale takes two: once the file folds case anywhere,
-    // a byte beyond ASCII in it is refused, in the group, outside it or in a definition, naming the group; a group
-    // turning the option off, `(?-i:`, or setting another flag, folds nothing.
+    // `(?i:a|\xE9)+` over `a\xC9` as one token where the C locale takes two: once the file folds case anywhere, a byte
+    // beyond ASCII in it is refused, in the group, outside it or in a definition, naming the group; a group turning the
+    // option off, `(?-i:`, or setting another flag, folds nothing.
     EXPECT_EQ(
             refusal_of("%%\n(?i:a|\\xE9)+   return 7;\n\\xC9   return 8;\n"),
             "line 2: the pattern spells the byte \\xE9 beside the group (?i: that folds case, which flex folds under "
@@ -367,9 +367,9 @@ TEST(Read_flex, A_negated_POSIX_class_is_refused_by_name_and_a_positive_one_is_r
     EXPECT_TRUE(refusal_of("%%\n(?-si:a)   return 7;\n\\xE9   return 8;\n").empty());
     EXPECT_TRUE(refusal_of("%%\n(?is-i:a)   return 7;\n\\xE9   return 8;\n").empty());
 
-    // flex's `-i` is the case option on before the file's own words, which override it: the reader records it as
-    // the first option word, so that `%option caseful` in the file stands last and turns it off again, as flex
-    // 2.6.4 with `-i` and that file scans case-sensitively; a byte beyond ASCII is refused under it as under the word.
+    // flex's `-i` is the case option on before the file's own words, which override it: the reader records it as the
+    // first option word, so that `%option caseful` in the file stands last and turns it off again, as flex 2.6.4 with
+    // `-i` and that file scans case-sensitively; a byte beyond ASCII is refused under it as under the word.
     const auto folded{read_flex("%%\na+   return 7;\n", {}, {}, true).front()};
     EXPECT_EQ(folded.options, (std::vector<std::string>{"case-insensitive"}));
     const auto unfolded{read_flex("%option caseful\n%%\na+   return 7;\n", {}, {}, true).front()};
@@ -388,9 +388,9 @@ TEST(Read_flex, A_negated_POSIX_class_is_refused_by_name_and_a_positive_one_is_r
     EXPECT_TRUE(refusal_of("%%\n(?s:a)+   return 7;\n\\xC9   return 8;\n").empty());
     EXPECT_TRUE(refusal_of("%%\n(?i:a)+   return 7;\nb   return 8;\n").empty());
 
-    // A group opens outside a quote and a bracket alone, `"(?i:"` being text and `[(?i:]` members; and an escape
-    // before a raw byte beyond ASCII, `\\\xE9` in an ISO-8859-1 file, spells that byte, flex 2.6.4 under
-    // fr_FR.ISO8859-1 taking `(a|\\\xE9)+` under `caseless` over `a\xC9` as one token where C takes two.
+    // A group opens outside a quote and a bracket alone, `"(?i:"` being text and `[(?i:]` members; and an escape before
+    // a raw byte beyond ASCII, `\\\xE9` in an ISO-8859-1 file, spells that byte, flex 2.6.4 under fr_FR.ISO8859-1
+    // taking `(a|\\\xE9)+` under `caseless` over `a\xC9` as one token where C takes two.
     EXPECT_TRUE(refusal_of("%%\n\"(?i:\"   return 7;\n\\xE9   return 8;\n").empty());
     EXPECT_TRUE(refusal_of("%%\n[(?i:]   return 7;\n\\xE9   return 8;\n").empty());
     EXPECT_TRUE(refusal_of("%%\n\"(?i:\"(?i:a)   return 7;\n\\xE9   return 8;\n").contains("beside the group (?i:"));
@@ -403,8 +403,8 @@ TEST(Read_flex, A_negated_POSIX_class_is_refused_by_name_and_a_positive_one_is_r
 
 TEST(Read_flex, An_action_ends_where_flex_s_action_scanner_ends_it)
 {
-    // The patterns of the rules read, or the refusal, for a rules section given whole; flex 2.6.4 was run on each
-    // with `%option noyywrap` and a driver returning the tokens, and the assertions say what it built.
+    // The patterns of the rules read, or the refusal, for a rules section given whole; flex 2.6.4 was run on each with
+    // `%option noyywrap` and a driver returning the tokens, and the assertions say what it built.
     const auto patterns{[](const std::string_view rules) {
         const std::string source{"%option noyywrap\n%%\n" + std::string{rules}};
 
@@ -428,14 +428,14 @@ TEST(Read_flex, An_action_ends_where_flex_s_action_scanner_ends_it)
     }};
 
     // flex's action scanner has no state for a `//` comment, so a brace after one counts: an open one runs the action
-    // on to the next close, making `b return 2;` code, which the action reading then refuses at a's line as an
-    // action returning 1 in one statement and ending in another, and a close one ends the action at its line, so
-    // that b and c are rules; flex builds both scanners, whether or not the C it emits compiles.
+    // on to the next close, making `b return 2;` code, which the action reading then refuses at a's line as an action
+    // returning 1 in one statement and ending in another, and a close one ends the action at its line, so that b and c
+    // are rules; flex builds both scanners, whether or not the C it emits compiles.
     EXPECT_EQ(patterns("a   { return 1; } // {\nb   return 1;\n}\nc   return 3;\n").substr(0, 8), "line 3: ");
     EXPECT_EQ(patterns("a   { // }\nb   return 2;\nc   return 3;\n"), R"(a b c .|\n)");
 
-    // A quote after a `//` opens a literal, which the line's end closes where the braces balance: flex ends the
-    // action inside the literal and its m4 stops with "end of file in string", so the file is refused by name.
+    // A quote after a `//` opens a literal, which the line's end closes where the braces balance: flex ends the action
+    // inside the literal and its m4 stops with "end of file in string", so the file is refused by name.
     EXPECT_EQ(
             patterns("a   { return 1; } // it's\nb   return 1;\n"),
             "line 3: a quote is left open at the end of the action's line, where flex ends the action inside the "
@@ -448,8 +448,8 @@ TEST(Read_flex, An_action_ends_where_flex_s_action_scanner_ends_it)
     EXPECT_EQ(patterns("a   { if (c == '\\'' || c == '}') return 1; return 1; }\nb   return 2;\n"), R"(a b .|\n)");
     EXPECT_EQ(patterns("a   { /* }\n      */ return 1; }\nb   return 2;\n"), R"(a b .|\n)");
 
-    // A literal ends at its line's end where a brace is open, and the action goes on: here the quote on the next
-    // line opens another literal that swallows the close, so flex meets the end of the file inside the action.
+    // A literal ends at its line's end where a brace is open, and the action goes on: here the quote on the next line
+    // opens another literal that swallows the close, so flex meets the end of the file inside the action.
     EXPECT_EQ(
             patterns("a   { puts(\"x\ny\"); return 1; }\nb   return 2;\n"), "line 3: the action's braces never close");
     EXPECT_EQ(patterns("a   { puts(\"x\n}\"); return 1; }\nb   return 2;\n").substr(0, 8), "line 3: ");
@@ -464,16 +464,16 @@ TEST(Read_flex, An_action_ends_where_flex_s_action_scanner_ends_it)
     // Outside a literal a backslash before the newline is no splice: the action ends there.
     EXPECT_EQ(patterns("a   return 1; \\\nb   return 2;\n"), R"(a b .|\n)");
 
-    // A stray close counts below zero and the action still ends at its line; flex builds the scanner, though the
-    // C it emits does not compile.
+    // A stray close counts below zero and the action still ends at its line; flex builds the scanner, though the C it
+    // emits does not compile.
     EXPECT_EQ(patterns("a   return 1; }\nb   return 2;\n"), R"(a b .|\n)");
 
     // A `|` line is taken unread, a brace after the bar counting for nothing.
     EXPECT_EQ(patterns("a   | {\nb   return 2;\nc   return 3;\n"), R"(a b c .|\n)");
 
-    // An action opening with `%{` runs to the end of the first line holding `%}`, comments and literals unread, so
-    // the rule-looking line inside is code and a brace after the `%}` counts for nothing; one never closed is
-    // refused, as flex refuses it.
+    // An action opening with `%{` runs to the end of the first line holding `%}`, comments and literals unread, so the
+    // rule-looking line inside is code and a brace after the `%}` counts for nothing; one never closed is refused, as
+    // flex refuses it.
     EXPECT_EQ(patterns("a   %{\nc   return 1;\n    return 1; %}\nb   return 2;\n"), R"(a b .|\n)");
     EXPECT_EQ(patterns("a   %{ return 1; %} {\nb   return 2;\n"), R"(a b .|\n)");
     EXPECT_EQ(
@@ -488,8 +488,8 @@ TEST(Read_flex, An_action_ends_where_flex_s_action_scanner_ends_it)
 
 TEST(Read_flex, Scopes_nest_and_a_prefixed_rule_inside_one_is_active_in_both)
 {
-    // flex's own scanner nests scopes and prefixes rules inside them; flex 2.6.4, run on this grammar, fires x in A
-    // and B, y in A, B and C, and z in A alone.
+    // flex's own scanner nests scopes and prefixes rules inside them; flex 2.6.4, run on this grammar, fires x in A and
+    // B, y in A, B and C, and z in A alone.
     constexpr std::string_view source{R"(%x A B C
 %%
 <A>{
@@ -548,8 +548,8 @@ TEST(Read_flex, A_start_condition_prefix_alone_on_its_line_opens_the_next)
 TEST(Read_flex, A_section_delimiter_is_a_margin_percent_pair_whatever_follows_it_and_an_indented_line_is_a_rule)
 {
     // The patterns read from a file, or its refusal: flex 2.6.4 lexes a delimiter as `%%` at the start of a line and
-    // drops the rest of the line, so a comment or text after either delimiter changes nothing, and it builds each
-    // file here as the assertion says.
+    // drops the rest of the line, so a comment or text after either delimiter changes nothing, and it builds each file
+    // here as the assertion says.
     const auto patterns{[](const std::string_view source) {
         std::string joined;
 
@@ -582,9 +582,9 @@ TEST(Read_flex, A_section_delimiter_is_a_margin_percent_pair_whatever_follows_it
     // The scanner's line is the first delimiter's, whatever follows it.
     EXPECT_EQ(read_flex("%option noyywrap\n%% /* rules */\na   return 1;\n").front().line, 2u);
 
-    // An indented `%%` is no delimiter: in the definitions section it is code flex copies out, so the delimiter is
-    // the margin's `%%` below, and in the rules section it is an indented rule matching the two bytes, discarded,
-    // which flex 2.6.4 builds and which scans "a%%b" as 1, the two bytes, then 2.
+    // An indented `%%` is no delimiter: in the definitions section it is code flex copies out, so the delimiter is the
+    // margin's `%%` below, and in the rules section it is an indented rule matching the two bytes, discarded, which
+    // flex 2.6.4 builds and which scans "a%%b" as 1, the two bytes, then 2.
     EXPECT_EQ(patterns("%option noyywrap\n  %%\n%%\na   return 1;\n%%\n"), R"(a .|\n)");
     EXPECT_EQ(patterns("%option noyywrap\n%%\na   return 1;\n  %%\nb   return 2;\n%%\n"), R"(a %% b .|\n)");
     EXPECT_EQ(patterns("%option noyywrap\n%%\n"), R"(.|\n)");
@@ -630,9 +630,9 @@ select      return SELECT;
 
 TEST(Read_flex, The_case_option_is_what_the_last_word_naming_it_left_standing)
 {
-    // flex sets its options before it parses a rule, so order decides and every spelling counts: run on each of
-    // these, flex 2.6.4 matches 'A' against the rule `a` exactly where the assertion says it does, and elsewhere
-    // leaves it to the default rule.
+    // flex sets its options before it parses a rule, so order decides and every spelling counts: run on each of these,
+    // flex 2.6.4 matches 'A' against the rule `a` exactly where the assertion says it does, and elsewhere leaves it to
+    // the default rule.
     const auto folds{[](const std::string_view options) {
         const std::string source{"%option " + std::string{options} + "\n%%\na   return A;\n"};
 
@@ -660,8 +660,8 @@ TEST(Read_flex, The_case_option_is_what_the_last_word_naming_it_left_standing)
     EXPECT_TRUE(folds("caseless\n%option nocaseless\n%option caseless"));
 
     // Each `no` flips the sense, since flex lexes one as a token of its own: run on these, flex 2.6.4 folds under
-    // `nonocaseless` and not under `nononocaseless` or `nonocaseful`. A `no` standing as a word of its own reaches
-    // no name, so the sense begins afresh at the next word.
+    // `nonocaseless` and not under `nononocaseless` or `nonocaseful`. A `no` standing as a word of its own reaches no
+    // name, so the sense begins afresh at the next word.
     EXPECT_TRUE(folds("nonocaseless"));
     EXPECT_FALSE(folds("nononocaseless"));
     EXPECT_FALSE(folds("nonocaseful"));
@@ -715,9 +715,9 @@ a          return 1;
 
 TEST(Read_flex, The_default_rule_stands_after_the_file_s_rules_unless_nodefault_drops_it)
 {
-    // flex 2.6.4, run on this file, returns 1 for a, echoes b, newline and c one byte at a time returning nothing,
-    // and in S echoes x the same way: its default rule, added after the file's own, matches one byte wherever no
-    // rule does, in every start condition.
+    // flex 2.6.4, run on this file, returns 1 for a, echoes b, newline and c one byte at a time returning nothing, and
+    // in S echoes x the same way: its default rule, added after the file's own, matches one byte wherever no rule does,
+    // in every start condition.
     constexpr std::string_view plain{R"(%option noyywrap
 %x S
 %%
@@ -770,8 +770,8 @@ s       BEGIN(S); return 2;
     // Without a second %% the rule takes the file's last line.
     EXPECT_EQ(read_flex("%%\na   return 1;\n").front().rules.back().line, 2u);
 
-    // Under `%option nodefault` flex 2.6.4 stops with "flex scanner jammed" at b, in INITIAL and in S alike, which
-    // is what the token set answers of itself: no rule is added, and b begins no token.
+    // Under `%option nodefault` flex 2.6.4 stops with "flex scanner jammed" at b, in INITIAL and in S alike, which is
+    // what the token set answers of itself: no rule is added, and b begins no token.
     const auto without{[](const std::string_view options) {
         const std::string source{"%option " + std::string{options} + "\n%%\na   return 1;\n"};
 
@@ -794,10 +794,10 @@ s       BEGIN(S); return 2;
 
 TEST(Read_flex, The_options_that_narrow_flex_s_alphabet_are_refused_by_name)
 {
-    // flex resolves the alphabet's width as its own check_options() does: a width named outright decides, and
-    // otherwise a `full` or `fast` table with the equivalence classes off leaves it at 128 bytes. Given these same
-    // option lines and a rule naming the byte \x80, flex 2.6.4 refuses to build a scanner for exactly the ones
-    // asserted refused here, with "scanner requires -8 flag to use the character \200".
+    // flex resolves the alphabet's width as its own check_options() does: a width named outright decides, and otherwise
+    // a `full` or `fast` table with the equivalence classes off leaves it at 128 bytes. Given these same option lines
+    // and a rule naming the byte \x80, flex 2.6.4 refuses to build a scanner for exactly the ones asserted refused
+    // here, with "scanner requires -8 flag to use the character \200".
     const auto refused{[](const std::string_view options) {
         const std::string source{"%option " + std::string{options} + "\n%%\n[^a]+   return A;\n"};
 
@@ -821,8 +821,8 @@ TEST(Read_flex, The_options_that_narrow_flex_s_alphabet_are_refused_by_name)
     EXPECT_FALSE(refused("7bit 8bit"));
     EXPECT_TRUE(refused("8bit 7bit"));
 
-    // A full or fast table drops the equivalence classes, whatever the word's sense, and the default width goes
-    // with them; naming the width outright, or asking the classes back, leaves the 256 bytes standing.
+    // A full or fast table drops the equivalence classes, whatever the word's sense, and the default width goes with
+    // them; naming the width outright, or asking the classes back, leaves the 256 bytes standing.
     EXPECT_TRUE(refused("full"));
     EXPECT_TRUE(refused("fast"));
     EXPECT_TRUE(refused("nofull"));
@@ -860,12 +860,12 @@ TEST(Read_flex, The_options_that_narrow_flex_s_alphabet_are_refused_by_name)
 
 TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_by_name_with_their_line)
 {
-    // What each does in flex 2.6.4, run on a scanner of the rule shown before `b return 8;` and `.|\n return 9;`
-    // under nodefault: `a yymore();` on "ab" returns one token 7 spanning both bytes, where the rules alone give a
-    // discarded a and then b; `abc REJECT;` before a second `abc return 7;` returns 7 for "abc", the rule the
-    // rules alone would never reach, and before `ab return 8;` alone returns 8 for "ab" and 9 for "c"; `ab {
-    // yyless(1); return 7; }` on "ab" returns 7 for a and 8 for b; `a { unput('b'); return 7; }` on "a" returns 7
-    // and then 8 for a b the input never held; `a { input(); return 7; }` on "ab" returns 7 and nothing for b.
+    // What each does in flex 2.6.4, run on a scanner of the rule shown before `b return 8;` and `.|\n return 9;` under
+    // nodefault: `a yymore();` on "ab" returns one token 7 spanning both bytes, where the rules alone give a discarded
+    // a and then b; `abc REJECT;` before a second `abc return 7;` returns 7 for "abc", the rule the rules alone would
+    // never reach, and before `ab return 8;` alone returns 8 for "ab" and 9 for "c"; `ab { yyless(1); return 7; }` on
+    // "ab" returns 7 for a and 8 for b; `a { unput('b'); return 7; }` on "a" returns 7 and then 8 for a b the input
+    // never held; `a { input(); return 7; }` on "ab" returns 7 and nothing for b.
     const auto refusal{[](const std::string_view source) {
         try
         {
@@ -905,10 +905,10 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
             "them");
     EXPECT_NE(refusal(rules("a      { c = yyinput (); return 7; }")).find("calls yyinput()"), std::string::npos);
 
-    // An `<<EOF>>` action runs where no match is, so it is read unchecked; a `|` rule above it runs it on that
-    // rule's match, `a |` over `<<EOF>> { yymore(); }` returning one token 8 spanning "ab" and over `<<EOF>> {
-    // yyless(1); return 7; }` returning 7 for a and 8 for b, so the shared action is checked at the sharing rule's
-    // line, and unshared it is not.
+    // An `<<EOF>>` action runs where no match is, so it is read unchecked; a `|` rule above it runs it on that rule's
+    // match, `a |` over `<<EOF>> { yymore(); }` returning one token 8 spanning "ab" and over `<<EOF>> { yyless(1);
+    // return 7; }` returning 7 for a and 8 for b, so the shared action is checked at the sharing rule's line, and
+    // unshared it is not.
     EXPECT_EQ(refusal(rules("a |\n<<EOF>> { yymore(); }")).substr(0, 33), "line 3: the action calls yymore()");
     EXPECT_EQ(
             refusal(rules("a |\n<<EOF>> { yyless(1); return 7; }")).substr(0, 33), "line 3: the action calls yyless()");
@@ -917,8 +917,8 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
 
     // YY_USER_ACTION runs before every action, so a call in it is a call in every action: flex 2.6.4 with `#define
     // YY_USER_ACTION input();` in a `%{` block takes "aab" through `a+ { return 7; }` and `b return 8;` as the one
-    // token 7, the b consumed by the hook, where the reader had modelled 7 and 8 and certified b. A comment naming
-    // the macro defines nothing.
+    // token 7, the b consumed by the hook, where the reader had modelled 7 and 8 and certified b. A comment naming the
+    // macro defines nothing.
     EXPECT_EQ(
             refusal("%{\n#define YY_USER_ACTION input();\n%}\n%option noyywrap\n%%\na+     return 7;\nb      return "
                     "8;\n")
@@ -936,9 +936,9 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
                     .substr(0, 8),
             "line 2: ");
 
-    // A comment holding a newline is one blank to the preprocessor and does not end the directive, so the
-    // replacement runs past it: gcc 13 compiles the definition below and flex takes "aab" through `a+` and `b` as
-    // the one token 7, where cutting the replacement at the first newline had found it empty and missed the hook.
+    // A comment holding a newline is one blank to the preprocessor and does not end the directive, so the replacement
+    // runs past it: gcc 13 compiles the definition below and flex takes "aab" through `a+` and `b` as the one token 7,
+    // where cutting the replacement at the first newline had found it empty and missed the hook.
     EXPECT_EQ(
             refusal("%{\n#define YY_USER_ACTION /* a\n  comment */ input();\n%}\n%option noyywrap\n%%\n"
                     "a+     return 7;\n")
@@ -950,8 +950,8 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
             "line 1: ");
 
     // A directive at the margin may be spliced over several lines as one inside a block may: flex copies the lines
-    // through as they stand and the compiler joins them before any of it means anything, so the hook is the same
-    // hook whichever way it is written, where the lines had been read one at a time and the replacement was lost.
+    // through as they stand and the compiler joins them before any of it means anything, so the hook is the same hook
+    // whichever way it is written, where the lines had been read one at a time and the replacement was lost.
     EXPECT_EQ(
             refusal("    #define YY_USER_ACTION \\\n        input();\n%option noyywrap\n%%\na+     return 7;\n")
                     .substr(0, 8),
@@ -959,12 +959,12 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
     EXPECT_EQ(refusal("    #define YY_USER_ACTION \\\n        ;\n%option noyywrap\n%%\na+     return 7;\n"), "");
 
     // A macro the file defines is expanded by nothing here. One whose replacements hold a word the reading gives
-    // meaning to, a call that moves the match or a `return`, is opaque, and calling it is refused, wherever and
-    // however often it is defined, through another macro, and in an argument as much as in a name: gcc makes
-    // `CALL(input)` the call `input()` under `#define CALL(f) f()`. A macro whose replacements hold no such word,
-    // `#define MAX 10`, changes nothing the reading looks for and its uses are read as ordinary text. What a
-    // macro makes of an argument is not decided, so `WRAP(input)` is refused under `#define WRAP(f) 0` too, an
-    // over-refusal taken rather than an expansion guessed.
+    // meaning to, a call that moves the match or a `return`, is opaque, and calling it is refused, wherever and however
+    // often it is defined, through another macro, and in an argument as much as in a name: gcc makes `CALL(input)` the
+    // call `input()` under `#define CALL(f) f()`. A macro whose replacements hold no such word, `#define MAX 10`,
+    // changes nothing the reading looks for and its uses are read as ordinary text. What a macro makes of an argument
+    // is not decided, so `WRAP(input)` is refused under `#define WRAP(f) 0` too, an over-refusal taken rather than an
+    // expansion guessed.
     EXPECT_EQ(
             refusal("%{\n#define ADVANCE() input();\n#define YY_USER_ACTION ADVANCE()\n%}\n%option noyywrap\n%%\n"
                     "a+     return 7;\n")
@@ -1010,8 +1010,8 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
             refusal("%{\n#define MAX 10\n%}\n%option noyywrap\n%%\na+     { if (yyleng < MAX) return 7; return 7; }\n"),
             "");
 
-    // Which arm of a conditional is live is the build's to decide, so a stretch holding one is refused rather
-    // than read with an arm guessed, in an action and in the copied code alike.
+    // Which arm of a conditional is live is the build's to decide, so a stretch holding one is refused rather than read
+    // with an arm guessed, in an action and in the copied code alike.
     EXPECT_EQ(
             refusal("%option noyywrap\n%%\na+ {\n#if 0\n (void)0;\n#elif 1\n return 7;\n#endif\n}\n").substr(0, 8),
             "line 3: ");
@@ -1020,12 +1020,12 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
                     .substr(0, 8),
             "line 1: ");
 
-    // flex writes `YY_BREAK` after every action too, so a definition of the file's own runs after every action;
-    // a directive inside an action defines or conditions code the reading does not follow; and an action that
-    // returns different tokens from different places emits one the text alone does not decide, where returning
-    // the same token from each is read as that token. The compiled scanners: YY_BREAK as `return 9;` returns 9
-    // over "aa" from an action of `;`, the action-defined macro leaves `a+` returning 7 and `b` returning 9, and
-    // the conditional return gives 7 over "aa" and 8 over "a".
+    // flex writes `YY_BREAK` after every action too, so a definition of the file's own runs after every action; a
+    // directive inside an action defines or conditions code the reading does not follow; and an action that returns
+    // different tokens from different places emits one the text alone does not decide, where returning the same token
+    // from each is read as that token. The compiled scanners: YY_BREAK as `return 9;` returns 9 over "aa" from an
+    // action of `;`, the action-defined macro leaves `a+` returning 7 and `b` returning 9, and the conditional return
+    // gives 7 over "aa" and 8 over "a".
     EXPECT_EQ(
             refusal("%{\n#define YY_BREAK return 9;\n%}\n%option noyywrap\n%%\na+     ;\nb      return 8;\n")
                     .substr(0, 8),
@@ -1036,10 +1036,10 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
     EXPECT_EQ(refusal(rules("a+     { if (yyleng >= 2) return 7; return 8; }")).substr(0, 8), "line 3: ");
     EXPECT_EQ(refusal(rules("a+     { if (yyleng >= 2) return 7; return 7; }")), "");
 
-    // A line ends in a newline of its own or in a carriage return and a newline, and the compiler joins a spliced
-    // line either way: flex 2.6.4 with gcc 13 takes "aab" through the scanners below as the one token 7 whichever
-    // ending the file carries, where a splice read as a backslash and a newline alone cut the replacement short of
-    // the call and missed the hook.
+    // A line ends in a newline of its own or in a carriage return and a newline, and the compiler joins a spliced line
+    // either way: flex 2.6.4 with gcc 13 takes "aab" through the scanners below as the one token 7 whichever ending the
+    // file carries, where a splice read as a backslash and a newline alone cut the replacement short of the call and
+    // missed the hook.
     EXPECT_EQ(
             refusal("%{\r\n#define YY_USER_ACTION \\\r\n input();\r\n%}\r\n%option noyywrap\r\n%%\r\n"
                     "a+     return 7;\r\n")
@@ -1051,9 +1051,9 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
                     .substr(0, 8),
             "line 2: ");
 
-    // The indented code before the first rule is the rules section's prologue, which flex copies into the scanner
-    // ahead of every action, so a hook defined there runs before every action as one defined above `%%` does: the
-    // compiled scanner takes "aab" as the one token 7, the b consumed by the hook.
+    // The indented code before the first rule is the rules section's prologue, which flex copies into the scanner ahead
+    // of every action, so a hook defined there runs before every action as one defined above `%%` does: the compiled
+    // scanner takes "aab" as the one token 7, the b consumed by the hook.
     EXPECT_EQ(
             refusal("%option noyywrap\n%%\n    #define YY_USER_ACTION input();\na+     return 7;\nb      return "
                     "8;\n")
@@ -1065,11 +1065,11 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
             "line 3: ");
     EXPECT_EQ(refusal("%option noyywrap\n%%\n    int seen = 0;\na+     return 7;\n"), "");
 
-    // gcc joins the lines where blanks stand between the backslash and the line's end, warning as it does it, and
-    // the scanner is compiled by the compiler: the first below takes "aab" as the one token 7. A code block in the
-    // rules section is copied into the scanner as the definitions' blocks are. Code after the second `%%` is
-    // copied after the scanner, too late to define the hook the actions expanded, and the same definition there
-    // leaves both tokens, which is why that one is read and not refused.
+    // gcc joins the lines where blanks stand between the backslash and the line's end, warning as it does it, and the
+    // scanner is compiled by the compiler: the first below takes "aab" as the one token 7. A code block in the rules
+    // section is copied into the scanner as the definitions' blocks are. Code after the second `%%` is copied after the
+    // scanner, too late to define the hook the actions expanded, and the same definition there leaves both tokens,
+    // which is why that one is read and not refused.
     EXPECT_EQ(
             refusal("%{\n#define YY_USER_ACTION \\ \n input();\n%}\n%option noyywrap\n%%\na+     return 7;\n")
                     .substr(0, 8),
@@ -1085,9 +1085,9 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
                     "input();\n"),
             "");
 
-    // flex copies the sections' code into the scanner, so a macro defined there is defined for every action: the
-    // hook and the action below each reach input() through one, and gcc expands both to the same call, which
-    // consumes the b after the a+ match. A macro standing for nothing that moves a match leaves the rules alone.
+    // flex copies the sections' code into the scanner, so a macro defined there is defined for every action: the hook
+    // and the action below each reach input() through one, and gcc expands both to the same call, which consumes the b
+    // after the a+ match. A macro standing for nothing that moves a match leaves the rules alone.
     EXPECT_EQ(
             refusal("%{\n#define ADVANCE() input();\n#define YY_USER_ACTION ADVANCE()\n%}\n%option noyywrap\n%%\n"
                     "a+     return 7;\n")
@@ -1097,9 +1097,9 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
             refusal("%{\n#define ADVANCE() input();\n%}\n%option noyywrap\n%%\na+     { ADVANCE(); return 7; }\n")
                     .substr(0, 8),
             "line 6: ");
-    // Only a plain value is transparent: a replacement holding any name or operator may change what the action
-    // does whatever stands beside it, `#define SELF this` making `SELF->yyinput()` the call the action does not
-    // spell, so `count++` is refused where `10` is read as text.
+    // Only a plain value is transparent: a replacement holding any name or operator may change what the action does
+    // whatever stands beside it, `#define SELF this` making `SELF->yyinput()` the call the action does not spell, so
+    // `count++` is refused where `10` is read as text.
     EXPECT_EQ(
             refusal("%{\n#define STEP() count++;\n%}\n%option noyywrap\n%%\na+     { STEP(); return 7; }\n")
                     .substr(0, 8),
@@ -1119,9 +1119,9 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
     // The line is the call's rule's, wherever in a multi-line action the call stands.
     EXPECT_EQ(refusal(rules("a      {\n    return 7;\n}\nab     {\n    yyless(1);\n}")).substr(0, 8), "line 6: ");
 
-    // Read as C reads the action: a comment or a literal holds no call, a word inside a longer one is none, a name
-    // of the file's own without a parenthesis or reached as a member is none, and flex takes `reject` and `Reject`
-    // as names of the file's own, building the scanner without the REJECT machinery.
+    // Read as C reads the action: a comment or a literal holds no call, a word inside a longer one is none, a name of
+    // the file's own without a parenthesis or reached as a member is none, and flex takes `reject` and `Reject` as
+    // names of the file's own, building the scanner without the REJECT machinery.
     EXPECT_EQ(refusal(rules("abc    { /* REJECT */ puts(\"REJECT\"); return 7; }")), "");
     EXPECT_EQ(refusal(rules("abc    { return 7; // REJECT\n       }")), "");
     EXPECT_EQ(refusal(rules("abc    { reject++; Reject++; REJECTED++; return 7; }")), "");
@@ -1131,9 +1131,9 @@ TEST(Read_flex, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refused_b
     // A `|` line is taken unread, as flex takes it, so a call written after the bar is no call.
     EXPECT_EQ(refusal(rules("abc    | REJECT\nabd    return 7;")), "");
 
-    // A condition change is not a call of these: flex 2.6.4 returns 7, 8 and 6 for "abb" under this scanner, the
-    // tokens where the rules put them, and the reading takes the actions as any other, the caveat over every
-    // report covering the condition.
+    // A condition change is not a call of these: flex 2.6.4 returns 7, 8 and 6 for "abb" under this scanner, the tokens
+    // where the rules put them, and the reading takes the actions as any other, the caveat over every report covering
+    // the condition.
     constexpr std::string_view states{R"(%option noyywrap nodefault stack
 %x S
 %%
@@ -1151,9 +1151,9 @@ b      { BEGIN(INITIAL); return 6; }
     EXPECT_EQ(file.rules[1].token, std::optional<std::string>{"8"});
     EXPECT_EQ(file.rules[2].token, std::optional<std::string>{"6"});
 
-    // `%option reject` and `%option yymore` declare a use flex cannot see: given `#define MORE yymore()` and the
-    // rule `a MORE;`, flex 2.6.4 joins the matches as it does for the call written out, so the option is refused
-    // where it stands; turned off, `noreject` and `noyymore`, the options say nothing.
+    // `%option reject` and `%option yymore` declare a use flex cannot see: given `#define MORE yymore()` and the rule
+    // `a MORE;`, flex 2.6.4 joins the matches as it does for the call written out, so the option is refused where it
+    // stands; turned off, `noreject` and `noyymore`, the options say nothing.
     EXPECT_EQ(
             refusal("%option noyywrap\n%option yymore\n%{\n#define MORE yymore()\n%}\n%%\na    MORE;\nb    return "
                     "7;\n"),
@@ -1171,8 +1171,8 @@ TEST(Read_flex, A_call_and_a_member_are_read_past_the_blanks_and_comments_partin
     // What flex 2.6.4 does on "ab" under nodefault with `b return 8;` and `.|\n return 9;` after the rule shown:
     // `a yymore /* c */ ();` returns one token 7 spanning both bytes, as `a yymore();` does, and `ab { yyless /* c */
     // (1); return 7; }` and the same with a newline before the `(1)` return 7 for a and 8 for b, as the call written
-    // plainly does; read byte by byte, the parted name would be a name of the file's own, the scanner accepted, and
-    // b certified inside flex's lexeme.
+    // plainly does; read byte by byte, the parted name would be a name of the file's own, the scanner accepted, and b
+    // certified inside flex's lexeme.
     const auto refusal{[](const std::string_view source) {
         try
         {
@@ -1227,16 +1227,15 @@ TEST(Read_flex, A_call_and_a_member_are_read_past_the_blanks_and_comments_partin
     EXPECT_EQ(returned("{ h[i](x); return 7; }"), std::optional<std::string>{"7"});
 
     // An attribute's brackets open no capture list, since nothing a lambda takes follows their close: flex 2.6.4
-    // returns 7 for a and 8 for b on the first action below, where reading the attribute's `[` as a capture list
-    // struck out the block holding the return and left the rule discarded. A return of a lambda's own call is the
-    // action's.
+    // returns 7 for a and 8 for b on the first action below, where reading the attribute's `[` as a capture list struck
+    // out the block holding the return and left the rule discarded. A return of a lambda's own call is the action's.
     EXPECT_EQ(returned("{ [[maybe_unused]] int q = 0; { return 7; } }"), std::optional<std::string>{"7"});
     EXPECT_NE(returned("{ return [](){ return 7; }(); }"), std::nullopt);
 
-    // The body is the brace outside every group after the capture list, so a template list, a specifier and a
-    // braced default argument are stepped over: flex 2.6.4 with gcc 13 as C++23 discards a and returns 8 for b on
-    // "ab" for each of the three below, where taking the first brace or reading only a short list of tokens after
-    // the list left the lambda's own return as the action's.
+    // The body is the brace outside every group after the capture list, so a template list, a specifier and a braced
+    // default argument are stepped over: flex 2.6.4 with gcc 13 as C++23 discards a and returns 8 for b on "ab" for
+    // each of the three below, where taking the first brace or reading only a short list of tokens after the list left
+    // the lambda's own return as the action's.
     for (const std::string_view action :
          {"{ auto f = []<class T>(T x) { return x; }; (void)f(7); }",
           "{ auto f = [](int x = int{7}) { return x; }; (void)f(); }",
@@ -1245,20 +1244,20 @@ TEST(Read_flex, A_call_and_a_member_are_read_past_the_blanks_and_comments_partin
         EXPECT_EQ(returned(action), std::nullopt) << action;
     }
 
-    // A template-id ends with `>`, so the name a braced initializer initializes stands before its argument list and
-    // not beside the brace: flex 2.6.4 with gcc 13 as C++23 returns 7 over "aa" for the first action below, where
-    // reading the subscript of the temporary as a capture list struck out the block holding the return. The list's
-    // own default argument may compare, which is a comparison and not a second opener, so the second action's
-    // lambda is passed over whole and the rule discards as the compiled scanner does.
+    // A template-id ends with `>`, so the name a braced initializer initializes stands before its argument list and not
+    // beside the brace: flex 2.6.4 with gcc 13 as C++23 returns 7 over "aa" for the first action below, where reading
+    // the subscript of the temporary as a capture list struck out the block holding the return. The list's own default
+    // argument may compare, which is a comparison and not a second opener, so the second action's lambda is passed over
+    // whole and the rule discards as the compiled scanner does.
     EXPECT_EQ(returned("{ if (std::array<bool, 1>{true}[0]) { return 7; } }"), std::optional<std::string>{"7"});
     EXPECT_EQ(returned("{ auto f = []<bool b = (1 < 2)>() { return b; }; (void)f(); }"), std::nullopt);
     EXPECT_EQ(
             returned("{ auto f = []<bool b = (1 < 2)>() { return b; }; (void)f(); return 8; }"),
             std::optional<std::string>{"8"});
 
-    // An argument of the template-id may compare too, and the comparison stands in a group of its own, so the
-    // list's own brackets are the ones outside every group; a type may be written as a specifier in parentheses,
-    // whose `)` stands where a name would. flex 2.6.4 with gcc 13 as C++23 returns 7 over "aa" for each below.
+    // An argument of the template-id may compare too, and the comparison stands in a group of its own, so the list's
+    // own brackets are the ones outside every group; a type may be written as a specifier in parentheses, whose `)`
+    // stands where a name would. flex 2.6.4 with gcc 13 as C++23 returns 7 over "aa" for each below.
     EXPECT_EQ(returned("{ if (std::array<bool, (2 > 1)>{true}[0]) { return 7; } }"), std::optional<std::string>{"7"});
     EXPECT_EQ(
             returned("{ std::array<bool, 1> flags; if (decltype(flags){true}[0]) { return 7; } }"),
@@ -1266,8 +1265,8 @@ TEST(Read_flex, A_call_and_a_member_are_read_past_the_blanks_and_comments_partin
     EXPECT_EQ(returned("{ if (decltype(std::array{true}){true}[0]) { return 7; } }"), std::optional<std::string>{"7"});
 
     // A requires clause stands between the parameter list and the body, and its constraint may be a requires
-    // expression, whose braces are not the body's: the lambda below is never called and the action returns
-    // nothing, where taking the constraint's group for the body left the lambda's own return as the action's.
+    // expression, whose braces are not the body's: the lambda below is never called and the action returns nothing,
+    // where taking the constraint's group for the body left the lambda's own return as the action's.
     EXPECT_EQ(
             returned("{ auto f = []<typename T>() requires requires { typename T::value_type; } { return 7; }; "
                      "(void)f; }"),
@@ -1277,8 +1276,8 @@ TEST(Read_flex, A_call_and_a_member_are_read_past_the_blanks_and_comments_partin
             returned("{ auto f = []<typename T>() requires requires { 1; } { return 7; }; (void)f; return 8; }"),
             std::optional<std::string>{"8"});
 
-    // A class keyword opens a definition where a statement begins, after a `typedef` and after a label as well as
-    // after a `;` or a brace, and the body is left out of the return search wherever the head's brace stands.
+    // A class keyword opens a definition where a statement begins, after a `typedef` and after a label as well as after
+    // a `;` or a brace, and the body is left out of the return search wherever the head's brace stands.
     EXPECT_EQ(
             returned("{ typedef struct Local { int f() { return 7; } } Local; Local x; (void)x.f(); }"), std::nullopt);
     EXPECT_EQ(returned("{ struct Local final { int f() { return 7; } }; Local x; (void)x.f(); }"), std::nullopt);
@@ -1287,14 +1286,14 @@ TEST(Read_flex, A_call_and_a_member_are_read_past_the_blanks_and_comments_partin
     EXPECT_EQ(returned("{ if !consteval {} [] { return; }(); return 7; }"), std::optional<std::string>{"7"});
     EXPECT_EQ(returned("{ if not consteval {} [] { return; }(); return 7; }"), std::optional<std::string>{"7"});
 
-    // A raw string's prefix is a token of its own: the `R` that ends "ERROR" opens no raw string, so the splice
-    // after the literal is read as gcc reads it and the call it joins is seen.
+    // A raw string's prefix is a token of its own: the `R` that ends "ERROR" opens no raw string, so the splice after
+    // the literal is read as gcc reads it and the call it joins is seen.
     EXPECT_EQ(
             refusal(rules("a+     { const char* e = \"ERROR\"; (void)e; yyin\\ \nput(); return 7; }")).substr(0, 8),
             "line 3: ");
 
-    // The first `requires` opens the clause and every one after it opens a requires expression of the constraint,
-    // so a constraint joined by `&&` reaches the lambda's own body and not a requirement's braces.
+    // The first `requires` opens the clause and every one after it opens a requires expression of the constraint, so a
+    // constraint joined by `&&` reaches the lambda's own body and not a requirement's braces.
     EXPECT_EQ(
             returned("{ auto f = []<class T>() requires true && requires { typename T::value_type; } { return 7; }; "
                      "(void)f; }"),
@@ -1308,11 +1307,11 @@ TEST(Read_flex, A_call_and_a_member_are_read_past_the_blanks_and_comments_partin
             refusal(rules("a      { yyFlexLexer::yyinput(); return 7; }")).substr(0, 34),
             "line 3: the action calls yyinput()");
 
-    // A member call of the name on anything is the call, since an alias of `this` is a name the text does not
-    // resolve: a C++ scanner's `auto* self = this; self->yyinput();` consumes the b of "aab" as `this->yyinput()`
-    // does, so `h . input()` on a holder of the file's own is refused by name past the blanks and comments too,
-    // although flex 2.6.4 returns 7 for a and 8 for b under it; a member of another name is read, both rules
-    // returning over one byte, and a and b certify, each a token of its own.
+    // A member call of the name on anything is the call, since an alias of `this` is a name the text does not resolve:
+    // a C++ scanner's `auto* self = this; self->yyinput();` consumes the b of "aab" as `this->yyinput()` does, so `h .
+    // input()` on a holder of the file's own is refused by name past the blanks and comments too, although flex 2.6.4
+    // returns 7 for a and 8 for b under it; a member of another name is read, both rules returning over one byte, and a
+    // and b certify, each a token of its own.
     constexpr std::string_view members{R"(%option noyywrap nodefault
 %{
 static int custom(void) { return 9; }
@@ -1355,8 +1354,8 @@ b      { struct holder h = {custom, custom}, *p = &h; p /* the holder */ -> feed
 
 TEST(Read_flex, A_bar_rule_above_an_EOF_rule_shares_its_action)
 {
-    // flex 2.6.4 gives `a |` the action of the `<<EOF>>` rule under it, as of any rule: on "ab" it returns 7 for a
-    // and 8 for b. The `<<EOF>>` rule itself matches no byte and is no rule of the token set.
+    // flex 2.6.4 gives `a |` the action of the `<<EOF>>` rule under it, as of any rule: on "ab" it returns 7 for a and
+    // 8 for b. The `<<EOF>>` rule itself matches no byte and is no rule of the token set.
     constexpr std::string_view shared{R"(%option noyywrap nodefault
 %%
 a       |
@@ -1377,9 +1376,9 @@ b       return 8;
 
 TEST(Read_flex, A_percent_brace_action_is_its_block_alone_and_the_rest_of_the_closing_line_is_dropped)
 {
-    // flex 2.6.4 copies a `%{` action out from after its `%{` to its `%}` and drops the rest of the `%}` line, so
-    // `a %{ int y = 2;\n int x = 1;\n%} return 7;` emits the two declarations and no return: on "ab" it returns 8
-    // alone, the a discarded. A `yyless(0)` after the `%}` is dropped with the rest and refuses nothing.
+    // flex 2.6.4 copies a `%{` action out from after its `%{` to its `%}` and drops the rest of the `%}` line, so `a %{
+    // int y = 2;\n int x = 1;\n%} return 7;` emits the two declarations and no return: on "ab" it returns 8 alone, the
+    // a discarded. A `yyless(0)` after the `%}` is dropped with the rest and refuses nothing.
     constexpr std::string_view dropped{R"(%option noyywrap nodefault
 %%
 a %{ int y = 2;
@@ -1415,12 +1414,12 @@ b return 8;
 
 TEST(Read_flex, An_action_is_read_with_its_lines_spliced_as_C_splices_them)
 {
-    // C deletes a backslash and the newline after it before it reads a token, so a word may be written over two
-    // lines. flex 2.6.4 on "a \n b" with `[ \t\n]+ { ret\<newline>urn 2; }`, `[ab] return 1;` and `.|\n return 9;`
-    // returns 1, 2 and 1, the whitespace a visible token of length 3; read byte by byte the action would hold the
-    // words `ret` and `urn` and no `return`, the rule would be discarded, and the newline certified modulo discarded
-    // tokens inside a token the scanner returns. The same splicing continues a `//` comment onto the next line, where
-    // it hides the `return` there, and joins a parted `yyless`, which the guard must then see.
+    // C deletes a backslash and the newline after it before it reads a token, so a word may be written over two lines.
+    // flex 2.6.4 on "a \n b" with `[ \t\n]+ { ret\<newline>urn 2; }`, `[ab] return 1;` and `.|\n return 9;` returns 1,
+    // 2 and 1, the whitespace a visible token of length 3; read byte by byte the action would hold the words `ret` and
+    // `urn` and no `return`, the rule would be discarded, and the newline certified modulo discarded tokens inside a
+    // token the scanner returns. The same splicing continues a `//` comment onto the next line, where it hides the
+    // `return` there, and joins a parted `yyless`, which the guard must then see.
     const auto rules{[](const std::string_view first) {
         return "%option noyywrap nodefault\n%%\n" + std::string{first} + "\n[ab]   return 1;\n.|\\n   return 9;\n";
     }};
@@ -1449,8 +1448,8 @@ TEST(Read_flex, An_action_is_read_with_its_lines_spliced_as_C_splices_them)
         EXPECT_EQ(std::string_view{error.what()}.substr(0, 33), "line 3: the action calls yyless()");
     }
 
-    // The tokens keep their places in the action as written, the splice counted in a token's extent, and the
-    // expression returned is spliced as they were.
+    // The tokens keep their places in the action as written, the splice counted in a token's extent, and the expression
+    // returned is spliced as they were.
     const auto tokens{c_tokens("re\\\nturn T_\\\r\nA;")};
 
     ASSERT_EQ(tokens.size(), 3u);
@@ -1463,10 +1462,10 @@ TEST(Read_flex, An_action_is_read_with_its_lines_spliced_as_C_splices_them)
     EXPECT_EQ(tokens[2].text, ";");
     EXPECT_EQ(returned("{ return T_\\\nA; }"), std::optional<std::string>{"T_A"});
 
-    // A C++ raw string is one literal to its closing delimiter, a quote inside it closing nothing: flex 2.6.4 ends
-    // the action's first line with that quote's literal open, so the action runs to the brace on the next line,
-    // and g++ compiles the raw string and the `return 7` after it. A universal character name is part of the
-    // identifier around it, so `return\u03B1` is a name of the file's own, and flex on "ab" returns 8 alone.
+    // A C++ raw string is one literal to its closing delimiter, a quote inside it closing nothing: flex 2.6.4 ends the
+    // action's first line with that quote's literal open, so the action runs to the brace on the next line, and g++
+    // compiles the raw string and the `return 7` after it. A universal character name is part of the identifier around
+    // it, so `return\u03B1` is a name of the file's own, and flex on "ab" returns 8 alone.
     const auto raw{c_tokens("{ const char* s = R\"(x\")\"; return 7;\n}")};
 
     ASSERT_EQ(raw.size(), 12u);
@@ -1486,14 +1485,14 @@ TEST(Read_flex, An_action_is_read_with_its_lines_spliced_as_C_splices_them)
 
 TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns_that_token)
 {
-    // flex 2.6.4 with gcc 13, each scanner before `b return 8;`: `a+ { if (yyleng >= 2) return 7; }` returns 8 alone
-    // on "ab", the single a discarded as the action falls through, and 7 then 8 on "aab", so the rule emits on one
-    // path and discards on another and is refused; a `static struct` declared in the action, `a { static struct
-    // Helper { int f() const { return 7; } } h; }`, returns nothing from the action, 8 alone on "ab", so the rule
-    // is discarded and the method's return is no return of the action's; and `a { (void)"R"; ret\` spliced to
-    // `urn 7; }` returns 7 on "ab", the `R` inside an ordinary literal opening no raw string, so the splice joins
-    // the `return`. A path is followed through a block, an `if` with an `else` and a label; a loop, a `switch` or
-    // an `if` alone may fall through and is refused rather than followed.
+    // flex 2.6.4 with gcc 13, each scanner before `b return 8;`: `a+ { if (yyleng >= 2) return 7; }` returns 8 alone on
+    // "ab", the single a discarded as the action falls through, and 7 then 8 on "aab", so the rule emits on one path
+    // and discards on another and is refused; a `static struct` declared in the action, `a { static struct Helper { int
+    // f() const { return 7; } } h; }`, returns nothing from the action, 8 alone on "ab", so the rule is discarded and
+    // the method's return is no return of the action's; and `a { (void)"R"; ret\` spliced to `urn 7; }` returns 7 on
+    // "ab", the `R` inside an ordinary literal opening no raw string, so the splice joins the `return`. A path is
+    // followed through a block, an `if` with an `else` and a label; a loop, a `switch` or an `if` alone may fall
+    // through and is refused rather than followed.
     const auto rules{[](const std::string_view first) {
         return "%option noyywrap\n%%\n" + std::string{first} + "\nb      return 8;\n";
     }};
@@ -1523,44 +1522,50 @@ TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns
     EXPECT_EQ(token_of("a      { done: return 7; }"), "7");
     EXPECT_EQ(token_of("a      { done: return 7; return 7; }"), "7");
 
-    // A jump anywhere but after the last return leaves the action on its path with the match discarded: flex 2.6.4
-    // with `a+ { if (yyleng == 1) break; return 7; }` before `b return 8;` returns 8 alone on "ab", and so with
-    // `continue` in place of `break`; a `goto` leaves for somewhere out of sight.
+    // A jump anywhere but after the last return leaves the action on its path with the match discarded: flex 2.6.4 with
+    // `a+ { if (yyleng == 1) break; return 7; }` before `b return 8;` returns 8 alone on "ab", and so with `continue`
+    // in place of `break`; a `goto` leaves for somewhere out of sight.
     EXPECT_EQ(token_of("a+     { if (yyleng == 1) break; return 7; }"), "line 3: ");
     EXPECT_EQ(token_of("a+     { if (yyleng == 1) continue; return 7; }"), "line 3: ");
     EXPECT_EQ(token_of("a      { if (yyleng) goto done; return 7; done: return 7; }"), "line 3: ");
     EXPECT_EQ(token_of("a      { if (yyleng == 1) break; }"), "discarded");
 
-    // flex defines `YY_BREAK` as `break;`, so an action spelling it leaves as a `break` does: flex 2.6.4 with
-    // `a+ { if (yyleng == 1) YY_BREAK; return 7; }` returns 8 alone on "ab".
+    // flex defines `YY_BREAK` as `break;`, so an action spelling it leaves as a `break` does: flex 2.6.4 with `a+ { if
+    // (yyleng == 1) YY_BREAK; return 7; }` returns 8 alone on "ab".
     EXPECT_EQ(token_of("a+     { if (yyleng == 1) YY_BREAK; return 7; }"), "line 3: ");
 
     // The one jump allowed after a stored token is a `break` or a `continue`, never a `goto`, whose label is out of
-    // sight: flex 2.6.4 returns 8 and 8 for "aab" under `a+ { (void)yyleng; goto emit_token; }` before
-    // `b { emit_token: return 8; }`, where taking the trailing jump as the one allowed read the rule as discarding.
+    // sight: flex 2.6.4 returns 8 and 8 for "aab" under `a+ { (void)yyleng; goto emit_token; }` before `b { emit_token:
+    // return 8; }`, where taking the trailing jump as the one allowed read the rule as discarding.
     EXPECT_EQ(token_of("a+     { (void)yyleng; goto emit_token; }\nc      { emit_token: return 8; }"), "line 3: ");
 
-    // A member of the name parenthesised to be called is the call too: the C++ scanner's `(self->yyinput)()`
-    // consumes the b of "aab" as `self->yyinput()` does.
+    // A member of the name parenthesised to be called is the call too: the C++ scanner's `(self->yyinput)()` consumes
+    // the b of "aab" as `self->yyinput()` does.
     EXPECT_EQ(token_of("a+     { auto* self = this; (self->yyinput)(); return 7; }"), "line 3: ");
 
-    // A change of buffer changes what is scanned next: flex 2.6.4 with `a+ { yy_scan_string(""); return 7; }`
-    // before `b return 8;` returns 7 alone on "aab", the b never scanned, and so with `YY_FLUSH_BUFFER;`; the
-    // calls that switch, push, pop, flush or restart a buffer are refused by name, as a hook holding one is.
+    // A change of buffer changes what is scanned next: flex 2.6.4 with `a+ { yy_scan_string(""); return 7; }` before `b
+    // return 8;` returns 7 alone on "aab", the b never scanned, and so with `YY_FLUSH_BUFFER;`; the calls that switch,
+    // push, pop, flush or restart a buffer are refused by name, as a hook holding one is.
     EXPECT_EQ(token_of("a+     { yy_scan_string(\"\"); return 7; }"), "line 3: ");
     EXPECT_EQ(token_of("a+     { YY_FLUSH_BUFFER; return 7; }"), "line 3: ");
     EXPECT_EQ(token_of("a+     { yyrestart(stdin); return 7; }"), "line 3: ");
     EXPECT_EQ(token_of("a+     { yy_switch_to_buffer(other); return 7; }"), "line 3: ");
 
-    // A `goto` in an action returning nowhere leaves for a label out of sight, `a+ { goto emit_token; }` reaching
-    // the `return 8` of `b { emit_token: return 8; }`: flex 2.6.4 returns 8 and 8 for "aab", where reading the
-    // action as discarding certified the a modulo discarded tokens.
+    // Reinitializing the current buffer flushes it as yy_flush_buffer() does: flex 2.6.4 with `a+ {
+    // yy_init_buffer(YY_CURRENT_BUFFER, yyin); return 7; }` before `b return 8;` returns 7 alone on "aab"; and deleting
+    // the current buffer leaves the scan without it, so both are refused by name too.
+    EXPECT_EQ(token_of("a+     { yy_init_buffer(YY_CURRENT_BUFFER, yyin); return 7; }"), "line 3: ");
+    EXPECT_EQ(token_of("a+     { yy_delete_buffer(YY_CURRENT_BUFFER); return 7; }"), "line 3: ");
+
+    // A `goto` in an action returning nowhere leaves for a label out of sight, `a+ { goto emit_token; }` reaching the
+    // `return 8` of `b { emit_token: return 8; }`: flex 2.6.4 returns 8 and 8 for "aab", where reading the action as
+    // discarding certified the a modulo discarded tokens.
     EXPECT_EQ(token_of("a+     { goto emit_token; }\nc      { emit_token: return 8; }"), "line 3: ");
 
-    // `yyterminate()` ends the scan with no token: flex 2.6.4 with `a+ { if (yyleng == 1) yyterminate(); return 7;
-    // }` prints nothing for "ab", and so with the call in the hook. A call through a member of anything is the
-    // call, an alias of `this` being a name the text does not resolve: a C++ scanner's `auto* self = this;
-    // self->yyinput();` consumes the b of "aab" as `this->yyinput()` does.
+    // `yyterminate()` ends the scan with no token: flex 2.6.4 with `a+ { if (yyleng == 1) yyterminate(); return 7; }`
+    // prints nothing for "ab", and so with the call in the hook. A call through a member of anything is the call, an
+    // alias of `this` being a name the text does not resolve: a C++ scanner's `auto* self = this; self->yyinput();`
+    // consumes the b of "aab" as `this->yyinput()` does.
     EXPECT_EQ(token_of("a+     { if (yyleng == 1) yyterminate(); return 7; }"), "line 3: ");
     EXPECT_EQ(token_of("a+     { auto* self = this; self->yyinput(); return 7; }"), "line 3: ");
     EXPECT_EQ(token_of("a+     { s.input(); return 7; }"), "line 3: ");
@@ -1576,13 +1581,13 @@ TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns
     EXPECT_EQ(token_of("a      { (void)R\"(x\\\n)\"; ret\\\nurn 7; }"), "7");
 
     // The lines are joined before any escape is read, so a backslash before a backslash ending the line escapes the
-    // next line's first byte and the literal goes on: gcc 13 takes `"x\\` and `y"` on the next line as "x\y", and
-    // the action returns 7; read the other way round, the first backslash escaped the second and the literal ended
-    // at the line, hiding what followed.
+    // next line's first byte and the literal goes on: gcc 13 takes `"x\\` and `y"` on the next line as "x\y", and the
+    // action returns 7; read the other way round, the first backslash escaped the second and the literal ended at the
+    // line, hiding what followed.
     EXPECT_EQ(token_of("a      { (void)\"x\\\\\ny\"; ret\\\nurn 7; }"), "7");
 
-    // The token is named by the expression returned, as written: a rule is one token to the certificates whatever
-    // its action computes, and `a+ { return yyleng == 1 ? 7 : 8; }` returns 7 for "a" and 8 for "aa" under flex.
+    // The token is named by the expression returned, as written: a rule is one token to the certificates whatever its
+    // action computes, and `a+ { return yyleng == 1 ? 7 : 8; }` returns 7 for "a" and 8 for "aa" under flex.
     EXPECT_EQ(token_of("a+     { return yyleng == 1 ? 7 : 8; }"), "yyleng == 1 ? 7 : 8");
 
     // The hook's replacement runs past a raw string's newline as the macro collector reads it: flex 2.6.4 under
@@ -1606,13 +1611,13 @@ TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns
     EXPECT_EQ(hook("(void)R\"(text\n)\"; yyinput();").substr(0, 8), "line 2: ");
     EXPECT_NE(hook("(void)R\"(text\n)\"; yyinput();").find("yyinput()"), std::string::npos);
 
-    // The same joining inside the hook: `"x\\` and `y"; yyinput();` on the next line is one literal and the call,
-    // which flex 2.6.4 runs before every action, taking "aab" as the one token 7 with the b consumed.
+    // The same joining inside the hook: `"x\\` and `y"; yyinput();` on the next line is one literal and the call, which
+    // flex 2.6.4 runs before every action, taking "aab" as the one token 7 with the b consumed.
     EXPECT_NE(hook("(void)\"x\\\\\ny\"; yyinput();").find("yyinput()"), std::string::npos);
 
-    // The hook runs before the rule's own action, so a return in it returns first, a `break` or a `continue` ends
-    // the rule's case without the action, and a `goto` leaves for somewhere out of sight: flex 2.6.4 under
-    // `#define YY_USER_ACTION return 9;` returns 9 and 9 for "aab", and under `if (yyleng == 1) return 9;` 7 and 9.
+    // The hook runs before the rule's own action, so a return in it returns first, a `break` or a `continue` ends the
+    // rule's case without the action, and a `goto` leaves for somewhere out of sight: flex 2.6.4 under `#define
+    // YY_USER_ACTION return 9;` returns 9 and 9 for "aab", and under `if (yyleng == 1) return 9;` 7 and 9.
     EXPECT_NE(hook("return 9;").find("holds `return`"), std::string::npos);
     EXPECT_NE(hook("if (yyleng == 1) return 9;").find("holds `return`"), std::string::npos);
     EXPECT_NE(hook("if (yyleng == 1) break;").find("holds `break`"), std::string::npos);
@@ -1621,10 +1626,10 @@ TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns
     EXPECT_NE(hook("if (yyleng == 1) YY_BREAK;").find("holds `YY_BREAK`"), std::string::npos);
 
     // A file the copied code includes by a quoted name defines what the file's own code would: flex 2.6.4 under a
-    // `#include "hook.h"` holding `#define YY_USER_ACTION yyinput();` takes "aab" as the one token 7. The reader
-    // given reaches the file, and the hook it defines is refused with the file's name; a reader that finds no such
-    // file, or no reader at all, has the include refused by name, where an include in angle brackets names a
-    // system header and is read past.
+    // `#include "hook.h"` holding `#define YY_USER_ACTION yyinput();` takes "aab" as the one token 7. The reader given
+    // reaches the file, and the hook it defines is refused with the file's name; a reader that finds no such file, or
+    // no reader at all, has the include refused by name, where an include in angle brackets names a system header and
+    // is read past.
     const auto including{[](const std::string_view definitions, const Include_reader_t& reader) {
         try
         {
@@ -1663,9 +1668,9 @@ TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns
     EXPECT_EQ(including("#include <stdio.h>", {}), "");
 
     // A file named by a macro, `#include HOOK_FILE`, is out of sight, since the reading expands no macro; an
-    // angle-bracket include the reader finds is read as a quoted one is, since a project's own header may be
-    // reached through the compiler's include path, and one it does not find is a system header's: gcc 13 reads
-    // `<hook.h>` beside the file under `-I.` and flex takes "aab" as the one token 7 under both spellings.
+    // angle-bracket include the reader finds is read as a quoted one is, since a project's own header may be reached
+    // through the compiler's include path, and one it does not find is a system header's: gcc 13 reads `<hook.h>`
+    // beside the file under `-I.` and flex takes "aab" as the one token 7 under both spellings.
     EXPECT_NE(
             including("#define HOOK_FILE \"hook.h\"\n#include HOOK_FILE", hooks).find("named by the macro HOOK_FILE"),
             std::string::npos);
@@ -1673,8 +1678,8 @@ TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns
     EXPECT_EQ(including("#include <other.h>", hooks), "");
     EXPECT_NE(hook("yy_flush_buffer(YY_CURRENT_BUFFER);").find("yy_flush_buffer()"), std::string::npos);
 
-    // The reader is told how the directive names the file, so that the command line looks for a quoted name beside
-    // the including file and for an angle-bracket name on its `--include` directories alone, as gcc resolves them:
+    // The reader is told how the directive names the file, so that the command line looks for a quoted name beside the
+    // including file and for an angle-bracket name on its `--include` directories alone, as gcc resolves them:
     // `<hook.h>` under `-Iinc` reaches inc/hook.h from a file whose own directory holds another.
     std::vector<std::string> forms;
 
@@ -1699,8 +1704,8 @@ TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns
     EXPECT_NE(including("#include \"outer.h\"", bare).find("the included file \"hook.h\" defines"), std::string::npos);
 
     // A nested include is resolved beside the file including it, as a compiler resolves a quoted name: `sub/hooks.h`
-    // including `"inner.h"` reaches `sub/inner.h`, so the reader is handed the including file's path back and the
-    // hook is found where gcc finds it, where resolving every name beside the audited file read another inner.h.
+    // including `"inner.h"` reaches `sub/inner.h`, so the reader is handed the including file's path back and the hook
+    // is found where gcc finds it, where resolving every name beside the audited file read another inner.h.
     std::vector<std::string> asked;
 
     const Include_reader_t nested{[&asked](const std::string_view name, const std::string_view from, Include_form) {
@@ -1722,8 +1727,8 @@ TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns
             std::string::npos);
     EXPECT_EQ(asked, (std::vector<std::string>{" > sub/hooks.h", "sub/hooks.h > inner.h"}));
 
-    // Many stretches of copied code are no include: a definitions section of 65 declarations, each in a `%{ %}`
-    // block of its own, is read, where a cap on the stretches read the sixty-fifth as an include too deep.
+    // Many stretches of copied code are no include: a definitions section of 65 declarations, each in a `%{ %}` block
+    // of its own, is read, where a cap on the stretches read the sixty-fifth as an include too deep.
     std::string many;
 
     for (auto declared{0}; declared < 65; ++declared)
@@ -1744,10 +1749,10 @@ TEST(Read_flex, An_action_emits_a_token_only_where_every_path_through_it_returns
 
 TEST(Read_flex, Whether_an_action_returns_is_read_past_its_comments_and_literals)
 {
-    // flex 2.6.4 on "a\nb" returns 1, 2 and 1 for the first scanner, the whitespace rule returning WHITESPACE
-    // whatever its comment says, and 1 and 1 for the second, the literal returning nothing; so the first scanner
-    // has no discarded token and the newline certifies neither exactly nor modulo discarded tokens, while the
-    // second discards its whitespace and the newline certifies modulo the discarded tokens.
+    // flex 2.6.4 on "a\nb" returns 1, 2 and 1 for the first scanner, the whitespace rule returning WHITESPACE whatever
+    // its comment says, and 1 and 1 for the second, the literal returning nothing; so the first scanner has no
+    // discarded token and the newline certifies neither exactly nor modulo discarded tokens, while the second discards
+    // its whitespace and the newline certifies modulo the discarded tokens.
     constexpr std::string_view commented{R"(%option noyywrap nodefault
 %%
 [ \t\n]+  { /* return; */ return WHITESPACE; }
@@ -1815,8 +1820,8 @@ TEST(Read_flex, Lex_compat_is_refused_by_name_rather_than_recorded_and_ignored)
     EXPECT_NO_THROW(std::ignore = read_flex("%option posix-compat noposix-compat\n%%\nab{3}   return A;\n"));
 
     // The two are flags of their own and flex takes that binding while either stands: run on `ab{3}`, flex 2.6.4
-    // matches "ababab" under `lex-compat posix-compat nolex-compat` and under `posix-compat lex-compat
-    // noposix-compat`, and only "abbb" once both are off.
+    // matches "ababab" under `lex-compat posix-compat nolex-compat` and under `posix-compat lex-compat noposix-compat`,
+    // and only "abbb" once both are off.
     EXPECT_THROW(
             std::ignore = read_flex("%option lex-compat posix-compat nolex-compat\n%%\nab{3}   return A;\n"),
             Spec_error);
@@ -1830,9 +1835,9 @@ TEST(Read_flex, Lex_compat_is_refused_by_name_rather_than_recorded_and_ignored)
     // yylineno changes no language: flex matches "abbb" against `ab{3}` under it, as the reader does.
     EXPECT_NO_THROW(std::ignore = read_flex("%option yylineno\n%%\nab{3}   return A;\n"));
 
-    // Under `%option lex-compat` flex 2.6.4 matches "ababab" against `ab{3}` and refuses "abbb", the repetition
-    // binding the whole expression before it; the pattern parser reads the other precedence, so the option is
-    // refused where it stands rather than read as if it said nothing.
+    // Under `%option lex-compat` flex 2.6.4 matches "ababab" against `ab{3}` and refuses "abbb", the repetition binding
+    // the whole expression before it; the pattern parser reads the other precedence, so the option is refused where it
+    // stands rather than read as if it said nothing.
     try
     {
         std::ignore = read_flex("%option noyywrap\n%option lex-compat\n%%\nab{3}   return A;\n");
@@ -1846,8 +1851,8 @@ TEST(Read_flex, Lex_compat_is_refused_by_name_rather_than_recorded_and_ignored)
         EXPECT_NE(std::string_view{error.what()}.find("ab{3}"), std::string_view::npos);
     }
 
-    // Turned back off it says nothing, and flex then matches "abbb" as the reader does, leaving "ababab" to the
-    // default rule one byte at a time.
+    // Turned back off it says nothing, and flex then matches "abbb" as the reader does, leaving "ababab" to the default
+    // rule one byte at a time.
     const auto file{read_flex("%option lex-compat nolex-compat\n%%\nab{3}   return A;\n").front()};
 
     const auto lexer{build(file, "INITIAL")};
@@ -1860,8 +1865,8 @@ TEST(Read_flex, Lex_compat_is_refused_by_name_rather_than_recorded_and_ignored)
 
 TEST(Read_flex, A_definition_runs_to_the_end_of_its_line_and_carries_a_comment_standing_there)
 {
-    // flex takes a definition to the end of its line, so a comment there is part of the pattern: flex 2.6.4 builds
-    // this file while the definition is unused, and refuses the file that expands it with "unrecognized rule".
+    // flex takes a definition to the end of its line, so a comment there is part of the pattern: flex 2.6.4 builds this
+    // file while the definition is unused, and refuses the file that expands it with "unrecognized rule".
     constexpr std::string_view unused{R"(D  [0-9]  /* digits */
 %%
 [0-9]+   return NUMBER;
@@ -1891,10 +1896,10 @@ TEST(Read_flex, A_definition_runs_to_the_end_of_its_line_and_carries_a_comment_s
 
 TEST(Read_flex, A_bracket_expression_ends_the_pattern_only_at_its_own_close)
 {
-    // flex 2.6.4, run on each of these as a rule of its own, matches the lengths asserted: a POSIX class's `]` is
-    // no close, so the blank of `[[:alpha:] ]+` is a member; a `]` first in the bracket is a member and the caret
-    // negating one is not a member, so `[^^]` admits every byte but the caret; and a `[:` in any other shape is the
-    // `[` and the `:` as members, which leaves `[[:al]pha:]` the bracket `[[:al]` and the text `pha:]`.
+    // flex 2.6.4, run on each of these as a rule of its own, matches the lengths asserted: a POSIX class's `]` is no
+    // close, so the blank of `[[:alpha:] ]+` is a member; a `]` first in the bracket is a member and the caret negating
+    // one is not a member, so `[^^]` admits every byte but the caret; and a `[:` in any other shape is the `[` and the
+    // `:` as members, which leaves `[[:al]pha:]` the bracket `[[:al]` and the text `pha:]`.
     const auto matched{[](const std::string_view pattern, const std::string_view input) {
         const std::string source{"%%\n" + std::string{pattern} + "   return A;\n"};
 
