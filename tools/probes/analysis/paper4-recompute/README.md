@@ -1,4 +1,4 @@
-# Paper four recomputed
+# The certified-splitting figures recomputed
 
 A differential stage for the certified-splitting paper: its emitted figures, written by the Python programs under
 `explorations/certification` in the research repository, recomputed from munch's own decisions and held against the

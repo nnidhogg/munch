@@ -1378,7 +1378,8 @@ struct Edit_record
 
         for (const auto boundary : moved)
         {
-            if (boundary + longest <= position || boundary >= anchor)
+            // The theorem's window is (max(a, p - L + 1), q): the first boundary past p - L is shared by both scans.
+            if (boundary + longest <= position + 1 || boundary >= anchor)
             {
                 throw std::runtime_error{
                         std::format("a moved boundary at {} lies outside the theorem's window", boundary)};
@@ -1437,7 +1438,7 @@ struct Edit_record
             }
         }
 
-        const auto low{std::max<std::size_t>(1, position + 1 > longest ? position + 1 - longest : 0)};
+        const auto low{std::max<std::size_t>(1, position + 2 > longest ? position + 2 - longest : 0)};
 
         record.accepted = true;
         record.left_admissible = low;
