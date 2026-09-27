@@ -270,6 +270,31 @@ jobs:
           ./build/tools/fuzz/munch_raw_string_fuzzer raw-string-corpus -max_total_time=60 -timeout=10 \
                 -rss_limit_mb=4096 -print_new_funcs=0
 
+  grammars-generate:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # The generators the audit's readers follow: flex 2.6.4 and re2c 3.1 from Ubuntu 24.04, ANTLR 4.13.2 pinned by
+      # digest.
+      - name: Install the generators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flex re2c default-jre-headless
+          flex --version
+          re2c --version
+          curl -sSfL -o antlr-4.13.2-complete.jar https://www.antlr.org/download/antlr-4.13.2-complete.jar
+          echo "eae2dfa119a64327444672aff63e9ec35a20180dc5b8090b7a6ab85125df4d76  antlr-4.13.2-complete.jar" \
+                | sha256sum -c -
+
+      - name: Every bundled grammar is accepted by its generator
+        run: tools/audit/check_grammars_generate.sh antlr-4.13.2-complete.jar
+
   xid-data:
     runs-on: ubuntu-24.04
 
