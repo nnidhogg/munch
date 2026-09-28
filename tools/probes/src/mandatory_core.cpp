@@ -49,7 +49,7 @@ using munch::dfa::Dfa;
 
 std::size_t failures{0};
 
-void expect(const bool condition, const char* what)
+void expect(const bool condition, const std::string_view what)
 {
     if (!condition)
     {

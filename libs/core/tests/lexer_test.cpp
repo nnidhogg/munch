@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -4082,9 +4083,9 @@ TEST_F(Lexer_test, Parallel_tokenization_accepts_a_sink_callable_only_as_an_lval
     // The counter is atomic because one sink serves every chunk's thread, as the API documents.
     struct Lvalue_only_sink
     {
-        std::atomic<std::size_t>* seen;
+        std::reference_wrapper<std::atomic<std::size_t>> seen;
 
-        void operator()(std::size_t, Token_kind, std::size_t) & { ++*seen; }
+        void operator()(std::size_t, Token_kind, std::size_t) & { ++seen.get(); }
     };
 
     Builder builder;
@@ -4100,7 +4101,7 @@ TEST_F(Lexer_test, Parallel_tokenization_accepts_a_sink_callable_only_as_an_lval
 
     std::atomic<std::size_t> seen{0};
 
-    const auto consumed{lexer.tokenize_all_parallel<Token_kind>(input, 2, Lvalue_only_sink{.seen = &seen})};
+    const auto consumed{lexer.tokenize_all_parallel<Token_kind>(input, 2, Lvalue_only_sink{.seen = seen})};
 
     std::size_t total{0};
 
@@ -4829,59 +4830,59 @@ struct Char_convertible_iterator
     using value_type = char;
     using difference_type = std::ptrdiff_t;
 
-    const char* ptr{};
+    std::string::const_iterator position{};
 
-    operator char() const { return *ptr; }
+    operator char() const { return *position; }
 
-    char operator*() const { return *ptr; }
-    char operator[](const difference_type at) const { return ptr[at]; }
+    char operator*() const { return *position; }
+    char operator[](const difference_type at) const { return position[at]; }
 
     Char_convertible_iterator& operator++()
     {
-        ++ptr;
+        ++position;
         return *this;
     }
 
-    Char_convertible_iterator operator++(int) { return {ptr++}; }
+    Char_convertible_iterator operator++(int) { return {position++}; }
 
     Char_convertible_iterator& operator--()
     {
-        --ptr;
+        --position;
         return *this;
     }
 
-    Char_convertible_iterator operator--(int) { return {ptr--}; }
+    Char_convertible_iterator operator--(int) { return {position--}; }
 
     Char_convertible_iterator& operator+=(const difference_type by)
     {
-        ptr += by;
+        position += by;
         return *this;
     }
 
     Char_convertible_iterator& operator-=(const difference_type by)
     {
-        ptr -= by;
+        position -= by;
         return *this;
     }
 
     friend Char_convertible_iterator operator+(const Char_convertible_iterator it, const difference_type by)
     {
-        return {it.ptr + by};
+        return {it.position + by};
     }
 
     friend Char_convertible_iterator operator+(const difference_type by, const Char_convertible_iterator it)
     {
-        return {it.ptr + by};
+        return {it.position + by};
     }
 
     friend Char_convertible_iterator operator-(const Char_convertible_iterator it, const difference_type by)
     {
-        return {it.ptr - by};
+        return {it.position - by};
     }
 
     friend difference_type operator-(const Char_convertible_iterator lhs, const Char_convertible_iterator rhs)
     {
-        return lhs.ptr - rhs.ptr;
+        return lhs.position - rhs.position;
     }
 
     friend auto operator<=>(const Char_convertible_iterator&, const Char_convertible_iterator&) = default;
@@ -4911,7 +4912,7 @@ TEST_F(Lexer_test, Window_planning_reads_elements_never_iterator_objects)
     const std::string text{std::string(12, ' ') + "alphabet"};
 
     const auto boundaries{lexer.chunk_boundaries_with_windows(
-            Char_convertible_iterator{text.data()}, Char_convertible_iterator{text.data() + text.size()}, 2)};
+            Char_convertible_iterator{text.cbegin()}, Char_convertible_iterator{text.cend()}, 2)};
 
     EXPECT_EQ(boundaries, lexer.chunk_boundaries_with_windows(text, 2));
 
@@ -5117,7 +5118,7 @@ TEST_F(Lexer_test, Test_container_concepts_require_common_const_ranges)
     // A counted iterator paired with the default sentinel is random access but not a common range, and a begin/end
     // pair of different types cannot instantiate the single-iterator entry points, so the concept must reject it at
     // the interface instead of failing inside the body.
-    using Counted = std::ranges::subrange<std::counted_iterator<const char*>, std::default_sentinel_t>;
+    using Counted = std::ranges::subrange<std::counted_iterator<std::string::const_iterator>, std::default_sentinel_t>;
 
     static_assert(std::ranges::random_access_range<Counted>);
     static_assert(!Random_access_iterable<Counted>);
@@ -5137,7 +5138,8 @@ TEST_F(Lexer_test, Test_container_concepts_require_common_const_ranges)
     const std::string input{"abab"};
 
     const auto common{
-            std::ranges::subrange{std::counted_iterator{input.data(), 4}, std::default_sentinel} | std::views::common};
+            std::ranges::subrange{std::counted_iterator{input.cbegin(), 4}, std::default_sentinel} |
+            std::views::common};
 
     static_assert(Random_access_iterable<decltype(common)>);
 
