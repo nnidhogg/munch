@@ -4,7 +4,6 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <map>
 #include <optional>
 #include <span>
@@ -112,11 +111,12 @@ struct Step
 };
 
 /**
- * @brief How the search reached a key: the key the byte was read from, null for the start, and the byte.
+ * @brief How the search reached a key: the number of the key the byte was read from, zero for the start, and the
+ *        byte.
  */
 struct Parent
 {
-    const Key* from{};
+    std::size_t from{};
 
     char byte{};
 };
@@ -125,6 +125,12 @@ struct Parent
  * @brief The keys visited, each with the parent that led to it.
  */
 using Seen = std::map<Key, Parent>;
+
+/**
+ * @brief The keys visited in the order the search admitted them, so that a key's number is its index here: the start
+ *        is number zero, and the keys still to expand are those past the one being expanded.
+ */
+using Admitted = std::vector<Seen::const_iterator>;
 
 /**
  * @brief Sorts a set of closed runs and drops the repeats, so that two positions holding the same runs compare equal.
@@ -280,18 +286,18 @@ void dedup(std::vector<State_t>& states)
 
 /**
  * @brief The bytes that led the search to a key, read back through the parents it recorded.
- * @param seen The keys visited.
- * @param at The key the last byte was read from.
+ * @param admitted The keys visited, by number.
+ * @param at The number of the key the last byte was read from.
  * @param last The last byte.
  * @return The input, first byte first.
  */
-[[nodiscard]] std::string trail(const Seen& seen, const Key* at, const char last)
+[[nodiscard]] std::string trail(const Admitted& admitted, const std::size_t at, const char last)
 {
     std::string out{last};
 
-    for (auto parent{seen.at(*at)}; parent.from != nullptr; parent = seen.at(*parent.from))
+    for (auto number{at}; number != 0; number = admitted[number]->second.from)
     {
-        out.push_back(parent.byte);
+        out.push_back(admitted[number]->second.byte);
     }
 
     std::ranges::reverse(out);
@@ -300,21 +306,20 @@ void dedup(std::vector<State_t>& states)
 }
 
 /**
- * @brief Admits the keys a byte led to that the search has not seen, each recorded with its parent and queued behind
- *        the frontier, while the ceiling allows.
+ * @brief Admits the keys a byte led to that the search has not seen, each recorded with its parent and numbered
+ *        after every key admitted before it, while the ceiling allows.
  *
  * Admitting an unseen key is where the search grows, so the ceiling is checked here and nowhere else: a key that would
  * pass it is not admitted, and the question stays open.
  * @param seen The keys visited, grown in place.
- * @param frontier The keys still to expand, grown in place.
+ * @param admitted The keys visited, by number, grown in place.
  * @param successors The keys the byte led to, moved from.
- * @param parent The key the byte was read from, and the byte.
+ * @param parent The number of the key the byte was read from, and the byte.
  * @param cap The most keys the search may hold at once.
  * @return False when an unseen key would pass the ceiling and the search must give up, true otherwise.
  */
 [[nodiscard]] bool admit(
-        Seen& seen, std::deque<const Key*>& frontier, const std::span<Key> successors, const Parent parent,
-        const std::size_t cap)
+        Seen& seen, Admitted& admitted, const std::span<Key> successors, const Parent parent, const std::size_t cap)
 {
     for (auto& next : successors)
     {
@@ -328,9 +333,9 @@ void dedup(std::vector<State_t>& states)
             return false;
         }
 
-        const auto [admitted, inserted]{seen.try_emplace(std::move(next), parent)};
+        const auto [key, inserted]{seen.try_emplace(std::move(next), parent)};
 
-        frontier.push_back(&admitted->first);
+        admitted.push_back(key);
     }
 
     return true;
@@ -357,28 +362,25 @@ template <typename Expand>
         return {.witness = {}, .exhaustive = false};
     }
 
-    Seen seen{{start, Parent{.from = nullptr, .byte = '\0'}}};
+    Seen seen{{start, Parent{.from = 0, .byte = '\0'}}};
 
-    std::deque<const Key*> frontier{&seen.begin()->first};
+    Admitted admitted{seen.cbegin()};
 
-    while (!frontier.empty())
+    // Keys are expanded in the order they were admitted, which is breadth-first.
+    for (std::size_t at{0}; at < admitted.size(); ++at)
     {
-        const auto* const at{frontier.front()};
-
-        frontier.pop_front();
-
         for (std::size_t value{0}; value < Simulator::symbol_count; ++value)
         {
             const auto byte{static_cast<unsigned char>(value)};
 
-            const Step step{expand(*at, byte)};
+            const Step step{expand(admitted[at]->first, byte)};
 
             if (step.ends)
             {
-                return {.witness = trail(seen, at, static_cast<char>(byte)), .exhaustive = true};
+                return {.witness = trail(admitted, at, static_cast<char>(byte)), .exhaustive = true};
             }
 
-            if (!admit(seen, frontier, step.successors, Parent{.from = at, .byte = static_cast<char>(byte)}, cap))
+            if (!admit(seen, admitted, step.successors, Parent{.from = at, .byte = static_cast<char>(byte)}, cap))
             {
                 return {.witness = {}, .exhaustive = false};
             }
@@ -829,8 +831,7 @@ std::vector<Gap_verdict> boundary_profile(
     // its refutations exhausted without a witness, which can come under a cap that stops the occurrence search.
     const Refutation proved{.witness = {}, .exhaustive = true};
 
-    std::vector<Gap_verdict> absent(
-            window.size() + 1, Gap_verdict{.verdict = Gap::absent, .crossed = proved, .cut = proved});
+    std::vector absent(window.size() + 1, Gap_verdict{.verdict = Gap::absent, .crossed = proved, .cut = proved});
 
     const auto [witness, exhaustive]{window_occurrence(simulator, window, cap)};
 
