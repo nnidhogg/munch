@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -196,7 +197,7 @@ int main(const int argc, const char** argv)
     {
         const char* name;
 
-        const munch::core::Mode_lexer* lexer;
+        std::reference_wrapper<const munch::core::Mode_lexer> lexer;
 
         std::string input;
 
@@ -207,11 +208,11 @@ int main(const int argc, const char** argv)
 
     std::vector<Row> rows;
 
-    rows.push_back({.name = "action-never-fires", .lexer = &acting, .input = generate(bytes, 0, 16, 0)});
-    rows.push_back({.name = "per-token", .lexer = &acting, .input = generate(bytes, 40, 32, 0), .batched = false});
-    rows.push_back({.name = "batched", .lexer = &acting, .input = generate(bytes, 40, 32, 0)});
-    rows.push_back({.name = "no-actions-declared", .lexer = &inert, .input = generate(bytes, 0, 16, 0)});
-    rows.push_back({.name = "one-action-never-fires", .lexer = &single, .input = generate(bytes, 0, 16, 0)});
+    rows.push_back({.name = "action-never-fires", .lexer = acting, .input = generate(bytes, 0, 16, 0)});
+    rows.push_back({.name = "per-token", .lexer = acting, .input = generate(bytes, 40, 32, 0), .batched = false});
+    rows.push_back({.name = "batched", .lexer = acting, .input = generate(bytes, 40, 32, 0)});
+    rows.push_back({.name = "no-actions-declared", .lexer = inert, .input = generate(bytes, 0, 16, 0)});
+    rows.push_back({.name = "one-action-never-fires", .lexer = single, .input = generate(bytes, 0, 16, 0)});
 
     for (const int percent : {1, 10, 40, 90})
     {
@@ -220,7 +221,7 @@ int main(const int argc, const char** argv)
                          percent == 10 ? "actions-10pc" :
                          percent == 40 ? "actions-40pc" :
                                          "actions-90pc",
-                 .lexer = &acting,
+                 .lexer = acting,
                  .input = generate(bytes, percent, 16, 0)});
     }
 
@@ -231,12 +232,12 @@ int main(const int argc, const char** argv)
                          body == 32  ? "body-32" :
                          body == 128 ? "body-128" :
                                        "body-512",
-                 .lexer = &acting,
+                 .lexer = acting,
                  .input = generate(bytes, 40, body, 0)});
     }
 
-    rows.push_back({.name = "push-pop", .lexer = &acting, .input = generate(bytes, 40, 32, 0)});
-    rows.push_back({.name = "go-to", .lexer = &flat_modes, .input = generate(bytes, 40, 32, 0)});
+    rows.push_back({.name = "push-pop", .lexer = acting, .input = generate(bytes, 40, 32, 0)});
+    rows.push_back({.name = "go-to", .lexer = flat_modes, .input = generate(bytes, 40, 32, 0)});
 
     for (const std::size_t depth : {1U, 4U, 16U})
     {
@@ -244,7 +245,7 @@ int main(const int argc, const char** argv)
                 {.name = depth == 1 ? "depth-1" :
                          depth == 4 ? "depth-4" :
                                       "depth-16",
-                 .lexer = &acting,
+                 .lexer = acting,
                  .input = generate(bytes, 10, 16, depth)});
     }
 
@@ -265,7 +266,7 @@ int main(const int argc, const char** argv)
 
                                      while (offset < row.input.size())
                                      {
-                                         const auto match{row.lexer->tokenize<Mode_token>(
+                                         const auto match{row.lexer.get().tokenize<Mode_token>(
                                                  row.input.cbegin() + static_cast<std::ptrdiff_t>(offset),
                                                  row.input.cend(), stack)};
 
@@ -282,7 +283,7 @@ int main(const int argc, const char** argv)
                                      return offset == row.input.size() ? tokens : 0;
                                  }
 
-                                 const auto consumed{row.lexer->tokenize_all<Mode_token>(
+                                 const auto consumed{row.lexer.get().tokenize_all<Mode_token>(
                                          row.input, [&tokens](Mode_token, std::size_t, std::size_t) { ++tokens; })};
 
                                  return consumed == row.input.size() ? tokens : 0;

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -190,7 +191,7 @@ private:
      * @throws std::invalid_argument If the value is negative or beyond what an index can hold.
      */
     template <typename V>
-    [[nodiscard]] static std::size_t as_index(const V value, const char* const what)
+    [[nodiscard]] static std::size_t as_index(const V value, const std::string_view what)
     {
         // An enum is dispatched through its underlying type rather than resolved with conditional_t, which would
         // instantiate underlying_type for the integral case where it does not exist.
@@ -204,7 +205,7 @@ private:
             {
                 if (value < 0)
                 {
-                    throw std::invalid_argument{std::string{"Mode_builder::add_token: negative "} + what};
+                    throw std::invalid_argument{std::string{"Mode_builder::add_token: negative "}.append(what)};
                 }
             }
 
@@ -213,8 +214,8 @@ private:
             // Sizing a row needs index + 1, so the largest representable value cannot be admitted either.
             if (index == static_cast<std::size_t>(-1))
             {
-                throw std::invalid_argument{
-                        std::string{"Mode_builder::add_token: "} + what + " is not representable as an index"};
+                throw std::invalid_argument{std::string{"Mode_builder::add_token: "}.append(what).append(
+                        " is not representable as an index")};
             }
 
             return index;

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -33,22 +34,20 @@ void require(const bool condition)
 class Reader
 {
 public:
-    Reader(const std::uint8_t* const data, const std::size_t size) : data_{data}, size_{size} {}
+    explicit Reader(const std::span<const std::uint8_t> data) : data_{data} {}
 
-    [[nodiscard]] std::uint8_t byte() noexcept { return position_ < size_ ? data_[position_++] : 0; }
+    [[nodiscard]] std::uint8_t byte() noexcept { return position_ < data_.size() ? data_[position_++] : 0; }
 
     /**
      * @brief The undecoded rest of the input, used as the text to scan.
      */
     [[nodiscard]] std::string remainder() const
     {
-        return {reinterpret_cast<const char*>(data_) + position_, size_ - position_};
+        return {reinterpret_cast<const char*>(data_.data()) + position_, data_.size() - position_};
     }
 
 private:
-    const std::uint8_t* data_;
-
-    std::size_t size_;
+    std::span<const std::uint8_t> data_;
 
     std::size_t position_{0};
 };
@@ -96,7 +95,7 @@ using Stream_t = std::vector<std::pair<unsigned, std::size_t>>;
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* const data, const std::size_t size)
 {
-    Reader reader{data, size};
+    Reader reader{std::span{data, size}};
 
     munch::core::Builder builder;
 

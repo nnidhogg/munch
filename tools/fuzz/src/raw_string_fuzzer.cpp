@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -30,15 +31,15 @@ constexpr std::size_t max_delimiter_length{16};
 class Reader
 {
 public:
-    Reader(const std::uint8_t* const data, const std::size_t size) : data_{data}, size_{size} {}
+    explicit Reader(const std::span<const std::uint8_t> data) : data_{data} {}
 
-    [[nodiscard]] std::uint8_t byte() noexcept { return position_ < size_ ? data_[position_++] : 0; }
+    [[nodiscard]] std::uint8_t byte() noexcept { return position_ < data_.size() ? data_[position_++] : 0; }
 
     [[nodiscard]] std::string take(const std::size_t count)
     {
-        const auto available{position_ < size_ ? std::min(count, size_ - position_) : std::size_t{0}};
+        const auto available{position_ < data_.size() ? std::min(count, data_.size() - position_) : std::size_t{0}};
 
-        std::string result{reinterpret_cast<const char*>(data_) + position_, available};
+        std::string result{reinterpret_cast<const char*>(data_.data()) + position_, available};
 
         position_ += available;
 
@@ -47,14 +48,13 @@ public:
 
     [[nodiscard]] std::string remainder() const
     {
-        return position_ < size_ ? std::string{reinterpret_cast<const char*>(data_) + position_, size_ - position_} :
-                                   std::string{};
+        return position_ < data_.size() ?
+                       std::string{reinterpret_cast<const char*>(data_.data()) + position_, data_.size() - position_} :
+                       std::string{};
     }
 
 private:
-    const std::uint8_t* data_;
-
-    std::size_t size_;
+    std::span<const std::uint8_t> data_;
 
     std::size_t position_{0};
 };
@@ -119,7 +119,7 @@ void check_success(const std::string_view input, const std::size_t offset, const
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* const data, const std::size_t size)
 {
-    Reader reader{data, size};
+    Reader reader{std::span{data, size}};
 
     const auto mode{reader.byte() % 2U};
 

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -2349,9 +2350,9 @@ constexpr std::size_t binding_chain{8};
 struct Sighting
 {
     /**
-     * @brief The binding, or nullptr when no scope in sight binds the name.
+     * @brief The binding, or none when no scope in sight binds the name.
      */
-    const Binding* binding{nullptr};
+    std::optional<std::reference_wrapper<const Binding>> binding;
 
     /**
      * @brief The scope holding it, as a path from the crate root, empty at the root.
@@ -2367,7 +2368,7 @@ struct Sighting
  * @param scope The scope the name is written in, as a path from the crate root, empty at the root.
  * @param name The name, or a path's prefix.
  * @param space The namespace asked.
- * @return The binding and the scope holding it, a null binding when no scope in sight binds the name there.
+ * @return The binding and the scope holding it, no binding when no scope in sight binds the name there.
  */
 [[nodiscard]] Sighting visible(
         const Names_t& names, std::string scope, const std::string_view name, const Namespace space)
@@ -2376,7 +2377,7 @@ struct Sighting
     {
         if (const auto found{names.find(qualified(scope, name))}; found != names.end() && found->second.in(space))
         {
-            return {.binding = &*found->second.in(space), .scope = std::move(scope)};
+            return {.binding = *found->second.in(space), .scope = std::move(scope)};
         }
 
         if (!in_block(scope))
@@ -2493,7 +2494,7 @@ struct Sighting
             // crate's path only through one naming a crate.
             const auto [binding, holder]{visible(names, module, prefix, cut == path.size() ? space : Namespace::type)};
 
-            const auto followed{binding != nullptr && (!external || names_crate(*binding))};
+            const auto followed{binding.has_value() && (!external || names_crate(*binding))};
 
             const auto crate{std::ranges::find_if(crate_names, [&](const auto& pair) { return pair.first == prefix; })};
 
@@ -2510,7 +2511,7 @@ struct Sighting
             }
             else
             {
-                const auto& [bound, home, exported]{*binding};
+                const auto& [bound, home, exported]{binding->get()};
 
                 // An item the file defines stands for itself: the path is its own, from the scope holding the
                 // name. That scope is the one the sighting names and not the one the binding is written in, which
@@ -4203,19 +4204,18 @@ private:
 
     /**
      * @brief The outcomes of a block, read in the scope the block itself is.
-     * @param inside The block's text between its braces.
-     * @param brace Where the block's opening brace stands in the body being read.
+     * @param block The block's text, its braces included, as it stands in the body being read.
      * @return The outcomes.
      */
-    [[nodiscard]] Outcomes_t of_block(std::string_view inside, const char* brace) const;
+    [[nodiscard]] Outcomes_t of_block(std::string_view block) const;
 
     /**
      * @brief This reading moved into the block a brace opens, whose scope the walk bound that block's items under.
-     * @param brace Where the brace stands in the body being read.
+     * @param block The text of the body being read from the brace on.
      * @return The reading, in the block's own scope; this reading unchanged for a closure, whose text is not the
      *         body's.
      */
-    [[nodiscard]] Callback_reader scoped_at(const char* brace) const;
+    [[nodiscard]] Callback_reader scoped_at(std::string_view block) const;
 
     /**
      * @brief Whether a stretch of a body declares anything: a `use`, an item, or a macro definition.
@@ -4342,13 +4342,13 @@ private:
     bool ok_skips_{false};
 
     /**
-     * @brief The first byte of the body being read, when the reading is inside a named function's body, so that a
-     *        block inside it is placed in the file; nullptr for a closure, whose text the attribute carries.
+     * @brief The body being read, when the reading is inside a named function's body, so that a block inside it is
+     *        placed in the file; none for a closure, whose text the attribute carries.
      */
-    const char* body_begin_{nullptr};
+    std::optional<std::string_view> body_;
 
     /**
-     * @brief Where that first byte stands in the file.
+     * @brief Where the body's first byte stands in the file.
      */
     std::size_t body_at_{0};
 };
@@ -4520,27 +4520,27 @@ Outcomes_t Callback_reader::of_callback() const
     return of_function(path.starts_with("crate::") ? path.substr(7) : path);
 }
 
-Callback_reader Callback_reader::scoped_at(const char* brace) const
+Callback_reader Callback_reader::scoped_at(const std::string_view block) const
 {
     Callback_reader inner{*this};
 
-    if (body_begin_ != nullptr)
+    if (body_)
     {
         inner.module_ = qualified(
-                module_, "{" + std::to_string(body_at_ + static_cast<std::size_t>(brace - body_begin_)) + "}");
+                module_, "{" + std::to_string(body_at_ + static_cast<std::size_t>(block.data() - body_->data())) + "}");
     }
 
     return inner;
 }
 
-Outcomes_t Callback_reader::of_block(const std::string_view inside, const char* brace) const
+Outcomes_t Callback_reader::of_block(const std::string_view block) const
 {
     // A block is a scope of its own, so what it binds is bound under its own brace and the names it writes are
     // read there: `{ use T::X as Skip; Skip }` makes `Skip` the variant for that block alone, whether the block
     // stands as a value, as a statement or as a match arm's, where reading it in the scope around it finds the
     // crate's `Skip` and discards a match the crate emits. The brace places the block in the file, as the walk
     // that bound its items placed it.
-    return scoped_at(brace).of_body(inside);
+    return scoped_at(block).of_body(block.substr(1, block.size() - 2));
 }
 
 bool Callback_reader::binds_names(const std::string_view inside) const
@@ -4639,7 +4639,7 @@ Outcomes_t Callback_reader::of_function(const std::string_view path) const
 
     // Where the body stands in the file, so that a block inside it can be named by its own brace's offset, which
     // is the name the walk bound that block's items under.
-    inner.body_begin_ = body->data();
+    inner.body_ = *body;
 
     inner.body_at_ = body_at;
 
@@ -5255,7 +5255,7 @@ Outcomes_t Callback_reader::of_value(const std::string_view text) const
 
     if (is_group(value, '{'))
     {
-        return of_block(value.substr(1, value.size() - 2), value.data());
+        return of_block(value);
     }
 
     Rust_cursor cursor{value, 0, value.size()};
@@ -5280,7 +5280,7 @@ Outcomes_t Callback_reader::of_value(const std::string_view text) const
         cursor.skip_group();
 
         // The branch is a block of its own, read in its own scope as any block is.
-        auto outcomes{of_block(value.substr(open + 1, cursor.offset() - 2 - open), value.data() + open)};
+        auto outcomes{of_block(value.substr(open, cursor.offset() - open))};
 
         cursor.skip_trivia();
 
@@ -5323,7 +5323,7 @@ Outcomes_t Callback_reader::of_value(const std::string_view text) const
         // The braces holding the arms are a block of the walk's own, so the arms stand one scope deeper than the
         // match does and an arm's own block deeper still; reading an arm in the scope around the match would look
         // for its names under a scope the walk never bound them in.
-        const auto inside{scoped_at(value.data() + open)};
+        const auto inside{scoped_at(value.substr(open))};
 
         Rust_cursor arm{arms, 0, arms.size()};
 
@@ -5352,7 +5352,7 @@ Outcomes_t Callback_reader::of_value(const std::string_view text) const
             {
                 arm.skip_group();
 
-                outcomes.merge(inside.of_block(arms.substr(begin + 1, arm.offset() - 2 - begin), arms.data() + begin));
+                outcomes.merge(inside.of_block(arms.substr(begin, arm.offset() - begin)));
             }
             else
             {
@@ -5533,7 +5533,7 @@ void Callback_reader::collect_returns(const std::string_view text, Outcomes_t& o
 
             // A block's returns are read in the block's own scope, as its value is: `{ use T::B as Skip; return
             // Skip; }` returns the variant it imports.
-            (braced ? scoped_at(text.data() + open) : *this)
+            (braced ? scoped_at(text.substr(open)) : *this)
                     .collect_returns(text.substr(open + 1, cursor.offset() - 2 - open), outcomes);
 
             auto look{cursor};

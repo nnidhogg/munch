@@ -189,8 +189,10 @@ namespace
  */
 [[nodiscard]] regex::Regex normalized(const regex::Regex& regex)
 {
-    if (const auto* repeat{std::get_if<regex::Repeat>(&regex.node)})
+    if (std::holds_alternative<regex::Repeat>(regex.node))
     {
+        const auto& repeat{std::get<regex::Repeat>(regex.node)};
+
         const auto once{std::visit(
                 []<typename Kind>(const Kind& kind) {
                     if constexpr (std::is_same_v<Kind, regex::Exact>)
@@ -206,16 +208,16 @@ namespace
                         return false;
                     }
                 },
-                repeat->kind)};
+                repeat.kind)};
 
         if (once)
         {
-            return normalized(*repeat->regex);
+            return normalized(*repeat.regex);
         }
 
         // What a repetition repeats is normalised too, so `([ \t\n]{1})+` repeats the class `[ \t\n]` and is the
         // run that `[ \t\n]+` is, rather than a repetition of a sequence of one.
-        auto inner{normalized(*repeat->regex)};
+        auto inner{normalized(*repeat.regex)};
 
         if (matches_nothing(inner))
         {
@@ -229,14 +231,14 @@ namespace
             return {.node = regex::Text{.text = {}}};
         }
 
-        return {.node = regex::Repeat{.kind = repeat->kind, .regex = regex::Indirect{std::move(inner)}}};
+        return {.node = regex::Repeat{.kind = repeat.kind, .regex = regex::Indirect{std::move(inner)}}};
     }
 
-    if (const auto* choice{std::get_if<regex::Choice>(&regex.node)})
+    if (std::holds_alternative<regex::Choice>(regex.node))
     {
         std::vector<regex::Regex> alternatives;
 
-        for (const auto& part : choice->regexes)
+        for (const auto& part : std::get<regex::Choice>(regex.node).regexes)
         {
             if (!matches_nothing(part))
             {
@@ -257,9 +259,7 @@ namespace
         return {.node = regex::Choice{.regexes = std::move(alternatives)}};
     }
 
-    const auto* concat{std::get_if<regex::Concat>(&regex.node)};
-
-    if (!concat)
+    if (!std::holds_alternative<regex::Concat>(regex.node))
     {
         return regex;
     }
@@ -273,7 +273,7 @@ namespace
     // the empty word once normalised, is no part either; a sequence of no parts left is the empty word itself.
     std::vector<regex::Regex> parts;
 
-    for (const auto& part : concat->regexes)
+    for (const auto& part : std::get<regex::Concat>(regex.node).regexes)
     {
         auto inner{normalized(part)};
 
@@ -305,9 +305,12 @@ namespace
 {
     auto whole{normalized(regex)};
 
-    auto* concat{std::get_if<regex::Concat>(&whole.node)};
+    if (!std::holds_alternative<regex::Concat>(whole.node))
+    {
+        return {};
+    }
 
-    return concat ? std::move(concat->regexes) : std::vector<regex::Regex>{};
+    return std::move(std::get<regex::Concat>(whole.node).regexes);
 }
 
 /**
@@ -325,17 +328,22 @@ namespace
 
     const auto& node{parts.size() == 1 ? parts.front().node : whole.node};
 
-    const auto* repeat{std::get_if<regex::Repeat>(&node)};
-
-    if (!repeat ||
-        (!std::holds_alternative<regex::Kleene>(repeat->kind) && !std::holds_alternative<regex::Plus>(repeat->kind)))
+    if (!std::holds_alternative<regex::Repeat>(node))
     {
         return false;
     }
 
-    const auto* set{std::get_if<regex::Any_of>(&(*repeat->regex).node)};
+    const auto& [kind, repeated]{std::get<regex::Repeat>(node)};
 
-    return set && set->set.symbols().contains(static_cast<char>(byte));
+    if (!std::holds_alternative<regex::Kleene>(kind) && !std::holds_alternative<regex::Plus>(kind))
+    {
+        return false;
+    }
+
+    const auto& inner{(*repeated).node};
+
+    return std::holds_alternative<regex::Any_of>(inner) &&
+           std::get<regex::Any_of>(inner).set.symbols().contains(static_cast<char>(byte));
 }
 
 /**

@@ -61,12 +61,15 @@ void exclude(regex::Regex& regex, const unsigned char byte)
     // A repetition that may run zero times loses the byte by not running, so one whose sub-pattern cannot lose it is
     // deleted, leaving the empty string where it stood, as a choice drops an alternative that cannot lose the byte.
     // can_lose() cleared one of the two for every caller.
-    if (const auto* repeat{std::get_if<Repeat>(&regex.node)};
-        repeat && zero_minimum(repeat->kind) && !can_lose(*repeat->regex, byte))
+    if (std::holds_alternative<Repeat>(regex.node))
     {
-        regex.node = Text{.text = {}};
+        if (const auto& [kind, repeated]{std::get<Repeat>(regex.node)};
+            zero_minimum(kind) && !can_lose(*repeated, byte))
+        {
+            regex.node = Text{.text = {}};
 
-        return;
+            return;
+        }
     }
 
     std::visit(

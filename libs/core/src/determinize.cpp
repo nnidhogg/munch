@@ -5,6 +5,7 @@
 #include <bit>
 #include <boost/container_hash/hash.hpp>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <queue>
@@ -142,7 +143,7 @@ private:
 
         std::vector<unsigned char> symbols;
 
-        std::array<std::vector<const Members_t*>, 256> buckets;
+        std::array<std::vector<std::reference_wrapper<const Members_t>>, 256> buckets;
 
         Bits_t scratch(words_, 0);
 
@@ -197,7 +198,7 @@ private:
                         symbols.push_back(move.symbol);
                     }
 
-                    buckets[move.symbol].push_back(&move.targets);
+                    buckets[move.symbol].emplace_back(move.targets);
                 }
             }
 
@@ -208,9 +209,9 @@ private:
             {
                 std::ranges::fill(scratch, 0);
 
-                for (const auto* targets : buckets[symbol])
+                for (const Members_t& targets : buckets[symbol])
                 {
-                    for (const auto target : *targets)
+                    for (const auto target : targets)
                     {
                         if (!contains(scratch, target))
                         {
