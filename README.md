@@ -260,13 +260,14 @@ gap of a window is a token boundary at every occurrence of the window in every c
 shortest input holding an occurrence a token crosses there under its cap; `crossing_counterexample()`, whether a token
 crosses the gap at every occurrence, with the shortest input holding an occurrence cut there under its cap, the two
 together stating the window certificate exactly; and `boundary_profile()`, every gap of a window decided both ways,
-before each byte and after the last, with the verdict `must`, `never` or `may` when the window occurs, `absent` at every
-gap when no nonempty completely tokenizable input contains it, as `window_occurrence()` reports, and `undetermined`
-where the cap stopped a search. They are declared beside the others in `munch/dfa/boundary_search.hpp`, the two that
-search answered by the same search over guessed token boundaries and the profile asking both at every gap. So did two
-options of `munch-audit`, `--require-certified` and `--require-certified-modulo`, which require every audited scanner
-and condition to certify a byte exactly or once the discarded tokens are deleted, and its exit status 3, when every one
-audited and one did not certify a byte required of it.
+before each byte and after the last, `absent` being a verdict on the window, proved by `window_occurrence()` under the
+cap or by any gap whose two searches both exhaust without a witness, and given at every gap or at none, `must`, `never`
+and `may` given only for a window some search has shown to occur, and `undetermined` where the cap stopped a search.
+They are declared beside the others in `munch/dfa/boundary_search.hpp`, the two that search answered by the same search
+over guessed token boundaries and the profile asking both at every gap. So did two options of `munch-audit`,
+`--require-certified` and `--require-certified-modulo`, which require every audited scanner and condition to certify a
+byte exactly or once the discarded tokens are deleted, and its exit status 3, when every one audited and one did not
+certify a byte required of it.
 
 The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
 `Mode_action` with its four kinds, the moded tokenizer's constructors taking a `Mode_lexer`, and `depth()`. So did

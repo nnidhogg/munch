@@ -472,9 +472,14 @@ decides the other side, whether a token crosses the gap at every occurrence, and
 occurrence cut there. The two sides together are the certificate: `(W, o)` holds exactly when gap `o` is a boundary at
 every occurrence and every later gap inside the window is crossed at every occurrence. The gap after the window adds
 what no offset inside it can: over `{ab}` the window `b` is crossed at gap 0 and cut at gap 1 at every occurrence.
-`boundary_profile(window)` decides every gap both ways, two searches per gap each under the cap on its own, and gives
-each gap a verdict: `must`, `never` or `may` when the window occurs, `absent` at every gap when it occurs in no nonempty
-completely tokenizable input, as `window_occurrence()` would report, and `undetermined` where the cap stopped a search.
+`boundary_profile(window)` decides every gap both ways. Absence is a verdict on the window, proved by
+`window_occurrence()` under the cap, which runs first, or by any gap whose two searches both exhaust without a witness,
+since then no input holds an occurrence crossed at the gap and none holds one cut there, and it is given at every gap or
+at none. The two proofs can come at different caps, since the occurrence search keeps every branch that has read the
+window through until its token closes while a gap search drops the through branches that keep its claim, so a gap can
+prove absence under a cap that stops the occurrence search. `must`, `never` and `may` are given only for a window some
+search has shown to occur: two searches per gap, each under the cap on its own, give each gap `must`, `never` or `may`,
+each with a witness showing the window occurring, or `undetermined` where the cap stopped a search without such proof.
 Must and never are monotone, a gap keeping its verdict in every extension of the window at the shifted gap unless the
 extension occurs nowhere, while may carries nothing. The cap, the empty window and a gap past the window's end are
 handled as for `window_counterexample()`:

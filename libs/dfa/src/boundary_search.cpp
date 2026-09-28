@@ -572,14 +572,16 @@ enum class Origin_claim : std::uint8_t
 }
 
 /**
- * @brief The verdict on a gap, read off its two refutations.
+ * @brief The verdict on a gap of a window, read off its two refutations.
  *
  * A refutation that found a witness settles its side, one that exhausted without a witness proves its claim, and one
- * the cap stopped leaves the verdict open. Both claims proved at once means no occurrence refutes either, which is to
- * say none exists.
+ * the cap stopped leaves the verdict open. Both claims proved at once prove the window absent: no completely
+ * tokenizable input holds an occurrence a token crosses at the gap, and none holds one cut there, so none holds an
+ * occurrence at all. That is a verdict on the window, which boundary_profile() spreads over every gap; it is never
+ * must, whose witness cut at the gap shows the window occurring, as never's witness crossed there does.
  * @param crossed What boundary_counterexample() found at the gap.
  * @param cut What crossing_counterexample() found at the gap.
- * @return The verdict.
+ * @return The verdict, absent when both refutations exhausted without a witness.
  */
 [[nodiscard]] Gap verdict(const Refutation& crossed, const Refutation& cut)
 {
@@ -822,6 +824,21 @@ std::vector<Gap_verdict> boundary_profile(
         throw std::invalid_argument{"boundary_profile: the empty window has no occurrence to hold a gap in"};
     }
 
+    // Absence is a property of the window rather than of a gap: given at every gap, both claims proved there, and
+    // settled by the first proof of it, the occurrence search's, one search where a gap costs two, or a gap's, both of
+    // its refutations exhausted without a witness, which can come under a cap that stops the occurrence search.
+    const Refutation proved{.witness = {}, .exhaustive = true};
+
+    std::vector<Gap_verdict> absent(
+            window.size() + 1, Gap_verdict{.verdict = Gap::absent, .crossed = proved, .cut = proved});
+
+    const auto [witness, exhaustive]{window_occurrence(simulator, window, cap)};
+
+    if (exhaustive && witness.empty())
+    {
+        return absent;
+    }
+
     std::vector<Gap_verdict> profile;
 
     for (std::size_t gap{0}; gap <= window.size(); ++gap)
@@ -830,7 +847,14 @@ std::vector<Gap_verdict> boundary_profile(
 
         const auto cut{crossing_counterexample(simulator, window, gap, cap)};
 
-        profile.push_back(Gap_verdict{.verdict = verdict(crossed, cut), .crossed = crossed, .cut = cut});
+        const auto decided{verdict(crossed, cut)};
+
+        if (decided == Gap::absent)
+        {
+            return absent;
+        }
+
+        profile.push_back(Gap_verdict{.verdict = decided, .crossed = crossed, .cut = cut});
     }
 
     return profile;

@@ -152,8 +152,10 @@ and never are monotone, since every occurrence of an extension of `W` holds an o
 extension at the shifted gap unless the extension occurs nowhere. `boundary_counterexample()` refutes must and
 `crossing_counterexample()` refutes never, both by the boundary-guessing search `window_counterexample()` uses for
 Definition 1 with a bit beside the window matcher recording whether the gap is a boundary, settled one step after the
-final byte for the gap after the window; `boundary_profile()` reads the two at every gap and reports a window no input
-contains as absent. No figure in this document counts gap verdicts.
+final byte for the gap after the window; `boundary_profile()` gives absent as a verdict on the window, proved by
+`window_occurrence()` under the cap, asked first, or by any gap whose two searches both exhaust without a witness, at
+every gap or at none, and reads the two at every gap of a window some search has shown to occur. No figure in this
+document counts gap verdicts.
 
 ## 3 The model
 

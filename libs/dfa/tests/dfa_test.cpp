@@ -8,7 +8,9 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <optional>
+#include <random>
 #include <ranges>
 #include <set>
 #include <sstream>
@@ -16,6 +18,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "munch/dfa/boundary_search.hpp"
@@ -2420,6 +2423,402 @@ TEST_F(Dfa_test, Boundary_profile_finds_the_input_a_gap_is_crossed_or_cut_on_or_
     EXPECT_THROW(std::ignore = crossing_counterexample(even, "aa", 3), std::invalid_argument);
     EXPECT_THROW(std::ignore = boundary_profile(even, ""), std::invalid_argument);
     EXPECT_TRUE(boundary_counterexample(even, "aa", 2).exhaustive);
+}
+
+TEST_F(Dfa_test, Boundary_profile_gives_absence_from_the_first_cap_at_which_a_gap_or_the_occurrence_search_proves_it)
+{
+    // Two tables with a transition into a dead state, which step() enters as it enters any state: {a} with b leading
+    // from q0 and q1 into the dead q2, where the window ab occurs nowhere, and a(aa)* with b leading from q0 into the
+    // dead q2, where aab occurs nowhere. A branch that has read the window through into the dead state never closes;
+    // the occurrence search holds every such branch while a gap search drops the ones keeping its claim, so a gap's
+    // pair exhausts under a cap that stops the occurrence search and proves absence there. The profile is absent at
+    // every gap from the first cap at which any proof exhausts and at no gap below it, and never must, never or may at
+    // any cap, the window occurring nowhere; the caps are read off the searches, four around each table's threshold.
+    const auto table{[](const bool looping) {
+        dfa::Builder dfa;
+
+        const auto q0{dfa.init_state()};
+        const auto q1{dfa.next_state()};
+        const auto q2{dfa.next_state()};
+
+        dfa.add_transition(q0, dfa::Label('a'), q1);
+        dfa.add_transition(q0, dfa::Label('b'), q2);
+        dfa.add_transition(q1, dfa::Label(looping ? 'a' : 'b'), looping ? q0 : q2);
+        dfa.add_accept_state(q1, dfa::Token{0});
+
+        return Simulator{dfa.build()};
+    }};
+
+    // The smallest cap under which a search exhausts, by running it.
+    const auto first_cap{[](const auto& exhausts) {
+        std::size_t cap{1};
+
+        while (!exhausts(cap))
+        {
+            ++cap;
+        }
+
+        return cap;
+    }};
+
+    for (const auto& [looping, window, low, high] :
+         std::vector<std::tuple<bool, std::string_view, std::size_t, std::size_t>>{
+                 {false, "ab", 7, 10},
+                 {true, "aab", 17, 20}})
+    {
+        const auto simulator{table(looping)};
+
+        EXPECT_FALSE(simulator.is_live(2)) << window;
+
+        const auto occurrence{
+                first_cap([&](const std::size_t cap) { return window_occurrence(simulator, window, cap).exhaustive; })};
+
+        EXPECT_TRUE(window_occurrence(simulator, window, occurrence).witness.empty()) << window;
+
+        auto proof{occurrence};
+
+        for (std::size_t gap{0}; gap <= window.size(); ++gap)
+        {
+            proof = std::min(proof, first_cap([&](const std::size_t cap) {
+                                 return boundary_counterexample(simulator, window, gap, cap).exhaustive &&
+                                        crossing_counterexample(simulator, window, gap, cap).exhaustive;
+                             }));
+        }
+
+        EXPECT_LT(proof, occurrence) << window;
+        EXPECT_TRUE(low < proof && proof <= high) << window << ' ' << proof;
+
+        for (auto cap{low}; cap <= high; ++cap)
+        {
+            const auto profile{boundary_profile(simulator, window, cap)};
+
+            const auto absent{std::ranges::count(profile, Gap::absent, &Gap_verdict::verdict)};
+
+            ASSERT_EQ(profile.size(), window.size() + 1) << window << ' ' << cap;
+            EXPECT_TRUE(absent == 0 || std::cmp_equal(absent, profile.size())) << window << ' ' << cap;
+            EXPECT_EQ(std::cmp_equal(absent, profile.size()), cap >= proof) << window << ' ' << cap;
+
+            for (std::size_t gap{0}; gap < profile.size(); ++gap)
+            {
+                const auto& [verdict, crossed, cut]{profile[gap]};
+
+                EXPECT_TRUE(verdict == Gap::absent || verdict == Gap::undetermined)
+                        << window << ' ' << cap << ' ' << gap;
+                EXPECT_TRUE(crossed.witness.empty() && cut.witness.empty()) << window << ' ' << cap << ' ' << gap;
+                EXPECT_EQ(crossed.exhaustive && cut.exhaustive, verdict == Gap::absent)
+                        << window << ' ' << cap << ' ' << gap;
+            }
+        }
+    }
+}
+
+TEST_F(Dfa_test, Boundary_profile_over_random_tables_is_absent_everywhere_or_nowhere_and_decides_only_occurring_windows)
+{
+    // Tables drawn at random: three to five states, the initial one among them, each byte of {a, b} leading from each
+    // to a random one of them, to a dead sink or nowhere, so that some of them may be reached by no byte, one or more
+    // of them but the initial accepting, and an island no transition reaches beside them. Over every window over {a, b}
+    // of length one to three and four caps drawn from 1 to 32, the profile is absent at every gap or at none, and a gap
+    // is must, never or may only where its witness shows the window occurring, which window_occurrence() confirms under
+    // a cap no search here reaches. Under that cap every search exhausts and the profile agrees with a brute-force
+    // maximal-munch oracle over every input to length eight, which sees every witness that short: a side the oracle saw
+    // is refuted by a witness as short as the oracle's, a witness inside the bound is a side the oracle saw, and where
+    // the window occurs in no input or in one inside the bound, absent is exactly where the oracle saw no occurrence.
+    constexpr std::size_t bound{8};
+
+    constexpr std::size_t large{1U << 16U};
+
+    std::mt19937 sequence{0x5eedU};
+
+    const auto draw{[&](const std::size_t below) {
+        return std::uniform_int_distribution<std::size_t>{0, below - 1}(sequence);
+    }};
+
+    const auto words{[](const std::size_t longest) {
+        std::vector<std::string> out;
+
+        std::vector<std::string> layer{""};
+
+        for (std::size_t length{1}; length <= longest; ++length)
+        {
+            std::vector<std::string> next;
+
+            for (const auto& prefix : layer)
+            {
+                for (const auto byte : std::string_view{"ab"})
+                {
+                    next.push_back(prefix + byte);
+                }
+            }
+
+            out.insert(out.end(), next.begin(), next.end());
+
+            layer = std::move(next);
+        }
+
+        return out;
+    }};
+
+    const auto windows{words(3)};
+
+    const auto inputs{words(bound)};
+
+    // A table as described, drawn from the sequence.
+    const auto random_table{[&] {
+        dfa::Builder dfa;
+
+        std::vector<Dfa::State_t> states{dfa.init_state()};
+
+        for (std::size_t added{draw(3) + 2}; added > 0; --added)
+        {
+            states.push_back(dfa.next_state());
+        }
+
+        const auto sink{dfa.next_state()};
+
+        const auto island{dfa.next_state()};
+
+        for (const auto from : states)
+        {
+            for (const auto byte : std::string_view{"ab"})
+            {
+                // One target beyond the states is the sink, and one more is no transition at all.
+                const auto target{draw(states.size() + 2)};
+
+                if (target < states.size())
+                {
+                    dfa.add_transition(from, dfa::Label(byte), states[target]);
+                }
+                else if (target == states.size())
+                {
+                    dfa.add_transition(from, dfa::Label(byte), sink);
+                }
+            }
+        }
+
+        dfa.add_transition(sink, dfa::Label('a'), sink);
+        dfa.add_transition(sink, dfa::Label('b'), sink);
+        dfa.add_transition(island, dfa::Label('a'), states.front());
+        dfa.add_transition(island, dfa::Label('b'), island);
+        dfa.add_accept_state(island, dfa::Token{7});
+        dfa.add_accept_state(states[draw(states.size() - 1) + 1], dfa::Token{1});
+
+        for (std::size_t index{2}; index < states.size(); ++index)
+        {
+            if (draw(3) == 0)
+            {
+                dfa.add_accept_state(states[index], dfa::Token{1});
+            }
+        }
+
+        return Simulator{dfa.build()};
+    }};
+
+    // The token starts of an input under maximal munch, nothing when the scan does not consume every byte.
+    const auto starts_of{
+            [](const Simulator& simulator, const std::string_view input) -> std::optional<std::vector<std::size_t>> {
+                std::vector<std::size_t> starts;
+
+                for (std::size_t at{0}; at < input.size();)
+                {
+                    const auto [token, length]{simulator.run(input.substr(at))};
+
+                    if (!token || length == 0)
+                    {
+                        return std::nullopt;
+                    }
+
+                    starts.push_back(at);
+
+                    at += length;
+                }
+
+                return starts;
+            }};
+
+    // Whether a witness is what a refutation claims: a completely tokenizable input holding an occurrence of the window
+    // at which the gap is cut, a token beginning there or the input ending there, or crossed.
+    const auto shows{[&](const Simulator& simulator, const std::string_view witness, const std::string_view window,
+                         const std::size_t gap, const bool cut) {
+        const auto starts{starts_of(simulator, witness)};
+
+        if (!starts)
+        {
+            return false;
+        }
+
+        for (auto at{witness.find(window)}; at != std::string_view::npos; at = witness.find(window, at + 1))
+        {
+            if ((at + gap == witness.size() || std::ranges::binary_search(*starts, at + gap)) == cut)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }};
+
+    // The shortest input length per window, gap and whether the gap was cut, over every input inside the bound.
+    using Shortest = std::map<std::tuple<std::string_view, std::size_t, bool>, std::size_t>;
+
+    // Notes the input's length at every gap of every occurrence of the window in it, unless a shorter one was seen.
+    const auto note{[](Shortest& shortest, const std::string_view window, const std::string_view input,
+                       const std::vector<std::size_t>& starts) {
+        for (auto at{input.find(window)}; at != std::string_view::npos; at = input.find(window, at + 1))
+        {
+            for (std::size_t gap{0}; gap <= window.size(); ++gap)
+            {
+                const auto cut{at + gap == input.size() || std::ranges::binary_search(starts, at + gap)};
+
+                shortest.try_emplace({window, gap, cut}, input.size());
+            }
+        }
+    }};
+
+    const auto oracle{[&](const Simulator& simulator) {
+        Shortest shortest;
+
+        for (const auto& input : inputs)
+        {
+            const auto starts{starts_of(simulator, input)};
+
+            if (!starts)
+            {
+                continue;
+            }
+
+            for (const auto& window : windows)
+            {
+                note(shortest, window, input, *starts);
+            }
+        }
+
+        return shortest;
+    }};
+
+    std::map<Gap, std::size_t> tally;
+
+    std::size_t stopped{0};
+
+    // Holds one gap's verdict under the large cap against the oracle's records of the gap.
+    const auto check_decided{[&](const Simulator& simulator, const std::string_view window, const std::size_t gap,
+                                 const Gap_verdict& decided, const bool occurs_inside, const Shortest& shortest,
+                                 const std::string& label) {
+        const auto& [verdict, crossed, cut]{decided};
+
+        const auto length{[&](const bool was_cut) {
+            const auto found{shortest.find({window, gap, was_cut})};
+
+            return found == shortest.end() ? 0 : found->second;
+        }};
+
+        const auto crossing{length(false)};
+
+        const auto cutting{length(true)};
+
+        ++tally[verdict];
+
+        ASSERT_TRUE(crossed.exhaustive && cut.exhaustive) << label;
+        EXPECT_EQ(verdict == Gap::must, crossed.witness.empty() && !cut.witness.empty()) << label;
+        EXPECT_EQ(verdict == Gap::never, !crossed.witness.empty() && cut.witness.empty()) << label;
+        EXPECT_EQ(verdict == Gap::absent, crossed.witness.empty() && cut.witness.empty()) << label;
+
+        if (verdict == Gap::absent || occurs_inside)
+        {
+            EXPECT_EQ(verdict == Gap::absent, crossing == 0 && cutting == 0) << label;
+        }
+
+        if (crossing > 0 || crossed.witness.size() <= bound)
+        {
+            EXPECT_EQ(crossed.witness.size(), crossing) << label;
+        }
+
+        if (cutting > 0 || cut.witness.size() <= bound)
+        {
+            EXPECT_EQ(cut.witness.size(), cutting) << label;
+        }
+
+        if (!crossed.witness.empty())
+        {
+            EXPECT_TRUE(shows(simulator, crossed.witness, window, gap, false)) << label;
+        }
+
+        if (!cut.witness.empty())
+        {
+            EXPECT_TRUE(shows(simulator, cut.witness, window, gap, true)) << label;
+        }
+    }};
+
+    // Holds a profile under a small cap against the one under the large cap: absent at every gap or at none, and a
+    // verdict the cap left decided the large cap's, with its witnesses, showing the window occurring unless absent.
+    const auto check_capped{[&](const std::vector<Gap_verdict>& profile, const std::vector<Gap_verdict>& decided,
+                                const bool occurs, const std::string& label) {
+        const auto absent{std::ranges::count(profile, Gap::absent, &Gap_verdict::verdict)};
+
+        ASSERT_EQ(profile.size(), decided.size()) << label;
+        EXPECT_TRUE(absent == 0 || std::cmp_equal(absent, profile.size())) << label;
+
+        for (std::size_t gap{0}; gap < profile.size(); ++gap)
+        {
+            const auto& [verdict, crossed, cut]{profile[gap]};
+
+            if (verdict == Gap::undetermined)
+            {
+                ++stopped;
+
+                continue;
+            }
+
+            EXPECT_EQ(verdict, decided[gap].verdict) << label << ' ' << gap;
+            EXPECT_EQ(crossed.witness, decided[gap].crossed.witness) << label << ' ' << gap;
+            EXPECT_EQ(cut.witness, decided[gap].cut.witness) << label << ' ' << gap;
+            EXPECT_EQ(verdict == Gap::absent, !occurs) << label << ' ' << gap;
+            EXPECT_EQ(verdict == Gap::absent, crossed.witness.empty() && cut.witness.empty()) << label << ' ' << gap;
+        }
+    }};
+
+    for (std::size_t table{0}; table < 60; ++table)
+    {
+        const auto simulator{random_table()};
+
+        const auto shortest{oracle(simulator)};
+
+        for (const auto& window : windows)
+        {
+            const auto name{std::to_string(table) + ' ' + std::string{window}};
+
+            const auto [witness, exhaustive]{window_occurrence(simulator, window, large)};
+
+            ASSERT_TRUE(exhaustive) << name;
+
+            const auto decided{boundary_profile(simulator, window, large)};
+
+            ASSERT_EQ(decided.size(), window.size() + 1) << name;
+
+            for (std::size_t gap{0}; gap < decided.size(); ++gap)
+            {
+                check_decided(
+                        simulator, window, gap, decided[gap], !witness.empty() && witness.size() <= bound, shortest,
+                        name + ' ' + std::to_string(gap));
+            }
+
+            for (std::size_t round{0}; round < 4; ++round)
+            {
+                const auto cap{draw(32) + 1};
+
+                check_capped(
+                        boundary_profile(simulator, window, cap), decided, !witness.empty(),
+                        name + " cap " + std::to_string(cap));
+            }
+        }
+    }
+
+    // Every verdict reached under the large cap, and some search stopped by a small one.
+    for (const auto verdict : {Gap::must, Gap::never, Gap::may, Gap::absent})
+    {
+        EXPECT_GT(tally[verdict], 0U) << static_cast<std::size_t>(verdict);
+    }
+
+    EXPECT_GT(stopped, 0U);
 }
 
 TEST_F(Dfa_test, Segmentation_difference_separates_two_token_sets_by_domain_or_by_boundary_or_proves_them_one)

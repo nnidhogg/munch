@@ -175,8 +175,9 @@ enum class Gap : std::size_t
     may,
 
     /**
-     * @brief No nonempty completely tokenizable input contains the window, so both claims hold vacuously; every gap of
-     *        the window has this verdict at once, which is the answer window_occurrence() gives of it.
+     * @brief No nonempty completely tokenizable input contains the window, so both claims hold vacuously; a property of
+     *        the window, proved by window_occurrence() under the cap or by any gap whose two refutations both exhaust
+     *        without a witness, and so given at every gap or at none.
      */
     absent,
 
@@ -198,12 +199,13 @@ struct Gap_verdict
 
     /**
      * @brief What boundary_counterexample() found: an input with an occurrence a token crosses at the gap, refuting
-     *        must.
+     *        must; exhaustive and empty when the window is absent, whether or not the search ran.
      */
     Refutation crossed;
 
     /**
-     * @brief What crossing_counterexample() found: an input with an occurrence cut at the gap, refuting never.
+     * @brief What crossing_counterexample() found: an input with an occurrence cut at the gap, refuting never;
+     *        exhaustive and empty when the window is absent, whether or not the search ran.
      */
     Refutation cut;
 };
@@ -490,15 +492,26 @@ inline constexpr std::size_t segmentation_cap{1U << 20U};
 /**
  * @brief Decides every gap of a window, before each of its bytes and after the last, returning each gap's verdict.
  *
- * Two searches per gap, boundary_counterexample() and crossing_counterexample(), each under the cap on its own, so a
- * gap the cap stops is undetermined without the others being so. The verdict is must when only the first exhausts
- * without a witness, never when only the second does, may when both find one, and absent when neither does, which
- * happens at every gap at once and exactly when the window occurs in no nonempty completely tokenizable input, since
- * every occurrence refutes one side at each gap. Over {0, 1, x, 001x, 011x} the window 0011 is must at gaps 0 and 1 and
+ * Absence is a property of the window rather than of a gap, so it is given at every gap or at none, both refutations
+ * exhaustive and empty at every gap, and it has two proofs: window_occurrence() under the cap exhausting without a
+ * witness, and any gap whose two refutations, boundary_counterexample() and crossing_counterexample() under the cap,
+ * both exhaust without a witness, since no completely tokenizable input then holds an occurrence a token crosses at the
+ * gap and none holds one cut there, so none holds an occurrence. The occurrence search runs first, one search where a
+ * gap costs two, and the gap searches run in order until one proves absence or every gap is read. The two proofs come
+ * at different caps because neither search holds a subset of the other's keys: the occurrence search keeps every
+ * branch that has read the window through until its token closes, while a gap search drops the through branches that
+ * keep its claim and holds the branches before the occurrence once per value of its bit. Over a table with a dead
+ * state, which step() enters as it enters any state, a through branch reading it never closes, and a gap's pair
+ * exhausts under a cap that stops the occurrence search: with q0 initial, q1 accepting on a and q2 dead on b from
+ * either, the window ab is absent from cap 8 by gap 1 and from cap 9 by the occurrence search. Must, never and may are
+ * given only for a window some search has shown to occur, the witness cut at the gap for must, the witness crossed
+ * there for never, and both for may; undetermined where the cap stopped a search without such proof, a witness the
+ * other search found still refuting its side. Over {0, 1, x, 001x, 011x} the window 0011 is must at gaps 0 and 1 and
  * may at 2, 3 and 4; over {ab} the window b is never at gap 0 and must at gap 1.
  * @param simulator The compiled token set.
  * @param window The byte string whose gaps are decided, non-empty.
- * @param cap The most search states each search holds at once, as boundary_counterexample() reads it.
+ * @param cap The most search states each search holds at once, the occurrence search's among them, as
+ *        boundary_counterexample() reads it; absence is given from the first cap at which any of its proofs exhausts.
  * @return One verdict per gap of the window, the gap's index, |W| + 1 of them.
  * @throws std::invalid_argument If the window is empty, which has no occurrence to hold a gap in.
  */

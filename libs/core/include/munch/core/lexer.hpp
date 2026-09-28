@@ -340,9 +340,11 @@ public:
     /**
      * @brief Every gap of the window decided both ways, each gap's verdict.
      *
-     * Two searches per gap under the cap on their own, boundary_counterexample() and crossing_counterexample(): the
-     * verdict is must, never or may when the window occurs, absent at every gap when it occurs in no nonempty
-     * completely tokenizable input, and undetermined where the cap stopped a search. The derivation is
+     * Absence is a property of the window and given at every gap or at none: proved by window_occurrence() under the
+     * cap, asked first, or by any gap whose two searches under the cap, boundary_counterexample() and
+     * crossing_counterexample(), both exhaust without a witness, which can come under a cap that stops the occurrence
+     * search. Otherwise the two searches per gap give must, never or may, each with a witness showing the window
+     * occurring, and undetermined where the cap stopped a search without such proof. The derivation is
      * dfa::boundary_profile()'s.
      * @param window The byte string whose gaps are decided, non-empty.
      * @param cap The largest number of search states each search holds before giving up, dfa::refutation_cap unless

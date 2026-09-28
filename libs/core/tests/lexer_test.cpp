@@ -1951,6 +1951,152 @@ TEST_F(Lexer_test, A_window_certificate_holds_exactly_where_its_origin_is_must_a
     EXPECT_GT(uncertified, 0U);
 }
 
+TEST_F(Lexer_test, Absence_is_given_at_every_gap_or_at_none_from_the_first_cap_at_which_any_search_proves_it)
+{
+    enum class Token_kind : uint8_t
+    {
+        Run,
+    };
+
+    // Over {a+} the window ab occurs nowhere, and a search at one gap exhausts from a smaller cap than one at another,
+    // so reading absence off each gap's own searches alone would mix it with undetermined. The profile gives it at
+    // every gap from the first cap at which any proof of it exhausts, window_occurrence() or a gap's two searches, and
+    // at no gap below that, every gap undetermined there; the caps are read off the searches, and here the occurrence
+    // search's is the first.
+    Builder builder;
+
+    builder.add_token(plus(any_of(Set{'a'})), Token_kind::Run, 1);
+
+    const auto lexer{builder.build()};
+
+    const auto first_cap{[](const auto& exhausts) {
+        std::size_t cap{1};
+
+        while (!exhausts(cap))
+        {
+            ++cap;
+        }
+
+        return cap;
+    }};
+
+    const auto occurrence{
+            first_cap([&](const std::size_t cap) { return lexer.window_occurrence("ab", cap).exhaustive; })};
+
+    auto proof{occurrence};
+
+    for (std::size_t gap{0}; gap <= 2; ++gap)
+    {
+        proof = std::min(proof, first_cap([&](const std::size_t cap) {
+                             return lexer.boundary_counterexample("ab", gap, cap).exhaustive &&
+                                    lexer.crossing_counterexample("ab", gap, cap).exhaustive;
+                         }));
+    }
+
+    EXPECT_EQ(proof, occurrence);
+    EXPECT_TRUE(lexer.window_occurrence("ab", occurrence).witness.empty());
+
+    std::size_t proved{0};
+
+    std::size_t stopped{0};
+
+    for (const auto cap : std::array<std::size_t, 7>{3, 4, 5, 6, 7, 8, 1024})
+    {
+        const auto profile{lexer.boundary_profile("ab", cap)};
+
+        const auto absent{std::ranges::count(profile, dfa::Gap::absent, &dfa::Gap_verdict::verdict)};
+
+        ASSERT_EQ(profile.size(), 3U) << cap;
+        EXPECT_TRUE(absent == 0 || std::cmp_equal(absent, profile.size())) << cap;
+        EXPECT_EQ(std::cmp_equal(absent, profile.size()), cap >= proof) << cap;
+
+        proved += cap >= proof ? 1 : 0;
+
+        if (cap >= proof)
+        {
+            continue;
+        }
+
+        ++stopped;
+
+        for (std::size_t gap{0}; gap < profile.size(); ++gap)
+        {
+            EXPECT_EQ(profile[gap].verdict, dfa::Gap::undetermined) << cap << ' ' << gap;
+            EXPECT_FALSE(lexer.boundary_counterexample("ab", gap, cap).exhaustive) << cap << ' ' << gap;
+            EXPECT_FALSE(lexer.crossing_counterexample("ab", gap, cap).exhaustive) << cap << ' ' << gap;
+        }
+    }
+
+    EXPECT_GT(proved, 0U);
+    EXPECT_GT(stopped, 0U);
+}
+
+TEST_F(Lexer_test, A_gap_verdict_decided_under_a_small_cap_is_the_verdict_under_the_default_one)
+{
+    // A verdict is a proof, so a cap that leaves it decided leaves the verdict the default cap gives: must, never or
+    // may with the same witnesses, showing the window occurring, and absent at every gap where the default cap gives
+    // it, never at some gaps alone. Checked over every set of one to three literals over {a, b} of length one to three,
+    // every window over {a, b} of length one to three and six caps, one that stops every search.
+    std::size_t decided{0};
+
+    std::size_t stopped{0};
+
+    // Holds a profile under a cap against the default cap's, the window's occurrence decided beside it.
+    const auto check{[&](const std::vector<dfa::Gap_verdict>& profile, const std::vector<dfa::Gap_verdict>& reference,
+                         const bool occurs, const std::string& label) {
+        const auto absent{std::ranges::count(profile, dfa::Gap::absent, &dfa::Gap_verdict::verdict)};
+
+        ASSERT_EQ(profile.size(), reference.size()) << label;
+        EXPECT_TRUE(absent == 0 || std::cmp_equal(absent, profile.size())) << label;
+
+        for (std::size_t gap{0}; gap < profile.size(); ++gap)
+        {
+            const auto& [verdict, crossed, cut]{profile[gap]};
+
+            if (verdict == dfa::Gap::undetermined)
+            {
+                ++stopped;
+
+                continue;
+            }
+
+            ++decided;
+
+            EXPECT_EQ(verdict, reference[gap].verdict) << label << ' ' << gap;
+            EXPECT_EQ(crossed.witness, reference[gap].crossed.witness) << label << ' ' << gap;
+            EXPECT_EQ(cut.witness, reference[gap].cut.witness) << label << ' ' << gap;
+            EXPECT_EQ(verdict == dfa::Gap::absent, !occurs) << label << ' ' << gap;
+            EXPECT_EQ(verdict == dfa::Gap::absent, crossed.witness.empty() && cut.witness.empty())
+                    << label << ' ' << gap;
+        }
+    }};
+
+    for (const auto& tokens : literal_sets(words("ab", 3), 3))
+    {
+        const auto lexer{literal_lexer(tokens)};
+
+        const auto name{tokens.front() + ' ' + std::to_string(tokens.size())};
+
+        for (const auto& window : words("ab", 3))
+        {
+            const auto reference{lexer.boundary_profile(window)};
+
+            const auto [witness, exhaustive]{lexer.window_occurrence(window)};
+
+            ASSERT_TRUE(exhaustive) << name << ' ' << window;
+
+            for (const auto cap : std::array<std::size_t, 6>{2, 4, 8, 16, 32, 1024})
+            {
+                check(lexer.boundary_profile(window, cap), reference, !witness.empty(),
+                      name + ' ' + window + ' ' + std::to_string(cap));
+            }
+        }
+    }
+
+    EXPECT_GT(decided, 0U);
+    EXPECT_GT(stopped, 0U);
+}
+
 TEST_F(Lexer_test, Must_and_never_gaps_stay_so_when_the_window_is_extended_on_either_side)
 {
     // Every occurrence of an extension of W holds an occurrence of W, so a verdict quantified over every occurrence
