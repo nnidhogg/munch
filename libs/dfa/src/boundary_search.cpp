@@ -4,7 +4,6 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <map>
 #include <optional>
 #include <span>
@@ -20,30 +19,37 @@ namespace munch::dfa
 {
 namespace
 {
-// Implements boundary_search.hpp: the search, its key and the moves over it are private to this unit.
-
 /**
- * @brief A state as the search stores it: the width of the Simulator's table entry, which bounds the states a
- *        compiled token set can have, so every state a scan stands in fits; narrowed because a position holds a set
- *        of them and a search holds many positions.
+ * @brief A state as the search stores it: the width of the Simulator's table entry, which bounds the states a compiled
+ *        token set can have, so every state a scan stands in fits; narrowed because a position holds a set of them and
+ *        a search holds many positions.
  */
 using State_t = std::uint32_t;
 
 /**
- * @brief One scan's position in a search that guesses token boundaries: the run of the segment being read, and the
- *        runs of the segments already closed.
+ * @brief One scan's position in a search that guesses token boundaries: the run of the segment being read, and the runs
+ *        of the segments already closed.
  *
  * A closed run is carried because a later accept on it proves the close was not the longest match, which is how a
- * guessed marking is held to maximal munch without tracking how far back the last accept was. The guesses that
- * survive are exactly the greedy segmentation, which is what makes guessing boundaries sound.
+ * guessed marking is held to maximal munch without tracking how far back the last accept was. The guesses that survive
+ * are exactly the greedy segmentation, which is what makes guessing boundaries sound.
  */
 struct Position
 {
+    /**
+     * @brief Ordered member by member, so positions order the keys that hold them.
+     */
+    auto operator<=>(const Position&) const = default;
+
+    /**
+     * @brief The state of the segment being read.
+     */
     std::size_t reading{};
 
+    /**
+     * @brief The states of the closed segments still alive, sorted and distinct.
+     */
     std::vector<State_t> closed{};
-
-    auto operator<=>(const Position&) const = default;
 };
 
 /**
@@ -67,15 +73,31 @@ struct Position
  */
 struct Key
 {
+    /**
+     * @brief Ordered member by member, so keys index the map of keys visited.
+     */
+    auto operator<=>(const Key&) const = default;
+
+    /**
+     * @brief The positions of the scans in progress.
+     */
     std::vector<Position> scans{};
 
+    /**
+     * @brief How far the window matcher has read into the occurrence it guessed.
+     */
     std::size_t matched{};
 
+    /**
+     * @brief The origin bit: whether the latest token start sits at the origin, or for a gap claim whether the gap is a
+     *        boundary.
+     */
     bool at_origin{};
 
+    /**
+     * @brief Whether the event searched for has happened on this branch.
+     */
     bool marked{};
-
-    auto operator<=>(const Key&) const = default;
 };
 
 /**
@@ -86,7 +108,7 @@ struct Outcome
     /**
      * @brief The input the search stopped at, empty when it found none.
      */
-    std::string witness;
+    std::string witness{};
 
     /**
      * @brief Whether the search settled the question rather than stopping at the cap.
@@ -100,8 +122,8 @@ struct Outcome
 struct Step
 {
     /**
-     * @brief The keys the byte leads to, none when no scan survives it; a view of the expansion's own buffer,
-     *        good until the expansion is next called, whose keys the search moves out.
+     * @brief The keys the byte leads to, none when no scan survives it; a view of the expansion's own buffer, good
+     *        until the expansion is next called, whose keys the search moves out.
      */
     std::span<Key> successors{};
 
@@ -112,19 +134,71 @@ struct Step
 };
 
 /**
- * @brief How the search reached a key: the key the byte was read from, null for the start, and the byte.
+ * @brief How the search reached a key: the number of the key the byte was read from, zero for the start, and the byte.
  */
 struct Parent
 {
-    const Key* from{};
+    /**
+     * @brief The number of the key the byte was read from, zero for the start.
+     */
+    std::size_t from{};
 
+    /**
+     * @brief The byte read.
+     */
     char byte{};
 };
 
 /**
  * @brief The keys visited, each with the parent that led to it.
  */
-using Seen = std::map<Key, Parent>;
+using Seen_t = std::map<Key, Parent>;
+
+/**
+ * @brief The keys visited in the order the search admitted them, so that a key's number is its index here: the start is
+ *        number zero, and the keys still to expand are those past the one being expanded.
+ */
+using Admitted_t = std::vector<Seen_t::const_iterator>;
+
+/**
+ * @brief One guess a byte opens for a scan beside a window matcher.
+ */
+struct Guess
+{
+    /**
+     * @brief How far the matcher has read into the occurrence it guessed, after the byte.
+     */
+    std::size_t matched{};
+
+    /**
+     * @brief Whether the segment being read closes on the byte.
+     */
+    bool closes{};
+};
+
+/**
+ * @brief What the origin bit of an origin search claims of an occurrence: that the token covering the window's final
+ *        byte begins at the origin, the window certificate, or that the gap at the origin is a boundary, or that a
+ *        token crosses it.
+ */
+enum class Origin_claim : std::uint8_t
+{
+    /**
+     * @brief The token covering the final byte begins at the origin, the claim window_counterexample() refutes.
+     */
+    covers,
+
+    /**
+     * @brief The gap is a boundary, a token beginning there or the input ending there, the claim
+     *        boundary_counterexample() refutes.
+     */
+    cut,
+
+    /**
+     * @brief A token crosses the gap, the claim crossing_counterexample() refutes.
+     */
+    crossed
+};
 
 /**
  * @brief Sorts a set of closed runs and drops the repeats, so that two positions holding the same runs compare equal.
@@ -144,9 +218,9 @@ void dedup(std::vector<State_t>& states)
  * @param simulator The compiled token set the position scans.
  * @param position The position, advanced in place.
  * @param byte The byte read.
- * @return False abandons the branch: either the segment being read died, so it can never close and the input can
- *         never be finished, or a closed run accepted and the marking is not the greedy one. True leaves in closed
- *         exactly the runs that survived the byte.
+ * @return False abandons the branch: either the segment being read died, so it can never close and the input can never
+ *         be finished, or a closed run accepted and the marking is not the greedy one. True leaves in closed exactly
+ *         the runs that survived the byte.
  */
 [[nodiscard]] bool advance(const Simulator& simulator, Position& position, const unsigned char byte)
 {
@@ -159,7 +233,7 @@ void dedup(std::vector<State_t>& states)
 
     position.reading = *next;
 
-    std::vector<State_t> survived;
+    std::vector<State_t> survived{};
 
     for (const auto state : position.closed)
     {
@@ -203,26 +277,25 @@ void dedup(std::vector<State_t>& states)
 }
 
 /**
- * @brief The dead position the marked-language product adjoins on a side: the state one past the table, which no scan
- *        stands in, with no closed runs. A side that has died stays dead, and advance() and close() are never asked
- *        of it.
+ * @brief Returns the position a scan starts in: the initial state, with no closed runs.
+ * @param simulator The compiled token set the scan reads.
+ * @return The initial position.
+ */
+[[nodiscard]] Position initial(const Simulator& simulator)
+{
+    return {.reading = simulator.init_state(), .closed = {}};
+}
+
+/**
+ * @brief Returns the dead position the marked-language product adjoins on a side: the state one past the table, which
+ *        no scan stands in, with no closed runs. A side that has died stays dead, and advance() and close() are never
+ *        asked of it.
  * @param simulator The compiled token set the side scans.
  * @return The dead position.
  */
 [[nodiscard]] Position dead(const Simulator& simulator)
 {
     return {.reading = simulator.state_count(), .closed = {}};
-}
-
-/**
- * @brief Whether a position is the dead one.
- * @param simulator The compiled token set the position scans.
- * @param position The position.
- * @return True when the side has died.
- */
-[[nodiscard]] bool is_dead(const Simulator& simulator, const Position& position)
-{
-    return position.reading == simulator.state_count();
 }
 
 /**
@@ -238,8 +311,10 @@ void dedup(std::vector<State_t>& states)
 [[nodiscard]] bool read_marked(
         const Simulator& simulator, Position& position, const unsigned char byte, const bool closes)
 {
-    if (is_dead(simulator, position) || !advance(simulator, position, byte) ||
-        (closes && !simulator.is_accepting(position.reading)))
+    // The dead position stands in the state one past the table.
+    const auto is_dead{position.reading == simulator.state_count()};
+
+    if (is_dead || !advance(simulator, position, byte) || (closes && !simulator.is_accepting(position.reading)))
     {
         position = dead(simulator);
 
@@ -255,8 +330,8 @@ void dedup(std::vector<State_t>& states)
 }
 
 /**
- * @brief Whether the token set tokenizes an input completely, by the scan itself: maximal munch from every token
- *        boundary to the end.
+ * @brief Returns whether the token set tokenizes an input completely, by the scan itself: maximal munch from every
+ *        token boundary to the end.
  * @param simulator The compiled token set.
  * @param input The input.
  * @return True when the scan consumes every byte.
@@ -279,19 +354,23 @@ void dedup(std::vector<State_t>& states)
 }
 
 /**
- * @brief The bytes that led the search to a key, read back through the parents it recorded.
- * @param seen The keys visited.
- * @param at The key the last byte was read from.
+ * @brief Returns the bytes that led the search to a key, read back through the parents it recorded.
+ * @param admitted The keys visited, by number.
+ * @param at The number of the key the last byte was read from.
  * @param last The last byte.
  * @return The input, first byte first.
  */
-[[nodiscard]] std::string trail(const Seen& seen, const Key* at, const char last)
+[[nodiscard]] std::string trail(const Admitted_t& admitted, const std::size_t at, const char last)
 {
     std::string out{last};
 
-    for (auto parent{seen.at(*at)}; parent.from != nullptr; parent = seen.at(*parent.from))
+    for (auto number{at}; number != 0;)
     {
+        const auto& [key, parent]{*admitted[number]};
+
         out.push_back(parent.byte);
+
+        number = parent.from;
     }
 
     std::ranges::reverse(out);
@@ -300,21 +379,20 @@ void dedup(std::vector<State_t>& states)
 }
 
 /**
- * @brief Admits the keys a byte led to that the search has not seen, each recorded with its parent and queued behind
- *        the frontier, while the ceiling allows.
+ * @brief Admits the keys a byte led to that the search has not seen, each recorded with its parent and numbered after
+ *        every key admitted before it, while the ceiling allows.
  *
  * Admitting an unseen key is where the search grows, so the ceiling is checked here and nowhere else: a key that would
  * pass it is not admitted, and the question stays open.
  * @param seen The keys visited, grown in place.
- * @param frontier The keys still to expand, grown in place.
+ * @param admitted The keys visited, by number, grown in place.
  * @param successors The keys the byte led to, moved from.
- * @param parent The key the byte was read from, and the byte.
+ * @param parent The number of the key the byte was read from, and the byte.
  * @param cap The most keys the search may hold at once.
  * @return False when an unseen key would pass the ceiling and the search must give up, true otherwise.
  */
 [[nodiscard]] bool admit(
-        Seen& seen, std::deque<const Key*>& frontier, const std::span<Key> successors, const Parent parent,
-        const std::size_t cap)
+        Seen_t& seen, Admitted_t& admitted, const std::span<Key> successors, const Parent parent, const std::size_t cap)
 {
     for (auto& next : successors)
     {
@@ -328,25 +406,26 @@ void dedup(std::vector<State_t>& states)
             return false;
         }
 
-        const auto [admitted, inserted]{seen.try_emplace(std::move(next), parent)};
+        const auto [key, inserted]{seen.try_emplace(std::move(next), parent)};
 
-        frontier.push_back(&admitted->first);
+        admitted.push_back(key);
     }
 
     return true;
 }
 
 /**
- * @brief The breadth-first search over inputs that every boundary-guessing decision runs: from a start key, every
- *        byte in turn, the keys it reaches recorded with the byte that led there, until an input ends as a witness or
- *        no key is left. Bytes are explored in order and keys by length, so a witness is a shortest one.
+ * @brief Runs the breadth-first search over inputs that every boundary-guessing decision shares: from a start key,
+ *        every byte in turn, the keys it reaches recorded with the byte that led there, until an input ends as a
+ *        witness or no key is left. Bytes are explored in order and keys by length, so a witness is a shortest one.
+ * @tparam Expand The expansion's callable type.
  * @param start The key before any byte.
- * @param cap The most keys the search may hold at once, the start key among them: a key that would pass the ceiling
- *        is never admitted and the search gives up instead. A cap of zero holds nothing, not even the start.
+ * @param cap The most keys the search may hold at once, the start key among them: a key that would pass the ceiling is
+ *        never admitted and the search gives up instead. A cap of zero holds nothing, not even the start.
  * @param expand Given a key and a byte, the keys the byte leads to and whether the input may end on that byte as the
  *        witness looked for, as a Step.
- * @return The witness and whether the question was settled: an empty witness with the search exhausted is a proof
- *         that none exists, an empty witness with it stopped at the cap says nothing.
+ * @return The witness and whether the question was settled: an empty witness with the search exhausted is a proof that
+ *         none exists, an empty witness with it stopped at the cap says nothing.
  */
 template <typename Expand>
 [[nodiscard]] Outcome search(const Key& start, const std::size_t cap, Expand expand)
@@ -357,28 +436,31 @@ template <typename Expand>
         return {.witness = {}, .exhaustive = false};
     }
 
-    Seen seen{{start, Parent{.from = nullptr, .byte = '\0'}}};
+    Seen_t seen{{start, Parent{.from = 0, .byte = '\0'}}};
 
-    std::deque<const Key*> frontier{&seen.begin()->first};
+    Admitted_t admitted{seen.cbegin()};
 
-    while (!frontier.empty())
+    // Keys are expanded in the order they were admitted, which is breadth-first.
+    for (std::size_t at{0}; at < admitted.size(); ++at)
     {
-        const auto* const at{frontier.front()};
-
-        frontier.pop_front();
+        const auto& [key, parent]{*admitted[at]};
 
         for (std::size_t value{0}; value < Simulator::symbol_count; ++value)
         {
             const auto byte{static_cast<unsigned char>(value)};
 
-            const Step step{expand(*at, byte)};
+            const auto read{static_cast<char>(byte)};
 
-            if (step.ends)
+            const auto [successors, ends]{expand(key, byte)};
+
+            if (ends)
             {
-                return {.witness = trail(seen, at, static_cast<char>(byte)), .exhaustive = true};
+                return {.witness = trail(admitted, at, read), .exhaustive = true};
             }
 
-            if (!admit(seen, frontier, step.successors, Parent{.from = at, .byte = static_cast<char>(byte)}, cap))
+            const Parent reached{.from = at, .byte = read};
+
+            if (!admit(seen, admitted, successors, reached, cap))
             {
                 return {.witness = {}, .exhaustive = false};
             }
@@ -389,24 +471,20 @@ template <typename Expand>
 }
 
 /**
- * @brief One guess a byte opens for a scan beside a window matcher.
+ * @brief Returns a search's outcome as a decision's result, the witness moved into it.
+ * @tparam Result The decision's result type, a witness and whether the search was exhaustive.
+ * @param outcome The search's outcome.
+ * @return The result.
  */
-struct Guess
+template <typename Result>
+[[nodiscard]] Result as(Outcome outcome)
 {
-    /**
-     * @brief How far the matcher has read into the occurrence it guessed, after the byte.
-     */
-    std::size_t matched{};
-
-    /**
-     * @brief Whether the segment being read closes on the byte.
-     */
-    bool closes{};
-};
+    return {.witness = std::move(outcome.witness), .exhaustive = outcome.exhaustive};
+}
 
 /**
- * @brief The guesses a byte opens for a scan beside a window matcher: every move of the matcher, each without a close
- *        and, where the segment being read accepts on the byte, with one.
+ * @brief Returns the guesses a byte opens for a scan beside a window matcher: every move of the matcher, each without a
+ *        close and, where the segment being read accepts on the byte, with one.
  *
  * The matcher's moves are the same for every decision that walks one: outside the occurrence it stays outside, and
  * begins one where the byte is the window's first, which is the guess; inside, it reads the window's next byte or the
@@ -425,6 +503,10 @@ struct Guess
 {
     out.clear();
 
+    /**
+     * @brief Writes one move of the matcher, without a close and, where the segment may close, with one.
+     * @param matched How far the matcher has read after the byte.
+     */
     const auto branch{[&](const std::size_t matched) {
         out.push_back(Guess{.matched = matched, .closes = false});
 
@@ -456,31 +538,7 @@ struct Guess
 }
 
 /**
- * @brief What the origin bit of an origin search claims of an occurrence: that the token covering the window's final
- *        byte begins at the origin, the window certificate, or that the gap at the origin is a boundary, or that a
- *        token crosses it.
- */
-enum class Origin_claim : std::uint8_t
-{
-    /**
-     * @brief The token covering the final byte begins at the origin, the claim window_counterexample() refutes.
-     */
-    covers,
-
-    /**
-     * @brief The gap is a boundary, a token beginning there or the input ending there, the claim
-     *        boundary_counterexample() refutes.
-     */
-    cut,
-
-    /**
-     * @brief A token crosses the gap, the claim crossing_counterexample() refutes.
-     */
-    crossed
-};
-
-/**
- * @brief The search window_counterexample(), boundary_counterexample() and crossing_counterexample() share: an
+ * @brief Runs the search window_counterexample(), boundary_counterexample() and crossing_counterexample() share: an
  *        occurrence of the window whose origin claim fails, in a completely tokenizable input.
  *
  * The key holds one scan, how far the matcher has read into the occurrence it guessed, and the origin bit, the next
@@ -504,17 +562,19 @@ enum class Origin_claim : std::uint8_t
         const Simulator& simulator, const std::string_view window, const std::size_t origin, const std::size_t cap,
         const Origin_claim claim)
 {
-    const Key start{
-            .scans = {Position{.reading = simulator.init_state(), .closed = {}}},
-            .matched = 0,
-            .at_origin = origin == 0,
-            .marked = false};
+    const Key start{.scans = {initial(simulator)}, .matched = 0, .at_origin = origin == 0, .marked = false};
 
     // Two buffers for the whole search, cleared per byte: the guesses, and the keys handed back as the step's view.
-    std::vector<Guess> branches;
+    std::vector<Guess> branches{};
 
-    std::vector<Key> successors;
+    std::vector<Key> successors{};
 
+    /**
+     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it with the claim refuted.
+     * @param at The key the byte is read from.
+     * @param byte The byte read.
+     * @return The step.
+     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 
@@ -525,7 +585,9 @@ enum class Origin_claim : std::uint8_t
             return {.successors = successors, .ends = false};
         }
 
-        for (const auto [matched, cuts] : guesses(window, at, byte, simulator.is_accepting(position.reading), branches))
+        const auto closes{simulator.is_accepting(position.reading)};
+
+        for (const auto [matched, cuts] : guesses(window, at, byte, closes, branches))
         {
             // The occurrence is read through on this byte once, and a marked branch depends on its scan alone.
             const auto through{!at.marked && matched == window.size()};
@@ -557,12 +619,11 @@ enum class Origin_claim : std::uint8_t
                 return {.successors = successors, .ends = true};
             }
 
+            const auto scan{cuts ? close(simulator, position) : position};
+
             // Past the counterexample the bit is clear, so that the branches agree.
             successors.push_back(
-                    Key{.scans = {cuts ? close(simulator, position) : position},
-                        .matched = matched,
-                        .at_origin = bit && !marked,
-                        .marked = marked});
+                    Key{.scans = {scan}, .matched = matched, .at_origin = bit && !marked, .marked = marked});
         }
 
         return {.successors = successors, .ends = false};
@@ -572,7 +633,7 @@ enum class Origin_claim : std::uint8_t
 }
 
 /**
- * @brief The verdict on a gap of a window, read off its two refutations.
+ * @brief Returns the verdict on a gap of a window, read off its two refutations.
  *
  * A refutation that found a witness settles its side, one that exhausted without a witness proves its claim, and one
  * the cap stopped leaves the verdict open. Both claims proved at once prove the window absent: no completely
@@ -612,18 +673,20 @@ enum class Origin_claim : std::uint8_t
 
 Rescue rescue(const Simulator& simulator, const std::size_t cap)
 {
-    // The key marks a branch once some closed run has survived a byte, which is the rollback looked for.
-    // A run that survives its first byte raises the mark; one that survived earlier leaves it raised, so
-    // the two need no telling apart.
-    const Key start{
-            .scans = {Position{.reading = simulator.init_state(), .closed = {}}},
-            .matched = 0,
-            .at_origin = false,
-            .marked = false};
+    // The key marks a branch once some closed run has survived a byte, which is the rollback looked for. A run that
+    // survives its first byte raises the mark; one that survived earlier leaves it raised, so the two need no telling
+    // apart.
+    const Key start{.scans = {initial(simulator)}, .matched = 0, .at_origin = false, .marked = false};
 
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
-    std::vector<Key> successors;
+    std::vector<Key> successors{};
 
+    /**
+     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it after a rollback.
+     * @param at The key the byte is read from.
+     * @param byte The byte read.
+     * @return The step.
+     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 
@@ -638,8 +701,8 @@ Rescue rescue(const Simulator& simulator, const std::size_t cap)
 
         const auto closes{simulator.is_accepting(position.reading)};
 
-        // The input may end here when the segment being read closes on this byte; with a rollback behind it, that
-        // is the witness, and the closed runs still alive never accepted, as every kept branch requires.
+        // The input may end here when the segment being read closes on this byte; with a rollback behind it, that is
+        // the witness, and the closed runs still alive never accepted, as every kept branch requires.
         if (closes && rescued)
         {
             return {.successors = successors, .ends = true};
@@ -649,32 +712,32 @@ Rescue rescue(const Simulator& simulator, const std::size_t cap)
 
         if (closes)
         {
-            successors.push_back(
-                    Key{.scans = {close(simulator, position)}, .matched = 0, .at_origin = false, .marked = rescued});
+            const auto closed{close(simulator, position)};
+
+            successors.push_back(Key{.scans = {closed}, .matched = 0, .at_origin = false, .marked = rescued});
         }
 
         return {.successors = successors, .ends = false};
     }};
 
-    const auto [witness, exhaustive]{search(start, cap, expand)};
-
-    return {.witness = witness, .exhaustive = exhaustive};
+    return as<Rescue>(search(start, cap, expand));
 }
 
 Difference boundary_difference(const Simulator& simulator, const Simulator& other, const std::size_t cap)
 {
     // The key holds the two scans' positions, mine first, and marks a branch once the two markings have diverged.
-    const Key start{
-            .scans =
-                    {Position{.reading = simulator.init_state(), .closed = {}},
-                     Position{.reading = other.init_state(), .closed = {}}},
-            .matched = 0,
-            .at_origin = false,
-            .marked = false};
+    const Key start{.scans = {initial(simulator), initial(other)}, .matched = 0, .at_origin = false, .marked = false};
 
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
-    std::vector<Key> successors;
+    std::vector<Key> successors{};
 
+    /**
+     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it with the markings
+     *        diverged.
+     * @param at The key the byte is read from.
+     * @param byte The byte read.
+     * @return The step.
+     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 
@@ -710,36 +773,35 @@ Difference boundary_difference(const Simulator& simulator, const Simulator& othe
 
             const auto theirs_next{theirs_closed ? close(other, theirs) : theirs};
 
+            const auto diverged{at.marked || mine_closed != theirs_closed};
+
             successors.push_back(
-                    Key{.scans = {mine_next, theirs_next},
-                        .matched = 0,
-                        .at_origin = false,
-                        .marked = at.marked || mine_closed != theirs_closed});
+                    Key{.scans = {mine_next, theirs_next}, .matched = 0, .at_origin = false, .marked = diverged});
         }
 
         return {.successors = successors, .ends = false};
     }};
 
-    const auto [witness, exhaustive]{search(start, cap, expand)};
-
-    return {.witness = witness, .exhaustive = exhaustive};
+    return as<Difference>(search(start, cap, expand));
 }
 
 Occurrence window_occurrence(const Simulator& simulator, const std::string_view window, const std::size_t cap)
 {
     // The key holds one scan and how far the matcher has read into the occurrence it guessed, and marks a branch once
     // the whole window has been read; the empty window has been read before any byte.
-    const Key start{
-            .scans = {Position{.reading = simulator.init_state(), .closed = {}}},
-            .matched = 0,
-            .at_origin = false,
-            .marked = window.empty()};
+    const Key start{.scans = {initial(simulator)}, .matched = 0, .at_origin = false, .marked = window.empty()};
 
     // Two buffers for the whole search, cleared per byte: the guesses, and the keys handed back as the step's view.
-    std::vector<Guess> branches;
+    std::vector<Guess> branches{};
 
-    std::vector<Key> successors;
+    std::vector<Key> successors{};
 
+    /**
+     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it with the window read.
+     * @param at The key the byte is read from.
+     * @param byte The byte read.
+     * @return The step.
+     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 
@@ -750,8 +812,9 @@ Occurrence window_occurrence(const Simulator& simulator, const std::string_view 
             return {.successors = successors, .ends = false};
         }
 
-        for (const auto [matched, closes] :
-             guesses(window, at, byte, simulator.is_accepting(position.reading), branches))
+        const auto accepting{simulator.is_accepting(position.reading)};
+
+        for (const auto [matched, closes] : guesses(window, at, byte, accepting, branches))
         {
             const auto marked{matched == window.size()};
 
@@ -762,19 +825,15 @@ Occurrence window_occurrence(const Simulator& simulator, const std::string_view 
                 return {.successors = successors, .ends = true};
             }
 
-            successors.push_back(
-                    Key{.scans = {closes ? close(simulator, position) : position},
-                        .matched = matched,
-                        .at_origin = false,
-                        .marked = marked});
+            const auto scan{closes ? close(simulator, position) : position};
+
+            successors.push_back(Key{.scans = {scan}, .matched = matched, .at_origin = false, .marked = marked});
         }
 
         return {.successors = successors, .ends = false};
     }};
 
-    const auto [witness, exhaustive]{search(start, cap, expand)};
-
-    return {.witness = witness, .exhaustive = exhaustive};
+    return as<Occurrence>(search(start, cap, expand));
 }
 
 Counterexample window_counterexample(
@@ -785,9 +844,7 @@ Counterexample window_counterexample(
         throw std::invalid_argument{"window_counterexample: the window is empty or its origin lies outside it"};
     }
 
-    const auto [witness, exhaustive]{origin_search(simulator, window, origin, cap, Origin_claim::covers)};
-
-    return {.witness = witness, .exhaustive = exhaustive};
+    return as<Counterexample>(origin_search(simulator, window, origin, cap, Origin_claim::covers));
 }
 
 Refutation boundary_counterexample(
@@ -798,9 +855,7 @@ Refutation boundary_counterexample(
         throw std::invalid_argument{"boundary_counterexample: the window is empty or its gap lies past its end"};
     }
 
-    const auto [witness, exhaustive]{origin_search(simulator, window, gap, cap, Origin_claim::cut)};
-
-    return {.witness = witness, .exhaustive = exhaustive};
+    return as<Refutation>(origin_search(simulator, window, gap, cap, Origin_claim::cut));
 }
 
 Refutation crossing_counterexample(
@@ -811,9 +866,7 @@ Refutation crossing_counterexample(
         throw std::invalid_argument{"crossing_counterexample: the window is empty or its gap lies past its end"};
     }
 
-    const auto [witness, exhaustive]{origin_search(simulator, window, gap, cap, Origin_claim::crossed)};
-
-    return {.witness = witness, .exhaustive = exhaustive};
+    return as<Refutation>(origin_search(simulator, window, gap, cap, Origin_claim::crossed));
 }
 
 std::vector<Gap_verdict> boundary_profile(
@@ -829,8 +882,7 @@ std::vector<Gap_verdict> boundary_profile(
     // its refutations exhausted without a witness, which can come under a cap that stops the occurrence search.
     const Refutation proved{.witness = {}, .exhaustive = true};
 
-    std::vector<Gap_verdict> absent(
-            window.size() + 1, Gap_verdict{.verdict = Gap::absent, .crossed = proved, .cut = proved});
+    std::vector absent(window.size() + 1, Gap_verdict{.verdict = Gap::absent, .crossed = proved, .cut = proved});
 
     const auto [witness, exhaustive]{window_occurrence(simulator, window, cap)};
 
@@ -839,7 +891,7 @@ std::vector<Gap_verdict> boundary_profile(
         return absent;
     }
 
-    std::vector<Gap_verdict> profile;
+    std::vector<Gap_verdict> profile{};
 
     for (std::size_t gap{0}; gap <= window.size(); ++gap)
     {
@@ -864,17 +916,18 @@ Separation segmentation_difference(const Simulator& simulator, const Simulator& 
 {
     // The key holds the two scans' positions, mine first, either of them dead, and marks nothing: the event, that
     // exactly one side accepts the marked run, ends the input where it happens. Both sides accept the empty run.
-    const Key start{
-            .scans =
-                    {Position{.reading = simulator.init_state(), .closed = {}},
-                     Position{.reading = other.init_state(), .closed = {}}},
-            .matched = 0,
-            .at_origin = false,
-            .marked = false};
+    const Key start{.scans = {initial(simulator), initial(other)}, .matched = 0, .at_origin = false, .marked = false};
 
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
-    std::vector<Key> successors;
+    std::vector<Key> successors{};
 
+    /**
+     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it with exactly one side
+     *        accepting.
+     * @param at The key the byte is read from.
+     * @param byte The byte read.
+     * @return The step.
+     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 
@@ -910,20 +963,20 @@ Separation segmentation_difference(const Simulator& simulator, const Simulator& 
         return {.successors = successors, .ends = false};
     }};
 
-    const auto [witness, exhaustive]{search(start, cap, expand)};
+    auto [witness, exhaustive]{search(start, cap, expand)};
 
     if (witness.empty())
     {
-        return {.witness = witness, .half = std::nullopt, .exhaustive = exhaustive};
+        return {.witness = std::move(witness), .half = std::nullopt, .exhaustive = exhaustive};
     }
 
     // The half is a fact about the witness: the side accepting the run tokenizes its bytes completely, and the other
     // side either does not, or does and cuts them apart.
-    const auto half{
-            tokenizes(simulator, witness) && tokenizes(other, witness) ? Separation_half::boundary :
-                                                                         Separation_half::domain};
+    const auto both_tokenize{tokenizes(simulator, witness) && tokenizes(other, witness)};
 
-    return {.witness = witness, .half = half, .exhaustive = exhaustive};
+    const auto half{both_tokenize ? Separation_half::boundary : Separation_half::domain};
+
+    return {.witness = std::move(witness), .half = half, .exhaustive = exhaustive};
 }
 
 } // namespace munch::dfa
