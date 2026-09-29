@@ -18,6 +18,7 @@
 
 #include "munch/tools/audit/command_line.hpp"
 #include "munch/tools/audit/directives.hpp"
+#include "munch/tools/audit/expression.hpp"
 #include "munch/tools/audit/file_kind.hpp"
 #include "munch/tools/audit/lexer_spec.hpp"
 #include "munch/tools/audit/price.hpp"
@@ -115,10 +116,11 @@ struct Reading
 
     if (name.size() > 60)
     {
-        // The cut falls before a code point's first byte, so a multibyte name keeps whole characters.
+        // The cut falls before a code point's first byte, or at the start where none of the first 58 bytes begins a
+        // code point, so a multibyte name keeps whole characters.
         auto cut{57UZ};
 
-        while ((static_cast<unsigned char>(name[cut]) & 0xC0) == 0x80)
+        while (cut > 0 && is_continuation(static_cast<unsigned char>(name[cut])))
         {
             --cut;
         }
