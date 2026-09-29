@@ -117,14 +117,15 @@ protected:
 
     /**
      * @brief Skips a brace block from its `{`, however nested.
-     * @throws Spec_error If the block never closes.
+     * @throws Spec_error If the block or a quoted string inside it never closes.
      */
     void skip_block();
 
     /**
      * @brief Skips a quoted string after its opening quote, through the closing one, a backslash escaping the byte
-     *        after it; at the text's end where the string never closes.
+     *        after it.
      * @param quote The quote, `'` or `"`.
+     * @throws Spec_error If the string never closes, at the line of its opening quote.
      */
     void skip_quoted(char quote);
 };

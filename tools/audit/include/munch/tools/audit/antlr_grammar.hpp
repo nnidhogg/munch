@@ -224,7 +224,7 @@ private:
      *        arguments or a `catch` clause's, as ANTLR's lexer reads an ARG_ACTION: brackets nest, a `"..."` or a
      *        `'...'` inside is skipped whole, a backslash escaping the byte after it, and no comment is recognised, so
      *        a `]` inside a quoted string is no closer and one inside what looks like a comment is.
-     * @throws Spec_error If the block never closes.
+     * @throws Spec_error If the block or a quoted string inside it never closes.
      */
     void skip_argument();
 
