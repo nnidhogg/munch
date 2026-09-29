@@ -15,6 +15,7 @@ add_library(${PROJECT_NAME}
         src/token.cpp
         src/unroll_start.cpp
         src/verifier.cpp
+        src/verifier_decisions.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
