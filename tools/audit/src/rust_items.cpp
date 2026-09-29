@@ -1,5 +1,6 @@
 #include "munch/tools/audit/rust_items.hpp"
 
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include "munch/tools/audit/expression.hpp"
+#include "munch/tools/audit/lexer_spec.hpp"
 #include "munch/tools/audit/rust_cursor.hpp"
 
 namespace munch::tools::audit
@@ -342,15 +344,17 @@ void skip_item(Rust_cursor& cursor)
  *        the bindings of the module it names to be brought in once the file's items are all collected.
  * @param cursor The cursor, at the tree's first segment or brace.
  * @param prefix The path the tree stands under, `a::` for its branches, empty at the top.
+ * @param braced Whether the tree is a branch of a brace group, the one place a `self` may stand alone.
  * @param module The module the `use` stands in, as a path from the crate root, empty at the root.
  * @param exported Whether the `use` is declared `pub`, which every name it binds is then.
  * @param names The bindings, added to.
  * @param globs The glob imports, added to.
- * @throws Spec_error If a brace is left open.
+ * @throws Spec_error If a brace is left open, or a `self` stands where rustc refuses one: other than alone in a
+ *         brace group, or in a group with no module before it.
  */
 void read_use_tree(
-        Rust_cursor& cursor, const std::string& prefix, const std::string_view module, const bool exported,
-        Names_t& names, std::vector<Glob>& globs)
+        Rust_cursor& cursor, const std::string& prefix, const bool braced, const std::string_view module,
+        const bool exported, Names_t& names, std::vector<Glob>& globs)
 {
     cursor.skip_trivia();
 
@@ -364,7 +368,7 @@ void read_use_tree(
 
         for (branch.skip_trivia(); !branch.done(); branch.skip_trivia())
         {
-            read_use_tree(branch, prefix, module, exported, names, globs);
+            read_use_tree(branch, prefix, true, module, exported, names, globs);
 
             branch.skip_trivia();
 
@@ -391,6 +395,8 @@ void read_use_tree(
 
     std::string last;
 
+    std::size_t line{};
+
     for (;;)
     {
         if (cursor.at("::"))
@@ -405,10 +411,12 @@ void read_use_tree(
 
         if (cursor.peek() == '{' || cursor.peek() == '*')
         {
-            read_use_tree(cursor, path, module, exported, names, globs);
+            read_use_tree(cursor, path, braced, module, exported, names, globs);
 
             return;
         }
+
+        line = cursor.line();
 
         last = std::string{cursor.word()};
 
@@ -427,10 +435,27 @@ void read_use_tree(
         }
     }
 
-    // `self` at the end names the module before it.
+    // `self` alone in a brace group names the module the group stands under; rustc refuses a `self` anywhere else,
+    // and one in a group under no module.
     if (last == "self")
     {
-        path.erase(path.size() - 6);
+        if (!braced || path != prefix + last)
+        {
+            throw Spec_error{
+                    "rustc refuses a `self` import outside a { } list: "
+                    "`self` imports are only allowed within a { } list",
+                    line};
+        }
+
+        path = prefix.ends_with("::") ? prefix.substr(0, prefix.size() - 2) : prefix;
+
+        if (path.empty())
+        {
+            throw Spec_error{
+                    "rustc refuses a `self` import with no module before it: "
+                    "`self` import can only appear in an import list with a non-empty prefix",
+                    line};
+        }
 
         last = last_segment(path);
     }
@@ -950,7 +975,7 @@ void Item_collector::read_impl()
 
 void Item_collector::read_use()
 {
-    read_use_tree(cursor_, {}, scope_of(opened_), std::exchange(exported_, false), items_.names, globs_);
+    read_use_tree(cursor_, {}, false, scope_of(opened_), std::exchange(exported_, false), items_.names, globs_);
 }
 
 void Item_collector::read_extern()

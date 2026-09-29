@@ -1605,6 +1605,72 @@ TEST(Read_logos, A_name_is_read_as_the_module_the_callback_stands_in_binds_it)
             std::optional<std::string>{"Y"});
 }
 
+TEST(Read_logos, A_self_import_is_read_where_rustc_takes_one_and_refused_in_its_words_at_its_line)
+{
+    // rustc takes a `self` alone in a brace group under a module, which binds the module, and refuses a `self` ending
+    // any other path, its error E0429, and one alone in a group under no module, its error E0431; each refusal names
+    // the line of the `self`.
+    const auto reason{[](const std::string_view items) {
+        try
+        {
+            std::ignore = read_logos(
+                    "use logos::Logos;\n" + std::string{items} +
+                    "#[derive(Logos)]\nenum T {\n    #[token(\"x\")]\n    V,\n}\n");
+        }
+        catch (const Spec_error& error)
+        {
+            return std::string{error.what()};
+        }
+
+        return std::string{};
+    }};
+
+    const std::string unbraced{
+            "rustc refuses a `self` import outside a { } list: `self` imports are only allowed within a { } list"};
+
+    const std::string unprefixed{
+            "rustc refuses a `self` import with no module before it: "
+            "`self` import can only appear in an import list with a non-empty prefix"};
+
+    EXPECT_EQ(reason("use self;\n"), "line 2: " + unbraced);
+    EXPECT_EQ(reason("use self as n;\n"), "line 2: " + unbraced);
+    EXPECT_EQ(reason("mod m { pub struct S; }\nuse m::self;\n"), "line 3: " + unbraced);
+    EXPECT_EQ(reason("mod m {\n    use super::self;\n}\n"), "line 3: " + unbraced);
+    EXPECT_EQ(reason("mod m { pub struct S; }\nuse {m::self};\n"), "line 3: " + unbraced);
+    EXPECT_EQ(reason("use self\n;\n"), "line 2: " + unbraced);
+    EXPECT_EQ(reason("use self // c\n ;\n"), "line 2: " + unbraced);
+    EXPECT_EQ(reason("use {self};\n"), "line 2: " + unprefixed);
+    EXPECT_EQ(reason("use {self as n};\n"), "line 2: " + unprefixed);
+    EXPECT_EQ(reason("use ::{self};\n"), "line 2: " + unprefixed);
+    EXPECT_EQ(reason("use {\n    self\n};\n"), "line 3: " + unprefixed);
+
+    // The module a `self` in a group binds is the one its path names: a callback returning `m::Skip` or `n::Skip`
+    // through it skips x where the module re-exports the crate's `Skip`, and emits V, its payload, where the module
+    // holds a struct of that name.
+    const auto token_of{[](const std::string_view item, const std::string_view import, const std::string_view name) {
+        const auto skip{std::string{name} + "::Skip"};
+
+        const auto variant{item.starts_with("pub struct") ? "V(" + skip + ")" : std::string{"V"}};
+
+        return read_logos(
+                       "use logos::Logos;\nmod outer {\n    pub mod m { " + std::string{item} + " }\n}\n" +
+                       std::string{import} + "\n#[derive(Logos)]\nenum T {\n    #[token(\"x\", |_| " + skip +
+                       ")]\n    " + variant + ",\n    #[token(\"y\")]\n    Y,\n}\n")
+                .front()
+                .rules.front()
+                .token;
+    }};
+
+    const std::optional<std::string> discarded;
+
+    const std::optional<std::string> v{"V"};
+
+    EXPECT_EQ(token_of("pub use logos::Skip;", "use outer::m::{self};", "m"), discarded);
+    EXPECT_EQ(token_of("pub struct Skip;", "use outer::m::{self};", "m"), v);
+    EXPECT_EQ(token_of("pub use logos::Skip;", "use outer::m::{self as n};", "n"), discarded);
+    EXPECT_EQ(token_of("pub struct Skip;", "use outer::m::{self as n};", "n"), v);
+}
+
 TEST(Read_logos, A_macros_text_and_an_expression_block_declare_no_item_of_the_module)
 {
     // A `macro_rules!` body is text for the macro until it is expanded, so the enum inside an unused one is no
