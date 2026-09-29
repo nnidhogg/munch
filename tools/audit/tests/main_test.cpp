@@ -266,3 +266,27 @@ TEST(Label, A_long_pattern_of_continuation_bytes_is_cut_at_its_start)
 
     std::filesystem::remove_all(scratch());
 }
+
+TEST(Price, A_byte_in_hex_takes_hex_digits_alone)
+{
+    const auto path{grammar("json.l")};
+
+    const auto control{run({path, "--price", "0x\x11\x12"})};
+
+    EXPECT_EQ(control.status, 2);
+    EXPECT_EQ(control.out, "");
+    EXPECT_TRUE(control.err.starts_with("munch-audit: '0x\x11\x12' is not a byte\n\nusage: munch-audit"))
+            << control.err;
+
+    const auto digits{run({path, "--price", "0x12"})};
+
+    EXPECT_EQ(digits.status, 0);
+    EXPECT_TRUE(digits.out.contains("what it would cost to certify 0x12\n")) << digits.out;
+
+    const auto letters{run({path, "--price", "0xab"})};
+
+    EXPECT_EQ(letters.status, 0);
+    EXPECT_TRUE(letters.out.contains("what it would cost to certify 0xAB\n")) << letters.out;
+    EXPECT_EQ(run({path, "--price", "0xAB"}).out, letters.out);
+    EXPECT_EQ(run({path, "--require-certified", "0x\x11\x12"}).status, 2);
+}
