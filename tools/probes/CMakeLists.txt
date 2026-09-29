@@ -250,3 +250,26 @@ if (MUNCH_BUILD_TESTS)
             COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/paper4_offline.sh $<TARGET_FILE:munch_paper4_recompute>
                     ${CMAKE_CURRENT_BINARY_DIR}/paper4-offline)
 endif ()
+
+# Holds the armed-run verifier's window certificates against the library's window route over every window of one to
+# three bytes of a JSON corpus, and prints the certified positions each route supplies. The test passes a small JSON
+# text; a disagreement between the routes fails it.
+add_executable(munch_verifier_supply src/verifier_supply.cpp)
+
+target_include_directories(munch_verifier_supply
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+)
+
+target_link_libraries(munch_verifier_supply
+        PRIVATE
+        munch_core
+)
+
+if (MUNCH_BUILD_TESTS)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/supply-corpus.json
+         "{\"id\": 17, \"name\": \"munch\", \"tags\": [\"a\", \"b\\n\"],\n"
+         "\t\"ok\": true, \"none\": null, \"x\": -0.5e+3}\r\n")
+    add_test(NAME munch_verifier_supply
+            COMMAND munch_verifier_supply ${CMAKE_CURRENT_BINARY_DIR}/supply-corpus.json)
+endif ()
