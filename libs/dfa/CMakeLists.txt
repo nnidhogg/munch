@@ -14,6 +14,7 @@ add_library(${PROJECT_NAME}
         src/split_window.cpp
         src/token.cpp
         src/unroll_start.cpp
+        src/verifier.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -62,6 +63,7 @@ if (MUNCH_BUILD_TESTS)
             tests/dfa_test.cpp
             tests/minimize_test.cpp
             tests/property_test.cpp
+            tests/verifier_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests
