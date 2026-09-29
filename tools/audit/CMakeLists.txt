@@ -3,17 +3,52 @@ cmake_policy(SET CMP0097 NEW)
 project(munch_audit)
 
 add_library(${PROJECT_NAME}
+        src/action_return.cpp
+        src/antlr_alphabet.cpp
+        src/antlr_checks.cpp
+        src/antlr_commands.cpp
+        src/antlr_cursor.cpp
+        src/antlr_expression.cpp
+        src/antlr_grammar.cpp
+        src/antlr_members.cpp
+        src/antlr_rule.cpp
+        src/c_tokens.cpp
+        src/command_line.cpp
         src/cursor.cpp
+        src/directives.cpp
         src/expression.cpp
+        src/file_kind.cpp
+        src/flex_actions.cpp
+        src/flex_lines.cpp
+        src/flex_options.cpp
+        src/flex_pattern.cpp
+        src/flex_sections.cpp
         src/lexer_spec.cpp
+        src/logos_attributes.cpp
+        src/logos_callback.cpp
+        src/logos_pattern.cpp
+        src/logos_refusals.cpp
+        src/logos_regex.cpp
+        src/pattern_shape.cpp
         src/price.cpp
+        src/re2c_actions.cpp
+        src/re2c_block.cpp
+        src/re2c_classes.cpp
+        src/re2c_configuration.cpp
+        src/re2c_regex.cpp
         src/read_antlr.cpp
         src/read_flex.cpp
         src/read_logos.cpp
         src/read_re2c.cpp
         src/report.cpp
+        src/report_render.cpp
+        src/rust_cursor.cpp
+        src/rust_items.cpp
+        src/rust_names.cpp
+        src/scalar_set.cpp
         src/supply.cpp
         src/token_set.cpp
+        src/word_kinds.cpp
 )
 
 target_include_directories(${PROJECT_NAME}

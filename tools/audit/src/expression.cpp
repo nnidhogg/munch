@@ -125,4 +125,14 @@ std::string bracket_member(const unsigned char byte)
     return {static_cast<char>(byte)};
 }
 
+std::string without_trailing_blanks(std::string text)
+{
+    while (!text.empty() && is_blank(text.back()))
+    {
+        text.pop_back();
+    }
+
+    return text;
+}
+
 } // namespace munch::tools::audit

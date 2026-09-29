@@ -16,6 +16,9 @@ namespace munch::tools::audit
 {
 namespace
 {
+// Implements supply.hpp: the gaps between anchors, the anchors each inventory finds and the figures each renders are
+// private to this unit.
+
 /**
  * @brief The gaps between consecutive anchors, each percentile the order statistic at floor(q n) capped at the last.
  * @param anchors The anchor positions, ascending.
@@ -44,30 +47,6 @@ namespace
     }};
 
     return Gaps{.median = at(50), .ninetieth = at(90), .ninety_ninth = at(99), .longest = gaps.back()};
-}
-
-/**
- * @brief What a set of anchored positions supplies on an input.
- * @param anchored Whether each position of the input is an anchor, the ends never.
- * @return The count, the density and the gaps.
- */
-[[nodiscard]] Anchors anchors_of(const std::vector<bool>& anchored)
-{
-    std::vector<std::size_t> positions;
-
-    for (std::size_t at{0}; at < anchored.size(); ++at)
-    {
-        if (anchored[at])
-        {
-            positions.push_back(at);
-        }
-    }
-
-    const auto density{
-            anchored.empty() ? 0.0 :
-                               1024.0 * static_cast<double>(positions.size()) / static_cast<double>(anchored.size())};
-
-    return Anchors{.count = positions.size(), .per_kibibyte = density, .gaps = gaps_of(positions)};
 }
 
 /**
@@ -170,20 +149,27 @@ namespace
 }
 
 /**
- * @brief The figures of one inventory as the text row prints them.
- * @param anchors The inventory's supply.
- * @return The row's value.
+ * @brief What a set of anchored positions supplies on an input.
+ * @param anchored Whether each position of the input is an anchor, the ends never.
+ * @return The count, the density and the gaps.
  */
-[[nodiscard]] std::string shown(const Anchors& anchors)
+[[nodiscard]] Anchors anchors_of(const std::vector<bool>& anchored)
 {
-    const auto& [count, per_kibibyte, gaps]{anchors};
+    std::vector<std::size_t> positions;
 
-    return std::format(
-            "{} anchor{}, {:.1f} per KiB, {}", count, count == 1 ? "" : "s", per_kibibyte,
-            gaps ? std::format(
-                           "gaps p50 {}, p90 {}, p99 {}, max {}", gaps->median, gaps->ninetieth, gaps->ninety_ninth,
-                           gaps->longest) :
-                   "no gaps, fewer than two anchors");
+    for (std::size_t at{0}; at < anchored.size(); ++at)
+    {
+        if (anchored[at])
+        {
+            positions.push_back(at);
+        }
+    }
+
+    const auto density{
+            anchored.empty() ? 0.0 :
+                               1024.0 * static_cast<double>(positions.size()) / static_cast<double>(anchored.size())};
+
+    return Anchors{.count = positions.size(), .per_kibibyte = density, .gaps = gaps_of(positions)};
 }
 
 /**
@@ -203,6 +189,23 @@ namespace
     return std::format(
             R"({{"anchors": {}, "per_kibibyte": {:.1f}, "gap_p50": {}, "gap_p90": {}, "gap_p99": {}, "gap_max": {}}})",
             count, per_kibibyte, figure(p50), figure(p90), figure(p99), figure(longest));
+}
+
+/**
+ * @brief The figures of one inventory as the text row prints them.
+ * @param anchors The inventory's supply.
+ * @return The row's value.
+ */
+[[nodiscard]] std::string shown(const Anchors& anchors)
+{
+    const auto& [count, per_kibibyte, gaps]{anchors};
+
+    return std::format(
+            "{} anchor{}, {:.1f} per KiB, {}", count, count == 1 ? "" : "s", per_kibibyte,
+            gaps ? std::format(
+                           "gaps p50 {}, p90 {}, p99 {}, max {}", gaps->median, gaps->ninetieth, gaps->ninety_ninth,
+                           gaps->longest) :
+                   "no gaps, fewer than two anchors");
 }
 
 } // namespace

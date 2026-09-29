@@ -7,6 +7,12 @@
 #include <string>
 #include <string_view>
 
+/**
+ * @brief A cursor over a span of a file's text, Cursor, and where a `//` comment it skips ends, Line_comment_end.
+ *
+ * re2c's block, ANTLR's grammar and a Rust file are each read through a class derived from it, which adds the
+ * generator's own tokens to the bytes, blanks and comments read here.
+ */
 namespace munch::tools::audit
 {
 /**
@@ -24,10 +30,10 @@ enum class Line_comment_end : std::uint8_t
  *        one byte looked at or taken, a prefix tested, a byte accepted or required, the line the cursor is on, and
  *        a refusal at that line.
  *
- * A reader derives from it and adds the grammar it reads; the cursor holds the text as a view and two offsets, the
- * one under it and the one its span ends at, and nothing else. A refusal names the line of the byte under the
- * cursor, or the text's last line once the text has ended, so that a construct left open is reported where it
- * was, not on the line a final newline would open.
+ * A reader derives from it and adds the grammar it reads; the cursor holds the text as a view and two offsets, the one
+ * under it and the one its span ends at, and nothing else. A refusal names the line of the byte under the cursor, or
+ * the text's last line once the text has ended, so that a construct left open is reported where it was, not on the line
+ * a final newline would open.
  */
 class Cursor
 {
@@ -64,13 +70,6 @@ public:
     [[nodiscard]] bool done() const noexcept;
 
     /**
-     * @brief Consumes the byte under the cursor if it is the one given.
-     * @param byte The byte asked for.
-     * @return True when consumed.
-     */
-    [[nodiscard]] bool accept(char byte) noexcept;
-
-    /**
      * @brief Skips blanks and comments of either C style, a block comment left open refused.
      * @throws Spec_error If a block comment never closes.
      */
@@ -85,10 +84,11 @@ public:
     void expect(char byte, std::string_view what);
 
     /**
-     * @brief The line the cursor is on, counted from one; the last line once the text has ended.
-     * @return The line.
+     * @brief Consumes the byte under the cursor if it is the one given.
+     * @param byte The byte asked for.
+     * @return True when consumed.
      */
-    [[nodiscard]] std::size_t line() const noexcept;
+    [[nodiscard]] bool accept(char byte) noexcept;
 
     /**
      * @brief The offset of the byte under the cursor.
@@ -108,6 +108,12 @@ public:
      * @throws Spec_error Always.
      */
     [[noreturn]] void fail(const std::string& message) const;
+
+    /**
+     * @brief The line the cursor is on, counted from one; the last line once the text has ended.
+     * @return The line.
+     */
+    [[nodiscard]] std::size_t line() const noexcept;
 
     /**
      * @brief Whether the text under the cursor begins with the given characters, within the span.
@@ -139,6 +145,9 @@ protected:
      */
     std::size_t end_;
 
+    /**
+     * @brief Where a `//` comment ends, which skip_blanks() reads comments by.
+     */
     Line_comment_end line_comment_end_;
 };
 

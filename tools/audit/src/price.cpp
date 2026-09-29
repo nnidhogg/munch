@@ -2,25 +2,161 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
 #include <optional>
-#include <ranges>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "munch/regex/regex.hpp"
-#include "munch/regex/set.hpp"
+#include "munch/tools/audit/pattern_shape.hpp"
 #include "munch/tools/audit/report.hpp"
+#include "munch/tools/audit/word_kinds.hpp"
 
 namespace munch::tools::audit
 {
 namespace
 {
+// Implements price.hpp: the probes of a compiled set, the byte's own token, the shapes' choices and the narrowing steps
+// are private to this unit.
+
+/**
+ * @brief What taking a rule's own shape's edit did to its copy in the combined set.
+ */
+struct Taken
+{
+    /**
+     * @brief Whether the shape offered an edit, which the copy took.
+     */
+    bool offered{};
+
+    /**
+     * @brief Whether the copy was narrowed instead.
+     */
+    bool narrowed{};
+};
+
+/**
+ * @brief The id and the priority a token of the byte's own is given: the smallest id no rule carries, since one past
+ *        the highest is no id at all where a rule carries the largest std::size_t, and a priority past every rule's,
+ *        so nothing else moves.
+ */
+struct Own_token
+{
+    /**
+     * @brief The id.
+     */
+    std::size_t id{};
+
+    /**
+     * @brief The priority.
+     */
+    std::size_t priority{};
+};
+
+/**
+ * @brief What the consuming tokens' shapes offer: one choice per token and shape, each edit on its own, and where the
+ *        byte stands once every consumer takes its own shape's edit.
+ */
+struct Offers
+{
+    /**
+     * @brief The choices, in the order the consumers were found.
+     */
+    std::vector<Choice> choices;
+
+    /**
+     * @brief Where the byte stands once every consumer takes its edit, absent when no shape offered one.
+     */
+    std::optional<Outcome> together;
+};
+
+/**
+ * @brief The narrowing's answers to the consumers: the steps it took, and the tokens it could not take a step on.
+ */
+struct Answers
+{
+    /**
+     * @brief The steps, in the order they were made.
+     */
+    std::vector<Price_step> steps;
+
+    /**
+     * @brief The tokens every word of which holds the byte fixed past its first byte.
+     */
+    std::vector<std::size_t> immovable;
+
+    /**
+     * @brief The tokens that cannot lose the byte while some word of them holds it fixed only as its first byte.
+     */
+    std::vector<std::size_t> undecided;
+};
+
+/**
+ * @brief The bytes a compiled set certifies exactly.
+ * @param lexer The compiled set.
+ * @return The bytes, ascending.
+ */
+[[nodiscard]] std::vector<unsigned char> exact_bytes(const core::Lexer& lexer)
+{
+    std::vector<unsigned char> bytes;
+
+    for (std::size_t value{0}; value < 256; ++value)
+    {
+        if (lexer.is_split_point(static_cast<char>(value)))
+        {
+            bytes.push_back(static_cast<unsigned char>(value));
+        }
+    }
+
+    return bytes;
+}
+
+/**
+ * @brief The pattern a shape's edit leaves a token with: a terminated one its body, a delimited one its opener.
+ * @param regex The token's pattern, of that shape for the byte.
+ * @param shape The shape, terminated or delimited.
+ * @return The pattern after the edit.
+ */
+[[nodiscard]] regex::Regex edited_by(const regex::Regex& regex, const Shape shape)
+{
+    const auto parts{parts_of(regex)};
+
+    if (shape == Shape::delimited)
+    {
+        return parts.front();
+    }
+
+    std::vector<regex::Regex> body{parts.begin(), parts.end() - 1};
+
+    return body.size() == 1 ? std::move(body.front()) : regex::Regex{.node = regex::Concat{.regexes = std::move(body)}};
+}
+
+/**
+ * @brief Where the byte stands over an edited set, against the bytes certified before any edit.
+ * @param edited The set after the edit.
+ * @param before The bytes certified exactly before any edit, ascending.
+ * @param byte The byte priced.
+ * @return The outcome.
+ */
+[[nodiscard]] Outcome outcome(
+        const Token_set& edited, const std::vector<unsigned char>& before, const unsigned char byte)
+{
+    const auto lexer{compile(edited)};
+
+    Outcome after{
+            .exact = lexer.is_split_point(static_cast<char>(byte)),
+            .modulo = lexer.is_split_point_ignoring(static_cast<char>(byte)),
+            .gained = {}};
+
+    std::ranges::set_difference(exact_bytes(lexer), before, std::back_inserter(after.gained));
+
+    std::erase(after.gained, byte);
+
+    return after;
+}
+
 /**
  * @brief The tokens the blame names for a byte, each once, in rule order: the order the set lists its rules, which
  *        for a set read from a file is the file's, whatever the ids are.
@@ -51,6 +187,98 @@ namespace
 }
 
 /**
+ * @brief Takes the byte off a rule of the probe, so that the next round sees what the rule had won: narrowed where the
+ *        rule can lose the byte, and by its own offered shape where it cannot, since a rule that spells the byte out is
+ *        edited by its shape and not by narrowing. A rule with neither is left as it stands and goes on consuming the
+ *        byte, which is what the steps report of it.
+ * @param probed The probe's copy of the rule, edited.
+ * @param rule The rule as the set gives it.
+ * @param byte The byte.
+ */
+void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned char byte)
+{
+    if (can_lose(probed.regex, byte))
+    {
+        exclude(probed.regex, byte);
+
+        return;
+    }
+
+    if (const auto shape{shape_of(rule.regex, byte)}; shape == Shape::terminated || shape == Shape::delimited)
+    {
+        probed.regex = edited_by(rule.regex, shape);
+    }
+}
+
+/**
+ * @brief What a consuming rule's shapes offer on their own: for the terminated and the delimited shape the rule has,
+ *        the edit the shape names applied to the rule alone, the rest of the set as it stands.
+ * @param rule The rule.
+ * @param edited The set before any narrowing.
+ * @param before The bytes certified exactly before any edit, ascending.
+ * @param byte The byte.
+ * @return The choices, terminated first.
+ */
+[[nodiscard]] std::vector<Choice> choices_of(
+        const Token_rule& rule, const Token_set& edited, const std::vector<unsigned char>& before,
+        const unsigned char byte)
+{
+    std::vector<Choice> choices;
+
+    for (const auto shape : {Shape::terminated, Shape::delimited})
+    {
+        if (shape == Shape::terminated ? !is_terminated(rule.regex, byte) : !is_delimited(rule.regex, byte))
+        {
+            continue;
+        }
+
+        auto alone{edited};
+
+        std::ranges::find(alone.rules, rule.id, &Token_rule::id)->regex = edited_by(rule.regex, shape);
+
+        choices.push_back({.token = rule.id, .shape = shape, .after = outcome(alone, before, byte)});
+    }
+
+    return choices;
+}
+
+/**
+ * @brief Gives a rule's copy in the combined set the edit its shape names: a terminated one its body, a delimited one
+ *        its opener, the rest narrowed as the steps narrow them. A rule that cannot lose the byte is left as it stands,
+ *        since narrowing it would leave a choice with no regex in it, and the steps report such a rule as one no edit
+ *        of this analysis decides, so editing it here would price an edit the report never offered.
+ * @param taken The rule's copy in the combined set, edited.
+ * @param rule The rule as the set gives it.
+ * @param byte The byte.
+ * @return Whether an edit of a shape was taken, and whether the copy was narrowed.
+ */
+[[nodiscard]] Taken take_shape(Token_rule& taken, const Token_rule& rule, const unsigned char byte)
+{
+    switch (shape_of(rule.regex, byte))
+    {
+    case Shape::terminated:
+    case Shape::delimited:
+        taken.regex = edited_by(rule.regex, shape_of(rule.regex, byte));
+
+        return Taken{.offered = true, .narrowed = false};
+    case Shape::run:
+    case Shape::other:
+        if (!can_lose(taken.regex, byte))
+        {
+            break;
+        }
+
+        exclude(taken.regex, byte);
+
+        return Taken{.offered = false, .narrowed = true};
+    case Shape::fixed:
+        break;
+    }
+
+    return Taken{.offered = false, .narrowed = false};
+}
+
+/**
  * @brief Whether some token of the compiled set matches the byte on its own.
  * @param lexer The compiled set.
  * @param byte The byte.
@@ -63,818 +291,29 @@ namespace
     return lexer.tokenize<std::size_t>(input).length == 1;
 }
 
-[[nodiscard]] std::optional<std::string> fixed_word(const regex::Regex& regex);
-
 /**
- * @brief Whether a pattern admits a byte anywhere: in a set, a text, or below, by what it matches rather than how it
- *        is written, so that a repetition of exactly zero, which matches the empty word alone, admits nothing
- *        whatever stands under it, and `[ab][x]{0}"x"` is the terminated shape `[ab]"x"` is.
- * @param regex The pattern.
+ * @brief The byte's own token, as a rule of the set.
  * @param byte The byte.
- * @return True when it does.
+ * @param own The id and the priority it takes.
+ * @param discarded Whether it is discarded.
+ * @return The rule.
  */
-[[nodiscard]] bool admits(const regex::Regex& regex, const unsigned char byte)
+[[nodiscard]] Token_rule byte_rule(const unsigned char byte, const Own_token own, const bool discarded)
 {
-    using namespace regex;
-
-    return std::visit(
-            [byte]<typename Node>(const Node& node) {
-                if constexpr (std::is_same_v<Node, Any_of>)
-                {
-                    return node.set.symbols().contains(static_cast<char>(byte));
-                }
-                else if constexpr (std::is_same_v<Node, Text>)
-                {
-                    return node.text.contains(static_cast<char>(byte));
-                }
-                else if constexpr (std::is_same_v<Node, Repeat>)
-                {
-                    const auto none{std::visit(
-                            []<typename Kind>(const Kind& kind) {
-                                if constexpr (std::is_same_v<Kind, Exact>)
-                                {
-                                    return kind.count == 0;
-                                }
-                                else if constexpr (std::is_same_v<Kind, Range>)
-                                {
-                                    return kind.max == 0;
-                                }
-                                else
-                                {
-                                    return false;
-                                }
-                            },
-                            node.kind)};
-
-                    return !none && admits(*node.regex, byte);
-                }
-                else
-                {
-                    return std::ranges::any_of(node.regexes, [byte](const Regex& part) { return admits(part, byte); });
-                }
-            },
-            regex.node);
+    return Token_rule{
+            .regex = regex::text(std::string(1, static_cast<char>(byte))),
+            .id = own.id,
+            .priority = own.priority,
+            .discarded = discarded};
 }
 
 /**
- * @brief Whether a pattern matches no word at all: a class of no byte, a sequence with such a part, a choice among
- *        such parts alone, or a repetition of one that must repeat it. No file syntax the readers accept spells one,
- *        an empty bracket being refused by the parser; a set assembled through the API may hold one, `any_of("")`.
- * @param regex The pattern.
- * @return True when no word matches.
+ * @brief The id and the priority a token of the byte's own takes in a set.
+ * @param set The set.
+ * @return The id and the priority.
  */
-[[nodiscard]] bool matches_nothing(const regex::Regex& regex)
+[[nodiscard]] Own_token own_token(const Token_set& set)
 {
-    return std::visit(
-            []<typename Node>(const Node& node) {
-                if constexpr (std::is_same_v<Node, regex::Any_of>)
-                {
-                    return node.set.symbols().empty();
-                }
-                else if constexpr (std::is_same_v<Node, regex::Text>)
-                {
-                    return false;
-                }
-                else if constexpr (std::is_same_v<Node, regex::Concat>)
-                {
-                    return std::ranges::any_of(node.regexes, matches_nothing);
-                }
-                else if constexpr (std::is_same_v<Node, regex::Choice>)
-                {
-                    return std::ranges::all_of(node.regexes, matches_nothing);
-                }
-                else
-                {
-                    static_assert(std::is_same_v<Node, regex::Repeat>);
-
-                    const auto required{std::visit(
-                            []<typename Kind>(const Kind& kind) -> std::size_t {
-                                if constexpr (std::is_same_v<Kind, regex::Plus>)
-                                {
-                                    return 1;
-                                }
-                                else if constexpr (std::is_same_v<Kind, regex::Exact>)
-                                {
-                                    return kind.count;
-                                }
-                                else if constexpr (
-                                        std::is_same_v<Kind, regex::At_least> || std::is_same_v<Kind, regex::Range>)
-                                {
-                                    return kind.min;
-                                }
-                                else
-                                {
-                                    return 0;
-                                }
-                            },
-                            node.kind)};
-
-                    return required > 0 && matches_nothing(*node.regex);
-                }
-            },
-            regex.node);
-}
-
-/**
- * @brief The pattern the scanner sees, the spellings that match the same words taken off it: a repetition of exactly
- *        one is what it repeats, a component matching the empty word alone is no part of a sequence, a sequence
- *        of one part is that part, an alternative matching nothing is no part of a choice and a choice of one part
- *        is that part, a sequence with a part matching nothing matches nothing, and a repetition of nothing that
- *        need not repeat it is the empty word, each applied until none is left to apply. So `([ab]"x"){1}`,
- *        `[ab]"x"[cd]{0}`, `([ab]"x"){1}[cd]{0}`, the choice of `[ab]"x"` and `any_of("")` and `[ab]"x"` followed
- *        by `(any_of(""))*` are the one sequence `[ab]"x"`, which every shape and every edit then reads, and
- *        `"x"{0} "y"{0}` is the empty word rather than a sequence of nothing.
- * @param regex The pattern.
- * @return The pattern normalised.
- */
-[[nodiscard]] regex::Regex normalized(const regex::Regex& regex)
-{
-    if (std::holds_alternative<regex::Repeat>(regex.node))
-    {
-        const auto& repeat{std::get<regex::Repeat>(regex.node)};
-
-        const auto once{std::visit(
-                []<typename Kind>(const Kind& kind) {
-                    if constexpr (std::is_same_v<Kind, regex::Exact>)
-                    {
-                        return kind.count == 1;
-                    }
-                    else if constexpr (std::is_same_v<Kind, regex::Range>)
-                    {
-                        return kind.min == 1 && kind.max == 1;
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                },
-                repeat.kind)};
-
-        if (once)
-        {
-            return normalized(*repeat.regex);
-        }
-
-        // What a repetition repeats is normalised too, so `([ \t\n]{1})+` repeats the class `[ \t\n]` and is the
-        // run that `[ \t\n]+` is, rather than a repetition of a sequence of one.
-        auto inner{normalized(*repeat.regex)};
-
-        if (matches_nothing(inner))
-        {
-            return matches_nothing(regex) ? regex::Regex{.node = regex::Any_of{.set = {}}} :
-                                            regex::Regex{.node = regex::Text{.text = {}}};
-        }
-
-        // A repetition of the empty word is the empty word, however many times.
-        if (fixed_word(inner) == std::string{})
-        {
-            return {.node = regex::Text{.text = {}}};
-        }
-
-        return {.node = regex::Repeat{.kind = repeat.kind, .regex = regex::Indirect{std::move(inner)}}};
-    }
-
-    if (std::holds_alternative<regex::Choice>(regex.node))
-    {
-        std::vector<regex::Regex> alternatives;
-
-        for (const auto& part : std::get<regex::Choice>(regex.node).regexes)
-        {
-            if (!matches_nothing(part))
-            {
-                alternatives.push_back(normalized(part));
-            }
-        }
-
-        if (alternatives.empty())
-        {
-            return {.node = regex::Any_of{.set = {}}};
-        }
-
-        if (alternatives.size() == 1)
-        {
-            return std::move(alternatives.front());
-        }
-
-        return {.node = regex::Choice{.regexes = std::move(alternatives)}};
-    }
-
-    if (!std::holds_alternative<regex::Concat>(regex.node))
-    {
-        return regex;
-    }
-
-    if (matches_nothing(regex))
-    {
-        return {.node = regex::Any_of{.set = {}}};
-    }
-
-    // Each part is normalised before it is asked whether it is the empty word, so that `(any_of(""))*`, which is
-    // the empty word once normalised, is no part either; a sequence of no parts left is the empty word itself.
-    std::vector<regex::Regex> parts;
-
-    for (const auto& part : std::get<regex::Concat>(regex.node).regexes)
-    {
-        auto inner{normalized(part)};
-
-        if (fixed_word(inner) != std::string{})
-        {
-            parts.push_back(std::move(inner));
-        }
-    }
-
-    if (parts.empty())
-    {
-        return {.node = regex::Text{.text = {}}};
-    }
-
-    if (parts.size() == 1)
-    {
-        return std::move(parts.front());
-    }
-
-    return {.node = regex::Concat{.regexes = std::move(parts)}};
-}
-
-/**
- * @brief The parts of a pattern's top-level sequence, once it is normalised, none when it is no sequence.
- * @param regex The pattern.
- * @return The parts.
- */
-[[nodiscard]] std::vector<regex::Regex> parts_of(const regex::Regex& regex)
-{
-    auto whole{normalized(regex)};
-
-    if (!std::holds_alternative<regex::Concat>(whole.node))
-    {
-        return {};
-    }
-
-    return std::move(std::get<regex::Concat>(whole.node).regexes);
-}
-
-/**
- * @brief Whether a pattern is a run over a class the byte is in: one or more of a set, possibly the sole part of a
- *        sequence.
- * @param regex The pattern.
- * @param byte The byte.
- * @return True when it is.
- */
-[[nodiscard]] bool is_run(const regex::Regex& regex, const unsigned char byte)
-{
-    const auto whole{normalized(regex)};
-
-    const auto parts{parts_of(whole)};
-
-    const auto& node{parts.size() == 1 ? parts.front().node : whole.node};
-
-    if (!std::holds_alternative<regex::Repeat>(node))
-    {
-        return false;
-    }
-
-    const auto& [kind, repeated]{std::get<regex::Repeat>(node)};
-
-    if (!std::holds_alternative<regex::Kleene>(kind) && !std::holds_alternative<regex::Plus>(kind))
-    {
-        return false;
-    }
-
-    const auto& inner{(*repeated).node};
-
-    return std::holds_alternative<regex::Any_of>(inner) &&
-           std::get<regex::Any_of>(inner).set.symbols().contains(static_cast<char>(byte));
-}
-
-/**
- * @brief The one word a component matches when it matches exactly one, whatever the spelling: a text, a class of one
- *        byte, a repetition of a fixed count of such a word, a repetition of exactly zero of anything, which is the
- *        empty word, a sequence of them, or a choice among spellings of the same one; none where the component
- *        matches two words or none.
- *
- * The shapes ask what a component matches, not how it is written, so that `\n`, `[\n]` and `\n{1}` are one terminator,
- * `"x"`, `[x]` and `x{1}` one opener and `[cd]{0}x` the terminator `x`, as they are one language to the scanner.
- * @param regex The component.
- * @return The word, or none.
- */
-[[nodiscard]] std::optional<std::string> fixed_word(const regex::Regex& regex)
-{
-    return std::visit(
-            []<typename Node>(const Node& node) -> std::optional<std::string> {
-                if constexpr (std::is_same_v<Node, regex::Text>)
-                {
-                    return node.text;
-                }
-                else if constexpr (std::is_same_v<Node, regex::Any_of>)
-                {
-                    const auto& symbols{node.set.symbols()};
-
-                    if (symbols.size() != 1)
-                    {
-                        return std::nullopt;
-                    }
-
-                    return std::string(1, *symbols.begin());
-                }
-                else if constexpr (std::is_same_v<Node, regex::Concat>)
-                {
-                    std::string word;
-
-                    for (const auto& part : node.regexes)
-                    {
-                        const auto fixed{fixed_word(part)};
-
-                        if (!fixed)
-                        {
-                            return std::nullopt;
-                        }
-
-                        word += *fixed;
-                    }
-
-                    return word;
-                }
-                else if constexpr (std::is_same_v<Node, regex::Choice>)
-                {
-                    std::optional<std::string> word;
-
-                    for (const auto& part : node.regexes)
-                    {
-                        const auto fixed{fixed_word(part)};
-
-                        if (!fixed || (word && *word != *fixed))
-                        {
-                            return std::nullopt;
-                        }
-
-                        word = fixed;
-                    }
-
-                    return word;
-                }
-                else
-                {
-                    static_assert(std::is_same_v<Node, regex::Repeat>);
-
-                    // A fixed count repeats the word that many times, an exact zero the empty word whatever the
-                    // component matches; any other count repeats only the empty word into one word.
-                    const auto count{std::visit(
-                            []<typename Kind>(const Kind& kind) -> std::optional<std::size_t> {
-                                if constexpr (std::is_same_v<Kind, regex::Exact>)
-                                {
-                                    return kind.count;
-                                }
-                                else if constexpr (std::is_same_v<Kind, regex::Range>)
-                                {
-                                    return kind.min == kind.max ? std::optional{kind.min} : std::nullopt;
-                                }
-                                else
-                                {
-                                    return std::nullopt;
-                                }
-                            },
-                            node.kind)};
-
-                    if (count == 0)
-                    {
-                        return std::string{};
-                    }
-
-                    const auto inner{fixed_word(*node.regex)};
-
-                    if (!inner)
-                    {
-                        return std::nullopt;
-                    }
-
-                    if (!count)
-                    {
-                        return inner->empty() ? inner : std::nullopt;
-                    }
-
-                    std::string word;
-
-                    for (std::size_t n{0}; n < *count; ++n)
-                    {
-                        word += *inner;
-                    }
-
-                    return word;
-                }
-            },
-            regex.node);
-}
-
-/**
- * @brief Whether a sequence ends in the byte and holds it nowhere else: a body, then the one byte that terminates
- *        it.
- *
- * The last component has to be the terminator itself, the one byte and no other, because the edit this shape names
- * deletes that component whole: the last component of `[a]"xb"` admits the `x` while the token ends in `b`, and
- * the class of `[a][xb]` admits the `x` while the token may end in `b`, so calling either terminated described
- * leaving a terminator to the token after it while the edit evaluated deleted the token's own `b` along with it. A
- * pattern like that is no terminated shape here, and is priced as what it is. The terminator is read by what it
- * matches, so `[a]x{1}` is terminated as `[a]x` is.
- * @param regex The pattern.
- * @param byte The byte.
- * @return True when it does.
- */
-[[nodiscard]] bool is_terminated(const regex::Regex& regex, const unsigned char byte)
-{
-    const auto parts{parts_of(regex)};
-
-    return parts.size() >= 2 && fixed_word(parts.back()) == std::string(1, static_cast<char>(byte)) &&
-           std::ranges::none_of(parts | std::views::take(parts.size() - 1), [byte](const regex::Regex& part) {
-               return admits(part, byte);
-           });
-}
-
-/**
- * @brief Whether a sequence opens with a fixed word the byte is not in, followed by a body it is in.
- *
- * The opener is read by what it matches, as the terminator is, so `[x][ab]*` and `x{1}[ab]*`
- * are delimited as `"x"[ab]*` is.
- * @param regex The pattern.
- * @param byte The byte.
- * @return True when it does.
- */
-[[nodiscard]] bool is_delimited(const regex::Regex& regex, const unsigned char byte)
-{
-    const auto parts{parts_of(regex)};
-
-    if (parts.size() < 2)
-    {
-        return false;
-    }
-
-    const auto opener{fixed_word(parts.front())};
-
-    return opener && !opener->empty() && !opener->contains(static_cast<char>(byte));
-}
-
-/**
- * @brief The kinds of word a pattern matches, told apart by the fixed occurrences of a byte they hold: the
- *        occurrences a text spells or a class of the one byte matches, which no narrowing removes.
- *
- * A pattern's words are summarised as a set of these, held as bits, so that concatenation and repetition can be
- * computed over the sets and a pattern can be asked whether every word it matches is of one kind.
- */
-namespace words
-{
-using Kinds = std::uint8_t;
-
-/**
- * @brief The empty word.
- */
-constexpr Kinds empty{1U};
-
-/**
- * @brief A nonempty word with no fixed occurrence of the byte.
- */
-constexpr Kinds plain{2U};
-
-/**
- * @brief A word whose one fixed occurrence of the byte is its first byte.
- */
-constexpr Kinds leading{4U};
-
-/**
- * @brief A word with a fixed occurrence of the byte past its first byte.
- */
-constexpr Kinds mid{8U};
-
-/**
- * @brief The kind of the word one kind of word makes followed by another.
- * @param first The kind of the first word.
- * @param second The kind of the second.
- * @return The kind of their concatenation.
- */
-[[nodiscard]] constexpr Kinds join(const Kinds first, const Kinds second)
-{
-    if (first == mid || second == mid)
-    {
-        return mid;
-    }
-
-    if (first == empty)
-    {
-        return second;
-    }
-
-    if (second == empty)
-    {
-        return first;
-    }
-
-    // A fixed first byte of the second word stands past the first byte of a nonempty first word.
-    return second == leading ? mid : first;
-}
-
-/**
- * @brief The kinds of word every word of one set makes followed by every word of another.
- * @param first The kinds of the first words.
- * @param second The kinds of the second.
- * @return The kinds of their concatenations.
- */
-[[nodiscard]] constexpr Kinds joined(const Kinds first, const Kinds second)
-{
-    Kinds out{0};
-
-    for (const auto a : {empty, plain, leading, mid})
-    {
-        for (const auto b : {empty, plain, leading, mid})
-        {
-            if ((first & a) != 0 && (second & b) != 0)
-            {
-                out |= join(a, b);
-            }
-        }
-    }
-
-    return out;
-}
-
-/**
- * @brief The kinds of word a repetition of words of the given kinds makes, over the counts allowed.
- *
- * The kinds of n repetitions follow from the kinds of n - 1, and there are sixteen sets of kinds, so the sets from
- * the minimum count on repeat within sixteen steps; the union is complete at the first repeat, which is also where
- * an unbounded repetition stops.
- * @param kinds The kinds of the repeated words.
- * @param min The least count.
- * @param max The greatest count, or none for an unbounded repetition.
- * @return The kinds of the repetitions' words.
- */
-[[nodiscard]] Kinds repeated(const Kinds kinds, const std::size_t min, const std::optional<std::size_t> max)
-{
-    Kinds out{0};
-
-    Kinds count{empty};
-
-    std::uint16_t seen{0};
-
-    for (std::size_t n{0}; !max || n <= *max; ++n)
-    {
-        if (n >= min)
-        {
-            if ((seen & (1U << count)) != 0)
-            {
-                break;
-            }
-
-            seen |= static_cast<std::uint16_t>(1U << count);
-
-            out |= count;
-        }
-
-        count = joined(count, kinds);
-    }
-
-    return out;
-}
-
-/**
- * @brief The kinds of word a pattern matches, for a byte.
- * @param regex The pattern.
- * @param byte The byte.
- * @return The kinds, at least one.
- */
-[[nodiscard]] Kinds of(const regex::Regex& regex, const unsigned char byte)
-{
-    return std::visit(
-            [byte]<typename Node>(const Node& node) -> Kinds {
-                if constexpr (std::is_same_v<Node, regex::Any_of>)
-                {
-                    // A class of the one byte matches nothing else, so its occurrence is as fixed as a text's.
-                    return node.set.symbols() == regex::Set::Symbols_t{static_cast<char>(byte)} ? leading : plain;
-                }
-                else if constexpr (std::is_same_v<Node, regex::Text>)
-                {
-                    if (node.text.empty())
-                    {
-                        return empty;
-                    }
-
-                    if (node.text.find(static_cast<char>(byte), 1) != std::string::npos)
-                    {
-                        return mid;
-                    }
-
-                    return node.text.front() == static_cast<char>(byte) ? leading : plain;
-                }
-                else if constexpr (std::is_same_v<Node, regex::Concat>)
-                {
-                    Kinds out{empty};
-
-                    for (const auto& part : node.regexes)
-                    {
-                        out = joined(out, of(part, byte));
-                    }
-
-                    return out;
-                }
-                else if constexpr (std::is_same_v<Node, regex::Choice>)
-                {
-                    Kinds out{0};
-
-                    for (const auto& part : node.regexes)
-                    {
-                        out |= of(part, byte);
-                    }
-
-                    return out;
-                }
-                else
-                {
-                    static_assert(std::is_same_v<Node, regex::Repeat>);
-
-                    const auto inner{of(*node.regex, byte)};
-
-                    return std::visit(
-                            [inner]<typename Kind>(const Kind& kind) {
-                                if constexpr (std::is_same_v<Kind, regex::Kleene>)
-                                {
-                                    return repeated(inner, 0, std::nullopt);
-                                }
-                                else if constexpr (std::is_same_v<Kind, regex::Plus>)
-                                {
-                                    return repeated(inner, 1, std::nullopt);
-                                }
-                                else if constexpr (std::is_same_v<Kind, regex::Optional>)
-                                {
-                                    return repeated(inner, 0, 1);
-                                }
-                                else if constexpr (std::is_same_v<Kind, regex::Exact>)
-                                {
-                                    return repeated(inner, kind.count, kind.count);
-                                }
-                                else if constexpr (std::is_same_v<Kind, regex::At_least>)
-                                {
-                                    return repeated(inner, kind.min, std::nullopt);
-                                }
-                                else
-                                {
-                                    static_assert(std::is_same_v<Kind, regex::Range>);
-
-                                    return repeated(inner, kind.min, kind.max);
-                                }
-                            },
-                            node.kind);
-                }
-            },
-            regex.node);
-}
-
-} // namespace words
-
-/**
- * @brief Whether every word of a pattern holds a fixed occurrence of the byte past its first byte, which is what
- *        makes a token that cannot lose the byte an obstruction rather than a token the narrowing decides nothing
- *        about.
- *
- * An edit that keeps any of the token's words, a class narrowed, an alternative dropped, a repetition run fewer
- * times, keeps that word's fixed occurrences, so when every word holds one past its first byte the token consumes
- * the byte mid-token in whatever narrowed form it keeps, and the byte cannot certify while the token stays: `[x]\n[x]`
- * and `\n{2}` are such tokens. Where some word holds the byte fixed only as its first byte, the occurrence the
- * initial state consumes, an edit this analysis does not make can keep that word and certify the byte: the class of
- * `\n[\nx]`, `[\n][\nx]`, `\n{1}[\nx]` or `(\n[xy])[\nx]` narrowed to `[x]`, or the second alternative of
- * `(\n[\nx]|\ny)` dropped and the first's class narrowed.
- * @param regex The pattern.
- * @param byte The byte.
- * @return True when it does.
- */
-[[nodiscard]] bool fixed_mid_token(const regex::Regex& regex, const unsigned char byte)
-{
-    return words::of(regex, byte) == words::mid;
-}
-
-/**
- * @brief The bytes a compiled set certifies exactly.
- * @param lexer The compiled set.
- * @return The bytes, ascending.
- */
-[[nodiscard]] std::vector<unsigned char> exact_bytes(const core::Lexer& lexer)
-{
-    std::vector<unsigned char> bytes;
-
-    for (std::size_t value{0}; value < 256; ++value)
-    {
-        if (lexer.is_split_point(static_cast<char>(value)))
-        {
-            bytes.push_back(static_cast<unsigned char>(value));
-        }
-    }
-
-    return bytes;
-}
-
-/**
- * @brief Where the byte stands over an edited set, against the bytes certified before any edit.
- * @param edited The set after the edit.
- * @param before The bytes certified exactly before any edit, ascending.
- * @param byte The byte priced.
- * @return The outcome.
- */
-[[nodiscard]] Outcome outcome(
-        const Token_set& edited, const std::vector<unsigned char>& before, const unsigned char byte)
-{
-    const auto lexer{compile(edited)};
-
-    Outcome after{
-            .exact = lexer.is_split_point(static_cast<char>(byte)),
-            .modulo = lexer.is_split_point_ignoring(static_cast<char>(byte)),
-            .gained = {}};
-
-    std::ranges::set_difference(exact_bytes(lexer), before, std::back_inserter(after.gained));
-
-    std::erase(after.gained, byte);
-
-    return after;
-}
-
-/**
- * @brief The pattern a shape's edit leaves a token with: a terminated one its body, a delimited one its opener.
- * @param regex The token's pattern, of that shape for the byte.
- * @param shape The shape, terminated or delimited.
- * @return The pattern after the edit.
- */
-[[nodiscard]] regex::Regex edited_by(const regex::Regex& regex, const Shape shape)
-{
-    const auto parts{parts_of(regex)};
-
-    if (shape == Shape::delimited)
-    {
-        return parts.front();
-    }
-
-    std::vector<regex::Regex> body{parts.begin(), parts.end() - 1};
-
-    return body.size() == 1 ? std::move(body.front()) : regex::Regex{.node = regex::Concat{.regexes = std::move(body)}};
-}
-
-} // namespace
-
-Shape shape_of(const regex::Regex& regex, const unsigned char byte)
-{
-    // A terminator or a body may spell the byte out, so the shapes with an edit of their own come before fixed.
-    if (is_run(regex, byte))
-    {
-        return Shape::run;
-    }
-
-    if (is_terminated(regex, byte))
-    {
-        return Shape::terminated;
-    }
-
-    if (is_delimited(regex, byte))
-    {
-        return Shape::delimited;
-    }
-
-    return can_lose(regex, byte) ? Shape::other : Shape::fixed;
-}
-
-Pricing price(const Token_set& set, const unsigned char byte)
-{
-    auto edited{set};
-
-    // Every pattern as the scanner sees it, the spellings that match the same words taken off, so that each shape
-    // and each edit reads the one pattern whatever the set spelled: the choice of `[ab]\n` with `any_of("")` is
-    // `[ab]\n`, terminated by the newline, and not a choice with an alternative reading as a word.
-    for (auto& rule : edited.rules)
-    {
-        rule.regex = normalized(rule.regex);
-    }
-
-    // Room for the one token the analysis may add, taken now: GCC 13 misreads the move a later reallocation would
-    // make of a rule's pattern as a read of something uninitialized, and the build treats the warning as an error.
-    edited.rules.reserve(set.rules.size() + 1);
-
-    auto lexer{compile(edited)};
-
-    const auto before{exact_bytes(lexer)};
-
-    Pricing pricing{
-            .byte = byte,
-            .exact_before = lexer.is_split_point(static_cast<char>(byte)),
-            .modulo_before = lexer.is_split_point_ignoring(static_cast<char>(byte)),
-            .given = std::nullopt,
-            .steps = {},
-            .immovable = {},
-            .undecided = {},
-            .gained = {},
-            .choices = {},
-            .together = std::nullopt};
-
-    if (pricing.exact_before)
-    {
-        return pricing;
-    }
-
-    // An id and a priority for a token of the byte's own: the smallest id no rule carries, since one past
-    // the highest is no id at all where a rule carries the largest std::size_t, and a priority past every
-    // rule's, so nothing else moves.
     std::vector<std::size_t> ids;
 
     std::ranges::transform(set.rules, std::back_inserter(ids), &Token_rule::id);
@@ -898,24 +337,45 @@ Pricing price(const Token_set& set, const unsigned char byte)
         next_priority = std::max(next_priority, rule.priority + 1);
     }
 
-    // A byte no token begins with is reported by neither certificate, every occurrence of it lying mid-token or
-    // nowhere, and no narrowing changes that. It is given a token of its own before anything else, visible since no
-    // token of the set says what it would be discarded as, and every edit below is made on the set holding it.
+    return Own_token{.id = next_id, .priority = next_priority};
+}
+
+/**
+ * @brief Whether a token of the compiled set begins with the byte: the initial state consumes it live.
+ * @param lexer The compiled set.
+ * @param byte The byte.
+ * @return True when one does.
+ */
+[[nodiscard]] bool begins_token(const core::Lexer& lexer, const unsigned char byte)
+{
     const auto& simulator{lexer.simulator()};
 
     const auto from_start{simulator.step(simulator.init_state(), byte)};
 
-    if (!from_start || !simulator.is_live(*from_start))
-    {
-        edited.rules.emplace_back(regex::text(std::string(1, static_cast<char>(byte))), next_id, next_priority, false);
+    return from_start && simulator.is_live(*from_start);
+}
 
-        lexer = compile(edited);
+/**
+ * @brief What each consuming token's shape offers on its own, and what every consumer taking its own shape's edit gives
+ *        together, before the uniform narrowing edits anything.
+ *
+ * A rule a narrowing uncovers has a shape of its own to offer too. The set each round looks in, the probe, has every
+ * consumer answered so far taken off the byte, so that the rule the narrowing uncovers is the next one asked for its
+ * shape; the probe gives a narrowed-away byte a token of its own as the steps do, since without a token beginning with
+ * the byte no rule is blamed for consuming it.
+ * @param set The set as given, whose rules the shapes are read from.
+ * @param edited The set normalised, the byte's own token added when no token began with it.
+ * @param before The bytes certified exactly before any edit, ascending.
+ * @param byte The byte.
+ * @param own The id and the priority the byte's own token takes.
+ * @return The choices and the combined outcome.
+ */
+[[nodiscard]] Offers shape_choices(
+        const Token_set& set, const Token_set& edited, const std::vector<unsigned char>& before,
+        const unsigned char byte, const Own_token own)
+{
+    Offers offers;
 
-        pricing.given = outcome(edited, before, byte);
-    }
-
-    // What each consuming token's shape offers on its own, before the uniform narrowing below edits anything, and
-    // what every consumer taking its own shape's edit gives together.
     auto together{edited};
 
     together.rules.reserve(set.rules.size() + 1);
@@ -924,14 +384,8 @@ Pricing price(const Token_set& set, const unsigned char byte)
 
     auto narrowed_discarded{false};
 
-    // The consumers are read again from what the edits so far leave: narrowing one rule leaves the byte to a rule
-    // whose match the narrowed one had won, and that rule's own shape is an edit the author can make too. Reading
-    // the list once named the first rule's shape alone and called the byte's other consumer immovable while its
-    // terminated form was still there to offer.
     std::set<std::size_t> shaped;
 
-    // The set the next round looks in: every consumer answered so far narrowed out of it, which is the edit the
-    // steps make, so that the rule the narrowing uncovers is the next one asked for its shape.
     auto probe{edited};
 
     auto probed{compile(probe)};
@@ -951,60 +405,16 @@ Pricing price(const Token_set& set, const unsigned char byte)
 
             fresh = true;
 
-            // The probe takes the byte off this rule so that the next round sees what the rule had won: narrowed
-            // where the rule can lose the byte, and by its own offered shape where it cannot, since a rule that
-            // spells the byte out is edited by its shape and not by narrowing. A rule with neither is left as it
-            // stands and goes on consuming the byte, which is what the steps report of it.
-            if (auto& probed_rule{*std::ranges::find(probe.rules, token, &Token_rule::id)};
-                can_lose(probed_rule.regex, byte))
-            {
-                exclude(probed_rule.regex, byte);
-            }
-            else if (const auto shape{shape_of(rule->regex, byte)};
-                     shape == Shape::terminated || shape == Shape::delimited)
-            {
-                probed_rule.regex = edited_by(rule->regex, shape);
-            }
+            take_from_probe(*std::ranges::find(probe.rules, token, &Token_rule::id), *rule, byte);
 
-            for (const auto shape : {Shape::terminated, Shape::delimited})
-            {
-                if (shape == Shape::terminated ? is_terminated(rule->regex, byte) : is_delimited(rule->regex, byte))
-                {
-                    auto alone{edited};
+            std::ranges::move(choices_of(*rule, edited, before, byte), std::back_inserter(offers.choices));
 
-                    std::ranges::find(alone.rules, token, &Token_rule::id)->regex = edited_by(rule->regex, shape);
+            const auto [edit, narrowed]{
+                    take_shape(*std::ranges::find(together.rules, token, &Token_rule::id), *rule, byte)};
 
-                    pricing.choices.push_back({.token = token, .shape = shape, .after = outcome(alone, before, byte)});
-                }
-            }
+            offered = offered || edit;
 
-            auto& taken{*std::ranges::find(together.rules, token, &Token_rule::id)};
-
-            switch (shape_of(rule->regex, byte))
-            {
-            case Shape::terminated:
-            case Shape::delimited:
-                taken.regex = edited_by(rule->regex, shape_of(rule->regex, byte));
-
-                offered = true;
-
-                break;
-            case Shape::run:
-            case Shape::other:
-                // A rule that cannot lose the byte is left as it stands here too: narrowing it would leave a
-                // choice with no regex in it, and the steps report such a rule as one no edit of this analysis
-                // decides, so editing it in the combined set would price an edit the report never offered.
-                if (can_lose(taken.regex, byte))
-                {
-                    exclude(taken.regex, byte);
-
-                    narrowed_discarded = narrowed_discarded || rule->discarded;
-                }
-
-                break;
-            case Shape::fixed:
-                break;
-            }
+            narrowed_discarded = narrowed_discarded || (narrowed && rule->discarded);
         }
 
         if (!fresh)
@@ -1012,41 +422,50 @@ Pricing price(const Token_set& set, const unsigned char byte)
             break;
         }
 
-        // The steps give a narrowed-away byte a token of its own so the scan can begin with it, and the probe does
-        // the same: without a token beginning with the byte no rule is blamed for consuming it, and the consumer
-        // the narrowing uncovered would go unseen and unoffered.
         probed = compile(probe);
 
         if (!matched_alone(probed, byte))
         {
-            probe.rules.emplace_back(
-                    regex::text(std::string(1, static_cast<char>(byte))), next_id, next_priority, narrowed_discarded);
+            probe.rules.push_back(byte_rule(byte, own, narrowed_discarded));
 
             probed = compile(probe);
         }
     }
 
-    if (offered)
+    if (!offered)
     {
-        if (!matched_alone(compile(together), byte))
-        {
-            together.rules.emplace_back(
-                    regex::text(std::string(1, static_cast<char>(byte))), next_id, next_priority, narrowed_discarded);
-        }
-
-        pricing.together = outcome(together, before, byte);
+        return offers;
     }
 
-    // The consumers are read from the recompiled tables again after every edit: narrowing one rule can leave the
-    // byte to a rule that did not consume it before, a later rule whose match the narrowed one had won. The list
-    // the blame gives before any edit is therefore not the list of rules that must change, and pricing from it
-    // alone stopped at the first rule and called the byte unbought while an edit was still there to make.
-    //
-    // The token the byte may be given of its own is answered before the first step: it is none of the set's rules,
-    // so it is no edit an author makes, no obstruction of theirs, and not a token the report can name.
-    std::set<std::size_t> answered{next_id};
+    if (!matched_alone(compile(together), byte))
+    {
+        together.rules.push_back(byte_rule(byte, own, narrowed_discarded));
+    }
 
-    while (true)
+    offers.together = outcome(together, before, byte);
+
+    return offers;
+}
+
+/**
+ * @brief Narrows the consumers one step at a time until the byte certifies or every token the byte is left to has
+ *        been answered, by a step or by an obstruction, as price() narrows them.
+ * @param edited The set, narrowed step by step.
+ * @param lexer The set compiled, recompiled after every edit.
+ * @param byte The byte.
+ * @param own The id and the priority the byte's own token takes.
+ * @return The steps and the tokens no step answers.
+ */
+[[nodiscard]] Answers narrowing_steps(
+        Token_set& edited, core::Lexer& lexer, const unsigned char byte, const Own_token own)
+{
+    Answers answers;
+
+    // The token the byte may be given of its own is answered before the first step: it is none of the set's rules, so
+    // it is no edit an author makes, no obstruction of theirs, and not a token the report can name.
+    std::set<std::size_t> answered{own.id};
+
+    for (;;)
     {
         const auto remaining{consumers(lexer, edited, byte)};
 
@@ -1072,11 +491,11 @@ Pricing price(const Token_set& set, const unsigned char byte)
 
         if (!can_lose(rule->regex, byte))
         {
-            // The narrowing is not applied to a rule that cannot lose the byte. The rule is an obstruction only
-            // where every word it matches holds the byte fixed past its first byte; a rule with a word holding it
-            // fixed only as its first byte, the initial state's occurrence, which begins a token, is reported as one
-            // this analysis decides nothing about rather than as an impossibility.
-            (fixed_mid_token(rule->regex, byte) ? pricing.immovable : pricing.undecided).push_back(token);
+            // The narrowing is not applied to a rule that cannot lose the byte. The rule is an obstruction only where
+            // every word it matches holds the byte fixed past its first byte; a rule with a word holding it fixed only
+            // as its first byte, the initial state's occurrence, which begins a token, is reported as one this analysis
+            // decides nothing about rather than as an impossibility.
+            (fixed_mid_token(rule->regex, byte) ? answers.immovable : answers.undecided).push_back(token);
 
             continue;
         }
@@ -1097,12 +516,13 @@ Pricing price(const Token_set& set, const unsigned char byte)
 
         if (!matched_alone(lexer, byte))
         {
-            edited.rules.emplace_back(
-                    regex::text(std::string(1, static_cast<char>(byte))), next_id, next_priority, rule->discarded);
+            const auto discarded{rule->discarded};
+
+            edited.rules.push_back(byte_rule(byte, own, discarded));
 
             step.separated = true;
 
-            step.separated_discarded = rule->discarded;
+            step.separated_discarded = discarded;
 
             lexer = compile(edited);
         }
@@ -1111,7 +531,7 @@ Pricing price(const Token_set& set, const unsigned char byte)
 
         step.modulo = lexer.is_split_point_ignoring(static_cast<char>(byte));
 
-        pricing.steps.push_back(step);
+        answers.steps.push_back(step);
 
         if (step.exact)
         {
@@ -1119,13 +539,102 @@ Pricing price(const Token_set& set, const unsigned char byte)
         }
     }
 
-    const auto after{exact_bytes(lexer)};
+    return answers;
+}
 
-    std::ranges::set_difference(after, before, std::back_inserter(pricing.gained));
+} // namespace
+
+Pricing price(const Token_set& set, const unsigned char byte)
+{
+    auto edited{set};
+
+    // Every pattern as the scanner sees it, the spellings that match the same words taken off, so that each shape
+    // and each edit reads the one pattern whatever the set spelled: the choice of `[ab]\n` with `any_of("")` is
+    // `[ab]\n`, terminated by the newline, and not a choice with an alternative reading as a word.
+    for (auto& rule : edited.rules)
+    {
+        rule.regex = normalized(rule.regex);
+    }
+
+    // Room for the one token the analysis may add, taken now: GCC 13 misreads the move a later reallocation would make
+    // of a rule's pattern as a read of something uninitialized, and the build treats the warning as an error.
+    edited.rules.reserve(set.rules.size() + 1);
+
+    auto lexer{compile(edited)};
+
+    const auto before{exact_bytes(lexer)};
+
+    Pricing pricing{
+            .byte = byte,
+            .exact_before = lexer.is_split_point(static_cast<char>(byte)),
+            .modulo_before = lexer.is_split_point_ignoring(static_cast<char>(byte)),
+            .given = std::nullopt,
+            .steps = {},
+            .immovable = {},
+            .undecided = {},
+            .gained = {},
+            .choices = {},
+            .together = std::nullopt};
+
+    if (pricing.exact_before)
+    {
+        return pricing;
+    }
+
+    const auto own{own_token(set)};
+
+    // A byte no token begins with is reported by neither certificate, every occurrence of it lying mid-token or
+    // nowhere, and no narrowing changes that. It is given a token of its own before anything else, visible since no
+    // token of the set says what it would be discarded as, and every edit below is made on the set holding it.
+    if (!begins_token(lexer, byte))
+    {
+        edited.rules.push_back(byte_rule(byte, own, false));
+
+        lexer = compile(edited);
+
+        pricing.given = outcome(edited, before, byte);
+    }
+
+    auto [choices, together]{shape_choices(set, edited, before, byte, own)};
+
+    pricing.choices = std::move(choices);
+
+    pricing.together = std::move(together);
+
+    auto [steps, immovable, undecided]{narrowing_steps(edited, lexer, byte, own)};
+
+    pricing.steps = std::move(steps);
+
+    pricing.immovable = std::move(immovable);
+
+    pricing.undecided = std::move(undecided);
+
+    std::ranges::set_difference(exact_bytes(lexer), before, std::back_inserter(pricing.gained));
 
     std::erase(pricing.gained, byte);
 
     return pricing;
+}
+
+Shape shape_of(const regex::Regex& regex, const unsigned char byte)
+{
+    // A terminator or a body may spell the byte out, so the shapes with an edit of their own come before fixed.
+    if (is_run(regex, byte))
+    {
+        return Shape::run;
+    }
+
+    if (is_terminated(regex, byte))
+    {
+        return Shape::terminated;
+    }
+
+    if (is_delimited(regex, byte))
+    {
+        return Shape::delimited;
+    }
+
+    return can_lose(regex, byte) ? Shape::other : Shape::fixed;
 }
 
 } // namespace munch::tools::audit
