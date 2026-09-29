@@ -433,12 +433,29 @@ void Antlr_cursor::skip_block()
 
 void Antlr_cursor::skip_quoted(const char quote)
 {
-    while (peek() && *peek() != quote)
-    {
-        at_ += *peek() == '\\' ? 2 : 1;
-    }
+    const auto opened{at_ - 1};
 
-    ++at_;
+    for (;;)
+    {
+        if (!peek())
+        {
+            at_ = opened;
+
+            fail("a quoted literal never closes");
+        }
+
+        const auto byte{next("the closing quote")};
+
+        if (byte == quote)
+        {
+            return;
+        }
+
+        if (byte == '\\' && peek())
+        {
+            ++at_;
+        }
+    }
 }
 
 } // namespace munch::tools::audit

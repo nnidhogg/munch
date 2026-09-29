@@ -311,6 +311,14 @@ e[const char* p] : A ;)"),
     EXPECT_EQ(line_of("grammar P;\nr[const char* p=\"]\" : A ;\nA : 'a' ;\n"), 2);
 }
 
+TEST(Read_antlr, A_quoted_literal_never_closed_in_a_block_is_refused_at_its_line)
+{
+    EXPECT_EQ(refusal_of("grammar G;r{'"), "line 1: a quoted literal never closes");
+    EXPECT_EQ(refusal_of("grammar G;r{'\\"), "line 1: a quoted literal never closes");
+    EXPECT_EQ(refusal_of("grammar G;\nr : A {\n\"x ;\nA : 'a' ;\n"), "line 3: a quoted literal never closes");
+    EXPECT_EQ(refusal_of("grammar G;\nr[char c = \"] : A ;\nA : 'a' ;\n"), "line 2: a quoted literal never closes");
+}
+
 TEST(Read_antlr, What_ANTLR_refuses_of_rules_modes_and_types_is_refused_in_its_words)
 {
     // Error 51: a rule name is the grammar's, whatever mode either definition stands in, fragments included.
