@@ -9,6 +9,8 @@
 #include <string_view>
 #include <system_error>
 
+#include "munch/tools/audit/expression.hpp"
+
 namespace munch::tools::audit
 {
 namespace
@@ -54,19 +56,12 @@ namespace
 
         for (const auto digit : text.substr(2))
         {
-            const auto lowered{static_cast<char>(digit | 0x20)};
-
-            const auto hex{
-                    lowered >= '0' && lowered <= '9' ? lowered - '0' :
-                    lowered >= 'a' && lowered <= 'f' ? lowered - 'a' + 10 :
-                                                       -1};
-
-            if (hex < 0)
+            if (!is_hex_digit(digit))
             {
                 throw std::invalid_argument{std::format("'{}' is not a byte", text)};
             }
 
-            value = value * 16 + static_cast<unsigned>(hex);
+            value = value * 16 + hex_value(digit);
         }
 
         return static_cast<unsigned char>(value);
