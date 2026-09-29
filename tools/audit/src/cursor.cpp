@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "munch/tools/audit/expression.hpp"
 #include "munch/tools/audit/lexer_spec.hpp"
 
 namespace munch::tools::audit
@@ -35,23 +36,11 @@ bool Cursor::done() const noexcept
     return at_ >= end_;
 }
 
-bool Cursor::accept(const char byte) noexcept
-{
-    if (peek() != byte)
-    {
-        return false;
-    }
-
-    ++at_;
-
-    return true;
-}
-
 void Cursor::skip_blanks()
 {
     for (;;)
     {
-        while (peek() && (*peek() == ' ' || *peek() == '\t' || *peek() == '\n' || *peek() == '\r'))
+        while (peek() && is_blank(*peek()))
         {
             ++at_;
         }
@@ -89,9 +78,16 @@ void Cursor::expect(const char byte, const std::string_view what)
     }
 }
 
-std::size_t Cursor::line() const noexcept
+bool Cursor::accept(const char byte) noexcept
 {
-    return line_of(std::min(at_, text_.empty() ? 0 : text_.size() - 1));
+    if (peek() != byte)
+    {
+        return false;
+    }
+
+    ++at_;
+
+    return true;
 }
 
 std::size_t Cursor::offset() const noexcept
@@ -107,6 +103,11 @@ std::optional<char> Cursor::peek() const noexcept
 void Cursor::fail(const std::string& message) const
 {
     throw Spec_error{message, line()};
+}
+
+std::size_t Cursor::line() const noexcept
+{
+    return line_of(std::min(at_, text_.empty() ? 0 : text_.size() - 1));
 }
 
 bool Cursor::at(const std::string_view prefix) const noexcept

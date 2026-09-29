@@ -9,6 +9,11 @@
 #include "munch/core/lexer.hpp"
 #include "munch/tools/audit/report.hpp"
 
+/**
+ * @brief The certified-anchor supply on an input, Supply, measured by supply() from what each inventory of certificates
+ *        finds there, Anchors, and the gaps between those, Gaps; and the supply rendered as JSON, supply_json(), and as
+ *        the report's own section, supply_section().
+ */
 namespace munch::tools::audit
 {
 /**
@@ -67,16 +72,18 @@ struct Anchors
 
 /**
  * @brief The certified-anchor supply on one input, the guarantee a parallel scanner lives on: how often a certified
- * anchor occurs in real input and how long the stretches between anchors are. A certificate is a property of the token
- * set; how many cuts it offers is a property of the input, which the certified-splitting paper measures on held-out
- * corpus slices and this measures on the input given. Every anchor is a decision of the report's applied to the input's
- * bytes, the exact and the modulo byte certificates and the certified windows, each window an occurrence of one the
- * report enumerated over its byte classes, and every position is counted once, no sampling. What a certificate promises
- * at an anchor, a token boundary of the serial scan, and for the modulo inventory a boundary of that scan once its
- * discarded tokens are deleted, it promises on input the token set tokenizes completely, as
- * core::Lexer::is_split_point() and is_split_window() state it; on an input the scan stops short of, the counts are the
- * occurrences as they stand and no boundary is promised, the exact byte row alone keeping tokenize_all_parallel()'s
- * weaker serial-prefix relation, which the window rows have not got, so the supply says how far the scan went.
+ *        anchor occurs in real input and how long the stretches between anchors are.
+ *
+ * A certificate is a property of the token set; how many cuts it offers is a property of the input, which the
+ * certified-splitting paper measures on held-out corpus slices and this measures on the input given. Every anchor is a
+ * decision of the report's applied to the input's bytes, the exact and the modulo byte certificates and the certified
+ * windows, each window an occurrence of one the report enumerated over its byte classes, and every position is counted
+ * once, no sampling. What a certificate promises at an anchor, a token boundary of the serial scan, and for the modulo
+ * inventory a boundary of that scan once its discarded tokens are deleted, it promises on input the token set tokenizes
+ * completely, as core::Lexer::is_split_point() and is_split_window() state it; on an input the scan stops short of, the
+ * counts are the occurrences as they stand and no boundary is promised, the exact byte row alone keeping
+ * tokenize_all_parallel()'s weaker serial-prefix relation, which the window rows have not got, so the supply says how
+ * far the scan went.
  */
 struct Supply
 {
@@ -114,9 +121,9 @@ struct Supply
  *
  * The bytes are looked up in the report's certified sets; the windows are matched through the report's byte classes,
  * every byte of the input and of a certified window standing for its class, since bytes of one class move every state
- * alike and so a window's decision is its class string's. The input is read once end to end and not scanned, so
- * whether it tokenizes completely is left open, the certified-splitting paper's own measurement over a report built
- * from an inventory; the overload taking the token set scans it.
+ * alike and so a window's decision is its class string's. The input is read once end to end and not scanned, so whether
+ * it tokenizes completely is left open, the certified-splitting paper's own measurement over a report built from an
+ * inventory; the overload taking the token set scans it.
  * @param report The report, its byte classes and windows filled as audit() fills them.
  * @param input The input.
  * @return The supply, how far the scan went left absent.

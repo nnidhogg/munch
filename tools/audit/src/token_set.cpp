@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -14,12 +15,14 @@ namespace munch::tools::audit
 {
 namespace
 {
+// Implements token_set.hpp: whether a repetition may match nothing is private to this unit.
+
 /**
  * @brief Whether a repetition may match its sub-pattern no times at all.
  * @param kind The repetition kind.
  * @return True for the star and the optional, and for a counted repetition whose minimum is zero.
  */
-[[nodiscard]] bool zero_minimum(const regex::Repeat::Kind_t& kind)
+[[nodiscard]] bool has_zero_minimum(const regex::Repeat::Kind_t& kind)
 {
     using namespace munch::regex;
 
@@ -64,7 +67,7 @@ void exclude(regex::Regex& regex, const unsigned char byte)
     if (std::holds_alternative<Repeat>(regex.node))
     {
         if (const auto& [kind, repeated]{std::get<Repeat>(regex.node)};
-            zero_minimum(kind) && !can_lose(*repeated, byte))
+            has_zero_minimum(kind) && !can_lose(*repeated, byte))
         {
             regex.node = Text{.text = {}};
 
@@ -157,7 +160,7 @@ bool can_lose(const regex::Regex& regex, const unsigned char byte)
                     static_assert(std::is_same_v<Node, Repeat>);
 
                     // Running no times loses the byte whatever the sub-pattern spells, and leaves the empty string.
-                    return zero_minimum(node.kind) || can_lose(*node.regex, byte);
+                    return has_zero_minimum(node.kind) || can_lose(*node.regex, byte);
                 }
             },
             regex.node);

@@ -9,6 +9,11 @@
 #include "munch/regex/regex.hpp"
 #include "munch/tools/audit/token_set.hpp"
 
+/**
+ * @brief What it costs to make one byte certify, price(): the tokens narrowed one step at a time with the certificate
+ *        after each, the tokens no step answers, and what each consuming token's shape, shape_of(), offers as an edit
+ *        of its own.
+ */
 namespace munch::tools::audit
 {
 /**
@@ -136,24 +141,23 @@ struct Price_step
  * @brief What it costs to make one byte certify: the tokens that must stop admitting it, taken one at a time with
  *        the certificate recomputed after each, and the tokens that cannot.
  *
- * The necessity theorem is what makes the answer complete rather than a suggestion: a byte certifies exactly when
- * no live state but a non-re-entrant start consumes it, so every token consuming it mid-token has to change, and
- * the only change the analysis makes is to exclude the byte from the token's character sets. A token that cannot
- * lose the byte, every word of it holding the byte in a text or a class of the one byte, takes no step. It is
- * listed as immovable when every word of it holds such a fixed occurrence past the word's first byte: an edit that
- * keeps any of its words keeps that occurrence, so while the token remains in any narrowed form the byte cannot
- * certify. Where some word holds the byte fixed only as its first byte, the occurrence a token begins with, nothing
- * follows about the byte: such a token is listed as undecided, and the report says the procedure decides nothing
- * rather than that the byte cannot certify.
+ * The necessity theorem is what makes the answer complete rather than a suggestion: a byte certifies exactly when no
+ * live state but a non-re-entrant start consumes it, so every token consuming it mid-token has to change, and the only
+ * change the analysis makes is to exclude the byte from the token's character sets. A token that cannot lose the byte,
+ * every word of it holding the byte in a text or a class of the one byte, takes no step. It is listed as immovable when
+ * every word of it holds such a fixed occurrence past the word's first byte: an edit that keeps any of its words keeps
+ * that occurrence, so while the token remains in any narrowed form the byte cannot certify. Where some word holds the
+ * byte fixed only as its first byte, the occurrence a token begins with, nothing follows about the byte: such a token
+ * is listed as undecided, and the report says the procedure decides nothing rather than that the byte cannot certify.
  *
- * Which tokens consume the byte is read from the tables again after every edit, since narrowing one token leaves
- * the byte to any token whose match it had won, and the steps run on until the byte certifies or every token the
- * byte is left to has been answered, by a step or by an obstruction.
+ * Which tokens consume the byte is read from the tables again after every edit, since narrowing one token leaves the
+ * byte to any token whose match it had won, and the steps run on until the byte certifies or every token the byte is
+ * left to has been answered, by a step or by an obstruction.
  *
- * A byte no token begins with is reported by neither certificate, since no occurrence of it can begin a token, and
- * no narrowing changes that: it is given a token of its own before any other edit and priced from there, the
- * language gaining the byte's token rather than losing the byte, so that the tokens consuming it mid-token are
- * answered as for any other byte.
+ * A byte no token begins with is reported by neither certificate, since no occurrence of it can begin a token, and no
+ * narrowing changes that: it is given a token of its own before any other edit and priced from there, the language
+ * gaining the byte's token rather than losing the byte, so that the tokens consuming it mid-token are answered as for
+ * any other byte.
  */
 struct Pricing
 {
@@ -185,10 +189,10 @@ struct Pricing
      * @brief The edits in the order they were made, each with the certificate after it; empty when nothing had to
      *        change.
      *
-     * After each step the consumers are read again from the recompiled table and the first not yet answered, in
-     * rule order, the order the set lists them, which for a set read from a file is the file's and not the order
-     * of the ids, is narrowed next; a token an earlier edit exposed is taken as soon as it is first in that order,
-     * and no token is answered twice.
+     * After each step the consumers are read again from the recompiled table and the first not yet answered, in rule
+     * order, the order the set lists them, which for a set read from a file is the file's and not the order of the ids,
+     * is narrowed next; a token an earlier edit exposed is taken as soon as it is first in that order, and no token is
+     * answered twice.
      */
     std::vector<Price_step> steps;
 
@@ -229,6 +233,24 @@ struct Pricing
 };
 
 /**
+ * @brief Prices one byte over a token set.
+ *
+ * The tokens consuming the byte are narrowed one step at a time: the set is compiled again after every edit, the
+ * consumers read from it again, and the first not yet answered in rule order, the order the set lists them, is narrowed
+ * next, so that a token an earlier narrowing exposes is narrowed as well, and the byte's certificates are read off
+ * after every step; a byte that no token can match any more after a narrowing is given a token of its own, discarded
+ * when the token it was taken from was, since the language should lose the token's reach, never the byte, and a byte no
+ * token begins with is given one, visible, before any other edit; the token given carries the smallest id no rule of
+ * the set carries, whatever their ids are, and no step names it. Beside the steps, each consuming token's shape is read
+ * and the edit it names tried on its own: a delimited token cut down to its opener, a terminated one to its body. The
+ * set given is not changed.
+ * @param set The token set.
+ * @param byte The byte.
+ * @return The pricing.
+ */
+[[nodiscard]] Pricing price(const Token_set& set, unsigned char byte);
+
+/**
  * @brief The shape of a token for a byte it consumes mid-token.
  * @param regex The token's pattern.
  * @param byte The byte.
@@ -236,24 +258,6 @@ struct Pricing
  *         delimited being terminated; else fixed when the byte is in a fixed spelling, else other.
  */
 [[nodiscard]] Shape shape_of(const regex::Regex& regex, unsigned char byte);
-
-/**
- * @brief Prices one byte over a token set.
- *
- * The tokens consuming the byte are narrowed one step at a time: the set is compiled again after every edit, the
- * consumers read from it again, and the first not yet answered in rule order, the order the set lists them, is
- * narrowed next, so that a token an earlier narrowing exposes is narrowed as well, and the byte's certificates are
- * read off after every step; a byte that no token can match any more after a narrowing is given a token of its own,
- * discarded when the token it was taken from was, since the language should lose the token's reach, never the byte,
- * and a byte no token begins with is given one, visible, before any other edit; the token given carries the smallest
- * id no rule of the set carries, whatever their ids are, and no step names it. Beside the steps, each consuming
- * token's shape is read and the edit it names tried on its own: a delimited token cut down to its opener, a terminated
- * one to its body. The set given is not changed.
- * @param set The token set.
- * @param byte The byte.
- * @return The pricing.
- */
-[[nodiscard]] Pricing price(const Token_set& set, unsigned char byte);
 
 } // namespace munch::tools::audit
 

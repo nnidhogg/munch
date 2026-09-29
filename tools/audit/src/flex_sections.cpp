@@ -1,0 +1,970 @@
+#include "munch/tools/audit/flex_sections.hpp"
+
+#include <algorithm>
+#include <cstddef>
+#include <iterator>
+#include <optional>
+#include <ranges>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "munch/tools/audit/expression.hpp"
+#include "munch/tools/audit/flex_pattern.hpp"
+
+namespace munch::tools::audit
+{
+namespace
+{
+// Implements flex_sections.hpp: what a line is to flex, the readers of each kind of line in either section, where an
+// action ends and a start-condition scope are private to this unit.
+
+/**
+ * @brief Whether a line is a section delimiter, as flex lexes one: `%%` at the margin, and after it anything at all,
+ *        a comment, text or blanks, which flex drops with the rest of the line; an indented `%%` is no delimiter.
+ * @param line The line, untrimmed.
+ * @return True for a delimiter.
+ */
+[[nodiscard]] bool is_delimiter(const std::string_view line) noexcept
+{
+    return line.starts_with("%%");
+}
+
+/**
+ * @brief Records a stretch of code flex copies into the scanner: the macros it defines are taken now and the hook it
+ *        defines is read once every stretch is, since a helper the hook calls may be defined in a later block and the
+ *        generated scanner expands the hook where it runs, under every definition the file leaves.
+ * @param code The stretch.
+ * @param first The line it begins on.
+ * @param what Which kind of stretch it is, as a refusal names it: "the definitions define".
+ * @param macros The macros the file defines, added to.
+ * @param copied The stretches of copied code, the stretch appended.
+ */
+void copy_code(
+        const std::string_view code, const std::size_t first, const std::string_view what, Macros_t& macros,
+        std::vector<Copied>& copied)
+{
+    take_macros(code, macros);
+
+    copied.push_back({.code = code, .first = first, .what = what, .path = {}});
+}
+
+/**
+ * @brief Reads a `%{` code block of the definitions section when one opens on the line, to the line holding its `%}`.
+ * @param lines The cursor, at the line; left at the block's last line.
+ * @param text The line, trimmed.
+ * @param macros The macros the section defines, added to.
+ * @param copied The stretches of copied code, the block appended.
+ * @return Whether the line opens such a block.
+ * @throws Spec_error If the block is never closed.
+ */
+[[nodiscard]] bool take_definitions_code_block(
+        Lines& lines, const std::string_view text, Macros_t& macros, std::vector<Copied>& copied)
+{
+    if (!text.starts_with("%{"))
+    {
+        return false;
+    }
+
+    const auto before{lines.rest()};
+
+    const auto first{lines.number()};
+
+    lines.skip_to("%}", "a %{ code block");
+
+    copy_code(before.substr(0, before.size() - lines.rest().size()), first, "the definitions define", macros, copied);
+
+    return true;
+}
+
+/**
+ * @brief Reads a `%top` block when one opens on the line, to the line that is its `}`.
+ * @param lines The cursor, at the line; left at the block's last line.
+ * @param text The line, trimmed.
+ * @param macros The macros the section defines, added to.
+ * @param copied The stretches of copied code, the block appended.
+ * @return Whether the line opens such a block.
+ * @throws Spec_error If the block is never closed.
+ */
+[[nodiscard]] bool take_top_block(
+        Lines& lines, const std::string_view text, Macros_t& macros, std::vector<Copied>& copied)
+{
+    if (!text.starts_with("%top") || !trimmed(text.substr(4)).starts_with('{'))
+    {
+        return false;
+    }
+
+    const auto before{lines.rest()};
+
+    const auto first{lines.number()};
+
+    lines.skip_through("}", "a %top block");
+
+    copy_code(before.substr(0, before.size() - lines.rest().size()), first, "the definitions define", macros, copied);
+
+    return true;
+}
+
+/**
+ * @brief Skips a comment of the definitions section when one opens on the line, to the line holding its star-slash.
+ * @param lines The cursor, at the line; left at the comment's last line.
+ * @param text The line, trimmed.
+ * @return Whether the line opens a comment.
+ */
+[[nodiscard]] bool skip_definitions_comment(Lines& lines, const std::string_view text)
+{
+    if (!text.starts_with("/*"))
+    {
+        return false;
+    }
+
+    while (lines.more() && trimmed(lines.current()).find("*/") == std::string_view::npos)
+    {
+        lines.advance();
+    }
+
+    return true;
+}
+
+/**
+ * @brief Whether a line is code or blank rather than a declaration: it begins with a blank or is empty.
+ * @param line The line.
+ * @return True for an indented or empty line.
+ */
+[[nodiscard]] bool is_code(const std::string_view line) noexcept
+{
+    return line.empty() || line.front() == ' ' || line.front() == '\t' || trimmed(line).empty();
+}
+
+/**
+ * @brief Whether a line continues on the next, its last byte a backslash, the line's own ending disregarded.
+ * @param line The line, with or without a carriage return at its end.
+ * @return True when the line is spliced to the next.
+ */
+[[nodiscard]] bool continues(std::string_view line) noexcept
+{
+    if (line.ends_with('\r'))
+    {
+        line.remove_suffix(1);
+    }
+
+    while (line.ends_with(' ') || line.ends_with('\t'))
+    {
+        line.remove_suffix(1);
+    }
+
+    return line.ends_with('\\');
+}
+
+/**
+ * @brief The line under the cursor with the lines it continues on: a directive spliced over several lines is one line
+ *        to the compiler that reads it, flex copying the lines through as they stand and a backslash at a line's end
+ *        joining it to the next before any of it means anything.
+ * @param lines The cursor, at the line; left at the last line the code continues on.
+ * @return The code, from the line's first byte through the last line's end, its newline excluded.
+ */
+[[nodiscard]] std::string_view continued_code(Lines& lines)
+{
+    const auto before{lines.rest()};
+
+    while (continues(lines.current()) && lines.more())
+    {
+        lines.advance();
+    }
+
+    return before.substr(0, before.size() - lines.rest().size() + lines.current().size());
+}
+
+/**
+ * @brief Reads an indented or blank line of the definitions section as code, with the lines it continues on.
+ * @param lines The cursor, at the line; left at the last line the code continues on.
+ * @param line The line, untrimmed.
+ * @param macros The macros the section defines, added to.
+ * @param copied The stretches of copied code, the line's appended.
+ * @return Whether the line is code.
+ */
+[[nodiscard]] bool take_code_line(
+        Lines& lines, const std::string_view line, Macros_t& macros, std::vector<Copied>& copied)
+{
+    if (!is_code(line))
+    {
+        return false;
+    }
+
+    const auto first{lines.number()};
+
+    copy_code(continued_code(lines), first, "the definitions define", macros, copied);
+
+    return true;
+}
+
+/**
+ * @brief The words of a line after its first, split on blanks outside double quotes.
+ *
+ * flex lexes a quoted value on an `%option` line as one token whatever blanks it holds, and the word after the closing
+ * quote as the next token whether or not a blank parts them, so the value stays in the word that names it:
+ * `header-file="a caseless.h"` is one word, neither `caseless.h"` nor anything else inside the quotes is an option of
+ * its own, and `header-file="a b.h"caseless` is that word and then `caseless`.
+ * @param line The line.
+ * @param number The line number, for the error.
+ * @return The words.
+ * @throws Spec_error If a quote is left open, which flex refuses as an unrecognized option.
+ */
+[[nodiscard]] std::vector<std::string> words_after_first(const std::string_view line, const std::size_t number)
+{
+    std::vector<std::string> words;
+
+    auto rest{trimmed(line)};
+
+    rest.remove_prefix(std::min(rest.find_first_of(" \t"), rest.size()));
+
+    std::string word;
+
+    auto quoted{false};
+
+    for (const auto byte : rest)
+    {
+        if (quoted)
+        {
+            word.push_back(byte);
+
+            if (byte == '"')
+            {
+                quoted = false;
+
+                words.push_back(std::exchange(word, {}));
+            }
+
+            continue;
+        }
+
+        if (byte == ' ' || byte == '\t')
+        {
+            if (!word.empty())
+            {
+                words.push_back(std::exchange(word, {}));
+            }
+
+            continue;
+        }
+
+        quoted = byte == '"';
+
+        word.push_back(byte);
+    }
+
+    if (quoted)
+    {
+        throw Spec_error{"a quote is left open on the line, which flex refuses", number};
+    }
+
+    if (!word.empty())
+    {
+        words.push_back(std::move(word));
+    }
+
+    return words;
+}
+
+/**
+ * @brief Reads an `%option` line, each word into the settings and the file's options in order.
+ * @param lines The cursor, at the line.
+ * @param text The line, trimmed.
+ * @param spec The specification being filled.
+ * @param settings The settings the words resolve to.
+ * @return Whether the line is an `%option` line.
+ * @throws Spec_error If a quote is left open on the line.
+ */
+[[nodiscard]] bool take_options(const Lines& lines, const std::string_view text, Lexer_spec& spec, Settings& settings)
+{
+    if (!text.starts_with("%option"))
+    {
+        return false;
+    }
+
+    for (auto& word : words_after_first(text, lines.number()))
+    {
+        take_option(settings, word, lines.number());
+
+        spec.options.push_back(std::move(word));
+    }
+
+    return true;
+}
+
+/**
+ * @brief Reads a `%s` or `%x` line, each name a start condition, inclusive or exclusive as the line says.
+ * @param lines The cursor, at the line.
+ * @param text The line, trimmed.
+ * @param spec The specification being filled.
+ * @return Whether the line declares start conditions.
+ * @throws Spec_error If a quote is left open on the line.
+ */
+[[nodiscard]] bool take_conditions(const Lines& lines, const std::string_view text, Lexer_spec& spec)
+{
+    if (!text.starts_with("%s") && !text.starts_with("%S") && !text.starts_with("%x") && !text.starts_with("%X"))
+    {
+        return false;
+    }
+
+    const auto exclusive{text[1] == 'x' || text[1] == 'X'};
+
+    for (auto& name : words_after_first(text, lines.number()))
+    {
+        spec.conditions.push_back({.name = std::move(name), .exclusive = exclusive});
+    }
+
+    return true;
+}
+
+/**
+ * @brief Whether a name is one flex accepts for a definition or a start condition.
+ * @param name The candidate.
+ * @return True for a letter or underscore followed by letters, digits, underscores and hyphens.
+ */
+[[nodiscard]] bool is_name(const std::string_view name) noexcept
+{
+    if (!starts_name(name))
+    {
+        return false;
+    }
+
+    return std::ranges::all_of(name, [](const char byte) { return is_name_byte(byte) || byte == '-'; });
+}
+
+/**
+ * @brief Reads a definition: a name at the margin, blanks, and the pattern to the end of the line, a comment there
+ *        included, since flex takes the definition to the line's end and reads such a comment as part of it.
+ * @param lines The cursor, at the line.
+ * @param text The line, trimmed.
+ * @param spec The specification being filled.
+ * @throws Spec_error If the name is none flex accepts, the pattern is missing, or it holds a negated class.
+ */
+void take_definition(const Lines& lines, const std::string_view text, Lexer_spec& spec)
+{
+    const auto split{text.find_first_of(" \t")};
+
+    const auto name{text.substr(0, split)};
+
+    if (!is_name(name))
+    {
+        throw Spec_error{
+                "a definition name was expected at the margin, got '" + std::string{name} + "'", lines.number()};
+    }
+
+    const auto pattern{split == std::string_view::npos ? std::string_view{} : trimmed(text.substr(split))};
+
+    if (pattern.empty())
+    {
+        throw Spec_error{"definition '" + std::string{name} + "' has no pattern", lines.number()};
+    }
+
+    if (const auto negated{negated_class(pattern)})
+    {
+        throw Spec_error{
+                "the definition '" + std::string{name} + "' " + negated_class_refusal(*negated), lines.number()};
+    }
+
+    spec.definitions.insert_or_assign(std::string{name}, std::string{pattern});
+}
+
+/**
+ * @brief Reads a `%{` code block of the rules section when one opens on the line, leaving the cursor past the line
+ *        holding its `%}`: the block is copied into the scanner as the definitions' blocks are, ahead of every action,
+ *        so a YY_USER_ACTION defined there is the same hook and refused by the same name.
+ * @param lines The cursor, at the line.
+ * @param text The line, trimmed.
+ * @param macros The macros the section defines, added to.
+ * @param copied The stretches of copied code, the block appended.
+ * @return Whether the line opens such a block.
+ * @throws Spec_error If the block is never closed.
+ */
+[[nodiscard]] bool take_rules_code_block(
+        Lines& lines, const std::string_view text, Macros_t& macros, std::vector<Copied>& copied)
+{
+    if (!text.starts_with("%{"))
+    {
+        return false;
+    }
+
+    const auto first{lines.number()};
+
+    const auto before{lines.rest()};
+
+    lines.skip_to("%}", "a %{ code block");
+
+    copy_code(
+            before.substr(0, before.size() - lines.rest().size()), first, "the rules' code block defines", macros,
+            copied);
+
+    lines.advance();
+
+    return true;
+}
+
+/**
+ * @brief One open start-condition scope, `<s>{` through the line opening with `}`.
+ */
+struct Scope
+{
+    /**
+     * @brief How many names the scope stack held before this scope opened, which closing it restores.
+     */
+    std::size_t names;
+
+    /**
+     * @brief The line the scope opened on, named when the section ends with it still open.
+     */
+    std::size_t line;
+};
+
+/**
+ * @brief Where a string or character literal of a flex action ends, as flex's action scanner reads one: at its closing
+ *        quote or at the end of its line, whichever comes first. A backslash before a newline splices the lines; any
+ *        other carries the byte after it, with whatever splices stand between, and a newline after those ends the
+ *        literal as it ends any other.
+ * @param code The stretch of C the action opens.
+ * @param at The index of the literal's opening quote.
+ * @return The index of the closing quote, of the newline ending the literal's line, or the stretch's size.
+ */
+[[nodiscard]] std::size_t literal_end(const std::string_view code, const std::size_t at)
+{
+    const auto quote{code[at]};
+
+    auto close{at + 1};
+
+    while (close < code.size() && code[close] != quote && code[close] != '\n')
+    {
+        if (code[close] != '\\')
+        {
+            ++close;
+
+            continue;
+        }
+
+        if (code.substr(close).starts_with("\\\n"))
+        {
+            close += 2;
+
+            continue;
+        }
+
+        ++close;
+
+        while (code.substr(close).starts_with("\\\n"))
+        {
+            close += 2;
+        }
+
+        if (close < code.size() && code[close] != '\n')
+        {
+            ++close;
+        }
+    }
+
+    return close;
+}
+
+/**
+ * @brief The refusal of a quote a rule's action leaves open at the end of its line, where its braces balance.
+ */
+constexpr std::string_view open_literal{
+        "a quote is left open at the end of the action's line, where flex ends the action inside the literal and never "
+        "closes the code it emits for it, so that the m4 it runs stops with an end of file in string"};
+
+/**
+ * @brief The refusal of an action's comment left open at the end of the file.
+ */
+constexpr std::string_view open_comment{
+        "the action's comment is never closed, which flex refuses as an end of file inside an action"};
+
+/**
+ * @brief Where a flex action ends, as flex 2.6.4's action scanner reads one: at the first end of a line at which its
+ *        braces balance, whether it opens with a brace or reaches one later on its line, a stray close counting
+ *        below zero.
+ *
+ * What hides a brace is what that scanner has a state for. A block comment runs to its star-slash over any number of
+ * lines. A string or character literal runs to its closing quote or to the end of its line, whichever comes first, an
+ * escape carrying the byte after it and a backslash before the newline carrying the literal on to the next line, as C
+ * splices lines; a literal the line's end closes leaves the action open where a brace is, and where none is, flex ends
+ * a rule's action there in the literal's state and never closes the code it emits for it, so that the m4 it runs stops
+ * with an end of file in string, which is refused by name, while a scope's opener or close line, whose code flex copies
+ * out as no rule's action, ends there like any other line. There is no state for a `//` comment, so a brace after one
+ * on the line counts and a quote there opens a literal. An action opening with `%{` is a code block instead, read in a
+ * state of its own with no comments or literals, which runs to the end of the first line holding `%}`.
+ * @param code The stretch of C the action opens, from its first byte to the end of the file.
+ * @param number The line the action begins on, for the refusals.
+ * @param rule Whether the code is a rule's action rather than the code on a scope's opener or close line.
+ * @return The offset of the newline ending the action, or the stretch's size when the file ends it balanced.
+ * @throws Spec_error If a brace, a comment or a `%{` block is left open at the end of the file, which flex refuses
+ *         as an end of file inside an action, or a rule's action leaves a literal open at the end of a line where its
+ *         braces balance.
+ */
+[[nodiscard]] std::size_t action_end(const std::string_view code, const std::size_t number, const bool rule)
+{
+    if (code.starts_with("%{"))
+    {
+        const auto close{code.find("%}")};
+
+        if (close == std::string_view::npos)
+        {
+            throw Spec_error{"the action's %{ block is never closed, which flex refuses", number};
+        }
+
+        return std::min(code.find('\n', close), code.size());
+    }
+
+    std::ptrdiff_t depth{0};
+
+    for (std::size_t at{0}; at < code.size();)
+    {
+        const auto byte{code[at]};
+
+        if (byte == '"' || byte == '\'')
+        {
+            const auto close{literal_end(code, at)};
+
+            // A literal its quote closes is read past, and so is one the line's end leaves open inside a brace.
+            if ((close < code.size() && code[close] == byte) || depth > 0)
+            {
+                at = close + 1;
+
+                continue;
+            }
+
+            if (rule)
+            {
+                throw Spec_error{std::string{open_literal}, number};
+            }
+
+            return close;
+        }
+
+        if (byte == '/' && code.substr(at + 1).starts_with('*'))
+        {
+            const auto close{code.find("*/", at + 2)};
+
+            if (close == std::string_view::npos)
+            {
+                throw Spec_error{std::string{open_comment}, number};
+            }
+
+            at = close + 2;
+
+            continue;
+        }
+
+        if (byte == '{')
+        {
+            ++depth;
+        }
+        else if (byte == '}')
+        {
+            --depth;
+        }
+        else if (byte == '\n' && depth <= 0)
+        {
+            return at;
+        }
+
+        ++at;
+    }
+
+    if (depth > 0)
+    {
+        throw Spec_error{"the action's braces never close", number};
+    }
+
+    return code.size();
+}
+
+/**
+ * @brief Skips code flex copies out of the rules section and drops, read to the same end an action is read to: a
+ *        comment closing on a later line, or a brace block, runs the code on to that line, and nothing on those lines
+ *        is a rule.
+ * @param lines The cursor, at the line the code begins on; left past the last line it runs on to.
+ * @param from The offset of the code's first byte from the line's first.
+ * @throws Spec_error If the code leaves a comment or a brace open at the end of the file.
+ */
+void skip_copied_code(Lines& lines, const std::size_t from)
+{
+    const auto rest{lines.rest()};
+
+    const auto end{action_end(rest.substr(from), lines.number(), false)};
+
+    lines.advance(1 + static_cast<std::size_t>(std::ranges::count(rest.substr(from, end), '\n')));
+}
+
+/**
+ * @brief Closes the innermost start-condition scope when the line opens with its `}`, the code after the brace skipped
+ *        as the code after a scope's opener is.
+ * @param lines The cursor, at the line; left past the code the line holds.
+ * @param text The line, trimmed.
+ * @param scoped The names of every open scope, the closed scope's dropped.
+ * @param opened The open scopes, innermost last.
+ * @return Whether the line closes a scope.
+ * @throws Spec_error If the code after the brace is left open at the end of the file.
+ */
+[[nodiscard]] bool close_scope(
+        Lines& lines, const std::string_view text, std::vector<std::string>& scoped, std::vector<Scope>& opened)
+{
+    if (opened.empty() || !text.starts_with('}'))
+    {
+        return false;
+    }
+
+    scoped.resize(opened.back().names);
+
+    opened.pop_back();
+
+    skip_copied_code(lines, static_cast<std::size_t>(text.data() - lines.rest().data()) + 1);
+
+    return true;
+}
+
+/**
+ * @brief Skips a comment on a line of its own, which flex copies out as code where the line is indented, and refuses
+ *        at the margin, where its slash begins a rule: trailing context with nothing before it, an unrecognized rule to
+ *        flex.
+ * @param lines The cursor, at the line; left past the comment.
+ * @param line The line, untrimmed.
+ * @param text The line, trimmed.
+ * @return Whether the line opens a comment.
+ * @throws Spec_error If the comment stands at the margin or is never closed.
+ */
+[[nodiscard]] bool skip_rules_comment(Lines& lines, const std::string_view line, const std::string_view text)
+{
+    if (!text.starts_with("/*"))
+    {
+        return false;
+    }
+
+    if (line.front() != ' ' && line.front() != '\t')
+    {
+        throw Spec_error{
+                "a comment at the margin of the rules section, which flex reads as a rule and refuses as "
+                "unrecognized; indent it, as flex's manual asks",
+                lines.number()};
+    }
+
+    skip_copied_code(lines, static_cast<std::size_t>(text.data() - lines.rest().data()));
+
+    return true;
+}
+
+/**
+ * @brief Reads a line of the rules section's prologue, or a blank line after it: the indented code before the first
+ *        rule is flex's to copy into the scanner, where it stands ahead of every action, so it holds the one thing the
+ *        token language is not blind to just as the definitions do, a YY_USER_ACTION that moves the match. The lines it
+ *        splices are read with it.
+ * @param lines The cursor, at the line; left past it and the lines it continues on.
+ * @param line The line, untrimmed.
+ * @param text The line, trimmed.
+ * @param prologue Whether the prologue is still open, no line at the margin read yet.
+ * @param macros The macros the section defines, added to.
+ * @param copied The stretches of copied code, the prologue's code appended.
+ * @return Whether the line is prologue code or blank.
+ */
+[[nodiscard]] bool take_prologue_line(
+        Lines& lines, const std::string_view line, const std::string_view text, const bool prologue, Macros_t& macros,
+        std::vector<Copied>& copied)
+{
+    if (prologue ? !is_code(line) : !text.empty())
+    {
+        return false;
+    }
+
+    if (prologue)
+    {
+        const auto first{lines.number()};
+
+        copy_code(continued_code(lines), first, "the rules' prologue defines", macros, copied);
+    }
+
+    lines.advance();
+
+    return true;
+}
+
+/**
+ * @brief Reads one rule from the line under the cursor and the action lines it spans, leaving the cursor after it.
+ * @param lines The cursor, at a rule line.
+ * @param line The rule line's text, the cursor's line with its indentation and trailing blanks removed.
+ * @param returning The forms besides `return` an action returns a token through.
+ * @return The rule, an `<<EOF>>` rule among them with what its action returns, since a `|` rule above it shares that
+ *         action; the caller drops the `<<EOF>>` rules once the actions are shared, as no byte matches one.
+ * @throws Spec_error If its start-condition prefix is not closed or ends the section, its pattern is missing or leaves
+ *         a quote or a bracket open, its action is one action_end() refuses, or the action makes a call that moves or
+ *         reruns the match, or an `<<EOF>>` action one that pushes a byte onto the input or takes one from it.
+ */
+[[nodiscard]] Lexer_spec::Rule read_rule(Lines& lines, std::string_view line, const Returning_t& returning)
+{
+    auto number{lines.number()};
+
+    std::vector<std::string> conditions;
+
+    if (line.starts_with('<') && !line.starts_with("<<EOF>>"))
+    {
+        const auto close{line.find('>')};
+
+        if (close == std::string_view::npos)
+        {
+            throw Spec_error{"the start-condition prefix is not closed", number};
+        }
+
+        for (const auto name : line.substr(1, close - 1) | std::views::split(','))
+        {
+            conditions.emplace_back(trimmed(std::string_view{name}));
+        }
+
+        line.remove_prefix(close + 1);
+
+        // flex takes a prefix alone on its line as opening whatever the next line holds, since the newline after it
+        // yields no token: the `{` of a scope, as bison's scanners write it, or a rule.
+        if (trimmed(line).empty())
+        {
+            do
+            {
+                lines.advance();
+            } while (lines.more() && trimmed(lines.current()).empty());
+
+            if (!lines.more())
+            {
+                throw Spec_error{"the start-condition prefix ends the section", number};
+            }
+
+            line = trimmed(lines.current());
+
+            number = lines.number();
+        }
+    }
+
+    const auto length{pattern_length(line, number)};
+
+    const std::string pattern{line.substr(0, length)};
+
+    if (pattern.empty())
+    {
+        throw Spec_error{"a rule at the margin has no pattern", number};
+    }
+
+    // The action runs to the first end of a line at which its braces balance, as flex reads it, so one that opens a
+    // brace anywhere on its line continues to the matching close, however many lines that takes; a `|` action is the
+    // bar and whatever follows it on its line, which flex takes unread, so no brace or quote there counts.
+    const auto tail{trimmed(line.substr(length))};
+
+    const auto rest{lines.rest()};
+
+    const auto opened{static_cast<std::size_t>(tail.data() - rest.data())};
+
+    const auto end{
+            tail.starts_with('|') ? std::min(rest.find('\n', opened), rest.size()) - opened :
+                                    action_end(rest.substr(opened), number, pattern != "{")};
+
+    // `<s>{` opens a start-condition scope rather than a rule, and what follows the brace on its line is code flex
+    // copies out and drops, read to the same end an action is read to: a comment closing on a later line runs the code
+    // on to that line, as flex 2.6.4 permits, and nothing on those lines is a rule. The caller reads the scope as such.
+    if (pattern == "{")
+    {
+        lines.advance(1 + static_cast<std::size_t>(std::ranges::count(rest.substr(opened, end), '\n')));
+
+        return {.pattern = pattern,
+                .expression = pattern,
+                .conditions = std::move(conditions),
+                .action = {},
+                .token = std::nullopt,
+                .priority = std::nullopt,
+                .line = number};
+    }
+
+    std::string action{trimmed(rest.substr(opened, end))};
+
+    lines.advance(1 + static_cast<std::size_t>(std::ranges::count(action, '\n')));
+
+    // A `%{` block's code is what stands between its `%{` and its `%}`, the rest of the `%}` line dropped, as flex
+    // copies it out: `%} return 7;` returns nothing.
+    if (action.starts_with("%{"))
+    {
+        action = std::string{trimmed(action.substr(2, action.find("%}") - 2))};
+    }
+
+    // A `|` line is taken unread, as flex takes it, so what follows the bar is no call; an `<<EOF>>` action runs where
+    // no match is, so what it calls moves no match, until a `|` rule above shares it, which share_actions() checks.
+    const auto unread{action.starts_with('|') || pattern == "<<EOF>>"};
+
+    if (const auto use{unread ? std::nullopt : stateful_use(action, false)})
+    {
+        throw Spec_error{"the action " + *use, number};
+    }
+
+    // What an `<<EOF>>` action pushes onto the input is scanned after it, whatever rule matched before: flex takes
+    // `<<EOF>> { unput('a'); return 9; }` on "b" through 8, 9, 7, 9, 7, the a arriving from the action. The calls that
+    // move a match are another rule's concern, since an end-of-input action has none.
+    if (pattern == "<<EOF>>")
+    {
+        if (const auto use{stateful_use(action, true)})
+        {
+            throw Spec_error{"the end-of-input action " + *use, number};
+        }
+    }
+
+    auto token{returned(action, returning)};
+
+    return {.pattern = pattern,
+            .expression = pattern,
+            .conditions = std::move(conditions),
+            .action = std::move(action),
+            .token = std::move(token),
+            .priority = std::nullopt,
+            .line = number};
+}
+
+} // namespace
+
+void read_definitions(Lines& lines, Lexer_spec& spec, Settings& settings, Macros_t& macros, std::vector<Copied>& copied)
+{
+    for (; lines.more(); lines.advance())
+    {
+        const auto line{lines.current()};
+
+        const auto text{trimmed(line)};
+
+        if (is_delimiter(line))
+        {
+            spec.line = lines.number();
+
+            lines.advance();
+
+            return;
+        }
+
+        // The section's code, a `%{` block, a `%top` block or an indented line, is flex's to copy through, and holds
+        // one thing the token language is not blind to: a YY_USER_ACTION that moves the match. Each kind of line is
+        // read by the first of these that takes it.
+        const auto taken{
+                take_definitions_code_block(lines, text, macros, copied) ||
+                take_top_block(lines, text, macros, copied) || skip_definitions_comment(lines, text) ||
+                take_code_line(lines, line, macros, copied) || take_options(lines, text, spec, settings) ||
+                take_conditions(lines, text, spec)};
+
+        // %array, %pointer and the like say nothing about the token set.
+        if (taken || text.front() == '%')
+        {
+            continue;
+        }
+
+        take_definition(lines, text, spec);
+    }
+
+    throw Spec_error{"the file has no rules section: no line begins with %%", lines.number()};
+}
+
+std::size_t read_rules(
+        Lines& lines, Lexer_spec& spec, const Returning_t& returning, Macros_t& macros, std::vector<Copied>& copied)
+{
+    // A start-condition scope, `<s>{` on a line of its own through a line opening with `}`, prefixes every rule inside
+    // it. Scopes nest, and a rule inside one with a prefix of its own is active in the scope's conditions and its own
+    // alike: flex keeps every open scope's names on one stack and a rule takes the whole stack.
+    std::vector<std::string> scoped;
+
+    std::vector<Scope> opened;
+
+    // The section opens with a prologue, where an indented line is code flex copies into the scanner ahead of the
+    // rules, which ends at the first line at the margin; from then on flex reads an indented line as a rule, in a scope
+    // or out of one.
+    auto prologue{true};
+
+    while (lines.more())
+    {
+        const auto line{lines.current()};
+
+        const auto text{trimmed(line)};
+
+        if (is_delimiter(line))
+        {
+            break;
+        }
+
+        // Each kind of line other than a rule is read by the first of these that takes it.
+        const auto taken{
+                take_rules_code_block(lines, text, macros, copied) || close_scope(lines, text, scoped, opened) ||
+                skip_rules_comment(lines, line, text) ||
+                take_prologue_line(lines, line, text, prologue, macros, copied)};
+
+        if (taken)
+        {
+            continue;
+        }
+
+        prologue = false;
+
+        auto rule{read_rule(lines, text, returning)};
+
+        if (rule.pattern == "{" && rule.action.empty())
+        {
+            opened.push_back({.names = scoped.size(), .line = rule.line});
+
+            std::ranges::move(rule.conditions, std::back_inserter(scoped));
+
+            continue;
+        }
+
+        for (const auto& name : scoped)
+        {
+            if (!std::ranges::contains(rule.conditions, name))
+            {
+                rule.conditions.push_back(name);
+            }
+        }
+
+        spec.rules.push_back(std::move(rule));
+    }
+
+    // flex reads the rest of the section as the scope's body and hits a parse error at its end, so a scope left open is
+    // refused here rather than read as if its `}` stood at the section's end.
+    if (!opened.empty())
+    {
+        throw Spec_error{"a start-condition scope is never closed", opened.back().line};
+    }
+
+    // The cursor stands on the `%%`, or one past the last line once the file has ended.
+    return lines.more() ? lines.number() : lines.number() - 1;
+}
+
+void share_actions(std::vector<Lexer_spec::Rule>& rules)
+{
+    for (auto at{rules.size()}; at > 1;)
+    {
+        --at;
+
+        if (!rules[at - 1].action.starts_with('|'))
+        {
+            continue;
+        }
+
+        if (rules[at].pattern == "<<EOF>>" && !rules[at].action.starts_with('|'))
+        {
+            if (const auto use{stateful_use(rules[at].action, false)})
+            {
+                throw Spec_error{"the action " + *use, rules[at - 1].line};
+            }
+        }
+
+        rules[at - 1].token = rules[at].token;
+    }
+}
+
+void add_default_rule(Lexer_spec& spec, const std::size_t line)
+{
+    spec.rules.push_back(
+            {.pattern = ".|\\n",
+             .expression = ".|\\n",
+             .conditions = {"*"},
+             .action = "ECHO;",
+             .token = std::nullopt,
+             .priority = std::nullopt,
+             .line = line});
+}
+
+} // namespace munch::tools::audit

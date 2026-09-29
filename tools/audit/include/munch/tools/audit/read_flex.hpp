@@ -4,8 +4,13 @@
 #include <string_view>
 #include <vector>
 
+#include "munch/tools/audit/action_return.hpp"
+#include "munch/tools/audit/directives.hpp"
 #include "munch/tools/audit/lexer_spec.hpp"
 
+/**
+ * @brief The flex reader, read_flex(), which the command reads a flex file with.
+ */
 namespace munch::tools::audit
 {
 /**

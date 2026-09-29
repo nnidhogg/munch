@@ -7,6 +7,11 @@
 #include "munch/core/lexer.hpp"
 #include "munch/regex/regex.hpp"
 
+/**
+ * @brief A token set held as patterns, Token_set, one Token_rule each, so that it can be edited and compiled again:
+ *        a byte excluded from a pattern, exclude(), whether a pattern can lose one, can_lose(), and the set compiled,
+ *        compile().
+ */
 namespace munch::tools::audit
 {
 /**
@@ -40,9 +45,9 @@ struct Token_rule
  * @brief A token set held as patterns rather than as tables, so that it can be edited and compiled again.
  *
  * Each id names one rule: the compiled set reports a match by its id, the pricing finds the rule to edit by the id the
- * blame names and takes the first that carries it, and the report names tokens by it, so a set giving two rules one
- * id is priced as though the second were the first. Every reader numbers rules by their index; a set assembled by
- * hand owes the uniqueness itself.
+ * blame names and takes the first that carries it, and the report names tokens by it, so a set giving two rules one id
+ * is priced as though the second were the first. Every reader numbers rules by their index; a set assembled by hand
+ * owes the uniqueness itself.
  */
 struct Token_set
 {
@@ -56,10 +61,10 @@ struct Token_set
  * @brief Excludes one byte from every character set of a regex, in place, dropping the alternatives of a choice
  *        that cannot lose it and deleting a repetition that may run zero times whose sub-pattern cannot.
  *
- * This is the one edit the cost analysis knows, and it is the edit behind every designed row of the split-points
- * study: a newline excluded from a comment's interior bounds the comment to a line, excluded from a string's
- * interior forbids raw newlines in strings, and excluded from a whitespace run splits the run at newlines. Call it
- * only where can_lose() holds; elsewhere the pattern would be left matching nothing.
+ * This is the one edit the cost analysis knows, and it is the edit behind every designed row of the split-points study:
+ * a newline excluded from a comment's interior bounds the comment to a line, excluded from a string's interior forbids
+ * raw newlines in strings, and excluded from a whitespace run splits the run at newlines. Call it only where can_lose()
+ * holds; elsewhere the pattern would be left matching nothing.
  * @param regex The pattern, narrowed on return.
  * @param byte The byte.
  */

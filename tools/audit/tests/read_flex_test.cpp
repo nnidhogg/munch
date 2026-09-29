@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "munch/tools/audit/c_tokens.hpp"
+
 using namespace munch::tools::audit;
 
 namespace

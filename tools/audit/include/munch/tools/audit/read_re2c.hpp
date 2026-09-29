@@ -4,8 +4,14 @@
 #include <string_view>
 #include <vector>
 
+#include "munch/tools/audit/action_return.hpp"
+#include "munch/tools/audit/directives.hpp"
 #include "munch/tools/audit/lexer_spec.hpp"
 
+/**
+ * @brief The re2c reader, read_re2c(), which the command reads a file of re2c blocks with, under the flags its command
+ *        line gives, Re2c_flags, and the encoding they name, Re2c_encoding.
+ */
 namespace munch::tools::audit
 {
 /**
@@ -13,8 +19,8 @@ namespace munch::tools::audit
  *        `--utf16` and `--utf32` options and the `re2c:encoding:...` configurations.
  *
  * A pattern names code points and the generated scanner reads code units, so the encoding is what turns the one into
- * the other. ASCII, the default, and EBCDIC have a code point per byte; UTF-8 has one to four bytes per code point;
- * the rest have a code unit of two or four bytes, which a reading over bytes cannot be.
+ * the other. ASCII, the default, and EBCDIC have a code point per byte; UTF-8 has one to four bytes per code point; the
+ * rest have a code unit of two or four bytes, which a reading over bytes cannot be.
  */
 enum class Re2c_encoding
 {

@@ -13,6 +13,14 @@
 #include "munch/tools/audit/price.hpp"
 #include "munch/tools/audit/token_set.hpp"
 
+/**
+ * @brief What the library decides about one token set, Report, gathered by audit(), with the blame() it holds and the
+ *        sentence it opens with, verdict(); and the report rendered as text, render(), and as JSON, json(), with a
+ *        scanner's options as the report's own row, options_row() and options_json(), and text as a JSON string,
+ *        json_string().
+ *
+ * Two units implement it: report.cpp decides, over the lexer's tables, and report_render.cpp writes what was decided.
+ */
 namespace munch::tools::audit
 {
 /**
@@ -58,12 +66,19 @@ struct Blame
 };
 
 /**
+ * @brief The most certified windows the window span is decided over once each class is expanded to its bytes; beyond
+ *        it the span is left undecided and the report says so, since the walk's node count can grow with every window
+ *        when every token is bounded.
+ */
+inline constexpr std::size_t span_window_cap{1U << 17U};
+
+/**
  * @brief What the library decides about one token set, gathered for a reader who did not write it.
  *
- * Bytes are the certificates a planner cuts at; windows the ones it falls back to, enumerated over one
- * representative per byte class so the count is of distinct behaviours rather than of byte strings; the core is
- * what every window must contain; the spans price the plan; lag and rescue-freeness are the recovery figures; and
- * the blame says, for every byte that could have certified, which token stopped it and how.
+ * Bytes are the certificates a planner cuts at; windows the ones it falls back to, enumerated over one representative
+ * per byte class so the count is of distinct behaviours rather than of byte strings; the core is what every window must
+ * contain; the spans price the plan; lag and rescue-freeness are the recovery figures; and the blame says, for every
+ * byte that could have certified, which token stopped it and how.
  */
 struct Report
 {
@@ -152,33 +167,6 @@ struct Report
 };
 
 /**
- * @brief The report's answer in one sentence: whether a cut has a certificate, of what kind, and where to read on. A
- *        certificate found is a certificate; none found among the windows is the conservative model's finding up to
- *        the width tried, which the sentence says, since the exact decision may certify a window the model refuses.
- * @param report The report.
- * @return The sentence.
- */
-[[nodiscard]] std::string verdict(const Report& report);
-
-/**
- * @brief Why each candidate byte that does not certify exactly fails: for every byte the start state consumes live,
- *        each token consuming it mid-token, with a shortest input reaching the consuming state.
- *
- * Every token whose match path holds the byte is named, not only the shortest of them: the state a shorter
- * token accepts in is where a longer token's scan stands after the same bytes, so a longer token's accepting
- * state lying beyond a shorter one's makes both consume the byte mid-token, and an author who narrows only the
- * shorter one has not freed the byte.
- *
- * A re-entrant start state blames itself, after a shortest nonempty input that returns to it: the exemption belongs
- * to the entry before any input, where a byte begins a token, and a start state an input reaches again stands
- * mid-token there like any other. The library's byte certificate withdraws that exemption on the same condition,
- * Simulator::init_reentrant(), so the blame names a consumer for every candidate the certificate refuses.
- * @param lexer The token set.
- * @return The blame, by byte then token.
- */
-[[nodiscard]] std::vector<Blame> blame(const core::Lexer& lexer);
-
-/**
  * @brief Audits a token set given as patterns, which is what lets the report price its edits as well.
  * @param set The token set.
  * @param window_limit The longest window tried.
@@ -189,9 +177,9 @@ struct Report
 /**
  * @brief Audits a compiled token set.
  *
- * Every figure is the library's own decision over the lexer's tables; nothing here is estimated. The window
- * enumeration is the one cost that grows with the grammar: it tries every string of class representatives up to the
- * limit, and the limit is a parameter for that reason.
+ * Every figure is the library's own decision over the lexer's tables; nothing here is estimated. The window enumeration
+ * is the one cost that grows with the grammar: it tries every string of class representatives up to the limit, and the
+ * limit is a parameter for that reason.
  * @param lexer The token set.
  * @param window_limit The longest window tried, three by default; four is the planners' own limit.
  * @return The report.
@@ -199,16 +187,22 @@ struct Report
 [[nodiscard]] Report audit(const core::Lexer& lexer, std::size_t window_limit = 3);
 
 /**
- * @brief Renders a report as JSON, one object with a member per figure, token ids paired with their names.
+ * @brief Why each candidate byte that does not certify exactly fails: for every byte the start state consumes live,
+ *        each token consuming it mid-token, with a shortest input reaching the consuming state.
  *
- * Byte strings, the windows, the core and the blame's inputs, are JSON strings holding each byte as the code point
- * of its value, so a reader recovers the bytes exactly; spans are numbers, or the string "unbounded", or for the
- * window span the string "undecided" when the windows were too many.
- * @param report The report.
- * @param name The name to print for a token id.
- * @return The JSON text, no trailing newline.
+ * Every token whose match path holds the byte is named, not only the shortest of them: the state a shorter token
+ * accepts in is where a longer token's scan stands after the same bytes, so a longer token's accepting state lying
+ * beyond a shorter one's makes both consume the byte mid-token, and an author who narrows only the shorter one has not
+ * freed the byte.
+ *
+ * A re-entrant start state blames itself, after a shortest nonempty input that returns to it: the exemption belongs to
+ * the entry before any input, where a byte begins a token, and a start state an input reaches again stands mid-token
+ * there like any other. The library's byte certificate withdraws that exemption on the same condition,
+ * Simulator::init_reentrant(), so the blame names a consumer for every candidate the certificate refuses.
+ * @param lexer The token set.
+ * @return The blame, by byte then token.
  */
-[[nodiscard]] std::string json(const Report& report, const std::function<std::string(std::size_t)>& name);
+[[nodiscard]] std::vector<Blame> blame(const core::Lexer& lexer);
 
 /**
  * @brief Renders a report as text, the verdict first and then one section per question.
@@ -217,6 +211,27 @@ struct Report
  * @return The text.
  */
 [[nodiscard]] std::string render(const Report& report, const std::function<std::string(std::size_t)>& name);
+
+/**
+ * @brief The report's answer in one sentence: whether a cut has a certificate, of what kind, and where to read on. A
+ *        certificate found is a certificate; none found among the windows is the conservative model's finding up to
+ *        the width tried, which the sentence says, since the exact decision may certify a window the model refuses.
+ * @param report The report.
+ * @return The sentence.
+ */
+[[nodiscard]] std::string verdict(const Report& report);
+
+/**
+ * @brief Renders a report as JSON, one object with a member per figure, token ids paired with their names.
+ *
+ * Byte strings, the windows, the core and the blame's inputs, are JSON strings holding each byte as the code point of
+ * its value, so a reader recovers the bytes exactly; spans are numbers, or the string "unbounded", or for the window
+ * span the string "undecided" when the windows were too many.
+ * @param report The report.
+ * @param name The name to print for a token id.
+ * @return The JSON text, no trailing newline.
+ */
+[[nodiscard]] std::string json(const Report& report, const std::function<std::string(std::size_t)>& name);
 
 /**
  * @brief Renders a scanner's options as the report's own row, the one that says what the reading was governed by.

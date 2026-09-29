@@ -6,6 +6,9 @@
 
 #include "munch/tools/audit/lexer_spec.hpp"
 
+/**
+ * @brief The ANTLR reader, read_antlr(), which the command reads a grammar with.
+ */
 namespace munch::tools::audit
 {
 /**
