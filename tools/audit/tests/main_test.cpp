@@ -236,3 +236,33 @@ TEST(Require_certified, A_refusal_outranks_an_unmet_requirement)
 
     std::filesystem::remove_all(scratch());
 }
+
+TEST(Label, A_long_pattern_of_continuation_bytes_is_cut_at_its_start)
+{
+    // No byte among the first 58 of the pattern begins a code point, so the one cut that keeps whole characters stands
+    // before the first, and the label is the ellipsis alone.
+    const auto path{(scratch() / "continuation.l").string()};
+
+    const auto pattern{std::string(61, '\x80')};
+
+    std::ofstream{path, std::ios::binary}
+            << "%%\n" + pattern + " { return " + std::string(41, 'T') + "; }\n\"a\" { return 2; }\n";
+
+    const auto [status, out, err]{run({path, "--json"})};
+
+    const std::string_view named{R"("token": {"id": 0, "name": ")"};
+
+    const auto at{out.find(named)};
+
+    ASSERT_NE(at, std::string::npos) << out;
+
+    const auto begin{at + named.size()};
+
+    const auto label{out.substr(begin, out.find('"', begin) - begin)};
+
+    EXPECT_EQ(status, 0);
+    EXPECT_LE(label.size(), 60U);
+    EXPECT_EQ(label, "...");
+
+    std::filesystem::remove_all(scratch());
+}
