@@ -255,6 +255,15 @@ user renames the type, includes `mode_tokenizer.hpp`, and changes nothing else: 
 transition table within the cap times the classes times four bytes, and it now allows one column more for a nullable
 token set, whose positive-width equivalent adds a state determinization never discovers.
 
+The verifier joined that surface in 2.2.0, at the library level and forwarded by nothing: `dfa::Verifier`, a
+deterministic trim automaton over marked symbols accepting exactly the marked strings of a policy, built from any
+transition table or by `dfa::armed_run()` from a token set's DFA as the maximal-munch scan; and the four decisions over
+it, `miscovering()`, the window certificate decided exactly with the shortest miscovering marked string, `boundary_gap()`,
+whether the distance between boundaries is bounded, with the supremum or the lasso, `realizable()`, whether
+completion-preserving generation never strands, with each state's admitted steps, and `divergence()`, whether two
+functional verifiers accept the same marked strings, with the shortest diverging input and its half. Every witness
+replays through `Verifier::step()`.
+
 Three decisions joined that surface in 2.1.0, each forwarded by `core::Lexer`: `boundary_counterexample()`, whether a
 gap of a window is a token boundary at every occurrence of the window in every completely tokenizable input, with the
 shortest input holding an occurrence a token crosses there under its cap; `crossing_counterexample()`, whether a token

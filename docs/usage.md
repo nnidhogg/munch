@@ -539,6 +539,40 @@ These six decisions and `rescue()` under Error Recovery are declared together in
 instances of one search over guessed token boundaries, with `boundary_profile()` beside the two it asks at every gap,
 and each is forwarded by `core::Lexer`.
 
+The searches above decide questions about one token set's scan. `munch/dfa/verifier.hpp` states the object they are
+questions about, so that the same decisions can be made about any segmentation a finite automaton recognizes.
+`dfa::Verifier` is a deterministic, trim automaton over marked symbols, a byte together with the bit saying whether a
+token boundary follows it, and it accepts exactly the marked strings of a policy: an input with its boundaries, one
+marking per input the policy segments. `dfa::armed_run(dfa)` builds the verifier of maximal-munch scanning over a
+token set's DFA, and the constructor builds one from any transition table, trimming it to the states reachable from
+the start that can reach acceptance. The four decisions of `munch/dfa/verifier_decisions.hpp` then run on the product
+of the verifier with a search, each with a witness replayable through `Verifier::step()`. `miscovering(verifier,
+window, origin)` decides the window certificate `(window, origin)`, that the token containing an occurrence's final
+byte begins at the origin at every occurrence in every accepted marked string, and returns the shortest accepted
+marked string that miscovers it; on the armed run this is the exact side of `is_split_window()`, and the online
+decision is conservative against it, refusing 17 of 53,074 window origin pairs on `twitter.json` under the JSON grammar
+that the verifier certifies, each confirmed by exact search. `boundary_gap(verifier)` decides whether the distance
+between consecutive boundaries is bounded, and returns the supremum or, when it is not, a stem, a loop and a suffix
+whose pumping grows the gap. `realizable(verifier)` decides whether generation restricted to completion-preserving
+steps never strands, and returns each state's admitted steps. `divergence(a, b)` decides whether two functional
+verifiers accept the same marked strings, and returns the shortest input they diverge on with the half it falls in,
+the domain or the boundaries; over two armed runs it is `segmentation_difference()` decided on the verifiers. The
+verifier is a library-level interface: `core::Lexer` forwards none of it, and a caller reaches a token set's DFA
+through `dfa::Builder` or by deriving from `core::Builder`, whose `dfa()` is protected.
+
+```cpp
+#include "munch/dfa/verifier.hpp"
+#include "munch/dfa/verifier_decisions.hpp"
+
+// over the tokens a, ab and b of the example above, with dfa their DFA
+const auto verifier{dfa::armed_run(dfa)};           // the maximal-munch scan over the token set's DFA
+
+dfa::miscovering(verifier, "ab", 0);                // std::nullopt: exact, where is_split_window() refuses
+dfa::miscovering(verifier, "ab", 1);                // the marked ab itself, its token beginning at offset 0
+dfa::boundary_gap(verifier);                        // 2, the longest token, since no token grows forever
+dfa::divergence(verifier, dfa::armed_run(other));   // std::nullopt when the two scans segment alike
+```
+
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
 nothing. Since the tokens responsible are usually the ones a parser throws away, `set_ignored_tokens()` lets a builder
