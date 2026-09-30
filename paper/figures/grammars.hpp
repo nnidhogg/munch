@@ -40,14 +40,14 @@ enum class Token : std::size_t
 };
 
 // The operator and punctuation bytes the C-like rows use, kept in one place so the expected column can name them.
-const Set& operators()
+inline const Set& operators()
 {
     static const Set set{'+', '-', '*', '/', '<', '>', '=', '!', '&', '|', '^', '%', '~'};
 
     return set;
 }
 
-const Set& punctuation()
+inline const Set& punctuation()
 {
     static const Set set{'(', ')', '[', ']', '{', '}', ';', ',', '.', ':', '?'};
 
@@ -55,13 +55,13 @@ const Set& punctuation()
 }
 
 // A string literal whose interior admits any byte except the quote and a raw newline.
-Regex string_literal()
+inline Regex string_literal()
 {
     return concat(text("\""), kleene(any_of(Set::all() - Set{'"'} - Set{'\n'})), text("\""));
 }
 
 // /* ( [^*] | *+ [^*/] )* *+ /, as docs/split_points.md states it.
-Regex block_comment()
+inline Regex block_comment()
 {
     const auto not_star{any_of(Set::all() - Set{'*'})};
 
@@ -72,7 +72,7 @@ Regex block_comment()
 
 // The blank set is the whitespace run's bytes other than newline: space and tab for the C-like rows, space alone for
 // the Zig subset, whose reference's skip rule admits space and newline only.
-void c_like(munch::core::Builder& builder, const bool split_friendly, const Set& blank = Set{' ', '\t'})
+inline void c_like(munch::core::Builder& builder, const bool split_friendly, const Set& blank = Set{' ', '\t'})
 {
     builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::Identifier, 2);
     builder.add_token(plus(any_of(Set::digits())), Token::Number, 2);
@@ -96,7 +96,7 @@ void c_like(munch::core::Builder& builder, const bool split_friendly, const Set&
 // That function returns a Staged_builder, which only exposes Builder's protected pipeline output for size reporting and
 // so compiles the same automaton as the plain Builder used here. The grammar differs from the surveyed C-like row above
 // in two ways that both cost certificates: operators are multi-byte literals, and numbers admit a decimal point.
-void keyword_scale_grammar(munch::core::Builder& builder)
+inline void keyword_scale_grammar(munch::core::Builder& builder)
 {
     // Roughly the C++ keyword set plus common fixed-width type names: 100 entries.
     static constexpr const char* keywords[]{
@@ -141,7 +141,7 @@ void keyword_scale_grammar(munch::core::Builder& builder)
 // The grammar of build_lexer(false) in tools/benchmark/src/harness.cpp, which produces the scaling table.
 // Its operators are also multi-byte literals, but every one of them has '=' as its only continuation byte,
 // so '=' is the only candidate lost.
-void scaling_grammar(munch::core::Builder& builder)
+inline void scaling_grammar(munch::core::Builder& builder)
 {
     builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::Whitespace, 2);
     builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::Identifier, 2);
@@ -165,7 +165,7 @@ void scaling_grammar(munch::core::Builder& builder)
 // JSON exchanged outside a closed ecosystem, is
 // assumed of the input rather than checked. Validating it could only remove bytes from string interiors, so it cannot
 // de-certify anything that certifies without it, and the row's result is unaffected.
-void json(munch::core::Builder& builder)
+inline void json(munch::core::Builder& builder)
 {
     const auto hex{any_of(Set::digits() + Set{'a', 'b', 'c', 'd', 'e', 'f', 'A', 'B', 'C', 'D', 'E', 'F'})};
 
@@ -217,7 +217,7 @@ void json(munch::core::Builder& builder)
 // admit, and so do the subset's. Tab, which the reference's source encoding admits as a token separator, and carriage
 // return, which it admits only immediately before a line feed, occur in no rule of the grammar appendix and so in no
 // token of this subset; they are certified vacuously and withheld.
-void zig(munch::core::Builder& builder, const bool split_friendly)
+inline void zig(munch::core::Builder& builder, const bool split_friendly)
 {
     c_like(builder, split_friendly, Set{' '});
 
@@ -258,7 +258,7 @@ void zig(munch::core::Builder& builder, const bool split_friendly)
     builder.add_token(concat(text("//"), kleene(any_of(non_control_utf8))), Token::LineComment, 1);
 }
 
-Regex line_comment()
+inline Regex line_comment()
 {
     return concat(text("//"), kleene(any_of(Set::all() - Set{'\n'})));
 }
@@ -267,17 +267,17 @@ Regex line_comment()
 // another of them, the obvious repair for the block-comment collapse. The row exists to price it, and the applicability
 // table records that it buys no useful certificate: the language loses the ability to write a slash or a quote inside
 // a string or a comment and gains nothing for it.
-Regex separated_string()
+inline Regex separated_string()
 {
     return concat(text("\""), kleene(any_of(Set::all() - Set{'"'} - Set{'/'} - Set{'\n'})), text("\""));
 }
 
-Regex separated_line_comment()
+inline Regex separated_line_comment()
 {
     return concat(text("//"), kleene(any_of(Set::all() - Set{'"'} - Set{'/'} - Set{'\n'})));
 }
 
-Regex separated_block_comment()
+inline Regex separated_block_comment()
 {
     const auto body{any_of(Set::all() - Set{'*'} - Set{'"'} - Set{'/'})};
 
@@ -286,7 +286,7 @@ Regex separated_block_comment()
     return concat(text("/*"), kleene(choice(body, stars_then_other)), plus(any_of(Set{'*'})), text("/"));
 }
 
-Regex line_bounded_plain_block_comment()
+inline Regex line_bounded_plain_block_comment()
 {
     const auto body{any_of(Set::all() - Set{'*'} - Set{'\n'})};
 
@@ -299,12 +299,12 @@ Regex line_bounded_plain_block_comment()
 // certificate paper uses the characteristic the RFC lists, that character boundaries are found from anywhere in an
 // octet stream, as the instance of its theorem every reader has met, and this is the token set that claim is
 // asserted on, for the useful certificates; the bytes no form contains are certified vacuously and withheld.
-Set octets(const int start, const int end)
+inline Set octets(const int start, const int end)
 {
     return Set::range(static_cast<char>(start), static_cast<char>(end));
 }
 
-void utf8(munch::core::Builder& builder)
+inline void utf8(munch::core::Builder& builder)
 {
     const auto tail{any_of(octets(0x80, 0xBF))};
 
@@ -324,7 +324,7 @@ void utf8(munch::core::Builder& builder)
 }
 
 // Names an ignored set in terms of the Token enum above; the certificate itself takes plain token ids.
-std::set<std::size_t> ignoring(const std::initializer_list<Token> tokens)
+inline std::set<std::size_t> ignoring(const std::initializer_list<Token> tokens)
 {
     std::set<std::size_t> kinds;
 

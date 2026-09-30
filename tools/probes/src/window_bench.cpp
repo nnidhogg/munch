@@ -1,17 +1,24 @@
 // Measures what a certified split window is worth as a parallel cut, on the grammar the window search rescues:
-// C-like with string literals, whose exact single-byte certificate is empty. Byte planning cannot help here;
-// this probe plans boundaries at window-recovered origins, proves the chunked stream equals the serial one
-// before any clock starts, and only then times the comparison.
+// C-like with string literals, whose exact single-byte certificate is empty, so byte planning cannot cut it. The probe
+// plans chunk boundaries at window-recovered origins, proves the chunked stream equals the serial one before any
+// clock starts, and only then times the comparison; it does the same on the split-friendly grammar with strings,
+// where newline is exactly certified, pricing the window plan against the shipped byte planner on one corpus.
 //
-// Every number printed here is run-local. The program stamps commit and dirty-state provenance into its CSV and
-// stdout, collect.sh records the environment, and paper/data/ holds the committed campaign archives; even so, no
-// figure from a casual run may be quoted anywhere without the collect.sh ritual on a quiet machine. The
-// assertions are the point; the throughput lines only accompany them.
+// What it checks. The premise that the first grammar certifies no byte and the second certifies newline; that every
+// planned boundary lands on a token start of the serial scan; that the chunks' concatenated (kind, length) stream
+// equals the serial one element for element; and that every timed pass reproduces the serial token count and
+// checksum. Any failure exits 1, as does a failed CSV open or write.
 //
-// The window model mirrored below is the one window_gate.cpp states and proves in full; see that header for the
-// representation lemma, the soundness argument, and the quotient. This copy exists so the two probes stay standalone,
-// and it is kept honest twice over: the gate asserts the model against the scanner, and this probe additionally
-// asserts that every boundary it plans lands on a token start of the serial scan it then reproduces exactly.
+// Usage: munch_window_bench [size MiB [passes [csv path | -]]] [occurrence file...]
+// A first argument std::atoi reads as positive is the size (16 MiB by default), then a second so read is the passes
+// (5), then a third is the CSV the observations are appended to, `-` for none; every remaining argument is a file
+// whose certified window occurrences are counted, and a file that cannot be read is skipped. Every number printed is
+// run-local: the CSV and stdout carry commit and dirty-state provenance, and no figure from a casual run may be
+// quoted without the collect.sh ritual on a quiet machine.
+//
+// The window model is window_model's, the one window_gate.cpp states and proves in its header comment: the
+// representation lemma, the soundness argument and the quotient. The gate asserts the model against the scanner, and
+// this probe asserts that every boundary it plans lands on a token start of the serial scan it then reproduces.
 
 #include <algorithm>
 #include <chrono>
@@ -19,15 +26,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <ctime>
-#include <deque>
 #include <fstream>
 #include <iomanip>
 #include <limits>
-#include <numeric>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -35,191 +38,337 @@
 #include <vector>
 
 #include "grammars.hpp"
-#include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
 #include "munch/dfa/dfa.hpp"
 #include "munch/tools/benchmark/provenance.hpp"
+#include "munch/tools/probes/builder_dbg.hpp"
+#include "munch/tools/probes/files.hpp"
+#include "munch/tools/probes/window_model.hpp"
 
 namespace
 {
 using figures::Token;
+using munch::tools::probes::Builder_dbg;
+using munch::tools::probes::certified_pairs;
+using munch::tools::probes::is_init_reentrant;
+using munch::tools::probes::live_states;
+using munch::tools::probes::read_bytes;
+using munch::tools::probes::States_t;
 
-using munch::dfa::Dfa;
-
-class Builder_dbg : public munch::core::Builder
+/**
+ * @brief One scan's observable workload: its tokens counted, their kinds hashed in stream order, its bytes consumed.
+ */
+struct Tally
 {
-public:
-    using Builder::dfa;
+    /**
+     * @brief The tokens the scan emitted, one per call of its sink.
+     */
+    std::size_t tokens{0};
+
+    /**
+     * @brief The token kinds in stream order as a polynomial hash of base 31.
+     */
+    std::size_t checksum{0};
+
+    /**
+     * @brief The bytes the scan consumed, as tokenize_all() reports them.
+     */
+    std::size_t consumed{0};
 };
 
-using States_t = std::set<Dfa::State_t>;
+/**
+ * @brief The chunks every plan asks for.
+ */
+constexpr std::size_t kChunks{8};
 
-constexpr std::size_t kBefore{static_cast<std::size_t>(-1)};
+/**
+ * @brief The origin table's entry for a two-byte window that is not certified.
+ */
+constexpr unsigned char kNotCertified{0xff};
 
-using Trajectory_t = std::pair<Dfa::State_t, std::size_t>;
-
-using Cloud_t = std::set<Trajectory_t>;
-
-States_t trim(const Dfa& dfa)
+/**
+ * @brief The serial scan of a corpus, the stream every plan must reproduce.
+ */
+struct Reference
 {
-    States_t reachable{dfa.init_state()};
+    /**
+     * @brief Every token's kind, in stream order.
+     */
+    std::vector<unsigned char> kinds;
 
-    std::deque<Dfa::State_t> pending{dfa.init_state()};
+    /**
+     * @brief Every token's length, in stream order.
+     */
+    std::vector<std::uint32_t> lengths;
 
-    while (!pending.empty())
-    {
-        const auto state{pending.front()};
+    /**
+     * @brief Per offset of the corpus, whether a token begins there.
+     */
+    std::vector<bool> begins;
 
-        pending.pop_front();
+    /**
+     * @brief The serial scan's token count, checksum and consumed bytes, which every chunked scan must equal.
+     */
+    Tally tally;
+};
 
-        for (int symbol{0}; symbol < 256; ++symbol)
-        {
-            if (const auto next{dfa.advance(state, static_cast<char>(symbol))}; next && !reachable.contains(*next))
-            {
-                reachable.insert(*next);
-
-                pending.push_back(*next);
-            }
-        }
-    }
-
-    States_t co_accessible;
-
-    for (const auto state : reachable)
-    {
-        if (dfa.has_accept_token(state))
-        {
-            co_accessible.insert(state);
-        }
-    }
-
-    for (auto grew{true}; grew;)
-    {
-        grew = false;
-
-        for (const auto state : reachable)
-        {
-            if (co_accessible.contains(state))
-            {
-                continue;
-            }
-
-            for (int symbol{0}; symbol < 256; ++symbol)
-            {
-                if (const auto next{dfa.advance(state, static_cast<char>(symbol))};
-                    next && co_accessible.contains(*next))
-                {
-                    co_accessible.insert(state);
-
-                    grew = true;
-
-                    break;
-                }
-            }
-        }
-    }
-
-    return co_accessible;
-}
-
-bool init_reentrant(const Dfa& dfa, const States_t& live)
+/**
+ * @brief The origin table of the certified two-byte windows.
+ */
+struct Origins
 {
-    for (const auto state : live)
-    {
-        for (int symbol{0}; symbol < 256; ++symbol)
-        {
-            if (const auto next{dfa.advance(state, static_cast<char>(symbol))}; next && *next == dfa.init_state())
-            {
-                return true;
-            }
-        }
-    }
+    /**
+     * @brief Per two-byte window, at the first byte times 256 plus the second, the offset inside it at which a token
+     *        begins, kNotCertified where the window is not certified.
+     */
+    std::vector<unsigned char> of_pair;
 
-    return false;
-}
+    /**
+     * @brief The count of certified two-byte windows, the entries of of_pair that are not kNotCertified.
+     */
+    std::size_t windows{0};
+};
 
-std::optional<Cloud_t> step(
-        const Dfa& dfa, const States_t& live, const Cloud_t& from, const char symbol, const std::size_t at,
-        const bool reentrant)
+/**
+ * @brief One timed scan: its tally and its wall-clock time.
+ */
+struct Timed_scan
 {
-    const auto restart{dfa.advance(dfa.init_state(), symbol)};
+    /**
+     * @brief What the scan returned: its token count, checksum and consumed bytes.
+     */
+    Tally tally;
 
-    const auto restart_ok{restart && live.contains(*restart)};
+    /**
+     * @brief The scan's wall-clock time.
+     */
+    std::chrono::steady_clock::duration elapsed{};
+};
 
-    auto accepting{false};
-
-    for (const auto& [state, origin] : from)
-    {
-        accepting = accepting || dfa.has_accept_token(state);
-    }
-
-    Cloud_t next;
-
-    for (const auto& [state, origin] : from)
-    {
-        if (const auto direct{dfa.advance(state, symbol)}; direct && live.contains(*direct))
-        {
-            const auto begins{state == dfa.init_state() && !reentrant};
-
-            next.emplace(*direct, begins ? at : origin);
-        }
-    }
-
-    if (restart_ok && accepting)
-    {
-        next.emplace(*restart, at);
-    }
-
-    return next.empty() ? std::nullopt : std::optional{next};
-}
-
-std::optional<std::size_t> predicted(
-        const Dfa& dfa, const States_t& live, const std::string& window, const bool reentrant)
+/**
+ * @brief One of the benchmark's two grammars, C-like with string literals, compiled: the automaton the window model
+ *        walks and the lexer that scans.
+ */
+struct Bench_grammar
 {
-    Cloud_t cloud;
+    /**
+     * @brief The automaton compiled from the grammar, not unrolled, which the window model walks.
+     */
+    munch::dfa::Dfa dfa;
 
-    for (const auto state : live)
-    {
-        cloud.emplace(state, kBefore);
-    }
+    /**
+     * @brief The lexer built from the same grammar.
+     */
+    munch::core::Lexer lexer;
 
-    for (std::size_t at{0}; at < window.size(); ++at)
-    {
-        const auto next{step(dfa, live, cloud, window[at], at, reentrant)};
+    /**
+     * @brief The automaton's trim states.
+     */
+    States_t live;
 
-        if (!next)
-        {
-            return std::nullopt;
-        }
+    /**
+     * @brief Whether a live transition re-enters the initial state.
+     */
+    bool reentrant{false};
+};
 
-        cloud = *next;
-    }
+/**
+ * @brief The benchmark's command line: the generated corpus's size, the timed passes, the CSV and the occurrence
+ *        files.
+ */
+struct Bench_options
+{
+    /**
+     * @brief The generated corpus's size in MiB.
+     */
+    std::size_t size_mib{16};
 
-    const auto origin{cloud.begin()->second};
+    /**
+     * @brief The timed passes of each measurement.
+     */
+    int passes{5};
 
-    if (origin == kBefore)
-    {
-        return std::nullopt;
-    }
+    /**
+     * @brief The CSV the observations are appended to, empty for none.
+     */
+    std::string csv_path;
 
-    for (const auto& [state, at] : cloud)
-    {
-        if (at != origin)
-        {
-            return std::nullopt;
-        }
-    }
+    /**
+     * @brief The files whose certified window occurrences are counted.
+     */
+    std::vector<std::string> occurrence_files;
+};
 
-    return origin;
+/**
+ * @brief The observations a run appends to its CSV, one row per timed plan or pass under the run's stamp, the commit
+ *        and the dirty state; a failed open or write is printed and fails the run.
+ */
+class Observations
+{
+public:
+    /**
+     * @brief Starts a run stamped with the current time.
+     * @param csv_path The CSV appended to, empty for none.
+     * @param input_mib The generated corpus's size in MiB, written on every row.
+     */
+    Observations(std::string csv_path, std::size_t input_mib);
+
+    /**
+     * @brief Appends one row to the CSV, the header first when the file is absent or empty, at round-trip precision;
+     *        nothing without a CSV. Prints `CSV OPEN FAILED` or `CSV WRITE FAILED` with the path when the open or the
+     *        write fails.
+     * @param scenario The scenario's name.
+     * @param pass The pass index, -1 for a plan.
+     * @param seconds The timed seconds.
+     * @param mib_s The throughput in MiB/s, 0 for a plan.
+     */
+    void row(std::string_view scenario, int pass, double seconds, double mib_s);
+
+    /**
+     * @brief Whether every open and write of the CSV so far succeeded.
+     * @return False after the first failure.
+     */
+    [[nodiscard]] bool is_healthy() const noexcept { return healthy_; }
+
+private:
+    /**
+     * @brief The CSV appended to, empty for none.
+     */
+    std::string csv_path_;
+
+    /**
+     * @brief The generated corpus's size in MiB.
+     */
+    std::size_t input_mib_;
+
+    /**
+     * @brief The run's stamp, the time the run started in seconds since the epoch.
+     */
+    std::size_t run_;
+
+    /**
+     * @brief Whether every open and write so far succeeded.
+     */
+    bool healthy_{true};
+};
+
+/**
+ * @brief The origin table's index of a two-byte window.
+ * @param first The window's first byte.
+ * @param second The window's second byte.
+ * @return The first byte times 256 plus the second.
+ */
+std::size_t pair_index(const char first, const char second)
+{
+    return static_cast<std::size_t>(static_cast<unsigned char>(first)) * 256 +
+           static_cast<std::size_t>(static_cast<unsigned char>(second));
 }
 
 /**
- * @brief A deterministic source-shaped corpus: identifier-heavy lines with numbers, operators, punctuation and
- *        string literals, every line newline-terminated, seeded so every run generates identical bytes.
+ * @brief 31 raised to a power, modulo 2 to the width of std::size_t, by repeated squaring.
+ * @param exponent The power.
+ * @return The power of 31, which splices a chunk's checksum after the checksums before it.
+ */
+std::size_t pow31(std::size_t exponent)
+{
+    std::size_t result{1};
+
+    std::size_t base{31};
+
+    for (; exponent != 0; exponent >>= 1U)
+    {
+        if ((exponent & 1U) != 0)
+        {
+            result *= base;
+        }
+
+        base *= base;
+    }
+
+    return result;
+}
+
+/**
+ * @brief Whether a scan reproduced the reference stream: the same bytes consumed, the same tokens counted, the same
+ *        checksum.
+ * @param scanned The scan's tally.
+ * @param reference The serial reference's tally.
+ * @return True when the three agree.
+ */
+bool is_same_stream(const Tally& scanned, const Tally& reference)
+{
+    return scanned.consumed == reference.consumed && scanned.checksum == reference.checksum &&
+           scanned.tokens == reference.tokens;
+}
+
+/**
+ * @brief Runs one scan under the steady clock.
+ * @param scan The scan, a callable returning its Tally.
+ * @return The scan's tally and its time.
+ */
+template <typename Scan>
+Timed_scan timed(const Scan& scan)
+{
+    const auto started{std::chrono::steady_clock::now()};
+
+    const auto tally{scan()};
+
+    return {.tally = tally, .elapsed = std::chrono::steady_clock::now() - started};
+}
+
+/**
+ * @brief Fills the origin table from every certified two-byte window of an automaton.
+ * @param dfa The automaton.
+ * @param live The automaton's trim states.
+ * @param reentrant Whether a live transition re-enters the initial state.
+ * @return The origin table and the count of certified windows.
+ */
+Origins origins_of(const munch::dfa::Dfa& dfa, const States_t& live, const bool reentrant)
+{
+    Origins origins{.of_pair = std::vector<unsigned char>(256 * 256, kNotCertified), .windows = 0};
+
+    for (const auto& [pair, at] : certified_pairs(dfa, live, reentrant))
+    {
+        origins.of_pair[pair_index(pair[0], pair[1])] = static_cast<unsigned char>(at);
+
+        ++origins.windows;
+    }
+
+    return origins;
+}
+
+/**
+ * @brief Every offset a certified window occurrence says a token begins at: per position whose two bytes form a
+ *        certified window, the position plus the window's origin.
+ * @param bytes The bytes scanned for occurrences.
+ * @param origins The origin table.
+ * @return The offsets, one per occurrence, in increasing order of position.
+ */
+std::vector<std::size_t> window_boundaries(const std::string& bytes, const Origins& origins)
+{
+    std::vector<std::size_t> boundaries{};
+
+    for (std::size_t at{0}; at + 1 < bytes.size(); ++at)
+    {
+        if (const auto origin{origins.of_pair[pair_index(bytes[at], bytes[at + 1])]}; origin != kNotCertified)
+        {
+            boundaries.push_back(at + origin);
+        }
+    }
+
+    return boundaries;
+}
+
+/**
+ * @brief Generates the deterministic source-shaped corpus both measurements scan: identifier-heavy lines of numbers,
+ *        `+` operators, `;` punctuation and string literals, drawn from a fixed 32-bit stream, cut back to its last
+ *        complete line and padded with newlines to the size asked.
+ * @param bytes The corpus size.
+ * @return The corpus, the same bytes on every run.
  */
 std::string source_corpus(const std::size_t bytes)
 {
-    std::string out;
+    std::string out{};
 
     out.reserve(bytes + 128);
 
@@ -287,9 +436,7 @@ std::string source_corpus(const std::size_t bytes)
         out += '\n';
     }
 
-    // Truncating can cut a string literal open, and no single-byte repair closes it; several sizes reproduce an
-    // untokenizable tail. Cut back to the last complete line instead, then pad with newlines, which both grammars
-    // tokenize, so every requested size is valid by construction.
+    // Cuts back to the last complete line, so no string literal is left open, then pads with newlines to the size.
     const auto last_newline{out.rfind('\n', bytes - 1)};
 
     out.resize(last_newline + 1);
@@ -299,76 +446,532 @@ std::string source_corpus(const std::size_t bytes)
     return out;
 }
 
-struct Tally
+/**
+ * @brief Scans a corpus serially, recording every token's kind and length, the offsets at which tokens begin, and the
+ *        tally the chunked scans are compared with.
+ * @param lexer The lexer.
+ * @param corpus The corpus.
+ * @return The serial reference; its tally's consumed count is below the corpus size when the corpus does not
+ *         tokenize.
+ */
+Reference serial_reference(const munch::core::Lexer& lexer, const std::string& corpus)
 {
-    std::size_t tokens{0};
+    Reference reference{.kinds{}, .lengths{}, .begins = std::vector<bool>(corpus.size(), false), .tally{}};
 
-    std::size_t checksum{0};
-};
+    std::size_t offset{0};
 
-std::size_t pow31(std::size_t exponent)
-{
-    std::size_t result{1};
+    reference.tally.consumed =
+            lexer.tokenize_all<Token>(corpus, [&reference, &offset](const Token token, const std::size_t length) {
+                reference.begins[offset] = true;
 
-    std::size_t base{31};
+                offset += length;
 
-    for (; exponent != 0; exponent >>= 1U)
-    {
-        if ((exponent & 1U) != 0)
-        {
-            result *= base;
-        }
+                reference.kinds.push_back(static_cast<unsigned char>(token));
 
-        base *= base;
-    }
+                reference.lengths.push_back(static_cast<std::uint32_t>(length));
 
-    return result;
+                reference.tally.checksum = reference.tally.checksum * 31 + static_cast<std::size_t>(token);
+
+                ++reference.tally.tokens;
+            });
+
+    return reference;
 }
 
 /**
- * @brief Corpus size, pass count, and CSV path for the campaign; overridable from the command line so the CI run
- *        stays small while the archived run uses collect.sh sizes. The CSV mirrors the harness schema, commit and
- *        dirty riding on every row so a row separated from its file still says which tree produced it.
+ * @brief The chunk edges of a window plan: 0, per interior division of kChunks equal parts the first boundary at or
+ *        after it that lies past the edge before, and the corpus size.
+ * @param corpus_size The corpus size.
+ * @param boundaries The window boundaries, in increasing order.
+ * @return The edges, at most kChunks + 1 of them, increasing.
  */
-std::size_t g_size_mib{16};
+std::vector<std::size_t> nearest_edges(const std::size_t corpus_size, const std::vector<std::size_t>& boundaries)
+{
+    std::vector<std::size_t> edges{0};
 
-int g_passes{5};
+    for (std::size_t chunk{1}; chunk < kChunks; ++chunk)
+    {
+        const auto desired{corpus_size * chunk / kChunks};
 
-std::string g_csv;
+        const auto nearest{std::ranges::lower_bound(boundaries, desired)};
 
-std::size_t g_run{0};
+        if (nearest != boundaries.end() && *nearest > edges.back())
+        {
+            edges.push_back(*nearest);
+        }
+    }
+
+    edges.push_back(corpus_size);
+
+    return edges;
+}
 
 /**
- * @brief Sticky CSV health: a single failed open, write, or flush fails the whole run at exit, the same class of
- *        hardening the main harness carries, since a silently truncated observations file poisons an archive.
+ * @brief The first interior edge of a plan at which no token of the serial scan begins.
+ * @param edges The plan's chunk edges.
+ * @param reference The serial reference.
+ * @return The edge, std::nullopt when every interior edge begins a token.
  */
-bool g_csv_ok{true};
-
-void csv_row(const std::string_view scenario, const int pass, const double seconds, const double mib_s)
+std::optional<std::size_t> first_non_token_start(const std::vector<std::size_t>& edges, const Reference& reference)
 {
-    if (g_csv.empty())
+    for (std::size_t edge{1}; edge + 1 < edges.size(); ++edge)
+    {
+        if (!reference.begins[edges[edge]])
+        {
+            return edges[edge];
+        }
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief Scans the corpus in the chunks the edges delimit, one jthread per interior chunk and the last chunk on the
+ *        calling thread, each chunk hashing and counting its tokens into its own cache-line-aligned slot, and splices
+ *        the chunks' tallies in stream order after the join. Every timed chunked path, byte-planned and
+ *        window-planned alike, scans through it.
+ * @param lexer The lexer.
+ * @param corpus The corpus.
+ * @param edges The chunk edges, at least two.
+ * @return The spliced tally: equal to the serial one exactly when the chunked stream hashes and counts alike.
+ */
+Tally chunked_scan(const munch::core::Lexer& lexer, const std::string& corpus, const std::vector<std::size_t>& edges)
+{
+    struct alignas(64) Padded
+    {
+        Tally tally;
+    };
+
+    std::vector<Padded> tallies(edges.size() - 1);
+
+    {
+        std::vector<std::jthread> workers{};
+
+        for (std::size_t chunk{0}; chunk + 2 < edges.size(); ++chunk)
+        {
+            workers.emplace_back([&, chunk] {
+                const std::string_view piece{corpus.data() + edges[chunk], edges[chunk + 1] - edges[chunk]};
+
+                auto& mine{tallies[chunk].tally};
+
+                mine.consumed = lexer.tokenize_all<Token>(piece, [&mine](const Token token, const std::size_t) {
+                    mine.checksum = mine.checksum * 31 + static_cast<std::size_t>(token);
+
+                    ++mine.tokens;
+                });
+            });
+        }
+
+        const auto last{edges.size() - 2};
+
+        const std::string_view piece{corpus.data() + edges[last], edges[last + 1] - edges[last]};
+
+        auto& mine{tallies[last].tally};
+
+        mine.consumed = lexer.tokenize_all<Token>(piece, [&mine](const Token token, const std::size_t) {
+            mine.checksum = mine.checksum * 31 + static_cast<std::size_t>(token);
+
+            ++mine.tokens;
+        });
+    }
+
+    Tally total{};
+
+    for (const auto& [tally] : tallies)
+    {
+        total.checksum = total.checksum * pow31(tally.tokens) + tally.checksum;
+
+        total.tokens += tally.tokens;
+
+        total.consumed += tally.consumed;
+    }
+
+    return total;
+}
+
+/**
+ * @brief The untimed proof of a plan: the chunks' concatenated (kind, length) stream equals the serial one element for
+ *        element, and every chunk consumes whole.
+ * @param lexer The lexer.
+ * @param corpus The corpus.
+ * @param edges The plan's chunk edges.
+ * @param reference The serial reference.
+ * @return True when every chunk consumes whole and the streams are equal.
+ */
+bool exact_match(
+        const munch::core::Lexer& lexer, const std::string& corpus, const std::vector<std::size_t>& edges,
+        const Reference& reference)
+{
+    std::size_t ordinal{0};
+
+    auto matched{true};
+
+    for (std::size_t chunk{0}; chunk + 1 < edges.size(); ++chunk)
+    {
+        const std::string_view piece{corpus.data() + edges[chunk], edges[chunk + 1] - edges[chunk]};
+
+        const auto consumed{lexer.tokenize_all<Token>(piece, [&](const Token token, const std::size_t length) {
+            matched = matched && ordinal < reference.kinds.size() &&
+                      static_cast<unsigned char>(token) == reference.kinds[ordinal] &&
+                      length == reference.lengths[ordinal];
+
+            ++ordinal;
+        })};
+
+        if (consumed != piece.size())
+        {
+            return false;
+        }
+    }
+
+    return matched && ordinal == reference.kinds.size();
+}
+
+/**
+ * @brief Times two scans of one corpus pass by pass, the first scan first on even passes and second on odd ones, and
+ *        reports each pass's two times once both have run.
+ * @param passes The passes.
+ * @param reference The serial reference's tally every scan must reproduce.
+ * @param first The first scan, a callable returning its Tally.
+ * @param second The second scan, a callable returning its Tally.
+ * @param report Called after each pass with the pass index and the first and the second scan's times.
+ * @return True when every scan of every pass reproduced the reference.
+ */
+template <typename First, typename Second, typename Report>
+bool timed_passes(
+        const int passes, const Tally& reference, const First& first, const Second& second, const Report& report)
+{
+    auto agreed{true};
+
+    for (int pass{0}; pass < passes; ++pass)
+    {
+        Timed_scan first_run{};
+
+        Timed_scan second_run{};
+
+        if (pass % 2 == 0)
+        {
+            first_run = timed(first);
+
+            second_run = timed(second);
+        }
+        else
+        {
+            second_run = timed(second);
+
+            first_run = timed(first);
+        }
+
+        agreed = agreed && is_same_stream(first_run.tally, reference) && is_same_stream(second_run.tally, reference);
+
+        report(pass, first_run.elapsed, second_run.elapsed);
+    }
+
+    return agreed;
+}
+
+/**
+ * @brief A wall-clock duration in seconds.
+ * @param elapsed The duration.
+ * @return The seconds.
+ */
+double elapsed_s(const std::chrono::steady_clock::duration elapsed)
+{
+    return std::chrono::duration<double>(elapsed).count();
+}
+
+/**
+ * @brief The throughput of scanning some bytes in a duration.
+ * @param bytes The bytes scanned.
+ * @param elapsed The duration.
+ * @return The MiB per second.
+ */
+double mib_per_s(const std::size_t bytes, const std::chrono::steady_clock::duration elapsed)
+{
+    const auto seconds{std::chrono::duration<double>(elapsed).count()};
+
+    return static_cast<double>(bytes) / (1024.0 * 1024.0) / seconds;
+}
+
+/**
+ * @brief Compiles C-like with string literals, the strings at priority 2.
+ * @param split_friendly Whether the C-like base is the split-friendly one, newline its own token.
+ * @return The automaton, the lexer, the trim states and whether the initial state is re-entered.
+ */
+Bench_grammar bench_grammar(const bool split_friendly)
+{
+    Builder_dbg builder{};
+
+    figures::c_like(builder, split_friendly);
+
+    builder.add_token(figures::string_literal(), Token::String, 2);
+
+    auto dfa{builder.dfa()};
+
+    auto live{live_states(dfa)};
+
+    const auto reentrant{is_init_reentrant(dfa, live)};
+
+    return {.dfa = std::move(dfa), .lexer = builder.build(), .live = std::move(live), .reentrant = reentrant};
+}
+
+/**
+ * @brief Reads the command line positionally: a first argument std::atoi reads as positive is the size in MiB, then a
+ *        second one read so is the passes, then a third is the CSV path, `-` for none; every argument after those
+ *        taken is an occurrence file.
+ * @param arguments The arguments after the program name.
+ * @return The options, each one not given at its default: 16 MiB, 5 passes, no CSV.
+ */
+Bench_options options_of(const std::vector<std::string>& arguments)
+{
+    Bench_options options{};
+
+    std::size_t taken{0};
+
+    if (!arguments.empty() && std::atoi(arguments[0].c_str()) > 0)
+    {
+        options.size_mib = static_cast<std::size_t>(std::atoi(arguments[0].c_str()));
+
+        taken = 1;
+
+        if (arguments.size() > 1 && std::atoi(arguments[1].c_str()) > 0)
+        {
+            options.passes = std::atoi(arguments[1].c_str());
+
+            taken = 2;
+
+            if (arguments.size() > 2)
+            {
+                options.csv_path = arguments[2] == "-" ? std::string{} : arguments[2];
+
+                taken = 3;
+            }
+        }
+    }
+
+    options.occurrence_files.assign(arguments.begin() + static_cast<std::ptrdiff_t>(taken), arguments.end());
+
+    return options;
+}
+
+/**
+ * @brief Prints the run's banner: the commit with its dirty state, the corpus size, the passes and whether the
+ *        observations are recorded.
+ * @param options The run's options.
+ */
+void print_banner(const Bench_options& options)
+{
+    using munch::tools::benchmark::kCommit;
+
+    using munch::tools::benchmark::kDirty;
+
+    std::printf("window-recovered parallel cuts, preview of the split-windows benchmark campaign\n");
+
+    std::printf(
+            "  commit %s%s, %zu MiB, %d passes%s\n", kCommit, kDirty ? " (uncommitted changes present)" : "",
+            options.size_mib, options.passes,
+            options.csv_path.empty() ? ", DEV RUN, observations discarded" : ", observations recorded");
+}
+
+/**
+ * @brief Checks the premise of the no-byte measurement: the lexer certifies no byte exactly. Prints `PREMISE MOVED`
+ *        with the first byte it certifies.
+ * @param lexer The lexer.
+ * @return True when no byte is exactly certified.
+ */
+bool has_no_exact_byte(const munch::core::Lexer& lexer)
+{
+    for (int symbol{0}; symbol < 256; ++symbol)
+    {
+        if (lexer.is_split_point(static_cast<char>(symbol)))
+        {
+            std::printf(
+                    "  PREMISE MOVED: byte %d is exactly certified, this grammar no longer needs windows\n", symbol);
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * @brief Finds every certified two-byte window of a grammar into the origin table, timing the search, and prints the
+ *        count and the time; prints that nothing is measured when no window is certified.
+ * @param grammar The grammar.
+ * @return The origin table, std::nullopt when no window is certified.
+ */
+std::optional<Origins> window_census(const Bench_grammar& grammar)
+{
+    const auto search_started{std::chrono::steady_clock::now()};
+
+    auto origins{origins_of(grammar.dfa, grammar.live, grammar.reentrant)};
+
+    const auto search_elapsed{std::chrono::steady_clock::now() - search_started};
+
+    std::printf(
+            "  certified two-byte windows: %zu, found in %.1f ms of post-construction analysis\n", origins.windows,
+            std::chrono::duration<double, std::milli>(search_elapsed).count());
+
+    if (origins.windows == 0)
+    {
+        std::printf("  no window certified, nothing to measure\n");
+
+        return std::nullopt;
+    }
+
+    return origins;
+}
+
+/**
+ * @brief Prints, per readable file, how often a certified window occurs in its bytes and the mean gap between
+ *        occurrences; a file that cannot be opened prints nothing.
+ * @param files The files.
+ * @param origins The origin table.
+ */
+void report_occurrences(const std::vector<std::string>& files, const Origins& origins)
+{
+    for (const auto& file : files)
+    {
+        if (const auto data{read_bytes(file)})
+        {
+            const auto occurrences{window_boundaries(*data, origins).size()};
+
+            std::printf(
+                    "  %-40s %zu occurrences over %zu bytes, mean gap %.1f\n", file.c_str(), occurrences, data->size(),
+                    occurrences ? static_cast<double>(data->size()) / occurrences : 0.0);
+        }
+    }
+}
+
+/**
+ * @brief The measurement on the grammar no byte certifies: plans at most eight chunks at window-recovered origins,
+ * holds the chunked stream to the serial one before any clock starts, and times the serial scan against the chunked one
+ *        pass by pass, printing each figure and recording it.
+ * @param grammar The C-like grammar with string literals.
+ * @param origins Its origin table.
+ * @param options The run's options.
+ * @param observations The run's observations.
+ * @return True when the corpus tokenizes, the plan cuts at token starts and every scan reproduces the serial stream.
+ */
+bool no_byte_measurement(
+        const Bench_grammar& grammar, const Origins& origins, const Bench_options& options, Observations& observations)
+{
+    const auto& lexer{grammar.lexer};
+
+    const auto corpus{source_corpus(options.size_mib << 20U)};
+
+    const auto reference{serial_reference(lexer, corpus)};
+
+    if (reference.tally.consumed != corpus.size())
+    {
+        std::printf("  CORPUS NOT TOKENIZABLE: consumed %zu of %zu\n", reference.tally.consumed, corpus.size());
+
+        return false;
+    }
+
+    const auto window_plan_started{std::chrono::steady_clock::now()};
+
+    const auto boundaries{window_boundaries(corpus, origins)};
+
+    std::printf(
+            "  corpus: %zu bytes, %zu window occurrences, mean gap %.1f bytes\n", corpus.size(), boundaries.size(),
+            boundaries.empty() ? 0.0 : static_cast<double>(corpus.size()) / boundaries.size());
+
+    const auto edges{nearest_edges(corpus.size(), boundaries)};
+
+    const auto window_plan_elapsed{std::chrono::steady_clock::now() - window_plan_started};
+
+    if (const auto edge{first_non_token_start(edges, reference)})
+    {
+        std::printf("  BOUNDARY %zu IS NOT A TOKEN START, the certificate or the planner is wrong\n", *edge);
+
+        return false;
+    }
+
+    if (!is_same_stream(chunked_scan(lexer, corpus, edges), reference.tally) ||
+        !exact_match(lexer, corpus, edges, reference))
+    {
+        std::printf("  STREAMS DISAGREE: the window cut does not reproduce the serial scan\n");
+
+        return false;
+    }
+
+    std::printf(
+            "  streams identical: %zu tokens, spliced checksum equal, %zu chunks; window plan %.2f ms\n",
+            reference.tally.tokens, edges.size() - 1, elapsed_s(window_plan_elapsed) * 1e3);
+
+    observations.row("plan-window-no-byte", -1, elapsed_s(window_plan_elapsed), 0.0);
+
+    Tally timed_serial{};
+
+    const auto agreed{timed_passes(
+            options.passes, reference.tally,
+            [&] {
+                timed_serial = {};
+
+                timed_serial.consumed = lexer.tokenize_all<Token>(corpus, [&](const Token token, const std::size_t) {
+                    timed_serial.checksum = timed_serial.checksum * 31 + static_cast<std::size_t>(token);
+
+                    ++timed_serial.tokens;
+                });
+
+                return timed_serial;
+            },
+            [&] { return chunked_scan(lexer, corpus, edges); },
+            [&](const int pass, const auto serial_elapsed, const auto chunked_elapsed) {
+                observations.row(
+                        "serial-no-byte", pass, elapsed_s(serial_elapsed), mib_per_s(corpus.size(), serial_elapsed));
+
+                observations.row(
+                        "window-scan-no-byte", pass, elapsed_s(chunked_elapsed),
+                        mib_per_s(corpus.size(), chunked_elapsed));
+
+                std::printf(
+                        "  pass %d: serial %7.1f MiB/s, window-scan x%zu %7.1f MiB/s, speedup %.2fx\n", pass,
+                        mib_per_s(corpus.size(), serial_elapsed), edges.size() - 1,
+                        mib_per_s(corpus.size(), chunked_elapsed),
+                        elapsed_s(serial_elapsed) / elapsed_s(chunked_elapsed));
+            })};
+
+    if (!agreed)
+    {
+        std::printf("  A TIMED PASS DISAGREED with the serial reference\n");
+
+        return false;
+    }
+
+    return true;
+}
+
+Observations::Observations(std::string csv_path, const std::size_t input_mib)
+    : csv_path_{std::move(csv_path)}, input_mib_{input_mib}, run_{static_cast<std::size_t>(std::time(nullptr))}
+{}
+
+void Observations::row(const std::string_view scenario, const int pass, const double seconds, const double mib_s)
+{
+    if (csv_path_.empty())
     {
         return;
     }
 
-    std::ifstream probe{g_csv};
+    std::ifstream probe{csv_path_};
 
     const auto fresh{!probe.good() || probe.peek() == std::ifstream::traits_type::eof()};
 
     probe.close();
 
-    std::ofstream csv{g_csv, std::ios::app};
+    std::ofstream csv{csv_path_, std::ios::app};
 
     if (!csv)
     {
-        std::printf("  CSV OPEN FAILED: %s\n", g_csv.c_str());
+        std::printf("  CSV OPEN FAILED: %s\n", csv_path_.c_str());
 
-        g_csv_ok = false;
+        healthy_ = false;
 
         return;
     }
 
-    // Round-trip precision: six digits silently rounds throughput, the defect the harness fixed once already.
     csv << std::setprecision(std::numeric_limits<double>::max_digits10);
 
     if (fresh)
@@ -380,166 +983,35 @@ void csv_row(const std::string_view scenario, const int pass, const double secon
 
     using munch::tools::benchmark::kDirty;
 
-    csv << g_run << ',' << kCommit << ',' << (kDirty ? "yes" : "no") << ',' << scenario << ',' << g_size_mib << ','
+    csv << run_ << ',' << kCommit << ',' << (kDirty ? "yes" : "no") << ',' << scenario << ',' << input_mib_ << ','
         << pass << ',' << seconds << ',' << mib_s << '\n';
 
     csv.flush();
 
     if (!csv)
     {
-        std::printf("  CSV WRITE FAILED: %s\n", g_csv.c_str());
+        std::printf("  CSV WRITE FAILED: %s\n", csv_path_.c_str());
 
-        g_csv_ok = false;
+        healthy_ = false;
     }
 }
 
-double mib_per_s(const std::size_t bytes, const std::chrono::steady_clock::duration elapsed)
-{
-    const auto seconds{std::chrono::duration<double>(elapsed).count()};
-
-    return static_cast<double>(bytes) / (1024.0 * 1024.0) / seconds;
-}
-
-double elapsed_s(const std::chrono::steady_clock::duration elapsed)
-{
-    return std::chrono::duration<double>(elapsed).count();
-}
-
 /**
- * @brief Scans the corpus in the chunks the edges delimit: one jthread per interior chunk, the last chunk on the
- *        calling thread, per-chunk tallies spliced in stream order.
- *
- * This is the one scan machinery every timed path shares, byte-planned and window-planned alike, so a throughput
- * ratio compares plans and nothing else. The tally work is the observable workload on every path, its results are
- * validated by the callers after every timed pass, and being used is what keeps the compiler from discarding it.
+ * @brief The same measurement on a grammar carrying both certificates, split-friendly C-like plus strings: newline is
+ *        exactly certified there, so the shipped byte planner and the window planner cut the same corpus, both plans
+ *        are held to the serial stream before any clock starts, and then their scans are timed against each other.
+ * @param options The run's options.
+ * @param observations The run's observations.
+ * @return True when newline is exactly certified, the corpus tokenizes, both plans cut at token starts and every
+ *         scan of both plans reproduces the serial stream.
  */
-std::size_t chunked_scan(
-        const munch::core::Lexer& lexer, const std::string& corpus, const std::vector<std::size_t>& edges, Tally& total)
-{
-    struct alignas(64) Padded
-    {
-        Tally tally;
-
-        std::size_t consumed{0};
-    };
-
-    std::vector<Padded> tallies(edges.size() - 1);
-
-    {
-        std::vector<std::jthread> workers;
-
-        for (std::size_t chunk{0}; chunk + 2 < edges.size(); ++chunk)
-        {
-            workers.emplace_back([&, chunk] {
-                const std::string_view piece{corpus.data() + edges[chunk], edges[chunk + 1] - edges[chunk]};
-
-                auto& mine{tallies[chunk]};
-
-                mine.consumed = lexer.tokenize_all<Token>(piece, [&mine](const Token token, const std::size_t) {
-                    mine.tally.checksum = mine.tally.checksum * 31 + static_cast<std::size_t>(token);
-
-                    ++mine.tally.tokens;
-                });
-            });
-        }
-
-        const auto last{edges.size() - 2};
-
-        const std::string_view piece{corpus.data() + edges[last], edges[last + 1] - edges[last]};
-
-        auto& mine{tallies[last]};
-
-        mine.consumed = lexer.tokenize_all<Token>(piece, [&mine](const Token token, const std::size_t) {
-            mine.tally.checksum = mine.tally.checksum * 31 + static_cast<std::size_t>(token);
-
-            ++mine.tally.tokens;
-        });
-    }
-
-    total = {};
-
-    std::size_t covered{0};
-
-    for (std::size_t chunk{0}; chunk + 1 < edges.size(); ++chunk)
-    {
-        covered += tallies[chunk].consumed;
-
-        total.checksum = total.checksum * pow31(tallies[chunk].tally.tokens) + tallies[chunk].tally.checksum;
-
-        total.tokens += tallies[chunk].tally.tokens;
-    }
-
-    return covered;
-}
-
-/**
- * @brief Whether a timed pass reproduced the reference stream; a mismatch is reported once by the caller.
- */
-bool agrees(const Tally& timed, const Tally& reference)
-{
-    return timed.checksum == reference.checksum && timed.tokens == reference.tokens;
-}
-
-/**
- * @brief The exact untimed proof: the chunked concatenation must match the serial (kind, length) stream element
- *        for element, exactly as the engine-comparison harness proves agreement once before timing.
- *
- * The hashes inside the timed passes are the sanity signal; this is the proof, and it is why streams with the
- * same kinds but different token boundaries cannot pass. The reference costs five bytes per token, which the CI
- * default carries lightly and a 512 MiB campaign machine must budget for.
- */
-bool exact_match(
-        const munch::core::Lexer& lexer, const std::string& corpus, const std::vector<std::size_t>& edges,
-        const std::vector<unsigned char>& kinds, const std::vector<std::uint32_t>& lengths)
-{
-    std::size_t ordinal{0};
-
-    auto matched{true};
-
-    for (std::size_t chunk{0}; chunk + 1 < edges.size(); ++chunk)
-    {
-        const std::string_view piece{corpus.data() + edges[chunk], edges[chunk + 1] - edges[chunk]};
-
-        const auto consumed{lexer.tokenize_all<Token>(piece, [&](const Token token, const std::size_t length) {
-            matched = matched && ordinal < kinds.size() && static_cast<unsigned char>(token) == kinds[ordinal] &&
-                      length == lengths[ordinal];
-
-            ++ordinal;
-        })};
-
-        if (consumed != piece.size())
-        {
-            return false;
-        }
-    }
-
-    return matched && ordinal == kinds.size();
-}
-
-/**
- * @brief The same measurement on a grammar carrying both certificates: split-friendly C-like plus strings.
- *
- * Newline is exactly certified there, so the shipped byte planner and the window planner run on the same corpus
- * and the window path's cost is priced against the native one, which is the comparison the campaign owes. Both
- * paths are stream-equality asserted against the serial scan before any clock starts.
- */
-bool byte_versus_window()
+bool byte_versus_window(const Bench_options& options, Observations& observations)
 {
     std::printf("\nbyte-certified versus window-recovered cuts, same grammar, same corpus\n");
 
-    Builder_dbg builder;
+    const auto grammar{bench_grammar(true)};
 
-    figures::c_like(builder, true);
-
-    builder.add_token(figures::string_literal(), Token::String, 2);
-
-    const auto dfa{builder.dfa()};
-
-    const auto lexer{builder.build()};
-
-    const auto live{trim(dfa)};
-
-    const auto reentrant{init_reentrant(dfa, live)};
+    const auto& lexer{grammar.lexer};
 
     if (!lexer.is_split_point('\n'))
     {
@@ -548,130 +1020,50 @@ bool byte_versus_window()
         return false;
     }
 
-    const auto corpus{source_corpus(g_size_mib << 20u)};
+    const auto corpus{source_corpus(options.size_mib << 20U)};
 
-    std::vector<bool> begins(corpus.size(), false);
+    const auto reference{serial_reference(lexer, corpus)};
 
-    std::vector<unsigned char> kinds;
-
-    std::vector<std::uint32_t> lengths;
-
-    Tally serial{};
-
-    std::size_t offset{0};
-
-    const auto consumed{lexer.tokenize_all<Token>(corpus, [&](const Token token, const std::size_t length) {
-        begins[offset] = true;
-
-        offset += length;
-
-        kinds.push_back(static_cast<unsigned char>(token));
-
-        lengths.push_back(static_cast<std::uint32_t>(length));
-
-        serial.checksum = serial.checksum * 31 + static_cast<std::size_t>(token);
-
-        ++serial.tokens;
-    })};
-
-    if (consumed != corpus.size())
+    if (reference.tally.consumed != corpus.size())
     {
-        std::printf("  CORPUS NOT TOKENIZABLE by the split-friendly grammar: %zu of %zu\n", consumed, corpus.size());
+        std::printf(
+                "  CORPUS NOT TOKENIZABLE by the split-friendly grammar: %zu of %zu\n", reference.tally.consumed,
+                corpus.size());
 
         return false;
     }
 
-    std::vector<unsigned char> origin_of(256 * 256, 0xff);
-
-    std::size_t windows{0};
-
-    for (int first{0}; first < 256; ++first)
-    {
-        for (int second{0}; second < 256; ++second)
-        {
-            const std::string pair{static_cast<char>(first), static_cast<char>(second)};
-
-            if (const auto at{predicted(dfa, live, pair, reentrant)})
-            {
-                origin_of[static_cast<std::size_t>(first) * 256 + static_cast<std::size_t>(second)] =
-                        static_cast<unsigned char>(*at);
-
-                ++windows;
-            }
-        }
-    }
+    const auto origins{origins_of(grammar.dfa, grammar.live, grammar.reentrant)};
 
     const auto window_plan_started{std::chrono::steady_clock::now()};
 
-    std::vector<std::size_t> boundaries;
-
-    for (std::size_t at{0}; at + 1 < corpus.size(); ++at)
-    {
-        const auto first{static_cast<unsigned char>(corpus[at])};
-
-        const auto second{static_cast<unsigned char>(corpus[at + 1])};
-
-        if (const auto origin{origin_of[static_cast<std::size_t>(first) * 256 + second]}; origin != 0xff)
-        {
-            boundaries.push_back(at + origin);
-        }
-    }
-
-    constexpr std::size_t kChunks{8};
-
-    std::vector<std::size_t> edges{0};
-
-    for (std::size_t chunk{1}; chunk < kChunks; ++chunk)
-    {
-        const auto desired{corpus.size() * chunk / kChunks};
-
-        const auto nearest{std::lower_bound(boundaries.begin(), boundaries.end(), desired)};
-
-        if (nearest != boundaries.end() && *nearest > edges.back())
-        {
-            edges.push_back(*nearest);
-        }
-    }
-
-    edges.push_back(corpus.size());
+    const auto edges{nearest_edges(corpus.size(), window_boundaries(corpus, origins))};
 
     const auto window_plan_elapsed{std::chrono::steady_clock::now() - window_plan_started};
 
-    for (std::size_t edge{1}; edge + 1 < edges.size(); ++edge)
+    if (const auto edge{first_non_token_start(edges, reference)})
     {
-        if (!begins[edges[edge]])
-        {
-            std::printf("  BOUNDARY %zu IS NOT A TOKEN START on the split-friendly grammar\n", edges[edge]);
+        std::printf("  BOUNDARY %zu IS NOT A TOKEN START on the split-friendly grammar\n", *edge);
 
-            return false;
-        }
+        return false;
     }
 
-    // The byte plan through the public planner, timed, so the comparison charges each side its own planning once
-    // and the per-pass ratio compares scan against scan through the identical machinery.
     const auto byte_plan_started{std::chrono::steady_clock::now()};
 
     const auto edges_byte{lexer.chunk_boundaries(corpus, kChunks)};
 
     const auto byte_plan_elapsed{std::chrono::steady_clock::now() - byte_plan_started};
 
-    for (std::size_t edge{1}; edge + 1 < edges_byte.size(); ++edge)
+    if (const auto edge{first_non_token_start(edges_byte, reference)})
     {
-        if (!begins[edges_byte[edge]])
-        {
-            std::printf("  BYTE BOUNDARY %zu IS NOT A TOKEN START\n", edges_byte[edge]);
+        std::printf("  BYTE BOUNDARY %zu IS NOT A TOKEN START\n", *edge);
 
-            return false;
-        }
+        return false;
     }
 
-    Tally via_window{};
-
-    Tally via_byte{};
-
-    if (chunked_scan(lexer, corpus, edges, via_window) != corpus.size() || !agrees(via_window, serial) ||
-        chunked_scan(lexer, corpus, edges_byte, via_byte) != corpus.size() || !agrees(via_byte, serial) ||
-        !exact_match(lexer, corpus, edges, kinds, lengths) || !exact_match(lexer, corpus, edges_byte, kinds, lengths))
+    if (!is_same_stream(chunked_scan(lexer, corpus, edges), reference.tally) ||
+        !is_same_stream(chunked_scan(lexer, corpus, edges_byte), reference.tally) ||
+        !exact_match(lexer, corpus, edges, reference) || !exact_match(lexer, corpus, edges_byte, reference))
     {
         std::printf("  STREAMS DISAGREE between the planners and the serial scan\n");
 
@@ -681,72 +1073,30 @@ bool byte_versus_window()
     std::printf(
             "  %zu windows; both plans reproduce the serial stream of %zu tokens; plans: byte %.2f ms for %zu "
             "chunks, window %.2f ms for %zu\n",
-            windows, serial.tokens, elapsed_s(byte_plan_elapsed) * 1e3, edges_byte.size() - 1,
+            origins.windows, reference.tally.tokens, elapsed_s(byte_plan_elapsed) * 1e3, edges_byte.size() - 1,
             elapsed_s(window_plan_elapsed) * 1e3, edges.size() - 1);
 
-    csv_row("plan-byte-split-friendly", -1, elapsed_s(byte_plan_elapsed), 0.0);
+    observations.row("plan-byte-split-friendly", -1, elapsed_s(byte_plan_elapsed), 0.0);
 
-    csv_row("plan-window-split-friendly", -1, elapsed_s(window_plan_elapsed), 0.0);
+    observations.row("plan-window-split-friendly", -1, elapsed_s(window_plan_elapsed), 0.0);
 
-    auto agreed{true};
+    const auto agreed{timed_passes(
+            options.passes, reference.tally, [&] { return chunked_scan(lexer, corpus, edges_byte); },
+            [&] { return chunked_scan(lexer, corpus, edges); },
+            [&](const int pass, const auto byte_elapsed, const auto window_elapsed) {
+                observations.row(
+                        "byte-scan-split-friendly", pass, elapsed_s(byte_elapsed),
+                        mib_per_s(corpus.size(), byte_elapsed));
 
-    for (int pass{0}; pass < g_passes; ++pass)
-    {
-        // Alternate which path runs first each pass, so thermal and frequency drift is shared rather than
-        // consistently charged to the second position, the same reason the main harness varies its order.
-        Tally timed_byte{};
+                observations.row(
+                        "window-scan-split-friendly", pass, elapsed_s(window_elapsed),
+                        mib_per_s(corpus.size(), window_elapsed));
 
-        Tally timed_window{};
-
-        std::chrono::steady_clock::duration byte_elapsed{};
-
-        std::chrono::steady_clock::duration window_elapsed{};
-
-        const auto run_byte{[&] {
-            const auto started{std::chrono::steady_clock::now()};
-
-            const auto covered{chunked_scan(lexer, corpus, edges_byte, timed_byte)};
-
-            byte_elapsed = std::chrono::steady_clock::now() - started;
-
-            agreed = agreed && covered == corpus.size();
-        }};
-
-        const auto run_window{[&] {
-            const auto started{std::chrono::steady_clock::now()};
-
-            const auto covered{chunked_scan(lexer, corpus, edges, timed_window)};
-
-            window_elapsed = std::chrono::steady_clock::now() - started;
-
-            agreed = agreed && covered == corpus.size();
-        }};
-
-        if (pass % 2 == 0)
-        {
-            run_byte();
-
-            run_window();
-        }
-        else
-        {
-            run_window();
-
-            run_byte();
-        }
-
-        agreed = agreed && agrees(timed_byte, serial) && agrees(timed_window, serial);
-
-        csv_row("byte-scan-split-friendly", pass, elapsed_s(byte_elapsed), mib_per_s(corpus.size(), byte_elapsed));
-
-        csv_row("window-scan-split-friendly", pass, elapsed_s(window_elapsed),
-                mib_per_s(corpus.size(), window_elapsed));
-
-        std::printf(
-                "  pass %d: byte-scan x%zu %7.1f MiB/s, window-scan x%zu %7.1f MiB/s, ratio %.2f\n", pass,
-                edges_byte.size() - 1, mib_per_s(corpus.size(), byte_elapsed), edges.size() - 1,
-                mib_per_s(corpus.size(), window_elapsed), elapsed_s(byte_elapsed) / elapsed_s(window_elapsed));
-    }
+                std::printf(
+                        "  pass %d: byte-scan x%zu %7.1f MiB/s, window-scan x%zu %7.1f MiB/s, ratio %.2f\n", pass,
+                        edges_byte.size() - 1, mib_per_s(corpus.size(), byte_elapsed), edges.size() - 1,
+                        mib_per_s(corpus.size(), window_elapsed), elapsed_s(byte_elapsed) / elapsed_s(window_elapsed));
+            })};
 
     if (!agreed)
     {
@@ -759,329 +1109,50 @@ bool byte_versus_window()
 }
 } // namespace
 
-int main(int argc, char** argv)
+/**
+ * @brief Runs the benchmark: the premise that no byte is exactly certified, the window census, the occurrence files,
+ *        the no-byte measurement and the byte-versus-window measurement, in turn.
+ * @param argc The argument count.
+ * @param argv The size in MiB, the passes, the CSV path or `-`, and the occurrence files, all optional.
+ * @return 0 when every premise and stream equality holds and every CSV write succeeded, 1 otherwise.
+ */
+int main(const int argc, char** argv)
 {
-    // Positional knobs mirror the modal benchmark: size in MiB, passes, CSV path ("-" for none), then any number
-    // of files for the occurrence statistics. Argument-free runs keep the CI-sized defaults.
-    int consumed_args{1};
+    std::vector<std::string> arguments{};
 
-    if (argc > 1 && std::atoi(argv[1]) > 0)
+    for (int arg{1}; arg < argc; ++arg)
     {
-        g_size_mib = static_cast<std::size_t>(std::atoi(argv[1]));
-
-        consumed_args = 2;
-
-        if (argc > 2 && std::atoi(argv[2]) > 0)
-        {
-            g_passes = std::atoi(argv[2]);
-
-            consumed_args = 3;
-
-            if (argc > 3)
-            {
-                g_csv = std::string_view{argv[3]} == "-" ? std::string{} : std::string{argv[3]};
-
-                consumed_args = 4;
-            }
-        }
+        arguments.emplace_back(argv[arg]);
     }
 
-    g_run = static_cast<std::size_t>(std::time(nullptr));
+    const auto options{options_of(arguments)};
 
-    using munch::tools::benchmark::kCommit;
+    Observations observations{options.csv_path, options.size_mib};
 
-    using munch::tools::benchmark::kDirty;
+    print_banner(options);
 
-    std::printf("window-recovered parallel cuts, preview of the split-windows benchmark campaign\n");
+    const auto grammar{bench_grammar(false)};
 
-    std::printf(
-            "  commit %s%s, %zu MiB, %d passes%s\n", kCommit, kDirty ? " (uncommitted changes present)" : "",
-            g_size_mib, g_passes, g_csv.empty() ? ", DEV RUN, observations discarded" : ", observations recorded");
-
-    Builder_dbg builder;
-
-    figures::c_like(builder, false);
-
-    builder.add_token(figures::string_literal(), Token::String, 2);
-
-    const auto dfa{builder.dfa()};
-
-    const auto lexer{builder.build()};
-
-    const auto live{trim(dfa)};
-
-    const auto reentrant{init_reentrant(dfa, live)};
-
-    // The premise: this grammar is one the published planner cannot serve at all.
-    for (int symbol{0}; symbol < 256; ++symbol)
+    if (!has_no_exact_byte(grammar.lexer))
     {
-        if (lexer.is_split_point(static_cast<char>(symbol)))
-        {
-            std::printf(
-                    "  PREMISE MOVED: byte %d is exactly certified, this grammar no longer needs windows\n", symbol);
-
-            return 1;
-        }
-    }
-
-    // Every certified two-byte window, as a 256x256 origin table for the occurrence scan. The search timing is
-    // the planning-cost figure the campaign owes: the whole price of window planning, paid once per grammar in a
-    // post-construction analysis of the compiled tables.
-    const auto search_started{std::chrono::steady_clock::now()};
-
-    std::vector<unsigned char> origin_of(256 * 256, 0xff);
-
-    std::size_t windows{0};
-
-    for (int first{0}; first < 256; ++first)
-    {
-        for (int second{0}; second < 256; ++second)
-        {
-            const std::string pair{static_cast<char>(first), static_cast<char>(second)};
-
-            if (const auto at{predicted(dfa, live, pair, reentrant)})
-            {
-                origin_of[static_cast<std::size_t>(first) * 256 + static_cast<std::size_t>(second)] =
-                        static_cast<unsigned char>(*at);
-
-                ++windows;
-            }
-        }
-    }
-
-    const auto search_elapsed{std::chrono::steady_clock::now() - search_started};
-
-    std::printf(
-            "  certified two-byte windows: %zu, found in %.1f ms of post-construction analysis\n", windows,
-            std::chrono::duration<double, std::milli>(search_elapsed).count());
-
-    if (windows == 0)
-    {
-        std::printf("  no window certified, nothing to measure\n");
-
         return 1;
     }
 
-    // Optional real-corpus statistics: how often the certified windows occur in the named files, bytes only.
-    // Occurrence frequency is the campaign's representativeness question, and it needs no tokenizability.
-    for (int arg{consumed_args}; arg < argc; ++arg)
+    const auto origins{window_census(grammar)};
+
+    if (!origins)
     {
-        if (auto* file{std::fopen(argv[arg], "rb")})
-        {
-            std::string data;
-
-            char buffer[1 << 16];
-
-            for (std::size_t got{0}; (got = std::fread(buffer, 1, sizeof buffer, file)) > 0;)
-            {
-                data.append(buffer, got);
-            }
-
-            std::fclose(file);
-
-            std::size_t occurrences{0};
-
-            for (std::size_t at{0}; at + 1 < data.size(); ++at)
-            {
-                const auto first{static_cast<unsigned char>(data[at])};
-
-                const auto second{static_cast<unsigned char>(data[at + 1])};
-
-                occurrences += origin_of[static_cast<std::size_t>(first) * 256 + second] != 0xff ? 1 : 0;
-            }
-
-            std::printf(
-                    "  %-40s %zu occurrences over %zu bytes, mean gap %.1f\n", argv[arg], occurrences, data.size(),
-                    occurrences ? static_cast<double>(data.size()) / occurrences : 0.0);
-        }
-    }
-
-    const auto corpus{source_corpus(g_size_mib << 20u)};
-
-    // The serial reference: the token stream this whole exercise must reproduce, plus the token-start bitmap the
-    // planned boundaries are asserted against.
-    std::vector<bool> begins(corpus.size(), false);
-
-    std::vector<unsigned char> kinds;
-
-    std::vector<std::uint32_t> lengths;
-
-    Tally serial{};
-
-    std::size_t offset{0};
-
-    const auto consumed{lexer.tokenize_all<Token>(corpus, [&](const Token token, const std::size_t length) {
-        begins[offset] = true;
-
-        offset += length;
-
-        kinds.push_back(static_cast<unsigned char>(token));
-
-        lengths.push_back(static_cast<std::uint32_t>(length));
-
-        serial.checksum = serial.checksum * 31 + static_cast<std::size_t>(token);
-
-        ++serial.tokens;
-    })};
-
-    if (consumed != corpus.size())
-    {
-        std::printf("  CORPUS NOT TOKENIZABLE: consumed %zu of %zu\n", consumed, corpus.size());
-
         return 1;
     }
 
-    // Plan boundaries: every window occurrence yields the offset the model certifies, and the chunk edges are the
-    // occurrences nearest the equal divisions, exactly the shape the shipped byte planner uses.
-    const auto window_plan_started{std::chrono::steady_clock::now()};
+    report_occurrences(options.occurrence_files, *origins);
 
-    std::vector<std::size_t> boundaries;
-
-    for (std::size_t at{0}; at + 1 < corpus.size(); ++at)
-    {
-        const auto first{static_cast<unsigned char>(corpus[at])};
-
-        const auto second{static_cast<unsigned char>(corpus[at + 1])};
-
-        if (const auto origin{origin_of[static_cast<std::size_t>(first) * 256 + second]}; origin != 0xff)
-        {
-            boundaries.push_back(at + origin);
-        }
-    }
-
-    std::printf(
-            "  corpus: %zu bytes, %zu window occurrences, mean gap %.1f bytes\n", corpus.size(), boundaries.size(),
-            boundaries.empty() ? 0.0 : static_cast<double>(corpus.size()) / boundaries.size());
-
-    constexpr std::size_t kChunks{8};
-
-    std::vector<std::size_t> edges{0};
-
-    for (std::size_t chunk{1}; chunk < kChunks; ++chunk)
-    {
-        const auto desired{corpus.size() * chunk / kChunks};
-
-        const auto nearest{std::lower_bound(boundaries.begin(), boundaries.end(), desired)};
-
-        if (nearest != boundaries.end() && *nearest > edges.back())
-        {
-            edges.push_back(*nearest);
-        }
-    }
-
-    edges.push_back(corpus.size());
-
-    const auto window_plan_elapsed{std::chrono::steady_clock::now() - window_plan_started};
-
-    for (std::size_t edge{1}; edge + 1 < edges.size(); ++edge)
-    {
-        if (!begins[edges[edge]])
-        {
-            std::printf("  BOUNDARY %zu IS NOT A TOKEN START, the certificate or the planner is wrong\n", edges[edge]);
-
-            return 1;
-        }
-    }
-
-    // The chunked scan: one jthread per interior chunk, the last chunk on this thread, per-chunk tallies spliced
-    // in stream order so equality with the serial checksum means the streams are identical token for token.
-    Tally parallel{};
-
-    if (chunked_scan(lexer, corpus, edges, parallel) != corpus.size() || !agrees(parallel, serial) ||
-        !exact_match(lexer, corpus, edges, kinds, lengths))
-    {
-        std::printf("  STREAMS DISAGREE: the window cut does not reproduce the serial scan\n");
-
-        return 1;
-    }
-
-    std::printf(
-            "  streams identical: %zu tokens, spliced checksum equal, %zu chunks; window plan %.2f ms\n", serial.tokens,
-            edges.size() - 1, elapsed_s(window_plan_elapsed) * 1e3);
-
-    csv_row("plan-window-no-byte", -1, elapsed_s(window_plan_elapsed), 0.0);
-
-    auto agreed{true};
-
-    // Only now the clocks. Every pass carries the identical observable tally workload on both paths and is
-    // validated against the reference afterwards; medians belong to the archived campaign, not here.
-    for (int pass{0}; pass < g_passes; ++pass)
-    {
-        // Alternate which path runs first each pass, sharing thermal and frequency drift instead of charging it
-        // to a fixed position, the same reason the main harness varies its order.
-        Tally timed_serial{};
-
-        Tally timed{};
-
-        std::size_t serial_covered{0};
-
-        std::chrono::steady_clock::duration serial_elapsed{};
-
-        std::chrono::steady_clock::duration chunked_elapsed{};
-
-        // The timed serial callback must do exactly the work the chunked callbacks do, checksum and count, or
-        // the baseline is unequal and the ratio lies; coverage comes from the driver's return value instead of
-        // a per-token accumulator in the timed region.
-        const auto run_serial{[&] {
-            const auto started{std::chrono::steady_clock::now()};
-
-            serial_covered = lexer.tokenize_all<Token>(corpus, [&](const Token token, const std::size_t) {
-                timed_serial.checksum = timed_serial.checksum * 31 + static_cast<std::size_t>(token);
-
-                ++timed_serial.tokens;
-            });
-
-            serial_elapsed = std::chrono::steady_clock::now() - started;
-        }};
-
-        const auto run_chunked{[&] {
-            const auto started{std::chrono::steady_clock::now()};
-
-            const auto covered{chunked_scan(lexer, corpus, edges, timed)};
-
-            chunked_elapsed = std::chrono::steady_clock::now() - started;
-
-            agreed = agreed && covered == corpus.size();
-        }};
-
-        if (pass % 2 == 0)
-        {
-            run_serial();
-
-            run_chunked();
-        }
-        else
-        {
-            run_chunked();
-
-            run_serial();
-        }
-
-        agreed = agreed && agrees(timed_serial, serial) && serial_covered == corpus.size() && agrees(timed, serial);
-
-        csv_row("serial-no-byte", pass, elapsed_s(serial_elapsed), mib_per_s(corpus.size(), serial_elapsed));
-
-        csv_row("window-scan-no-byte", pass, elapsed_s(chunked_elapsed), mib_per_s(corpus.size(), chunked_elapsed));
-
-        std::printf(
-                "  pass %d: serial %7.1f MiB/s, window-scan x%zu %7.1f MiB/s, speedup %.2fx\n", pass,
-                mib_per_s(corpus.size(), serial_elapsed), edges.size() - 1, mib_per_s(corpus.size(), chunked_elapsed),
-                elapsed_s(serial_elapsed) / elapsed_s(chunked_elapsed));
-    }
-
-    if (!agreed)
-    {
-        std::printf("  A TIMED PASS DISAGREED with the serial reference\n");
-
-        return 1;
-    }
-
-    if (!byte_versus_window())
+    if (!no_byte_measurement(grammar, *origins, options, observations) || !byte_versus_window(options, observations))
     {
         return 1;
     }
 
     std::printf("\ndev-grade preview only: archived figures require the collect.sh ritual on a quiet machine\n");
 
-    return g_csv_ok ? 0 : 1;
+    return observations.is_healthy() ? 0 : 1;
 }
