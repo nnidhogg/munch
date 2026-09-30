@@ -1,6 +1,29 @@
 cmake_minimum_required(VERSION 3.20.6)
 project(munch_probes)
 
+# The units two or more probes share, their headers under include/munch/tools/probes; paper4_recompute and
+# parallel_scan are built without it.
+add_library(munch_probes
+        src/assertions.cpp
+        src/crosscheck_session.cpp
+        src/files.cpp
+        src/lcg64.cpp
+        src/study_rows.cpp
+        src/window_model.cpp
+)
+
+target_include_directories(munch_probes
+        PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+)
+
+target_link_libraries(munch_probes
+        PUBLIC
+        munch_core
+)
+
 # Programs backing claims made outside this repository, in the same spirit as paper/figures: the numbers are asserted
 # against what the shipped predicates answer, so a note citing them cannot drift from the library silently.
 add_executable(munch_mode_cut_gate src/mode_cut_gate.cpp)
@@ -12,7 +35,13 @@ target_link_libraries(munch_mode_cut_gate
 
 # The window search reuses the applicability figures' grammars, so a row measured here is the same row the table
 # publishes rather than a transcription of it.
-add_executable(munch_window_gate src/window_gate.cpp)
+add_executable(munch_window_gate
+        src/gate_evidence.cpp
+        src/gate_search.cpp
+        src/gate_sweep.cpp
+        src/gate_totals.cpp
+        src/window_gate.cpp
+)
 
 target_include_directories(munch_window_gate
         PRIVATE
@@ -22,6 +51,7 @@ target_include_directories(munch_window_gate
 target_link_libraries(munch_window_gate
         PRIVATE
         munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)
@@ -33,7 +63,17 @@ endif ()
 # Quality of certified error recovery against the classical panic-mode conventions, on the study's grammar rows
 # under a deterministic corruption model. Runs as a test because it carries the pristine oracle and the theorem
 # transfer as hard assertions; the campaign form passes larger figures and archives the CSV.
-add_executable(munch_recovery_quality src/recovery_quality.cpp)
+add_executable(munch_recovery_quality
+        src/recovery_archive.cpp
+        src/recovery_arms.cpp
+        src/recovery_checks.cpp
+        src/recovery_corpora.cpp
+        src/recovery_damage.cpp
+        src/recovery_lcg.cpp
+        src/recovery_oracle.cpp
+        src/recovery_quality.cpp
+        src/recovery_report.cpp
+)
 
 target_include_directories(munch_recovery_quality
         PRIVATE
@@ -43,6 +83,7 @@ target_include_directories(munch_recovery_quality
 target_link_libraries(munch_recovery_quality
         PRIVATE
         munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)
@@ -115,6 +156,7 @@ target_include_directories(munch_corpus_windows
 target_link_libraries(munch_corpus_windows
         PRIVATE
         munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)
@@ -134,6 +176,7 @@ target_include_directories(munch_mandatory_core
 target_link_libraries(munch_mandatory_core
         PRIVATE
         munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)
@@ -154,6 +197,7 @@ target_include_directories(munch_malformed_splice
 target_link_libraries(munch_malformed_splice
         PRIVATE
         munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)
@@ -176,6 +220,7 @@ target_include_directories(munch_window_bench
 target_link_libraries(munch_window_bench
         PRIVATE
         munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)
@@ -187,7 +232,16 @@ endif ()
 # labeling whose byte permutations form the carry group, certifies windows behind the resolved flavor,
 # and holds every carry-driven plan to the serial scan. Runs as a test because every verdict, campaign
 # count, and price is pinned and every unproved premise is a refusal.
-add_executable(munch_wall_prepass src/wall_prepass.cpp)
+add_executable(munch_wall_prepass
+        src/wall_carry.cpp
+        src/wall_planning.cpp
+        src/wall_prepass.cpp
+        src/wall_prices.cpp
+        src/wall_refusals.cpp
+        src/wall_rows.cpp
+        src/wall_subsets.cpp
+        src/wall_table.cpp
+)
 
 target_include_directories(munch_wall_prepass
         PRIVATE
@@ -197,6 +251,7 @@ target_include_directories(munch_wall_prepass
 target_link_libraries(munch_wall_prepass
         PRIVATE
         munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)
@@ -210,12 +265,20 @@ endif ()
 # kept in Python on purpose: a separately written model in another language makes agreement evidence
 # rather than a shared-idiom coincidence. The drivers fail on any disagreement.
 add_executable(munch_crosscheck_scan src/crosscheck_scan.cpp)
-target_compile_options(munch_crosscheck_scan PRIVATE -O2 -Wall -Wextra)
-target_link_libraries(munch_crosscheck_scan PRIVATE munch_core munch_regex munch_dfa munch_nfa)
+
+target_link_libraries(munch_crosscheck_scan
+        PRIVATE
+        munch_core
+        munch_probes
+)
 
 add_executable(munch_crosscheck_anchor src/crosscheck_anchor.cpp)
-target_compile_options(munch_crosscheck_anchor PRIVATE -O2 -Wall -Wextra)
-target_link_libraries(munch_crosscheck_anchor PRIVATE munch_core munch_regex munch_dfa munch_nfa)
+
+target_link_libraries(munch_crosscheck_anchor
+        PRIVATE
+        munch_core
+        munch_probes
+)
 
 if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_crosscheck_scan

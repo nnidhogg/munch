@@ -1,9 +1,10 @@
-// A standalone probe over munch's public certificate walk and its anchored comparator machinery.
+// A probe over munch's public certificate walk and its anchored comparator machinery.
 //
-// It is crosscheck_scan.cpp widened, not replaced: the SET, Q, T and END commands answer byte for byte what
-// crosscheck_scan.cpp answers, so crosscheck_scan.py keeps working against either binary, and two commands are added
-// for Lexer::next_anchored_start() and Lexer::minimal_repair(). Nothing is asserted here; crosscheck_anchor.py owns
-// every verdict and compares against its own reference model.
+// Its main reads the protocol's commands and hands each to the Crosscheck_session of munch_probes, which builds the
+// Lexer from a literal token list and answers the query. It is crosscheck_scan.cpp widened, not replaced: the SET, Q, T
+// and END commands answer byte for byte what crosscheck_scan.cpp answers, so crosscheck_scan.py keeps working against
+// either binary, and two commands are added for Lexer::next_anchored_start() and Lexer::minimal_repair(). Nothing is
+// asserted here; crosscheck_anchor.py owns every verdict and compares against its own reference model.
 //
 // Protocol, line oriented on stdin, one field per whitespace-separated word:
 //
@@ -26,54 +27,27 @@
 //   M <repair>                                           a minimal repair, "-" when it is empty
 //   MR                                                   no repair exists, or the set is nullable
 
-#include <cstddef>
 #include <iostream>
-#include <optional>
 #include <string>
-#include <vector>
 
-#include "munch/core/builder.hpp"
-#include "munch/core/lexer.hpp"
-#include "munch/regex/regex.hpp"
+#include "munch/tools/probes/crosscheck_session.hpp"
 
-namespace
-{
-std::string decode(const std::string& field)
-{
-    return field == "-" ? std::string{} : field;
-}
-
-std::string encode(const std::string& text)
-{
-    return text.empty() ? std::string{"-"} : text;
-}
-
-munch::core::Lexer build(const std::vector<std::string>& tokens)
-{
-    munch::core::Builder builder;
-
-    for (std::size_t index{0}; index < tokens.size(); ++index)
-    {
-        builder.add_token(munch::regex::text(tokens[index]), index, index);
-    }
-
-    return builder.build();
-}
-} // namespace
-
+/**
+ * @brief Reads the protocol's commands from standard input and answers each through the session, refusing a query
+ *        before any SET on standard error.
+ * @return Zero, or one after a refused command.
+ */
 int main()
 {
     std::ios::sync_with_stdio(false);
 
-    // Zero or one current lexer, re-seated by each SET; optional says exactly that,
-    // where a single-slot vector only implied it.
-    std::optional<munch::core::Lexer> lexer;
+    munch::tools::probes::Crosscheck_session session;
 
     std::string command;
 
     while (std::cin >> command)
     {
-        if (command != "SET" && command != "END" && !lexer)
+        if (command != "SET" && command != "END" && !session.ready())
         {
             std::cerr << "crosscheck_anchor: " << command << " before any SET\n";
             return 1;
@@ -86,119 +60,35 @@ int main()
 
         if (command == "SET")
         {
-            std::size_t count{0};
-
-            std::cin >> count;
-
-            std::vector<std::string> tokens;
-
-            for (std::size_t index{0}; index < count; ++index)
-            {
-                std::string field;
-
-                std::cin >> field;
-
-                tokens.push_back(decode(field));
-            }
-
-            lexer.emplace(build(tokens));
+            session.set(std::cin);
 
             continue;
         }
 
         if (command == "Q")
         {
-            std::string field;
-
-            std::size_t from{0};
-
-            std::cin >> field >> from;
-
-            const auto input{decode(field)};
-
-            const auto found{lexer->next_certified_evidence(input, from)};
-
-            if (found)
-            {
-                std::cout << "A " << found->start << ' ' << found->evidence_begin << ' ' << found->evidence_end << ' '
-                          << (found->window ? 1 : 0) << '\n';
-            }
-            else
-            {
-                std::cout << "R\n";
-            }
+            session.query(std::cin, std::cout);
 
             continue;
         }
 
         if (command == "N")
         {
-            std::string field;
-
-            std::size_t from{0};
-
-            std::cin >> field >> from;
-
-            const auto tail{decode(field)};
-
-            const auto found{lexer->next_anchored_start(tail, from)};
-
-            if (found)
-            {
-                std::cout << "N " << *found << '\n';
-            }
-            else
-            {
-                std::cout << "NR\n";
-            }
+            session.anchored(std::cin, std::cout);
 
             continue;
         }
 
         if (command == "M")
         {
-            std::string field;
-
-            std::cin >> field;
-
-            const auto tail{decode(field)};
-
-            const auto found{lexer->minimal_repair(tail)};
-
-            if (found)
-            {
-                std::cout << "M " << encode(*found) << '\n';
-            }
-            else
-            {
-                std::cout << "MR\n";
-            }
+            session.repair(std::cin, std::cout);
 
             continue;
         }
 
         if (command == "T")
         {
-            std::string field;
-
-            std::cin >> field;
-
-            const auto input{decode(field)};
-
-            std::vector<std::size_t> lengths;
-
-            const auto record{[&lengths](const std::size_t, const std::size_t length) { lengths.push_back(length); }};
-
-            const auto committed{lexer->tokenize_all<std::size_t>(input, record)};
-
-            std::cout << "T " << committed << ' ' << lengths.size();
-
-            for (const auto length : lengths)
-            {
-                std::cout << ' ' << length;
-            }
-
-            std::cout << '\n';
+            session.tokenize(std::cin, std::cout);
 
             continue;
         }

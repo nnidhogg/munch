@@ -36,208 +36,149 @@
 // targets, the planning-granularity proxy for the certificate gap distribution. Rows go to the CSV path when
 // given. The stream row is one grammar's measurement, so a corpus whose extensions select both grammars is
 // refused it: the per-file rows still stand, but no single certificate plans the aggregate. Figures from campaign runs
-// are quotable only under the collection ritual, archived with provenance beside the clean commit, exactly as the
-// benchmark's and the recovery harness's are.
+// are quoted from archives kept with their provenance beside a clean commit, as the benchmark's and the recovery
+// harness's are.
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "grammars.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
+#include "munch/tools/probes/assertions.hpp"
+#include "munch/tools/probes/files.hpp"
+#include "munch/tools/probes/lcg64.hpp"
+#include "munch/tools/probes/study_rows.hpp"
 
 namespace
 {
 using figures::Token;
-using namespace munch::regex;
+using munch::tools::probes::Assertions;
+using munch::tools::probes::consumption_complete_c_row;
+using munch::tools::probes::files_under;
+using munch::tools::probes::Lcg64;
+using munch::tools::probes::Output_file;
+using munch::tools::probes::published_cumulative_row;
+using munch::tools::probes::read_bytes;
 
-std::size_t failures{0};
-
-void expect(const bool condition, const std::string_view what)
+/**
+ * @brief The grammar a campaign reads a file under.
+ */
+enum class Grammar
 {
-    if (!condition)
-    {
-        ++failures;
-        std::cout << "FAIL: " << what << "\n";
-    }
-}
-
-munch::core::Lexer published_cumulative()
-{
-    munch::core::Builder builder;
-
-    figures::c_like(builder, false);
-    builder.add_token(figures::string_literal(), Token::String, 2);
-    builder.add_token(figures::line_comment(), Token::LineComment, 1);
-    builder.add_token(figures::block_comment(), Token::BlockComment, 1);
-
-    return builder.build();
-}
-
-munch::core::Lexer consumption_complete_c()
-{
-    munch::core::Builder builder;
-
-    builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::Identifier, 2);
-    builder.add_token(plus(any_of(Set::digits())), Token::Number, 2);
-    builder.add_token(any_of(figures::operators()), Token::Operator, 2);
-    builder.add_token(any_of(figures::punctuation() + '#' + '\\' + '@' + '`' + '$' + '\''), Token::Punctuation, 2);
-    builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), Token::Whitespace, 2);
-
-    const auto escape{concat(text("\\"), any_of(Set::all()))};
-
-    builder.add_token(
-            concat(text("\""), kleene(choice(any_of(Set::all() - Set{'"', '\\', '\n'}), escape)), text("\"")),
-            Token::String, 1);
-
-    builder.add_token(
-            concat(text("'"), plus(choice(any_of(Set::all() - Set{'\'', '\\', '\n'}), escape)), text("'")),
-            Token::Literal, 1);
-
-    builder.add_token(figures::line_comment(), Token::LineComment, 1);
-    builder.add_token(figures::block_comment(), Token::BlockComment, 1);
-
-    return builder.build();
-}
-
-munch::core::Lexer rfc_json()
-{
-    munch::core::Builder builder;
-
-    figures::json(builder);
-
-    return builder.build();
-}
-
-std::size_t exact_bytes(const munch::core::Lexer& lexer)
-{
-    std::size_t count{0};
-
-    for (int value{0}; value < 256; ++value)
-    {
-        count += lexer.is_split_point(static_cast<char>(value)) ? 1 : 0;
-    }
-
-    return count;
-}
-
-// The two-byte census; whitespace_anchored counts members whose first byte the grammar treats as whitespace.
-struct Census
-{
-    std::size_t windows{0};
-    std::size_t whitespace_anchored{0};
+    rfc8259,
+    consumption_complete_c
 };
 
-Census census_two(const munch::core::Lexer& lexer, const std::string_view whitespace)
+/**
+ * @brief The grammar a file's extension selects: `.json` the RFC 8259 row, every other the consumption-complete C row.
+ * @param path The file.
+ * @return The file's grammar.
+ */
+Grammar grammar_of(const std::filesystem::path& path)
 {
-    Census census;
-
-    for (int first{0}; first < 256; ++first)
-    {
-        for (int second{0}; second < 256; ++second)
-        {
-            const char window[2]{static_cast<char>(first), static_cast<char>(second)};
-
-            if (lexer.is_split_window(std::string_view{window, 2}).has_value())
-            {
-                ++census.windows;
-
-                if (whitespace.find(static_cast<char>(first)) != std::string_view::npos)
-                {
-                    ++census.whitespace_anchored;
-                }
-            }
-        }
-    }
-
-    return census;
+    return path.extension() == ".json" ? Grammar::rfc8259 : Grammar::consumption_complete_c;
 }
 
-// Deterministic C-like source: the same LCG discipline as the recovery harness, so every run performs the
-// identical experiment. The shapes exercise what the consumption fixes exist for: preprocessor lines, strings
-// with escapes, char literals, both comment forms, and ordinary statement text.
-std::string generated_c(const std::size_t bytes)
+/**
+ * @brief The grammar's name in the CSV's grammar column.
+ * @param grammar The grammar.
+ * @return `rfc8259` or `consumption-complete-c`.
+ */
+std::string_view name_of(const Grammar grammar)
 {
-    std::uint64_t state{0x2545F4914F6CDD1DULL};
-
-    const auto next{[&state](const std::size_t bound) {
-        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
-
-        return static_cast<std::size_t>((state >> 33) % bound);
-    }};
-
-    static constexpr const char* idents[]{"count", "buffer", "index", "state", "value", "table", "next", "size"};
-
-    std::string out;
-
-    while (out.size() < bytes)
-    {
-        switch (next(8))
-        {
-        case 0:
-            out += "#define LIMIT_";
-            out += idents[next(8)];
-            out += " 4096\n";
-            break;
-        case 1:
-            out += "/* invariant: ";
-            out += idents[next(8)];
-            out += " stays below the table size */\n";
-            break;
-        case 2:
-            out += "static const char* name = \"escaped \\\"quote\\\" and tab\\t\";\n";
-            break;
-        case 3:
-            out += "if (";
-            out += idents[next(8)];
-            out += " != '\\n') { // resync at line end\n";
-            break;
-        case 4:
-            out += "    ";
-            out += idents[next(8)];
-            out += " = ";
-            out += idents[next(8)];
-            out += " + 17;\n";
-            break;
-        case 5:
-            out += "}\n";
-            break;
-        case 6:
-            out += "int ";
-            out += idents[next(8)];
-            out += "[128];\n";
-            break;
-        default:
-            out += "    call(";
-            out += idents[next(8)];
-            out += ", \"literal\", 3);\n";
-            break;
-        }
-    }
-
-    return out;
+    return grammar == Grammar::rfc8259 ? "rfc8259" : "consumption-complete-c";
 }
 
+/**
+ * @brief The two rows' lexers a campaign reads files under: json the RFC 8259 row, c the consumption-complete C row.
+ */
+struct Row_lexers
+{
+    munch::core::Lexer json;
+
+    munch::core::Lexer c;
+};
+
+/**
+ * @brief Picks the RFC 8259 row's lexer for Grammar::rfc8259 and the consumption-complete C row's otherwise.
+ */
+const munch::core::Lexer& lexer_of(const Row_lexers& lexers, const Grammar grammar)
+{
+    return grammar == Grammar::rfc8259 ? lexers.json : lexers.c;
+}
+
+/**
+ * @brief Scans an input, counting tokens.
+ * @param lexer The lexer.
+ * @param input The input.
+ * @param tokens The count, incremented once per token.
+ * @return The consumed byte count exactly as tokenize_all() reports it.
+ */
+std::size_t scan(const munch::core::Lexer& lexer, const std::string_view input, std::size_t& tokens)
+{
+    return lexer.tokenize_all<Token>(input, [&tokens](Token, std::size_t) { ++tokens; });
+}
+
+/**
+ * @brief Scans an input, recording each token with its length.
+ * @param lexer The lexer.
+ * @param input The input.
+ * @param tokens The stream, each token appended with its length.
+ * @return The consumed byte count exactly as tokenize_all() reports it.
+ */
+std::size_t scan(
+        const munch::core::Lexer& lexer, const std::string_view input,
+        std::vector<std::pair<Token, std::size_t>>& tokens)
+{
+    return lexer.tokenize_all<Token>(
+            input, [&tokens](const Token token, const std::size_t length) { tokens.emplace_back(token, length); });
+}
+
+/**
+ * @brief One plan of an input and how evenly it cuts.
+ */
 struct Plan
 {
+    /**
+     * @brief The chunks the plan achieves.
+     */
     std::size_t chunks{0};
+
+    /**
+     * @brief The largest chunk over the ideal equal share.
+     */
     double balance{0.0};
+
+    /**
+     * @brief Each inner boundary's distance from its equal-division target, sorted.
+     */
     std::vector<std::size_t> deviations;
 };
 
+/**
+ * @brief Plans an input with the shipped window planner and measures the plan against equal division.
+ * @param lexer The lexer planning.
+ * @param input The input.
+ * @param chunks The chunks requested.
+ * @return The achieved chunks, the balance, and the sorted boundary deviations.
+ */
 Plan plan(const munch::core::Lexer& lexer, const std::string_view input, const std::size_t chunks)
 {
-    Plan result;
+    Plan result{};
 
     const auto bounds{lexer.chunk_boundaries_with_windows(input, chunks)};
 
@@ -265,76 +206,69 @@ Plan plan(const munch::core::Lexer& lexer, const std::string_view input, const s
     return result;
 }
 
+/**
+ * @brief One quantile of a sorted sample in integer arithmetic, `sorted[min(n - 1, n * numerator / denominator)]`.
+ * @param sorted The sample, sorted.
+ * @param numerator The quantile's numerator.
+ * @param denominator The quantile's denominator.
+ * @return The quantile, 0 for an empty sample.
+ */
 std::size_t quantile(const std::vector<std::size_t>& sorted, const std::size_t numerator, const std::size_t denominator)
 {
     return sorted.empty() ? 0 : sorted[std::min(sorted.size() - 1, sorted.size() * numerator / denominator)];
 }
 
-// One scan counting tokens; the return is the consumed byte count exactly as tokenize_all() reports it.
-std::size_t scan(const munch::core::Lexer& lexer, const std::string_view input, std::size_t& tokens)
+/**
+ * @brief The files of a campaign concatenated, and the grammar the stream row is read under.
+ */
+struct Stream
 {
-    return lexer.tokenize_all<Token>(input, [&tokens](Token, std::size_t) { ++tokens; });
-}
+    /**
+     * @brief Every file's bytes, each followed by a newline, in sorted order.
+     */
+    std::string bytes;
 
-// The same scan recording each token with its length, so spliced and serial streams compare as streams.
-std::size_t scan(
-        const munch::core::Lexer& lexer, const std::string_view input,
-        std::vector<std::pair<Token, std::size_t>>& tokens)
+    /**
+     * @brief The first file's grammar, std::nullopt when there is no file.
+     */
+    std::optional<Grammar> grammar;
+
+    /**
+     * @brief Whether a later file's grammar differs from the first file's.
+     */
+    bool is_mixed{false};
+};
+
+/**
+ * @brief Scans and plans every file under its grammar, writes one CSV row per file when the CSV is open, and
+ *        concatenates the files into the stream.
+ * @param files The files, sorted; an unreadable one is read as empty.
+ * @param lexers The two rows' lexers.
+ * @param chunks The chunks requested of each plan.
+ * @param csv The CSV, written only when open.
+ * @return The stream, its grammar, and whether its files mix grammars.
+ */
+Stream file_rows(
+        const std::vector<std::filesystem::path>& files, const Row_lexers& lexers, const std::size_t chunks,
+        Output_file& csv)
 {
-    return lexer.tokenize_all<Token>(
-            input, [&tokens](const Token token, const std::size_t length) { tokens.emplace_back(token, length); });
-}
-
-// Scans and plans the files under root; the return says whether one certificate planned the aggregate stream.
-bool campaign(const std::filesystem::path& root, const std::size_t chunks, const char* csv_path)
-{
-    const auto json_lexer{rfc_json()};
-
-    const auto c_lexer{consumption_complete_c()};
-
-    std::vector<std::filesystem::path> files;
-
-    for (const auto& entry : std::filesystem::recursive_directory_iterator{root})
-    {
-        if (entry.is_regular_file())
-        {
-            files.push_back(entry.path());
-        }
-    }
-
-    std::ranges::sort(files);
-
-    std::FILE* csv{csv_path ? std::fopen(csv_path, "w") : nullptr};
-
-    if (csv)
-    {
-        std::fprintf(
-                csv,
-                "path,grammar,bytes,consumed,chunks_requested,chunks_achieved,balance,dev_median,"
-                "dev_p95,dev_max\n");
-    }
-
-    std::string stream;
-
-    const munch::core::Lexer* stream_lexer{nullptr};
-
-    bool mixed{false};
+    Stream stream{};
 
     for (const auto& path : files)
     {
-        const auto& lexer{path.extension() == ".json" ? json_lexer : c_lexer};
+        const auto grammar{grammar_of(path)};
+
+        const auto& lexer{lexer_of(lexers, grammar)};
 
         // The stream is scanned and planned with one lexer, so a second grammar in the corpus leaves it none.
-        mixed = mixed || (stream_lexer != nullptr && stream_lexer != &lexer);
+        stream.is_mixed = stream.is_mixed || stream.grammar.value_or(grammar) != grammar;
 
-        if (stream_lexer == nullptr)
+        if (!stream.grammar)
         {
-            stream_lexer = &lexer;
+            stream.grammar = grammar;
         }
 
-        std::ifstream in{path, std::ios::binary};
-
-        std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+        const auto text{read_bytes(path).value_or("")};
 
         std::size_t tokens{0};
 
@@ -342,86 +276,246 @@ bool campaign(const std::filesystem::path& root, const std::size_t chunks, const
 
         const auto planned{plan(lexer, text, chunks)};
 
-        if (csv)
+        if (csv.is_open())
         {
             std::fprintf(
-                    csv, "%s,%s,%zu,%zu,%zu,%zu,%.5f,%zu,%zu,%zu\n", path.c_str(),
-                    path.extension() == ".json" ? "rfc8259" : "consumption-complete-c", text.size(), consumed, chunks,
-                    planned.chunks, planned.balance, quantile(planned.deviations, 1, 2),
-                    quantile(planned.deviations, 95, 100), planned.deviations.empty() ? 0 : planned.deviations.back());
+                    csv.stream(), "%s,%s,%zu,%zu,%zu,%zu,%.5f,%zu,%zu,%zu\n", path.c_str(),
+                    std::string{name_of(grammar)}.c_str(), text.size(), consumed, chunks, planned.chunks,
+                    planned.balance, quantile(planned.deviations, 1, 2), quantile(planned.deviations, 95, 100),
+                    planned.deviations.empty() ? 0 : planned.deviations.back());
         }
 
-        stream.append(text);
+        stream.bytes.append(text);
 
-        stream += '\n';
+        stream.bytes += '\n';
     }
 
-    if (!stream_lexer)
-    {
-        std::cout << "campaign: no regular files under " << root << "\n";
+    return stream;
+}
 
-        return false;
-    }
-
-    if (mixed)
-    {
-        std::cout << "campaign: mixed grammars under " << root
-                  << ", stream row refused: no single certificate plans the aggregate\n";
-
-        if (csv)
-        {
-            std::fclose(csv);
-        }
-
-        return false;
-    }
-
+/**
+ * @brief Scans and plans the stream under its one grammar, prints the stream row, and writes it to the CSV and closes
+ *        the CSV when it is open.
+ * @param stream The stream, of the one grammar its grammar field names.
+ * @param lexer The lexer of the stream's grammar.
+ * @param files The number of files in the stream.
+ * @param chunks The chunks requested of the plan.
+ * @param csv The CSV, written and closed only when open.
+ */
+void stream_row(
+        const Stream& stream, const munch::core::Lexer& lexer, const std::size_t files, const std::size_t chunks,
+        Output_file& csv)
+{
     std::size_t serial_tokens{0};
 
-    const auto consumed{scan(*stream_lexer, stream, serial_tokens)};
+    const auto consumed{scan(lexer, stream.bytes, serial_tokens)};
 
-    const auto planned{plan(*stream_lexer, stream, chunks)};
+    const auto planned{plan(lexer, stream.bytes, chunks)};
 
-    std::cout << "stream: " << files.size() << " files, " << stream.size() << " bytes, consumed " << consumed
+    std::cout << "stream: " << files << " files, " << stream.bytes.size() << " bytes, consumed " << consumed
               << ", chunks " << planned.chunks << "/" << chunks << ", balance " << planned.balance
               << ", deviations median " << quantile(planned.deviations, 1, 2) << " p95 "
               << quantile(planned.deviations, 95, 100) << " max "
               << (planned.deviations.empty() ? 0 : planned.deviations.back()) << "\n";
 
-    if (csv)
+    if (csv.is_open())
     {
         std::fprintf(
-                csv, "STREAM,%s,%zu,%zu,%zu,%zu,%.5f,%zu,%zu,%zu\n",
-                stream_lexer == &json_lexer ? "rfc8259" : "consumption-complete-c", stream.size(), consumed, chunks,
-                planned.chunks, planned.balance, quantile(planned.deviations, 1, 2),
-                quantile(planned.deviations, 95, 100), planned.deviations.empty() ? 0 : planned.deviations.back());
+                csv.stream(), "STREAM,%s,%zu,%zu,%zu,%zu,%.5f,%zu,%zu,%zu\n",
+                std::string{name_of(*stream.grammar)}.c_str(), stream.bytes.size(), consumed, chunks, planned.chunks,
+                planned.balance, quantile(planned.deviations, 1, 2), quantile(planned.deviations, 95, 100),
+                planned.deviations.empty() ? 0 : planned.deviations.back());
 
-        std::fclose(csv);
+        std::ignore = csv.close();
     }
-
-    return true;
 }
 
-// A directory removed when the guard goes out of scope, so a fixture never outlives the check that made it.
+/**
+ * @brief Builds the RFC 8259 row.
+ * @return The row's lexer.
+ */
+munch::core::Lexer rfc_json()
+{
+    munch::core::Builder builder{};
+
+    figures::json(builder);
+
+    return builder.build();
+}
+
+/**
+ * @brief Builds the consumption-complete C row.
+ * @return The row's lexer.
+ */
+munch::core::Lexer consumption_complete_c()
+{
+    munch::core::Builder builder{};
+
+    consumption_complete_c_row(builder);
+
+    return builder.build();
+}
+
+/**
+ * @brief Counts the bytes in a lexer's exact certificate.
+ * @param lexer The lexer.
+ * @return The number of bytes, of 256, that are split points.
+ */
+std::size_t exact_bytes(const munch::core::Lexer& lexer)
+{
+    std::size_t count{0};
+
+    for (int value{0}; value < 256; ++value)
+    {
+        count += lexer.is_split_point(static_cast<char>(value)) ? 1 : 0;
+    }
+
+    return count;
+}
+
+/**
+ * @brief The two-byte census of a lexer.
+ */
+struct Census
+{
+    /**
+     * @brief The certified two-byte windows.
+     */
+    std::size_t windows{0};
+
+    /**
+     * @brief The certified windows whose first byte the grammar treats as whitespace.
+     */
+    std::size_t whitespace_anchored{0};
+};
+
+/**
+ * @brief Counts the certified two-byte windows, and those whose first byte is one of the given whitespace bytes.
+ * @param lexer The lexer.
+ * @param whitespace The bytes the grammar treats as whitespace.
+ * @return The two counts.
+ */
+Census census_two(const munch::core::Lexer& lexer, const std::string_view whitespace)
+{
+    Census census{};
+
+    for (int first{0}; first < 256; ++first)
+    {
+        for (int second{0}; second < 256; ++second)
+        {
+            const std::array window{static_cast<char>(first), static_cast<char>(second)};
+
+            if (lexer.is_split_window(std::string_view{window.data(), window.size()}).has_value())
+            {
+                ++census.windows;
+
+                if (whitespace.find(static_cast<char>(first)) != std::string_view::npos)
+                {
+                    ++census.whitespace_anchored;
+                }
+            }
+        }
+    }
+
+    return census;
+}
+
+/**
+ * @brief Generates C-like source of eight statement shapes drawn from an Lcg64 at a fixed seed, deterministic from
+ *        that seed: preprocessor lines, strings with escapes, char literals, both comment forms, and ordinary
+ *        statement text.
+ * @param bytes The least size of the source; generation stops at the first statement reaching it.
+ * @return The source.
+ */
+std::string generated_c(const std::size_t bytes)
+{
+    Lcg64 lcg{0x2545F4914F6CDD1DULL};
+
+    static constexpr std::array<std::string_view, 8> idents{"count", "buffer", "index", "state",
+                                                            "value", "table",  "next",  "size"};
+
+    std::string out{};
+
+    while (out.size() < bytes)
+    {
+        switch (lcg.next(8))
+        {
+        case 0:
+            out += "#define LIMIT_";
+            out += idents[lcg.next(8)];
+            out += " 4096\n";
+            break;
+        case 1:
+            out += "/* invariant: ";
+            out += idents[lcg.next(8)];
+            out += " stays below the table size */\n";
+            break;
+        case 2:
+            out += "static const char* name = \"escaped \\\"quote\\\" and tab\\t\";\n";
+            break;
+        case 3:
+            out += "if (";
+            out += idents[lcg.next(8)];
+            out += " != '\\n') { // resync at line end\n";
+            break;
+        case 4:
+            out += "    ";
+            out += idents[lcg.next(8)];
+            out += " = ";
+            out += idents[lcg.next(8)];
+            out += " + 17;\n";
+            break;
+        case 5:
+            out += "}\n";
+            break;
+        case 6:
+            out += "int ";
+            out += idents[lcg.next(8)];
+            out += "[128];\n";
+            break;
+        default:
+            out += "    call(";
+            out += idents[lcg.next(8)];
+            out += ", \"literal\", 3);\n";
+            break;
+        }
+    }
+
+    return out;
+}
+
+/**
+ * @brief A directory, root, removed with everything under it when the object is destroyed.
+ */
 struct Removed_on_exit
 {
     std::filesystem::path root;
 
+    /**
+     * @brief Removes the directory and everything under it, ignoring a failure.
+     */
     ~Removed_on_exit()
     {
-        std::error_code ignored;
+        std::error_code ignored{};
 
         std::filesystem::remove_all(root, ignored);
     }
 };
 
-// A corpus mixing the two grammars, written under a private directory made by mkdtemp beneath TMPDIR, so
-// concurrent runs never share a fixture and no existing directory of a fixed name is ever removed.
+/**
+ * @brief Writes a corpus mixing the two grammars, one JSON and one C file, into a new directory of a unique name
+ *        made by mkdtemp beneath TMPDIR, or beneath /tmp when TMPDIR is unset or empty; exits the program with
+ *        EXIT_FAILURE when mkdtemp fails.
+ * @return The directory.
+ */
 std::filesystem::path mixed_corpus()
 {
-    const char* const base{std::getenv("TMPDIR")};
+    std::string pattern{"/tmp"};
 
-    std::string pattern{base != nullptr && *base != '\0' ? base : "/tmp"};
+    if (const char* const base{std::getenv("TMPDIR")}; base != nullptr && *base != '\0')
+    {
+        pattern = base;
+    }
 
     pattern += "/munch-corpus-windows-XXXXXX";
 
@@ -444,86 +538,160 @@ std::filesystem::path mixed_corpus()
 
     return root;
 }
-} // namespace
 
-int main(const int argc, const char** argv)
+/**
+ * @brief Scans and plans the files under a directory, per file and as one stream, printing the stream row and writing
+ *        every row to the CSV when a path is given; the stream row is refused when there is no file or the files mix
+ *        grammars.
+ * @param root The directory walked.
+ * @param chunks The chunks requested of each plan.
+ * @param csv_path The CSV to write, std::nullopt for none.
+ * @return Whether one certificate planned the aggregate stream.
+ */
+bool campaign(
+        const std::filesystem::path& root, const std::size_t chunks,
+        const std::optional<std::filesystem::path>& csv_path)
 {
-    if (argc > 1)
-    {
-        campaign(argv[1], argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 8, argc > 3 ? argv[3] : nullptr);
+    const Row_lexers lexers{.json = rfc_json(), .c = consumption_complete_c()};
 
-        return 0;
+    const auto files{files_under(root, std::nullopt)};
+
+    auto csv{csv_path ? Output_file{*csv_path} : Output_file{}};
+
+    if (csv.is_open())
+    {
+        std::fprintf(
+                csv.stream(),
+                "path,grammar,bytes,consumed,chunks_requested,chunks_achieved,balance,dev_median,"
+                "dev_p95,dev_max\n");
     }
 
-    // The corpus-free grammar facts. Exact bytes: both published rows certify none, which is why the window
-    // layer is load-bearing on production-shaped inputs at all.
-    expect(exact_bytes(published_cumulative()) == 0, "published cumulative row certifies an exact byte");
+    const auto stream{file_rows(files, lexers, chunks, csv)};
+
+    if (!stream.grammar)
+    {
+        std::cout << "campaign: no regular files under " << root << "\n";
+
+        return false;
+    }
+
+    if (stream.is_mixed)
+    {
+        std::cout << "campaign: mixed grammars under " << root
+                  << ", stream row refused: no single certificate plans the aggregate\n";
+
+        if (csv.is_open())
+        {
+            std::ignore = csv.close();
+        }
+
+        return false;
+    }
+
+    stream_row(stream, lexer_of(lexers, *stream.grammar), files.size(), chunks, csv);
+
+    return true;
+}
+
+/**
+ * @brief Asserts the corpus-free facts of the two published rows: neither certifies an exact byte; the RFC 8259
+ *        row's two-byte census and its structural poison-byte windows, pinned positively and negatively. Prints the
+ *        census.
+ * @param assertions The probe's assertions.
+ */
+void published_row_facts(Assertions& assertions)
+{
+    munch::core::Builder cumulative_builder{};
+
+    published_cumulative_row(cumulative_builder);
+
+    assertions.expect(exact_bytes(cumulative_builder.build()) == 0, "published cumulative row certifies an exact byte");
 
     const auto json_lexer{rfc_json()};
 
-    expect(exact_bytes(json_lexer) == 0, "RFC 8259 row certifies an exact byte");
+    assertions.expect(exact_bytes(json_lexer) == 0, "RFC 8259 row certifies an exact byte");
 
     const auto json_census{census_two(json_lexer, "\t\n\r ")};
 
     std::cout << "json two-byte windows " << json_census.windows << ", whitespace-anchored "
               << json_census.whitespace_anchored << "\n";
 
-    expect(json_census.windows == 120, "RFC 8259 two-byte census moved");
+    assertions.expect(json_census.windows == 120, "RFC 8259 two-byte census moved");
 
-    expect(json_census.whitespace_anchored == 63, "the control-whitespace-first family moved");
+    assertions.expect(json_census.whitespace_anchored == 63, "the control-whitespace-first family moved");
 
     // Space is a legal string interior, so it poisons nothing: no two-byte window uses it on either side.
-    expect(!json_lexer.is_split_window(" \"").has_value(), "space-first window certifies");
+    assertions.expect(!json_lexer.is_split_window(" \"").has_value(), "space-first window certifies");
 
-    expect(!json_lexer.is_split_window("\" ").has_value(), "space-second window certifies");
+    assertions.expect(!json_lexer.is_split_window("\" ").has_value(), "space-second window certifies");
 
     // Control whitespace is excluded from unescaped interiors, so it anchors in both directions.
-    expect(json_lexer.is_split_window("\"\t") == std::optional<std::size_t>{1},
-           "token-final-then-tab window does not certify");
+    assertions.expect(
+            json_lexer.is_split_window("\"\t") == std::optional<std::size_t>{1},
+            "token-final-then-tab window does not certify");
 
     // The structural poison-byte mechanism, pinned positively and negatively.
-    expect(json_lexer.is_split_window(",\"v") == std::optional<std::size_t>{1},
-           "structural window {,\"v} does not certify at origin 1");
+    assertions.expect(
+            json_lexer.is_split_window(",\"v") == std::optional<std::size_t>{1},
+            "structural window {,\"v} does not certify at origin 1");
 
-    expect(json_lexer.is_split_window("t\":") == std::optional<std::size_t>{2},
-           "structural window {t\":} does not certify at origin 2");
+    assertions.expect(
+            json_lexer.is_split_window("t\":") == std::optional<std::size_t>{2},
+            "structural window {t\":} does not certify at origin 2");
 
-    expect(!json_lexer.is_split_window(",\"").has_value(), "two-byte prefix {,\"} certifies");
+    assertions.expect(!json_lexer.is_split_window(",\"").has_value(), "two-byte prefix {,\"} certifies");
 
-    expect(!json_lexer.is_split_window("\",").has_value(), "two-byte {\",} certifies");
+    assertions.expect(!json_lexer.is_split_window("\",").has_value(), "two-byte {\",} certifies");
 
-    expect(!json_lexer.is_split_window(",\"9").has_value(), "{,\"9} certifies although 9 can begin a Number");
+    assertions.expect(
+            !json_lexer.is_split_window(",\"9").has_value(), "{,\"9} certifies although 9 can begin a Number");
+}
 
-    const auto c_lexer{consumption_complete_c()};
-
-    expect(exact_bytes(c_lexer) == 0, "consumption-complete C row certifies an exact byte");
+/**
+ * @brief Asserts that the consumption-complete C row certifies no exact byte and no two-byte window.
+ * @param assertions The probe's assertions.
+ * @param c_lexer The consumption-complete C row's lexer.
+ */
+void c_row_facts(Assertions& assertions, const munch::core::Lexer& c_lexer)
+{
+    assertions.expect(exact_bytes(c_lexer) == 0, "consumption-complete C row certifies an exact byte");
 
     const auto c_census{census_two(c_lexer, "\t\n\r ")};
 
-    expect(c_census.windows == 0, "the consumption-complete C row gained a two-byte window");
+    assertions.expect(c_census.windows == 0, "the consumption-complete C row gained a two-byte window");
+}
 
-    // The generated corpus: consumption, a full plan, and spliced equality with pinned counts.
+/**
+ * @brief Asserts on the generated corpus: complete consumption, a full plan at eight chunks, and the spliced chunks'
+ *        (token, length) stream equal to the serial scan's, with the corpus size and the token count pinned. Prints
+ *        the plan.
+ * @param assertions The probe's assertions.
+ * @param c_lexer The consumption-complete C row's lexer.
+ */
+void generated_corpus_splices(Assertions& assertions, const munch::core::Lexer& c_lexer)
+{
     const auto corpus{generated_c(256 * 1024)};
 
-    expect(corpus.size() == 262194, "generated corpus size moved");
+    assertions.expect(corpus.size() == 262194, "generated corpus size moved");
 
-    std::vector<std::pair<Token, std::size_t>> serial_stream;
+    std::vector<std::pair<Token, std::size_t>> serial_stream{};
 
-    expect(scan(c_lexer, corpus, serial_stream) == corpus.size(), "generated corpus does not consume completely");
+    assertions.expect(
+            scan(c_lexer, corpus, serial_stream) == corpus.size(), "generated corpus does not consume completely");
 
-    expect(serial_stream.size() == 74838, "generated corpus token count moved");
+    assertions.expect(serial_stream.size() == 74838, "generated corpus token count moved");
 
     const auto planned{plan(c_lexer, corpus, 8)};
 
     std::cout << "generated corpus chunks " << planned.chunks << ", balance " << planned.balance << "\n";
 
-    expect(planned.chunks == 8, "generated corpus does not plan eight chunks");
+    assertions.expect(planned.chunks == 8, "generated corpus does not plan eight chunks");
 
-    expect(planned.balance < 1.10, "generated corpus balance exceeds 1.10");
+    assertions.expect(planned.balance < 1.10, "generated corpus balance exceeds 1.10");
 
     const auto bounds{c_lexer.chunk_boundaries_with_windows(corpus, 8)};
 
-    std::vector<std::pair<Token, std::size_t>> spliced_stream;
+    std::vector<std::pair<Token, std::size_t>> spliced_stream{};
 
     auto consumed_all{true};
 
@@ -534,21 +702,59 @@ int main(const int argc, const char** argv)
         consumed_all = scan(c_lexer, chunk, spliced_stream) == chunk.size() && consumed_all;
     }
 
-    expect(consumed_all, "a planned chunk of the generated corpus does not consume completely");
+    assertions.expect(consumed_all, "a planned chunk of the generated corpus does not consume completely");
 
-    expect(spliced_stream == serial_stream, "spliced token stream differs from the serial scan");
+    assertions.expect(spliced_stream == serial_stream, "spliced token stream differs from the serial scan");
+}
 
-    // The stream row is planned by one lexer, so a corpus carrying both grammars refuses it rather than planning
-    // the aggregate under whichever came first; a single-grammar corpus plans it.
+/**
+ * @brief Asserts that the stream row is planned by one lexer: a corpus carrying both grammars refuses it rather than
+ *        planning the aggregate under whichever came first, and a single-grammar corpus plans it.
+ * @param assertions The probe's assertions.
+ */
+void stream_row_refuses_mixed(Assertions& assertions)
+{
     const Removed_on_exit scratch{mixed_corpus()};
 
-    expect(!campaign(scratch.root, 2, nullptr), "a mixed corpus planned its aggregate stream");
+    assertions.expect(!campaign(scratch.root, 2, std::nullopt), "a mixed corpus planned its aggregate stream");
 
     std::filesystem::remove(scratch.root / "b.c");
 
-    expect(campaign(scratch.root, 2, nullptr), "a single-grammar corpus refused its aggregate stream");
+    assertions.expect(campaign(scratch.root, 2, std::nullopt), "a single-grammar corpus refused its aggregate stream");
+}
+} // namespace
 
-    std::cout << (failures == 0 ? "all assertions hold\n" : "assertion failures\n");
+/**
+ * @brief Runs a campaign over the directory, chunk count and CSV path given, or else the self-test of the grammar
+ *        facts, the generated corpus and the mixed-corpus refusal, and prints the verdict.
+ * @param argc The argument count.
+ * @param argv The directory, the chunks requested (8 by default) and the CSV path, all optional.
+ * @return 0 after a campaign or a self-test whose assertions hold, 1 when a self-test assertion fails.
+ */
+int main(const int argc, const char** argv)
+{
+    Assertions assertions{};
 
-    return failures == 0 ? 0 : 1;
+    if (argc > 1)
+    {
+        std::ignore = campaign(
+                argv[1], argc > 2 ? std::strtoull(argv[2], nullptr, 10) : 8,
+                argc > 3 ? std::optional<std::filesystem::path>{argv[3]} : std::nullopt);
+
+        return 0;
+    }
+
+    published_row_facts(assertions);
+
+    const auto c_lexer{consumption_complete_c()};
+
+    c_row_facts(assertions, c_lexer);
+
+    generated_corpus_splices(assertions, c_lexer);
+
+    stream_row_refuses_mixed(assertions);
+
+    std::cout << (assertions.has_failures() ? "assertion failures\n" : "all assertions hold\n");
+
+    return assertions.has_failures() ? 1 : 0;
 }
