@@ -2,7 +2,9 @@
 #define MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_SPLIT_WINDOW_HPP
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 
 #include "munch/dfa/simulator.hpp"
@@ -33,6 +35,58 @@ namespace munch::dfa
  * @return The in-window origin every covering token begins at, or std::nullopt when the window is refused.
  */
 [[nodiscard]] std::optional<std::size_t> is_split_window(const Simulator& simulator, std::string_view window);
+
+/**
+ * @brief What shortest_split_window() found: a shortest certified window, a proof that none exists, or an exhausted
+ *        budget.
+ */
+struct Shortest_window
+{
+    /**
+     * @brief How the search ended.
+     */
+    enum class Outcome : std::uint8_t
+    {
+        found,
+        none,
+        budget
+    };
+
+    /**
+     * @brief How the search ended.
+     */
+    Outcome outcome{Outcome::none};
+
+    /**
+     * @brief A shortest window is_split_window() certifies, when one was found; its bytes are one representative per
+     *        class of bytes the tables do not tell apart.
+     */
+    std::string window;
+
+    /**
+     * @brief Its certified origin.
+     */
+    std::size_t origin{};
+};
+
+/**
+ * @brief A shortest window is_split_window() certifies, searched exactly rather than by trying candidates.
+ *
+ * The search follows one origin from the moment a token may begin, the support of every other hypothesis beside it,
+ * and before any origin is chosen the support of all of them: the cloud of is_split_window() with the origins
+ * forgotten except the one that is to survive. A window is certified exactly when that origin outlives every other
+ * hypothesis, and two hypotheses that share a state never separate again, so a collision ends the path. The nodes are
+ * at most (n + 2) 2^(n - 1) for n live states, and a shortest window is shorter than that. The question is
+ * PSPACE-complete, so the budget bounds the nodes visited, and running out is reported as such, never as an answer. A
+ * node costs about a state count over eight bytes, so the default budget holds a few hundred megabytes at a few
+ * thousand states; a caller with less to spare passes less.
+ * A window found is as is_split_window() would certify it, conditional on occurrence like every window certificate.
+ * @param simulator The compiled token set.
+ * @param budget The most search nodes visited before the search gives up; zero visits none.
+ * @return A shortest certified window with its origin, Outcome::none when no window of any length is certified, or
+ *         Outcome::budget when the search stopped first.
+ */
+[[nodiscard]] Shortest_window shortest_split_window(const Simulator& simulator, std::size_t budget = 1U << 20U);
 
 } // namespace munch::dfa
 

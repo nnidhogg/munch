@@ -217,13 +217,13 @@ check the whole pipeline against direct NFA simulation.
 
 munch follows semantic versioning. The stable surface is what this README and [docs/usage.md](docs/usage.md) document:
 the regex combinators with `Set`, `regex::parse()` reading a generator's pattern into them, `utf8::range`,
-`utf8::ranges`, and the `unicode` XID classes, `core::Builder` with
-`add_token()`, `build()`, `diagnose()`, `set_state_limit()`, and `set_ignored_tokens()`, `core::determinize()`,
-`core::Lexer` with `Match`, `tokenize()`, `tokenize_all()`, `is_split_point()`, `is_split_point_ignoring()`,
-`chunk_boundaries()`, and `tokenize_all_parallel()`, and the `tools::tokenizer` layer. Breaking any of it bumps the
-major version; additions arrive in minor versions. The window layer, `is_split_window()` and
-`chunk_boundaries_with_windows()`, joined that surface in 1.4.0; the release the split-windows report evaluates, v1.3.3,
-deliberately ships no window-planning API.
+`utf8::ranges`, and the `unicode` XID classes, `core::Builder` with `add_token()`, `build()`, `diagnose()`,
+`set_state_limit()`, and `set_ignored_tokens()`, `core::determinize()`, `core::Lexer` with `Match`, `tokenize()`,
+`tokenize_all()`, `is_split_point()`, `is_split_point_ignoring()`, `chunk_boundaries()`, and `tokenize_all_parallel()`,
+and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions arrive in minor versions. The
+window layer, `is_split_window()` and `chunk_boundaries_with_windows()`, joined that surface in 1.4.0, and
+`shortest_split_window()` joins it in 2.2; the release the split-windows report evaluates, v1.3.3, deliberately ships no
+window-planning API.
 
 The recovery layer joined that surface in 1.6.0: `next_certified_start()`, `next_certified_evidence()`,
 `next_anchored_start()`, `minimal_repair()`, `lag()`, and `rescue_free()`, each under the contract its own documentation

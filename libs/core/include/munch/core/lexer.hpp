@@ -234,6 +234,22 @@ public:
     }
 
     /**
+     * @brief A shortest window is_split_window() certifies, with its origin, found exactly rather than by trying
+     *        candidates; or the proof that the model certifies no window of any length; or a budget run out.
+     *
+     * Its window may be much longer than the state count, and a grammar whose shortest window is longer than
+     * chunk_boundaries_with_windows() tries gains nothing from that planner. A found window is conditional on
+     * occurrence like every window certificate, which window_occurrence() settles. The derivation is
+     * dfa::shortest_split_window()'s.
+     * @param budget The most search nodes visited before the search gives up.
+     * @return The window and its origin, Outcome::none when none exists, or Outcome::budget.
+     */
+    [[nodiscard]] dfa::Shortest_window shortest_split_window(const std::size_t budget = 1U << 20U) const
+    {
+        return dfa::shortest_split_window(simulator_, budget);
+    }
+
+    /**
      * @brief Whether the given byte string occurs in some nonempty completely tokenizable input, with one that
      *        contains it.
      *
