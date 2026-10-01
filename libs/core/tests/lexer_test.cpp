@@ -2384,6 +2384,21 @@ TEST_F(Lexer_test, Relaxed_certificate_admits_a_restart_into_an_equivalent_state
     EXPECT_FALSE(lexer.is_split_point('b'));
 }
 
+TEST_F(Lexer_test, Relaxed_certificate_tells_a_kept_kind_from_the_discarded_ones_whatever_its_id)
+{
+    // Discarded a and ac, kept c. Cutting ac before its c turns one discarded token into a discarded a and a kept c,
+    // so c is no split point modulo the discard. The restart on c accepts the kept c and the interrupted scan the
+    // discarded ac, both with nothing after, so only their kinds tell them apart, and the largest ID must not pass
+    // for a discarded one.
+    Builder builder;
+
+    builder.add_token(choice(text("a"), text("ac")), std::size_t{0}, 1);
+    builder.add_token(text("c"), std::numeric_limits<std::size_t>::max(), 1);
+    builder.set_ignored_tokens(std::vector<std::size_t>{0});
+
+    EXPECT_FALSE(builder.build().is_split_point_ignoring('c'));
+}
+
 TEST_F(Lexer_test, Relaxed_certificate_still_refuses_a_safe_symbol_whose_restart_differs_at_once)
 {
     enum class Token_kind : uint8_t
