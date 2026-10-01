@@ -36,9 +36,10 @@ namespace munch::dfa
  * @brief The same, over a supplied inventory of certified windows rather than over the certified bytes.
  *
  * A window anchors a position inside its occurrence, at the origin, rather than at the byte just read, so a position's
- * status is only settled once the rest of the window has arrived. The walk therefore carries the last few bytes and a
- * flag per position still waiting, and a position leaves that buffer anchored or not once no window can still reach
- * back to it. That is the whole difference from the byte case, which is this with a buffer of nothing.
+ * status is only settled once the rest of the window has arrived. The walk therefore guesses the stretch and refuses
+ * any window that anchors inside it, carrying only how far back the stretch began and ended and which windows can
+ * still complete. Its size grows with the inventory's total length and the longest window's width, not exponentially
+ * in either, and no window is too long for it. The byte case is this with windows of width one.
  *
  * Windows matter here because a grammar that certifies no byte can still certify windows, so this can return a
  * bound where the byte version cannot. It is a question about the supplied inventory: anchors outside it are not
@@ -49,7 +50,7 @@ namespace munch::dfa
  * @param inventory The certified windows and their origins, each refused by is_split_window() being an error.
  * @return The exact supremum, or std::nullopt when it is unbounded.
  * @throws std::invalid_argument If the inventory holds a window the simulator does not certify at the stated
- *         origin, or one longer than the buffer this walk can carry.
+ *         origin.
  */
 [[nodiscard]] std::optional<std::size_t> anchor_free_span(
         const Simulator& simulator, std::span<const std::pair<std::string_view, std::size_t>> inventory);

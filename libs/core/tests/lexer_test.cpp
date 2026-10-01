@@ -5873,6 +5873,54 @@ TEST_F(Lexer_test, The_window_span_counts_positions_a_window_reaches_back_to)
     EXPECT_EQ(*span, 3u);
 }
 
+TEST_F(Lexer_test, A_window_longer_than_a_machine_word_is_decided_like_a_short_one)
+{
+    // Tokens a and b, every byte a token. The windows ab and ba anchor the first byte of every run after the first,
+    // and a^n and b^n anchor every byte of a run from its n-th on. So only the first n - 1 bytes of the input can
+    // escape every anchor, and the anchor-free stretch is n - 1 for every n. The walk keeps no buffer of bytes, so a
+    // window of 70 bytes costs no more in kind than one of 3.
+    enum class Kind : std::size_t
+    {
+        a = 1,
+        b = 2
+    };
+
+    Builder builder;
+
+    builder.add_token(text("a"), Kind::a, 1);
+
+    builder.add_token(text("b"), Kind::b, 1);
+
+    const auto lexer{builder.build()};
+
+    for (const std::size_t width : {3U, 70U})
+    {
+        const std::string as(width, 'a');
+
+        const std::string bs(width, 'b');
+
+        ASSERT_EQ(lexer.is_split_window(as), std::optional<std::size_t>{width - 1});
+
+        ASSERT_EQ(lexer.is_split_window(bs), std::optional<std::size_t>{width - 1});
+
+        ASSERT_EQ(lexer.is_split_window("ab"), std::optional<std::size_t>{1});
+
+        ASSERT_EQ(lexer.is_split_window("ba"), std::optional<std::size_t>{1});
+
+        const std::vector<std::pair<std::string_view, std::size_t>> inventory{
+                {as, width - 1},
+                {bs, width - 1},
+                {"ab", 1},
+                {"ba", 1}};
+
+        const auto span{lexer.anchor_free_span(inventory)};
+
+        ASSERT_TRUE(span.has_value());
+
+        EXPECT_EQ(*span, width - 1);
+    }
+}
+
 TEST_F(Lexer_test, A_run_token_leaves_the_window_span_unbounded_too)
 {
     // A run of a and the token ab. The a after a b starts a token, since b only ends one, so ba is certified at the
