@@ -165,9 +165,10 @@ public:
      * Weaker than is_split_point(), and never stronger: every certified symbol satisfies this too, and with an empty
      * ignored set the two coincide. A state may consume the symbol into a state that can still accept, provided the
      * token the cut would sever vanishes from both streams. That holds when the state accepts an ignored token, when
-     * every token still reachable from it is ignored, and when advancing on the symbol from it and from the initial
-     * state reach the same state, so the restarted scan rejoins the interrupted one at once and only the one token
-     * containing the cut is disturbed.
+     * every token the severed one can still become past the cut is ignored, and when advancing on the symbol from it
+     * and from the initial state reach states with the same future once ignored kinds are not told apart, so the
+     * restarted scan ends its token at the same byte as the interrupted one, also ignored, and only that one token
+     * is disturbed. The test is sound and still not complete: some symbols safe under this equivalence are refused.
      *
      * The guarantee is correspondingly weaker in two independent ways. Chunks cut here reproduce the serial stream
      * only after tokens of the ignored kinds are deleted from both, so a caller that keeps them must use
@@ -523,6 +524,13 @@ private:
      * @return The class of each symbol value, numbered densely from zero.
      */
     [[nodiscard]] static Classes_t classify(const Dfa& dfa);
+
+    /**
+     * @brief The right-language classes of the states once every discarded kind shares one colour.
+     * @param accepts_discarded Per state, whether it accepts a token of a discarded kind.
+     * @return One class per state, and one more at index size() for the missing transition.
+     */
+    [[nodiscard]] std::vector<std::size_t> observed_classes(const std::vector<bool>& accepts_discarded) const;
 
     /**
      * @brief Fills split_points_ignoring_ from the tables the constructor has already built.

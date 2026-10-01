@@ -347,10 +347,18 @@ void Simulator::derive_split_points_ignoring(
         }
     }
 
+    const auto observed{observed_classes(accepts_discarded)};
+
     const auto consumes{[this, &co_accessible](const std::size_t symbol, const std::size_t state) {
         const auto to{table_[row_offsets_[symbol] + state]};
 
         return to != no_state_ && co_accessible[to];
+    }};
+
+    const auto class_after{[this, &observed, states](const std::size_t symbol, const std::size_t state) {
+        const auto to{table_[row_offsets_[symbol] + state]};
+
+        return observed[to == no_state_ ? states : static_cast<std::size_t>(to)];
     }};
 
     for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
@@ -361,10 +369,14 @@ void Simulator::derive_split_points_ignoring(
                 return true;
             }
 
-            // The left chunk must end on a complete token the caller discards, every token the severed one could
-            // still become must be discarded too, and the restart must land where the interrupted scan already is.
-            return accepts_discarded[state] && !reaches_kept[state] &&
-                   table_[row_offsets_[symbol] + state] == table_[row_offsets_[symbol] + init_state_];
+            // The left chunk must end on a complete token the caller discards, and the severed token's rest must
+            // only ever become discarded tokens. The restart need not land where the interrupted scan is, only in a
+            // state whose future is the same once discarded kinds are not told apart: both scans then end their
+            // tokens at the same byte, both discarded, and are back in step from there.
+            const auto to{static_cast<std::size_t>(table_[row_offsets_[symbol] + state])};
+
+            return accepts_discarded[state] && !reaches_kept[to] &&
+                   class_after(symbol, state) == class_after(symbol, init_state_);
         })};
 
         // Vacuity is judged as for the exact map: a symbol no live state consumes is useless to a caller.
@@ -372,6 +384,75 @@ void Simulator::derive_split_points_ignoring(
         {
             split_points_ignoring_[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
         }
+    }
+}
+
+// Moore's refinement with every discarded kind given one colour: two states end up in one class exactly when every
+// continuation is accepted from both or from neither, and with the same kind wherever that kind is kept. Index
+// `states` stands for the missing transition, a sink that accepts nothing, so a partial table needs no completion.
+std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& accepts_discarded) const
+{
+    const auto states{accept_table_.size()};
+
+    std::vector<std::size_t> rows;
+
+    for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
+    {
+        rows.push_back(row_offsets_[symbol]);
+    }
+
+    std::ranges::sort(rows);
+
+    rows.erase(std::ranges::unique(rows).begin(), rows.end());
+
+    const auto colour{[&](const std::size_t state) -> std::size_t {
+        if (state == states || !is_accepting(state))
+        {
+            return 0;
+        }
+
+        return accepts_discarded[state] ? 1 : 2 + accept_table_[state].token.id();
+    }};
+
+    std::vector<std::size_t> current(states + 1);
+
+    std::map<std::size_t, std::size_t> first_classes;
+
+    for (std::size_t state{0}; state <= states; ++state)
+    {
+        current[state] = first_classes.try_emplace(colour(state), first_classes.size()).first->second;
+    }
+
+    auto count{first_classes.size()};
+
+    while (true)
+    {
+        std::map<std::vector<std::size_t>, std::size_t> signatures;
+
+        std::vector<std::size_t> next(states + 1);
+
+        for (std::size_t state{0}; state <= states; ++state)
+        {
+            std::vector<std::size_t> signature{current[state]};
+
+            for (const auto row : rows)
+            {
+                const auto to{state == states ? no_state_ : table_[row + state]};
+
+                signature.push_back(current[to == no_state_ ? states : static_cast<std::size_t>(to)]);
+            }
+
+            next[state] = signatures.try_emplace(std::move(signature), signatures.size()).first->second;
+        }
+
+        current = std::move(next);
+
+        if (signatures.size() == count)
+        {
+            return current;
+        }
+
+        count = signatures.size();
     }
 }
 
