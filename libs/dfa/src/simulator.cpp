@@ -347,7 +347,9 @@ void Simulator::derive_split_points_ignoring(
         }
     }
 
-    const auto observed{observed_classes(accepts_discarded)};
+    // The classes cost a refinement over the whole table, and only a state that accepts a discarded kind ever asks
+    // for them, so they are computed on the first such question and never for a lexer that discards nothing.
+    std::optional<std::vector<std::size_t>> observed;
 
     const auto consumes{[this, &co_accessible](const std::size_t symbol, const std::size_t state) {
         const auto to{table_[row_offsets_[symbol] + state]};
@@ -355,11 +357,17 @@ void Simulator::derive_split_points_ignoring(
         return to != no_state_ && co_accessible[to];
     }};
 
-    const auto class_after{[this, &observed, states](const std::size_t symbol, const std::size_t state) {
-        const auto to{table_[row_offsets_[symbol] + state]};
+    const auto class_after{
+            [this, &observed, &accepts_discarded, states](const std::size_t symbol, const std::size_t state) {
+                if (!observed)
+                {
+                    observed = observed_classes(accepts_discarded);
+                }
 
-        return observed[to == no_state_ ? states : static_cast<std::size_t>(to)];
-    }};
+                const auto to{table_[row_offsets_[symbol] + state]};
+
+                return (*observed)[to == no_state_ ? states : static_cast<std::size_t>(to)];
+            }};
 
     for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
     {
@@ -405,18 +413,20 @@ std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& ac
 
     rows.erase(std::ranges::unique(rows).begin(), rows.end());
 
-    const auto colour{[&](const std::size_t state) -> std::size_t {
+    // A pair, so no kept token ID can collide with the discarded or the nonaccepting colour.
+    const auto colour{[&](const std::size_t state) -> std::pair<std::uint8_t, std::size_t> {
         if (state == states || !is_accepting(state))
         {
-            return 0;
+            return {0, 0};
         }
 
-        return accepts_discarded[state] ? 1 : 2 + accept_table_[state].token.id();
+        return accepts_discarded[state] ? std::pair<std::uint8_t, std::size_t>{1, 0} :
+                                          std::pair<std::uint8_t, std::size_t>{2, accept_table_[state].token.id()};
     }};
 
     std::vector<std::size_t> current(states + 1);
 
-    std::map<std::size_t, std::size_t> first_classes;
+    std::map<std::pair<std::uint8_t, std::size_t>, std::size_t> first_classes;
 
     for (std::size_t state{0}; state <= states; ++state)
     {
