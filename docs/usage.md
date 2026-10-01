@@ -438,6 +438,14 @@ lexer.window_occurrence("1001");            // {"", true}: no completely tokeniz
 lexer.window_occurrence("001");             // {"0001", true}: 00 then 01
 ```
 
+`shortest_split_window()` turns the question around: rather than deciding a window it is given, it finds a shortest
+window `is_split_window()` certifies, with its origin, or proves that the model certifies none of any length. It follows
+one origin from where a token may begin, beside the states every other hypothesis occupies, so it never tries
+candidates, and a shortest window can be far longer than the state count: on a family of 69 states it is 2,531 bytes.
+The question is PSPACE-complete in general, so the search takes a budget of nodes and reports running out as such. A
+grammar whose shortest window is longer than `chunk_boundaries_with_windows()` tries, four bytes, gains nothing from
+that planner, and this is how to tell.
+
 `window_counterexample(window, origin)` holds the certificate itself against every completely tokenizable input. A
 counterexample is such an input holding an occurrence of the window whose covering token begins elsewhere than the
 origin, and the decision is exact: it searches for one by the same boundary-guessing search as `window_occurrence()`,

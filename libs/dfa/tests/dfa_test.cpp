@@ -25,6 +25,7 @@
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/recovery.hpp"
 #include "munch/dfa/simulator.hpp"
+#include "munch/dfa/split_window.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
 #include "munch/dfa/unroll_start.hpp"
 
@@ -3038,4 +3039,160 @@ TEST_F(Dfa_test, Accepted_resolves_the_token_of_an_accepting_state_and_nothing_f
     EXPECT_EQ(simulator.accepted(q1), std::optional{Token{1}});
     EXPECT_EQ(simulator.accepted(q2), std::nullopt);
     EXPECT_EQ(simulator.accepted(q3), std::optional{Token{3}});
+}
+
+namespace
+{
+/**
+ * @brief Paper two's long-window family: one token kind, symbols a, b, r, t and #, and m sources, the j-th a cycle of
+ *        j + 1 states accepting at its last, so a window must carry a common accepted length of every cycle.
+ * @param m The number of sources.
+ * @return The token set.
+ */
+munch::dfa::Simulator lcm_family(const std::size_t m)
+{
+    munch::dfa::Builder builder;
+
+    const auto root{builder.init_state()};
+    const auto error{builder.next_state()};
+    const auto guard{builder.next_state()};
+    const auto result{builder.next_state()};
+
+    std::vector<munch::dfa::Dfa::State_t> timer(m + 1);
+    std::vector<munch::dfa::Dfa::State_t> header(m + 1);
+    std::vector<std::vector<munch::dfa::Dfa::State_t>> source(m);
+
+    for (auto& state : timer)
+    {
+        state = builder.next_state();
+    }
+
+    for (auto& state : header)
+    {
+        state = builder.next_state();
+    }
+
+    for (std::size_t j{0}; j < m; ++j)
+    {
+        source[j].resize(j + 1);
+
+        for (auto& state : source[j])
+        {
+            state = builder.next_state();
+        }
+    }
+
+    const auto edge{[&builder](const auto from, const char symbol, const auto to) {
+        builder.add_transition(from, munch::dfa::Label(symbol), to);
+    }};
+
+    // Every state but the root accepts, all with the one kind; a letter that would end the countdown resets it.
+    const auto accept_resetting{[&](const auto state, const auto on_r, const auto on_t, const bool letters_reset) {
+        builder.add_accept_state(state, munch::dfa::Token{1});
+        edge(state, 'r', on_r);
+        edge(state, 't', on_t);
+
+        if (letters_reset)
+        {
+            edge(state, 'a', error);
+            edge(state, 'b', error);
+        }
+    }};
+
+    edge(root, 'r', header[0]);
+    edge(root, '#', result);
+
+    for (const auto state : {error, result})
+    {
+        accept_resetting(state, timer[m], error, true);
+        edge(state, '#', error);
+    }
+
+    accept_resetting(guard, timer[m], error, false);
+    edge(guard, 'a', guard);
+    edge(guard, 'b', guard);
+
+    for (std::size_t j{1}; j <= m; ++j)
+    {
+        accept_resetting(timer[j], timer[j - 1], error, true);
+        edge(timer[j], '#', error);
+    }
+
+    accept_resetting(timer[0], timer[0], guard, true);
+    edge(timer[0], '#', error);
+
+    for (std::size_t j{0}; j < m; ++j)
+    {
+        accept_resetting(header[j], header[j + 1], source[j][0], true);
+        edge(header[j], '#', error);
+    }
+
+    accept_resetting(header[m], header[m], guard, true);
+    edge(header[m], '#', error);
+
+    for (std::size_t j{0}; j < m; ++j)
+    {
+        for (std::size_t k{0}; k <= j; ++k)
+        {
+            const auto next{source[j][(k + 1) % (j + 1)]};
+
+            accept_resetting(source[j][k], timer[m], error, false);
+            edge(source[j][k], 'a', next);
+            edge(source[j][k], 'b', next);
+
+            if (k != j)
+            {
+                edge(source[j][k], '#', error); // the accepting state alone dies on #
+            }
+        }
+    }
+
+    return munch::dfa::Simulator{builder.build(), std::vector<std::size_t>{}};
+}
+} // namespace
+
+TEST_F(Dfa_test, Shortest_split_window_finds_windows_far_longer_than_the_state_count)
+{
+    // The shortest windows of the family are lcm(1..m) + m + 2 bytes long: 4, 6, 11, 18, 67 and 68 for m = 1 to 6,
+    // already past the 31 and 39 states of the last two, which no search by length would reach.
+    const std::vector<std::size_t> shortest{4, 6, 11, 18, 67, 68};
+
+    for (std::size_t m{1}; m <= shortest.size(); ++m)
+    {
+        const auto simulator{lcm_family(m)};
+
+        const auto found{munch::dfa::shortest_split_window(simulator)};
+
+        ASSERT_EQ(found.outcome, munch::dfa::Shortest_window::Outcome::found);
+
+        EXPECT_EQ(found.window.size(), shortest[m - 1]);
+
+        EXPECT_EQ(munch::dfa::is_split_window(simulator, found.window), std::optional{found.origin});
+    }
+}
+
+TEST_F(Dfa_test, Shortest_split_window_proves_absence_and_reports_an_exhausted_budget)
+{
+    // A single self-looping accepting state: every byte may continue the run or begin a new one, so no window ever
+    // resolves where its covering token began, and the search exhausts its nodes.
+    munch::dfa::Builder run;
+
+    const auto q0{run.init_state()};
+    const auto q1{run.next_state()};
+
+    run.add_accept_state(q1, Token{1});
+    run.add_transition(q0, munch::dfa::Label('a'), q1);
+    run.add_transition(q1, munch::dfa::Label('a'), q1);
+
+    const munch::dfa::Simulator simulator{run.build(), std::vector<std::size_t>{}};
+
+    EXPECT_EQ(munch::dfa::shortest_split_window(simulator).outcome, munch::dfa::Shortest_window::Outcome::none);
+
+    // A budget too small to settle the family's search is reported as such, never as an answer.
+    EXPECT_EQ(
+            munch::dfa::shortest_split_window(lcm_family(5), 8).outcome, munch::dfa::Shortest_window::Outcome::budget);
+
+    // Zero visits nothing, rather than meaning no limit.
+    EXPECT_EQ(
+            munch::dfa::shortest_split_window(lcm_family(1), 0).outcome, munch::dfa::Shortest_window::Outcome::budget);
 }
