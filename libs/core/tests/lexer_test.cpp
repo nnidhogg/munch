@@ -2359,6 +2359,59 @@ TEST_F(Lexer_test, Malformed_input_keeps_the_default_prefix_guarantee_and_window
     EXPECT_NE(rejoined, serial);
 }
 
+TEST_F(Lexer_test, Relaxed_certificate_admits_a_restart_into_an_equivalent_state)
+{
+    enum class Token_kind : uint8_t
+    {
+        Word,
+        Run,
+        Kept,
+    };
+
+    // Splitting at a b inside ab* leaves a shorter ab* on the left and a b+ on the right, both discarded. The restart
+    // on b enters a state accepting b+, the interrupted scan stays in one accepting ab*: different states, which
+    // minimization keeps apart, and the same future once the two discarded kinds are not told apart.
+    Builder_dbg builder;
+
+    builder.add_token(concat(text("a"), kleene(text("b"))), Token_kind::Word, 1);
+    builder.add_token(plus(text("b")), Token_kind::Run, 1);
+    builder.add_token(text("c"), Token_kind::Kept, 1);
+    builder.set_ignored_tokens({static_cast<std::size_t>(Token_kind::Word), static_cast<std::size_t>(Token_kind::Run)});
+
+    const auto lexer{builder.build()};
+
+    EXPECT_TRUE(lexer.is_split_point_ignoring('b'));
+    EXPECT_FALSE(lexer.is_split_point('b'));
+}
+
+TEST_F(Lexer_test, Relaxed_certificate_still_refuses_a_safe_symbol_whose_restart_differs_at_once)
+{
+    enum class Token_kind : uint8_t
+    {
+        Discarded,
+        Kept,
+    };
+
+    // Every cut before a b is safe modulo the discarded kind: inside abc the left piece is a and the right piece
+    // scans b then c, all discarded, as the serial abc is. The restart on b accepts at once where the interrupted
+    // ab does not, so the two states have different futures and the certificate refuses. This is the known limit
+    // of a local test; deciding such symbols exactly needs a search, not a table row.
+    Builder_dbg builder;
+
+    for (const auto* word : {"a", "b", "c", "abc"})
+    {
+        builder.add_token(text(word), Token_kind::Discarded, 1);
+    }
+
+    builder.add_token(text("k"), Token_kind::Kept, 1);
+    builder.add_token(text("kk"), Token_kind::Kept, 1);
+    builder.set_ignored_tokens({static_cast<std::size_t>(Token_kind::Discarded)});
+
+    const auto lexer{builder.build()};
+
+    EXPECT_FALSE(lexer.is_split_point_ignoring('b'));
+}
+
 TEST_F(Lexer_test, Default_planning_uses_the_exact_certificate_never_the_relaxed_one)
 {
     enum class Token_kind : uint8_t

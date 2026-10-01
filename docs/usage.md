@@ -592,17 +592,20 @@ lexer.is_split_point('\n');           // false: a whitespace run can contain it
 lexer.is_split_point_ignoring('\n');  // true: both halves of the split run are discarded
 ```
 
-The technical report *Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens* states both
-certificates formally, relates them to the parallel-automata literature, and studies which grammars certify usable split
-symbols under each: read it as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473), as
-[docs/split_points.md](split_points.md), or build the formal version from [paper/](../paper/). Its companion report
-*Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies* generalizes the certificate
-from single bytes to short byte windows, the mechanism behind `chunk_boundaries_with_windows()`: read it as
-[arXiv:2608.09761](https://arxiv.org/abs/2608.09761), as [docs/split_windows.md](split_windows.md), or build it
-from the same directory. The third report *Certified Panic Mode: Repair-Invariant Error Recovery for Maximal-Munch
-Lexing* turns the same certificates into resynchronization points for input that does not tokenize, the contract behind
-the Tokenizer's `recover()` family: read it as [arXiv:2609.10600](https://arxiv.org/abs/2609.10600), as
-[docs/panic_mode.md](panic_mode.md), or build it from the same directory.
+Since 2.2 the weaker test asks less than the report's: the restart after the cut need not reach the very state the
+interrupted scan is in, only one with the same future once the discarded kinds are not told apart. So it certifies every
+symbol the report's condition does and some more, still in one table lookup per symbol. The technical report *Certified
+Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens* states both certificates formally as of v1.2.0,
+relates them to the parallel-automata literature, and studies which grammars certify usable split symbols under each:
+read it as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473), as [docs/split_points.md](split_points.md), or build
+the formal version from [paper/](../paper/). Its companion report *Certified Split Windows for Parallel Lexing:
+Recovering Boundaries Where No Byte Certifies* generalizes the certificate from single bytes to short byte windows, the
+mechanism behind `chunk_boundaries_with_windows()`: read it as [arXiv:2608.09761](https://arxiv.org/abs/2608.09761), as
+[docs/split_windows.md](split_windows.md), or build it from the same directory. The third report *Certified Panic Mode:
+Repair-Invariant Error Recovery for Maximal-Munch Lexing* turns the same certificates into resynchronization points for
+input that does not tokenize, the contract behind the Tokenizer's `recover()` family: read it as
+[arXiv:2609.10600](https://arxiv.org/abs/2609.10600), as [docs/panic_mode.md](panic_mode.md), or build it from the same
+directory.
 
 ### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 

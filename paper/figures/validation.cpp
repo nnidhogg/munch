@@ -229,6 +229,81 @@ std::vector<Verdict> oracle(
     return verdicts;
 }
 
+/**
+ * @brief The relaxed condition as the report states it, evaluated on the compiled tables.
+ *
+ * The library has since strengthened its rule: the restart need only reach a state with the same future once ignored
+ * kinds are not told apart, where the report's condition asks for the same state. The figures below are the report's,
+ * so they are taken of the report's condition, and the shipped predicate is checked against it separately: it admits
+ * at least as much and is never unsound.
+ */
+bool published_condition(const munch::core::Lexer& lexer, const Kinds& ignored, const unsigned char symbol)
+{
+    const auto& simulator{lexer.simulator()};
+
+    const auto states{simulator.state_count()};
+
+    const auto discarded{[&](const std::size_t state) {
+        const auto token{simulator.accepted(state)};
+
+        return token.has_value() && ignored.contains(token->id());
+    }};
+
+    std::vector<bool> reaches_kept(states, false);
+
+    for (bool changed{true}; changed;)
+    {
+        changed = false;
+
+        for (std::size_t state{0}; state < states; ++state)
+        {
+            if (reaches_kept[state])
+            {
+                continue;
+            }
+
+            auto reaches{simulator.is_accepting(state) && !discarded(state)};
+
+            for (std::size_t byte{0}; byte < 256 && !reaches; ++byte)
+            {
+                const auto to{simulator.step(state, static_cast<unsigned char>(byte))};
+
+                reaches = to.has_value() && reaches_kept[*to];
+            }
+
+            if (reaches)
+            {
+                reaches_kept[state] = true;
+
+                changed = true;
+            }
+        }
+    }
+
+    const auto init{simulator.init_state()};
+
+    const auto consumes{[&](const std::size_t state) {
+        const auto to{simulator.step(state, symbol)};
+
+        return to.has_value() && simulator.is_live(*to);
+    }};
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        if (!simulator.is_live(state) || !consumes(state) || (state == init && !simulator.init_reentrant()))
+        {
+            continue;
+        }
+
+        if (!discarded(state) || reaches_kept[state] || simulator.step(state, symbol) != simulator.step(init, symbol))
+        {
+            return false;
+        }
+    }
+
+    return consumes(init);
+}
+
 struct Sweep
 {
     std::size_t token_sets{0};
@@ -236,6 +311,9 @@ struct Sweep
     std::size_t unsound{0};
     std::size_t lost{0};
     std::size_t conservative{0};
+    std::size_t shipped_admitted{0};
+    std::size_t shipped_unsound{0};
+    std::size_t shipped_lost{0};
 
     // The (round, symbol) identity of every conservative pair, so a bound change must name what it reclassified.
     std::set<std::pair<std::size_t, char>> conservative_pairs;
@@ -293,7 +371,15 @@ Sweep sweep(const std::size_t rounds, const std::size_t max_length)
                     continue;
                 }
 
-                const auto claim{lexer.is_split_point_ignoring(symbol)};
+                const auto claim{published_condition(lexer, ignored, static_cast<unsigned char>(symbol))};
+
+                const auto shipped{lexer.is_split_point_ignoring(symbol)};
+
+                totals.shipped_admitted += shipped ? 1 : 0;
+
+                totals.shipped_unsound += shipped && !verdict.safe ? 1 : 0;
+
+                totals.shipped_lost += claim && !shipped ? 1 : 0;
 
                 totals.admitted += claim ? 1 : 0;
 
@@ -345,7 +431,7 @@ bool conservatism_witness()
 
     const auto& verdict{verdicts[static_cast<unsigned char>('b')]};
 
-    return verdict.exercised && verdict.safe && !lexer.is_split_point_ignoring('b');
+    return verdict.exercised && verdict.safe && !published_condition(lexer, ignored, 'b');
 }
 
 } // namespace
@@ -405,6 +491,14 @@ int main()
     check("the reclassified pairs are the two named ones", reclassified == expected ? 1U : 0U, 1U);
 
     check("a named token set where splitting is safe and the condition refuses", conservatism_witness(), true);
+
+    std::cout << "\nthe library's strengthened predicate on the same sweep, beyond what the report states\n";
+
+    check("admitted by the report's condition yet refused by the library", eight.shipped_lost, std::size_t{0});
+
+    check("admitted by the library yet unsafe to split at", eight.shipped_unsound, std::size_t{0});
+
+    std::cout << "  info admitted by the library: " << eight.shipped_admitted << '\n';
 
     std::cout
             << (failures == 0 ? "\nthe validation figures reproduce the report\n" :
