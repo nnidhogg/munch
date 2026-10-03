@@ -220,10 +220,15 @@ the regex combinators with `Set`, `regex::parse()` reading a generator's pattern
 `utf8::ranges`, and the `unicode` XID classes, `core::Builder` with `add_token()`, `build()`, `diagnose()`,
 `set_state_limit()`, and `set_ignored_tokens()`, `core::determinize()`, `core::Lexer` with `Match`, `tokenize()`,
 `tokenize_all()`, `is_split_point()`, `is_split_point_ignoring()`, `chunk_boundaries()`, and `tokenize_all_parallel()`,
-and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions arrive in minor versions. The
-window layer, `is_split_window()` and `chunk_boundaries_with_windows()`, joined that surface in 1.4.0, and
-`shortest_split_window()` joins it in 2.2; the release the split-windows report evaluates, v1.3.3, deliberately ships no
-window-planning API.
+and the `tools::tokenizer` layer. Breaking any of it bumps the major version; additions arrive in minor versions.
+
+The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
+`Mode_action` with its four kinds, the moded tokenizer's constructors taking a `Mode_lexer`, and `depth()`. So did
+`Builder::set_token_payload()` and the three-argument `tokenize_all()` sink that delivers what it attaches. A sink
+accepting both arities is called with two.
+
+The window layer joined that surface in 1.4.0: `is_split_window()` and `chunk_boundaries_with_windows()`. The release
+the split-windows paper evaluates, v1.3.3, ships no window-planning API.
 
 The recovery layer joined that surface in 1.6.0: `next_certified_start()`, `next_certified_evidence()`,
 `next_anchored_start()`, `minimal_repair()`, `lag()`, and `rescue_free()`, each under the contract its own documentation
@@ -255,15 +260,6 @@ user renames the type, includes `mode_tokenizer.hpp`, and changes nothing else: 
 transition table within the cap times the classes times four bytes, and it now allows one column more for a nullable
 token set, whose positive-width equivalent adds a state determinization never discovers.
 
-The verifier joined that surface in 2.2.0, at the library level and forwarded by nothing: `dfa::Verifier`, a
-deterministic trim automaton over marked symbols accepting exactly the marked strings of a policy, built from any
-transition table or by `dfa::armed_run()` from a token set's DFA as the maximal-munch scan; and the four decisions over
-it, `miscovering()`, the window certificate decided exactly with the shortest miscovering marked string,
-`boundary_gap()`, whether the distance between boundaries is bounded, with the supremum or the lasso, `realizable()`,
-whether completion-preserving generation never strands, with each state's admitted steps, and `divergence()`, whether
-two functional verifiers accept the same marked strings, with the shortest diverging input of the first half that has
-one, the boundaries searched before the domain. Every witness replays through `Verifier::step()`.
-
 Three decisions joined that surface in 2.1.0, each forwarded by `core::Lexer`: `boundary_counterexample()`, whether a
 gap of a window is a token boundary at every occurrence of the window in every completely tokenizable input, with the
 shortest input holding an occurrence a token crosses there under its cap; `crossing_counterexample()`, whether a token
@@ -278,10 +274,15 @@ over guessed token boundaries and the profile asking both at every gap. So did t
 byte exactly or once the discarded tokens are deleted, and its exit status 3, when every one audited and one did not
 certify a byte required of it.
 
-The mode layer joined that surface in 1.3.0: `core::Mode_builder`, `core::Mode_lexer`, `core::Mode_stack`,
-`Mode_action` with its four kinds, the moded tokenizer's constructors taking a `Mode_lexer`, and `depth()`. So did
-`Builder::set_token_payload()` and the three-argument `tokenize_all()` sink that delivers what it attaches. A sink
-accepting both arities is called with two.
+`shortest_split_window()`, forwarded by `core::Lexer`, joined that surface in 2.2.0, and so did the verifier, at the
+library level and forwarded by nothing: `dfa::Verifier`, a deterministic trim automaton over marked symbols accepting
+exactly the marked strings of a policy, built from any transition table or by `dfa::armed_run()` from a token set's DFA
+as the maximal-munch scan; and the four decisions over it, `miscovering()`, the window certificate decided exactly with
+the shortest miscovering marked string, `boundary_gap()`, whether the distance between boundaries is bounded, with the
+supremum or the lasso, `realizable()`, whether completion-preserving generation never strands, with each state's
+admitted steps, and `divergence()`, whether two functional verifiers accept the same marked strings, with the shortest
+diverging input of the first half that has one, the boundaries searched before the domain. Every witness replays through
+`Verifier::step()`.
 
 The supported platform is 64-bit Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds and tests on
 x86-64 and ARM64, so both signednesses of plain `char` are exercised, and sanitizes and fuzzes on x86-64. Other
