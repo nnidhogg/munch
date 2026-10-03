@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "grammars.hpp"
+#include "modulo.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/dfa/dfa.hpp"
 #include "munch/regex/regex.hpp"
@@ -195,6 +196,92 @@ std::string certified_modulo(const munch::core::Lexer& lexer)
     }
 
     return rendered.empty() ? "none" : rendered;
+}
+
+// The relaxed column as the published condition reads it, from the copy in modulo.hpp, so the table can assert that
+// the column is the same under the published condition and under the rule the library now ships.
+std::set<char> published_modulo(const munch::core::Lexer& lexer, const Kinds& ignored)
+{
+    std::set<char> relaxed;
+
+    for (int value{0}; value < 256; ++value)
+    {
+        if (figures::published_condition(lexer, ignored, static_cast<unsigned char>(value)))
+        {
+            relaxed.insert(static_cast<char>(value));
+        }
+    }
+
+    return relaxed;
+}
+
+std::set<char> shipped_modulo(const munch::core::Lexer& lexer)
+{
+    std::set<char> relaxed;
+
+    for (int value{0}; value < 256; ++value)
+    {
+        if (lexer.is_split_point_ignoring(static_cast<char>(value)))
+        {
+            relaxed.insert(static_cast<char>(value));
+        }
+    }
+
+    return relaxed;
+}
+
+// The bytes safe modulo the ignored kinds exactly, by the decision of modulo.hpp, one decision per class of bytes the
+// tables do not tell apart and withholding the vacuous ones as the predicates do. A byte the decision cannot settle
+// within its budget is reported in `undecided` rather than counted either way.
+std::set<char> exactly_safe_modulo(const munch::core::Lexer& lexer, const Kinds& ignored, std::string& undecided)
+{
+    const auto& simulator{lexer.simulator()};
+
+    const auto states{simulator.state_count()};
+
+    std::map<std::vector<int>, std::vector<int>> classes;
+
+    for (int value{0}; value < 256; ++value)
+    {
+        std::vector<int> column;
+
+        for (std::size_t state{0}; state < states; ++state)
+        {
+            const auto to{simulator.step(state, static_cast<unsigned char>(value))};
+
+            column.push_back(to.has_value() ? static_cast<int>(*to) : -1);
+        }
+
+        classes[column].push_back(value);
+    }
+
+    std::set<char> safe;
+
+    for (const auto& [column, members] : classes)
+    {
+        const auto from_init{simulator.step(simulator.init_state(), static_cast<unsigned char>(members.front()))};
+
+        if (!from_init || !simulator.is_live(*from_init))
+        {
+            continue; // vacuous or never useful, withheld as the predicates withhold it
+        }
+
+        const auto verdict{figures::decide_exactly(lexer, ignored, static_cast<unsigned char>(members.front()))};
+
+        for (const auto value : members)
+        {
+            if (verdict.outcome == figures::Exact_verdict::Outcome::safe)
+            {
+                safe.insert(static_cast<char>(value));
+            }
+            else if (verdict.outcome == figures::Exact_verdict::Outcome::budget)
+            {
+                undecided += std::format("{}{:#04x}", undecided.empty() ? "" : " ", value);
+            }
+        }
+    }
+
+    return safe;
 }
 
 Stream scan(const munch::core::Lexer& lexer, const std::string& text, std::size_t& consumed)
@@ -502,7 +589,14 @@ int main()
     // point: an earlier text-parsing check miscounted by reading "the same, plus ..." as unchanged.
     int changed{0};
 
-    const auto check{[&failures, &changed](
+    // The relaxed column is also judged three more ways per row: by the published condition, which must give the
+    // same column as the shipped rule, and by the exact decision, which settles whether the column is exact on the
+    // row or merely conservative there. The report states both counts, so they are counted here.
+    int exact_rows{0};
+
+    std::string undecided;
+
+    const auto check{[&failures, &changed, &exact_rows, &undecided](
                              const std::string& name, const std::string& exact, const std::string& relaxed,
                              const Kinds& ignored, munch::core::Builder& b) {
         b.set_ignored_tokens(std::vector<std::size_t>{ignored.begin(), ignored.end()});
@@ -515,16 +609,42 @@ int main()
 
         changed += actual_relaxed == "the same" ? 0 : 1;
 
-        const auto agrees{actual_exact == exact && actual_relaxed == relaxed};
+        const auto shipped{shipped_modulo(lexer)};
 
-        std::cout << (agrees ? "  ok   " : "  FAIL ") << name << '\n';
+        const auto both_rules{published_modulo(lexer, ignored) == shipped};
+
+        const auto decided{exactly_safe_modulo(lexer, ignored, undecided)};
+
+        exact_rows += decided == shipped ? 1 : 0;
+
+        const auto agrees{actual_exact == exact && actual_relaxed == relaxed && both_rules};
+
+        std::cout << (agrees ? "  ok   " : "  FAIL ") << name << (decided == shipped ? "" : " (column not exact)")
+                  << '\n';
 
         if (!agrees)
         {
             std::cout << "         certified: " << actual_exact << ", cell says " << exact
-                      << "\n         modulo:    " << actual_relaxed << ", cell says " << relaxed << '\n';
+                      << "\n         modulo:    " << actual_relaxed << ", cell says " << relaxed
+                      << "\n         the published condition and the shipped rule "
+                      << (both_rules ? "agree" : "disagree") << '\n';
 
             ++failures;
+        }
+
+        if (decided != shipped)
+        {
+            std::string extra;
+
+            for (const auto byte : decided)
+            {
+                if (!shipped.contains(byte))
+                {
+                    extra += std::format("{}{:#04x}", extra.empty() ? "" : " ", static_cast<unsigned char>(byte));
+                }
+            }
+
+            std::cout << "         safe exactly beyond the column: " << (extra.empty() ? "none" : extra) << '\n';
         }
     }};
 
@@ -872,6 +992,26 @@ int main()
         if (!agrees)
         {
             std::cout << "         the report says eight\n";
+
+            ++failures;
+        }
+    }
+
+    {
+        const auto agrees{exact_rows == 15 && undecided.empty()};
+
+        std::cout << (agrees ? "  ok   " : "  FAIL ") << "rows whose modulo column is exact: " << exact_rows << '\n';
+
+        if (!agrees)
+        {
+            std::cout << "         the report says all fifteen";
+
+            if (!undecided.empty())
+            {
+                std::cout << ", and these bytes were left undecided: " << undecided;
+            }
+
+            std::cout << '\n';
 
             ++failures;
         }
