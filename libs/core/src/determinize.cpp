@@ -5,7 +5,6 @@
 #include <bit>
 #include <boost/container_hash/hash.hpp>
 #include <cstdint>
-#include <functional>
 #include <limits>
 #include <optional>
 #include <queue>
@@ -143,7 +142,14 @@ private:
 
         std::vector<unsigned char> symbols;
 
-        std::array<std::vector<std::reference_wrapper<const Members_t>>, 256> buckets;
+        // A move of a member state, named by the member and the move's place in its list.
+        struct Edge
+        {
+            std::uint32_t member;
+            std::uint32_t move;
+        };
+
+        std::array<std::vector<Edge>, 256> buckets;
 
         Bits_t scratch(words_, 0);
 
@@ -191,14 +197,16 @@ private:
 
             for (const auto member : members)
             {
-                for (const auto& move : moves_[member])
+                for (std::uint32_t index{0}; const auto& move : moves_[member])
                 {
                     if (buckets[move.symbol].empty())
                     {
                         symbols.push_back(move.symbol);
                     }
 
-                    buckets[move.symbol].emplace_back(move.targets);
+                    buckets[move.symbol].push_back({.member = member, .move = index});
+
+                    ++index;
                 }
             }
 
@@ -209,9 +217,9 @@ private:
             {
                 std::ranges::fill(scratch, 0);
 
-                for (const Members_t& targets : buckets[symbol])
+                for (const auto [member, index] : buckets[symbol])
                 {
-                    for (const auto target : targets)
+                    for (const auto target : moves_[member][index].targets)
                     {
                         if (!contains(scratch, target))
                         {
