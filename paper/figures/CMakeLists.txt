@@ -91,3 +91,15 @@ foreach(table basis-types basis-profile profiles macros)
 
     set_tests_properties(munch_repair_profile_${table} PROPERTIES FIXTURES_REQUIRED repair_profile)
 endforeach()
+
+# The smaller searches of paper/split-windows/split-windows.tex over the window table's token sets, the long-window
+# family's exact minima, and the greedy-agreement test on the structural section's examples. Every quoted count is
+# asserted, so the table's new columns cannot drift from what the searches compute.
+add_executable(munch_window_search window_search.cpp)
+
+target_link_libraries(munch_window_search
+        PRIVATE
+        munch_core
+)
+
+add_test(NAME munch_window_search COMMAND munch_window_search)

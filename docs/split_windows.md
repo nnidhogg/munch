@@ -138,13 +138,13 @@ extra segmentations and may refuse even a true covering-origin certificate. Note
 require: it says nothing about the tokens overlapping the window's earlier bytes, and it does not require the boundary
 to be the only one inside the window.
 
-The weakest guarantee has an exact decision of its own, which release 2.1.0 adds and no version of the paper contains.
-Gap `g` of `W`, for `g` from 0 to `|W|`, sits before byte `g` of an occurrence, gap `|W|` right after its final byte,
-and it is a boundary at an occurrence at offset `t` when `t + g` is a token start or the end of the input. Over every
-occurrence of `W` in every completely tokenizable input the gap is *must* when it is a boundary at every occurrence,
-*never* when it is one at none, and *may* when both happen. A certified split window `(W, o)` has gap `o` must, since
-the covering token's start is a token start, and the converse fails, as `{a, abx, b, x}` at `ab` shows above and
-`{0, 1, x, 001x, 011x}` at `0011` shows with two must gaps: gaps 0 and 1 are must, yet the covering origin is 3 in
+The weakest guarantee has an exact decision of its own, which release 2.1.0 adds and the paper only names in one
+sentence. Gap `g` of `W`, for `g` from 0 to `|W|`, sits before byte `g` of an occurrence, gap `|W|` right after its
+final byte, and it is a boundary at an occurrence at offset `t` when `t + g` is a token start or the end of the input.
+Over every occurrence of `W` in every completely tokenizable input the gap is *must* when it is a boundary at every
+occurrence, *never* when it is one at none, and *may* when both happen. A certified split window `(W, o)` has gap `o`
+must, since the covering token's start is a token start, and the converse fails, as `{a, abx, b, x}` at `ab` shows above
+and `{0, 1, x, 001x, 011x}` at `0011` shows with two must gaps: gaps 0 and 1 are must, yet the covering origin is 3 in
 `0011`, cut `0|0|1|1`, and 1 in `0011x`, cut `0|011x`, so no origin certifies the window. The certificate is exactly the
 conjunction the profile states: `(W, o)` holds when gap `o` is must and gaps `o + 1` to `|W| - 1` are never, since the
 covering token begins at `o` of an occurrence exactly when `o` is a boundary and no later gap inside the window is. Must

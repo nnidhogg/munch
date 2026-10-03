@@ -108,6 +108,16 @@
   doi       = {10.1145/3720498}
 }
 
+@misc{hopper,
+  author       = {Nicklas Nidh{\"o}gg},
+  title        = {hopper: a {C++23} library for building recursive-descent parsers on top of munch lexers},
+  year         = {2026},
+  howpublished = {Public repository, \url{https://github.com/nnidhogg/hopper}},
+  note         = {The JSON lexer \path{libs/json/src/lexer.cpp}, read at commit \texttt{caff92b} and unchanged since
+                  release \texttt{v1.0.0}, archived at \doi{10.5281/zenodo.22998778}, is the token set of the JSON row
+                  of Section~\ref{sec:profile}}
+}
+
 @misc{munch,
   author = {Nicklas Nidh{\"o}gg},
   title  = {munch},
@@ -116,8 +126,8 @@
   note   = {Release tag \texttt{v1.3.3}, archived at \doi{10.5281/zenodo.21842344}; a lexical analysis library based on
             automata theory. The artifact evaluated here is that release, with its single-byte decision and a
             single-byte planner this paper does not evaluate; release v1.4.0 added the window decision
-            \texttt{is\_split\_window()}, which the revised sweep cross-checks, and the window planner, which is not
-            evaluated here; the 400-set sweep as revised here is the output of
+            \texttt{is\_split\_window()}, which the sweep at the later commit cross-checks, and the window planner,
+            which is not evaluated here; the 400-set sweep reported here is the output of
             \texttt{tools/probes/src/window\_gate.cpp} at commit 707a79941472885a260c0bc96e615dd2fb5e99d2 of the public
             repository, after release \texttt{v1.6.0}}
 }
@@ -351,4 +361,35 @@
   pages   = {95--101},
   year    = {1975},
   doi     = {10.1016/0304-3975(75)90015-8}
+}
+
+@misc{nidhogg2026splitting,
+  author = {Nicklas Nidh{\"o}gg},
+  title  = {Certified Splitting: Decidability and Anchor Supply for Maximal-Munch Tokenization},
+  year   = {2026},
+  note   = {Companion manuscript, in preparation}
+}
+
+@misc{nidhogg2026panicmode,
+  author       = {Nicklas Nidh{\"o}gg},
+  title        = {Certified Panic Mode: Repair-Invariant Error Recovery for Maximal-Munch Lexing},
+  year         = {2026},
+  note         = {Preprint, \href{https://arxiv.org/abs/2609.10600}{arXiv:2609.10600} [cs.PL]}
+}
+
+@misc{marcus2001constrained,
+  author = {Brian H. Marcus and Ron M. Roth and Paul H. Siegel},
+  title  = {An Introduction to Coding for Constrained Systems},
+  year   = {2001},
+  note   = {Lecture notes, fifth edition, October 2001.
+            \url{https://ronny.cswp.cs.technion.ac.il/wp-content/uploads/sites/54/2016/05/chapters1-9.pdf}}
+}
+
+@inproceedings{kozen1977lower,
+  author    = {Dexter Kozen},
+  title     = {Lower Bounds for Natural Proof Systems},
+  booktitle = {18th Annual Symposium on Foundations of Computer Science (FOCS)},
+  pages     = {254--266},
+  year      = {1977},
+  doi       = {10.1109/SFCS.1977.16}
 }
