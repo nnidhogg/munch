@@ -4151,9 +4151,9 @@ TEST_F(Lexer_test, Parallel_tokenization_accepts_a_sink_callable_only_as_an_lval
     // The counter is atomic because one sink serves every chunk's thread, as the API documents.
     struct Lvalue_only_sink
     {
-        std::reference_wrapper<std::atomic<std::size_t>> seen;
+        std::atomic<std::size_t>& seen;
 
-        void operator()(std::size_t, Token_kind, std::size_t) & { ++seen.get(); }
+        void operator()(std::size_t, Token_kind, std::size_t) & { ++seen; }
     };
 
     Builder builder;

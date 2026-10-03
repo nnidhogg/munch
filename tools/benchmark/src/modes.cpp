@@ -7,7 +7,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -197,7 +196,7 @@ int main(const int argc, const char** argv)
     {
         const char* name;
 
-        std::reference_wrapper<const munch::core::Mode_lexer> lexer;
+        const munch::core::Mode_lexer& lexer;
 
         std::string input;
 
@@ -266,7 +265,7 @@ int main(const int argc, const char** argv)
 
                                      while (offset < row.input.size())
                                      {
-                                         const auto match{row.lexer.get().tokenize<Mode_token>(
+                                         const auto match{row.lexer.tokenize<Mode_token>(
                                                  row.input.cbegin() + static_cast<std::ptrdiff_t>(offset),
                                                  row.input.cend(), stack)};
 
@@ -283,7 +282,7 @@ int main(const int argc, const char** argv)
                                      return offset == row.input.size() ? tokens : 0;
                                  }
 
-                                 const auto consumed{row.lexer.get().tokenize_all<Mode_token>(
+                                 const auto consumed{row.lexer.tokenize_all<Mode_token>(
                                          row.input, [&tokens](Mode_token, std::size_t, std::size_t) { ++tokens; })};
 
                                  return consumed == row.input.size() ? tokens : 0;

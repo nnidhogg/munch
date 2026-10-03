@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -29,7 +28,7 @@ struct Sighting
     /**
      * @brief The binding, or none when no scope in sight binds the name.
      */
-    std::optional<std::reference_wrapper<const Binding>> binding;
+    std::optional<Binding> binding;
 
     /**
      * @brief The scope holding it, as a path from the crate root, empty at the root.
@@ -263,7 +262,7 @@ std::string canonical(
             }
             else
             {
-                const auto& [bound, home, exported]{binding->get()};
+                const auto& [bound, home, exported]{*binding};
 
                 // An item the file defines stands for itself: the path is its own, from the scope holding the name.
                 if (bound == "crate::" + qualified(holder, prefix))

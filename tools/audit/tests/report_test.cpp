@@ -311,9 +311,8 @@ TEST(Report, An_alternative_matching_nothing_is_no_part_of_the_pattern_the_price
 
     const auto expected{price(plain, '\n')};
 
-    for (const auto* set : {&with_nothing, &with_trailing})
-    {
-        const auto priced{price(*set, '\n')};
+    const auto same_as_plain{[&expected](const auto& set) {
+        const auto priced{price(set, '\n')};
 
         EXPECT_EQ(priced.exact_before, expected.exact_before);
         EXPECT_EQ(priced.modulo_before, expected.modulo_before);
@@ -331,7 +330,11 @@ TEST(Report, An_alternative_matching_nothing_is_no_part_of_the_pattern_the_price
             EXPECT_EQ(priced.steps[step].exact, expected.steps[step].exact) << step;
             EXPECT_EQ(priced.steps[step].modulo, expected.steps[step].modulo) << step;
         }
-    }
+    }};
+
+    same_as_plain(with_nothing);
+
+    same_as_plain(with_trailing);
 }
 
 TEST(Report, A_re_entrant_initial_state_is_blamed_for_what_it_consumes_mid_token)
