@@ -72,3 +72,22 @@ target_link_libraries(munch_validation
 )
 
 add_test(NAME munch_validation COMMAND munch_validation)
+
+# The exact-repair section of paper/panic-mode/panic-mode.tex quotes its tables and every number in its prose from
+# this program alone. Writing them into the build tree and comparing byte for byte against the committed files under
+# paper/panic-mode/data/exact is what makes "the section cannot drift from the program" a property of the build. The
+# program is kept in Python on purpose, like the recovery cross-check: a scanner and a decision procedure written apart
+# from the library, checked here against transcriptions of the shipped routines.
+add_test(NAME munch_repair_profile
+        COMMAND python3 ${MUNCH_SOURCE_DIR}/paper/panic-mode/checks/repair_profile.py
+        ${CMAKE_CURRENT_BINARY_DIR}/exact)
+
+set_tests_properties(munch_repair_profile PROPERTIES FIXTURES_SETUP repair_profile)
+
+foreach(table basis-types basis-profile profiles macros)
+    add_test(NAME munch_repair_profile_${table}
+            COMMAND ${CMAKE_COMMAND} -E compare_files
+            ${CMAKE_CURRENT_BINARY_DIR}/exact/${table}.tex ${MUNCH_SOURCE_DIR}/paper/panic-mode/data/exact/${table}.tex)
+
+    set_tests_properties(munch_repair_profile_${table} PROPERTIES FIXTURES_REQUIRED repair_profile)
+endforeach()
