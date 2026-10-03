@@ -1,18 +1,20 @@
 # Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens
 
-**Nicklas Nidhögg**, August 2026. Mirrors `paper/split-points/split-points.tex` as it now stands, the arXiv v3 source of
-[arXiv:2608.03473](https://arxiv.org/abs/2608.03473), which describes munch at the v1.2.0 release: the paper's own
-version statements are its citation of the library, release tag `v1.2.0` archived at doi:10.5281/zenodo.21752997, and
-its applicability section's note that the pinned v1.2.0 probe carries the construction-cost grammar's transcription
-"verified by eye only", a binding later releases add mechanically. The scaling measurements in the evaluation were taken
-on an earlier tree, preserved by the `benchmark/split-points-2026-08` tag; the composition and validation figures are
-asserted from the release tree under CI, and the certificate figures' DOT sources are regenerated there and
-byte-compared against the committed copies. The tables below are produced mechanically from the paper's own tabular
-sources, never transcribed by hand.
+**Nicklas Nidhögg**, August 2026. Mirrors `paper/split-points/split-points.tex` as it now stands, revised beyond the
+arXiv v3 source of [arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The paper describes munch at the v1.2.0
+release, with one later rule beside it. It makes three version statements of its own. It cites the library at release
+tag `v1.2.0`, archived at doi:10.5281/zenodo.21752997. It names release 2.2 as the release that ships the coalesced test
+of Section 5.1, the rule behind `Lexer::is_split_point_ignoring()`. And its applicability section notes that the pinned
+v1.2.0 probe carries the construction-cost grammar's transcription "verified by eye only", a binding later releases add
+mechanically. The exact decision of Section 5.2 is a figure program beside the library, `paper/figures/modulo.hpp`, not
+part of it. The scaling measurements in the evaluation were taken on an earlier tree, preserved by the
+`benchmark/split-points-2026-08` tag; the composition and validation figures are asserted from the release tree under
+CI, and the certificate figures' DOT sources are regenerated there and byte-compared against the committed copies. The
+tables below are produced mechanically from the paper's own tabular sources, never transcribed by hand.
 
-*A technical report on the mechanism behind `Lexer::is_split_point()`, `chunk_boundaries()`, and
-`tokenize_all_parallel()`. The implementation, tests, and benchmarks live in this repository; this document states the
-idea precisely, relates it to prior work, and reports where it applies.*
+*A technical report on the mechanism behind `Lexer::is_split_point()`, `is_split_point_ignoring()`,
+`chunk_boundaries()`, and `tokenize_all_parallel()`. The implementation, tests, and benchmarks live in this repository;
+this document states the idea precisely, relates it to prior work, and reports where it applies.*
 
 ## Abstract
 
@@ -26,12 +28,16 @@ by ordered concatenation. The condition is necessary as well as sufficient, and 
 whitespace run can eliminate every useful certificate. Comments and whitespace are usually discarded. We therefore
 weaken the guarantee to equality after deleting a declared discarded set, and give a second condition, decided from the
 same tables and answered by a second constant-time one-bit query: *sound and more permissive, coinciding with the first
-when the discarded set is empty and strictly gaining on suitable pairs of token set and discarded set, but conservative
-rather than exact*. It recovers newline for a conventional C-like tokenization and tab, newline and carriage return for
-JSON, without altering their token definitions, and refuses it where block comments are unrestricted. Splitting at exact
-certificates in the munch library (release v1.2.0) reaches 92.6 to 95.3% parallel efficiency at eight threads on a
-restricted CPU set, on a 512 MiB dense corpus beyond last-level cache, and a 3.46 to 3.94× end-to-end speedup at four
-threads, across two benchmark revisions on one machine. It turns delimiter-based parallel lexing from a
+when the discarded set is empty and strictly gaining on suitable pairs of token set and discarded set, but
+conservative*. It recovers newline for a conventional C-like tokenization and tab, newline and carriage return for JSON,
+without altering their token definitions, and refuses it where block comments are unrestricted. The exact question is
+decidable. Whether a byte is safe modulo the discarded set at every occurrence is decided for every token automaton in
+polynomial space, with a replayable counterexample when it is not. For listed literal tokens it is decided in polynomial
+time. A stronger local test, the rule of release 2.2 of munch, is proved sound, strictly stronger than the second
+condition and still incomplete. On the fifteen token sets studied the exact decision confirms every cell the local tests
+give. Splitting at exact certificates in the munch library (release v1.2.0) reaches 92.6 to 95.3% parallel efficiency at
+eight threads on a restricted CPU set, on a 512 MiB dense corpus beyond last-level cache, and a 3.46 to 3.94× end-to-end
+speedup at four threads, across two benchmark revisions on one machine. It turns delimiter-based parallel lexing from a
 language-specific assumption into a property a compiler checks.
 
 ## 1 Introduction
@@ -75,14 +81,19 @@ The contributions are:
   for the resulting parallel scan, implemented and released in a general-purpose lexer library (Sections 6 and 8). The
   planner and executor decide boundaries with the exact condition, and the evaluation measures that path;
 - a second condition, weakening equality to hold only after the tokens a caller discards are deleted: *sound and
-  conservative rather than complete*: every exact certificate remains certified modulo `I`, the inclusion strict for
-  some token sets and discarded sets. The second condition is decided from the same tables and answered by a second
-  constant-time one-bit query. The condition recovers newline for the conventional C-like and JSON tokenizations that
-  certify nothing exactly, and ships as a query rather than in the planner, so a caller wanting it places the
-  boundaries itself (Section 5);
+  conservative*: every exact certificate remains certified modulo `I`, the inclusion strict for some token sets and
+  discarded sets. The second condition is decided from the same tables and answered by a second constant-time one-bit
+  query. The condition recovers newline for the conventional C-like and JSON tokenizations that certify nothing exactly,
+  and ships as a query rather than in the planner, so a caller wanting it places the boundaries itself (Section 5). A
+  stronger local test, the rule of release 2.2 of munch, is proved sound and shown strictly stronger and still
+  incomplete (Section 5.1);
+- the exact question answered: safety modulo `I` at every occurrence is decidable for every token automaton, in
+  polynomial space, with an input and a cut that replay whenever it fails, and in polynomial time for listed literals.
+  The decision runs a complete-scan automaton with obligation sets, a failure automaton beside it, and a finite test of
+  output equality by group delays (Section 5.2);
 - a controlled applicability study of fifteen token sets under both conditions, showing where each condition yields
   useful bytes, how one added token kind can eliminate every useful exact certificate, and when line-based splitting is
-  sound for the C-like tokenizations studied (Section 7).
+  sound for the C-like tokenizations studied. The exact decision confirms every cell of the relaxed column (Section 7).
 
 Table 1 states what the paper establishes and where, so a reader can see the whole claim before the definitions arrive.
 
@@ -97,17 +108,19 @@ and two benchmark revisions, as Section 8 details.
 | What does it cost to decide?                                         | Time linear in the compiled tables, then one bit per byte                                                                                                                                                      | Section 6          |
 | Do real token sets satisfy it?                                       | 15 token sets measured; the conventional C-like and JSON rows certify no useful byte exactly                                                                                                                   | Table 2            |
 | Can a token set that certifies no useful byte be rescued?            | Weakening to equality modulo discarded tokens recovers newline there; eight of the fifteen rows gain bytes                                                                                                     | Section 5, Table 2 |
+| Is a refusal of the relaxed condition final?                         | No: safety modulo `I` is decidable, in polynomial space, with a replayable witness when it fails; on the fifteen rows every refusal stood                                                                      | Theorem 5, Table 2 |
 | Can it be bought by design?                                          | In the studied grammar, where the block comment is the one token spanning lines, once newline is its own token a line-bounded block comment suffices; barring the kinds from each other's openers buys nothing | Table 2            |
 | Does it pay?                                                         | 92.6 to 95.3% parallel efficiency at eight threads, 3.46 to 3.94× end to end at four                                                                                                                           | Section 8          |
 
 The paper separates the result from the study around it. The result is Sections 3 to 5: the definitions, the exact
-certificate with its necessity proof and the re-entrancy subtlety, and the relaxed condition modulo discarded tokens.
-The study and the artifact are Sections 6 to 8: the derivation and planner as released, the applicability of both
-conditions over fifteen token sets, and the measured parallel scan. Section 2 places the certificate among the existing
-answers to the entry-state problem before the result. Section 10 returns to that literature after the result. A
-companion report generalizes the certificate from single bytes to short byte windows
-([arXiv:2608.09761](https://arxiv.org/abs/2608.09761)). A second report reuses the same certificates to choose where a
-scan resumes after an error ([arXiv:2609.10600](https://arxiv.org/abs/2609.10600)). Nothing here depends on either.
+certificate with its necessity proof and the re-entrancy subtlety, the relaxed condition modulo discarded tokens, the
+stronger coalesced test of Section 5.1, and the exact decision of Section 5.2. The study and the artifact are Sections 6
+to 8: the derivation and planner, the applicability of both conditions over fifteen token sets, and the measured
+parallel scan. Section 2 places the certificate among the existing answers to the entry-state problem before the result.
+Section 10 returns to that literature after the result. A companion report generalizes the certificate from single bytes
+to short byte windows ([arXiv:2608.09761](https://arxiv.org/abs/2608.09761)). A second report reuses the same
+certificates to choose where a scan resumes after an error ([arXiv:2609.10600](https://arxiv.org/abs/2609.10600)).
+Nothing here depends on either.
 
 ## 2 Prior approaches
 
@@ -518,9 +531,8 @@ that token and whatever the severed remainder becomes both discardable, and sinc
 chunk's token to be discarded. The equality `δ⁺(q, b) = δ⁺(q0, b)` is the load-bearing condition. After consuming `b`
 the restarted scan occupies the same state as the scan it interrupted, so the two agree on every subsequent byte and the
 disturbance is confined to the single token containing the cut. Without the equality the definition would be a statement
-about language inclusion rather than a test on the transition table. Such a statement may still be decidable. Deciding
-it, though, would need a construction over an augmented scanner semantics, one carrying lookahead and token output as
-state composition for maximal munch must, rather than the comparison of two table rows used here.
+about scanner equivalence rather than a test on the transition table. Section 5.1 weakens the equality to an equivalence
+that is still a test on the tables, and Section 5.2 decides the statement itself.
 
 **Theorem 3 (split invariance modulo `I`).** Let `w` be completely tokenizable and let `0 = c_0 < c_1 < ... < c_m = |w|`
 be offsets such that each interior `c_j` holds a symbol certified modulo `I`. Then `π_I(tok(w)) =
@@ -586,6 +598,306 @@ is that of Definition 2. For the second, take identifiers, punctuation and a whi
 the whitespace token in `I`. Newline is not certified, since the state inside a whitespace run consumes it into a
 co-accessible state. Newline is certified modulo `I`, since that state accepts the whitespace token, reaches no other
 token, and advancing from it and from `q0` on newline both reach the run state. ∎
+
+### 5.1 A stronger local test
+
+Definition 3 asks the restarted scan to stand in the very state of the scan it interrupted. The rule of release 2.2 of
+munch, the release that ships the coalesced test, asks less. It asks for the same future, once discarded kinds are not
+told apart. Complete `A⁺` with a sink `⊥`: read an undefined `δ⁺(q, a)` as `⊥`, and let `δ⁺(⊥, a) = ⊥`. Give every state
+an observation. A state observes *reject* when `τ` is undefined there, and so does `⊥`. It observes *discard* when `τ(q)
+∈ I`. It observes `keep(τ(q))` otherwise. Write `p ≡_I r` when for every `z ∈ Σ*` the states reached from `p` and from
+`r` on `z` carry the same observation. This is Moore equivalence of the completed automaton with the discarded kinds
+coalesced into one colour. Discard stays distinct from reject, and the empty `z` compares the two states themselves.
+
+**Definition 4 (certified modulo `I`, coalesced).** A symbol `b ∈ Σ` is *certified modulo `I` under the coalesced test*
+if every `q ∈ Q⁺` with `δ⁺(q, b)` defined satisfies `A(q)` or `C'(q)`, where `A` is as in Definition 3 and `C'(q)` holds
+when all three of
+
+1. `τ(q) ∈ I`,
+2. `δ⁺(q0, b)` is defined and `δ⁺(q0, b) ≡_I δ⁺(q, b)`, and
+3. `T(δ⁺(q, b)) ⊆ I`
+
+are satisfied.
+
+Two things changed. Equality of the two states became equivalence. And the discarded future is asked of the state past
+the cut rather than of the state before it. The old clause 3 asked that everything reachable from `q` is discarded. Only
+the continuations through `b` are the severed token, and the left fragment itself is what the new clause 1 discards.
+
+**Theorem 4 (soundness of the coalesced test).** Theorem 3 holds with Definition 4 in place of Definition 3.
+
+*Proof.* As in Theorem 3, one interior cut at `c` holding `b` suffices, and a cut at a token boundary of `w` is settled
+there without any use of `C`. Otherwise `c` lies strictly inside an emitted token spanning `[s, e)` and carrying `t`.
+Let `u = w_s ... w_(c-1)` and `q = (δ⁺)*(q0, u)`. Then `δ⁺(q, b)` is defined, and `A(q)` fails exactly as before, so
+`C'(q)` holds.
+
+The chunk ending at `c` emits the same tokens as `w` on `[0, s)` and reaches `s` in `q0`, by Lemma 2. It then consumes
+`u` and arrives at `q` with the chunk exhausted. By clause 1, `τ(q)` is defined and lies in `I`, so the chunk emits
+`τ(q)` spanning `[s, c)` and consumes to its end.
+
+Write `p = δ⁺(q, b)` for the state the scan of `w` occupies after `c`, and `p0 = δ⁺(q0, b)` for the state the chunk
+beginning at `c` occupies there. From `c + 1` on both scans read the same bytes. Every accepting position a scan records
+is reached by a path in `A⁺`. So for each `k >= 0` the two scans record position `c + 1 + k` exactly when the states
+they reach from `p` and `p0` on the same `k` bytes accept. By clause 2 those two states carry the same observation, so
+one accepts exactly when the other does. The scan of `w` records `e` last. The chunk therefore records `e` last as well,
+and emits a token spanning `[c, e)`. The kind the scan of `w` emits there is `t ∈ T(p)`, which clause 3 places in `I`,
+so the state reached from `p` at `e` observes discard. The state reached from `p0` at `e` observes the same, so the
+chunk's token is discarded too. Both scans restart in `q0` at `e`, which is a boundary of `w`, and the remainders agree.
+
+The two sides therefore differ only in that `t` on `[s, e)` is replaced by `τ(q)` on `[s, c)` followed by a discarded
+token on `[c, e)`. All three lie in `I`, so `π_I` deletes them and the images coincide. ∎
+
+Nothing about lengths is given up: both scans end the severed token at `e`. What the equivalence gives up against
+equality is only the identity of the state there, which the projection never sees.
+
+**Proposition 4 (strictly stronger, and still incomplete).** Every symbol certified by Definition 3 is certified by
+Definition 4. The converse fails, once for each of the two changes. And there are token sets and sets `I` with a symbol
+safe modulo `I` at every occurrence that Definition 4 refuses.
+
+*Proof.* For the inclusion, suppose `C(q)`. Then `τ(q) ∈ T(q) ⊆ I`, which is clause 1. Equal states are equivalent,
+which is clause 2. And `T(δ⁺(q, b)) ⊆ T(q) ⊆ I`, which is clause 3. `A` is unchanged.
+
+For the first change, take the literals `a` and `ab` of one discarded kind `D`, the literal `b` of a second discarded
+kind `E`, and a kept literal `k`. After `a` the scan stands in a state `q` accepting `D`. Advancing on `b` from `q`
+reaches the state accepting `ab`, of kind `D`, and advancing from `q0` reaches the state accepting `b`, of kind `E`. The
+two accept different kinds, so the minimizer keeps them apart and Definition 3 refuses `b`. Neither state has a live
+transition, so once `D` and `E` share a colour the two are equivalent. Clause 1 holds since `τ(q) = D`, and clause 3
+since only `D` lies past the cut. The only other state consuming `b` is `q0`, which is not re-entrant. So Definition 4
+admits `b`.
+
+For the second change, take the literals `a`, `b`, `c` and `ab` of one discarded kind and the kept literal `ac`. After
+`a` the scan stands in a state `q` from which `ac` is still reachable, so `T(q) ⊄ I` and Definition 3 refuses `b`. Yet
+`δ⁺(q, b)` accepts `ab`, `δ⁺(q0, b)` accepts `b`, both are discarded leaves, and `τ(q)` is discarded. Definition 4
+admits `b`.
+
+For incompleteness, take the literals `a`, `b`, `c` and `abc` of one discarded kind and the kept literals `k` and `kk`
+of one kind `K`. Every input over these four letters tokenizes completely, since each letter is a token. Kept output
+comes only from maximal runs of `k`: a run of length `n` emits `(K, 2)` exactly `⌊n/2⌋` times and then `(K, 1)` when `n`
+is odd, by longest match. A cut before a `b` lies inside no such run, and leaves every run maximal in its chunk, so both
+chunks tokenize completely and the kept streams concatenate to the whole input's. Hence every cut before `b` is safe.
+Yet after `a`, advancing on `b` reaches the non-accepting prefix of `abc`, which observes reject, while advancing from
+`q0` reaches the state accepting `b`, which observes discard. Clause 2 fails on the empty continuation, so Definition 4
+refuses `b`, and Definition 3 with it. ∎
+
+The obstruction in the last example is structural. A safe cut may split one discarded token into several, with the
+restarted scan rejoining the interrupted one only after further restarts. Equivalence of the two states past the cut
+forces the two scans to end their current tokens together, and that is what such a case lacks. All three token sets,
+with the named witness of Section 6.1, are asserted by `validation.cpp` under both local tests, the decision of Section
+5.2 and a bounded oracle.
+
+### 5.2 The exact decision
+
+Both local tests are sufficient conditions. This section decides the property they approximate. Throughout, the alphabet
+is restricted to the bytes some live state consumes, since no other byte occurs in a completely tokenizable input, and
+`n = |Q⁺|`.
+
+**Definition 5 (safe modulo `I`).** A symbol `b` is *safe modulo `I`* if for every completely tokenizable `w` and every
+offset `0 < c < |w|` with `w_c = b`, both `w[0..c)` and `w[c..|w|)` are completely tokenizable and `π_I(tok(w)) =
+π_I(tok(w[0..c))) · π_I(tok(w[c..|w|)))`.
+
+The chunk-completeness clause is part of the contract, not a convenience. Over the single discarded token `ab`, cutting
+`ab` before `b` leaves two empty kept streams and two chunks neither of which tokenizes. The clause is also what makes
+one cut enough. Applying Definition 5 to one interior cut leaves two completely tokenizable chunks. The remaining cuts
+apply to them in turn, so the conclusion of Theorem 3 follows for any partition at safe symbols.
+
+**Theorem 5 (exact decision).** For every token automaton and every `I ⊆ T`, whether `b` is safe modulo `I` is
+decidable. A procedure singly exponential in `n` and polynomial in `|Σ|` and `|T|` decides it, and returns a completely
+tokenizable input and a cut that violate Definition 5 whenever `b` is not safe. The question lies in PSPACE.
+
+The proof builds three finite automata from the token automaton and tests two products for emptiness and one for
+equality of outputs. The first automaton recognizes the completely tokenizable words. It is the armed run of the
+companion manuscript on certified splitting (Nidhögg, manuscript 2026), which establishes that greedy complete
+segmentation is regular, specialized here to one token automaton and its obligations.
+
+**Lemma 4 (complete scans).** Let `S` be the nondeterministic automaton with states `(O, q)`, where `O ⊆ Q⁺` and `q ∈ Q⁺
+∪ {fresh}`, initial state `(∅, fresh)`, and final states those with `q = fresh`. On a byte `a` from `(O, q)`, let `O' =
+{ δ⁺(o, a) | o ∈ O, δ⁺(o, a) defined }`. If some member of `O'` accepts there is no transition. Otherwise let `p = q0`
+when `q` is fresh and `p = q` when it is not, and let `q' = δ⁺(p, a)`. If `q'` is undefined there is no transition.
+Otherwise `(O', q')` is a successor, and when `τ(q')` is defined so is `(O' ∪ {q'}, fresh)`. Then `S` accepts exactly
+the completely tokenizable words, and the positions at which an accepting run moves to fresh are exactly the token
+boundaries of the scan.
+
+The members of `O` are *obligations*: the end states of tokens already committed. If one of them accepts after at least
+one further byte, the committed token had a longer match and the commitment was wrong. Fresh is distinct from the state
+`q0` reached by a nonempty path, which a re-entrant initial state allows.
+
+*Proof.* Every accepting position a scan records is reached by a path lying in `A⁺`, since the accepting state is itself
+live and so is every state before it. So the scanner from offset `i` records position `j` exactly when `(δ⁺)*(q0,
+w[i..j))` accepts, and reading `δ` as `δ⁺` loses nothing below.
+
+Let `w` be completely tokenizable, with tokens spanning `[s_0, s_1), ..., [s_(m-1), s_m)` and `s_m = |w|`. Run `S` along
+`w`, continuing inside each token and moving to fresh at each `s_j` with `j >= 1`. Each token's match path lies in `A⁺`,
+so every `q'` along it is defined, and its end state accepts, so each move to fresh is permitted. An obligation added at
+`s_j` is the end state of the token before `s_j`. Were it to accept after `k >= 1` further bytes, the scanner would have
+recorded `s_j + k` for that token and emitted a longer one, by longest match. So no obligation ever accepts, the run is
+defined throughout, and it ends at `|w|` in fresh. `S` accepts `w`.
+
+Conversely, let an accepting run of `S` on `w` move to fresh at `0 < s_1 < ... < s_m = |w|`, with `s_0 = 0`, and `m = 0`
+when `w` is empty. Each part `w[s_j..s_(j+1))` is nonempty, since a move to fresh consumes a byte, and has a `δ⁺`-path
+from `q0` ending in an accepting state, so it is an accepted word. Suppose the scanner stands at `s_j` in `q0`, which
+holds at `0`. Its token there is the longest accepted prefix of `w[s_j..|w|)`. The prefix `w[s_j..s_(j+1))` is accepted.
+A longer accepted prefix, of length `s_(j+1) - s_j + k` with `k >= 1`, would have a `δ⁺`-path through the state the run
+committed at `s_(j+1)` and `k` bytes further to an accepting state. That state entered `O` at `s_(j+1)`, the run follows
+it along the same path while the path is defined, and it would accept after `k` bytes, which the run forbids. So the
+scanner emits exactly `w[s_j..s_(j+1))` and restarts at `s_(j+1)` in `q0`. By induction the scanner's boundaries are
+`s_0, ..., s_m`, and it consumes all of `w`. ∎
+
+**Lemma 5 (failed scans).** Let `F` have the states of `S`, none of them final, and in addition the *failure states*
+`(O, q, fail)` with `q ∈ Q⁺` non-accepting or `q = ⊥`, all of them final. Transitions among the states of `S` are those
+of `S`. From `(O, fresh)` on `a`, form `O'` as in Lemma 4, with no transition if some member of `O'` accepts, and let
+`q' = δ⁺(q0, a)`. The successor is `(O', ⊥, fail)` when `q'` is undefined, and `(O', q', fail)` when `q'` is defined and
+does not accept. When `q'` accepts there is no failure successor. From `(O, q, fail)` on `a`, form `O'` with the same
+proviso and let `q' = δ⁺(q, a)`, with `⊥` fixed. The successor is `(O', ⊥, fail)` when `q'` is undefined, `(O', q',
+fail)` when `q'` does not accept, and there is none when `q'` accepts. Then `F` accepts exactly the words the scanner
+does not tokenize completely.
+
+*Proof.* Let the scanner halt on `w` at `con(w) < |w|` after emitting tokens with boundaries `s_0, ..., s_m = con(w)`.
+Run `F` as in Lemma 4 up to `s_m`, which is permitted because each emitted token was a longest match against the whole
+of `w`, and then enter failure on `w_(s_m)`. The suffix `v = w[s_m..|w|)` is nonempty and has no accepted prefix of
+positive length, so the `δ⁺`-path from `q0` along `v` visits no accepting state while it is defined. Each failure step
+is therefore permitted, and the obligations from earlier tokens never accept, for the same reason as before. The run
+ends in a failure state, so `F` accepts `w`.
+
+Conversely, an accepting run of `F` moves to fresh at `s_1 < ... < s_m` and enters failure on the byte at `s_m`, with a
+nonempty suffix `v`. The argument of Lemma 4 shows that the scanner's tokens are exactly the committed parts, since the
+obligations are carried across `v` as well. From `s_m` the failure path shows that no prefix of `v` of positive length
+is accepted: while defined the path visits no accepting state, and once undefined no longer prefix can be accepted. The
+scanner therefore halts at `s_m < |w|`.
+
+The empty word is not accepted, since entering failure consumes a byte. An accepting `q0` needs no exception: acceptance
+is tested only after a byte is consumed, exactly as the scanner emits only positive-length tokens. ∎
+
+Both constructions are direct. Neither complements the other by subset construction, and each has at most `2(n + 1)2ⁿ`
+states.
+
+**Lemma 6 (chunk completeness).** Let `M_b` be the marked inputs `u#v` with `u` nonempty, `v` beginning with `b`, and
+`#` a letter outside `Σ`. Let `P_L` run `S` on `uv`, carrying its state across `#`, beside `F` on `u`, requiring `F` to
+be in a failure state at `#` and ignoring `v`. Let `P_R` run `S` on `uv` in the same way, beside `F` started afresh at
+`#` and run on `v`, requiring it to be in a failure state at the end. Then `P_L` accepts `u#v` exactly when `uv` is
+completely tokenizable and `u` is not, and `P_R` exactly when `uv` is and `v` is not. Hence both chunks of every cut
+before `b` are completely tokenizable if and only if both products are empty. Reachability decides that, and a shortest
+accepting path of a nonempty product spells a violating input and cut.
+
+*Proof.* Immediate from Lemmas 4 and 5. The format of `M_b` is checked by a four-state automaton that admits exactly the
+inputs and cuts Definition 5 quantifies over, and the product of finitely many finite automata is finite. ∎
+
+The third automaton carries the kept output. Let `Γ = {z} ∪ { K_t | t ∈ T \ I }`. Encode a kept token `(t, ℓ)` as `z^ℓ
+K_t` and a discarded token as the empty word, and write `code` for the extension to streams. The map is injective on
+kept streams, since every `K_t` ends exactly one unary length and every length is positive. So equality of codes is
+equality of the images under `π_I`, lengths included.
+
+**Lemma 7 (kept output).** Let `S_out` have states `(O, q, g)` with `(O, q)` a state of `S` and `g ∈ {keep, discard,
+none}`, with `g = none` exactly when `q` is fresh. A transition of `S` from a fresh state first guesses `g`; a
+transition inside a token keeps it. The transition emits `z` when `g = keep` and nothing otherwise. A move to fresh at a
+state `q'` is permitted only when `g = keep` exactly if `τ(q') ∉ I`, and then emits `K_τ(q')` when kept. Then `S_out`
+has an accepting run on `w` exactly when `w` is completely tokenizable. Every accepting run emits `code(π_I(tok(w)))`.
+
+*Proof.* By Lemma 4 the moves to fresh of any accepting run are the scanner's token boundaries, so the tokens an
+accepting run commits are the scanner's. Each guess is checked at the token's end against the kind the scanner emits, so
+a wrong guess has no accepting continuation. A right guess emits `z` once per byte of a kept token and then its kind,
+which is its code. The guess exists for every completely tokenizable `w`, so an accepting run exists exactly then. ∎
+
+Let `P_O` run `S_out` on `uv` across `#` beside a second copy. The copy runs on `u`, must be fresh at `#`, restarts
+there in `(∅, fresh, none)`, and runs on `v`. Each edge of `P_O` carries two output words, `h` from the whole scan and
+`g` from the split one, each of at most two letters. Once `P_L` and `P_R` are empty, the accepting paths of `P_O` are
+exactly the inputs and cuts of Definition 5, by Lemmas 6 and 7, and `b` is safe exactly when every accepting path has `h
+= g`. That is a question about a finite labelled graph.
+
+**Lemma 8 (output equality on a finite graph).** Let `G` be a finite directed multigraph with `N` vertices, an initial
+vertex, a set of final vertices, and two words `h(e), g(e) ∈ Γ*` on every edge `e`, extended to paths by concatenation.
+Whether `h(π) = g(π)` for every accepting path `π` is decidable in time polynomial in the size of `G` and its labels.
+When it fails, an accepting path with `h(π) ≠ g(π)` of at most `2N - 1` edges exists and is constructed.
+
+*Proof.* Discard every vertex not on an accepting path, which breadth-first search in both directions finds; every
+retained edge then lies on one. Read words over `Γ` as elements of the free group on `Γ`. A positive word is its own
+reduced form, so two positive words are equal in the group exactly when they are equal as words. For each retained
+vertex `q` choose a shortest path `α_q` from the initial vertex and let `d_q` be the reduced form of `h(α_q)⁻¹ g(α_q)`,
+the *delay* at `q`. Check two conditions: (E) `d_q = h(e)⁻¹ d_p g(e)` for every retained edge `e` from `p` to `q`, and
+(F) `d_q = 1` for every retained final `q`.
+
+Suppose every accepting path has equal outputs. Fix a retained `q` and an accepting suffix `β` from `q`, with `C = h(β)`
+and `D = g(β)`. For any path `α` from the initial vertex to `q`, with `A = h(α)` and `B = g(α)`, the path `αβ` is
+accepting, so `AC = BD` and hence `A⁻¹B = CD⁻¹` in the group. The delay of every path into `q` is therefore the one
+value `CD⁻¹`. Applying this to `α_q` and to `α_p e` gives (E), and to `α_q` with `q` final, where `α_q` is itself
+accepting, gives (F).
+
+Suppose (E) and (F). Along any path from the initial vertex the delay starts at `1`, which is `d` there since the chosen
+path is empty, and appending `e` from `p` to `q` carries `d_p` to `h(e)⁻¹ d_p g(e) = d_q`. So every path into `q` has
+delay `d_q`, every accepting path has delay `1` by (F), and its two outputs are equal in the group, hence as words.
+
+For the witness, choose for each retained `q` a shortest accepting suffix `β_q`, by breadth-first search backwards from
+the finals. If (F) fails at `q`, then `α_q` is accepting with unequal outputs. If (E) fails at `e` from `p` to `q`,
+consider `α_q β_q` and `α_p e β_q`. Were both to have equal outputs, the computation above with the common suffix `β_q`
+would give both prefixes the delay `CD⁻¹`, against the failed equation. So one of them has unequal outputs, and
+comparing the two explicit output pairs names it. Both have at most `2N - 1` edges. Each chosen path has at most `N - 1`
+edges. So each delay has at most `(N - 1)M` letters, where `M` bounds `|h(e)| + |g(e)|`, one check costs `O(NM)`, and
+the whole test is polynomial. ∎
+
+*Proof of Theorem 5.* Build `P_L` and `P_R` and test them for emptiness, by Lemma 6. If either is nonempty, `b` is
+unsafe and a shortest accepting path spells the input and cut. Otherwise build `P_O` and apply Lemma 8. If every
+accepting path has equal outputs, `b` is safe by Lemma 7 and the injectivity of the code. If not, the constructed path
+spells an input `uv` and the cut `|u|` whose chunks are complete and whose kept streams differ. In each case the scanner
+replays the witness, and `validation.cpp` does so for every negative answer it gives.
+
+For the size, `S` has at most `(n + 1)2ⁿ` states, `F` at most twice that, and `S_out` at most `(2n + 1)2ⁿ`. With the
+four phases of the format every product has at most `N = 16(n + 1)² 4ⁿ` states and `O(|Σ| N)` edges, each with at most
+two letters per output. Building them and running Lemma 8 is singly exponential in `n` and polynomial in `|Σ|` and
+`|T|`, the kind identifiers affecting only the size of a letter.
+
+For the space bound, a vertex of any product is two subsets of `Q⁺`, two token states, two guesses and a phase, so it
+has a description of polynomial length. Its successors on a byte are computable in polynomial time from the tables.
+Unsafety has a witness path of fewer than `N` edges in `P_L` or `P_R`, or of at most `2N - 1` edges in `P_O` by Lemma 8,
+whose two outputs have fewer than `4N` letters each. A nondeterministic machine guesses such a path one vertex at a time
+with a step counter of `O(n)` bits. For output inequality it also guesses a position `j <= 4N` and keeps the two output
+lengths and the letter each output has at position `j`. At a final vertex it accepts when the lengths differ or the two
+letters do. That detects exactly unequal outputs. Unsafety is therefore in NPSPACE, which is PSPACE, and PSPACE is
+closed under complement. ∎
+
+The bound is an upper bound. Nothing here shows the question PSPACE-hard, or that the obligation sets must be
+exponential in general, and both are open. The bound is also measured in the compiled automaton, not in a regular
+expression source. Where the tokens are listed, the obligations collapse.
+
+**Theorem 6 (literal vocabularies).** Let the tokens be a finite list of nonempty words with kinds, equal words resolved
+by priority. Then whether `b` is safe modulo `I` is decidable in time polynomial in the total length of the words, `|Σ|`
+and `|T|`, with a replayable witness when it is not.
+
+*Proof.* Let `L` be the length of the longest word. Let `P` be the number of distinct prefixes of the words, the empty
+prefix included; `P` is at most the total length plus one. Define a scanner `B` whose state is a buffer `x` that is a
+prefix of some word, initially empty, plus a failure state. `B` is the pending-prefix scanner of the companion
+manuscript (Nidhögg, manuscript 2026), specialized to a listed vocabulary. On a byte `a`, if `xa` is a prefix of some
+word, the buffer becomes `xa` and nothing is emitted. Otherwise no continuation can extend a token over `xa`, so `B`
+commits. It emits the code of the longest word that is a prefix of `xa` and removes it. It repeats on the remainder
+until the remainder is a prefix of some word, which becomes the buffer, or until no word is a prefix of the remainder,
+which is failure. At the end of the input `B` flushes the buffer the same way, to empty or to failure.
+
+`B` emits the scanner's tokens with delay, and its buffer is the uncommitted suffix. Suppose, after reading `w[0..i)`,
+that the scanner's tokens on `[0, j)` are the committed ones, the scanner restarts at `j` in `q0` whatever follows, and
+the buffer is `w[j..i)`. That holds at `i = 0`. A byte `a` that keeps `xa` a prefix changes nothing but the buffer. A
+byte that does not makes the scanner's token at `j` a prefix of `x` on every continuation, since no word extends past
+`xa`. The longest word that is a prefix of `xa` is therefore that token, and the remainder restores the invariant at `j`
+moved past it, repeatedly. Suppose no word is a prefix of a remainder `y` that is not itself a prefix of a word. Then no
+continuation of `y` has an accepted prefix, since such a prefix would either be a prefix of `y` or have `y` as a prefix.
+The scanner fails at `j` on every continuation, and so does `B` for good. The flush is longest match on the buffer
+alone, which is what the scanner does at the end. So `B` emits `code(π_I(tok(w)))` and ends outside failure exactly when
+`w` is completely tokenizable.
+
+`B` has `P + 1` states. A transition examines at most `L + 1` buffered bytes and emits at most `L + 1` tokens, so its
+output has `O(L)` letters; the flush is bounded the same way. Run two copies on the marked inputs `M_b` with an explicit
+end marker: the whole copy ignores `#`, the split copy flushes at `#` and restarts empty, and both flush at the end. A
+failed whole copy is dropped, since no continuation makes the input completely tokenizable. A failed split copy is kept
+as an absorbing state, so that a path reaching a successful whole flush with a failed split copy is a chunk-completeness
+violation, found by reachability. On the remaining graph, of `O(P²)` vertices and `O(|Σ| P²)` edges with outputs of
+`O(L)` letters, Lemma 8 decides output equality in `O(|Σ| P⁴ L)` letter operations and constructs the witness. Both
+tests and the construction of `B` are polynomial. ∎
+
+Two token sets mark the edges of what the decision compares, and `validation.cpp` asserts both. Testing each severed
+token on its own is not enough. Over discarded `a`, `ab`, `b`, `bc` and kept `c`, every token containing `b` can be cut
+there alone. Yet `abc` scans as `ab` then `c`, while the chunks `a` and `bc` are both discarded, so a kept token
+vanishes with both chunks complete. The restarted scan consumed past the severed token's end, which the obligations of
+Lemma 4 track and a per-token test cannot. And the observable is the kept kinds and lengths, not their positions. Over
+discarded `a`, `ab`, `b`, `d` and kept `bc` and `cd` of one kind, every cut before `b` is safe. On `abcd` the kept token
+nonetheless moves, from `cd` at offset two to `bc` at offset one. Both local tests refuse it on their clause 2: the scan
+restarted at `b` can still reach the kept `bc`, while the interrupted one, past `ab`, can reach nothing, so the two
+states are neither equal nor equivalent. The decision admits it.
 
 ## 6 Deriving and using the certificate
 
@@ -659,40 +971,63 @@ by the consuming tool when the lexer is built and does not vary with the input, 
 the relaxed certificate is not a drop-in query on an existing lexer. Two consumers of one grammar that discard different
 tokens, a compiler and a formatter say, hold different certificates.
 
-The condition is sound and conservative rather than exact. We tested both directions against an exhaustive oracle. Over
-400 randomly generated token sets on a three-symbol alphabet, every nonempty string up to length eight that the token
-set tokenizes completely was split at every noninitial occurrence of every symbol, the initial cut being tautologically
-safe. The `π_I` images of the spliced and serial streams were compared. Strings the serial scan leaves unconsumed are
-skipped before any comparison. Of the symbol and token set pairs the corpus exercised, 265 were admitted by Definition 3
-and none of them failed. No symbol admitted by Definition 2 was ever lost, which is Proposition 3 checked mechanically.
-A further 97 pairs had no counterexample through length eight yet were rejected, so close to one such pair in four is
-refused. Those 97 are only pairs for which no counterexample exists through length eight, so they do not by themselves
-establish conservatism. Raising the bound from six to eight reduced the count from 99 to 97, which shows the count is
-bound-sensitive rather than settled. What does establish conservatism is the explicit witness below. These counts
-describe one generator and are stated only because `validation.cpp` in the artifact reproduces them exactly. The counts
-are seeded and their draw order is pinned, so they do not vary between compilers.
+The coalesced test of Section 5.1, the rule of release 2.2 of munch, replaces the comparison of two states by a
+comparison of two classes. The classes are computed by partition refinement over the completed automaton. The states are
+first partitioned by observation, with every discarded kind one colour, and then split by the classes of their
+successors on every stored class row until nothing splits. Each round either splits a class or is the last, so there are
+at most `|Q| + 1` rounds. A round keys the states by their signatures in an ordered map, so it costs `O(|Q| E' log
+|Q|)`, with `E'` the number of stored class rows, and the whole refinement is polynomial. The clause past the cut reads
+the same backward closure, at the target of the transition rather than at its source. The implementation computes the
+classes on the first question that needs them and never for a lexer that discards nothing, and the per-symbol sweep then
+looks up two classes where it compared two states. The outcome is the same 256-bit map, and nothing at scan time
+changes.
 
-A proportion from a random sweep describes the generator as much as the condition, so it is worth naming a witness. Take
+Both local conditions are sound and conservative. We tested both directions against an exhaustive oracle, and settled
+what the oracle leaves open with the decision of Section 5.2. Over 400 randomly generated token sets on a three-symbol
+alphabet, every nonempty string up to length eight that the token set tokenizes completely was split at every noninitial
+occurrence of every symbol, the initial cut being tautologically safe. The `π_I` images of the spliced and serial
+streams were compared. Strings the serial scan leaves unconsumed are skipped before any comparison. The corpus exercised
+1125 pairs of symbol and token set. Of those, 265 were admitted by Definition 3 and none of them failed. No symbol
+admitted by Definition 2 was ever lost, which is Proposition 3 checked mechanically. A further 97 pairs had no
+counterexample through length eight yet were rejected. Raising the bound from six to eight had reduced that count from
+99 to 97, so the count is bound-sensitive, and the exact decision shows by how much. Of the 97, 95 are safe at every
+length and 2 are refuted by a counterexample of nine bytes, one byte beyond the oracle's bound; both witnesses replay
+through the scanner. In all, 360 of the 1125 exercised pairs are safe modulo their discarded set. The published
+condition admits 265 of them. The coalesced test admits 306, none of them unsafe, and loses none the published condition
+admits. The decision answered every exercised pair, and agreed with the oracle on every pair the oracle settles. These
+counts describe one generator and are stated only because `validation.cpp` in the artifact reproduces them exactly. The
+counts are seeded and their draw order is pinned, so they do not vary between compilers.
+
+A proportion from a random sweep describes the generator as much as the condition, so it is worth naming witnesses. Take
 the discarded tokens `ab*` and `b+` alongside a kept token `c`, over a letter neither uses. An occurrence of `b` sits in
 one of three places. At the start of a token it can only open a `b+`, so the cut falls on a token boundary and the
 spliced scan is the serial one. Inside an `ab*` token the left piece is a shorter `ab*` and the right piece is a `b+`,
 both discarded. Inside a `b+` token the cut leaves two shorter `b+` pieces, discarded as well. Hence every occurrence of
-`b` is safe modulo the discarded kinds, at every length. Condition 2 nonetheless fails: advancing on `b` from inside
-`ab*` reaches a state accepting `ab*`, advancing on `b` from the initial state reaches one accepting `b+`, and since
-those accept different tokens minimization keeps them apart. Insisting that the two scans reconverge at once is what
-makes the test local, and this is what it costs. The equality is necessary for this local certificate, not for semantic
-safety, which the witness retains without it. The sweep figures and this witness are both asserted by `validation.cpp`
-in the artifact, the witness in its bounded length-six form. The all-lengths claim rests on the three cases above.
-Because the automaton is minimized before the test, the state equality in condition 2 is as tight as the minimizer of
-Section 4.1 makes it, which is tighter than no minimization and weaker than Myhill-Nerode, since that minimizer keeps
-empty-right-language states apart. The test is not the tightest conceivable one: a quotient treating accepting labels in
-`I` as observationally equivalent could merge states this one keeps apart, and the witness above is exactly such a pair.
-Both directions are additionally carried as property tests over randomly generated automata in the munch lexer library
-(release v1.2.0). Those are a separate and independently parameterised sweep, over a four-symbol alphabet to a shorter
-bound. Both sweeps query the shipped predicate rather than a private copy of the rule, which is deliberate: a test of a
-reimplementation would justify the reimplementation. What is independent between them is the generator and the oracle,
-so their agreement is evidence that the predicate meets the specification on two unrelated families of automata, not
-that two codings of the rule agree.
+`b` is safe modulo the discarded kinds, at every length. Condition 2 of Definition 3 nonetheless fails: advancing on `b`
+from inside `ab*` reaches a state accepting `ab*`, advancing on `b` from the initial state reaches one accepting `b+`,
+and since those accept different tokens minimization keeps them apart. Insisting that the two scans reconverge on one
+state is what the published condition costs. The coalesced test admits this `b`. With the two discarded kinds one
+colour, the two states have the same future: both observe discard, both stay put on `b`, and neither has another
+transition. Earlier versions of this paper named this token set as the witness that the published condition is
+conservative. It is now the example of what the coalesced test gains, and the token set of Proposition 4 with `a`, `b`,
+`c`, `abc` discarded and `k`, `kk` kept is the witness that the coalesced test is conservative in turn. There every cut
+before `b` is safe, the state past the cut accepts nothing while the state the restart reaches accepts `b`, and only the
+exact decision admits it. Because the automaton is minimized before the test, the state equality in condition 2 is as
+tight as the minimizer of Section 4.1 makes it. That is tighter than no minimization and weaker than Myhill-Nerode,
+since that minimizer keeps empty-right-language states apart. The coalesced test is the quotient that treats accepting
+labels in `I` as one, and the first witness is exactly a pair it merges. Both witnesses, the two further token sets of
+Proposition 4 and the two of Section 5.2 are asserted by `validation.cpp` under four judges: the published condition,
+the shipped rule, the exact decision, and the bounded oracle to length six.
+
+Which rule a program queries matters for what its agreement shows. The library's own property tests query the shipped
+predicate over randomly generated automata on a four-symbol alphabet to a shorter bound, and in release v1.2.0 the
+predicate they tested was the published condition. A test of a reimplementation would justify only the reimplementation.
+The sweep here queries the shipped predicate for the coalesced test, the rule of release 2.2 of munch. For the published
+condition it evaluates a copy inside the program, since that release no longer ships that rule. The copy is checked the
+one way a copy can be: it reproduces the three figures the shipped predicate gave in the earlier versions of this paper,
+265, 97 and 99, on the pinned draw. The exact decision is likewise a program beside the library, written from Section
+5.2, and its negative answers are checked by the scanner itself, since every witness is replayed before it is counted.
+Its positive answers rest on Theorem 5 and are checked against the oracle wherever the oracle has a verdict.
 
 ## 7 Applicability
 
@@ -721,10 +1056,10 @@ whitespace run leaves two whitespace runs and both are deleted, so the run-token
 comment or kept token that also admits the byte still excludes it. The other two survive it: a state inside a string
 literal or a block comment accepts nothing, so no cut there ends the left chunk on a complete discarded token, and a
 kept multi-byte token keeps its continuation bytes lost, since the token such a cut severs is kept and cannot vanish
-from the streams. Both columns are asserted for every row by `figures/applicability.cpp`; the exact column is the
-shipped predicate, and the relaxed column is the same predicate given the row's discarded set, with four rows
-additionally confirmed by splitting a corpus. The two benchmark-grammar rows are asserted against transcriptions whose
-provenance the text details.
+from the streams. Both columns are asserted for every row by `figures/applicability.cpp`, the relaxed column under the
+published condition, the shipped coalesced test and the exact decision of Section 5.2 alike, with four rows additionally
+confirmed by splitting a corpus. The two benchmark-grammar rows are asserted against transcriptions whose provenance the
+text details.
 
 | Token set                                                                                                    | Useful certified                   | Useful modulo `I`                     |
 |--------------------------------------------------------------------------------------------------------------|------------------------------------|---------------------------------------|
@@ -847,30 +1182,34 @@ byte can still reach the kept token, so the third clause of `C` fails, and right
 difference the deletion preserves.
 
 In the exact column each outcome reports a fact about the tokenization rather than a limitation of the test, since
-Theorem 2 makes that condition necessary as well as sufficient. The modulo column carries no such licence. The column
-is conservative, so a byte absent there may still be safe modulo `I` and merely refused, and only its positive entries
-are statements about the pair of token set and discarded set. Newline is recovered for the conventional C-like token
-set because line-bounded strings and `//` comments cannot contain one, so a whitespace run is the only token whose
-interior admits it. Space is recovered in no C-like row carrying strings or comments, since it sits legally inside
-both. The first row, which has neither, recovers space along with tab and newline. The JSON row is the same lexer over
-bytes, its UTF-8 caveat unchanged from above. JSON gains tab and carriage return as well as newline because RFC 8259
-excludes every raw byte below `0x20` from string interiors, which confines all three to whitespace, while space is
-admitted there and so is not recovered. That the recovered set is exactly JSON's whitespace minus space is a
-consequence of the RFC's own exclusion, not a coincidence. The rows carrying unrestricted block comments continue to
-hold no useful certificate, because a comment severed at a newline leaves `/* a` and `b */`, and both halves
-re-tokenize completely. In this token set the halves become the operators `/` and `*` and an identifier, six kept
-tokens in place of one discarded comment, which is exactly the difference a caller can see. The correct conclusion
-carries the certificate's own scope. This tokenization of a C-like language with unrestricted block comments cannot be
-split at every occurrence of a byte value chosen from the grammar alone, newline included, on completely tokenizable
-inputs, without state, overlap, speculation or repair. The certificate says so. Schemes that inspect the document and
-split at some occurrences but not others are outside the claim.
+Theorem 2 makes that condition necessary as well as sufficient. The modulo column is read from a conservative condition,
+so on its own a byte absent there might be safe modulo `I` and merely refused. On these fifteen rows none is.
+`applicability.cpp` runs the decision of Section 5.2 on every useful byte of every row, one decision per class of bytes
+the tables do not tell apart, and finds every byte absent from the column unsafe, with a counterexample replayed through
+the scanner, and every byte present safe. The column is therefore exact on every row. The coalesced test of Section 5.1
+gives the same column on every row, which the same program asserts from a copy of the published condition beside the
+shipped predicate. Newline is recovered for the conventional C-like token set because line-bounded strings and `//`
+comments cannot contain one, so a whitespace run is the only token whose interior admits it. Space is recovered in no
+C-like row carrying strings or comments, since it sits legally inside both. The first row, which has neither, recovers
+space along with tab and newline. The JSON row is the same lexer over bytes, its UTF-8 caveat unchanged from above. JSON
+gains tab and carriage return as well as newline because RFC 8259 excludes every raw byte below `0x20` from string
+interiors, which confines all three to whitespace, while space is admitted there and so is not recovered. That the
+recovered set is exactly JSON's whitespace minus space is a consequence of the RFC's own exclusion, not a coincidence.
+The rows carrying unrestricted block comments continue to hold no useful certificate, because a comment severed at a
+newline leaves `/* a` and `b */`, and both halves re-tokenize completely. In this token set the halves become the
+operators `/` and `*` and an identifier, six kept tokens in place of one discarded comment, which is exactly the
+difference a caller can see. The correct conclusion carries the certificate's own scope. This tokenization of a C-like
+language with unrestricted block comments cannot be split at every occurrence of a byte value chosen from the grammar
+alone, newline included, on completely tokenizable inputs, without state, overlap, speculation or repair. The
+certificate says so. Schemes that inspect the document and split at some occurrences but not others are outside the
+claim.
 
-Four rows are cross-checked by splitting as well as by reading the predicate: the conventional and split-friendly
-C-like pair, the split-friendly row with block comments, and JSON. On those the condition agrees with brute-force
-splitting on every candidate byte the corpus exercises. The bytes exercised are a declared set of sixteen bytes, the
-four whitespace bytes, eleven representative structural characters and the letter `t`, not all 256. The conservatism
-measured in Section 6.1 therefore did not appear on the bytes tested, which is weaker than exactness on those token
-sets and is all the artifact checks.
+Four rows are cross-checked by splitting as well as by reading the predicate: the conventional and split-friendly C-like
+pair, the split-friendly row with block comments, and JSON. On those the condition agrees with brute-force splitting on
+every candidate byte the corpus exercises. The bytes exercised are a declared set of sixteen bytes, the four whitespace
+bytes, eleven representative structural characters and the letter `t`, not all 256. The corpus check is weaker than the
+exact decision above and predates it; it is kept because it exercises the scanner on documents rather than the decision
+on the tables.
 
 The practical content is narrower than a count of moved cells suggests, and more useful. The exact certificate already
 admitted newline for the split-friendly tokenization in which newline is its own token and whitespace runs exclude it.
@@ -914,7 +1253,8 @@ format designer choosing a delimiter is making a claim about every token the gra
 that claim from the compiled automaton rather than leaving it to inspection. Read this way an applicability table is not
 only a report of where the method applies but a design rule for formats intended to be chunked. A row whose exact column
 is empty is a warning, by Theorem 2, that no single-byte delimiter preserves the exact stream without changing the token
-set. An empty modulo column is only a refusal, since that condition is conservative.
+set. An empty modulo column is a refusal by a conservative condition, which the decision of Section 5.2 turns into a
+verdict; on the rows here every refusal stood.
 
 The limit is equally clear. A document already written cannot be reframed without reading it, so this recovers nothing
 for a compiler consuming source it did not generate. Framing applies where the writer cooperates, which covers generated
@@ -1140,7 +1480,9 @@ also specifies the concatenated token sequence, not callback interleaving: the s
 order-sensitive effects need per-chunk buffering followed by ordered replay.
 
 The approach trades generality for certainty. When the grammar does not cooperate it offers no usable split points, by
-design, and the composition and speculation families of Section 2 remain the applicable answers we know of. Several
+design, and the composition and speculation families of Section 2 remain the applicable answers we know of. The exact
+decision of Section 5.2 is bounded above by polynomial space and below by nothing shown here: whether a polynomial
+algorithm exists for a general token automaton, and whether the question is PSPACE-hard, are both open. Several
 extensions look natural, and the first has since been carried out. A companion report generalizes the certificate from
 single bytes to short byte windows, certifying a cut at a fixed offset inside every occurrence of a multi-byte string.
 The generalization recovers splitting for some grammars where no single byte certifies
@@ -1227,7 +1569,8 @@ the *condition* rejects a byte exactly when a witness input exists that places i
 is deliberately narrower: it also withholds vacuously certified bytes, which the condition admits and for which no
 witness exists, because no input the token set accepts contains them and a caller could never find one to split at. That
 matters for reading Section 7: an empty exact-certificate entry is a fact about the tokenization, not a limit of the
-analysis, while a modulo-column negative remains conservative and therefore inconclusive.
+analysis, while a modulo-column negative is conservative on its own and is settled, on every row of the table, by the
+decision of Section 5.2.
 
 We are not aware of prior work stating this condition, in particular the re-entrancy requirement, as a static per-symbol
 property of the token DFA, though its components are all classical. We checked that claim against the parallel lexing
@@ -1247,17 +1590,17 @@ consider more than one state. Sin'ya et al. (ICPP 2013) study the size of the si
 worst-case bounds and empirical data. Theirs is the dual question to ours: they bound the cost of carrying many states,
 we give a condition under which none need be carried. Plex (IPDPS 2021) arrives in the same territory from the other
 side. Plex reports splitting JSON at newline as prior work, on the stated ground that newline is a delimiter "not
-allowed in any lexeme", and then abandons delimiters altogether. A prescanning automaton derived from the scanner
-builds a transfer function per chunk, and combining them determines the states each chunk's thread begins from. The
-thread tries them in turn, falling through whenever one would force a backtrack into the preceding chunk. Plex's
-contribution therefore belongs with the composition family above rather than with the equivalence weakened here. What
-this paper adds is the certification: an exact characterization deciding, for an arbitrary token set, when a delimiter
-byte is sound, and for an arbitrary discarded set a certificate that is sound but deliberately conservative, so a
-refusal there does not decide. Structural prescans for JSON, such as Mison (PVLDB 2017) and simdjson (VLDB Journal
-2019), do not exploit a fact like the one Table 2 records. They search for structural characters, the object and array
-brackets and `:` among them, all of which may legally occur inside a JSON string. Both suppress the occurrences inside
-a string by deriving a string mask from the quote and backslash positions. Mison's Algorithm 1 constructs exactly that
-mask, and simdjson performs the same masking branchlessly. Theirs is a format-specific scan that computes which
+allowed in any lexeme", and then abandons delimiters altogether. A prescanning automaton derived from the scanner builds
+a transfer function per chunk, and combining them determines the states each chunk's thread begins from. The thread
+tries them in turn, falling through whenever one would force a backtrack into the preceding chunk. Plex's contribution
+therefore belongs with the composition family above rather than with the equivalence weakened here. What this paper adds
+is the certification: an exact characterization deciding, for an arbitrary token set, when a delimiter byte is sound,
+and for an arbitrary discarded set a local certificate that is sound and conservative, beside an exact decision that
+settles what the certificate refuses. Structural prescans for JSON, such as Mison (PVLDB 2017) and simdjson (VLDB
+Journal 2019), do not exploit a fact like the one Table 2 records. They search for structural characters, the object and
+array brackets and `:` among them, all of which may legally occur inside a JSON string. Both suppress the occurrences
+inside a string by deriving a string mask from the quote and backslash positions. Mison's Algorithm 1 constructs exactly
+that mask, and simdjson performs the same masking branchlessly. Theirs is a format-specific scan that computes which
 occurrences are real, where the certificate instead decides, for an arbitrary compiled token set, which bytes need no
 such computation. Reps (TOPLAS 1998) studies maximal-munch scanning itself, and the lookahead hazard noted in the
 discussion of state composition below is a consequence of the same backtracking behaviour.
@@ -1278,6 +1621,18 @@ after the symbol, so the sole non-error candidate is all it needs. A restart fro
 precedes needs a token boundary before the byte. The boundary requirement is why the certificate speaks of sources,
 requires that `q0` is not re-entrant, and is taken over the trim live automaton `A⁺`, where an untrimmed presentation's
 dead and unreachable states, and any equivalent copies of live states it carries, can only enlarge their count.
+
+**Deciding the relaxed question.** Yang (Computer Languages 1996) observes that an object composed for maximal-munch
+lexing must carry token output and lookahead, not merely a map on states. The complete-scan automaton of Section 5.2 is
+that object made explicit for one scan rather than composed. Its obligation sets carry exactly the lookahead a
+longest-match decision still depends on, and the `z^ℓ K_t` coding carries the output without storing a length. The
+failure automaton beside it recognizes the words the scanner rejects by a direct construction rather than by
+complementing the first. The equality test by delays is elementary, and we claim no priority for it or for the automata;
+the proofs are included so that the result is checkable without further reading. What is specific here is the question
+they decide: a cut's safety at every occurrence of a byte, together with the chunk-completeness obligation the contract
+of Section 3 carries and an output comparison alone would miss. The decision is a check at construction, like the
+certificate, but it is exponential in the worst case where the certificate is linear, and it ships as a figure program
+rather than in the library.
 
 **Cut points chosen rather than forced.** Two lines outside compiler construction, content-defined chunking and document
 fingerprinting, choose positions in a byte stream by rules of their own, with objectives other than lexical safety.
@@ -1369,13 +1724,17 @@ certification step that prior delimiter-based systems have handled through langu
 
 Weakening the guarantee from token stream equality to equality after deleting discarded tokens recovers split points
 that the exact certificate must reject, with the same constant-time one-bit query. At construction it adds a backward
-closure and a second `O(|Q| |Σ|)` sweep, plus `O((|Q| + |I|) log(1 + |I|))` ordered-set work. The recovered cases
-include ones that matter in practice. The conventional C-like token set studied here and a JSON lexer both gain newline
-without any change to their token definitions, which removes a token set redesign that the exact method had imposed on
-its users. An explicit witness establishes that the relaxation is conservative. In the fixed seeded sweep the relaxation
-rejected 97, or 26.8%, of the 362 exercised pairs that have no counterexample through length eight. Separately, on four
-application token sets it agreed with brute-force splitting on all sixteen declared candidate bytes. The relaxed result
-remains a precomputed one-bit query. The shipped planner and every throughput measurement use the exact certificate.
+closure and a second `O(|Q| |Σ|)` sweep, plus `O((|Q| + |I|) log(1 + |I|))` ordered-set work, and the coalesced test of
+release 2.2 of munch adds a partition refinement. The recovered cases include ones that matter in practice. The
+conventional C-like token set studied here and a JSON lexer both gain newline without any change to their token
+definitions, which removes a token set redesign that the exact method had imposed on its users. Both local tests are
+conservative, and the exact decision measures by how much. Of the 360 pairs of symbol and token set the fixed seeded
+sweep finds safe, the published condition admits 265 and the coalesced test 306, and a named token set is safe yet
+certified by neither. The exact question is decidable all the same. Safety modulo the discarded set is decided for every
+token automaton in polynomial space, with an input and a cut that replay whenever it fails. For a vocabulary of literals
+it is decided in polynomial time. On the fifteen token sets of the applicability study the decision confirms every cell
+of the relaxed column, so there the local tests give nothing away. The relaxed result remains a precomputed one-bit
+query. The shipped planner and every throughput measurement use the exact certificate.
 
 Two boundaries are worth restating, because both were initially unclear to us. Certification depends only on the token
 set, for the relaxed condition also on the declared discarded set, and never on a particular input, so a read-time
@@ -1397,6 +1756,7 @@ degenerate to `O(kN)` aggregate search work when certified bytes are scarce, whi
   Boundaries Where No Byte Certifies.* Preprint, arXiv:2608.09761, 2026.
 - N. Nidhögg. *Certified Panic Mode: Repair-Invariant Error Recovery
   for Maximal-Munch Lexing.* Preprint, arXiv:2609.10600, 2026.
+- N. Nidhögg. *Certified Splitting: Decidability and Anchor Supply for Maximal-Munch Tokenization.* Manuscript, 2026.
 - R. Sin'ya, K. Matsuzaki, M. Sassa. *Simultaneous Finite Automata: An Efficient Data-Parallel
   Model for Regular Expression Matching.* ICPP 2013, 220-229. Preprint: arXiv:1405.0562.
 - W. D. Hillis, G. L. Steele, Jr. *Data Parallel Algorithms.* Communications of the ACM 29(12):1170-1183, 1986.
@@ -1467,15 +1827,20 @@ degenerate to `O(kN)` aggregate search work when certified bytes are scarce, whi
 
 ## Appendix: the applicability probe
 
-The table in Section 7 is produced by `paper/figures/applicability.cpp`, which uses only the public API: it builds each
-token set with `core::Builder`, reads `Lexer::is_split_point()` for every byte value, and asserts the result against the
-published row, exiting non-zero if any row disagrees. The grammars are those listed, with `Set::all()`-derived interiors
-carrying the exclusions the source shows: a string admits any byte but `"` and newline, a line comment any byte but
-newline, and the block comment is written as `/* ( [^*] | *+ [^*/] )* *+ /`. The `build_lexer(false)` row is bound to
-the real function, which the checker compiles and compares against; the `keyword_scale_grammar()` row is a hand-copied
-transcription of that grammar, keyword list and priorities included, now compared against the linked
-`keyword_scale_tokens()` the benchmark itself compiles, 256 certified bits and a token stream, the same discipline as
-sharing code with the benchmark. Against an existing build tree, from the repository root:
+The table in Section 7 is produced by `paper/figures/applicability.cpp`, which uses only the public API for the shipped
+columns: it builds each token set with `core::Builder`, reads `Lexer::is_split_point()` and
+`Lexer::is_split_point_ignoring()` for every byte value, and asserts the result against the published row, exiting
+non-zero if any row disagrees. The relaxed column is judged two more ways from `paper/figures/modulo.hpp`, a header
+shared with `validation.cpp`: by its copy of the published condition, which must give the same column, and by the exact
+decision of Section 5.2, run once per class of bytes the tables do not tell apart, which must find every byte in the
+column safe and every byte outside it unsafe, each counterexample replayed through the scanner. The grammars are those
+listed, with `Set::all()`-derived interiors carrying the exclusions the source shows: a string admits any byte but `"`
+and newline, a line comment any byte but newline, and the block comment is written as `/* ( [^*] | *+ [^*/] )* *+ /`.
+The `build_lexer(false)` row is bound to the real function, which the checker compiles and compares against; the
+`keyword_scale_grammar()` row is a hand-copied transcription of that grammar, keyword list and priorities included, now
+compared against the linked `keyword_scale_tokens()` the benchmark itself compiles, 256 certified bits and a token
+stream, the same discipline as sharing code with the benchmark. Against an existing build tree, from the repository
+root:
 
 ```
 c++ -std=c++23 -I libs/common/include -I libs/core/include -I libs/dfa/include -I libs/nfa/include \
@@ -1484,4 +1849,12 @@ c++ -std=c++23 -I libs/common/include -I libs/core/include -I libs/dfa/include -
     -L build/libs/core -L build/libs/dfa -L build/libs/nfa -L build/libs/regex \
     -lmunch_core -lmunch_dfa -lmunch_nfa -lmunch_regex -lpthread
 /tmp/applicability
+```
+
+The validation figures of Section 6.1 come from `paper/figures/validation.cpp`, which asserts every count quoted there
+and the verdicts of the named token sets under all four judges. Both programs also run under CTest in an existing build
+tree, the table and the sweep in a few seconds each:
+
+```
+ctest --test-dir build -R "munch_validation|munch_applicability" --timeout 300
 ```
