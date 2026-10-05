@@ -1,6 +1,8 @@
 #ifndef MUNCH_LIBS_REGEX_INCLUDE_MUNCH_REGEX_REGEX_HPP
 #define MUNCH_LIBS_REGEX_INCLUDE_MUNCH_REGEX_REGEX_HPP
 
+#include <cstddef>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -112,7 +114,7 @@ template <typename... Args>
     requires(sizeof...(Args) > 0)
 [[nodiscard]] Regex concat(Args&&... args)
 {
-    std::vector<Regex> regexes;
+    std::vector<Regex> regexes{};
 
     regexes.reserve(sizeof...(Args));
 
@@ -131,7 +133,7 @@ template <typename... Args>
     requires(sizeof...(Args) > 0)
 [[nodiscard]] Regex choice(Args&&... args)
 {
-    std::vector<Regex> regexes;
+    std::vector<Regex> regexes{};
 
     regexes.reserve(sizeof...(Args));
 

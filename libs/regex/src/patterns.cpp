@@ -1,20 +1,30 @@
 #include "munch/regex/patterns.hpp"
 
+#include "munch/regex/set.hpp"
+
 namespace munch::regex::patterns
 {
 Regex identifier()
 {
-    return concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_')));
+    const auto head{any_of(Set::alpha() + '_')};
+
+    const auto tail{kleene(any_of(Set::alphanum() + '_'))};
+
+    return concat(head, tail);
 }
 
 Regex decimal_integer()
 {
-    return plus(any_of(Set::digits()));
+    const auto digit{any_of(Set::digits())};
+
+    return plus(digit);
 }
 
 Regex decimal_float()
 {
-    return concat(plus(any_of(Set::digits())), text("."), plus(any_of(Set::digits())));
+    const auto digits{decimal_integer()};
+
+    return concat(digits, text("."), digits);
 }
 
 } // namespace munch::regex::patterns

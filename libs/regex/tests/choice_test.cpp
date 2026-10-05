@@ -2,35 +2,30 @@
 
 #include <gtest/gtest.h>
 
-#include <filesystem>
+#include <optional>
 #include <stdexcept>
+#include <tuple>
 
 #include "munch/nfa/simulator.hpp"
-#include "munch/nfa/tools/graphviz.hpp"
 #include "munch/regex/regex.hpp"
 
 using namespace munch::nfa;
-using namespace munch::nfa::tools;
 using namespace munch::regex;
 
-class Choice_test : public testing::Test
+/**
+ * @brief A match the NFA simulator reports.
+ */
+using Match = Simulator::Match;
+
+/**
+ * @brief The match of a scan that matched nothing.
+ */
+const Match no_match{.token = std::nullopt, .length = 0};
+
+TEST(Choice_test, A_choice_of_two_bytes_matches_either)
 {
-protected:
-    void write_dot(const auto& nfa, const std::string& name) const
-    {
-        Graphviz::to_file(nfa, debug_path_ / (name + ".dot"));
-    }
-
-private:
-    std::filesystem::path debug_path_{std::string(SOURCE_DIR) + "/debug/"};
-};
-
-TEST_F(Choice_test, Single_character)
-{
-    using namespace testing;
-
-    auto a{text('a')};
-    auto b{text('b')};
+    const auto a{text('a')};
+    const auto b{text('b')};
 
     const auto regex{choice(a, b)};
 
@@ -38,23 +33,19 @@ TEST_F(Choice_test, Single_character)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Match = Simulator::Match;
+    EXPECT_EQ(Simulator::run(nfa, "a"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "b"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
 
-    EXPECT_EQ(Simulator::run(nfa, "a"), Match(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "b"), Match(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), Match(token, 1));
-
-    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "c"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "c"), no_match);
 }
 
-TEST_F(Choice_test, Multiple_characters)
+TEST(Choice_test, A_choice_of_three_texts_matches_each_whole)
 {
-    using namespace testing;
-
-    auto a{text('a')};
-    auto bc{text("bc")};
-    auto def{text("def")};
+    const auto a{text('a')};
+    const auto bc{text("bc")};
+    const auto def{text("def")};
 
     const auto regex{choice(a, bc, def)};
 
@@ -62,18 +53,16 @@ TEST_F(Choice_test, Multiple_characters)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Match = Simulator::Match;
+    EXPECT_EQ(Simulator::run(nfa, "a"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "bc"), (Match{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "def"), (Match{.token = token, .length = 3}));
 
-    EXPECT_EQ(Simulator::run(nfa, "a"), Match(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "bc"), Match(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "def"), Match(token, 3));
-
-    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "b"), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "de"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "b"), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "de"), no_match);
 }
 
-TEST_F(Choice_test, Empty_regexes_throws)
+TEST(Choice_test, A_choice_of_nothing_throws)
 {
-    EXPECT_THROW(static_cast<void>(to_nfa(Choice{.regexes = {}})), std::invalid_argument);
+    EXPECT_THROW(std::ignore = to_nfa(Choice{.regexes = {}}), std::invalid_argument);
 }

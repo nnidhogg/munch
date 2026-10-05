@@ -14,8 +14,8 @@ using utf8::Code_point_range;
 #include "class_ranges.inc"
 #include "xid_ranges.inc"
 
-// The two generated files pin one database between them; a regeneration that moves one and not the other is refused
-// at compile time rather than shipped as two Unicode versions under one version().
+// The two generated files pin one database between them; a regeneration that moves one and not the other is refused at
+// compile time rather than shipped as two Unicode versions under one version().
 static_assert(unicode_version == class_unicode_version);
 
 } // namespace

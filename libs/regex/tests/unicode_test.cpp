@@ -2,85 +2,80 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstddef>
+#include <optional>
 #include <string>
+#include <utility>
 
 #include "munch/nfa/simulator.hpp"
+#include "munch/regex/utf8.hpp"
 
-using namespace munch;
 using namespace munch::nfa;
 using namespace munch::regex;
 
 namespace
 {
-std::string encode(const char32_t code_point)
-{
-    std::string bytes;
+/**
+ * @brief The number of Unicode properties the library builds classes for.
+ */
+constexpr std::size_t property_count{5};
 
-    if (code_point <= 0x7F)
+/**
+ * @brief Returns the regex of a property's class, as the property's own builder spells it.
+ * @param property The property.
+ * @return The regex.
+ */
+Regex property_regex(const unicode::Property property)
+{
+    switch (property)
     {
-        bytes += static_cast<char>(code_point);
+    case unicode::Property::xid_start:
+        return unicode::xid_start();
+    case unicode::Property::xid_continue:
+        return unicode::xid_continue();
+    case unicode::Property::decimal_digit:
+        return unicode::decimal_digit();
+    case unicode::Property::white_space:
+        return unicode::white_space();
+    case unicode::Property::word:
+        return unicode::word();
     }
-    else if (code_point <= 0x7FF)
+
+    std::unreachable();
+}
+
+/**
+ * @brief Returns the automaton of a property's class, built on first use and shared across the membership probes, since
+ *        the XID automata are large.
+ * @param property The property.
+ * @return The automaton.
+ */
+const Nfa& class_nfa(const unicode::Property property)
+{
+    static std::array<std::optional<Nfa>, property_count> automata{};
+
+    auto& automaton{automata[std::to_underlying(property)]};
+
+    if (!automaton)
     {
-        bytes += static_cast<char>(0xC0 | (code_point >> 6U));
-        bytes += static_cast<char>(0x80 | (code_point & 0x3FU));
-    }
-    else if (code_point <= 0xFFFF)
-    {
-        bytes += static_cast<char>(0xE0 | (code_point >> 12U));
-        bytes += static_cast<char>(0x80 | ((code_point >> 6U) & 0x3FU));
-        bytes += static_cast<char>(0x80 | (code_point & 0x3FU));
-    }
-    else
-    {
-        bytes += static_cast<char>(0xF0 | (code_point >> 18U));
-        bytes += static_cast<char>(0x80 | ((code_point >> 12U) & 0x3FU));
-        bytes += static_cast<char>(0x80 | ((code_point >> 6U) & 0x3FU));
-        bytes += static_cast<char>(0x80 | (code_point & 0x3FU));
+        const auto regex{property_regex(property)};
+
+        automaton.emplace(to_nfa(regex).set_accept_token(Token{1, 1}).build());
     }
 
-    return bytes;
+    return *automaton;
 }
 
-// The XID automata are large, so each property is built once and shared across the membership probes.
-const Nfa& xid_start_nfa()
-{
-    static const Nfa nfa{to_nfa(unicode::xid_start()).set_accept_token(Token{1, 1}).build()};
-
-    return nfa;
-}
-
-const Nfa& xid_continue_nfa()
-{
-    static const Nfa nfa{to_nfa(unicode::xid_continue()).set_accept_token(Token{1, 1}).build()};
-
-    return nfa;
-}
-
-const Nfa& decimal_digit_nfa()
-{
-    static const Nfa nfa{to_nfa(unicode::decimal_digit()).set_accept_token(Token{1, 1}).build()};
-
-    return nfa;
-}
-
-const Nfa& white_space_nfa()
-{
-    static const Nfa nfa{to_nfa(unicode::white_space()).set_accept_token(Token{1, 1}).build()};
-
-    return nfa;
-}
-
-const Nfa& word_nfa()
-{
-    static const Nfa nfa{to_nfa(unicode::word()).set_accept_token(Token{1, 1}).build()};
-
-    return nfa;
-}
-
+/**
+ * @brief Returns whether an automaton matches exactly the encoding of a code point.
+ * @param nfa The automaton.
+ * @param code_point The code point.
+ * @return True when the longest match is the whole encoding.
+ */
 bool matches(const Nfa& nfa, const char32_t code_point)
 {
-    const auto input{encode(code_point)};
+    const auto input{utf8::encode(code_point)};
 
     const auto [token, length]{Simulator::run(nfa, input)};
 
@@ -91,98 +86,124 @@ bool matches(const Nfa& nfa, const char32_t code_point)
 
 TEST(Unicode_test, Xid_start_holds_letters_of_many_scripts)
 {
-    EXPECT_TRUE(matches(xid_start_nfa(), U'A'));
-    EXPECT_TRUE(matches(xid_start_nfa(), U'z'));
-    EXPECT_TRUE(matches(xid_start_nfa(), U'À'));          // Latin capital A with grave
-    EXPECT_TRUE(matches(xid_start_nfa(), U'λ'));          // Greek small lambda
-    EXPECT_TRUE(matches(xid_start_nfa(), U'漢'));         // Han 'kan'
-    EXPECT_TRUE(matches(xid_start_nfa(), U'\U0001D400')); // mathematical bold capital A
+    const auto& xid_start{class_nfa(unicode::Property::xid_start)};
+
+    EXPECT_TRUE(matches(xid_start, U'A'));
+    EXPECT_TRUE(matches(xid_start, U'z'));
+    EXPECT_TRUE(matches(xid_start, U'À'));          // Latin capital A with grave
+    EXPECT_TRUE(matches(xid_start, U'λ'));          // Greek small lambda
+    EXPECT_TRUE(matches(xid_start, U'漢'));         // Han 'kan'
+    EXPECT_TRUE(matches(xid_start, U'\U0001D400')); // mathematical bold capital A
 }
 
 TEST(Unicode_test, Xid_start_excludes_digits_underscore_and_symbols)
 {
-    EXPECT_FALSE(matches(xid_start_nfa(), U'0'));
-    EXPECT_FALSE(matches(xid_start_nfa(), U'_'));
-    EXPECT_FALSE(matches(xid_start_nfa(), U' '));
-    EXPECT_FALSE(matches(xid_start_nfa(), U'-'));
-    EXPECT_FALSE(matches(xid_start_nfa(), U'́'));           // combining acute accent
-    EXPECT_FALSE(matches(xid_start_nfa(), U'€'));          // euro sign
-    EXPECT_FALSE(matches(xid_start_nfa(), U'\U0010FFFF')); // last code point, unassigned
+    const auto& xid_start{class_nfa(unicode::Property::xid_start)};
+
+    EXPECT_FALSE(matches(xid_start, U'0'));
+    EXPECT_FALSE(matches(xid_start, U'_'));
+    EXPECT_FALSE(matches(xid_start, U' '));
+    EXPECT_FALSE(matches(xid_start, U'-'));
+    EXPECT_FALSE(matches(xid_start, U'́'));           // combining acute accent
+    EXPECT_FALSE(matches(xid_start, U'€'));          // euro sign
+    EXPECT_FALSE(matches(xid_start, U'\U0010FFFF')); // last code point, unassigned
 }
 
 TEST(Unicode_test, Xid_continue_adds_digits_underscore_and_marks)
 {
-    EXPECT_TRUE(matches(xid_continue_nfa(), U'a'));
-    EXPECT_TRUE(matches(xid_continue_nfa(), U'Z'));
-    EXPECT_TRUE(matches(xid_continue_nfa(), U'9'));
-    EXPECT_TRUE(matches(xid_continue_nfa(), U'_'));
-    EXPECT_TRUE(matches(xid_continue_nfa(), U'́'));  // combining acute accent
-    EXPECT_TRUE(matches(xid_continue_nfa(), U'٠')); // Arabic-Indic digit zero
+    const auto& xid_continue{class_nfa(unicode::Property::xid_continue)};
+
+    EXPECT_TRUE(matches(xid_continue, U'a'));
+    EXPECT_TRUE(matches(xid_continue, U'Z'));
+    EXPECT_TRUE(matches(xid_continue, U'9'));
+    EXPECT_TRUE(matches(xid_continue, U'_'));
+    EXPECT_TRUE(matches(xid_continue, U'́'));  // combining acute accent
+    EXPECT_TRUE(matches(xid_continue, U'٠')); // Arabic-Indic digit zero
 }
 
 TEST(Unicode_test, Xid_continue_excludes_separators_and_symbols)
 {
-    EXPECT_FALSE(matches(xid_continue_nfa(), U' '));
-    EXPECT_FALSE(matches(xid_continue_nfa(), U'!'));
-    EXPECT_FALSE(matches(xid_continue_nfa(), U'\n'));
-    EXPECT_FALSE(matches(xid_continue_nfa(), U'€')); // euro sign
+    const auto& xid_continue{class_nfa(unicode::Property::xid_continue)};
+
+    EXPECT_FALSE(matches(xid_continue, U' '));
+    EXPECT_FALSE(matches(xid_continue, U'!'));
+    EXPECT_FALSE(matches(xid_continue, U'\n'));
+    EXPECT_FALSE(matches(xid_continue, U'€')); // euro sign
 }
 
 TEST(Unicode_test, Xid_start_members_continue_identifiers_too)
 {
-    EXPECT_TRUE(matches(xid_continue_nfa(), U'A'));
-    EXPECT_TRUE(matches(xid_continue_nfa(), U'λ'));
-    EXPECT_TRUE(matches(xid_continue_nfa(), U'漢'));
+    const auto& xid_continue{class_nfa(unicode::Property::xid_continue)};
+
+    EXPECT_TRUE(matches(xid_continue, U'A'));
+    EXPECT_TRUE(matches(xid_continue, U'λ'));
+    EXPECT_TRUE(matches(xid_continue, U'漢'));
 }
 
 TEST(Unicode_test, Decimal_digits_are_the_Nd_category)
 {
-    EXPECT_TRUE(matches(decimal_digit_nfa(), U'0'));
-    EXPECT_TRUE(matches(decimal_digit_nfa(), U'9'));
-    EXPECT_TRUE(matches(decimal_digit_nfa(), U'٣'));          // Arabic-Indic digit three
-    EXPECT_TRUE(matches(decimal_digit_nfa(), U'\U0001D7CE')); // mathematical bold digit zero
-    EXPECT_FALSE(matches(decimal_digit_nfa(), U'A'));
-    EXPECT_FALSE(matches(decimal_digit_nfa(), U'²')); // superscript two, category No
-    EXPECT_FALSE(matches(decimal_digit_nfa(), U'Ⅳ')); // Roman numeral four, category Nl
+    const auto& decimal_digit{class_nfa(unicode::Property::decimal_digit)};
+
+    EXPECT_TRUE(matches(decimal_digit, U'0'));
+    EXPECT_TRUE(matches(decimal_digit, U'9'));
+    EXPECT_TRUE(matches(decimal_digit, U'٣'));          // Arabic-Indic digit three
+    EXPECT_TRUE(matches(decimal_digit, U'\U0001D7CE')); // mathematical bold digit zero
+    EXPECT_FALSE(matches(decimal_digit, U'A'));
+    EXPECT_FALSE(matches(decimal_digit, U'²')); // superscript two, category No
+    EXPECT_FALSE(matches(decimal_digit, U'Ⅳ')); // Roman numeral four, category Nl
 }
 
 TEST(Unicode_test, White_space_is_the_property_and_no_more)
 {
-    EXPECT_TRUE(matches(white_space_nfa(), U' '));
-    EXPECT_TRUE(matches(white_space_nfa(), U'\t'));
-    EXPECT_TRUE(matches(white_space_nfa(), U'\r'));
-    EXPECT_TRUE(matches(white_space_nfa(), U'\u0085'));  // next line
-    EXPECT_TRUE(matches(white_space_nfa(), U'\u00A0'));  // no-break space
-    EXPECT_TRUE(matches(white_space_nfa(), U'\u2028'));  // line separator
-    EXPECT_TRUE(matches(white_space_nfa(), U'\u3000'));  // ideographic space
-    EXPECT_FALSE(matches(white_space_nfa(), U'\u200B')); // zero width space, not White_Space
-    EXPECT_FALSE(matches(white_space_nfa(), U'\uFEFF')); // byte order mark
-    EXPECT_FALSE(matches(white_space_nfa(), U'a'));
+    const auto& white_space{class_nfa(unicode::Property::white_space)};
+
+    EXPECT_TRUE(matches(white_space, U' '));
+    EXPECT_TRUE(matches(white_space, U'\t'));
+    EXPECT_TRUE(matches(white_space, U'\r'));
+    EXPECT_TRUE(matches(white_space, U'\u0085'));  // next line
+    EXPECT_TRUE(matches(white_space, U'\u00A0'));  // no-break space
+    EXPECT_TRUE(matches(white_space, U'\u2028'));  // line separator
+    EXPECT_TRUE(matches(white_space, U'\u3000'));  // ideographic space
+    EXPECT_FALSE(matches(white_space, U'\u200B')); // zero width space, not White_Space
+    EXPECT_FALSE(matches(white_space, U'\uFEFF')); // byte order mark
+    EXPECT_FALSE(matches(white_space, U'a'));
 }
 
 TEST(Unicode_test, Word_characters_are_the_crates_union)
 {
-    EXPECT_TRUE(matches(word_nfa(), U'a'));
-    EXPECT_TRUE(matches(word_nfa(), U'Z'));
-    EXPECT_TRUE(matches(word_nfa(), U'0'));
-    EXPECT_TRUE(matches(word_nfa(), U'_'));      // connector punctuation
-    EXPECT_TRUE(matches(word_nfa(), U'é'));      // alphabetic
-    EXPECT_TRUE(matches(word_nfa(), U'́'));       // combining acute accent, a mark
-    EXPECT_TRUE(matches(word_nfa(), U'٣'));      // Arabic-Indic digit three
-    EXPECT_TRUE(matches(word_nfa(), U'\u200D')); // zero width joiner, Join_Control
-    EXPECT_TRUE(matches(word_nfa(), U'漢'));
-    EXPECT_FALSE(matches(word_nfa(), U' '));
-    EXPECT_FALSE(matches(word_nfa(), U'-'));
-    EXPECT_FALSE(matches(word_nfa(), U'€'));
-    EXPECT_FALSE(matches(word_nfa(), U'\u00A0'));
+    const auto& word{class_nfa(unicode::Property::word)};
+
+    EXPECT_TRUE(matches(word, U'a'));
+    EXPECT_TRUE(matches(word, U'Z'));
+    EXPECT_TRUE(matches(word, U'0'));
+    EXPECT_TRUE(matches(word, U'_'));      // connector punctuation
+    EXPECT_TRUE(matches(word, U'é'));      // alphabetic
+    EXPECT_TRUE(matches(word, U'́'));       // combining acute accent, a mark
+    EXPECT_TRUE(matches(word, U'٣'));      // Arabic-Indic digit three
+    EXPECT_TRUE(matches(word, U'\u200D')); // zero width joiner, Join_Control
+    EXPECT_TRUE(matches(word, U'漢'));
+    EXPECT_FALSE(matches(word, U' '));
+    EXPECT_FALSE(matches(word, U'-'));
+    EXPECT_FALSE(matches(word, U'€'));
+    EXPECT_FALSE(matches(word, U'\u00A0'));
 }
 
 TEST(Unicode_test, Ranges_are_the_tables_the_builders_expand)
 {
-    EXPECT_EQ(unicode::ranges(unicode::Property::white_space).size(), 10U);
-    EXPECT_EQ(unicode::ranges(unicode::Property::white_space).front().first, U'\t');
-    EXPECT_EQ(unicode::ranges(unicode::Property::white_space).back().last, U'\u3000');
-    EXPECT_EQ(unicode::ranges(unicode::Property::decimal_digit).front().last, U'9');
+    const auto white_space{unicode::ranges(unicode::Property::white_space)};
+
+    EXPECT_EQ(white_space.size(), 10U);
+
+    const auto [first, first_last]{white_space.front()};
+
+    const auto [last_first, last]{white_space.back()};
+
+    EXPECT_EQ(first, U'\t');
+    EXPECT_EQ(last, U'\u3000');
+
+    const auto [digit_first, digit_last]{unicode::ranges(unicode::Property::decimal_digit).front()};
+
+    EXPECT_EQ(digit_last, U'9');
     EXPECT_FALSE(unicode::ranges(unicode::Property::word).empty());
     EXPECT_FALSE(unicode::ranges(unicode::Property::xid_start).empty());
     EXPECT_FALSE(unicode::ranges(unicode::Property::xid_continue).empty());

@@ -1,6 +1,9 @@
-#include <algorithm>
+#include <cstddef>
 #include <ranges>
 #include <stdexcept>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
 #include "munch/regex/regex.hpp"
 
@@ -9,8 +12,39 @@ namespace munch::regex
 namespace
 {
 /**
- * @brief Wraps a single regex in the vector a Repeat node stores its sub-pattern in.
+ * @brief Loops every accepting state of an automaton back to its initial state with an epsilon transition.
+ * @param nfa The automaton.
+ * @return The automaton with the loops added.
  */
+[[nodiscard]] nfa::Builder loop_back(nfa::Builder nfa)
+{
+    for (const auto state : std::views::keys(nfa.accept_states()))
+    {
+        nfa.add_epsilon_transition(state, nfa.init_state());
+    }
+
+    return nfa;
+}
+
+/**
+ * @brief Appends copies of a sub-pattern's automaton to an automaton, one after another.
+ * @param nfa The automaton appended to.
+ * @param regex The sub-pattern copied.
+ * @param copies The number of copies.
+ * @return The automaton followed by the copies.
+ */
+[[nodiscard]] nfa::Builder append_copies(nfa::Builder nfa, const Regex& regex, const std::size_t copies)
+{
+    for (std::size_t copy{0}; copy < copies; ++copy)
+    {
+        const auto body{to_nfa(regex)};
+
+        nfa = nfa.append(body);
+    }
+
+    return nfa;
+}
+
 /**
  * @brief Builds the NFA for a Kleene star (zero or more) repetition.
  * @param regex The sub-pattern to repeat.
@@ -18,21 +52,20 @@ namespace
  */
 [[nodiscard]] nfa::Builder to_kleene(const Regex& regex)
 {
-    /**
-     * Matches zero or more occurrences of a sub-pattern.
-     *
-     *       / <--------ε-------- \
-     *      /                      \
-     * ((S)) --ε--> ((regex)) --ε-->
-     */
-    auto S{to_nfa(regex).prepend_init_state()};
+    // Matches zero or more occurrences of a sub-pattern:
+    //
+    //         +-----------ε-----------+
+    //         v                       |
+    // ((nfa)) --ε--> ((regex)) --ε----+
+    const auto body{to_nfa(regex)};
 
-    std::ranges::for_each(
-            S.accept_states(), [&S](const auto& pair) { S.add_epsilon_transition(pair.first, S.init_state()); });
+    const auto prepended{body.prepend_init_state()};
 
-    S.add_accept_state(S.init_state());
+    auto nfa{loop_back(prepended)};
 
-    return S;
+    nfa.add_accept_state(nfa.init_state());
+
+    return nfa;
 }
 
 /**
@@ -42,19 +75,16 @@ namespace
  */
 [[nodiscard]] nfa::Builder to_plus(const Regex& regex)
 {
-    /**
-     * Matches one or more occurrences of a sub-pattern.
-     *
-     *     / <--------ε-------- \
-     *    /                      \
-     * (S) --ε--> ((regex)) --ε-->
-     */
-    auto S{to_nfa(regex).prepend_init_state()};
+    // Matches one or more occurrences of a sub-pattern:
+    //
+    //       +-----------ε-----------+
+    //       v                       |
+    // (nfa) --ε--> ((regex)) --ε----+
+    const auto body{to_nfa(regex)};
 
-    std::ranges::for_each(
-            S.accept_states(), [&S](const auto& pair) { S.add_epsilon_transition(pair.first, S.init_state()); });
+    const auto prepended{body.prepend_init_state()};
 
-    return S;
+    return loop_back(prepended);
 }
 
 /**
@@ -64,16 +94,16 @@ namespace
  */
 [[nodiscard]] nfa::Builder to_optional(const Regex& regex)
 {
-    /**
-     * Matches zero or one occurrences of a sub-pattern.
-     *
-     * ((S)) --ε--> ((regex))
-     */
-    auto S{to_nfa(regex).prepend_init_state()};
+    // Matches zero or one occurrences of a sub-pattern:
+    //
+    // ((nfa)) --ε--> ((regex))
+    const auto body{to_nfa(regex)};
 
-    S.add_accept_state(S.init_state());
+    auto nfa{body.prepend_init_state()};
 
-    return S;
+    nfa.add_accept_state(nfa.init_state());
+
+    return nfa;
 }
 
 /**
@@ -84,20 +114,14 @@ namespace
  */
 [[nodiscard]] nfa::Builder to_exact(const Regex& regex, const std::size_t count)
 {
-    /**
-     * Matches an exact number of occurrences of a sub-pattern.
-     *
-     * (S) --ε--> ... --ε--> ((regex n))
-     */
-    nfa::Builder S;
+    // Matches an exact number of occurrences of a sub-pattern:
+    //
+    // (nfa) --ε--> ... --ε--> ((regex n))
+    nfa::Builder nfa{};
 
-    S.add_accept_state(S.init_state());
+    nfa.add_accept_state(nfa.init_state());
 
-    std::ranges::for_each(std::ranges::iota_view(static_cast<std::size_t>(0), count), [&regex, &S](auto) {
-        S = S.append(to_nfa(regex));
-    });
-
-    return S;
+    return append_copies(nfa, regex, count);
 }
 
 /**
@@ -108,35 +132,29 @@ namespace
  */
 [[nodiscard]] nfa::Builder to_at_least(const Regex& regex, const std::size_t min)
 {
-    /**
-     * Matches a range of occurrences of a sub-pattern.
-     *
-     *                 / <-----ε----- \
-     *                /                \
-     * (S) --ε--> ... ((regex n)) --ε-->
-     *
-     * At least zero occurrences is the Kleene star; branching keeps the iota below well-formed, as its bound
-     * may not lie before its start.
-     */
+    // Matches at least `min` occurrences of a sub-pattern:
+    //
+    //                  +--------ε--------+
+    //                  v                 |
+    // (nfa) --ε--> ... ((regex n)) --ε---+
+    //
+    // At least zero occurrences is the Kleene star; otherwise min - 1 plain copies precede the looping one.
     if (min == 0)
     {
         return to_kleene(regex);
     }
 
-    nfa::Builder S;
+    nfa::Builder start{};
 
-    S.add_accept_state(S.init_state());
+    start.add_accept_state(start.init_state());
 
-    std::ranges::for_each(
-            std::views::iota(static_cast<std::size_t>(1), min), [&regex, &S](auto) { S = S.append(to_nfa(regex)); });
+    const auto nfa{append_copies(start, regex, min - 1)};
 
-    auto F{to_nfa(regex)};
+    const auto body{to_nfa(regex)};
 
-    std::ranges::for_each(std::views::keys(F.accept_states()), [&F](const auto state) {
-        F.add_epsilon_transition(state, F.init_state());
-    });
+    const auto loop{loop_back(body)};
 
-    return S.append(F);
+    return nfa.append(loop);
 }
 
 /**
@@ -148,76 +166,79 @@ namespace
  */
 [[nodiscard]] nfa::Builder to_range(const Regex& regex, const std::size_t min, const std::size_t max)
 {
-    /**
-     * Matches a range of occurrences of a sub-pattern: the first `min` copies are required, and the state reached
-     * after each further copy accepts, so the scan may stop at any count in the range.
-     *
-     * (S) --ε--> ... ((regex n)) --ε--> ... --ε--> ((regex m))
-     *
-     * The state reached after `k` copies is made an accepting state of its own, as the optional repetition makes
-     * its skipped start one. An epsilon from there into the accepting state of a later copy would accept the same
-     * words and more: that state is inside the sub-pattern and carries the sub-pattern's own outgoing transitions,
-     * so a scan taking the epsilon could go on consuming through them and the machine would admit a suffix of the
-     * body that the pattern does not, `b` under `(ab+){0,1}` among them.
-     */
-    nfa::Builder S;
+    // Matches a range of occurrences of a sub-pattern: the first `min` copies are required, and the state reached after
+    // each further copy accepts, so the scan may stop at any count in the range:
+    //
+    // (nfa) --ε--> ... ((regex n)) --ε--> ... --ε--> ((regex m))
+    //
+    // The state reached after `k` copies is made an accepting state of its own, as the optional repetition makes its
+    // skipped start one.
+    nfa::Builder start{};
 
-    S.add_accept_state(S.init_state());
+    start.add_accept_state(start.init_state());
 
-    std::ranges::for_each(
-            std::views::iota(static_cast<std::size_t>(0), min), [&regex, &S](auto) { S = S.append(to_nfa(regex)); });
+    auto nfa{append_copies(start, regex, min)};
 
-    nfa::Nfa::States_t pending;
+    nfa::Nfa::States_t pending{};
 
-    std::ranges::for_each(std::views::iota(min, max), [&regex, &S, &pending](auto) {
-        std::ranges::copy(std::views::keys(S.accept_states()), std::inserter(pending, pending.end()));
-        S = S.append(to_nfa(regex));
-    });
+    for (std::size_t copy{min}; copy < max; ++copy)
+    {
+        const auto reached{std::views::keys(nfa.accept_states())};
 
-    std::ranges::for_each(pending, [&S](const auto pending_state) { S.add_accept_state(pending_state); });
+        pending.insert(reached.begin(), reached.end());
 
-    return S;
+        const auto body{to_nfa(regex)};
+
+        nfa = nfa.append(body);
+    }
+
+    for (const auto pending_state : pending)
+    {
+        nfa.add_accept_state(pending_state);
+    }
+
+    return nfa;
 }
 
 } // namespace
 
 nfa::Builder to_nfa(const Repeat& repeat)
 {
-    // The child needs no emptiness check: a Indirect always holds exactly one value.
+    // The child needs no emptiness check: an Indirect always holds exactly one value.
     const auto& regex{*repeat.regex};
 
-    return std::visit(
-            [&regex]<typename T>(const T& kind) {
-                if constexpr (std::is_same_v<T, Kleene>)
-                {
-                    return to_kleene(regex);
-                }
-                else if constexpr (std::is_same_v<T, Plus>)
-                {
-                    return to_plus(regex);
-                }
-                else if constexpr (std::is_same_v<T, Optional>)
-                {
-                    return to_optional(regex);
-                }
-                else if constexpr (std::is_same_v<T, Exact>)
-                {
-                    return to_exact(regex, kind.count);
-                }
-                else if constexpr (std::is_same_v<T, At_least>)
-                {
-                    return to_at_least(regex, kind.min);
-                }
-                else
-                {
-                    // Adding a repetition kind without handling it above is a compile error rather than a silent
-                    // fall-through returning nothing.
-                    static_assert(std::is_same_v<T, Range>, "Unhandled repetition kind");
+    const auto lower{[&regex]<typename T>(const T& kind) {
+        if constexpr (std::is_same_v<T, Kleene>)
+        {
+            return to_kleene(regex);
+        }
+        else if constexpr (std::is_same_v<T, Plus>)
+        {
+            return to_plus(regex);
+        }
+        else if constexpr (std::is_same_v<T, Optional>)
+        {
+            return to_optional(regex);
+        }
+        else if constexpr (std::is_same_v<T, Exact>)
+        {
+            return to_exact(regex, kind.count);
+        }
+        else if constexpr (std::is_same_v<T, At_least>)
+        {
+            return to_at_least(regex, kind.min);
+        }
+        else
+        {
+            // Adding a repetition kind without handling it above is a compile error rather than a silent fall-through
+            // returning nothing.
+            static_assert(std::is_same_v<T, Range>, "Unhandled repetition kind");
 
-                    return to_range(regex, kind.min, kind.max);
-                }
-            },
-            repeat.kind);
+            return to_range(regex, kind.min, kind.max);
+        }
+    }};
+
+    return std::visit(lower, repeat.kind);
 }
 
 Regex kleene(Regex regex)
@@ -249,7 +270,7 @@ Regex range(Regex regex, const std::size_t min, const std::size_t max)
 {
     if (max < min)
     {
-        throw std::invalid_argument("A repetition range may not end before it starts");
+        throw std::invalid_argument{"A repetition range may not end before it starts"};
     }
 
     return {.node = Repeat{.kind = Range{.min = min, .max = max}, .regex = Indirect{std::move(regex)}}};

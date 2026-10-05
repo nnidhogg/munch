@@ -48,84 +48,78 @@ public:
     explicit Set(Symbols_t&& symbols);
 
     /**
-     * @brief Returns the symbols in the set.
-     * @return Reference to the set of symbols.
-     */
-    const Symbols_t& symbols() const noexcept;
-
-    /**
      * @brief Creates a set containing a single symbol.
-     * @param s The symbol to include.
+     * @param symbol The symbol to include.
      * @return The created set.
      */
-    static Set from(Symbol_t s);
+    [[nodiscard]] static Set from(Symbol_t symbol);
 
     /**
      * @brief Creates a set from an initializer list of symbols.
      * @param symbols The symbols to include.
      * @return The created set.
      */
-    static Set from(std::initializer_list<Symbol_t> symbols);
+    [[nodiscard]] static Set from(std::initializer_list<Symbol_t> symbols);
 
     /**
      * @brief Creates a set containing all symbols in the range [start, end].
      *
-     * Symbols are ordered as unsigned bytes, so the range is over byte values rather than
-     * over char, which may be signed.
+     * Symbols are ordered as unsigned bytes, so the range is over byte values rather than over char, which may be
+     * signed.
      * @param start The starting symbol.
      * @param end The ending symbol.
      * @return The created set.
      * @throws std::invalid_argument If end orders before start.
      */
-    static Set range(Symbol_t start, Symbol_t end);
+    [[nodiscard]] static Set range(Symbol_t start, Symbol_t end);
 
     /**
      * @brief Creates a set of digit characters ('0'-'9').
      * @return The created set.
      */
-    static Set digits();
+    [[nodiscard]] static Set digits();
 
     /**
      * @brief Creates a set of alphabetic characters (A-Z, a-z).
      * @return The created set.
      */
-    static Set alpha();
+    [[nodiscard]] static Set alpha();
 
     /**
      * @brief Creates a set of alphanumeric characters (A-Z, a-z, 0-9).
      * @return The created set.
      */
-    static Set alphanum();
+    [[nodiscard]] static Set alphanum();
 
     /**
      * @brief Creates a set of printable characters.
      * @return The created set.
      */
-    static Set printable();
+    [[nodiscard]] static Set printable();
 
     /**
      * @brief Creates a set of escape characters (e.g. '\n', '\t', etc.).
      * @return The created set.
      */
-    static Set escape();
+    [[nodiscard]] static Set escape();
 
     /**
      * @brief Creates a set of newline characters (e.g. '\n', '\r').
      * @return The created set.
      */
-    static Set newline();
+    [[nodiscard]] static Set newline();
 
     /**
      * @brief Creates a set of standard whitespace characters (e.g. ' ', '\t').
      * @return The created set.
      */
-    static Set whitespace();
+    [[nodiscard]] static Set whitespace();
 
     /**
      * @brief Creates a set containing all possible characters.
      * @return The created set.
      */
-    static Set all();
+    [[nodiscard]] static Set all();
 
     /**
      * @brief Adds all symbols from another set to this set.
@@ -136,10 +130,10 @@ public:
 
     /**
      * @brief Adds a symbol to this set.
-     * @param s The symbol to add.
+     * @param symbol The symbol to add.
      * @return Reference to this set.
      */
-    Set& operator+=(Symbol_t s);
+    Set& operator+=(Symbol_t symbol);
 
     /**
      * @brief Removes all symbols from another set from this set.
@@ -150,10 +144,10 @@ public:
 
     /**
      * @brief Removes a symbol from this set.
-     * @param s The symbol to remove.
+     * @param symbol The symbol to remove.
      * @return Reference to this set.
      */
-    Set& operator-=(Symbol_t s);
+    Set& operator-=(Symbol_t symbol);
 
     /**
      * @brief Returns the union of two sets.
@@ -166,10 +160,18 @@ public:
     /**
      * @brief Returns the union of a set and a symbol.
      * @param lhs The set.
-     * @param s The symbol.
+     * @param symbol The symbol.
      * @return The union of the set and the symbol.
      */
-    friend Set operator+(Set lhs, Symbol_t s);
+    friend Set operator+(Set lhs, Symbol_t symbol);
+
+    /**
+     * @brief Returns the union of a symbol and a set.
+     * @param symbol The symbol.
+     * @param rhs The set.
+     * @return The union of the symbol and the set.
+     */
+    friend Set operator+(Symbol_t symbol, Set rhs);
 
     /**
      * @brief Returns the difference of two sets.
@@ -182,20 +184,21 @@ public:
     /**
      * @brief Returns the difference of a set and a symbol.
      * @param lhs The set.
-     * @param s The symbol.
+     * @param symbol The symbol.
      * @return The difference of the set and the symbol.
      */
-    friend Set operator-(Set lhs, Symbol_t s);
+    friend Set operator-(Set lhs, Symbol_t symbol);
 
     /**
-     * @brief Returns the union of a symbol and a set.
-     * @param s The symbol.
-     * @param rhs The set.
-     * @return The union of the symbol and the set.
+     * @brief Returns the symbols in the set.
+     * @return Reference to the set of symbols.
      */
-    friend Set operator+(Symbol_t s, Set rhs);
+    [[nodiscard]] const Symbols_t& symbols() const noexcept;
 
 private:
+    /**
+     * @brief The symbols the set holds.
+     */
     Symbols_t symbols_;
 };
 

@@ -2,72 +2,61 @@
 
 #include <gtest/gtest.h>
 
-#include <filesystem>
+#include <optional>
 #include <stdexcept>
+#include <tuple>
 
 #include "munch/nfa/simulator.hpp"
-#include "munch/nfa/tools/graphviz.hpp"
 #include "munch/regex/regex.hpp"
 
 using namespace munch::nfa;
-using namespace munch::nfa::tools;
 using namespace munch::regex;
 
-class Concat_test : public testing::Test
+/**
+ * @brief A match the NFA simulator reports.
+ */
+using Match = Simulator::Match;
+
+/**
+ * @brief The match of a scan that matched nothing.
+ */
+const Match no_match{.token = std::nullopt, .length = 0};
+
+TEST(Concat_test, Two_concatenated_bytes_match_only_together)
 {
-protected:
-    void write_dot(const auto& nfa, const std::string& name) const
-    {
-        Graphviz::to_file(nfa, debug_path_ / (name + ".dot"));
-    }
-
-private:
-    std::filesystem::path debug_path_{std::string(SOURCE_DIR) + "/debug/"};
-};
-
-TEST_F(Concat_test, Two_characters)
-{
-    using namespace testing;
-
     const auto regex{concat(text('a'), text('b'))};
 
     const Token token{1, 1};
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Match = Simulator::Match;
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match{.token = token, .length = 2}));
 
-    EXPECT_EQ(Simulator::run(nfa, "ab"), Match(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), Match(token, 2));
-
-    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "b"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "a"), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "b"), no_match);
 }
 
-TEST_F(Concat_test, Multiple_characters)
+TEST(Concat_test, Four_concatenated_bytes_match_only_together)
 {
-    using namespace testing;
-
     const auto regex{concat(text('a'), text('b'), text('c'), text('d'))};
 
     const Token token{2, 1};
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Match = Simulator::Match;
+    EXPECT_EQ(Simulator::run(nfa, "abcd"), (Match{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "abcde"), (Match{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "abcd!"), (Match{.token = token, .length = 4}));
 
-    EXPECT_EQ(Simulator::run(nfa, "abcd"), Match(token, 4));
-    EXPECT_EQ(Simulator::run(nfa, "abcde"), Match(token, 4));
-    EXPECT_EQ(Simulator::run(nfa, "abcd!"), Match(token, 4));
-
-    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "a"), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ""), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "a"), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "ab"), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "abc"), no_match);
 }
 
-TEST_F(Concat_test, Empty_regexes_throws)
+TEST(Concat_test, A_concatenation_of_nothing_throws)
 {
-    EXPECT_THROW(static_cast<void>(to_nfa(Concat{.regexes = {}})), std::invalid_argument);
+    EXPECT_THROW(std::ignore = to_nfa(Concat{.regexes = {}}), std::invalid_argument);
 }

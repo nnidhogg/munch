@@ -1,8 +1,8 @@
 #include "munch/regex/set.hpp"
 
-#include <algorithm>
 #include <ranges>
 #include <stdexcept>
+#include <utility>
 
 namespace munch::regex
 {
@@ -15,37 +15,38 @@ Set::Set(const Symbols_t& symbols) : symbols_{symbols}
 Set::Set(Symbols_t&& symbols) : symbols_{std::move(symbols)}
 {}
 
-const Set::Symbols_t& Set::symbols() const noexcept
+Set Set::from(const Symbol_t symbol)
 {
-    return symbols_;
+    return {symbol};
 }
 
-Set Set::from(const Symbol_t s)
+Set Set::from(const std::initializer_list<Symbol_t> symbols)
 {
-    return Set({s});
-}
+    Symbols_t chosen{symbols.begin(), symbols.end()};
 
-Set Set::from(std::initializer_list<Symbol_t> symbols)
-{
-    return Set({symbols.begin(), symbols.end()});
+    return Set{std::move(chosen)};
 }
 
 Set Set::range(const Symbol_t start, const Symbol_t end)
 {
-    // views::iota requires its bound to order at or after its value, so a reversed range would be undefined rather
-    // than empty. Symbols are ordered as unsigned bytes here, matching how the rest of the library indexes them.
+    // views::iota requires its bound to order at or after its value, so a reversed range would be undefined rather than
+    // empty. Symbols are ordered as unsigned bytes here, matching how the rest of the library indexes them.
     if (static_cast<unsigned char>(end) < static_cast<unsigned char>(start))
     {
-        throw std::invalid_argument("A symbol range may not end before it starts");
+        throw std::invalid_argument{"A symbol range may not end before it starts"};
     }
 
-    const auto range{
-            std::views::iota(
-                    static_cast<unsigned>(static_cast<unsigned char>(start)),
-                    static_cast<unsigned>(static_cast<unsigned char>(end)) + 1) |
-            std::views::transform([](const auto i) { return static_cast<Symbol_t>(i); })};
+    const unsigned first{static_cast<unsigned char>(start)};
 
-    return Set({range.begin(), range.end()});
+    const unsigned last{static_cast<unsigned char>(end)};
+
+    const auto symbol_of{[](const unsigned value) { return static_cast<Symbol_t>(value); }};
+
+    const auto symbols{std::views::iota(first, last + 1) | std::views::transform(symbol_of)};
+
+    Symbols_t chosen{symbols.begin(), symbols.end()};
+
+    return Set{std::move(chosen)};
 }
 
 Set Set::digits()
@@ -70,7 +71,7 @@ Set Set::printable()
 
 Set Set::escape()
 {
-    return {'\n', '\t', '\r', '\'', '\"', '\\'};
+    return {'\n', '\t', '\r', '\'', '"', '\\'};
 }
 
 Set Set::newline()
@@ -95,9 +96,9 @@ Set& Set::operator+=(const Set& other)
     return *this;
 }
 
-Set& Set::operator+=(const Symbol_t s)
+Set& Set::operator+=(const Symbol_t symbol)
 {
-    symbols_.insert(s);
+    symbols_.insert(symbol);
 
     return *this;
 }
@@ -112,14 +113,17 @@ Set& Set::operator-=(const Set& other)
         return *this;
     }
 
-    std::ranges::for_each(other.symbols_, [this](const Symbol_t s) { symbols_.erase(s); });
+    for (const auto symbol : other.symbols_)
+    {
+        symbols_.erase(symbol);
+    }
 
     return *this;
 }
 
-Set& Set::operator-=(const Symbol_t s)
+Set& Set::operator-=(const Symbol_t symbol)
 {
-    symbols_.erase(s);
+    symbols_.erase(symbol);
 
     return *this;
 }
@@ -131,11 +135,18 @@ Set operator+(Set lhs, const Set& rhs)
     return lhs;
 }
 
-Set operator+(Set lhs, const Set::Symbol_t s)
+Set operator+(Set lhs, const Set::Symbol_t symbol)
 {
-    lhs += s;
+    lhs += symbol;
 
     return lhs;
+}
+
+Set operator+(const Set::Symbol_t symbol, Set rhs)
+{
+    rhs += symbol;
+
+    return rhs;
 }
 
 Set operator-(Set lhs, const Set& rhs)
@@ -145,18 +156,16 @@ Set operator-(Set lhs, const Set& rhs)
     return lhs;
 }
 
-Set operator-(Set lhs, const Set::Symbol_t s)
+Set operator-(Set lhs, const Set::Symbol_t symbol)
 {
-    lhs -= s;
+    lhs -= symbol;
 
     return lhs;
 }
 
-Set operator+(const Set::Symbol_t s, Set rhs)
+const Set::Symbols_t& Set::symbols() const noexcept
 {
-    rhs += s;
-
-    return rhs;
+    return symbols_;
 }
 
 } // namespace munch::regex

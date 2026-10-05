@@ -2,354 +2,414 @@
 
 #include <gtest/gtest.h>
 
-#include <filesystem>
 #include <stdexcept>
+#include <tuple>
+#include <utility>
 
-#include "munch/nfa/tools/graphviz.hpp"
-
-using namespace munch;
 using namespace munch::regex;
-using namespace munch::nfa::tools;
 
-class Set_test : public testing::Test
+namespace
 {
-protected:
-    Set empty_set;
-    Set digits_set;
-    Set alpha_set;
-    Set alphanum_set;
-
-    void SetUp() override
-    {
-        digits_set = Set::digits();
-        alpha_set = Set::alpha();
-        alphanum_set = Set::alphanum();
-    }
-
-    void write_dot(const auto& nfa, const std::string& name) const
-    {
-        Graphviz::to_file(nfa, debug_path_ / (name + ".dot"));
-    }
-
-private:
-    std::filesystem::path debug_path_{std::string(SOURCE_DIR) + "/debug/"};
-};
-
-TEST_F(Set_test, Constructor_empty)
+/**
+ * @brief Returns the char holding a byte value.
+ * @param value The byte value, 0 to 255.
+ * @return The byte as a char.
+ */
+constexpr char byte(const unsigned value)
 {
+    return static_cast<char>(static_cast<unsigned char>(value));
+}
+
+} // namespace
+
+TEST(Set_test, A_default_set_is_empty)
+{
+    const Set empty_set{};
+
     EXPECT_TRUE(empty_set.symbols().empty());
 }
 
-TEST_F(Set_test, Constructor_initializer_list)
+TEST(Set_test, An_initializer_list_set_holds_its_symbols)
 {
-    const Set s{'a', 'b', 'c'};
-    EXPECT_EQ(s.symbols().size(), 3);
-    EXPECT_TRUE(s.symbols().contains('a'));
-    EXPECT_TRUE(s.symbols().contains('b'));
-    EXPECT_TRUE(s.symbols().contains('c'));
+    const Set set{'a', 'b', 'c'};
+
+    EXPECT_EQ(set.symbols().size(), 3U);
+    EXPECT_TRUE(set.symbols().contains('a'));
+    EXPECT_TRUE(set.symbols().contains('b'));
+    EXPECT_TRUE(set.symbols().contains('c'));
 }
 
-TEST_F(Set_test, Constructor_from_existing_symbols)
+TEST(Set_test, A_set_built_from_symbols_holds_exactly_them)
 {
     const Set::Symbols_t symbols{'a', 'b', 'c'};
-    const Set s{symbols};
 
-    EXPECT_EQ(s.symbols(), symbols);
+    const Set set{symbols};
+
+    EXPECT_EQ(set.symbols(), symbols);
 }
 
-TEST_F(Set_test, From_char)
+TEST(Set_test, From_a_symbol_holds_that_symbol_alone)
 {
-    const Set s{Set::from('x')};
-    EXPECT_EQ(s.symbols().size(), 1);
-    EXPECT_TRUE(s.symbols().contains('x'));
+    const Set set{Set::from('x')};
+
+    EXPECT_EQ(set.symbols().size(), 1U);
+    EXPECT_TRUE(set.symbols().contains('x'));
 }
 
-TEST_F(Set_test, From_chars)
+TEST(Set_test, From_a_list_holds_every_listed_symbol)
 {
-    const Set s{Set::from({'a', 'b', 'c'})};
-    EXPECT_EQ(s.symbols().size(), 3);
-    EXPECT_TRUE(s.symbols().contains('a'));
-    EXPECT_TRUE(s.symbols().contains('b'));
-    EXPECT_TRUE(s.symbols().contains('c'));
+    const Set set{Set::from({'a', 'b', 'c'})};
+
+    EXPECT_EQ(set.symbols().size(), 3U);
+    EXPECT_TRUE(set.symbols().contains('a'));
+    EXPECT_TRUE(set.symbols().contains('b'));
+    EXPECT_TRUE(set.symbols().contains('c'));
 }
 
-TEST_F(Set_test, From_range)
+TEST(Set_test, A_range_holds_both_ends_and_everything_between)
 {
-    const Set s{Set::range('a', 'c')};
-    EXPECT_EQ(s.symbols().size(), 3);
-    EXPECT_TRUE(s.symbols().contains('a'));
-    EXPECT_TRUE(s.symbols().contains('b'));
-    EXPECT_TRUE(s.symbols().contains('c'));
+    const Set set{Set::range('a', 'c')};
+
+    EXPECT_EQ(set.symbols().size(), 3U);
+    EXPECT_TRUE(set.symbols().contains('a'));
+    EXPECT_TRUE(set.symbols().contains('b'));
+    EXPECT_TRUE(set.symbols().contains('c'));
 }
 
-TEST_F(Set_test, Range_crossing_high_bit)
+TEST(Set_test, A_range_crosses_the_high_bit_in_unsigned_order)
 {
-    const auto low{static_cast<char>(static_cast<unsigned char>(0x7E))};
-    const auto high{static_cast<char>(static_cast<unsigned char>(0x81))};
-    const Set s{Set::range(low, high)};
-    EXPECT_EQ(s.symbols().size(), 4);
-    for (unsigned i{0x7E}; i <= 0x81; ++i)
+    const auto low{byte(0x7E)};
+
+    const auto high{byte(0x81)};
+
+    const Set set{Set::range(low, high)};
+
+    EXPECT_EQ(set.symbols().size(), 4U);
+
+    for (unsigned value{0x7E}; value <= 0x81; ++value)
     {
-        EXPECT_TRUE(s.symbols().contains(static_cast<char>(static_cast<unsigned char>(i))));
+        EXPECT_TRUE(set.symbols().contains(byte(value)));
     }
 }
 
-TEST_F(Set_test, Range_rejects_a_reversed_range)
+TEST(Set_test, A_reversed_range_throws)
 {
     // A single-symbol range is the boundary and must still be accepted.
-    EXPECT_EQ(Set::range('a', 'a').symbols().size(), 1);
+    EXPECT_EQ(Set::range('a', 'a').symbols().size(), 1U);
 
-    // One past it in the wrong direction is an error rather than an empty set: views::iota would be undefined here,
-    // and a silently empty result would hide the typo.
-    EXPECT_THROW((void)Set::range('9', '0'), std::invalid_argument);
-    EXPECT_THROW((void)Set::range('b', 'a'), std::invalid_argument);
+    // One past it in the wrong direction is an error rather than an empty set: views::iota would be undefined here, and
+    // a silently empty result would hide the typo.
+    EXPECT_THROW(std::ignore = Set::range('9', '0'), std::invalid_argument);
+    EXPECT_THROW(std::ignore = Set::range('b', 'a'), std::invalid_argument);
 
     // Ordering is by unsigned byte, so a high-bit symbol orders after an ASCII one rather than before it.
-    const auto high{static_cast<char>(static_cast<unsigned char>(0x80))};
+    const auto high{byte(0x80)};
 
-    EXPECT_NO_THROW((void)Set::range('a', high));
-    EXPECT_THROW((void)Set::range(high, 'a'), std::invalid_argument);
+    EXPECT_NO_THROW(std::ignore = Set::range('a', high));
+    EXPECT_THROW(std::ignore = Set::range(high, 'a'), std::invalid_argument);
 }
 
-TEST_F(Set_test, Range_ending_at_max_byte)
+TEST(Set_test, A_range_reaches_the_largest_byte)
 {
-    const auto low{static_cast<char>(static_cast<unsigned char>(0xFE))};
-    const auto high{static_cast<char>(static_cast<unsigned char>(0xFF))};
-    const Set s{Set::range(low, high)};
-    EXPECT_EQ(s.symbols().size(), 2);
-    EXPECT_TRUE(s.symbols().contains(static_cast<char>(static_cast<unsigned char>(0xFE))));
-    EXPECT_TRUE(s.symbols().contains(static_cast<char>(static_cast<unsigned char>(0xFF))));
+    const auto low{byte(0xFE)};
+
+    const auto high{byte(0xFF)};
+
+    const Set set{Set::range(low, high)};
+
+    EXPECT_EQ(set.symbols().size(), 2U);
+    EXPECT_TRUE(set.symbols().contains(low));
+    EXPECT_TRUE(set.symbols().contains(high));
 }
 
-TEST_F(Set_test, Digits)
+TEST(Set_test, Digits_are_the_ten_decimal_digits)
 {
-    EXPECT_EQ(digits_set.symbols().size(), 10);
-    for (char c{'0'}; c <= '9'; ++c)
+    const auto digits_set{Set::digits()};
+
+    EXPECT_EQ(digits_set.symbols().size(), 10U);
+
+    for (char symbol{'0'}; symbol <= '9'; ++symbol)
     {
-        EXPECT_TRUE(digits_set.symbols().contains(c));
+        EXPECT_TRUE(digits_set.symbols().contains(symbol));
     }
 }
 
-TEST_F(Set_test, Alpha)
+TEST(Set_test, Alpha_is_the_fifty_two_ascii_letters)
 {
-    EXPECT_EQ(alpha_set.symbols().size(), 52);
-    for (char c{'a'}; c <= 'z'; ++c)
-    {
-        EXPECT_TRUE(alpha_set.symbols().contains(c));
-    }
-    for (char c{'A'}; c <= 'Z'; ++c)
-    {
-        EXPECT_TRUE(alpha_set.symbols().contains(c));
-    }
-}
+    const auto alpha_set{Set::alpha()};
 
-TEST_F(Set_test, Alphanum)
-{
-    EXPECT_EQ(alphanum_set.symbols().size(), 62);
-    for (char c{'a'}; c <= 'z'; ++c)
+    EXPECT_EQ(alpha_set.symbols().size(), 52U);
+
+    for (char symbol{'a'}; symbol <= 'z'; ++symbol)
     {
-        EXPECT_TRUE(alphanum_set.symbols().contains(c));
+        EXPECT_TRUE(alpha_set.symbols().contains(symbol));
     }
-    for (char c{'A'}; c <= 'Z'; ++c)
+
+    for (char symbol{'A'}; symbol <= 'Z'; ++symbol)
     {
-        EXPECT_TRUE(alphanum_set.symbols().contains(c));
-    }
-    for (char c{'0'}; c <= '9'; ++c)
-    {
-        EXPECT_TRUE(alphanum_set.symbols().contains(c));
+        EXPECT_TRUE(alpha_set.symbols().contains(symbol));
     }
 }
 
-TEST_F(Set_test, Printable)
+TEST(Set_test, Alphanum_is_the_letters_and_the_digits)
 {
-    const Set s{Set::printable()};
-    EXPECT_EQ(s.symbols().size(), 95);
-    for (char c{' '}; c <= '~'; ++c)
+    const auto alphanum_set{Set::alphanum()};
+
+    EXPECT_EQ(alphanum_set.symbols().size(), 62U);
+
+    for (char symbol{'a'}; symbol <= 'z'; ++symbol)
     {
-        EXPECT_TRUE(s.symbols().contains(c));
+        EXPECT_TRUE(alphanum_set.symbols().contains(symbol));
+    }
+
+    for (char symbol{'A'}; symbol <= 'Z'; ++symbol)
+    {
+        EXPECT_TRUE(alphanum_set.symbols().contains(symbol));
+    }
+
+    for (char symbol{'0'}; symbol <= '9'; ++symbol)
+    {
+        EXPECT_TRUE(alphanum_set.symbols().contains(symbol));
     }
 }
 
-TEST_F(Set_test, All)
+TEST(Set_test, Printable_is_the_blank_through_the_tilde)
 {
-    const Set s{Set::all()};
-    EXPECT_EQ(s.symbols().size(), 256);
-    for (int i{0}; i <= 255; ++i)
+    const Set set{Set::printable()};
+
+    EXPECT_EQ(set.symbols().size(), 95U);
+
+    for (char symbol{' '}; symbol <= '~'; ++symbol)
     {
-        EXPECT_TRUE(s.symbols().contains(static_cast<char>(static_cast<unsigned char>(i))));
+        EXPECT_TRUE(set.symbols().contains(symbol));
     }
 }
 
-TEST_F(Set_test, Operator_plus_equal_set)
+TEST(Set_test, All_holds_every_byte)
 {
-    Set s{Set::from('x')};
-    s += Set::from('y');
-    EXPECT_EQ(s.symbols().size(), 2);
-    EXPECT_TRUE(s.symbols().contains('x'));
-    EXPECT_TRUE(s.symbols().contains('y'));
+    const Set set{Set::all()};
+
+    EXPECT_EQ(set.symbols().size(), 256U);
+
+    for (unsigned value{0}; value <= 255; ++value)
+    {
+        EXPECT_TRUE(set.symbols().contains(byte(value)));
+    }
 }
 
-TEST_F(Set_test, Operator_plus_equal_char)
+TEST(Set_test, Adding_a_set_adds_its_symbols)
 {
-    Set s{Set::from('x')};
-    s += 'y';
-    EXPECT_EQ(s.symbols().size(), 2);
-    EXPECT_TRUE(s.symbols().contains('x'));
-    EXPECT_TRUE(s.symbols().contains('y'));
+    Set set{Set::from('x')};
+
+    set += Set::from('y');
+
+    EXPECT_EQ(set.symbols().size(), 2U);
+    EXPECT_TRUE(set.symbols().contains('x'));
+    EXPECT_TRUE(set.symbols().contains('y'));
 }
 
-TEST_F(Set_test, Operator_plus_equal_initializer_list_chars)
+TEST(Set_test, Adding_a_symbol_adds_it)
 {
-    Set s{Set::from('x')};
-    s += {'y', 'z'};
-    EXPECT_EQ(s.symbols().size(), 3);
-    EXPECT_TRUE(s.symbols().contains('x'));
-    EXPECT_TRUE(s.symbols().contains('y'));
-    EXPECT_TRUE(s.symbols().contains('z'));
+    Set set{Set::from('x')};
+
+    set += 'y';
+
+    EXPECT_EQ(set.symbols().size(), 2U);
+    EXPECT_TRUE(set.symbols().contains('x'));
+    EXPECT_TRUE(set.symbols().contains('y'));
 }
 
-TEST_F(Set_test, Operator_plus_set)
+TEST(Set_test, Adding_a_list_adds_every_listed_symbol)
 {
-    const Set s1{Set::from('x')};
-    const Set s2{Set::from('y')};
-    const Set s{s1 + s2};
-    EXPECT_EQ(s.symbols().size(), 2);
-    EXPECT_TRUE(s.symbols().contains('x'));
-    EXPECT_TRUE(s.symbols().contains('y'));
+    Set set{Set::from('x')};
+
+    set += {'y', 'z'};
+
+    EXPECT_EQ(set.symbols().size(), 3U);
+    EXPECT_TRUE(set.symbols().contains('x'));
+    EXPECT_TRUE(set.symbols().contains('y'));
+    EXPECT_TRUE(set.symbols().contains('z'));
 }
 
-TEST_F(Set_test, Operator_plus_char)
+TEST(Set_test, The_sum_of_two_sets_is_their_union)
 {
-    const Set s{Set::from('x') + 'y'};
-    EXPECT_EQ(s.symbols().size(), 2);
-    EXPECT_TRUE(s.symbols().contains('x'));
-    EXPECT_TRUE(s.symbols().contains('y'));
+    const Set left{Set::from('x')};
+
+    const Set right{Set::from('y')};
+
+    const Set set{left + right};
+
+    EXPECT_EQ(set.symbols().size(), 2U);
+    EXPECT_TRUE(set.symbols().contains('x'));
+    EXPECT_TRUE(set.symbols().contains('y'));
 }
 
-TEST_F(Set_test, Operator_minus_equal_set)
+TEST(Set_test, A_set_plus_a_symbol_holds_both)
 {
-    Set s{Set::from({'a', 'b', 'c', 'd'})};
-    s -= Set::from({'b', 'c'});
-    EXPECT_EQ(s.symbols().size(), 2);
-    EXPECT_TRUE(s.symbols().contains('a'));
-    EXPECT_TRUE(s.symbols().contains('d'));
+    const Set set{Set::from('x') + 'y'};
+
+    EXPECT_EQ(set.symbols().size(), 2U);
+    EXPECT_TRUE(set.symbols().contains('x'));
+    EXPECT_TRUE(set.symbols().contains('y'));
 }
 
-TEST_F(Set_test, Operator_minus_equal_char)
+TEST(Set_test, Subtracting_a_set_removes_its_symbols)
 {
-    Set s{Set::from({'a', 'b', 'c'})};
-    s -= 'b';
-    EXPECT_EQ(s.symbols().size(), 2);
-    EXPECT_TRUE(s.symbols().contains('a'));
-    EXPECT_TRUE(s.symbols().contains('c'));
+    Set set{Set::from({'a', 'b', 'c', 'd'})};
+
+    set -= Set::from({'b', 'c'});
+
+    EXPECT_EQ(set.symbols().size(), 2U);
+    EXPECT_TRUE(set.symbols().contains('a'));
+    EXPECT_TRUE(set.symbols().contains('d'));
 }
 
-TEST_F(Set_test, Operator_minus_equal_initializer_list_chars)
+TEST(Set_test, Subtracting_a_symbol_removes_it)
 {
-    Set s{Set::from({'a', 'b', 'c', 'd'})};
-    s -= {'b', 'c'};
-    EXPECT_EQ(s.symbols().size(), 2);
-    EXPECT_TRUE(s.symbols().contains('a'));
-    EXPECT_TRUE(s.symbols().contains('d'));
+    Set set{Set::from({'a', 'b', 'c'})};
+
+    set -= 'b';
+
+    EXPECT_EQ(set.symbols().size(), 2U);
+    EXPECT_TRUE(set.symbols().contains('a'));
+    EXPECT_TRUE(set.symbols().contains('c'));
 }
 
-TEST_F(Set_test, Operator_minus_set)
+TEST(Set_test, Subtracting_a_list_removes_every_listed_symbol)
 {
-    const Set s{Set::from({'a', 'b', 'c', 'd'})};
-    const Set result{s - Set::from({'b', 'c'})};
-    EXPECT_EQ(result.symbols().size(), 2);
-    EXPECT_TRUE(result.symbols().contains('a'));
-    EXPECT_TRUE(result.symbols().contains('d'));
+    Set set{Set::from({'a', 'b', 'c', 'd'})};
+
+    set -= {'b', 'c'};
+
+    EXPECT_EQ(set.symbols().size(), 2U);
+    EXPECT_TRUE(set.symbols().contains('a'));
+    EXPECT_TRUE(set.symbols().contains('d'));
 }
 
-TEST_F(Set_test, Operator_minus_char)
+TEST(Set_test, The_difference_of_two_sets_keeps_the_left_symbols_the_right_lacks)
 {
-    const Set s{Set::from({'a', 'b', 'c'})};
-    const Set result{s - 'b'};
-    EXPECT_EQ(result.symbols().size(), 2);
-    EXPECT_TRUE(result.symbols().contains('a'));
-    EXPECT_TRUE(result.symbols().contains('c'));
+    const Set set{Set::from({'a', 'b', 'c', 'd'})};
+
+    const Set difference{set - Set::from({'b', 'c'})};
+
+    EXPECT_EQ(difference.symbols().size(), 2U);
+    EXPECT_TRUE(difference.symbols().contains('a'));
+    EXPECT_TRUE(difference.symbols().contains('d'));
 }
 
-TEST_F(Set_test, Operator_plus_commute_char_set)
+TEST(Set_test, A_set_minus_a_symbol_lacks_it)
 {
-    const Set s{'x' + Set::from('y')};
-    EXPECT_EQ(s.symbols().size(), 2);
-    EXPECT_TRUE(s.symbols().contains('x'));
-    EXPECT_TRUE(s.symbols().contains('y'));
+    const Set set{Set::from({'a', 'b', 'c'})};
+
+    const Set difference{set - 'b'};
+
+    EXPECT_EQ(difference.symbols().size(), 2U);
+    EXPECT_TRUE(difference.symbols().contains('a'));
+    EXPECT_TRUE(difference.symbols().contains('c'));
 }
 
-TEST_F(Set_test, Operator_plus_overlapping)
+TEST(Set_test, A_symbol_plus_a_set_holds_both)
 {
-    const Set s1{Set::from({'a', 'b', 'c'})};
-    const Set s2{Set::from({'b', 'c', 'd'})};
-    const Set s{s1 + s2};
-    EXPECT_EQ(s.symbols().size(), 4);
-    EXPECT_TRUE(s.symbols().contains('a'));
-    EXPECT_TRUE(s.symbols().contains('b'));
-    EXPECT_TRUE(s.symbols().contains('c'));
-    EXPECT_TRUE(s.symbols().contains('d'));
+    const Set set{'x' + Set::from('y')};
+
+    EXPECT_EQ(set.symbols().size(), 2U);
+    EXPECT_TRUE(set.symbols().contains('x'));
+    EXPECT_TRUE(set.symbols().contains('y'));
 }
 
-TEST_F(Set_test, Operator_minus_non_existing)
+TEST(Set_test, The_union_of_overlapping_sets_holds_each_symbol_once)
 {
-    Set s{'a', 'b', 'c'};
-    s -= 'd'; // 'd' is not in the set
-    EXPECT_EQ(s.symbols().size(), 3);
-    EXPECT_TRUE(s.symbols().contains('a'));
-    EXPECT_TRUE(s.symbols().contains('b'));
-    EXPECT_TRUE(s.symbols().contains('c'));
+    const Set left{Set::from({'a', 'b', 'c'})};
+
+    const Set right{Set::from({'b', 'c', 'd'})};
+
+    const Set set{left + right};
+
+    EXPECT_EQ(set.symbols().size(), 4U);
+    EXPECT_TRUE(set.symbols().contains('a'));
+    EXPECT_TRUE(set.symbols().contains('b'));
+    EXPECT_TRUE(set.symbols().contains('c'));
+    EXPECT_TRUE(set.symbols().contains('d'));
 }
 
-TEST_F(Set_test, Operator_minus_all_elements)
+TEST(Set_test, Subtracting_an_absent_symbol_changes_nothing)
 {
-    Set s{'a', 'b', 'c'};
-    s -= Set::from({'a', 'b', 'c'});
-    EXPECT_TRUE(s.symbols().empty());
+    Set set{'a', 'b', 'c'};
+
+    // 'd' is not in the set.
+    set -= 'd';
+
+    EXPECT_EQ(set.symbols().size(), 3U);
+    EXPECT_TRUE(set.symbols().contains('a'));
+    EXPECT_TRUE(set.symbols().contains('b'));
+    EXPECT_TRUE(set.symbols().contains('c'));
 }
 
-TEST_F(Set_test, Large_set)
+TEST(Set_test, Subtracting_every_symbol_leaves_the_set_empty)
 {
-    Set s{Set::all()};
-    EXPECT_EQ(s.symbols().size(), 256);
-    s -= Set::printable();
-    EXPECT_EQ(s.symbols().size(), 161); // 256 - 95 = 161
+    Set set{'a', 'b', 'c'};
+
+    set -= Set::from({'a', 'b', 'c'});
+
+    EXPECT_TRUE(set.symbols().empty());
 }
 
-TEST_F(Set_test, Copy_constructor)
+TEST(Set_test, Every_byte_less_the_printable_ones_leaves_one_hundred_sixty_one)
 {
-    const Set s1{Set::from({'a', 'b', 'c'})};
-    const Set s2(s1);
-    EXPECT_EQ(s1.symbols(), s2.symbols());
+    Set set{Set::all()};
+
+    EXPECT_EQ(set.symbols().size(), 256U);
+
+    set -= Set::printable();
+
+    // 256 bytes less the 95 printable ones.
+    EXPECT_EQ(set.symbols().size(), 161U);
 }
 
-TEST_F(Set_test, Copy_assignment)
+TEST(Set_test, A_copy_holds_the_same_symbols)
 {
-    const Set s1{Set::from({'a', 'b', 'c'})};
-    Set s2;
-    s2 = s1;
-    EXPECT_EQ(s1.symbols(), s2.symbols());
+    const Set original{Set::from({'a', 'b', 'c'})};
+
+    const Set copy{original};
+
+    EXPECT_EQ(original.symbols(), copy.symbols());
 }
 
-TEST_F(Set_test, Move_constructor)
+TEST(Set_test, A_copy_assigned_holds_the_same_symbols)
 {
-    Set s1{'a', 'b', 'c'};
-    const Set s2(std::move(s1));
-    EXPECT_EQ(s2.symbols().size(), 3);
+    const Set original{Set::from({'a', 'b', 'c'})};
+
+    Set copy{};
+
+    copy = original;
+
+    EXPECT_EQ(original.symbols(), copy.symbols());
 }
 
-TEST_F(Set_test, Move_assignment)
+TEST(Set_test, A_moved_set_keeps_the_symbols)
 {
-    Set s1{'a', 'b', 'c'};
-    Set s2;
-    s2 = std::move(s1);
-    EXPECT_EQ(s2.symbols().size(), 3);
+    Set source{'a', 'b', 'c'};
+
+    const Set moved{std::move(source)};
+
+    EXPECT_EQ(moved.symbols().size(), 3U);
 }
 
-TEST_F(Set_test, Self_subtraction_empties_the_set)
+TEST(Set_test, A_move_assigned_set_keeps_the_symbols)
 {
-    // Subtracting a set from itself used to erase the elements being iterated, a use-after-free the sanitizer
-    // flagged; the answer is defined as the empty set and must not touch a dangling iterator.
+    Set source{'a', 'b', 'c'};
+
+    Set moved{};
+
+    moved = std::move(source);
+
+    EXPECT_EQ(moved.symbols().size(), 3U);
+}
+
+TEST(Set_test, Self_subtraction_empties_the_set)
+{
+    // Subtracting a set from itself must not erase the elements being iterated; the answer is defined as the empty set
+    // and touches no dangling iterator.
     Set set{'a', 'b', 'c'};
 
     set -= set;

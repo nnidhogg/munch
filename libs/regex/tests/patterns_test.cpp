@@ -2,29 +2,25 @@
 
 #include <gtest/gtest.h>
 
-#include <filesystem>
+#include <optional>
 
 #include "munch/nfa/nfa.hpp"
 #include "munch/nfa/simulator.hpp"
-#include "munch/nfa/tools/graphviz.hpp"
 
 using namespace munch::nfa;
-using namespace munch::nfa::tools;
 using namespace munch::regex;
 
-class Patterns_test : public testing::Test
-{
-protected:
-    void write_dot(const auto& nfa, const std::string& name) const
-    {
-        Graphviz::to_file(nfa, debug_path_ / (name + ".dot"));
-    }
+/**
+ * @brief A match the NFA simulator reports.
+ */
+using Match = Simulator::Match;
 
-private:
-    std::filesystem::path debug_path_{std::string(SOURCE_DIR) + "/debug/"};
-};
+/**
+ * @brief The match of a scan that matched nothing.
+ */
+const Match no_match{.token = std::nullopt, .length = 0};
 
-TEST_F(Patterns_test, Identifier)
+TEST(Patterns_test, An_identifier_is_a_letter_or_underscore_then_letters_digits_and_underscores)
 {
     const auto regex{patterns::identifier()};
 
@@ -32,19 +28,17 @@ TEST_F(Patterns_test, Identifier)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Match = Simulator::Match;
+    EXPECT_EQ(Simulator::run(nfa, "x"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "_private"), (Match{.token = token, .length = 8}));
+    EXPECT_EQ(Simulator::run(nfa, "counter2"), (Match{.token = token, .length = 8}));
+    EXPECT_EQ(Simulator::run(nfa, "snake_case_name"), (Match{.token = token, .length = 15}));
+    EXPECT_EQ(Simulator::run(nfa, "x + y"), (Match{.token = token, .length = 1}));
 
-    EXPECT_EQ(Simulator::run(nfa, "x"), Match(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "_private"), Match(token, 8));
-    EXPECT_EQ(Simulator::run(nfa, "counter2"), Match(token, 8));
-    EXPECT_EQ(Simulator::run(nfa, "snake_case_name"), Match(token, 15));
-    EXPECT_EQ(Simulator::run(nfa, "x + y"), Match(token, 1));
-
-    EXPECT_EQ(Simulator::run(nfa, "2x"), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "2x"), no_match);
+    EXPECT_EQ(Simulator::run(nfa, ""), no_match);
 }
 
-TEST_F(Patterns_test, Decimal_integer)
+TEST(Patterns_test, A_decimal_integer_is_a_run_of_digits)
 {
     const auto regex{patterns::decimal_integer()};
 
@@ -52,20 +46,18 @@ TEST_F(Patterns_test, Decimal_integer)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Match = Simulator::Match;
-
-    EXPECT_EQ(Simulator::run(nfa, "0"), Match(token, 1));
-    EXPECT_EQ(Simulator::run(nfa, "42"), Match(token, 2));
-    EXPECT_EQ(Simulator::run(nfa, "1234567890"), Match(token, 10));
-    EXPECT_EQ(Simulator::run(nfa, "42 apples"), Match(token, 2));
+    EXPECT_EQ(Simulator::run(nfa, "0"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "42"), (Match{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "1234567890"), (Match{.token = token, .length = 10}));
+    EXPECT_EQ(Simulator::run(nfa, "42 apples"), (Match{.token = token, .length = 2}));
 
     // No sign: that's a parser-level unary operator, not part of the lexeme.
-    EXPECT_EQ(Simulator::run(nfa, "-42"), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, ""), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "x"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, "-42"), no_match);
+    EXPECT_EQ(Simulator::run(nfa, ""), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "x"), no_match);
 }
 
-TEST_F(Patterns_test, Decimal_float)
+TEST(Patterns_test, A_decimal_float_is_digits_a_dot_and_digits)
 {
     const auto regex{patterns::decimal_float()};
 
@@ -73,16 +65,14 @@ TEST_F(Patterns_test, Decimal_float)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    using Match = Simulator::Match;
-
-    EXPECT_EQ(Simulator::run(nfa, "3.5"), Match(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "0.0"), Match(token, 3));
-    EXPECT_EQ(Simulator::run(nfa, "123.456"), Match(token, 7));
-    EXPECT_EQ(Simulator::run(nfa, "3.5 + 1"), Match(token, 3));
+    EXPECT_EQ(Simulator::run(nfa, "3.5"), (Match{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "0.0"), (Match{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "123.456"), (Match{.token = token, .length = 7}));
+    EXPECT_EQ(Simulator::run(nfa, "3.5 + 1"), (Match{.token = token, .length = 3}));
 
     // No leading/trailing-dot-only forms, no sign, no exponent.
-    EXPECT_EQ(Simulator::run(nfa, ".5"), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "5."), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "5"), Match(std::nullopt, 0));
-    EXPECT_EQ(Simulator::run(nfa, "-3.5"), Match(std::nullopt, 0));
+    EXPECT_EQ(Simulator::run(nfa, ".5"), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "5."), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "5"), no_match);
+    EXPECT_EQ(Simulator::run(nfa, "-3.5"), no_match);
 }
