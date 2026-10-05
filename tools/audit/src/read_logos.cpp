@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -21,9 +23,6 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements read_logos.hpp: the reading of one enum deriving Logos, its generics, its `#[logos(...)]` options and its
-// variants, each with the rules its attributes define, and a rule's compilation are private to this unit.
-
 /**
  * @brief One rule a variant's attribute defines: what the attribute says, and whether the pattern is a token's or a
  *        regex's.
@@ -33,12 +32,12 @@ struct Variant_rule
     /**
      * @brief What the `#[token(...)]` or `#[regex(...)]` says.
      */
-    Definition definition;
+    Definition definition{};
 
     /**
      * @brief What the pattern is to logos, a token matched as it stands or a regex.
      */
-    Pattern_kind kind;
+    Pattern_kind kind{};
 };
 
 /**
@@ -50,17 +49,17 @@ struct Logos_options
     /**
      * @brief The subpatterns, by name.
      */
-    Subpatterns_t subpatterns;
+    Subpatterns_t subpatterns{};
 
     /**
      * @brief The skip definitions, in file order.
      */
-    std::vector<Definition> skips;
+    std::vector<Definition> skips{};
 
     /**
      * @brief The names the callbacks are read under.
      */
-    Names_t names;
+    Names_t names{};
 };
 
 /**
@@ -72,16 +71,17 @@ struct Read_variant
     /**
      * @brief The variant, its payload's type resolved.
      */
-    Variant variant;
+    Variant variant{};
 
     /**
      * @brief The rules, in the order the attributes stand.
      */
-    std::vector<Variant_rule> rules;
+    std::vector<Variant_rule> rules{};
 };
 
 /**
- * @brief The rules a variant's attributes define, one per `#[token(...)]` and `#[regex(...)]`, in the order they stand.
+ * @brief Returns the rules a variant's attributes define, one per `#[token(...)]` and `#[regex(...)]`, in the order
+ *        they stand.
  * @param attributes The variant's attributes.
  * @param cursor The cursor over the file the attributes' offsets index.
  * @return The rules.
@@ -91,24 +91,28 @@ struct Read_variant
 [[nodiscard]] std::vector<Variant_rule> variant_rules(
         const std::vector<Attribute>& attributes, const Rust_cursor& cursor)
 {
-    std::vector<Variant_rule> rules;
+    std::vector<Variant_rule> rules{};
 
-    for (const auto& attribute : attributes)
+    for (const auto& [path, begin, end, delimited, line, assumed] : attributes)
     {
-        if (attribute.path == "error")
+        if (path == "error")
         {
             throw Spec_error{
-                    "logos 0.15.1 refuses #[error]: Since 0.13 Logos no longer requires the #[error] variant",
-                    attribute.line};
+                    "logos 0.15.1 refuses #[error]: Since 0.13 Logos no longer requires the #[error] variant", line};
         }
 
-        if (attribute.path == "token" || attribute.path == "regex")
+        if (path != "token" && path != "regex")
         {
-            rules.push_back(
-                    {.definition =
-                             read_definition(cursor.inside(attribute.begin, attribute.end), attribute.path, false),
-                     .kind = attribute.path == "token" ? Pattern_kind::token : Pattern_kind::regex});
+            continue;
         }
+
+        const auto content{cursor.inside(begin, end)};
+
+        auto definition{read_definition(content, path, false)};
+
+        const auto kind{path == "token" ? Pattern_kind::token : Pattern_kind::regex};
+
+        rules.push_back({.definition = std::move(definition), .kind = kind});
     }
 
     return rules;
@@ -125,7 +129,7 @@ struct Read_variant
  */
 [[nodiscard]] std::vector<std::string> read_generics(Rust_cursor& cursor, const std::size_t line)
 {
-    std::vector<std::string> type_parameters;
+    std::vector<std::string> type_parameters{};
 
     if (cursor.peek() != '<')
     {
@@ -138,9 +142,10 @@ struct Read_variant
 
     std::size_t lifetimes{0};
 
+    auto parameter{cursor.group_inside(open)};
+
     // One parameter up to each comma outside nested generics: a lifetime, `const N: usize`, or a type.
-    for (auto parameter{cursor.inside(open + 1, cursor.offset() - 1)}; parameter.skip_trivia(), !parameter.done();
-         std::ignore = parameter.accept(','))
+    for (parameter.skip_trivia(); !parameter.done(); parameter.skip_trivia())
     {
         const auto first{parameter.word()};
 
@@ -164,17 +169,9 @@ struct Read_variant
             type_parameters.emplace_back(first);
         }
 
-        while (!parameter.done() && parameter.peek() != ',')
-        {
-            if (parameter.peek() == '<')
-            {
-                skip_generics(parameter);
-            }
-            else
-            {
-                parameter.skip_token();
-            }
-        }
+        skip_list_item(parameter);
+
+        std::ignore = parameter.accept(',');
     }
 
     return type_parameters;
@@ -197,30 +194,28 @@ struct Read_variant
 {
     Logos_options options{.subpatterns = {}, .skips = {}, .names = names};
 
-    for (const auto& attribute : attributes)
+    for (const auto& [path, begin, end, delimited, line, assumed] : attributes)
     {
-        if (attribute.path != "logos")
+        if (path != "logos")
         {
             continue;
         }
 
-        if (!attribute.delimited)
+        if (!delimited)
         {
-            throw Spec_error{
-                    "logos 0.15.1 refuses a #[logos] without its parentheses: Expected #[logos(...)]", attribute.line};
+            throw Spec_error{"logos 0.15.1 refuses a #[logos] without its parentheses: Expected #[logos(...)]", line};
         }
 
-        read_logos_attribute(
-                cursor.inside(attribute.begin, attribute.end), spec, options.subpatterns, options.skips, options.names,
-                module);
+        const auto content{cursor.inside(begin, end)};
+
+        read_logos_attribute(content, spec, options.subpatterns, options.skips, options.names, module);
     }
 
     return options;
 }
 
 /**
- * @brief Holds the enum's type parameters to the options: each `type T = ...` must name a parameter and each parameter
- *        must have one.
+ * @brief Refuses a `type T = ...` that names no parameter of the enum, or a parameter that has none.
  * @param options The scanner's options.
  * @param type_parameters The enum's type parameters.
  * @param line The line of the derive naming Logos, for refusals.
@@ -232,25 +227,32 @@ void check_type_parameters(
 {
     for (const auto& option : options)
     {
-        if (option.starts_with("type ") &&
-            !std::ranges::contains(type_parameters, option.substr(5, option.find('=') - 5)))
+        if (!option.starts_with(type_key))
         {
-            throw Spec_error{
-                    "logos 0.15.1 refuses the assignment: " + option.substr(5, option.find('=') - 5) +
-                            " is not a declared type parameter",
-                    line};
+            continue;
+        }
+
+        const auto parameter{option.substr(type_key.size(), option.find('=') - type_key.size())};
+
+        if (!std::ranges::contains(type_parameters, parameter))
+        {
+            const auto message{
+                    std::format("logos 0.15.1 refuses the assignment: {} is not a declared type parameter", parameter)};
+
+            throw Spec_error{message, line};
         }
     }
 
     for (const auto& parameter : type_parameters)
     {
-        if (!option_given(options, "type " + parameter))
+        if (!option_given(options, std::format("{}{}", type_key, parameter)))
         {
-            throw Spec_error{
-                    "logos 0.15.1 refuses the enum: Generic type parameter without a concrete type; define a "
-                    "concrete type Logos can use: #[logos(type " +
-                            parameter + " = Type)]",
-                    line};
+            const auto message{std::format(
+                    "logos 0.15.1 refuses the enum: Generic type parameter without a concrete type; define a concrete "
+                    "type Logos can use: #[logos(type {} = Type)]",
+                    parameter)};
+
+            throw Spec_error{message, line};
         }
     }
 }
@@ -270,7 +272,7 @@ void check_type_parameters(
 [[nodiscard]] std::optional<Read_variant> read_variant(
         Rust_cursor& cursor, std::vector<std::string>& options, const Names_t& names, const std::string_view module)
 {
-    std::vector<Attribute> attributes;
+    std::vector<Attribute> attributes{};
 
     read_attributes(cursor, attributes);
 
@@ -281,7 +283,12 @@ void check_type_parameters(
 
     const auto stands{stands_by_form(attributes, cursor)};
 
-    auto rules{stands ? variant_rules(attributes, cursor) : std::vector<Variant_rule>{}};
+    std::vector<Variant_rule> rules{};
+
+    if (stands)
+    {
+        rules = variant_rules(attributes, cursor);
+    }
 
     Variant variant{.name = std::string{cursor.word()}, .payload = {}};
 
@@ -296,7 +303,9 @@ void check_type_parameters(
     {
         if (stands)
         {
-            variant.payload = canonical_type(names, variant_payload(cursor), module, Namespace::type);
+            const auto payload{variant_payload(cursor)};
+
+            variant.payload = canonical_type(names, payload, module, Namespace::type);
         }
         else
         {
@@ -308,17 +317,14 @@ void check_type_parameters(
 
     if (cursor.accept('='))
     {
-        while (!cursor.done() && cursor.peek() != ',' && cursor.peek() != '}')
-        {
-            cursor.skip_token();
-        }
+        skip_until(cursor, ",}");
     }
 
     cursor.skip_trivia();
 
     if (cursor.peek() != '}')
     {
-        cursor.expect(',', "',' or '}' after the variant '" + variant.name + "'");
+        cursor.expect(',', std::format("',' or '}}' after the variant '{}'", variant.name));
     }
 
     if (!stands)
@@ -345,19 +351,22 @@ void add_rule(
         Lexer_spec& spec, const Definition& definition, const Pattern_kind kind, const std::optional<Variant>& variant,
         const Subpatterns_t& subpatterns, const Enum_context& context)
 {
-    const auto [expression, computed]{
-            compile(definition.literal, kind, definition.folding, subpatterns, definition.line)};
+    const auto& [literal, callback, priority, folding, line]{definition};
 
-    const auto emitted{Callback_reader{context, variant, definition.callback, definition.line}.token()};
+    const auto [expression, computed]{compile(literal, kind, folding, subpatterns, line)};
+
+    const Callback_reader reader{context, variant, callback, line};
+
+    const auto emitted{reader.token()};
 
     spec.rules.push_back(
-            {.pattern = definition.literal.written,
+            {.pattern = literal.written,
              .expression = expression,
              .conditions = {},
-             .action = definition.callback,
+             .action = callback,
              .token = emitted,
-             .priority = definition.priority.value_or(computed),
-             .line = definition.line});
+             .priority = priority.value_or(computed),
+             .line = line});
 }
 
 /**
@@ -378,13 +387,17 @@ void add_rule(
         Rust_cursor& cursor, const std::vector<Attribute>& attributes, const std::size_t line, const Items& items,
         const std::string_view module)
 {
-    Lexer_spec spec;
+    Lexer_spec spec{};
 
     spec.line = line;
 
     // Which language the classes were read as: `\d`, `\s` and `\w` are a Unicode version's, so the account of the
     // scanner names the one this reading modelled, the crate's own.
-    spec.options.emplace_back("unicode-classes=" + std::string{unicode_classes_version()});
+    const auto version{unicode_classes_version()};
+
+    const auto option{std::format("unicode-classes={}", version)};
+
+    spec.options.push_back(option);
 
     // An enum under a `cfg` false by its form was passed over with the items and is no scanner; one under a predicate
     // the build alone decides is read as standing, and the options say so.
@@ -406,10 +419,7 @@ void add_rule(
 
     const auto type_parameters{read_generics(cursor, line)};
 
-    while (!cursor.done() && cursor.peek() != '{')
-    {
-        cursor.skip_token();
-    }
+    skip_until(cursor, "{");
 
     cursor.expect('{', "'{' to open the enum");
 
@@ -417,7 +427,7 @@ void add_rule(
 
     check_type_parameters(spec.options, type_parameters, line);
 
-    std::vector<Read_variant> variants;
+    std::vector<Read_variant> variants{};
 
     for (cursor.skip_trivia(); !cursor.accept('}'); cursor.skip_trivia())
     {
@@ -432,12 +442,11 @@ void add_rule(
         }
     }
 
-    std::vector<std::string> variant_names;
+    const auto name_of{[](const Read_variant& read) { return read.variant.name; }};
 
-    for (const auto& [variant, rules] : variants)
-    {
-        variant_names.push_back(variant.name);
-    }
+    std::vector<std::string> variant_names{};
+
+    std::ranges::transform(variants, std::back_inserter(variant_names), name_of);
 
     const Enum_context context{
             .name = enum_name,
@@ -470,7 +479,7 @@ std::vector<Lexer_spec> read_logos(const std::string_view source)
     // callback may name a function defined after the enum, and a name the file binds in the enum's scope.
     const auto items{collect_items(source)};
 
-    std::vector<Lexer_spec> lexers;
+    std::vector<Lexer_spec> lexers{};
 
     for (const auto& [offset, attributes, line, scope] : items.scanners)
     {

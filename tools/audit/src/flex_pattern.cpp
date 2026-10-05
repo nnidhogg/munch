@@ -14,8 +14,35 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements flex_pattern.hpp: the states of a pattern the scans walk, the step between them and the length of a POSIX
-// class inside a bracket are private to this unit.
+/**
+ * @brief What opens a POSIX class inside a bracket, `[:alpha:]`.
+ */
+constexpr std::string_view class_opener{"[:"};
+
+/**
+ * @brief What opens a negated POSIX class, `[:^alpha:]`.
+ */
+constexpr std::string_view negated_class_opener{"[:^"};
+
+/**
+ * @brief What closes a POSIX class.
+ */
+constexpr std::string_view class_closer{":]"};
+
+/**
+ * @brief What opens a flag group, `(?i:...)`.
+ */
+constexpr std::string_view group_opener{"(?"};
+
+/**
+ * @brief What opens a hex escape, `\x41`, whose digits follow it.
+ */
+constexpr std::string_view hex_escape_opener{R"(\x)"};
+
+/**
+ * @brief The base an octal escape writes its number in.
+ */
+constexpr int octal_base{8};
 
 /**
  * @brief Where the scanner of a rule's pattern stands, which decides what a `]` is and what ends the pattern.
@@ -49,8 +76,8 @@ enum class Pattern_at : std::uint8_t
 };
 
 /**
- * @brief The length of the POSIX class standing at an index inside a bracket: `[:`, an optional negating `^`, one or
- *        more letters and `:]`, which is the only shape flex lexes as a class, its CCL_EXPR.
+ * @brief Returns the length of the POSIX class standing at an index inside a bracket: `[:`, an optional negating `^`,
+ *        one or more letters and `:]`, which is the only shape flex lexes as a class, its CCL_EXPR.
  *
  * A `[:` of any other shape leaves the `[` an ordinary member, which is how flex reads `[[:al]pha:]` as the bracket
  * `[[:al]` and the text `pha:]` after it, and `[[:alpha]]` as the bracket `[[:alpha]` and a literal `]`.
@@ -60,12 +87,14 @@ enum class Pattern_at : std::uint8_t
  */
 [[nodiscard]] std::size_t class_length(const std::string_view line, const std::size_t at) noexcept
 {
-    if (!line.substr(at).starts_with("[:"))
+    const auto rest{line.substr(at)};
+
+    if (!rest.starts_with(class_opener))
     {
         return 0;
     }
 
-    auto past{at + (line.substr(at).starts_with("[:^") ? 3U : 2U)};
+    auto past{at + (rest.starts_with(negated_class_opener) ? negated_class_opener.size() : class_opener.size())};
 
     const auto name{past};
 
@@ -74,15 +103,15 @@ enum class Pattern_at : std::uint8_t
         ++past;
     }
 
-    return past > name && line.substr(past).starts_with(":]") ? past + 2 - at : 0;
+    return past > name && line.substr(past).starts_with(class_closer) ? past + class_closer.size() - at : 0;
 }
 
 /**
- * @brief Where the scanner of a pattern stands after the byte at an index, as flex lexes a pattern: an escape carries
- *        the byte after it and uses up a bracket's first position; a quote opens text only outside a bracket, where
- *        inside one it is a member, and the text runs to the next quote; a `[` outside opens a bracket, a `^` just past
- *        its `[` negates it, and a `]` past its first member closes it; a `[:class:]` inside one is one token whose `]`
- *        is no close.
+ * @brief Returns where the scanner of a pattern stands after the byte at an index, as flex lexes a pattern: an escape
+ *        carries the byte after it and uses up a bracket's first position; a quote opens text only outside a bracket,
+ *        where inside one it is a member, and the text runs to the next quote; a `[` outside opens a bracket, a `^`
+ *        just past its `[` negates it, and a `]` past its first member closes it; a `[:class:]` inside one is one token
+ *        whose `]` is no close.
  * @param state Where the scanner stands before the byte.
  * @param text The pattern or rule line.
  * @param at The index of the byte; left at the last byte the step takes, the escaped byte or the class's `]`.
@@ -106,7 +135,12 @@ enum class Pattern_at : std::uint8_t
 
     if (state == Pattern_at::pattern)
     {
-        return byte == '"' ? Pattern_at::quoted : byte == '[' ? Pattern_at::opened : state;
+        if (byte == '"')
+        {
+            return Pattern_at::quoted;
+        }
+
+        return byte == '[' ? Pattern_at::opened : state;
     }
 
     if (byte == ']' && state == Pattern_at::bracket)
@@ -127,6 +161,27 @@ enum class Pattern_at : std::uint8_t
     return Pattern_at::bracket;
 }
 
+/**
+ * @brief Returns whether a byte is a digit in the base an escape writes its number in.
+ * @param byte The byte.
+ * @param base hex_base or octal_base.
+ * @return True for a hex digit in the hex base, and for 0 to 7 in the octal base.
+ */
+[[nodiscard]] constexpr bool is_digit_in(const char byte, const int base) noexcept
+{
+    return base == hex_base ? is_hex_digit(byte) : is_octal_digit(byte);
+}
+
+/**
+ * @brief Returns a byte spelled as a hex escape, which is text whatever the file's encoding.
+ * @param byte The byte.
+ * @return `\x` and the byte's two hex digits, in capitals.
+ */
+[[nodiscard]] std::string hex_spelling(const unsigned char byte)
+{
+    return std::format(R"(\x{:02X})", byte);
+}
+
 } // namespace
 
 std::size_t pattern_length(const std::string_view line, const std::size_t number)
@@ -145,16 +200,17 @@ std::size_t pattern_length(const std::string_view line, const std::size_t number
 
     if (state != Pattern_at::pattern)
     {
-        throw Spec_error{
+        const auto left_open{
                 state == Pattern_at::quoted ? "a quote is left open in the pattern" :
-                                              "a bracket is left open in the pattern",
-                number};
+                                              "a bracket is left open in the pattern"};
+
+        throw Spec_error{left_open, number};
     }
 
     return line.size();
 }
 
-std::optional<std::string> negated_class(const std::string_view pattern) noexcept
+std::optional<std::string> negated_class(const std::string_view pattern)
 {
     // A quote opens text only outside a bracket, where inside one it is a member, `[^"[:^print:]]` holding the quote
     // and then the class.
@@ -163,7 +219,8 @@ std::optional<std::string> negated_class(const std::string_view pattern) noexcep
     for (std::size_t at{0}; at < pattern.size(); ++at)
     {
         const auto negating{
-                state != Pattern_at::pattern && state != Pattern_at::quoted && pattern.substr(at).starts_with("[:^")};
+                state != Pattern_at::pattern && state != Pattern_at::quoted &&
+                pattern.substr(at).starts_with(negated_class_opener)};
 
         if (const auto length{negating ? class_length(pattern, at) : 0UZ}; length > 0)
         {
@@ -178,69 +235,120 @@ std::optional<std::string> negated_class(const std::string_view pattern) noexcep
 
 std::string negated_class_refusal(const std::string_view negated)
 {
-    return "holds " + std::string{negated} +
-           ", which flex fills under the locale it runs under, dropping the bytes that locale counts in the class "
-           "beside the ASCII ones, which the file does not decide";
+    return std::format(
+            "holds {}, which flex fills under the locale it runs under, dropping the bytes that locale counts in the "
+            "class beside the ASCII ones, which the file does not decide",
+            negated);
 }
 
-std::optional<std::string> folding_group(const std::string_view pattern) noexcept
+std::optional<std::string> folding_group(const std::string_view pattern)
 {
+    // Flags apply in order, a `-` turning off every flag after it, so `(?i-i:` and `(?-ii:` fold nothing.
+    const auto folding_opening{[pattern](const std::size_t at) -> std::optional<std::string> {
+        auto on{true};
+
+        auto folds{false};
+
+        for (auto flag{at + group_opener.size()}; flag < pattern.size(); ++flag)
+        {
+            const auto letter{pattern[flag]};
+
+            if (letter == ':' && !folds)
+            {
+                return std::nullopt;
+            }
+
+            if (letter == ':')
+            {
+                return std::string{pattern.substr(at, flag - at + 1)};
+            }
+
+            if (letter == '-')
+            {
+                on = false;
+
+                continue;
+            }
+
+            if (letter == 'i')
+            {
+                folds = on;
+
+                continue;
+            }
+
+            if (letter != 's' && letter != 'x' && letter != 'r')
+            {
+                return std::nullopt;
+            }
+        }
+
+        return std::nullopt;
+    }};
+
     // A group opens outside a quote and a bracket alone: `"(?i:"` is text and `[(?i:]` members, as flex lexes them.
     auto state{Pattern_at::pattern};
 
     for (std::size_t at{0}; at < pattern.size(); ++at)
     {
-        if (state != Pattern_at::pattern || !pattern.substr(at).starts_with("(?"))
+        if (state != Pattern_at::pattern || !pattern.substr(at).starts_with(group_opener))
         {
             state = next_pattern_at(state, pattern, at);
 
             continue;
         }
 
-        // The flags apply in order, as flex applies them, a `-` turning off every flag after it: `(?i-i:` and `(?-ii:`
-        // fold nothing, flex 2.6.4 taking neither over the other case.
-        auto on{true};
-
-        auto folds{false};
-
-        for (auto flag{at + 2}; flag < pattern.size(); ++flag)
+        if (auto opening{folding_opening(at)})
         {
-            if (pattern[flag] == ':')
-            {
-                if (folds)
-                {
-                    return std::string{pattern.substr(at, flag - at + 1)};
-                }
-
-                break;
-            }
-
-            if (pattern[flag] == '-')
-            {
-                on = false;
-            }
-            else if (pattern[flag] == 'i')
-            {
-                folds = on;
-            }
-            else if (pattern[flag] != 's' && pattern[flag] != 'x' && pattern[flag] != 'r')
-            {
-                break;
-            }
+            return opening;
         }
     }
 
     return std::nullopt;
 }
 
-std::optional<std::string> beyond_ascii(const std::string_view pattern) noexcept
+std::optional<std::string> beyond_ascii(const std::string_view pattern)
 {
+    // The escape as written when the byte it names is beyond ASCII; `at` moves to its last digit.
+    const auto numbered{
+            [pattern](std::size_t& at, const std::size_t first, const int base) -> std::optional<std::string> {
+                auto past{first};
+
+                // The digits stand up to the third byte after the backslash, `\x41` or `\101`.
+                static constexpr std::size_t longest_escape{4};
+
+                while (past < pattern.size() && past < at + longest_escape && is_digit_in(pattern[past], base))
+                {
+                    ++past;
+                }
+
+                const auto digits{pattern.substr(first, past - first)};
+
+                const auto escape{pattern.substr(at, past - at)};
+
+                at = past - 1;
+
+                if (digits.empty())
+                {
+                    return std::nullopt;
+                }
+
+                const auto value{std::stoul(std::string{digits}, nullptr, base)};
+
+                if (value > last_ascii)
+                {
+                    return std::string{escape};
+                }
+
+                return std::nullopt;
+            }};
+
     for (std::size_t at{0}; at < pattern.size(); ++at)
     {
         // A raw byte is spelled in hex, so that the refusal is text whatever the file's encoding.
-        if (static_cast<unsigned char>(pattern[at]) >= 0x80)
+        if (const auto raw{static_cast<unsigned char>(pattern[at])}; raw > last_ascii)
         {
-            return std::format("\\x{:02X}", static_cast<unsigned char>(pattern[at]));
+            return hex_spelling(raw);
         }
 
         if (pattern[at] != '\\' || at + 1 >= pattern.size())
@@ -249,46 +357,28 @@ std::optional<std::string> beyond_ascii(const std::string_view pattern) noexcept
         }
 
         // flex takes `\x` with one or two hex digits and an octal escape of one to three digits.
-        if (pattern[at + 1] == 'x')
+        if (pattern.substr(at).starts_with(hex_escape_opener))
         {
-            std::size_t past{at + 2};
-
-            while (past < pattern.size() && past < at + 4 && is_hex_digit(pattern[past]))
+            if (auto escape{numbered(at, at + hex_escape_opener.size(), hex_base)})
             {
-                ++past;
+                return escape;
             }
-
-            if (past > at + 2 && std::stoul(std::string{pattern.substr(at + 2, past - at - 2)}, nullptr, 16) >= 0x80)
-            {
-                return std::string{pattern.substr(at, past - at)};
-            }
-
-            at = past - 1;
         }
-        else if (pattern[at + 1] >= '0' && pattern[at + 1] <= '7')
+        else if (is_digit_in(pattern[at + 1], octal_base))
         {
-            std::size_t past{at + 1};
-
-            while (past < pattern.size() && past < at + 4 && pattern[past] >= '0' && pattern[past] <= '7')
+            if (auto escape{numbered(at, at + 1, octal_base)})
             {
-                ++past;
+                return escape;
             }
-
-            if (std::stoul(std::string{pattern.substr(at + 1, past - at - 1)}, nullptr, 8) >= 0x80)
-            {
-                return std::string{pattern.substr(at, past - at)};
-            }
-
-            at = past - 1;
         }
         else
         {
             // Any other escape carries the byte after it as itself, a raw byte beyond ASCII included.
             ++at;
 
-            if (static_cast<unsigned char>(pattern[at]) >= 0x80)
+            if (const auto escaped{static_cast<unsigned char>(pattern[at])}; escaped > last_ascii)
             {
-                return std::format("\\x{:02X}", static_cast<unsigned char>(pattern[at]));
+                return hex_spelling(escaped);
             }
         }
     }

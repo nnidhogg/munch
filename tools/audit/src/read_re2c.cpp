@@ -1,8 +1,10 @@
 #include "munch/tools/audit/read_re2c.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <functional>
 #include <optional>
 #include <set>
@@ -21,9 +23,6 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements read_re2c.hpp: the included files' macros, a block's opener, the ranking of a scanner's rules and the
-// reading of the file block by block are private to this unit.
-
 /**
  * @brief A carried definition this block's flags cannot read, kept until the block says whether it names it.
  *
@@ -36,7 +35,7 @@ struct Unreadable_definition
     /**
      * @brief The name the definition binds.
      */
-    std::string name;
+    std::string name{};
 
     /**
      * @brief The refusal to raise where a pattern names it.
@@ -55,8 +54,7 @@ enum class Block_kind : std::uint8_t
     global,
 
     /**
-     * @brief `!local:re2c`: a block that reads the definitions and configurations so far and passes none of its own
-     *        on.
+     * @brief `!local:re2c`: a block that reads the definitions and configurations so far and passes none of its own on.
      */
     local,
 
@@ -72,6 +70,41 @@ enum class Block_kind : std::uint8_t
 };
 
 /**
+ * @brief What a block's comment opens with, the bang telling it from a plain comment.
+ */
+constexpr std::string_view block_comment{"/*!"};
+
+/**
+ * @brief The most files the reading follows the code's includes into.
+ */
+constexpr std::size_t most_included_files{64};
+
+/**
+ * @brief The word after a block's comment opening that says which kind of block it opens.
+ */
+struct Opener_word
+{
+    /**
+     * @brief The word.
+     */
+    std::string_view word{};
+
+    /**
+     * @brief The block kind it opens.
+     */
+    Block_kind kind{};
+};
+
+/**
+ * @brief The words that open a block carrying rules or definitions, in the order they are tested.
+ */
+constexpr std::array<Opener_word, 4> opener_words{
+        Opener_word{.word = "re2c", .kind = Block_kind::global},
+        Opener_word{.word = "local:re2c", .kind = Block_kind::local},
+        Opener_word{.word = "rules:re2c", .kind = Block_kind::rules},
+        Opener_word{.word = "use:re2c", .kind = Block_kind::use}};
+
+/**
  * @brief A block's opener as re2c reads it: its kind, its name, where the block's text begins and the opener's line.
  */
 struct Opener
@@ -79,34 +112,113 @@ struct Opener
     /**
      * @brief The block's kind.
      */
-    Block_kind kind;
+    Block_kind kind{};
 
     /**
      * @brief The name after the opener's colon, `rules:re2c:name`, empty when it has none; a use block's names the
      *        block it uses.
      */
-    std::string name;
+    std::string name{};
 
     /**
      * @brief The offset just past the opener and its name.
      */
-    std::size_t begin;
+    std::size_t begin{};
 
     /**
      * @brief The line the opener is on.
      */
-    std::size_t line;
+    std::size_t line{};
 };
 
 /**
- * @brief The line an offset of the file is on, counted from one.
+ * @brief What the global blocks read so far leave the blocks after them: re2c carries a block's configurations and
+ *        definitions into the global scope, and a local block's, a rules block's and a use block's stay in it.
+ */
+struct Carried
+{
+    /**
+     * @brief The flags: the command line's, with the global blocks' configurations and the evidence of the flex syntax
+     *        applied.
+     */
+    Re2c_flags flags{};
+
+    /**
+     * @brief The configurations, as options.
+     */
+    std::vector<std::string> options{};
+
+    /**
+     * @brief Where each definition's regex stands, so that the block using it translates the regex itself, never the
+     *        rules.
+     */
+    std::vector<Definition_site> definitions{};
+
+    /**
+     * @brief What the blocks so far call the scan pointers: re2c carries a `define:` configuration from the block it
+     *        stands in to the blocks after it, so a block renaming none writes what the one above it left, and the
+     *        file's last word on a name is the one its actions are read under.
+     */
+    Pointers_t pointers{};
+
+    /**
+     * @brief Whether the blocks so far left the scanner under an API other than the default one, and where, carried as
+     *        the pointer names are.
+     */
+    std::optional<std::size_t> api_custom{};
+};
+
+/**
+ * @brief What a pass over a block read: its scanner, where its definitions stand, the kinds of its rules, what its
+ *        configurations leave, and where the block ends.
+ */
+struct Block_reading
+{
+    /**
+     * @brief The scanner, its rules in the block's order.
+     */
+    Lexer_spec spec{};
+
+    /**
+     * @brief Where each definition the block declared stands.
+     */
+    std::vector<Definition_site> sites{};
+
+    /**
+     * @brief The kinds of rule the block holds and the names they stand in.
+     */
+    Rule_kinds kinds{};
+
+    /**
+     * @brief The flags the block's configurations leave.
+     */
+    Re2c_flags flags{};
+
+    /**
+     * @brief The pointer names the block's configurations leave.
+     */
+    Pointers_t pointers{};
+
+    /**
+     * @brief The API setting the block's configurations leave.
+     */
+    std::optional<std::size_t> api_custom{};
+
+    /**
+     * @brief The offset just past the block's close.
+     */
+    std::size_t end{};
+};
+
+/**
+ * @brief Returns the line an offset of the file is on, counted from one.
  * @param source The file's text.
  * @param at The offset.
  * @return The line.
  */
 [[nodiscard]] std::size_t line_at(const std::string_view source, const std::size_t at)
 {
-    return 1 + static_cast<std::size_t>(std::ranges::count(source.substr(0, at), '\n'));
+    return 1 + lines_before(source, at);
 }
 
 /**
@@ -138,9 +250,9 @@ void references(const std::string_view text, std::vector<std::string>& into)
             continue;
         }
 
-        if (const auto length{reference_length(text, at)}; length > 0)
+        if (const auto name{reference_name(text, at)}; !name.empty())
         {
-            into.emplace_back(text.substr(at + 1, length - 2));
+            into.emplace_back(name);
         }
     }
 }
@@ -151,36 +263,32 @@ void references(const std::string_view text, std::vector<std::string>& into)
  * @param at The offset of the comment.
  * @return The opener, or std::nullopt for another block kind, which carries no rules.
  * @throws Spec_error If the opener runs on into anything but a blank, a newline, a colon and a name, or the block's
- *         close, which re2c refuses as an ill-formed start of a block: `!re2cx` after the comment's opening opens
- *         no block.
+ *         close, which re2c refuses as an ill-formed start of a block: `!re2cx` after the comment's opening opens no
+ *         block.
  */
 [[nodiscard]] std::optional<Opener> opener_at(const std::string_view source, const std::size_t at)
 {
-    const auto rest{source.substr(at + 3)};
+    const auto word_at{at + block_comment.size()};
 
-    const auto kind{
-            rest.starts_with("re2c")       ? std::optional{Block_kind::global} :
-            rest.starts_with("local:re2c") ? std::optional{Block_kind::local} :
-            rest.starts_with("rules:re2c") ? std::optional{Block_kind::rules} :
-            rest.starts_with("use:re2c")   ? std::optional{Block_kind::use} :
-                                             std::nullopt};
+    const auto rest{source.substr(word_at)};
 
-    if (!kind)
+    const auto opens{[rest](const Opener_word& opener) { return rest.starts_with(opener.word); }};
+
+    const auto found{std::ranges::find_if(opener_words, opens)};
+
+    if (found == opener_words.end())
     {
         return std::nullopt;
     }
 
-    const auto length{
-            kind == Block_kind::global ? std::size_t{4} :
-            kind == Block_kind::use    ? std::size_t{8} :
-                                         std::size_t{10}};
+    const auto& [word, kind]{*found};
 
     const auto line{line_at(source, at)};
 
     // The block's name, `rules:re2c:name`, when it has one.
-    std::string name;
+    std::string name{};
 
-    auto begin{at + 3 + length};
+    auto begin{word_at + word.size()};
 
     if (source.substr(begin).starts_with(':'))
     {
@@ -191,21 +299,21 @@ void references(const std::string_view text, std::vector<std::string>& into)
     }
 
     // re2c ends the opener at a blank, a newline or the block's close.
-    if (begin < source.size() && source[begin] != ' ' && source[begin] != '\t' && source[begin] != '\r' &&
-        source[begin] != '\n' && !source.substr(begin).starts_with("*/"))
+    if (begin < source.size() && !std::string_view{" \t\r\n"}.contains(source[begin]) &&
+        !source.substr(begin).starts_with(comment_closer))
     {
         throw Spec_error{
                 "ill-formed start of a block: re2c expects a blank, a newline, a colon and a name, or the block's "
-                "close "
-                "after the opener",
+                "close after the opener",
                 line};
     }
 
-    return Opener{.kind = *kind, .name = std::move(name), .begin = begin, .line = line};
+    return Opener{.kind = kind, .name = std::move(name), .begin = begin, .line = line};
 }
 
 /**
- * @brief Where a block of another kind ends, which carries no rules and is skipped through its close like any comment.
+ * @brief Returns where a block of another kind ends, which carries no rules and is skipped through its close like any
+ *        comment.
  * @param source The file's text.
  * @param at The offset of the comment opening it.
  * @return The offset just past its close.
@@ -213,14 +321,14 @@ void references(const std::string_view text, std::vector<std::string>& into)
  */
 [[nodiscard]] std::size_t other_block_end(const std::string_view source, const std::size_t at)
 {
-    const auto close{source.find("*/", at + 3)};
+    const auto close{source.find(comment_closer, at + block_comment.size())};
 
     if (close == std::string_view::npos)
     {
         throw Spec_error{"a re2c block is never closed", line_at(source, at)};
     }
 
-    return close + 2;
+    return close + comment_closer.size();
 }
 
 /**
@@ -244,23 +352,25 @@ void references(const std::string_view text, std::vector<std::string>& into)
  */
 void place_rules(Lexer_spec& spec, const Rule_kinds& kinds)
 {
-    // The rules in re2c's ranks, each rank in the file's order.
+    // re2c ranks a condition's own rules, then the `<*>` rules, then the default rules in the same two ranks.
     const auto rank{[](const Lexer_spec::Rule& rule) {
-        return (rule.pattern == "*" ? 2 : 0) + (std::ranges::contains(rule.conditions, "*") ? 1 : 0);
+        return (rule.pattern == default_rule ? 2 : 0) +
+               (std::ranges::contains(rule.conditions, every_condition) ? 1 : 0);
     }};
 
+    // The rules in re2c's ranks, each rank in the file's order.
     std::ranges::stable_sort(spec.rules, std::ranges::less{}, rank);
 
     // The conditions the rules name, each exclusive but INITIAL.
     for (const auto& name : kinds.named())
     {
-        spec.conditions.push_back({.name = name, .exclusive = name != "INITIAL"});
+        spec.conditions.push_back({.name = name, .exclusive = name != initial_condition});
     }
 
     // A `<*>` rule stands in each condition the rules name and in no other.
-    for (auto& rule : spec.rules)
+    for (auto& [pattern, expression, conditions, action, token, priority, line] : spec.rules)
     {
-        if (!std::ranges::contains(rule.conditions, "*"))
+        if (!std::ranges::contains(conditions, every_condition))
         {
             continue;
         }
@@ -270,15 +380,15 @@ void place_rules(Lexer_spec& spec, const Rule_kinds& kinds)
             throw Spec_error{
                     "the rule names `<*>` where no rule of the block names a condition, so re2c compiles no condition "
                     "for it to stand in",
-                    rule.line};
+                    line};
         }
 
-        rule.conditions = kinds.named();
+        conditions = kinds.named();
     }
 }
 
 /**
- * @brief The names a scanner's rules reach: every `{name}` reference in a rule's expression, and through the
+ * @brief Returns the names a scanner's rules reach: every `{name}` reference in a rule's expression, and through the
  *        definitions those name, the references in theirs, however many definitions deep.
  *
  * re2c compiles a definition's regex where a rule uses it, so a definition no rule reaches, directly or through a chain
@@ -289,13 +399,13 @@ void place_rules(Lexer_spec& spec, const Rule_kinds& kinds)
  */
 [[nodiscard]] std::set<std::string, std::less<>> reached(const Lexer_spec& spec)
 {
-    std::set<std::string, std::less<>> names;
+    std::set<std::string, std::less<>> names{};
 
-    std::vector<std::string> pending;
+    std::vector<std::string> pending{};
 
-    for (const auto& rule : spec.rules)
+    for (const auto& [pattern, expression, conditions, action, token, priority, line] : spec.rules)
     {
-        references(rule.expression, pending);
+        references(expression, pending);
     }
 
     while (!pending.empty())
@@ -304,14 +414,18 @@ void place_rules(Lexer_spec& spec, const Rule_kinds& kinds)
 
         pending.pop_back();
 
-        if (!names.insert(name).second)
+        const auto [position, inserted]{names.insert(name)};
+
+        if (!inserted)
         {
             continue;
         }
 
         if (const auto definition{spec.definitions.find(name)}; definition != spec.definitions.end())
         {
-            references(definition->second, pending);
+            const auto& [defined, body]{*definition};
+
+            references(body, pending);
         }
     }
 
@@ -320,8 +434,7 @@ void place_rules(Lexer_spec& spec, const Rule_kinds& kinds)
 
 /**
  * @brief Takes the macros of the files the code includes: a file the code includes defines macros as the file's own
- *        code does, `#define SLOT 0` among them, so its text is read for them, its own includes after it and beside
- *        it.
+ *        code does, `#define SLOT 0` among them, so its text is read for them, its own includes after it and beside it.
  *
  * An include is refused where no reader reaches the file, since what it defines is out of sight; an angle-bracket
  * include the reader does not find is a system header's, and one named by a macro is out of sight.
@@ -348,7 +461,7 @@ void follow_includes(const std::string_view source, const Include_reader_t& incl
                 continue;
             }
 
-            if (texts.size() > 64)
+            if (texts.size() > most_included_files)
             {
                 throw Spec_error{"the code includes more files than the reading follows", where};
             }
@@ -359,85 +472,6 @@ void follow_includes(const std::string_view source, const Include_reader_t& incl
         }
     }
 }
-
-/**
- * @brief What the global blocks read so far leave the blocks after them: re2c carries a block's configurations and
- *        definitions into the global scope, and a local block's, a rules block's and a use block's stay in it.
- */
-struct Carried
-{
-    /**
-     * @brief The flags: the command line's, with the global blocks' configurations and the evidence of the flex syntax
-     *        applied.
-     */
-    Re2c_flags flags;
-
-    /**
-     * @brief The configurations, as options.
-     */
-    std::vector<std::string> options;
-
-    /**
-     * @brief Where each definition's regex stands, so that the block using it translates the regex itself, never the
-     *        rules.
-     */
-    std::vector<Definition_site> definitions;
-
-    /**
-     * @brief What the blocks so far call the scan pointers: re2c carries a `define:` configuration from the block it
-     *        stands in to the blocks after it, so a block renaming none writes what the one above it left, and the
-     *        file's last word on a name is the one its actions are read under.
-     */
-    Pointers_t pointers;
-
-    /**
-     * @brief Whether the blocks so far left the scanner under an API other than the default one, and where, carried as
-     *        the pointer names are.
-     */
-    std::optional<std::size_t> api_custom;
-};
-
-/**
- * @brief What a pass over a block read: its scanner, where its definitions stand, the kinds of its rules, what its
- *        configurations leave, and where the block ends.
- */
-struct Block_reading
-{
-    /**
-     * @brief The scanner, its rules in the block's order.
-     */
-    Lexer_spec spec;
-
-    /**
-     * @brief Where each definition the block declared stands.
-     */
-    std::vector<Definition_site> sites;
-
-    /**
-     * @brief The kinds of rule the block holds and the names they stand in.
-     */
-    Rule_kinds kinds;
-
-    /**
-     * @brief The flags the block's configurations leave.
-     */
-    Re2c_flags flags;
-
-    /**
-     * @brief The pointer names the block's configurations leave.
-     */
-    Pointers_t pointers;
-
-    /**
-     * @brief The API setting the block's configurations leave.
-     */
-    std::optional<std::size_t> api_custom;
-
-    /**
-     * @brief The offset just past the block's close.
-     */
-    std::size_t end;
-};
 
 /**
  * @brief The re2c blocks of a file read in order, each under the flags in force where it is used, into the scanners
@@ -465,7 +499,7 @@ public:
      * @return The scanners, in file order.
      * @throws Spec_error If a block is refused.
      */
-    [[nodiscard]] std::vector<Lexer_spec> read();
+    [[nodiscard]] std::vector<Lexer_spec> read() &&;
 
 private:
     /**
@@ -477,8 +511,8 @@ private:
     [[nodiscard]] std::size_t block(const Opener& opener);
 
     /**
-     * @brief Where the rules block a use block uses begins: a use block names the rules block it uses, not itself, and
-     *        with no name it uses the most recent one.
+     * @brief Returns where the rules block a use block uses begins: a use block names the rules block it uses, not
+     *        itself, and with no name it uses the most recent one.
      * @param opener The block's opener.
      * @return The offset just past the used block's opener, or std::nullopt for a block that uses none.
      * @throws Spec_error If a use block names no block above it, or names none where no rules block is above it.
@@ -549,8 +583,8 @@ private:
 
     /**
      * @brief The macros the C around the blocks defines, every `#define` of the file's: an action calling one that
-     *        returns or moves a pointer is refused by the macro's name, since re2c copies the action as written and
-     *        the compiler expands it there.
+     *        returns or moves a pointer is refused by the macro's name, since re2c copies the action as written and the
+     *        compiler expands it there.
      */
     const Macros_t& macros_;
 
@@ -591,13 +625,18 @@ File_reader::File_reader(
               .api_custom = std::nullopt}
 {}
 
-std::vector<Lexer_spec> File_reader::read()
+std::vector<Lexer_spec> File_reader::read() &&
 {
-    for (auto at{source_.find("/*!")}; at != std::string_view::npos; at = source_.find("/*!", at))
+    for (auto at{source_.find(block_comment)}; at != std::string_view::npos; at = source_.find(block_comment, at))
     {
-        const auto opener{opener_at(source_, at)};
-
-        at = opener ? block(*opener) : other_block_end(source_, at);
+        if (const auto opener{opener_at(source_, at)})
+        {
+            at = block(*opener);
+        }
+        else
+        {
+            at = other_block_end(source_, at);
+        }
     }
 
     return std::move(scanners_);
@@ -665,10 +704,12 @@ std::optional<std::size_t> File_reader::used_block(const Opener& opener) const
 
     if (used == library_.end())
     {
-        throw Spec_error{"the used block '" + name + "' is not above this one", opener.line};
+        throw Spec_error{std::format("the used block '{}' is not above this one", name), opener.line};
     }
 
-    return used->second;
+    const auto& [used_name, begin]{*used};
+
+    return begin;
 }
 
 Block_reading File_reader::settled(const Opener& opener, const std::optional<std::size_t> used)
@@ -694,7 +735,7 @@ Block_reading File_reader::pass(const Opener& opener, const std::optional<std::s
 {
     const auto rules{opener.kind == Block_kind::rules};
 
-    Lexer_spec spec;
+    Lexer_spec spec{};
 
     spec.parse = re2c_parse;
 
@@ -776,7 +817,7 @@ Block_reading File_reader::pass(const Opener& opener, const std::optional<std::s
 std::vector<Unreadable_definition> File_reader::carried_definitions(
         const Re2c_flags reading, Lexer_spec& spec, Pass_state& pass) const
 {
-    std::vector<Unreadable_definition> refused;
+    std::vector<Unreadable_definition> refused{};
 
     for (const auto& [name, at_definition, line_bound] : carried_.definitions)
     {
@@ -786,7 +827,7 @@ std::vector<Unreadable_definition> File_reader::carried_definitions(
 
         flags.flex_syntax = flags.flex_syntax || line_bound;
 
-        std::optional<Spec_error> deferred;
+        std::optional<Spec_error> deferred{};
 
         try
         {
@@ -854,13 +895,15 @@ std::vector<Lexer_spec> read_re2c(
         throw Spec_error{refusal, 1};
     }
 
-    Macros_t macros;
+    Macros_t macros{};
 
     take_macros(source, macros);
 
     follow_includes(source, includes, macros);
 
-    return File_reader{source, flags, returning, macros}.read();
+    File_reader reader{source, flags, returning, macros};
+
+    return std::move(reader).read();
 }
 
 } // namespace munch::tools::audit

@@ -15,7 +15,8 @@
 /**
  * @brief The specification a reader makes of one scanner, Lexer_spec, whichever generator's file it was read from; the
  *        refusal a reader raises against a file, Spec_error; and the token set a start condition of the scanner scans
- *        with, token_set(), active_rules() and build().
+ *        with, token_set(), active_rules() and build(), with the names of the default condition and of every condition,
+ *        initial_condition and every_condition.
  *
  * Every reader turns its generator's file into these specifications, and the audit asks nothing of the file beyond
  * them: the rules in the order their generator ranks them, each with the expression the pattern parser reads, the
@@ -26,15 +27,25 @@
 namespace munch::tools::audit
 {
 /**
+ * @brief The name of the default start condition, which every scanner has without declaring it.
+ */
+constexpr std::string_view initial_condition{"INITIAL"};
+
+/**
+ * @brief The name a rule gives as its condition to stand in every start condition.
+ */
+constexpr std::string_view every_condition{"*"};
+
+/**
  * @brief What one scanner's specification declares, as far as a token set is concerned: its definitions, its start
  *        conditions, its options and its rules in order, whichever generator's file it was read from.
  *
  * A flex file is one scanner; a re2c file holds one per block with rules; a Rust file holds one per enum deriving
  * Logos. Rule order is the priority: flex and re2c take the longest match and, among rules matching it, the first in
  * the file, which is exactly the maximal-munch scan with priority by rule index that the library runs, so a reader
- * whose generator ranks some rules otherwise than by their place, as re2c ranks its `<*>` and default rules, lists
- * them where that rank puts them; logos ranks by a number of its own, which each of its rules carries. The code
- * sections and the actions' bodies are carried as text and never interpreted beyond the return the audit looks for.
+ * whose generator ranks some rules otherwise than by their place, as re2c ranks its `<*>` and default rules, lists them
+ * where that rank puts them; logos ranks by a number of its own, which each of its rules carries. The code sections and
+ * the actions' bodies are carried as text and never interpreted beyond the return the audit looks for.
  */
 struct Lexer_spec
 {
@@ -47,42 +58,42 @@ struct Lexer_spec
         /**
          * @brief The pattern exactly as it stands in the file.
          */
-        std::string pattern;
+        std::string pattern{};
 
         /**
-         * @brief The pattern in the syntax regex::parse() reads, `{name}` for a definition; the same as the pattern
-         *        for a flex file, and the file's dialect rewritten for others.
+         * @brief The pattern in the syntax regex::parse() reads, `{name}` for a definition; the same as the pattern for
+         *        a flex file, and the file's dialect rewritten for others.
          */
-        std::string expression;
+        std::string expression{};
 
         /**
          * @brief The start conditions the rule is active in, empty when it names none; `*` stands for all.
          */
-        std::vector<std::string> conditions;
+        std::vector<std::string> conditions{};
 
         /**
          * @brief The action's text, braces included, `|` when it shares the next rule's.
          */
-        std::string action;
+        std::string action{};
 
         /**
-         * @brief The expression the action returns, when it returns one through `return` or a form the caller
-         *        named; a rule that returns nothing discards its match, which is what whitespace and comment rules
-         *        do, and the audit treats the token as discarded.
+         * @brief The expression the action returns, when it returns one through `return` or a form the caller named; a
+         *        rule that returns nothing discards its match, which is what whitespace and comment rules do, and the
+         *        audit treats the token as discarded.
          */
-        std::optional<std::string> token;
+        std::optional<std::string> token{};
 
         /**
-         * @brief The priority the file's generator ranks the rule at among rules matching the same longest lexeme,
-         *        its own number with the higher winning, when the generator ranks by a number rather than by file
-         *        order, as logos does; std::nullopt when the rule's index is its priority, as flex and re2c rank.
+         * @brief The priority the file's generator ranks the rule at among rules matching the same longest lexeme, its
+         *        own number with the higher winning, when the generator ranks by a number rather than by file order, as
+         *        logos does; std::nullopt when the rule's index is its priority, as flex and re2c rank.
          */
-        std::optional<std::size_t> priority;
+        std::optional<std::size_t> priority{};
 
         /**
          * @brief The line the rule begins on, counted from one, for the report.
          */
-        std::size_t line;
+        std::size_t line{};
     };
 
     /**
@@ -93,30 +104,30 @@ struct Lexer_spec
         /**
          * @brief The condition's name.
          */
-        std::string name;
+        std::string name{};
 
         /**
          * @brief Whether it is exclusive, so that rules naming no condition are inactive in it.
          */
-        bool exclusive;
+        bool exclusive{};
     };
 
     /**
      * @brief The named patterns, in the syntax regex::parse() reads, `{name}` in an expression expanding to one.
      */
-    regex::Definitions_t definitions;
+    regex::Definitions_t definitions{};
 
     /**
      * @brief The start conditions besides INITIAL: the ones a flex file declares, the ones a re2c file's rules name,
      *        INITIAL among them where a re2c rule names it, inclusive.
      */
-    std::vector<Condition> conditions;
+    std::vector<Condition> conditions{};
 
     /**
-     * @brief The file's options, each one entry: flex's `%option` words, re2c's configurations, or the `#[logos]`
-     *        keys besides the skips and subpatterns.
+     * @brief The file's options, each one entry: flex's `%option` words, re2c's configurations, or the `#[logos]` keys
+     *        besides the skips and subpatterns.
      */
-    std::vector<std::string> options;
+    std::vector<std::string> options{};
 
     /**
      * @brief What the patterns are read under besides their syntax: what the file's options leave standing of the
@@ -129,10 +140,10 @@ struct Lexer_spec
 
     /**
      * @brief The rules, in the order their generator ranks them, which is file order except where a reader says
-     *        otherwise: the re2c reader places the `<*>` rules after the rules naming a condition and the default
-     *        rules after them all, as re2c ranks those wherever in the block they stand.
+     *        otherwise: the re2c reader places the `<*>` rules after the rules naming a condition and the default rules
+     *        after them all, as re2c ranks those wherever in the block they stand.
      */
-    std::vector<Rule> rules;
+    std::vector<Rule> rules{};
 
     /**
      * @brief The line the rules begin on, counted from one: a flex file's `%%`, a re2c block's opener, a Rust enum's
@@ -155,7 +166,7 @@ public:
     Spec_error(const std::string& message, std::size_t line);
 
     /**
-     * @brief The line the refusal points at, counted from one.
+     * @brief Returns the line the refusal points at, counted from one.
      * @return The line.
      */
     [[nodiscard]] std::size_t line() const noexcept;
@@ -177,8 +188,8 @@ private:
 [[nodiscard]] core::Lexer build(const Lexer_spec& spec, std::string_view condition);
 
 /**
- * @brief The token set a start condition scans with: every active rule is a token whose id is its rule index and
- *        whose priority is that index, or its generator's own number turned onto the builder's lower-wins scale
+ * @brief Returns the token set a start condition scans with: every active rule is a token whose id is its rule index
+ *        and whose priority is that index, or its generator's own number turned onto the builder's lower-wins scale
  *        when the rule carries one, and the rules returning nothing are discarded.
  *
  * A generator's number is placed below every index at half the scale's range, so that a rule appended past the set's
@@ -194,10 +205,10 @@ private:
 [[nodiscard]] Token_set token_set(const Lexer_spec& spec, std::string_view condition);
 
 /**
- * @brief The rules active in a start condition, in the order the specification lists them.
+ * @brief Returns the rules active in a start condition, in the order the specification lists them.
  *
- * A rule naming no condition is active in INITIAL and in every inclusive condition; a rule naming a condition is
- * active in it; a rule naming `*` is active everywhere.
+ * A rule naming no condition is active in INITIAL and in every inclusive condition; a rule naming a condition is active
+ * in it; a rule naming `*` is active everywhere.
  * @param spec The specification.
  * @param condition The condition, INITIAL for the default one.
  * @return The indices of the active rules into spec.rules.

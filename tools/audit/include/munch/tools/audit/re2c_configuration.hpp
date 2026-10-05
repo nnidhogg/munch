@@ -28,12 +28,12 @@ struct Pointer_name
      * @brief The name re2c gives the pointer, `YYCURSOR`, `YYMARKER` or `YYCTXMARKER`, which a `define:` configuration
      *        renames.
      */
-    std::string canonical;
+    std::string canonical{};
 
     /**
      * @brief The name the configurations leave it under, an expression as the actions write it.
      */
-    std::string name;
+    std::string name{};
 };
 
 /**
@@ -44,7 +44,7 @@ struct Pointer_name
 using Pointers_t = std::vector<Pointer_name>;
 
 /**
- * @brief Why an encoding is one no reading over bytes can follow, when it is: its own reason, named.
+ * @brief Returns why an encoding is one no reading over bytes can follow, when it is: its own reason, named.
  * @param encoding The encoding.
  * @return The refusal's words, empty for the encodings the reading models, ASCII and UTF-8.
  */

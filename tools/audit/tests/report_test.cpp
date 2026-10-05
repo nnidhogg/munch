@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -25,101 +27,203 @@
 #include "munch/tools/audit/token_set.hpp"
 
 using namespace munch::tools::audit;
+using munch::regex::any_of;
+using munch::regex::choice;
+using munch::regex::concat;
+using munch::regex::kleene;
+using munch::regex::parse;
+using munch::regex::Set;
+using munch::regex::text;
 
 namespace
 {
 /**
- * @brief Reads one of the grammars beside the tests and audits its INITIAL condition.
+ * @brief A grammar read and the report on its INITIAL condition.
  */
 struct Audited
 {
-    Lexer_spec file;
+    /**
+     * @brief The grammar's scanner as the flex reader reads it.
+     */
+    Lexer_spec file{};
 
-    Report report;
+    /**
+     * @brief The report on its INITIAL condition.
+     */
+    Report report{};
 };
 
-Audited audited(const std::string_view grammar, const std::size_t window_limit = 3)
+/**
+ * @brief One row of the split-points paper's applicability table: a grammar and the bytes it certifies.
+ */
+struct Applicability_row
 {
-    std::ifstream stream{std::string{SOURCE_DIR} + "/tools/audit/grammars/" + std::string{grammar}};
+    /**
+     * @brief The grammar's file name.
+     */
+    std::string_view grammar{};
 
-    const std::string source{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+    /**
+     * @brief The bytes it certifies exactly.
+     */
+    std::string_view exact{};
+
+    /**
+     * @brief The bytes it certifies once the discarded tokens are deleted.
+     */
+    std::string_view modulo{};
+};
+
+/**
+ * @brief Reads one of the grammars beside the tests and audits its INITIAL condition.
+ * @param grammar The grammar's file name.
+ * @param window_limit The longest window tried.
+ * @return The scanner and its report.
+ */
+Audited audited(const std::string_view grammar, const std::size_t window_limit = default_window_limit)
+{
+    const auto path{std::format("{}/tools/audit/grammars/{}", SOURCE_DIR, grammar)};
+
+    std::ifstream stream{path};
+
+    const std::string source{std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
 
     auto file{read_flex(source).front()};
 
-    auto report{audit(token_set(file, "INITIAL"), window_limit)};
+    const auto set{token_set(file, "INITIAL")};
+
+    auto report{audit(set, window_limit)};
 
     return {.file = std::move(file), .report = std::move(report)};
 }
 
 /**
- * @brief The name the report prints for a rule: its returned token, or its pattern when it returns nothing.
+ * @brief Returns the naming the report takes for a scanner's rules: a rule's returned token, or its pattern when it
+ *        returns nothing.
+ * @param file The scanner.
+ * @return The naming.
  */
-std::function<std::string(std::size_t)> names(const Lexer_spec& file)
+auto names(const Lexer_spec& file)
 {
-    return [&file](const std::size_t rule) { return file.rules[rule].token.value_or(file.rules[rule].pattern); };
+    return [&file](const std::size_t rule) {
+        const auto& [pattern, expression, conditions, action, token, priority, line]{file.rules[rule]};
+
+        return token.value_or(pattern);
+    };
 }
 
+/**
+ * @brief Returns the bytes of a text, as the report lists certified bytes.
+ * @param text The text.
+ * @return The bytes in order.
+ */
 std::vector<unsigned char> bytes(const std::string_view text)
 {
     return {text.begin(), text.end()};
 }
 
-} // namespace
-
-TEST(Report, The_flex_grammars_reproduce_the_applicability_rows)
+/**
+ * @brief Returns a rule of a token set that is kept, not discarded.
+ * @param pattern The rule's pattern, as regex::parse() reads it.
+ * @param id The token id.
+ * @param priority The rule's priority.
+ * @return The rule.
+ */
+Token_rule rule(const std::string_view pattern, const std::size_t id, const std::size_t priority)
 {
-    // Each row of the split-points paper's table, read through a .l file rather than typed into the library.
-    EXPECT_EQ(audited("c-like-conventional.l").report.exact, bytes(""));
-    EXPECT_EQ(audited("c-like-conventional.l").report.modulo, bytes("\n"));
-
-    EXPECT_EQ(audited("c-like-split-friendly.l").report.exact, bytes("\n"));
-    EXPECT_EQ(audited("c-like-split-friendly.l").report.modulo, bytes("\n"));
-
-    EXPECT_EQ(audited("c-like-block-comments.l").report.exact, bytes(""));
-    EXPECT_EQ(audited("c-like-block-comments.l").report.modulo, bytes(""));
-
-    EXPECT_EQ(audited("json.l").report.exact, bytes(""));
-    EXPECT_EQ(audited("json.l").report.modulo, bytes("\t\n\r"));
-
-    EXPECT_EQ(audited("log-lines.l").report.exact, bytes("\n"));
-    EXPECT_EQ(audited("log-lines.l").report.modulo, bytes("\n"));
+    return {.regex = parse(pattern), .id = id, .priority = priority, .discarded = false};
 }
 
-TEST(Report, Windows_and_the_core_answer_where_bytes_do_not)
+/**
+ * @brief Returns whether a blame entry is the newline's.
+ * @param entry The entry.
+ * @return True when it is.
+ */
+bool on_newline(const Blame& entry)
 {
-    // The conventional row gains two-byte windows, among them the paper's own: a newline followed by a byte that
-    // must begin a token, certified at the byte.
+    return entry.byte == '\n';
+}
+
+/**
+ * @brief Returns the text report of a set with a byte's pricing added, as the command adds one it is asked for.
+ * @param set The token set.
+ * @param priced The pricing.
+ * @param file The scanner the set was built from, whose rules name the tokens.
+ * @return The text.
+ */
+std::string priced_page(const Token_set& set, const Pricing& priced, const Lexer_spec& file)
+{
+    auto report{audit(set)};
+
+    report.prices.push_back(priced);
+
+    return render(report, names(file));
+}
+
+} // namespace
+
+TEST(Report_test, The_flex_grammars_reproduce_the_applicability_rows)
+{
+    // Each row of the split-points paper's table, read through a .l file rather than typed into the library.
+    const std::vector<Applicability_row> rows{
+            {.grammar = "c-like-conventional.l", .exact = "", .modulo = "\n"},
+            {.grammar = "c-like-split-friendly.l", .exact = "\n", .modulo = "\n"},
+            {.grammar = "c-like-block-comments.l", .exact = "", .modulo = ""},
+            {.grammar = "json.l", .exact = "", .modulo = "\t\n\r"},
+            {.grammar = "log-lines.l", .exact = "\n", .modulo = "\n"}};
+
+    for (const auto& [grammar, exact, modulo] : rows)
+    {
+        const auto [file, report]{audited(grammar)};
+
+        EXPECT_EQ(report.exact, bytes(exact)) << grammar;
+        EXPECT_EQ(report.modulo, bytes(modulo)) << grammar;
+    }
+}
+
+TEST(Report_test, Windows_and_the_core_answer_where_bytes_do_not)
+{
+    // The conventional row gains two-byte windows, among them the paper's own: a newline followed by a byte that must
+    // begin a token, certified at the byte.
     const auto conventional{audited("c-like-conventional.l")};
 
-    EXPECT_TRUE(std::ranges::any_of(conventional.report.windows, [](const Certified_window& window) {
-        return window.window == "\n!" && window.origin == 1;
-    }));
+    const auto papers_own{[](const Certified_window& certified) {
+        const auto& [window, origin]{certified};
+
+        return window == "\n!" && origin == 1;
+    }};
+
+    EXPECT_TRUE(std::ranges::any_of(conventional.report.windows, papers_own));
 
     // Block comments force "*/" into every certified window, and no two-byte window certifies.
     const auto blocks{audited("c-like-block-comments.l")};
 
     EXPECT_EQ(blocks.report.mandatory_core, "*/");
-    EXPECT_TRUE(std::ranges::none_of(
-            blocks.report.windows, [](const Certified_window& window) { return window.window.size() == 2; }));
+
+    const auto two_wide{[](const Certified_window& certified) { return certified.window.size() == 2; }};
+
+    EXPECT_TRUE(std::ranges::none_of(blocks.report.windows, two_wide));
 
     // Every real row has an unbounded byte span: an identifier of any length carries no anchor.
     EXPECT_FALSE(conventional.report.byte_span.has_value());
     EXPECT_FALSE(blocks.report.byte_span.has_value());
 }
 
-TEST(Report, Every_certified_window_of_the_conventional_row_occurs)
+TEST(Report_test, Every_certified_window_of_the_conventional_row_occurs)
 {
-    // The certified-splitting paper splits a row's certificates into occurring and vacuous ones, a vacuous window
-    // being one no completely tokenizable input contains. Over the conventional row read as bytes every certified
-    // window occurs, and the decision places each in an input that tokenizes completely and contains it: the
-    // conservative model refuses a window no live history crosses, so the vacuous certificates the paper's class
-    // abstraction reports for this row, a newline followed by a byte only a string or a line comment holds, come
-    // back here refused rather than certified, and occurring nowhere.
+    // The certified-splitting paper splits a row's certificates into occurring and vacuous ones, a vacuous window being
+    // one no completely tokenizable input contains. Over the conventional row read as bytes every certified window
+    // occurs, and the decision places each in an input that tokenizes completely and contains it: the conservative
+    // model refuses a window no live history crosses, so the vacuous certificates the paper's class abstraction reports
+    // for this row, a newline followed by a byte only a string or a line comment holds, come back here refused rather
+    // than certified, and occurring nowhere.
     const auto [file, report]{audited("c-like-conventional.l")};
 
     const auto lexer{build(file, "INITIAL")};
 
     ASSERT_FALSE(report.windows.empty());
+
+    const auto ignore_token{[](std::size_t, std::size_t) {}};
 
     for (const auto& [window, origin] : report.windows)
     {
@@ -127,22 +231,27 @@ TEST(Report, Every_certified_window_of_the_conventional_row_occurs)
 
         ASSERT_TRUE(exhaustive) << window;
         ASSERT_FALSE(witness.empty()) << window;
-        EXPECT_NE(witness.find(window), std::string::npos) << window;
-        EXPECT_EQ(lexer.tokenize_all<std::size_t>(witness, [](const std::size_t, const std::size_t) {}), witness.size())
-                << window;
+        EXPECT_TRUE(witness.contains(window)) << window;
+
+        const auto consumed{lexer.tokenize_all<std::size_t>(witness, ignore_token)};
+
+        EXPECT_EQ(consumed, witness.size()) << window;
     }
 
     EXPECT_FALSE(lexer.is_split_window("\n#").has_value());
-    EXPECT_TRUE(lexer.window_occurrence("\n#").exhaustive);
-    EXPECT_TRUE(lexer.window_occurrence("\n#").witness.empty());
+
+    const auto [refused_witness, refused_exhaustive]{lexer.window_occurrence("\n#")};
+
+    EXPECT_TRUE(refused_exhaustive);
+    EXPECT_TRUE(refused_witness.empty());
 }
 
-TEST(Report, Every_certified_window_of_the_conventional_row_is_exact)
+TEST(Report_test, Every_certified_window_of_the_conventional_row_is_exact)
 {
     // The report certifies its windows through the conservative model, and the certified-splitting paper's decision
     // holds each against every completely tokenizable input: an exhaustive search with no counterexample proves the
-    // certificate exact at its origin, which every window certified at width 3 on the conventional row is. The
-    // window the model refuses and no input holds has no counterexample either, its certificate being vacuous.
+    // certificate exact at its origin, which every window certified at width 3 on the conventional row is. The window
+    // the model refuses and no input holds has no counterexample either, its certificate being vacuous.
     const auto [file, report]{audited("c-like-conventional.l")};
 
     const auto lexer{build(file, "INITIAL")};
@@ -157,11 +266,13 @@ TEST(Report, Every_certified_window_of_the_conventional_row_is_exact)
         EXPECT_TRUE(witness.empty()) << window << " failed by " << witness;
     }
 
-    EXPECT_TRUE(lexer.window_counterexample("\n#", 1).exhaustive);
-    EXPECT_TRUE(lexer.window_counterexample("\n#", 1).witness.empty());
+    const auto [vacuous_witness, vacuous_exhaustive]{lexer.window_counterexample("\n#", 1)};
+
+    EXPECT_TRUE(vacuous_exhaustive);
+    EXPECT_TRUE(vacuous_witness.empty());
 }
 
-TEST(Report, The_conventional_and_split_friendly_rows_separate_on_the_boundary_half)
+TEST(Report_test, The_conventional_and_split_friendly_rows_separate_on_the_boundary_half)
 {
     // The two rows of the split-points study tokenize the same inputs and differ in their whitespace treatment alone,
     // the split-friendly row making the newline its own token, so full equivalence decided directly separates them on
@@ -169,17 +280,26 @@ TEST(Report, The_conventional_and_split_friendly_rows_separate_on_the_boundary_h
     // under the conventional row and two under the split-friendly one, the minimal disagreement the certified-splitting
     // paper's auditor synthesizes. A boundary witness is a boundary_difference() witness, and the conventional row
     // against itself is one segmentation function over every input.
-    const auto conventional{build(audited("c-like-conventional.l").file, "INITIAL")};
+    const auto conventional_audit{audited("c-like-conventional.l")};
 
-    const auto friendly{build(audited("c-like-split-friendly.l").file, "INITIAL")};
+    const auto friendly_audit{audited("c-like-split-friendly.l")};
+
+    const auto conventional{build(conventional_audit.file, "INITIAL")};
+
+    const auto friendly{build(friendly_audit.file, "INITIAL")};
 
     const auto [witness, half, exhaustive]{conventional.segmentation_difference(friendly)};
 
     ASSERT_TRUE(exhaustive);
     EXPECT_EQ(witness, "\t\n");
     EXPECT_EQ(half, munch::dfa::Separation_half::boundary);
-    EXPECT_EQ(conventional.boundary_difference(friendly).witness.size(), witness.size());
-    EXPECT_EQ(friendly.segmentation_difference(conventional).half, munch::dfa::Separation_half::boundary);
+
+    const auto [boundary_witness, boundary_exhaustive]{conventional.boundary_difference(friendly)};
+
+    const auto [reversed_witness, reversed_half, reversed_exhaustive]{friendly.segmentation_difference(conventional)};
+
+    EXPECT_EQ(boundary_witness.size(), witness.size());
+    EXPECT_EQ(reversed_half, munch::dfa::Separation_half::boundary);
 
     const auto [none, no_half, settled]{conventional.segmentation_difference(conventional)};
 
@@ -188,66 +308,54 @@ TEST(Report, The_conventional_and_split_friendly_rows_separate_on_the_boundary_h
     EXPECT_FALSE(no_half.has_value());
 }
 
-TEST(Report, Blame_names_the_token_that_consumes_a_candidate_mid_token)
+TEST(Report_test, Blame_names_the_token_that_consumes_a_candidate_mid_token)
 {
     const auto [file, report]{audited("c-like-conventional.l")};
 
     // The newline is a candidate, and only the whitespace run consumes it mid-token.
-    std::vector<std::size_t> newline_tokens;
+    std::vector<std::size_t> newline_tokens{};
 
-    for (const auto& [byte, token, after] : report.blame)
+    for (const auto& [byte, token, after] : report.blame | std::views::filter(on_newline))
     {
-        if (byte == '\n')
-        {
-            newline_tokens.push_back(token);
+        newline_tokens.push_back(token);
 
-            EXPECT_TRUE(file.rules[token].pattern == R"([ \t\n]+)") << file.rules[token].pattern;
+        EXPECT_EQ(file.rules[token].pattern, R"([ \t\n]+)");
 
-            // A shortest input reaching the run's state is one blank, whichever the search met first.
-            EXPECT_TRUE(after == " " || after == "\t") << after;
-        }
+        // A shortest input reaching the run's state is one blank, whichever the search met first.
+        EXPECT_TRUE(after == " " || after == "\t") << after;
     }
 
-    EXPECT_EQ(newline_tokens.size(), 1u);
+    EXPECT_EQ(newline_tokens.size(), 1U);
+
+    const auto on_bang{[](const Blame& entry) { return entry.byte == '!'; }};
 
     // '!' is consumed inside strings and line comments, after a quote and after the two slashes respectively.
-    std::vector<std::string> bang_after;
+    std::vector<std::string> bang_after{};
 
-    for (const auto& [byte, token, after] : report.blame)
-    {
-        if (byte == '!')
-        {
-            bang_after.push_back(after);
-        }
-    }
+    std::ranges::copy(
+            report.blame | std::views::filter(on_bang) | std::views::transform(&Blame::after),
+            std::back_inserter(bang_after));
 
     std::ranges::sort(bang_after);
 
     EXPECT_EQ(bang_after, (std::vector<std::string>{R"(")", "//"}));
 }
 
-TEST(Report, Blame_names_a_longer_token_whose_accept_lies_beyond_a_shorter_one)
+TEST(Report_test, Blame_names_a_longer_token_whose_accept_lies_beyond_a_shorter_one)
 {
-    // The newline itself, a[\nx] and a[\nx]b: after the "a" the newline leads to the state accepting the second
-    // rule, and the third rule's scan stands in that same state, so both consume the newline mid-token. Reading
-    // only the nearest accepting state blamed the second rule alone, and the price then narrowed that one rule and
-    // reported the byte still uncertified with nothing further to try.
-    const Token_set set{
-            .rules = {
-                    {.regex = munch::regex::parse(R"(\n)"), .id = 0, .priority = 1, .discarded = false},
-                    {.regex = munch::regex::parse(R"(a[\nx])"), .id = 1, .priority = 1, .discarded = false},
-                    {.regex = munch::regex::parse(R"(a[\nx]b)"), .id = 2, .priority = 1, .discarded = false}}};
+    // The newline itself, a[\nx] and a[\nx]b: after the "a" the newline leads to the state accepting the second rule,
+    // and the third rule's scan stands in that same state, so both consume the newline mid-token.
+    const Token_set set{.rules = {rule(R"(\n)", 0, 1), rule(R"(a[\nx])", 1, 1), rule(R"(a[\nx]b)", 2, 1)}};
 
-    std::vector<std::size_t> blamed;
+    const auto entries{blame(compile(set))};
 
-    for (const auto& [byte, token, after] : blame(compile(set)))
+    std::vector<std::size_t> blamed{};
+
+    for (const auto& [byte, token, after] : entries | std::views::filter(on_newline))
     {
-        if (byte == '\n')
-        {
-            blamed.push_back(token);
+        blamed.push_back(token);
 
-            EXPECT_EQ(after, "a") << token;
-        }
+        EXPECT_EQ(after, "a") << token;
     }
 
     std::ranges::sort(blamed);
@@ -264,54 +372,41 @@ TEST(Report, Blame_names_a_longer_token_whose_accept_lies_beyond_a_shorter_one)
     EXPECT_TRUE(pricing.steps.back().exact);
 }
 
-TEST(Report, An_alternative_matching_nothing_is_no_part_of_the_pattern_the_price_reads)
+TEST(Report_test, An_alternative_matching_nothing_is_no_part_of_the_pattern_the_price_reads)
 {
-    // A set assembled through the API may hold an alternative matching no word at all, any_of(""), which no file
-    // syntax spells; the choice matches what its other alternative does, so `[ab]\n` and the choice of it with
-    // nothing are one pattern to the scanner and must be one to the price: the same terminated shape, the same
-    // steps and the same outcome, where reading the alternative as a word left the newline a possible opener and
-    // lost the terminated edit.
-    using munch::regex::any_of;
-    using munch::regex::choice;
-    using munch::regex::concat;
-    using munch::regex::text;
-
-    const Token_set plain{
-            .rules = {
-                    {.regex = munch::regex::parse(R"([ab]\n)"), .id = 0, .priority = 1, .discarded = false},
-                    {.regex = munch::regex::parse("x"), .id = 1, .priority = 1, .discarded = false}}};
+    // A set assembled through the API may hold an alternative matching no word at all, any_of(""), which no file syntax
+    // spells; the choice matches what its other alternative does, so `[ab]\n` and the choice of it with nothing are one
+    // pattern to the scanner and must be one to the price: the same terminated shape, the same steps and the same
+    // outcome.
+    const Token_set plain{.rules = {rule(R"([ab]\n)", 0, 1), rule("x", 1, 1)}};
 
     const Token_set with_nothing{
             .rules = {
-                    {.regex = choice(
-                             concat(any_of(munch::regex::Set{'a', 'b'}), text('\n')), any_of(munch::regex::Set{})),
+                    {.regex = choice(concat(any_of(Set{'a', 'b'}), text('\n')), any_of(Set{})),
                      .id = 0,
                      .priority = 1,
                      .discarded = false},
-                    {.regex = munch::regex::parse("x"), .id = 1, .priority = 1, .discarded = false}}};
+                    rule("x", 1, 1)}};
 
     // A repetition of nothing that need not repeat it is the empty word, and no part of a sequence: `[ab]\n` followed
     // by `(any_of(""))*` is `[ab]\n` too.
     const Token_set with_trailing{
             .rules = {
-                    {.regex =
-                             concat(any_of(munch::regex::Set{'a', 'b'}), text('\n'),
-                                    munch::regex::kleene(any_of(munch::regex::Set{}))),
+                    {.regex = concat(any_of(Set{'a', 'b'}), text('\n'), kleene(any_of(Set{}))),
                      .id = 0,
                      .priority = 1,
                      .discarded = false},
-                    {.regex = munch::regex::parse("x"), .id = 1, .priority = 1, .discarded = false}}};
+                    rule("x", 1, 1)}};
 
     // A sequence whose parts all match the empty word alone is the empty word and no sequence of nothing: pricing
-    // `a(x{0}y{0}|b)c`, which matches "ac" and "abc", built an empty sequence and threw.
-    const Token_set emptied{
-            .rules = {{.regex = munch::regex::parse("a(x{0}y{0}|b)c"), .id = 0, .priority = 1, .discarded = false}}};
+    // `a(x{0}y{0}|b)c`, which matches "ac" and "abc", throws nothing.
+    const Token_set emptied{.rules = {rule("a(x{0}y{0}|b)c", 0, 1)}};
 
     EXPECT_NO_THROW(std::ignore = price(emptied, 'c'));
 
     const auto expected{price(plain, '\n')};
 
-    const auto same_as_plain{[&expected](const auto& set) {
+    const auto same_as_plain{[&expected](const Token_set& set) {
         const auto priced{price(set, '\n')};
 
         EXPECT_EQ(priced.exact_before, expected.exact_before);
@@ -322,13 +417,13 @@ TEST(Report, An_alternative_matching_nothing_is_no_part_of_the_pattern_the_price
         EXPECT_EQ(priced.together.has_value(), expected.together.has_value());
         ASSERT_EQ(priced.steps.size(), expected.steps.size());
 
-        for (std::size_t step{0}; step < expected.steps.size(); ++step)
+        for (const auto& [ours, theirs] : std::views::zip(priced.steps, expected.steps))
         {
-            EXPECT_EQ(priced.steps[step].token, expected.steps[step].token) << step;
-            EXPECT_EQ(priced.steps[step].shape, expected.steps[step].shape) << step;
-            EXPECT_EQ(priced.steps[step].separated, expected.steps[step].separated) << step;
-            EXPECT_EQ(priced.steps[step].exact, expected.steps[step].exact) << step;
-            EXPECT_EQ(priced.steps[step].modulo, expected.steps[step].modulo) << step;
+            EXPECT_EQ(ours.token, theirs.token);
+            EXPECT_EQ(ours.shape, theirs.shape);
+            EXPECT_EQ(ours.separated, theirs.separated);
+            EXPECT_EQ(ours.exact, theirs.exact);
+            EXPECT_EQ(ours.modulo, theirs.modulo);
         }
     }};
 
@@ -337,29 +432,27 @@ TEST(Report, An_alternative_matching_nothing_is_no_part_of_the_pattern_the_price
     same_as_plain(with_trailing);
 }
 
-TEST(Report, A_re_entrant_initial_state_is_blamed_for_what_it_consumes_mid_token)
+TEST(Report_test, A_re_entrant_initial_state_is_blamed_for_what_it_consumes_mid_token)
 {
     // The star at the head of [\n]*b returns the scan to the initial state, so on "\n\nb" the second newline stands
-    // mid-token in the very state a byte may also begin a token in. Skipping the initial state unconditionally left
-    // the blame empty for a byte the certificate had already refused, and the price section printed nothing at all.
-    const Token_set set{
-            .rules = {{.regex = munch::regex::parse(R"([\n]*b)"), .id = 0, .priority = 1, .discarded = false}}};
+    // mid-token in the very state a byte may also begin a token in. The initial state is blamed there like any other
+    // state, so the byte the certificate refuses has a consumer the price names.
+    const Token_set set{.rules = {rule(R"([\n]*b)", 0, 1)}};
 
     const auto lexer{compile(set)};
 
     EXPECT_TRUE(lexer.simulator().init_reentrant());
     EXPECT_FALSE(lexer.is_split_point('\n'));
 
-    std::vector<std::string> newline_after;
+    std::vector<std::string> newline_after{};
 
-    for (const auto& [byte, token, after] : blame(lexer))
+    const auto blamed{blame(lexer)};
+
+    for (const auto& [byte, token, after] : blamed | std::views::filter(on_newline))
     {
-        if (byte == '\n')
-        {
-            EXPECT_EQ(token, 0U);
+        EXPECT_EQ(token, 0U);
 
-            newline_after.push_back(after);
-        }
+        newline_after.push_back(after);
     }
 
     // The input reported is a shortest one that returns to the initial state, never the empty one it is entered by.
@@ -373,56 +466,55 @@ TEST(Report, A_re_entrant_initial_state_is_blamed_for_what_it_consumes_mid_token
     EXPECT_TRUE(priced.steps.front().separated);
     EXPECT_TRUE(priced.steps.front().exact);
 
-    const auto text{render(audit(set), [](const std::size_t) { return std::string{"B"}; })};
+    const auto report{audit(set)};
 
-    EXPECT_NE(text.find(R"(what it would cost to certify '\n')"), std::string::npos);
-    EXPECT_NE(
-            text.find(R"(B                        no longer admits '\n', and '\n' becomes a token of its own)"),
-            std::string::npos);
+    const auto name{[](const std::size_t) { return std::string{"B"}; }};
+
+    const auto text{render(report, name)};
+
+    EXPECT_TRUE(text.contains(R"(what it would cost to certify '\n')"));
+    EXPECT_TRUE(
+            text.contains(R"(B                        no longer admits '\n', and '\n' becomes a token of its own)"));
 }
 
-TEST(Report, Rendering_reads_as_the_sections)
+TEST(Report_test, Rendering_reads_as_the_sections)
 {
     const auto [file, report]{audited("c-like-conventional.l")};
 
     const auto text{render(report, names(file))};
 
-    EXPECT_NE(text.find("certified bytes             none"), std::string::npos);
-    EXPECT_NE(text.find(R"(certified modulo discarded  '\n')"), std::string::npos);
+    EXPECT_TRUE(text.contains("certified bytes             none"));
+    EXPECT_TRUE(text.contains(R"(certified modulo discarded  '\n')"));
 
     // The two rules returning nothing are what the modulo row deleted, and the page says so.
     EXPECT_EQ(report.discarded, (std::vector<std::size_t>{5, 6}));
-    EXPECT_NE(text.find(R"(discarded tokens            2: "//"[^\n]*, [ \t\n]+)"), std::string::npos);
+    EXPECT_TRUE(text.contains(R"(discarded tokens            2: "//"[^\n]*, [ \t\n]+)"));
 
     // The verdict leads, and the JSON form carries the same figures under their names.
     EXPECT_TRUE(text.starts_with("verdict                     no byte certifies exactly; 1 certifies once the "));
 
     const auto document{json(report, names(file))};
 
-    EXPECT_NE(
-            document.find(R"("verdict": "no byte certifies exactly; 1 certifies once the discarded tokens)"),
-            std::string::npos);
-    EXPECT_NE(document.find(R"("exact": [])"), std::string::npos);
-    EXPECT_NE(document.find(R"("modulo": [10])"), std::string::npos);
-    EXPECT_NE(
-            document.find(R"("discarded": [{"id": 5, "name": "\"//\"[^\\n]*"}, {"id": 6, "name": "[ \\t\\n]+"}])"),
-            std::string::npos);
-    EXPECT_NE(document.find(R"("byte_span": "unbounded")"), std::string::npos);
-    EXPECT_NE(document.find(R"("mandatory_core": "")"), std::string::npos);
-    EXPECT_NE(text.find("anchor-free span, bytes     unbounded"), std::string::npos);
-    EXPECT_NE(text.find("why candidate bytes do not certify"), std::string::npos);
-    EXPECT_NE(text.find("STRING"), std::string::npos);
+    EXPECT_TRUE(document.contains(R"("verdict": "no byte certifies exactly; 1 certifies once the discarded tokens)"));
+    EXPECT_TRUE(document.contains(R"("exact": [])"));
+    EXPECT_TRUE(document.contains(R"("modulo": [10])"));
+    EXPECT_TRUE(
+            document.contains(R"("discarded": [{"id": 5, "name": "\"//\"[^\\n]*"}, {"id": 6, "name": "[ \\t\\n]+"}])"));
+    EXPECT_TRUE(document.contains(R"("byte_span": "unbounded")"));
+    EXPECT_TRUE(document.contains(R"("mandatory_core": "")"));
+    EXPECT_TRUE(text.contains("anchor-free span, bytes     unbounded"));
+    EXPECT_TRUE(text.contains("why candidate bytes do not certify"));
+    EXPECT_TRUE(text.contains("STRING"));
 }
 
-TEST(Report, A_window_count_no_size_t_holds_is_reported_as_the_bound_it_passed)
+TEST(Report_test, A_window_count_no_size_t_holds_is_reported_as_the_bound_it_passed)
 {
-    // One token matching any single byte: every byte moves every state alike, so the tables hold one byte class of
-    // 256 and one certified window per width. A window of the widest width the command accepts, eight, therefore
-    // stands for 256^8 byte strings, which is one more than a std::size_t counts, and the widths below it sum to
-    // 0x0101010101010100. Multiplying the class sizes unchecked wrapped the wider count back onto that sum and
-    // printed it as the number of windows an input can show.
-    const Token_set any{
-            .rules = {{.regex = any_of(munch::regex::Set::all()), .id = 0, .priority = 1, .discarded = false}}};
+    // One token matching any single byte: every byte moves every state alike, so the tables hold one byte class of 256
+    // and one certified window per width. A window of the widest width the command accepts, eight, therefore stands for
+    // 256^8 byte strings, which is one more than a std::size_t counts, and the widths below it sum to
+    // 0x0101010101010100. The count is multiplied checked, so the wider one is reported as the bound it passed and not
+    // as a wrapped number.
+    const Token_set any{.rules = {{.regex = any_of(Set::all()), .id = 0, .priority = 1, .discarded = false}}};
 
     const auto lexer{compile(any)};
 
@@ -430,9 +522,14 @@ TEST(Report, A_window_count_no_size_t_holds_is_reported_as_the_bound_it_passed)
 
     const auto narrow{audit(lexer, 7)};
 
+    const auto narrow_document{json(narrow, name)};
+
+    // The sum of 256^w over the widths w from one to seven, 0x0101010101010100.
+    constexpr std::size_t narrow_count{72340172838076416U};
+
     ASSERT_TRUE(narrow.window_count.has_value());
-    EXPECT_EQ(*narrow.window_count, 72340172838076416U);
-    EXPECT_NE(json(narrow, name).find(R"("window_count": 72340172838076416)"), std::string::npos);
+    EXPECT_EQ(*narrow.window_count, narrow_count);
+    EXPECT_TRUE(narrow_document.contains(std::format(R"("window_count": {})", narrow_count)));
 
     const auto wide{audit(lexer, 8)};
 
@@ -440,15 +537,19 @@ TEST(Report, A_window_count_no_size_t_holds_is_reported_as_the_bound_it_passed)
 
     const auto text{render(wide, name)};
 
-    EXPECT_NE(text.find("more than 18446744073709551615 once classes expand"), std::string::npos);
-    EXPECT_EQ(text.find("72340172838076416"), std::string::npos);
-    EXPECT_NE(json(wide, name).find(R"("window_count": "more than 18446744073709551615")"), std::string::npos);
+    const auto wide_document{json(wide, name)};
+
+    const auto most{std::numeric_limits<std::size_t>::max()};
+
+    EXPECT_TRUE(text.contains(std::format("more than {} once classes expand", most)));
+    EXPECT_FALSE(text.contains(std::to_string(narrow_count)));
+    EXPECT_TRUE(wide_document.contains(std::format(R"("window_count": "more than {}")", most)));
 }
 
-TEST(Report, The_options_that_governed_the_reading_reach_both_forms_of_the_report)
+TEST(Report_test, The_options_that_governed_the_reading_reach_both_forms_of_the_report)
 {
-    // A flex file's `%option` words, in the reader's own order, as the row the report prints under the scanner and
-    // as the array its JSON account carries; a scanner that declares none prints no row at all.
+    // A flex file's `%option` words, in the reader's own order, as the row the report prints under the scanner and as
+    // the array its JSON account carries; a scanner that declares none prints no row at all.
     const auto [file, report]{audited("c-like-split-friendly.l")};
 
     EXPECT_EQ(file.options, (std::vector<std::string>{"noyywrap", "nodefault"}));
@@ -458,23 +559,27 @@ TEST(Report, The_options_that_governed_the_reading_reach_both_forms_of_the_repor
     EXPECT_EQ(options_row({}), "");
     EXPECT_EQ(options_json({}), "[]");
 
-    // Several options are one row, comma-separated; what a logos reading notes of the Unicode version its classes
-    // came from is one of them, so the page says which language was analysed.
+    // Several options are one row, comma-separated; what a logos reading notes of the Unicode version its classes came
+    // from is one of them, so the page says which language was analysed.
     const std::vector<std::string> several{"unicode-classes=16.0.0", "extras=Extras"};
 
     EXPECT_EQ(options_row(several), "options                     unicode-classes=16.0.0, extras=Extras\n");
     EXPECT_EQ(options_json(several), R"(["unicode-classes=16.0.0", "extras=Extras"])");
 }
 
-TEST(Report, Pricing_follows_the_design_rows_of_the_study)
+TEST(Report_test, Pricing_follows_the_design_rows_of_the_study)
 {
-    // The conventional row: one edit, the whitespace run loses the newline and the newline becomes a discarded
-    // token of its own, and the newline certifies exactly. That is the split-friendly row.
-    const auto conventional{price(token_set(audited("c-like-conventional.l").file, "INITIAL"), '\n')};
+    // The conventional row: one edit, the whitespace run loses the newline and the newline becomes a discarded token of
+    // its own, and the newline certifies exactly. That is the split-friendly row.
+    const auto [conventional_file, conventional_report]{audited("c-like-conventional.l")};
+
+    const auto conventional_set{token_set(conventional_file, "INITIAL")};
+
+    const auto conventional{price(conventional_set, '\n')};
 
     EXPECT_FALSE(conventional.exact_before);
     EXPECT_TRUE(conventional.modulo_before);
-    ASSERT_EQ(conventional.steps.size(), 1u);
+    ASSERT_EQ(conventional.steps.size(), 1U);
     EXPECT_TRUE(conventional.steps[0].separated);
     EXPECT_TRUE(conventional.steps[0].separated_discarded);
     EXPECT_TRUE(conventional.steps[0].exact);
@@ -484,23 +589,30 @@ TEST(Report, Pricing_follows_the_design_rows_of_the_study)
     // whitespace run then buys it exactly, in that order, as the paper's two design rows had it.
     const auto blocks{audited("c-like-block-comments.l")};
 
-    const auto priced{price(token_set(blocks.file, "INITIAL"), '\n')};
+    const auto blocks_set{token_set(blocks.file, "INITIAL")};
+
+    const auto priced{price(blocks_set, '\n')};
 
     EXPECT_FALSE(priced.exact_before);
     EXPECT_FALSE(priced.modulo_before);
-    ASSERT_EQ(priced.steps.size(), 2u);
-    EXPECT_EQ(blocks.file.rules[priced.steps[0].token].pattern, R"("/*"([^*]|\*+[^*/])*\*+"/")");
+    ASSERT_EQ(priced.steps.size(), 2U);
+
+    const auto& comment_rule{blocks.file.rules[priced.steps[0].token]};
+
+    const auto& run_rule{blocks.file.rules[priced.steps[1].token]};
+
+    EXPECT_EQ(comment_rule.pattern, R"("/*"([^*]|\*+[^*/])*\*+"/")");
     EXPECT_FALSE(priced.steps[0].separated);
     EXPECT_FALSE(priced.steps[0].exact);
     EXPECT_TRUE(priced.steps[0].modulo);
-    EXPECT_EQ(blocks.file.rules[priced.steps[1].token].pattern, R"([ \t\n]+)");
+    EXPECT_EQ(run_rule.pattern, R"([ \t\n]+)");
     EXPECT_TRUE(priced.steps[1].separated);
     EXPECT_TRUE(priced.steps[1].exact);
     EXPECT_TRUE(priced.immovable.empty());
 
-    // The comment is discarded, but its step separated nothing, so there is no token of the byte's own to be
-    // discarded there; the run's step separated one, discarded as the run is.
-    EXPECT_TRUE(blocks.file.rules[priced.steps[0].token].token == std::nullopt);
+    // The comment is discarded, but its step separated nothing, so there is no token of the byte's own to be discarded
+    // there; the run's step separated one, discarded as the run is.
+    EXPECT_EQ(comment_rule.token, std::nullopt);
     EXPECT_FALSE(priced.steps[0].separated_discarded);
     EXPECT_TRUE(priced.steps[1].separated_discarded);
 
@@ -508,23 +620,21 @@ TEST(Report, Pricing_follows_the_design_rows_of_the_study)
     const auto fixed{
             read_flex("%%\n\"==\"      return EQUAL;\n[=]        return ASSIGN;\n[a-z]+     return WORD;\n").front()};
 
-    const auto equals{price(token_set(fixed, "INITIAL"), '=')};
+    const auto fixed_set{token_set(fixed, "INITIAL")};
+
+    const auto equals{price(fixed_set, '=')};
 
     EXPECT_FALSE(equals.exact_before);
     EXPECT_EQ(equals.immovable, (std::vector<std::size_t>{0}));
     EXPECT_TRUE(equals.steps.empty());
 }
 
-TEST(Report, Pricing_narrows_the_consumer_an_earlier_edit_exposes)
+TEST(Report_test, Pricing_narrows_the_consumer_an_earlier_edit_exposes)
 {
-    // A's match of "a\n" is what keeps B from consuming the newline, so the blame names A alone; once A loses the
-    // byte, B wins that match and must be narrowed too. Pricing from the list the blame gave before any edit
-    // stopped after one step and reported the byte still uncertified with nothing immovable and nothing to try.
-    const Token_set exposed{
-            .rules = {
-                    {.regex = munch::regex::parse(R"(\n)"), .id = 0, .priority = 0, .discarded = false},
-                    {.regex = munch::regex::parse(R"(a[\nx])"), .id = 1, .priority = 1, .discarded = false},
-                    {.regex = munch::regex::parse(R"(a[\ny])"), .id = 2, .priority = 2, .discarded = false}}};
+    // A's match of "a\n" is what keeps B from consuming the newline, so the blame names A alone; once A loses the byte,
+    // B wins that match and must be narrowed too. The price asks the blame again after every edit, so it takes both
+    // steps.
+    const Token_set exposed{.rules = {rule(R"(\n)", 0, 0), rule(R"(a[\nx])", 1, 1), rule(R"(a[\ny])", 2, 2)}};
 
     const auto priced{price(exposed, '\n')};
 
@@ -535,12 +645,9 @@ TEST(Report, Pricing_narrows_the_consumer_an_earlier_edit_exposes)
     EXPECT_TRUE(priced.steps.back().exact);
     EXPECT_TRUE(priced.immovable.empty());
 
-    // The same where priority alone hides the second consumer: FIRST and SECOND match the same runs, FIRST wins
-    // them, and SECOND is the run that consumes the newline once FIRST no longer does.
-    const Token_set shadowed{
-            .rules = {
-                    {.regex = munch::regex::parse(R"([\nx]+)"), .id = 0, .priority = 0, .discarded = false},
-                    {.regex = munch::regex::parse(R"([\nx]+|y)"), .id = 1, .priority = 1, .discarded = false}}};
+    // The same where priority alone hides the second consumer: the first rule and the second match the same runs, the
+    // first wins them, and the second is the run that consumes the newline once the first no longer does.
+    const Token_set shadowed{.rules = {rule(R"([\nx]+)", 0, 0), rule(R"([\nx]+|y)", 1, 1)}};
 
     const auto repriced{price(shadowed, '\n')};
 
@@ -551,21 +658,20 @@ TEST(Report, Pricing_narrows_the_consumer_an_earlier_edit_exposes)
     EXPECT_TRUE(repriced.steps.back().separated);
     EXPECT_TRUE(repriced.steps.back().exact);
 
-    // The token the byte was given of its own is the analysis's, none of the set's rules, so no round of the
-    // repricing narrows it and nothing the report names is an id the caller cannot name.
+    // The token the byte was given of its own is the analysis's, none of the set's rules, so no round of the repricing
+    // narrows it and nothing the report names is an id the caller cannot name.
     EXPECT_LT(repriced.steps.back().token, shadowed.rules.size());
     EXPECT_TRUE(repriced.immovable.empty());
     EXPECT_TRUE(repriced.undecided.empty());
 }
 
-TEST(Report, A_byte_no_token_begins_with_is_given_one_before_it_is_priced)
+TEST(Report_test, A_byte_no_token_begins_with_is_given_one_before_it_is_priced)
 {
-    // The newline here ends a line and begins nothing, so neither certificate reports it and the blame is silent
-    // about it; the page printed the heading and nothing under it. The byte is given a token of its own first, and
-    // the line token is then priced as any consumer is: immovable for the narrowing, and its terminated shape
-    // leaves the newline to the token it now has; the opener matches two words, so that edit is the one offered.
-    const Token_set lines{
-            .rules = {{.regex = munch::regex::parse(R"([ab]\n)"), .id = 0, .priority = 0, .discarded = false}}};
+    // The newline here ends a line and begins nothing, so neither certificate reports it and the blame is silent about
+    // it. The byte is given a token of its own first, and the line token is then priced as any consumer is: immovable
+    // for the narrowing, and its terminated shape leaves the newline to the token it now has; the opener matches two
+    // words, so that edit is the one offered.
+    const Token_set lines{.rules = {rule(R"([ab]\n)", 0, 0)}};
 
     const auto priced{price(lines, '\n')};
 
@@ -581,8 +687,7 @@ TEST(Report, A_byte_no_token_begins_with_is_given_one_before_it_is_priced)
     EXPECT_TRUE(priced.together->exact);
 
     // A byte no token holds at all certifies exactly once given a token, with nothing left to narrow.
-    const Token_set absent{
-            .rules = {{.regex = munch::regex::parse(R"([a])"), .id = 0, .priority = 0, .discarded = false}}};
+    const Token_set absent{.rules = {rule(R"([a])", 0, 0)}};
 
     const auto held{price(absent, '\n')};
 
@@ -591,13 +696,12 @@ TEST(Report, A_byte_no_token_begins_with_is_given_one_before_it_is_priced)
     EXPECT_TRUE(held.steps.empty());
     EXPECT_TRUE(held.immovable.empty());
 
-    // A byte some token begins with is priced as before, nothing given.
-    const Token_set begun{
-            .rules = {
-                    {.regex = munch::regex::parse(R"(\n)"), .id = 0, .priority = 0, .discarded = false},
-                    {.regex = munch::regex::parse(R"(a[\nx])"), .id = 1, .priority = 1, .discarded = false}}};
+    // A byte some token begins with is priced with nothing given.
+    const Token_set begun{.rules = {rule(R"(\n)", 0, 0), rule(R"(a[\nx])", 1, 1)}};
 
-    EXPECT_FALSE(price(begun, '\n').given.has_value());
+    const auto begun_price{price(begun, '\n')};
+
+    EXPECT_FALSE(begun_price.given.has_value());
 
     // The report prices the newline on its own, and both forms say what the case is rather than nothing.
     const auto report{audit(lines)};
@@ -609,27 +713,25 @@ TEST(Report, A_byte_no_token_begins_with_is_given_one_before_it_is_priced)
 
     const auto text{render(report, name)};
 
-    EXPECT_NE(
-            text.find("no token begins with '\\n'  neither certificate reports it; it is given a token of its own"),
-            std::string::npos);
-    EXPECT_NE(
-            text.find("LINE                       spells '\\n' out and cannot be narrowed; its shape"),
-            std::string::npos);
-    EXPECT_NE(
-            json(report, name).find(R"("given": {"exact": false, "modulo": false, "gained": []})"), std::string::npos);
-    EXPECT_NE(render(audit(absent), name).find("certifies exactly"), std::string::npos);
+    EXPECT_TRUE(text.contains(
+            R"(no token begins with '\n'  neither certificate reports it; it is given a token of its own)"));
+    EXPECT_TRUE(text.contains(R"(LINE                       spells '\n' out and cannot be narrowed; its shape)"));
+
+    const auto document{json(report, name)};
+
+    const auto absent_report{audit(absent)};
+
+    const auto absent_text{render(absent_report, name)};
+
+    EXPECT_TRUE(document.contains(R"("given": {"exact": false, "modulo": false, "gained": []})"));
+    EXPECT_TRUE(absent_text.contains("certifies exactly"));
 }
 
-TEST(Report, Steps_follow_the_order_of_the_rules_and_not_of_their_ids)
+TEST(Report_test, Steps_follow_the_order_of_the_rules_and_not_of_their_ids)
 {
-    // Both openers consume the newline before any edit, so both are answered before any other, in the order the
-    // set lists them: the rule with id 9 stands first. Ordering by id took the rule with id 2 first, against what
-    // the page promises of the steps.
-    const Token_set set{
-            .rules = {
-                    {.regex = munch::regex::parse(R"(\n)"), .id = 5, .priority = 0, .discarded = false},
-                    {.regex = munch::regex::parse(R"(a[\nx])"), .id = 9, .priority = 1, .discarded = false},
-                    {.regex = munch::regex::parse(R"(b[\nx])"), .id = 2, .priority = 2, .discarded = false}}};
+    // Both openers consume the newline before any edit, so both are answered before any other, in the order the set
+    // lists them: the rule with id 9 stands first.
+    const Token_set set{.rules = {rule(R"(\n)", 5, 0), rule(R"(a[\nx])", 9, 1), rule(R"(b[\nx])", 2, 2)}};
 
     const auto priced{price(set, '\n')};
 
@@ -640,22 +742,20 @@ TEST(Report, Steps_follow_the_order_of_the_rules_and_not_of_their_ids)
     EXPECT_TRUE(priced.steps.back().exact);
 }
 
-TEST(Report, The_token_a_byte_is_given_of_its_own_takes_an_id_no_rule_carries_whatever_the_ids_are)
+TEST(Report_test, The_token_a_byte_is_given_of_its_own_takes_an_id_no_rule_carries_whatever_the_ids_are)
 {
-    // The ids are the caller's and any std::size_t is one: with `a[xy]` at the largest and `x` one below it, x does
-    // not certify and narrowing the opener certifies it, as it does under ids 0 and 1. Taking one past the highest
-    // id for the byte's own token wrapped to 0, and seeding the answered set with the id of `a[xy]`'s successor
-    // left the consumer unread: no step, nothing immovable, nothing undecided, while x stayed uncertified.
+    // The ids are the caller's and any std::size_t is one: with `a[xy]` at the largest and `x` one below it, x does not
+    // certify and narrowing the opener certifies it, as it does under ids 0 and 1. The byte's own token takes an id no
+    // rule carries, so the opener is the one step whatever the ids are.
     constexpr auto largest{std::numeric_limits<std::size_t>::max()};
 
     for (const auto& [opener, terminator] : {std::pair{0UZ, 1UZ}, std::pair{largest, largest - 1}, std::pair{1UZ, 0UZ}})
     {
-        const Token_set set{
-                .rules = {
-                        {.regex = munch::regex::parse(R"(a[xy])"), .id = opener, .priority = 0, .discarded = false},
-                        {.regex = munch::regex::parse("x"), .id = terminator, .priority = 1, .discarded = false}}};
+        const Token_set set{.rules = {rule(R"(a[xy])", opener, 0), rule("x", terminator, 1)}};
 
-        EXPECT_FALSE(compile(set).is_split_point('x'));
+        const auto lexer{compile(set)};
+
+        EXPECT_FALSE(lexer.is_split_point('x'));
 
         const auto priced{price(set, 'x')};
 
@@ -666,12 +766,9 @@ TEST(Report, The_token_a_byte_is_given_of_its_own_takes_an_id_no_rule_carries_wh
         EXPECT_TRUE(priced.undecided.empty());
     }
 
-    // The token the byte is given where none begins with it takes the smallest id no rule carries, 1 between 0 and
-    // 2, which no step names, so the one step is the opener's and certifies.
-    const Token_set unmatched{
-            .rules = {
-                    {.regex = munch::regex::parse(R"(a[xy])"), .id = 0, .priority = 0, .discarded = false},
-                    {.regex = munch::regex::parse("b"), .id = 2, .priority = 1, .discarded = false}}};
+    // The token the byte is given where none begins with it takes the smallest id no rule carries, 1 between 0 and 2,
+    // which no step names, so the one step is the opener's and certifies.
+    const Token_set unmatched{.rules = {rule(R"(a[xy])", 0, 0), rule("b", 2, 1)}};
 
     const auto priced{price(unmatched, 'x')};
 
@@ -681,18 +778,15 @@ TEST(Report, The_token_a_byte_is_given_of_its_own_takes_an_id_no_rule_carries_wh
     EXPECT_TRUE(priced.steps.front().exact);
 }
 
-TEST(Report, A_byte_a_token_begins_with_obstructs_nothing_and_is_not_called_immovable)
+TEST(Report_test, A_byte_a_token_begins_with_obstructs_nothing_and_is_not_called_immovable)
 {
-    // The opener's newline is the rule's fixed occurrence of the byte, and it is the one the initial state
-    // consumes, where a byte may begin a token. The narrowing cannot take a byte out of a spelling, but reporting
-    // that as the byte being unbuyable while the rule stays was false: the class alone narrowed, it certifies. The
-    // opener may be a class of the one byte, a repetition of the text, a group, or one alternative among others
-    // that begin the same way; each was called immovable while a leading text alone was recognised.
+    // The opener's newline is the rule's fixed occurrence of the byte, and it is the one the initial state consumes,
+    // where a byte may begin a token. The narrowing cannot take a byte out of a spelling, and that leaves the byte
+    // buyable while the rule stays: the class alone narrowed, it certifies. The opener may be a class of the one byte,
+    // a repetition of the text, a group, or one alternative among others that begin the same way; each is undecided and
+    // none immovable.
     const auto priced{[](const std::string_view opener) {
-        const Token_set set{
-                .rules = {
-                        {.regex = munch::regex::parse(R"(\n)"), .id = 0, .priority = 0, .discarded = false},
-                        {.regex = munch::regex::parse(opener), .id = 1, .priority = 1, .discarded = false}}};
+        const Token_set set{.rules = {rule(R"(\n)", 0, 0), rule(opener, 1, 1)}};
 
         return price(set, '\n');
     }};
@@ -710,16 +804,15 @@ TEST(Report, A_byte_a_token_begins_with_obstructs_nothing_and_is_not_called_immo
     // its opener: the byte certifies with the rule standing.
     for (const auto narrowed : {R"(\n[x])", R"([\n][x])", R"((\n[x]|\ny))", R"(\n{1}[x])", R"((\n[xy])[x])"})
     {
-        const Token_set set{
-                .rules = {
-                        {.regex = munch::regex::parse(R"(\n)"), .id = 0, .priority = 0, .discarded = false},
-                        {.regex = munch::regex::parse(narrowed), .id = 1, .priority = 1, .discarded = false}}};
+        const Token_set set{.rules = {rule(R"(\n)", 0, 0), rule(narrowed, 1, 1)}};
 
-        EXPECT_TRUE(compile(set).is_split_point('\n')) << narrowed;
+        const auto lexer{compile(set)};
+
+        EXPECT_TRUE(lexer.is_split_point('\n')) << narrowed;
     }
 
-    // A fixed occurrence past the first byte on every path is the obstruction the necessity theorem names, and it
-    // stays immovable: spelled mid-token, spelled twice, or repeated to a second occurrence.
+    // A fixed occurrence past the first byte on every path is the obstruction the necessity theorem names, and it stays
+    // immovable: spelled mid-token, spelled twice, or repeated to a second occurrence.
     for (const auto inside : {R"([x]\n[x])", R"([xy]\n[x])", R"(\n\n)", R"(\n{2})", R"((\n[x]|x\n)\n)"})
     {
         const auto pricing{priced(inside)};
@@ -730,45 +823,48 @@ TEST(Report, A_byte_a_token_begins_with_obstructs_nothing_and_is_not_called_immo
 
     // The page says which of the two it is, and claims impossibility only where the theorem proves it and no shape
     // offers an edit: the opener of [xy]\n[x] matches two words, so none does.
-    const Token_set set{
-            .rules = {
-                    {.regex = munch::regex::parse(R"(\n)"), .id = 0, .priority = 0, .discarded = false},
-                    {.regex = munch::regex::parse(R"([\n][\nx])"), .id = 1, .priority = 1, .discarded = false}}};
+    const Token_set set{.rules = {rule(R"(\n)", 0, 0), rule(R"([\n][\nx])", 1, 1)}};
 
-    const Token_set inside{
-            .rules = {
-                    {.regex = munch::regex::parse(R"(\n)"), .id = 0, .priority = 0, .discarded = false},
-                    {.regex = munch::regex::parse(R"([xy]\n[x])"), .id = 1, .priority = 1, .discarded = false}}};
+    const Token_set inside{.rules = {rule(R"(\n)", 0, 0), rule(R"([xy]\n[x])", 1, 1)}};
 
-    const auto text{render(audit(set), [](const std::size_t rule) { return rule == 0 ? "NEWLINE" : "OPENER"; })};
+    const auto report{audit(set)};
 
-    EXPECT_NE(
-            text.find(R"(OPENER                     spells '\n' out, on some path only as its first byte)"),
-            std::string::npos);
-    EXPECT_NE(text.find("no narrowing applies to a fixed spelling, so this edit decides nothing"), std::string::npos);
-    EXPECT_EQ(text.find("the byte cannot certify while it stays"), std::string::npos);
+    const auto name{[](const std::size_t id) { return std::string{id == 0 ? "NEWLINE" : "OPENER"}; }};
 
-    EXPECT_NE(
-            render(audit(inside), [](const std::size_t rule) { return rule == 0 ? "NEWLINE" : "INSIDE"; })
-                    .find("the byte cannot certify while it stays"),
-            std::string::npos);
+    const auto text{render(report, name)};
+
+    EXPECT_TRUE(text.contains(R"(OPENER                     spells '\n' out, on some path only as its first byte)"));
+    EXPECT_TRUE(text.contains("no narrowing applies to a fixed spelling, so this edit decides nothing"));
+    EXPECT_FALSE(text.contains("the byte cannot certify while it stays"));
+
+    const auto inside_report{audit(inside)};
+
+    const auto inside_name{[](const std::size_t id) { return std::string{id == 0 ? "NEWLINE" : "INSIDE"}; }};
+
+    const auto inside_text{render(inside_report, inside_name)};
+
+    EXPECT_TRUE(inside_text.contains("the byte cannot certify while it stays"));
 }
 
-TEST(Report, Shapes_name_the_edit_an_author_would_make_and_each_is_tried_on_its_own)
+TEST(Report_test, Shapes_name_the_edit_an_author_would_make_and_each_is_tried_on_its_own)
 {
-    // The whitespace run is a run; the block comment is delimited; the line comment ending in its newline is
-    // terminated (and delimited too, terminated winning the name); the two-byte spelling is fixed.
-    const auto blocks{audited("c-like-block-comments.l").file};
+    // The whitespace run is a run; the block comment is delimited; the line comment ending in its newline is terminated
+    // (and delimited too, terminated winning the name); the two-byte spelling is fixed.
+    const auto [blocks, blocks_report]{audited("c-like-block-comments.l")};
 
-    const auto rule{[&blocks](const std::string_view pattern) {
+    const auto expression_of{[&blocks](const std::string_view pattern) {
         return std::ranges::find(blocks.rules, pattern, &Lexer_spec::Rule::pattern)->expression;
     }};
 
-    EXPECT_EQ(shape_of(munch::regex::parse(rule(R"([ \t\n]+)")), '\n'), Shape::run);
-    EXPECT_EQ(shape_of(munch::regex::parse(rule(R"("/*"([^*]|\*+[^*/])*\*+"/")")), '\n'), Shape::delimited);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"("//"[^\n]*\n)"), '\n'), Shape::terminated);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"("==")"), '='), Shape::fixed);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([a-z]+|"\n")"), '\n'), Shape::other);
+    const auto run_expression{expression_of(R"([ \t\n]+)")};
+
+    const auto comment_expression{expression_of(R"("/*"([^*]|\*+[^*/])*\*+"/")")};
+
+    EXPECT_EQ(shape_of(parse(run_expression), '\n'), Shape::run);
+    EXPECT_EQ(shape_of(parse(comment_expression), '\n'), Shape::delimited);
+    EXPECT_EQ(shape_of(parse(R"("//"[^\n]*\n)"), '\n'), Shape::terminated);
+    EXPECT_EQ(shape_of(parse(R"("==")"), '='), Shape::fixed);
+    EXPECT_EQ(shape_of(parse(R"([a-z]+|"\n")"), '\n'), Shape::other);
 
     // A string and a line comment ending in its newline both consume the newline mid-token; the whitespace run, which
     // excludes it, does not. Each shape's edit alone leaves the other consumer, both together buy the byte.
@@ -782,23 +878,25 @@ TEST(Report, Shapes_name_the_edit_an_author_would_make_and_each_is_tried_on_its_
 
     const auto strings{read_flex(with_comment).front()};
 
-    const auto priced{price(token_set(strings, "INITIAL"), '\n')};
+    const auto strings_set{token_set(strings, "INITIAL")};
+
+    const auto priced{price(strings_set, '\n')};
 
     EXPECT_FALSE(priced.exact_before);
-    ASSERT_EQ(priced.steps.size(), 1u);
+    ASSERT_EQ(priced.steps.size(), 1U);
     EXPECT_EQ(priced.steps[0].shape, Shape::delimited);
 
     // The narrowing cannot take the newline out of the comment's fixed terminator, so it is immovable there; the
     // choices can: the string's delimited edit and the comment's terminated and delimited edits, each alone.
     EXPECT_EQ(priced.immovable, (std::vector<std::size_t>{2}));
-    ASSERT_EQ(priced.choices.size(), 3u);
-    EXPECT_EQ(priced.choices[0].token, 1u);
+    ASSERT_EQ(priced.choices.size(), 3U);
+    EXPECT_EQ(priced.choices[0].token, 1U);
     EXPECT_EQ(priced.choices[0].shape, Shape::delimited);
     EXPECT_FALSE(priced.choices[0].after.exact);
-    EXPECT_EQ(priced.choices[1].token, 2u);
+    EXPECT_EQ(priced.choices[1].token, 2U);
     EXPECT_EQ(priced.choices[1].shape, Shape::terminated);
     EXPECT_FALSE(priced.choices[1].after.exact);
-    EXPECT_EQ(priced.choices[2].token, 2u);
+    EXPECT_EQ(priced.choices[2].token, 2U);
     EXPECT_EQ(priced.choices[2].shape, Shape::delimited);
 
     // Taken together, the string cut to its quote and the comment stopping short of its newline, the byte certifies.
@@ -815,36 +913,37 @@ TEST(Report, Shapes_name_the_edit_an_author_would_make_and_each_is_tried_on_its_
 
     const auto alone{read_flex(without_comment).front()};
 
-    const auto bought{price(token_set(alone, "INITIAL"), '\n')};
+    const auto alone_set{token_set(alone, "INITIAL")};
 
-    ASSERT_EQ(bought.choices.size(), 1u);
+    const auto bought{price(alone_set, '\n')};
+
+    ASSERT_EQ(bought.choices.size(), 1U);
     EXPECT_EQ(bought.choices[0].shape, Shape::delimited);
     EXPECT_TRUE(bought.choices[0].after.exact);
     EXPECT_FALSE(bought.choices[0].after.gained.empty());
 
-    const auto text{render(audit(token_set(alone, "INITIAL")), names(alone))};
+    const auto alone_report{audit(alone_set)};
 
-    EXPECT_NE(text.find("delimited: scan the body in a start condition of its own"), std::string::npos);
+    const auto text{render(alone_report, names(alone))};
+
+    EXPECT_TRUE(text.contains("delimited: scan the body in a start condition of its own"));
 }
 
-TEST(Report, A_terminated_shape_names_the_edit_that_was_evaluated_and_no_other)
+TEST(Report_test, A_terminated_shape_names_the_edit_that_was_evaluated_and_no_other)
 {
     // The shape's edit deletes the token's last component, so the shape holds only where that component is the
-    // terminator. The last component of [ab]"xb" admits the 'x' while the token ends in 'b': the page reported an
-    // edit leaving a terminator to the token after it, while what was evaluated deleted the token's own 'b' too.
-    // The class of [ab][xb] admits the 'x' the same way: the class holds the byte, and it is not the byte alone.
-    // The openers here match two words, so no delimited edit stands in for the terminated one.
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab]"xb")"), 'x'), Shape::fixed);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab][xb])"), 'x'), Shape::other);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab]"x")"), 'x'), Shape::terminated);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab][x])"), 'x'), Shape::terminated);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"("//"[^\n]*\n)"), '\n'), Shape::terminated);
+    // terminator. The last component of [ab]"xb" admits the 'x' while the token ends in 'b', so deleting it deletes the
+    // token's own 'b' too and leaves no terminator to the token after it. The class of [ab][xb] admits the 'x' the same
+    // way: the class holds the byte, and it is not the byte alone. The openers here match two words, so no delimited
+    // edit stands in for the terminated one.
+    EXPECT_EQ(shape_of(parse(R"([ab]"xb")"), 'x'), Shape::fixed);
+    EXPECT_EQ(shape_of(parse(R"([ab][xb])"), 'x'), Shape::other);
+    EXPECT_EQ(shape_of(parse(R"([ab]"x")"), 'x'), Shape::terminated);
+    EXPECT_EQ(shape_of(parse(R"([ab][x])"), 'x'), Shape::terminated);
+    EXPECT_EQ(shape_of(parse(R"("//"[^\n]*\n)"), '\n'), Shape::terminated);
 
     // The class narrows to [b] instead, which is the step the page reports, and no shape's edit is offered.
-    const Token_set classed{
-            .rules = {
-                    {.regex = munch::regex::parse(R"([ab][xb])"), .id = 0, .priority = 0, .discarded = false},
-                    {.regex = munch::regex::parse("x"), .id = 1, .priority = 1, .discarded = false}}};
+    const Token_set classed{.rules = {rule(R"([ab][xb])", 0, 0), rule("x", 1, 1)}};
 
     const auto narrowed{price(classed, 'x')};
 
@@ -871,36 +970,29 @@ x                      return X;
     EXPECT_EQ(priced.immovable, (std::vector<std::size_t>{0}));
 
     // The byte is asked for as the command asks for it, and the page offers no edit it did not evaluate.
-    auto report{audit(set)};
+    const auto text{priced_page(set, priced, spelled)};
 
-    report.prices.push_back(priced);
-
-    const auto text{render(report, names(spelled))};
-
-    EXPECT_EQ(text.find("leave the terminator to the token after it"), std::string::npos);
-    EXPECT_NE(
-            text.find("spells 'x' out and cannot be narrowed; the byte cannot certify while it stays"),
-            std::string::npos);
+    EXPECT_FALSE(text.contains("leave the terminator to the token after it"));
+    EXPECT_TRUE(text.contains("spells 'x' out and cannot be narrowed; the byte cannot certify while it stays"));
 }
 
-TEST(Report, An_opener_is_read_by_what_it_matches_and_not_by_its_spelling)
+TEST(Report_test, An_opener_is_read_by_what_it_matches_and_not_by_its_spelling)
 {
-    // flex scans [x][ab]* and x{1}[ab]* as it scans "x"[ab]*, so the shape is the same: the first component matches
-    // one fixed word the byte is not in, however the tree spells that. Reading the spelling called the first two
-    // other and offered no edit, while the quoted one was delimited and its edit certified.
+    // flex scans [x][ab]* and x{1}[ab]* as it scans "x"[ab]*, so the shape is the same: the first component matches one
+    // fixed word the byte is not in, however the tree spells that. Each is delimited, and its edit certifies.
     for (const auto delimited :
          {R"("x"[ab]*)", R"([x][ab]*)", R"(x{1}[ab]*)", R"([x]{1}[ab]*)", R"((x|[x])[ab]*)", R"("xy"{2}[ab]*)",
           R"([a]"xb")", R"([a][xb])"})
     {
-        EXPECT_EQ(shape_of(munch::regex::parse(delimited), 'b'), Shape::delimited) << delimited;
+        EXPECT_EQ(shape_of(parse(delimited), 'b'), Shape::delimited) << delimited;
     }
 
     // An opener matching two words opens nothing the body can leave, and one holding the byte spells it fixed.
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([xy][ab]*)"), 'b'), Shape::other);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"(x?[ab]*)"), 'b'), Shape::other);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"(x{1,2}[ab]*)"), 'b'), Shape::other);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([b][ab]*)"), 'b'), Shape::fixed);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"(b{1}[ab]*)"), 'b'), Shape::fixed);
+    EXPECT_EQ(shape_of(parse(R"([xy][ab]*)"), 'b'), Shape::other);
+    EXPECT_EQ(shape_of(parse(R"(x?[ab]*)"), 'b'), Shape::other);
+    EXPECT_EQ(shape_of(parse(R"(x{1,2}[ab]*)"), 'b'), Shape::other);
+    EXPECT_EQ(shape_of(parse(R"([b][ab]*)"), 'b'), Shape::fixed);
+    EXPECT_EQ(shape_of(parse(R"(b{1}[ab]*)"), 'b'), Shape::fixed);
 
     constexpr std::string_view classed{R"(%%
 [x][ab]*               return T;
@@ -923,43 +1015,34 @@ b                      return B;
     ASSERT_TRUE(priced.together.has_value());
     EXPECT_TRUE(priced.together->exact);
 
-    auto report{audit(set)};
+    const auto text{priced_page(set, priced, file)};
 
-    report.prices.push_back(priced);
-
-    const auto text{render(report, names(file))};
-
-    EXPECT_NE(
-            text.find("delimited: scan the body in a start condition of its own, the opener staying here"),
-            std::string::npos);
+    EXPECT_TRUE(text.contains("delimited: scan the body in a start condition of its own, the opener staying here"));
 }
 
-TEST(Report, A_terminator_is_read_by_what_it_matches_and_not_by_its_spelling)
+TEST(Report_test, A_terminator_is_read_by_what_it_matches_and_not_by_its_spelling)
 {
     // flex scans [a]x{1}, [a]x{1,1} and [a][x]{1} as it scans [a]x, so the shape is the same: the last component
-    // matches the one byte and nothing else, however the tree spells that. Reading the spelling called the three
-    // with a count fixed and the byte unbuyable, while removing the count certified it.
+    // matches the one byte and nothing else, however the tree spells that. Each is terminated, and its edit certifies.
     for (const auto terminated :
          {R"([a]x)", R"([a]x{1})", R"([a]x{1,1})", R"([a][x]{1})", R"([a](x|[x]))", R"([a](x{1}){1})"})
     {
-        EXPECT_EQ(shape_of(munch::regex::parse(terminated), 'x'), Shape::terminated) << terminated;
+        EXPECT_EQ(shape_of(parse(terminated), 'x'), Shape::terminated) << terminated;
     }
 
     // The tree can carry an empty text beside the byte, which exclude() leaves where a repetition stood.
-    EXPECT_EQ(
-            shape_of(
-                    munch::regex::concat(
-                            munch::regex::any_of(munch::regex::Set{'a'}),
-                            munch::regex::concat(munch::regex::text(""), munch::regex::text("x"))),
-                    'x'),
-            Shape::terminated);
+    const auto with_empty{concat(text(""), text("x"))};
+
+    const auto tree{concat(any_of(Set{'a'}), with_empty)};
+
+    EXPECT_EQ(shape_of(tree, 'x'), Shape::terminated);
 
     // A last component matching more than the one byte, or another one, is no terminator.
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab]x{2})"), 'x'), Shape::fixed);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab]x{1,2})"), 'x'), Shape::fixed);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab]x?)"), 'x'), Shape::other);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab](x|y))"), 'x'), Shape::other);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab]y{1})"), 'x'), Shape::other);
+    EXPECT_EQ(shape_of(parse(R"([ab]x{2})"), 'x'), Shape::fixed);
+    EXPECT_EQ(shape_of(parse(R"([ab]x{1,2})"), 'x'), Shape::fixed);
+    EXPECT_EQ(shape_of(parse(R"([ab]x?)"), 'x'), Shape::other);
+    EXPECT_EQ(shape_of(parse(R"([ab](x|y))"), 'x'), Shape::other);
+    EXPECT_EQ(shape_of(parse(R"([ab]y{1})"), 'x'), Shape::other);
 
     // The opener matches two words, so the terminated edit is the one offered.
     constexpr std::string_view spelled_once{R"(%%
@@ -982,84 +1065,60 @@ x                      return X;
     ASSERT_TRUE(priced.together.has_value());
     EXPECT_TRUE(priced.together->exact);
 
-    auto report{audit(set)};
+    const auto text{priced_page(set, priced, file)};
 
-    report.prices.push_back(priced);
-
-    const auto text{render(report, names(file))};
-
-    EXPECT_NE(text.find("terminated: leave the terminator to the token after it"), std::string::npos);
-    EXPECT_EQ(text.find("the byte cannot certify while it stays"), std::string::npos);
+    EXPECT_TRUE(text.contains("terminated: leave the terminator to the token after it"));
+    EXPECT_FALSE(text.contains("the byte cannot certify while it stays"));
 }
 
-TEST(Report, An_exact_zero_repetition_is_the_empty_word_whatever_it_repeats)
+TEST(Report_test, An_exact_zero_repetition_is_the_empty_word_whatever_it_repeats)
 {
-    // re2c 3.1 scans `[ab]([cd]{0}"x")` as it scans `[ab]"x"`, BODY of length two on "ax" and "bx" and X on "x",
-    // since a repetition of exactly zero matches the empty word whatever it repeats, so the last component matches
-    // the one byte and the shape is terminated; reading the repeated class first called the component two words
-    // and the byte unbuyable, and the opener forms other. A repetition that may run once is read by its class, so
-    // the byte stays fixed in the component.
+    // re2c 3.1 scans `[ab]([cd]{0}"x")` as it scans `[ab]"x"`, BODY of length two on "ax" and "bx" and X on "x", since
+    // a repetition of exactly zero matches the empty word whatever it repeats, so the last component matches the one
+    // byte and the shape is terminated, the opener forms delimited. A repetition that may run once is read by its
+    // class, so the byte stays fixed in the component.
     for (const auto terminated : {R"([ab]([cd]{0}x))", R"([ab]([cd]{0,0}x))", R"([ab](([cd]{0}){2}x))"})
     {
-        EXPECT_EQ(shape_of(munch::regex::parse(terminated), 'x'), Shape::terminated) << terminated;
+        EXPECT_EQ(shape_of(parse(terminated), 'x'), Shape::terminated) << terminated;
     }
 
     for (const auto delimited : {R"(([cd]{0}a)[bx]*)", R"((a[cd]{0})[bx]*)"})
     {
-        EXPECT_EQ(shape_of(munch::regex::parse(delimited), 'x'), Shape::delimited) << delimited;
+        EXPECT_EQ(shape_of(parse(delimited), 'x'), Shape::delimited) << delimited;
     }
 
     // The same whether the zero repetition stands in the sequence or in a group of its own, and whatever it repeats,
-    // the byte itself included: `[ab][x]{0}"x"` and `[ab]([x]{0}"x")` are both `[ab]"x"` to re2c 3.1, so the shape
-    // is terminated either way, the repetition admitting no byte.
+    // the byte itself included: `[ab][x]{0}"x"` and `[ab]([x]{0}"x")` are both `[ab]"x"` to re2c 3.1, so the shape is
+    // terminated either way, the repetition admitting no byte.
     for (const auto same : {R"([ab][x]{0}"x")", R"([ab]([x]{0}"x"))", R"([ab][x]{0,0}x)", R"([ab]([x]{0}){3}x)"})
     {
-        EXPECT_EQ(shape_of(munch::regex::parse(same), 'x'), Shape::terminated) << same;
+        EXPECT_EQ(shape_of(parse(same), 'x'), Shape::terminated) << same;
     }
 
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab][x]{0,1}"x")"), 'x'), Shape::fixed);
+    EXPECT_EQ(shape_of(parse(R"([ab][x]{0,1}"x")"), 'x'), Shape::fixed);
+    EXPECT_EQ(shape_of(parse(R"([ab]([cd]{0,1}x))"), 'x'), Shape::fixed);
+    EXPECT_EQ(shape_of(parse(R"([ab]([cd]{1}x))"), 'x'), Shape::fixed);
 
-    // And the same at either end of the sequence: re2c 3.1 scans `[ab]"x"[cd]{0}` as `[ab]"x"` and `[cd]{0}"a"[bx]*`
-    // as `"a"[bx]*`, the zero repetition being no part of the word, so the last component is the terminator and the
-    // first the opener there too. Reading the sequence's ends by position saw the repetition as the last or first
-    // component, called the terminated one delimited alone and the delimited one other, and priced the two spellings
-    // of one language differently.
+    // And the same at either end of the sequence: re2c 3.1 scans `[ab]"x"[cd]{0}` as `[ab]"x"` and `[cd]{0}"a"[bx]*` as
+    // `"a"[bx]*`, the zero repetition being no part of the word, so the last component is the terminator and the first
+    // the opener there too. The two spellings of one language are priced alike.
     for (const auto terminated : {R"([ab]"x"[cd]{0})", R"([ab]x[cd]{0}[cd]{0})", R"([cd]{0}[ab]"x"[cd]{0,0})"})
     {
-        EXPECT_EQ(shape_of(munch::regex::parse(terminated), 'x'), Shape::terminated) << terminated;
+        EXPECT_EQ(shape_of(parse(terminated), 'x'), Shape::terminated) << terminated;
     }
 
     for (const auto delimited : {R"([cd]{0}"a"[bx]*)", R"([cd]{0}[cd]{0}a[bx]*)", R"([cd]{0,0}a[bx]*[cd]{0})"})
     {
-        EXPECT_EQ(shape_of(munch::regex::parse(delimited), 'x'), Shape::delimited) << delimited;
+        EXPECT_EQ(shape_of(parse(delimited), 'x'), Shape::delimited) << delimited;
     }
 
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([cd]{0}[ \t\n]+)"), '\n'), Shape::run);
+    EXPECT_EQ(shape_of(parse(R"([cd]{0}[ \t\n]+)"), '\n'), Shape::run);
 
-    // What a repetition repeats is normalised too, so a run written through a repetition of exactly one is the run
-    // it matches, where taking an exactly-one repetition off at the top alone left these as a shape of no name.
-    EXPECT_EQ(shape_of(munch::regex::parse(R"(([ \t\n]{1})+)"), '\n'), Shape::run);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"((([ \t\n]{1}){1})+)"), '\n'), Shape::run);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"(([ \t\n][cd]{0})+)"), '\n'), Shape::run);
-
-    // Narrowing one consumer leaves the byte to a rule whose match it had won, and that rule's own shape is an
-    // edit too: the shapes are read from what the edits so far leave, where reading the consumers once named the
-    // first rule's shape alone and called the combined edit short of certifying. Here the first rule wins every
-    // match the second would, so the second is blamed for nothing until the first stops admitting the newline.
-    {
-        const Token_set exposed{
-                .rules = {
-                        {.regex = munch::regex::parse(R"(a[\nx])"), .id = 1, .priority = 1, .discarded = false},
-                        {.regex = munch::regex::parse(R"([a]\n)"), .id = 2, .priority = 1, .discarded = false},
-                        {.regex = munch::regex::parse(R"([ \t]+)"), .id = 3, .priority = 1, .discarded = false}}};
-
-        const auto priced{price(exposed, '\n')};
-
-        EXPECT_TRUE(std::ranges::any_of(priced.choices, [](const auto& choice) { return choice.token == 2; }));
-    }
-
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab]([cd]{0,1}x))"), 'x'), Shape::fixed);
-    EXPECT_EQ(shape_of(munch::regex::parse(R"([ab]([cd]{1}x))"), 'x'), Shape::fixed);
+    // What a repetition repeats is normalised too, so a run written through a repetition of exactly one is the run it
+    // matches.
+    EXPECT_EQ(shape_of(parse(R"(([ \t\n]{1})+)"), '\n'), Shape::run);
+    EXPECT_EQ(shape_of(parse(R"((([ \t\n]{1}){1})+)"), '\n'), Shape::run);
+    EXPECT_EQ(shape_of(parse(R"(([ \t\n][cd]{0})+)"), '\n'), Shape::run);
 
     // flex refuses a count of zero, so the scanner is re2c's; the terminated edit certifies x exactly.
     constexpr std::string_view zero{R"(/*!re2c
@@ -1072,7 +1131,11 @@ TEST(Report, An_exact_zero_repetition_is_the_empty_word_whatever_it_repeats)
 
     const auto set{token_set(file, "INITIAL")};
 
-    EXPECT_EQ(compile(set).tokenize<std::size_t>(std::string_view{"ax"}).length, 2U);
+    const auto lexer{compile(set)};
+
+    const auto [token, length]{lexer.tokenize<std::size_t>(std::string_view{"ax"})};
+
+    EXPECT_EQ(length, 2U);
 
     const auto priced{price(set, 'x')};
 
@@ -1082,31 +1145,40 @@ TEST(Report, An_exact_zero_repetition_is_the_empty_word_whatever_it_repeats)
     EXPECT_EQ(priced.choices.front().shape, Shape::terminated);
     EXPECT_TRUE(priced.choices.front().after.exact);
 
-    auto report{audit(set)};
+    const auto text{priced_page(set, priced, file)};
 
-    report.prices.push_back(priced);
-
-    const auto text{render(report, names(file))};
-
-    EXPECT_NE(text.find("terminated: leave the terminator to the token after it"), std::string::npos);
-    EXPECT_EQ(text.find("the byte cannot certify while it stays"), std::string::npos);
+    EXPECT_TRUE(text.contains("terminated: leave the terminator to the token after it"));
+    EXPECT_FALSE(text.contains("the byte cannot certify while it stays"));
 }
 
-TEST(Report, A_repetition_that_may_run_zero_times_loses_the_byte_its_class_spells)
+TEST(Report_test, A_consumer_an_edit_exposes_offers_its_own_shape_among_the_choices)
 {
-    // The class under the star in a[\n]*b holds nothing but the newline, so narrowing the class empties it and the
-    // star runs zero times, leaving "ab" matching. Reading the sub-pattern alone called the rule immovable and
-    // priced the newline as unbuyable while the edit an author would make was there all along.
-    EXPECT_TRUE(can_lose(munch::regex::parse(R"(a[\n]*b)"), '\n'));
-    EXPECT_TRUE(can_lose(munch::regex::parse(R"(a[\n]?b)"), '\n'));
-    EXPECT_TRUE(can_lose(munch::regex::parse(R"(a[\n]{0,3}b)"), '\n'));
+    // Narrowing one consumer leaves the byte to a rule whose match it had won, and that rule's own shape is an edit
+    // too: the shapes are read from what the edits so far leave, so the second rule's shape is among the choices. Here
+    // the first rule wins every match the second would, so the second is blamed for nothing until the first stops
+    // admitting the newline.
+    const Token_set exposed{.rules = {rule(R"(a[\nx])", 1, 1), rule(R"([a]\n)", 2, 1), rule(R"([ \t]+)", 3, 1)}};
+
+    const auto exposed_price{price(exposed, '\n')};
+
+    EXPECT_TRUE(std::ranges::contains(exposed_price.choices, 2U, &Choice::token));
+}
+
+TEST(Report_test, A_repetition_that_may_run_zero_times_loses_the_byte_its_class_spells)
+{
+    // The class under the star in a[\n]*b holds nothing but the newline, so narrowing the class empties it and the star
+    // runs zero times, leaving "ab" matching. The rule is no obstruction, and the price names the edit an author would
+    // make.
+    EXPECT_TRUE(can_lose(parse(R"(a[\n]*b)"), '\n'));
+    EXPECT_TRUE(can_lose(parse(R"(a[\n]?b)"), '\n'));
+    EXPECT_TRUE(can_lose(parse(R"(a[\n]{0,3}b)"), '\n'));
 
     // A repetition that must run at least once leaves the byte unavoidable, as a fixed spelling does.
-    EXPECT_FALSE(can_lose(munch::regex::parse(R"(a[\n]+b)"), '\n'));
-    EXPECT_FALSE(can_lose(munch::regex::parse(R"(a[\n]b)"), '\n'));
+    EXPECT_FALSE(can_lose(parse(R"(a[\n]+b)"), '\n'));
+    EXPECT_FALSE(can_lose(parse(R"(a[\n]b)"), '\n'));
 
     // The edit performs the exclusion: what is left matches "ab" and no longer a newline between the two.
-    auto narrowed{munch::regex::parse(R"(a[\n]*b)")};
+    auto narrowed{parse(R"(a[\n]*b)")};
 
     exclude(narrowed, '\n');
 
@@ -1114,14 +1186,15 @@ TEST(Report, A_repetition_that_may_run_zero_times_loses_the_byte_its_class_spell
 
     const auto narrow_lexer{compile(only)};
 
-    EXPECT_EQ(narrow_lexer.tokenize<std::size_t>(std::string{"ab"}).length, 2U);
-    EXPECT_EQ(narrow_lexer.tokenize<std::size_t>(std::string{"a\nb"}).length, 0U);
+    const auto [ab_token, ab_length]{narrow_lexer.tokenize<std::size_t>(std::string_view{"ab"})};
+
+    const auto [split_token, split_length]{narrow_lexer.tokenize<std::size_t>(std::string_view{"a\nb"})};
+
+    EXPECT_EQ(ab_length, 2U);
+    EXPECT_EQ(split_length, 0U);
 
     // The price then names a step rather than an immovable rule, and the newline certifies after it.
-    const Token_set set{
-            .rules = {
-                    {.regex = munch::regex::parse(R"(\n)"), .id = 0, .priority = 1, .discarded = false},
-                    {.regex = munch::regex::parse(R"(a[\n]*b)"), .id = 1, .priority = 1, .discarded = false}}};
+    const Token_set set{.rules = {rule(R"(\n)", 0, 1), rule(R"(a[\n]*b)", 1, 1)}};
 
     const auto priced{price(set, '\n')};
 
@@ -1131,30 +1204,30 @@ TEST(Report, A_repetition_that_may_run_zero_times_loses_the_byte_its_class_spell
     EXPECT_TRUE(priced.steps.front().exact);
 }
 
-TEST(Report, The_report_over_patterns_prices_the_newline_and_the_near_misses)
+TEST(Report_test, The_report_over_patterns_prices_the_newline_and_the_near_misses)
 {
     const auto [file, report]{audited("json.l")};
 
     // JSON certifies tab, newline and carriage return modulo whitespace; each is priced, the newline first.
-    ASSERT_EQ(report.prices.size(), 3u);
+    ASSERT_EQ(report.prices.size(), 3U);
     EXPECT_EQ(report.prices[0].byte, '\n');
     EXPECT_EQ(report.prices[1].byte, '\t');
     EXPECT_EQ(report.prices[2].byte, '\r');
 
     for (const auto& pricing : report.prices)
     {
-        ASSERT_EQ(pricing.steps.size(), 1u) << pricing.byte;
+        ASSERT_EQ(pricing.steps.size(), 1U) << pricing.byte;
         EXPECT_TRUE(pricing.steps[0].exact);
     }
 
     const auto text{render(report, names(file))};
 
-    EXPECT_NE(text.find(R"(what it would cost to certify '\n')"), std::string::npos);
-    EXPECT_NE(text.find("becomes a token of its own, discarded"), std::string::npos);
-    EXPECT_NE(text.find("certifies exactly"), std::string::npos);
+    EXPECT_TRUE(text.contains(R"(what it would cost to certify '\n')"));
+    EXPECT_TRUE(text.contains("becomes a token of its own, discarded"));
+    EXPECT_TRUE(text.contains("certifies exactly"));
 }
 
-TEST(Report, A_json_string_escapes_the_quote_the_backslash_and_the_controls_and_passes_utf8_through)
+TEST(Report_test, A_json_string_escapes_the_quote_the_backslash_and_the_controls_and_passes_utf8_through)
 {
     // The quote and the backslash by their short escapes, every control by its backslash-u form, both ends of that
     // range pinned; 0x7F and a UTF-8 sequence stand as they are, since the text is UTF-8 and a byte string is rendered
@@ -1169,14 +1242,14 @@ TEST(Report, A_json_string_escapes_the_quote_the_backslash_and_the_controls_and_
             {"\xC3\xA9", "\"\xC3\xA9\""},
             {"\xE2\x82\xAC\xF0\x9F\x98\x80", "\"\xE2\x82\xAC\xF0\x9F\x98\x80\""}};
 
-    for (const auto& [text, json] : cases)
+    for (const auto& [text, expected] : cases)
     {
-        EXPECT_EQ(json_string(text), json) << json;
+        EXPECT_EQ(json_string(text), expected) << expected;
     }
 
-    // A byte that is part of no well-formed UTF-8 sequence, a lone continuation byte, a lead byte its file ends
-    // inside, an overlong encoding, a surrogate or a code point past U+10FFFF, is escaped as the code point of its
-    // value, so a path or a name of any bytes still makes a JSON document.
+    // A byte that is part of no well-formed UTF-8 sequence, a lone continuation byte, a lead byte its file ends inside,
+    // an overlong encoding, a surrogate or a code point past U+10FFFF, is escaped as the code point of its value, so a
+    // path or a name of any bytes still makes a JSON document.
     const std::vector<std::pair<std::string_view, std::string>> malformed{
             {"\xA9", R"("\u00a9")"},
             {"\xC3", R"("\u00c3")"},
@@ -1187,20 +1260,21 @@ TEST(Report, A_json_string_escapes_the_quote_the_backslash_and_the_controls_and_
              "b",
              R"("a\u00ffb")"}};
 
-    for (const auto& [text, json] : malformed)
+    for (const auto& [text, expected] : malformed)
     {
-        EXPECT_EQ(json_string(text), json) << json;
+        EXPECT_EQ(json_string(text), expected) << expected;
     }
 
-    // A token's name is text, rendered as such wherever the report names a token, so a name in UTF-8 reads the
-    // same under `blame` and `prices` as under the rules, where a byte string would be escaped byte by byte.
-    const Token_set accented{
-            .rules = {
-                    {.regex = munch::regex::parse("a+"), .id = 0, .priority = 0, .discarded = false},
-                    {.regex = munch::regex::parse("b"), .id = 1, .priority = 1, .discarded = false}}};
+    // A token's name is text, rendered as such wherever the report names a token, so a name in UTF-8 reads the same
+    // under `blame` and `prices` as under the rules, where a byte string would be escaped byte by byte.
+    const Token_set accented{.rules = {rule("a+", 0, 0), rule("b", 1, 1)}};
 
-    const auto document{json(audit(accented), [](const std::size_t) { return std::string{"\xC3\x89"}; })};
+    const auto accented_report{audit(accented)};
 
-    EXPECT_NE(document.find("\"name\": \"\xC3\x89\""), std::string::npos);
-    EXPECT_EQ(document.find(R"(\u00c3)"), std::string::npos);
+    const auto name{[](const std::size_t) { return std::string{"\xC3\x89"}; }};
+
+    const auto document{json(accented_report, name)};
+
+    EXPECT_TRUE(document.contains("\"name\": \"\xC3\x89\""));
+    EXPECT_FALSE(document.contains(R"(\u00c3)"));
 }

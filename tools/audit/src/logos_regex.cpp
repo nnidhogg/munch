@@ -4,8 +4,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
+#include <iterator>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -22,14 +25,59 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements logos_regex.hpp: a node written for the parser and the priority logos counts over it, the counts over
-// UTF-8 they rest on, the references resolved, a token escaped for an ignore flag and the ASCII folding of
-// `ignore(ascii_case)` are private to this unit.
+/**
+ * @brief What logos adds to a pattern's priority for each character it matches, a literal's or a class's.
+ */
+constexpr std::size_t character_priority{2};
 
 /**
- * @brief Inclusive byte ranges, the members of a bracket expression or the positions of a UTF-8 sequence.
+ * @brief The opener of a subpattern reference, `(?&name)`.
  */
-using Byte_ranges_t = std::vector<std::pair<unsigned char, unsigned char>>;
+constexpr std::string_view reference_opener{"(?&"};
+
+/**
+ * @brief One inclusive range of bytes.
+ */
+struct Byte_range
+{
+    /**
+     * @brief The range's first byte.
+     */
+    unsigned char first{};
+
+    /**
+     * @brief Its last.
+     */
+    unsigned char last{};
+};
+
+/**
+ * @brief Inclusive byte ranges, the members of a bracket expression.
+ */
+using Byte_ranges_t = std::vector<Byte_range>;
+
+/**
+ * @brief Returns the subpattern a reference names, which must be declared before it.
+ * @param subpatterns The subpatterns declared so far.
+ * @param name The name.
+ * @param line The line of the pattern, for the refusal.
+ * @return The subpattern.
+ * @throws Spec_error If no subpattern of the name is declared.
+ */
+[[nodiscard]] const Subpattern& declared_subpattern(
+        const Subpatterns_t& subpatterns, const std::string_view name, const std::size_t line)
+{
+    const auto found{subpatterns.find(name)};
+
+    if (found == subpatterns.end())
+    {
+        throw Spec_error{std::format("the subpattern '{}' is not declared before its use", name), line};
+    }
+
+    const auto& [declared, subpattern]{*found};
+
+    return subpattern;
+}
 
 /**
  * @brief Resolves every subpattern reference in a tree: one in the subpattern's own mode under the default flags keeps
@@ -53,14 +101,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
     {
         const auto& [name, reference_flags]{std::get<Reference>(node.kind)};
 
-        const auto found{subpatterns.find(name)};
-
-        if (found == subpatterns.end())
-        {
-            throw Spec_error{"the subpattern '" + name + "' is not declared before its use", line};
-        }
-
-        const auto& subpattern{found->second};
+        const auto& subpattern{declared_subpattern(subpatterns, name, line)};
 
         // The definition was compiled in its own mode, so the reference can stand for it only where that mode is the
         // one in force and no flag is; an empty definition is expanded to the nothing it adds.
@@ -72,39 +113,41 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 
         // logos pastes the definition's text into the pattern before the crate parses it, so the definition is read
         // under the flags and in the mode of the reference; the reference is gone once the node is replaced.
-        node = Pattern_reader{subpattern.literal, reference_flags, line}.read();
+        Pattern_reader reader{subpattern.literal, reference_flags, line};
+
+        node = reader.read();
 
         resolve(node, subpatterns, line, expand);
 
         return;
     }
 
-    std::visit(
-            [&]<typename Kind>(Kind& kind) {
-                if constexpr (std::is_same_v<Kind, Concat>)
-                {
-                    for (auto& part : kind.parts)
-                    {
-                        resolve(part, subpatterns, line, expand);
-                    }
-                }
-                else if constexpr (std::is_same_v<Kind, Alternation>)
-                {
-                    for (auto& branch : kind.branches)
-                    {
-                        resolve(branch, subpatterns, line, expand);
-                    }
-                }
-                else if constexpr (std::is_same_v<Kind, Repeat>)
-                {
-                    resolve(*kind.operand, subpatterns, line, expand);
-                }
-            },
-            node.kind);
+    const auto resolve_inside{[&]<typename Kind>(Kind& kind) {
+        if constexpr (std::is_same_v<Kind, Concat>)
+        {
+            for (auto& part : kind.parts)
+            {
+                resolve(part, subpatterns, line, expand);
+            }
+        }
+        else if constexpr (std::is_same_v<Kind, Alternation>)
+        {
+            for (auto& branch : kind.branches)
+            {
+                resolve(branch, subpatterns, line, expand);
+            }
+        }
+        else if constexpr (std::is_same_v<Kind, Repeat>)
+        {
+            resolve(*kind.operand, subpatterns, line, expand);
+        }
+    }};
+
+    std::visit(resolve_inside, node.kind);
 }
 
 /**
- * @brief One byte of a literal with its ASCII case folded, as logos folds a byte under `ignore(ascii_case)`.
+ * @brief Returns one byte of a literal with its ASCII case folded, as logos folds a byte under `ignore(ascii_case)`.
  *
  * An ASCII letter becomes the two cases, which logos writes as an alternation of two one-byte literals and this reads
  * as the class of them, the two being one language and one priority; every other byte stays the byte it is.
@@ -118,20 +161,21 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 
     if (!is_letter(value))
     {
-        return {.kind = Bytes{.bytes = std::string(1, byte), .bounded = false}};
+        return {.kind = Bytes{.bytes = std::string{byte}, .bounded = false}};
     }
 
-    Scalar_set both;
+    Scalar_set both{};
 
-    both.add(value | 0x20U, value | 0x20U);
+    both.add(value | case_bit, value | case_bit);
 
-    both.add(value & ~0x20U, value & ~0x20U);
+    both.add(value & ~case_bit, value & ~case_bit);
 
     return {.kind = Char_class{.set = std::move(both), .unicode = unicode}};
 }
 
 /**
- * @brief A tree with the ASCII letters of every literal and class folded, which is what `ignore(ascii_case)` leaves.
+ * @brief Returns a tree with the ASCII letters of every literal and class folded, which is what `ignore(ascii_case)`
+ *        leaves.
  *
  * logos parses the pattern as it stands and then walks the compiled tree: a class gains the other case of its ASCII
  * letters, and a literal is taken apart into one piece per byte, each of them the two cases where the byte is an ASCII
@@ -146,14 +190,18 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
     {
         const auto& [bytes, bounded]{std::get<Bytes>(node.kind)};
 
-        std::vector<Node> pieces;
+        const auto folded_byte{[](const char byte) { return ascii_folded_byte(byte, false); }};
 
-        for (const auto byte : bytes)
+        std::vector<Node> pieces{};
+
+        std::ranges::transform(bytes, std::back_inserter(pieces), folded_byte);
+
+        if (pieces.size() == 1)
         {
-            pieces.push_back(ascii_folded_byte(byte, false));
+            return std::move(pieces.front());
         }
 
-        return pieces.size() == 1 ? std::move(pieces.front()) : Node{.kind = Concat{.parts = std::move(pieces)}};
+        return {.kind = Concat{.parts = std::move(pieces)}};
     }
 
     if (std::holds_alternative<Char_class>(node.kind))
@@ -165,61 +213,52 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
         return node;
     }
 
-    std::visit(
-            []<typename Kind>(Kind& kind) {
-                if constexpr (std::is_same_v<Kind, Concat>)
-                {
-                    for (auto& part : kind.parts)
-                    {
-                        part = ascii_folded(std::move(part));
-                    }
-                }
-                else if constexpr (std::is_same_v<Kind, Alternation>)
-                {
-                    for (auto& branch : kind.branches)
-                    {
-                        branch = ascii_folded(std::move(branch));
-                    }
-                }
-                else if constexpr (std::is_same_v<Kind, Repeat>)
-                {
-                    *kind.operand = ascii_folded(std::move(*kind.operand));
-                }
-            },
-            node.kind);
+    const auto fold_inside{[]<typename Kind>(Kind& kind) {
+        if constexpr (std::is_same_v<Kind, Concat>)
+        {
+            for (auto& part : kind.parts)
+            {
+                part = ascii_folded(std::move(part));
+            }
+        }
+        else if constexpr (std::is_same_v<Kind, Alternation>)
+        {
+            for (auto& branch : kind.branches)
+            {
+                branch = ascii_folded(std::move(branch));
+            }
+        }
+        else if constexpr (std::is_same_v<Kind, Repeat>)
+        {
+            *kind.operand = ascii_folded(std::move(*kind.operand));
+        }
+    }};
+
+    std::visit(fold_inside, node.kind);
 
     return node;
 }
 
 /**
- * @brief Byte ranges as the members of a bracket, a run of three or more as a range.
+ * @brief Returns byte ranges as the members of a bracket, a run of three or more as a range.
  * @param ranges The ranges, ascending.
  * @return The members' text, without the brackets.
  */
 [[nodiscard]] std::string members(const Byte_ranges_t& ranges)
 {
-    std::string text;
+    std::string text{};
 
     for (const auto& [low, high] : ranges)
     {
-        text += bracket_member(low);
-
-        if (high > low + 1)
-        {
-            text += '-';
-        }
-
-        if (high > low)
-        {
-            text += bracket_member(high);
-        }
+        text += bracket_run(low, high);
     }
 
     return text;
 }
 
 /**
- * @brief The number of scalars a run of bytes encodes, when it is well-formed UTF-8 as strictly as Rust reads it.
+ * @brief Returns the number of scalars a run of bytes encodes, when it is well-formed UTF-8 as strictly as Rust reads
+ *        it.
  *
  * logos takes a literal's priority from `std::str::from_utf8` and falls back to the byte length where that fails, so
  * the validation is that one, well_formed_length()'s: the shortest form only, no encoding of a surrogate and nothing
@@ -248,7 +287,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 }
 
 /**
- * @brief The scalar a run of bytes encodes.
+ * @brief Returns the scalar a run of bytes encodes.
  * @param bytes The run, the UTF-8 of exactly one scalar as scalar_count() validates it.
  * @return The scalar.
  */
@@ -256,24 +295,38 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 {
     const auto lead{static_cast<unsigned char>(bytes.front())};
 
-    if (lead < 0x80)
+    if (lead <= last_ascii)
     {
         return lead;
     }
 
-    char32_t value{lead & (0xFFU >> (bytes.size() + 1))};
+    // The length marker is dropped by the run's own length, which a run cut short at a literal's end may make shorter
+    // than its lead byte says.
+    const auto marker_bits{bytes.size() + 1};
+
+    char32_t value{lead & (0xFFU >> marker_bits)};
 
     for (const char byte : bytes.substr(1))
     {
-        value = (value << 6U) | (static_cast<unsigned char>(byte) & 0x3FU);
+        value = continued(value, static_cast<unsigned char>(byte));
     }
 
     return value;
 }
 
 /**
- * @brief A literal as logos escapes it for the regex crate, which is what it compiles a token under an ignore flag
- *        from.
+ * @brief Returns a byte as the `\xNN` escape logos writes it in, its hex digits in lower case.
+ * @param byte The byte.
+ * @return The escape's four characters.
+ */
+[[nodiscard]] std::string byte_escape(const unsigned char byte)
+{
+    return std::format(R"(\x{:02x})", static_cast<unsigned>(byte));
+}
+
+/**
+ * @brief Returns a literal as logos escapes it for the regex crate, which is what it compiles a token under an ignore
+ *        flag from.
  *
  * A byte string's bytes are written out as text first, a byte beyond ASCII as the four characters of its `\xNN` escape
  * in lower case, and that text is then escaped for the crate, which escapes the backslash just written: the pattern the
@@ -289,19 +342,19 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
         return literal;
     }
 
-    std::string bytes;
+    std::string bytes{};
 
     for (const auto byte : literal.bytes)
     {
-        const auto value{static_cast<unsigned>(static_cast<unsigned char>(byte))};
+        const auto value{static_cast<unsigned char>(byte)};
 
-        if (value < 0x80)
+        if (value <= last_ascii)
         {
             bytes.push_back(byte);
         }
         else
         {
-            bytes += std::format(R"(\x{:02x})", value);
+            bytes += byte_escape(value);
         }
     }
 
@@ -309,122 +362,142 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 }
 
 /**
- * @brief A class in the syntax regex::parse() reads: over bytes, a bracket of its byte ranges; over scalars, a bracket
- *        of its ASCII members and its other ranges as code point escapes, which the parser reads as the encodings of
- *        the scalars they span.
- * @param cls The class.
+ * @brief Returns a class in the syntax regex::parse() reads: over bytes, a bracket of its byte ranges; over scalars, a
+ *        bracket of its ASCII members and its other ranges as code point escapes, which the parser reads as the
+ *        encodings of the scalars they span.
+ * @param char_class The class.
  * @return The bracket.
  */
-[[nodiscard]] std::string written(const Char_class& cls)
+[[nodiscard]] std::string written(const Char_class& char_class)
 {
-    Byte_ranges_t direct;
+    Byte_ranges_t direct{};
 
-    std::string beyond;
+    std::string beyond{};
 
-    const char32_t ceiling{cls.unicode ? 0x7FU : 0xFFU};
+    const auto ceiling{char_class.unicode ? last_ascii : last_byte};
 
-    for (const auto& [low, high] : cls.set.ranges())
+    for (const auto& [low, high] : char_class.set.ranges())
     {
         if (low <= ceiling)
         {
-            direct.emplace_back(static_cast<unsigned char>(low), static_cast<unsigned char>(std::min(high, ceiling)));
+            const auto last{std::min(high, ceiling)};
+
+            direct.push_back({.first = static_cast<unsigned char>(low), .last = static_cast<unsigned char>(last)});
         }
 
         if (high > ceiling)
         {
-            const auto from{static_cast<std::uint32_t>(std::max(low, static_cast<char32_t>(ceiling + 1)))};
+            const auto first_beyond{std::max(low, static_cast<char32_t>(ceiling + 1))};
 
-            beyond += from == high ? std::format(R"(\u{{{:x}}})", from) :
-                                     std::format(R"(\u{{{:x}}}-\u{{{:x}}})", from, static_cast<std::uint32_t>(high));
+            beyond += code_point_member(first_beyond, high);
         }
     }
 
-    return '[' + members(direct) + beyond + ']';
+    return std::format("[{}{}]", members(direct), beyond);
 }
 
 /**
- * @brief A node in the syntax regex::parse() reads.
+ * @brief Returns a node in the syntax regex::parse() reads.
  * @param node The node.
  * @param top Whether the node is the whole pattern, which an alternation needs no parentheses around.
  * @return The text.
  */
 [[nodiscard]] std::string written(const Node& node, const bool top)
 {
-    return std::visit(
-            [top]<typename Kind>(const Kind& kind) -> std::string {
-                if constexpr (std::is_same_v<Kind, Empty>)
-                {
-                    return {};
-                }
-                else if constexpr (std::is_same_v<Kind, Bytes>)
-                {
-                    return quoted(kind.bytes);
-                }
-                else if constexpr (std::is_same_v<Kind, Char_class>)
-                {
-                    return written(kind);
-                }
-                else if constexpr (std::is_same_v<Kind, Reference>)
-                {
-                    return '{' + kind.name + '}';
-                }
-                else if constexpr (std::is_same_v<Kind, Concat>)
-                {
-                    std::string text;
+    const auto written_kind{[top]<typename Kind>(const Kind& kind) -> std::string {
+        if constexpr (std::is_same_v<Kind, Empty>)
+        {
+            return {};
+        }
+        else if constexpr (std::is_same_v<Kind, Bytes>)
+        {
+            return quoted(kind.bytes);
+        }
+        else if constexpr (std::is_same_v<Kind, Char_class>)
+        {
+            return written(kind);
+        }
+        else if constexpr (std::is_same_v<Kind, Reference>)
+        {
+            return reference(kind.name);
+        }
+        else if constexpr (std::is_same_v<Kind, Concat>)
+        {
+            std::string text{};
 
-                    for (const auto& part : kind.parts)
-                    {
-                        text += written(part, false);
-                    }
+            for (const auto& part : kind.parts)
+            {
+                text += written(part, false);
+            }
 
-                    return text;
-                }
-                else if constexpr (std::is_same_v<Kind, Alternation>)
-                {
-                    std::string text{top ? "" : "("};
+            return text;
+        }
+        else if constexpr (std::is_same_v<Kind, Alternation>)
+        {
+            const auto branch_text{[](const Node& branch) { return written(branch, false); }};
 
-                    for (std::size_t index{0}; index < kind.branches.size(); ++index)
-                    {
-                        text += (index == 0 ? "" : "|") + written(kind.branches[index], false);
-                    }
+            std::string text{top ? "" : "("};
 
-                    return top ? text : text + ')';
-                }
-                else
-                {
-                    static_assert(std::is_same_v<Kind, Repeat>);
+            const auto branches{kind.branches | std::views::transform(branch_text)};
 
-                    const auto& operand{*kind.operand};
+            std::ranges::copy(branches | std::views::join_with('|'), std::back_inserter(text));
 
-                    const auto grouped{
-                            std::holds_alternative<Concat>(operand.kind) ||
-                            std::holds_alternative<Repeat>(operand.kind)};
+            if (top)
+            {
+                return text;
+            }
 
-                    const auto text{grouped ? '(' + written(operand, false) + ')' : written(operand, false)};
+            return std::format("{})", text);
+        }
+        else
+        {
+            static_assert(std::is_same_v<Kind, Repeat>);
 
-                    if (!kind.max)
-                    {
-                        return kind.min == 0 ? text + '*' :
-                               kind.min == 1 ? text + '+' :
-                                               text + '{' + std::to_string(kind.min) + ",}";
-                    }
+            const auto& operand{*kind.operand};
 
-                    if (kind.min == 0 && *kind.max == 1)
-                    {
-                        return text + '?';
-                    }
+            const auto grouped{
+                    std::holds_alternative<Concat>(operand.kind) || std::holds_alternative<Repeat>(operand.kind)};
 
-                    return text + '{' + std::to_string(kind.min) +
-                           (*kind.max == kind.min ? "" : ',' + std::to_string(*kind.max)) + '}';
-                }
-            },
-            node.kind);
+            const auto inner{written(operand, false)};
+
+            const auto text{grouped ? std::format("({})", inner) : inner};
+
+            if (!kind.max && kind.min == 0)
+            {
+                return std::format("{}*", text);
+            }
+
+            if (!kind.max && kind.min == 1)
+            {
+                return std::format("{}+", text);
+            }
+
+            if (!kind.max)
+            {
+                return std::format("{}{{{},}}", text, kind.min);
+            }
+
+            if (kind.min == 0 && *kind.max == 1)
+            {
+                return std::format("{}?", text);
+            }
+
+            if (*kind.max == kind.min)
+            {
+                return std::format("{}{{{}}}", text, kind.min);
+            }
+
+            return std::format("{}{{{},{}}}", text, kind.min, *kind.max);
+        }
+    }};
+
+    return std::visit(written_kind, node.kind);
 }
 
 /**
- * @brief The priority logos computes for a node: two per scalar of a literal, two per byte when the run is not UTF-8;
- *        two for a class; the sum over a concatenation; the least over an alternation; a repetition's operand its
- *        minimum number of times.
+ * @brief Returns the priority logos computes for a node: two per scalar of a literal, two per byte when the run is not
+ *        UTF-8; two for a class; the sum over a concatenation; the least over an alternation; a repetition's operand
+ *        its minimum number of times.
  *
  * A reference is not expected here, the caller having read the pattern with every subpattern substituted as logos
  * substitutes it, and counts nothing.
@@ -433,65 +506,53 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
  */
 [[nodiscard]] std::size_t priority(const Node& node)
 {
-    return std::visit(
-            []<typename Kind>(const Kind& kind) -> std::size_t {
-                if constexpr (std::is_same_v<Kind, Empty> || std::is_same_v<Kind, Reference>)
-                {
-                    return 0;
-                }
-                else if constexpr (std::is_same_v<Kind, Bytes>)
-                {
-                    return 2 * scalar_count(kind.bytes).value_or(kind.bytes.size());
-                }
-                else if constexpr (std::is_same_v<Kind, Char_class>)
-                {
-                    return 2;
-                }
-                else if constexpr (std::is_same_v<Kind, Concat>)
-                {
-                    std::size_t sum{0};
+    const auto priority_of{[]<typename Kind>(const Kind& kind) -> std::size_t {
+        if constexpr (std::is_same_v<Kind, Empty> || std::is_same_v<Kind, Reference>)
+        {
+            return 0;
+        }
+        else if constexpr (std::is_same_v<Kind, Bytes>)
+        {
+            const auto characters{scalar_count(kind.bytes).value_or(kind.bytes.size())};
 
-                    for (const auto& part : kind.parts)
-                    {
-                        sum += priority(part);
-                    }
+            return character_priority * characters;
+        }
+        else if constexpr (std::is_same_v<Kind, Char_class>)
+        {
+            return character_priority;
+        }
+        else if constexpr (std::is_same_v<Kind, Concat>)
+        {
+            auto priorities{kind.parts | std::views::transform(priority)};
 
-                    return sum;
-                }
-                else if constexpr (std::is_same_v<Kind, Alternation>)
-                {
-                    auto least{std::numeric_limits<std::size_t>::max()};
+            return std::ranges::fold_left(priorities, 0UZ, std::plus{});
+        }
+        else if constexpr (std::is_same_v<Kind, Alternation>)
+        {
+            auto priorities{kind.branches | std::views::transform(priority)};
 
-                    for (const auto& branch : kind.branches)
-                    {
-                        least = std::min(least, priority(branch));
-                    }
+            return std::ranges::fold_left(priorities, std::numeric_limits<std::size_t>::max(), std::ranges::min);
+        }
+        else
+        {
+            static_assert(std::is_same_v<Kind, Repeat>);
 
-                    return least;
-                }
-                else
-                {
-                    static_assert(std::is_same_v<Kind, Repeat>);
+            return kind.min * priority(*kind.operand);
+        }
+    }};
 
-                    return kind.min * priority(*kind.operand);
-                }
-            },
-            node.kind);
+    return std::visit(priority_of, node.kind);
 }
 
 } // namespace
 
 Scalar_set folded(const Scalar_set& set, const bool unicode)
 {
-    constexpr char32_t long_s{0x17F};
-
-    constexpr char32_t kelvin{0x212A};
-
     auto result{set};
 
     for (char32_t lower{'a'}; lower <= 'z'; ++lower)
     {
-        const auto upper{lower - 0x20};
+        const auto upper{lower & ~case_bit};
 
         if (set.contains(lower) || set.contains(upper))
         {
@@ -501,19 +562,23 @@ Scalar_set folded(const Scalar_set& set, const bool unicode)
         }
     }
 
-    if (unicode && (result.contains('s') || set.contains(long_s)))
-    {
-        result.add('s', 's');
-        result.add('S', 'S');
-        result.add(long_s, long_s);
-    }
+    // Under the Unicode flag, a set holding the letter or the scalar gets both cases and the scalar.
+    const auto join_fold{[&result, &set, unicode](const char32_t lower, const char32_t upper, const char32_t special) {
+        if (!unicode || !(result.contains(lower) || set.contains(special)))
+        {
+            return;
+        }
 
-    if (unicode && (result.contains('k') || set.contains(kelvin)))
-    {
-        result.add('k', 'k');
-        result.add('K', 'K');
-        result.add(kelvin, kelvin);
-    }
+        result.add(lower, lower);
+
+        result.add(upper, upper);
+
+        result.add(special, special);
+    }};
+
+    join_fold('s', 'S', long_s);
+
+    join_fold('k', 'K', kelvin);
 
     return result;
 }
@@ -524,7 +589,7 @@ std::optional<Merged> merged(const Node& node)
     {
         const auto& given{std::get<Char_class>(node.kind)};
 
-        return given.captured ? std::nullopt : std::optional{Merged{.cls = given, .literal = false}};
+        return given.captured ? std::nullopt : std::optional{Merged{.char_class = given, .literal = false}};
     }
 
     // A literal of one character, in either mode, is a one-character literal to the crate's merging, and a lone byte
@@ -538,33 +603,44 @@ std::optional<Merged> merged(const Node& node)
             return std::nullopt;
         }
 
-        Scalar_set one;
+        Scalar_set one{};
 
         if (scalar_count(bytes) == 1)
         {
-            one.add(decoded(bytes), decoded(bytes));
+            const auto scalar{decoded(bytes)};
 
-            return Merged{.cls = {.set = std::move(one), .unicode = true, .captured = false}, .literal = true};
+            one.add(scalar, scalar);
+
+            return Merged{.char_class = {.set = std::move(one), .unicode = true, .captured = false}, .literal = true};
         }
 
         if (bytes.size() == 1)
         {
-            one.add(static_cast<unsigned char>(bytes.front()), static_cast<unsigned char>(bytes.front()));
+            const auto byte{static_cast<unsigned char>(bytes.front())};
 
-            return Merged{.cls = {.set = std::move(one), .unicode = false, .captured = false}, .literal = true};
+            one.add(byte, byte);
+
+            return Merged{.char_class = {.set = std::move(one), .unicode = false, .captured = false}, .literal = true};
         }
 
         return std::nullopt;
     }
 
-    if (!std::holds_alternative<Alternation>(node.kind) || std::get<Alternation>(node.kind).captured)
+    if (!std::holds_alternative<Alternation>(node.kind))
     {
         return std::nullopt;
     }
 
-    std::vector<Merged> branches;
+    const auto& [alternatives, captured]{std::get<Alternation>(node.kind)};
 
-    for (const auto& branch : std::get<Alternation>(node.kind).branches)
+    if (captured)
+    {
+        return std::nullopt;
+    }
+
+    std::vector<Merged> branches{};
+
+    for (const auto& branch : alternatives)
     {
         auto seen{merged(branch)};
 
@@ -577,26 +653,41 @@ std::optional<Merged> merged(const Node& node)
         branches.push_back(std::move(*seen));
     }
 
-    // Unicode first: every byte class must be ASCII; then bytes: every Unicode class must be.
-    const auto ascii_only{
-            [](const Merged& one) { return one.cls.set.empty() || one.cls.set.ranges().back().second <= 0x7F; }};
+    const auto ascii_only{[](const Merged& one) {
+        const auto& set{one.char_class.set};
 
+        if (set.empty())
+        {
+            return true;
+        }
+
+        const auto [low, high]{set.ranges().back()};
+
+        return high <= last_ascii;
+    }};
+
+    // Unicode first: every byte class must be ASCII; then bytes: every Unicode class must be.
     for (const auto unicode : {true, false})
     {
-        if (std::ranges::all_of(
-                    branches, [&](const Merged& one) { return one.cls.unicode == unicode || ascii_only(one); }))
+        const auto fits{[&ascii_only, unicode](const Merged& one) {
+            return one.char_class.unicode == unicode || ascii_only(one);
+        }};
+
+        if (!std::ranges::all_of(branches, fits))
         {
-            Merged whole{.cls = {.set = {}, .unicode = unicode, .captured = false}, .literal = false};
-
-            for (const auto& one : branches)
-            {
-                whole.cls.set.add(one.cls.set);
-            }
-
-            whole.literal = whole.cls.set.single().has_value();
-
-            return whole;
+            continue;
         }
+
+        Merged whole{.char_class = {.set = {}, .unicode = unicode, .captured = false}, .literal = false};
+
+        for (const auto& one : branches)
+        {
+            whole.char_class.set.add(one.char_class.set);
+        }
+
+        whole.literal = whole.char_class.set.single().has_value();
+
+        return whole;
     }
 
     return std::nullopt;
@@ -644,12 +735,16 @@ Compiled compile(
 
     if (!token)
     {
+        auto bytes{substituted(literal, subpatterns, line)};
+
         const String_literal pasted{
                 .written = literal.written,
-                .bytes = substituted(literal, subpatterns, line),
+                .bytes = std::move(bytes),
                 .byte_string = literal.byte_string};
 
-        whole = Pattern_reader{pasted, flags, line}.read();
+        Pattern_reader pasted_reader{pasted, flags, line};
+
+        whole = pasted_reader.read();
 
         if (fold_ascii)
         {
@@ -661,43 +756,50 @@ Compiled compile(
     // parser/subpattern.rs and graph/regex.rs).
     if (kind != Pattern_kind::definition && std::holds_alternative<Empty>(whole.kind))
     {
-        throw Spec_error{
-                "the pattern " + literal.written + " matches only the empty string" +
-                        (token ? ", which logos 0.15.1 panics on" :
-                                 ", which logos 0.15.1 compiles into a rule matching no input, so it is no token"),
-                line};
+        const std::string_view consequence{
+                token ? ", which logos 0.15.1 panics on" :
+                        ", which logos 0.15.1 compiles into a rule matching no input, so it is no token"};
+
+        const auto message{std::format("the pattern {} matches only the empty string{}", literal.written, consequence)};
+
+        throw Spec_error{message, line};
     }
 
     check_dot_repetitions(whole, literal.written, line);
 
     check_repetitions(whole, {}, line);
 
-    return {.expression = written(node, true),
-            .priority = token && folding == Ignore_case::none ? 2 * literal.bytes.size() : priority(whole)};
+    auto expression{written(node, true)};
+
+    if (token && folding == Ignore_case::none)
+    {
+        return {.expression = std::move(expression), .priority = character_priority * literal.bytes.size()};
+    }
+
+    return {.expression = std::move(expression), .priority = priority(whole)};
 }
 
 std::string substituted(const String_literal& literal, const Subpatterns_t& subpatterns, const std::size_t line)
 {
-    std::string text;
+    std::string text{};
 
     const auto& bytes{literal.bytes};
 
     for (std::size_t at{0}; at < bytes.size();)
     {
-        const auto close{bytes.compare(at, 3, "(?&") == 0 ? bytes.find(')', at + 3) : std::string::npos};
+        const auto opens{std::string_view{bytes}.substr(at).starts_with(reference_opener)};
+
+        const auto name_at{at + reference_opener.size()};
+
+        const auto close{opens ? bytes.find(')', name_at) : std::string::npos};
 
         if (close != std::string::npos)
         {
-            const auto name{bytes.substr(at + 3, close - at - 3)};
+            const auto name{bytes.substr(name_at, close - name_at)};
 
-            const auto found{subpatterns.find(name)};
+            const auto& subpattern{declared_subpattern(subpatterns, name, line)};
 
-            if (found == subpatterns.end())
-            {
-                throw Spec_error{"the subpattern '" + name + "' is not declared before its use", line};
-            }
-
-            text += "(?:" + found->second.text + ")";
+            text += std::format("(?:{})", subpattern.text);
 
             at = close + 1;
 
@@ -706,13 +808,15 @@ std::string substituted(const String_literal& literal, const Subpatterns_t& subp
 
         const auto lead{static_cast<unsigned char>(bytes[at])};
 
-        if (lead < 0x80)
+        if (lead <= last_ascii)
         {
-            text.push_back(bytes[at++]);
+            text.push_back(bytes[at]);
+
+            ++at;
         }
         else if (literal.byte_string)
         {
-            text += std::format(R"(\x{:02x})", static_cast<unsigned>(lead));
+            text += byte_escape(lead);
 
             ++at;
         }
@@ -721,7 +825,9 @@ std::string substituted(const String_literal& literal, const Subpatterns_t& subp
             // A string literal is UTF-8, so the lead byte gives the scalar's length.
             const auto length{sequence_length(lead)};
 
-            text += std::format(R"(\x{{{:x}}})", static_cast<std::uint32_t>(decoded(bytes.substr(at, length))));
+            const auto scalar{decoded(bytes.substr(at, length))};
+
+            text += std::format(R"(\x{{{:x}}})", static_cast<std::uint32_t>(scalar));
 
             at += length;
         }

@@ -4,12 +4,14 @@
 #include <cstddef>
 #include <iterator>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "munch/regex/regex.hpp"
+#include "munch/tools/audit/expression.hpp"
 #include "munch/tools/audit/pattern_shape.hpp"
 #include "munch/tools/audit/report.hpp"
 #include "munch/tools/audit/word_kinds.hpp"
@@ -18,9 +20,6 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements price.hpp: the probes of a compiled set, the byte's own token, the shapes' choices and the narrowing steps
-// are private to this unit.
-
 /**
  * @brief What taking a rule's own shape's edit did to its copy in the combined set.
  */
@@ -39,8 +38,8 @@ struct Taken
 
 /**
  * @brief The id and the priority a token of the byte's own is given: the smallest id no rule carries, since one past
- *        the highest is no id at all where a rule carries the largest std::size_t, and a priority past every rule's,
- *        so nothing else moves.
+ *        the highest is no id at all where a rule carries the largest std::size_t, and a priority past every rule's, so
+ *        nothing else moves.
  */
 struct Own_token
 {
@@ -64,12 +63,12 @@ struct Offers
     /**
      * @brief The choices, in the order the consumers were found.
      */
-    std::vector<Choice> choices;
+    std::vector<Choice> choices{};
 
     /**
      * @brief Where the byte stands once every consumer takes its edit, absent when no shape offered one.
      */
-    std::optional<Outcome> together;
+    std::optional<Outcome> together{};
 };
 
 /**
@@ -80,41 +79,61 @@ struct Answers
     /**
      * @brief The steps, in the order they were made.
      */
-    std::vector<Price_step> steps;
+    std::vector<Price_step> steps{};
 
     /**
      * @brief The tokens every word of which holds the byte fixed past its first byte.
      */
-    std::vector<std::size_t> immovable;
+    std::vector<std::size_t> immovable{};
 
     /**
      * @brief The tokens that cannot lose the byte while some word of them holds it fixed only as its first byte.
      */
-    std::vector<std::size_t> undecided;
+    std::vector<std::size_t> undecided{};
 };
 
 /**
- * @brief The bytes a compiled set certifies exactly.
+ * @brief Returns the bytes a compiled set certifies exactly.
  * @param lexer The compiled set.
  * @return The bytes, ascending.
  */
 [[nodiscard]] std::vector<unsigned char> exact_bytes(const core::Lexer& lexer)
 {
-    std::vector<unsigned char> bytes;
+    const auto certifies{[&lexer](const std::size_t value) { return lexer.is_split_point(static_cast<char>(value)); }};
 
-    for (std::size_t value{0}; value < 256; ++value)
+    std::vector<unsigned char> bytes{};
+
+    for (const auto value : std::views::iota(0UZ, byte_values) | std::views::filter(certifies))
     {
-        if (lexer.is_split_point(static_cast<char>(value)))
-        {
-            bytes.push_back(static_cast<unsigned char>(value));
-        }
+        bytes.push_back(static_cast<unsigned char>(value));
     }
 
     return bytes;
 }
 
 /**
- * @brief The pattern a shape's edit leaves a token with: a terminated one its body, a delimited one its opener.
+ * @brief Returns the bytes a compiled set certifies exactly that it did not before any edit, the byte priced left out.
+ * @param lexer The compiled set.
+ * @param before The bytes certified exactly before any edit, ascending.
+ * @param byte The byte priced.
+ * @return The bytes gained, ascending.
+ */
+[[nodiscard]] std::vector<unsigned char> gained_bytes(
+        const core::Lexer& lexer, const std::vector<unsigned char>& before, const unsigned char byte)
+{
+    const auto certified{exact_bytes(lexer)};
+
+    std::vector<unsigned char> gained{};
+
+    std::ranges::set_difference(certified, before, std::back_inserter(gained));
+
+    std::erase(gained, byte);
+
+    return gained;
+}
+
+/**
+ * @brief Returns the pattern a shape's edit leaves a token with: a terminated one its body, a delimited one its opener.
  * @param regex The token's pattern, of that shape for the byte.
  * @param shape The shape, terminated or delimited.
  * @return The pattern after the edit.
@@ -130,11 +149,16 @@ struct Answers
 
     std::vector<regex::Regex> body{parts.begin(), parts.end() - 1};
 
-    return body.size() == 1 ? std::move(body.front()) : regex::Regex{.node = regex::Concat{.regexes = std::move(body)}};
+    if (body.size() == 1)
+    {
+        return std::move(body.front());
+    }
+
+    return {.node = regex::Concat{.regexes = std::move(body)}};
 }
 
 /**
- * @brief Where the byte stands over an edited set, against the bytes certified before any edit.
+ * @brief Returns where the byte stands over an edited set, against the bytes certified before any edit.
  * @param edited The set after the edit.
  * @param before The bytes certified exactly before any edit, ascending.
  * @param byte The byte priced.
@@ -145,21 +169,18 @@ struct Answers
 {
     const auto lexer{compile(edited)};
 
-    Outcome after{
-            .exact = lexer.is_split_point(static_cast<char>(byte)),
-            .modulo = lexer.is_split_point_ignoring(static_cast<char>(byte)),
-            .gained = {}};
+    const auto exact{lexer.is_split_point(static_cast<char>(byte))};
 
-    std::ranges::set_difference(exact_bytes(lexer), before, std::back_inserter(after.gained));
+    const auto modulo{lexer.is_split_point_ignoring(static_cast<char>(byte))};
 
-    std::erase(after.gained, byte);
+    auto gained{gained_bytes(lexer, before, byte)};
 
-    return after;
+    return {.exact = exact, .modulo = modulo, .gained = std::move(gained)};
 }
 
 /**
- * @brief The tokens the blame names for a byte, each once, in rule order: the order the set lists its rules, which
- *        for a set read from a file is the file's, whatever the ids are.
+ * @brief Returns the tokens the blame names for a byte, each once, in rule order: the order the set lists its rules,
+ *        which for a set read from a file is the file's, whatever the ids are.
  * @param lexer The compiled set.
  * @param set The set it was compiled from, whose order is the rule order.
  * @param byte The byte.
@@ -168,20 +189,22 @@ struct Answers
 [[nodiscard]] std::vector<std::size_t> consumers(
         const core::Lexer& lexer, const Token_set& set, const unsigned char byte)
 {
-    std::vector<std::size_t> tokens;
+    std::vector<std::size_t> tokens{};
 
-    for (const auto& entry : blame(lexer))
+    for (const auto& [blamed, token, after] : blame(lexer))
     {
-        if (entry.byte == byte && !std::ranges::contains(tokens, entry.token))
+        if (blamed == byte && !std::ranges::contains(tokens, token))
         {
-            tokens.push_back(entry.token);
+            tokens.push_back(token);
         }
     }
 
     // A token the set does not list, which none of the blamed ones is, would sort last.
-    std::ranges::sort(tokens, {}, [&set](const std::size_t token) {
+    const auto position{[&set](const std::size_t token) {
         return std::ranges::find(set.rules, token, &Token_rule::id) - set.rules.begin();
-    });
+    }};
+
+    std::ranges::sort(tokens, {}, position);
 
     return tokens;
 }
@@ -211,8 +234,8 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 }
 
 /**
- * @brief What a consuming rule's shapes offer on their own: for the terminated and the delimited shape the rule has,
- *        the edit the shape names applied to the rule alone, the rest of the set as it stands.
+ * @brief Returns what a consuming rule's shapes offer on their own: for the terminated and the delimited shape the rule
+ *        has, the edit the shape names applied to the rule alone, the rest of the set as it stands.
  * @param rule The rule.
  * @param edited The set before any narrowing.
  * @param before The bytes certified exactly before any edit, ascending.
@@ -223,20 +246,27 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
         const Token_rule& rule, const Token_set& edited, const std::vector<unsigned char>& before,
         const unsigned char byte)
 {
-    std::vector<Choice> choices;
+    std::vector<Choice> choices{};
 
     for (const auto shape : {Shape::terminated, Shape::delimited})
     {
-        if (shape == Shape::terminated ? !is_terminated(rule.regex, byte) : !is_delimited(rule.regex, byte))
+        const auto has_shape{
+                shape == Shape::terminated ? is_terminated(rule.regex, byte) : is_delimited(rule.regex, byte)};
+
+        if (!has_shape)
         {
             continue;
         }
 
         auto alone{edited};
 
-        std::ranges::find(alone.rules, rule.id, &Token_rule::id)->regex = edited_by(rule.regex, shape);
+        const auto copy{std::ranges::find(alone.rules, rule.id, &Token_rule::id)};
 
-        choices.push_back({.token = rule.id, .shape = shape, .after = outcome(alone, before, byte)});
+        copy->regex = edited_by(rule.regex, shape);
+
+        auto after{outcome(alone, before, byte)};
+
+        choices.push_back({.token = rule.id, .shape = shape, .after = std::move(after)});
     }
 
     return choices;
@@ -254,13 +284,15 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
  */
 [[nodiscard]] Taken take_shape(Token_rule& taken, const Token_rule& rule, const unsigned char byte)
 {
-    switch (shape_of(rule.regex, byte))
+    const auto shape{shape_of(rule.regex, byte)};
+
+    switch (shape)
     {
     case Shape::terminated:
     case Shape::delimited:
-        taken.regex = edited_by(rule.regex, shape_of(rule.regex, byte));
+        taken.regex = edited_by(rule.regex, shape);
 
-        return Taken{.offered = true, .narrowed = false};
+        return {.offered = true, .narrowed = false};
     case Shape::run:
     case Shape::other:
         if (!can_lose(taken.regex, byte))
@@ -270,29 +302,31 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 
         exclude(taken.regex, byte);
 
-        return Taken{.offered = false, .narrowed = true};
+        return {.offered = false, .narrowed = true};
     case Shape::fixed:
         break;
     }
 
-    return Taken{.offered = false, .narrowed = false};
+    return {.offered = false, .narrowed = false};
 }
 
 /**
- * @brief Whether some token of the compiled set matches the byte on its own.
+ * @brief Returns whether some token of the compiled set matches the byte on its own.
  * @param lexer The compiled set.
  * @param byte The byte.
  * @return True when a one-byte input of it tokenizes.
  */
 [[nodiscard]] bool matched_alone(const core::Lexer& lexer, const unsigned char byte)
 {
-    const std::string input(1, static_cast<char>(byte));
+    const std::string input{static_cast<char>(byte)};
 
-    return lexer.tokenize<std::size_t>(input).length == 1;
+    const auto [token, length]{lexer.tokenize<std::size_t>(input)};
+
+    return length == 1;
 }
 
 /**
- * @brief The byte's own token, as a rule of the set.
+ * @brief Returns the byte's own token, as a rule of the set.
  * @param byte The byte.
  * @param own The id and the priority it takes.
  * @param discarded Whether it is discarded.
@@ -300,21 +334,19 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
  */
 [[nodiscard]] Token_rule byte_rule(const unsigned char byte, const Own_token own, const bool discarded)
 {
-    return Token_rule{
-            .regex = regex::text(std::string(1, static_cast<char>(byte))),
-            .id = own.id,
-            .priority = own.priority,
-            .discarded = discarded};
+    const std::string spelled{static_cast<char>(byte)};
+
+    return {.regex = regex::text(spelled), .id = own.id, .priority = own.priority, .discarded = discarded};
 }
 
 /**
- * @brief The id and the priority a token of the byte's own takes in a set.
+ * @brief Returns the id and the priority a token of the byte's own takes in a set.
  * @param set The set.
  * @return The id and the priority.
  */
 [[nodiscard]] Own_token own_token(const Token_set& set)
 {
-    std::vector<std::size_t> ids;
+    std::vector<std::size_t> ids{};
 
     std::ranges::transform(set.rules, std::back_inserter(ids), &Token_rule::id);
 
@@ -332,16 +364,16 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 
     auto next_priority{0UZ};
 
-    for (const auto& rule : set.rules)
+    for (const auto& [rule_regex, id, priority, discarded] : set.rules)
     {
-        next_priority = std::max(next_priority, rule.priority + 1);
+        next_priority = std::max(next_priority, priority + 1);
     }
 
-    return Own_token{.id = next_id, .priority = next_priority};
+    return {.id = next_id, .priority = next_priority};
 }
 
 /**
- * @brief Whether a token of the compiled set begins with the byte: the initial state consumes it live.
+ * @brief Returns whether a token of the compiled set begins with the byte: the initial state consumes it live.
  * @param lexer The compiled set.
  * @param byte The byte.
  * @return True when one does.
@@ -356,8 +388,8 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 }
 
 /**
- * @brief What each consuming token's shape offers on its own, and what every consumer taking its own shape's edit gives
- *        together, before the uniform narrowing edits anything.
+ * @brief Returns what each consuming token's shape offers on its own, and what every consumer taking its own shape's
+ *        edit gives together, before the uniform narrowing edits anything.
  *
  * A rule a narrowing uncovers has a shape of its own to offer too. The set each round looks in, the probe, has every
  * consumer answered so far taken off the byte, so that the rule the narrowing uncovers is the next one asked for its
@@ -374,7 +406,7 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
         const Token_set& set, const Token_set& edited, const std::vector<unsigned char>& before,
         const unsigned char byte, const Own_token own)
 {
-    Offers offers;
+    Offers offers{};
 
     auto together{edited};
 
@@ -384,11 +416,46 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 
     auto narrowed_discarded{false};
 
-    std::set<std::size_t> shaped;
+    std::set<std::size_t> shaped{};
 
     auto probe{edited};
 
     auto probed{compile(probe)};
+
+    // Takes the byte off the probe's copy of the rule, keeps its own choices and applies its shape's edit to the set.
+    const auto shape_token{[&](const std::size_t token) {
+        const auto rule{std::ranges::find(set.rules, token, &Token_rule::id)};
+
+        if (rule == set.rules.end())
+        {
+            return false;
+        }
+
+        const auto [position, inserted]{shaped.insert(token)};
+
+        if (!inserted)
+        {
+            return false;
+        }
+
+        auto& probed_rule{*std::ranges::find(probe.rules, token, &Token_rule::id)};
+
+        take_from_probe(probed_rule, *rule, byte);
+
+        auto choices{choices_of(*rule, edited, before, byte)};
+
+        std::ranges::move(choices, std::back_inserter(offers.choices));
+
+        auto& combined{*std::ranges::find(together.rules, token, &Token_rule::id)};
+
+        const auto [edit, narrowed]{take_shape(combined, *rule, byte)};
+
+        offered = offered || edit;
+
+        narrowed_discarded = narrowed_discarded || (narrowed && rule->discarded);
+
+        return true;
+    }};
 
     for (;;)
     {
@@ -396,25 +463,7 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 
         for (const auto token : consumers(probed, probe, byte))
         {
-            const auto rule{std::ranges::find(set.rules, token, &Token_rule::id)};
-
-            if (rule == set.rules.end() || !shaped.insert(token).second)
-            {
-                continue;
-            }
-
-            fresh = true;
-
-            take_from_probe(*std::ranges::find(probe.rules, token, &Token_rule::id), *rule, byte);
-
-            std::ranges::move(choices_of(*rule, edited, before, byte), std::back_inserter(offers.choices));
-
-            const auto [edit, narrowed]{
-                    take_shape(*std::ranges::find(together.rules, token, &Token_rule::id), *rule, byte)};
-
-            offered = offered || edit;
-
-            narrowed_discarded = narrowed_discarded || (narrowed && rule->discarded);
+            fresh = shape_token(token) || fresh;
         }
 
         if (!fresh)
@@ -437,7 +486,9 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
         return offers;
     }
 
-    if (!matched_alone(compile(together), byte))
+    const auto compiled{compile(together)};
+
+    if (!matched_alone(compiled, byte))
     {
         together.rules.push_back(byte_rule(byte, own, narrowed_discarded));
     }
@@ -448,8 +499,8 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 }
 
 /**
- * @brief Narrows the consumers one step at a time until the byte certifies or every token the byte is left to has
- *        been answered, by a step or by an obstruction, as price() narrows them.
+ * @brief Narrows the consumers one step at a time until the byte certifies or every token the byte is left to has been
+ *        answered, by a step or by an obstruction, as price() narrows them.
  * @param edited The set, narrowed step by step.
  * @param lexer The set compiled, recompiled after every edit.
  * @param byte The byte.
@@ -459,18 +510,19 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 [[nodiscard]] Answers narrowing_steps(
         Token_set& edited, core::Lexer& lexer, const unsigned char byte, const Own_token own)
 {
-    Answers answers;
+    Answers answers{};
 
     // The token the byte may be given of its own is answered before the first step: it is none of the set's rules, so
     // it is no edit an author makes, no obstruction of theirs, and not a token the report can name.
-    std::set<std::size_t> answered{own.id};
+    std::set answered{own.id};
+
+    const auto is_open{[&answered](const std::size_t token) { return !answered.contains(token); }};
 
     for (;;)
     {
         const auto remaining{consumers(lexer, edited, byte)};
 
-        const auto next{std::ranges::find_if(
-                remaining, [&answered](const std::size_t token) { return !answered.contains(token); })};
+        const auto next{std::ranges::find_if(remaining, is_open)};
 
         // Every rule the byte is left to has been narrowed or found immovable: no edit of this analysis remains.
         if (next == remaining.end())
@@ -491,11 +543,12 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 
         if (!can_lose(rule->regex, byte))
         {
-            // The narrowing is not applied to a rule that cannot lose the byte. The rule is an obstruction only where
-            // every word it matches holds the byte fixed past its first byte; a rule with a word holding it fixed only
-            // as its first byte, the initial state's occurrence, which begins a token, is reported as one this analysis
-            // decides nothing about rather than as an impossibility.
-            (fixed_mid_token(rule->regex, byte) ? answers.immovable : answers.undecided).push_back(token);
+            // A rule that cannot lose the byte is not narrowed: it is an obstruction where every word it matches holds
+            // the byte fixed past its first byte, and one with a word holding it fixed only as its first byte, which
+            // begins a token, is one this analysis decides nothing about.
+            auto& unanswered{fixed_mid_token(rule->regex, byte) ? answers.immovable : answers.undecided};
+
+            unanswered.push_back(token);
 
             continue;
         }
@@ -506,34 +559,31 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
 
         lexer = compile(edited);
 
-        Price_step step{
-                .token = token,
-                .shape = shape,
-                .separated = false,
-                .separated_discarded = false,
-                .exact = false,
-                .modulo = false};
+        const auto separated{!matched_alone(lexer, byte)};
 
-        if (!matched_alone(lexer, byte))
+        // The rule is read before the byte's own rule is added, which may move the rules.
+        const auto discarded{rule->discarded};
+
+        if (separated)
         {
-            const auto discarded{rule->discarded};
-
             edited.rules.push_back(byte_rule(byte, own, discarded));
-
-            step.separated = true;
-
-            step.separated_discarded = discarded;
 
             lexer = compile(edited);
         }
 
-        step.exact = lexer.is_split_point(static_cast<char>(byte));
+        const auto exact{lexer.is_split_point(static_cast<char>(byte))};
 
-        step.modulo = lexer.is_split_point_ignoring(static_cast<char>(byte));
+        const auto modulo{lexer.is_split_point_ignoring(static_cast<char>(byte))};
 
-        answers.steps.push_back(step);
+        answers.steps.push_back(
+                {.token = token,
+                 .shape = shape,
+                 .separated = separated,
+                 .separated_discarded = separated && discarded,
+                 .exact = exact,
+                 .modulo = modulo});
 
-        if (step.exact)
+        if (exact)
         {
             break;
         }
@@ -548,9 +598,9 @@ Pricing price(const Token_set& set, const unsigned char byte)
 {
     auto edited{set};
 
-    // Every pattern as the scanner sees it, the spellings that match the same words taken off, so that each shape
-    // and each edit reads the one pattern whatever the set spelled: the choice of `[ab]\n` with `any_of("")` is
-    // `[ab]\n`, terminated by the newline, and not a choice with an alternative reading as a word.
+    // Every pattern as the scanner sees it, the spellings that match the same words taken off, so that each shape and
+    // each edit reads the one pattern whatever the set spelled: the choice of `[ab]\n` with `any_of("")` is `[ab]\n`,
+    // terminated by the newline, and not a choice with an alternative reading as a word.
     for (auto& rule : edited.rules)
     {
         rule.regex = normalized(rule.regex);
@@ -564,24 +614,27 @@ Pricing price(const Token_set& set, const unsigned char byte)
 
     const auto before{exact_bytes(lexer)};
 
-    Pricing pricing{
-            .byte = byte,
-            .exact_before = lexer.is_split_point(static_cast<char>(byte)),
-            .modulo_before = lexer.is_split_point_ignoring(static_cast<char>(byte)),
-            .given = std::nullopt,
-            .steps = {},
-            .immovable = {},
-            .undecided = {},
-            .gained = {},
-            .choices = {},
-            .together = std::nullopt};
+    const auto exact_before{lexer.is_split_point(static_cast<char>(byte))};
 
-    if (pricing.exact_before)
+    const auto modulo_before{lexer.is_split_point_ignoring(static_cast<char>(byte))};
+
+    if (exact_before)
     {
-        return pricing;
+        return {.byte = byte,
+                .exact_before = exact_before,
+                .modulo_before = modulo_before,
+                .given = std::nullopt,
+                .steps = {},
+                .immovable = {},
+                .undecided = {},
+                .gained = {},
+                .choices = {},
+                .together = std::nullopt};
     }
 
     const auto own{own_token(set)};
+
+    std::optional<Outcome> given{};
 
     // A byte no token begins with is reported by neither certificate, every occurrence of it lying mid-token or
     // nowhere, and no narrowing changes that. It is given a token of its own before anything else, visible since no
@@ -592,28 +645,25 @@ Pricing price(const Token_set& set, const unsigned char byte)
 
         lexer = compile(edited);
 
-        pricing.given = outcome(edited, before, byte);
+        given = outcome(edited, before, byte);
     }
 
     auto [choices, together]{shape_choices(set, edited, before, byte, own)};
 
-    pricing.choices = std::move(choices);
-
-    pricing.together = std::move(together);
-
     auto [steps, immovable, undecided]{narrowing_steps(edited, lexer, byte, own)};
 
-    pricing.steps = std::move(steps);
+    auto gained{gained_bytes(lexer, before, byte)};
 
-    pricing.immovable = std::move(immovable);
-
-    pricing.undecided = std::move(undecided);
-
-    std::ranges::set_difference(exact_bytes(lexer), before, std::back_inserter(pricing.gained));
-
-    std::erase(pricing.gained, byte);
-
-    return pricing;
+    return {.byte = byte,
+            .exact_before = exact_before,
+            .modulo_before = modulo_before,
+            .given = std::move(given),
+            .steps = std::move(steps),
+            .immovable = std::move(immovable),
+            .undecided = std::move(undecided),
+            .gained = std::move(gained),
+            .choices = std::move(choices),
+            .together = std::move(together)};
 }
 
 Shape shape_of(const regex::Regex& regex, const unsigned char byte)

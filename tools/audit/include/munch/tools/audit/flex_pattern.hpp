@@ -20,7 +20,7 @@
 namespace munch::tools::audit
 {
 /**
- * @brief Where a pattern ends on a rule line: the first blank outside a quote and a bracket, escapes honoured.
+ * @brief Returns where a pattern ends on a rule line: the first blank outside a quote and a bracket, escapes honoured.
  *
  * A bracket expression holds no bracket of its own, so the scan tracks which state of one it stands in rather than a
  * depth: a `]` closes the bracket unless it is its first member, `[]a]` and `[^]a]`, a `^` negates the bracket only
@@ -34,7 +34,7 @@ namespace munch::tools::audit
 [[nodiscard]] std::size_t pattern_length(std::string_view line, std::size_t number);
 
 /**
- * @brief The first negated POSIX class in a pattern, `[:^alpha:]`, or nothing.
+ * @brief Returns the first negated POSIX class in a pattern, `[:^alpha:]`, or nothing.
  *
  * flex fills a class with its ASCII members whatever locale it runs under, its CCL_EXPR testing isascii() first, and
  * fills the negation without that test, so `[[:^alpha:]]` drops the letters of the locale flex ran under beside the
@@ -43,26 +43,27 @@ namespace munch::tools::audit
  * @param pattern The pattern or definition text.
  * @return The class as written, or nothing.
  */
-[[nodiscard]] std::optional<std::string> negated_class(std::string_view pattern) noexcept;
+[[nodiscard]] std::optional<std::string> negated_class(std::string_view pattern);
 
 /**
- * @brief What the refusal of a negated POSIX class says after naming what holds it: the class, and that flex fills it
- *        under the locale it runs under, as negated_class() says.
+ * @brief Returns what the refusal of a negated POSIX class says after naming what holds it: the class, and that flex
+ *        fills it under the locale it runs under, as negated_class() says.
  * @param negated The class as negated_class() returns it.
  * @return The refusal's text from "holds" on.
  */
 [[nodiscard]] std::string negated_class_refusal(std::string_view negated);
 
 /**
- * @brief The first group in a pattern that turns the case option on, `(?i:`, with `s`, `x` and `r` beside it in any
- *        order and a `-` turning what follows off, `(?s-i:` counting as none; or nothing.
+ * @brief Returns the first group in a pattern that turns the case option on, `(?i:`, with `s`, `x` and `r` beside it in
+ *        any order and a `-` turning what follows off, `(?s-i:` counting as none; or nothing.
  * @param pattern The pattern or definition text.
  * @return The group's opening as written, or nothing.
  */
-[[nodiscard]] std::optional<std::string> folding_group(std::string_view pattern) noexcept;
+[[nodiscard]] std::optional<std::string> folding_group(std::string_view pattern);
 
 /**
- * @brief The first byte beyond ASCII a pattern spells, written out, as `\xHH` or as an octal escape, or nothing.
+ * @brief Returns the first byte beyond ASCII a pattern spells, written out, as `\xHH` or as an octal escape, or
+ *        nothing.
  *
  * Under the case option flex folds every byte of a pattern with the C library's case functions under the locale it runs
  * under, so a byte beyond ASCII gains its other case there and not under the C locale: flex 2.6.4 under fr_FR.ISO8859-1
@@ -71,7 +72,7 @@ namespace munch::tools::audit
  * @param pattern The pattern or definition text.
  * @return The byte as written, or nothing.
  */
-[[nodiscard]] std::optional<std::string> beyond_ascii(std::string_view pattern) noexcept;
+[[nodiscard]] std::optional<std::string> beyond_ascii(std::string_view pattern);
 
 } // namespace munch::tools::audit
 

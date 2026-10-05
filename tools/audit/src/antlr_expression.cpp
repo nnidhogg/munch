@@ -19,12 +19,35 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements antlr_expression.hpp: what a sequence begins with and measures, an element before its atom, an inert
-// action and the words of ANTLR's errors 144 and 174 are private to this unit.
+/**
+ * @brief The dots that part a range's two ends, `'a'..'z'`.
+ */
+constexpr std::string_view range_dots{".."};
 
 /**
- * @brief What a sequence can begin with: every element up to and including the first that cannot match the empty
- *        string, an element under `?` or `*` and a group with an empty alternative among those that can, an inert
+ * @brief The arrow that opens a rule's commands, `-> skip`.
+ */
+constexpr std::string_view arrow{"->"};
+
+/**
+ * @brief Returns an expression under a suffix, bare where it is atomic and parenthesised where it is not.
+ * @param expression The expression.
+ * @param suffix The suffix, `?`, `*`, `+` or a non-greedy one, or empty for the expression alone as a unit.
+ * @return The suffixed expression.
+ */
+[[nodiscard]] std::string suffixed(const std::string& expression, const std::string_view suffix)
+{
+    if (is_atomic(expression))
+    {
+        return std::format("{}{}", expression, suffix);
+    }
+
+    return std::format("({}){}", expression, suffix);
+}
+
+/**
+ * @brief Returns what a sequence can begin with: every element up to and including the first that cannot match the
+ *        empty string, an element under `?` or `*` and a group with an empty alternative among those that can, an inert
  *        action stepped over.
  * @param elements The sequence's elements.
  * @return The characters, or std::nullopt where an element that can begin a match does not say which, a reference among
@@ -60,8 +83,8 @@ namespace
 }
 
 /**
- * @brief How many characters a match of a sequence's first elements has, when every one's matches have one length and
- *        no suffix varies it.
+ * @brief Returns how many characters a match of a sequence's first elements has, when every one's matches have one
+ *        length and no suffix varies it.
  * @param elements The sequence's elements.
  * @param count How many of them, from the first.
  * @return The count of characters, or std::nullopt where they have no one length.
@@ -84,8 +107,8 @@ namespace
 }
 
 /**
- * @brief An element before its atom is read: no expression and no literal, nothing it admits or begins with known,
- *        never empty, of no known length and with no suffix.
+ * @brief Returns an element before its atom is read: no expression and no literal, nothing it admits or begins with
+ *        known, never empty, of no known length and with no suffix.
  * @return The element.
  */
 [[nodiscard]] Element no_element()
@@ -103,8 +126,8 @@ namespace
 }
 
 /**
- * @brief Whether the body of an action provably does nothing the token stream can see: blanks and comments only, so
- *        that no call runs at all.
+ * @brief Returns whether the body of an action provably does nothing the token stream can see: blanks and comments
+ *        only, so that no call runs at all.
  *
  * Any statement in an action may reach the lexer's own state, `more()`, `skip()`, `setType()` and `setText()` among the
  * calls ANTLR's runtime offers, and a call to a member of the grammar's own `@members` block may reach them indirectly,
@@ -133,20 +156,20 @@ namespace
 }
 
 /**
- * @brief The words of ANTLR's error 144 for a literal a range's end or a negation needs one character of and does not
- *        get: a multi-character literal, an empty one, a character beyond the basic multilingual plane written out, or
- *        a surrogate pair of two escapes, the last two being two UTF-16 units to it.
+ * @brief Returns the words of ANTLR's error 144 for a literal a range's end or a negation needs one character of and
+ *        does not get: a multi-character literal, an empty one, a character beyond the basic multilingual plane written
+ *        out, or a surrogate pair of two escapes, the last two being two UTF-16 units to it.
  * @param spelling The literal as written, quotes included.
  * @return The message.
  */
 [[nodiscard]] std::string multi_character(const std::string_view spelling)
 {
-    return "multi-character literals are not allowed in lexer sets: " + std::string{spelling};
+    return std::format("multi-character literals are not allowed in lexer sets: {}", spelling);
 }
 
 /**
- * @brief The element of an atom that admits an alphabet in one step: the alphabet's step for the pattern parser, of one
- *        length in bytes where it stays within ASCII.
+ * @brief Returns the element of an atom that admits an alphabet in one step: the alphabet's step for the pattern
+ *        parser, of one length in bytes where it stays within ASCII.
  * @param alphabet What the atom admits.
  * @return The element.
  */
@@ -164,13 +187,13 @@ namespace
 }
 
 /**
- * @brief The words of ANTLR's error 174 for a range whose end is below its start and for an empty set.
+ * @brief Returns the words of ANTLR's error 174 for a range whose end is below its start and for an empty set.
  * @param spelling The range or set as written.
  * @return The message.
  */
 [[nodiscard]] std::string empty_range(const std::string_view spelling)
 {
-    return "string literals and sets cannot be empty: " + std::string{spelling};
+    return std::format("string literals and sets cannot be empty: {}", spelling);
 }
 
 } // namespace
@@ -183,16 +206,16 @@ Expression_reader::Expression_reader(
 
 std::vector<Alternative> Expression_reader::alternatives()
 {
-    std::vector<Alternative> read;
+    std::vector<Alternative> read{};
 
     // What the alternatives read so far can begin with, unknown once one of them cannot say.
     std::optional<Beginning> earlier{Beginning{}};
 
     // Where a non-greedy loop stood in some alternative, and whether some alternative can match the empty string, known
     // or through a reference.
-    std::optional<std::size_t> lazy_at;
+    std::optional<std::size_t> lazy_at{};
 
-    std::vector<Nullable_t> formulas;
+    std::vector<Nullable_t> formulas{};
 
     for (;;)
     {
@@ -202,7 +225,9 @@ std::vector<Alternative> Expression_reader::alternatives()
 
         auto [expression, first, characters, lazy, empty, nullable, spelling, acted]{sequence(true)};
 
-        if (lazy && !(earlier && first && !earlier->overlaps(*first)))
+        const auto apart{earlier && first && !earlier->overlaps(*first)};
+
+        if (lazy && !apart)
         {
             throw Spec_error{
                     "a non-greedy loop is read only where no earlier alternative of the rule can begin with the same "
@@ -211,7 +236,10 @@ std::vector<Alternative> Expression_reader::alternatives()
                     line_of(opened)};
         }
 
-        lazy_at = lazy ? std::optional{opened} : lazy_at;
+        if (lazy)
+        {
+            lazy_at = opened;
+        }
 
         formulas.push_back(nullable);
 
@@ -224,33 +252,11 @@ std::vector<Alternative> Expression_reader::alternatives()
             earlier = std::nullopt;
         }
 
-        auto pattern{without_trailing_blanks(std::string{text_.substr(opened, at_ - opened)})};
+        const auto written{text_.substr(opened, at_ - opened)};
 
-        std::string commands;
+        auto pattern{without_trailing_blanks(std::string{written})};
 
-        auto clause{opened};
-
-        if (at("->"))
-        {
-            at_ += 2;
-
-            skip_blanks();
-
-            clause = at_;
-
-            for (; peek() && *peek() != ';' && *peek() != '|'; skip_blanks())
-            {
-                ++at_;
-            }
-
-            commands = text_.substr(clause, at_ - clause);
-
-            // ANTLR's parser takes a command after the arrow, so `-> ;` is its error 50, a syntax error at the `;`.
-            if (commands.empty())
-            {
-                fail(std::format("syntax error: '->' has no command after it{}", rejected));
-            }
-        }
+        auto [commands, clause]{command_clause(opened)};
 
         read.push_back(
                 {.pattern = std::move(pattern),
@@ -292,29 +298,35 @@ bool Expression_reader::is_lazy() const noexcept
 
 Sequence Expression_reader::sequence(const bool outermost)
 {
-    std::vector<Element> elements;
+    std::vector<Element> elements{};
 
-    for (skip_blanks(); peek() && *peek() != '|' && *peek() != ')' && *peek() != ';' && !at("->"); skip_blanks())
+    const auto at_sequence_end{
+            [this] { return !peek() || *peek() == '|' || *peek() == ')' || *peek() == ';' || at(arrow); }};
+
+    for (skip_blanks(); !at_sequence_end(); skip_blanks())
     {
         elements.push_back(element());
     }
 
-    std::string out;
+    std::string out{};
 
-    for (std::size_t index{0}; index < elements.size(); ++index)
+    for (const auto [index, element] : std::views::enumerate(elements))
     {
-        const auto& [expression, literal, spelling, alphabet, begins, nullable, one_length, characters, suffix, lazy]{
-                elements[index]};
-
-        if (lazy)
+        if (element.lazy)
         {
-            out += lazy_element(elements, index, outermost);
+            out += lazy_element(elements, static_cast<std::size_t>(index), outermost);
 
             continue;
         }
 
-        out += suffix == 0 || is_atomic(expression) ? expression + (suffix == 0 ? "" : std::string{suffix}) :
-                                                      std::format("({}){}", expression, suffix);
+        if (element.suffix == 0)
+        {
+            out += element.expression;
+
+            continue;
+        }
+
+        out += suffixed(element.expression, std::string{element.suffix});
     }
 
     // The sequence matches the empty string when every element can, and an element under `?` or `*` always can.
@@ -322,19 +334,23 @@ Sequence Expression_reader::sequence(const bool outermost)
 
     for (const auto& element : elements)
     {
-        nullable = both_empty(
-                nullable, element.suffix == '?' || element.suffix == '*' ? always_empty() : element.nullable);
+        const auto each{element.suffix == '?' || element.suffix == '*' ? always_empty() : element.nullable};
+
+        nullable = both_empty(nullable, each);
     }
+
+    // An inert action is an element that writes no expression.
+    const auto inert{[](const Element& element) { return element.expression.empty(); }};
 
     // ANTLR's patterns for a rule spelling a parser literal match the literal alone, unsuffixed, or the literal and one
     // action after it; an inert action is the only kind read this far.
-    const auto acted{elements.size() == 2 && elements.back().expression.empty()};
+    const auto acted{elements.size() == 2 && inert(elements.back())};
 
     const auto spelled{(elements.size() == 1 || acted) && elements.front().suffix == 0};
 
     // An alternative of inert actions alone matches the empty string as one of no elements does: ANTLR takes `({} |
     // 'a') 'b'` over `b`, the action-only branch matching nothing and standing.
-    const auto blank{std::ranges::all_of(elements, [](const Element& element) { return element.expression.empty(); })};
+    const auto blank{std::ranges::all_of(elements, inert)};
 
     return {.expression = std::move(out),
             .first = beginning_of(elements),
@@ -349,8 +365,7 @@ Sequence Expression_reader::sequence(const bool outermost)
 std::string Expression_reader::lazy_element(
         const std::vector<Element>& elements, const std::size_t index, const bool outermost)
 {
-    const auto& [expression, literal, spelling, alphabet, begins, nullable, one_length, characters, suffix, lazy]{
-            elements[index]};
+    const auto& element{elements[index]};
 
     lazy_ = true;
 
@@ -378,42 +393,42 @@ std::string Expression_reader::lazy_element(
 
     const auto opener{static_cast<unsigned char>(next->front())};
 
-    if (suffix == '?')
+    if (element.suffix == '?')
     {
-        if (!begins || begins->ascii.test(opener))
+        if (!element.first || element.first->ascii.test(opener))
         {
             fail("a non-greedy option before a string it could begin is not modelled");
         }
 
-        if (!characters)
+        if (!element.characters)
         {
             fail("a non-greedy option is read over a body whose every match has one length in characters, since ANTLR "
                  "takes the body's alternatives in order and the first to reach the rule's end stops the others, "
                  "which the byte reading cannot express where they reach the rest at different characters");
         }
 
-        return is_atomic(expression) ? expression + "?" : std::format("({})?", expression);
+        return suffixed(element.expression, "?");
     }
 
-    if (alphabet)
+    if (element.alphabet)
     {
         // A `+?` loop reads its first character whatever follows, since it cannot stop before it has one, and the rest
         // of its body is the `*?` body from there on.
-        const auto unit{is_atomic(expression) ? expression : "(" + expression + ")"};
+        const auto unit{suffixed(element.expression, "")};
 
-        const auto body{avoiding(*next, *alphabet)};
+        const auto body{avoiding(*next, *element.alphabet)};
 
-        return suffix == '+' ? unit + body : body;
+        return element.suffix == '+' ? unit + body : body;
     }
 
-    if (!one_length || !begins || begins->ascii.test(opener))
+    if (!element.one_length || !element.first || element.first->ascii.test(opener))
     {
         fail("a non-greedy loop is read over a set, a dot, one character, or a literal of one length whose first byte "
              "the rest cannot begin with; over any other body ANTLR stops it at the fewest characters that let the "
              "rest match, a group's alternatives taken in order, which the byte reading cannot express");
     }
 
-    return is_atomic(expression) ? expression + suffix : std::format("({}){}", expression, suffix);
+    return suffixed(element.expression, std::string{element.suffix});
 }
 
 Element Expression_reader::element()
@@ -447,7 +462,9 @@ Element Expression_reader::element()
     // A set, a range, the dot, a negation and a one-character literal all match one character.
     if (element.alphabet)
     {
-        element.first = Beginning{.ascii = element.alphabet->ascii, .beyond = !element.alphabet->beyond.empty()};
+        const auto& [ascii, beyond]{*element.alphabet};
+
+        element.first = Beginning{.ascii = ascii, .beyond = !beyond.empty()};
 
         element.characters = 1;
     }
@@ -475,10 +492,7 @@ Element Expression_reader::element()
         {
             at_ = opened;
 
-            fail(std::format(
-                    "the rule {} contains a closure with at least one alternative that can match the empty string, "
-                    "which ANTLR rejects",
-                    rule_));
+            fail(closure_refusal(rule_));
         }
 
         tables_.closures.push_back({.rule = rule_, .line = line_of(opened), .body = element.nullable});
@@ -562,7 +576,7 @@ Expression_reader::Atom Expression_reader::quoted_element(const std::size_t open
 
     skip_blanks();
 
-    if (at(".."))
+    if (at(range_dots))
     {
         return {.element = range_element(opened, start, spelling), .optionable = false};
     }
@@ -587,14 +601,16 @@ Element Expression_reader::range_element(const std::size_t opened, const Literal
 
     const auto high{range_high(opened, low, spelling, end)};
 
-    refuse_unfoldable(opened, high >= 0x80);
+    refuse_unfoldable(opened, high > last_ascii);
 
-    return alphabet_element(spanning(low, high, case_insensitive_));
+    auto range{spanning(low, high, case_insensitive_)};
+
+    return alphabet_element(std::move(range));
 }
 
 Expression_reader::Range_end Expression_reader::range_end()
 {
-    at_ += 2;
+    at_ += range_dots.size();
 
     skip_blanks();
 
@@ -610,20 +626,24 @@ Expression_reader::Range_end Expression_reader::range_end()
 char32_t Expression_reader::range_high(
         const std::size_t opened, const char32_t low, const std::string& spelling, const Range_end& end)
 {
-    if (!end.end.single)
+    const auto& [last, last_spelling]{end};
+
+    const auto& [bytes, single]{last};
+
+    if (!single)
     {
         at_ = opened;
 
-        fail(multi_character(end.spelling));
+        fail(multi_character(last_spelling));
     }
 
-    const auto high{*decoded(end.end.bytes)};
+    const auto high{*decoded(bytes)};
 
     if (high < low)
     {
         at_ = opened;
 
-        fail(empty_range(spelling + ".." + end.spelling));
+        fail(empty_range(std::format("{}..{}", spelling, last_spelling)));
     }
 
     return high;
@@ -653,8 +673,9 @@ Element Expression_reader::literal_element(
 
     auto element{no_element()};
 
-    const auto lettered{
-            std::ranges::any_of(bytes, [](const char one) { return is_letter(static_cast<unsigned char>(one)); })};
+    const auto letter{[](const char one) { return is_letter(static_cast<unsigned char>(one)); }};
+
+    const auto lettered{std::ranges::any_of(bytes, letter)};
 
     if (case_insensitive_ && lettered)
     {
@@ -673,15 +694,20 @@ Element Expression_reader::literal_element(
     // of which every byte but a continuation byte begins one.
     element.one_length = true;
 
-    element.characters = static_cast<std::size_t>(std::ranges::count_if(
-            bytes, [](const char one) { return !is_continuation(static_cast<unsigned char>(one)); }));
+    const auto leading{[](const char one) { return !is_continuation(static_cast<unsigned char>(one)); }};
+
+    const auto leads{std::ranges::count_if(bytes, leading)};
+
+    element.characters = static_cast<std::size_t>(leads);
 
     // A literal's characters fold one by one, each as a range of itself.
     element.first = Beginning{};
 
-    if (const auto lead{static_cast<unsigned char>(bytes.front())}; lead < 0x80)
+    if (const auto lead{static_cast<unsigned char>(bytes.front())}; lead <= last_ascii)
     {
-        element.first->ascii = spanning(lead, lead, case_insensitive_).ascii;
+        const auto [ascii, beyond]{spanning(lead, lead, case_insensitive_)};
+
+        element.first->ascii = ascii;
     }
     else
     {
@@ -710,8 +736,10 @@ Element Expression_reader::set_element(const std::size_t opened)
 
         at_ = opened;
 
-        fail("the set " + spelling +
-             " holds nothing but surrogates, which no UTF-8 input decodes to, so ANTLR's lexer never matches it");
+        fail(std::format(
+                "the set {} holds nothing but surrogates, which no UTF-8 input decodes to, so ANTLR's lexer never "
+                "matches it",
+                spelling));
     }
 
     refuse_unfoldable(opened, !alphabet.beyond.empty());
@@ -723,8 +751,9 @@ Alphabet Expression_reader::set()
 {
     const auto opened{at_ - 1};
 
-    Alphabet alphabet;
+    Alphabet alphabet{};
 
+    // A span of nothing but surrogates is left out.
     const auto take{[this, &alphabet](const char32_t first, const char32_t last) {
         if (!(is_surrogate(first) && is_surrogate(last)))
         {
@@ -732,7 +761,7 @@ Alphabet Expression_reader::set()
         }
     }};
 
-    std::optional<char32_t> pending;
+    std::optional<char32_t> pending{};
 
     auto written{false};
 
@@ -800,7 +829,9 @@ Element Expression_reader::negation_element(const std::size_t opened)
 
     refuse_unfoldable(opened, !negated.beyond.empty());
 
-    return alphabet_element(complement(negated));
+    auto complemented{complement(negated)};
+
+    return alphabet_element(std::move(complemented));
 }
 
 Alphabet Expression_reader::negatable()
@@ -818,39 +849,7 @@ Alphabet Expression_reader::negatable()
     {
         ++at_;
 
-        // One character as ANTLR reads one, its error 144 otherwise.
-        const auto [bytes, single]{literal()};
-
-        const std::string spelling{text_.substr(opened, at_ - opened)};
-
-        if (!single)
-        {
-            at_ = opened;
-
-            fail(multi_character(spelling));
-        }
-
-        const auto scalar{*decoded(bytes)};
-
-        skip_blanks();
-
-        // A range inside the negation, ~('0'..'9' | '^'), as Clojure's grammar writes it; a literal that is no range
-        // may carry element options, `~'x'<a=b>`, which set nothing here.
-        if (!at(".."))
-        {
-            if (peek() == '<')
-            {
-                ++at_;
-
-                element_options();
-            }
-
-            return spanning(scalar, scalar, case_insensitive_);
-        }
-
-        const auto end{range_end()};
-
-        return spanning(scalar, range_high(opened, scalar, spelling, end), case_insensitive_);
+        return negated_literal(opened);
     }
 
     if (peek() != '(')
@@ -861,17 +860,17 @@ Alphabet Expression_reader::negatable()
     // A group of sets and characters, each alternative one of them.
     ++at_;
 
-    Alphabet joined;
+    Alphabet joined{};
 
     for (;;)
     {
         skip_blanks();
 
-        const auto part{negatable()};
+        const auto [ascii, beyond]{negatable()};
 
-        joined.ascii |= part.ascii;
+        joined.ascii |= ascii;
 
-        joined.beyond.insert(joined.beyond.end(), part.beyond.begin(), part.beyond.end());
+        joined.beyond.insert(joined.beyond.end(), beyond.begin(), beyond.end());
 
         skip_blanks();
 
@@ -890,11 +889,50 @@ Alphabet Expression_reader::negatable()
     }
 }
 
+Alphabet Expression_reader::negated_literal(const std::size_t opened)
+{
+    // One character as ANTLR reads one, its error 144 otherwise.
+    const auto [bytes, single]{literal()};
+
+    const std::string spelling{text_.substr(opened, at_ - opened)};
+
+    if (!single)
+    {
+        at_ = opened;
+
+        fail(multi_character(spelling));
+    }
+
+    const auto scalar{*decoded(bytes)};
+
+    skip_blanks();
+
+    // A range inside the negation, ~('0'..'9' | '^'), as Clojure's grammar writes it.
+    if (at(range_dots))
+    {
+        const auto end{range_end()};
+
+        const auto high{range_high(opened, scalar, spelling, end)};
+
+        return spanning(scalar, high, case_insensitive_);
+    }
+
+    // A literal that is no range may carry element options, `~'x'<a=b>`, which set nothing here.
+    if (peek() == '<')
+    {
+        ++at_;
+
+        element_options();
+    }
+
+    return spanning(scalar, scalar, case_insensitive_);
+}
+
 Element Expression_reader::dot_element()
 {
     ++at_;
 
-    Alphabet all{.ascii = {}, .beyond = {{.first = 0x80, .last = last_scalar}}};
+    Alphabet all{.ascii = {}, .beyond = {{.first = last_ascii + 1, .last = last_scalar}}};
 
     all.ascii.set();
 
@@ -907,7 +945,7 @@ Element Expression_reader::group_element(const std::size_t opened)
 
     auto element{no_element()};
 
-    std::string inner;
+    std::string inner{};
 
     auto optional{false};
 
@@ -928,7 +966,7 @@ Element Expression_reader::group_element(const std::size_t opened)
         }
         else
         {
-            inner += (inner.empty() ? "" : "|") + expression;
+            join_onto(inner, expression, "|");
         }
 
         if (element.first && first)
@@ -974,7 +1012,7 @@ Element Expression_reader::group_element(const std::size_t opened)
     }
 
     // An empty alternative makes the group optional.
-    element.expression = optional ? "(" + inner + ")?" : "(" + inner + ")";
+    element.expression = grouped(inner, optional);
 
     return element;
 }
@@ -997,11 +1035,40 @@ Element Expression_reader::reference_element(const std::size_t opened, const cha
 
     auto element{no_element()};
 
-    element.expression = "{" + name + "}";
+    element.expression = reference(name);
 
     element.nullable = {{name}};
 
     return element;
+}
+
+Expression_reader::Command_clause Expression_reader::command_clause(const std::size_t opened)
+{
+    if (!at(arrow))
+    {
+        return {.commands = {}, .clause = opened};
+    }
+
+    at_ += arrow.size();
+
+    skip_blanks();
+
+    const auto clause{at_};
+
+    for (; peek() && *peek() != ';' && *peek() != '|'; skip_blanks())
+    {
+        ++at_;
+    }
+
+    std::string commands{text_.substr(clause, at_ - clause)};
+
+    // ANTLR's parser takes a command after the arrow, so `-> ;` is its error 50, a syntax error at the `;`.
+    if (commands.empty())
+    {
+        fail(std::format("syntax error: '->' has no command after it{}", rejected));
+    }
+
+    return {.commands = std::move(commands), .clause = clause};
 }
 
 } // namespace munch::tools::audit

@@ -28,18 +28,8 @@ Nullable_t either_empty(Nullable_t left, const Nullable_t& right)
 
 bool matches_empty(const Nullable_t& formula, const std::set<std::string, std::less<>>& nullable)
 {
-    /**
-     * @brief Returns whether a rule is known to match the empty string.
-     * @param name The rule's name.
-     * @return True when it is among the nullable ones.
-     */
     const auto known_empty{[&nullable](const std::string& name) { return nullable.contains(name); }};
 
-    /**
-     * @brief Returns whether a term of the formula holds, every rule it names matching the empty string.
-     * @param term The rules the term names.
-     * @return True when it holds.
-     */
     const auto term_holds{
             [&known_empty](const std::vector<std::string>& term) { return std::ranges::all_of(term, known_empty); }};
 
@@ -89,14 +79,14 @@ bool is_atomic(const std::string_view expression)
 
     if (opener == '"')
     {
+        const auto size{expression.size()};
+
         // The three literals that are one byte: the byte itself, an escape and a hex escape.
         static constexpr std::string_view plain{R"("x")"};
 
         static constexpr std::string_view escaped{R"("\n")"};
 
         static constexpr std::string_view hex{R"("\xHH")"};
-
-        const auto size{expression.size()};
 
         return size == plain.size() || (size == escaped.size() && expression[1] == '\\') ||
                (size == hex.size() && expression.substr(1, 2) == R"(\x)");
@@ -107,10 +97,6 @@ bool is_atomic(const std::string_view expression)
         return false;
     }
 
-    /**
-     * @brief Returns the closer of the opener's kind.
-     * @return `]`, `)` or `}`.
-     */
     const auto closer{[opener] {
         switch (opener)
         {
@@ -193,11 +179,6 @@ std::string avoiding(const std::string_view terminator, const Alphabet& alphabet
     // Labels between states as regex text: absent for no edge, empty for the empty string.
     std::vector label(states + 1, std::vector<std::optional<std::string>>(states + 1));
 
-    /**
-     * @brief Adds an alternative to an edge's label, an empty alternative making the other optional.
-     * @param into The label, absent for no edge.
-     * @param more The alternative's regex text, empty for the empty string.
-     */
     const auto join{[](std::optional<std::string>& into, const std::string& more) {
         if (!into)
         {
@@ -215,13 +196,6 @@ std::string avoiding(const std::string_view terminator, const Alphabet& alphabet
         }
     }};
 
-    /**
-     * @brief Returns the state a byte moves a prefix of the terminator to: the longest prefix of the terminator that is
-     *        a suffix of the prefix followed by the byte.
-     * @param from The prefix's length.
-     * @param byte The byte.
-     * @return The longest such prefix's length.
-     */
     const auto next_state{[terminator, states](const std::size_t from, const std::size_t byte) {
         std::string tail{terminator.substr(0, from)};
 
@@ -237,20 +211,6 @@ std::string avoiding(const std::string_view terminator, const Alphabet& alphabet
         return to;
     }};
 
-    /**
-     * @brief Returns whether the loop's body, having read the terminator's first `length` bytes and nothing longer of
-     *        it, is already past the point ANTLR's loop stops at, because the terminator appended there spells an
-     *        occurrence of itself that begins inside the body.
-     *
-     * Appending the terminator after a prefix of it of length j spells an occurrence beginning j bytes early exactly
-     * when the terminator's own bytes from j on are its first bytes, that is when j is a period of it. `'aa'` after one
-     * `a` is the case: the body's `a` and the terminator's first `a` are an occurrence of `aa`, so ANTLR's fewest
-     * characters stopped a byte earlier and the body may not end there. The longest prefix the body ends in is the only
-     * one to test: a shorter prefix the body also ends in is a suffix of the longest one, and a periodic terminator's
-     * suffix of that kind makes the longest one a period too.
-     * @param length The length of the longest prefix of the terminator the body ends with, below the whole of it.
-     * @return True when the terminator completes that prefix into an occurrence of itself.
-     */
     const auto is_overlapped{[terminator](const std::size_t length) {
         return length > 0 && terminator.substr(length) == terminator.substr(0, terminator.size() - length);
     }};
@@ -298,12 +258,7 @@ std::string avoiding(const std::string_view terminator, const Alphabet& alphabet
         }
     }
 
-    /**
-     * @brief Adds to every edge from a state into the eliminated one the paths through it onward, its own loop between.
-     * @param from The state the edge leaves.
-     * @param gone The state eliminated.
-     * @param loop The eliminated state's loop as regex text, empty for none.
-     */
+    // Adds to each edge out of `from` the paths through the eliminated state onward, its loop between.
     const auto bypass{[&label, &join, final](const std::size_t from, const std::size_t gone, const std::string& loop) {
         for (std::size_t to{0}; to <= final; ++to)
         {
@@ -318,11 +273,6 @@ std::string avoiding(const std::string_view terminator, const Alphabet& alphabet
         }
     }};
 
-    /**
-     * @brief Returns a state's loop as regex text, starred.
-     * @param state The state.
-     * @return The loop, empty when the state has none.
-     */
     const auto loop_of{[&label](const std::size_t state) {
         return label[state][state] ? std::format("({})*", *label[state][state]) : std::string{};
     }};

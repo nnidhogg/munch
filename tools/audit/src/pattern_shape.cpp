@@ -24,12 +24,6 @@ namespace
  */
 [[nodiscard]] std::optional<std::size_t> fixed_count(const regex::Repeat::Kind_t& kind)
 {
-    /**
-     * @brief Returns the fixed count of a repetition of one kind.
-     * @tparam Kind The kind's type.
-     * @param counted The repetition's kind.
-     * @return The count, or std::nullopt.
-     */
     const auto count_of{[]<typename Kind>(const Kind& counted) -> std::optional<std::size_t> {
         if constexpr (std::is_same_v<Kind, regex::Exact>)
         {
@@ -61,12 +55,6 @@ namespace
  */
 [[nodiscard]] std::optional<std::string> fixed_word(const regex::Regex& regex)
 {
-    /**
-     * @brief Returns the one word a component of one kind matches.
-     * @tparam Node The node's type.
-     * @param node The component.
-     * @return The word, or none.
-     */
     const auto word_of{[]<typename Node>(const Node& node) -> std::optional<std::string> {
         if constexpr (std::is_same_v<Node, regex::Text>)
         {
@@ -180,19 +168,8 @@ namespace
  */
 [[nodiscard]] bool admits(const regex::Regex& regex, const unsigned char byte)
 {
-    /**
-     * @brief Returns whether a part of the pattern admits the byte.
-     * @param part The part.
-     * @return True when it does.
-     */
     const auto admits_byte{[byte](const regex::Regex& part) { return admits(part, byte); }};
 
-    /**
-     * @brief Returns whether a pattern of one kind admits the byte.
-     * @tparam Node The node's type.
-     * @param node The pattern.
-     * @return True when it does.
-     */
     const auto admitted{[byte, &admits_byte]<typename Node>(const Node& node) {
         if constexpr (std::is_same_v<Node, regex::Any_of>)
         {
@@ -224,12 +201,6 @@ namespace
  */
 [[nodiscard]] std::size_t required_count(const regex::Repeat::Kind_t& kind)
 {
-    /**
-     * @brief Returns the least count of a repetition of one kind.
-     * @tparam Kind The kind's type.
-     * @param counted The repetition's kind.
-     * @return The count.
-     */
     const auto least_of{[]<typename Kind>(const Kind& counted) -> std::size_t {
         if constexpr (std::is_same_v<Kind, regex::Plus>)
         {
@@ -261,12 +232,6 @@ namespace
  */
 [[nodiscard]] bool matches_nothing(const regex::Regex& regex)
 {
-    /**
-     * @brief Returns whether a pattern of one kind matches no word.
-     * @tparam Node The node's type.
-     * @param node The pattern.
-     * @return True when none matches.
-     */
     const auto nothing_of{[]<typename Node>(const Node& node) {
         if constexpr (std::is_same_v<Node, regex::Any_of>)
         {
@@ -471,11 +436,6 @@ bool is_terminated(const regex::Regex& regex, const unsigned char byte)
 
     const auto before{parts | std::views::take(parts.size() - 1)};
 
-    /**
-     * @brief Returns whether a part of the pattern admits the byte.
-     * @param part The part.
-     * @return True when it does.
-     */
     const auto admits_byte{[byte](const regex::Regex& part) { return admits(part, byte); }};
 
     return std::ranges::none_of(before, admits_byte);

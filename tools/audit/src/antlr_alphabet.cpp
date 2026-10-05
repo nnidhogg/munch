@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <format>
 #include <optional>
 #include <string>
@@ -16,16 +15,14 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements antlr_alphabet.hpp: the runs a set of ASCII bytes falls into are private to this unit.
-
 /**
- * @brief The runs of consecutive bytes a set of ASCII bytes holds, in order.
+ * @brief Returns the runs of consecutive bytes a set of ASCII bytes holds, in order.
  * @param ascii The bytes.
  * @return Each run's first and last byte.
  */
 [[nodiscard]] std::vector<Scalar_range> runs(const Ascii_t& ascii)
 {
-    std::vector<Scalar_range> found;
+    std::vector<Scalar_range> found{};
 
     for (std::size_t byte{0}; byte < ascii.size();)
     {
@@ -67,7 +64,9 @@ bool Beginning::overlaps(const Beginning& other) const noexcept
 
 bool holds_beyond_ascii(const std::string_view bytes)
 {
-    return std::ranges::any_of(bytes, [](const char one) { return static_cast<unsigned char>(one) >= 0x80; });
+    const auto beyond_ascii{[](const char one) { return static_cast<unsigned char>(one) > last_ascii; }};
+
+    return std::ranges::any_of(bytes, beyond_ascii);
 }
 
 std::optional<char32_t> decoded(const std::string_view bytes)
@@ -88,7 +87,7 @@ std::optional<char32_t> decoded(const std::string_view bytes)
 
     for (const auto byte : bytes.substr(1))
     {
-        scalar = (scalar << 6U) | (static_cast<unsigned char>(byte) & 0x3FU);
+        scalar = continued(scalar, static_cast<unsigned char>(byte));
     }
 
     return scalar;
@@ -101,23 +100,16 @@ std::string step(const Alphabet& alphabet)
         return bracket(alphabet.ascii);
     }
 
-    const auto escaped{[](const char32_t first, const char32_t last) {
-        return first == last ? std::format(R"(\u{{{:x}}})", static_cast<std::uint32_t>(first)) :
-                               std::format(
-                                       R"(\u{{{:x}}}-\u{{{:x}}})", static_cast<std::uint32_t>(first),
-                                       static_cast<std::uint32_t>(last));
-    }};
-
     std::string out{'['};
 
     for (const auto& [first, last] : runs(alphabet.ascii))
     {
-        out += escaped(first, last);
+        out += code_point_member(first, last);
     }
 
     for (const auto& [first, last] : alphabet.beyond)
     {
-        out += escaped(first, last);
+        out += code_point_member(first, last);
     }
 
     return out + ']';
@@ -129,17 +121,7 @@ std::string bracket(const Ascii_t& ascii)
 
     for (const auto& [first, last] : runs(ascii))
     {
-        out += bracket_member(static_cast<unsigned char>(first));
-
-        if (last > first + 1)
-        {
-            out += '-';
-        }
-
-        if (last > first)
-        {
-            out += bracket_member(static_cast<unsigned char>(last));
-        }
+        out += bracket_run(static_cast<unsigned char>(first), static_cast<unsigned char>(last));
     }
 
     return out + ']';
@@ -151,9 +133,9 @@ Alphabet complement(const Alphabet& alphabet)
 
     std::ranges::sort(beyond, {}, &Scalar_range::first);
 
-    std::vector<Scalar_range> rest;
+    std::vector<Scalar_range> rest{};
 
-    char32_t from{0x80};
+    char32_t from{last_ascii + 1};
 
     for (const auto& [first, last] : beyond)
     {
@@ -175,17 +157,23 @@ Alphabet complement(const Alphabet& alphabet)
 
 std::string caseless(const std::string_view bytes)
 {
-    std::string out;
+    std::string out{};
 
     for (const auto byte : bytes)
     {
-        if (is_letter(static_cast<unsigned char>(byte)))
+        const auto value{static_cast<unsigned char>(byte)};
+
+        if (is_letter(value))
         {
-            out += std::format("[{}{}]", static_cast<char>(byte | 0x20), static_cast<char>(byte & ~0x20));
+            const auto lower{static_cast<char>(byte | case_bit)};
+
+            const auto upper{static_cast<char>(byte & ~case_bit)};
+
+            out += std::format("[{}{}]", lower, upper);
         }
         else
         {
-            out += '[' + bracket_member(static_cast<unsigned char>(byte)) + ']';
+            out += std::format("[{}]", bracket_member(value));
         }
     }
 
@@ -194,7 +182,7 @@ std::string caseless(const std::string_view bytes)
 
 Alphabet spanning(const char32_t low, const char32_t high, const bool case_insensitive)
 {
-    Alphabet alphabet;
+    Alphabet alphabet{};
 
     admit(alphabet, low, high, case_insensitive);
 
@@ -204,23 +192,27 @@ Alphabet spanning(const char32_t low, const char32_t high, const bool case_insen
 void admit(Alphabet& alphabet, const char32_t first, const char32_t last, const bool case_insensitive)
 {
     const auto add{[&alphabet](const char32_t low, const char32_t high) {
-        for (auto value{low}; value <= std::min<char32_t>(high, 0x7F); ++value)
+        const auto ascii_high{std::min(high, last_ascii)};
+
+        for (auto value{low}; value <= ascii_high; ++value)
         {
             alphabet.ascii.set(value);
         }
 
-        if (high >= 0x80)
+        if (high > last_ascii)
         {
-            alphabet.beyond.push_back({.first = std::max<char32_t>(low, 0x80), .last = high});
+            const auto beyond_low{std::max(low, char32_t{last_ascii + 1})};
+
+            alphabet.beyond.push_back({.first = beyond_low, .last = high});
         }
     }};
 
     const auto lower{[](const char32_t value) {
-        return value >= 'A' && value <= 'Z' ? static_cast<char32_t>(value | 0x20U) : value;
+        return value >= 'A' && value <= 'Z' ? static_cast<char32_t>(value | case_bit) : value;
     }};
 
     const auto upper{[](const char32_t value) {
-        return value >= 'a' && value <= 'z' ? static_cast<char32_t>(value & ~0x20U) : value;
+        return value >= 'a' && value <= 'z' ? static_cast<char32_t>(value & ~case_bit) : value;
     }};
 
     const auto lower_first{lower(first)};

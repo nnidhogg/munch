@@ -1,6 +1,7 @@
 #include "munch/tools/audit/antlr_commands.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <expected>
 #include <format>
@@ -22,9 +23,6 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements antlr_commands.hpp: the token's state as the commands apply, each command's application, a channel's
-// resolution, the words of error 50 for empty parens and the reading of a command's argument are private to this unit.
-
 /**
  * @brief The words of ANTLR's error 50 for a `)` closing parens that hold nothing, `skip()` and `type( )`, which its
  *        parser rejects at that `)`.
@@ -40,23 +38,23 @@ struct Token_state
     /**
      * @brief The token's type, the rule's own name while no command has set one, nothing once a skip has.
      */
-    std::optional<std::string> type;
+    std::optional<std::string> type{};
 
     /**
      * @brief The line of the command that set the type last, the rule's own while none has: where a refusal of the type
      *        the commands set is reported.
      */
-    std::size_t typed_at;
+    std::size_t typed_at{};
 
     /**
      * @brief Whether a channel command sends the token to a channel a parser does not read.
      */
-    bool channelled;
+    bool channelled{};
 
     /**
      * @brief Whether a type command sets the type.
      */
-    bool retyped;
+    bool retyped{};
 };
 
 /**
@@ -74,43 +72,54 @@ struct Token_state
  */
 void refuse_unknown(const std::string& command, const std::string& argument, const std::size_t line)
 {
-    const auto templated{
-            command == "Skip" || command == "More" || command == "PopMode" || command == "Type" ||
-            command == "Channel" || command == "Mode" || command == "PushMode"};
+    static constexpr std::array<std::string_view, 7> templates{"Skip",    "More", "PopMode", "Type",
+                                                               "Channel", "Mode", "PushMode"};
+
+    const auto templated{std::ranges::contains(templates, command)};
 
     auto lowered{command};
 
     if (templated)
     {
-        lowered.front() = static_cast<char>(lowered.front() | 0x20);
+        lowered.front() = static_cast<char>(lowered.front() | case_bit);
     }
 
-    const auto plain{lowered == "skip" || lowered == "more" || lowered == "popMode"};
+    static constexpr std::array<std::string_view, 3> plain_commands{"skip", "more", "popMode"};
 
-    const auto called{lowered == "type" || lowered == "channel" || lowered == "mode" || lowered == "pushMode"};
+    const auto plain{std::ranges::contains(plain_commands, lowered)};
+
+    static constexpr std::array<std::string_view, 4> called_commands{"type", "channel", "mode", "pushMode"};
+
+    const auto called{std::ranges::contains(called_commands, lowered)};
 
     if (!plain && !called)
     {
-        throw Spec_error{
-                "lexer command " + command + " does not exist or is not supported by the current target", line};
+        const auto message{
+                std::format("lexer command {} does not exist or is not supported by the current target", command)};
+
+        throw Spec_error{message, line};
     }
 
     if (called && argument.empty())
     {
-        throw Spec_error{"missing argument for lexer command " + command, line};
+        const auto message{std::format("missing argument for lexer command {}", command)};
+
+        throw Spec_error{message, line};
     }
 
     if (plain && !argument.empty())
     {
-        throw Spec_error{"lexer command " + command + " does not take any arguments", line};
+        const auto message{std::format("lexer command {} does not take any arguments", command)};
+
+        throw Spec_error{message, line};
     }
 
     if (templated)
     {
-        const auto message{
-                "lexer command " + command +
-                " names a code template of ANTLR's target, expanded into an action the generated lexer runs and "
-                "ANTLR's own interpreter leaves out, so what the token stream holds is the target's to say"};
+        const auto message{std::format(
+                "lexer command {} names a code template of ANTLR's target, expanded into an action the generated lexer "
+                "runs and ANTLR's own interpreter leaves out, so what the token stream holds is the target's to say",
+                command)};
 
         throw Spec_error{message, line};
     }
@@ -135,7 +144,9 @@ void apply_type(
 {
     const auto zero{argument.find_first_not_of('0') == std::string::npos};
 
-    state.type = zero ? (rule.typed ? rule.name : "0") : argument;
+    const auto rule_type{rule.typed ? rule.name : std::string{"0"}};
+
+    state.type = zero ? rule_type : argument;
 
     state.typed_at = line;
 
@@ -149,12 +160,12 @@ void apply_type(
 }
 
 /**
- * @brief Whether a channel command's argument names a channel other than the default one, the one a parser reads,
- *        resolved as ANTLR resolves it (LexerATNFactory.getChannelConstantValue): `HIDDEN` and `DEFAULT_TOKEN_CHANNEL`
- *        are its constants one and zero, another of its reserved names is its error 172, a name the grammar's
- *        `channels` block declares is a channel from two up, and anything else is read as a decimal number, `00` and
- *        `000` being zero and the default channel and every other number a channel of its own, a number beyond its int
- *        or a name nothing declares being its error 177, each in its words.
+ * @brief Returns whether a channel command's argument names a channel other than the default one, the one a parser
+ *        reads, resolved as ANTLR resolves it (LexerATNFactory.getChannelConstantValue): `HIDDEN` and
+ *        `DEFAULT_TOKEN_CHANNEL` are its constants one and zero, another of its reserved names is its error 172, a name
+ *        the grammar's `channels` block declares is a channel from two up, and anything else is read as a decimal
+ *        number, `00` and `000` being zero and the default channel and every other number a channel of its own, a
+ *        number beyond its int or a name nothing declares being its error 177, each in its words.
  * @param argument The argument as written.
  * @param declared The channels the grammar declares.
  * @param line The command's line, which a refusal names.
@@ -176,7 +187,9 @@ void apply_type(
 
     if (std::ranges::contains(reserved_names, argument))
     {
-        throw Spec_error{"cannot use or declare channel with reserved name " + argument, line};
+        const auto message{std::format("cannot use or declare channel with reserved name {}", argument)};
+
+        throw Spec_error{message, line};
     }
 
     if (declared.contains(argument))
@@ -184,10 +197,14 @@ void apply_type(
         return true;
     }
 
-    // Integer.parseInt: the digits, leading zeros dropped, up to 2147483647.
-    constexpr std::string_view largest{"2147483647"};
+    const auto nonzero{argument.find_first_not_of('0')};
 
-    const auto digits{std::string_view{argument}.substr(std::min(argument.find_first_not_of('0'), argument.size()))};
+    const auto first_digit{std::min(nonzero, argument.size())};
+
+    const auto digits{std::string_view{argument}.substr(first_digit)};
+
+    // Integer.parseInt: the digits, leading zeros dropped, up to 2147483647.
+    static constexpr std::string_view largest{"2147483647"};
 
     if (is_number(argument) &&
         (digits.size() < largest.size() || (digits.size() == largest.size() && digits <= largest)))
@@ -195,7 +212,9 @@ void apply_type(
         return !digits.empty();
     }
 
-    throw Spec_error{argument + " is not a recognized channel name", line};
+    const auto message{std::format("{} is not a recognized channel name", argument)};
+
+    throw Spec_error{message, line};
 }
 
 /**
@@ -252,7 +271,7 @@ void apply_command(
 }
 
 /**
- * @brief The byte under the cursor, quoted for a refusal.
+ * @brief Returns the byte under the cursor, quoted for a refusal.
  * @param cursor The cursor, before the end of its span.
  * @return The byte between single quotes.
  */
@@ -299,11 +318,11 @@ void apply_command(
 
     if (argument.empty())
     {
-        return std::unexpected{Syntax_error{
-                .offset = inside,
-                .message = std::format(
-                        "syntax error: {} stands where the argument of {} should be a name or a number{}",
-                        quoted_byte(cursor), name, rejected)}};
+        auto message{std::format(
+                "syntax error: {} stands where the argument of {} should be a name or a number{}", quoted_byte(cursor),
+                name, rejected)};
+
+        return std::unexpected{Syntax_error{.offset = inside, .message = std::move(message)}};
     }
 
     cursor.skip_blanks();
@@ -315,11 +334,11 @@ void apply_command(
 
     if (!cursor.accept(')'))
     {
-        return std::unexpected{Syntax_error{
-                .offset = cursor.offset(),
-                .message = std::format(
-                        "syntax error: {} stands after the argument of {} where ')' should close it{}",
-                        quoted_byte(cursor), name, rejected)}};
+        auto message{std::format(
+                "syntax error: {} stands after the argument of {} where ')' should close it{}", quoted_byte(cursor),
+                name, rejected)};
+
+        return std::unexpected{Syntax_error{.offset = cursor.offset(), .message = std::move(message)}};
     }
 
     return argument;
@@ -341,14 +360,18 @@ Commanded_token apply_commands(
 
     if (error)
     {
-        throw Spec_error{error->message, grammar.line_of(alternative.clause + error->offset)};
+        const auto& [offset, message]{*error};
+
+        throw Spec_error{message, grammar.line_of(alternative.clause + offset)};
     }
 
     for (const auto& command : commands)
     {
-        const auto line{grammar.line_of(alternative.clause + command.offset)};
+        const auto& [name, argument, offset]{command};
 
-        refuse_unknown(command.name, command.argument, line);
+        const auto line{grammar.line_of(alternative.clause + offset)};
+
+        refuse_unknown(name, argument, line);
 
         apply_command(command, line, rule, state, tables);
     }
@@ -369,14 +392,14 @@ Commanded_token apply_commands(
 
 Commands commands_of(const std::string_view text)
 {
-    Commands read;
+    Commands read{};
 
     auto& [commands, error]{read};
 
     Antlr_cursor cursor{text};
 
     // The offset of the comma taken as a separator before the command about to be read, stray where none follows.
-    std::optional<std::size_t> comma;
+    std::optional<std::size_t> comma{};
 
     for (;;)
     {
@@ -389,10 +412,9 @@ Commands commands_of(const std::string_view text)
         {
             if (comma || !cursor.done())
             {
-                error = Syntax_error{
-                        .offset = cursor.done() ? *comma : offset,
-                        .message = std::string{"syntax error: ',' stands where no command name follows it"} +
-                                   std::string{rejected}};
+                auto message{std::format("syntax error: ',' stands where no command name follows it{}", rejected)};
+
+                error = Syntax_error{.offset = cursor.done() ? *comma : offset, .message = std::move(message)};
             }
 
             return read;
@@ -402,17 +424,17 @@ Commands commands_of(const std::string_view text)
 
         if (name.empty())
         {
-            error = Syntax_error{
-                    .offset = offset,
-                    .message = std::format(
-                            "syntax error: {} stands where a command's name should{}", quoted_byte(cursor), rejected)};
+            auto message{std::format(
+                    "syntax error: {} stands where a command's name should{}", quoted_byte(cursor), rejected)};
+
+            error = Syntax_error{.offset = offset, .message = std::move(message)};
 
             return read;
         }
 
         cursor.skip_blanks();
 
-        std::string argument;
+        std::string argument{};
 
         if (cursor.accept('('))
         {
@@ -449,14 +471,20 @@ Commands commands_of(const std::string_view text)
         // A command with no comma before it, the `type(B)` of `skip type(B)`, or any other byte.
         const auto following{cursor.identifier()};
 
-        error = Syntax_error{
-                .offset = after,
-                .message = following.empty() ?
-                                   std::format(
-                                           "syntax error: {} stands after the command {} where ',' or ';' should{}",
-                                           quoted_byte(cursor), name, rejected) :
-                                   std::format(
-                                           "syntax error: '{}' stands with no comma before it{}", following, rejected)};
+        std::string message{};
+
+        if (following.empty())
+        {
+            message = std::format(
+                    "syntax error: {} stands after the command {} where ',' or ';' should{}", quoted_byte(cursor), name,
+                    rejected);
+        }
+        else
+        {
+            message = std::format("syntax error: '{}' stands with no comma before it{}", following, rejected);
+        }
+
+        error = Syntax_error{.offset = after, .message = std::move(message)};
 
         return read;
     }

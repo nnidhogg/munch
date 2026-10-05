@@ -14,15 +14,31 @@
 /**
  * @brief The names a Rust file binds, Names_t, each by the scope it is bound in and in the namespace it stands in,
  *        Namespace, types apart from values as Rust keeps them; the functions the file defines, Function and
- *        Functions_t; a name qualified by its module, qualified(), and bound there, bind_name() and bind_item(); and a
- *        path as the file's bindings resolve it from a scope, canonical(), with every path of a type resolved,
- *        canonical_type().
+ *        Functions_t; a name qualified by its module, qualified(), and bound there, bind_name() and bind_item(); a
+ *        module's parent, parent(); a path from the crate root, rooted_path() and from_root(), and a block's mark,
+ *        block_mark(); and a path as the file's bindings resolve it from a scope, canonical(), with every path of a
+ *        type resolved, canonical_type().
  *
  * A binding is kept as written, with the module it is written in, and resolved when a name is looked up rather than
  * when it is bound, so that where it stands among the file's items does not matter, as it does not to Rust.
  */
 namespace munch::tools::audit
 {
+/**
+ * @brief What parts the segments of a path.
+ */
+constexpr std::string_view path_separator{"::"};
+
+/**
+ * @brief The path of the crate root.
+ */
+constexpr std::string_view crate_root{"crate"};
+
+/**
+ * @brief What a path from the crate root opens with.
+ */
+constexpr std::string_view crate_prefix{"crate::"};
+
 /**
  * @brief A function the file defines, as far as a callback naming it needs: its return type and its body.
  */
@@ -31,34 +47,34 @@ struct Function
     /**
      * @brief The return type's text without its trivia, empty when the function returns `()`.
      */
-    std::string returns;
+    std::string returns{};
 
     /**
      * @brief The body's text between its braces, or std::nullopt for a declaration without one.
      */
-    std::optional<std::string> body;
+    std::optional<std::string> body{};
 
     /**
      * @brief The name the first parameter binds, which is the lexer's when logos calls the function: the identifier of
      *        `lex`, `mut lex`, `ref lex` or `ref mut lex`; empty when the parameter is `_` or there is none; and
      *        std::nullopt when it is a pattern of any other shape, whose bindings the reading does not follow.
      */
-    std::optional<std::string> parameter;
+    std::optional<std::string> parameter{};
 
     /**
      * @brief The type an enclosing `impl` block is for, which `Self` names in the function's return type and body: its
-     *        path as impl_type() reads it while the file's items are collected, and as canonical() spells it once they
-     *        all are, `crate::m::T` for `impl m::T` at the root as for `impl T` inside `m`; empty where the function is
-     *        not declared directly in an impl block or the block's type is not a path.
+     *        path as the impl block's head writes it while the file's items are collected, and as canonical() spells it
+     *        once they all are, `crate::m::T` for `impl m::T` at the root as for `impl T` inside `m`; empty where the
+     *        function is not declared directly in an impl block or the block's type is not a path.
      */
-    std::string self_type;
+    std::string self_type{};
 
     /**
      * @brief The scope the function is declared in, as a path from the crate root, `a::b` inside `mod a { mod b { ... }
      *        }`, a block's mark under it for a function inside another's body, and empty at the top, which the names in
      *        its return type resolve in, the type standing outside the body.
      */
-    std::string module;
+    std::string module{};
 
     /**
      * @brief The scope the function's body is: the scope it is declared in with the mark of its own block under it,
@@ -66,7 +82,7 @@ struct Function
      *        nowhere above it, `use T::X as Skip;` making `Skip` the variant inside that body alone; empty for a
      *        declaration without a body.
      */
-    std::string scope;
+    std::string scope{};
 
     /**
      * @brief Where the body's first byte stands in the file, so that a block inside the body is named by the offset of
@@ -84,30 +100,6 @@ struct Function
 using Functions_t = std::map<std::string, std::vector<Function>, std::less<>>;
 
 /**
- * @brief A name as a module qualifies it: `a::name` in the module `a`, the name itself at the crate root.
- * @param module The module's path from the crate root, empty at the root.
- * @param name The name, or a path.
- * @return The qualified name.
- */
-[[nodiscard]] std::string qualified(std::string_view module, std::string_view name);
-
-/**
- * @brief A path's last segment, the name of what it names: `f` for `m::f`, the path itself for a bare name.
- * @param path The path.
- * @return The segment.
- */
-[[nodiscard]] std::string_view last_segment(std::string_view path);
-
-/**
- * @brief Whether a module stands in a scope or under it: the scope itself or a module inside it, and every module when
- *        the scope is the crate root.
- * @param module The module's path from the crate root.
- * @param scope The scope's path from the crate root, empty for the root.
- * @return True when it does.
- */
-[[nodiscard]] bool is_within(std::string_view module, std::string_view scope);
-
-/**
  * @brief The namespaces Rust binds a name in, kept apart: types, where a module, a struct, an enum, a union, a trait, a
  *        type alias and a crate's name stand, and values, where a function, a constant, a static and the constructor of
  *        a unit or tuple struct stand; a variant stands in both, and a `use` binds its name in both, since the item it
@@ -117,7 +109,14 @@ using Functions_t = std::map<std::string, std::vector<Function>, std::less<>>;
  */
 enum class Namespace
 {
+    /**
+     * @brief The types', where a module, a type, a trait, a type alias and a crate's name stand.
+     */
     type,
+
+    /**
+     * @brief The values', where a function, a constant, a static and a unit or tuple struct's constructor stand.
+     */
     value,
 };
 
@@ -148,20 +147,20 @@ struct Binding
      * @brief The path or type the name stands for, without trivia: the path a `use` imports, the type of a `type`
      *        alias, or the name's own path from the crate root under `crate::` for an item the file defines.
      */
-    std::string path;
+    std::string path{};
 
     /**
      * @brief The module the binding is written in, as a path from the crate root, empty at the root, whose bindings the
      *        path resolves through.
      */
-    std::string module;
+    std::string module{};
 
     /**
      * @brief Whether the binding is declared `pub`, in any of its forms, `pub(crate)` and `pub(super)` among them, so
      *        that a glob of its module from outside that module brings it in; a private one is seen only from inside
      *        the module and the modules under it, as Rust has it.
      */
-    bool exported;
+    bool exported{};
 };
 
 /**
@@ -171,14 +170,14 @@ struct Binding
 struct Bindings
 {
     /**
-     * @brief The binding in a namespace.
+     * @brief Returns the binding in a namespace.
      * @param space The namespace.
      * @return The binding, or none.
      */
     [[nodiscard]] std::optional<Binding>& in(Namespace space);
 
     /**
-     * @brief The binding in a namespace.
+     * @brief Returns the binding in a namespace.
      * @param space The namespace.
      * @return The binding, or none.
      */
@@ -187,12 +186,12 @@ struct Bindings
     /**
      * @brief The binding in the type namespace, or none.
      */
-    std::optional<Binding> type;
+    std::optional<Binding> type{};
 
     /**
      * @brief The binding in the value namespace, or none.
      */
-    std::optional<Binding> value;
+    std::optional<Binding> value{};
 };
 
 /**
@@ -206,25 +205,78 @@ struct Bindings
  *        nowhere else, as Rust has it, so a name bound only inside `mod a` is no binding at the root and one bound at
  *        the root none inside `mod a`, a glob bringing in what the importing module may see. A block, a function's body
  *        or a constant's initializer, is a scope of its own under the module it stands in, its path the module's with
- *        the block's mark, as Opened::segment spells it: a name bound in it is seen from inside the block and the
- *        blocks within it, and the block sees the module's names, as visible() looks them up. The crate's names,
- *        `Skip`, `Filter`, `FilterResult` and `skip`, are the crate's wherever the file binds them no other way, since
- *        a bare one reaches a callback only through an import the reading may not see, `use logos::*` among them; and
- *        the prelude's `Result` and `Option` are spelled bare however the file reaches them, by their paths in `std` or
- *        `core` or an import of those.
+ *        the block's mark, as block_mark() spells it: a name bound in it is seen from inside the block and the blocks
+ *        within it, and the block sees the module's names. The crate's names, `Skip`, `Filter`, `FilterResult` and
+ *        `skip`, are the crate's wherever the file binds them no other way, since a bare one reaches a callback only
+ *        through an import the reading may not see, `use logos::*` among them; and the prelude's `Result` and `Option`
+ *        are spelled bare however the file reaches them, by their paths in `std` or `core` or an import of those.
  */
 using Names_t = std::map<std::string, Bindings, std::less<>>;
 
 /**
- * @brief A path as the file's bindings resolve it from a module: `crate::` starts it at the root, `self::` in the
- *        module itself and `super::` in the one above, one of the three alone naming that module by its own path from
- *        the root, `crate` for the root, the longest prefix the module binds is replaced by what it stands for, read in
- *        the module binding it, and again on the result, so that `lx::Skip` under `use logos as lx` and `Drop` under
- *        `use logos::Skip as Drop` are both `logos::Skip`, `std::result::Result` and `R` under `use
+ * @brief Returns a name as a module qualifies it: `a::name` in the module `a`, the name itself at the crate root.
+ * @param module The module's path from the crate root, empty at the root.
+ * @param name The name, or a path.
+ * @return The qualified name.
+ */
+[[nodiscard]] std::string qualified(std::string_view module, std::string_view name);
+
+/**
+ * @brief Returns a path's last segment, the name of what it names: `f` for `m::f`, the path itself for a bare name.
+ * @param path The path.
+ * @return The segment.
+ */
+[[nodiscard]] std::string_view last_segment(std::string_view path);
+
+/**
+ * @brief Returns whether a module stands in a scope or under it: the scope itself or a module inside it, and every
+ *        module when the scope is the crate root.
+ * @param module The module's path from the crate root.
+ * @param scope The scope's path from the crate root, empty for the root.
+ * @return True when it does.
+ */
+[[nodiscard]] bool is_within(std::string_view module, std::string_view scope);
+
+/**
+ * @brief Returns the module a module stands in: `a` for `a::b`, empty for `a` and for the root.
+ * @param module The module's path from the crate root.
+ * @return The path of the one above.
+ */
+[[nodiscard]] std::string parent(std::string_view module);
+
+/**
+ * @brief Returns a path from the crate root as canonical() spells it, under `crate::`.
+ * @param path The path from the root, without the prefix.
+ * @return The path under the prefix.
+ */
+[[nodiscard]] std::string rooted_path(std::string_view path);
+
+/**
+ * @brief Returns a path under `crate::` as the path from the crate root, without the prefix, and any other path as it
+ *        stands.
+ * @param path The path.
+ * @return The path without the prefix.
+ */
+[[nodiscard]] std::string_view from_root(std::string_view path) noexcept;
+
+/**
+ * @brief Returns the mark a block is named by among the scopes, its brace's offset in braces, as the walk marks every
+ *        block it enters.
+ * @param brace The offset of the block's `{`.
+ * @return The mark.
+ */
+[[nodiscard]] std::string block_mark(std::size_t brace);
+
+/**
+ * @brief Returns a path as the file's bindings resolve it from a module: `crate::` starts it at the root, `self::` in
+ *        the module itself and `super::` in the one above, one of the three alone naming that module by its own path
+ *        from the root, `crate` for the root, the longest prefix the module binds is replaced by what it stands for,
+ *        read in the module binding it, and again on the result, so that `lx::Skip` under `use logos as lx` and `Drop`
+ *        under `use logos::Skip as Drop` are both `logos::Skip`, `std::result::Result` and `R` under `use
  *        core::result::Result as R` are both `Result`, and an item the file defines is `crate::` and its path from the
  *        root, `crate::a::Skip` for the `struct Skip` of `mod a`, named as `Skip` inside that module and as `a::Skip`
  *        at the root. A leading `::` makes the path an external crate's, as Rust 2018 and later have it, which follows
- *        the root's bindings that name a crate alone, as names_crate() tells them: `::lx::Skip` under `extern crate
+ *        the root's bindings that name a crate alone by its absolute path, `::logos`: `::lx::Skip` under `extern crate
  *        logos as lx` is `logos::Skip`, and `::logos::Skip` is the crate's beside a `mod logos` of the file's, which
  *        `crate::logos::Skip` names.
  *
@@ -238,22 +290,22 @@ using Names_t = std::map<std::string, Bindings, std::less<>>;
  * @param space The namespace the path names in, the types' for a type and the values' for a result or a callback's
  *        path, which its last segment is read in; a prefix names a module, a type or an enum, in the types'.
  * @param depth The bindings followed to reach the path, none for a path the file's text writes: each binding found is
- *        read in its own module one deeper, and a chain past binding_chain, a cycle, is left as it stands.
+ *        read in its own module one deeper, and a chain past the few bindings followed, a cycle, is left as it stands.
  * @return The canonical path.
  */
 [[nodiscard]] std::string canonical(
         const Names_t& names, std::string path, std::string module, Namespace space, std::size_t depth = 0);
 
 /**
- * @brief Whether a canonical path is the file's own, `crate` for the root or a module's or item's under `crate::`,
- *        rather than a crate's.
+ * @brief Returns whether a canonical path is the file's own, `crate` for the root or a module's or item's under
+ *        `crate::`, rather than a crate's.
  * @param path The canonical path.
  * @return Whether the file defines what it names.
  */
 [[nodiscard]] bool files_own(std::string_view path);
 
 /**
- * @brief A type's text with every path in it resolved by canonical(), the rest kept as written.
+ * @brief Returns a type's text with every path in it resolved by canonical(), the rest kept as written.
  * @param names The file's bindings.
  * @param text The type without trivia.
  * @param module The module the type is written in, as a path from the crate root, empty at the root.

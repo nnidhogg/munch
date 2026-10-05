@@ -40,40 +40,40 @@ public:
     void add(const Scalar_set& other);
 
     /**
-     * @brief The members of this set that are not in another.
+     * @brief Returns the members of this set that are not in another.
      * @param other The set to remove.
      * @return The difference.
      */
     [[nodiscard]] Scalar_set minus(const Scalar_set& other) const;
 
     /**
-     * @brief The ranges, ascending and disjoint.
+     * @brief Returns the ranges, ascending and disjoint.
      * @return The ranges.
      */
     [[nodiscard]] const std::vector<Range_t>& ranges() const noexcept;
 
     /**
-     * @brief Whether a value is a member.
+     * @brief Returns whether a value is a member.
      * @param value The value.
      * @return True when it is.
      */
     [[nodiscard]] bool contains(char32_t value) const noexcept;
 
     /**
-     * @brief Whether the set has no member.
+     * @brief Returns whether the set has no member.
      * @return True when empty.
      */
     [[nodiscard]] bool empty() const noexcept;
 
     /**
-     * @brief The one member, when there is exactly one.
+     * @brief Returns the one member, when there is exactly one.
      * @return The member, or std::nullopt.
      */
     [[nodiscard]] std::optional<char32_t> single() const noexcept;
 
     /**
-     * @brief Whether the regex crate keeps a range of this set running across the surrogate gap, from below U+D800 to
-     *        above U+DFFF.
+     * @brief Returns whether the regex crate keeps a range of this set running across the surrogate gap, from below
+     *        U+D800 to above U+DFFF.
      *
      * The crate's classes hold their ranges as the crate built them, and it never merges a range ending at U+D7FF with
      * one beginning at U+E000, so a class admitting every scalar is the dot to it, one range, only when made from a
@@ -98,7 +98,7 @@ private:
 };
 
 /**
- * @brief The set every class is complemented against in a mode: the scalars less the surrogates, or the bytes.
+ * @brief Returns the set every class is complemented against in a mode: the scalars less the surrogates, or the bytes.
  * @param unicode Whether the mode is Unicode.
  * @return The universe.
  */

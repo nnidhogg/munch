@@ -28,7 +28,7 @@ struct Enum_context
     /**
      * @brief The enum's name, which a constructor of it opens with.
      */
-    std::string_view name;
+    std::string_view name{};
 
     /**
      * @brief The variants' names, which a constructor of the enum must be one of.
@@ -51,7 +51,7 @@ struct Enum_context
      * @brief The scope the enum is declared in, as a path from the crate root, a block's marked, empty at the root,
      *        which the names in its callbacks resolve in.
      */
-    std::string_view module;
+    std::string_view module{};
 };
 
 /**
@@ -62,12 +62,12 @@ struct Variant
     /**
      * @brief The variant's name.
      */
-    std::string name;
+    std::string name{};
 
     /**
      * @brief The payload's type as written, without trivia; empty for a unit variant, and `()` is a unit to logos too.
      */
-    std::string payload;
+    std::string payload{};
 };
 
 /**
@@ -81,29 +81,36 @@ struct Variant
  * is the token itself; for a variant with a payload, a value of the payload's type, bare or in `Some`, `Ok` or an
  * `Emit` arm, is that payload and the variant's token, so a `Skip` returned to a variant carrying `Skip` is the payload
  * and emits, the `Skip` arms alone still skip, and the enum, `()`, `bool` and a `Skip` the payload's type is not are
- * type errors the crate refuses. The reading has no types, only the text, so it reads what the text shows:
- * `logos::skip` or `skip` is the crate's function returning `Skip`; another path names a function this file defines,
- * whose return type decides, its body read where the type is `Filter`, `FilterResult`, `Result<Skip, E>` or the enum; a
- * closure's body is read for every result it produces, the tail expression, every `return`, the branches of an `if` and
- * the arms of a `match`, and each result must be visibly one thing: `Skip`, `Filter::Skip`, `FilterResult::Skip` or
- * `Ok` of one, a constructor of the enum, or `Some`, `None`, `Ok`, `Err`, `true`, `false`, a literal, `()`,
- * `Filter::Emit`, `FilterResult::Emit` or `FilterResult::Error`, each read against the payload the variant is written
- * with. A callback whose results all skip discards the rule, one whose results all emit one variant makes the rule that
- * variant's, and anything else, a function the file does not define, a result the text does not show, results that skip
- * on one path and emit on another, or a result the crate refuses for the variant's payload, is refused by name, since
- * the rule's token is then decided at run time or out of sight. logos 0.15.1 refuses a closure with a return type
- * annotation, so a closure's body is the only place to look, and a `skip(...)` attribute's callback has no result to
- * read, every result the crate admits there skipping or failing.
+ * type errors the crate refuses. The reading has no types, only the text, its blanks and comments dropped as Rust's
+ * lexer drops them before a type or a path is read, so it reads what the text shows: `logos::skip` or `skip` is the
+ * crate's function returning `Skip`; another path names a function this file defines, before or after the enum, in an
+ * impl block or a module, whose return type decides, `Skip` a skip, its body read where the type is `Filter`,
+ * `FilterResult`, `Result<Skip, E>` or the enum, `Self` in one of the enum's impl blocks among them, and any other type
+ * a payload; a closure's body is read for every result it produces, the tail expression, every `return`, every `?`,
+ * which returns its `Err`, the branches of an `if` and the arms of a `match`, through the statements before them, a
+ * closure inside the body being a callable of its own whose `return` and `?` exit it and not the callback, and each
+ * result must be visibly one thing: `Skip`, `Filter::Skip`, `FilterResult::Skip` or `Ok` of one, a constructor of the
+ * enum, or `Some`, `None`, `Ok`, `Err`, `true`, `false`, a literal, `()`, `Filter::Emit`, `FilterResult::Emit` or
+ * `FilterResult::Error`, each read against the payload the variant is written with. A callback whose results all skip
+ * discards the rule, one whose results all emit one variant makes the rule that variant's, and anything else, a
+ * function the file does not define, a result the text does not show, such as `lex.slice().parse().ok()`, a type
+ * written through a generic alias of the file's, `R<Skip>` under `type R<T> = Result<T, ()>`, whose arguments the
+ * reading does not substitute, results that skip on one path and emit on another, or a result the crate refuses for the
+ * variant's payload, a `Skip` to `V(u64)` or a literal to a variant without one, is refused by name, since the rule's
+ * token is then decided at run time or out of sight. logos 0.15.1 refuses a closure with a return type annotation, so a
+ * closure's body is the only place to look, and a `skip(...)` attribute's callback has no result to read, every result
+ * the crate admits there skipping or failing.
  *
  * The callback also holds the lexer, and may move it: logos 0.15.1's Lexer moves its cursor through `bump` alone among
  * its public methods, and through `bump_unchecked`, `trivia`, `error`, `end` and `set` of its `internal::LexerInternal`
  * trait, which a callback can reach by importing it (logos 0.15.1, src/lexer.rs and src/internal.rs), while `slice`,
  * `span`, `remainder` and `source` and the `extras` field read it and `clone` copies it. A match the callback extends
- * or empties is not the pattern's, so a body, a closure's or the named function's, is read only where its lexer
- * parameter is used through the reading members alone; one naming `bump`, `bump_unchecked` or `trivia` as a method on
- * anything, or using the parameter any other way, passing it to a function or a macro, calling another method on it or
- * binding it to a name, is refused by name, and so is a function declared without a body, whose use of the lexer is out
- * of sight.
+ * or empties is not the pattern's, so a body, a closure's or the named function's, a skip's among them, is read only
+ * where its lexer parameter is used through the reading members alone; one naming `bump`, `bump_unchecked` or `trivia`
+ * as a method on anything, or using the parameter any other way, passing it to a function or a macro, calling another
+ * method on it or binding it to a name, is refused by name, and so is a function declared without a body, whose use of
+ * the lexer is out of sight, and so is one binding the lexer with a pattern rather than a name, `lex`, `mut lex`, `ref
+ * lex`, `ref mut lex` or `_`, whose bindings the reading does not follow.
  */
 class Callback_reader
 {
@@ -120,7 +127,7 @@ public:
             std::size_t line);
 
     /**
-     * @brief The token the rule carries.
+     * @brief Returns the token the rule carries.
      * @return The token, or std::nullopt when the rule is a skip's or the callback skips the match.
      * @throws Spec_error If what the callback does is not decidable from the source, or it moves the lexer.
      */
@@ -133,19 +140,19 @@ private:
     struct Outcome
     {
         /**
+         * @brief Orders outcomes, skips before tokens and tokens by name, so that a set of them holds each once.
+         */
+        [[nodiscard]] auto operator<=>(const Outcome&) const = default;
+
+        /**
          * @brief Whether the match is skipped.
          */
-        bool skips;
+        bool skips{};
 
         /**
          * @brief The token emitted, empty when the match is skipped.
          */
-        std::string token;
-
-        /**
-         * @brief Orders outcomes, skips before tokens and tokens by name, so that a set of them holds each once.
-         */
-        [[nodiscard]] auto operator<=>(const Outcome&) const = default;
+        std::string token{};
     };
 
     /**
@@ -197,12 +204,12 @@ private:
         /**
          * @brief The kind.
          */
-        Kind kind;
+        Kind kind{};
 
         /**
          * @brief The variant named, when the kind is variant.
          */
-        std::string variant;
+        std::string variant{};
     };
 
     /**
@@ -237,8 +244,8 @@ private:
         continued_brace,
 
         /**
-         * @brief A word opening a block Rust lets stand as a statement: `if`, `match`, `while`, `for`, `loop`,
-         *        `unsafe` or `else`.
+         * @brief A word opening a block Rust lets stand as a statement: `if`, `match`, `while`, `for`, `loop`, `unsafe`
+         *        or `else`.
          */
         block_word,
 
@@ -285,23 +292,59 @@ private:
          *        =>`, and one after anything else, an operator, a comma, a `=`, a `return` or a `move`, opens a
          *        closure's parameters.
          */
-        bool operand;
+        bool operand{};
 
         /**
          * @brief Whether the cursor stands where a statement begins: at the body's start, after a semicolon, and after
          *        a block Rust read as a statement of its own.
          */
-        bool opening;
+        bool opening{};
 
         /**
          * @brief Whether a block-like expression was opened at a statement's start, so that its brace group ends the
          *        statement however many groups stand between the word and the brace, `if (cond) { }` among them.
          */
-        bool standing;
+        bool standing{};
     };
 
     /**
-     * @brief The outcomes of the callback: a path's by the function it names, a closure's by its body.
+     * @brief Where the text being read stands: the enum's own scope for its callbacks, and a named function's for that
+     *        function's return type and body.
+     */
+    struct Scope
+    {
+        /**
+         * @brief Whether `Self` names the enum in the text, as it does in a function declared in one of the enum's impl
+         *        blocks.
+         */
+        bool self_is_enum{};
+
+        /**
+         * @brief The module the text stands in, as a path from the crate root: the enum's for its callbacks, and a
+         *        named function's for that function's return type and body.
+         */
+        std::string module{};
+
+        /**
+         * @brief Whether the body being read returns a `Result<Skip, E>`, whose Ok arm carries a `Skip` by its declared
+         *        type and so skips however the expression inside it is written.
+         */
+        bool ok_skips{};
+
+        /**
+         * @brief The body being read, when the reading is inside a named function's body, so that a block inside it is
+         *        placed in the file; none for a closure, whose text the attribute carries.
+         */
+        std::optional<std::string_view> body{};
+
+        /**
+         * @brief Where the body's first byte stands in the file.
+         */
+        std::size_t body_at{};
+    };
+
+    /**
+     * @brief Returns the outcomes of the callback: a path's by the function it names, a closure's by its body.
      *
      * A closure written in the attribute is read where it stands, and the walk that binds a file's items does not enter
      * an attribute, so a name the body binds, wherever in the body it binds it, is bound nowhere the reading can find:
@@ -324,9 +367,9 @@ private:
     void check_lexer_use(std::string_view body, std::string_view parameter) const;
 
     /**
-     * @brief Whether the file binds `std` or `core` to something of its own in sight of the text being read: a `mod
-     *        std` or a binding of the name in the text's module or one of its ancestors, which is what a path from the
-     *        text reaches, and not one in an unrelated module.
+     * @brief Returns whether the file binds `std` or `core` to something of its own in sight of the text being read: a
+     *        `mod std` or a binding of the name in the text's module or one of its ancestors, which is what a path from
+     *        the text reaches, and not one in an unrelated module.
      * @return True when it does.
      */
     [[nodiscard]] bool binds_std() const;
@@ -357,7 +400,7 @@ private:
     void check_parameter_use(Rust_cursor& cursor, std::string_view parameter) const;
 
     /**
-     * @brief Whether a stretch of a body declares anything: a `use`, an item, or a macro definition.
+     * @brief Returns whether a stretch of a body declares anything: a `use`, an item, or a macro definition.
      * @param inside The stretch.
      * @return True when it binds a name.
      * @throws Spec_error If a group or a literal is left open.
@@ -365,8 +408,8 @@ private:
     [[nodiscard]] bool binds_names(std::string_view inside) const;
 
     /**
-     * @brief The outcomes of an expression: a block's, an `if`'s branches, a `match`'s arms, a `return`'s value, or the
-     *        one outcome a constructor shows.
+     * @brief Returns the outcomes of an expression: a block's, an `if`'s branches, a `match`'s arms, a `return`'s
+     *        value, or the one outcome a constructor shows.
      * @param text The expression's text.
      * @return The outcomes.
      * @throws Spec_error If the expression is not visibly a token or a skip.
@@ -374,10 +417,10 @@ private:
     [[nodiscard]] Outcomes_t of_value(std::string_view text) const;
 
     /**
-     * @brief The outcome a bare result makes, read against the variant's payload: a skip for `Skip` where the variant
-     *        has no payload and the `Skip` arms anywhere, the variant named by a constructor of the enum, the rule's
-     *        own variant for a payload of the variant's type, `()` where it has none and `Skip` where that is its
-     *        payload's type, and a refusal for what the crate refuses or the text does not show.
+     * @brief Returns the outcome a bare result makes, read against the variant's payload: a skip for `Skip` where the
+     *        variant has no payload and the `Skip` arms anywhere, the variant named by a constructor of the enum, the
+     *        rule's own variant for a payload of the variant's type, `()` where it has none and `Skip` where that is
+     *        its payload's type, and a refusal for what the crate refuses or the text does not show.
      * @param text The result's text.
      * @return The outcome.
      * @throws Spec_error If the result is not visibly a token or a skip, or is one the crate refuses for the variant.
@@ -385,7 +428,8 @@ private:
     [[nodiscard]] Outcome of_result(std::string_view text) const;
 
     /**
-     * @brief What a value visibly is: `Skip`, a `Skip` arm, a constructor of the enum, a literal, `()` or opaque.
+     * @brief Returns what a value visibly is: `Skip`, a `Skip` arm, a constructor of the enum, a literal, `()` or
+     *        opaque.
      * @param text The value's text.
      * @return The value.
      * @throws Spec_error If a block comment or a literal in the value is left open.
@@ -393,15 +437,15 @@ private:
     [[nodiscard]] Value classify(std::string_view text) const;
 
     /**
-     * @brief Whether the rule's variant has no payload, `()` being none to logos as well.
+     * @brief Returns whether the rule's variant has no payload, `()` being none to logos as well.
      * @return True when it has none.
      */
     [[nodiscard]] bool is_unit() const;
 
     /**
-     * @brief The variant a constructor of the enum names, `Enum::Variant` or `Enum::Variant(...)`, by whatever path the
-     *        text's module binds the enum, `Self::Variant` in a function of the enum's impl blocks, and bare under `use
-     *        Enum::*` or `use Enum::Variant`.
+     * @brief Returns the variant a constructor of the enum names, `Enum::Variant` or `Enum::Variant(...)`, by whatever
+     *        path the text's module binds the enum, `Self::Variant` in a function of the enum's impl blocks, and bare
+     *        under `use Enum::*` or `use Enum::Variant`.
      * @param text The expression's text.
      * @return The variant, or std::nullopt when the expression is not such a constructor.
      * @throws Spec_error If a block comment or a literal in the expression is left open.
@@ -409,32 +453,39 @@ private:
     [[nodiscard]] std::optional<std::string> enum_variant(std::string_view text) const;
 
     /**
-     * @brief The enum's path from the crate root, `crate::m::T` for `enum T` inside `mod m`, as the file's bindings
-     *        resolve its name in its own module.
+     * @brief Returns the enum's path from the crate root, `crate::m::T` for `enum T` inside `mod m`, as the file's
+     *        bindings resolve its name in its own module.
      * @return The path.
      */
     [[nodiscard]] std::string enum_path() const;
 
     /**
-     * @brief Whether the rule's variant carries the crate's `Skip` as its payload, in any of its spellings.
+     * @brief Returns whether the rule's variant carries the crate's `Skip` as its payload, in any of its spellings.
      * @return True when it does.
      */
     [[nodiscard]] bool payload_is_skip() const;
 
     /**
-     * @brief The outcome that emits the rule's own variant; not asked of a skip's rule, whose results are not read.
+     * @brief Returns the outcome that emits the rule's own variant; not asked of a skip's rule, whose results are not
+     *        read.
      * @return The outcome.
      */
     [[nodiscard]] Outcome emits() const;
 
     /**
-     * @brief The variant with its payload, `V(u64)`, for refusals.
+     * @brief Returns the outcome that skips the match.
+     * @return The outcome.
+     */
+    [[nodiscard]] static Outcome skipped() noexcept;
+
+    /**
+     * @brief Returns the variant with its payload, `V(u64)`, for refusals.
      * @return The text.
      */
     [[nodiscard]] std::string written_variant() const;
 
     /**
-     * @brief The outcomes of a block, read in the scope the block itself is.
+     * @brief Returns the outcomes of a block, read in the scope the block itself is.
      *
      * A block is a scope of its own, so what it binds is bound under its own brace and the names it writes are read
      * there: `{ use T::X as Skip; Skip }` makes `Skip` the variant for that block alone, whether the block stands as a
@@ -448,7 +499,8 @@ private:
     [[nodiscard]] Outcomes_t of_block(std::string_view block) const;
 
     /**
-     * @brief This reading moved into the block a brace opens, whose scope the walk bound that block's items under.
+     * @brief Returns this reading moved into the block a brace opens, whose scope the walk bound that block's items
+     *        under.
      * @param block The text of the body being read from the brace on.
      * @return The reading, in the block's own scope; this reading unchanged for a closure, whose text is not the
      *         body's.
@@ -456,7 +508,8 @@ private:
     [[nodiscard]] Callback_reader scoped_at(std::string_view block) const;
 
     /**
-     * @brief The outcomes of a block's content: every `return` in it, and its value, the tail expression or `()`.
+     * @brief Returns the outcomes of a block's content: every `return` in it, and its value, the tail expression or
+     *        `()`.
      *
      * The statements are split at the semicolons outside any group, string or character literal, and after a block-like
      * expression, an `if`, a `match`, a loop or a block, that opens a statement and has nothing continuing it, which
@@ -509,8 +562,8 @@ private:
             std::string_view text, Rust_cursor& cursor, Statement& statement, Outcomes_t& outcomes) const;
 
     /**
-     * @brief The outcomes of an `if`: the block after the condition, read in its own scope, then `else` and another
-     *        `if` or block; without an `else` the value is `()`.
+     * @brief Returns the outcomes of an `if`: the block after the condition, read in its own scope, then `else` and
+     *        another `if` or block; without an `else` the value is `()`.
      * @param value The `if` expression's text.
      * @param cursor A cursor over the text, just past `if`.
      * @return The outcomes.
@@ -519,9 +572,9 @@ private:
     [[nodiscard]] Outcomes_t of_if(std::string_view value, Rust_cursor cursor) const;
 
     /**
-     * @brief The outcomes of a `match`: the arms between the braces after the scrutinee, each a pattern, `=>`, then a
-     *        block or a value up to the comma, read one scope deeper than the match, since the braces holding the arms
-     *        are a block of the walk's own.
+     * @brief Returns the outcomes of a `match`: the arms between the braces after the scrutinee, each a pattern, `=>`,
+     *        then a block or a value up to the comma, read one scope deeper than the match, since the braces holding
+     *        the arms are a block of the walk's own.
      * @param value The `match` expression's text.
      * @param cursor A cursor over the text, just past `match`.
      * @return The outcomes.
@@ -531,9 +584,9 @@ private:
     [[nodiscard]] Outcomes_t of_match(std::string_view value, Rust_cursor cursor) const;
 
     /**
-     * @brief The outcome a constructor's argument makes, read against the variant's payload as of_result() reads a bare
-     *        result, except that only `Ok` skips on a `Skip`, `Some` takes no constructor of the enum, and `Err` and
-     *        `FilterResult::Error` are an error at the boundary whatever they hold.
+     * @brief Returns the outcome a constructor's argument makes, read against the variant's payload as of_result()
+     *        reads a bare result, except that only `Ok` skips on a `Skip`, `Some` takes no constructor of the enum, and
+     *        `Err` and `FilterResult::Error` are an error at the boundary whatever they hold.
      *
      * For a variant without a payload the wrapper may carry `()` or any variant of the enum, `Filter<T>`,
      * `FilterResult<T, T::Error>` and `Result<T, T::Error>` being results logos 0.15.1 takes from a callback, so an
@@ -547,8 +600,8 @@ private:
     [[nodiscard]] Outcome of_argument(std::string_view constructor, std::string_view text) const;
 
     /**
-     * @brief The outcomes of a function this file defines, by its return type, or by its body where the type leaves the
-     *        decision to the value.
+     * @brief Returns the outcomes of a function this file defines, by its return type, or by its body where the type
+     *        leaves the decision to the value.
      *
      * Under a return type of `Result<Skip, E>` the body decides which arm the function takes and not which value the Ok
      * arm carries: the arm's payload is `Skip` by the declared type, so `Ok(skip_here())` skips as `Ok(Skip)` does,
@@ -561,13 +614,27 @@ private:
     [[nodiscard]] Outcomes_t of_function(std::string_view path) const;
 
     /**
-     * @brief The function this file defines under a path, its definition where a trait declares it and an impl defines
-     *        it.
+     * @brief Returns the function this file defines under a path, its definition where a trait declares it and an impl
+     *        defines it.
      * @param path The function's path from the crate root, as Functions_t keys it.
      * @return The function.
      * @throws Spec_error If the file defines no such function, or more than one.
      */
     [[nodiscard]] const Function& defined_function(std::string_view path) const;
+
+    /**
+     * @brief Returns the outcomes of a function by its return type, or by its body where the type leaves the decision
+     *        to the value, as of_function() reads it, this reader standing in the body's own scope; a `Result<Skip, E>`
+     *        sets the scope's ok_skips before the body is read.
+     * @param name The function's name, for the refusals.
+     * @param written The return type as written.
+     * @param returns The return type with its aliases and imports resolved.
+     * @param body The function's body.
+     * @return The outcomes.
+     * @throws Spec_error If the type is one logos 0.15.1 takes for no token of the variant.
+     */
+    [[nodiscard]] Outcomes_t of_return_type(
+            std::string_view name, std::string_view written, std::string_view returns, std::string_view body);
 
     /**
      * @brief Refuses the callback.
@@ -597,33 +664,9 @@ private:
     std::size_t line_;
 
     /**
-     * @brief Whether `Self` names the enum in the text being read, as it does in a function declared in one of the
-     *        enum's impl blocks.
+     * @brief Where the text being read stands.
      */
-    bool self_is_enum_{false};
-
-    /**
-     * @brief The module the text being read stands in, as a path from the crate root: the enum's for its callbacks, and
-     *        a named function's for that function's return type and body.
-     */
-    std::string module_;
-
-    /**
-     * @brief Whether the body being read returns a `Result<Skip, E>`, whose Ok arm carries a `Skip` by its declared
-     *        type and so skips however the expression inside it is written.
-     */
-    bool ok_skips_{false};
-
-    /**
-     * @brief The body being read, when the reading is inside a named function's body, so that a block inside it is
-     *        placed in the file; none for a closure, whose text the attribute carries.
-     */
-    std::optional<std::string_view> body_;
-
-    /**
-     * @brief Where the body's first byte stands in the file.
-     */
-    std::size_t body_at_{0};
+    Scope scope_;
 };
 
 } // namespace munch::tools::audit

@@ -2,22 +2,126 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
 
+#include "munch/regex/utf8.hpp"
 #include "munch/tools/audit/expression.hpp"
 #include "munch/tools/audit/lexer_spec.hpp"
 
 namespace munch::tools::audit
 {
+namespace
+{
+/**
+ * @brief What opens a character literal.
+ */
+constexpr std::string_view character_opener{"'"};
+
+/**
+ * @brief What opens a byte literal.
+ */
+constexpr std::string_view byte_opener{"b'"};
+
+/**
+ * @brief What a raw identifier opens with, `r#match`.
+ */
+constexpr std::string_view raw_identifier_prefix{"r#"};
+
+/**
+ * @brief The most hex digits a `\u{...}` escape takes.
+ */
+constexpr std::size_t most_unicode_digits{6};
+
+/**
+ * @brief Returns the delimiter that closes a group an opening one opens.
+ * @param open The opening delimiter, `(`, `[` or `{`.
+ * @return `)`, `]` or `}`.
+ */
+[[nodiscard]] char closer_of(const char open) noexcept
+{
+    switch (open)
+    {
+    case '(':
+        return ')';
+    case '[':
+        return ']';
+    default:
+        return '}';
+    }
+}
+
+/**
+ * @brief Returns where a character literal opening at an offset ends: after one scalar or one escape and the closing
+ *        quote; a lifetime or a label, which does not close, ends just past its quote.
+ * @param text The text.
+ * @param open The offset just past the opening quote.
+ * @param end The offset the text is read up to.
+ * @return The offset just past the literal, or the given one where no quote closes it.
+ */
+[[nodiscard]] std::size_t character_end(const std::string_view text, const std::size_t open, const std::size_t end)
+{
+    auto close{open};
+
+    if (close < end && text[close] == '\\')
+    {
+        const auto quote{text.find('\'', close + 2)};
+
+        close = std::min(quote, end);
+    }
+    else if (close < end)
+    {
+        const auto lead{static_cast<unsigned char>(text[close])};
+
+        close += sequence_length(lead);
+    }
+
+    return close < end && text[close] == '\'' ? close + 1 : open;
+}
+
+} // namespace
+
 Rust_cursor::Rust_cursor(const std::string_view text, const std::size_t begin, const std::size_t end)
     : Cursor{text, begin, end}
 {}
 
 void Rust_cursor::skip_trivia()
 {
+    // Rust nests block comments.
+    const auto skip_block_comment{[this] {
+        const auto opened_line{line()};
+
+        std::size_t depth{0};
+
+        do
+        {
+            if (at_ >= end_)
+            {
+                throw Spec_error{"a block comment is never closed", opened_line};
+            }
+
+            if (at(comment_opener))
+            {
+                ++depth;
+
+                at_ += comment_opener.size();
+            }
+            else if (at(comment_closer))
+            {
+                --depth;
+
+                at_ += comment_closer.size();
+            }
+            else
+            {
+                ++at_;
+            }
+        } while (depth > 0);
+    }};
+
     for (;;)
     {
         while (peek() && is_blank(*peek()))
@@ -25,55 +129,28 @@ void Rust_cursor::skip_trivia()
             ++at_;
         }
 
-        if (at("//"))
+        if (at(line_comment_opener))
         {
             while (peek() && *peek() != '\n')
             {
                 ++at_;
             }
+
+            continue;
         }
-        else if (at("/*"))
-        {
-            const auto line{this->line()};
 
-            // Rust nests block comments.
-            std::size_t depth{0};
-
-            do
-            {
-                if (at_ >= end_)
-                {
-                    throw Spec_error{"a block comment is never closed", line};
-                }
-
-                if (at("/*"))
-                {
-                    ++depth;
-
-                    at_ += 2;
-                }
-                else if (at("*/"))
-                {
-                    --depth;
-
-                    at_ += 2;
-                }
-                else
-                {
-                    ++at_;
-                }
-            } while (depth > 0);
-        }
-        else
+        if (!at(comment_opener))
         {
             return;
         }
+
+        skip_block_comment();
     }
 }
 
 void Rust_cursor::skip_token()
 {
-    if (at("//") || at("/*"))
+    if (at(line_comment_opener) || at(comment_opener))
     {
         skip_trivia();
 
@@ -87,30 +164,18 @@ void Rust_cursor::skip_token()
         return;
     }
 
-    if (at("'") || at("b'"))
+    if (at(character_opener) || at(byte_opener))
     {
-        // A character literal closes after one scalar or one escape; a lifetime or label does not close at all.
-        const auto open{at_ + (at("b'") ? 2 : 1)};
+        const auto opener{at(byte_opener) ? byte_opener : character_opener};
 
-        auto close{open};
+        const auto open{at_ + opener.size()};
 
-        if (close < end_ && text_[close] == '\\')
-        {
-            close = std::min(text_.find('\'', close + 2), end_);
-        }
-        else if (close < end_)
-        {
-            const auto lead{static_cast<unsigned char>(text_[close])};
-
-            close += sequence_length(lead);
-        }
-
-        at_ = close < end_ && text_[close] == '\'' ? close + 1 : open;
+        at_ = character_end(text_, open, end_);
 
         return;
     }
 
-    if (peek() == '(' || peek() == '[' || peek() == '{')
+    if (is_opening(peek()))
     {
         skip_group();
 
@@ -125,69 +190,79 @@ void Rust_cursor::skip_token()
 
 std::optional<std::size_t> Rust_cursor::string_end() const
 {
-    auto at{at_};
+    auto scan{at_};
 
     // The prefixes: b for a byte string, r for a raw one, br for both; c and cr, the C strings, have no pattern to give
     // but are skipped like the rest.
-    if (at < end_ && (text_[at] == 'b' || text_[at] == 'c'))
+    if (scan < end_ && (text_[scan] == 'b' || text_[scan] == 'c'))
     {
-        ++at;
+        ++scan;
     }
 
-    const auto raw{at < end_ && text_[at] == 'r'};
+    const auto raw{scan < end_ && text_[scan] == 'r'};
 
     if (raw)
     {
-        ++at;
+        ++scan;
     }
 
     std::size_t hashes{0};
 
-    for (; raw && at < end_ && text_[at] == '#'; ++at)
+    for (; raw && scan < end_ && text_[scan] == '#'; ++scan)
     {
         ++hashes;
     }
 
-    if (at >= end_ || text_[at] != '"')
+    if (scan >= end_ || text_[scan] != '"')
     {
         return std::nullopt;
     }
 
-    const auto line{this->line()};
+    const auto opened_line{line()};
 
-    for (++at; at < end_; ++at)
+    const auto closing_hashes{std::string(hashes, '#')};
+
+    for (++scan; scan < end_; ++scan)
     {
-        if (text_[at] == '\\' && !raw)
+        if (text_[scan] == '\\' && !raw)
         {
-            ++at;
+            ++scan;
+
+            continue;
         }
-        else if (text_[at] == '"' && at + hashes < end_ && text_.substr(at + 1, hashes) == std::string(hashes, '#'))
+
+        if (text_[scan] != '"' || scan + hashes >= end_)
         {
-            return at + 1 + hashes;
+            continue;
+        }
+
+        if (text_.substr(scan + 1, hashes) == closing_hashes)
+        {
+            return scan + 1 + hashes;
         }
     }
 
-    throw Spec_error{"a string literal is never closed", line};
+    throw Spec_error{"a string literal is never closed", opened_line};
 }
 
 void Rust_cursor::skip_group()
 {
     const auto open{next("a group")};
 
-    const auto close{open == '(' ? ')' : open == '[' ? ']' : '}'};
+    const auto close{closer_of(open)};
 
-    const auto line{this->line()};
+    const auto opened_line{line()};
 
     for (skip_trivia(); !accept(close); skip_trivia())
     {
         if (done())
         {
-            throw Spec_error{std::string{"the '"} + open + "' is never closed", line};
+            throw Spec_error{std::format("the '{}' is never closed", open), opened_line};
         }
 
-        if (peek() == ')' || peek() == ']' || peek() == '}')
+        if (is_closing(peek()))
         {
-            fail(std::string{"'"} + *peek() + "' closes nothing, '" + close + "' was expected");
+            fail(std::format("'{}' closes nothing, '{}' was expected", *peek(), close));
         }
 
         skip_token();
@@ -198,9 +273,11 @@ std::string_view Rust_cursor::word()
 {
     const auto begin{at_};
 
-    if (at("r#") && at_ + 2 < end_ && is_word_byte(text_[at_ + 2]))
+    const auto after_prefix{at_ + raw_identifier_prefix.size()};
+
+    if (at(raw_identifier_prefix) && after_prefix < end_ && is_word_byte(text_[after_prefix]))
     {
-        at_ += 2;
+        at_ = after_prefix;
     }
 
     while (peek() && is_word_byte(*peek()))
@@ -297,13 +374,17 @@ void Rust_cursor::escape(std::string& bytes, const bool byte_string)
         bytes.push_back(byte_escape(byte_string));
         break;
     case 'u':
+    {
         if (byte_string)
         {
             fail(R"(a byte string has no \u escape)");
         }
 
-        bytes += encoded(unicode_escape());
+        const auto scalar{unicode_escape()};
+
+        bytes += regex::utf8::encode(scalar);
         break;
+    }
     case '\n':
     case '\r':
         // A backslash ending the line continues the string on the next, its leading blanks dropped.
@@ -314,7 +395,7 @@ void Rust_cursor::escape(std::string& bytes, const bool byte_string)
 
         break;
     default:
-        fail(std::string{R"('\)"} + escaped + "' is not an escape Rust knows");
+        fail(std::format(R"('\{}' is not an escape Rust knows)", escaped));
     }
 }
 
@@ -331,7 +412,7 @@ char Rust_cursor::byte_escape(const bool byte_string)
 
     const auto value{hex_value(high) * 16 + hex_value(low)};
 
-    if (value > 0x7F && !byte_string)
+    if (value > last_ascii && !byte_string)
     {
         fail(R"(\x in a string reaches only \x7f; a higher scalar is written \u{...})");
     }
@@ -349,7 +430,7 @@ char32_t Rust_cursor::unicode_escape()
 
     // Rust writes an underscore between the digits of a numeric escape as it writes one in a number, `\u{1F_600}` being
     // `\u{1F600}`, and the underscores are no digits of the escape's own.
-    for (; peek() && (is_hex_digit(*peek()) || *peek() == '_');)
+    while (peek() && (is_hex_digit(*peek()) || *peek() == '_'))
     {
         if (*peek() == '_')
         {
@@ -358,14 +439,16 @@ char32_t Rust_cursor::unicode_escape()
             continue;
         }
 
-        value = value * 16 + hex_value(next("a hex digit"));
+        const auto digit{next("a hex digit")};
+
+        value = value * 16 + hex_value(digit);
 
         ++digits;
     }
 
     expect('}', R"('}' to close the \u escape)");
 
-    if (digits == 0 || digits > 6 || value > last_scalar || is_surrogate(value))
+    if (digits == 0 || digits > most_unicode_digits || value > last_scalar || is_surrogate(value))
     {
         fail(R"(\u{...} needs one to six hex digits naming a scalar)");
     }
@@ -383,21 +466,34 @@ std::string_view Rust_cursor::slice(const std::size_t begin, const std::size_t e
     return text_.substr(begin, end - begin);
 }
 
+Rust_cursor Rust_cursor::group_inside(const std::size_t open) const noexcept
+{
+    return inside(open + 1, offset() - 1);
+}
+
+std::string_view Rust_cursor::group_text(const std::size_t open) const noexcept
+{
+    return slice(open + 1, offset() - 1);
+}
+
 bool Rust_cursor::at_string() const
 {
     return string_end().has_value();
+}
+
+bool Rust_cursor::at_literal() const
+{
+    return at_string() || at(character_opener) || at(byte_opener);
 }
 
 bool at_attribute(const Rust_cursor& cursor)
 {
     auto look{cursor};
 
-    if (!look.at("#"))
+    if (!look.accept('#'))
     {
         return false;
     }
-
-    std::ignore = look.accept('#');
 
     look.skip_trivia();
 
@@ -406,7 +502,7 @@ bool at_attribute(const Rust_cursor& cursor)
 
 std::string compacted(const std::string_view text)
 {
-    std::string compact;
+    std::string compact{};
 
     Rust_cursor cursor{text, 0, text.size()};
 
@@ -416,7 +512,7 @@ std::string compacted(const std::string_view text)
 
         // A literal is copied whole, trivia inside it being none; a group's delimiters are single bytes here, so that
         // the trivia inside the group is dropped as well.
-        if (cursor.at_string() || cursor.at("'") || cursor.at("b'"))
+        if (cursor.at_literal())
         {
             cursor.skip_token();
         }
@@ -453,6 +549,37 @@ void skip_generics(Rust_cursor& cursor)
             std::ignore = cursor.next("'>'");
         }
     } while (depth > 0);
+}
+
+void skip_until(Rust_cursor& cursor, const std::string_view stops)
+{
+    while (!cursor.done() && !stops.contains(*cursor.peek()))
+    {
+        cursor.skip_token();
+    }
+}
+
+void skip_list_item(Rust_cursor& cursor)
+{
+    while (!cursor.done() && cursor.peek() != ',')
+    {
+        if (cursor.peek() == '<')
+        {
+            skip_generics(cursor);
+        }
+        else
+        {
+            cursor.skip_token();
+        }
+    }
+}
+
+void expect_spelled(Rust_cursor& cursor, const std::string_view token)
+{
+    for (const auto byte : token)
+    {
+        cursor.expect(byte, std::format("'{}'", byte));
+    }
 }
 
 } // namespace munch::tools::audit

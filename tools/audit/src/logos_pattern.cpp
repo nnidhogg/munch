@@ -3,9 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <format>
 #include <iterator>
-#include <limits>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -22,9 +23,6 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements logos_pattern.hpp: the classes' tables and the builders that flatten a concatenation, an alternation and a
-// repetition as the crate builds them are private to this unit.
-
 using regex::utf8::Code_point_range;
 
 // What logos's `\d`, `\s` and `\w` admit: the tables of the Unicode version that the regex-syntax logos is locked to
@@ -33,14 +31,137 @@ using regex::utf8::Code_point_range;
 #include "logos_class_ranges.inc"
 
 /**
- * @brief A concatenation of parts, flattened, the empty parts dropped and adjacent literal runs merged unless a capture
- *        bounds one, which is how the crate builds one.
+ * @brief One run of an ASCII class, its first scalar and its last.
+ */
+struct Ascii_run
+{
+    /**
+     * @brief The run's first scalar.
+     */
+    char32_t low{};
+
+    /**
+     * @brief Its last.
+     */
+    char32_t high{};
+};
+
+/**
+ * @brief An ASCII class of the regex crate, `[:name:]`, as the runs it admits.
+ */
+struct Ascii_class
+{
+    /**
+     * @brief The class's name.
+     */
+    std::string_view name{};
+
+    /**
+     * @brief The runs, ascending, the ones past the count left empty.
+     */
+    std::array<Ascii_run, 4> runs{};
+
+    /**
+     * @brief How many runs the class has.
+     */
+    std::size_t count{};
+};
+
+/**
+ * @brief The regex crate's ASCII classes.
+ */
+constexpr std::array<Ascii_class, 14> ascii_classes{
+        Ascii_class{
+                .name = "alnum",
+                .runs = {{{.low = '0', .high = '9'}, {.low = 'A', .high = 'Z'}, {.low = 'a', .high = 'z'}}},
+                .count = 3},
+        Ascii_class{.name = "alpha", .runs = {{{.low = 'A', .high = 'Z'}, {.low = 'a', .high = 'z'}}}, .count = 2},
+        Ascii_class{.name = "ascii", .runs = {{{.low = 0, .high = last_ascii}}}, .count = 1},
+        Ascii_class{.name = "blank", .runs = {{{.low = '\t', .high = '\t'}, {.low = ' ', .high = ' '}}}, .count = 2},
+        Ascii_class{
+                .name = "cntrl",
+                .runs = {{{.low = 0, .high = 0x1F}, {.low = last_ascii, .high = last_ascii}}},
+                .count = 2},
+        Ascii_class{.name = "digit", .runs = {{{.low = '0', .high = '9'}}}, .count = 1},
+        Ascii_class{.name = "graph", .runs = {{{.low = '!', .high = '~'}}}, .count = 1},
+        Ascii_class{.name = "lower", .runs = {{{.low = 'a', .high = 'z'}}}, .count = 1},
+        Ascii_class{.name = "print", .runs = {{{.low = ' ', .high = '~'}}}, .count = 1},
+        Ascii_class{
+                .name = "punct",
+                .runs =
+                        {{{.low = '!', .high = '/'},
+                          {.low = ':', .high = '@'},
+                          {.low = '[', .high = '`'},
+                          {.low = '{', .high = '~'}}},
+                .count = 4},
+        Ascii_class{.name = "space", .runs = {{{.low = '\t', .high = '\r'}, {.low = ' ', .high = ' '}}}, .count = 2},
+        Ascii_class{.name = "upper", .runs = {{{.low = 'A', .high = 'Z'}}}, .count = 1},
+        Ascii_class{
+                .name = "word",
+                .runs =
+                        {{{.low = '0', .high = '9'},
+                          {.low = 'A', .high = 'Z'},
+                          {.low = '_', .high = '_'},
+                          {.low = 'a', .high = 'z'}}},
+                .count = 4},
+        Ascii_class{
+                .name = "xdigit",
+                .runs = {{{.low = '0', .high = '9'}, {.low = 'A', .high = 'F'}, {.low = 'a', .high = 'f'}}},
+                .count = 3}};
+
+/**
+ * @brief Returns the class of one scalar.
+ * @param scalar The scalar.
+ * @return The class holding it alone.
+ */
+[[nodiscard]] Scalar_set one_scalar(const char32_t scalar)
+{
+    Scalar_set set{};
+
+    set.add(scalar, scalar);
+
+    return set;
+}
+
+/**
+ * @brief Returns a scalar's bytes in a pattern: the one byte it is, or its UTF-8.
+ * @param scalar The scalar.
+ * @param as_byte Whether it stands for a byte, outside Unicode mode or as a byte string's.
+ * @return The bytes.
+ */
+[[nodiscard]] std::string scalar_bytes(const char32_t scalar, const bool as_byte)
+{
+    return as_byte ? std::string{static_cast<char>(scalar)} : regex::utf8::encode(scalar);
+}
+
+/**
+ * @brief Returns the members of an ASCII class.
+ * @param ascii The class.
+ * @return The members, its runs.
+ */
+[[nodiscard]] Scalar_set class_members(const Ascii_class& ascii)
+{
+    const auto& [name, runs, count]{ascii};
+
+    Scalar_set set{};
+
+    for (const auto& [low, high] : runs | std::views::take(count))
+    {
+        set.add(low, high);
+    }
+
+    return set;
+}
+
+/**
+ * @brief Returns a concatenation of parts, flattened, the empty parts dropped and adjacent literal runs merged unless a
+ *        capture bounds one, which is how the crate builds one.
  * @param parts The parts.
  * @return The node: Empty for none, the part for one, a Concat otherwise.
  */
 [[nodiscard]] Node concatenated(std::vector<Node> parts)
 {
-    std::vector<Node> flat;
+    std::vector<Node> flat{};
 
     for (auto& part : parts)
     {
@@ -54,23 +175,29 @@ using regex::utf8::Code_point_range;
         }
     }
 
-    std::vector<Node> merged;
+    std::vector<Node> merged{};
+
+    // A literal run no capture bounds merges with its neighbours of the same kind.
+    const auto unbounded_bytes{[](const Node& node) {
+        return std::holds_alternative<Bytes>(node.kind) && !std::get<Bytes>(node.kind).bounded;
+    }};
 
     for (auto& part : flat)
     {
-        const auto joins{
-                !merged.empty() && std::holds_alternative<Bytes>(merged.back().kind) &&
-                std::holds_alternative<Bytes>(part.kind) && !std::get<Bytes>(merged.back().kind).bounded &&
-                !std::get<Bytes>(part.kind).bounded};
+        const auto joins{!merged.empty() && unbounded_bytes(merged.back()) && unbounded_bytes(part)};
 
-        if (joins)
-        {
-            std::get<Bytes>(merged.back().kind).bytes += std::get<Bytes>(part.kind).bytes;
-        }
-        else
+        if (!joins)
         {
             merged.push_back(std::move(part));
+
+            continue;
         }
+
+        auto& joined{std::get<Bytes>(merged.back().kind)};
+
+        const auto& [bytes, bounded]{std::get<Bytes>(part.kind)};
+
+        joined.bytes += bytes;
     }
 
     if (merged.empty())
@@ -87,8 +214,8 @@ using regex::utf8::Code_point_range;
 }
 
 /**
- * @brief An alternation of branches, flattened as the crate flattens it, an empty branch making the rest optional,
- *        which says the same.
+ * @brief Returns an alternation of branches, flattened as the crate flattens it, an empty branch making the rest
+ *        optional, which says the same.
  *
  * The crate builds an alternation bottom up, so a nested one it has merged into a class, or wrapped in a capture, is
  * one branch to the outer alternation, while any other nested alternation is flattened into it (regex-syntax 0.8.11,
@@ -98,14 +225,18 @@ using regex::utf8::Code_point_range;
  */
 [[nodiscard]] Node alternated(std::vector<Node> branches)
 {
-    std::vector<Node> flat;
+    std::vector<Node> flat{};
 
     auto nullable{false};
 
+    const auto flattens{[](const Node& branch) {
+        return std::holds_alternative<Alternation>(branch.kind) && !std::get<Alternation>(branch.kind).captured &&
+               !merged(branch);
+    }};
+
     for (auto& branch : branches)
     {
-        if (std::holds_alternative<Alternation>(branch.kind) && !std::get<Alternation>(branch.kind).captured &&
-            !merged(branch))
+        if (flattens(branch))
         {
             std::ranges::move(std::get<Alternation>(branch.kind).branches, std::back_inserter(flat));
         }
@@ -135,10 +266,10 @@ using regex::utf8::Code_point_range;
 }
 
 /**
- * @brief A repetition of an operand, the forms that repeat nothing reduced.
+ * @brief Returns a repetition of an operand, the forms that repeat nothing reduced.
  * @param operand The operand.
  * @param min The least number of times.
- * @param max The most, unbounded when std::nullopt.
+ * @param max The greatest number of times, std::nullopt when unbounded.
  * @return The node: Empty when the operand is or the maximum is zero, the operand for exactly once, a Repeat else.
  */
 [[nodiscard]] Node repeated(Node operand, const std::size_t min, const std::optional<std::size_t> max)
@@ -173,7 +304,7 @@ Node Pattern_reader::read()
 
     if (peek())
     {
-        fail(std::string{"unexpected '"} + *peek() + "'");
+        fail(std::format("unexpected '{}'", *peek()));
     }
 
     return node;
@@ -181,11 +312,13 @@ Node Pattern_reader::read()
 
 Node Pattern_reader::read_literal()
 {
-    std::vector<Node> parts;
+    std::vector<Node> parts{};
 
     while (peek())
     {
-        parts.push_back(unit_node(next_unit()));
+        const auto unit{next_unit()};
+
+        parts.push_back(unit_node(unit));
     }
 
     return concatenated(std::move(parts));
@@ -193,7 +326,7 @@ Node Pattern_reader::read_literal()
 
 Node Pattern_reader::alternation()
 {
-    std::vector<Node> branches;
+    std::vector<Node> branches{};
 
     branches.push_back(concatenation());
 
@@ -207,7 +340,7 @@ Node Pattern_reader::alternation()
 
 Node Pattern_reader::concatenation()
 {
-    std::vector<Node> parts;
+    std::vector<Node> parts{};
 
     while (peek() && *peek() != '|' && *peek() != ')')
     {
@@ -221,42 +354,49 @@ Node Pattern_reader::repetition()
 {
     auto node{atom()};
 
-    for (;;)
-    {
-        std::size_t min{0};
-
-        std::optional<std::size_t> max;
-
+    const auto bounds{[this]() -> std::optional<Count> {
         if (accept('*'))
         {
-            max = std::nullopt;
+            return Count{.min = 0, .max = std::nullopt};
         }
-        else if (accept('+'))
+
+        if (accept('+'))
         {
-            min = 1;
+            return Count{.min = 1, .max = std::nullopt};
         }
-        else if (accept('?'))
+
+        if (accept('?'))
         {
-            max = 1;
+            return Count{.min = 0, .max = 1};
         }
-        else if (accept('{'))
+
+        if (accept('{'))
         {
-            std::tie(min, max) = count();
+            return count();
         }
-        else
+
+        return std::nullopt;
+    }};
+
+    for (;;)
+    {
+        const auto taken{bounds()};
+
+        if (!taken)
         {
             return node;
         }
 
+        const auto [min, max]{*taken};
+
         // Only an empty group or a flag setting stands before the operator: the crate refuses the second and logos has
-        // no use for the first, so both are refused rather than read as repeating nothing.
+        // no use for the first, so both are refused.
         if (std::holds_alternative<Empty>(node.kind))
         {
             fail("a repetition operator needs something before it to repeat");
         }
 
-        // logos 0.15.1 refuses the lazy forms outright (logos-codegen 0.15.1, mir.rs), so they are refused here too
-        // rather than read as the greedy form the crate never compiles.
+        // logos 0.15.1 refuses the lazy forms outright (logos-codegen 0.15.1, mir.rs), so they are refused here too.
         if (accept('?'))
         {
             fail("the lazy operator is one logos 0.15.1 refuses: non-greedy parsing is currently unsupported");
@@ -278,9 +418,7 @@ Node Pattern_reader::atom()
         return bracket();
     case '.':
     {
-        Scalar_set newline;
-
-        newline.add('\n', '\n');
+        const auto newline{one_scalar('\n')};
 
         auto members{flags_.dot_all ? universe() : universe().minus(newline)};
 
@@ -305,7 +443,7 @@ Node Pattern_reader::atom()
     case '{':
         --at_;
 
-        fail(std::string{"nothing for '"} + byte + "' to repeat");
+        fail(std::format("nothing for '{}' to repeat", byte));
     case ')':
         --at_;
 
@@ -314,8 +452,8 @@ Node Pattern_reader::atom()
     case '$':
         --at_;
 
-        fail(std::string{"the anchor '"} + byte +
-             "' conditions the context a match stands in, which a token language cannot say");
+        fail(std::format(
+                "the anchor '{}' conditions the context a match stands in, which a token language cannot say", byte));
     default:
         --at_;
 
@@ -338,7 +476,7 @@ Node Pattern_reader::group()
 
     if (accept('&'))
     {
-        std::string name;
+        std::string name{};
 
         while (peek() && *peek() != ')')
         {
@@ -373,6 +511,11 @@ Node Pattern_reader::group()
         fail("lookaround conditions the context a match stands in, which a token language cannot say");
     }
 
+    return flag_group(saved);
+}
+
+Node Pattern_reader::flag_group(const Flags& saved)
+{
     auto negated{false};
 
     auto dangling{false};
@@ -433,9 +576,9 @@ Node Pattern_reader::group()
         case 'm':
         case 'U':
         case 'R':
-            fail(std::string{"the flag '"} + flag + "' is not modelled");
+            fail(std::format("the flag '{}' is not modelled", flag));
         default:
-            fail(std::string{"'"} + flag + "' is not a flag of the regex crate");
+            fail(std::format("'{}' is not a flag of the regex crate", flag));
         }
     }
 }
@@ -446,6 +589,7 @@ Node Pattern_reader::captured()
 
     expect(')', "')' to close the group");
 
+    // No run outside the capture merges with a bounded run.
     const auto bound{[](Node& edge) {
         if (std::holds_alternative<Bytes>(edge.kind))
         {
@@ -455,9 +599,11 @@ Node Pattern_reader::captured()
 
     if (std::holds_alternative<Concat>(node.kind))
     {
-        bound(std::get<Concat>(node.kind).parts.front());
+        auto& parts{std::get<Concat>(node.kind).parts};
 
-        bound(std::get<Concat>(node.kind).parts.back());
+        bound(parts.front());
+
+        bound(parts.back());
     }
     else if (std::holds_alternative<Char_class>(node.kind))
     {
@@ -484,16 +630,18 @@ Node Pattern_reader::bracket()
     return class_node(members(), negated);
 }
 
-Node Pattern_reader::class_node(Scalar_set members, const bool negated)
+Node Pattern_reader::class_node(Scalar_set admitted, const bool negated)
 {
     if (flags_.insensitive)
     {
-        // The crate folds before it negates; folding is modelled for ASCII and the two scalars that fold to it.
-        const auto foldable{std::ranges::all_of(members.ranges(), [](const Scalar_set::Range_t& range) {
+        const auto foldable_run{[](const Scalar_set::Range_t& range) {
             const auto& [low, high]{range};
 
-            return high <= 0x7F || (low == high && (low == 0x17F || low == 0x212A));
-        })};
+            return high <= last_ascii || (low == high && (low == long_s || low == kelvin));
+        }};
+
+        // The crate folds before it negates; folding is modelled for ASCII and the two scalars that fold to it.
+        const auto foldable{std::ranges::all_of(admitted.ranges(), foldable_run)};
 
         if (flags_.unicode && !foldable)
         {
@@ -501,42 +649,70 @@ Node Pattern_reader::class_node(Scalar_set members, const bool negated)
         }
     }
 
-    members = negated ? universe().minus(cased(members)) : cased(members);
+    const auto cased_members{cased(admitted)};
 
-    if (members.empty())
+    admitted = negated_if(cased_members, negated);
+
+    if (admitted.empty())
     {
         fail("the class matches nothing");
     }
 
-    check_utf8(members);
+    check_utf8(admitted);
 
-    if (const auto one{members.single()})
+    if (const auto one{admitted.single()})
     {
-        return {.kind =
-                        Bytes{.bytes = flags_.unicode ? encoded(*one) : std::string(1, static_cast<char>(*one)),
-                              .bounded = false}};
+        auto bytes{scalar_bytes(*one, !flags_.unicode)};
+
+        return {.kind = Bytes{.bytes = std::move(bytes), .bounded = false}};
     }
 
-    return {.kind = Char_class{.set = std::move(members), .unicode = flags_.unicode}};
+    return {.kind = Char_class{.set = std::move(admitted), .unicode = flags_.unicode}};
 }
 
 Scalar_set Pattern_reader::members()
 {
-    Scalar_set members;
+    Scalar_set admitted{};
+
+    const auto opens_range{[this] {
+        const auto after{at_ + 1 < literal_.bytes.size() ? literal_.bytes[at_ + 1] : ']'};
+
+        return peek() == '-' && after != ']' && after != '-';
+    }};
+
+    const auto escaped_member{[this, &admitted, &opens_range]() -> std::optional<char32_t> {
+        auto escaped{escape()};
+
+        if (std::holds_alternative<Unit>(escaped))
+        {
+            return member(std::get<Unit>(escaped));
+        }
+
+        admitted.add(std::get<Scalar_set>(escaped));
+
+        if (opens_range())
+        {
+            fail("a range cannot start with a class");
+        }
+
+        return std::nullopt;
+    }};
+
+    const auto at_operator{[this](const std::string_view written) { return at(written); }};
 
     // Dashes first are members, and a ']' first is one too, as the crate has it.
     auto first{true};
 
     while (accept('-'))
     {
-        members.add('-', '-');
+        admitted.add('-', '-');
 
         first = false;
     }
 
     if (first && accept(']'))
     {
-        members.add(']', ']');
+        admitted.add(']', ']');
     }
 
     for (;;)
@@ -548,58 +724,54 @@ Scalar_set Pattern_reader::members()
 
         if (accept(']'))
         {
-            return members;
+            return admitted;
         }
 
-        if (at("&&") || at("--") || at("~~"))
+        static constexpr std::array<std::string_view, 3> class_operators{"&&", "--", "~~"};
+
+        const auto written{std::ranges::find_if(class_operators, at_operator)};
+
+        if (written != class_operators.end())
         {
-            fail("the class operator '" + literal_.bytes.substr(at_, 2) + "' is not modelled");
+            fail(std::format("the class operator '{}' is not modelled", *written));
         }
 
-        std::optional<char32_t> low;
+        std::optional<char32_t> low{};
 
-        if (at("[:"))
+        static constexpr std::string_view class_opener{"[:"};
+
+        if (at(class_opener))
         {
-            at_ += 2;
+            at_ += class_opener.size();
 
-            members.add(posix_class());
+            admitted.add(posix_class());
         }
         else if (accept('['))
         {
             const auto negated{accept('^')};
 
-            const auto nested{this->members()};
+            const auto nested{members()};
 
-            auto inner{negated ? universe().minus(cased(nested)) : nested};
+            // A nested class is folded only where it is negated, the crate folding before it negates.
+            const auto read{negated ? cased(nested) : nested};
+
+            auto inner{negated_if(read, negated)};
 
             // The crate checks every bracket as it translates it, a nested one included, so a nested negation that
             // reaches beyond ASCII outside Unicode mode is refused though the outer class may not.
             check_utf8(inner);
 
-            members.add(std::move(inner));
+            admitted.add(std::move(inner));
         }
         else if (accept('\\'))
         {
-            auto escaped{escape()};
-
-            if (std::holds_alternative<Unit>(escaped))
-            {
-                low = member(std::get<Unit>(escaped));
-            }
-            else
-            {
-                members.add(std::get<Scalar_set>(escaped));
-
-                if (peek() == '-' && at_ + 1 < literal_.bytes.size() && literal_.bytes[at_ + 1] != ']' &&
-                    literal_.bytes[at_ + 1] != '-')
-                {
-                    fail("a range cannot start with a class");
-                }
-            }
+            low = escaped_member();
         }
         else
         {
-            low = member(next_unit());
+            const auto unit{next_unit()};
+
+            low = member(unit);
         }
 
         if (!low)
@@ -607,55 +779,55 @@ Scalar_set Pattern_reader::members()
             continue;
         }
 
-        // A '-' after a member opens a range, unless the close or another '-' follows it.
-        const auto after{at_ + 1 < literal_.bytes.size() ? literal_.bytes[at_ + 1] : ']'};
-
-        if (peek() != '-' || after == ']' || after == '-')
+        if (!opens_range())
         {
-            members.add(*low, *low);
+            admitted.add(*low, *low);
 
             continue;
         }
 
-        ++at_;
-
-        if (peek() == '[')
-        {
-            fail("a range cannot end in a class");
-        }
-
-        char32_t high{0};
-
-        if (accept('\\'))
-        {
-            auto escaped{escape()};
-
-            if (!std::holds_alternative<Unit>(escaped))
-            {
-                fail("a range cannot end in a class");
-            }
-
-            high = member(std::get<Unit>(escaped));
-        }
-        else
-        {
-            high = member(next_unit());
-        }
+        const auto high{range_end()};
 
         if (high < *low)
         {
             fail("the range ends before it starts");
         }
 
-        members.add(*low, high);
+        admitted.add(*low, high);
     }
+}
+
+char32_t Pattern_reader::range_end()
+{
+    ++at_;
+
+    if (peek() == '[')
+    {
+        fail("a range cannot end in a class");
+    }
+
+    if (!accept('\\'))
+    {
+        const auto unit{next_unit()};
+
+        return member(unit);
+    }
+
+    auto escaped{escape()};
+
+    if (!std::holds_alternative<Unit>(escaped))
+    {
+        fail("a range cannot end in a class");
+    }
+
+    return member(std::get<Unit>(escaped));
 }
 
 Scalar_set Pattern_reader::posix_class()
 {
     const auto negated{accept('^')};
 
-    std::string name;
+    std::string name{};
 
     while (peek() && *peek() != ':')
     {
@@ -663,77 +835,26 @@ Scalar_set Pattern_reader::posix_class()
     }
 
     expect(':', "':]' to close the class");
+
     expect(']', "':]' to close the class");
 
-    Scalar_set set;
+    const auto found{std::ranges::find(ascii_classes, std::string_view{name}, &Ascii_class::name)};
 
-    const auto add_range{[&set](const char32_t low, const char32_t high) { set.add(low, high); }};
-
-    if (name == "alnum" || name == "alpha" || name == "word" || name == "xdigit" || name == "upper" ||
-        name == "lower" || name == "digit")
+    if (found == ascii_classes.end())
     {
-        if (name != "lower" && name != "digit")
-        {
-            add_range('A', name == "xdigit" ? 'F' : 'Z');
-        }
-
-        if (name != "upper" && name != "digit")
-        {
-            add_range('a', name == "xdigit" ? 'f' : 'z');
-        }
-
-        if (name != "alpha" && name != "upper" && name != "lower")
-        {
-            add_range('0', '9');
-        }
-
-        if (name == "word")
-        {
-            add_range('_', '_');
-        }
-    }
-    else if (name == "ascii")
-    {
-        add_range(0, 0x7F);
-    }
-    else if (name == "blank")
-    {
-        add_range(' ', ' ');
-        add_range('\t', '\t');
-    }
-    else if (name == "cntrl")
-    {
-        add_range(0, 0x1F);
-        add_range(0x7F, 0x7F);
-    }
-    else if (name == "graph" || name == "print" || name == "punct")
-    {
-        add_range(name == "print" ? ' ' : '!', '~');
-
-        if (name == "punct")
-        {
-            set = set.minus([] {
-                Scalar_set alphanumeric;
-
-                alphanumeric.add('0', '9');
-                alphanumeric.add('A', 'Z');
-                alphanumeric.add('a', 'z');
-
-                return alphanumeric;
-            }());
-        }
-    }
-    else if (name == "space")
-    {
-        add_range('\t', '\r');
-        add_range(' ', ' ');
-    }
-    else
-    {
-        fail("'[:" + name + ":]' is not an ASCII class of the regex crate");
+        fail(std::format("'[:{}:]' is not an ASCII class of the regex crate", name));
     }
 
-    return negated ? universe().minus(cased(set)) : set;
+    const auto set{class_members(*found)};
+
+    if (!negated)
+    {
+        return set;
+    }
+
+    const auto cased_set{cased(set)};
+
+    return negated_if(cased_set, true);
 }
 
 Scalar_set Pattern_reader::universe() const
@@ -746,9 +867,26 @@ Scalar_set Pattern_reader::cased(const Scalar_set& members) const
     return flags_.insensitive ? folded(members, flags_.unicode) : members;
 }
 
+Scalar_set Pattern_reader::negated_if(const Scalar_set& members, const bool negated) const
+{
+    if (!negated)
+    {
+        return members;
+    }
+
+    return universe().minus(members);
+}
+
 void Pattern_reader::check_utf8(const Scalar_set& members) const
 {
-    if (!flags_.unicode && flags_.utf8 && !members.empty() && members.ranges().back().second > 0x7F)
+    if (flags_.unicode || !flags_.utf8 || members.empty())
+    {
+        return;
+    }
+
+    const auto [low, high]{members.ranges().back()};
+
+    if (high > last_ascii)
     {
         fail("a byte beyond ASCII outside Unicode mode can match invalid UTF-8, which the regex crate refuses in a "
              "string pattern, logos 0.15.1 having no option to turn that check off");
@@ -786,47 +924,11 @@ std::variant<Pattern_reader::Unit, Scalar_set> Pattern_reader::escape()
     {
         const auto negated{byte == 'D' || byte == 'S' || byte == 'W'};
 
-        const auto kind{static_cast<char>(byte | 0x20)};
+        const auto kind{static_cast<char>(byte | case_bit)};
 
-        Scalar_set members;
+        const auto members{perl_class(kind)};
 
-        if (flags_.unicode)
-        {
-            // The crate's Unicode forms: Nd, White_Space and the word class, from the tables of the database the locked
-            // regex-syntax was generated from, which is the language the scanner has rather than the one the library
-            // pins; the two databases differ by ten digits and thousands of word characters.
-            const std::span<const Code_point_range> ranges{
-                    kind == 'd' ? std::span<const Code_point_range>{decimal_digit_ranges} :
-                    kind == 's' ? std::span<const Code_point_range>{white_space_ranges} :
-                                  std::span<const Code_point_range>{word_ranges}};
-
-            for (const auto& [first, last] : ranges)
-            {
-                members.add(first, last);
-            }
-        }
-        else
-        {
-            if (kind == 'd' || kind == 'w')
-            {
-                members.add('0', '9');
-            }
-
-            if (kind == 'w')
-            {
-                members.add('A', 'Z');
-                members.add('a', 'z');
-                members.add('_', '_');
-            }
-
-            if (kind == 's')
-            {
-                members.add('\t', '\r');
-                members.add(' ', ' ');
-            }
-        }
-
-        return negated ? universe().minus(members) : members;
+        return negated_if(members, negated);
     }
     case 'p':
     case 'P':
@@ -838,8 +940,9 @@ std::variant<Pattern_reader::Unit, Scalar_set> Pattern_reader::escape()
     case 'B':
     case '<':
     case '>':
-        fail(std::string{R"(the assertion '\)"} + byte +
-             "' conditions the context a match stands in, which a token language cannot say");
+        fail(std::format(
+                "the assertion '\\{}' conditions the context a match stands in, which a token language cannot say",
+                byte));
     default:
         break;
     }
@@ -849,12 +952,57 @@ std::variant<Pattern_reader::Unit, Scalar_set> Pattern_reader::escape()
         fail("the regex crate has neither octal escapes nor backreferences");
     }
 
-    if (is_letter(static_cast<unsigned char>(byte)) || static_cast<unsigned char>(byte) >= 0x80)
+    if (is_letter(static_cast<unsigned char>(byte)) || static_cast<unsigned char>(byte) > last_ascii)
     {
-        fail(std::string{R"('\)"} + byte + "' is not an escape of the regex crate");
+        fail(std::format("'\\{}' is not an escape of the regex crate", byte));
     }
 
     return Unit{.value = static_cast<unsigned char>(byte), .byte = false};
+}
+
+Scalar_set Pattern_reader::perl_class(const char kind) const
+{
+    if (!flags_.unicode)
+    {
+        const auto name{[kind]() -> std::string_view {
+            switch (kind)
+            {
+            case 'd':
+                return "digit";
+            case 's':
+                return "space";
+            default:
+                return "word";
+            }
+        }()};
+
+        const auto found{std::ranges::find(ascii_classes, name, &Ascii_class::name)};
+
+        return class_members(*found);
+    }
+
+    // The tables are the database's the locked regex-syntax was generated from, which is the language the scanner has
+    // rather than the one the library pins; the two databases differ by ten digits and thousands of word characters.
+    const auto ranges{[kind]() -> std::span<const Code_point_range> {
+        switch (kind)
+        {
+        case 'd':
+            return decimal_digit_ranges;
+        case 's':
+            return white_space_ranges;
+        default:
+            return word_ranges;
+        }
+    }()};
+
+    Scalar_set members{};
+
+    for (const auto& [first, last] : ranges)
+    {
+        members.add(first, last);
+    }
+
+    return members;
 }
 
 Pattern_reader::Unit Pattern_reader::hex_escape(const char kind)
@@ -874,20 +1022,34 @@ Pattern_reader::Unit Pattern_reader::hex_escape(const char kind)
                 fail("the hex escape exceeds any scalar");
             }
 
-            value = value * 16 + hex_value(next("a hex digit"));
+            const auto digit{next("a hex digit")};
+
+            value = value * 16 + hex_value(digit);
         }
 
         expect('}', "'}' to close the hex escape");
     }
     else
     {
-        for (const auto wanted{kind == 'x' ? 2UZ : kind == 'u' ? 4UZ : 8UZ}; digits < wanted; ++digits)
+        const auto wanted{[kind] {
+            switch (kind)
+            {
+            case 'x':
+                return 2UZ;
+            case 'u':
+                return 4UZ;
+            default:
+                return 8UZ;
+            }
+        }()};
+
+        for (; digits < wanted; ++digits)
         {
             const auto digit{next("a hex digit")};
 
             if (!is_hex_digit(digit))
             {
-                fail(std::string{R"('\)"} + kind + "' needs " + std::to_string(wanted) + " hex digits, or braces");
+                fail(std::format("'\\{}' needs {} hex digits, or braces", kind, wanted));
             }
 
             value = value * 16 + hex_value(digit);
@@ -912,22 +1074,20 @@ Pattern_reader::Unit Pattern_reader::hex_escape(const char kind)
 
 char32_t Pattern_reader::member(const Unit unit)
 {
-    if (!unit.byte && !flags_.unicode && unit.value > 0x7F)
+    const auto [value, byte]{unit};
+
+    if (!byte && !flags_.unicode && value > last_ascii)
     {
         fail("a class outside Unicode mode holds bytes, not the encoding of a non-ASCII scalar");
     }
 
     // The crate refuses a byte beyond ASCII where it is written, before the class it stands in is negated.
-    if (unit.byte)
+    if (byte)
     {
-        Scalar_set one;
-
-        one.add(unit.value, unit.value);
-
-        check_utf8(one);
+        check_utf8(one_scalar(value));
     }
 
-    return unit.value;
+    return value;
 }
 
 Pattern_reader::Unit Pattern_reader::next_unit()
@@ -935,7 +1095,7 @@ Pattern_reader::Unit Pattern_reader::next_unit()
     const auto lead{static_cast<unsigned char>(next("a character"))};
 
     // A byte string's bytes reach the crate as `\xHH`, bytes outside Unicode mode and scalars inside it.
-    if (literal_.byte_string || lead < 0x80)
+    if (literal_.byte_string || lead <= last_ascii)
     {
         return {.value = lead, .byte = !flags_.unicode};
     }
@@ -946,7 +1106,9 @@ Pattern_reader::Unit Pattern_reader::next_unit()
 
     for (std::size_t index{1}; index < length; ++index)
     {
-        value = (value << 6U) | (static_cast<unsigned char>(next("a UTF-8 continuation byte")) & 0x3FU);
+        const auto continuation{static_cast<unsigned char>(next("a UTF-8 continuation byte"))};
+
+        value = continued(value, continuation);
     }
 
     return {.value = value, .byte = false};
@@ -958,31 +1120,29 @@ Node Pattern_reader::unit_node(const Unit unit)
 
     if (flags_.insensitive && is_letter(value))
     {
-        Scalar_set letter;
+        const auto letter{one_scalar(value)};
 
-        letter.add(value, value);
+        auto cases{folded(letter, flags_.unicode)};
 
-        return {.kind = Char_class{.set = folded(letter, flags_.unicode), .unicode = flags_.unicode}};
+        return {.kind = Char_class{.set = std::move(cases), .unicode = flags_.unicode}};
     }
 
-    if (flags_.insensitive && flags_.unicode && value > 0x7F)
+    if (flags_.insensitive && flags_.unicode && value > last_ascii)
     {
         fail("the case folding of a non-ASCII scalar under (?i) is not modelled");
     }
 
     if (byte)
     {
-        Scalar_set one;
-
-        one.add(value, value);
-
-        check_utf8(one);
+        check_utf8(one_scalar(value));
     }
 
-    return {.kind = Bytes{.bytes = byte ? std::string(1, static_cast<char>(value)) : encoded(value), .bounded = false}};
+    auto bytes{scalar_bytes(value, byte)};
+
+    return {.kind = Bytes{.bytes = std::move(bytes), .bounded = false}};
 }
 
-std::pair<std::size_t, std::optional<std::size_t>> Pattern_reader::count()
+Pattern_reader::Count Pattern_reader::count()
 {
     const auto min{number()};
 
@@ -993,14 +1153,14 @@ std::pair<std::size_t, std::optional<std::size_t>> Pattern_reader::count()
 
     if (accept('}'))
     {
-        return {*min, *min};
+        return {.min = *min, .max = *min};
     }
 
     expect(',', "',' or '}' in the count");
 
     if (accept('}'))
     {
-        return {*min, std::nullopt};
+        return {.min = *min, .max = std::nullopt};
     }
 
     const auto max{number()};
@@ -1017,7 +1177,7 @@ std::pair<std::size_t, std::optional<std::size_t>> Pattern_reader::count()
 
     expect('}', "'}' to close the count");
 
-    return {*min, *max};
+    return {.min = *min, .max = *max};
 }
 
 std::optional<std::size_t> Pattern_reader::number()
@@ -1033,12 +1193,14 @@ std::optional<std::size_t> Pattern_reader::number()
     {
         const auto digit{static_cast<std::size_t>(next("a digit") - '0')};
 
-        if (value > (std::numeric_limits<std::size_t>::max() - digit) / 10)
+        const auto appended{appended_digit(value, digit)};
+
+        if (!appended)
         {
             fail("the count does not fit");
         }
 
-        value = value * 10 + digit;
+        value = *appended;
     }
 
     return value;
@@ -1070,7 +1232,7 @@ void Pattern_reader::expect(const char byte, const std::string_view what)
 {
     if (!accept(byte))
     {
-        fail("expected " + std::string{what});
+        fail(std::format("expected {}", what));
     }
 }
 
@@ -1078,7 +1240,7 @@ char Pattern_reader::next(const std::string_view what)
 {
     if (at_ >= literal_.bytes.size())
     {
-        fail("expected " + std::string{what} + " before the end of the pattern");
+        fail(std::format("expected {} before the end of the pattern", what));
     }
 
     return literal_.bytes[at_++];
@@ -1086,7 +1248,7 @@ char Pattern_reader::next(const std::string_view what)
 
 void Pattern_reader::fail(const std::string& message) const
 {
-    throw Spec_error{"the pattern " + literal_.written + " is refused: " + message, line_};
+    throw Spec_error{std::format("the pattern {} is refused: {}", literal_.written, message), line_};
 }
 
 } // namespace munch::tools::audit

@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <format>
 #include <iterator>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -19,16 +21,22 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements logos_callback.hpp: the crate's names a result is told by, the lexer's members that read or move it, the
-// standard macros and a macro's path, the words an expression begins after, and the skips over a block-like expression,
-// a closure and a match arm's bar a body is split by are private to this unit.
+/**
+ * @brief The words that open a block-like expression Rust lets stand as a statement with no semicolon after it.
+ */
+constexpr std::array<std::string_view, 6> block_openers{"if", "match", "while", "for", "loop", "unsafe"};
+
+/**
+ * @brief The word a value's `return` is written with.
+ */
+constexpr std::string_view return_word{"return"};
 
 /**
  * @brief The standard library's macros, whose expansions return from no function: each expands to an expression, a
  *        panic or a compile-time value. Any other macro's expansion is out of sight, and `return T::Other;` in a
  *        `macro_rules!` body returns from the callback that invokes it, so the invocation is refused by name.
  */
-constexpr std::array standard{
+constexpr std::array standard_macros{
         std::string_view{"println"},
         std::string_view{"print"},
         std::string_view{"eprintln"},
@@ -71,12 +79,12 @@ struct Macro_path
     /**
      * @brief The path's segments joined by `::`, empty for a bare name.
      */
-    std::string qualifier;
+    std::string qualifier{};
 
     /**
      * @brief Whether the path begins with `::`, naming a crate through the extern prelude.
      */
-    bool absolute;
+    bool absolute{};
 };
 
 /**
@@ -126,11 +134,51 @@ constexpr std::array expression_openers{
         std::string_view{"loop"},   std::string_view{"for"},   std::string_view{"unsafe"}};
 
 /**
- * @brief A text without the blanks at either end.
+ * @brief Returns whether the byte at a cursor is one of a set of bytes.
+ * @param cursor The cursor.
+ * @param bytes The bytes.
+ * @return True when the cursor stands at one of them, false at the end of its text.
+ */
+[[nodiscard]] bool at_any_of(const Rust_cursor& cursor, const std::string_view bytes)
+{
+    const auto byte{cursor.peek()};
+
+    return byte && bytes.contains(*byte);
+}
+
+/**
+ * @brief Skips the tokens up to the next `{` and the block it opens.
+ * @param cursor The cursor; left past the block.
+ * @return The offset of the block's `{`.
+ * @throws Spec_error If a group is left open.
+ */
+[[nodiscard]] std::size_t skip_to_block(Rust_cursor& cursor)
+{
+    skip_until(cursor, "{");
+
+    const auto open{cursor.offset()};
+
+    cursor.skip_group();
+
+    return open;
+}
+
+/**
+ * @brief Returns the refusal of a result whose shape is none the reading takes.
+ * @param value The result as written.
+ * @return The refusal's text.
+ */
+[[nodiscard]] std::string unread_result(const std::string_view value)
+{
+    return std::format("its result `{}` is not visibly a token or a skip", value);
+}
+
+/**
+ * @brief Returns a text without the blanks at either end.
  * @param text The text.
  * @return The text trimmed.
  */
-[[nodiscard]] std::string_view trimmed(std::string_view text)
+[[nodiscard]] std::string_view without_blanks(std::string_view text)
 {
     while (!text.empty() && is_blank(text.front()))
     {
@@ -146,14 +194,15 @@ constexpr std::array expression_openers{
 }
 
 /**
- * @brief Whether a `use` statement binds `std` or `core`: an alias `as std` or a path ending in `std` binds the name.
+ * @brief Returns whether a `use` statement binds `std` or `core`: an alias `as std` or a path ending in `std` binds the
+ *        name.
  * @param look A cursor just past the `use`, over the statement's words to its `;`.
  * @return True when it does.
  * @throws Spec_error If a block comment in the statement is left open.
  */
 [[nodiscard]] bool use_binds_std(Rust_cursor look)
 {
-    std::vector<std::string> path;
+    std::vector<std::string> path{};
 
     for (look.skip_trivia(); !look.done() && !look.at(";"); look.skip_trivia())
     {
@@ -171,7 +220,7 @@ constexpr std::array expression_openers{
 }
 
 /**
- * @brief The path before a macro's name, as Macro_path has it.
+ * @brief Returns the path before a macro's name, as Macro_path has it.
  * @param recent The tokens read before the name, the name last among them.
  * @return The path.
  */
@@ -183,7 +232,10 @@ constexpr std::array expression_openers{
         return back < recent.size() ? std::string_view{recent[recent.size() - 1 - back]} : std::string_view{};
     }};
 
-    for (std::size_t back{1}; token(back) == ":" && token(back + 1) == ":"; back += 3)
+    // Each step back passes the two colons and the segment before them.
+    static constexpr std::size_t segment_tokens{3};
+
+    for (std::size_t back{1}; token(back) == ":" && token(back + 1) == ":"; back += segment_tokens)
     {
         const auto segment{token(back + 2)};
 
@@ -194,14 +246,21 @@ constexpr std::array expression_openers{
             break;
         }
 
-        path.qualifier = std::string{segment} + (path.qualifier.empty() ? "" : "::" + path.qualifier);
+        if (path.qualifier.empty())
+        {
+            path.qualifier = segment;
+        }
+        else
+        {
+            path.qualifier = std::format("{}{}{}", segment, path_separator, path.qualifier);
+        }
     }
 
     return path;
 }
 
 /**
- * @brief Whether a text is one delimited group and nothing else, `(...)` or `{...}` through its own close.
+ * @brief Returns whether a text is one delimited group and nothing else, `(...)` or `{...}` through its own close.
  * @param text The text, trimmed.
  * @param open The opening delimiter.
  * @return True when the group opening the text closes at its end.
@@ -243,7 +302,7 @@ constexpr std::array expression_openers{
 
     const std::string word{look.word()};
 
-    if (word != "if" && word != "match" && word != "while" && word != "for" && word != "loop" && word != "unsafe")
+    if (!std::ranges::contains(block_openers, word))
     {
         return false;
     }
@@ -252,12 +311,7 @@ constexpr std::array expression_openers{
     // chain, each `else` followed by another head and block or by a block alone.
     for (;;)
     {
-        while (!look.done() && look.peek() != '{')
-        {
-            look.skip_token();
-        }
-
-        look.skip_group();
+        std::ignore = skip_to_block(look);
 
         cursor = look;
 
@@ -276,9 +330,9 @@ constexpr std::array expression_openers{
 }
 
 /**
- * @brief Whether a bare `|` at the cursor opens a match arm, `| 1 => ...`, rather than a closure: the arm's `=>` stands
- *        at the depth the `|` does, where a closure's parameters are followed by its body, and reading such a `|` as a
- *        closure would pass over the arms and with them every outcome they carry.
+ * @brief Returns whether a bare `|` at the cursor opens a match arm, `| 1 => ...`, rather than a closure: the arm's
+ *        `=>` stands at the depth the `|` does, where a closure's parameters are followed by its body, and reading such
+ *        a `|` as a closure would pass over the arms and with them every outcome they carry.
  * @param from The cursor, at the `|`.
  * @return True when an arm's `=>` follows before anything that ends the group the bar stands in.
  * @throws Spec_error If a group is left open.
@@ -298,14 +352,14 @@ constexpr std::array expression_openers{
 
         // A pattern is one group and never a list of them: a `,`, a `;` or a bracket it does not open ends whatever the
         // bar opened, and a closure's body reaching one of those is no arm.
-        if (look.peek() == ';' || look.peek() == ',' || look.peek() == '}' || look.peek() == ')' || look.peek() == ']')
+        if (at_any_of(look, ";,})]"))
         {
             return false;
         }
 
         // A struct pattern carries braces, `| Point { value: 1 } =>`, so a group of any kind is part of the pattern and
         // stepped over whole.
-        if (look.peek() == '(' || look.peek() == '[' || look.peek() == '{')
+        if (is_opening(look.peek()))
         {
             look.skip_group();
 
@@ -339,25 +393,16 @@ void skip_closure(Rust_cursor& cursor)
 
     if (cursor.at("->"))
     {
-        while (!cursor.done() && cursor.peek() != '{')
-        {
-            cursor.skip_token();
-        }
-
-        cursor.skip_group();
+        std::ignore = skip_to_block(cursor);
 
         return;
     }
 
-    while (!cursor.done() && cursor.peek() != ',' && cursor.peek() != ';' && cursor.peek() != ')' &&
-           cursor.peek() != ']' && cursor.peek() != '}')
-    {
-        cursor.skip_token();
-    }
+    skip_until(cursor, ",;)]}");
 }
 
 /**
- * @brief Whether a type's text names a path as a whole, not as a part of a longer path or name.
+ * @brief Returns whether a type's text names a path as a whole, not as a part of a longer path or name.
  * @param type The type, its paths resolved.
  * @param path The path.
  * @return True when it does.
@@ -368,9 +413,9 @@ void skip_closure(Rust_cursor& cursor)
     {
         const auto before{at == 0 || (!is_word_byte(type[at - 1]) && type[at - 1] != ':')};
 
-        const auto after{
-                at + path.size() == type.size() ||
-                (!is_word_byte(type[at + path.size()]) && type[at + path.size()] != ':')};
+        const auto end{at + path.size()};
+
+        const auto after{end == type.size() || (!is_word_byte(type[end]) && type[end] != ':')};
 
         if (before && after)
         {
@@ -386,12 +431,20 @@ void skip_closure(Rust_cursor& cursor)
 Callback_reader::Callback_reader(
         const Enum_context& context, const std::optional<Variant>& variant, const std::string_view callback,
         const std::size_t line)
-    : context_{context}, variant_{variant}, callback_{callback}, line_{line}, module_{context.module}
+    : context_{context}
+    , variant_{variant}
+    , callback_{callback}
+    , line_{line}
+    , scope_{.self_is_enum = false,
+             .module = std::string{context.module},
+             .ok_skips = false,
+             .body = std::nullopt,
+             .body_at = 0}
 {}
 
 std::optional<std::string> Callback_reader::token() const
 {
-    if (trimmed(callback_).empty())
+    if (without_blanks(callback_).empty())
     {
         return variant_ ? std::optional{variant_->name} : std::nullopt;
     }
@@ -405,19 +458,25 @@ std::optional<std::string> Callback_reader::token() const
         return skips ? std::nullopt : std::optional{token};
     }
 
-    std::string results;
+    const auto described{[](const Outcome& outcome) {
+        const auto& [skips, token]{outcome};
 
-    for (const auto& [skips, token] : outcomes)
-    {
-        results += (results.empty() ? "" : ", ") + (skips ? std::string{"a skip"} : "the token " + token);
-    }
+        return skips ? std::string{"a skip"} : std::format("the token {}", token);
+    }};
 
-    fail("its results differ from one path to another, " + results + ", so which the rule gets is decided at run time");
+    auto descriptions{outcomes | std::views::transform(described) | std::views::join_with(std::string_view{", "})};
+
+    std::string results{};
+
+    std::ranges::copy(descriptions, std::back_inserter(results));
+
+    fail(std::format(
+            "its results differ from one path to another, {}, so which the rule gets is decided at run time", results));
 }
 
 Callback_reader::Outcomes_t Callback_reader::of_callback() const
 {
-    const auto text{trimmed(callback_)};
+    const auto text{without_blanks(callback_)};
 
     if (text.starts_with('|'))
     {
@@ -448,20 +507,23 @@ Callback_reader::Outcomes_t Callback_reader::of_callback() const
         }
 
         // A skip attribute's callback has no result to read: every one the crate admits skips or fails.
-        return variant_ ? of_value(body) : Outcomes_t{Outcome{.skips = true, .token = {}}};
+        return variant_ ? of_value(body) : Outcomes_t{skipped()};
     }
 
-    const auto path{canonical(context_.names, compacted(text), std::string{module_}, Namespace::value)};
+    const auto compact{compacted(text)};
+
+    const auto path{canonical(context_.names, compact, scope_.module, Namespace::value)};
 
     if (path == "logos::skip")
     {
-        return {Outcome{.skips = true, .token = {}}};
+        return {skipped()};
     }
 
     if (path.starts_with("logos::"))
     {
-        fail("it names `" + path +
-             "` of the crate, which is not its `skip` function, so what it returns is out of sight");
+        fail(std::format(
+                "it names `{}` of the crate, which is not its `skip` function, so what it returns is out of sight",
+                path));
     }
 
     const auto name{last_segment(path)};
@@ -472,7 +534,9 @@ Callback_reader::Outcomes_t Callback_reader::of_callback() const
     }
 
     // A function of the file is named by its path from the root, which the file's bindings resolve it to.
-    return of_function(path.starts_with("crate::") ? path.substr(7) : path);
+    const auto function_path{from_root(path)};
+
+    return of_function(function_path);
 }
 
 void Callback_reader::check_lexer_use(const std::string_view body, const std::string_view parameter) const
@@ -484,7 +548,7 @@ void Callback_reader::check_lexer_use(const std::string_view body, const std::st
 
     // The tokens read so far, words and bytes, blanks and comments left out, so that the path before a macro's name,
     // `compat::std` of `compat::std::println!` with any comment inside it, is read as Rust reads it.
-    std::vector<std::string> recent;
+    std::vector<std::string> recent{};
 
     // Whether the body or the file binds `std` or `core` to something of its own: a `use crate::local as std;` in the
     // body or at item level, or a `mod std`, stands before the crate under a path.
@@ -492,7 +556,7 @@ void Callback_reader::check_lexer_use(const std::string_view body, const std::st
 
     for (cursor.skip_trivia(); !cursor.done(); cursor.skip_trivia())
     {
-        if (cursor.at_string() || cursor.at("'") || cursor.at("b'"))
+        if (cursor.at_literal())
         {
             cursor.skip_token();
 
@@ -529,8 +593,9 @@ void Callback_reader::check_lexer_use(const std::string_view body, const std::st
 
         if (after_dot && std::ranges::contains(moving_methods, word))
         {
-            fail("its body names `" + std::string{word} +
-                 "`, which moves the lexer's cursor, so the match it leaves is not the pattern's");
+            fail(std::format(
+                    "its body names `{}`, which moves the lexer's cursor, so the match it leaves is not the pattern's",
+                    word));
         }
 
         if (!after_dot && !parameter.empty() && word == parameter)
@@ -542,29 +607,33 @@ void Callback_reader::check_lexer_use(const std::string_view body, const std::st
 
 bool Callback_reader::binds_std() const
 {
-    // A `mod std` or a binding of the name in the callback's own module or one of its ancestors is what a path from the
-    // callback reaches; one in an unrelated module is not.
-    const auto in_scope{[this](const std::string_view declared) { return is_within(module_, declared); }};
+    const auto in_scope{[this](const std::string_view declared) { return is_within(scope_.module, declared); }};
+
+    const auto binds_in_scope{[&in_scope]<typename Bound>(const Bound& bound) {
+        const auto& [key, bindings]{bound};
+
+        for (const std::string_view name : {"std", "core"})
+        {
+            if (key == name)
+            {
+                return in_scope("");
+            }
+
+            const auto qualified_name{std::format("{}{}", path_separator, name)};
+
+            if (key.ends_with(qualified_name))
+            {
+                const auto module{std::string_view{key}.substr(0, key.size() - qualified_name.size())};
+
+                return in_scope(module);
+            }
+        }
+
+        return false;
+    }};
 
     return std::ranges::any_of(context_.items.std_modules, in_scope) ||
-           std::ranges::any_of(context_.names, [&in_scope](const auto& bound) {
-               const auto& key{bound.first};
-
-               for (const std::string_view name : {"std", "core"})
-               {
-                   if (key == name)
-                   {
-                       return in_scope("");
-                   }
-
-                   if (key.ends_with("::" + std::string{name}))
-                   {
-                       return in_scope(std::string_view{key}.substr(0, key.size() - name.size() - 2));
-                   }
-               }
-
-               return false;
-           });
+           std::ranges::any_of(context_.names, binds_in_scope);
 }
 
 void Callback_reader::check_macro(
@@ -588,42 +657,50 @@ void Callback_reader::check_macro(
 
     if (absolute && qualifier.empty())
     {
-        qualifier = "::";
+        qualifier = path_separator;
     }
 
-    const auto shadowed{
-            context_.items.macros.contains(word) || std::ranges::any_of(context_.names, [word](const auto& bound) {
-                return bound.first == word || bound.first.ends_with("::" + std::string{word});
-            })};
+    const auto binds_word{[word]<typename Bound>(const Bound& bound) {
+        const auto& [key, bindings]{bound};
+
+        return key == word || key.ends_with(std::format("{}{}", path_separator, word));
+    }};
+
+    const auto shadowed{context_.items.macros.contains(word) || std::ranges::any_of(context_.names, binds_word)};
 
     if (!qualifier.empty() && !of_std)
     {
-        fail("its body invokes the macro `" + qualifier + "::" + std::string{word} +
-             "!`, reached through a path of the file's own" +
-             (std_bound ? ", `std` or `core` being bound by the file or the body," : "") +
-             " whose expansion is out of sight and may return from the callback, so what the match "
-             "becomes is out of sight");
+        const std::string_view bound_note{std_bound ? ", `std` or `core` being bound by the file or the body," : ""};
+
+        fail(std::format(
+                "its body invokes the macro `{}::{}!`, reached through a path of the file's own{} whose expansion is "
+                "out of sight and may return from the callback, so what the match becomes is out of sight",
+                qualifier, word, bound_note));
     }
 
-    if (!std::ranges::contains(standard, word))
+    if (!std::ranges::contains(standard_macros, word))
     {
-        fail("its body invokes the macro `" + std::string{word} +
-             "!`, whose expansion is out of sight and may return from the callback, so what the match "
-             "becomes is out of sight");
+        fail(std::format(
+                "its body invokes the macro `{}!`, whose expansion is out of sight and may return from the callback, "
+                "so what the match becomes is out of sight",
+                word));
     }
 
     if (!of_std && shadowed)
     {
-        fail("its body invokes the macro `" + std::string{word} +
-             "!`, which the file defines or imports under a standard macro's name, so its expansion is out "
-             "of sight and may return from the callback, so what the match becomes is out of sight");
+        fail(std::format(
+                "its body invokes the macro `{}!`, which the file defines or imports under a standard macro's name, so "
+                "its expansion is out of sight and may return from the callback, so what the match becomes is out of "
+                "sight",
+                word));
     }
 
     if (!of_std && context_.items.generated)
     {
-        fail("its body invokes the macro `" + std::string{word} +
-             "!` by a standard macro's name in a file that invokes a macro at item level, whose expansion "
-             "may define that name, so what the invocation expands to is out of sight");
+        fail(std::format(
+                "its body invokes the macro `{}!` by a standard macro's name in a file that invokes a macro at item "
+                "level, whose expansion may define that name, so what the invocation expands to is out of sight",
+                word));
     }
 }
 
@@ -640,36 +717,37 @@ void Callback_reader::check_parameter_use(Rust_cursor& cursor, const std::string
 
     if (std::ranges::contains(moving_methods, member))
     {
-        fail("its body names `" + std::string{member} +
-             "`, which moves the lexer's cursor, so the match it leaves is not the pattern's");
+        fail(std::format(
+                "its body names `{}`, which moves the lexer's cursor, so the match it leaves is not the pattern's",
+                member));
     }
 
     if (!std::ranges::contains(reading_members, member))
     {
-        fail("its body uses the lexer `" + std::string{parameter} +
-             "` other than through slice, span, remainder, source, extras or clone, so what becomes of the "
-             "match is out of sight");
+        fail(std::format(
+                "its body uses the lexer `{}` other than through slice, span, remainder, source, extras or clone, so "
+                "what becomes of the match is out of sight",
+                parameter));
     }
 }
 
 bool Callback_reader::binds_names(const std::string_view inside) const
 {
-    static constexpr std::string_view items[]{"use",    "fn",   "struct", "enum",  "union", "const",
-                                              "static", "type", "mod",    "trait", "impl",  "macro_rules"};
-
     Rust_cursor cursor{inside, 0, inside.size()};
 
     for (cursor.skip_trivia(); !cursor.done(); cursor.skip_trivia())
     {
         // A group is entered rather than passed over: a block one deeper, a parenthesised block and an `if` branch bind
         // names as the outermost block does.
-        if (cursor.peek() == '(' || cursor.peek() == '[' || cursor.peek() == '{')
+        if (is_opening(cursor.peek()))
         {
             const auto open{cursor.offset()};
 
             cursor.skip_group();
 
-            if (binds_names(inside.substr(open + 1, cursor.offset() - 2 - open)))
+            const auto group{cursor.group_text(open)};
+
+            if (binds_names(group))
             {
                 return true;
             }
@@ -677,11 +755,18 @@ bool Callback_reader::binds_names(const std::string_view inside) const
             continue;
         }
 
-        if (const auto word{cursor.word()}; std::ranges::find(items, word) != std::ranges::end(items))
+        const auto word{cursor.word()};
+
+        static constexpr std::array<std::string_view, 12> item_keywords{"use",   "fn",    "struct", "enum",
+                                                                        "union", "const", "static", "type",
+                                                                        "mod",   "trait", "impl",   "macro_rules"};
+
+        if (std::ranges::contains(item_keywords, word))
         {
             return true;
         }
-        else if (word.empty())
+
+        if (word.empty())
         {
             cursor.skip_token();
         }
@@ -692,7 +777,7 @@ bool Callback_reader::binds_names(const std::string_view inside) const
 
 Callback_reader::Outcomes_t Callback_reader::of_value(const std::string_view text) const
 {
-    const auto value{trimmed(text)};
+    const auto value{without_blanks(text)};
 
     // `()` is a value, and a parenthesised value is that value.
     if (value.empty())
@@ -702,7 +787,7 @@ Callback_reader::Outcomes_t Callback_reader::of_value(const std::string_view tex
 
     if (is_group(value, '('))
     {
-        return of_value(value.substr(1, value.size() - 2));
+        return of_value(without_delimiters(value));
     }
 
     if (is_group(value, '{'))
@@ -714,7 +799,7 @@ Callback_reader::Outcomes_t Callback_reader::of_value(const std::string_view tex
 
     const auto word{cursor.word()};
 
-    if (word == "return")
+    if (word == return_word)
     {
         return of_value(value.substr(cursor.offset()));
     }
@@ -741,22 +826,29 @@ Callback_reader::Outcomes_t Callback_reader::of_value(const std::string_view tex
     {
         if (!is_unit())
         {
-            fail("its result `" + std::string{value} +
-                 "` is a bool, which logos 0.15.1 takes from a callback only for a variant without a payload, and " +
-                 written_variant() + " carries one");
+            fail(std::format(
+                    "its result `{}` is a bool, which logos 0.15.1 takes from a callback only for a variant without a "
+                    "payload, and {} carries one",
+                    value, written_variant()));
         }
 
         return {emits()};
     }
 
     // A constructor: its path up to the parenthesis, which must close the value.
-    if (const auto paren{value.find('(')}; paren != std::string_view::npos && is_group(value.substr(paren), '('))
+    const auto paren{value.find('(')};
+
+    if (paren != std::string_view::npos && is_group(value.substr(paren), '('))
     {
-        if (const auto constructor{canonical(
-                    context_.names, compacted(value.substr(0, paren)), std::string{module_}, Namespace::value)};
-            std::ranges::contains(constructors, std::string_view{constructor}))
+        const auto head{compacted(value.substr(0, paren))};
+
+        const auto constructor{canonical(context_.names, head, scope_.module, Namespace::value)};
+
+        if (std::ranges::contains(constructors, std::string_view{constructor}))
         {
-            return {of_argument(constructor, value.substr(paren + 1, value.size() - 2 - paren))};
+            const auto argument{without_delimiters(value.substr(paren))};
+
+            return {of_argument(constructor, argument)};
         }
     }
 
@@ -765,7 +857,7 @@ Callback_reader::Outcomes_t Callback_reader::of_value(const std::string_view tex
 
 Callback_reader::Outcome Callback_reader::of_result(const std::string_view text) const
 {
-    const auto value{trimmed(text)};
+    const auto value{without_blanks(text)};
 
     const auto [kind, variant]{classify(value)};
 
@@ -774,7 +866,7 @@ Callback_reader::Outcome Callback_reader::of_result(const std::string_view text)
     case Value::Kind::skip:
         if (is_unit())
         {
-            return {.skips = true, .token = {}};
+            return skipped();
         }
 
         if (payload_is_skip())
@@ -782,34 +874,38 @@ Callback_reader::Outcome Callback_reader::of_result(const std::string_view text)
             return emits();
         }
 
-        fail("its result `" + std::string{value} + "` is the payload of " + written_variant() +
-             " to logos 0.15.1, which takes a callback's Skip as a skip only for a variant without a payload, and a "
-             "type error unless `" +
-             variant_->payload + "` is Skip under another name, so the rule's token is out of sight");
+        fail(std::format(
+                "its result `{}` is the payload of {} to logos 0.15.1, which takes a callback's Skip as a skip only "
+                "for a variant without a payload, and a type error unless `{}` is Skip under another name, so the "
+                "rule's token is out of sight",
+                value, written_variant(), variant_->payload));
     case Value::Kind::arm_skip:
-        return {.skips = true, .token = {}};
+        return skipped();
     case Value::Kind::variant:
         if (!is_unit())
         {
-            fail("its result `" + std::string{value} +
-                 "` is the enum, which logos 0.15.1 takes from a callback only for a variant without a payload, and " +
-                 written_variant() + " carries one");
+            fail(std::format(
+                    "its result `{}` is the enum, which logos 0.15.1 takes from a callback only for a variant without "
+                    "a payload, and {} carries one",
+                    value, written_variant()));
         }
 
         return {.skips = false, .token = variant};
     case Value::Kind::literal:
         if (is_unit())
         {
-            fail("its result `" + std::string{value} + "` is a payload, and the variant " + variant_->name +
-                 " carries none, so logos 0.15.1 refuses the file");
+            fail(std::format(
+                    "its result `{}` is a payload, and the variant {} carries none, so logos 0.15.1 refuses the file",
+                    value, variant_->name));
         }
 
         return emits();
     case Value::Kind::unit:
         if (!is_unit())
         {
-            fail("its result is `()`, which is no payload for " + written_variant() +
-                 ", so logos 0.15.1 refuses the file");
+            fail(std::format(
+                    "its result is `()`, which is no payload for {}, so logos 0.15.1 refuses the file",
+                    written_variant()));
         }
 
         return emits();
@@ -817,11 +913,12 @@ Callback_reader::Outcome Callback_reader::of_result(const std::string_view text)
         break;
     }
 
-    fail("its result `" + std::string{value} +
-         "` is not visibly a token or a skip; a result is read when it is logos::Skip, Filter::Skip, "
-         "FilterResult::Skip or Ok of one, a constructor of the enum, Some, None, Ok, Err, true, false, a literal, "
-         "(), Filter::Emit, FilterResult::Emit or FilterResult::Error, and a function this file defines is read by "
-         "its return type instead");
+    fail(std::format(
+            "its result `{}` is not visibly a token or a skip; a result is read when it is logos::Skip, Filter::Skip, "
+            "FilterResult::Skip or Ok of one, a constructor of the enum, Some, None, Ok, Err, true, false, a literal, "
+            "(), Filter::Emit, FilterResult::Emit or FilterResult::Error, and a function this file defines is read by "
+            "its return type instead",
+            value));
 }
 
 Callback_reader::Value Callback_reader::classify(const std::string_view text) const
@@ -838,7 +935,7 @@ Callback_reader::Value Callback_reader::classify(const std::string_view text) co
         return {.kind = Value::Kind::variant, .variant = std::move(*named)};
     }
 
-    const auto path{canonical(context_.names, compact, std::string{module_}, Namespace::value)};
+    const auto path{canonical(context_.names, compact, scope_.module, Namespace::value)};
 
     if (path == crate_skip)
     {
@@ -850,12 +947,18 @@ Callback_reader::Value Callback_reader::classify(const std::string_view text) co
         return {.kind = Value::Kind::arm_skip, .variant = {}};
     }
 
+    const auto opens_literal{[&compact](const std::string_view opener) { return compact.starts_with(opener); }};
+
+    static constexpr std::array<std::string_view, 8> literal_openers{"\"",  "'",  "b\"",  "b'",
+                                                                     "r\"", "r#", "br\"", "br#"};
+
     // A literal, or a unit struct spelled as the payload's own type, which the blanket conversion takes as the payload
     // whatever the type is.
-    if (compact == "true" || compact == "false" || is_digit(compact.front()) || compact.starts_with('"') ||
-        compact.starts_with('\'') || compact.starts_with("b\"") || compact.starts_with("b'") ||
-        compact.starts_with("r\"") || compact.starts_with("r#") || compact.starts_with("br\"") ||
-        compact.starts_with("br#") || (!is_unit() && path == variant_->payload))
+    const auto literal{
+            compact == "true" || compact == "false" || is_digit(compact.front()) ||
+            std::ranges::any_of(literal_openers, opens_literal)};
+
+    if (literal || (!is_unit() && path == variant_->payload))
     {
         return {.kind = Value::Kind::literal, .variant = {}};
     }
@@ -884,19 +987,29 @@ std::optional<std::string> Callback_reader::enum_variant(const std::string_view 
 
     const auto owner{enum_path()};
 
+    static constexpr std::string_view self_word{"Self"};
+
     // `Self` is the enum where the text is a function's of the enum's impl blocks; any other path is resolved as the
     // text's module binds it.
-    const auto path{
-            self_is_enum_ && (head == "Self" || head.starts_with("Self::")) ?
-                    owner + head.substr(4) :
-                    canonical(context_.names, head, std::string{module_}, Namespace::value)};
+    const auto through_self{scope_.self_is_enum && (head == self_word || head.starts_with("Self::"))};
 
-    if (!path.starts_with(owner + "::"))
+    const auto path{[&] {
+        if (through_self)
+        {
+            return std::format("{}{}", owner, head.substr(self_word.size()));
+        }
+
+        return canonical(context_.names, head, scope_.module, Namespace::value);
+    }()};
+
+    const auto variant_prefix{std::format("{}{}", owner, path_separator)};
+
+    if (!path.starts_with(variant_prefix))
     {
         return std::nullopt;
     }
 
-    const auto name{path.substr(owner.size() + 2)};
+    const auto name{path.substr(variant_prefix.size())};
 
     // A name that is no variant's is an associated function's, `T::make(lex)`, whose result is out of sight.
     if (!std::ranges::all_of(name, is_word_byte) || !std::ranges::contains(context_.variants, name))
@@ -922,24 +1035,36 @@ Callback_reader::Outcome Callback_reader::emits() const
     return {.skips = false, .token = variant_ ? variant_->name : std::string{}};
 }
 
+Callback_reader::Outcome Callback_reader::skipped() noexcept
+{
+    return {.skips = true, .token = {}};
+}
+
 std::string Callback_reader::written_variant() const
 {
-    return is_unit() ? variant_->name : variant_->name + "(" + variant_->payload + ")";
+    return is_unit() ? variant_->name : std::format("{}({})", variant_->name, variant_->payload);
 }
 
 Callback_reader::Outcomes_t Callback_reader::of_block(const std::string_view block) const
 {
-    return scoped_at(block).of_body(block.substr(1, block.size() - 2));
+    const auto inner{scoped_at(block)};
+
+    const auto body{without_delimiters(block)};
+
+    return inner.of_body(body);
 }
 
 Callback_reader Callback_reader::scoped_at(const std::string_view block) const
 {
     Callback_reader inner{*this};
 
-    if (body_)
+    if (scope_.body)
     {
-        inner.module_ = qualified(
-                module_, "{" + std::to_string(body_at_ + static_cast<std::size_t>(block.data() - body_->data())) + "}");
+        const auto distance{static_cast<std::size_t>(block.data() - scope_.body->data())};
+
+        const auto offset{scope_.body_at + distance};
+
+        inner.scope_.module = qualified(scope_.module, block_mark(offset));
     }
 
     return inner;
@@ -947,7 +1072,7 @@ Callback_reader Callback_reader::scoped_at(const std::string_view block) const
 
 Callback_reader::Outcomes_t Callback_reader::of_body(const std::string_view text) const
 {
-    Outcomes_t outcomes;
+    Outcomes_t outcomes{};
 
     collect_returns(text, outcomes);
 
@@ -955,7 +1080,7 @@ Callback_reader::Outcomes_t Callback_reader::of_body(const std::string_view text
     Rust_cursor cursor{text, 0, text.size()};
 
     // The last statement, or the tail expression, and whether a semicolon ended it.
-    std::string_view last;
+    std::string_view last{};
 
     auto terminated{true};
 
@@ -968,7 +1093,9 @@ Callback_reader::Outcomes_t Callback_reader::of_body(const std::string_view text
 
         if (cursor.done())
         {
-            if (const auto tail{trimmed(text.substr(begin, cursor.offset() - begin))}; !tail.empty())
+            const auto rest{text.substr(begin, cursor.offset() - begin)};
+
+            if (const auto tail{without_blanks(rest)}; !tail.empty())
             {
                 last = tail;
 
@@ -980,7 +1107,7 @@ Callback_reader::Outcomes_t Callback_reader::of_body(const std::string_view text
 
         if (cursor.accept(';'))
         {
-            last = trimmed(text.substr(begin, cursor.offset() - 1 - begin));
+            last = without_blanks(text.substr(begin, cursor.offset() - 1 - begin));
 
             terminated = true;
 
@@ -991,32 +1118,36 @@ Callback_reader::Outcomes_t Callback_reader::of_body(const std::string_view text
             continue;
         }
 
-        if (opening && skip_block_like(cursor, text))
-        {
-            Rust_cursor look{cursor};
-
-            look.skip_trivia();
-
-            if (!look.done() && look.peek() != ';' && look.peek() != '.' && look.peek() != '?')
-            {
-                last = trimmed(text.substr(begin, cursor.offset() - begin));
-
-                terminated = true;
-
-                begin = cursor.offset();
-
-                continue;
-            }
-        }
-        else
+        if (!opening || !skip_block_like(cursor, text))
         {
             cursor.skip_token();
+
+            opening = false;
+
+            continue;
         }
 
-        opening = false;
+        Rust_cursor look{cursor};
+
+        look.skip_trivia();
+
+        if (look.done() || at_any_of(look, ";.?"))
+        {
+            opening = false;
+
+            continue;
+        }
+
+        last = without_blanks(text.substr(begin, cursor.offset() - begin));
+
+        terminated = true;
+
+        begin = cursor.offset();
     }
 
-    const auto returns{last.starts_with("return") && (last.size() == 6 || !is_word_byte(last[6]))};
+    const auto past_word{return_word.size()};
+
+    const auto returns{last.starts_with(return_word) && (last.size() == past_word || !is_word_byte(last[past_word]))};
 
     if (!terminated)
     {
@@ -1038,7 +1169,7 @@ void Callback_reader::collect_returns(const std::string_view text, Outcomes_t& o
 
     for (cursor.skip_trivia(); !cursor.done(); cursor.skip_trivia())
     {
-        if (cursor.at_string() || cursor.at("'") || cursor.at("b'"))
+        if (cursor.at_literal())
         {
             cursor.skip_token();
 
@@ -1047,7 +1178,7 @@ void Callback_reader::collect_returns(const std::string_view text, Outcomes_t& o
             continue;
         }
 
-        if (cursor.peek() == '(' || cursor.peek() == '[' || cursor.peek() == '{')
+        if (is_opening(cursor.peek()))
         {
             collect_group_returns(text, cursor, statement, outcomes);
 
@@ -1149,16 +1280,30 @@ void Callback_reader::collect_group_returns(
 
     // A block's returns are read in the block's own scope, as its value is: `{ use T::B as Skip; return Skip; }`
     // returns the variant it imports.
-    (braced ? scoped_at(text.substr(open)) : *this)
-            .collect_returns(text.substr(open + 1, cursor.offset() - 2 - open), outcomes);
+    const auto reader{braced ? scoped_at(text.substr(open)) : *this};
+
+    const auto inside{cursor.group_text(open)};
+
+    reader.collect_returns(inside, outcomes);
 
     auto look{cursor};
 
     look.skip_trivia();
 
-    const auto continued{!look.done() && (look.peek() == '.' || look.peek() == '?')};
+    const auto continued{at_any_of(look, ".?")};
 
-    statement.after(!braced ? Scanned::group : continued ? Scanned::continued_brace : Scanned::brace);
+    if (!braced)
+    {
+        statement.after(Scanned::group);
+    }
+    else if (continued)
+    {
+        statement.after(Scanned::continued_brace);
+    }
+    else
+    {
+        statement.after(Scanned::brace);
+    }
 }
 
 void Callback_reader::collect_word_returns(
@@ -1168,9 +1313,7 @@ void Callback_reader::collect_word_returns(
 
     // The words that open a block Rust lets stand as a statement, whose block therefore ends one, and only where the
     // word itself opens a statement: a `match` in `let v = match ...` leaves a value.
-    static constexpr std::string_view block_words[]{"if", "match", "while", "for", "loop", "unsafe", "else"};
-
-    if (std::ranges::find(block_words, word) != std::ranges::end(block_words))
+    if (std::ranges::contains(block_openers, word) || word == "else")
     {
         statement.after(Scanned::block_word);
 
@@ -1188,7 +1331,7 @@ void Callback_reader::collect_word_returns(
 
     statement.after(std::ranges::contains(expression_openers, word) ? Scanned::opener_word : Scanned::word);
 
-    if (word != "return")
+    if (word != return_word)
     {
         return;
     }
@@ -1199,27 +1342,21 @@ void Callback_reader::collect_word_returns(
 
     const auto begin{cursor.offset()};
 
-    while (!cursor.done() && cursor.peek() != ';' && cursor.peek() != ',')
-    {
-        cursor.skip_token();
-    }
+    skip_until(cursor, ";,");
 
-    outcomes.merge(of_value(text.substr(begin, cursor.offset() - begin)));
+    const auto value{text.substr(begin, cursor.offset() - begin)};
+
+    outcomes.merge(of_value(value));
 }
 
 Callback_reader::Outcomes_t Callback_reader::of_if(const std::string_view value, Rust_cursor cursor) const
 {
-    while (!cursor.done() && cursor.peek() != '{')
-    {
-        cursor.skip_token();
-    }
-
-    const auto open{cursor.offset()};
-
-    cursor.skip_group();
+    const auto open{skip_to_block(cursor)};
 
     // The branch is a block of its own, read in its own scope as any block is.
-    auto outcomes{of_block(value.substr(open, cursor.offset() - open))};
+    const auto branch{value.substr(open, cursor.offset() - open)};
+
+    auto outcomes{of_block(branch)};
 
     cursor.skip_trivia();
 
@@ -1232,31 +1369,26 @@ Callback_reader::Outcomes_t Callback_reader::of_if(const std::string_view value,
 
     if (cursor.word() != "else")
     {
-        fail("its result `" + std::string{value} + "` is not visibly a token or a skip");
+        fail(unread_result(value));
     }
 
-    outcomes.merge(of_value(value.substr(cursor.offset())));
+    const auto otherwise{value.substr(cursor.offset())};
+
+    outcomes.merge(of_value(otherwise));
 
     return outcomes;
 }
 
 Callback_reader::Outcomes_t Callback_reader::of_match(const std::string_view value, Rust_cursor cursor) const
 {
-    while (!cursor.done() && cursor.peek() != '{')
-    {
-        cursor.skip_token();
-    }
-
-    const auto open{cursor.offset()};
-
-    cursor.skip_group();
+    const auto open{skip_to_block(cursor)};
 
     if (!cursor.done())
     {
-        fail("its result `" + std::string{value} + "` is not visibly a token or a skip");
+        fail(unread_result(value));
     }
 
-    const auto arms{value.substr(open + 1, value.size() - 2 - open)};
+    const auto arms{cursor.group_text(open)};
 
     // The braces holding the arms are a block of the walk's own, so the arms stand one scope deeper than the match does
     // and an arm's own block deeper still; reading an arm in the scope around the match would look for its names under
@@ -1265,7 +1397,7 @@ Callback_reader::Outcomes_t Callback_reader::of_match(const std::string_view val
 
     Rust_cursor arm{arms, 0, arms.size()};
 
-    Outcomes_t outcomes;
+    Outcomes_t outcomes{};
 
     for (arm.skip_trivia(); !arm.done(); arm.skip_trivia())
     {
@@ -1276,10 +1408,11 @@ Callback_reader::Outcomes_t Callback_reader::of_match(const std::string_view val
 
         if (arm.done())
         {
-            fail("its result `" + std::string{value} + "` is not visibly a token or a skip");
+            fail(unread_result(value));
         }
 
         arm.expect('=', "'=>' after a match arm's pattern");
+
         arm.expect('>', "'=>' after a match arm's pattern");
 
         arm.skip_trivia();
@@ -1290,16 +1423,17 @@ Callback_reader::Outcomes_t Callback_reader::of_match(const std::string_view val
         {
             arm.skip_group();
 
-            outcomes.merge(inside.of_block(arms.substr(begin, arm.offset() - begin)));
+            const auto block{arms.substr(begin, arm.offset() - begin)};
+
+            outcomes.merge(inside.of_block(block));
         }
         else
         {
-            while (!arm.done() && arm.peek() != ',')
-            {
-                arm.skip_token();
-            }
+            skip_until(arm, ",");
 
-            outcomes.merge(inside.of_value(arms.substr(begin, arm.offset() - begin)));
+            const auto result{arms.substr(begin, arm.offset() - begin)};
+
+            outcomes.merge(inside.of_value(result));
         }
 
         arm.skip_trivia();
@@ -1321,12 +1455,12 @@ Callback_reader::Outcome Callback_reader::of_argument(
 
     // The Ok arm of a `Result<Skip, E>` carries a `Skip` by its own type, so it skips whatever the expression spells
     // it.
-    if (ok_skips_ && constructor == "Ok")
+    if (scope_.ok_skips && constructor == "Ok")
     {
-        return {.skips = true, .token = {}};
+        return skipped();
     }
 
-    const auto value{trimmed(text)};
+    const auto value{without_blanks(text)};
 
     const auto [kind, variant]{classify(value)};
 
@@ -1335,7 +1469,7 @@ Callback_reader::Outcome Callback_reader::of_argument(
     case Value::Kind::skip:
         if (is_unit() && constructor == "Ok")
         {
-            return {.skips = true, .token = {}};
+            return skipped();
         }
 
         if (!is_unit() && payload_is_skip())
@@ -1343,36 +1477,43 @@ Callback_reader::Outcome Callback_reader::of_argument(
             return emits();
         }
 
-        fail("its result wraps `" + std::string{value} + "` in `" + std::string{constructor} +
-             "`, which logos 0.15.1 takes as a skip only as Ok(Skip) for a variant without a payload, and as the "
-             "payload of a variant carrying `Skip`; " +
-             written_variant() + " is neither, so the crate refuses it and the rule's token is out of sight");
+        fail(std::format(
+                "its result wraps `{}` in `{}`, which logos 0.15.1 takes as a skip only as Ok(Skip) for a variant "
+                "without a payload, and as the payload of a variant carrying `Skip`; {} is neither, so the crate "
+                "refuses it and the rule's token is out of sight",
+                value, constructor, written_variant()));
     case Value::Kind::arm_skip:
-        fail("its result wraps `" + std::string{value} + "` in `" + std::string{constructor} +
-             "`, which is no result logos 0.15.1 takes from a callback");
+        fail(std::format(
+                "its result wraps `{}` in `{}`, which is no result logos 0.15.1 takes from a callback", value,
+                constructor));
     case Value::Kind::variant:
         if (!is_unit() || constructor == "Some")
         {
-            fail("its result wraps `" + std::string{value} + "` in `" + std::string{constructor} +
-                 "`, and logos 0.15.1 takes the enum from a callback only bare or in Ok, Filter::Emit or "
-                 "FilterResult::Emit, for a variant without a payload, which " +
-                 written_variant() + (is_unit() ? " is" : " is not"));
+            const std::string_view is{is_unit() ? " is" : " is not"};
+
+            fail(std::format(
+                    "its result wraps `{}` in `{}`, and logos 0.15.1 takes the enum from a callback only bare or in "
+                    "Ok, Filter::Emit or FilterResult::Emit, for a variant without a payload, which {}{}",
+                    value, constructor, written_variant(), is));
         }
 
         return {.skips = false, .token = variant};
     case Value::Kind::literal:
         if (is_unit())
         {
-            fail("its result wraps the payload `" + std::string{value} + "` in `" + std::string{constructor} +
-                 "`, and the variant " + variant_->name + " carries none, so logos 0.15.1 refuses the file");
+            fail(std::format(
+                    "its result wraps the payload `{}` in `{}`, and the variant {} carries none, so logos 0.15.1 "
+                    "refuses the file",
+                    value, constructor, variant_->name));
         }
 
         return emits();
     case Value::Kind::unit:
         if (!is_unit())
         {
-            fail("its result wraps `()` in `" + std::string{constructor} + "`, which is no payload for " +
-                 written_variant() + ", so logos 0.15.1 refuses the file");
+            fail(std::format(
+                    "its result wraps `()` in `{}`, which is no payload for {}, so logos 0.15.1 refuses the file",
+                    constructor, written_variant()));
         }
 
         return emits();
@@ -1381,9 +1522,10 @@ Callback_reader::Outcome Callback_reader::of_argument(
         if (is_unit() &&
             (constructor == "Ok" || constructor == "logos::Filter::Emit" || constructor == "logos::FilterResult::Emit"))
         {
-            fail("its result wraps `" + std::string{value} + "` in `" + std::string{constructor} +
-                 "`, an expression the text does not decide, which for a variant without a payload may be `()` or "
-                 "any variant of the enum, so the rule's token is out of sight");
+            fail(std::format(
+                    "its result wraps `{}` in `{}`, an expression the text does not decide, which for a variant "
+                    "without a payload may be `()` or any variant of the enum, so the rule's token is out of sight",
+                    value, constructor));
         }
 
         break;
@@ -1400,39 +1542,42 @@ Callback_reader::Outcomes_t Callback_reader::of_function(const std::string_view 
 
     if (!body)
     {
-        fail("the function `" + std::string{name} +
-             "` is declared without a body, so what it does with the lexer and what it returns are out of sight");
+        fail(std::format(
+                "the function `{}` is declared without a body, so what it does with the lexer and what it returns are "
+                "out of sight",
+                name));
     }
 
     if (!parameter)
     {
-        fail("the function `" + std::string{name} +
-             "` binds the lexer with a pattern rather than a name, so what it does with the lexer is out of sight");
+        fail(std::format(
+                "the function `{}` binds the lexer with a pattern rather than a name, so what it does with the lexer "
+                "is out of sight",
+                name));
     }
 
     check_lexer_use(*body, *parameter);
 
     if (!variant_)
     {
-        return {Outcome{.skips = true, .token = {}}};
+        return {skipped()};
     }
 
-    // In a function declared in one of the enum's impl blocks, `Self` is the enum, in the type and in the body, and the
-    // names of both resolve in the function's own module.
     Callback_reader inner{*this};
 
-    inner.self_is_enum_ = self_type == enum_path();
-
-    // The body's names are the body's own: a `use` it writes binds in its block and not in the module around it, so a
-    // result is read in that block, which sees the module's names through the scopes above it. The return type stands
-    // outside the body and is read in the module, above.
-    inner.module_ = scope;
-
-    // Where the body stands in the file, so that a block inside it can be named by its own brace's offset, which is the
-    // name the walk bound that block's items under.
-    inner.body_ = *body;
-
-    inner.body_at_ = body_at;
+    inner.scope_ = {
+            // In a function declared in one of the enum's impl blocks, `Self` is the enum, in the type and in the body,
+            // and the names of both resolve in the function's own module.
+            .self_is_enum = self_type == enum_path(),
+            // The body's names are the body's own: a `use` it writes binds in its block and not in the module around
+            // it, so a result is read in that block, which sees the module's names through the scopes above it. The
+            // return type stands outside the body and is read in the module, above.
+            .module = scope,
+            .ok_skips = scope_.ok_skips,
+            // Where the body stands in the file, so that a block inside it can be named by its own brace's offset,
+            // which is the name the walk bound that block's items under.
+            .body = *body,
+            .body_at = body_at};
 
     // The return type with its aliases and imports resolved: `Filter`, `FilterResult` and `Result<Skip, E>` leave the
     // decision to the value; the enum takes the variant returned, for a variant without a payload; the crate's `Skip`
@@ -1445,67 +1590,14 @@ Callback_reader::Outcomes_t Callback_reader::of_function(const std::string_view 
     {
         if (names_path(returns, alias))
         {
-            fail("the function `" + std::string{name} + "` returns `" + written + "` through the generic alias `" +
-                 std::string{last_segment(alias)} +
-                 "`, whose arguments the reading does not substitute, so what it returns is out of sight");
+            fail(std::format(
+                    "the function `{}` returns `{}` through the generic alias `{}`, whose arguments the reading does "
+                    "not substitute, so what it returns is out of sight",
+                    name, written, last_segment(alias)));
         }
     }
 
-    // A value of the payload's own type is the payload, whatever the type, as the crate's blanket conversion has it: a
-    // `Filter<()>` returned to `V(Filter<()>)` is the payload and emits, where a `Filter<Filter<()>>` is the arm.
-    if (!is_unit() && returns == variant_->payload)
-    {
-        return {emits()};
-    }
-
-    if (names_path(returns, "logos::Filter") || names_path(returns, "logos::FilterResult"))
-    {
-        return inner.of_body(*body);
-    }
-
-    if (names_path(returns, enum_path()) || (inner.self_is_enum_ && names_path(returns, "Self")))
-    {
-        if (!is_unit())
-        {
-            fail("the function `" + std::string{name} +
-                 "` returns the enum, which logos 0.15.1 takes from a callback only for a variant without a payload, "
-                 "and " +
-                 written_variant() + " carries one");
-        }
-
-        return inner.of_body(*body);
-    }
-
-    if (returns == crate_skip && is_unit())
-    {
-        return {Outcome{.skips = true, .token = {}}};
-    }
-
-    // `Ok(Skip)` skips and `Err(e)` is an error token at the same boundary, so the body decides which arm it takes.
-    if (returns.starts_with("Result<logos::Skip,") && is_unit())
-    {
-        inner.ok_skips_ = true;
-
-        return inner.of_body(*body);
-    }
-
-    if (names_path(returns, crate_skip) && !payload_is_skip())
-    {
-        fail("the function `" + std::string{name} + "` returns `" + written +
-             "`, which logos 0.15.1 takes as a skip only for a variant without a payload, written `Skip` or as the "
-             "`Ok(Skip)` of a `Result<Skip, E>`, and as the payload of a variant carrying `Skip`; " +
-             written_variant() + " is neither, so the crate refuses it and the rule's token is out of sight");
-    }
-
-    if (returns == "bool" && !is_unit())
-    {
-        fail("the function `" + std::string{name} +
-             "` returns a bool, which logos 0.15.1 takes from a callback only for a variant without a payload, and " +
-             written_variant() + " carries one");
-    }
-
-    // No return type is `()`, the variant's token where it has no payload and no payload where it has one.
-    return {returns.empty() ? of_result({}) : emits()};
+    return inner.of_return_type(name, written, returns, *body);
 }
 
 const Function& Callback_reader::defined_function(const std::string_view path) const
@@ -1519,23 +1611,96 @@ const Function& Callback_reader::defined_function(const std::string_view path) c
              "or a skip");
     }
 
-    // A trait declares a method without a body and its impl defines it with one; the definition is the one read.
-    const auto defined{std::ranges::count_if(found->second, [](const Function& one) { return one.body.has_value(); })};
+    const auto& [function_path, definitions]{*found};
 
-    if (found->second.size() > 1 && defined != 1)
+    const auto has_body{[](const Function& one) { return one.body.has_value(); }};
+
+    // A trait declares a method without a body and its impl defines it with one; the definition is the one read.
+    const auto defined{std::ranges::count_if(definitions, has_body)};
+
+    if (definitions.size() > 1 && defined != 1)
     {
-        fail("this file defines `" + std::string{last_segment(path)} +
-             "` more than once, so which one it names is out of sight");
+        const auto name{last_segment(path)};
+
+        fail(std::format("this file defines `{}` more than once, so which one it names is out of sight", name));
     }
 
-    return defined == 1 ?
-                   *std::ranges::find_if(found->second, [](const Function& one) { return one.body.has_value(); }) :
-                   found->second.front();
+    const auto with_body{std::ranges::find_if(definitions, has_body)};
+
+    return defined == 1 ? *with_body : definitions.front();
+}
+
+Callback_reader::Outcomes_t Callback_reader::of_return_type(
+        const std::string_view name, const std::string_view written, const std::string_view returns,
+        const std::string_view body)
+{
+    // A value of the payload's own type is the payload, whatever the type, as the crate's blanket conversion has it: a
+    // `Filter<()>` returned to `V(Filter<()>)` is the payload and emits, where a `Filter<Filter<()>>` is the arm.
+    if (!is_unit() && returns == variant_->payload)
+    {
+        return {emits()};
+    }
+
+    if (names_path(returns, "logos::Filter") || names_path(returns, "logos::FilterResult"))
+    {
+        return of_body(body);
+    }
+
+    if (names_path(returns, enum_path()) || (scope_.self_is_enum && names_path(returns, "Self")))
+    {
+        if (!is_unit())
+        {
+            fail(std::format(
+                    "the function `{}` returns the enum, which logos 0.15.1 takes from a callback only for a variant "
+                    "without a payload, and {} carries one",
+                    name, written_variant()));
+        }
+
+        return of_body(body);
+    }
+
+    if (returns == crate_skip && is_unit())
+    {
+        return {skipped()};
+    }
+
+    // `Ok(Skip)` skips and `Err(e)` is an error token at the same boundary, so the body decides which arm it takes.
+    if (returns.starts_with("Result<logos::Skip,") && is_unit())
+    {
+        scope_.ok_skips = true;
+
+        return of_body(body);
+    }
+
+    if (names_path(returns, crate_skip) && !payload_is_skip())
+    {
+        fail(std::format(
+                "the function `{}` returns `{}`, which logos 0.15.1 takes as a skip only for a variant without a "
+                "payload, written `Skip` or as the `Ok(Skip)` of a `Result<Skip, E>`, and as the payload of a variant "
+                "carrying `Skip`; {} is neither, so the crate refuses it and the rule's token is out of sight",
+                name, written, written_variant()));
+    }
+
+    if (returns == "bool" && !is_unit())
+    {
+        fail(std::format(
+                "the function `{}` returns a bool, which logos 0.15.1 takes from a callback only for a variant without "
+                "a payload, and {} carries one",
+                name, written_variant()));
+    }
+
+    // No return type is `()`, the variant's token where it has no payload and no payload where it has one.
+    if (returns.empty())
+    {
+        return {of_result({})};
+    }
+
+    return {emits()};
 }
 
 void Callback_reader::fail(const std::string& why) const
 {
-    throw Spec_error{"the callback `" + std::string{callback_} + "` is refused: " + why, line_};
+    throw Spec_error{std::format("the callback `{}` is refused: {}", callback_, why), line_};
 }
 
 } // namespace munch::tools::audit

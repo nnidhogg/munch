@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,19 +17,26 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements re2c_regex.hpp: the refusals of a braced escape and of a byte beyond ASCII, the bytes a literal spells and
-// the value of a named escape are private to this unit.
-
 /**
  * @brief Why a braced hexadecimal escape is refused.
  *
- * re2c's hexadecimal escape is `\xHH`, two digits and no braces, and re2c 3.1 answers `\x{...}` with "syntax error
- * in hexadecimal escape sequence" wherever it stands, in a class or in a literal, so a file holding one is no re2c
- * file and the code point the pattern parser would read there is nobody's.
+ * re2c's hexadecimal escape is `\xHH`, two digits and no braces, and re2c 3.1 answers `\x{...}` with "syntax error in
+ * hexadecimal escape sequence" wherever it stands, in a class or in a literal, so a file holding one is no re2c file
+ * and the code point the pattern parser would read there is nobody's.
  */
 constexpr std::string_view braced_escape{
         "re2c's hexadecimal escape is a backslash, an x and two digits, and it takes no braces, so re2c answers this "
         "one with a syntax error in a hexadecimal escape sequence"};
+
+/**
+ * @brief The widest numeric escape of a literal: the backslash, an `x` or a first octal digit, and two digits more.
+ */
+constexpr std::size_t widest_escape{4};
+
+/**
+ * @brief What ends a line comment.
+ */
+constexpr std::string_view line_comment_closer{"\n"};
 
 /**
  * @brief Why a byte beyond ASCII written into the source is refused under the UTF-8 encoding.
@@ -38,17 +46,30 @@ constexpr std::string_view beyond_ascii_source{
         "carries, so under the utf8 encoding it is not read"};
 
 /**
- * @brief Whether text holds a byte beyond ASCII.
+ * @brief Returns the code point a byte stands for under the byte encodings.
+ * @param byte The byte.
+ * @return The code point, 0 to 255.
+ */
+[[nodiscard]] constexpr char32_t point_of(const char byte) noexcept
+{
+    return static_cast<char32_t>(static_cast<unsigned char>(byte));
+}
+
+/**
+ * @brief Returns whether text holds a byte beyond ASCII.
  * @param text The text.
  * @return True when it does.
  */
 [[nodiscard]] bool spells_beyond_ascii(const std::string_view text)
 {
-    return std::ranges::any_of(text, [](const char one) { return static_cast<unsigned char>(one) >= 0x80; });
+    const auto beyond{[](const char one) { return point_of(one) > last_ascii; }};
+
+    return std::ranges::any_of(text, beyond);
 }
 
 /**
- * @brief The bytes a quoted literal spells, as the parser reads them; the empty literal spells none, matching nothing.
+ * @brief Returns the bytes a quoted literal spells, as the parser reads them; the empty literal spells none, matching
+ *        nothing.
  * @param copied The literal as written, its quotes included.
  * @param definitions The definitions in force, which the parser is given.
  * @return The bytes, or std::nullopt when the parser reads the literal as something else or refuses it.
@@ -61,21 +82,22 @@ constexpr std::string_view beyond_ascii_source{
         return std::string{};
     }
 
+    const auto text_of{[]<typename Node>(const Node& node) -> std::optional<std::string> {
+        if constexpr (std::is_same_v<Node, regex::Text>)
+        {
+            return node.text;
+        }
+        else
+        {
+            return std::nullopt;
+        }
+    }};
+
     try
     {
-        // A literal is one run of text to the parser, or it spells no bytes of its own.
-        return std::visit(
-                []<typename Node>(const Node& node) -> std::optional<std::string> {
-                    if constexpr (std::is_same_v<Node, regex::Text>)
-                    {
-                        return node.text;
-                    }
-                    else
-                    {
-                        return std::nullopt;
-                    }
-                },
-                regex::parse(copied, definitions, re2c_parse).node);
+        const auto parsed{regex::parse(copied, definitions, re2c_parse)};
+
+        return std::visit(text_of, parsed.node);
     }
     catch (const regex::Syntax_error&)
     {
@@ -84,7 +106,7 @@ constexpr std::string_view beyond_ascii_source{
 }
 
 /**
- * @brief The class of one code point.
+ * @brief Returns the class of one code point.
  * @param point The code point.
  * @return The class holding it alone.
  */
@@ -94,8 +116,8 @@ constexpr std::string_view beyond_ascii_source{
 }
 
 /**
- * @brief The byte a named escape stands for, as the pattern parser decodes it: the controls `\n`, `\t`, `\r`, `\f`,
- *        `\v`, `\a` and `\b`, and any other escaped byte itself.
+ * @brief Returns the byte a named escape stands for, as the pattern parser decodes it: the controls `\n`, `\t`, `\r`,
+ *        `\f`, `\v`, `\a` and `\b`, and any other escaped byte itself.
  * @param escaped The byte after the backslash, not a hex or octal digit.
  * @return The value.
  */
@@ -143,6 +165,13 @@ std::size_t reference_length(const std::string_view text, const std::size_t at) 
     return named && end < text.size() && text[end] == '}' ? end + 1 - at : 0;
 }
 
+std::string_view reference_name(const std::string_view text, const std::size_t at) noexcept
+{
+    const auto length{reference_length(text, at)};
+
+    return length == 0 ? std::string_view{} : text.substr(at + 1, length - 2);
+}
+
 Regex_reader::Regex_reader(
         const std::string_view text, const std::size_t begin, const Re2c_flags flags, const bool line_bound,
         const Classes_t& classes, std::optional<Spec_error>& deferred)
@@ -158,7 +187,7 @@ Regex_text Regex_reader::regex_text(const regex::Definitions_t& definitions)
 {
     for (;;)
     {
-        if (!peek() || at("*/"))
+        if (!peek() || at(comment_closer))
         {
             fail("expected an action before the end of the block");
         }
@@ -168,7 +197,7 @@ Regex_text Regex_reader::regex_text(const regex::Definitions_t& definitions)
             break;
         }
 
-        if (at("//") || at("/*"))
+        if (at(line_comment_opener) || at(comment_opener))
         {
             if (comment_ends_regex())
             {
@@ -189,22 +218,25 @@ Regex_text Regex_reader::regex_text(const regex::Definitions_t& definitions)
 
     close_term();
 
-    while (!pattern_.empty() && pattern_.back() == ' ')
-    {
-        pattern_.pop_back();
-    }
+    const auto last{pattern_.find_last_not_of(' ')};
 
-    while (!pattern_.empty() && pattern_.front() == ' ')
-    {
-        pattern_.erase(0, 1);
-    }
+    pattern_.erase(last == std::string::npos ? 0 : last + 1);
+
+    const auto first{pattern_.find_first_not_of(' ')};
+
+    pattern_.erase(0, std::min(first, pattern_.size()));
 
     // The regex is a class where its alternatives, at the top level, are each one class atom, as re2c merges them.
     const auto whole{levels_.size() == 1 && levels_.front().classes};
 
-    return {.pattern = std::move(pattern_),
-            .expression = std::move(expression_),
-            .points = whole ? std::optional{std::move(levels_.front().branches)} : std::nullopt};
+    std::optional<Class> points{};
+
+    if (whole)
+    {
+        points = std::move(levels_.front().branches);
+    }
+
+    return {.pattern = std::move(pattern_), .expression = std::move(expression_), .points = std::move(points)};
 }
 
 bool Regex_reader::at_regex_end() const noexcept
@@ -223,12 +255,15 @@ bool Regex_reader::at_regex_end() const noexcept
 
     const auto referenced{byte == '{' && reference_length(text_, at_) > 0};
 
-    return byte == ';' || (byte == '{' && !counted && !referenced) || at("=>") || at(":=") || byte == '=';
+    return byte == ';' || (byte == '{' && !counted && !referenced) || at(transition_opener) || at(line_action_opener) ||
+           byte == '=';
 }
 
 bool Regex_reader::comment_ends_regex()
 {
-    const auto line_end{std::min(text_.find('\n', at_), text_.size())};
+    const auto newline{text_.find('\n', at_)};
+
+    const auto line_end{std::min(newline, text_.size())};
 
     skip_blanks();
 
@@ -245,11 +280,17 @@ bool Regex_reader::take_reference()
         return false;
     }
 
-    pattern_ += text_.substr(at_, length);
+    const auto reference{text_.substr(at_, length)};
 
-    expression_ += text_.substr(at_, length);
+    const auto name{reference_name(text_, at_)};
 
-    place(defined(text_.substr(at_ + 1, length - 2)));
+    pattern_ += reference;
+
+    expression_ += reference;
+
+    auto points{defined(name)};
+
+    place(std::move(points));
 
     at_ += length;
 
@@ -269,14 +310,19 @@ std::optional<Class> Regex_reader::defined(const std::string_view name) const
 {
     const auto found{classes_.find(name)};
 
-    return found == classes_.end() ? std::nullopt : std::optional{found->second};
+    if (found == classes_.end())
+    {
+        return std::nullopt;
+    }
+
+    const auto& [defined_name, points]{*found};
+
+    return points;
 }
 
 bool Regex_reader::take_blank()
 {
-    const auto byte{*peek()};
-
-    if (byte != ' ' && byte != '\t' && byte != '\n' && byte != '\r')
+    if (!is_blank(*peek()))
     {
         return false;
     }
@@ -302,13 +348,13 @@ bool Regex_reader::take_bracket(const regex::Definitions_t& definitions)
     pattern_ += copied;
 
     // Under UTF-8 the expression spells the bracket's code points, which the byte parser's reading of it gives.
-    auto points{code_points(copied, definitions, code_space(flags_.encoding))};
+    const auto space{code_space(flags_.encoding)};
+
+    auto points{code_points(copied, definitions, space)};
 
     if (in_utf8() && !points)
     {
-        at_ = opened;
-
-        fail("the class '" + copied + "' is no class whose code points the reading can take");
+        fail_at(opened, std::format("the class '{}' is no class whose code points the reading can take", copied));
     }
 
     if (in_utf8())
@@ -317,12 +363,19 @@ bool Regex_reader::take_bracket(const regex::Definitions_t& definitions)
     }
     else
     {
-        expression_ += copied == "[^]" ? std::string{R"([\x00-\xff])"} : copied;
+        expression_ += copied == "[^]" ? std::string{any_byte} : copied;
     }
 
     place(std::move(points));
 
     return true;
+}
+
+void Regex_reader::fail_at(const std::size_t at, const std::string& why)
+{
+    at_ = at;
+
+    fail(why);
 }
 
 std::string Regex_reader::copied_text(const char close)
@@ -331,16 +384,20 @@ std::string Regex_reader::copied_text(const char close)
 
     std::string copied{next("a quote")};
 
+    const std::string_view closing{close == '"' ? R"('"' to close the quoted text)" : "']' to close the bracket"};
+
     // re2c closes a bracket at the first unescaped ']', a literal one being spelled '\]'.
     for (;;)
     {
-        const auto inner{next(close == '"' ? R"('"' to close the quoted text)" : "']' to close the bracket")};
+        const auto inner{next(closing)};
 
         copied.push_back(inner);
 
         if (inner == '\\')
         {
-            copied.push_back(next("the escaped byte"));
+            const auto escaped{next("the escaped byte")};
+
+            copied.push_back(escaped);
 
             continue;
         }
@@ -359,38 +416,39 @@ std::string Regex_reader::copied_text(const char close)
             continue;
         }
 
-        if (copied[index + 1] == 'u' || copied[index + 1] == 'U' || copied[index + 1] == 'X')
-        {
-            at_ = opened;
+        const auto escaped{copied[index + 1]};
 
-            fail("a Unicode escape needs an encoding the byte reading has not got");
-        }
+        const auto braced{index + 2 < copied.size() && copied[index + 2] == '{'};
 
-        if (copied[index + 1] == 'x' && index + 2 < copied.size() && copied[index + 2] == '{')
-        {
-            at_ = opened;
-
-            fail(std::string{braced_escape});
-        }
+        refuse_unread_escape(escaped, braced, opened);
 
         ++index;
     }
 
     if (copied == "[]")
     {
-        at_ = opened;
-
-        fail("an empty class matches nothing");
+        fail_at(opened, "an empty class matches nothing");
     }
 
     if (in_utf8() && spells_beyond_ascii(copied))
     {
-        at_ = opened;
-
-        fail(std::string{beyond_ascii_source});
+        fail_at(opened, std::string{beyond_ascii_source});
     }
 
     return copied;
+}
+
+void Regex_reader::refuse_unread_escape(const char escaped, const bool braced, const std::size_t at)
+{
+    if (escaped == 'u' || escaped == 'U' || escaped == 'X')
+    {
+        fail_at(at, "a Unicode escape needs an encoding the byte reading has not got");
+    }
+
+    if (escaped == 'x' && braced)
+    {
+        fail_at(at, std::string{braced_escape});
+    }
 }
 
 bool Regex_reader::in_utf8() const noexcept
@@ -415,9 +473,7 @@ bool Regex_reader::take_exact_literal(const regex::Definitions_t& definitions)
 
     if (in_utf8() && !bytes)
     {
-        at_ = opened;
-
-        fail("the literal " + copied + " is no text whose code points the reading can take");
+        fail_at(opened, std::format("the literal {} is no text whose code points the reading can take", copied));
     }
 
     // Under UTF-8 every character of the literal is a code point of its own, which the encoding spells in one byte or
@@ -426,9 +482,9 @@ bool Regex_reader::take_exact_literal(const regex::Definitions_t& definitions)
     {
         for (const auto one : *bytes)
         {
-            const auto point{static_cast<char32_t>(static_cast<unsigned char>(one))};
+            const auto points{one_point(point_of(one))};
 
-            expression_ += step(one_point(point));
+            expression_ += step(points);
         }
     }
     else
@@ -439,9 +495,7 @@ bool Regex_reader::take_exact_literal(const regex::Definitions_t& definitions)
     // A literal of one character is a char set to re2c.
     if (bytes && bytes->size() == 1)
     {
-        const auto point{static_cast<char32_t>(static_cast<unsigned char>(bytes->front()))};
-
-        place(one_point(point));
+        place(one_point(point_of(bytes->front())));
     }
     else
     {
@@ -475,9 +529,7 @@ bool Regex_reader::take_literal()
 
     if (in_utf8() && spells_beyond_ascii(quoted))
     {
-        at_ = opened;
-
-        fail(std::string{beyond_ascii_source});
+        fail_at(opened, std::string{beyond_ascii_source});
     }
 
     pattern_ += quoted;
@@ -491,13 +543,14 @@ bool Regex_reader::take_literal()
 
 Regex_reader::Rewritten_literal Regex_reader::literal(const char quote, const bool insensitive)
 {
-    std::string expression;
+    std::string expression{};
 
     // The characters read, and the class of the first, which is the literal's where it is the only one.
     std::size_t characters{0};
 
-    Class first;
+    Class first{};
 
+    // Counts a character read and keeps the class of the first.
     const auto character{[&characters, &first](Class points) {
         if (++characters == 1)
         {
@@ -505,9 +558,11 @@ Regex_reader::Rewritten_literal Regex_reader::literal(const char quote, const bo
         }
     }};
 
+    const auto closing{std::format("'{}' to close the quoted text", quote)};
+
     for (;;)
     {
-        auto byte{next(std::string{"'"} + quote + "' to close the quoted text")};
+        auto byte{next(closing)};
 
         if (byte == quote)
         {
@@ -516,94 +571,44 @@ Regex_reader::Rewritten_literal Regex_reader::literal(const char quote, const bo
 
         if (byte == '\\')
         {
-            // An escape stands for one byte, which the parser decodes inside a bracket as well; one spelling a
-            // letter, `\x41`, `\101` or `\A`, is decoded here so its bracket can hold both cases, as re2c folds it.
-            const auto escaped{next("the escaped byte")};
+            auto [letter, written, points]{literal_escape(insensitive)};
 
-            if (escaped == 'u' || escaped == 'U' || escaped == 'X')
+            if (!letter)
             {
-                fail("a Unicode escape needs an encoding the byte reading has not got");
-            }
+                expression += written;
 
-            if (escaped == 'x' && peek() == '{')
-            {
-                fail(std::string{braced_escape});
-            }
-
-            std::string text{'\\', escaped};
-
-            const auto numeric{escaped == 'x' || (escaped >= '0' && escaped <= '7')};
-
-            auto value{0};
-
-            if (escaped == 'x')
-            {
-                while (text.size() < 4 && peek() && is_hex_digit(*peek()))
-                {
-                    const auto digit{next("a hex digit")};
-
-                    text.push_back(digit);
-
-                    value = value * 16 + static_cast<int>(hex_value(digit));
-                }
-            }
-            else if (escaped >= '0' && escaped <= '7')
-            {
-                value = escaped - '0';
-
-                while (text.size() < 4 && peek() && *peek() >= '0' && *peek() <= '7')
-                {
-                    const auto digit{next("an octal digit")};
-
-                    text.push_back(digit);
-
-                    value = value * 8 + (digit - '0');
-                }
-            }
-
-            const auto stands{numeric ? static_cast<char32_t>(value) : decoded(escaped)};
-
-            if (insensitive && stands < 0x80 && is_letter(static_cast<char>(stands)))
-            {
-                byte = static_cast<char>(stands);
-            }
-            else if (value >= 0x80 && flags_.encoding == Re2c_encoding::utf8)
-            {
-                // The escape names a code point, which this encoding spells in two bytes rather than one.
-                expression += step(one_point(stands));
-
-                character(one_point(stands));
+                character(std::move(points));
 
                 continue;
             }
-            else
-            {
-                expression += '[' + text + ']';
 
-                character(one_point(stands));
-
-                continue;
-            }
+            byte = *letter;
         }
 
         if (insensitive && is_letter(byte))
         {
-            const auto lower{static_cast<char>(byte | 0x20)};
+            const auto lower{static_cast<char>(byte | case_bit)};
 
-            const auto upper{static_cast<char>(byte & ~0x20)};
+            const auto upper{static_cast<char>(byte & ~case_bit)};
 
-            expression += std::string{'['} + lower + upper + ']';
+            expression += std::format("[{}{}]", lower, upper);
 
-            character(
-                    {{.first = static_cast<char32_t>(upper), .last = static_cast<char32_t>(upper)},
-                     {.first = static_cast<char32_t>(lower), .last = static_cast<char32_t>(lower)}});
+            Class both_cases{
+                    {.first = static_cast<char32_t>(upper), .last = static_cast<char32_t>(upper)},
+                    {.first = static_cast<char32_t>(lower), .last = static_cast<char32_t>(lower)}};
+
+            character(std::move(both_cases));
 
             continue;
         }
 
-        expression += '[' + bracket_member(static_cast<unsigned char>(byte)) + ']';
+        const auto value{static_cast<unsigned char>(byte)};
 
-        character(one_point(static_cast<unsigned char>(byte)));
+        const auto member{bracket_member(value)};
+
+        expression += std::format("[{}]", member);
+
+        character(one_point(value));
     }
 
     if (expression.empty())
@@ -611,8 +616,85 @@ Regex_reader::Rewritten_literal Regex_reader::literal(const char quote, const bo
         fail("an empty quoted literal matches nothing");
     }
 
-    return {.expression = std::move(expression),
-            .points = characters == 1 ? std::optional{std::move(first)} : std::nullopt};
+    std::optional<Class> points{};
+
+    if (characters == 1)
+    {
+        points = std::move(first);
+    }
+
+    return {.expression = std::move(expression), .points = std::move(points)};
+}
+
+Regex_reader::Literal_escape Regex_reader::literal_escape(const bool insensitive)
+{
+    const auto escaped{next("the escaped byte")};
+
+    refuse_unread_escape(escaped, peek() == '{', at_);
+
+    std::string text{'\\', escaped};
+
+    const auto numeric{escaped == 'x' || is_octal_digit(escaped)};
+
+    const auto value{numeric_value(escaped, text)};
+
+    const auto stands{numeric ? static_cast<char32_t>(value) : decoded(escaped)};
+
+    if (insensitive && stands <= last_ascii && is_letter(static_cast<char>(stands)))
+    {
+        return {.letter = static_cast<char>(stands), .written = {}, .points = {}};
+    }
+
+    // An escape naming a code point beyond ASCII under UTF-8 is spelled in two bytes rather than one.
+    if (value > static_cast<int>(last_ascii) && in_utf8())
+    {
+        auto points{one_point(stands)};
+
+        auto written{step(points)};
+
+        return {.letter = std::nullopt, .written = std::move(written), .points = std::move(points)};
+    }
+
+    auto written{std::format("[{}]", text)};
+
+    return {.letter = std::nullopt, .written = std::move(written), .points = one_point(stands)};
+}
+
+int Regex_reader::numeric_value(const char escaped, std::string& text)
+{
+    auto value{0};
+
+    if (escaped == 'x')
+    {
+        while (text.size() < widest_escape && peek() && is_hex_digit(*peek()))
+        {
+            const auto digit{next("a hex digit")};
+
+            text.push_back(digit);
+
+            value = value * 16 + static_cast<int>(hex_value(digit));
+        }
+
+        return value;
+    }
+
+    if (!is_octal_digit(escaped))
+    {
+        return value;
+    }
+
+    value = escaped - '0';
+
+    while (text.size() < widest_escape && peek() && is_octal_digit(*peek()))
+    {
+        const auto digit{next("an octal digit")};
+
+        text.push_back(digit);
+
+        value = value * 8 + (digit - '0');
+    }
+
+    return value;
 }
 
 bool Regex_reader::take_name()
@@ -624,7 +706,7 @@ bool Regex_reader::take_name()
         return false;
     }
 
-    std::string name;
+    std::string name{};
 
     while (peek() && is_name_byte(*peek()))
     {
@@ -638,13 +720,18 @@ bool Regex_reader::take_name()
     {
         expression_ += name;
 
-        const auto point{static_cast<char32_t>(static_cast<unsigned char>(name.front()))};
+        std::optional<Class> points{};
 
-        place(name.size() == 1 ? std::optional{one_point(point)} : std::nullopt);
+        if (name.size() == 1)
+        {
+            points = one_point(point_of(name.front()));
+        }
+
+        place(std::move(points));
     }
     else
     {
-        expression_ += '{' + name + '}';
+        expression_ += reference(name);
 
         place(defined(name));
     }
@@ -682,8 +769,8 @@ bool Regex_reader::take_tag()
         return false;
     }
 
-    // A tag, `@name` or `#name`, marks a position and matches nothing; kept as written and dropped from the
-    // expression, and no char set to re2c.
+    // A tag, `@name` or `#name`, marks a position and matches nothing; kept as written and dropped from the expression,
+    // and no char set to re2c.
     const auto begin{at_};
 
     ++at_;
@@ -819,31 +906,37 @@ void Regex_reader::open_group()
 
 std::size_t Regex_reader::group_mark() const noexcept
 {
+    const std::string_view blanks{line_bound_ ? " \t" : " \t\r\n"};
+
     auto found{at_};
 
     for (;;)
     {
-        const std::string_view blanks{line_bound_ ? " \t" : " \t\r\n"};
+        const auto first_other{text_.find_first_not_of(blanks, found)};
 
-        found = std::min(text_.find_first_not_of(blanks, found), end_);
+        found = std::min(first_other, end_);
 
         const auto rest{text_.substr(found, end_ - found)};
 
-        if (line_bound_ || !(rest.starts_with("/*") || rest.starts_with("//")))
+        const auto line_comment{rest.starts_with(line_comment_opener)};
+
+        if (line_bound_ || !(rest.starts_with(comment_opener) || line_comment))
         {
             return found;
         }
 
-        const auto close{rest.starts_with("//") ? text_.find('\n', found) : text_.find("*/", found + 2)};
+        const auto closer{line_comment ? line_comment_closer : comment_closer};
 
-        const auto width{rest.starts_with("//") ? 1UZ : 2UZ};
+        const auto from{line_comment ? found : found + comment_opener.size()};
 
-        if (close == std::string_view::npos || close + width > end_)
+        const auto close{text_.find(closer, from)};
+
+        if (close == std::string_view::npos || close + closer.size() > end_)
         {
             return found;
         }
 
-        found = close + width;
+        found = close + closer.size();
     }
 }
 
@@ -857,7 +950,14 @@ void Regex_reader::close_group()
 
     expression_.push_back(')');
 
-    place(group.classes ? std::optional{std::move(group.branches)} : std::nullopt);
+    std::optional<Class> points{};
+
+    if (group.classes)
+    {
+        points = std::move(group.branches);
+    }
+
+    place(std::move(points));
 }
 
 void Regex_reader::close_term()
@@ -880,7 +980,9 @@ void Regex_reader::alternative(const char byte)
 {
     close_term();
 
-    levels_.back().classes = levels_.back().classes && byte == '|';
+    auto& level{levels_.back()};
+
+    level.classes = level.classes && byte == '|';
 
     expression_.push_back(byte);
 

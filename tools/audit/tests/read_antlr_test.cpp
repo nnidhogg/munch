@@ -278,11 +278,6 @@ TEST(Read_antlr_test, Reads_a_combined_grammar_with_its_idioms)
 
 TEST(Read_antlr_test, A_parser_literal_is_the_token_of_the_lexer_rule_ANTLR_maps_it_onto)
 {
-    /**
-     * @brief Returns the rules of a combined grammar whose parser uses 'x': the lexer rule given, then Y.
-     * @param rule The lexer rule.
-     * @return The rules.
-     */
     const auto rules_of{[](const std::string_view rule) {
         const auto grammar{std::format("grammar A;\ns : 'x' Y EOF ;\n{}\nY : 'y' ;\n", rule)};
 
@@ -356,11 +351,6 @@ TEST(Read_antlr_test, A_parser_literal_is_the_token_of_the_lexer_rule_ANTLR_maps
 
 TEST(Read_antlr_test, A_parser_rule_argument_block_is_skipped_as_ANTLR_lexes_it)
 {
-    /**
-     * @brief Returns the patterns of the rules of a combined grammar holding the parser rules given, then A and B.
-     * @param rules The parser rules.
-     * @return The patterns in order.
-     */
     const auto patterns_of{[](const std::string_view rules) {
         const auto grammar{std::format("grammar P;\n{}\nA : 'a' ;\nB : 'b' ;\n", rules)};
 
@@ -690,11 +680,6 @@ TEST(Read_antlr_test, Case_insensitivity_doubles_every_letter)
 
 TEST(Read_antlr_test, A_range_under_case_insensitivity_folds_by_its_ends_as_ANTLR_folds_it)
 {
-    /**
-     * @brief Returns the expression of a lexer grammar's one rule under caseInsensitive.
-     * @param atom The rule's body.
-     * @return The expression.
-     */
     const auto expression_of{[](const std::string_view atom) {
         const auto grammar{std::format("lexer grammar R;\noptions {{ caseInsensitive = true; }}\nA : {} ;\n", atom)};
 
@@ -775,11 +760,6 @@ TEST(Read_antlr_test, An_option_is_read_as_its_one_token_whatever_comments_stand
 
     // ANTLR takes `true` and `false` and no other spelling: `TRUE` and `untrue` are its warning 84 and set nothing, so
     // the grammar's option stays off and a rule's option leaves the grammar's in force.
-    /**
-     * @brief Returns the expression of a lexer grammar's one rule `A : 'a'` under an options block.
-     * @param options The grammar's options block.
-     * @return The expression.
-     */
     const auto expression_of{[](const std::string_view options) {
         const auto grammar{std::format("lexer grammar O;\n{}\nA : 'a' ;\n", options)};
 
@@ -790,12 +770,6 @@ TEST(Read_antlr_test, An_option_is_read_as_its_one_token_whatever_comments_stand
     EXPECT_EQ(expression_of("options { caseInsensitive = untrue; }"), R"("a")");
     EXPECT_EQ(expression_of("options { caseInsensitive = true; }"), "[aA]");
 
-    /**
-     * @brief Returns the expression of the rule `A : 'a'` carrying an options block of its own, the grammar folding
-     *        case.
-     * @param options The rule's options block.
-     * @return The expression.
-     */
     const auto rule_expression_of{[](const std::string_view options) {
         const auto grammar{
                 std::format("lexer grammar O;\noptions {{ caseInsensitive = true; }}\nA {} : 'a' ;\n", options)};
@@ -835,46 +809,21 @@ TEST(Read_antlr_test, Sets_beyond_ascii_and_negated_groups_read_as_scalars)
 
 TEST(Read_antlr_test, A_surrogate_pair_is_the_character_it_encodes_and_a_surrogate_alone_never_matches)
 {
-    /**
-     * @brief Returns a lexer grammar whose first rule has the body given, B after it.
-     * @param body The first rule's body.
-     * @return The grammar's text.
-     */
     const auto grammar_of{
             [](const std::string_view body) { return std::format("lexer grammar S;\nA : {} ;\nB : . ;\n", body); }};
 
-    /**
-     * @brief Returns a lexer grammar whose second rule has the body given, A matching `q` before it.
-     * @param body The second rule's body.
-     * @return The grammar's text.
-     */
     const auto second_grammar_of{
             [](const std::string_view body) { return std::format("lexer grammar S;\nA : 'q' ;\nB : {} ;\n", body); }};
 
-    /**
-     * @brief Returns the scanner of a lexer grammar whose first rule has the body given, B after it.
-     * @param body The first rule's body.
-     * @return The scanner.
-     */
     const auto scanner_with{[&grammar_of](const std::string_view body) {
         const auto grammar{grammar_of(body)};
 
         return scanner_of(grammar);
     }};
 
-    /**
-     * @brief Returns the expression of the first rule with the body given.
-     * @param body The rule's body.
-     * @return The expression.
-     */
     const auto expression_of{
             [&scanner_with](const std::string_view body) { return scanner_with(body).rules.front().expression; }};
 
-    /**
-     * @brief Returns why a lexer grammar whose first rule has the body given is refused.
-     * @param body The rule's body.
-     * @return The refusal, empty when the grammar is read.
-     */
     const auto refusal{[&grammar_of](const std::string_view body) {
         const auto grammar{grammar_of(body)};
 
@@ -1189,11 +1138,6 @@ TEST(Read_antlr_test, A_closure_over_a_body_that_can_match_the_empty_string_is_r
 
 TEST(Read_antlr_test, A_command_is_read_as_its_name_whatever_comments_stand_beside_it)
 {
-    /**
-     * @brief Returns the first rule of a lexer grammar, `X : 'a'` with the clause given, Y and B after it.
-     * @param clause What follows the rule's literal, its `;` included.
-     * @return The rule.
-     */
     const auto rule_of{[](const std::string_view clause) {
         const auto grammar{std::format("lexer grammar A;\nX : 'a' {}\nY : 'b' ;\nB : 'c' ;\n", clause)};
 
@@ -1234,30 +1178,15 @@ TEST(Read_antlr_test, A_command_is_read_as_its_name_whatever_comments_stand_besi
 
 TEST(Read_antlr_test, An_escape_ANTLR_has_not_got_is_refused_in_its_words)
 {
-    /**
-     * @brief Returns a lexer grammar whose first rule has the body given, B after it.
-     * @param body The first rule's body.
-     * @return The grammar's text.
-     */
     const auto grammar_of{
             [](const std::string_view body) { return std::format("lexer grammar E;\nA : {} ;\nB : 'b' ;\n", body); }};
 
-    /**
-     * @brief Returns why a lexer grammar whose first rule has the body given is refused.
-     * @param body The rule's body.
-     * @return The refusal, empty when the grammar is read.
-     */
     const auto refusal{[&grammar_of](const std::string_view body) {
         const auto grammar{grammar_of(body)};
 
         return refusal_of(grammar);
     }};
 
-    /**
-     * @brief Returns the expression of the first rule with the body given.
-     * @param body The rule's body.
-     * @return The expression.
-     */
     const auto expression_of{[&grammar_of](const std::string_view body) {
         const auto grammar{grammar_of(body)};
 
@@ -1318,12 +1247,7 @@ TEST(Read_antlr_test, An_escape_ANTLR_has_not_got_is_refused_in_its_words)
 
 TEST(Read_antlr_test, A_command_ANTLR_has_not_got_is_refused_in_its_words)
 {
-    /**
-     * @brief Returns why a lexer grammar is refused whose first rule `X : 'a'` carries the clause given on its next
-     *        line, the grammar's third, as the report prints the refusal, the line first.
-     * @param clause The clause.
-     * @return The refusal, empty when the grammar is read.
-     */
+    // The clause stands on the grammar's third line, which the refusal names first.
     const auto refusal{[](const std::string_view clause) {
         const auto grammar{std::format("lexer grammar A;\nX : 'a'\n  {} ;\nY : 'b' ;\nmode M;\nZ : 'c' ;\n", clause)};
 
@@ -1420,11 +1344,6 @@ TEST(Read_antlr_test, A_command_ANTLR_has_not_got_is_refused_in_its_words)
 
 TEST(Read_antlr_test, A_channel_command_hides_the_token_whatever_a_type_command_renames_it_to)
 {
-    /**
-     * @brief Returns the token of the first rule of a lexer grammar, `X : 'a'` with the clause given, B and C after it.
-     * @param clause The clause.
-     * @return The token, none where the rule emits none a parser reads.
-     */
     const auto token_of{[](const std::string_view clause) {
         const auto grammar{std::format("lexer grammar A;\nX : 'a' {} ;\nB : 'b' ;\nC : 'c' ;\n", clause)};
 
@@ -1460,36 +1379,18 @@ TEST(Read_antlr_test, A_channel_command_hides_the_token_whatever_a_type_command_
 
 TEST(Read_antlr_test, A_channel_argument_is_resolved_as_ANTLR_resolves_it)
 {
-    /**
-     * @brief Returns a lexer grammar holding a channels block where given and a first rule `X : 'a'` with the clause
-     *        given, the command on the third line.
-     * @param channels The channels block, empty for none.
-     * @param clause The rule's clause.
-     * @return The grammar's text.
-     */
+    // The command stands on the grammar's third line.
     const auto grammar_of{[](const std::string_view channels, const std::string_view clause) {
         return std::format(
                 "lexer grammar A;\n{}\nX : 'a' {} ;\nB : 'b' ;\nmode M;\nC : 'c' -> popMode ;\n", channels, clause);
     }};
 
-    /**
-     * @brief Returns the token of that grammar's first rule.
-     * @param channels The channels block, empty for none.
-     * @param clause The rule's clause.
-     * @return The token, none when the rule emits none to a parser.
-     */
     const auto token_of{[&grammar_of](const std::string_view channels, const std::string_view clause) {
         const auto grammar{grammar_of(channels, clause)};
 
         return first_rule_of(grammar).token;
     }};
 
-    /**
-     * @brief Returns why that grammar is refused.
-     * @param channels The channels block, empty for none.
-     * @param clause The rule's clause.
-     * @return The refusal, empty when the grammar is read.
-     */
     const auto refusal{[&grammar_of](const std::string_view channels, const std::string_view clause) {
         const auto grammar{grammar_of(channels, clause)};
 
@@ -1534,11 +1435,6 @@ TEST(Read_antlr_test, A_channel_argument_is_resolved_as_ANTLR_resolves_it)
 
 TEST(Read_antlr_test, Element_options_are_metadata_on_the_element_and_no_token)
 {
-    /**
-     * @brief Returns the rules of a combined grammar holding the parser rules given, then X.
-     * @param rules The parser rules.
-     * @return The rules.
-     */
     const auto rules_of{[](const std::string_view rules) {
         const auto grammar{std::format("grammar E;\n{}\nX : 'x' ;\n", rules)};
 
@@ -1573,11 +1469,6 @@ TEST(Read_antlr_test, Element_options_are_metadata_on_the_element_and_no_token)
     // In a lexer rule ANTLR's parser takes them on a literal, a reference, the dot and a negated literal, before the
     // suffix, with any of the values and with nothing between the angles: antlr 4.13.2 accepts each with its warning 83
     // and emits X for the input x.
-    /**
-     * @brief Returns the first rule of a lexer grammar whose rule X has the body given.
-     * @param body X's body.
-     * @return The rule.
-     */
     const auto lexer_rule_of{[](const std::string_view body) {
         const auto grammar{std::format("lexer grammar E;\nX : {} ;\nfragment Y : 'y' ;\n", body)};
 
@@ -1644,30 +1535,15 @@ TEST(Read_antlr_test, Element_options_are_metadata_on_the_element_and_no_token)
 
 TEST(Read_antlr_test, A_type_of_EOF_is_refused_and_a_type_of_zero_is_the_rules_own)
 {
-    /**
-     * @brief Returns a lexer grammar holding the rule given before Y.
-     * @param rule The rule.
-     * @return The grammar's text.
-     */
     const auto grammar_of{
             [](const std::string_view rule) { return std::format("lexer grammar T;\n{}\nY : 'y' ;\n", rule); }};
 
-    /**
-     * @brief Returns the token of a lexer grammar's first rule.
-     * @param rule The rule.
-     * @return The token, none when the rule emits none to a parser.
-     */
     const auto token_of{[&grammar_of](const std::string_view rule) {
         const auto grammar{grammar_of(rule)};
 
         return first_rule_of(grammar).token;
     }};
 
-    /**
-     * @brief Returns why a lexer grammar holding the rule given before Y is refused.
-     * @param rule The rule.
-     * @return The refusal, empty when the grammar is read.
-     */
     const auto refusal{[&grammar_of](const std::string_view rule) {
         const auto grammar{grammar_of(rule)};
 
@@ -1714,12 +1590,7 @@ TEST(Read_antlr_test, A_type_of_EOF_is_refused_and_a_type_of_zero_is_the_rules_o
 
 TEST(Read_antlr_test, A_clause_ANTLR_parser_rejects_is_refused_at_the_byte_it_rejects)
 {
-    /**
-     * @brief Returns why a lexer grammar is refused whose first rule `X : 'a'` carries the clause given on its next
-     *        line, the grammar's third, as the report prints the refusal.
-     * @param clause The clause.
-     * @return The refusal, empty when the grammar is read.
-     */
+    // The clause stands on the grammar's third line.
     const auto refusal{[](const std::string_view clause) {
         const auto grammar{std::format("lexer grammar A;\nX : 'a'\n  {} ;\nY : 'b' ;\n", clause)};
 
@@ -1796,11 +1667,6 @@ TEST(Read_antlr_test, A_clause_ANTLR_parser_rejects_is_refused_at_the_byte_it_re
     // TWO, `extraneous input 'TWO' expecting RBRACE`, and a name missing after the brace or a comma, `{ }`, `{ ONE,
     // TWO, }` and `{ ONE, 'x' }`, as `'}' came as a complete surprise to me while looking for an identifier`, a tokens
     // block alone allowed to hold nothing.
-    /**
-     * @brief Returns why a lexer grammar holding the block given before its one rule is refused.
-     * @param block The tokens or channels block.
-     * @return The refusal, empty when the grammar is read.
-     */
     const auto refusal_with{[](const std::string_view block) {
         const auto grammar{std::format("lexer grammar A;\n{}\nX : 'x' ;\n", block)};
 
@@ -1881,11 +1747,6 @@ TEST(Read_antlr_test, A_byte_order_mark_is_a_blank_wherever_ANTLR_drops_one)
     // Between any two tokens the same: before a rule's colon, before its `;`, inside a clause and inside a command's
     // parens, after a literal and inside a channels block, antlr 4.13.2 accepts each and skips or emits the token as
     // the commands say.
-    /**
-     * @brief Returns the first rule of a lexer grammar holding the rule given before Y.
-     * @param rule The rule.
-     * @return The rule.
-     */
     const auto rule_of{[](const std::string_view rule) {
         const auto grammar{std::format("lexer grammar B;\n{}\nY : 'y' ;\n", rule)};
 

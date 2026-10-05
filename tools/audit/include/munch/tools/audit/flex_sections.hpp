@@ -2,6 +2,7 @@
 #define MUNCH_TOOLS_AUDIT_INCLUDE_MUNCH_TOOLS_AUDIT_FLEX_SECTIONS_HPP
 
 #include <cstddef>
+#include <string_view>
 #include <vector>
 
 #include "munch/tools/audit/action_return.hpp"
@@ -14,7 +15,7 @@
 /**
  * @brief The two sections of a flex file read as flex reads them: the definitions section, read_definitions(), and the
  *        rules section, read_rules(), with what flex does to the rules once the section is read, share_actions() and
- *        add_default_rule().
+ *        add_default_rule(), and the end-of-input rule's pattern, end_of_input.
  *
  * The sections share one Lines cursor, the definitions section leaving it past its `%%` and the rules section taking it
  * there. Each takes the macros the code it copies out defines and records that code as Copied, so that the hook is read
@@ -23,6 +24,11 @@
  */
 namespace munch::tools::audit
 {
+/**
+ * @brief The pattern of an end-of-input rule, which matches no byte.
+ */
+constexpr std::string_view end_of_input{"<<EOF>>"};
+
 /**
  * @brief Reads the definitions section, up to and over its `%%`, whose line names the scanner.
  * @param lines The cursor, at the file's first line.
@@ -50,20 +56,20 @@ void read_definitions(
         Lines& lines, Lexer_spec& spec, const Returning_t& returning, Macros_t& macros, std::vector<Copied>& copied);
 
 /**
- * @brief Gives every `|` action the token of the first rule below it that has an action of its own; flex takes a
- *        `|` and whatever follows it on the line, a comment usually, as that continuation. An `<<EOF>>` rule's action
- *        was read unchecked, since it runs where no match is; shared, it runs on the `|` rule's match, `a |` over
- *        `<<EOF>> { yymore(); }` returning one token for "ab" in flex 2.6.4, so it is checked here as any action is,
- *        at the line of the rule that runs it.
+ * @brief Gives every `|` action the token of the first rule below it that has an action of its own; flex takes a `|`
+ *        and whatever follows it on the line, a comment usually, as that continuation. An `<<EOF>>` rule's action was
+ *        read unchecked, since it runs where no match is; shared, it runs on the `|` rule's match, `a |` over `<<EOF>>
+ *        { yymore(); }` returning one token for "ab" in flex 2.6.4, so it is checked here as any action is, at the line
+ *        of the rule that runs it.
  * @param rules The rules, in file order.
  * @throws Spec_error If a `|` rule shares an `<<EOF>>` action that moves the match.
  */
 void share_actions(std::vector<Lexer_spec::Rule>& rules);
 
 /**
- * @brief Appends the default rule flex adds after the file's own once the section is read: one byte, `.|\n`, in
- *        every start condition and at the lowest priority, whose action `ECHO;` returns nothing, so that a byte no
- *        rule of the file's matches is a one-byte discarded token wherever the scanner stands.
+ * @brief Appends the default rule flex adds after the file's own once the section is read: one byte, `.|\n`, in every
+ *        start condition and at the lowest priority, whose action `ECHO;` returns nothing, so that a byte no rule of
+ *        the file's matches is a one-byte discarded token wherever the scanner stands.
  * @param spec The specification, its own rules read.
  * @param line The line the rules section ends on, which the rule is given, standing on none of its own.
  */

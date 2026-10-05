@@ -22,12 +22,6 @@ namespace
  */
 [[nodiscard]] bool has_zero_minimum(const regex::Repeat::Kind_t& kind)
 {
-    /**
-     * @brief Returns whether a repetition of one kind may match its sub-pattern no times at all.
-     * @tparam Kind The kind's type.
-     * @param repetition The repetition kind.
-     * @return True when it may.
-     */
     const auto zero_minimum{[]<typename Kind>(const Kind& repetition) {
         if constexpr (std::is_same_v<Kind, regex::Kleene> || std::is_same_v<Kind, regex::Optional>)
         {
@@ -82,18 +76,8 @@ void exclude(regex::Regex& regex, const unsigned char byte)
         return;
     }
 
-    /**
-     * @brief Returns whether an alternative cannot lose the byte, which drops it from a choice.
-     * @param part The alternative.
-     * @return True when it cannot.
-     */
     const auto keeps_byte{[byte](const regex::Regex& part) { return !can_lose(part, byte); }};
 
-    /**
-     * @brief Takes the byte off a pattern of one kind.
-     * @tparam Node The node's type.
-     * @param node The pattern.
-     */
     const auto narrow{[byte, &keeps_byte]<typename Node>(Node& node) {
         if constexpr (std::is_same_v<Node, regex::Any_of>)
         {
@@ -153,19 +137,8 @@ core::Lexer compile(const Token_set& set)
 
 bool can_lose(const regex::Regex& regex, const unsigned char byte)
 {
-    /**
-     * @brief Returns whether a part can lose the byte.
-     * @param part The part.
-     * @return True when it can.
-     */
     const auto loses{[byte](const regex::Regex& part) { return can_lose(part, byte); }};
 
-    /**
-     * @brief Returns whether a pattern of one kind can lose the byte.
-     * @tparam Node The node's type.
-     * @param node The pattern.
-     * @return True when it can.
-     */
     const auto loses_node{[byte, &loses]<typename Node>(const Node& node) -> bool {
         if constexpr (std::is_same_v<Node, regex::Any_of>)
         {

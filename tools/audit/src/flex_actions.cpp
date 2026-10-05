@@ -11,35 +11,38 @@
 #include <vector>
 
 #include "munch/tools/audit/c_tokens.hpp"
+#include "munch/tools/audit/expression.hpp"
 
 namespace munch::tools::audit
 {
 namespace
 {
-// Implements flex_actions.hpp: flex's calls that move or rerun a match, what each does, and the words a macro may not
-// hide are private to this unit.
-
 /**
- * @brief One of flex's calls that moves the bounds of a match or reruns it, which the token language has no place
- *        for, and what it does.
+ * @brief One of flex's calls that moves the bounds of a match or reruns it, which the token language has no place for,
+ *        and what it does.
  */
 struct Stateful
 {
     /**
      * @brief The name, `REJECT` in flex's own spelling and the rest as the macros are named.
      */
-    std::string_view name;
+    std::string_view name{};
 
     /**
      * @brief Whether it is written as a call, a parenthesis after the name; `REJECT` stands alone.
      */
-    bool call;
+    bool call{};
 
     /**
      * @brief What it does to the tokens, for the refusal.
      */
-    std::string_view does;
+    std::string_view does{};
 };
+
+/**
+ * @brief The macro flex writes after every action, `break;` unless the file defines it.
+ */
+constexpr std::string_view break_macro{"YY_BREAK"};
 
 /**
  * @brief flex's calls that move the bounds of a match or rerun it: what each does is what the refusal says.
@@ -133,8 +136,8 @@ constexpr std::array stateful{
                         "input's next bytes"}};
 
 /**
- * @brief The words this reading gives meaning to in a flex action, which a macro's replacement may not hide: the
- *        calls that move or feed the match, and the one that ends the scan, the stateful calls' names.
+ * @brief The words this reading gives meaning to in a flex action, which a macro's replacement may not hide: the calls
+ *        that move or feed the match, and the one that ends the scan, the stateful calls' names.
  */
 constexpr auto meaningful_words{[] {
     std::array<std::string_view, stateful.size()> words{};
@@ -145,8 +148,8 @@ constexpr auto meaningful_words{[] {
 }()};
 
 /**
- * @brief Whether the `.` or `->` at an index names a member of `this`, `this->yyinput()`, `(this)->yyinput()` or
- *        `(*this).yyinput()`, which is the call as flex's C++ scanners write it; the parentheses and the dereference
+ * @brief Returns whether the `.` or `->` at an index names a member of `this`, `this->yyinput()`, `(this)->yyinput()`
+ *        or `(*this).yyinput()`, which is the call as flex's C++ scanners write it; the parentheses and the dereference
  *        are stepped over.
  * @param tokens The action's tokens.
  * @param dot The index of the `.` or `->`.
@@ -170,8 +173,8 @@ constexpr auto meaningful_words{[] {
 }
 
 /**
- * @brief What a `YY_USER_ACTION`'s replacement does that an action may not, as the refusal states it: the hook runs
- *        before the rule's own action, so a return in it returns before the action can, a `break` or a `continue`
+ * @brief Returns what a `YY_USER_ACTION`'s replacement does that an action may not, as the refusal states it: the hook
+ *        runs before the rule's own action, so a return in it returns before the action can, a `break` or a `continue`
  *        ends the rule's case without the action, and a `goto` leaves for somewhere out of sight; flex 2.6.4 under
  *        `#define YY_USER_ACTION return 9;` returns 9 for every match of `a+ return 7;`. A call that moves the match
  *        and a macro that could hide one are refused as they are in an action.
@@ -183,17 +186,18 @@ constexpr auto meaningful_words{[] {
 [[nodiscard]] std::optional<std::string> replacement_use(
         const std::string_view replacement, const Macros_t& macros, const Returning_t& returning)
 {
-    for (const auto& token : c_tokens(replacement))
+    static constexpr std::array<std::string_view, 5> jumps{"return", "break", "continue", "goto", break_macro};
+
+    for (const auto& [at, end, text] : c_tokens(replacement))
     {
-        const auto leaves{
-                token.text == "return" || token.text == "break" || token.text == "continue" || token.text == "goto" ||
-                token.text == "YY_BREAK" || std::ranges::contains(returning, token.text)};
+        const auto leaves{std::ranges::contains(jumps, text) || std::ranges::contains(returning, text)};
 
         if (leaves)
         {
-            return "holds `" + token.text +
-                   "`, which ends the rule's case before its own action runs, so which token a match emits is out of "
-                   "sight";
+            return std::format(
+                    "holds `{}`, which ends the rule's case before its own action runs, so which token a match emits "
+                    "is out of sight",
+                    text);
         }
     }
 
@@ -215,48 +219,52 @@ std::optional<std::string> stateful_use(const std::string_view action, const boo
     {
         const auto& word{tokens[index].text};
 
+        const auto entry{std::ranges::find(stateful, word, &Stateful::name)};
+
+        if (entry == stateful.end())
+        {
+            continue;
+        }
+
         const auto called{index + 1 < tokens.size() && tokens[index + 1].text == "("};
 
-        // A member of the name on anything, called or parenthesised to be called, `(self->yyinput)()`, is the call:
-        // flex's C++ scanners write `this->yyinput()`, and an alias of `this`, `auto* self = this; self->yyinput();`,
-        // is the same call under a name the text does not resolve, so `self->yyinput()` and `s.input()` alike are
-        // refused by name; a member of that name read and not called, `yylval.input = 1`, is none.
+        // A member of the name on anything but `this` is the call when called or parenthesised to be called, and none
+        // when read and not called.
         const auto through_member{
                 index > 0 && (tokens[index - 1].text == "." || tokens[index - 1].text == "->") &&
                 !is_member_of_this(tokens, index - 1)};
 
         const auto closed{index + 1 < tokens.size() && tokens[index + 1].text == ")"};
 
-        for (const auto& [name, call, does] : stateful)
+        const auto& [name, call, does]{*entry};
+
+        // The calls that push a byte onto the input or take one from it, which change what is scanned next wherever
+        // they stand; the others move a match, which an action without one cannot do.
+        const auto injecting{name == "unput" || name == "input" || name == "yyinput"};
+
+        if ((through_member && !called && !closed) || (injecting_only && !injecting))
         {
-            // The calls that push a byte onto the input or take one from it, which change what is scanned next wherever
-            // they stand; the others move a match, which an action without one cannot do.
-            const auto injecting{name == "unput" || name == "input" || name == "yyinput"};
-
-            if (word != name || (through_member && !called && !closed) || (injecting_only && !injecting))
-            {
-                continue;
-            }
-
-            if (!call)
-            {
-                return std::format("uses {}, which {}", name, does);
-            }
-
-            if (called)
-            {
-                return std::format("calls {}(), which {}", name, does);
-            }
-
-            return std::format(
-                    "names {} apart from a call, so what it does with it is out of sight; called, it {}", name, does);
+            continue;
         }
+
+        if (!call)
+        {
+            return std::format("uses {}, which {}", name, does);
+        }
+
+        if (called)
+        {
+            return std::format("calls {}(), which {}", name, does);
+        }
+
+        return std::format(
+                "names {} apart from a call, so what it does with it is out of sight; called, it {}", name, does);
     }
 
     return std::nullopt;
 }
 
-std::optional<std::pair<std::string, std::size_t>> user_action_use(
+std::optional<User_action_use> user_action_use(
         const std::string_view code, const Macros_t& macros, const Returning_t& returning)
 {
     const auto tokens{c_tokens(code)};
@@ -270,17 +278,17 @@ std::optional<std::pair<std::string, std::size_t>> user_action_use(
 
         const auto& name{tokens[at + 2].text};
 
-        const auto line{static_cast<std::size_t>(std::ranges::count(code.substr(0, tokens[at].at), '\n'))};
+        const auto line{lines_before(code, tokens[at].at)};
 
         // flex writes `YY_BREAK` after every action as well, a `break` by default, so a definition of it of the file's
         // own runs after every action too, and what it does there is out of this reading's sight.
-        if (name == "YY_BREAK")
+        if (name == break_macro)
         {
             std::string why{
                     "is not the only hook the code defines: YY_BREAK is defined too, which flex writes after every "
                     "action, so what an action leaves is out of sight"};
 
-            return std::pair{std::move(why), line};
+            return User_action_use{.why = std::move(why), .lines_in = line};
         }
 
         if (name != "YY_USER_ACTION")
@@ -288,15 +296,15 @@ std::optional<std::pair<std::string, std::size_t>> user_action_use(
             continue;
         }
 
-        const auto end{directive_end(code, tokens[at + 2].end)};
-
         const auto from{tokens[at + 2].end};
+
+        const auto end{directive_end(code, from)};
 
         const auto replacement{code.substr(from, end - from)};
 
         if (const auto use{replacement_use(replacement, macros, returning)})
         {
-            return std::pair{*use, line};
+            return User_action_use{.why = *use, .lines_in = line};
         }
     }
 
@@ -310,33 +318,32 @@ void refuse_action(const Lexer_spec::Rule& rule, const Macros_t& macros, const R
         return;
     }
 
+    const auto refuse{[&rule](const std::string_view use) { throw Spec_error{action_refusal(use), rule.line}; }};
+
     if (const auto use{directive_use(rule.action)})
     {
-        throw Spec_error{"the action " + *use, rule.line};
+        refuse(*use);
     }
 
     if (const auto use{returns_undecided(rule.action, returning, true)})
     {
-        throw Spec_error{"the action " + *use, rule.line};
+        refuse(*use);
     }
 
     // flex defines `YY_BREAK` as `break;` and writes it after every action; an action spelling it itself leaves the
     // rule's case on that path with the match discarded, as a `break` of its own would: flex 2.6.4 with `a+ { if
     // (yyleng == 1) YY_BREAK; return 7; }` before `b return 8;` returns 8 alone on "ab".
-    for (const auto& token : c_tokens(rule.action))
+    const auto tokens{c_tokens(rule.action)};
+
+    if (std::ranges::contains(tokens, break_macro, &C_token::text))
     {
-        if (token.text == "YY_BREAK")
-        {
-            throw Spec_error{
-                    "the action uses YY_BREAK, which flex defines as `break;`, so it leaves the rule's case on "
-                    "some path with the match discarded, and whether a match emits a token is out of sight",
-                    rule.line};
-        }
+        refuse("uses YY_BREAK, which flex defines as `break;`, so it leaves the rule's case on some path with the "
+               "match discarded, and whether a match emits a token is out of sight");
     }
 
     if (const auto use{macro_use(rule.action, macros, meaningful_words)})
     {
-        throw Spec_error{"the action " + *use, rule.line};
+        refuse(*use);
     }
 }
 

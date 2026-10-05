@@ -9,15 +9,13 @@
 #include <tuple>
 #include <utility>
 
+#include "munch/regex/utf8.hpp"
 #include "munch/tools/audit/expression.hpp"
 
 namespace munch::tools::audit
 {
 namespace
 {
-// Implements antlr_cursor.hpp: the code points a surrogate pair spends and the UTF-16 measure of the grammar's text are
-// private to this unit.
-
 /**
  * @brief The last high surrogate, the first of a pair.
  */
@@ -29,8 +27,50 @@ constexpr char32_t last_high_surrogate{0xDBFF};
 constexpr char32_t first_low_surrogate{0xDC00};
 
 /**
- * @brief The UTF-16 code units a span of UTF-8 text holds, which is how ANTLR's lexer, reading the grammar into Java
- *        strings, measures it: one per character up to U+FFFF, two per character beyond.
+ * @brief The byte order mark, which ANTLR's lexer reads as a blank wherever it stands.
+ */
+constexpr std::string_view byte_order_mark{"\xEF\xBB\xBF"};
+
+/**
+ * @brief The UTF-16 code units from a literal's opening quote through a braced Unicode escape at which ANTLR refuses
+ *        the escape as an invalid escape sequence.
+ */
+constexpr std::size_t braced_escape_units{12};
+
+/**
+ * @brief The hex digits of a Unicode escape without braces, `\uXXXX`.
+ */
+constexpr std::size_t unbraced_escape_digits{4};
+
+/**
+ * @brief The most hex digits a braced Unicode escape holds, `\u{X...}`.
+ */
+constexpr std::size_t braced_escape_digits{6};
+
+/**
+ * @brief The last scalar of the basic multilingual plane, the last that UTF-16 holds in one unit.
+ */
+constexpr char32_t last_basic_scalar{0xFFFF};
+
+/**
+ * @brief The bits of a scalar each surrogate of a pair carries, the low surrogate's below the high one's.
+ */
+constexpr unsigned surrogate_payload_bits{10U};
+
+/**
+ * @brief Returns the scalar a UTF-16 surrogate pair encodes.
+ * @param high The high surrogate, the first of the pair.
+ * @param low The low surrogate, the second.
+ * @return The scalar, beyond U+FFFF.
+ */
+[[nodiscard]] constexpr char32_t paired_scalar(const char32_t high, const char32_t low) noexcept
+{
+    return last_basic_scalar + 1 + ((high - first_surrogate) << surrogate_payload_bits) + (low - first_low_surrogate);
+}
+
+/**
+ * @brief Returns the UTF-16 code units a span of UTF-8 text holds, which is how ANTLR's lexer, reading the grammar into
+ *        Java strings, measures it: one per character up to U+FFFF, two per character beyond.
  * @param text The text.
  * @param begin The span's first offset.
  * @param end The offset past its last.
@@ -44,7 +84,12 @@ constexpr char32_t first_low_surrogate{0xDC00};
     {
         const auto value{static_cast<unsigned char>(byte)};
 
-        count += is_continuation(value) ? 0 : value >= 0xF0 ? 2 : 1;
+        if (is_continuation(value))
+        {
+            continue;
+        }
+
+        count += sequence_length(value) == 4 ? 2 : 1;
     }
 
     return count;
@@ -59,109 +104,17 @@ Antlr_cursor::Antlr_cursor(const std::string_view text, const std::size_t begin)
     : Cursor{text, begin, text.size(), Line_comment_end::newline_or_return}
 {}
 
-void Antlr_cursor::element_options()
-{
-    skip_blanks();
-
-    if (accept('>'))
-    {
-        return;
-    }
-
-    // A name, dotted or not, each dot a token of its own to ANTLR's lexer with blanks and comments allowed on either
-    // side of it; a value follows `=` after an undotted name alone, a name dotted the same way, a number, a quoted
-    // string or a brace block.
-    const auto qualified{[this](std::string name) {
-        skip_blanks();
-
-        while (!name.empty() && accept('.'))
-        {
-            skip_blanks();
-
-            const auto part{identifier()};
-
-            name = part.empty() ? std::string{} : name + '.' + part;
-
-            skip_blanks();
-        }
-
-        return name;
-    }};
-
-    for (;;)
-    {
-        const auto first{identifier()};
-
-        const auto name{qualified(first)};
-
-        if (name.empty())
-        {
-            fail("an element option needs a name");
-        }
-
-        if (name == first && accept('='))
-        {
-            skip_blanks();
-
-            if (peek() == '\'')
-            {
-                ++at_;
-
-                std::ignore = literal();
-            }
-            else if (peek() == '{')
-            {
-                skip_block();
-            }
-            else if (const auto value{identifier()}; !value.empty())
-            {
-                if (qualified(value).empty())
-                {
-                    fail("an element option's value needs a name after its dot");
-                }
-            }
-            else
-            {
-                const auto begin{at_};
-
-                while (peek() && is_digit(*peek()))
-                {
-                    ++at_;
-                }
-
-                if (at_ == begin)
-                {
-                    fail("an element option needs a value");
-                }
-            }
-
-            skip_blanks();
-        }
-
-        if (accept(','))
-        {
-            skip_blanks();
-
-            continue;
-        }
-
-        expect('>', "'>' to close the element options");
-
-        return;
-    }
-}
-
 void Antlr_cursor::skip_blanks()
 {
-    for (Cursor::skip_blanks(); at("\xEF\xBB\xBF"); Cursor::skip_blanks())
+    for (Cursor::skip_blanks(); at(byte_order_mark); Cursor::skip_blanks())
     {
-        at_ += 3;
+        at_ += byte_order_mark.size();
     }
 }
 
 std::string Antlr_cursor::identifier()
 {
-    std::string name;
+    std::string name{};
 
     if (!peek() || !is_letter(static_cast<unsigned char>(*peek())))
     {
@@ -180,9 +133,9 @@ Literal Antlr_cursor::literal()
 {
     const auto quote{at_ - 1};
 
-    std::string bytes;
+    std::string bytes{};
 
-    std::optional<char32_t> high;
+    std::optional<char32_t> high{};
 
     auto pieces{0UZ};
 
@@ -199,7 +152,7 @@ Literal Antlr_cursor::literal()
     {
         const auto written{peek() != '\\'};
 
-        const auto braced{at("\\u{")};
+        const auto braced{at(R"(\u{)")};
 
         const auto scalar{character('\'')};
 
@@ -208,22 +161,24 @@ Literal Antlr_cursor::literal()
             break;
         }
 
-        if (braced && units(text_, quote, at_ - 1) >= 12)
+        if (braced && units(text_, quote, at_ - 1) >= braced_escape_units)
         {
             const std::string sequence{text_.substr(quote, at_ - quote)};
 
             at_ = quote;
 
-            fail("invalid escape sequence " + sequence);
+            fail(std::format("invalid escape sequence {}", sequence));
         }
 
         ++pieces;
 
-        wide = wide || (written && *scalar > 0xFFFF);
+        wide = wide || (written && *scalar > last_basic_scalar);
 
         if (high && *scalar >= first_low_surrogate && *scalar <= last_surrogate)
         {
-            bytes += encoded(0x10000 + ((*high - first_surrogate) << 10U) + (*scalar - first_low_surrogate));
+            const auto paired{paired_scalar(*high, *scalar)};
+
+            bytes += regex::utf8::encode(paired);
 
             high = std::nullopt;
 
@@ -247,7 +202,7 @@ Literal Antlr_cursor::literal()
             lone(*scalar);
         }
 
-        bytes += encoded(*scalar);
+        bytes += regex::utf8::encode(*scalar);
     }
 
     if (high)
@@ -272,32 +227,20 @@ std::optional<char32_t> Antlr_cursor::character(const char closing)
     // its error 50 at the break, each in its words at the line the literal or set opened on.
     if (byte == '\n' || byte == '\r')
     {
+        const auto shown{byte == '\n' ? R"(\n)" : R"(\r)"};
+
+        const auto message{
+                closing == '\'' ? std::string{"unterminated string literal"} :
+                                  std::format("syntax error: mismatched character '{}' expecting ']'", shown)};
+
         --at_;
 
-        fail(closing == '\'' ? std::string{"unterminated string literal"} :
-                               std::format(
-                                       "syntax error: mismatched character '{}' expecting ']'",
-                                       byte == '\n' ? R"(\n)" : R"(\r)"));
+        fail(message);
     }
 
     if (byte != '\\')
     {
-        // A scalar typed directly in UTF-8: its lead byte says how many follow.
-        const auto value{static_cast<unsigned char>(byte)};
-
-        if (value < 0x80)
-        {
-            return value;
-        }
-
-        auto scalar{lead_bits(value)};
-
-        for (auto count{1UZ}; count < sequence_length(value); ++count)
-        {
-            scalar = (scalar << 6U) | (static_cast<unsigned char>(next("a continuation byte")) & 0x3FU);
-        }
-
-        return scalar;
+        return typed_scalar(static_cast<unsigned char>(byte));
     }
 
     const auto escaped{next("the escaped character")};
@@ -364,9 +307,33 @@ std::optional<char32_t> Antlr_cursor::character(const char closing)
 
         at_ = begin;
 
-        fail("invalid escape sequence " + sequence);
+        fail(std::format("invalid escape sequence {}", sequence));
     }
 
+    return unicode_escape();
+}
+
+char32_t Antlr_cursor::typed_scalar(const unsigned char lead)
+{
+    if (lead <= last_ascii)
+    {
+        return lead;
+    }
+
+    auto scalar{lead_bits(lead)};
+
+    for (auto count{1UZ}; count < sequence_length(lead); ++count)
+    {
+        const auto continuation{static_cast<unsigned char>(next("a continuation byte"))};
+
+        scalar = continued(scalar, continuation);
+    }
+
+    return scalar;
+}
+
+char32_t Antlr_cursor::unicode_escape()
+{
     // \uXXXX, or \u{X...} of one to six digits.
     const auto braced{peek() == '{'};
 
@@ -375,11 +342,13 @@ std::optional<char32_t> Antlr_cursor::character(const char closing)
         ++at_;
     }
 
+    const auto most_digits{braced ? braced_escape_digits : unbraced_escape_digits};
+
     char32_t scalar{0};
 
     std::size_t digits{0};
 
-    while (digits < (braced ? 6U : 4U) && peek() && is_hex_digit(*peek()))
+    while (digits < most_digits && peek() && is_hex_digit(*peek()))
     {
         const auto digit{next("a hex digit")};
 
@@ -388,43 +357,174 @@ std::optional<char32_t> Antlr_cursor::character(const char closing)
         ++digits;
     }
 
-    if (digits == 0 || (!braced && digits < 4) || (braced && next("'}'") != '}') || scalar > last_scalar)
+    const std::string malformed{R"(a Unicode escape is \uXXXX or \u{X...} up to U+10FFFF)"};
+
+    if (digits == 0 || (!braced && digits < most_digits))
     {
-        fail(R"(a Unicode escape is \uXXXX or \u{X...} up to U+10FFFF)");
+        fail(malformed);
+    }
+
+    if (braced)
+    {
+        const auto close{next("'}'")};
+
+        if (close != '}')
+        {
+            fail(malformed);
+        }
+    }
+
+    if (scalar > last_scalar)
+    {
+        fail(malformed);
     }
 
     return scalar;
 }
 
+void Antlr_cursor::element_options()
+{
+    skip_blanks();
+
+    if (accept('>'))
+    {
+        return;
+    }
+
+    // Each dot is a token of its own to ANTLR's lexer, with blanks and comments allowed on either side.
+    const auto qualified{[this](std::string name) {
+        skip_blanks();
+
+        while (!name.empty() && accept('.'))
+        {
+            skip_blanks();
+
+            const auto part{identifier()};
+
+            name = part.empty() ? std::string{} : std::format("{}.{}", name, part);
+
+            skip_blanks();
+        }
+
+        return name;
+    }};
+
+    const auto skip_value{[&] {
+        if (peek() == '\'')
+        {
+            ++at_;
+
+            std::ignore = literal();
+
+            return;
+        }
+
+        if (peek() == '{')
+        {
+            skip_block();
+
+            return;
+        }
+
+        if (const auto first{identifier()}; !first.empty())
+        {
+            const auto name{qualified(first)};
+
+            if (name.empty())
+            {
+                fail("an element option's value needs a name after its dot");
+            }
+
+            return;
+        }
+
+        const auto begin{at_};
+
+        while (peek() && is_digit(*peek()))
+        {
+            ++at_;
+        }
+
+        if (at_ == begin)
+        {
+            fail("an element option needs a value");
+        }
+    }};
+
+    // A value follows `=` after an undotted name alone.
+    for (;;)
+    {
+        const auto first{identifier()};
+
+        const auto name{qualified(first)};
+
+        if (name.empty())
+        {
+            fail("an element option needs a name");
+        }
+
+        if (name == first && accept('='))
+        {
+            skip_blanks();
+
+            skip_value();
+
+            skip_blanks();
+        }
+
+        if (accept(','))
+        {
+            skip_blanks();
+
+            continue;
+        }
+
+        expect('>', "'>' to close the element options");
+
+        return;
+    }
+}
+
 void Antlr_cursor::skip_block()
 {
+    // A comment's quotes are prose, the apostrophe of "the parser's" among them, so comments are skipped whole.
+    skip_bracketed('{', '}', true, "a brace block never closes");
+}
+
+void Antlr_cursor::skip_bracketed(
+        const char opener, const char closer, const bool comments, const std::string& unclosed)
+{
     const auto opened{at_};
+
+    const auto expected{std::format("'{}'", closer)};
 
     std::size_t depth{0};
 
     do
     {
-        // A comment's quotes are prose, the apostrophe of "the parser's" among them, so comments are skipped whole.
-        skip_blanks();
+        if (comments)
+        {
+            skip_blanks();
+        }
 
         if (!peek())
         {
             at_ = opened;
 
-            fail("a brace block never closes");
+            fail(unclosed);
         }
 
-        const auto byte{next("'}'")};
+        const auto byte{next(expected)};
 
         if (byte == '\'' || byte == '"')
         {
             skip_quoted(byte);
         }
-        else if (byte == '{')
+        else if (byte == opener)
         {
             ++depth;
         }
-        else if (byte == '}')
+        else if (byte == closer)
         {
             --depth;
         }

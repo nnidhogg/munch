@@ -15,24 +15,39 @@ namespace munch::tools::audit
  */
 enum class Kind : std::uint8_t
 {
+    /**
+     * @brief A flex file, read by read_flex().
+     */
     flex,
+
+    /**
+     * @brief A file holding re2c blocks, read by read_re2c().
+     */
     re2c,
+
+    /**
+     * @brief An ANTLR 4 grammar, read by read_antlr().
+     */
     antlr,
+
+    /**
+     * @brief A Rust file deriving Logos, read by read_logos().
+     */
     logos
 };
 
 /**
- * @brief The kind a file's text says: ANTLR when its first item is a grammar declaration; logos when a derive names
- *        Logos; re2c when it opens a re2c block, which no other file does; flex otherwise. The name says nothing,
- *        since re2c lives in files of any extension and PHP's re2c scanners end in `.l`. Each question is asked of
- *        the text in the language it asks about, since the three do not lex alike: Rust nests its block comments
- *        and writes a lifetime where C writes a character literal, so a marker inside a nested comment or after a
- *        lifetime opens nothing, and an ANTLR character set holding a re2c opener is the set's bytes. A literal,
- *        comment and a raw string hold no marker in any of them.
+ * @brief Returns the kind a file's text says: ANTLR when its first item is a grammar declaration; logos when a derive
+ *        names Logos; re2c when it opens a re2c block, which no other file does; flex otherwise. The name says nothing,
+ *        since re2c lives in files of any extension and PHP's re2c scanners end in `.l`. Each question is asked of the
+ *        text in the language it asks about, since the three do not lex alike: Rust nests its block comments and writes
+ *        a lifetime where C writes a character literal, so a marker inside a nested comment or after a lifetime opens
+ *        nothing, and an ANTLR character set holding a re2c opener is the set's bytes. A literal, comment and a raw
+ *        string hold no marker in any of them.
  * @param source The file's text.
  * @return The kind.
  */
-[[nodiscard]] Kind kind_of(std::string_view source) noexcept;
+[[nodiscard]] Kind kind_of(std::string_view source);
 
 } // namespace munch::tools::audit
 

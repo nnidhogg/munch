@@ -9,28 +9,49 @@
 
 namespace munch::tools::audit
 {
+namespace
+{
+/**
+ * @brief The last scalar below the surrogates.
+ */
+constexpr char32_t below_surrogates{first_surrogate - 1};
+
+/**
+ * @brief The first scalar above the surrogates.
+ */
+constexpr char32_t above_surrogates{last_surrogate + 1};
+
+} // namespace
+
 void Scalar_set::add(const char32_t low, const char32_t high)
 {
-    spans_gap_ = spans_gap_ || (low <= 0xD7FF && high >= 0xE000);
+    spans_gap_ = spans_gap_ || (low <= below_surrogates && high >= above_surrogates);
 
     ranges_.emplace_back(low, high);
 
     std::ranges::sort(ranges_);
 
-    std::vector<Range_t> merged;
+    std::vector<Range_t> merged{};
 
     for (const auto& [from, to] : ranges_)
     {
-        if (merged.empty() || from > merged.back().second + 1)
+        if (merged.empty())
         {
             merged.emplace_back(from, to);
 
             continue;
         }
 
-        auto& [low, high]{merged.back()};
+        auto& [kept_low, kept_high]{merged.back()};
 
-        high = std::max(high, to);
+        if (from > kept_high + 1)
+        {
+            merged.emplace_back(from, to);
+
+            continue;
+        }
+
+        kept_high = std::max(kept_high, to);
     }
 
     ranges_ = std::move(merged);
@@ -48,9 +69,9 @@ void Scalar_set::add(const Scalar_set& other)
 
 Scalar_set Scalar_set::minus(const Scalar_set& other) const
 {
-    Scalar_set difference;
+    Scalar_set difference{};
 
-    difference.spans_gap_ = spans_gap_ && !other.contains(0xD7FF) && !other.contains(0xE000);
+    difference.spans_gap_ = spans_gap_ && !other.contains(below_surrogates) && !other.contains(above_surrogates);
 
     for (const auto& [low, high] : ranges_)
     {
@@ -99,11 +120,13 @@ const std::vector<Scalar_set::Range_t>& Scalar_set::ranges() const noexcept
 
 bool Scalar_set::contains(const char32_t value) const noexcept
 {
-    return std::ranges::any_of(ranges_, [value](const Range_t& range) {
+    const auto holds{[value](const Range_t& range) {
         const auto& [low, high]{range};
 
         return low <= value && value <= high;
-    });
+    }};
+
+    return std::ranges::any_of(ranges_, holds);
 }
 
 bool Scalar_set::empty() const noexcept
@@ -130,11 +153,11 @@ bool Scalar_set::spans_gap() const noexcept
 
 Scalar_set universe_of(const bool unicode)
 {
-    Scalar_set set;
+    Scalar_set set{};
 
     if (!unicode)
     {
-        set.add(0, 0xFF);
+        set.add(0, last_byte);
 
         return set;
     }
@@ -142,7 +165,7 @@ Scalar_set universe_of(const bool unicode)
     // Made as the crate makes its dot, one range across the surrogate gap, with the surrogates then taken out.
     set.add(0, last_scalar);
 
-    Scalar_set surrogates;
+    Scalar_set surrogates{};
 
     surrogates.add(first_surrogate, last_surrogate);
 

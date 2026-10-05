@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <string>
 
+#include "munch/tools/audit/expression.hpp"
 #include "munch/tools/audit/logos_regex.hpp"
 
 /**
@@ -19,6 +20,11 @@
 namespace munch::tools::audit
 {
 /**
+ * @brief A set of bytes, one bit per byte value.
+ */
+using Byte_set_t = std::bitset<byte_values>;
+
+/**
  * @brief Refuses a repetition logos 0.15.1 cannot resolve at its boundary, whose scanner then matches nothing.
  *
  * The crate's graph decides a repetition's end on one byte, so an unbounded repetition whose operand can begin with a
@@ -32,7 +38,7 @@ namespace munch::tools::audit
  * @param line The line, for refusals.
  * @throws Spec_error If a repetition's operand and its follow share a byte.
  */
-void check_repetitions(const Node& node, const std::bitset<256>& follow, std::size_t line);
+void check_repetitions(const Node& node, const Byte_set_t& follow, std::size_t line);
 
 /**
  * @brief Refuses an unbounded repetition of the dot under `s`, which logos 0.15.1 refuses.

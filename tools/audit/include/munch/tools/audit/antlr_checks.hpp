@@ -26,7 +26,7 @@ namespace munch::tools::audit
 void finish_grammar(const Grammar_tables& tables, bool case_insensitive, Lexer_spec& spec);
 
 /**
- * @brief Whether a `mode` line of the grammar names a mode, DEFAULT_MODE's reopening among them.
+ * @brief Returns whether a `mode` line of the grammar names a mode, DEFAULT_MODE's reopening among them.
  * @param tables What the reading recorded about the grammar, its sections so far.
  * @param name The name.
  * @return True when one does.

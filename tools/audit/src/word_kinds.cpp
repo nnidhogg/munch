@@ -135,12 +135,6 @@ Word_kinds& Word_kinds::operator|=(const Word_kinds other) noexcept
 
 Word_kinds Word_kinds::of(const regex::Regex& regex, const unsigned char byte)
 {
-    /**
-     * @brief Returns the kinds of word a pattern of one kind matches.
-     * @tparam Node The node's type.
-     * @param node The pattern.
-     * @return The kinds.
-     */
     const auto kinds_of{[byte]<typename Node>(const Node& node) -> Word_kinds {
         if constexpr (std::is_same_v<Node, regex::Any_of>)
         {
@@ -195,12 +189,6 @@ Word_kinds Word_kinds::of(const regex::Regex& regex, const unsigned char byte)
 
             const auto inner{of(*node.regex, byte)};
 
-            /**
-             * @brief Returns the kinds of word a repetition of one kind makes of the repeated words.
-             * @tparam Kind The kind's type.
-             * @param kind The repetition's kind.
-             * @return The kinds.
-             */
             const auto repeated_by{[inner]<typename Kind>(const Kind& kind) {
                 if constexpr (std::is_same_v<Kind, regex::Kleene>)
                 {
@@ -239,9 +227,9 @@ Word_kinds Word_kinds::of(const regex::Regex& regex, const unsigned char byte)
 
 Word_kinds Word_kinds::followed_by(const Word_kinds second) const noexcept
 {
-    static constexpr std::array words{Word::empty, Word::plain, Word::leading, Word::mid};
-
     Word_kinds out{};
+
+    static constexpr std::array words{Word::empty, Word::plain, Word::leading, Word::mid};
 
     for (const auto first_word : words)
     {

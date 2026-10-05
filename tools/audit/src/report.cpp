@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <deque>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <optional>
@@ -14,67 +15,66 @@
 #include <vector>
 
 #include "munch/dfa/simulator.hpp"
+#include "munch/tools/audit/expression.hpp"
 
 namespace munch::tools::audit
 {
 namespace
 {
-// Implements report.hpp's decisions: the byte classes, the window enumeration and its expansion, and the shortest
-// inputs the blame is given with, are private to this unit; report_render.cpp renders what they decide.
-
 /**
- * @brief The byte a class is shown by: its first printable member when it has one, since a reader recognises that
+ * @brief Returns the byte a class is shown by: its first graphic member when it has one, since a reader recognises that
  *        one, else its lowest; every member decides alike, so the choice is a matter of display alone.
  * @param members The class, ascending.
  * @return The representative.
  */
 [[nodiscard]] unsigned char representative(const std::vector<unsigned char>& members) noexcept
 {
-    const auto printable{
-            std::ranges::find_if(members, [](const unsigned char byte) { return byte > 0x20 && byte < 0x7F; })};
+    const auto graphic{std::ranges::find_if(members, is_graphic)};
 
-    return printable == members.end() ? members.front() : *printable;
+    return graphic == members.end() ? members.front() : *graphic;
 }
 
 /**
- * @brief The byte classes of the tables: two bytes are one class when every state moves on both to the same state,
- *        so any decision over transitions gives one answer for the whole class.
+ * @brief Returns the byte classes of the tables: two bytes are one class when every state moves on both to the same
+ *        state, so any decision over transitions gives one answer for the whole class.
  * @param simulator The tables.
  * @return Every class's members, ascending, the classes in order of their lowest byte.
  */
 [[nodiscard]] std::vector<std::vector<unsigned char>> byte_classes(const dfa::Simulator& simulator)
 {
-    std::map<std::vector<std::optional<std::size_t>>, std::vector<unsigned char>> by_signature;
+    std::map<std::vector<std::optional<std::size_t>>, std::vector<unsigned char>> by_signature{};
 
     for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
     {
-        std::vector<std::optional<std::size_t>> signature;
+        const auto byte{static_cast<unsigned char>(value)};
+
+        std::vector<std::optional<std::size_t>> signature{};
 
         signature.reserve(simulator.state_count());
 
         for (std::size_t state{0}; state < simulator.state_count(); ++state)
         {
-            signature.push_back(simulator.step(state, static_cast<unsigned char>(value)));
+            signature.push_back(simulator.step(state, byte));
         }
 
-        by_signature[std::move(signature)].push_back(static_cast<unsigned char>(value));
+        by_signature[std::move(signature)].push_back(byte);
     }
 
-    std::vector<std::vector<unsigned char>> classes;
+    std::vector<std::vector<unsigned char>> classes{};
 
-    for (auto& members : by_signature | std::views::values)
-    {
-        classes.push_back(std::move(members));
-    }
+    std::ranges::move(by_signature | std::views::values, std::back_inserter(classes));
+
+    // Each class gathers its bytes ascending.
+    const auto lowest_member{[](const std::vector<unsigned char>& members) { return members.front(); }};
 
     // Ordered by lowest byte, so the enumeration and the report are deterministic and read in byte order.
-    std::ranges::sort(classes, {}, [](const std::vector<unsigned char>& members) { return members.front(); });
+    std::ranges::sort(classes, {}, lowest_member);
 
     return classes;
 }
 
 /**
- * @brief Every certified window over class representatives up to a width, widths ascending.
+ * @brief Returns every certified window over class representatives up to a width, widths ascending.
  * @param lexer The token set.
  * @param classes The byte classes.
  * @param limit The longest width tried.
@@ -83,30 +83,36 @@ namespace
 [[nodiscard]] std::vector<Certified_window> certified_windows(
         const core::Lexer& lexer, const std::vector<std::vector<unsigned char>>& classes, const std::size_t limit)
 {
-    std::vector<Certified_window> windows;
+    std::vector<Certified_window> windows{};
 
     std::vector<std::string> frontier{""};
 
+    const auto extend{[&](const std::string& prefix, const std::size_t width, std::vector<std::string>& next) {
+        for (const auto& members : classes)
+        {
+            const auto byte{representative(members)};
+
+            auto window{prefix};
+
+            window.push_back(static_cast<char>(byte));
+
+            // A window is two bytes at least; one byte is the byte certificate's to decide.
+            if (const auto origin{width >= 2 ? lexer.is_split_window(window) : std::nullopt})
+            {
+                windows.push_back({.window = window, .origin = *origin});
+            }
+
+            next.push_back(std::move(window));
+        }
+    }};
+
     for (std::size_t width{1}; width <= limit; ++width)
     {
-        std::vector<std::string> next;
+        std::vector<std::string> next{};
 
         for (const auto& prefix : frontier)
         {
-            for (const auto& members : classes)
-            {
-                auto window{prefix};
-
-                window.push_back(static_cast<char>(representative(members)));
-
-                // A window is two bytes at least; one byte is the byte certificate's to decide.
-                if (const auto origin{width >= 2 ? lexer.is_split_window(window) : std::nullopt})
-                {
-                    windows.push_back({.window = window, .origin = *origin});
-                }
-
-                next.push_back(std::move(window));
-            }
+            extend(prefix, width, next);
         }
 
         frontier = std::move(next);
@@ -116,7 +122,24 @@ namespace
 }
 
 /**
- * @brief How many byte strings the certified windows stand for once every representative expands to its class.
+ * @brief Returns where each byte class stands among the classes, by its representative.
+ * @param classes The byte classes.
+ * @return The index of each class, keyed by the byte it is shown by.
+ */
+[[nodiscard]] std::map<unsigned char, std::size_t> class_indices(const std::vector<std::vector<unsigned char>>& classes)
+{
+    std::map<unsigned char, std::size_t> class_of{};
+
+    for (const auto [index, members] : std::views::enumerate(classes))
+    {
+        class_of[representative(members)] = static_cast<std::size_t>(index);
+    }
+
+    return class_of;
+}
+
+/**
+ * @brief Returns how many byte strings the certified windows stand for once every representative expands to its class.
  *
  * A window stands for the product of its bytes' class sizes, and the windows an input can show are the sum over the
  * windows. Both are counted checked, since the count outgrows what holds it: eight bytes of one class of 256, the
@@ -124,21 +147,16 @@ namespace
  * byte class always has a member, so the products below divide by no zero.
  * @param windows The certified windows over class representatives.
  * @param classes The byte classes.
+ * @param class_of The index of each class, keyed by its representative, as class_indices() gives it.
  * @return The count, or std::nullopt when it is more than a std::size_t can hold.
  */
 [[nodiscard]] std::optional<std::size_t> expansion_count(
-        const std::vector<Certified_window>& windows, const std::vector<std::vector<unsigned char>>& classes)
+        const std::vector<Certified_window>& windows, const std::vector<std::vector<unsigned char>>& classes,
+        const std::map<unsigned char, std::size_t>& class_of)
 {
-    constexpr auto most{std::numeric_limits<std::size_t>::max()};
-
-    std::map<unsigned char, std::size_t> class_size;
-
-    for (const auto& members : classes)
-    {
-        class_size[representative(members)] = members.size();
-    }
-
     std::size_t total{0};
+
+    static constexpr auto most{std::numeric_limits<std::size_t>::max()};
 
     for (const auto& [window, origin] : windows)
     {
@@ -146,7 +164,7 @@ namespace
 
         for (const auto byte : window)
         {
-            const auto size{class_size.at(static_cast<unsigned char>(byte))};
+            const auto size{classes[class_of.at(static_cast<unsigned char>(byte))].size()};
 
             if (count > most / size)
             {
@@ -168,23 +186,40 @@ namespace
 }
 
 /**
- * @brief The certified windows with every class expanded to its member bytes, the inventory the span is decided
+ * @brief Returns the certified windows with every class expanded to its member bytes, the inventory the span is decided
  *        over, or std::nullopt when there would be more than the cap.
  * @param windows The windows over representatives.
  * @param classes The byte classes.
+ * @param class_of The index of each class, keyed by its representative.
  * @return The expanded inventory.
  */
-[[nodiscard]] std::optional<std::vector<std::pair<std::string, std::size_t>>> expanded(
-        const std::vector<Certified_window>& windows, const std::vector<std::vector<unsigned char>>& classes)
+[[nodiscard]] std::optional<std::vector<Certified_window>> expanded(
+        const std::vector<Certified_window>& windows, const std::vector<std::vector<unsigned char>>& classes,
+        const std::map<unsigned char, std::size_t>& class_of)
 {
-    std::map<unsigned char, std::size_t> class_of;
+    std::vector<Certified_window> inventory{};
 
-    for (std::size_t index{0}; index < classes.size(); ++index)
-    {
-        class_of[representative(classes[index])] = index;
-    }
+    // Nothing once the expansions and the inventory pass the cap.
+    const auto expand{
+            [&](const std::vector<std::string>& partial,
+                const std::vector<unsigned char>& members) -> std::optional<std::vector<std::string>> {
+                std::vector<std::string> longer{};
 
-    std::vector<std::pair<std::string, std::size_t>> inventory;
+                for (const auto& head : partial)
+                {
+                    for (const auto member : members)
+                    {
+                        longer.push_back(head + static_cast<char>(member));
+                    }
+
+                    if (inventory.size() + longer.size() > span_window_cap)
+                    {
+                        return std::nullopt;
+                    }
+                }
+
+                return longer;
+            }};
 
     for (const auto& [window, origin] : windows)
     {
@@ -192,27 +227,21 @@ namespace
 
         for (const auto byte : window)
         {
-            std::vector<std::string> longer;
+            const auto& members{classes[class_of.at(static_cast<unsigned char>(byte))]};
 
-            for (const auto& head : partial)
+            auto longer{expand(partial, members)};
+
+            if (!longer)
             {
-                for (const auto member : classes[class_of.at(static_cast<unsigned char>(byte))])
-                {
-                    longer.push_back(head + static_cast<char>(member));
-                }
-
-                if (inventory.size() + longer.size() > span_window_cap)
-                {
-                    return std::nullopt;
-                }
+                return std::nullopt;
             }
 
-            partial = std::move(longer);
+            partial = std::move(*longer);
         }
 
         for (auto& expansion : partial)
         {
-            inventory.emplace_back(std::move(expansion), origin);
+            inventory.push_back({.window = std::move(expansion), .origin = origin});
         }
     }
 
@@ -220,7 +249,7 @@ namespace
 }
 
 /**
- * @brief A shortest input reaching every reachable state, found breadth first from the initial state.
+ * @brief Returns a shortest input reaching every reachable state, found breadth first from the initial state.
  * @param simulator The tables.
  * @return The input per state, absent for a state no input reaches.
  */
@@ -230,7 +259,7 @@ namespace
 
     input[simulator.init_state()] = std::string{};
 
-    std::deque<std::size_t> pending{simulator.init_state()};
+    std::deque pending{simulator.init_state()};
 
     while (!pending.empty())
     {
@@ -255,8 +284,8 @@ namespace
 }
 
 /**
- * @brief The tokens reachable from each state: those the accepting states reachable from it accept, which are the
- *        tokens a match path through it can still be on its way to.
+ * @brief Returns the tokens reachable from each state: those the accepting states reachable from it accept, which are
+ *        the tokens a match path through it can still be on its way to.
  *
  * Every reachable accepting state counts, not the nearest one, because an accepting state lies on the way to longer
  * tokens' accepting states: with the rules a[\nx] and a[\nx]b, the state accepting the shorter one is where the scan of
@@ -267,13 +296,12 @@ namespace
  */
 [[nodiscard]] std::vector<std::set<std::size_t>> tokens_ahead(const dfa::Simulator& simulator)
 {
-    std::vector<std::set<std::size_t>> ahead(simulator.state_count());
+    const auto reachable_tokens{[&](const std::size_t from) {
+        std::set<std::size_t> tokens{};
 
-    for (std::size_t from{0}; from < simulator.state_count(); ++from)
-    {
         std::vector<bool> seen(simulator.state_count(), false);
 
-        std::deque<std::size_t> pending{from};
+        std::deque pending{from};
 
         seen[from] = true;
 
@@ -285,26 +313,39 @@ namespace
 
             if (const auto token{simulator.accepted(at)})
             {
-                ahead[from].insert(token->id());
+                tokens.insert(token->id());
             }
 
             for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
             {
-                if (const auto to{simulator.step(at, static_cast<unsigned char>(value))}; to && !seen[*to])
-                {
-                    seen[*to] = true;
+                const auto to{simulator.step(at, static_cast<unsigned char>(value))};
 
-                    pending.push_back(*to);
+                if (!to || seen[*to])
+                {
+                    continue;
                 }
+
+                seen[*to] = true;
+
+                pending.push_back(*to);
             }
         }
+
+        return tokens;
+    }};
+
+    std::vector<std::set<std::size_t>> ahead(simulator.state_count());
+
+    for (std::size_t from{0}; from < simulator.state_count(); ++from)
+    {
+        ahead[from] = reachable_tokens(from);
     }
 
     return ahead;
 }
 
 /**
- * @brief A shortest nonempty input after which the scan stands in the initial state again.
+ * @brief Returns a shortest nonempty input after which the scan stands in the initial state again.
  *
  * A shortest such input is a shortest input reaching a state that steps into the initial state, one byte longer, so the
  * inputs already found decide it without a walk of its own. It exists exactly where a reachable state steps back into
@@ -316,7 +357,7 @@ namespace
 [[nodiscard]] std::optional<std::string> shortest_re_entry(
         const dfa::Simulator& simulator, const std::vector<std::optional<std::string>>& inputs)
 {
-    std::optional<std::string> shortest;
+    std::optional<std::string> shortest{};
 
     for (std::size_t state{0}; state < simulator.state_count(); ++state)
     {
@@ -327,7 +368,9 @@ namespace
 
         for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
         {
-            if (simulator.step(state, static_cast<unsigned char>(value)) != simulator.init_state())
+            const auto to{simulator.step(state, static_cast<unsigned char>(value))};
+
+            if (to != simulator.init_state())
             {
                 continue;
             }
@@ -342,6 +385,45 @@ namespace
     }
 
     return shortest;
+}
+
+/**
+ * @brief Returns the anchor-free span decided over the certified windows expanded to their member bytes.
+ * @param lexer The token set.
+ * @param windows The certified windows over class representatives.
+ * @param classes The byte classes.
+ * @param class_of The index of each class, keyed by its representative.
+ * @return The span the lexer decides, or std::nullopt when no window is certified or the inventory passes its cap.
+ */
+[[nodiscard]] std::optional<std::optional<std::size_t>> window_span(
+        const core::Lexer& lexer, const std::vector<Certified_window>& windows,
+        const std::vector<std::vector<unsigned char>>& classes, const std::map<unsigned char, std::size_t>& class_of)
+{
+    if (windows.empty())
+    {
+        return std::nullopt;
+    }
+
+    const auto inventory{expanded(windows, classes, class_of)};
+
+    if (!inventory)
+    {
+        return std::nullopt;
+    }
+
+    const auto viewed{[](const Certified_window& entry) {
+        const auto& [window, origin]{entry};
+
+        return std::pair<std::string_view, std::size_t>{window, origin};
+    }};
+
+    std::vector<std::pair<std::string_view, std::size_t>> views{};
+
+    views.reserve(inventory->size());
+
+    std::ranges::transform(*inventory, std::back_inserter(views), viewed);
+
+    return std::optional<std::optional<std::size_t>>{std::in_place, lexer.anchor_free_span(views)};
 }
 
 } // namespace
@@ -371,10 +453,14 @@ Report audit(const Token_set& set, const std::size_t window_limit)
 
     for (const auto byte : asked)
     {
-        if (!std::ranges::binary_search(report.exact, byte))
+        if (std::ranges::binary_search(report.exact, byte))
         {
-            report.prices.push_back(price(set, byte));
+            continue;
         }
+
+        auto pricing{price(set, byte)};
+
+        report.prices.push_back(std::move(pricing));
     }
 
     return report;
@@ -384,22 +470,19 @@ Report audit(const core::Lexer& lexer, const std::size_t window_limit)
 {
     const auto& simulator{lexer.simulator()};
 
-    Report report{
-            .nullable = simulator.nullable(),
-            .exact = {},
-            .modulo = {},
-            .discarded = {},
-            .classes = {},
-            .window_limit = window_limit,
-            .windows = {},
-            .window_count = std::nullopt,
-            .mandatory_core = std::string{lexer.mandatory_core()},
-            .byte_span = lexer.anchor_free_span(),
-            .window_span = std::nullopt,
-            .lag = lexer.lag(),
-            .rescue = lexer.rescue(),
-            .blame = {},
-            .prices = {}};
+    const auto nullable{simulator.nullable()};
+
+    std::string mandatory_core{lexer.mandatory_core()};
+
+    const auto byte_span{lexer.anchor_free_span()};
+
+    const auto lag{lexer.lag()};
+
+    const auto rescue{lexer.rescue()};
+
+    std::vector<unsigned char> exact{};
+
+    std::vector<unsigned char> modulo{};
 
     for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
     {
@@ -407,41 +490,42 @@ Report audit(const core::Lexer& lexer, const std::size_t window_limit)
 
         if (lexer.is_split_point(byte))
         {
-            report.exact.push_back(static_cast<unsigned char>(value));
+            exact.push_back(static_cast<unsigned char>(value));
         }
 
         if (lexer.is_split_point_ignoring(byte))
         {
-            report.modulo.push_back(static_cast<unsigned char>(value));
+            modulo.push_back(static_cast<unsigned char>(value));
         }
     }
 
-    report.classes = byte_classes(simulator);
+    auto classes{byte_classes(simulator)};
 
-    report.windows = certified_windows(lexer, report.classes, window_limit);
+    const auto class_of{class_indices(classes)};
 
-    report.window_count = expansion_count(report.windows, report.classes);
+    auto windows{certified_windows(lexer, classes, window_limit)};
 
-    if (!report.windows.empty())
-    {
-        if (const auto inventory{expanded(report.windows, report.classes)})
-        {
-            std::vector<std::pair<std::string_view, std::size_t>> views;
+    const auto window_count{expansion_count(windows, classes, class_of)};
 
-            views.reserve(inventory->size());
+    const auto spanned{window_span(lexer, windows, classes, class_of)};
 
-            for (const auto& [window, origin] : *inventory)
-            {
-                views.emplace_back(window, origin);
-            }
+    auto blamed{blame(lexer)};
 
-            report.window_span = lexer.anchor_free_span(views);
-        }
-    }
-
-    report.blame = blame(lexer);
-
-    return report;
+    return {.nullable = nullable,
+            .exact = std::move(exact),
+            .modulo = std::move(modulo),
+            .discarded = {},
+            .classes = std::move(classes),
+            .window_limit = window_limit,
+            .windows = std::move(windows),
+            .window_count = window_count,
+            .mandatory_core = std::move(mandatory_core),
+            .byte_span = byte_span,
+            .window_span = spanned,
+            .lag = lag,
+            .rescue = rescue,
+            .blame = std::move(blamed),
+            .prices = {}};
 }
 
 std::vector<Blame> blame(const core::Lexer& lexer)
@@ -457,7 +541,22 @@ std::vector<Blame> blame(const core::Lexer& lexer)
     // than after none.
     const auto re_entry{shortest_re_entry(simulator, inputs)};
 
-    std::vector<Blame> blame;
+    std::vector<Blame> entries{};
+
+    const auto keep_shortest{[&](std::map<std::size_t, std::string>& shortest_by_token, const std::size_t to,
+                                 const std::string& reached) {
+        for (const auto token : ahead[to])
+        {
+            const auto [found, inserted]{shortest_by_token.try_emplace(token, reached)};
+
+            auto& [kept_token, kept]{*found};
+
+            if (!inserted && reached.size() < kept.size())
+            {
+                kept = reached;
+            }
+        }
+    }};
 
     for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
     {
@@ -471,7 +570,7 @@ std::vector<Blame> blame(const core::Lexer& lexer)
             continue;
         }
 
-        std::map<std::size_t, std::string> shortest_by_token;
+        std::map<std::size_t, std::string> shortest_by_token{};
 
         for (std::size_t state{0}; state < simulator.state_count(); ++state)
         {
@@ -489,24 +588,16 @@ std::vector<Blame> blame(const core::Lexer& lexer)
                 continue;
             }
 
-            for (const auto token : ahead[*to])
-            {
-                const auto found{shortest_by_token.find(token)};
-
-                if (found == shortest_by_token.end() || reached->size() < found->second.size())
-                {
-                    shortest_by_token.insert_or_assign(token, *reached);
-                }
-            }
+            keep_shortest(shortest_by_token, *to, *reached);
         }
 
         for (const auto& [token, after] : shortest_by_token)
         {
-            blame.push_back({.byte = byte, .token = token, .after = after});
+            entries.push_back({.byte = byte, .token = token, .after = after});
         }
     }
 
-    return blame;
+    return entries;
 }
 
 } // namespace munch::tools::audit

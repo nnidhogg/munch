@@ -549,11 +549,6 @@ TEST(Read_logos_test, The_built_lexer_ranks_as_logos_ranks)
 
 TEST(Read_logos_test, Priorities_are_computed_as_the_handbook_documents)
 {
-    /**
-     * @brief Returns the priority of the one rule a variant's attribute gives.
-     * @param attribute The variant's attribute.
-     * @return The priority.
-     */
     const auto priority_of{[](const std::string_view attribute) { return *rule_of(attribute).priority; }};
 
     // The handbook's own examples, and the shapes around them.
@@ -689,11 +684,6 @@ TEST(Read_logos_test, Unicode_perl_classes_are_the_crates_at_the_version_the_cra
     EXPECT_FALSE(digits.expression.contains(R"(\u{11de0})"));
 
     // Built, the digit class takes the ASCII digit and leaves that code point's encoding to its negation.
-    /**
-     * @brief Returns the scanner built from a file whose enum's one variant carries the attribute given.
-     * @param attribute The variant's attribute.
-     * @return The scanner.
-     */
     const auto lexer_of{[](const std::string_view attribute) {
         const auto file{read_logos(attribute_file(attribute)).front()};
 
@@ -736,13 +726,6 @@ TEST(Read_logos_test, A_subpattern_is_read_in_the_mode_of_the_pattern_referencin
     // range, a byte dot any scalar but the newline, and under `ignore(case)` the string pattern's Unicode folding, the
     // Kelvin sign with `k`, while a string's `\xe9` referenced from a byte pattern is that byte and its typed scalar
     // its UTF-8. The priority follows the mode too: two scalars count four, the crate's conflict check answering so.
-    /**
-     * @brief Returns the first rule of a file whose enum declares a subpattern and carries the attribute given on its
-     *        one variant.
-     * @param definition The subpattern's name and pattern.
-     * @param attribute The variant's attribute.
-     * @return The rule.
-     */
     const auto first_rule{[](const std::string_view definition, const std::string_view attribute) {
         const auto file{std::format(
                 "#[derive(Logos)]\n#[logos(subpattern {})]\nenum T {{\n{}\n    V,\n}}\n", definition, attribute)};
@@ -842,13 +825,6 @@ TEST(Read_logos_test, A_subpattern_is_substituted_as_text_before_the_priority_is
     // scalar and counts two, while a run that is UTF-8 on its own and not once joined counts its bytes. logos 0.15.1's
     // conflict hint names each of these priorities one higher, `priority = 3` for the first and third and `priority =
     // 7` for the second, and a capture around the reference keeps the runs apart, four, which lets that pair build.
-    /**
-     * @brief Returns the first rule of a file whose enum carries the attributes given and the attribute given on its
-     *        one variant.
-     * @param definitions The enum's attributes, each line ending in a newline.
-     * @param attribute The variant's attribute.
-     * @return The rule.
-     */
     const auto first_rule{[](const std::string_view definitions, const std::string_view attribute) {
         const auto file{std::format("#[derive(Logos)]\n{}enum T {{\n{}\n    V,\n}}\n", definitions, attribute)};
 
@@ -1735,13 +1711,6 @@ TEST(Read_logos_test, A_name_is_read_as_the_module_the_callback_stands_in_binds_
     // A binding stands for the same wherever it is declared among the file's items, as Rust has it: `type D = Drop;`
     // inside `mod m` above `use logos::{Skip as Drop}` is the crate's `Skip` as it is below it, and so is `use
     // self::inner::Drop as D` inside `m` above the `mod inner` that binds `Drop`; the crate discards x on each.
-    /**
-     * @brief Returns a file whose module `m` holds the two items given, the enum and the callback `drop_it` returning
-     *        `D`.
-     * @param first The first item.
-     * @param second The second item.
-     * @return The file's text.
-     */
     const auto aliased{[](const std::string_view first, const std::string_view second) {
         return std::format(
                 "use logos::Logos;\nmod m {{\n    {}\n    {}\n    #[derive(Logos)]\n    pub enum T {{\n        "
@@ -1771,13 +1740,6 @@ TEST(Read_logos_test, A_name_is_read_as_the_module_the_callback_stands_in_binds_
     // m::T`, `impl crate::m::T` and `impl self::m::T` at the root and `impl U` under `use self::m::T as U` define the
     // `T::drop_it` the enum inside `m` names, as `impl T` inside `m` does, and `Self` in each is the enum, so that
     // `Self::Y` returned is Y; the crate discards x under each and emits Y for the last.
-    /**
-     * @brief Returns a file whose enum stands in `m`, its variant V carrying the callback given, and the impl block
-     *        given at the root.
-     * @param attribute The callback's path.
-     * @param block The impl block.
-     * @return The file's text.
-     */
     const auto impl_of{[](const std::string_view attribute, const std::string_view block) {
         return std::format(
                 "use logos::{{Lexer, Logos, Skip}};\nuse self::m::T as U;\nmod m {{\n    use logos::Logos;\n    "
@@ -1817,11 +1779,6 @@ TEST(Read_logos_test, A_self_import_is_read_where_rustc_takes_one_and_refused_in
     // rustc takes a `self` alone in a brace group under a module, which binds the module, and refuses a `self` ending
     // any other path, its error E0429, and one alone in a group under no module, its error E0431; each refusal names
     // the line of the `self`.
-    /**
-     * @brief Returns what the refusal of a file holding the items given before its enum says.
-     * @param items The items.
-     * @return The refusal, empty when the file is read.
-     */
     const auto reason{[](const std::string_view items) {
         const auto file{std::format(
                 "use logos::Logos;\n{}#[derive(Logos)]\nenum T {{\n    #[token(\"x\")]\n    V,\n}}\n", items)};
@@ -1832,10 +1789,6 @@ TEST(Read_logos_test, A_self_import_is_read_where_rustc_takes_one_and_refused_in
     const std::string unbraced{
             "rustc refuses a `self` import outside a { } list: `self` imports are only allowed within a { } list"};
 
-    const std::string unprefixed{
-            "rustc refuses a `self` import with no module before it: "
-            "`self` import can only appear in an import list with a non-empty prefix"};
-
     EXPECT_EQ(reason("use self;\n"), "line 2: " + unbraced);
     EXPECT_EQ(reason("use self as n;\n"), "line 2: " + unbraced);
     EXPECT_EQ(reason("mod m { pub struct S; }\nuse m::self;\n"), "line 3: " + unbraced);
@@ -1843,6 +1796,11 @@ TEST(Read_logos_test, A_self_import_is_read_where_rustc_takes_one_and_refused_in
     EXPECT_EQ(reason("mod m { pub struct S; }\nuse {m::self};\n"), "line 3: " + unbraced);
     EXPECT_EQ(reason("use self\n;\n"), "line 2: " + unbraced);
     EXPECT_EQ(reason("use self // c\n ;\n"), "line 2: " + unbraced);
+
+    const std::string unprefixed{
+            "rustc refuses a `self` import with no module before it: "
+            "`self` import can only appear in an import list with a non-empty prefix"};
+
     EXPECT_EQ(reason("use {self};\n"), "line 2: " + unprefixed);
     EXPECT_EQ(reason("use {self as n};\n"), "line 2: " + unprefixed);
     EXPECT_EQ(reason("use ::{self};\n"), "line 2: " + unprefixed);
@@ -1851,13 +1809,6 @@ TEST(Read_logos_test, A_self_import_is_read_where_rustc_takes_one_and_refused_in
     // The module a `self` in a group binds is the one its path names: a callback returning `m::Skip` or `n::Skip`
     // through it skips x where the module re-exports the crate's `Skip`, and emits V, its payload, where the module
     // holds a struct of that name.
-    /**
-     * @brief Returns the token of a file whose callback returns the `Skip` a module reached through an import names.
-     * @param item The item of `outer::m`.
-     * @param import The import at the root.
-     * @param name The path the callback's `Skip` stands under.
-     * @return The token, none for a discarded rule.
-     */
     const auto token_through{[](const std::string_view item, const std::string_view import,
                                 const std::string_view name) {
         const auto skip{std::format("{}::Skip", name)};
@@ -1990,13 +1941,6 @@ TEST(Read_logos_test, A_pub_glob_exports_the_binding_a_private_glob_of_the_same_
     // either order, so `use b::*` at the root reaches it and x is discarded, as logos 0.15.1 on "xy" prints `Ok(Y)
     // 1..2` alone. A binding of the module's own under the name, `pub struct Drop` inside `b`, shadows both globs and
     // is the variant's payload, which the crate emits as `Ok(V(Drop)) 0..1` then `Ok(Y) 1..2`.
-    /**
-     * @brief Returns a file whose module `b` holds the items given, globbed at the root, and whose callback returns
-     *        `Drop`.
-     * @param b The items of `b`.
-     * @param payload V's payload, empty for none.
-     * @return The file's text.
-     */
     const auto through{[](const std::string_view b, const std::string_view payload) {
         return std::format(
                 "use logos::{{Lexer, Logos}};\nmod a {{ pub use logos::Skip as Drop; }}\nmod b {{ {} }}\nuse "
@@ -2020,12 +1964,6 @@ TEST(Read_logos_test, A_leading_double_colon_names_the_crate_whatever_the_file_d
     // each, as logos 0.15.1 on "xy" prints `Ok(Y) 1..2` alone. `crate::logos::Skip` and `self::logos::Skip` reach the
     // module of the file's, whose `pub struct Skip` is the variant's payload, which the crate emits as `Ok(V(Skip))
     // 0..1` then `Ok(Y) 1..2`.
-    /**
-     * @brief Returns a file holding the items given before an enum whose callback `drop_it` returns `Skip`.
-     * @param head The items before the enum.
-     * @param payload V's payload, empty for none.
-     * @return The file's text.
-     */
     const auto beside{[](const std::string_view head, const std::string_view payload) {
         return std::format(
                 "{}#[derive(Logos, Debug)]\npub enum T {{\n    #[token(\"x\", drop_it)] V{},\n    #[token(\"y\")] "
@@ -2061,11 +1999,6 @@ TEST(Read_logos_test, An_enum_or_a_variant_a_cfg_strips_is_no_scanner_or_rule)
     // `not(any())` are true by form and leave the enum standing, `all(all(), any())` false. A predicate the build alone
     // decides, `feature = "never"`, leaves the enum read as standing, and the options say so. A variant under
     // `#[cfg(any())]` is no rule of its enum.
-    /**
-     * @brief Returns a file whose enum Ghost stands under a `cfg` with the predicate given, and the enum T after it.
-     * @param predicate The predicate.
-     * @return The file's text.
-     */
     const auto ghost{[](const std::string_view predicate) {
         return std::format(
                 "use logos::Logos;\n#[cfg({})]\n#[derive(Logos, Debug, PartialEq)]\npub enum Ghost {{ #[token(\"q\")] "
@@ -2213,11 +2146,6 @@ TEST(Read_logos_test, A_cfg_attr_applies_the_attributes_it_carries_as_its_predic
     // without the feature, the crate prints `Ok(Run) 0..2` then `Ok(Y) 2..3` for the file whose derive stands under a
     // `cfg_attr(all(), ...)` as well. On the enum, a `logos(skip ...)` under `cfg_attr(all(), ...)` is a discarded rule
     // ahead of the variants: the crate prints `Ok(X) 2..3` then `Ok(Y) 3..4` on "zzxy".
-    /**
-     * @brief Returns a file whose variant Run carries its regex under a `cfg_attr` with the predicate given.
-     * @param predicate The predicate.
-     * @return The file's text.
-     */
     const auto run{[](const std::string_view predicate) {
         return std::format(
                 "use logos::Logos;\n#[derive(Logos)]\nenum T {{\n    #[cfg_attr({}, regex(\"x+\", priority = 3))]\n    "
@@ -2269,11 +2197,6 @@ TEST(Read_logos_test, A_function_returning_Result_of_Skip_is_read_by_its_body)
     // "xy" prints `Err(()) 0..1` then `Ok(Y) 1..2` for a function returning `Err(())`; `Ok(Skip)` discards x, the crate
     // printing `Ok(Y) 1..2` alone, and a body that skips on one path and errs on another is refused, the rule's token
     // being decided at run time.
-    /**
-     * @brief Returns a file whose callback `cb` returns a `Result<Skip, ()>` by the body given.
-     * @param body The callback's body.
-     * @return The file's text.
-     */
     const auto returning{[](const std::string_view body) {
         return std::format(
                 "use logos::{{Lexer, Logos, Skip}};\n#[derive(Logos, Debug, PartialEq)]\npub enum T {{\n    "
@@ -2301,12 +2224,6 @@ TEST(Read_logos_test, A_closures_returns_and_question_marks_are_its_own)
     // 2;`, whose bar is the bitwise or. A `?` in the callback's own body still exits it: the crate prints `Err(())
     // 0..1` then `Ok(Y) 1..2` on "xy" for `Err::<(), ()>(())?; Err(())`, and a body skipping on the tail and erring on
     // the `?` is refused as mixed.
-    /**
-     * @brief Returns a file whose callback `cb` returns the type given by the body given.
-     * @param type The return type.
-     * @param body The callback's body.
-     * @return The file's text.
-     */
     const auto returning{[](const std::string_view type, const std::string_view body) {
         return std::format(
                 "use logos::{{Lexer, Logos, Skip}};\n#[derive(Logos, Debug, PartialEq)]\npub enum T {{\n    "
@@ -2335,12 +2252,6 @@ TEST(Read_logos_test, A_function_returning_the_payloads_own_type_returns_the_pay
     // function returning `Filter<()>` to `V(Filter<()>)` emits V, the crate on "xy" emitting a token at 0..1 and Y at
     // 1..2, `Filter<()>` carrying no `Debug` for the fixture to print; one returning `Filter<Filter<()>>` is read by
     // its arm, `Filter::Skip` discarding x as the crate prints `Ok(Y) 1..2` alone.
-    /**
-     * @brief Returns a file whose callback `cb` returns `Filter::Skip` as the type given, its variant's payload a
-     *        `Filter<()>`.
-     * @param type The return type.
-     * @return The file's text.
-     */
     const auto returning{[](const std::string_view type) {
         return std::format(
                 "use logos::{{Filter, Lexer, Logos}};\n#[derive(Logos)]\npub enum T {{\n    #[token(\"x\", cb)] "
@@ -2358,12 +2269,6 @@ TEST(Read_logos_test, A_pub_self_item_is_private)
     // the callback's `skip` is the crate's through `use logos::*`, discarding x as logos 0.15.1 on "xy" prints `Ok(Y)
     // 1..2` alone; `pub(super)` reaches the root, whose glob brings the function in, a bool that emits X, as the crate
     // prints `Ok(X) 0..1` then `Ok(Y) 1..2`.
-    /**
-     * @brief Returns a file whose module `m` holds a function `skip` under the visibility given, globbed at the root.
-     * @param imports The imports at the root.
-     * @param visibility The function's visibility.
-     * @return The file's text.
-     */
     const auto under{[](const std::string_view imports, const std::string_view visibility) {
         return std::format(
                 "{}mod m {{ {} fn skip(_: &mut logos::Lexer<crate::T>) -> bool {{ true }} }}\nuse "
@@ -2402,12 +2307,6 @@ TEST(Read_logos_test, A_name_is_read_in_the_namespace_the_text_asks)
     // of sight, and is refused in either order of the two, which logos 0.15.1 on "xy" emits as `Ok(Y) 0..1` then `Ok(Y)
     // 1..2`; and a `const Skip: u8` under `use logos::*` leaves the type `Skip` the crate's, so a callback returning
     // `Skip` with the crate's value discards x, as the crate prints `Ok(Y) 1..2` alone.
-    /**
-     * @brief Returns a file holding the items given, the enum, and the callback `cb` given after it.
-     * @param head The items before the enum.
-     * @param function The callback's definition.
-     * @return The file's text.
-     */
     const auto enum_of{[](const std::string_view head, const std::string_view function) {
         return std::format(
                 "{}#[derive(Logos, Debug, PartialEq)]\npub enum T {{\n    #[token(\"x\", cb)] X,\n    #[token(\"y\")] "
@@ -2439,20 +2338,14 @@ TEST(Read_logos_test, A_glob_of_the_enum_brings_its_variants_in)
     // the glob shadows the glob's variant, as Rust's own imports do, so a callback returning `Skip` returns the crate's
     // and x is discarded, as the crate prints `Ok(Y) 1..2` alone; and a constructor written as `T::Skip` or
     // `crate::T::Skip` names the variant.
-    const std::optional<std::string> skip{"Skip"};
-
-    /**
-     * @brief Returns a file whose variant `Skip` carries the callback `cb`, which returns `Skip` as the type given.
-     * @param imports The imports at the root.
-     * @param returns The return type.
-     * @return The file's text.
-     */
     const auto through{[](const std::string_view imports, const std::string_view returns) {
         return std::format(
                 "{}#[derive(Logos, Debug, PartialEq)]\npub enum T {{\n    #[token(\"x\", cb)] Skip,\n    "
                 "#[token(\"y\")] Y,\n}}\nfn cb(_: &mut Lexer<T>) -> {} {{ Skip }}\n",
                 imports, returns);
     }};
+
+    const std::optional<std::string> skip{"Skip"};
 
     EXPECT_EQ(token_of(through("use logos::{Lexer, Logos};\nuse T::*;\n", "T")), skip);
     EXPECT_EQ(token_of(through("use logos::{Lexer, Logos};\nuse T::Skip;\n", "T")), skip);
@@ -2469,12 +2362,6 @@ TEST(Read_logos_test, What_the_crate_refuses_of_attributes_and_variants_is_refus
     // Each of these is a file logos 0.15.1 refuses, in the words quoted, as building it shows; the reading refuses it
     // at the line of the attribute or variant in question rather than read a scanner the crate never makes. The last
     // group builds and is read.
-    /**
-     * @brief Returns a file holding the items given before the enum T with the body given.
-     * @param head The items before the enum, its attributes included.
-     * @param body The enum's body.
-     * @return The file's text.
-     */
     const auto enum_of{[](const std::string_view head, const std::string_view body) {
         return std::format("{}enum T {{\n{}\n}}\n", head, body);
     }};
@@ -2494,12 +2381,6 @@ TEST(Read_logos_test, What_the_crate_refuses_of_attributes_and_variants_is_refus
     // A variant a `cfg` strips is gone before the derive reads the enum, so its fields are fields the crate never sees
     // and refuses nothing: the same shapes stand where the attribute is false by form, and are refused again where it
     // is true.
-    /**
-     * @brief Returns a file whose enum derives Logos and holds `Word`, then a variant under a `cfg` attribute.
-     * @param cfg The `cfg` attribute's text, `#[...]` included.
-     * @param variant The variant the attribute governs.
-     * @return The file's text.
-     */
     const auto under_cfg{[&enum_of, word](const std::string_view cfg, const std::string_view variant) {
         const auto body{std::format("{}\n    {}\n    {}", word, cfg, variant)};
 
@@ -2510,11 +2391,6 @@ TEST(Read_logos_test, What_the_crate_refuses_of_attributes_and_variants_is_refus
     EXPECT_EQ(line_of(under_cfg("#[cfg(any())]", "Pair(u8, u8),")), std::nullopt);
     EXPECT_EQ(line_of(under_cfg("#[cfg(all())]", "Named { a: u8 },")), 6);
 
-    /**
-     * @brief Returns a file whose enum derives Logos and holds the one variant `Word`, carrying the attribute given.
-     * @param attribute The attribute's text, `#[...]` included.
-     * @return The file's text.
-     */
     const auto on_word{[&enum_of](const std::string_view attribute) {
         const auto variant{std::format("    {}\n    Word,", attribute)};
 
@@ -2629,18 +2505,6 @@ TEST(Read_logos_test, A_callback_that_moves_the_lexer_is_refused)
     // `span`, `remainder`, `source`, `extras` or `clone`; one naming a moving method, or letting the parameter out of
     // sight, is refused by name at the rule's line, in a closure, in a function the callback names and in a skip's
     // callback alike, as is a function declared without a body.
-    /**
-     * @brief The line the variant's attribute stands on in a file of file_of() below, which a refusal names.
-     */
-    constexpr std::size_t attribute_at{6};
-
-    /**
-     * @brief Returns a file importing the lexer's internals whose enum carries a variant with the attribute given, then
-     *        Word, and the items given after it.
-     * @param attribute The variant's attribute.
-     * @param after The items after the enum.
-     * @return The file's text.
-     */
     const auto file_of{[](const std::string_view attribute, const std::string_view after) {
         return std::format(
                 "use logos::{{Lexer, Logos, Skip}};\nuse "
@@ -2649,15 +2513,12 @@ TEST(Read_logos_test, A_callback_that_moves_the_lexer_is_refused)
                 attribute, after);
     }};
 
-    /**
-     * @brief Returns the line that file is refused at.
-     * @param attribute The variant's attribute.
-     * @param after The items after the enum.
-     * @return The line, or none when the file is read.
-     */
     const auto refused_at{[&file_of](const std::string_view attribute, const std::string_view after = "") {
         return line_of(file_of(attribute, after));
     }};
+
+    // The line the variant's attribute stands on in a file of file_of(), which a refusal names.
+    constexpr std::size_t attribute_at{6};
 
     EXPECT_EQ(refused_at(R"rs(#[token("#", |lex| { lex.bump(1); })])rs"), attribute_at);
     EXPECT_EQ(refused_at(R"rs(#[token("#", |lex| { lex.bump_unchecked(1); })])rs"), attribute_at);

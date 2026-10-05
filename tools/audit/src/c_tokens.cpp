@@ -1,9 +1,11 @@
 #include "munch/tools/audit/c_tokens.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,209 +17,15 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements c_tokens.hpp: the scans that find where a word, a literal, a raw string, a comment or a punctuator ends,
-// and where a backslash splices a line, are private to this unit.
+/**
+ * @brief The member access through a pointer, the one punctuator of two bytes a token is read as.
+ */
+constexpr std::string_view arrow{"->"};
 
 /**
- * @brief The index just past the raw string literal opening at an index, when one does: an `R` after an optional
- *        `u8`, `u`, `U` or `L`, then `"`, a delimiter of up to sixteen bytes, `(`, the body, `)`, the same delimiter
- *        and `"`, as C++ reads one. Flex's C++ scanners hold C++ actions, so the word `R` followed by a quote is the
- *        prefix and not a name of the file's own; one left open runs to the end.
- * @param code The stretch of C.
- * @param at The index, of a byte that is no whitespace.
- * @return The index past the literal, or std::nullopt when none opens here.
+ * @brief How many bytes the marker of a universal character name takes, `\u` or `\U`, before its hexadecimal digits.
  */
-[[nodiscard]] std::optional<std::size_t> raw_string_end(const std::string_view code, const std::size_t at)
-{
-    const auto rest{code.substr(at)};
-
-    std::size_t prefix{0};
-
-    for (const std::string_view encoding : {"u8", "u", "U", "L", ""})
-    {
-        if ((at == 0 || !is_word_byte(code[at - 1])) && rest.starts_with(std::string{encoding} + "R\""))
-        {
-            prefix = encoding.size() + 2;
-
-            break;
-        }
-
-        if (encoding.empty())
-        {
-            return std::nullopt;
-        }
-    }
-
-    const auto open{code.find('(', at + prefix)};
-
-    if (open == std::string_view::npos)
-    {
-        return code.size();
-    }
-
-    const auto delimiter{code.substr(at + prefix, open - at - prefix)};
-
-    const auto close{code.find(")" + std::string{delimiter} + "\"", open + 1)};
-
-    return close == std::string_view::npos ? code.size() : close + delimiter.size() + 2;
-}
-
-/**
- * @brief Whether a universal character name, `\u` or `\U` and its hexadecimal digits, opens at an index; it is part
- *        of the identifier around it, so that `return\u03B1` is a name of the file's own and no `return`.
- * @param code The stretch of C.
- * @param at The index.
- * @return True when one opens here.
- */
-[[nodiscard]] bool at_universal_name(const std::string_view code, const std::size_t at) noexcept
-{
-    return at + 1 < code.size() && code[at] == '\\' && (code[at + 1] == 'u' || code[at + 1] == 'U');
-}
-
-/**
- * @brief The index just past the universal character name opening at an index: its `\u` or `\U` and the hexadecimal
- *        digits after it.
- * @param code The stretch of C.
- * @param at The index, where at_universal_name() holds.
- * @return The index past the name.
- */
-[[nodiscard]] std::size_t past_universal_name(const std::string_view code, const std::size_t at) noexcept
-{
-    auto end{at + 2};
-
-    while (end < code.size() && is_hex_digit(code[end]))
-    {
-        ++end;
-    }
-
-    return end;
-}
-
-/**
- * @brief The index just past the token or the comment opening at an index of a stretch of C, as c_tokens() reads
- *        them: past a literal's closing quote, an escaped byte carried, past a comment's end, past the last byte of a
- *        word, and past the one or two bytes of a punctuator; a literal or a comment left open runs to the end.
- * @param code The stretch of C.
- * @param at The index, of a byte that is no whitespace.
- * @return The index to resume at.
- */
-[[nodiscard]] std::size_t token_end(const std::string_view code, const std::size_t at)
-{
-    const auto rest{code.substr(at)};
-
-    if (const auto raw{raw_string_end(code, at)})
-    {
-        return *raw;
-    }
-
-    if (rest.starts_with("//"))
-    {
-        return std::min(code.find('\n', at), code.size());
-    }
-
-    if (rest.starts_with("/*"))
-    {
-        const auto close{code.find("*/", at + 2)};
-
-        return close == std::string_view::npos ? code.size() : close + 2;
-    }
-
-    if (rest.front() == '"' || rest.front() == '\'')
-    {
-        auto close{at + 1};
-
-        while (close < code.size() && code[close] != rest.front())
-        {
-            close += code[close] == '\\' ? 2 : 1;
-        }
-
-        return std::min(close + 1, code.size());
-    }
-
-    // A number runs as the preprocessor's pp-number does: digits, letters, dots, a digit separator's apostrophe
-    // before a digit or a letter, and a sign after an exponent's letter, so `1'000` is one token and its apostrophe
-    // opens no character literal, and `0'0'0` is the one index 0.
-    if (is_digit(rest.front()) || (rest.front() == '.' && rest.size() > 1 && is_digit(rest[1])))
-    {
-        auto end{at + 1};
-
-        while (end < code.size())
-        {
-            const auto byte{code[end]};
-
-            const auto next{end + 1 < code.size() ? code[end + 1] : '\0'};
-
-            const auto separator{byte == '\'' && std::isalnum(static_cast<unsigned char>(next)) != 0};
-
-            const auto exponent{
-                    (byte == 'e' || byte == 'E' || byte == 'p' || byte == 'P') && (next == '+' || next == '-')};
-
-            if (exponent)
-            {
-                end += 2;
-
-                continue;
-            }
-
-            if (is_word_byte(byte) || byte == '.' || separator)
-            {
-                end += separator ? 2 : 1;
-
-                continue;
-            }
-
-            break;
-        }
-
-        return end;
-    }
-
-    if (is_word_byte(rest.front()) || at_universal_name(code, at))
-    {
-        auto end{at};
-
-        while (end < code.size() && (is_word_byte(code[end]) || at_universal_name(code, end)))
-        {
-            end = at_universal_name(code, end) ? past_universal_name(code, end) : end + 1;
-        }
-
-        return end;
-    }
-
-    return at + (rest.starts_with("->") ? 2 : 1);
-}
-
-/**
- * @brief The tokens of a text as token_end() reads them, whitespace and comments left out, each placed by its offsets
- *        in that text.
- * @param text The text.
- * @return The tokens in order.
- */
-[[nodiscard]] std::vector<C_token> tokens_in(const std::string_view text)
-{
-    std::vector<C_token> tokens;
-
-    for (std::size_t at{0}; at < text.size();)
-    {
-        if (std::isspace(static_cast<unsigned char>(text[at])) != 0)
-        {
-            ++at;
-
-            continue;
-        }
-
-        const auto end{token_end(text, at)};
-
-        if (const auto rest{text.substr(at)}; !rest.starts_with("//") && !rest.starts_with("/*"))
-        {
-            tokens.push_back({.at = at, .end = end, .text = std::string{text.substr(at, end - at)}});
-        }
-
-        at = end;
-    }
-
-    return tokens;
-}
+constexpr std::size_t universal_marker_length{2};
 
 /**
  * @brief What a byte of a stretch of C stands in as spliced() reads it: code, a string or character literal, a line
@@ -251,9 +59,235 @@ enum class Inside : std::uint8_t
 };
 
 /**
- * @brief What the byte after the one at hand stands in, given what the byte at hand does there: code opens a literal at
- *        a quote and a comment at two slashes or at a slash before a star; a literal ends at its quote, or at the
- *        line's end when it is left open; a line comment ends at the newline and a block comment at its star-slash.
+ * @brief Returns the index just past the raw string literal opening at an index, when one does: an `R` after an
+ *        optional `u8`, `u`, `U` or `L`, then `"`, a delimiter of up to sixteen bytes, `(`, the body, `)`, the same
+ *        delimiter and `"`, as C++ reads one. Flex's C++ scanners hold C++ actions, so the word `R` followed by a quote
+ *        is the prefix and not a name of the file's own; one left open runs to the end.
+ * @param code The stretch of C.
+ * @param at The index, of a byte that is no whitespace.
+ * @return The index past the literal, or std::nullopt when none opens here.
+ */
+[[nodiscard]] std::optional<std::size_t> raw_string_end(const std::string_view code, const std::size_t at)
+{
+    // A raw string's prefix is a word of its own, so one standing after a word's byte opens none.
+    if (at > 0 && is_word_byte(code[at - 1]))
+    {
+        return std::nullopt;
+    }
+
+    const auto rest{code.substr(at)};
+
+    static constexpr std::string_view marker{"R\""};
+
+    const auto opens{[rest](const std::string_view encoding) {
+        return rest.starts_with(std::format("{}{}", encoding, marker));
+    }};
+
+    static constexpr std::array<std::string_view, 5> encodings{"u8", "u", "U", "L", ""};
+
+    const auto encoding{std::ranges::find_if(encodings, opens)};
+
+    if (encoding == encodings.end())
+    {
+        return std::nullopt;
+    }
+
+    const auto prefix{encoding->size() + marker.size()};
+
+    const auto open{code.find('(', at + prefix)};
+
+    if (open == std::string_view::npos)
+    {
+        return code.size();
+    }
+
+    const auto delimiter{code.substr(at + prefix, open - at - prefix)};
+
+    const auto closer{std::format("){}\"", delimiter)};
+
+    const auto close{code.find(closer, open + 1)};
+
+    return close == std::string_view::npos ? code.size() : close + closer.size();
+}
+
+/**
+ * @brief Returns whether a universal character name, `\u` or `\U` and its hexadecimal digits, opens at an index; it is
+ *        part of the identifier around it, so that `return\u03B1` is a name of the file's own and no `return`.
+ * @param code The stretch of C.
+ * @param at The index.
+ * @return True when one opens here.
+ */
+[[nodiscard]] bool at_universal_name(const std::string_view code, const std::size_t at) noexcept
+{
+    return at + 1 < code.size() && code[at] == '\\' && (code[at + 1] == 'u' || code[at + 1] == 'U');
+}
+
+/**
+ * @brief Returns the index just past the universal character name opening at an index: its `\u` or `\U` and the
+ *        hexadecimal digits after it.
+ * @param code The stretch of C.
+ * @param at The index, where at_universal_name() holds.
+ * @return The index past the name.
+ */
+[[nodiscard]] std::size_t past_universal_name(const std::string_view code, const std::size_t at) noexcept
+{
+    auto end{at + universal_marker_length};
+
+    while (end < code.size() && is_hex_digit(code[end]))
+    {
+        ++end;
+    }
+
+    return end;
+}
+
+/**
+ * @brief Returns the index past the number that begins at an index, which runs as the preprocessor's pp-number does:
+ *        digits, letters, dots, a digit separator's apostrophe before a digit or a letter, and a sign after an
+ *        exponent's letter, so `1'000` is one token and its apostrophe opens no character literal, and `0'0'0` is the
+ *        one index 0.
+ * @param code The stretch of C.
+ * @param at The index of the number's first byte, a digit or a dot before one.
+ * @return The index past the number.
+ */
+[[nodiscard]] std::size_t number_end(const std::string_view code, const std::size_t at)
+{
+    auto end{at + 1};
+
+    while (end < code.size())
+    {
+        const auto byte{code[end]};
+
+        const auto next{end + 1 < code.size() ? code[end + 1] : '\0'};
+
+        const auto separator{byte == '\'' && std::isalnum(static_cast<unsigned char>(next)) != 0};
+
+        const auto exponent{std::string_view{"eEpP"}.contains(byte) && (next == '+' || next == '-')};
+
+        if (exponent)
+        {
+            end += 2;
+
+            continue;
+        }
+
+        if (is_word_byte(byte) || byte == '.' || separator)
+        {
+            end += separator ? 2 : 1;
+
+            continue;
+        }
+
+        break;
+    }
+
+    return end;
+}
+
+/**
+ * @brief Returns the index just past the token or the comment opening at an index of a stretch of C, as c_tokens()
+ *        reads them: past a literal's closing quote, an escaped byte carried, past a comment's end, past the last byte
+ *        of a word, and past the one or two bytes of a punctuator; a literal or a comment left open runs to the end.
+ * @param code The stretch of C.
+ * @param at The index, of a byte that is no whitespace.
+ * @return The index to resume at.
+ */
+[[nodiscard]] std::size_t token_end(const std::string_view code, const std::size_t at)
+{
+    const auto rest{code.substr(at)};
+
+    if (const auto raw{raw_string_end(code, at)})
+    {
+        return *raw;
+    }
+
+    if (rest.starts_with(line_comment_opener))
+    {
+        const auto newline{code.find('\n', at)};
+
+        return std::min(newline, code.size());
+    }
+
+    if (rest.starts_with(comment_opener))
+    {
+        const auto close{code.find(comment_closer, at + comment_opener.size())};
+
+        return close == std::string_view::npos ? code.size() : close + comment_closer.size();
+    }
+
+    if (rest.front() == '"' || rest.front() == '\'')
+    {
+        auto close{at + 1};
+
+        while (close < code.size() && code[close] != rest.front())
+        {
+            close += code[close] == '\\' ? 2 : 1;
+        }
+
+        return std::min(close + 1, code.size());
+    }
+
+    if (is_digit(rest.front()) || (rest.front() == '.' && rest.size() > 1 && is_digit(rest[1])))
+    {
+        return number_end(code, at);
+    }
+
+    if (is_word_byte(rest.front()) || at_universal_name(code, at))
+    {
+        auto end{at};
+
+        while (end < code.size() && (is_word_byte(code[end]) || at_universal_name(code, end)))
+        {
+            end = at_universal_name(code, end) ? past_universal_name(code, end) : end + 1;
+        }
+
+        return end;
+    }
+
+    return at + (rest.starts_with(arrow) ? arrow.size() : 1);
+}
+
+/**
+ * @brief Returns the tokens of a text as token_end() reads them, whitespace and comments left out, each placed by its
+ *        offsets in that text.
+ * @param text The text.
+ * @return The tokens in order.
+ */
+[[nodiscard]] std::vector<C_token> tokens_in(const std::string_view text)
+{
+    std::vector<C_token> tokens{};
+
+    for (std::size_t at{0}; at < text.size();)
+    {
+        if (std::isspace(static_cast<unsigned char>(text[at])) != 0)
+        {
+            ++at;
+
+            continue;
+        }
+
+        const auto end{token_end(text, at)};
+
+        const auto rest{text.substr(at)};
+
+        const auto comment{rest.starts_with(line_comment_opener) || rest.starts_with(comment_opener)};
+
+        if (!comment)
+        {
+            tokens.push_back({.at = at, .end = end, .text = std::string{text.substr(at, end - at)}});
+        }
+
+        at = end;
+    }
+
+    return tokens;
+}
+
+/**
+ * @brief Returns what the byte after the one at hand stands in, given what the byte at hand does there: code opens a
+ *        literal at a quote and a comment at two slashes or at a slash before a star; a literal ends at its quote, or
+ *        at the line's end when it is left open; a line comment ends at the newline and a block comment at its
+ *        star-slash.
  * @param inside What the byte at hand stands in.
  * @param rest The stretch from the byte at hand on, not empty.
  * @param quote The quote the open literal began with, when one is open.
@@ -264,10 +298,17 @@ enum class Inside : std::uint8_t
     switch (inside)
     {
     case Inside::code:
-        return rest.front() == '"' || rest.front() == '\'' ? Inside::literal :
-               rest.starts_with("//")                      ? Inside::line_comment :
-               rest.starts_with("/*")                      ? Inside::block_comment :
-                                                             Inside::code;
+        if (rest.front() == '"' || rest.front() == '\'')
+        {
+            return Inside::literal;
+        }
+
+        if (rest.starts_with(line_comment_opener))
+        {
+            return Inside::line_comment;
+        }
+
+        return rest.starts_with(comment_opener) ? Inside::block_comment : Inside::code;
 
     case Inside::literal:
         return rest.front() == quote || rest.front() == '\n' ? Inside::code : Inside::literal;
@@ -276,16 +317,16 @@ enum class Inside : std::uint8_t
         return rest.front() == '\n' ? Inside::code : Inside::line_comment;
 
     case Inside::block_comment:
-        return rest.starts_with("*/") ? Inside::code : Inside::block_comment;
+        return rest.starts_with(comment_closer) ? Inside::code : Inside::block_comment;
     }
 
     return inside;
 }
 
 /**
- * @brief The newline a backslash at an index joins its line to the next at, as gcc joins lines: blanks may stand
- *        between the backslash and the line's end, as gcc allows them with a warning, and a carriage return before the
- *        newline.
+ * @brief Returns the newline a backslash at an index joins its line to the next at, as gcc joins lines: blanks may
+ *        stand between the backslash and the line's end, as gcc allows them with a warning, and a carriage return
+ *        before the newline.
  *
  * The code a scanner carries is compiled by the compiler and not by the standard, so a splice is read the way the
  * compiler reads it: `ret\` with a space after it, then `urn 7;` on the next line, is one `return`.
@@ -295,7 +336,9 @@ enum class Inside : std::uint8_t
  */
 [[nodiscard]] std::optional<std::size_t> spliced_newline(const std::string_view code, const std::size_t at)
 {
-    auto newline{std::min(code.find_first_not_of(" \t", at + 1), code.size())};
+    const auto past_blanks{code.find_first_not_of(" \t", at + 1)};
+
+    auto newline{std::min(past_blanks, code.size())};
 
     newline += newline < code.size() && code[newline] == '\r' ? 1 : 0;
 
@@ -303,9 +346,9 @@ enum class Inside : std::uint8_t
 }
 
 /**
- * @brief Where an ordinary literal opening at an index of a directive ends, as the preprocessor reads it: its escapes
- *        carry their byte and its splices join, the lines joined before any escape is read, so a backslash before a
- *        backslash ending the line escapes the next line's first byte; one left open ends with the line.
+ * @brief Returns where an ordinary literal opening at an index of a directive ends, as the preprocessor reads it: its
+ *        escapes carry their byte and its splices join, the lines joined before any escape is read, so a backslash
+ *        before a backslash ending the line escapes the next line's first byte; one left open ends with the line.
  * @param code The stretch of C the directive stands in.
  * @param scan The index of the literal's opening quote.
  * @return The index of its closing quote, of the newline ending the line it is left open on, or the stretch's size.
@@ -337,7 +380,10 @@ enum class Inside : std::uint8_t
 
         const auto joined{scan < code.size() && code[scan] == '\\' ? spliced_newline(code, scan) : std::nullopt};
 
-        scan = joined ? *joined + 1 : scan;
+        if (joined)
+        {
+            scan = *joined + 1;
+        }
     }
 
     return scan;
@@ -351,11 +397,11 @@ std::vector<C_token> c_tokens(const std::string_view code)
 
     auto tokens{tokens_in(text)};
 
-    for (auto& token : tokens)
+    for (auto& [begin, end, spelled] : tokens)
     {
-        token.at = place[token.at];
+        begin = place[begin];
 
-        token.end = place[token.end - 1] + 1;
+        end = place[end - 1] + 1;
     }
 
     return tokens;
@@ -372,17 +418,17 @@ std::vector<C_token> java_tokens(const std::string_view code)
 
 std::optional<std::size_t> brace_close(const std::string_view code)
 {
-    std::size_t depth{0};
+    int depth{0};
 
-    for (const auto& token : c_tokens(code))
+    for (const auto& [at, end, text] : c_tokens(code))
     {
-        if (token.text == "{")
+        const auto step{depth_step(text, "{", "}")};
+
+        depth += step;
+
+        if (step < 0 && depth == 0)
         {
-            ++depth;
-        }
-        else if (token.text == "}" && --depth == 0)
-        {
-            return token.end;
+            return end;
         }
     }
 
@@ -391,7 +437,7 @@ std::optional<std::size_t> brace_close(const std::string_view code)
 
 Spliced spliced(const std::string_view code)
 {
-    Spliced result;
+    Spliced result{};
 
     const auto copy{[&result, code](const std::size_t at) {
         result.text.push_back(code[at]);
@@ -425,8 +471,8 @@ Spliced spliced(const std::string_view code)
         }
 
         // An escape inside a literal carries its byte, so an escaped quote closes nothing; the byte it carries is the
-        // one after any splice, since the compiler joins the lines before it reads an escape, and so a backslash
-        // before a backslash ending the line, `"x\\` and a newline, escapes the next line's first byte.
+        // one after any splice, since the compiler joins the lines before it reads an escape, and so a backslash before
+        // a backslash ending the line, `"x\\` and a newline, escapes the next line's first byte.
         if (code[at] == '\\' && inside == Inside::literal && at + 1 < code.size())
         {
             copy(at);
@@ -447,7 +493,10 @@ Spliced spliced(const std::string_view code)
 
         const auto next{next_inside(inside, code.substr(at), quote)};
 
-        quote = inside == Inside::code && next == Inside::literal ? code[at] : quote;
+        if (inside == Inside::code && next == Inside::literal)
+        {
+            quote = code[at];
+        }
 
         // A comment's opening and closing are two bytes each, taken together so that the star of `/*/` closes nothing.
         if ((inside == Inside::code && next == Inside::block_comment) ||
@@ -482,18 +531,18 @@ std::size_t directive_end(const std::string_view code, const std::size_t from)
             continue;
         }
 
-        if (!commented && code.substr(scan).starts_with("/*"))
+        if (!commented && code.substr(scan).starts_with(comment_opener))
         {
-            const auto close{code.find("*/", scan + 2)};
+            const auto close{code.find(comment_closer, scan + comment_opener.size())};
 
-            scan = close == std::string_view::npos ? code.size() : close + 1;
+            scan = close == std::string_view::npos ? code.size() : close + comment_closer.size() - 1;
 
             continue;
         }
 
         // A line comment runs to the line's end, a splice carrying it on with the directive; nothing inside it opens a
         // literal, a comment or a raw string.
-        if (!commented && code.substr(scan).starts_with("//"))
+        if (!commented && code.substr(scan).starts_with(line_comment_opener))
         {
             commented = true;
 

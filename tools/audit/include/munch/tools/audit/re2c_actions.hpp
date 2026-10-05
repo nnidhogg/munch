@@ -12,10 +12,10 @@
 #include "munch/tools/audit/re2c_configuration.hpp"
 
 /**
- * @brief What a re2c action does with the match, as far as its text decides: whether it leaves a scan pointer
- *        elsewhere than where the match ended, under the names the block's configurations give the pointers, whether it
- *        returns on every path or leaves by a jump the scan restarts at, restart_labels(), and what else it is refused
- *        for, refuse_action().
+ * @brief What a re2c action does with the match, as far as its text decides: whether it leaves a scan pointer elsewhere
+ *        than where the match ended, under the names the block's configurations give the pointers, whether it returns
+ *        on every path or leaves by a jump the scan restarts at, restart_labels(), and what else it is refused for,
+ *        refuse_action().
  *
  * An action is judged only once its block is read, since re2c applies a configuration to the whole block it stands in
  * and what the actions call the scan pointers is the block's last word on them; so a block keeps its actions as Action
@@ -34,28 +34,28 @@ struct Action
     /**
      * @brief The action's code, a transition or a shortcut included as the rule wrote it.
      */
-    std::string code;
+    std::string code{};
 
     /**
      * @brief The line to report the action at, its rule's.
      */
-    std::size_t line;
+    std::size_t line{};
 
     /**
      * @brief How a refusal names the action: "the action ", "a setup rule moves " or "the entry rule <> moves ".
      */
-    std::string what;
+    std::string what{};
 
     /**
      * @brief Whether the action is a rule's own, which falls into the next rule's unless it leaves, rather than a setup
      *        rule's or the entry rule's.
      */
-    bool of_rule;
+    bool of_rule{};
 };
 
 /**
- * @brief The labels the file's C code declares outside every block and before one, which a `goto` in an action restarts
- *        the scan by.
+ * @brief Returns the labels the file's C code declares outside every block and before one, which a `goto` in an action
+ *        restarts the scan by.
  *
  * A label is a name and a colon opening a statement, `loop:`; `case` and `default` labels and a `::` are none. A label
  * after the block, `done:` past the scanning loop, is left for, not restarted at; and a label before it restarts the

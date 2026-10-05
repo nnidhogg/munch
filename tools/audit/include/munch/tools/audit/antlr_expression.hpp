@@ -67,7 +67,7 @@ public:
     [[nodiscard]] std::vector<Alternative> alternatives();
 
     /**
-     * @brief Whether the body holds a non-greedy loop, which the grammar records with the rule's name.
+     * @brief Returns whether the body holds a non-greedy loop, which the grammar records with the rule's name.
      * @return True when it does.
      */
     [[nodiscard]] bool is_lazy() const noexcept;
@@ -83,12 +83,12 @@ private:
         /**
          * @brief The atom, its suffix not yet read.
          */
-        Element element;
+        Element element{};
 
         /**
          * @brief Whether element options may follow it.
          */
-        bool optionable;
+        bool optionable{};
     };
 
     /**
@@ -99,12 +99,28 @@ private:
         /**
          * @brief The end.
          */
-        Literal end;
+        Literal end{};
 
         /**
          * @brief The end as written.
          */
-        std::string spelling;
+        std::string spelling{};
+    };
+
+    /**
+     * @brief An alternative's `->` clause as read: the commands' text and where it begins.
+     */
+    struct Command_clause
+    {
+        /**
+         * @brief The commands' text, empty when no arrow stands.
+         */
+        std::string commands{};
+
+        /**
+         * @brief The offset the commands begin at, the alternative's own offset when none does.
+         */
+        std::size_t clause{};
     };
 
     /**
@@ -205,7 +221,7 @@ private:
     [[nodiscard]] Range_end range_end();
 
     /**
-     * @brief The last character of a range, `'a'..'z'`: its end one character as ANTLR reads one, its error 144
+     * @brief Returns the last character of a range, `'a'..'z'`: its end one character as ANTLR reads one, its error 144
      *        otherwise, and no lower than the start, its error 174 otherwise.
      * @param opened The offset of the range's opening quote, which a refusal names.
      * @param low The range's first character.
@@ -227,8 +243,8 @@ private:
     void refuse_unfoldable(std::size_t opened, bool beyond);
 
     /**
-     * @brief The element a quoted literal no range follows is: its bytes, folded where letters double their case, of
-     *        one length, beginning with its first character, and admitting that character where it is one.
+     * @brief Returns the element a quoted literal no range follows is: its bytes, folded where letters double their
+     *        case, of one length, beginning with its first character, and admitting that character where it is one.
      * @param opened The offset of the literal's opening quote.
      * @param bytes The literal's bytes.
      * @param spelling The literal as written, quotes included, which a rule spelling a parser literal is matched by.
@@ -275,6 +291,16 @@ private:
     [[nodiscard]] Alphabet negatable();
 
     /**
+     * @brief Reads a one-character literal a `~` negates after its opening quote, a range from it or element options
+     *        after it.
+     * @param opened The offset of the literal's opening quote.
+     * @return What is negated.
+     * @throws Spec_error If the literal is not one character, ANTLR's error 144, or a range's end is below its start,
+     *         its error 174.
+     */
+    [[nodiscard]] Alphabet negated_literal(std::size_t opened);
+
+    /**
      * @brief Reads the dot, which admits every scalar.
      * @return The element.
      */
@@ -298,6 +324,14 @@ private:
      * @throws Spec_error If no name begins at the byte, or the name is EOF.
      */
     [[nodiscard]] Element reference_element(std::size_t opened, char byte);
+
+    /**
+     * @brief Reads an alternative's `->` clause when one stands, through the byte before the `;` or `|` that ends it.
+     * @param opened The offset the alternative opened at.
+     * @return The clause.
+     * @throws Spec_error If `->` has no command after it, ANTLR's error 50.
+     */
+    [[nodiscard]] Command_clause command_clause(std::size_t opened);
 
     /**
      * @brief What the reading records about the whole grammar, the closures and the non-greedy loops' alternatives

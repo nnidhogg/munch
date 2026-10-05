@@ -23,26 +23,26 @@ namespace munch::tools::audit
 enum class Shape : std::uint8_t
 {
     /**
-     * @brief A run over a class the byte is in, `[ \t\n]+`: the byte leaves the class and becomes a token of its
-     *        own, which is the price's own edit.
+     * @brief A run over a class the byte is in, `[ \t\n]+`: the byte leaves the class and becomes a token of its own,
+     *        which is the price's own edit.
      */
     run,
 
     /**
-     * @brief A body ending in the byte, `"//"[^\n]*\n`, the byte nowhere else in it and the token's last component
-     *        the terminator itself: the terminator can be left to the token after it, which is the edit priced, so
-     *        a last component admitting more than the byte, the `"xb"` of `[a]"xb"` or the `[xb]` of `[a][xb]`,
-     *        is no terminated token here. The terminator is read by what it matches, not by its spelling: `\n`,
-     *        `[\n]`, `\n{1}`, `[cd]{0}\n` and `\n[cd]{0}`, whose repetition of exactly zero is the empty word, are one
+     * @brief A body ending in the byte, `"//"[^\n]*\n`, the byte nowhere else in it and the token's last component the
+     *        terminator itself: the terminator can be left to the token after it, which is the edit priced, so a last
+     *        component admitting more than the byte, the `"xb"` of `[a]"xb"` or the `[xb]` of `[a][xb]`, is no
+     *        terminated token here. The terminator is read by what it matches, not by its spelling: `\n`, `[\n]`,
+     *        `\n{1}`, `[cd]{0}\n` and `\n[cd]{0}`, whose repetition of exactly zero is the empty word, are one
      *        terminator.
      */
     terminated,
 
     /**
-     * @brief A fixed opener followed by a body the byte is in, a block comment from its slash-star or a string from
-     *        its quote: the body can be scanned in a start condition of its own, the opener alone staying in this
-     *        one. The opener is read by what it matches, as the terminator is: `"x"`, `[x]`, `x{1}` and `[cd]{0}"x"`
-     *        are one opener.
+     * @brief A fixed opener followed by a body the byte is in, a block comment from its slash-star or a string from its
+     *        quote: the body can be scanned in a start condition of its own, the opener alone staying in this one. The
+     *        opener is read by what it matches, as the terminator is: `"x"`, `[x]`, `x{1}` and `[cd]{0}"x"` are one
+     *        opener.
      */
     delimited,
 
@@ -54,7 +54,7 @@ enum class Shape : std::uint8_t
     /**
      * @brief None of the above.
      */
-    other,
+    other
 };
 
 /**
@@ -65,17 +65,17 @@ struct Outcome
     /**
      * @brief Whether the byte certifies exactly.
      */
-    bool exact;
+    bool exact{};
 
     /**
      * @brief Whether the byte certifies once discarded tokens are deleted.
      */
-    bool modulo;
+    bool modulo{};
 
     /**
      * @brief The other bytes that certify exactly now and did not before.
      */
-    std::vector<unsigned char> gained;
+    std::vector<unsigned char> gained{};
 };
 
 /**
@@ -87,17 +87,17 @@ struct Choice
     /**
      * @brief The token.
      */
-    std::size_t token;
+    std::size_t token{};
 
     /**
      * @brief The shape, terminated or delimited, which says what the edit was.
      */
-    Shape shape;
+    Shape shape{};
 
     /**
      * @brief Where the byte stands after the edit.
      */
-    Outcome after;
+    Outcome after{};
 };
 
 /**
@@ -108,38 +108,38 @@ struct Price_step
     /**
      * @brief The token the byte was excluded from.
      */
-    std::size_t token;
+    std::size_t token{};
 
     /**
      * @brief The token's shape, which names the edit an author would make where the step narrows.
      */
-    Shape shape;
+    Shape shape{};
 
     /**
      * @brief Whether the byte, left with no token to match it, was given a token of its own in this step.
      */
-    bool separated;
+    bool separated{};
 
     /**
      * @brief Whether that token of its own is discarded, as the token it was taken from was; false where none was
      *        separated, whatever the narrowed token is.
      */
-    bool separated_discarded;
+    bool separated_discarded{};
 
     /**
      * @brief Whether the byte certifies exactly after this step.
      */
-    bool exact;
+    bool exact{};
 
     /**
      * @brief Whether the byte certifies once discarded tokens are deleted after this step.
      */
-    bool modulo;
+    bool modulo{};
 };
 
 /**
- * @brief What it costs to make one byte certify: the tokens that must stop admitting it, taken one at a time with
- *        the certificate recomputed after each, and the tokens that cannot.
+ * @brief What it costs to make one byte certify: the tokens that must stop admitting it, taken one at a time with the
+ *        certificate recomputed after each, and the tokens that cannot.
  *
  * The necessity theorem is what makes the answer complete rather than a suggestion: a byte certifies exactly when no
  * live state but a non-re-entrant start consumes it, so every token consuming it mid-token has to change, and the only
@@ -164,17 +164,17 @@ struct Pricing
     /**
      * @brief The byte priced.
      */
-    unsigned char byte;
+    unsigned char byte{};
 
     /**
      * @brief Whether it certified exactly before any edit.
      */
-    bool exact_before;
+    bool exact_before{};
 
     /**
      * @brief Whether it certified modulo discarded tokens before any edit.
      */
-    bool modulo_before;
+    bool modulo_before{};
 
     /**
      * @brief Where the byte stands once given a token of its own, before any other edit, when no token of the set
@@ -183,7 +183,7 @@ struct Pricing
      * The token given is visible, since no token of the set says what it would be discarded as, and it stays through
      * every step, so no step separates the byte again.
      */
-    std::optional<Outcome> given;
+    std::optional<Outcome> given{};
 
     /**
      * @brief The edits in the order they were made, each with the certificate after it; empty when nothing had to
@@ -194,42 +194,42 @@ struct Pricing
      * is narrowed next; a token an earlier edit exposed is taken as soon as it is first in that order, and no token is
      * answered twice.
      */
-    std::vector<Price_step> steps;
+    std::vector<Price_step> steps{};
 
     /**
-     * @brief The tokens every word of which holds the byte fixed past its first byte, `[x]\n[x]` or `\n{2}`, which
-     *        no narrowing frees: the byte cannot certify while one of them stays.
+     * @brief The tokens every word of which holds the byte fixed past its first byte, `[x]\n[x]` or `\n{2}`, which no
+     *        narrowing frees: the byte cannot certify while one of them stays.
      */
-    std::vector<std::size_t> immovable;
+    std::vector<std::size_t> immovable{};
 
     /**
      * @brief The tokens the narrowing is not applied to and decides nothing about: those that cannot lose the byte
      *        while some word of them holds it fixed only as its first byte.
      *
-     * The narrowing is defined where a pattern can lose the byte, which a fixed occurrence cannot, so these tokens
-     * take no step. Nothing follows about the byte either: the occurrence that word holds is the one a token begins
-     * with, which the initial state consumes before any input, and an edit this analysis does not make, the class
-     * of `\n[\nx]`, `[\n][\nx]`, `\n{1}[\nx]` or `(\n[xy])[\nx]` narrowed to `[x]`, or an alternative of
-     * `(\n[\nx]|\ny)` dropped, can keep the word and certify the byte.
+     * The narrowing is defined where a pattern can lose the byte, which a fixed occurrence cannot, so these tokens take
+     * no step. Nothing follows about the byte either: the occurrence that word holds is the one a token begins with,
+     * which the initial state consumes before any input, and an edit this analysis does not make, the class of
+     * `\n[\nx]`, `[\n][\nx]`, `\n{1}[\nx]` or `(\n[xy])[\nx]` narrowed to `[x]`, or an alternative of `(\n[\nx]|\ny)`
+     * dropped, can keep the word and certify the byte.
      */
-    std::vector<std::size_t> undecided;
+    std::vector<std::size_t> undecided{};
 
     /**
      * @brief The other bytes that certify exactly after every step and did not before.
      */
-    std::vector<unsigned char> gained;
+    std::vector<unsigned char> gained{};
 
     /**
      * @brief What the consuming tokens' shapes offer, one entry per token and shape, each an edit on its own.
      */
-    std::vector<Choice> choices;
+    std::vector<Choice> choices{};
 
     /**
-     * @brief Where the byte stands once every consuming token takes the edit its shape names, the terminated ones
-     *        their terminator left, the delimited ones cut to their opener, the rest narrowed as the steps narrow
-     *        them; absent when no shape offered an edit.
+     * @brief Where the byte stands once every consuming token takes the edit its shape names, the terminated ones their
+     *        terminator left, the delimited ones cut to their opener, the rest narrowed as the steps narrow them;
+     *        absent when no shape offered an edit.
      */
-    std::optional<Outcome> together;
+    std::optional<Outcome> together{};
 };
 
 /**
@@ -251,7 +251,7 @@ struct Pricing
 [[nodiscard]] Pricing price(const Token_set& set, unsigned char byte);
 
 /**
- * @brief The shape of a token for a byte it consumes mid-token.
+ * @brief Returns the shape of a token for a byte it consumes mid-token.
  * @param regex The token's pattern.
  * @param byte The byte.
  * @return The shape: run, terminated or delimited when the pattern has that form, a pattern both terminated and

@@ -8,37 +8,37 @@
 #include "munch/regex/regex.hpp"
 
 /**
- * @brief A token set held as patterns, Token_set, one Token_rule each, so that it can be edited and compiled again:
- *        a byte excluded from a pattern, exclude(), whether a pattern can lose one, can_lose(), and the set compiled,
+ * @brief A token set held as patterns, Token_set, one Token_rule each, so that it can be edited and compiled again: a
+ *        byte excluded from a pattern, exclude(), whether a pattern can lose one, can_lose(), and the set compiled,
  *        compile().
  */
 namespace munch::tools::audit
 {
 /**
- * @brief One token of a set as the audit edits and compiles it: the pattern as nodes, the id the report names it
- *        by, its priority, and whether a parser ever sees it.
+ * @brief One token of a set as the audit edits and compiles it: the pattern as nodes, the id the report names it by,
+ *        its priority, and whether a parser ever sees it.
  */
 struct Token_rule
 {
     /**
      * @brief The pattern.
      */
-    regex::Regex regex;
+    regex::Regex regex{};
 
     /**
      * @brief The id, a rule index for a set read from a file.
      */
-    std::size_t id;
+    std::size_t id{};
 
     /**
      * @brief The priority, lower winning among rules matching the same longest lexeme.
      */
-    std::size_t priority;
+    std::size_t priority{};
 
     /**
      * @brief Whether the token is discarded before a parser sees it, which is what the modulo certificate deletes.
      */
-    bool discarded;
+    bool discarded{};
 };
 
 /**
@@ -54,12 +54,12 @@ struct Token_set
     /**
      * @brief The rules, in the order the file gave them.
      */
-    std::vector<Token_rule> rules;
+    std::vector<Token_rule> rules{};
 };
 
 /**
- * @brief Excludes one byte from every character set of a regex, in place, dropping the alternatives of a choice
- *        that cannot lose it and deleting a repetition that may run zero times whose sub-pattern cannot.
+ * @brief Excludes one byte from every character set of a regex, in place, dropping the alternatives of a choice that
+ *        cannot lose it and deleting a repetition that may run zero times whose sub-pattern cannot.
  *
  * This is the one edit the cost analysis knows, and it is the edit behind every designed row of the split-points study:
  * a newline excluded from a comment's interior bounds the comment to a line, excluded from a string's interior forbids
@@ -78,13 +78,13 @@ void exclude(regex::Regex& regex, unsigned char byte);
 [[nodiscard]] core::Lexer compile(const Token_set& set);
 
 /**
- * @brief Whether a regex can lose a byte: whether excluding it from every character set leaves a pattern that still
- *        matches something, which fails exactly where the byte is part of a fixed spelling the pattern needs.
+ * @brief Returns whether a regex can lose a byte: whether excluding it from every character set leaves a pattern that
+ *        still matches something, which fails exactly where the byte is part of a fixed spelling the pattern needs.
  *
  * A character set can lose the byte while another member remains; a fixed spelling cannot lose a byte it holds; a
- * concatenation or repetition can lose it when its parts can; a choice can while one alternative can. A repetition
- * that may run zero times, a star, an optional or a counted one with a minimum of zero, can lose the byte whatever
- * its sub-pattern spells, by running no times: excluding the newline from `a[\n]*b` leaves `ab` matching.
+ * concatenation or repetition can lose it when its parts can; a choice can while one alternative can. A repetition that
+ * may run zero times, a star, an optional or a counted one with a minimum of zero, can lose the byte whatever its
+ * sub-pattern spells, by running no times: excluding the newline from `a[\n]*b` leaves `ab` matching.
  * @param regex The pattern.
  * @param byte The byte.
  * @return True when exclude() would leave a pattern matching something.

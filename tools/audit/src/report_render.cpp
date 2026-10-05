@@ -18,12 +18,14 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements report.hpp's rendering: how a byte, a byte string, a span, a count and a shape are written in the text and
-// in the JSON is private to this unit.
+/**
+ * @brief How many examples a list in the text report shows before it counts the rest.
+ */
+constexpr std::size_t shown_examples{6};
 
 /**
- * @brief What the blame section says per token: how many candidate bytes it consumes mid-token, and one of them
- *        with the shortest input after which it does.
+ * @brief What the blame section says per token: how many candidate bytes it consumes mid-token, and one of them with
+ *        the shortest input after which it does.
  */
 struct Consumed
 {
@@ -40,50 +42,154 @@ struct Consumed
     /**
      * @brief The shortest input after which the token consumes the example.
      */
-    std::string after;
+    std::string after{};
 };
 
 /**
- * @brief A byte as the report prints it: the character when it is printable, an escape when it is a common
+ * @brief Returns the items written one after another with a separator between every two.
+ * @tparam Items The type of the items' range.
+ * @tparam One The type of what writes one item.
+ * @param items The items.
+ * @param separator What stands between two items.
+ * @param one What an item is written as.
+ * @return The text, empty for no item.
+ */
+template <typename Items, typename One>
+[[nodiscard]] std::string joined(const Items& items, const std::string_view separator, const One& one)
+{
+    std::string text{};
+
+    for (const auto& item : items)
+    {
+        if (!text.empty())
+        {
+            text += separator;
+        }
+
+        text += one(item);
+    }
+
+    return text;
+}
+
+/**
+ * @brief Writes one character of a JSON string: a quote or a backslash escaped, a byte that may not stand bare as the
+ *        escape of its value, and any other as written.
+ * @param out The JSON text, the character added.
+ * @param byte The character's first byte.
+ * @param bare Whether the character may stand as written.
+ * @param written The character as written.
+ */
+void put_json_character(std::string& out, const char byte, const bool bare, const std::string_view written)
+{
+    if (byte == '"' || byte == '\\')
+    {
+        out += std::format(R"(\{})", byte);
+
+        return;
+    }
+
+    if (!bare)
+    {
+        out += std::format(R"(\u{:04x})", static_cast<unsigned char>(byte));
+
+        return;
+    }
+
+    out += written;
+}
+
+/**
+ * @brief Returns the ending `certif` takes for a count of bytes, `certifies` for one and `certify` for any other.
+ * @param count The count.
+ * @return `ies` for one, `y` for any other.
+ */
+[[nodiscard]] constexpr std::string_view certifies_ending(const std::size_t count) noexcept
+{
+    return count == 1 ? "ies" : "y";
+}
+
+/**
+ * @brief Returns what a certificate says of a byte, by whether it certifies exactly or once the discarded tokens are
+ *        deleted.
+ * @param exact Whether it certifies exactly.
+ * @param modulo Whether it certifies once the discarded tokens are deleted.
+ * @return The words.
+ */
+[[nodiscard]] std::string_view certificate_state(const bool exact, const bool modulo) noexcept
+{
+    if (exact)
+    {
+        return "certifies exactly";
+    }
+
+    if (modulo)
+    {
+        return "certifies once discarded tokens are deleted";
+    }
+
+    return "still does not certify";
+}
+
+/**
+ * @brief Returns the escape a byte is written as inside the quotes the report shows it in, when it has one: a common
+ *        control, the backslash, and the quote around it.
+ * @param byte The byte.
+ * @param quote The quote around it, `'` for a byte shown alone and `"` for one of a string.
+ * @return The escape, or std::nullopt for a byte written as itself or in hex.
+ */
+[[nodiscard]] std::optional<std::string_view> quoted_escape(const unsigned char byte, const char quote)
+{
+    switch (byte)
+    {
+    case '\n':
+        return R"(\n)";
+    case '\t':
+        return R"(\t)";
+    case '\r':
+        return R"(\r)";
+    case '\\':
+        // A backslash is written as two, so that the two bytes of a backslash and an n are told apart from the one byte
+        // of a newline, which is written `\n`.
+        return R"(\\)";
+    default:
+        break;
+    }
+
+    // The quote inside the quotes is written as an escape, so the quotes the byte is shown in are their own and a
+    // witness holding one does not look as though it closed early.
+    if (byte == static_cast<unsigned char>(quote))
+    {
+        return quote == '\'' ? R"(\')" : R"(\")";
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief Returns a byte as the report prints it: the character when it is printable, an escape when it is a common
  *        control, hex otherwise.
  * @param byte The byte.
  * @return The rendering, quoted.
  */
 [[nodiscard]] std::string shown(const unsigned char byte)
 {
-    switch (byte)
+    if (const auto escape{quoted_escape(byte, '\'')})
     {
-    case '\n':
-        return R"('\n')";
-    case '\t':
-        return R"('\t')";
-    case '\r':
-        return R"('\r')";
-    case ' ':
-        return "' '";
-    case '\'':
-        return R"('\'')";
-    default:
-        break;
+        return std::format("'{}'", *escape);
     }
 
-    // A backslash is written as two, so that the two bytes of a backslash and an n are told apart from the one byte of
-    // a newline, which is written `\n`.
-    if (byte == '\\')
+    if (is_printable(byte))
     {
-        return R"('\\')";
-    }
-
-    if (byte > 0x20 && byte < 0x7F)
-    {
-        return std::string{'\''} + static_cast<char>(byte) + '\'';
+        return std::format("'{}'", static_cast<char>(byte));
     }
 
     return std::format("0x{:02X}", byte);
 }
 
 /**
- * @brief A byte string as the report prints it, each byte shown as above but without its own quotes.
+ * @brief Returns a byte string as the report prints it, each byte shown as above but without its own quotes, and in hex
+ *        as the escape `\xHH`.
  * @param bytes The bytes.
  * @return The rendering, quoted once.
  */
@@ -93,33 +199,27 @@ struct Consumed
 
     for (const auto byte : bytes)
     {
-        auto one{shown(static_cast<unsigned char>(byte))};
+        const auto value{static_cast<unsigned char>(byte)};
 
-        if (one.front() == '\'')
+        if (const auto escape{quoted_escape(value, '"')})
         {
-            one = one.substr(1, one.size() - 2);
+            out += *escape;
         }
-
-        if (one == R"(\')")
+        else if (is_printable(value))
         {
-            one = "'";
+            out += byte;
         }
-
-        // A double quote inside the string is written as an escape, so the quotes the string is shown in are its own
-        // and a witness holding one does not look as though it closed early.
-        if (one == "\"")
+        else
         {
-            one = R"(\")";
+            out += std::format(R"(\x{:02X})", value);
         }
-
-        out += one.starts_with("0x") ? R"(\x)" + one.substr(2) : one;
     }
 
     return out + '"';
 }
 
 /**
- * @brief A list of bytes as the report prints it.
+ * @brief Returns a list of bytes as the report prints it.
  * @param bytes The bytes.
  * @return The rendering, or "none".
  */
@@ -130,18 +230,13 @@ struct Consumed
         return "none";
     }
 
-    std::string out;
+    const auto shown_byte{[](const unsigned char byte) { return shown(byte); }};
 
-    for (const auto byte : bytes)
-    {
-        out += (out.empty() ? "" : " ") + shown(byte);
-    }
-
-    return out;
+    return joined(bytes, " ", shown_byte);
 }
 
 /**
- * @brief A span as the report prints it.
+ * @brief Returns a span as the report prints it.
  * @param span The span.
  * @return The number, or "unbounded".
  */
@@ -151,24 +246,19 @@ struct Consumed
 }
 
 /**
- * @brief A list of bytes as a JSON array of their values.
+ * @brief Returns a list of bytes as a JSON array of their values.
  * @param bytes The bytes.
  * @return The JSON text.
  */
 [[nodiscard]] std::string json_bytes(const std::vector<unsigned char>& bytes)
 {
-    std::string out{'['};
+    const auto value{[](const unsigned char byte) { return std::format("{}", byte); }};
 
-    for (const auto byte : bytes)
-    {
-        out += std::format("{}{}", out.size() == 1 ? "" : ", ", byte);
-    }
-
-    return out + ']';
+    return std::format("[{}]", joined(bytes, ", ", value));
 }
 
 /**
- * @brief One row of the text report: its label, padded to the column the values stand in, and its value.
+ * @brief Returns one row of the text report: its label, padded to the column the values stand in, and its value.
  * @param label The label, empty for a row continuing the one before.
  * @param value The value.
  * @return The row, its newline included.
@@ -179,7 +269,7 @@ struct Consumed
 }
 
 /**
- * @brief A window count as the report prints it: the number, or the bound the count passed when none holds it.
+ * @brief Returns a window count as the report prints it: the number, or the bound the count passed when none holds it.
  * @param count The count, std::nullopt when it is more than a std::size_t can hold.
  * @return The rendering.
  */
@@ -189,31 +279,24 @@ struct Consumed
 }
 
 /**
- * @brief Whether every byte of a window is printable ASCII, which makes it the better example.
- * @param window The window.
- * @return True when it is.
- */
-[[nodiscard]] bool is_printable(const std::string_view window) noexcept
-{
-    return std::ranges::all_of(window, [](const char byte) { return byte >= 0x20 && byte < 0x7F; });
-}
-
-/**
- * @brief Where the byte stands after an edit, said to the author, with the other bytes it certifies.
+ * @brief Returns where the byte stands after an edit, said to the author, with the other bytes it certifies.
  * @param after The outcome.
  * @return The sentence.
  */
 [[nodiscard]] std::string standing(const Outcome& after)
 {
-    return std::string{
-                   after.exact  ? "certifies exactly" :
-                   after.modulo ? "certifies once discarded tokens are deleted" :
-                                  "still does not certify"} +
-           (after.gained.empty() ? "" : "; also certified: " + shown(after.gained));
+    const auto state{certificate_state(after.exact, after.modulo)};
+
+    if (after.gained.empty())
+    {
+        return std::string{state};
+    }
+
+    return std::format("{}; also certified: {}", state, shown(after.gained));
 }
 
 /**
- * @brief A shape's name, as the text and the JSON spell it.
+ * @brief Returns a shape's name, as the text and the JSON spell it.
  * @param shape The shape.
  * @return The name.
  */
@@ -237,7 +320,7 @@ struct Consumed
 }
 
 /**
- * @brief What a shape's edit is, said to the author.
+ * @brief Returns what a shape's edit is, said to the author.
  * @param shape The shape.
  * @return The edit.
  */
@@ -259,7 +342,7 @@ struct Consumed
 }
 
 /**
- * @brief A byte string as a JSON string, each byte the code point of its value.
+ * @brief Returns a byte string as a JSON string, each byte the code point of its value.
  * @param bytes The bytes.
  * @return The JSON text, quotes included.
  */
@@ -267,40 +350,35 @@ struct Consumed
 {
     std::string out{'"'};
 
-    for (const auto byte : bytes)
+    for (std::size_t at{0}; at < bytes.size(); ++at)
     {
-        const auto value{static_cast<unsigned char>(byte)};
+        const auto byte{bytes[at]};
 
-        if (byte == '"' || byte == '\\')
-        {
-            out += std::string{'\\'} + byte;
-        }
-        else if (value < 0x20 || value >= 0x7F)
-        {
-            out += std::format(R"(\u{:04x})", value);
-        }
-        else
-        {
-            out.push_back(byte);
-        }
+        const auto bare{is_printable(static_cast<unsigned char>(byte))};
+
+        const auto written{bytes.substr(at, 1)};
+
+        put_json_character(out, byte, bare, written);
     }
 
     return out + '"';
 }
 
 /**
- * @brief A token as JSON: its id and its name.
+ * @brief Returns a token as JSON: its id and its name.
+ * @tparam Name The type of the naming.
  * @param token The token id.
  * @param name The naming.
  * @return The JSON text.
  */
-[[nodiscard]] std::string json_token(const std::size_t token, const std::function<std::string(std::size_t)>& name)
+template <typename Name>
+[[nodiscard]] std::string json_token(const std::size_t token, const Name& name)
 {
     return std::format(R"({{"id": {}, "name": {}}})", token, json_string(name(token)));
 }
 
 /**
- * @brief A list as a JSON array, each item written by the function given.
+ * @brief Returns a list as a JSON array, each item written by the function given.
  * @tparam Items The type of the items' range.
  * @tparam One The type of what writes one item.
  * @param items The items.
@@ -310,18 +388,11 @@ struct Consumed
 template <typename Items, typename One>
 [[nodiscard]] std::string json_list(const Items& items, const One& one)
 {
-    std::string text{'['};
-
-    for (const auto& item : items)
-    {
-        text += (text.size() == 1 ? "" : ", ") + one(item);
-    }
-
-    return text + ']';
+    return std::format("[{}]", joined(items, ", ", one));
 }
 
 /**
- * @brief Where the byte stands after an edit, as JSON.
+ * @brief Returns where the byte stands after an edit, as JSON.
  * @param after The outcome.
  * @return The JSON text.
  */
@@ -332,90 +403,104 @@ template <typename Items, typename One>
 }
 
 /**
- * @brief The row naming the discarded tokens, so that what the modulo row deleted is on the page: their count and the
- *        first six names.
+ * @brief Returns the row naming the discarded tokens, so that what the modulo row deleted is on the page: their count
+ *        and the first six names.
+ * @tparam Name The type of the naming.
  * @param discarded The discarded tokens, by id.
  * @param name The name to print for a token id.
  * @return The row.
  */
-[[nodiscard]] std::string discarded_row(
-        const std::vector<std::size_t>& discarded, const std::function<std::string(std::size_t)>& name)
+template <typename Name>
+[[nodiscard]] std::string discarded_row(const std::vector<std::size_t>& discarded, const Name& name)
 {
-    std::string names;
+    auto names{joined(discarded | std::views::take(shown_examples), ", ", name)};
 
-    for (const auto id : discarded | std::views::take(6))
+    if (discarded.size() > shown_examples)
     {
-        names += (names.empty() ? "" : ", ") + name(id);
-    }
-
-    if (discarded.size() > 6)
-    {
-        names += std::format(", ... {} more", discarded.size() - 6);
+        names += std::format(", ... {} more", discarded.size() - shown_examples);
     }
 
     return row("discarded tokens", std::format("{}: {}", discarded.size(), names));
 }
 
 /**
- * @brief The windows' rows: the count over class representatives, widths ascending, and the first few as examples,
- *        printable windows first, since a reader recognises those.
+ * @brief Returns the windows' rows: the count over class representatives, widths ascending, and the first few as
+ *        examples, printable windows first, since a reader recognises those.
  * @param report The report.
  * @return The rows.
  */
 [[nodiscard]] std::string window_rows(const Report& report)
 {
-    std::map<std::size_t, std::size_t> per_width;
+    std::map<std::size_t, std::size_t> per_width{};
 
     for (const auto& [window, origin] : report.windows)
     {
         ++per_width[window.size()];
     }
 
-    std::string summary;
+    const auto at_width{[]<typename Entry>(const Entry& entry) {
+        const auto& [width, count]{entry};
 
-    for (const auto& [width, count] : per_width)
-    {
-        summary += std::format("{}{} at width {}", summary.empty() ? "" : ", ", count, width);
-    }
+        return std::format("{} at width {}", count, width);
+    }};
 
-    auto out{
-            row(std::format("certified windows (<= {})", report.window_limit),
-                report.windows.empty() ? "none" :
-                                         std::format(
-                                                 "{} over {} byte classes, {} once classes expand", summary,
-                                                 report.classes.size(), counted(report.window_count)))};
+    const auto summary{joined(per_width, ", ", at_width)};
+
+    const auto label{std::format("certified windows (<= {})", report.window_limit)};
+
+    const auto expanded{counted(report.window_count)};
+
+    const auto value{[&]() -> std::string {
+        if (report.windows.empty())
+        {
+            return "none";
+        }
+
+        return std::format("{} over {} byte classes, {} once classes expand", summary, report.classes.size(), expanded);
+    }()};
+
+    auto out{row(label, value)};
+
+    // A window of printable ASCII makes the better example.
+    const auto printable_window{[](const Certified_window& certified) {
+        const auto& [window, origin]{certified};
+
+        const auto printable{[](const char byte) { return is_printable(static_cast<unsigned char>(byte)); }};
+
+        return std::ranges::all_of(window, printable);
+    }};
 
     auto examples{report.windows};
 
-    std::ranges::stable_partition(
-            examples, [](const Certified_window& certified) { return is_printable(certified.window); });
+    std::ranges::stable_partition(examples, printable_window);
 
-    for (const auto& [window, origin] : examples | std::views::take(6))
+    for (const auto& [window, origin] : examples | std::views::take(shown_examples))
     {
         out += row("", std::format("{} at {}", shown(std::string_view{window}), origin));
     }
 
-    if (report.windows.size() > 6)
+    if (report.windows.size() > shown_examples)
     {
-        out += row("", std::format("... {} more", report.windows.size() - 6));
+        out += row("", std::format("... {} more", report.windows.size() - shown_examples));
     }
 
     return out;
 }
 
 /**
- * @brief The blame section, grouped by token: the candidate bytes each de-certifies and the shortest input after which
- *        it consumes one.
+ * @brief Returns the blame section, grouped by token: the candidate bytes each de-certifies and the shortest input
+ *        after which it consumes one.
+ * @tparam Name The type of the naming.
  * @param blame The blame, by byte then token.
  * @param name The name to print for a token id.
  * @return The section, its heading first.
  */
-[[nodiscard]] std::string blame_section(
-        const std::vector<Blame>& blame, const std::function<std::string(std::size_t)>& name)
+template <typename Name>
+[[nodiscard]] std::string blame_section(const std::vector<Blame>& blame, const Name& name)
 {
     std::string out{"\nwhy candidate bytes do not certify\n"};
 
-    std::map<std::size_t, Consumed> by_token;
+    std::map<std::size_t, Consumed> by_token{};
 
     for (const auto& [byte, token, after] : blame)
     {
@@ -433,22 +518,30 @@ template <typename Items, typename One>
 
     for (const auto& [token, consumed] : by_token)
     {
+        const auto& [bytes, example, after]{consumed};
+
+        const auto example_shown{shown(example)};
+
+        const auto after_shown{shown(std::string_view{after})};
+
         out += std::format(
-                "  {:<26} consumes {} candidate byte{} mid-token, e.g. {} after {}\n", name(token), consumed.bytes,
-                consumed.bytes == 1 ? "" : "s", shown(consumed.example), shown(std::string_view{consumed.after}));
+                "  {:<26} consumes {} candidate byte{} mid-token, e.g. {} after {}\n", name(token), bytes,
+                plural(bytes), example_shown, after_shown);
     }
 
     return out;
 }
 
 /**
- * @brief One byte's price section: the edits in order with the certificate after each, what cannot move, and what the
- *        shapes of the tokens consuming it offer.
+ * @brief Returns one byte's price section: the edits in order with the certificate after each, what cannot move, and
+ *        what the shapes of the tokens consuming it offer.
+ * @tparam Name The type of the naming.
  * @param pricing The pricing.
  * @param name The name to print for a token id.
  * @return The section, its heading first.
  */
-[[nodiscard]] std::string price_section(const Pricing& pricing, const std::function<std::string(std::size_t)>& name)
+template <typename Name>
+[[nodiscard]] std::string price_section(const Pricing& pricing, const Name& name)
 {
     const auto& [byte, exact_before, modulo_before, given, steps, immovable, undecided, gained, choices, together]{
             pricing};
@@ -463,41 +556,40 @@ template <typename Items, typename One>
     // A byte no token begins with has nothing to certify until one does; the token given is the first edit.
     if (given)
     {
+        const auto label{std::format("no token begins with {}", shown(byte))};
+
         out += std::format(
-                "  {:<26} neither certificate reports it; it is given a token of its own before any edit\n",
-                std::format("no token begins with {}", shown(byte)));
+                "  {:<26} neither certificate reports it; it is given a token of its own before any edit\n", label);
 
         out += std::format("  {:<26} {}\n", "", standing(*given));
     }
 
-    for (std::size_t index{0}; index < steps.size(); ++index)
+    for (const auto [index, step] : std::views::enumerate(steps))
     {
-        const auto& [token, shape, separated, separated_discarded, exact, modulo]{steps[index]};
+        const auto& [token, shape, separated, separated_discarded, exact, modulo]{step};
 
-        out += std::format(
-                "  {}. {:<24} {}no longer admits {}", index + 1, name(token), shape == Shape::run ? "the run " : "",
-                shown(byte));
+        const std::string_view run{shape == Shape::run ? "the run " : ""};
+
+        out += std::format("  {}. {:<24} {}no longer admits {}", index + 1, name(token), run, shown(byte));
 
         if (separated)
         {
-            out += std::format(
-                    ", and {} becomes a token of its own{}", shown(byte), separated_discarded ? ", discarded" : "");
+            const std::string_view discarded{separated_discarded ? ", discarded" : ""};
+
+            out += std::format(", and {} becomes a token of its own{}", shown(byte), discarded);
         }
 
-        out += std::format(
-                "\n     {:<24} {}\n", "",
-                exact  ? "certifies exactly" :
-                modulo ? "certifies once discarded tokens are deleted" :
-                         "still does not certify");
+        out += std::format("\n     {:<24} {}\n", "", certificate_state(exact, modulo));
     }
 
     for (const auto token : immovable)
     {
         const auto offered{std::ranges::contains(choices, token, &Choice::token)};
 
-        out += std::format(
-                "  {:<26} spells {} out and cannot be narrowed; {}\n", name(token), shown(byte),
-                offered ? "its shape offers an edit below" : "the byte cannot certify while it stays");
+        const std::string_view remedy{
+                offered ? "its shape offers an edit below" : "the byte cannot certify while it stays"};
+
+        out += std::format("  {:<26} spells {} out and cannot be narrowed; {}\n", name(token), shown(byte), remedy);
     }
 
     // The tokens the narrowing is not applied to and has no verdict about: some word of the token holds the byte fixed
@@ -508,8 +600,7 @@ template <typename Items, typename One>
                 "  {:<26} spells {} out, on some path only as its first byte, where a token may begin with it\n",
                 name(token), shown(byte));
 
-        out += std::format(
-                "  {:<26} {}\n", "", "no narrowing applies to a fixed spelling, so this edit decides nothing");
+        out += std::format("  {:<26} no narrowing applies to a fixed spelling, so this edit decides nothing\n", "");
     }
 
     if (!gained.empty())
@@ -538,17 +629,7 @@ template <typename Items, typename One>
 }
 
 /**
- * @brief A window count as JSON: the number, or the bound it passed as a string.
- * @param count The count, std::nullopt when it is more than a std::size_t can hold.
- * @return The JSON text.
- */
-[[nodiscard]] std::string json_count(const std::optional<std::size_t>& count)
-{
-    return count ? std::to_string(*count) : json_byte_string(counted(count));
-}
-
-/**
- * @brief A span as JSON: the number, or "unbounded".
+ * @brief Returns a span as JSON: the number, or "unbounded".
  * @param span The span.
  * @return The JSON text.
  */
@@ -558,40 +639,57 @@ template <typename Items, typename One>
 }
 
 /**
- * @brief One byte's pricing as JSON: the certificates before any edit, the token given, the steps, the tokens no step
- *        answers, the bytes gained, the shapes' choices and every shape's edit together.
+ * @brief Returns one byte's pricing as JSON: the certificates before any edit, the token given, the steps, the tokens
+ *        no step answers, the bytes gained, the shapes' choices and every shape's edit together.
+ * @tparam Name The type of the naming.
  * @param pricing The pricing.
  * @param name The naming.
  * @return The JSON text.
  */
-[[nodiscard]] std::string json_pricing(const Pricing& pricing, const std::function<std::string(std::size_t)>& name)
+template <typename Name>
+[[nodiscard]] std::string json_pricing(const Pricing& pricing, const Name& name)
 {
-    const auto token{[&name](const std::size_t token) { return json_token(token, name); }};
+    const auto& [byte, exact_before, modulo_before, given, steps, immovable, undecided, gained, choices, together]{
+            pricing};
 
-    const auto steps{json_list(pricing.steps, [&name](const Price_step& step) {
-        const auto& [token, shape, separated, separated_discarded, exact, modulo]{step};
+    const auto token{[&name](const std::size_t id) { return json_token(id, name); }};
+
+    const auto step_json{[&name](const Price_step& step) {
+        const auto& [id, shape, separated, separated_discarded, exact, modulo]{step};
 
         return std::format(
                 R"({{"token": {}, "shape": "{}", "separated": {}, "separated_discarded": {}, )"
                 R"("exact": {}, "modulo": {}}})",
-                json_token(token, name), shape_name(shape), separated, separated_discarded, exact, modulo);
-    })};
+                json_token(id, name), shape_name(shape), separated, separated_discarded, exact, modulo);
+    }};
 
-    const auto choices{json_list(pricing.choices, [&name](const Choice& choice) {
-        const auto& [token, shape, after]{choice};
+    const auto choice_json{[&name](const Choice& choice) {
+        const auto& [id, shape, after]{choice};
 
         return std::format(
-                R"({{"token": {}, "shape": "{}", "after": {}}})", json_token(token, name), shape_name(shape),
+                R"({{"token": {}, "shape": "{}", "after": {}}})", json_token(id, name), shape_name(shape),
                 json_outcome(after));
-    })};
+    }};
+
+    const auto steps_json{json_list(steps, step_json)};
+
+    const auto choices_json{json_list(choices, choice_json)};
+
+    const auto given_json{given ? json_outcome(*given) : "null"};
+
+    const auto immovable_json{json_list(immovable, token)};
+
+    const auto undecided_json{json_list(undecided, token)};
+
+    const auto gained_json{json_bytes(gained)};
+
+    const auto together_json{together ? json_outcome(*together) : "null"};
 
     return std::format(
             R"({{"byte": {}, "exact_before": {}, "modulo_before": {}, "given": {}, "steps": {}, )"
             R"("immovable": {}, "undecided": {}, "gained": {}, "choices": {}, "together": {}}})",
-            pricing.byte, pricing.exact_before, pricing.modulo_before,
-            pricing.given ? json_outcome(*pricing.given) : "null", steps, json_list(pricing.immovable, token),
-            json_list(pricing.undecided, token), json_bytes(pricing.gained), choices,
-            pricing.together ? json_outcome(*pricing.together) : "null");
+            byte, exact_before, modulo_before, given_json, steps_json, immovable_json, undecided_json, gained_json,
+            choices_json, together_json);
 }
 
 } // namespace
@@ -616,29 +714,46 @@ std::string render(const Report& report, const std::function<std::string(std::si
 
     out += window_rows(report);
 
-    out += row(
-            "mandatory core", report.mandatory_core.empty() ? "none" : shown(std::string_view{report.mandatory_core}));
+    const auto core{
+            report.mandatory_core.empty() ? std::string{"none"} : shown(std::string_view{report.mandatory_core})};
+
+    out += row("mandatory core", core);
 
     out += row("anchor-free span, bytes", shown(report.byte_span));
 
     if (!report.windows.empty())
     {
-        out +=
-                row("anchor-free span, windows",
-                    report.window_span ?
-                            shown(*report.window_span) :
-                            std::format("not decided: more than {} windows once classes expand", span_window_cap));
+        const auto span{[&report] {
+            if (report.window_span)
+            {
+                return shown(*report.window_span);
+            }
+
+            return std::format("not decided: more than {} windows once classes expand", span_window_cap);
+        }()};
+
+        out += row("anchor-free span, windows", span);
     }
 
     out += row("lag", shown(report.lag));
 
-    out +=
-            row("rescue-free",
-                !report.rescue.exhaustive ?
-                        std::format("not decided: the search passed {} states", dfa::rescue_cap) :
-                report.rescue.witness.empty() ?
-                        "yes" :
-                        std::format("no: the scan rolls back and continues on {}", shown(report.rescue.witness)));
+    const auto& [witness, exhaustive]{report.rescue};
+
+    const auto rescue{[&exhaustive, &witness]() -> std::string {
+        if (!exhaustive)
+        {
+            return std::format("not decided: the search passed {} states", dfa::rescue_cap);
+        }
+
+        if (witness.empty())
+        {
+            return "yes";
+        }
+
+        return std::format("no: the scan rolls back and continues on {}", shown(witness));
+    }()};
+
+    out += row("rescue-free", rescue);
 
     if (!report.blame.empty())
     {
@@ -655,18 +770,25 @@ std::string render(const Report& report, const std::function<std::string(std::si
 
 std::string verdict(const Report& report)
 {
+    const std::string_view priced{report.prices.empty() ? "" : ", priced below"};
+
     if (!report.exact.empty())
     {
-        return std::format(
-                "{} byte{} certif{} exactly: a cut is safe at any occurrence", report.exact.size(),
-                report.exact.size() == 1 ? "" : "s", report.exact.size() == 1 ? "ies" : "y");
+        const auto count{report.exact.size()};
+
+        const auto verb{certifies_ending(count)};
+
+        return std::format("{} byte{} certif{} exactly: a cut is safe at any occurrence", count, plural(count), verb);
     }
 
     if (!report.modulo.empty())
     {
+        const auto count{report.modulo.size()};
+
+        const auto verb{certifies_ending(count)};
+
         return std::format(
-                "no byte certifies exactly; {} certif{} once the discarded tokens are deleted{}", report.modulo.size(),
-                report.modulo.size() == 1 ? "ies" : "y", report.prices.empty() ? "" : ", priced below");
+                "no byte certifies exactly; {} certif{} once the discarded tokens are deleted{}", count, verb, priced);
     }
 
     if (!report.windows.empty())
@@ -678,20 +800,46 @@ std::string verdict(const Report& report)
 
     // The windows are the conservative model's, so their absence up to the width is the model's finding and no proof
     // that the exact decision certifies none.
-    return std::format(
-            "no byte certifies, and no window up to width {} in the model{}", report.window_limit,
-            report.prices.empty() ? "" : "; what certifying a byte would cost is priced below");
+    const std::string_view costed{report.prices.empty() ? "" : "; what certifying a byte would cost is priced below"};
+
+    return std::format("no byte certifies, and no window up to width {} in the model{}", report.window_limit, costed);
 }
 
 std::string json(const Report& report, const std::function<std::string(std::size_t)>& name)
 {
     std::string out{"{\n"};
 
-    const auto member{[&out](const std::string_view key, const std::string& value) {
-        out += std::format(R"({}  "{}": {})", out.size() == 2 ? "" : ",\n", key, value);
+    auto first_member{true};
+
+    const auto member{[&out, &first_member](const std::string_view key, const std::string& value) {
+        const std::string_view separator{first_member ? "" : ",\n"};
+
+        first_member = false;
+
+        out += std::format(R"({}  "{}": {})", separator, key, value);
     }};
 
-    const auto token{[&name](const std::size_t token) { return json_token(token, name); }};
+    const auto token{[&name](const std::size_t id) { return json_token(id, name); }};
+
+    const auto window_json{[](const Certified_window& certified) {
+        const auto& [window, origin]{certified};
+
+        return std::format(R"({{"window": {}, "origin": {}}})", json_byte_string(window), origin);
+    }};
+
+    const auto blame_json{[&name](const Blame& blamed) {
+        const auto& [byte, id, after]{blamed};
+
+        return std::format(
+                R"({{"byte": {}, "token": {}, "after": {}}})", byte, json_token(id, name), json_byte_string(after));
+    }};
+
+    const auto pricing_json{[&name](const Pricing& pricing) { return json_pricing(pricing, name); }};
+
+    // A count past what a std::size_t holds prints as the bound it passed, a string.
+    const auto count_json{[](const std::optional<std::size_t>& count) {
+        return count ? std::to_string(*count) : json_byte_string(counted(count));
+    }};
 
     member("verdict", json_byte_string(verdict(report)));
 
@@ -707,39 +855,54 @@ std::string json(const Report& report, const std::function<std::string(std::size
 
     member("window_limit", std::to_string(report.window_limit));
 
-    member("windows", json_list(report.windows, [](const Certified_window& certified) {
-               const auto& [window, origin]{certified};
+    member("windows", json_list(report.windows, window_json));
 
-               return std::format(R"({{"window": {}, "origin": {}}})", json_byte_string(window), origin);
-           }));
-
-    member("window_count", json_count(report.window_count));
+    member("window_count", count_json(report.window_count));
 
     member("mandatory_core", json_byte_string(report.mandatory_core));
 
     member("byte_span", json_span(report.byte_span));
 
-    member("window_span", report.windows.empty() ? "null" :
-                          report.window_span     ? json_span(*report.window_span) :
-                                                   R"("undecided")");
+    const auto window_span{[&report]() -> std::string {
+        if (report.windows.empty())
+        {
+            return "null";
+        }
+
+        if (report.window_span)
+        {
+            return json_span(*report.window_span);
+        }
+
+        return R"("undecided")";
+    }()};
+
+    member("window_span", window_span);
 
     member("lag", json_span(report.lag));
 
-    member("rescue_free", !report.rescue.exhaustive ? "null" : report.rescue.witness.empty() ? "true" : "false");
+    const auto& [witness, exhaustive]{report.rescue};
 
-    member("rescue_witness", report.rescue.witness.empty() ? "null" : json_byte_string(report.rescue.witness));
+    const auto rescue_free{[&exhaustive, &witness]() -> std::string_view {
+        if (!exhaustive)
+        {
+            return "null";
+        }
 
-    member("blame", json_list(report.blame, [&name](const Blame& blamed) {
-               const auto& [byte, token, after]{blamed};
+        return witness.empty() ? "true" : "false";
+    }()};
 
-               return std::format(
-                       R"({{"byte": {}, "token": {}, "after": {}}})", byte, json_token(token, name),
-                       json_byte_string(after));
-           }));
+    member("rescue_free", std::string{rescue_free});
 
-    member("prices", json_list(report.prices, [&name](const Pricing& pricing) { return json_pricing(pricing, name); }));
+    const auto rescue_witness{witness.empty() ? std::string{"null"} : json_byte_string(witness)};
 
-    return out + "\n}";
+    member("rescue_witness", rescue_witness);
+
+    member("blame", json_list(report.blame, blame_json));
+
+    member("prices", json_list(report.prices, pricing_json));
+
+    return std::format("{}\n}}", out);
 }
 
 std::string options_row(const std::vector<std::string>& options)
@@ -749,26 +912,12 @@ std::string options_row(const std::vector<std::string>& options)
         return {};
     }
 
-    std::string named;
-
-    for (const auto& option : options)
-    {
-        named += (named.empty() ? "" : ", ") + option;
-    }
-
-    return std::format("{:<28}{}\n", "options", named);
+    return row("options", joined(options, ", ", std::identity{}));
 }
 
 std::string options_json(const std::vector<std::string>& options)
 {
-    std::string out{'['};
-
-    for (const auto& option : options)
-    {
-        out += (out.size() == 1 ? "" : ", ") + json_string(option);
-    }
-
-    return out + ']';
+    return json_list(options, json_string);
 }
 
 std::string json_string(const std::string_view text)
@@ -783,18 +932,7 @@ std::string json_string(const std::string_view text)
 
         const auto length{well_formed_length(text, at)};
 
-        if (byte == '"' || byte == '\\')
-        {
-            out += std::string{'\\'} + byte;
-        }
-        else if (value < 0x20 || length == 0)
-        {
-            out += std::format(R"(\u{:04x})", value);
-        }
-        else
-        {
-            out += text.substr(at, length);
-        }
+        put_json_character(out, byte, value >= ' ' && length != 0, text.substr(at, length));
 
         at += std::max(length, 1UZ);
     }

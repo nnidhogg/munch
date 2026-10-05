@@ -27,7 +27,7 @@ struct Literal
     /**
      * @brief The bytes, each character's UTF-8 encoding, a surrogate pair's the scalar the pair encodes.
      */
-    std::string bytes;
+    std::string bytes{};
 
     /**
      * @brief Whether ANTLR reads the literal as one character where a range's end or a negated literal needs one
@@ -36,7 +36,7 @@ struct Literal
      *        escapes are two UTF-16 units to it, and its error 144 calls the literal multi-character, as it calls the
      *        empty one.
      */
-    bool single;
+    bool single{};
 };
 
 /**
@@ -97,6 +97,15 @@ public:
 
 protected:
     /**
+     * @brief Reads one character of a literal or a set, an escape decoded.
+     * @param closing The byte that closes the literal or set, which a bare one of ends the reading.
+     * @return The scalar, or std::nullopt at the closing byte.
+     * @throws Spec_error At the text's end, for a raw line break, ANTLR's errors 152 and 50, an escape ANTLR has not
+     *         got, its error 156, a Unicode property class, or a malformed Unicode escape.
+     */
+    [[nodiscard]] std::optional<char32_t> character(char closing);
+
+    /**
      * @brief Reads element options after their `<`, through the `>`, as ANTLR's parser reads them (ANTLRParser.g's
      *        elementOptions): names, dotted or not, each alone or, undotted, with `=` and a value that is a name, a
      *        number, a quoted string or a brace block, parted by commas, or nothing at all between the angles. An
@@ -107,19 +116,21 @@ protected:
     void element_options();
 
     /**
-     * @brief Reads one character of a literal or a set, an escape decoded.
-     * @param closing The byte that closes the literal or set, which a bare one of ends the reading.
-     * @return The scalar, or std::nullopt at the closing byte.
-     * @throws Spec_error At the text's end, for a raw line break, ANTLR's errors 152 and 50, an escape ANTLR has not
-     *         got, its error 156, a Unicode property class, or a malformed Unicode escape.
-     */
-    [[nodiscard]] std::optional<char32_t> character(char closing);
-
-    /**
      * @brief Skips a brace block from its `{`, however nested.
      * @throws Spec_error If the block or a quoted string inside it never closes.
      */
     void skip_block();
+
+    /**
+     * @brief Skips a bracketed block from its opener, through the closer that matches it: brackets of its kind nest and
+     *        a `"..."` or a `'...'` inside is skipped whole.
+     * @param opener The bracket that opens the block, where the skip begins.
+     * @param closer The bracket that closes it.
+     * @param comments Whether a comment inside is skipped whole, its quotes being prose, or read as any other bytes.
+     * @param unclosed What a refusal says when the block never closes.
+     * @throws Spec_error If the block or a quoted string inside it never closes.
+     */
+    void skip_bracketed(char opener, char closer, bool comments, const std::string& unclosed);
 
     /**
      * @brief Skips a quoted string after its opening quote, through the closing one, a backslash escaping the byte
@@ -128,6 +139,23 @@ protected:
      * @throws Spec_error If the string never closes, at the line of its opening quote.
      */
     void skip_quoted(char quote);
+
+private:
+    /**
+     * @brief Reads the rest of a scalar typed directly in UTF-8, its lead byte saying how many bytes follow.
+     * @param lead The lead byte, already read.
+     * @return The scalar.
+     * @throws Spec_error If the text ends before the sequence does.
+     */
+    [[nodiscard]] char32_t typed_scalar(unsigned char lead);
+
+    /**
+     * @brief Reads a Unicode escape after its `\u`: four hex digits, `\uXXXX`, or one to six in braces, `\u{X...}`, up
+     *        to U+10FFFF.
+     * @return The scalar.
+     * @throws Spec_error If the escape is malformed.
+     */
+    [[nodiscard]] char32_t unicode_escape();
 };
 
 } // namespace munch::tools::audit

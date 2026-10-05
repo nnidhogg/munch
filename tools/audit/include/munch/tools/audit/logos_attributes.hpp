@@ -25,6 +25,12 @@
 namespace munch::tools::audit
 {
 /**
+ * @brief What the option a `#[logos(type ...)]` entry records opens with, its key and the blank before the parameter it
+ *        types, `type T=u8`.
+ */
+constexpr std::string_view type_key{"type "};
+
+/**
  * @brief One `#[path(...)]` attribute: its path, where the text between its delimiters lies, and its line.
  */
 struct Attribute
@@ -32,34 +38,34 @@ struct Attribute
     /**
      * @brief The path, `derive`, `logos`, `token`, `regex` or another.
      */
-    std::string path;
+    std::string path{};
 
     /**
      * @brief The offset of the first byte inside the delimiters, equal to `end` when there are none.
      */
-    std::size_t begin;
+    std::size_t begin{};
 
     /**
      * @brief The offset just past the last byte inside the delimiters.
      */
-    std::size_t end;
+    std::size_t end{};
 
     /**
      * @brief Whether the path is followed by a delimited group, `#[path(...)]`, rather than nothing or `= value`.
      */
-    bool delimited;
+    bool delimited{};
 
     /**
      * @brief The line the attribute opens on.
      */
-    std::size_t line;
+    std::size_t line{};
 
     /**
      * @brief The predicates the build alone decides that the attribute was applied under, `feature = "x"` for one
      *        written `#[cfg_attr(feature = "x", ...)]`, outermost first, each read as holding, which a scanner's
      *        options say, `cfg=` and the predicate; empty for an attribute written as it stands.
      */
-    std::vector<std::string> assumed;
+    std::vector<std::string> assumed{};
 };
 
 /**
@@ -70,27 +76,27 @@ struct Definition
     /**
      * @brief The pattern's literal.
      */
-    String_literal literal;
+    String_literal literal{};
 
     /**
      * @brief The callback's text as written, empty when there is none.
      */
-    std::string callback;
+    std::string callback{};
 
     /**
      * @brief The `priority = n` override, when given.
      */
-    std::optional<std::size_t> priority;
+    std::optional<std::size_t> priority{};
 
     /**
      * @brief Which folding an `ignore(...)` argument asked for.
      */
-    Ignore_case folding;
+    Ignore_case folding{};
 
     /**
      * @brief The line the attribute opens on.
      */
-    std::size_t line;
+    std::size_t line{};
 };
 
 /**
@@ -103,10 +109,10 @@ struct Definition
 void read_attributes(Rust_cursor& cursor, std::vector<Attribute>& attributes);
 
 /**
- * @brief Whether an item carrying these attributes stands, by the form of its `#[cfg(...)]` predicates alone: one false
- *        whatever the build says, `any()` of nothing among them, strips the item and with it every name it would bind,
- *        as rustc strips it before a name is resolved. A predicate the build decides leaves the item standing, which
- *        note_assumed() records in a scanner's options.
+ * @brief Returns whether an item carrying these attributes stands, by the form of its `#[cfg(...)]` predicates alone:
+ *        one false whatever the build says, `any()` of nothing among them, strips the item and with it every name it
+ *        would bind, as rustc strips it before a name is resolved. A predicate the build decides leaves the item
+ *        standing, which note_assumed() records in a scanner's options.
  * @param attributes The attributes read for the item.
  * @param cursor The cursor over the file the attributes' offsets index.
  * @return True when the item stands.
@@ -125,7 +131,7 @@ void read_attributes(Rust_cursor& cursor, std::vector<Attribute>& attributes);
 void note_assumed(const Attribute& attribute, const Rust_cursor& cursor, std::vector<std::string>& options);
 
 /**
- * @brief The line of the attribute among a list of outer attributes whose derive names Logos, bare or by path.
+ * @brief Returns the line of the attribute among a list of outer attributes whose derive names Logos, bare or by path.
  * @param attributes The attributes.
  * @param cursor The cursor over the file the offsets index.
  * @return The line, or std::nullopt when none does.
@@ -156,7 +162,7 @@ void note_assumed(const Attribute& attribute, const Rust_cursor& cursor, std::ve
 [[nodiscard]] Definition read_definition(Rust_cursor content, std::string_view attribute, bool skip);
 
 /**
- * @brief Whether an option with a key, `extras`, `error`, `source` or `type S`, has been recorded already.
+ * @brief Returns whether an option with a key, `extras`, `error`, `source` or `type S`, has been recorded already.
  * @param options The options recorded so far.
  * @param key The key, `type S` for a type parameter's assignment.
  * @return True when one has.

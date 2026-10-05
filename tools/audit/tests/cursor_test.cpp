@@ -9,10 +9,10 @@
 
 using namespace munch::tools::audit;
 
-TEST(Cursor, Done_is_the_end_of_the_span_and_skip_blanks_stops_at_the_first_byte_that_is_neither_blank_nor_comment)
+TEST(Cursor_test, Done_is_the_end_of_the_span_and_not_of_the_text)
 {
-    // The span form ends where it says, not where the text does: one byte to take, then done, with
-    // the text still holding more.
+    // The span form ends where it says, not where the text does: one byte to take, then done, with the text still
+    // holding more.
     Cursor span{"abc", 1, 2};
 
     EXPECT_FALSE(span.done());
@@ -20,9 +20,12 @@ TEST(Cursor, Done_is_the_end_of_the_span_and_skip_blanks_stops_at_the_first_byte
     EXPECT_TRUE(span.done());
 
     EXPECT_TRUE(Cursor{""}.done());
+}
 
-    // Every blank kind and both comment styles in one run, the block comment spanning a line, so the byte reached
-    // and the line it is on are both pinned; the line is counted from one by the newlines passed.
+TEST(Cursor_test, Skip_blanks_stops_at_the_first_byte_that_is_neither_blank_nor_comment)
+{
+    // Every blank kind and both comment styles in one run, the block comment spanning a line, so the byte reached and
+    // the line it is on are both pinned; the line is counted from one by the newlines passed.
     Cursor blanks{" \t\r\n// a line comment\n/* a block\n comment */ \tx"};
 
     blanks.skip_blanks();
@@ -31,8 +34,8 @@ TEST(Cursor, Done_is_the_end_of_the_span_and_skip_blanks_stops_at_the_first_byte
     EXPECT_EQ(blanks.line(), 4U);
     EXPECT_FALSE(blanks.done());
 
-    // Nothing to skip leaves the cursor where it was, a lone slash is no comment, and an ended span is
-    // skipped over without a refusal.
+    // Nothing to skip leaves the cursor where it was, a lone slash is no comment, and an ended span is skipped over
+    // without a refusal.
     Cursor slash{"/x"};
 
     slash.skip_blanks();
@@ -49,8 +52,8 @@ TEST(Cursor, Done_is_the_end_of_the_span_and_skip_blanks_stops_at_the_first_byte
 
     EXPECT_TRUE(ended.done());
 
-    // A block comment that never closes is refused at the line it opens on, and one closing beyond the span's end
-    // is as unclosed as one closing nowhere.
+    // A block comment that never closes is refused at the line it opens on, and one closing beyond the span's end is as
+    // unclosed as one closing nowhere.
     Cursor open{"\n\n/* never"};
 
     EXPECT_THROW(open.skip_blanks(), Spec_error);

@@ -1,7 +1,9 @@
 #include "munch/tools/audit/rust_items.hpp"
 
 #include <cstddef>
+#include <format>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -17,10 +19,6 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements rust_items.hpp: the walk over the file, Item_collector, with a glob import, a declared function and an
-// open delimiter as it holds them, the skips over an item and a macro's text, an impl block's type, a `use` tree, the
-// variants an enum binds, a function's first parameter and the globs followed are private to this unit.
-
 /**
  * @brief A glob import, `use path::*;`, which brings the bindings of the module it names that the importing module may
  *        see into the module it stands in; followed once the file's items are all collected, since it brings in items
@@ -31,18 +29,18 @@ struct Glob
     /**
      * @brief The module the import stands in, as a path from the crate root, empty at the root.
      */
-    std::string module;
+    std::string module{};
 
     /**
      * @brief The path before the `*`, without trivia, `super` for `use super::*;`.
      */
-    std::string path;
+    std::string path{};
 
     /**
      * @brief Whether the import is declared `pub`, `pub use path::*;`, so that what it brings in is exported from the
      *        module it stands in.
      */
-    bool exported;
+    bool exported{};
 };
 
 /**
@@ -53,12 +51,12 @@ struct Opened
     /**
      * @brief The impl block's type for the brace of one, its path as impl_type() reads it, empty otherwise.
      */
-    std::string impl_type;
+    std::string impl_type{};
 
     /**
      * @brief Whether the delimiter is the brace of an impl or trait block, whose `type` items are associated types.
      */
-    bool associated;
+    bool associated{};
 
     /**
      * @brief What the brace adds to the path of the scope it opens: a `mod` block's name; nothing for an impl or trait
@@ -67,7 +65,7 @@ struct Opened
      *        can spell, since such a block is a scope of its own. Empty for a parenthesis or a bracket, which open no
      *        scope.
      */
-    std::string segment;
+    std::string segment{};
 };
 
 /**
@@ -78,13 +76,28 @@ struct Declared_function
     /**
      * @brief The function's name.
      */
-    std::string name;
+    std::string name{};
 
     /**
      * @brief The function.
      */
-    Function function;
+    Function function{};
 };
+
+/**
+ * @brief Returns a path prefix without the `::` that ends it, when one does.
+ * @param prefix The prefix.
+ * @return The prefix as a path.
+ */
+[[nodiscard]] std::string without_separator(const std::string& prefix)
+{
+    if (!prefix.ends_with(path_separator))
+    {
+        return prefix;
+    }
+
+    return prefix.substr(0, prefix.size() - path_separator.size());
+}
 
 /**
  * @brief Brings the bindings of the module one glob imports from into the module importing it, as follow_globs() has
@@ -105,55 +118,58 @@ struct Declared_function
         return false;
     }
 
-    const auto target{resolved == "crate" ? std::string{} : resolved.substr(7)};
+    const auto target{resolved == crate_root ? std::string{} : resolved.substr(crate_prefix.size())};
 
     // The importing module sees everything of a module it stands in or under.
     const auto within{is_within(module, target)};
 
     auto brought{false};
 
+    // Brings a binding into the importing module as far as that module may see it.
+    const auto bring{[&](const std::string_view name, const std::optional<Binding>& value, const Namespace space) {
+        if (!value || !(within || value->exported))
+        {
+            return;
+        }
+
+        const auto key_in_module{qualified(module, name)};
+
+        auto& standing{names[key_in_module].in(space)};
+
+        if (!standing)
+        {
+            standing = Binding{.path = value->path, .module = value->module, .exported = exported};
+
+            brought = true;
+
+            return;
+        }
+
+        // The binding standing under the name shadows the glob's unless it is the same one, brought in by another glob
+        // of the module, `use crate::a::*;` beside `pub use crate::a::*;`: one binding then, exported where either glob
+        // is.
+        if (standing->path == value->path && standing->module == value->module && exported && !standing->exported)
+        {
+            standing->exported = true;
+
+            brought = true;
+        }
+    }};
+
     for (const auto& [key, bindings] : Names_t{names})
     {
-        const auto cut{key.rfind("::")};
-
-        const auto owner{cut == std::string::npos ? std::string_view{} : std::string_view{key}.substr(0, cut)};
-
-        const auto name{cut == std::string::npos ? key : key.substr(cut + 2)};
+        const auto owner{parent(key)};
 
         if (owner != target)
         {
             continue;
         }
 
+        const auto name{last_segment(key)};
+
         for (const auto space : both_namespaces)
         {
-            const auto& value{bindings.in(space)};
-
-            if (!value || !(within || value->exported))
-            {
-                continue;
-            }
-
-            auto& standing{names[qualified(module, name)].in(space)};
-
-            if (!standing)
-            {
-                standing = Binding{.path = value->path, .module = value->module, .exported = exported};
-
-                brought = true;
-
-                continue;
-            }
-
-            // The binding standing under the name shadows the glob's unless it is the same one, brought in by another
-            // glob of the module, `use crate::a::*;` beside `pub use crate::a::*;`: one binding then, exported where
-            // either glob is.
-            if (standing->path == value->path && standing->module == value->module && exported && !standing->exported)
-            {
-                standing->exported = true;
-
-                brought = true;
-            }
+            bring(name, bindings.in(space), space);
         }
     }
 
@@ -170,7 +186,7 @@ struct Declared_function
  */
 [[nodiscard]] std::string impl_path(Rust_cursor& cursor)
 {
-    std::string segments;
+    std::string segments{};
 
     for (;;)
     {
@@ -187,15 +203,14 @@ struct Declared_function
             cursor.skip_trivia();
         }
 
-        if (!cursor.at("::"))
+        if (!cursor.at(path_separator))
         {
             return segments;
         }
 
-        cursor.expect(':', "':'");
-        cursor.expect(':', "':'");
+        expect_spelled(cursor, path_separator);
 
-        segments += "::";
+        segments += path_separator;
     }
 }
 
@@ -216,7 +231,9 @@ struct Declared_function
 void follow_globs(const std::vector<Glob>& globs, Names_t& names)
 {
     // A glob's module may itself be filled by a glob, so the passes run until none brings in anything more.
-    for (auto brought{true}; brought;)
+    auto brought{false};
+
+    do
     {
         brought = false;
 
@@ -224,7 +241,7 @@ void follow_globs(const std::vector<Glob>& globs, Names_t& names)
         {
             brought = follow_glob(glob, names) || brought;
         }
-    }
+    } while (brought);
 }
 
 /**
@@ -239,7 +256,7 @@ void skip_item(Rust_cursor& cursor)
 {
     for (cursor.skip_trivia(); !cursor.done(); cursor.skip_trivia())
     {
-        if (cursor.accept(';') || cursor.peek() == ')' || cursor.peek() == ']' || cursor.peek() == '}')
+        if (cursor.accept(';') || is_closing(cursor.peek()))
         {
             return;
         }
@@ -291,7 +308,7 @@ void skip_item(Rust_cursor& cursor)
         look.skip_trivia();
     }
 
-    if (look.peek() != '(' && look.peek() != '[' && look.peek() != '{')
+    if (!is_opening(look.peek()))
     {
         return false;
     }
@@ -330,10 +347,7 @@ void skip_item(Rust_cursor& cursor)
         type = impl_path(cursor);
     }
 
-    while (!cursor.done() && cursor.peek() != '{' && cursor.peek() != ';')
-    {
-        cursor.skip_token();
-    }
+    skip_until(cursor, "{;");
 
     return type;
 }
@@ -349,8 +363,8 @@ void skip_item(Rust_cursor& cursor)
  * @param exported Whether the `use` is declared `pub`, which every name it binds is then.
  * @param names The bindings, added to.
  * @param globs The glob imports, added to.
- * @throws Spec_error If a brace is left open, or a `self` stands where rustc refuses one: other than alone in a
- *         brace group, or in a group with no module before it.
+ * @throws Spec_error If a brace is left open, or a `self` stands where rustc refuses one: other than alone in a brace
+ *         group, or in a group with no module before it.
  */
 void read_use_tree(
         Rust_cursor& cursor, const std::string& prefix, const bool braced, const std::string_view module,
@@ -364,7 +378,7 @@ void read_use_tree(
 
         cursor.skip_group();
 
-        auto branch{cursor.inside(open + 1, cursor.offset() - 1)};
+        auto branch{cursor.group_inside(open)};
 
         for (branch.skip_trivia(); !branch.done(); branch.skip_trivia())
         {
@@ -383,28 +397,26 @@ void read_use_tree(
 
     if (cursor.accept('*'))
     {
-        globs.push_back(
-                {.module = std::string{module},
-                 .path = prefix.ends_with("::") ? prefix.substr(0, prefix.size() - 2) : prefix,
-                 .exported = exported});
+        auto path{without_separator(prefix)};
+
+        globs.push_back({.module = std::string{module}, .path = std::move(path), .exported = exported});
 
         return;
     }
 
     std::string path{prefix};
 
-    std::string last;
+    std::string last{};
 
     std::size_t line{};
 
     for (;;)
     {
-        if (cursor.at("::"))
+        if (cursor.at(path_separator))
         {
-            cursor.expect(':', "':'");
-            cursor.expect(':', "':'");
+            expect_spelled(cursor, path_separator);
 
-            path += "::";
+            path += path_separator;
         }
 
         cursor.skip_trivia();
@@ -429,14 +441,14 @@ void read_use_tree(
 
         cursor.skip_trivia();
 
-        if (!cursor.at("::"))
+        if (!cursor.at(path_separator))
         {
             break;
         }
     }
 
-    // `self` alone in a brace group names the module the group stands under; rustc refuses a `self` anywhere else,
-    // and one in a group under no module.
+    // `self` alone in a brace group names the module the group stands under; rustc refuses a `self` anywhere else, and
+    // one in a group under no module.
     if (last == "self")
     {
         if (!braced || path != prefix + last)
@@ -447,7 +459,7 @@ void read_use_tree(
                     line};
         }
 
-        path = prefix.ends_with("::") ? prefix.substr(0, prefix.size() - 2) : prefix;
+        path = without_separator(prefix);
 
         if (path.empty())
         {
@@ -476,21 +488,20 @@ void read_use_tree(
 }
 
 /**
- * @brief The scope the open delimiters stand in, as a path from the crate root: the segments of the `mod` blocks and
- *        the blocks among them joined by `::`, empty at the root.
+ * @brief Returns the scope the open delimiters stand in, as a path from the crate root: the segments of the `mod`
+ *        blocks and the blocks among them joined by `::`, empty at the root.
  * @param opened The open delimiters, outermost first.
  * @return The scope's path.
  */
 [[nodiscard]] std::string scope_of(const std::vector<Opened>& opened)
 {
-    std::string scope;
+    const auto names_scope{[](const Opened& one) { return !one.segment.empty(); }};
 
-    for (const auto& [impl_type, associated, segment] : opened)
+    std::string scope{};
+
+    for (const auto& [impl_type, associated, segment] : opened | std::views::filter(names_scope))
     {
-        if (!segment.empty())
-        {
-            scope = qualified(scope, segment);
-        }
+        scope = qualified(scope, segment);
     }
 
     return scope;
@@ -512,11 +523,13 @@ void bind_variants(Rust_cursor& cursor, Names_t& names, const std::string_view m
 
     cursor.skip_group();
 
-    auto body{cursor.inside(open + 1, cursor.offset() - 1)};
+    auto body{cursor.group_inside(open)};
+
+    const auto owner{qualified(module, name)};
 
     for (body.skip_trivia(); !body.done(); body.skip_trivia())
     {
-        std::vector<Attribute> attributes;
+        std::vector<Attribute> attributes{};
 
         read_attributes(body, attributes);
 
@@ -524,7 +537,7 @@ void bind_variants(Rust_cursor& cursor, Names_t& names, const std::string_view m
 
         if (!variant.empty() && stands_by_form(attributes, body))
         {
-            bind_item(names, qualified(module, name), variant, true, both_namespaces);
+            bind_item(names, owner, variant, true, both_namespaces);
         }
 
         // The payload and the discriminant, up to the comma after the variant.
@@ -536,7 +549,7 @@ void bind_variants(Rust_cursor& cursor, Names_t& names, const std::string_view m
 }
 
 /**
- * @brief The name a function's first parameter binds, which is the lexer's when logos calls the function, the
+ * @brief Returns the name a function's first parameter binds, which is the lexer's when logos calls the function, the
  *        attributes before it stepped over: a binding, `lex`, `mut lex`, `ref lex` or `ref mut lex`, names the lexer,
  *        and a binding is followed by the colon of its type, or by nothing where the function takes no parameter.
  * @param first A cursor over the text between the parameter list's parentheses.
@@ -597,7 +610,7 @@ public:
      * @return The items.
      * @throws Spec_error If a group or a literal is left open.
      */
-    [[nodiscard]] Items collect();
+    [[nodiscard]] Items collect() &&;
 
 private:
     /**
@@ -648,6 +661,13 @@ private:
     void read_extern();
 
     /**
+     * @brief Returns whether the innermost open delimiter is no impl or trait block's brace, so that what is read binds
+     *        in the module rather than being associated with a type.
+     * @return True outside every delimiter and inside any other.
+     */
+    [[nodiscard]] bool outside_associated() const noexcept;
+
+    /**
      * @brief Reads a `type` alias after its `type`, binding its name to the type it stands for; a generic alias stands
      *        for no one type, and its name is bound to itself and noted, so that a type written through it is refused
      *        as one the reading does not follow.
@@ -690,7 +710,7 @@ private:
     [[nodiscard]] std::string return_type();
 
     /**
-     * @brief Whether the keyword `where` stands at the cursor, as a whole word.
+     * @brief Returns whether the keyword `where` stands at the cursor, as a whole word.
      * @return True when it does.
      */
     [[nodiscard]] bool at_where() const;
@@ -766,7 +786,7 @@ private:
 Item_collector::Item_collector(const std::string_view source) : source_{source}, cursor_{source, 0, source.size()}
 {}
 
-Items Item_collector::collect()
+Items Item_collector::collect() &&
 {
     for (cursor_.skip_trivia(); !cursor_.done(); cursor_.skip_trivia())
     {
@@ -872,7 +892,7 @@ void Item_collector::step()
         return;
     }
 
-    if (word == "type" && (opened_.empty() || !opened_.back().associated))
+    if (word == "type" && outside_associated())
     {
         read_type_alias();
 
@@ -920,7 +940,7 @@ void Item_collector::read_visibility()
 {
     cursor_.skip_trivia();
 
-    std::string scope;
+    std::string scope{};
 
     if (cursor_.peek() == '(')
     {
@@ -928,7 +948,7 @@ void Item_collector::read_visibility()
 
         cursor_.skip_group();
 
-        auto inside{cursor_.inside(open + 1, cursor_.offset() - 1)};
+        auto inside{cursor_.group_inside(open)};
 
         inside.skip_trivia();
 
@@ -975,7 +995,11 @@ void Item_collector::read_impl()
 
 void Item_collector::read_use()
 {
-    read_use_tree(cursor_, {}, false, scope_of(opened_), std::exchange(exported_, false), items_.names, globs_);
+    const auto module{scope_of(opened_)};
+
+    const auto exported{std::exchange(exported_, false)};
+
+    read_use_tree(cursor_, {}, false, module, exported, items_.names, globs_);
 }
 
 void Item_collector::read_extern()
@@ -1012,8 +1036,17 @@ void Item_collector::read_extern()
 
     if (!crate.empty() && !name.empty() && name != "_")
     {
-        bind_name(items_.names, scope_of(opened_), name, "::" + crate, exported, type_namespace);
+        const auto module{scope_of(opened_)};
+
+        const auto absolute{std::format("{}{}", path_separator, crate)};
+
+        bind_name(items_.names, module, name, absolute, exported, type_namespace);
     }
+}
+
+bool Item_collector::outside_associated() const noexcept
+{
+    return opened_.empty() || !opened_.back().associated;
 }
 
 void Item_collector::read_type_alias()
@@ -1028,10 +1061,7 @@ void Item_collector::read_type_alias()
 
     const auto generic{cursor_.peek() == '<'};
 
-    while (!cursor_.done() && cursor_.peek() != '=' && cursor_.peek() != ';' && cursor_.peek() != '{')
-    {
-        cursor_.skip_token();
-    }
+    skip_until(cursor_, "=;{");
 
     if (!cursor_.accept('='))
     {
@@ -1040,22 +1070,23 @@ void Item_collector::read_type_alias()
 
     const auto begin{cursor_.offset()};
 
-    while (!cursor_.done() && cursor_.peek() != ';')
-    {
-        cursor_.skip_token();
-    }
+    skip_until(cursor_, ";");
+
+    const auto module{scope_of(opened_)};
 
     if (!name.empty() && generic)
     {
-        bind_item(items_.names, scope_of(opened_), name, exported, type_namespace);
+        bind_item(items_.names, module, name, exported, type_namespace);
 
-        items_.generic_aliases.insert("crate::" + qualified(scope_of(opened_), name));
+        items_.generic_aliases.insert(rooted_path(qualified(module, name)));
     }
     else if (!name.empty())
     {
-        bind_name(
-                items_.names, scope_of(opened_), name, compacted(cursor_.slice(begin, cursor_.offset())), exported,
-                type_namespace);
+        const auto written{cursor_.slice(begin, cursor_.offset())};
+
+        const auto aliased{compacted(written)};
+
+        bind_name(items_.names, module, name, aliased, exported, type_namespace);
     }
 }
 
@@ -1086,19 +1117,26 @@ void Item_collector::read_constant()
     const auto exported{std::exchange(exported_, false)};
 
     // An associated constant, one of an impl or trait block, is the type's and binds nothing in the module.
-    if (name != "_" && (opened_.empty() || !opened_.back().associated))
+    if (name != "_" && outside_associated())
     {
-        bind_item(items_.names, scope_of(opened_), name, exported, value_namespace);
+        const auto module{scope_of(opened_)};
+
+        bind_item(items_.names, module, name, exported, value_namespace);
     }
 }
 
 void Item_collector::read_named_item(const std::string_view word, const std::vector<Attribute>& attributes)
 {
     // An enum deriving `Logos` is a scanner, read once every item is collected.
-    if (const auto line{word == "enum" ? derives_logos(attributes, cursor_) : std::nullopt})
+    const auto module{scope_of(opened_)};
+
+    if (word == "enum")
     {
-        items_.scanners.push_back(
-                {.offset = cursor_.offset(), .attributes = attributes, .line = *line, .scope = scope_of(opened_)});
+        if (const auto line{derives_logos(attributes, cursor_)})
+        {
+            items_.scanners.push_back(
+                    {.offset = cursor_.offset(), .attributes = attributes, .line = *line, .scope = module});
+        }
     }
 
     cursor_.skip_trivia();
@@ -1111,10 +1149,11 @@ void Item_collector::read_named_item(const std::string_view word, const std::vec
     // no value to rustc, so a callback naming one is refused here rather than read as its own.
     if (!name.empty() && name != "_")
     {
-        bind_item(
-                items_.names, scope_of(opened_), name, exported,
+        const auto spaces{
                 word == "struct" ? std::span<const Namespace>{both_namespaces} :
-                                   std::span<const Namespace>{type_namespace});
+                                   std::span<const Namespace>{type_namespace}};
+
+        bind_item(items_.names, module, name, exported, spaces);
     }
 
     cursor_.skip_trivia();
@@ -1130,7 +1169,7 @@ void Item_collector::read_named_item(const std::string_view word, const std::vec
     // An enum's body declares its variants, items of the enum; `enum Never {}` none.
     if (word == "enum" && !name.empty() && cursor_.peek() == '{')
     {
-        bind_variants(cursor_, items_.names, scope_of(opened_), name);
+        bind_variants(cursor_, items_.names, module, name);
 
         return;
     }
@@ -1142,7 +1181,7 @@ void Item_collector::read_named_item(const std::string_view word, const std::vec
     // declaring it.
     if (word == "mod" && (name == "std" || name == "core"))
     {
-        items_.std_modules.emplace(scope_of(opened_));
+        items_.std_modules.emplace(module);
     }
 }
 
@@ -1162,16 +1201,13 @@ void Item_collector::read_function()
     const auto exported{std::exchange(exported_, false)};
 
     // A free function's name is bound in its module; a method's is reached through its type.
-    if (opened_.empty() || (opened_.back().impl_type.empty() && !opened_.back().associated))
+    if (outside_associated())
     {
         bind_item(items_.names, module, name, exported, value_namespace);
     }
 
     // Generic parameters stand between the name and the parameter list.
-    while (!cursor_.done() && cursor_.peek() != '(' && cursor_.peek() != '{' && cursor_.peek() != ';')
-    {
-        cursor_.skip_token();
-    }
+    skip_until(cursor_, "({;");
 
     if (cursor_.peek() != '(')
     {
@@ -1182,24 +1218,27 @@ void Item_collector::read_function()
 
     cursor_.skip_group();
 
-    auto parameter{first_parameter(cursor_.inside(parameters + 1, cursor_.offset() - 1))};
+    const auto parameter_list{cursor_.group_inside(parameters)};
+
+    auto parameter{first_parameter(parameter_list)};
 
     cursor_.skip_trivia();
 
+    auto returns{return_type()};
+
+    auto self_type{opened_.empty() ? std::string{} : opened_.back().impl_type};
+
     Function function{
-            .returns = return_type(),
+            .returns = std::move(returns),
             .body = std::nullopt,
             .parameter = std::move(parameter),
-            .self_type = opened_.empty() ? std::string{} : opened_.back().impl_type,
+            .self_type = std::move(self_type),
             .module = module,
             .scope = {},
             .body_at = 0};
 
     // A where clause, then the body or the semicolon of a declaration.
-    while (!cursor_.done() && cursor_.peek() != '{' && cursor_.peek() != ';')
-    {
-        cursor_.skip_token();
-    }
+    skip_until(cursor_, "{;");
 
     // The body is kept whole for a callback naming the function, and left for the walk to enter as the block it is, so
     // that an item declared in it is in scope for a scanner declared beside it.
@@ -1209,13 +1248,17 @@ void Item_collector::read_function()
 
         // The body's own block, marked by where its brace stands, as the walk marks every block it enters, so that what
         // the body binds is looked up under the same name the walk bound it under.
-        function.scope = qualified(module, "{" + std::to_string(cursor_.offset()) + "}");
+        const auto block{block_mark(cursor_.offset())};
+
+        function.scope = qualified(module, block);
 
         function.body_at = cursor_.offset() + 1;
 
         body.skip_group();
 
-        function.body = std::string{cursor_.slice(cursor_.offset() + 1, body.offset() - 1)};
+        const auto inside{cursor_.slice(cursor_.offset() + 1, body.offset() - 1)};
+
+        function.body = std::string{inside};
     }
 
     declared_.push_back({.name = name, .function = std::move(function)});
@@ -1228,8 +1271,7 @@ std::string Item_collector::return_type()
         return {};
     }
 
-    cursor_.expect('-', "'-'");
-    cursor_.expect('>', "'>'");
+    expect_spelled(cursor_, "->");
 
     const auto begin{cursor_.offset()};
 
@@ -1238,18 +1280,23 @@ std::string Item_collector::return_type()
         cursor_.skip_token();
     }
 
-    return compacted(cursor_.slice(begin, cursor_.offset()));
+    const auto written{cursor_.slice(begin, cursor_.offset())};
+
+    return compacted(written);
 }
 
 bool Item_collector::at_where() const
 {
-    return cursor_.at("where") &&
-           (cursor_.offset() + 5 >= source_.size() || !is_word_byte(source_[cursor_.offset() + 5]));
+    static constexpr std::string_view where_word{"where"};
+
+    const auto past{cursor_.offset() + where_word.size()};
+
+    return cursor_.at(where_word) && (past >= source_.size() || !is_word_byte(source_[past]));
 }
 
 void Item_collector::read_punctuation()
 {
-    if (cursor_.peek() == '(' || cursor_.peek() == '[' || cursor_.peek() == '{')
+    if (is_opening(cursor_.peek()))
     {
         open_group();
 
@@ -1259,7 +1306,7 @@ void Item_collector::read_punctuation()
         return;
     }
 
-    if (cursor_.peek() == ')' || cursor_.peek() == ']' || cursor_.peek() == '}')
+    if (is_closing(cursor_.peek()))
     {
         if (!opened_.empty())
         {
@@ -1283,19 +1330,20 @@ void Item_collector::open_group()
 {
     const auto open{cursor_.next("a delimiter")};
 
-    const auto associated{open == '{' && std::exchange(next_brace_.associated, false)};
+    const auto brace{open == '{'};
 
-    auto segment{open == '{' ? std::exchange(next_brace_.segment, {}) : std::string{}};
+    const auto associated{brace && std::exchange(next_brace_.associated, false)};
 
-    if (open == '{' && segment.empty() && !associated)
+    auto segment{brace ? std::exchange(next_brace_.segment, {}) : std::string{}};
+
+    if (brace && segment.empty() && !associated)
     {
-        segment = "{" + std::to_string(cursor_.offset() - 1) + "}";
+        segment = block_mark(cursor_.offset() - 1);
     }
 
-    opened_.push_back(
-            {.impl_type = open == '{' ? std::exchange(next_brace_.impl_type, {}) : std::string{},
-             .associated = associated,
-             .segment = std::move(segment)});
+    auto impl_type{brace ? std::exchange(next_brace_.impl_type, {}) : std::string{}};
+
+    opened_.push_back({.impl_type = std::move(impl_type), .associated = associated, .segment = std::move(segment)});
 }
 
 void Item_collector::index_functions()
@@ -1309,9 +1357,16 @@ void Item_collector::index_functions()
 
         const auto& type{function.self_type};
 
-        const auto owner{
-                type.empty() ? qualified(function.module, name) :
-                               (type.starts_with("crate::") ? type.substr(7) : type) + "::" + name};
+        const auto owner{[&] {
+            if (type.empty())
+            {
+                return qualified(function.module, name);
+            }
+
+            const auto type_path{from_root(type)};
+
+            return qualified(type_path, name);
+        }()};
 
         items_.functions[owner].push_back(std::move(function));
     }
@@ -1321,7 +1376,9 @@ void Item_collector::index_functions()
 
 Items collect_items(const std::string_view source)
 {
-    return Item_collector{source}.collect();
+    Item_collector collector{source};
+
+    return std::move(collector).collect();
 }
 
 } // namespace munch::tools::audit

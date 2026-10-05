@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -23,9 +24,9 @@ Cursor::Cursor(const std::string_view text, const Line_comment_end line_comment_
 
 char Cursor::next(const std::string_view what)
 {
-    if (at_ >= end_)
+    if (done())
     {
-        fail("expected " + std::string{what} + " before the end of the text");
+        fail(std::format("expected {} before the end of the text", what));
     }
 
     return text_[at_++];
@@ -45,28 +46,29 @@ void Cursor::skip_blanks()
             ++at_;
         }
 
-        if (at("//"))
+        if (at(line_comment_opener))
         {
             while (peek() && *peek() != '\n' && (line_comment_end_ == Line_comment_end::newline || *peek() != '\r'))
             {
                 ++at_;
             }
-        }
-        else if (at("/*"))
-        {
-            const auto close{text_.find("*/", at_ + 2)};
 
-            if (close == std::string_view::npos || close + 2 > end_)
-            {
-                fail("a comment is never closed");
-            }
-
-            at_ = close + 2;
+            continue;
         }
-        else
+
+        if (!at(comment_opener))
         {
             return;
         }
+
+        const auto close{text_.find(comment_closer, at_ + comment_opener.size())};
+
+        if (close == std::string_view::npos || close + comment_closer.size() > end_)
+        {
+            fail("a comment is never closed");
+        }
+
+        at_ = close + comment_closer.size();
     }
 }
 
@@ -74,7 +76,7 @@ void Cursor::expect(const char byte, const std::string_view what)
 {
     if (!accept(byte))
     {
-        fail("expected " + std::string{what});
+        fail(std::format("expected {}", what));
     }
 }
 
@@ -97,7 +99,7 @@ std::size_t Cursor::offset() const noexcept
 
 std::optional<char> Cursor::peek() const noexcept
 {
-    return at_ < end_ ? std::optional{text_[at_]} : std::nullopt;
+    return !done() ? std::optional{text_[at_]} : std::nullopt;
 }
 
 void Cursor::fail(const std::string& message) const
@@ -107,17 +109,21 @@ void Cursor::fail(const std::string& message) const
 
 std::size_t Cursor::line() const noexcept
 {
-    return line_of(std::min(at_, text_.empty() ? 0 : text_.size() - 1));
+    const auto last{text_.empty() ? 0 : text_.size() - 1};
+
+    return line_of(std::min(at_, last));
 }
 
 bool Cursor::at(const std::string_view prefix) const noexcept
 {
-    return text_.substr(at_, end_ - std::min(at_, end_)).starts_with(prefix);
+    const auto rest{text_.substr(at_, end_ - std::min(at_, end_))};
+
+    return rest.starts_with(prefix);
 }
 
 std::size_t Cursor::line_of(const std::size_t offset) const noexcept
 {
-    return 1 + static_cast<std::size_t>(std::ranges::count(text_.substr(0, offset), '\n'));
+    return 1 + lines_before(text_, offset);
 }
 
 } // namespace munch::tools::audit

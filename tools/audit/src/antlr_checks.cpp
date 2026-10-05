@@ -4,8 +4,8 @@
 #include <cstddef>
 #include <format>
 #include <functional>
-#include <iterator>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <string>
 #include <string_view>
@@ -22,7 +22,10 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements antlr_checks.hpp: each check over the recorded grammar is private to this unit.
+/**
+ * @brief What ANTLR names an implicit token by, the k-th of them named `T__k`.
+ */
+constexpr std::string_view implicit_prefix{"T__"};
 
 /**
  * @brief Refuses a closure whose body can match the empty string, ANTLR's error 153, and a non-greedy loop in a rule an
@@ -36,9 +39,11 @@ namespace
  */
 void check_nullability(const Grammar_tables& tables)
 {
-    std::set<std::string, std::less<>> nullable;
+    std::set<std::string, std::less<>> nullable{};
 
-    for (auto growing{true}; growing;)
+    auto growing{false};
+
+    do
     {
         growing = false;
 
@@ -51,18 +56,13 @@ void check_nullability(const Grammar_tables& tables)
                 growing = true;
             }
         }
-    }
+    } while (growing);
 
     for (const auto& [rule, line, body] : tables.closures)
     {
         if (matches_empty(body, nullable))
         {
-            const auto message{
-                    "the rule " + rule +
-                    " contains a closure with at least one alternative that can match the empty string, which ANTLR "
-                    "rejects"};
-
-            throw Spec_error{message, line};
+            throw Spec_error{closure_refusal(rule), line};
         }
     }
 
@@ -97,24 +97,27 @@ void check_lazy_rules(const Grammar_tables& tables, const Lexer_spec& spec)
 {
     for (const auto& [name, line] : tables.lazy_rules)
     {
-        const auto reference{'{' + name + '}'};
+        const auto written{reference(name)};
+
+        const auto rule_references{
+                [&written](const Lexer_spec::Rule& rule) { return rule.expression.contains(written); }};
+
+        const auto definition_references{[&written, &name]<typename Definition>(const Definition& definition) {
+            const auto& [defined, expression]{definition};
+
+            return defined != name && expression.contains(written);
+        }};
 
         const auto referenced{
-                std::ranges::any_of(
-                        spec.rules,
-                        [&reference](const Lexer_spec::Rule& rule) { return rule.expression.contains(reference); }) ||
-                std::ranges::any_of(spec.definitions, [&reference, &name](const auto& definition) {
-                    const auto& [defined, expression]{definition};
-
-                    return defined != name && expression.contains(reference);
-                })};
+                std::ranges::any_of(spec.rules, rule_references) ||
+                std::ranges::any_of(spec.definitions, definition_references)};
 
         if (referenced)
         {
-            const auto message{
-                    "the rule " + name +
-                    " holds a non-greedy loop and another rule references it, so what ANTLR stops the loop at is the "
-                    "rest of that rule and not of this one"};
+            const auto message{std::format(
+                    "the rule {} holds a non-greedy loop and another rule references it, so what ANTLR stops the loop "
+                    "at is the rest of that rule and not of this one",
+                    name)};
 
             throw Spec_error{message, line};
         }
@@ -122,8 +125,8 @@ void check_lazy_rules(const Grammar_tables& tables, const Lexer_spec& spec)
 }
 
 /**
- * @brief The implicit tokens a combined grammar makes of the literals its parser rules use, in the order they are first
- *        used.
+ * @brief Returns the implicit tokens a combined grammar makes of the literals its parser rules use, in the order they
+ *        are first used.
  *
  * The literals the parser rules use are implicit tokens ahead of every explicit rule, unless a rule spells exactly that
  * literal in a shape ANTLR maps it onto, when the parser's literal is that rule's token; two rules spelling it leave
@@ -138,27 +141,32 @@ void check_lazy_rules(const Grammar_tables& tables, const Lexer_spec& spec)
 [[nodiscard]] std::vector<Lexer_spec::Rule> implicit_tokens(
         const Grammar_tables& tables, const Lexer_spec& spec, const bool case_insensitive)
 {
-    std::vector<Lexer_spec::Rule> implicit;
+    std::vector<Lexer_spec::Rule> implicit{};
 
     for (const auto& [text, line] : tables.parser_literals)
     {
-        const auto aliased{tables.aliases.find(text)};
+        const auto alias{tables.aliases.find(text)};
 
-        if (aliased != tables.aliases.end() && aliased->second > 1)
+        const auto aliased{alias != tables.aliases.end()};
+
+        if (aliased)
         {
-            const auto message{
-                    "two lexer rules spell " + text +
-                    ", so ANTLR maps it onto neither and rejects the parser's use of it: cannot create implicit token "
-                    "for string literal in non-combined grammar: " +
-                    text};
+            const auto& [spelling, rules]{*alias};
 
-            throw Spec_error{message, line};
+            if (rules > 1)
+            {
+                const auto message{std::format(
+                        "two lexer rules spell {}, so ANTLR maps it onto neither and rejects the parser's use of it: "
+                        "cannot create implicit token for string literal in non-combined grammar: {}",
+                        text, text)};
+
+                throw Spec_error{message, line};
+            }
         }
 
-        const auto placed{
-                std::ranges::any_of(implicit, [&text](const Lexer_spec::Rule& rule) { return rule.pattern == text; })};
+        const auto placed{std::ranges::contains(implicit, text, &Lexer_spec::Rule::pattern)};
 
-        if (aliased != tables.aliases.end() || placed)
+        if (aliased || placed)
         {
             continue;
         }
@@ -167,16 +175,18 @@ void check_lazy_rules(const Grammar_tables& tables, const Lexer_spec& spec)
 
         std::ignore = reader.accept('\'');
 
-        const auto bytes{reader.literal().bytes};
+        const auto [bytes, single]{reader.literal()};
 
         if (case_insensitive && holds_beyond_ascii(bytes))
         {
             throw Spec_error{std::string{unfoldable}, line};
         }
 
+        auto expression{case_insensitive ? caseless(bytes) : quoted(bytes)};
+
         implicit.push_back(
                 {.pattern = text,
-                 .expression = case_insensitive ? caseless(bytes) : quoted(bytes),
+                 .expression = std::move(expression),
                  .conditions = {},
                  .action = {},
                  .token = text,
@@ -188,12 +198,13 @@ void check_lazy_rules(const Grammar_tables& tables, const Lexer_spec& spec)
     // name is a redefinition, in ANTLR's words, the implicit one having no line.
     for (std::size_t index{0}; index < implicit.size(); ++index)
     {
-        const auto name{"T__" + std::to_string(index)};
+        const auto name{std::format("{}{}", implicit_prefix, index)};
 
         if (spec.definitions.contains(name))
         {
-            throw Spec_error{
-                    std::format("rule {} redefinition; previous at line 0", name), tables.definition_lines.at(name)};
+            const auto message{std::format("rule {} redefinition; previous at line 0", name)};
+
+            throw Spec_error{message, tables.definition_lines.at(name)};
         }
     }
 
@@ -214,40 +225,49 @@ void check_names(const Grammar_tables& tables)
 {
     for (const auto& [name, line, rules] : tables.sections)
     {
-        if (name != "DEFAULT_MODE" && std::ranges::contains(reserved_names, name))
+        if (name != default_mode && std::ranges::contains(reserved_names, name))
         {
-            throw Spec_error{std::format("cannot use or declare mode with reserved name {}", name), line};
+            const auto message{std::format("cannot use or declare mode with reserved name {}", name)};
+
+            throw Spec_error{message, line};
         }
 
-        if (name != "DEFAULT_MODE" && (tables.rule_names.contains(name) || tables.tokens.contains(name)))
+        if (name != default_mode && (tables.rule_names.contains(name) || tables.tokens.contains(name)))
         {
-            throw Spec_error{std::format("mode {} conflicts with token with same name", name), line};
+            const auto message{std::format("mode {} conflicts with token with same name", name)};
+
+            throw Spec_error{message, line};
         }
     }
 
-    if (tables.tokens.contains("DEFAULT_MODE"))
+    if (tables.tokens.contains(default_mode))
     {
-        throw Spec_error{"mode DEFAULT_MODE conflicts with token with same name", tables.tokens_line};
+        const auto message{std::format("mode {} conflicts with token with same name", default_mode)};
+
+        throw Spec_error{message, tables.tokens_line};
     }
 
     for (const auto& channel : tables.channels)
     {
         if (std::ranges::contains(reserved_names, channel))
         {
-            throw Spec_error{
-                    std::format("cannot use or declare channel with reserved name {}", channel), tables.channels_line};
+            const auto message{std::format("cannot use or declare channel with reserved name {}", channel)};
+
+            throw Spec_error{message, tables.channels_line};
         }
 
         if (tables.rule_names.contains(channel) || tables.tokens.contains(channel))
         {
-            throw Spec_error{
-                    std::format("channel {} conflicts with token with same name", channel), tables.channels_line};
+            const auto message{std::format("channel {} conflicts with token with same name", channel)};
+
+            throw Spec_error{message, tables.channels_line};
         }
 
         if (declares_mode(tables, channel))
         {
-            throw Spec_error{
-                    std::format("channel {} conflicts with mode with same name", channel), tables.channels_line};
+            const auto message{std::format("channel {} conflicts with mode with same name", channel)};
+
+            throw Spec_error{message, tables.channels_line};
         }
     }
 }
@@ -271,7 +291,9 @@ void resolve_types(const Grammar_tables& tables, const std::vector<Lexer_spec::R
         // ANTLR's error 171: a `type` may not name what its commands and channels reserve, declared or not.
         if (std::ranges::contains(reserved_names, name))
         {
-            throw Spec_error{std::format("cannot use or declare token with reserved name {}", name), line};
+            const auto message{std::format("cannot use or declare token with reserved name {}", name)};
+
+            throw Spec_error{message, line};
         }
 
         if (tables.rule_names.contains(name) || tables.tokens.contains(name))
@@ -279,25 +301,32 @@ void resolve_types(const Grammar_tables& tables, const std::vector<Lexer_spec::R
             continue;
         }
 
-        const auto digits{name.starts_with("T__") ? name.substr(3) : std::string{}};
+        const auto digits{name.starts_with(implicit_prefix) ? name.substr(implicit_prefix.size()) : std::string{}};
+
+        // The digits after the implicit prefix, read when there are few enough of them for std::stoul to hold.
+        static constexpr std::size_t most_digits{6};
+
+        const auto readable{is_number(digits) && digits.size() <= most_digits};
 
         // The spelling is exact, `T__0` and never `T__00`, as ANTLR's own table names them.
-        const auto index{is_number(digits) && digits.size() <= 6 ? std::optional{std::stoul(digits)} : std::nullopt};
+        const auto index{readable ? std::optional{std::stoul(digits)} : std::nullopt};
 
         const auto numbered{index && digits == std::to_string(*index) && *index < implicit.size()};
 
         if (!numbered)
         {
-            throw Spec_error{name + " is not a recognized token name", line};
+            const auto message{std::format("{} is not a recognized token name", name)};
+
+            throw Spec_error{message, line};
         }
 
         const auto& literal{*implicit[*index].token};
 
-        for (auto& rule : spec.rules)
+        for (auto& [pattern, expression, conditions, action, token, priority, rule_line] : spec.rules)
         {
-            if (rule.token == name)
+            if (token == name)
             {
-                rule.token = literal;
+                token = literal;
             }
         }
     }
@@ -317,7 +346,9 @@ void check_modes(const Grammar_tables& tables)
     {
         if (rules == 0)
         {
-            throw Spec_error{std::format("lexer mode {} must contain at least one non-fragment rule", mode), line};
+            const auto message{std::format("lexer mode {} must contain at least one non-fragment rule", mode)};
+
+            throw Spec_error{message, line};
         }
     }
 
@@ -325,11 +356,13 @@ void check_modes(const Grammar_tables& tables)
     // a number names a mode by its index and is kept as written.
     for (const auto& [name, line] : tables.mode_names)
     {
-        const auto declared{name == "DEFAULT_MODE" || declares_mode(tables, name)};
+        const auto declared{name == default_mode || declares_mode(tables, name)};
 
         if (!declared)
         {
-            throw Spec_error{name + " is not a recognized mode name", line};
+            const auto message{std::format("{} is not a recognized mode name", name)};
+
+            throw Spec_error{message, line};
         }
     }
 }
@@ -348,15 +381,16 @@ void finish_grammar(const Grammar_tables& tables, const bool case_insensitive, L
 
     resolve_types(tables, implicit, spec);
 
-    spec.rules.insert(
-            spec.rules.begin(), std::make_move_iterator(implicit.begin()), std::make_move_iterator(implicit.end()));
+    auto moved{implicit | std::views::as_rvalue};
+
+    spec.rules.insert(spec.rules.begin(), moved.begin(), moved.end());
 
     check_modes(tables);
 }
 
 bool declares_mode(const Grammar_tables& tables, const std::string_view name)
 {
-    return std::ranges::any_of(tables.sections, [name](const Mode_section& section) { return section.name == name; });
+    return std::ranges::contains(tables.sections, name, &Mode_section::name);
 }
 
 } // namespace munch::tools::audit

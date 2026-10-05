@@ -24,12 +24,12 @@ struct Standing
     /**
      * @brief The word, as the file spells it.
      */
-    std::string word;
+    std::string word{};
 
     /**
      * @brief The line it stands on, counted from one.
      */
-    std::size_t line;
+    std::size_t line{};
 };
 
 /**
@@ -48,15 +48,15 @@ struct Settings
     bool caseless{false};
 
     /**
-     * @brief The standing `lex-compat`, under which a counted repetition binds the whole expression before it
-     *        rather than the one atom, so that `ab{3}` matches "ababab"; std::nullopt while it does not stand.
+     * @brief The standing `lex-compat`, under which a counted repetition binds the whole expression before it rather
+     *        than the one atom, so that `ab{3}` matches "ababab"; std::nullopt while it does not stand.
      */
     std::optional<Standing> lex_compat{};
 
     /**
-     * @brief The standing `posix-compat`, which binds a counted repetition the same way; flex keeps the two as
-     *        flags of its own and takes that binding while either stands, so `lex-compat posix-compat
-     *        nolex-compat` still has it.
+     * @brief The standing `posix-compat`, which binds a counted repetition the same way; flex keeps the two as flags of
+     *        its own and takes that binding while either stands, so `lex-compat posix-compat nolex-compat` still has
+     *        it.
      */
     std::optional<Standing> posix_compat{};
 
@@ -67,9 +67,9 @@ struct Settings
     std::optional<Standing> narrowed{};
 
     /**
-     * @brief Whether the alphabet's width was named outright and as the narrow one: `7bit` and `no8bit` name it
-     *        narrow, `8bit` and `no7bit` wide, and the last word naming it decides; std::nullopt while none does,
-     *        where flex's own default settles it.
+     * @brief Whether the alphabet's width was named outright and as the narrow one: `7bit` and `no8bit` name it narrow,
+     *        `8bit` and `no7bit` wide, and the last word naming it decides; std::nullopt while none does, where flex's
+     *        own default settles it.
      */
     std::optional<bool> named_width{};
 
@@ -85,15 +85,15 @@ struct Settings
     bool classes{true};
 
     /**
-     * @brief Whether the default rule stands, the one flex adds after the file's own that matches one byte where
-     *        no rule of the file's does and echoes it; `%option nodefault` drops it, so that such a byte stops the
-     *        scanner with a fatal error instead, and `%option default` restores it.
+     * @brief Whether the default rule stands, the one flex adds after the file's own that matches one byte where no
+     *        rule of the file's does and echoes it; `%option nodefault` drops it, so that such a byte stops the scanner
+     *        with a fatal error instead, and `%option default` restores it.
      */
     bool default_rule{true};
 
     /**
-     * @brief The standing `reject`, which declares that an action uses REJECT where flex cannot see it, through a
-     *        macro or code of the file's own; std::nullopt while it does not stand.
+     * @brief The standing `reject`, which declares that an action uses REJECT where flex cannot see it, through a macro
+     *        or code of the file's own; std::nullopt while it does not stand.
      */
     std::optional<Standing> reject{};
 
@@ -112,8 +112,8 @@ struct Settings
 void take_option(Settings& settings, std::string_view word, std::size_t line);
 
 /**
- * @brief Refuses the file when a standing option changes what its rules match in a way the byte-level reading
- *        cannot follow, naming the option and the line it stands on rather than recording it and reading on.
+ * @brief Refuses the file when a standing option changes what its rules match in a way the byte-level reading cannot
+ *        follow, naming the option and the line it stands on rather than recording it and reading on.
  * @param settings The settings the definitions section left standing.
  * @throws Spec_error If such an option stands.
  */

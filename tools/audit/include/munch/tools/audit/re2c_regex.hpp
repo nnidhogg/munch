@@ -15,27 +15,44 @@
 
 /**
  * @brief A re2c regex read to its end and rewritten for the pattern parser, Regex_reader, with what it reads,
- *        Regex_text, and the length of a flex-style `{name}` reference, reference_length().
+ *        Regex_text, the length and the name of a flex-style `{name}` reference, reference_length() and
+ *        reference_name(), and what the actions a regex ends at open with, transition_opener, line_action_opener and
+ *        shortcut_opener.
  */
 namespace munch::tools::audit
 {
 /**
- * @brief A re2c regex read to its end and rewritten into the syntax regex::parse() reads, its class kept where it is
- *        one, which is what re2c's class difference takes.
- *
- * The reader stands on the block's text at the regex, reads under the flags every pattern of the block is translated
- * under and the classes among the definitions in force, and is left where the regex ends, which its owner takes back as
- * its own offset. A class difference left empty under these flags is held rather than thrown, since the flags the block
- * settles on may fill it: the first is kept where the owner keeps its refusals for the settled pass.
+ * @brief What a transition rule's action opens with, `=> condition`, the code after the condition's name.
  */
+constexpr std::string_view transition_opener{"=>"};
+
 /**
- * @brief The length of a flex-style reference at an offset of a regex, `{name}` exactly, a name not opening with a
- *        digit between the braces; zero where there is none, a count `{2,5}` among them.
+ * @brief What an action written without braces opens with, `:=`, its code running on over the lines that begin with a
+ *        blank.
+ */
+constexpr std::string_view line_action_opener{":="};
+
+/**
+ * @brief What a shortcut rule's action opens with, `:=> condition`, which has no code of its own.
+ */
+constexpr std::string_view shortcut_opener{":=>"};
+
+/**
+ * @brief Returns the length of a flex-style reference at an offset of a regex, `{name}` exactly, a name not opening
+ *        with a digit between the braces; zero where there is none, a count `{2,5}` among them.
  * @param text The regex's text.
  * @param at The offset.
  * @return The length, brackets included, or zero.
  */
 [[nodiscard]] std::size_t reference_length(std::string_view text, std::size_t at) noexcept;
+
+/**
+ * @brief Returns the name a flex-style reference at an offset of a regex names, the text between its braces.
+ * @param text The regex's text.
+ * @param at The offset.
+ * @return The name, or empty where no reference stands, as reference_length() reads one.
+ */
+[[nodiscard]] std::string_view reference_name(std::string_view text, std::size_t at) noexcept;
 
 /**
  * @brief A regex as Regex_reader reads it: as written, rewritten for the pattern parser, and the class it is.
@@ -45,19 +62,28 @@ struct Regex_text
     /**
      * @brief The regex as written, blanks between tokens kept as one space and none at either end.
      */
-    std::string pattern;
+    std::string pattern{};
 
     /**
      * @brief The regex rewritten for the pattern parser.
      */
-    std::string expression;
+    std::string expression{};
 
     /**
      * @brief The class the whole regex is, where it is one, which a definition keeps for the differences that name it.
      */
-    std::optional<Class> points;
+    std::optional<Class> points{};
 };
 
+/**
+ * @brief A re2c regex read to its end and rewritten into the syntax regex::parse() reads, its class kept where it is
+ *        one, which is what re2c's class difference takes.
+ *
+ * The reader stands on the block's text at the regex, reads under the flags every pattern of the block is translated
+ * under and the classes among the definitions in force, and is left where the regex ends, which its owner takes back as
+ * its own offset. A class difference left empty under these flags is held rather than thrown, since the flags the block
+ * settles on may fill it: the first is kept where the owner keeps its refusals for the settled pass.
+ */
 class Regex_reader : public Cursor
 {
 public:
@@ -68,8 +94,8 @@ public:
      * @param flags The flags the regex is translated under.
      * @param line_bound Whether the regex ends at the line's end, which a flex-style definition's does.
      * @param classes The classes among the definitions in force, which a class difference takes its operands from.
-     * @param deferred The first refusal held for the settled flags, which a class difference left empty sets when it
-     *        is not set yet.
+     * @param deferred The first refusal held for the settled flags, which a class difference left empty sets when it is
+     *        not set yet.
      */
     Regex_reader(
             std::string_view text, std::size_t begin, Re2c_flags flags, bool line_bound, const Classes_t& classes,
@@ -79,11 +105,11 @@ public:
      * @brief Reads regex text up to what ends it: a bare `=` for a definition, a `;` closing a definition's body, or
      *        the start of an action, `{`, `:=` or `=>`.
      *
-     * The text as written and the text rewritten for the pattern parser are both returned, the rewriting done token
-     * by token: bare names become `{name}` unless the flex syntax makes them literals, quoted literals other than an
-     * exact double-quoted one become bracket sequences, blanks are dropped, and a class difference `A \ B` becomes
-     * the class of the code points left, its operands the char sets re2c takes there. With them comes the class the
-     * whole regex is, where it is one, which a definition keeps for the differences that name it.
+     * The text as written and the text rewritten for the pattern parser are both returned, the rewriting done token by
+     * token: bare names become `{name}` unless the flex syntax makes them literals, quoted literals other than an exact
+     * double-quoted one become bracket sequences, blanks are dropped, and a class difference `A \ B` becomes the class
+     * of the code points left, its operands the char sets re2c takes there. With them comes the class the whole regex
+     * is, where it is one, which a definition keeps for the differences that name it.
      * @param definitions The definitions read so far, which a difference's operand may name.
      * @return The pattern as written, its expression, both empty when an action follows at once, and its class.
      * @throws Spec_error If a quote or bracket is left open, or the regex uses a refused construct, an operand of a
@@ -145,19 +171,42 @@ private:
         /**
          * @brief The bracket sequence.
          */
-        std::string expression;
+        std::string expression{};
 
         /**
          * @brief The class the literal is where it is one character, which re2c takes for a char set.
          */
-        std::optional<Class> points;
+        std::optional<Class> points{};
     };
 
     /**
-     * @brief Whether the regex ends at the cursor: at the line's end for a regex bound to its line, and at the top
-     *        level at a bare `=`, the `;` of a definition's body, or an action, a `{` opening one unless it is a count,
-     *        `{2,5}`, or a flex-style reference, `{name}`, which re2c reads with its flex-syntax flag and which the
-     *        parser reads as it stands.
+     * @brief An escape of a quoted literal as read: the letter it spells where the literal folds it, or what the
+     *        expression writes for it and the class it is.
+     */
+    struct Literal_escape
+    {
+        /**
+         * @brief The letter the escape spells where the literal folds it, which is then written as a letter written
+         *        bare is; std::nullopt for any other escape.
+         */
+        std::optional<char> letter{};
+
+        /**
+         * @brief What the expression writes for the escape, empty for a letter.
+         */
+        std::string written{};
+
+        /**
+         * @brief The class the escape is, empty for a letter.
+         */
+        Class points{};
+    };
+
+    /**
+     * @brief Returns whether the regex ends at the cursor: at the line's end for a regex bound to its line, and at the
+     *        top level at a bare `=`, the `;` of a definition's body, or an action, a `{` opening one unless it is a
+     *        count, `{2,5}`, or a flex-style reference, `{name}`, which re2c reads with its flex-syntax flag and which
+     *        the parser reads as it stands.
      * @return True when it does.
      */
     [[nodiscard]] bool at_regex_end() const noexcept;
@@ -184,7 +233,7 @@ private:
     void place(std::optional<Class> points);
 
     /**
-     * @brief The class a definition is, when it is one.
+     * @brief Returns the class a definition is, when it is one.
      * @param name The definition's name.
      * @return The class, or std::nullopt when the definition is no class or there is none.
      */
@@ -211,6 +260,14 @@ private:
     [[nodiscard]] bool take_bracket(const regex::Definitions_t& definitions);
 
     /**
+     * @brief Refuses the regex at an offset of it.
+     * @param at The offset the refusal stands at.
+     * @param why The reason.
+     * @throws Spec_error Always.
+     */
+    [[noreturn]] void fail_at(std::size_t at, const std::string& why);
+
+    /**
      * @brief Reads text copied through with its escapes, a bracket or an exact double-quoted literal, both of which the
      *        parser reads as they stand, through its closing byte.
      * @param close The closing byte, `]` or `"`.
@@ -221,7 +278,17 @@ private:
     [[nodiscard]] std::string copied_text(char close);
 
     /**
-     * @brief Whether the regex is read under the UTF-8 encoding.
+     * @brief Refuses an escape the byte reading has not got: a Unicode escape, `\u`, `\U` or `\X`, and a braced hex
+     *        escape, `\x{...}`, which re2c refuses.
+     * @param escaped The byte after the backslash.
+     * @param braced Whether a brace follows it.
+     * @param at The offset the refusal stands at.
+     * @throws Spec_error For either.
+     */
+    void refuse_unread_escape(char escaped, bool braced, std::size_t at);
+
+    /**
+     * @brief Returns whether the regex is read under the UTF-8 encoding.
      * @return True when it is.
      */
     [[nodiscard]] bool in_utf8() const noexcept;
@@ -237,7 +304,7 @@ private:
     [[nodiscard]] bool take_exact_literal(const regex::Definitions_t& definitions);
 
     /**
-     * @brief Whether a quote opens a case-insensitive literal, which is the flags' to say.
+     * @brief Returns whether a quote opens a case-insensitive literal, which is the flags' to say.
      * @param quote The quote.
      * @return True when it does.
      */
@@ -252,16 +319,35 @@ private:
     [[nodiscard]] bool take_literal();
 
     /**
-     * @brief A quoted literal after its opening quote, through the closing one, as a bracket sequence, one bracket per
-     *        character and an escape kept as written inside its bracket, an escape naming a code point beyond ASCII
-     *        under UTF-8 excepted, which becomes the step of that code point.
+     * @brief Reads a quoted literal after its opening quote, through the closing one, as a bracket sequence, one
+     *        bracket per character and an escape kept as written inside its bracket, an escape naming a code point
+     *        beyond ASCII under UTF-8 excepted, which becomes the step of that code point.
      * @param quote The closing quote.
      * @param insensitive Whether a letter's bracket holds both cases.
-     * @return The expression, and the class the literal is where it is one character, which re2c takes for a char
-     *         set.
+     * @return The expression, and the class the literal is where it is one character, which re2c takes for a char set.
      * @throws Spec_error If the literal is empty or never closes, or an escape is a Unicode one.
      */
     [[nodiscard]] Rewritten_literal literal(char quote, bool insensitive);
+
+    /**
+     * @brief Reads an escape of a quoted literal after its backslash: one stands for one byte, which the parser decodes
+     *        inside a bracket as well, and one spelling a letter, `\x41`, `\101` or `\A`, is decoded here so its
+     *        bracket can hold both cases, as re2c folds it.
+     * @param insensitive Whether the literal folds a letter.
+     * @return The letter the escape spells where the literal folds it, or what the expression writes for it and its
+     *         class.
+     * @throws Spec_error For a Unicode escape or a braced hex escape.
+     */
+    [[nodiscard]] Literal_escape literal_escape(bool insensitive);
+
+    /**
+     * @brief Reads the digits of a numeric escape after its first byte into the escape as written: up to two hex digits
+     *        after `\x`, up to two more octal digits after an octal one.
+     * @param escaped The byte after the backslash.
+     * @param text The escape as written, the digits added to it.
+     * @return The value the digits spell, zero for an escape that is not numeric.
+     */
+    [[nodiscard]] int numeric_value(char escaped, std::string& text);
 
     /**
      * @brief Reads a bare name, when one is at the cursor: a definition's name, `{name}` to the parser, or under the
@@ -313,8 +399,8 @@ private:
     void open_group();
 
     /**
-     * @brief Where the byte after a group's opening stands, past whatever blanks or comments come between, as re2c
-     *        reads its regex tokens, a newline and a comment among them where no line bounds the regex.
+     * @brief Returns where the byte after a group's opening stands, past whatever blanks or comments come between, as
+     *        re2c reads its regex tokens, a newline and a comment among them where no line bounds the regex.
      * @return The offset.
      */
     [[nodiscard]] std::size_t group_mark() const noexcept;

@@ -23,7 +23,8 @@
 /**
  * @brief One re2c block read item by item, Block_reader, with where the blocks a later one may use begin, Library_t,
  *        where a definition a later block may use stands, Definition_site, what the blocks of one pass share,
- *        Pass_state, and the kinds of rule a scanner holds, Rule_kinds.
+ *        Pass_state, and the kinds of rule a scanner holds, Rule_kinds, with the patterns of the end rule and of the
+ *        default rule, end_rule and default_rule.
  *
  * A block's close is found as re2c finds it, its regexes are read by Regex_reader and its configurations applied by
  * configure(); what a block leaves for the blocks after it, its flags, its pointer names and its definitions, is kept
@@ -33,13 +34,23 @@
 namespace munch::tools::audit
 {
 /**
- * @brief Where each block a later one may use begins, by name: a `rules:re2c:name` block or any other block opened
- *        with a name, kept as the offset just past its opener.
+ * @brief The pattern of the end rule, which matches at the end of the input and no byte.
+ */
+constexpr std::string_view end_rule{"$"};
+
+/**
+ * @brief The pattern of the default rule, which matches one code unit where no other rule matches.
+ */
+constexpr std::string_view default_rule{"*"};
+
+/**
+ * @brief Where each block a later one may use begins, by name: a `rules:re2c:name` block or any other block opened with
+ *        a name, kept as the offset just past its opener.
  *
  * An offset is all a use needs, and more faithful than the reading itself would be: re2c compiles a rules block's
  * regexes at every point of use, under the configurations in force there, so a `!use:name;` and a use block read the
- * block's source again rather than copy what it was read as here. The same block can then be one scanner's under
- * one encoding and another's under another, which is what re2c's own multiple-encoding example does.
+ * block's source again rather than copy what it was read as here. The same block can then be one scanner's under one
+ * encoding and another's under another, which is what re2c's own multiple-encoding example does.
  */
 using Library_t = std::map<std::string, std::size_t, std::less<>>;
 
@@ -56,17 +67,17 @@ struct Definition_site
     /**
      * @brief The name the definition binds.
      */
-    std::string name;
+    std::string name{};
 
     /**
      * @brief The offset its regex begins at, just past the `=` or past the name under the flex syntax.
      */
-    std::size_t begin;
+    std::size_t begin{};
 
     /**
      * @brief Whether the regex ends at the line's end, which a flex-style definition's does.
      */
-    bool line_bound;
+    bool line_bound{};
 };
 
 /**
@@ -82,20 +93,20 @@ struct Pass_state
      * @brief The classes among the definitions in force, which a block's definitions join and its class differences
      *        take their operands from.
      */
-    Classes_t classes;
+    Classes_t classes{};
 
     /**
      * @brief The names the configurations give the scan pointers, re2c's own until one is renamed.
      */
-    Pointers_t pointers;
+    Pointers_t pointers{};
 
     /**
-     * @brief The line of the configuration that left the scanner under an API other than the default one, none while
-     *        it reads under the default: the last assignment governs, as for every configuration, and the setting
-     *        carries from a block to the blocks after it and from a used block into the block using it, as re2c carries
-     *        it, so it is the file's and not one block's, like the pointer names.
+     * @brief The line of the configuration that left the scanner under an API other than the default one, none while it
+     *        reads under the default: the last assignment governs, as for every configuration, and the setting carries
+     *        from a block to the blocks after it and from a used block into the block using it, as re2c carries it, so
+     *        it is the file's and not one block's, like the pointer names.
      */
-    std::optional<std::size_t> api_custom;
+    std::optional<std::size_t> api_custom{};
 };
 
 /**
@@ -129,19 +140,19 @@ public:
     void merge(const Rule_kinds& used);
 
     /**
-     * @brief Refuses the scanner as re2c 3.1 refuses one whose rules are of both kinds, ones naming a condition,
-     *        `<*>` included, and ones naming none, the rules its `!use:` directives brought in counted with its own;
-     *        for a scanner, since a rules block is compiled where it is used and not on its own.
+     * @brief Refuses the scanner as re2c 3.1 refuses one whose rules are of both kinds, ones naming a condition, `<*>`
+     *        included, and ones naming none, the rules its `!use:` directives brought in counted with its own; for a
+     *        scanner, since a rules block is compiled where it is used and not on its own.
      * @throws Spec_error If rules of both kinds were read, at the first naming none, in re2c's words; or if the only
      *         rule naming none is the end rule `$`, which re2c refuses in words of its own, at that rule.
      */
     void refuse_mixed() const;
 
     /**
-     * @brief Holds a scanner to re2c's own checks of the end rule, in its words: an end rule whose name has no other
-     *        rule, `<*>` counted as a name of its own, "doesn't make sense"; an end rule needs `re2c:eof` set; and
-     *        `re2c:eof` set needs an end rule in every condition, its own or under `<*>`, and in a block naming none
-     *        one end rule.
+     * @brief Refuses a scanner that fails re2c's own checks of the end rule, in its words: an end rule whose name has
+     *        no other rule, `<*>` counted as a name of its own, "doesn't make sense"; an end rule needs `re2c:eof` set;
+     *        and `re2c:eof` set needs an end rule in every condition, its own or under `<*>`, and in a block naming
+     *        none one end rule.
      *
      * re2c holds a block of its own to them once it is read, its rules all tokens or none, and a rules block only where
      * a use block takes it up, its rules and end rules counted with the using block's, since re2c reads a rules block
@@ -153,27 +164,28 @@ public:
     void refuse_end_rules(const std::vector<std::string>& options, std::size_t line) const;
 
     /**
-     * @brief The conditions the rules name, `*` aside, in the order first named, which are the scanner's conditions.
+     * @brief Returns the conditions the rules name, `*` aside, in the order first named, which are the scanner's
+     *        conditions.
      * @return The names.
      */
     [[nodiscard]] const std::vector<std::string>& named() const noexcept;
 
 private:
     /**
-     * @brief An end rule `$` a block holds: a name it stands in, the empty name for one naming no condition, and
-     *        its line.
+     * @brief An end rule `$` a block holds: a name it stands in, the empty name for one naming no condition, and its
+     *        line.
      */
     struct End_rule
     {
         /**
          * @brief The name, `*` for one under `<*>` and empty for one naming no condition.
          */
-        std::string name;
+        std::string name{};
 
         /**
          * @brief The rule's line.
          */
-        std::size_t line;
+        std::size_t line{};
     };
 
     /**
@@ -183,15 +195,15 @@ private:
 
     /**
      * @brief The conditions the block's rules name, `*` aside, in the order first named, the end rule and the empty
-     *        rule counted with the rest and the used blocks' rules too: re2c compiles a condition for every name a
-     *        rule carries, whether or not that rule is a token.
+     *        rule counted with the rest and the used blocks' rules too: re2c compiles a condition for every name a rule
+     *        carries, whether or not that rule is a token.
      */
     std::vector<std::string> named_;
 
     /**
-     * @brief The condition names, `*` and the empty name for a rule naming none included, that some rule other than
-     *        the end rule stands in, the used blocks' rules counted: re2c refuses an end rule whose name has no other
-     *        rule, in its words.
+     * @brief The condition names, `*` and the empty name for a rule naming none included, that some rule other than the
+     *        end rule stands in, the used blocks' rules counted: re2c refuses an end rule whose name has no other rule,
+     *        in its words.
      */
     std::vector<std::string> ruled_;
 
@@ -217,11 +229,11 @@ private:
  *
  * The block is read item by item: a configuration, a definition or a rule, each ending where re2c's own grammar ends
  * it, and the regex text of a definition or a rule is rewritten for the pattern parser as it is read. The close is
- * found the way re2c finds it, as the first star-slash between items: one inside a quoted literal, a class, an
- * action or a comment is content, since the file is read by re2c and not by a C compiler. Definitions come in two
- * spellings, re2c's `name = regex;` and the flex one, a name followed by a blank and regex to the end of the line,
- * which re2c accepts with its flex-syntax flag wherever the name stands and which a name opening an item, followed
- * by a blank and then something other than a brace, identifies.
+ * found the way re2c finds it, as the first star-slash between items: one inside a quoted literal, a class, an action
+ * or a comment is content, since the file is read by re2c and not by a C compiler. Definitions come in two spellings,
+ * re2c's `name = regex;` and the flex one, a name followed by a blank and regex to the end of the line, which re2c
+ * accepts with its flex-syntax flag wherever the name stands and which a name opening an item, followed by a blank and
+ * then something other than a brace, identifies.
  */
 class Block_reader : public Cursor
 {
@@ -232,8 +244,8 @@ public:
      * @param begin The offset just past the opener.
      * @param reading The flags every pattern of the block is translated under, which is the configuration the whole
      *        block leaves once the reading has settled on it.
-     * @param configured The flags the configurations have left so far, the same as `reading` at a block's head and
-     *        the using block's where a used block is read at its `!use:` directive.
+     * @param configured The flags the configurations have left so far, the same as `reading` at a block's head and the
+     *        using block's where a used block is read at its `!use:` directive.
      * @param pass What the blocks read in the same pass share, which the block's definitions and configurations change.
      * @param macros The macros the C around the blocks defines.
      */
@@ -248,11 +260,11 @@ public:
     void judge_later() noexcept;
 
     /**
-     * @brief Reads a rules block into the specification as used here, a `!use:name;` directive or a use block's
-     *        opener: the used block is read again at this point, under the flags this block's patterns are read
-     *        under, so that its rules are the rules this block compiles rather than the ones its own block was read
-     *        as; its configurations stand where the directive does, and the ones after it may override them in
-     *        turn; its default rules are noted, since the block's own override them once the block is read.
+     * @brief Reads a rules block into the specification as used here, a `!use:name;` directive or a use block's opener:
+     *        the used block is read again at this point, under the flags this block's patterns are read under, so that
+     *        its rules are the rules this block compiles rather than the ones its own block was read as; its
+     *        configurations stand where the directive does, and the ones after it may override them in turn; its
+     *        default rules are noted, since the block's own override them once the block is read.
      * @param begin The offset just past the used block's opener.
      * @param spec The specification being filled.
      * @param library The named blocks read so far, which the used block's own `!use:name;` items may name.
@@ -272,36 +284,36 @@ public:
     [[nodiscard]] std::size_t read(Lexer_spec& spec, const Library_t& library, const Returning_t& returning);
 
     /**
-     * @brief The kinds of rule the block holds and the names they stand in, the used blocks' rules counted.
+     * @brief Returns the kinds of rule the block holds and the names they stand in, the used blocks' rules counted.
      * @return The kinds.
      */
     [[nodiscard]] const Rule_kinds& kinds() const noexcept;
 
     /**
-     * @brief The flags the block's configurations and the evidence of the flex syntax have left, which the next
+     * @brief Returns the flags the block's configurations and the evidence of the flex syntax have left, which the next
      *        pass translates its patterns under and the next block inherits.
      * @return The flags.
      */
     [[nodiscard]] Re2c_flags configured() const noexcept;
 
     /**
-     * @brief The line of the configuration that last set the block's encoding, where a refusal of the encoding the
-     *        configurations leave points; the block's opening line while none has set it.
+     * @brief Returns the line of the configuration that last set the block's encoding, where a refusal of the encoding
+     *        the configurations leave points; the block's opening line while none has set it.
      * @return The line.
      */
     [[nodiscard]] std::size_t encoding_line() const noexcept;
 
     /**
-     * @brief Where each definition the block declared stands, in the order it declared them, the ones a `!use:`
+     * @brief Returns where each definition the block declared stands, in the order it declared them, the ones a `!use:`
      *        directive brought in included.
      * @return The sites.
      */
     [[nodiscard]] const std::vector<Definition_site>& sites() const noexcept;
 
     /**
-     * @brief The first refusal this pass's flags decided and the settled flags may not: a class difference left
-     *        empty, which `[^] \ [\x00-\xff]` is under ASCII and is not under UTF-8, held rather than thrown, since
-     *        the pass reading under the flags the block leaves is the one that answers it.
+     * @brief Returns the first refusal this pass's flags decided and the settled flags may not: a class difference left
+     *        empty, which `[^] \ [\x00-\xff]` is under ASCII and is not under UTF-8, held rather than thrown, since the
+     *        pass reading under the flags the block leaves is the one that answers it.
      * @return The refusal, at its rule's line, or std::nullopt when the pass decided none.
      */
     [[nodiscard]] const std::optional<Spec_error>& deferred() const noexcept;
@@ -375,8 +387,8 @@ private:
     [[nodiscard]] bool take_definition(const std::string& name, Lexer_spec& spec);
 
     /**
-     * @brief Reads an action starting at the cursor: a brace block, or `:=` and the rest of the line, a `=> c` or
-     *        `:=> c` transition included in the text.
+     * @brief Reads an action starting at the cursor: a brace block, or `:=` and the rest of the line, a `=> c` or `:=>
+     *        c` transition included in the text.
      * @return The action's text.
      * @throws Spec_error If a brace block never closes.
      */
@@ -386,10 +398,9 @@ private:
      * @brief Keeps the code of the entry rule `<>` or of a `<!c>` setup rule, whose code re2c writes into the actions
      *        it runs before, for the check of the block's actions.
      *
-     * re2c writes this code into the actions it runs before, so a scan pointer it moves is moved there, leaving the
-     * next token beginning somewhere other than where a match ended, exactly as a rule's own action moving it would.
-     * The pointer's name is the block's, which the block settles, so the check waits for the block's last
-     * configuration.
+     * A scan pointer the code moves is so moved in those actions, leaving the next token beginning somewhere other than
+     * where a match ended, exactly as a rule's own action moving it would. The pointer's name is the block's, which the
+     * block settles, so the check waits for the block's last configuration.
      * @param code The code.
      * @param line The rule's line.
      * @param entry Whether it is the entry rule.
@@ -430,8 +441,8 @@ private:
     void refuse_actions();
 
     /**
-     * @brief The offset just past the block's opener, before which a label restarts the scan and after which it
-     *        leaves it.
+     * @brief The offset just past the block's opener, before which a label restarts the scan and after which it leaves
+     *        it.
      */
     std::size_t opener_;
 
@@ -452,16 +463,13 @@ private:
     Pass_state& pass_;
 
     /**
-     * @brief The macros the C around the blocks defines, which an action may call: a call that moves the pointer
-     *        or returns through one is out of sight, so such a call is refused by the macro's name.
+     * @brief The macros the C around the blocks defines, which an action may call: a call that moves the pointer or
+     *        returns through one is out of sight, so such a call is refused by the macro's name.
      */
     const Macros_t& macros_;
 
     /**
-     * @brief Every action of this block with the line to report it at and how a refusal names it, kept until the
-     *        block's configurations are all read: re2c applies a configuration to the whole block it stands in,
-     *        wherever in the block it is written, so what the actions call the scan pointers is settled by the
-     *        block and not by what stood above a rule.
+     * @brief Every action of this block, kept as Action says until the block's configurations are all read.
      */
     std::vector<Action> actions_;
 
@@ -499,8 +507,8 @@ private:
     std::optional<Spec_error> deferred_;
 
     /**
-     * @brief The line of the configuration that last set the encoding, for the refusal of one the reading has not
-     *        got; the block's opening line while none has.
+     * @brief The line of the configuration that last set the encoding, for the refusal of one the reading has not got;
+     *        the block's opening line while none has.
      */
     std::size_t encoding_line_;
 };

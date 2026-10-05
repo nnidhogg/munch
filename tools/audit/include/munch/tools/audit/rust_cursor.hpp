@@ -12,7 +12,9 @@
  * @brief Rust text read as Rust's lexer reads it, Rust_cursor: blanks and nesting block comments, words, string
  *        literals in their plain, raw and byte forms, String_literal, character literals told from lifetimes, and the
  *        three kinds of delimited group; with whether an attribute opens at a cursor, at_attribute(), a text without
- *        its trivia, compacted(), and the skip over a generic list, skip_generics().
+ *        its trivia, compacted(), the skips over a generic list, skip_generics(), up to a stop, skip_until(), and over
+ *        an item of a list, skip_list_item(), a token of punctuation taken byte by byte, expect_spelled(), and the
+ *        bytes that open and close a group, is_opening() and is_closing().
  *
  * The logos reader reads the whole file with these, its items, its attributes, the enums deriving Logos and the
  * callbacks' bodies, so that nothing inside a comment or a literal is mistaken for code.
@@ -27,17 +29,17 @@ struct String_literal
     /**
      * @brief The literal as it stands in the source, prefix and quotes included.
      */
-    std::string written;
+    std::string written{};
 
     /**
      * @brief The content, the escapes of a plain string decoded and a raw string's taken verbatim.
      */
-    std::string bytes;
+    std::string bytes{};
 
     /**
      * @brief Whether the literal is a byte string, `b"..."`, whose pattern is over bytes.
      */
-    bool byte_string;
+    bool byte_string{};
 };
 
 /**
@@ -93,7 +95,7 @@ public:
     [[nodiscard]] String_literal literal();
 
     /**
-     * @brief A cursor over a span inside this one, counting lines from the same file start.
+     * @brief Returns a cursor over a span inside this one, counting lines from the same file start.
      * @param begin The span's first offset.
      * @param end The offset the span ends at.
      * @return The cursor.
@@ -101,7 +103,7 @@ public:
     [[nodiscard]] Rust_cursor inside(std::size_t begin, std::size_t end) const noexcept;
 
     /**
-     * @brief The text between two offsets.
+     * @brief Returns the text between two offsets.
      * @param begin The first offset.
      * @param end The offset past the last.
      * @return The text.
@@ -109,15 +111,37 @@ public:
     [[nodiscard]] std::string_view slice(std::size_t begin, std::size_t end) const noexcept;
 
     /**
-     * @brief Whether a string literal, in any of its prefixed forms, opens at the cursor.
+     * @brief Returns a cursor over the inside of the group the cursor has just skipped, its two delimiters left out.
+     * @param open The offset of the group's opening delimiter; the cursor stands just past its closing one.
+     * @return The cursor over the inside.
+     */
+    [[nodiscard]] Rust_cursor group_inside(std::size_t open) const noexcept;
+
+    /**
+     * @brief Returns the text inside the group the cursor has just skipped, its two delimiters left out.
+     * @param open The offset of the group's opening delimiter; the cursor stands just past its closing one.
+     * @return The text between the delimiters.
+     */
+    [[nodiscard]] std::string_view group_text(std::size_t open) const noexcept;
+
+    /**
+     * @brief Returns whether a string literal, in any of its prefixed forms, opens at the cursor.
      * @return True when one does.
      * @throws Spec_error If it is left open.
      */
     [[nodiscard]] bool at_string() const;
 
+    /**
+     * @brief Returns whether a literal opens at the cursor: a string literal in any of its forms, or the quote of a
+     *        character or a byte literal, which a lifetime opens with as well.
+     * @return True when one does.
+     * @throws Spec_error If a string literal is left open.
+     */
+    [[nodiscard]] bool at_literal() const;
+
 private:
     /**
-     * @brief The offset just past the string literal at the cursor, its prefix, hashes and escapes honoured.
+     * @brief Returns the offset just past the string literal at the cursor, its prefix, hashes and escapes honoured.
      * @return The offset, or std::nullopt when no string literal opens here.
      * @throws Spec_error If the literal is left open.
      */
@@ -151,9 +175,9 @@ private:
 };
 
 /**
- * @brief Whether an attribute opens where the cursor stands, `#` and `[` with whatever blanks and comments Rust allows
- *        between them, `# [derive(Logos)]` being the attribute `#[derive(Logos)]` is; an inner attribute's `#!` is told
- *        apart by the caller, which asks for it first.
+ * @brief Returns whether an attribute opens where the cursor stands, `#` and `[` with whatever blanks and comments Rust
+ *        allows between them, `# [derive(Logos)]` being the attribute `#[derive(Logos)]` is; an inner attribute's `#!`
+ *        is told apart by the caller, which asks for it first.
  * @param cursor The cursor, which is not moved.
  * @return True when one does.
  * @throws Spec_error If a block comment after the `#` is left open.
@@ -161,8 +185,8 @@ private:
 [[nodiscard]] bool at_attribute(const Rust_cursor& cursor);
 
 /**
- * @brief A text without its trivia: the blanks and the comments dropped, as Rust's lexer drops them before anything
- *        reads a type or a path, and every token, string and character literals included, kept as written.
+ * @brief Returns a text without its trivia: the blanks and the comments dropped, as Rust's lexer drops them before
+ *        anything reads a type or a path, and every token, string and character literals included, kept as written.
  * @param text The text.
  * @return The text with its trivia dropped.
  * @throws Spec_error If a block comment or a literal is left open.
@@ -175,6 +199,50 @@ private:
  * @throws Spec_error If the text ends first.
  */
 void skip_generics(Rust_cursor& cursor);
+
+/**
+ * @brief Skips tokens up to the first that opens with one of a set of bytes, a group or a literal taken whole.
+ * @param cursor The cursor; left at that token, or at the end of its text.
+ * @param stops The bytes that stop it.
+ * @throws Spec_error If a group or a literal is left open.
+ */
+void skip_until(Rust_cursor& cursor, std::string_view stops);
+
+/**
+ * @brief Skips one item of a comma-separated list, a type or a generic parameter, up to the comma that ends it, a
+ *        generic list inside the item taken whole.
+ * @param cursor The cursor, at the item; left at the comma, or at the end of its text.
+ * @throws Spec_error If a group or a generic list is left open.
+ */
+void skip_list_item(Rust_cursor& cursor);
+
+/**
+ * @brief Takes a token of punctuation at the cursor byte by byte, `::` or `->`.
+ * @param cursor The cursor, at the token; left past it.
+ * @param token The token.
+ * @throws Spec_error If a byte of it is not there.
+ */
+void expect_spelled(Rust_cursor& cursor, std::string_view token);
+
+/**
+ * @brief Returns whether a byte opens a delimited group: `(`, `[` or `{`.
+ * @param byte The byte, or nothing at the end.
+ * @return True when it does.
+ */
+[[nodiscard]] constexpr bool is_opening(const std::optional<char> byte) noexcept
+{
+    return byte == '(' || byte == '[' || byte == '{';
+}
+
+/**
+ * @brief Returns whether a byte closes a delimited group: `)`, `]` or `}`.
+ * @param byte The byte, or nothing at the end.
+ * @return True when it does.
+ */
+[[nodiscard]] constexpr bool is_closing(const std::optional<char> byte) noexcept
+{
+    return byte == ')' || byte == ']' || byte == '}';
+}
 
 } // namespace munch::tools::audit
 

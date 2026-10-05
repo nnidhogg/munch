@@ -1,6 +1,7 @@
 #include "munch/tools/audit/directives.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <format>
 #include <functional>
@@ -21,40 +22,68 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements directives.hpp: which macros are opaque to the reading and the spellings they are tested against are
-// private to this unit.
-
 /**
- * @brief The spellings the reading gives meaning to, each as the run of tokens it is: a word, or a pointer named by
- *        an expression, `in->cur`.
+ * @brief The spellings the reading gives meaning to, each as the run of tokens it is: a word, or a pointer named by an
+ *        expression, `in->cur`.
  */
 using Spellings_t = std::vector<std::vector<std::string>>;
 
 /**
- * @brief Whether a sequence of words holds a meaningful spelling as a run, or a word that makes tokens the text does
- *        not show.
+ * @brief Whether each macro asked about is opaque, as is_opaque() answers it, by the macro's name.
+ */
+using Opacity_t = std::map<std::string, bool, std::less<>>;
+
+/**
+ * @brief Returns the name an angled include spells between its brackets, its tokens joined as they stand, `sys/types.h`
+ *        among them, read up to the `>` or the directive's end, which is the end of its line, or of the stretch where
+ *        no newline follows.
+ * @param code The stretch of C.
+ * @param tokens The stretch's tokens.
+ * @param at The index of the directive's `#`.
+ * @return The name.
+ */
+[[nodiscard]] std::string angled_name(
+        const std::string_view code, const std::vector<C_token>& tokens, const std::size_t at)
+{
+    std::string joined{};
+
+    const auto newline{code.find('\n', tokens[at].at)};
+
+    const auto end{newline == std::string_view::npos ? code.size() : newline};
+
+    for (auto close{at + 3}; close < tokens.size() && tokens[close].text != ">" && tokens[close].at < end; ++close)
+    {
+        joined += tokens[close].text;
+    }
+
+    return joined;
+}
+
+/**
+ * @brief Returns whether a sequence of words holds a meaningful spelling as a run, or a word that makes tokens the text
+ *        does not show.
  * @param words The words, a replacement's or a call's arguments.
  * @param runs The meaningful spellings.
  * @return True when the words hold one.
  */
 [[nodiscard]] bool is_loaded(const std::span<const std::string> words, const Spellings_t& runs)
 {
+    static constexpr std::array<std::string_view, 4> generative{"#", "##", "__VA_ARGS__", "return"};
+
     for (std::size_t at{0}; at < words.size(); ++at)
     {
-        const auto& word{words[at]};
-
-        if (word == "#" || word == "##" || word == "__VA_ARGS__" || word == "return")
+        if (std::ranges::contains(generative, words[at]))
         {
             return true;
         }
 
-        for (const auto& run : runs)
+        const auto stands_here{[&words, at](const std::vector<std::string>& run) {
+            return at + run.size() <= words.size() && std::ranges::equal(run, words.subspan(at, run.size()));
+        }};
+
+        if (std::ranges::any_of(runs, stands_here))
         {
-            if (at + run.size() <= words.size() &&
-                std::equal(run.begin(), run.end(), words.begin() + static_cast<std::ptrdiff_t>(at)))
-            {
-                return true;
-            }
+            return true;
         }
     }
 
@@ -62,42 +91,46 @@ using Spellings_t = std::vector<std::vector<std::string>>;
 }
 
 /**
- * @brief Whether a macro's replacements, and those of the macros they name, hold such a spelling.
+ * @brief Returns whether a macro's replacements, and those of the macros they name, hold such a spelling.
+ *
+ * A replacement that is a plain value, numbers, quoted literals, `true` and `false`, changes nothing an action does
+ * whatever stands beside it. Anything else may: `#define SELF this` makes `SELF->yyinput()` the call the action does
+ * not spell, and `#define STEP ++` makes `STEP YYCURSOR` a move, neither replacement holding a word the reading gives
+ * meaning to. So a replacement holding any name or operator is opaque.
  * @param name The macro's name, one the table holds.
  * @param macros The table.
  * @param runs The meaningful spellings.
- * @param opacity The answers so far, a name on its way to an answer standing as not opaque, since a cycle adds
- *        nothing to what its members hold.
+ * @param opacity The answers so far, a name on its way to an answer standing as not opaque, since a cycle adds nothing
+ *        to what its members hold.
  * @return True when using the macro could put such a spelling in an action.
  */
 [[nodiscard]] bool is_opaque(
-        const std::string_view name, const Macros_t& macros, const Spellings_t& runs,
-        std::map<std::string, bool, std::less<>>& opacity)
+        const std::string_view name, const Macros_t& macros, const Spellings_t& runs, Opacity_t& opacity)
 {
     if (const auto known{opacity.find(name)}; known != opacity.end())
     {
-        return known->second;
+        const auto& [known_name, opaque]{*known};
+
+        return opaque;
     }
 
     opacity.emplace(std::string{name}, false);
 
-    // A replacement that is a plain value, numbers, quoted literals, `true` and `false`, changes nothing an action
-    // does whatever stands beside it. Anything else may: `#define SELF this` makes `SELF->yyinput()` the call the
-    // action does not spell, and `#define STEP ++` makes `STEP YYCURSOR` a move, neither replacement holding a
-    // word the reading gives meaning to. So a replacement holding any name or operator is opaque.
-    const auto& words{macros.find(name)->second.words};
+    const auto& [macro_name, macro]{*macros.find(name)};
+
+    const auto& words{macro.words};
 
     const auto plain_value{[](const std::string& word) {
         return word == "true" || word == "false" || word.front() == '"' || word.front() == '\'' ||
                is_digit(word.front()) || (word.front() == '.' && word.size() > 1 && is_digit(word[1]));
     }};
 
-    auto result{is_loaded(words, runs) || !std::ranges::all_of(words, plain_value)};
+    const auto names_opaque{
+            [&](const std::string& word) { return macros.contains(word) && is_opaque(word, macros, runs, opacity); }};
 
-    for (auto at{words.begin()}; !result && at != words.end(); ++at)
-    {
-        result = macros.contains(*at) && is_opaque(*at, macros, runs, opacity);
-    }
+    const auto result{
+            is_loaded(words, runs) || !std::ranges::all_of(words, plain_value) ||
+            std::ranges::any_of(words, names_opaque)};
 
     opacity.insert_or_assign(std::string{name}, result);
 
@@ -105,22 +138,21 @@ using Spellings_t = std::vector<std::vector<std::string>>;
 }
 
 /**
- * @brief The meaningful spellings as runs of tokens.
+ * @brief Returns the meaningful spellings as runs of tokens.
  * @param meaningful The spellings, each as the text it is written in.
  * @return Each spelling's tokens, the spellings holding none left out.
  */
 [[nodiscard]] Spellings_t runs_of(const std::span<const std::string_view> meaningful)
 {
-    Spellings_t runs;
+    Spellings_t runs{};
 
     for (const auto& spelling : meaningful)
     {
-        std::vector<std::string> run;
+        const auto tokens{c_tokens(spelling)};
 
-        for (const auto& token : c_tokens(spelling))
-        {
-            run.push_back(token.text);
-        }
+        std::vector<std::string> run{};
+
+        std::ranges::transform(tokens, std::back_inserter(run), &C_token::text);
 
         if (!run.empty())
         {
@@ -136,6 +168,22 @@ using Spellings_t = std::vector<std::vector<std::string>>;
 void take_macros(const std::string_view code, Macros_t& macros)
 {
     const auto tokens{c_tokens(code)};
+
+    const auto past_parameters{[&tokens](std::size_t from, const std::size_t end) {
+        for (auto depth{0}; from < tokens.size() && tokens[from].at < end; ++from)
+        {
+            const auto& text{tokens[from].text};
+
+            depth += depth_step(text, "(", ")");
+
+            if (depth == 0)
+            {
+                return from + 1;
+            }
+        }
+
+        return from;
+    }};
 
     for (std::size_t at{0}; at + 2 < tokens.size(); ++at)
     {
@@ -162,20 +210,10 @@ void take_macros(const std::string_view code, Macros_t& macros)
         {
             macro.function_like = true;
 
-            for (auto depth{0}; from < tokens.size() && tokens[from].at < end; ++from)
-            {
-                depth += tokens[from].text == "(" ? 1 : tokens[from].text == ")" ? -1 : 0;
-
-                if (depth == 0)
-                {
-                    ++from;
-
-                    break;
-                }
-            }
+            from = past_parameters(from, end);
         }
 
-        std::vector<std::string> replacement;
+        std::vector<std::string> replacement{};
 
         for (; from < tokens.size() && tokens[from].at < end; ++from)
         {
@@ -192,7 +230,7 @@ std::vector<Include_directive> includes_of(const std::string_view code)
 {
     const auto tokens{c_tokens(code)};
 
-    std::vector<Include_directive> includes;
+    std::vector<Include_directive> includes{};
 
     for (std::size_t at{0}; at + 2 < tokens.size(); ++at)
     {
@@ -201,32 +239,19 @@ std::vector<Include_directive> includes_of(const std::string_view code)
             continue;
         }
 
-        const auto line{static_cast<std::size_t>(std::ranges::count(code.substr(0, tokens[at].at), '\n'))};
+        const auto line{lines_before(code, tokens[at].at)};
 
         const auto& name{tokens[at + 2].text};
 
         if (name.size() >= 2 && name.front() == '"' && name.back() == '"')
         {
-            includes.push_back({.name = name.substr(1, name.size() - 2), .line = line, .form = Include_form::quoted});
+            const auto included{without_delimiters(name)};
+
+            includes.push_back({.name = std::string{included}, .line = line, .form = Include_form::quoted});
         }
         else if (name == "<")
         {
-            // The name between the brackets, its tokens joined as they stand, `sys/types.h` among them.
-            std::string joined;
-
-            auto close{at + 3};
-
-            // The directive ends with its line, or with the stretch where no newline follows.
-            const auto newline{code.find('\n', tokens[at].at)};
-
-            const auto end{newline == std::string_view::npos ? code.size() : newline};
-
-            for (; close < tokens.size() && tokens[close].text != ">" && tokens[close].at < end; ++close)
-            {
-                joined += tokens[close].text;
-            }
-
-            includes.push_back({.name = joined, .line = line, .form = Include_form::angled});
+            includes.push_back({.name = angled_name(code, tokens, at), .line = line, .form = Include_form::angled});
         }
         else if (starts_name(name))
         {
@@ -248,9 +273,10 @@ std::optional<Included> included_file(
     if (form == Include_form::computed)
     {
         throw Spec_error{
-                "the code includes a file named by the macro " + name +
-                        ", which the reading does not expand, so what the file defines is out of sight, " +
-                        std::string{needed},
+                std::format(
+                        "the code includes a file named by the macro {}, which the reading does not expand, so what "
+                        "the file defines is out of sight, {}",
+                        name, needed),
                 line};
     }
 
@@ -263,11 +289,14 @@ std::optional<Included> included_file(
 
     if (!included)
     {
+        const std::string_view missed{
+                includes ? "not found beside the file including it or on the include path" :
+                           "the reading does not reach"};
+
         throw Spec_error{
-                "the code includes \"" + name + "\", a file of its own " +
-                        (includes ? "not found beside the file including it or on the include path" :
-                                    "the reading does not reach") +
-                        ", whose definitions are out of sight, " + std::string{needed},
+                std::format(
+                        "the code includes \"{}\", a file of its own {}, whose definitions are out of sight, {}", name,
+                        missed, needed),
                 line};
     }
 
@@ -283,7 +312,7 @@ std::vector<std::vector<std::string>> plain_values(const std::string_view name, 
         return {};
     }
 
-    std::map<std::string, bool, std::less<>> opacity;
+    Opacity_t opacity{};
 
     if (is_opaque(name, macros, Spellings_t{}, opacity))
     {
@@ -291,9 +320,11 @@ std::vector<std::vector<std::string>> plain_values(const std::string_view name, 
     }
 
     // A transparent macro's words are plain values and name no macro, so each definition is one value as written.
-    std::vector<std::vector<std::string>> values;
+    std::vector<std::vector<std::string>> values{};
 
-    for (const auto& replacement : macro->second.replacements)
+    const auto& [macro_name, definition]{*macro};
+
+    for (const auto& replacement : definition.replacements)
     {
         if (!std::ranges::contains(values, replacement))
         {
@@ -309,9 +340,26 @@ std::optional<std::string> macro_use(
 {
     const auto runs{runs_of(meaningful)};
 
-    std::map<std::string, bool, std::less<>> opacity;
+    Opacity_t opacity{};
 
     const auto tokens{c_tokens(code)};
+
+    // The words from the opening parenthesis to the close, the opening one kept and the closing one left out.
+    const auto arguments_of{[&tokens](const std::size_t open) {
+        const auto close{group_close(tokens, open, "(", ")")};
+
+        const auto group{std::span{tokens}.subspan(open, close - open)};
+
+        std::vector<std::string> arguments{};
+
+        std::ranges::transform(group, std::back_inserter(arguments), &C_token::text);
+
+        return arguments;
+    }};
+
+    const auto opaque{[&](const std::string& argument) {
+        return macros.contains(argument) && is_opaque(argument, macros, runs, opacity);
+    }};
 
     for (std::size_t at{0}; at < tokens.size(); ++at)
     {
@@ -333,35 +381,21 @@ std::optional<std::string> macro_use(
         // The arguments a call passes stand in place of the parameters, so a spelling in them is a spelling of the
         // action's; a group after any macro's name is read as its arguments, since an object-like alias of a
         // function-like macro takes the group with it.
-        if (at + 1 < tokens.size() && tokens[at + 1].text == "(")
+        if (at + 1 >= tokens.size() || tokens[at + 1].text != "(")
         {
-            std::vector<std::string> arguments;
+            continue;
+        }
 
-            auto scan{at + 1};
+        const auto arguments{arguments_of(at + 1)};
 
-            for (auto depth{0UZ}; scan < tokens.size(); ++scan)
-            {
-                depth += tokens[scan].text == "(" ? 1 : tokens[scan].text == ")" ? -1 : 0;
+        const auto opaque_argument{std::ranges::any_of(arguments, opaque)};
 
-                if (depth == 0)
-                {
-                    break;
-                }
-
-                arguments.push_back(tokens[scan].text);
-            }
-
-            const auto opaque_argument{std::ranges::any_of(arguments, [&](const std::string& argument) {
-                return macros.contains(argument) && is_opaque(argument, macros, runs, opacity);
-            })};
-
-            if (is_loaded(arguments, runs) || opaque_argument)
-            {
-                return std::format(
-                        "passes to the macro {} an argument it may put to a use the action does not spell, so what "
-                        "the action does is out of sight until the macro is written out",
-                        word);
-            }
+        if (is_loaded(arguments, runs) || opaque_argument)
+        {
+            return std::format(
+                    "passes to the macro {} an argument it may put to a use the action does not spell, so what the "
+                    "action does is out of sight until the macro is written out",
+                    word);
         }
     }
 
@@ -370,19 +404,20 @@ std::optional<std::string> macro_use(
 
 std::optional<std::string> conditional_use(const std::string_view code)
 {
-    static constexpr std::string_view directives[]{"if", "ifdef", "ifndef", "elif", "else", "endif"};
-
     const auto tokens{c_tokens(code)};
+
+    static constexpr std::array<std::string_view, 6> directives{"if", "ifdef", "ifndef", "elif", "else", "endif"};
 
     for (std::size_t at{0}; at + 1 < tokens.size(); ++at)
     {
-        if (tokens[at].text == "#" &&
-            std::ranges::find(directives, tokens[at + 1].text) != std::ranges::end(directives))
+        const auto& directive{tokens[at + 1].text};
+
+        if (tokens[at].text == "#" && std::ranges::contains(directives, directive))
         {
             return std::format(
                     "holds a #{} directive, and which arm of a conditional is live is the build's to decide, so "
                     "the action is out of sight until it is written without one",
-                    tokens[at + 1].text);
+                    directive);
         }
     }
 
@@ -395,13 +430,14 @@ std::optional<std::string> directive_use(const std::string_view code)
 
     for (std::size_t at{0}; at + 1 < tokens.size(); ++at)
     {
-        if (tokens[at].text == "#" && !tokens[at + 1].text.empty() &&
-            is_letter(static_cast<unsigned char>(tokens[at + 1].text.front())))
+        const auto& directive{tokens[at + 1].text};
+
+        if (tokens[at].text == "#" && !directive.empty() && is_letter(static_cast<unsigned char>(directive.front())))
         {
             return std::format(
                     "holds a #{} directive, which defines or conditions code this reading does not follow, so the "
                     "action is out of sight until it is written without one",
-                    tokens[at + 1].text);
+                    directive);
         }
     }
 

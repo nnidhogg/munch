@@ -15,8 +15,9 @@
 /**
  * @brief What re2c calls a char set, as the code points it admits under the block's encoding, Class, and how one is
  *        written for the pattern parser: the code points of a bracket, code_points(), the union and the difference
- *        re2c's class difference takes, united() and subtracted(), and the rendering under an encoding, rendered()
- *        and step(), with the classes among a block's definitions kept by name, Classes_t and note_class().
+ *        re2c's class difference takes, united() and subtracted(), and the rendering under an encoding, rendered() and
+ *        step(), with the classes among a block's definitions kept by name, Classes_t and note_class(), and the class
+ *        of every byte, any_byte.
  *
  * A class is held as code points rather than bytes, so that a difference is taken before any encoding, as re2c takes
  * it: under UTF-8 `[^] \ [\x00-\x7f]` is every code point beyond ASCII, which is no set of bytes. Only once it is
@@ -37,14 +38,19 @@ using Class = std::vector<regex::utf8::Code_point_range>;
 using Classes_t = std::map<std::string, Class, std::less<>>;
 
 /**
- * @brief What the parser reads every re2c pattern under: a bracket range written backwards spans its members as
- *        re2c reads it, `[z-a]` being `[a-z]`; the case flags re2c has are spelled into the patterns instead.
+ * @brief What the parser reads every re2c pattern under: a bracket range written backwards spans its members as re2c
+ *        reads it, `[z-a]` being `[a-z]`; the case flags re2c has are spelled into the patterns instead.
  */
 constexpr regex::Parse_options re2c_parse{.caseless = false, .ranges_either_way = true};
 
 /**
- * @brief The code points there are under an encoding: the byte values under the byte encodings, every scalar under
- *        UTF-8, which is what a negated class admits the rest of.
+ * @brief The class of every byte, which `[^]` and the default rule `*` stand for where they match one byte.
+ */
+constexpr std::string_view any_byte{R"([\x00-\xff])"};
+
+/**
+ * @brief Returns the code points there are under an encoding: the byte values under the byte encodings, every scalar
+ *        under UTF-8, which is what a negated class admits the rest of.
  * @param encoding The encoding.
  * @return One past the last code point.
  */
@@ -54,7 +60,7 @@ constexpr regex::Parse_options re2c_parse{.caseless = false, .ranges_either_way 
 }
 
 /**
- * @brief The code points a class admits, when the class is one the byte parser can read.
+ * @brief Returns the code points a class admits, when the class is one the byte parser can read.
  *
  * Every class member the reader accepts is a byte value, the Unicode escapes being refused, so the byte parser's own
  * reading of the class is its members; under an encoding whose code space is wider than a byte those values are code
@@ -68,7 +74,7 @@ constexpr regex::Parse_options re2c_parse{.caseless = false, .ranges_either_way 
         std::string_view bracket, const regex::Definitions_t& definitions, char32_t space);
 
 /**
- * @brief The union of two classes.
+ * @brief Returns the union of two classes.
  * @param left The left class.
  * @param right The right class.
  * @return The class holding the code points of either.
@@ -76,7 +82,7 @@ constexpr regex::Parse_options re2c_parse{.caseless = false, .ranges_either_way 
 [[nodiscard]] Class united(const Class& left, const Class& right);
 
 /**
- * @brief The difference of two classes, re2c's `left \ right`.
+ * @brief Returns the difference of two classes, re2c's `left \ right`.
  * @param left The left class.
  * @param right The right class.
  * @return The class holding the code points of the left that the right has not got.
@@ -84,9 +90,9 @@ constexpr regex::Parse_options re2c_parse{.caseless = false, .ranges_either_way 
 [[nodiscard]] Class subtracted(const Class& left, const Class& right);
 
 /**
- * @brief A class as the pattern parser's syntax under an encoding: under UTF-8 one step of its code points where it
- *        reaches past ASCII, otherwise the bracket of its bytes, which every code point of it then is; `[]` for an
- *        empty class, which no settled pass compiles.
+ * @brief Returns a class as the pattern parser's syntax under an encoding: under UTF-8 one step of its code points
+ *        where it reaches past ASCII, otherwise the bracket of its bytes, which every code point of it then is; `[]`
+ *        for an empty class, which no settled pass compiles.
  * @param points The class.
  * @param encoding The encoding.
  * @return The expression, one atom.
@@ -94,27 +100,27 @@ constexpr regex::Parse_options re2c_parse{.caseless = false, .ranges_either_way 
 [[nodiscard]] std::string rendered(const Class& points, Re2c_encoding encoding);
 
 /**
- * @brief Whether every code point of a class is ASCII, whose encoding under UTF-8 is the byte itself.
+ * @brief Returns whether every code point of a class is ASCII, whose encoding under UTF-8 is the byte itself.
  * @param points The class.
  * @return True when it is.
  */
 [[nodiscard]] bool is_ascii(const Class& points);
 
 /**
- * @brief A set of code points as one step of the pattern parser's syntax under the UTF-8 encoding.
+ * @brief Returns a set of code points as one step of the pattern parser's syntax under the UTF-8 encoding.
  *
- * The ranges become a bracket of `\u{...}` members, which the parser matches as their UTF-8 encodings. The
- * surrogates are the one part it cannot take: no encoding has them, so the parser refuses them, while re2c under its
- * default encoding policy encodes them like any other code point; a set holding them, which is every set written as
- * a negation, carries their three-byte spelling beside the bracket instead.
+ * The ranges become a bracket of `\u{...}` members, which the parser matches as their UTF-8 encodings. The surrogates
+ * are the one part it cannot take: no encoding has them, so the parser refuses them, while re2c under its default
+ * encoding policy encodes them like any other code point; a set holding them, which is every set written as a negation,
+ * carries their three-byte spelling beside the bracket instead.
  * @param ranges The ranges, ascending and disjoint, at least one and not the surrogates alone.
  * @return The expression, one atom, grouped where it is more than the bracket.
  */
 [[nodiscard]] std::string step(const std::vector<regex::utf8::Code_point_range>& ranges);
 
 /**
- * @brief Notes what a definition is to a class difference: its class where its regex is one class, and nothing where
- *        it is not, a name defined again dropping the class it had.
+ * @brief Notes what a definition is to a class difference: its class where its regex is one class, and nothing where it
+ *        is not, a name defined again dropping the class it had.
  * @param classes The classes among the definitions in force.
  * @param name The definition's name.
  * @param points Its class, when its regex is one.

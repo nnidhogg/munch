@@ -3,8 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <limits>
+#include <format>
+#include <functional>
+#include <iterator>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -17,10 +20,6 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements logos_attributes.hpp: one attribute read from its `#` or its path, a `cfg` predicate by its form, the
-// attributes a `cfg_attr` carries, a rule attribute's arguments, a `#[logos(...)]` entry read by its key, a priority's
-// number and a tuple's fields are private to this unit.
-
 /**
  * @brief The head of one entry of a `#[logos(...)]`: its key, where and on which line it stands, and the shape of the
  *        value after it.
@@ -30,27 +29,44 @@ struct Logos_entry
     /**
      * @brief The key.
      */
-    std::string key;
+    std::string key{};
 
     /**
      * @brief The offset the key begins at.
      */
-    std::size_t begin;
+    std::size_t begin{};
 
     /**
      * @brief The line the key stands on.
      */
-    std::size_t line;
+    std::size_t line{};
 
     /**
      * @brief Whether the value is a parenthesised group, `skip(...)` or `error(...)`.
      */
-    bool group_valued;
+    bool group_valued{};
 
     /**
      * @brief Whether the value follows an `=`.
      */
-    bool assigned;
+    bool assigned{};
+};
+
+/**
+ * @brief The shape of value a `skip` or a `subpattern` takes besides a string literal, which check_shape() holds the
+ *        entry to.
+ */
+enum class Value_shape
+{
+    /**
+     * @brief A parenthesised group, `skip(...)`.
+     */
+    group,
+
+    /**
+     * @brief A name, `subpattern name = ...`.
+     */
+    name,
 };
 
 /**
@@ -61,24 +77,132 @@ struct Given_arguments
     /**
      * @brief Whether a callback has been given, in first position or as `callback = ...`.
      */
-    bool callback;
+    bool callback{};
 
     /**
      * @brief Whether a `priority = n` has been given.
      */
-    bool priority;
+    bool priority{};
 
     /**
      * @brief Whether an `ignore(...)` has been given, which closes the arguments.
      */
-    bool ignore;
+    bool ignore{};
 };
 
 /**
- * @brief What a `cfg` predicate is by its form alone: `all(...)` is true when every argument is and false when one is,
- *        `any(...)` true when one is and false when every one is, so that `all()` of nothing is true and `any()` of
- *        nothing false, `not(p)` is the opposite of `p`, and a name or a `name = "value"` pair, `test`, `unix` or
- *        `feature = "x"`, is decided by the build alone, as is any other form.
+ * @brief One of the six keys logos 0.15.1 records as an option, with the shapes of value it takes and what its refusals
+ *        call it.
+ */
+struct Option_key
+{
+    /**
+     * @brief The key.
+     */
+    std::string_view name{};
+
+    /**
+     * @brief The shape the key takes, in the crate's words.
+     */
+    std::string_view expected{};
+
+    /**
+     * @brief Whether the key takes `= value`.
+     */
+    bool assigned{};
+
+    /**
+     * @brief Whether the key takes a parenthesised group, `error(...)`.
+     */
+    bool grouped{};
+
+    /**
+     * @brief Whether the key takes a value with neither, `type T = SomeType`.
+     */
+    bool bare{};
+
+    /**
+     * @brief What the crate calls the key when it is given twice, empty for a key it takes any number of times or, for
+     *        `type`, once per parameter.
+     */
+    std::string_view once{};
+};
+
+/**
+ * @brief The keys logos 0.15.1 records as options; it knows eight and calls any other an unknown nested attribute
+ *        (logos-codegen 0.15.1, parser/mod.rs), `utf8` among the others being a later crate's.
+ */
+constexpr std::array option_keys{
+        Option_key{
+                .name = "crate",
+                .expected = "Expected: #[logos(crate = path::to::logos)]",
+                .assigned = true,
+                .grouped = false,
+                .bare = false,
+                .once = {}},
+        Option_key{
+                .name = "error",
+                .expected = "Expected: #[logos(error = SomeType)] or #[logos(error(SomeType[, callback))]",
+                .assigned = true,
+                .grouped = true,
+                .bare = false,
+                .once = "Error type"},
+        Option_key{
+                .name = "export_dir",
+                .expected = R"(Expected #[logos(export_dir = "path/to/export/dir")])",
+                .assigned = true,
+                .grouped = false,
+                .bare = false,
+                .once = {}},
+        Option_key{
+                .name = "extras",
+                .expected = "Expected: #[logos(extras = SomeType)]",
+                .assigned = true,
+                .grouped = false,
+                .bare = false,
+                .once = "Extras"},
+        Option_key{
+                .name = "source",
+                .expected = "Expected: #[logos(source = SomeType)]",
+                .assigned = true,
+                .grouped = false,
+                .bare = false,
+                .once = "Source"},
+        Option_key{
+                .name = "type",
+                .expected = "Expected: #[logos(type T = SomeType)]",
+                .assigned = false,
+                .grouped = false,
+                .bare = true,
+                .once = {}}};
+
+/**
+ * @brief Reads a path at the cursor, its segments parted by `::` with blanks and comments allowed around each.
+ * @param cursor The cursor, at the path's first segment; left past the trivia after its last.
+ * @return The segments in order, each as written, an empty one where no word follows a `::`.
+ * @throws Spec_error If a block comment is left open.
+ */
+[[nodiscard]] std::vector<std::string> path_segments(Rust_cursor& cursor)
+{
+    std::vector<std::string> segments{std::string{cursor.word()}};
+
+    for (cursor.skip_trivia(); cursor.at(path_separator); cursor.skip_trivia())
+    {
+        expect_spelled(cursor, path_separator);
+
+        cursor.skip_trivia();
+
+        segments.emplace_back(cursor.word());
+    }
+
+    return segments;
+}
+
+/**
+ * @brief Returns what a `cfg` predicate is by its form alone: `all(...)` is true when every argument is and false when
+ *        one is, `any(...)` true when one is and false when every one is, so that `all()` of nothing is true and
+ *        `any()` of nothing false, `not(p)` is the opposite of `p`, and a name or a `name = "value"` pair, `test`,
+ *        `unix` or `feature = "x"`, is decided by the build alone, as is any other form.
  * @param predicate The cursor over the predicate, left after it.
  * @return True or false when the form decides it, std::nullopt when the build does.
  * @throws Spec_error If a group in the predicate is left open.
@@ -94,10 +218,7 @@ struct Given_arguments
     if (predicate.peek() != '(')
     {
         // A name, with its value if any, up to the end of the argument it is.
-        while (!predicate.done() && predicate.peek() != ',')
-        {
-            predicate.skip_token();
-        }
+        skip_until(predicate, ",");
 
         return std::nullopt;
     }
@@ -106,13 +227,13 @@ struct Given_arguments
 
     predicate.skip_group();
 
-    auto arguments{predicate.inside(open + 1, predicate.offset() - 1)};
+    auto arguments{predicate.group_inside(open)};
 
     if (word == "not")
     {
         const auto value{cfg_value(arguments)};
 
-        return value ? std::optional{!*value} : std::nullopt;
+        return value.transform(std::logical_not{});
     }
 
     if (word != "all" && word != "any")
@@ -157,17 +278,11 @@ struct Given_arguments
  */
 [[nodiscard]] Attribute read_meta(Rust_cursor& cursor, const std::size_t line)
 {
-    std::string path{cursor.word()};
+    const auto segments{path_segments(cursor)};
 
-    for (cursor.skip_trivia(); cursor.at("::"); cursor.skip_trivia())
-    {
-        cursor.expect(':', "':'");
-        cursor.expect(':', "':'");
+    std::string path{};
 
-        cursor.skip_trivia();
-
-        path += "::" + std::string{cursor.word()};
-    }
+    std::ranges::copy(segments | std::views::join_with(path_separator), std::back_inserter(path));
 
     if (path.empty())
     {
@@ -178,7 +293,9 @@ struct Given_arguments
 
     auto end{begin};
 
-    const auto delimited{cursor.peek() == '(' || cursor.peek() == '[' || cursor.peek() == '{'};
+    const auto opener{cursor.peek()};
+
+    const auto delimited{is_opening(opener)};
 
     if (delimited)
     {
@@ -190,17 +307,14 @@ struct Given_arguments
     }
     else
     {
-        while (!cursor.done() && cursor.peek() != ']' && cursor.peek() != ',')
-        {
-            cursor.skip_token();
-        }
+        skip_until(cursor, "],");
     }
 
     return {.path = std::move(path), .begin = begin, .end = end, .delimited = delimited, .line = line, .assumed = {}};
 }
 
 /**
- * @brief The unsigned decimal a `priority = n` gives.
+ * @brief Returns the unsigned decimal a `priority = n` gives.
  * @param text The value's text.
  * @param cursor The cursor, for the refusal's line.
  * @return The number.
@@ -208,30 +322,32 @@ struct Given_arguments
  */
 [[nodiscard]] std::size_t unsigned_value(const std::string_view text, const Rust_cursor& cursor)
 {
+    if (text.empty())
+    {
+        cursor.fail("priority expects an unsigned integer");
+    }
+
     std::size_t value{0};
 
     for (const auto byte : text)
     {
         const auto digit{static_cast<std::size_t>(byte - '0')};
 
-        if (!is_digit(byte) || value > (std::numeric_limits<std::size_t>::max() - digit) / 10)
+        const auto appended{appended_digit(value, digit)};
+
+        if (!is_digit(byte) || !appended)
         {
-            cursor.fail("priority expects an unsigned integer, got '" + std::string{text} + "'");
+            cursor.fail(std::format("priority expects an unsigned integer, got '{}'", text));
         }
 
-        value = value * 10 + digit;
-    }
-
-    if (text.empty())
-    {
-        cursor.fail("priority expects an unsigned integer");
+        value = *appended;
     }
 
     return value;
 }
 
 /**
- * @brief The text of an argument from an offset to its end, its trailing blanks dropped.
+ * @brief Returns the text of an argument from an offset to its end, its trailing blanks dropped.
  * @param content A cursor over the file the offsets index.
  * @param from The offset the text begins at.
  * @param end The offset the argument ends at.
@@ -239,7 +355,9 @@ struct Given_arguments
  */
 [[nodiscard]] std::string argument_text(const Rust_cursor& content, const std::size_t from, const std::size_t end)
 {
-    return without_trailing_blanks(std::string{content.slice(from, end)});
+    const auto text{content.slice(from, end)};
+
+    return without_trailing_blanks(std::string{text});
 }
 
 /**
@@ -247,47 +365,46 @@ struct Given_arguments
  *        neither takes `= value`, `skip` takes a group or a literal and `subpattern` a name.
  * @param content The cursor, at the value.
  * @param entry The entry's head.
- * @param group Whether the key takes a parenthesised group.
- * @param keyword Whether the key takes a name.
+ * @param taken The shape the key takes besides a string literal.
  * @param expected The shape the key takes, in the crate's words.
  * @throws Spec_error If the value is of another shape.
  */
 void check_shape(
-        const Rust_cursor& content, const Logos_entry& entry, const bool group, const bool keyword,
-        const std::string_view expected)
+        const Rust_cursor& content, const Logos_entry& entry, const Value_shape taken, const std::string_view expected)
 {
-    const auto shape{
-            !entry.assigned && (entry.group_valued  ? group :
-                                content.at_string() ? entry.key == "skip" :
-                                                      keyword)};
+    const auto& [key, begin, line, group_valued, assigned]{entry};
+
+    const auto shape{[&] {
+        if (assigned)
+        {
+            return false;
+        }
+
+        if (group_valued)
+        {
+            return taken == Value_shape::group;
+        }
+
+        if (content.at_string())
+        {
+            return key == "skip";
+        }
+
+        return taken == Value_shape::name;
+    }()};
 
     if (!shape)
     {
-        content.fail("logos 0.15.1 refuses this shape of `" + entry.key + "`: " + std::string{expected});
+        content.fail(std::format("logos 0.15.1 refuses this shape of `{}`: {}", key, expected));
     }
 }
 
 /**
- * @brief The shape a key other than `skip` and `subpattern` takes, in the crate's words.
- * @param key The key, one of the six logos 0.15.1 records as an option.
- * @return The words.
- */
-[[nodiscard]] std::string_view expected_shape(const std::string_view key)
-{
-    return key == "crate"      ? "Expected: #[logos(crate = path::to::logos)]" :
-           key == "error"      ? "Expected: #[logos(error = SomeType)] or #[logos(error(SomeType[, callback))]" :
-           key == "export_dir" ? R"(Expected #[logos(export_dir = "path/to/export/dir")])" :
-           key == "extras"     ? "Expected: #[logos(extras = SomeType)]" :
-           key == "source"     ? "Expected: #[logos(source = SomeType)]" :
-                                 "Expected: #[logos(type T = SomeType)]";
-}
-
-/**
- * @brief The attributes an attribute stands for: itself, or, for `#[cfg_attr(predicate, a, b)]`, the `a` and `b` it
- *        applies where the predicate holds, none where it is false by its form, each expanded in turn where it is a
- *        `cfg_attr` itself, as rustc expands the attribute before any derive runs; under a predicate the build alone
- *        decides, `feature = "x"`, the attributes are applied, as an item under such a `#[cfg]` is read as standing,
- *        each carrying the predicate as assumed, for a scanner's options to say so.
+ * @brief Returns the attributes an attribute stands for: itself, or, for `#[cfg_attr(predicate, a, b)]`, the `a` and
+ *        `b` it applies where the predicate holds, none where it is false by its form, each expanded in turn where it
+ *        is a `cfg_attr` itself, as rustc expands the attribute before any derive runs; under a predicate the build
+ *        alone decides, `feature = "x"`, the attributes are applied, as an item under such a `#[cfg]` is read as
+ *        standing, each carrying the predicate as assumed, for a scanner's options to say so.
  * @param attribute The attribute.
  * @param cursor The cursor over the file the attribute's offsets index.
  * @return The attributes, in the order written.
@@ -313,9 +430,11 @@ void check_shape(
         return {};
     }
 
-    const auto assumed{value ? std::string{} : compacted(cursor.slice(begin, content.offset()))};
+    const auto predicate{cursor.slice(begin, content.offset())};
 
-    std::vector<Attribute> attributes;
+    const auto assumed{value ? std::string{} : compacted(predicate)};
+
+    std::vector<Attribute> attributes{};
 
     for (content.skip_trivia(); content.accept(','); content.skip_trivia())
     {
@@ -327,7 +446,11 @@ void check_shape(
             break;
         }
 
-        for (auto& carried : expanded(read_meta(content, content.line()), cursor))
+        const auto line{content.line()};
+
+        const auto meta{read_meta(content, line)};
+
+        for (auto& carried : expanded(meta, cursor))
         {
             if (!assumed.empty())
             {
@@ -393,7 +516,9 @@ void read_named_argument(
             item.fail("logos 0.15.1 refuses a second priority: Resetting previously set priority");
         }
 
-        definition.priority = unsigned_value(argument_text(item, item.offset(), end), item);
+        const auto text{argument_text(item, item.offset(), end)};
+
+        definition.priority = unsigned_value(text, item);
 
         return;
     }
@@ -410,7 +535,7 @@ void read_named_argument(
         return;
     }
 
-    item.fail("logos knows no argument '" + key + "'; expected callback, priority or ignore");
+    item.fail(std::format("logos knows no argument '{}'; expected callback, priority or ignore", key));
 }
 
 /**
@@ -430,7 +555,7 @@ void read_ignore(const Rust_cursor& item, const std::size_t end, Definition& def
 
         if (flag != "case" && flag != "ascii_case")
         {
-            flags.fail("ignore knows no flag '" + std::string{flag} + "'; expected case or ascii_case");
+            flags.fail(std::format("ignore knows no flag '{}'; expected case or ascii_case", flag));
         }
 
         const auto asked{flag == "case" ? Ignore_case::unicode : Ignore_case::ascii};
@@ -480,7 +605,7 @@ void read_ignore(const Rust_cursor& item, const std::size_t end, Definition& def
 
     if (content.done() || content.peek() == ',')
     {
-        content.fail("logos 0.15.1 refuses a bare `" + key + "` in #[logos(...)]: Invalid nested attribute");
+        content.fail(std::format("logos 0.15.1 refuses a bare `{}` in #[logos(...)]: Invalid nested attribute", key));
     }
 
     return {.key = std::move(key), .begin = begin, .line = line, .group_valued = group_valued, .assigned = assigned};
@@ -495,7 +620,8 @@ void read_ignore(const Rust_cursor& item, const std::size_t end, Definition& def
  */
 void read_skip(Rust_cursor& content, const Logos_entry& entry, std::vector<Definition>& skips)
 {
-    check_shape(content, entry, true, false, R"(Expected: #[logos(skip "regex literal")] or #[logos(skip(...))])");
+    check_shape(
+            content, entry, Value_shape::group, R"(Expected: #[logos(skip "regex literal")] or #[logos(skip(...))])");
 
     if (content.peek() == '(')
     {
@@ -503,13 +629,19 @@ void read_skip(Rust_cursor& content, const Logos_entry& entry, std::vector<Defin
 
         content.skip_group();
 
-        skips.push_back(read_definition(content.inside(open + 1, content.offset() - 1), "skip", true));
+        const auto arguments{content.group_inside(open)};
+
+        auto skip{read_definition(arguments, "skip", true)};
+
+        skips.push_back(std::move(skip));
 
         return;
     }
 
+    auto literal{content.literal()};
+
     skips.push_back(
-            {.literal = content.literal(),
+            {.literal = std::move(literal),
              .callback = {},
              .priority = std::nullopt,
              .folding = Ignore_case::none,
@@ -528,7 +660,7 @@ void read_skip(Rust_cursor& content, const Logos_entry& entry, std::vector<Defin
  */
 void read_subpattern(Rust_cursor& content, const Logos_entry& entry, Lexer_spec& spec, Subpatterns_t& subpatterns)
 {
-    check_shape(content, entry, false, true, R"(Expected: #[logos(subpattern name = r"regex")])");
+    check_shape(content, entry, Value_shape::name, R"(Expected: #[logos(subpattern name = r"regex")])");
 
     const std::string name{content.word()};
 
@@ -540,19 +672,22 @@ void read_subpattern(Rust_cursor& content, const Logos_entry& entry, Lexer_spec&
 
     if (name.empty() || is_digit(name.front()))
     {
-        content.fail(
-                "a subpattern needs a name that opens with a letter or an underscore, since {" + name +
-                "} would read as a count");
+        const auto message{std::format(
+                "a subpattern needs a name that opens with a letter or an underscore, since {{{}}} would read as a "
+                "count",
+                name)};
+
+        content.fail(message);
     }
 
     if (subpatterns.contains(name))
     {
-        content.fail("the subpattern '" + name + "' is declared twice");
+        content.fail(std::format("the subpattern '{}' is declared twice", name));
     }
 
     auto literal{content.literal()};
 
-    auto expression{compile(literal, Pattern_kind::definition, Ignore_case::none, subpatterns, entry.line).expression};
+    auto [expression, priority]{compile(literal, Pattern_kind::definition, Ignore_case::none, subpatterns, entry.line)};
 
     auto text{substituted(literal, subpatterns, entry.line)};
 
@@ -563,9 +698,119 @@ void read_subpattern(Rust_cursor& content, const Logos_entry& entry, Lexer_spec&
 }
 
 /**
+ * @brief Returns the option key an entry names, refusing one logos 0.15.1 does not know, in its words.
+ * @param entry The entry's head.
+ * @return The key.
+ * @throws Spec_error If the key is none logos 0.15.1 records as an option.
+ */
+[[nodiscard]] const Option_key& known_key(const Logos_entry& entry)
+{
+    const auto& [key, begin, line, group_valued, assigned]{entry};
+
+    const auto found{std::ranges::find(option_keys, std::string_view{key}, &Option_key::name)};
+
+    if (found == option_keys.end())
+    {
+        const auto message{std::format(
+                "logos 0.15.1 knows no #[logos({})] attribute; expected one of: crate, error, export_dir, extras, "
+                "skip, source, subpattern, type",
+                key)};
+
+        throw Spec_error{message, line};
+    }
+
+    return *found;
+}
+
+/**
+ * @brief Refuses an option whose value is of another shape than its key takes, or missing after its `=`.
+ * @param form The option's key.
+ * @param entry The entry's head.
+ * @param option The option as recorded.
+ * @param rest The value without its trivia.
+ * @throws Spec_error If the value is of another shape, or nothing follows the `=`.
+ */
+void refuse_shape(
+        const Option_key& form, const Logos_entry& entry, const std::string& option, const std::string_view rest)
+{
+    const auto& [key, begin, line, group_valued, assigned]{entry};
+
+    const auto shaped{
+            (form.assigned && assigned) || (form.grouped && group_valued) || (form.bare && !assigned && !group_valued)};
+
+    if (!shaped || (key == "type" && !option.contains('=')))
+    {
+        const auto message{std::format("logos 0.15.1 refuses this shape of `{}`: {}", key, form.expected)};
+
+        throw Spec_error{message, line};
+    }
+
+    // A value must follow the `=`; the crate's parse of the type says so.
+    if (rest.ends_with('='))
+    {
+        const auto message{std::format("logos 0.15.1 refuses `{}` with nothing after it: expected type", option)};
+
+        throw Spec_error{message, line};
+    }
+}
+
+/**
+ * @brief Refuses a second option of a key the crate takes once: `extras`, `error` and `source`, and the type of each
+ *        parameter.
+ * @param form The option's key.
+ * @param entry The entry's head.
+ * @param option The option as recorded.
+ * @param options The options recorded so far.
+ * @throws Spec_error If the key, or the parameter's type, is given already.
+ */
+void refuse_second(
+        const Option_key& form, const Logos_entry& entry, const std::string& option,
+        const std::vector<std::string>& options)
+{
+    const auto& [key, begin, line, group_valued, assigned]{entry};
+
+    const auto typed{key == "type"};
+
+    const auto once{typed ? option.substr(0, option.find('=')) : key};
+
+    if ((form.once.empty() && !typed) || !option_given(options, once))
+    {
+        return;
+    }
+
+    const auto what{typed ? once.substr(type_key.size()) : std::string{form.once}};
+
+    const std::string_view restriction{typed ? " can only have one type assigned to it" : " can be defined only once"};
+
+    const auto message{std::format("logos 0.15.1 refuses a second `{}`: {}{}", once, what, restriction)};
+
+    throw Spec_error{message, line};
+}
+
+/**
+ * @brief Binds the path a `crate = path` entry names to the crate, since that is where the enum's generated code finds
+ *        the crate, and so where a callback may too.
+ * @param rest The value without its trivia, its `=` first.
+ * @param names The names bound for the enum, added to.
+ * @param module The module the enum is declared in, as a path from the crate root, which the binding stands in.
+ */
+void bind_crate(const std::string_view rest, Names_t& names, const std::string_view module)
+{
+    static constexpr std::string_view rooted{"=::"};
+
+    static constexpr std::string_view assigned_to{"="};
+
+    const auto sign{rest.starts_with(rooted) ? rooted.size() : assigned_to.size()};
+
+    const auto path{std::string{rest.substr(sign)}};
+
+    bind_name(names, module, path, "::logos", false, type_namespace);
+}
+
+/**
  * @brief Records an entry of any key but `skip` and `subpattern` among the options, the key then the rest without its
  *        trivia, `extras=Extras`, `error(E,callback=f)`, `type S=&str`; `crate = path` also binds the path to the
- *        crate, since that is where the enum's generated code finds the crate, and so where a callback may too.
+ *        crate, as bind_crate() says.
  * @param content The cursor, at the end of the entry's value.
  * @param entry The entry's head.
  * @param spec The specification, whose options are added to.
@@ -580,82 +825,38 @@ void record_option(
 {
     const auto& [key, begin, line, group_valued, assigned]{entry};
 
-    // logos 0.15.1 knows eight keys and calls any other an unknown nested attribute (logos-codegen 0.15.1,
-    // parser/mod.rs); `utf8` among the others is a later crate's.
-    constexpr std::array known{std::string_view{"crate"},  std::string_view{"error"},  std::string_view{"export_dir"},
-                               std::string_view{"extras"}, std::string_view{"source"}, std::string_view{"type"}};
+    const auto& form{known_key(entry)};
 
-    if (!std::ranges::contains(known, std::string_view{key}))
-    {
-        const auto message{
-                "logos 0.15.1 knows no #[logos(" + key +
-                ")] attribute; expected one of: crate, error, export_dir, extras, skip, source, subpattern, type"};
+    const auto value{content.slice(begin + key.size(), content.offset())};
 
-        throw Spec_error{message, line};
-    }
+    const auto rest{compacted(value)};
 
-    const auto rest{compacted(content.slice(begin + key.size(), content.offset()))};
+    const std::string_view separator{rest.starts_with('=') || rest.starts_with('(') ? "" : " "};
 
-    const auto option{key + (rest.starts_with('=') || rest.starts_with('(') ? "" : " ") + rest};
+    const auto option{std::format("{}{}{}", key, separator, rest)};
 
-    // The shape each key takes, and the keys the crate takes once: `extras`, `error` and `source`, and the type of each
-    // parameter.
-    const auto shaped{
-            key == "crate"      ? assigned :
-            key == "error"      ? assigned || group_valued :
-            key == "export_dir" ? assigned :
-            key == "extras"     ? assigned :
-            key == "source"     ? assigned :
-                                  !assigned && !group_valued};
+    refuse_shape(form, entry, option, rest);
 
-    if (!shaped || (key == "type" && option.find('=') == std::string::npos))
-    {
-        throw Spec_error{"logos 0.15.1 refuses this shape of `" + key + "`: " + std::string{expected_shape(key)}, line};
-    }
-
-    // A value must follow the `=`; the crate's parse of the type says so.
-    if (rest.ends_with('='))
-    {
-        throw Spec_error{"logos 0.15.1 refuses `" + option + "` with nothing after it: expected type", line};
-    }
-
-    const auto once{key == "type" ? option.substr(0, option.find('=')) : key};
-
-    if ((key == "extras" || key == "error" || key == "source" || key == "type") && option_given(spec.options, once))
-    {
-        const auto what{
-                key == "extras" ? "Extras" :
-                key == "error"  ? "Error type" :
-                key == "source" ? "Source" :
-                                  once.substr(5)};
-
-        const auto message{
-                "logos 0.15.1 refuses a second `" + once + "`: " + what +
-                (key == "type" ? " can only have one type assigned to it" : " can be defined only once")};
-
-        throw Spec_error{message, line};
-    }
+    refuse_second(form, entry, option, spec.options);
 
     spec.options.push_back(option);
 
     if (key == "crate" && rest.starts_with('='))
     {
-        bind_name(
-                names, module, std::string{rest.substr(rest.starts_with("=::") ? 3 : 1)}, "::logos", false,
-                type_namespace);
+        bind_crate(rest, names, module);
     }
 }
 
 /**
- * @brief The fields of a variant's tuple, split at the commas outside groups and generics, each without its trivia and
- *        the attributes before its type; a trailing comma closes the last field rather than opening another.
+ * @brief Returns the fields of a variant's tuple, split at the commas outside groups and generics, each without its
+ *        trivia and the attributes before its type; a trailing comma closes the last field rather than opening another.
  * @param fields A cursor over the text between the parentheses.
  * @return The fields' types.
  * @throws Spec_error If a group is left open.
  */
 [[nodiscard]] std::vector<std::string> tuple_fields(Rust_cursor fields)
 {
-    std::vector<std::string> types;
+    std::vector<std::string> types{};
 
     for (fields.skip_trivia(); !fields.done(); fields.skip_trivia())
     {
@@ -670,19 +871,11 @@ void record_option(
 
         const auto begin{fields.offset()};
 
-        while (!fields.done() && fields.peek() != ',')
-        {
-            if (fields.peek() == '<')
-            {
-                skip_generics(fields);
-            }
-            else
-            {
-                fields.skip_token();
-            }
-        }
+        skip_list_item(fields);
 
-        types.push_back(compacted(fields.slice(begin, fields.offset())));
+        const auto field{fields.slice(begin, fields.offset())};
+
+        types.push_back(compacted(field));
 
         std::ignore = fields.accept(',');
     }
@@ -696,16 +889,17 @@ void read_attributes(Rust_cursor& cursor, std::vector<Attribute>& attributes)
 {
     for (cursor.skip_trivia(); at_attribute(cursor); cursor.skip_trivia())
     {
-        for (auto& attribute : expanded(read_attribute(cursor), cursor))
-        {
-            attributes.push_back(std::move(attribute));
-        }
+        const auto read{read_attribute(cursor)};
+
+        auto applied{expanded(read, cursor)};
+
+        std::ranges::move(applied, std::back_inserter(attributes));
     }
 }
 
 bool stands_by_form(const std::vector<Attribute>& attributes, const Rust_cursor& cursor)
 {
-    return std::ranges::all_of(attributes, [&cursor](const Attribute& attribute) {
+    const auto stands{[&cursor](const Attribute& attribute) {
         if (attribute.path != "cfg" || !attribute.delimited)
         {
             return true;
@@ -714,7 +908,9 @@ bool stands_by_form(const std::vector<Attribute>& attributes, const Rust_cursor&
         auto predicate{cursor.inside(attribute.begin, attribute.end)};
 
         return cfg_value(predicate).value_or(true);
-    });
+    }};
+
+    return std::ranges::all_of(attributes, stands);
 }
 
 void note_assumed(const Attribute& attribute, const Rust_cursor& cursor, std::vector<std::string>& options)
@@ -727,13 +923,15 @@ void note_assumed(const Attribute& attribute, const Rust_cursor& cursor, std::ve
 
         if (!cfg_value(predicate))
         {
-            predicates.push_back(compacted(cursor.slice(attribute.begin, attribute.end)));
+            const auto written{cursor.slice(attribute.begin, attribute.end)};
+
+            predicates.push_back(compacted(written));
         }
     }
 
     for (const auto& predicate : predicates)
     {
-        if (const auto option{"cfg=" + predicate}; !std::ranges::contains(options, option))
+        if (const auto option{std::format("cfg={}", predicate)}; !std::ranges::contains(options, option))
         {
             options.push_back(option);
         }
@@ -742,32 +940,22 @@ void note_assumed(const Attribute& attribute, const Rust_cursor& cursor, std::ve
 
 std::optional<std::size_t> derives_logos(const std::vector<Attribute>& attributes, const Rust_cursor& cursor)
 {
-    for (const auto& attribute : attributes)
+    for (const auto& [path, begin, end, delimited, line, assumed] : attributes)
     {
-        if (attribute.path != "derive")
+        if (path != "derive")
         {
             continue;
         }
 
-        auto list{cursor.inside(attribute.begin, attribute.end)};
+        auto list{cursor.inside(begin, end)};
 
         for (list.skip_trivia(); !list.done(); list.skip_trivia())
         {
-            std::string name{list.word()};
+            const auto segments{path_segments(list)};
 
-            for (list.skip_trivia(); list.at("::"); list.skip_trivia())
+            if (segments.back() == "Logos")
             {
-                list.expect(':', "':'");
-                list.expect(':', "':'");
-
-                list.skip_trivia();
-
-                name = std::string{list.word()};
-            }
-
-            if (name == "Logos")
-            {
-                return attribute.line;
+                return line;
             }
 
             if (!list.done())
@@ -788,15 +976,20 @@ Definition read_definition(Rust_cursor content, const std::string_view attribute
 
     if (content.done())
     {
+        if (skip)
+        {
+            content.fail(R"(logos 0.15.1 refuses an empty skip(...): Expected #[logos(skip("regex literal"[, )"
+                         "[callback = ] callback, priority = priority]))]");
+        }
+
         content.fail(
-                skip ? std::string{"logos 0.15.1 refuses an empty skip(...): Expected #[logos(skip(\"regex literal\"[, "
-                                   "[callback = ] callback, priority = priority]))]"} :
-                       "logos 0.15.1 refuses an empty #[" + std::string{attribute} + "(...)]: Expected #[" +
-                                std::string{attribute} + "(...)]");
+                std::format("logos 0.15.1 refuses an empty #[{}(...)]: Expected #[{}(...)]", attribute, attribute));
     }
 
+    auto literal{content.literal()};
+
     Definition definition{
-            .literal = content.literal(),
+            .literal = std::move(literal),
             .callback = {},
             .priority = std::nullopt,
             .folding = Ignore_case::none,
@@ -833,10 +1026,7 @@ Definition read_definition(Rust_cursor content, const std::string_view attribute
         // One argument runs to the next comma outside any group, string or closure body.
         const auto begin{content.offset()};
 
-        while (!content.done() && content.peek() != ',')
-        {
-            content.skip_token();
-        }
+        skip_until(content, ",");
 
         const auto end{content.offset()};
 
@@ -855,9 +1045,9 @@ Definition read_definition(Rust_cursor content, const std::string_view attribute
 
         if ((key == "priority" || key == "callback") && item.peek() == '(')
         {
-            item.fail(
-                    "logos 0.15.1 refuses " + key +
-                    "(...): Expected: " + (key == "priority" ? "priority = <integer>" : "callback = ..."));
+            const std::string_view shape{key == "priority" ? "priority = <integer>" : "callback = ..."};
+
+            item.fail(std::format("logos 0.15.1 refuses {}(...): Expected: {}", key, shape));
         }
 
         if (key == "ignore" && item.peek() == '(')
@@ -889,9 +1079,11 @@ Definition read_definition(Rust_cursor content, const std::string_view attribute
 
 bool option_given(const std::vector<std::string>& options, const std::string& key)
 {
-    return std::ranges::any_of(options, [&key](const std::string& option) {
+    const auto gives{[&key](const std::string& option) {
         return option == key || option.starts_with(key + "=") || option.starts_with(key + "(");
-    });
+    }};
+
+    return std::ranges::any_of(options, gives);
 }
 
 void read_logos_attribute(
@@ -902,21 +1094,22 @@ void read_logos_attribute(
     {
         const auto entry{read_entry(content)};
 
-        if (entry.key == "skip")
+        const auto& [key, begin, line, group_valued, assigned]{entry};
+
+        const auto recorded{key != "skip" && key != "subpattern"};
+
+        if (key == "skip")
         {
             read_skip(content, entry, skips);
         }
-        else if (entry.key == "subpattern")
+        else if (key == "subpattern")
         {
             read_subpattern(content, entry, spec, subpatterns);
         }
 
-        while (!content.done() && content.peek() != ',')
-        {
-            content.skip_token();
-        }
+        skip_until(content, ",");
 
-        if (entry.key != "skip" && entry.key != "subpattern")
+        if (recorded)
         {
             record_option(content, entry, spec, names, module);
         }
@@ -928,12 +1121,14 @@ void read_logos_attribute(
 
         // logos 0.15.1 leaves the comma after `key(...)` unread, so the entry after it begins with that comma and is an
         // invalid nested attribute to it (logos-codegen 0.15.1, parser/nested.rs).
-        if (entry.group_valued)
+        if (group_valued)
         {
-            content.fail(
-                    "logos 0.15.1 refuses an entry after " + entry.key +
-                    "(...) in one #[logos(...)] as an invalid nested attribute; write it in a #[logos(...)] of "
-                    "its own");
+            const auto message{std::format(
+                    "logos 0.15.1 refuses an entry after {}(...) in one #[logos(...)] as an invalid nested attribute; "
+                    "write it in a #[logos(...)] of its own",
+                    key)};
+
+            content.fail(message);
         }
 
         content.expect(',', "',' between the entries of #[logos(...)]");
@@ -946,21 +1141,26 @@ std::string variant_payload(Rust_cursor& cursor)
 
     const auto open{cursor.offset()};
 
+    const auto named{cursor.peek() == '{'};
+
     cursor.skip_group();
 
-    if (cursor.slice(open, open + 1) == "{")
+    if (named)
     {
         throw Spec_error{"logos 0.15.1 refuses named fields: Logos doesn't support named fields yet", line};
     }
 
-    auto fields{tuple_fields(cursor.inside(open + 1, cursor.offset() - 1))};
+    const auto inside{cursor.group_inside(open)};
+
+    auto fields{tuple_fields(inside)};
 
     if (fields.size() != 1)
     {
-        throw Spec_error{
-                "logos 0.15.1 refuses the variant: Logos currently only supports variants with one field, found " +
-                        std::to_string(fields.size()),
-                line};
+        const auto message{std::format(
+                "logos 0.15.1 refuses the variant: Logos currently only supports variants with one field, found {}",
+                fields.size())};
+
+        throw Spec_error{message, line};
     }
 
     return std::move(fields.front());

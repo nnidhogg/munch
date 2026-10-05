@@ -31,17 +31,17 @@ struct Command
     /**
      * @brief The name, `skip`, `more`, `type`, `channel`, `mode`, `pushMode` or `popMode`.
      */
-    std::string name;
+    std::string name{};
 
     /**
      * @brief What the parens hold, a token or a mode name or a number, empty when the command takes none.
      */
-    std::string argument;
+    std::string argument{};
 
     /**
      * @brief The offset of the name within the clause, which names the command's own line in a refusal.
      */
-    std::size_t offset;
+    std::size_t offset{};
 };
 
 /**
@@ -53,12 +53,12 @@ struct Syntax_error
      * @brief The offset of the byte within the clause, the clause's length where the clause ends before something
      *        ANTLR's parser still needs.
      */
-    std::size_t offset;
+    std::size_t offset{};
 
     /**
      * @brief The refusal, which names the cause where ANTLR's own words vary with what its parser had taken before.
      */
-    std::string message;
+    std::string message{};
 };
 
 /**
@@ -69,12 +69,12 @@ struct Commands
     /**
      * @brief The commands in order, through the first syntax error where there is one.
      */
-    std::vector<Command> commands;
+    std::vector<Command> commands{};
 
     /**
      * @brief The first syntax error of the clause, nothing where ANTLR's parser takes the whole of it.
      */
-    std::optional<Syntax_error> error;
+    std::optional<Syntax_error> error{};
 };
 
 /**
@@ -85,18 +85,18 @@ struct Commanded_rule
     /**
      * @brief The rule's name, the token's type while no command sets another.
      */
-    std::string name;
+    std::string name{};
 
     /**
      * @brief The rule's line, where a refusal of the type is reported while no command has set one.
      */
-    std::size_t line;
+    std::size_t line{};
 
     /**
      * @brief Whether ANTLR gives the rule a token type of its own, a lexer grammar's tokens block naming it or the rule
      *        spelling a parser literal, which a type command setting zero leaves the token with.
      */
-    bool typed;
+    bool typed{};
 };
 
 /**
@@ -107,13 +107,13 @@ struct Commanded_token
     /**
      * @brief The token the rule returns, nothing where a skip or a channel a parser does not read leaves it out.
      */
-    std::optional<std::string> token;
+    std::optional<std::string> token{};
 
     /**
      * @brief Whether a type command sets the type: ANTLR gives such a rule no token type of its own, unless it spells
      *        one literal, so another rule's `type` cannot name it.
      */
-    bool retyped;
+    bool retyped{};
 };
 
 /**
@@ -123,17 +123,17 @@ constexpr std::array<std::string_view, 8> reserved_names{
         "DEFAULT_MODE", "SKIP", "MORE", "EOF", "MAX_CHAR_VALUE", "MIN_CHAR_VALUE", "HIDDEN", "DEFAULT_TOKEN_CHANNEL"};
 
 /**
- * @brief Whether a text is a number as ANTLR's lexer reads one, decimal digits alone.
- * @param text The text.
- * @return True when it is one digit or more and nothing else.
- */
-[[nodiscard]] bool is_number(std::string_view text);
-
-/**
  * @brief How a refusal of a `->` clause's syntax ends: ANTLR's parser rejects the byte named before any command is
  *        looked at, its error 50 while matching a lexer rule.
  */
 constexpr std::string_view rejected{", which ANTLR's parser rejects while matching a lexer rule"};
+
+/**
+ * @brief Returns whether a text is a number as ANTLR's lexer reads one, decimal digits alone.
+ * @param text The text.
+ * @return True when it is one digit or more and nothing else.
+ */
+[[nodiscard]] bool is_number(std::string_view text);
 
 /**
  * @brief Applies a rule's commands to the token it matches, as ANTLR applies them.
@@ -161,8 +161,8 @@ constexpr std::string_view rejected{", which ANTLR's parser rejects while matchi
         const Alternative& alternative, const Commanded_rule& rule, const Cursor& grammar, Grammar_tables& tables);
 
 /**
- * @brief The commands a `->` clause holds, as their names and arguments, blanks and comments dropped, and the first
- *        byte of the clause ANTLR's parser rejects, where there is one.
+ * @brief Returns the commands a `->` clause holds, as their names and arguments, blanks and comments dropped, and the
+ *        first byte of the clause ANTLR's parser rejects, where there is one.
  *
  * ANTLR reads a clause with the lexer it reads the grammar with, so a comment inside one is no part of any command: a
  * clause of `skip` and a block comment after it is the skip command, and comparing the clause's text as written would

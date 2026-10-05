@@ -12,23 +12,18 @@ namespace munch::tools::audit
 {
 void take_option(Settings& settings, const std::string_view word, const std::size_t line)
 {
-    // flex lexes a `no` inside the word as a token of its own that flips the sense, and no option's name begins with
-    // one, so `nonocaseless` sets the case option and `nononocaseless` clears it again. A `no` standing as a word of
-    // its own reaches no name and says nothing, which is where the sense begins afresh for each word.
-    static constexpr std::string_view negation{"no"};
-
-    /**
-     * @brief Returns whether flex builds its tables over the 128 bytes of ASCII rather than all 256, resolved as flex's
-     *        own check_options() resolves it: a width named outright decides, and otherwise a full or fast table with
-     *        the equivalence classes off narrows it.
-     * @return True for the narrow alphabet.
-     */
+    // As flex's check_options() resolves it: a named width decides, else a full table without classes narrows.
     const auto is_narrow{
             [&settings] { return settings.named_width.value_or(settings.full_table && !settings.classes); }};
 
     auto sense{true};
 
     auto name{word};
+
+    // flex lexes a `no` inside the word as a token of its own that flips the sense, and no option's name begins with
+    // one, so `nonocaseless` sets the case option and `nononocaseless` clears it again. A `no` standing as a word of
+    // its own reaches no name and says nothing, which is where the sense begins afresh for each word.
+    static constexpr std::string_view negation{"no"};
 
     while (name.starts_with(negation))
     {
@@ -37,10 +32,7 @@ void take_option(Settings& settings, const std::string_view word, const std::siz
         name.remove_prefix(negation.size());
     }
 
-    /**
-     * @brief Records the word that narrowed the alphabet, which the refusal names, so that it stands until one widens
-     *        the alphabet again.
-     */
+    // The word that narrowed the alphabet stands, for the refusal to name, until one widens it again.
     const auto track_narrowing{[&settings, &is_narrow, word, line] {
         if (!is_narrow())
         {
@@ -55,10 +47,6 @@ void take_option(Settings& settings, const std::string_view word, const std::siz
         }
     }};
 
-    /**
-     * @brief Sets or clears the record of a word that stands until it is turned off, which a refusal names.
-     * @param standing The record the word keeps.
-     */
     const auto stand{[sense, word, line](std::optional<Standing>& standing) {
         standing = sense ? std::optional{Standing{.word = std::string{word}, .line = line}} : std::nullopt;
     }};
@@ -115,13 +103,6 @@ void take_option(Settings& settings, const std::string_view word, const std::siz
 
 void refuse_unmodelled(const Settings& settings)
 {
-    /**
-     * @brief Refuses the file for an option word left standing, naming the word and what it does that the reading does
-     *        not follow.
-     * @param standing The word and its line.
-     * @param consequence What the option does, from the word on: " binds ...".
-     * @throws Spec_error Always, at the word's line.
-     */
     const auto refuse_standing{[](const Standing& standing, const std::string_view consequence) {
         const auto& [word, line]{standing};
 

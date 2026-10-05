@@ -82,11 +82,6 @@ std::string grammar(const std::string_view name)
  */
 Run run(const std::vector<std::string>& arguments)
 {
-    /**
-     * @brief Returns text quoted for the shell, a quote inside it closed, escaped and reopened.
-     * @param text The text.
-     * @return The quoted text.
-     */
     const auto quoted{[](const std::string_view text) {
         std::string out{'\''};
 
@@ -280,15 +275,15 @@ TEST(Label_test, A_long_pattern_of_continuation_bytes_is_cut_at_its_start)
     // A label holds at most 60 bytes, and a pattern or token longer than that is named by its pattern cut to fit with
     // the ellipsis; no byte among the first 58 of the pattern begins a code point, so the one cut that keeps whole
     // characters stands before the first, and the label is the ellipsis alone.
-    constexpr std::size_t label_limit{60};
-
-    constexpr std::size_t longest_token{40};
-
     const auto directory{scratch()};
 
     const auto path{(directory / "continuation.l").string()};
 
+    constexpr std::size_t label_limit{60};
+
     const auto pattern{std::string(label_limit + 1, '\x80')};
+
+    constexpr std::size_t longest_token{40};
 
     const auto token{std::string(longest_token + 1, 'T')};
 

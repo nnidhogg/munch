@@ -1,13 +1,17 @@
 #include "munch/tools/audit/action_return.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <format>
 #include <functional>
 #include <iterator>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "munch/tools/audit/c_tokens.hpp"
@@ -17,9 +21,6 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements action_return.hpp: the tokens an action's own returns are looked for among, with the bodies of its local
-// classes and lambdas left out, are private to this unit.
-
 /**
  * @brief The statements of an action's own tokens and whether they return on every path through them, as
  *        returns_undecided() reads the action: a return, a block ending in one, an `if` whose both branches do, a
@@ -39,12 +40,12 @@ public:
         /**
          * @brief The index of the stretch's first token.
          */
-        std::size_t begin;
+        std::size_t begin{};
 
         /**
          * @brief The index just past the stretch's last token.
          */
-        std::size_t end;
+        std::size_t end{};
     };
 
     /**
@@ -58,9 +59,9 @@ public:
             const std::set<std::string, std::less<>>& restarts);
 
     /**
-     * @brief The statements of a stretch, each from its first token through the one before the next: one ends at a
-     *        `;` or at a closing brace outside every brace of the stretch's own, unless an `else` follows, so that an
-     *        `if` and its `else`, and a chain of them, are one statement.
+     * @brief Returns the statements of a stretch, each from its first token through the one before the next: one ends
+     *        at a `;` or at a closing brace outside every brace of the stretch's own, unless an `else` follows, so that
+     *        an `if` and its `else`, and a chain of them, are one statement.
      *
      * A stretch of nothing but `;`, `}` and `\\` is no statement, which is what flex passes on after an action's own
      * text, a stray close or a backslash ending its line.
@@ -70,10 +71,10 @@ public:
     [[nodiscard]] std::vector<Range> statements(Range range) const;
 
     /**
-     * @brief Whether the last statement may follow the one before it as the one jump after the last return: a `break`
-     *        after a stored token, `token = BUILD; break;`, which leaves the loop with the token stored, or any jump
-     *        after a `return`, which is dead code; a `continue` or a restarting `goto` after a stored token rescans and
-     *        drops the token, and is no such jump.
+     * @brief Returns whether the last statement may follow the one before it as the one jump after the last return: a
+     *        `break` after a stored token, `token = BUILD; break;`, which leaves the loop with the token stored, or any
+     *        jump after a `return`, which is dead code; a `continue` or a restarting `goto` after a stored token
+     *        rescans and drops the token, and is no such jump.
      * @param before The statement before the last.
      * @param last The last statement.
      * @return True when the last statement is that jump.
@@ -81,17 +82,25 @@ public:
     [[nodiscard]] bool is_trailing_jump(Range before, Range last) const;
 
     /**
-     * @brief Whether a statement is the one jump that may follow a stored token, `token = BUILD; break;`: a `break`, a
-     *        `continue` or a `goto` to a restarting label; a `goto` to any other is never it, its label being out of
-     *        sight.
+     * @brief Returns whether a run of statements ends in the one jump after the last return, is_trailing_jump() of its
+     *        last two.
+     * @param statements The statements, in order.
+     * @return True when there are two or more and the last is that jump.
+     */
+    [[nodiscard]] bool ends_in_trailing_jump(const std::vector<Range>& statements) const;
+
+    /**
+     * @brief Returns whether a statement is the one jump that may follow a stored token, `token = BUILD; break;`: a
+     *        `break`, a `continue` or a `goto` to a restarting label; a `goto` to any other is never it, its label
+     *        being out of sight.
      * @param statement The statement.
      * @return True for such a jump.
      */
     [[nodiscard]] bool is_jump(Range statement) const;
 
     /**
-     * @brief Whether the last of a stretch's statements returns on every path through it, or the one before does and
-     *        the last is a jump, `token = BUILD; break;`, which leaves the scanner with the token stored.
+     * @brief Returns whether the last of a stretch's statements returns on every path through it, or the one before
+     *        does and the last is a jump, `token = BUILD; break;`, which leaves the scanner with the token stored.
      * @param range The stretch.
      * @return True when the stretch ends by returning.
      */
@@ -99,16 +108,16 @@ public:
 
 private:
     /**
-     * @brief Whether a statement returns on every path through it: a return of the action's own; a block whose last
-     *        statement does, dead code after a return counted as returning still; an `if` with an `else` whose both
-     *        branches do; a labelled statement that does, `done: return 7;`.
+     * @brief Returns whether a statement returns on every path through it: a return of the action's own; a block whose
+     *        last statement does, dead code after a return counted as returning still; an `if` with an `else` whose
+     *        both branches do; a labelled statement that does, `done: return 7;`.
      * @param range The statement.
      * @return True when it returns on every path.
      */
     [[nodiscard]] bool returns(Range range) const;
 
     /**
-     * @brief Whether an `if` statement returns on every path through it: it has an `else`, and the branches the
+     * @brief Returns whether an `if` statement returns on every path through it: it has an `else`, and the branches the
      *        `else` outside every brace of theirs parts, the then-statement before it and the other after it, itself an
      *        `if` when the chain goes on, both return.
      * @param range The statement, its first token the `if`.
@@ -133,7 +142,7 @@ private:
 };
 
 /**
- * @brief The brace a `}` closes, found by matching the braces back from it.
+ * @brief Returns the brace a `}` closes, found by matching the braces back from it.
  * @param tokens The tokens.
  * @param at The index of the `}`.
  * @return The index of the `{`, or zero when the matching reaches the first token.
@@ -144,7 +153,7 @@ private:
 
     for (auto depth{0};; --open)
     {
-        depth += tokens[open].text == "}" ? 1 : tokens[open].text == "{" ? -1 : 0;
+        depth += depth_step(tokens[open].text, "}", "{");
 
         if (depth == 0 || open == 0)
         {
@@ -156,9 +165,9 @@ private:
 }
 
 /**
- * @brief The token before the template argument list a `>` closes: a template-id ends with `>`, so the name stands
- *        before the list and not beside what follows it, and `std::array<bool, 1>{true}` initializes as `Predicates{}`
- *        does, the `[` after either one subscripting rather than opening a capture list.
+ * @brief Returns the token before the template argument list a `>` closes: a template-id ends with `>`, so the name
+ *        stands before the list and not beside what follows it, and `std::array<bool, 1>{true}` initializes as
+ *        `Predicates{}` does, the `[` after either one subscripting rather than opening a capture list.
  *
  * An argument may be an expression with a comparison in it, `std::array<bool, (2 > 1)>`, whose signs are that
  * comparison and not the list's, so only the ones outside every group count.
@@ -176,17 +185,16 @@ private:
     {
         const auto& text{tokens[head].text};
 
-        if (text == ")" || text == "]" || text == "}")
+        // Read backwards, a closer deepens the group and an opener comes back out.
+        const auto step{group_step(text, ")]}", "([{")};
+
+        if (step != 0)
         {
-            ++groups;
-        }
-        else if (text == "(" || text == "[" || text == "{")
-        {
-            groups -= groups > 0 ? 1 : 0;
+            groups = std::max(groups + step, 0);
         }
         else if (groups == 0)
         {
-            angles += text == ">" ? 1 : text == "<" ? -1 : 0;
+            angles += depth_step(text, ">", "<");
         }
 
         if (groups == 0 && angles == 0)
@@ -204,8 +212,8 @@ private:
 }
 
 /**
- * @brief Whether the parenthesised group before a brace is a type, whose braced value ends an expression, rather than
- *        a condition, whose brace opens a block and ends none.
+ * @brief Returns whether the parenthesised group before a brace is a type, whose braced value ends an expression,
+ *        rather than a condition, whose brace opens a block and ends none.
  *
  * Which it is the word before the group says: `if (q) { }` and the loops open a block, while anything else opens a
  * braced value, `decltype(flags){true}` and the compound literal `(int[]){1}` among them, whose `[` after the brace
@@ -221,7 +229,7 @@ private:
 
     for (auto groups{0}; scan > 0; --scan)
     {
-        groups += tokens[scan].text == ")" ? 1 : tokens[scan].text == "(" ? -1 : 0;
+        groups += depth_step(tokens[scan].text, ")", "(");
 
         if (groups == 0)
         {
@@ -234,18 +242,19 @@ private:
         return false;
     }
 
-    static constexpr std::string_view conditions[]{"if", "while", "for", "switch", "catch"};
-
     const auto& before{tokens[scan - 1].text};
 
     const auto qualified{
             (before == "constexpr" || before == "consteval") && scan >= 2 && tokens[scan - 2].text == "if"};
 
-    return !qualified && std::ranges::find(conditions, before) == std::ranges::end(conditions);
+    static constexpr std::array<std::string_view, 5> conditions{"if", "while", "for", "switch", "catch"};
+
+    return !qualified && !std::ranges::contains(conditions, before);
 }
 
 /**
- * @brief Whether a token is a name or a number, which is what its first byte says: a letter, a digit or an underscore.
+ * @brief Returns whether a token is a name or a number, which is what its first byte says: a letter, a digit or an
+ *        underscore.
  * @param text The token's text, not empty.
  * @return True for a name or a number.
  */
@@ -255,19 +264,16 @@ private:
 }
 
 /**
- * @brief Whether a `}` ends an expression, which depends on what it closes: a braced initializer's, whose `{` the type
- *        it initializes stands before, ends one, so the `[` of `Predicates{}[0]()` subscripts; a block's, whose `{` a
- *        parenthesis, a semicolon, another brace or a control keyword stands before, ends none, so the `[` of `if (q)
- *        { } [&]{ ... }();` opens a capture list.
+ * @brief Returns whether a `}` ends an expression, which depends on what it closes: a braced initializer's, whose `{`
+ *        the type it initializes stands before, ends one, so the `[` of `Predicates{}[0]()` subscripts; a block's,
+ *        whose `{` a parenthesis, a semicolon, another brace or a control keyword stands before, ends none, so the `[`
+ *        of `if (q) { } [&]{ ... }();` opens a capture list.
  * @param tokens The tokens.
  * @param at The index of the `}`.
  * @return True when the brace closes a braced value.
  */
 [[nodiscard]] bool closes_value(const std::vector<C_token>& tokens, const std::size_t at)
 {
-    static constexpr std::string_view blocks[]{"if",    "else",   "for",   "while", "do",   "switch",   "try",
-                                               "catch", "struct", "class", "union", "enum", "namespace"};
-
     const auto open{opening_brace(tokens, at)};
 
     if (open == 0)
@@ -309,12 +315,16 @@ private:
         }
     }
 
-    return is_named(before) && std::ranges::find(blocks, before) == std::ranges::end(blocks);
+    static constexpr std::array<std::string_view, 13> blocks{"if",     "else", "for",      "while",  "do",
+                                                             "switch", "try",  "catch",    "struct", "class",
+                                                             "union",  "enum", "namespace"};
+
+    return is_named(before) && !std::ranges::contains(blocks, before);
 }
 
 /**
- * @brief Whether a token is one an expression can end with: a name of the file's own, a number, a literal, a closing
- *        parenthesis or bracket, or a closing brace that closes_value() says ends one.
+ * @brief Returns whether a token is one an expression can end with: a name of the file's own, a number, a literal, a
+ *        closing parenthesis or bracket, or a closing brace that closes_value() says ends one.
  *
  * A keyword of C's ends no expression, so the `[` of `return [](){ ... }()` opens a capture list where the `[` of
  * `h[i](x)` subscripts, and neither do the alternative spellings C++ gives the operators: `true and [] { ... }()` has
@@ -325,11 +335,6 @@ private:
  */
 [[nodiscard]] bool ends_expression(const std::vector<C_token>& tokens, const std::size_t at)
 {
-    static constexpr std::string_view keywords[]{"return", "case",      "throw",    "else",     "do",     "new",
-                                                 "delete", "co_return", "co_yield", "sizeof",   "and",    "or",
-                                                 "not",    "xor",       "bitand",   "bitor",    "compl",  "and_eq",
-                                                 "or_eq",  "xor_eq",    "not_eq",   "co_await", "alignof"};
-
     const auto& text{tokens[at].text};
 
     if (text == "}")
@@ -339,13 +344,17 @@ private:
 
     const auto literal{text.front() == '"' || text.front() == '\''};
 
-    return (is_named(text) || literal || text == ")" || text == "]") &&
-           std::ranges::find(keywords, text) == std::ranges::end(keywords);
+    static constexpr std::array<std::string_view, 23> keywords{
+            "return",   "case",   "throw", "else",   "do",     "new",      "delete", "co_return",
+            "co_yield", "sizeof", "and",   "or",     "not",    "xor",      "bitand", "bitor",
+            "compl",    "and_eq", "or_eq", "xor_eq", "not_eq", "co_await", "alignof"};
+
+    return (is_named(text) || literal || text == ")" || text == "]") && !std::ranges::contains(keywords, text);
 }
 
 /**
- * @brief Where the template parameter list after a capture list ends, when one stands there: its angle brackets are a
- *        group there and an operator anywhere after, `[](int x = (1 < 2)) { ... }` holding a comparison and not a
+ * @brief Returns where the template parameter list after a capture list ends, when one stands there: its angle brackets
+ *        are a group there and an operator anywhere after, `[](int x = (1 < 2)) { ... }` holding a comparison and not a
  *        list, so the list is stepped over before the body is looked for.
  *
  * A default argument of the list's own may compare too, `[]<bool b = (1 < 2)>() { ... }`, so the angle brackets inside
@@ -365,17 +374,15 @@ private:
     {
         const auto& text{tokens[from].text};
 
-        if (text == "(" || text == "[" || text == "{")
+        const auto step{group_step(text, "([{", ")]}")};
+
+        if (step != 0)
         {
-            ++groups;
-        }
-        else if (text == ")" || text == "]" || text == "}")
-        {
-            groups -= groups > 0 ? 1 : 0;
+            groups = std::max(groups + step, 0);
         }
         else if (groups == 0)
         {
-            angles += text == "<" ? 1 : text == ">" ? -1 : 0;
+            angles += depth_step(text, "<", ">");
         }
 
         if (groups == 0 && angles == 0)
@@ -388,8 +395,8 @@ private:
 }
 
 /**
- * @brief Where a requires expression inside a lambda's constraint ends: its parameter list and its requirement braces,
- *        each stepped over whole when it stands, so that neither is taken for the lambda's body.
+ * @brief Returns where a requires expression inside a lambda's constraint ends: its parameter list and its requirement
+ *        braces, each stepped over whole when it stands, so that neither is taken for the lambda's body.
  * @param tokens The tokens.
  * @param at The index of the expression's `requires`.
  * @return The index just past the expression.
@@ -398,18 +405,20 @@ private:
 {
     auto scan{at + 1};
 
-    for (const auto opener : {"(", "{"})
+    static constexpr std::array bracket_pairs{
+            std::pair{std::string_view{"("}, std::string_view{")"}},
+            std::pair{std::string_view{"{"}, std::string_view{"}"}}};
+
+    for (const auto& [opener, closer] : bracket_pairs)
     {
         if (scan >= tokens.size() || tokens[scan].text != opener)
         {
             continue;
         }
 
-        const auto closer{std::string_view{opener} == "(" ? ")" : "}"};
-
         for (auto groups{0}; scan < tokens.size(); ++scan)
         {
-            groups += tokens[scan].text == opener ? 1 : tokens[scan].text == closer ? -1 : 0;
+            groups += depth_step(tokens[scan].text, opener, closer);
 
             if (groups == 0)
             {
@@ -424,14 +433,16 @@ private:
 }
 
 /**
- * @brief The brace opening a lambda's body: the first one outside every group after the capture list and the template
- *        parameters, since a `(` or a `[` between the two opens a group a brace inside belongs to, `[](int x =
+ * @brief Returns the brace opening a lambda's body: the first one outside every group after the capture list and the
+ *        template parameters, since a `(` or a `[` between the two opens a group a brace inside belongs to, `[](int x =
  *        int{7}) { ... }` being the case that says so.
  *
  * A `;` outside every group before it means the `[` opened no lambda at all. A requires clause stands between the
  * parameter list and the body, and its constraint may be a requires expression, whose own braces are not the body's:
  * `[]<class T>() requires requires { typename T::value_type; } { return 7; }` returns from the lambda in the second
- * group and not the first, so the clause is stepped over whole.
+ * group and not the first, so the clause is stepped over whole. The constraint is an expression like any other: names,
+ * parenthesised expressions and requires expressions joined by `&&` and `||`, each requires expression stepped over
+ * whole, so that `requires true && requires { ... } { ... }` reaches the second group as its body.
  * @param tokens The tokens.
  * @param from The index just past the template parameters, or past the capture list when there are none.
  * @return The index of the body's `{`, or std::nullopt when the bracket opened no lambda.
@@ -448,10 +459,7 @@ private:
     {
         const auto& text{tokens[at].text};
 
-        // The first `requires` opens the clause and what follows it is the constraint, an expression like any other:
-        // a name, a parenthesised expression, or a requires expression, joined by `&&` and `||`. Every `requires`
-        // inside that constraint opens a requires expression, stepped over whole, so that `requires true && requires
-        // { ... } { ... }` reaches the second group as its body.
+        // The first `requires` opens the clause; every later one opens a requires expression of its constraint.
         if (depth == 0 && text == "requires" && !constraining)
         {
             constraining = true;
@@ -466,13 +474,11 @@ private:
             continue;
         }
 
-        if (text == "(" || text == "[")
+        const auto step{group_step(text, "([", ")]")};
+
+        if (step != 0)
         {
-            ++depth;
-        }
-        else if (text == ")" || text == "]")
-        {
-            depth -= depth > 0 ? 1 : 0;
+            depth = std::max(depth + step, 0);
         }
         else if (depth == 0 && text == ";")
         {
@@ -488,8 +494,23 @@ private:
 }
 
 /**
- * @brief The tokens of an action with the body of every lambda declared in it left out, since a `return` in a lambda
- *        returns from the lambda and not from the action.
+ * @brief Erases a group of tokens, from its opener through its closer.
+ * @param tokens The tokens.
+ * @param open The index of the group's opener.
+ * @param close The index of the group's closer.
+ */
+void erase_group(std::vector<C_token>& tokens, const std::size_t open, const std::size_t close)
+{
+    const auto group_begin{tokens.begin() + static_cast<std::ptrdiff_t>(open)};
+
+    const auto group_end{tokens.begin() + static_cast<std::ptrdiff_t>(close) + 1};
+
+    tokens.erase(group_begin, group_end);
+}
+
+/**
+ * @brief Returns the tokens of an action with the body of every lambda declared in it left out, since a `return` in a
+ *        lambda returns from the lambda and not from the action.
  *
  * A `[` opens a capture list where no expression ends before it, which would make it a subscript, and where it opens no
  * attribute's `[[`; the body is the first brace group after the list outside every group, a template parameter list and
@@ -506,9 +527,9 @@ private:
             continue;
         }
 
-        // An attribute opens with two brackets where a capture list opens with one, so `[[likely]] { ... }` opens
-        // no lambda and the block after it is the function's own; the whole attribute is stepped over, wherever it
-        // stands, since its inner bracket opens no capture list either and an expression may end before it.
+        // An attribute opens with two brackets where a capture list opens with one, so `[[likely]] { ... }` opens no
+        // lambda and the block after it is the function's own; the whole attribute is stepped over, wherever it stands,
+        // since its inner bracket opens no capture list either and an expression may end before it.
         if (at + 1 < tokens.size() && tokens[at + 1].text == "[")
         {
             at = group_close(tokens, at, "[", "]");
@@ -523,7 +544,9 @@ private:
         }
 
         // The body is looked for past the capture list and the template parameters after it.
-        const auto from{template_parameters_end(tokens, group_close(tokens, at, "[", "]") + 1)};
+        const auto captures_close{group_close(tokens, at, "[", "]")};
+
+        const auto from{template_parameters_end(tokens, captures_close + 1)};
 
         const auto open{body_open(tokens, from)};
 
@@ -539,16 +562,14 @@ private:
             break;
         }
 
-        tokens.erase(
-                tokens.begin() + static_cast<std::ptrdiff_t>(*open),
-                tokens.begin() + static_cast<std::ptrdiff_t>(close) + 1);
+        erase_group(tokens, *open, close);
     }
 
     return tokens;
 }
 
 /**
- * @brief The tokens of an action with the body of every class, struct or union declared in it left out, since a
+ * @brief Returns the tokens of an action with the body of every class, struct or union declared in it left out, since a
  *        `return` in a method of one returns from that method and not from the action.
  *
  * `{ struct Local { int f() { return 7; } }; Local local; (void)local.f(); }` returns nothing from the rule, and the
@@ -559,45 +580,46 @@ private:
  */
 [[nodiscard]] std::vector<C_token> outside_local_types(std::vector<C_token> tokens)
 {
-    static constexpr std::string_view types[]{"struct", "class", "union"};
-
     for (std::size_t at{0}; at < tokens.size(); ++at)
     {
-        if (std::ranges::find(types, tokens[at].text) == std::ranges::end(types))
+        static constexpr std::array<std::string_view, 3> types{"struct", "class", "union"};
+
+        if (!std::ranges::contains(types, tokens[at].text))
         {
             continue;
         }
 
-        // A definition begins a statement, so the keyword stands first or after a `;`, a brace or a label's colon,
-        // with declaration specifiers allowed between, `static struct Helper { ... } h;`; the `class` of a template
-        // parameter list, `[]<class T>()`, follows a `<` or a `,` and defines nothing.
-        static constexpr std::string_view specifiers[]{"typedef", "static",   "const",    "constexpr",
-                                                       "inline",  "extern",   "volatile", "thread_local",
-                                                       "mutable", "register", "constinit"};
+        static constexpr std::array<std::string_view, 11> specifiers{"typedef", "static",   "const",    "constexpr",
+                                                                     "inline",  "extern",   "volatile", "thread_local",
+                                                                     "mutable", "register", "constinit"};
 
+        static constexpr std::array<std::string_view, 4> statement_ends{";", "{", "}", ":"};
+
+        // A definition begins a statement, so the keyword stands first or after a `;`, a brace or a label's colon, with
+        // declaration specifiers allowed between, `static struct Helper { ... } h;`; the `class` of a template
+        // parameter list, `[]<class T>()`, follows a `<` or a `,` and defines nothing.
         auto start{at};
 
-        while (start > 0 && std::ranges::find(specifiers, tokens[start - 1].text) != std::ranges::end(specifiers))
+        while (start > 0 && std::ranges::contains(specifiers, tokens[start - 1].text))
         {
             --start;
         }
 
-        if (start > 0 && tokens[start - 1].text != ";" && tokens[start - 1].text != "{" &&
-            tokens[start - 1].text != "}" && tokens[start - 1].text != ":")
+        if (start > 0 && !std::ranges::contains(statement_ends, tokens[start - 1].text))
         {
             continue;
         }
 
         // The head runs from the keyword to the body's brace: a name, `final`, a base clause, an attribute or an
-        // `alignas(...)` may stand between, their own groups stepped over, while an `=` or a `;` before any brace
-        // says the keyword opened no class body at all, `struct holder h = {custom};` and `struct S;` among them.
+        // `alignas(...)` may stand between, their own groups stepped over, while an `=` or a `;` before any brace says
+        // the keyword opened no class body at all, `struct holder h = {custom};` and `struct S;` among them.
         auto open{at + 1};
 
         for (auto groups{0}; open < tokens.size(); ++open)
         {
             const auto& piece{tokens[open].text};
 
-            groups += piece == "(" || piece == "[" ? 1 : piece == ")" || piece == "]" ? -1 : 0;
+            groups += group_step(piece, "([", ")]");
 
             if (groups == 0 && (piece == "{" || piece == "=" || piece == ";"))
             {
@@ -617,26 +639,23 @@ private:
             break;
         }
 
-        tokens.erase(
-                tokens.begin() + static_cast<std::ptrdiff_t>(open),
-                tokens.begin() + static_cast<std::ptrdiff_t>(close) + 1);
+        erase_group(tokens, open, close);
 
-        at = open > 0 ? open - 1 : 0;
+        at = open - 1;
     }
 
     return tokens;
 }
 
 /**
- * @brief Whether a token returns: `return`, or one of the names the reader gives meaning to as returns.
+ * @brief Returns whether a token returns: `return`, or one of the names the reader gives meaning to as returns.
  * @param token The token.
  * @param returning The names besides `return` that return.
  * @return True for a return.
  */
 [[nodiscard]] bool is_return(const C_token& token, const Returning_t& returning)
 {
-    return token.text == "return" ||
-           std::ranges::any_of(returning, [&token](const std::string& name) { return name == token.text; });
+    return token.text == "return" || std::ranges::contains(returning, token.text);
 }
 
 Return_paths::Return_paths(
@@ -647,7 +666,10 @@ Return_paths::Return_paths(
 
 std::vector<Return_paths::Range> Return_paths::statements(const Range range) const
 {
-    std::vector<Range> out;
+    const auto is_filler{
+            [](const C_token& token) { return token.text == ";" || token.text == "}" || token.text == "\\"; }};
+
+    std::vector<Range> out{};
 
     auto depth{0};
 
@@ -657,7 +679,7 @@ std::vector<Return_paths::Range> Return_paths::statements(const Range range) con
     {
         const auto& text{tokens_[at].text};
 
-        depth += text == "{" ? 1 : text == "}" ? -1 : 0;
+        depth += depth_step(text, "{", "}");
 
         const auto continued{at + 1 < range.end && tokens_[at + 1].text == "else"};
 
@@ -668,12 +690,11 @@ std::vector<Return_paths::Range> Return_paths::statements(const Range range) con
             continue;
         }
 
-        const auto garbage{std::ranges::all_of(
-                tokens_.begin() + static_cast<std::ptrdiff_t>(begin),
-                tokens_.begin() + static_cast<std::ptrdiff_t>(at) + 1,
-                [](const C_token& token) { return token.text == ";" || token.text == "}" || token.text == "\\"; })};
+        const auto statement{std::span{tokens_}.subspan(begin, at + 1 - begin)};
 
-        if (!garbage)
+        const auto filler{std::ranges::all_of(statement, is_filler)};
+
+        if (!filler)
         {
             out.push_back(Range{.begin = begin, .end = at + 1});
         }
@@ -690,6 +711,11 @@ bool Return_paths::is_trailing_jump(const Range before, const Range last) const
 {
     return is_jump(last) && returns(before) &&
            (tokens_[last.begin].text == "break" || tokens_[before.begin].text == "return");
+}
+
+bool Return_paths::ends_in_trailing_jump(const std::vector<Range>& statements) const
+{
+    return statements.size() >= 2 && is_trailing_jump(statements[statements.size() - 2], statements.back());
 }
 
 bool Return_paths::is_jump(const Range statement) const
@@ -738,7 +764,7 @@ bool Return_paths::ends_returning(const Range range) const
 {
     auto own{statements(range)};
 
-    if (own.size() >= 2 && is_trailing_jump(own[own.size() - 2], own.back()))
+    if (ends_in_trailing_jump(own))
     {
         own.pop_back();
     }
@@ -748,8 +774,8 @@ bool Return_paths::ends_returning(const Range range) const
 
 bool Return_paths::if_returns(const Range range) const
 {
-    // Past the condition: the words of `if constexpr` and the parenthesised condition, or `if !consteval` and its
-    // kin, which have none.
+    // Past the condition: the words of `if constexpr` and the parenthesised condition, or `if !consteval` and its kin,
+    // which have none.
     auto at{range.begin + 1};
 
     while (at < range.end && tokens_[at].text != "(" && tokens_[at].text != "{")
@@ -759,17 +785,7 @@ bool Return_paths::if_returns(const Range range) const
 
     if (at < range.end && tokens_[at].text == "(")
     {
-        for (auto groups{0}; at < range.end; ++at)
-        {
-            groups += tokens_[at].text == "(" ? 1 : tokens_[at].text == ")" ? -1 : 0;
-
-            if (groups == 0)
-            {
-                break;
-            }
-        }
-
-        ++at;
+        at = group_close(tokens_, at, "(", ")") + 1;
     }
 
     const auto branches{statements({.begin = at, .end = range.end})};
@@ -785,7 +801,7 @@ bool Return_paths::if_returns(const Range range) const
 
     for (auto split{first}; split < end; ++split)
     {
-        depth += tokens_[split].text == "{" ? 1 : tokens_[split].text == "}" ? -1 : 0;
+        depth += depth_step(tokens_[split].text, "{", "}");
 
         if (depth == 0 && tokens_[split].text == "else")
         {
@@ -796,18 +812,32 @@ bool Return_paths::if_returns(const Range range) const
     return false;
 }
 
-} // namespace
-
-std::optional<std::string> returns_undecided(
-        const std::string_view action, const Returning_t& returning, const bool break_discards,
-        const std::set<std::string, std::less<>>& restarts, const bool chained)
+/**
+ * @brief Returns an action's own tokens: its tokens with the bodies of its local classes and of its lambdas left out,
+ *        since a `return` in either returns from them and not from the action.
+ * @param action The action's text.
+ * @return The action's own tokens.
+ */
+[[nodiscard]] std::vector<C_token> own_tokens(const std::string_view action)
 {
-    const auto tokens{outside_lambdas(outside_local_types(c_tokens(action)))};
+    auto all{c_tokens(action)};
 
-    const Return_paths paths{tokens, returning, restarts};
+    auto outside_types{outside_local_types(std::move(all))};
 
-    // Every return of the action's own, each read as returned() reads the first, and the text of each.
-    std::vector<std::string> values;
+    return outside_lambdas(std::move(outside_types));
+}
+
+/**
+ * @brief Returns what every return of the action's own returns, each read as returned() reads the first.
+ * @param action The action's text.
+ * @param tokens The action's own tokens.
+ * @param returning The names besides `return` that return.
+ * @return The text of each return's value in order, empty for one returned() reads no value of.
+ */
+[[nodiscard]] std::vector<std::string> returned_values(
+        const std::string_view action, const std::vector<C_token>& tokens, const Returning_t& returning)
+{
+    std::vector<std::string> values{};
 
     for (auto at{tokens.begin()}; at != tokens.end(); ++at)
     {
@@ -818,7 +848,9 @@ std::optional<std::string> returns_undecided(
 
         const auto rest{action.substr(at->at)};
 
-        values.push_back(returned(rest, returning).value_or(std::string{}));
+        const auto value{returned(rest, returning)};
+
+        values.push_back(value.value_or(std::string{}));
 
         at = std::ranges::find(at, tokens.end(), ";", &C_token::text);
 
@@ -828,35 +860,63 @@ std::optional<std::string> returns_undecided(
         }
     }
 
-    for (const auto& value : values)
-    {
-        if (value != values.front())
-        {
-            return "returns from more than one place and not the same token from each, so which token a match "
-                   "emits is out of sight until the action returns one token";
-        }
-    }
+    return values;
+}
 
-    // A jump anywhere but as the one after the last return ends the action on its path before any return: flex
-    // writes each action as a case of a switch inside the scanning loop, so `break` and `continue` both leave it
-    // with the match discarded, and re2c's actions stand in the loop the file wrote; `a+ { if (yyleng == 1) break;
-    // return 7; }` returns 8 alone on "ab" under flex 2.6.4. A `goto` leaves for a label out of the action's sight,
-    // `a+ { goto emit_token; }` reaching a `return 8` in the next rule's action, so it is refused whether or not
-    // the action returns anywhere; a `break` or a `continue` in an action returning nowhere discards on every path.
+/**
+ * @brief Returns the action's own statements inside the braces that are the whole action when it has them, which is
+ *        where the one jump allowed after the last return stands last.
+ * @param paths The reading of the action's own tokens.
+ * @param tokens The action's own tokens.
+ * @return The statements.
+ */
+[[nodiscard]] std::vector<Return_paths::Range> unbraced_statements(
+        const Return_paths& paths, const std::vector<C_token>& tokens)
+{
     auto own{paths.statements({.begin = 0, .end = tokens.size()})};
 
-    // The one jump allowed stands last among the action's own statements, inside the braces that are the whole action
-    // when it has them.
-    while (own.size() == 1 && tokens[own.front().begin].text == "{" && tokens[own.front().end - 1].text == "}")
+    const auto one_block{[&tokens](const std::vector<Return_paths::Range>& statements) {
+        if (statements.size() != 1)
+        {
+            return false;
+        }
+
+        const auto [begin, end]{statements.front()};
+
+        return tokens[begin].text == "{" && tokens[end - 1].text == "}";
+    }};
+
+    while (one_block(own))
     {
-        own = paths.statements({.begin = own.front().begin + 1, .end = own.front().end - 1});
+        const auto [begin, end]{own.front()};
+
+        own = paths.statements({.begin = begin + 1, .end = end - 1});
     }
 
-    const auto trailing{
-            own.size() >= 2 && paths.is_trailing_jump(own[own.size() - 2], own.back()) ?
-                    own.back() :
-                    Return_paths::Range{.begin = tokens.size(), .end = tokens.size()}};
+    return own;
+}
 
+/**
+ * @brief Returns why a jump outside the one allowed after the last return leaves what a match does out of sight, when
+ *        one does.
+ *
+ * A jump anywhere but as the one after the last return ends the action on its path before any return: flex writes each
+ * action as a case of a switch inside the scanning loop, so `break` and `continue` both leave it with the match
+ * discarded, and re2c's actions stand in the loop the file wrote; `a+ { if (yyleng == 1) break; return 7; }` returns 8
+ * alone on "ab" under flex 2.6.4. A `goto` leaves for a label out of the action's sight, `a+ { goto emit_token; }`
+ * reaching a `return 8` in the next rule's action, so it is refused whether or not the action returns anywhere; a
+ * `break` or a `continue` in an action returning nowhere discards on every path.
+ * @param tokens The action's own tokens.
+ * @param trailing The one jump allowed, an empty range at the tokens' end when there is none.
+ * @param restarts The labels a `goto` restarts the scan by.
+ * @param returns_somewhere Whether the action returns on some path.
+ * @param break_discards Whether a `break` leaves the action with the match discarded rather than the scanner's loop.
+ * @return The refusal, or std::nullopt when no such jump stands.
+ */
+[[nodiscard]] std::optional<std::string> jump_refusal(
+        const std::vector<C_token>& tokens, const Return_paths::Range trailing,
+        const std::set<std::string, std::less<>>& restarts, const bool returns_somewhere, const bool break_discards)
+{
     for (std::size_t at{0}; at < tokens.size(); ++at)
     {
         const auto& text{tokens[at].text};
@@ -866,8 +926,8 @@ std::optional<std::string> returns_undecided(
             continue;
         }
 
-        // A `goto` to a label that restarts the scan, standing before the block in the file, discards the match as
-        // a `continue` does; any other label is out of sight.
+        // A `goto` to a label that restarts the scan, standing before the block in the file, discards the match as a
+        // `continue` does; any other label is out of sight.
         const auto restarting{text == "goto" && at + 1 < tokens.size() && restarts.contains(tokens[at + 1].text)};
 
         if (text == "goto" && !restarting)
@@ -876,12 +936,15 @@ std::optional<std::string> returns_undecided(
                    "a token or is discarded is out of sight until every path returns";
         }
 
-        if ((text == "break" || text == "continue" || restarting) && !values.empty())
+        if ((text == "break" || text == "continue" || restarting) && returns_somewhere)
         {
-            return "leaves by `" + text + (restarting ? " " + tokens[at + 1].text : std::string{}) +
-                   "` on some path before it returns, which the scanner takes as the action's end with the match "
-                   "discarded, so whether a match emits a token or is discarded is out of sight until every path "
-                   "returns";
+            const auto label{restarting ? std::format(" {}", tokens[at + 1].text) : std::string{}};
+
+            return std::format(
+                    "leaves by `{}{}` on some path before it returns, which the scanner takes as the action's end with "
+                    "the match discarded, so whether a match emits a token or is discarded is out of sight until every "
+                    "path returns",
+                    text, label);
         }
 
         if (text == "break" && !break_discards)
@@ -891,13 +954,45 @@ std::optional<std::string> returns_undecided(
         }
     }
 
+    return std::nullopt;
+}
+
+} // namespace
+
+std::optional<std::string> returns_undecided(
+        const std::string_view action, const Returning_t& returning, const bool break_discards,
+        const std::set<std::string, std::less<>>& restarts, const bool chained)
+{
+    const auto tokens{own_tokens(action)};
+
+    const Return_paths paths{tokens, returning, restarts};
+
+    const auto values{returned_values(action, tokens, returning)};
+
+    if (std::ranges::adjacent_find(values, std::ranges::not_equal_to{}) != values.end())
+    {
+        return "returns from more than one place and not the same token from each, so which token a match "
+               "emits is out of sight until the action returns one token";
+    }
+
+    const auto own{unbraced_statements(paths, tokens)};
+
+    const auto jumps_last{paths.ends_in_trailing_jump(own)};
+
+    const auto trailing{jumps_last ? own.back() : Return_paths::Range{.begin = tokens.size(), .end = tokens.size()}};
+
+    if (auto refusal{jump_refusal(tokens, trailing, restarts, !values.empty(), break_discards)})
+    {
+        return refusal;
+    }
+
     if (values.empty())
     {
-        // flex writes `YY_BREAK` after every action, so one returning nowhere discards its match; re2c writes the
-        // actions one after another and control falls from an action's end into the next rule's action, so one
-        // returning nowhere must leave by a jump, `continue;` or a restarting `goto`, `"a"+ { ++count; }` before
-        // `"b" { return 8; }` returning 8 for "a" under re2c 3.1.
-        if (chained && !(!own.empty() && paths.is_jump(own.back())))
+        // flex's `YY_BREAK` discards the match of an action returning nowhere; a chained re2c action returning nowhere
+        // falls into the next rule's action unless it leaves by a jump, `continue;` or a restarting `goto`.
+        const auto leaves_by_jump{!own.empty() && paths.is_jump(own.back())};
+
+        if (chained && !leaves_by_jump)
         {
             return "ends without returning or leaving, and re2c writes the next rule's action right after it, so "
                    "what a match of this rule does is out of sight until the action leaves by a jump or a return";
@@ -911,27 +1006,35 @@ std::optional<std::string> returns_undecided(
         return std::nullopt;
     }
 
-    return "returns " + values.front() +
-           " on some path and ends without returning on another, so whether a match emits a token or is "
-           "discarded is out of sight until the action ends by returning one";
+    return std::format(
+            "returns {} on some path and ends without returning on another, so whether a match emits a token or is "
+            "discarded is out of sight until the action ends by returning one",
+            values.front());
 }
 
 std::optional<std::string> returned(const std::string_view action, const Returning_t& returning)
 {
-    const auto tokens{outside_lambdas(outside_local_types(c_tokens(action)))};
+    const auto tokens{own_tokens(action)};
 
-    // The text from one token through the one before another, nothing between neighbours, spliced as the tokens are.
+    // The text from one token through the one before another, spliced as the tokens are.
     const auto text{[action]<typename Iterator>(const Iterator from, const Iterator to) -> std::optional<std::string> {
         if (from >= to)
         {
             return std::nullopt;
         }
 
-        return spliced(action.substr(from->at, std::prev(to)->end - from->at)).text;
+        const auto last{std::prev(to)};
+
+        const auto stretch{action.substr(from->at, last->end - from->at)};
+
+        auto [joined, place]{spliced(stretch)};
+
+        return std::move(joined);
     }};
 
-    const auto returns{
-            std::ranges::find_if(tokens, [&returning](const C_token& token) { return is_return(token, returning); })};
+    const auto is_return_token{[&returning](const C_token& token) { return is_return(token, returning); }};
+
+    const auto returns{std::ranges::find_if(tokens, is_return_token)};
 
     if (returns == tokens.end())
     {
@@ -957,15 +1060,17 @@ std::optional<std::string> returned(const std::string_view action, const Returni
     if (next != tokens.end() && next->text == "(")
     {
         // The first argument: up to the comma or the close at depth one.
-        std::size_t depth{0};
+        auto depth{0};
 
         for (auto inner{next}; inner != tokens.end(); ++inner)
         {
-            if (inner->text == "(")
-            {
-                ++depth;
-            }
-            else if ((inner->text == ")" && --depth == 0) || (inner->text == "," && depth == 1))
+            depth += depth_step(inner->text, "(", ")");
+
+            const auto closed{inner->text == ")" && depth == 0};
+
+            const auto first_ended{inner->text == "," && depth == 1};
+
+            if (closed || first_ended)
             {
                 return text(std::next(next), inner).value_or(std::string{name});
             }
@@ -973,6 +1078,11 @@ std::optional<std::string> returned(const std::string_view action, const Returni
     }
 
     return std::string{name};
+}
+
+std::string action_refusal(const std::string_view use)
+{
+    return std::format("the action {}", use);
 }
 
 } // namespace munch::tools::audit

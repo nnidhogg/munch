@@ -1,5 +1,6 @@
 #include "munch/tools/audit/command_line.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cstddef>
 #include <format>
@@ -8,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 
 #include "munch/tools/audit/expression.hpp"
 
@@ -15,10 +17,53 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements command_line.hpp: the reading of one byte an option names and the usage text are private to this unit.
+/**
+ * @brief The shortest window `--windows` takes.
+ */
+constexpr std::size_t shortest_window_limit{1};
 
 /**
- * @brief A byte as the command line spells one.
+ * @brief The longest window `--windows` takes.
+ */
+constexpr std::size_t longest_window_limit{8};
+
+/**
+ * @brief What a byte written in hex opens with, `0xHH`.
+ */
+constexpr std::string_view hex_prefix{"0x"};
+
+/**
+ * @brief The most hex digits a byte written in hex takes.
+ */
+constexpr std::size_t most_hex_digits{2};
+
+/**
+ * @brief Returns the longest window `--windows` gives.
+ * @param text The option's value, a decimal.
+ * @return The limit.
+ * @throws std::invalid_argument If the text is no decimal from shortest_window_limit to longest_window_limit.
+ */
+[[nodiscard]] std::size_t parse_window_limit(const std::string_view text)
+{
+    std::size_t limit{};
+
+    const auto text_end{text.data() + text.size()};
+
+    const auto [end, error]{std::from_chars(text.data(), text_end, limit)};
+
+    if (error != std::errc{} || end != text_end || limit < shortest_window_limit || limit > longest_window_limit)
+    {
+        const auto message{
+                std::format("--windows takes {} to {}, not '{}'", shortest_window_limit, longest_window_limit, text)};
+
+        throw std::invalid_argument{message};
+    }
+
+    return limit;
+}
+
+/**
+ * @brief Returns a byte as the command line spells one.
  * @param text A single character, one of the escapes `\n`, `\t`, `\r`, `\0`, or `0xHH`.
  * @return The byte.
  * @throws std::invalid_argument If the text spells none.
@@ -50,19 +95,17 @@ namespace
         return 0;
     }
 
-    if (text.starts_with("0x") && text.size() >= 3 && text.size() <= 4)
+    const auto digits{text.starts_with(hex_prefix) ? text.substr(hex_prefix.size()) : std::string_view{}};
+
+    const auto hex{!digits.empty() && digits.size() <= most_hex_digits && std::ranges::all_of(digits, is_hex_digit)};
+
+    if (hex)
     {
-        auto value{0U};
+        unsigned value{};
 
-        for (const auto digit : text.substr(2))
-        {
-            if (!is_hex_digit(digit))
-            {
-                throw std::invalid_argument{std::format("'{}' is not a byte", text)};
-            }
+        const auto digits_end{digits.data() + digits.size()};
 
-            value = value * 16 + hex_value(digit);
-        }
+        std::ignore = std::from_chars(digits.data(), digits_end, value, hex_base);
 
         return static_cast<unsigned char>(value);
     }
@@ -114,7 +157,7 @@ such byte named on standard error after the whole report.
 
 Options parse_options(const std::span<const std::string_view> arguments)
 {
-    Options options;
+    Options options{};
 
     for (std::size_t at{0}; at < arguments.size(); ++at)
     {
@@ -175,20 +218,13 @@ Options parse_options(const std::span<const std::string_view> arguments)
         {
             const auto text{value()};
 
-            std::size_t limit{0};
-
-            const auto [end, error]{std::from_chars(text.data(), text.data() + text.size(), limit)};
-
-            if (error != std::errc{} || end != text.data() + text.size() || limit < 1 || limit > 8)
-            {
-                throw std::invalid_argument{std::format("--windows takes 1 to 8, not '{}'", text)};
-            }
-
-            options.window_limit = limit;
+            options.window_limit = parse_window_limit(text);
         }
         else if (argument == "--price")
         {
-            options.priced.push_back(parse_byte(value()));
+            const auto text{value()};
+
+            options.priced.push_back(parse_byte(text));
         }
         else if (argument == "--input")
         {

@@ -26,6 +26,16 @@
 namespace munch::tools::audit
 {
 /**
+ * @brief The long s, `ſ`, which folds to the ASCII `s` under the crate's case folding.
+ */
+constexpr char32_t long_s{0x17F};
+
+/**
+ * @brief The Kelvin sign, which folds to the ASCII `k` under the crate's case folding.
+ */
+constexpr char32_t kelvin{0x212A};
+
+/**
  * @brief The regex crate's flags a pattern is read under, each scoped to the group it is set in.
  */
 struct Flags
@@ -110,20 +120,20 @@ struct Subpattern
      * @brief The literal, whose text is read again in the mode and under the flags of every reference, since logos
      *        substitutes the text into the referencing pattern before the crate parses it.
      */
-    String_literal literal;
+    String_literal literal{};
 
     /**
      * @brief The content as substituted(): its own references substituted, and every byte beyond ASCII spelled as an
      *        escape, so that the text reads the same pasted into a pattern of either mode.
      */
-    std::string text;
+    std::string text{};
 
     /**
      * @brief Whether the definition matches only the empty string, which logos allows of a definition, the patterns
      *        pasting it in being the rules, and which a reference then expands to, since regex::parse() takes no empty
      *        definition.
      */
-    bool empty;
+    bool empty{};
 };
 
 /**
@@ -131,6 +141,9 @@ struct Subpattern
  */
 using Subpatterns_t = std::map<std::string, Subpattern, std::less<>>;
 
+/**
+ * @brief A node of a pattern's tree, declared ahead of the kinds it holds, which hold nodes of their own.
+ */
 struct Node;
 
 /**
@@ -148,13 +161,13 @@ struct Bytes
     /**
      * @brief The bytes.
      */
-    std::string bytes;
+    std::string bytes{};
 
     /**
      * @brief Whether the run opens or closes a capture group, which keeps it apart from the run beside it, as the
      *        crate's literals stay apart across a capture and logos counts them apart.
      */
-    bool bounded;
+    bool bounded{};
 };
 
 /**
@@ -165,12 +178,12 @@ struct Char_class
     /**
      * @brief The members.
      */
-    Scalar_set set;
+    Scalar_set set{};
 
     /**
      * @brief Whether the members are scalars, matched as their UTF-8, rather than bytes.
      */
-    bool unicode;
+    bool unicode{};
 
     /**
      * @brief Whether a capture group encloses the class alone, which hides it from the crate's check for the dot under
@@ -187,12 +200,12 @@ struct Reference
     /**
      * @brief The subpattern's name.
      */
-    std::string name;
+    std::string name{};
 
     /**
      * @brief The flags in force at the reference, which logos lets reach into the expansion.
      */
-    Flags flags;
+    Flags flags{};
 };
 
 /**
@@ -236,12 +249,12 @@ struct Repeat
     /**
      * @brief The least number of times.
      */
-    std::size_t min;
+    std::size_t min{};
 
     /**
-     * @brief The most number of times, unbounded when std::nullopt.
+     * @brief The greatest number of times, std::nullopt when unbounded.
      */
-    std::optional<std::size_t> max;
+    std::optional<std::size_t> max{};
 };
 
 /**
@@ -255,7 +268,7 @@ struct Node
     /**
      * @brief The node's kind and content.
      */
-    std::variant<Empty, Bytes, Char_class, Reference, Concat, Alternation, Repeat> kind;
+    std::variant<Empty, Bytes, Char_class, Reference, Concat, Alternation, Repeat> kind{};
 };
 
 /**
@@ -266,12 +279,12 @@ struct Compiled
     /**
      * @brief The expression in the syntax regex::parse() reads.
      */
-    std::string expression;
+    std::string expression{};
 
     /**
      * @brief The priority, logos's own number.
      */
-    std::size_t priority;
+    std::size_t priority{};
 };
 
 /**
@@ -283,17 +296,17 @@ struct Merged
     /**
      * @brief The class: the class itself, or the one member of the literal.
      */
-    Char_class cls;
+    Char_class char_class{};
 
     /**
      * @brief Whether the node is a literal to the crate rather than a class.
      */
-    bool literal;
+    bool literal{};
 };
 
 /**
- * @brief The set of a class under `i`, every ASCII letter joined by its other case and, over scalars, `k` and `s` by
- *        the Kelvin sign and the long s, the crate's simple case folding on what the reader admits.
+ * @brief Returns the set of a class under `i`, every ASCII letter joined by its other case and, over scalars, `k` and
+ *        `s` by the Kelvin sign and the long s, the crate's simple case folding on what the reader admits.
  * @param set The members.
  * @param unicode Whether the members are scalars.
  * @return The folded set.
@@ -301,7 +314,8 @@ struct Merged
 [[nodiscard]] Scalar_set folded(const Scalar_set& set, bool unicode);
 
 /**
- * @brief A node as the regex crate's alternation merging sees it, where it sees a class or a literal of one unit.
+ * @brief Returns a node as the regex crate's alternation merging sees it, where it sees a class or a literal of one
+ *        unit.
  *
  * The crate builds an alternation whose branches are all classes into their union, and one whose branches are all
  * literals of one character, or failing that all literals of one byte, into the class of them, nested alternations
@@ -335,10 +349,10 @@ struct Merged
         std::size_t line);
 
 /**
- * @brief A pattern's content as logos pastes it into a referencing pattern, and as the crate then parses it: every
- *        `(?&name)` replaced by the subpattern's own content in a non-capturing group, and every byte beyond ASCII
- *        spelled as an escape, `\xHH` for a byte string's byte, which is the crate's spelling, and `\x{HHHH}` for a
- *        string's scalar, so that the text reads the same in a pattern of either mode.
+ * @brief Returns a pattern's content as logos pastes it into a referencing pattern, and as the crate then parses it:
+ *        every `(?&name)` replaced by the subpattern's own content in a non-capturing group, and every byte beyond
+ *        ASCII spelled as an escape, `\xHH` for a byte string's byte, which is the crate's spelling, and `\x{HHHH}` for
+ *        a string's scalar, so that the text reads the same in a pattern of either mode.
  *
  * logos substitutes the text before the crate parses anything (logos-codegen 0.15.1, parser/subpattern.rs), so the
  * crate's merging of adjacent literals runs across a reference and a group and a flag around one reach inside it: a

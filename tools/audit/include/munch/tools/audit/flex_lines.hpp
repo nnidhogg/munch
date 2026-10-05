@@ -6,7 +6,8 @@
 #include <vector>
 
 /**
- * @brief A flex file as the lines its sections are read from, Lines, and a line with its blanks trimmed, trimmed().
+ * @brief A flex file as the lines its sections are read from, Lines, and a line with its blanks, line_blanks, trimmed,
+ *        trimmed().
  *
  * flex reads its file line by line before it reads anything else: a line at the margin is a declaration or a rule, an
  * indented one is code it copies out, and `%%` at the margin parts the sections, whatever follows it on the line. The
@@ -14,6 +15,11 @@
  */
 namespace munch::tools::audit
 {
+/**
+ * @brief The blanks trimmed() drops from a line's ends: the space, the tab and a CRLF line end's return.
+ */
+constexpr std::string_view line_blanks{" \t\r"};
+
 /**
  * @brief The source as lines, with the cursor the two section readers share.
  */
@@ -27,7 +33,7 @@ public:
     explicit Lines(std::string_view source);
 
     /**
-     * @brief Whether a line remains.
+     * @brief Returns whether a line remains.
      * @return True while the cursor is inside the file.
      */
     [[nodiscard]] bool more() const noexcept;
@@ -39,19 +45,19 @@ public:
     void advance(std::size_t count = 1) noexcept;
 
     /**
-     * @brief The number of the line under the cursor, counted from one.
+     * @brief Returns the number of the line under the cursor, counted from one.
      * @return The line number.
      */
     [[nodiscard]] std::size_t number() const noexcept;
 
     /**
-     * @brief The source from the line under the cursor to the end of the file, for an action that spans lines.
+     * @brief Returns the source from the line under the cursor to the end of the file, for an action that spans lines.
      * @return The remaining text.
      */
     [[nodiscard]] std::string_view rest() const noexcept;
 
     /**
-     * @brief The line under the cursor.
+     * @brief Returns the line under the cursor.
      * @return The line, without its newline.
      */
     [[nodiscard]] std::string_view current() const noexcept;
@@ -65,8 +71,8 @@ public:
     void skip_through(std::string_view close, std::string_view what);
 
     /**
-     * @brief Moves to the first line holding the given mark anywhere, the line under the cursor included, which is
-     *        how flex closes a `%{` block: at the line that holds `%}`, wherever on it.
+     * @brief Moves to the first line holding the given mark anywhere, the line under the cursor included, which is how
+     *        flex closes a `%{` block: at the line that holds `%}`, wherever on it.
      * @param mark The mark, `%}`.
      * @param what What was open, named when the file ends first.
      * @throws Spec_error If the file ends before the mark.
@@ -91,8 +97,8 @@ private:
 };
 
 /**
- * @brief The line without the spaces, tabs and carriage returns at either end, which are a flex line's blanks; a
- *        newline is no blank of a line and stays.
+ * @brief Returns the line without the spaces, tabs and carriage returns at either end, which are a flex line's blanks;
+ *        a newline is no blank of a line and stays.
  * @param line The line.
  * @return The trimmed view.
  */

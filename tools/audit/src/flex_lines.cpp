@@ -1,6 +1,7 @@
 #include "munch/tools/audit/flex_lines.hpp"
 
 #include <cstddef>
+#include <format>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -59,7 +60,7 @@ void Lines::skip_through(const std::string_view close, const std::string_view wh
         }
     }
 
-    throw Spec_error{std::string{what} + " is never closed", opened};
+    throw Spec_error{std::format("{} is never closed", what), opened};
 }
 
 void Lines::skip_to(const std::string_view mark, const std::string_view what)
@@ -75,22 +76,21 @@ void Lines::skip_to(const std::string_view mark, const std::string_view what)
         }
     }
 
-    throw Spec_error{std::string{what} + " is never closed", opened};
+    throw Spec_error{std::format("{} is never closed", what), opened};
 }
 
-std::string_view trimmed(std::string_view line) noexcept
+std::string_view trimmed(const std::string_view line) noexcept
 {
-    while (!line.empty() && (line.front() == ' ' || line.front() == '\t' || line.front() == '\r'))
+    const auto first{line.find_first_not_of(line_blanks)};
+
+    if (first == std::string_view::npos)
     {
-        line.remove_prefix(1);
+        return {};
     }
 
-    while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r'))
-    {
-        line.remove_suffix(1);
-    }
+    const auto last{line.find_last_not_of(line_blanks)};
 
-    return line;
+    return line.substr(first, last + 1 - first);
 }
 
 } // namespace munch::tools::audit

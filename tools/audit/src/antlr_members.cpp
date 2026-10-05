@@ -1,10 +1,11 @@
 #include "munch/tools/audit/antlr_members.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <format>
-#include <iterator>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -17,8 +18,6 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements antlr_members.hpp: the reading of one members action, Members_reader, is private to this unit.
-
 /**
  * @brief One `members` action's code read as the target language reads it, refusing what stands in place of the
  *        runtime's own methods or runs when the lexer is built.
@@ -59,7 +58,7 @@ public:
 
 private:
     /**
-     * @brief The text of a token, empty past the last one.
+     * @brief Returns the text of a token, empty past the last one.
      * @param index The token's index.
      * @return The text.
      */
@@ -74,7 +73,7 @@ private:
     void refuse_initializer_block(std::size_t index) const;
 
     /**
-     * @brief Where a brace initializer ends, when a brace at the class's own level opens one, its values read.
+     * @brief Returns where a brace initializer ends, when a brace at the class's own level opens one, its values read.
      *
      * A C++ field may be initialized with braces, `int initial{(setMode(IN), 0)};` or `Initializer startup{this};`,
      * whose constructor may set the mode through the lexer it is handed, which runs when the lexer is built as `=`
@@ -94,7 +93,7 @@ private:
     [[nodiscard]] std::optional<std::size_t> brace_initializer_end(std::size_t index) const;
 
     /**
-     * @brief Where the statement a token stands in begins: just past the `;`, `{` or `}` before it.
+     * @brief Returns where the statement a token stands in begins: just past the `;`, `{` or `}` before it.
      * @param index The token's index.
      * @return The index of the statement's first token.
      */
@@ -112,25 +111,25 @@ private:
     void refuse_accessor_body(std::size_t index, std::size_t close, std::size_t declarator) const;
 
     /**
-     * @brief Whether a token of a brace initializer is plain: a value, a dot, a comma, a brace, or a sign opening a
-     *        number after a brace or a comma.
+     * @brief Returns whether a token of a brace initializer is plain: a value, a dot, a comma, a brace, or a sign
+     *        opening a number after a brace or a comma.
      * @param piece The token's index.
      * @return True when it is.
      */
     [[nodiscard]] bool is_plain_in_braces(std::size_t piece) const;
 
     /**
-     * @brief Whether a token is a sign opening a number, `-` or `+` before a token beginning with a digit.
+     * @brief Returns whether a token is a sign opening a number, `-` or `+` before a token beginning with a digit.
      * @param piece The token's index.
      * @return True when it is.
      */
     [[nodiscard]] bool opens_number(std::size_t piece) const;
 
     /**
-     * @brief Whether a word of an initializer is a value that decides nothing of the scanner: a name, a number or a
-     *        quoted literal, `this` excepted, and a name a macro of an action's defines, `START_IN_MODE` under `#define
-     *        START_IN_MODE (setMode(IN), 0)` in the header, standing for its replacement, which is a value only when
-     *        the macro is transparent.
+     * @brief Returns whether a word of an initializer is a value that decides nothing of the scanner: a name, a number
+     *        or a quoted literal, `this` excepted, and a name a macro of an action's defines, `START_IN_MODE` under
+     *        `#define START_IN_MODE (setMode(IN), 0)` in the header, standing for its replacement, which is a value
+     *        only when the macro is transparent.
      * @param word The word.
      * @return True when it is.
      */
@@ -145,7 +144,8 @@ private:
     [[noreturn]] void refuse_value(std::string_view name) const;
 
     /**
-     * @brief Where a field's `=` initializer ends, when a token at the class's own level is its `=`, its tokens read.
+     * @brief Returns where a field's `=` initializer ends, when a token at the class's own level is its `=`, its tokens
+     *        read.
      *
      * A field's initializer runs when the lexer is built too, `int startupMode = (_mode = IN);` and `int initial[] = {
      * _mode = IN };` alike, and the Java runtime's `_mode` is a field the members can assign. An initializer that is
@@ -160,8 +160,8 @@ private:
     [[nodiscard]] std::optional<std::size_t> field_initializer_end(std::size_t index) const;
 
     /**
-     * @brief Whether a token of an `=` initializer is plain: a value, a grouping, or a sign opening a number after the
-     *        `=`, a comma or a brace.
+     * @brief Returns whether a token of an `=` initializer is plain: a value, a grouping, or a sign opening a number
+     *        after the `=`, a comma or a brace.
      * @param piece The token's index.
      * @return True when it is.
      */
@@ -224,7 +224,7 @@ void Members_reader::refuse() const
             }
         }
 
-        depth += text(index) == "{" ? 1 : text(index) == "}" ? -1 : 0;
+        depth += depth_step(text(index), "{", "}");
 
         if (depth != 1)
         {
@@ -251,7 +251,9 @@ void Members_reader::refuse_initializer_block(const std::size_t index) const
 {
     const auto before{index > 0 ? text(index - 1) : std::string_view{}};
 
-    if (before.empty() || before == ";" || before == "}" || before == "{" || before == "static")
+    static constexpr std::array<std::string_view, 5> statement_starts{"", ";", "}", "{", "static"};
+
+    if (std::ranges::contains(statement_starts, before))
     {
         throw Spec_error{
                 "the lexer's members hold an initializer block, which runs when the lexer is built and may decide its "
@@ -266,7 +268,7 @@ std::optional<std::size_t> Members_reader::brace_initializer_end(const std::size
 
     for (auto groups{0}; declarator > 0 && (text(declarator) == "]" || groups > 0); --declarator)
     {
-        groups += text(declarator) == "]" ? 1 : text(declarator) == "[" ? -1 : 0;
+        groups += depth_step(text(declarator), "]", "[");
     }
 
     if (index == 0 || !starts_name(text(declarator)))
@@ -276,20 +278,27 @@ std::optional<std::size_t> Members_reader::brace_initializer_end(const std::size
 
     const auto start{statement_start(index)};
 
-    static constexpr std::string_view types[]{"class", "struct", "union", "enum", "interface", "record"};
-
     auto declares_type{false};
 
     auto parameters{false};
 
+    static constexpr std::array<std::string_view, 6> types{"class", "struct", "union", "enum", "interface", "record"};
+
     for (auto piece{start}, brackets{0UZ}; piece < index; ++piece)
     {
-        const auto keyword{std::ranges::find(types, text(piece)) != std::ranges::end(types)};
+        const auto keyword{std::ranges::contains(types, text(piece))};
 
         declares_type = declares_type ||
                         (keyword && starts_name(text(piece + 1)) && (text(piece + 2) == "{" || text(piece + 2) == ":"));
 
-        brackets += text(piece) == "[" ? 1 : text(piece) == "]" && brackets > 0 ? -1 : 0;
+        if (text(piece) == "[")
+        {
+            ++brackets;
+        }
+        else if (text(piece) == "]" && brackets > 0)
+        {
+            --brackets;
+        }
 
         parameters = parameters || (text(piece) == "(" && brackets == 0);
     }
@@ -341,13 +350,13 @@ void Members_reader::refuse_accessor_body(
     {
         if (text(piece) == "{" || (text(piece) == "=" && text(piece + 1) == ">"))
         {
-            throw Spec_error{
-                    std::format(
-                            "the lexer's members define an accessor of {} with a body, and the generated lexer reads "
-                            "its own properties to decide the tokens without this reading knowing which, so the tokens "
-                            "the rules describe may not be the tokens the scanner emits",
-                            text(declarator)),
-                    line_};
+            const auto message{std::format(
+                    "the lexer's members define an accessor of {} with a body, and the generated lexer reads its own "
+                    "properties to decide the tokens without this reading knowing which, so the tokens the rules "
+                    "describe may not be the tokens the scanner emits",
+                    text(declarator))};
+
+            throw Spec_error{message, line_};
         }
     }
 }
@@ -358,7 +367,9 @@ bool Members_reader::is_plain_in_braces(const std::size_t piece) const
 
     const auto sign{(text(piece - 1) == "{" || text(piece - 1) == ",") && opens_number(piece)};
 
-    return word == "." || word == "," || word == "{" || word == "}" || sign || is_value(word);
+    static constexpr std::array<std::string_view, 4> plain_marks{".", ",", "{", "}"};
+
+    return std::ranges::contains(plain_marks, word) || sign || is_value(word);
 }
 
 bool Members_reader::opens_number(const std::size_t piece) const
@@ -378,33 +389,32 @@ bool Members_reader::is_value(const std::string_view word) const
 
 void Members_reader::refuse_value(const std::string_view name) const
 {
-    throw Spec_error{
-            std::format(
-                    "the lexer's members initialize {} with more than a value, which runs when the lexer is built and "
-                    "may decide its mode before any token, so what it does is out of the audit's sight",
-                    name),
-            line_};
+    const auto message{std::format(
+            "the lexer's members initialize {} with more than a value, which runs when the lexer is built and may "
+            "decide its mode before any token, so what it does is out of the audit's sight",
+            name)};
+
+    throw Spec_error{message, line_};
 }
 
 std::optional<std::size_t> Members_reader::field_initializer_end(const std::size_t index) const
 {
-    static constexpr std::string_view operators[]{"=", "!", "<", ">", "+", "-", "*", "/", "%", "&", "|", "^"};
-
     const auto before{index > 0 ? text(index - 1) : std::string_view{}};
 
+    static constexpr std::array<std::string_view, 12> operators{"=", "!", "<", ">", "+", "-",
+                                                                "*", "/", "%", "&", "|", "^"};
+
     if (text(index) != "=" || text(index + 1) == "=" || text(index + 1) == ">" ||
-        std::ranges::find(operators, before) != std::ranges::end(operators))
+        std::ranges::contains(operators, before))
     {
         return std::nullopt;
     }
 
     auto scan{index + 1};
 
-    for (auto groups{0UZ}; scan < tokens_.size() && !(groups == 0 && text(scan) == ";"); ++scan)
+    for (auto groups{0}; scan < tokens_.size() && !(groups == 0 && text(scan) == ";"); ++scan)
     {
-        groups += text(scan) == "(" || text(scan) == "{" || text(scan) == "[" ? 1 :
-                  text(scan) == ")" || text(scan) == "}" || text(scan) == "]" ? -1 :
-                                                                                0;
+        groups += group_step(text(scan), "({[", ")}]");
     }
 
     // The field's name stands before the `=`, an array declarator's brackets stepped over.
@@ -430,7 +440,9 @@ bool Members_reader::is_plain_after_equals(const std::size_t piece) const
 {
     const auto word{text(piece)};
 
-    const auto grouping{word == "." || word == "," || word == "{" || word == "}" || word == "[" || word == "]"};
+    static constexpr std::array<std::string_view, 6> grouping_marks{".", ",", "{", "}", "[", "]"};
+
+    const auto grouping{std::ranges::contains(grouping_marks, word)};
 
     const auto sign_stands{text(piece - 1) == "=" || text(piece - 1) == "," || text(piece - 1) == "{"};
 
@@ -448,9 +460,18 @@ void Members_reader::refuse_method(const std::size_t index) const
 
     auto bracketed{false};
 
-    for (auto back{index}, opened{0UZ}; back > statement_start(index); --back)
+    const auto start{statement_start(index)};
+
+    for (auto back{index}, opened{0UZ}; back > start; --back)
     {
-        opened += text(back - 1) == "[" ? 1 : text(back - 1) == "]" && opened > 0 ? -1 : 0;
+        if (text(back - 1) == "[")
+        {
+            ++opened;
+        }
+        else if (text(back - 1) == "]" && opened > 0)
+        {
+            --opened;
+        }
 
         bracketed = bracketed || (text(back - 1) == "[" && opened == 1);
     }
@@ -460,23 +481,28 @@ void Members_reader::refuse_method(const std::size_t index) const
         return;
     }
 
+    const auto ends_head{[this](const std::size_t piece) {
+        return text(piece) == "{" || text(piece) == ";" || (text(piece) == "=" && text(piece + 1) == ">");
+    }};
+
     auto scan{group_close(tokens_, index + 1, "(", ")")};
 
-    for (++scan; scan < tokens_.size() && text(scan) != "{" && text(scan) != ";" &&
-                 !(text(scan) == "=" && text(scan + 1) == ">");
-         ++scan)
+    ++scan;
+
+    while (scan < tokens_.size() && !ends_head(scan))
     {
+        ++scan;
     }
 
     if (scan < tokens_.size() && text(scan) != ";")
     {
-        throw Spec_error{
-                std::format(
-                        "the lexer's members define {}(), and the generated lexer calls its own methods to decide the "
-                        "tokens without this reading knowing which, so the tokens the rules describe may not be the "
-                        "tokens the scanner emits",
-                        text(index)),
-                line_};
+        const auto message{std::format(
+                "the lexer's members define {}(), and the generated lexer calls its own methods to decide the tokens "
+                "without this reading knowing which, so the tokens the rules describe may not be the tokens the "
+                "scanner emits",
+                text(index))};
+
+        throw Spec_error{message, line_};
     }
 }
 
@@ -485,50 +511,53 @@ void Members_reader::refuse_method(const std::size_t index) const
 void refuse_lexer_class(
         const Lexer_spec& spec, const std::vector<Members_action>& members, const std::string_view actions_code)
 {
-    const auto target{[&spec]() -> std::string_view {
-        for (const auto& option : spec.options)
-        {
-            if (option.starts_with("language="))
-            {
-                return std::string_view{option}.substr(9);
-            }
-        }
+    static constexpr std::string_view language_option{"language="};
 
-        return "Java";
-    }()};
+    const auto names_language{[](const std::string& option) { return option.starts_with(language_option); }};
+
+    const auto language{std::ranges::find_if(spec.options, names_language)};
+
+    const auto target{
+            language == spec.options.end() ? std::string_view{"Java"} :
+                                             std::string_view{*language}.substr(language_option.size())};
+
+    static constexpr std::string_view superclass_option{"superClass="};
+
+    const auto names_superclass{[](const std::string& option) { return option.starts_with(superclass_option); }};
+
+    const auto superclassed{std::ranges::any_of(spec.options, names_superclass)};
 
     // A superclass named by the grammar may define any method of the lexer's, `nextToken` among them, and its code is
     // not in the grammar to read, so a grammar naming one is refused by name.
-    for (const auto& option : spec.options)
-    {
-        if (option.starts_with("superClass="))
-        {
-            throw Spec_error{
-                    "the grammar sets superClass, and the class it names may define the methods that decide the "
-                    "tokens, which are out of the audit's sight",
-                    spec.line};
-        }
-    }
-
-    static constexpr std::string_view known[]{"Java", "Cpp", "CSharp"};
-
-    if (!members.empty() && std::ranges::find(known, target) == std::ranges::end(known))
+    if (superclassed)
     {
         throw Spec_error{
-                std::format(
-                        "the grammar's target language is {}, whose members declare a method otherwise than this "
-                        "reading reads one, so whether one of them decides the tokens is out of the audit's sight",
-                        target),
-                members.front().line};
+                "the grammar sets superClass, and the class it names may define the methods that decide the tokens, "
+                "which are out of the audit's sight",
+                spec.line};
     }
 
-    Macros_t macros;
+    static constexpr std::array<std::string_view, 3> known{"Java", "Cpp", "CSharp"};
+
+    if (!members.empty() && !std::ranges::contains(known, target))
+    {
+        const auto message{std::format(
+                "the grammar's target language is {}, whose members declare a method otherwise than this reading reads "
+                "one, so whether one of them decides the tokens is out of the audit's sight",
+                target)};
+
+        throw Spec_error{message, members.front().line};
+    }
+
+    Macros_t macros{};
 
     take_macros(actions_code, macros);
 
     for (const auto& [code, line] : members)
     {
-        Members_reader{code, line, target == "CSharp", macros}.refuse();
+        const Members_reader reader{code, line, target == "CSharp", macros};
+
+        reader.refuse();
     }
 }
 

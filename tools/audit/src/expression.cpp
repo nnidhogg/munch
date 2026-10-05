@@ -1,41 +1,14 @@
 #include "munch/tools/audit/expression.hpp"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <string>
 #include <string_view>
 
 namespace munch::tools::audit
 {
-std::string encoded(const char32_t scalar)
-{
-    std::string bytes;
-
-    if (scalar < 0x80)
-    {
-        bytes.push_back(static_cast<char>(scalar));
-    }
-    else if (scalar < 0x800)
-    {
-        bytes.push_back(static_cast<char>(0xC0 | (scalar >> 6U)));
-        bytes.push_back(static_cast<char>(0x80 | (scalar & 0x3FU)));
-    }
-    else if (scalar < 0x10000)
-    {
-        bytes.push_back(static_cast<char>(0xE0 | (scalar >> 12U)));
-        bytes.push_back(static_cast<char>(0x80 | ((scalar >> 6U) & 0x3FU)));
-        bytes.push_back(static_cast<char>(0x80 | (scalar & 0x3FU)));
-    }
-    else
-    {
-        bytes.push_back(static_cast<char>(0xF0 | (scalar >> 18U)));
-        bytes.push_back(static_cast<char>(0x80 | ((scalar >> 12U) & 0x3FU)));
-        bytes.push_back(static_cast<char>(0x80 | ((scalar >> 6U) & 0x3FU)));
-        bytes.push_back(static_cast<char>(0x80 | (scalar & 0x3FU)));
-    }
-
-    return bytes;
-}
-
 std::string quoted(const std::string_view bytes)
 {
     std::string text{'"'};
@@ -48,7 +21,7 @@ std::string quoted(const std::string_view bytes)
         {
             text += std::string{'\\', byte};
         }
-        else if (value < 0x20 || value > 0x7E)
+        else if (!is_printable(value))
         {
             text += bracket_member(value);
         }
@@ -61,11 +34,16 @@ std::string quoted(const std::string_view bytes)
     return text + '"';
 }
 
+std::string reference(const std::string_view name)
+{
+    return std::format("{{{}}}", name);
+}
+
 std::string bracket(const regex::Set& set)
 {
     std::string text{'['};
 
-    for (unsigned first{0}; first < 256; ++first)
+    for (unsigned first{0}; first < byte_values; ++first)
     {
         if (!set.symbols().contains(static_cast<char>(first)))
         {
@@ -74,27 +52,48 @@ std::string bracket(const regex::Set& set)
 
         auto last{first};
 
-        while (last + 1 < 256 && set.symbols().contains(static_cast<char>(last + 1)))
+        while (last + 1 < byte_values && set.symbols().contains(static_cast<char>(last + 1)))
         {
             ++last;
         }
 
-        text += bracket_member(static_cast<unsigned char>(first));
-
-        if (last > first + 1)
-        {
-            text += '-';
-        }
-
-        if (last > first)
-        {
-            text += bracket_member(static_cast<unsigned char>(last));
-        }
+        text += bracket_run(static_cast<unsigned char>(first), static_cast<unsigned char>(last));
 
         first = last;
     }
 
     return text + ']';
+}
+
+std::string bracket_run(const unsigned char first, const unsigned char last)
+{
+    auto text{bracket_member(first)};
+
+    if (last > first + 1)
+    {
+        text += '-';
+    }
+
+    if (last > first)
+    {
+        text += bracket_member(last);
+    }
+
+    return text;
+}
+
+std::string code_point_member(const char32_t first, const char32_t last)
+{
+    const auto low{static_cast<std::uint32_t>(first)};
+
+    if (first == last)
+    {
+        return std::format(R"(\u{{{:x}}})", low);
+    }
+
+    const auto high{static_cast<std::uint32_t>(last)};
+
+    return std::format(R"(\u{{{:x}}}-\u{{{:x}}})", low, high);
 }
 
 std::string bracket_member(const unsigned char byte)
@@ -117,7 +116,7 @@ std::string bracket_member(const unsigned char byte)
         break;
     }
 
-    if (byte < 0x20 || byte > 0x7E)
+    if (!is_printable(byte))
     {
         return std::format(R"(\x{:02x})", byte);
     }
@@ -133,6 +132,18 @@ std::string without_trailing_blanks(std::string text)
     }
 
     return text;
+}
+
+std::string_view without_delimiters(const std::string_view text) noexcept
+{
+    return text.substr(1, text.size() - 2);
+}
+
+std::size_t lines_before(const std::string_view text, const std::size_t offset) noexcept
+{
+    const auto before{text.substr(0, offset)};
+
+    return static_cast<std::size_t>(std::ranges::count(before, '\n'));
 }
 
 } // namespace munch::tools::audit

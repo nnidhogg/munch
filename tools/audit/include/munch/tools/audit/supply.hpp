@@ -17,8 +17,8 @@
 namespace munch::tools::audit
 {
 /**
- * @brief The gaps between consecutive anchors of one inventory on an input, in bytes: the distance from each anchor
- *        to the next, so the run before the first anchor and the run after the last are in none of them.
+ * @brief The gaps between consecutive anchors of one inventory on an input, in bytes: the distance from each anchor to
+ *        the next, so the run before the first anchor and the run after the last are in none of them.
  *
  * A percentile is the order statistic at floor(q n) of the n gaps ascending, capped at the last, the
  * certified-splitting paper's own convention, so the median of two gaps is the larger.
@@ -28,46 +28,45 @@ struct Gaps
     /**
      * @brief The median gap.
      */
-    std::size_t median;
+    std::size_t median{};
 
     /**
      * @brief The ninetieth percentile.
      */
-    std::size_t ninetieth;
+    std::size_t ninetieth{};
 
     /**
      * @brief The ninety-ninth percentile.
      */
-    std::size_t ninety_ninth;
+    std::size_t ninety_ninth{};
 
     /**
      * @brief The longest gap.
      */
-    std::size_t longest;
+    std::size_t longest{};
 };
 
 /**
- * @brief What one inventory of certificates supplies on an input: the anchors it finds there and the gaps between
- *        them.
+ * @brief What one inventory of certificates supplies on an input: the anchors it finds there and the gaps between them.
  */
 struct Anchors
 {
     /**
-     * @brief How many positions of the input are anchors: the distinct interior positions a certificate places a
-     *        token boundary at, a position before a certified byte or a window occurrence's origin, the input's two
-     *        ends left out since neither is a cut.
+     * @brief How many positions of the input are anchors: the distinct interior positions a certificate places a token
+     *        boundary at, a position before a certified byte or a window occurrence's origin, the input's two ends left
+     *        out since neither is a cut.
      */
-    std::size_t count;
+    std::size_t count{};
 
     /**
      * @brief 1024 times the count over the input's length, the paper's figure; zero on an empty input.
      */
-    double per_kibibyte;
+    double per_kibibyte{};
 
     /**
      * @brief The gaps between consecutive anchors, absent when fewer than two anchors leave none.
      */
-    std::optional<Gaps> gaps;
+    std::optional<Gaps> gaps{};
 };
 
 /**
@@ -90,30 +89,30 @@ struct Supply
     /**
      * @brief The input's length in bytes.
      */
-    std::size_t bytes;
+    std::size_t bytes{};
 
     /**
-     * @brief How many bytes the serial scan of the input tokenized, the input's length when it tokenizes completely
-     *        and the offset the scan stopped at otherwise, no token matching there or a zero-width one matching;
-     *        absent when the supply was measured over the report alone, with no token set to scan with.
+     * @brief How many bytes the serial scan of the input tokenized, the input's length when it tokenizes completely and
+     *        the offset the scan stopped at otherwise, no token matching there or a zero-width one matching; absent
+     *        when the supply was measured over the report alone, with no token set to scan with.
      */
-    std::optional<std::size_t> tokenized;
+    std::optional<std::size_t> tokenized{};
 
     /**
      * @brief The supply of the bytes certified exactly.
      */
-    Anchors exact;
+    Anchors exact{};
 
     /**
      * @brief The supply of the bytes certified once the discarded tokens are deleted.
      */
-    Anchors modulo;
+    Anchors modulo{};
 
     /**
      * @brief The supply of the exactly certified bytes together with the certified windows, the inventory a planner
      *        that falls back to windows cuts at; absent when the report found no window.
      */
-    std::optional<Anchors> windows;
+    std::optional<Anchors> windows{};
 };
 
 /**
@@ -152,8 +151,8 @@ struct Supply
 [[nodiscard]] std::string supply_json(const Supply& supply, std::string_view path);
 
 /**
- * @brief Renders a supply as the report's own section, a heading naming the input, a row saying how far the serial
- *        scan went when the input was scanned, and one row per inventory.
+ * @brief Renders a supply as the report's own section, a heading naming the input, a row saying how far the serial scan
+ *        went when the input was scanned, and one row per inventory.
  * @param supply The supply.
  * @param path The input's name, as given.
  * @return The section, a blank line before its heading and a newline after every row.

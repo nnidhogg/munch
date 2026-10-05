@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "munch/tools/audit/expression.hpp"
+
 /**
  * @brief The characters an ANTLR set or literal admits, Alphabet, and what a match can begin with, Beginning: a range
  *        folded as ANTLR folds one under `caseInsensitive`, admit() and spanning(), a set's complement over the
@@ -34,7 +36,7 @@ constexpr std::string_view unfoldable{
 /**
  * @brief The ASCII bytes, one bit each.
  */
-using Ascii_t = std::bitset<128>;
+using Ascii_t = std::bitset<last_ascii + 1>;
 
 /**
  * @brief One inclusive range of scalars.
@@ -44,12 +46,12 @@ struct Scalar_range
     /**
      * @brief The first scalar.
      */
-    char32_t first;
+    char32_t first{};
 
     /**
      * @brief The last scalar.
      */
-    char32_t last;
+    char32_t last{};
 };
 
 /**
@@ -61,12 +63,12 @@ struct Alphabet
     /**
      * @brief The ASCII bytes admitted.
      */
-    Ascii_t ascii;
+    Ascii_t ascii{};
 
     /**
      * @brief The scalars from U+0080 up admitted, as ranges in any order.
      */
-    std::vector<Scalar_range> beyond;
+    std::vector<Scalar_range> beyond{};
 };
 
 /**
@@ -76,74 +78,74 @@ struct Alphabet
 struct Beginning
 {
     /**
-     * @brief The ASCII bytes a match can begin with.
-     */
-    Ascii_t ascii;
-
-    /**
-     * @brief Whether a match can begin with a scalar beyond ASCII.
-     */
-    bool beyond;
-
-    /**
      * @brief Adds the characters another can begin with.
      * @param other The other.
      */
     void join(const Beginning& other) noexcept;
 
     /**
-     * @brief Whether one character may begin both this and another, two scalars beyond ASCII taken to be one.
+     * @brief Returns whether one character may begin both this and another, two scalars beyond ASCII taken to be one.
      * @param other The other.
      * @return True when one may.
      */
     [[nodiscard]] bool overlaps(const Beginning& other) const noexcept;
+
+    /**
+     * @brief The ASCII bytes a match can begin with.
+     */
+    Ascii_t ascii{};
+
+    /**
+     * @brief Whether a match can begin with a scalar beyond ASCII.
+     */
+    bool beyond{};
 };
 
 /**
- * @brief Whether bytes hold one beyond ASCII.
+ * @brief Returns whether bytes hold one beyond ASCII.
  * @param bytes The bytes.
  * @return True when one is.
  */
 [[nodiscard]] bool holds_beyond_ascii(std::string_view bytes);
 
 /**
- * @brief The one scalar a literal's UTF-8 bytes encode, when they encode exactly one.
+ * @brief Returns the one scalar a literal's UTF-8 bytes encode, when they encode exactly one.
  * @param bytes The bytes.
  * @return The scalar, or std::nullopt for none or several.
  */
 [[nodiscard]] std::optional<char32_t> decoded(std::string_view bytes);
 
 /**
- * @brief An alphabet as one step of the parser's syntax: a bracket over bytes when it stays within ASCII, else a
- *        bracket over scalars, every member a code point escape, which is how the parser reads one.
+ * @brief Returns an alphabet as one step of the parser's syntax: a bracket over bytes when it stays within ASCII, else
+ *        a bracket over scalars, every member a code point escape, which is how the parser reads one.
  * @param alphabet The alphabet.
  * @return The bracket.
  */
 [[nodiscard]] std::string step(const Alphabet& alphabet);
 
 /**
- * @brief A set of ASCII bytes as a bracket, runs of three or more as ranges.
+ * @brief Returns a set of ASCII bytes as a bracket, runs of three or more as ranges.
  * @param ascii The bytes.
  * @return The bracket text.
  */
 [[nodiscard]] std::string bracket(const Ascii_t& ascii);
 
 /**
- * @brief Every scalar an alphabet does not admit.
+ * @brief Returns every scalar an alphabet does not admit.
  * @param alphabet The alphabet.
  * @return Its complement over the scalars.
  */
 [[nodiscard]] Alphabet complement(const Alphabet& alphabet);
 
 /**
- * @brief The bytes of a literal with every ASCII letter in both cases, one bracket per byte.
+ * @brief Returns the bytes of a literal with every ASCII letter in both cases, one bracket per byte.
  * @param bytes The bytes.
  * @return The expression.
  */
 [[nodiscard]] std::string caseless(std::string_view bytes);
 
 /**
- * @brief The characters of a range, `'a'..'z'`, as an alphabet.
+ * @brief Returns the characters of a range, `'a'..'z'`, as an alphabet.
  * @param low The first character.
  * @param high The last, no lower than the first.
  * @param case_insensitive Whether the range folds as ANTLR folds one under `caseInsensitive`.

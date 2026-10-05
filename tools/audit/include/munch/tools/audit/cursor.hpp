@@ -21,14 +21,21 @@ namespace munch::tools::audit
  */
 enum class Line_comment_end : std::uint8_t
 {
+    /**
+     * @brief At the newline, as C reads a `//` comment.
+     */
     newline,
-    newline_or_return,
+
+    /**
+     * @brief At a newline or a carriage return, as ANTLR's lexer reads one.
+     */
+    newline_or_return
 };
 
 /**
- * @brief A cursor over a span of a file's text: the reading primitives every reader of a generator's file shares,
- *        one byte looked at or taken, a prefix tested, a byte accepted or required, the line the cursor is on, and
- *        a refusal at that line.
+ * @brief A cursor over a span of a file's text: the reading primitives every reader of a generator's file shares, one
+ *        byte looked at or taken, a prefix tested, a byte accepted or required, the line the cursor is on, and a
+ *        refusal at that line.
  *
  * A reader derives from it and adds the grammar it reads; the cursor holds the text as a view and two offsets, the one
  * under it and the one its span ends at, and nothing else. A refusal names the line of the byte under the cursor, or
@@ -64,7 +71,7 @@ public:
     char next(std::string_view what);
 
     /**
-     * @brief Whether the span has ended.
+     * @brief Returns whether the span has ended.
      * @return True at or past its end.
      */
     [[nodiscard]] bool done() const noexcept;
@@ -91,13 +98,13 @@ public:
     [[nodiscard]] bool accept(char byte) noexcept;
 
     /**
-     * @brief The offset of the byte under the cursor.
+     * @brief Returns the offset of the byte under the cursor.
      * @return The offset.
      */
     [[nodiscard]] std::size_t offset() const noexcept;
 
     /**
-     * @brief The byte under the cursor, or nothing once the span has ended.
+     * @brief Returns the byte under the cursor, or nothing once the span has ended.
      * @return The byte.
      */
     [[nodiscard]] std::optional<char> peek() const noexcept;
@@ -110,20 +117,20 @@ public:
     [[noreturn]] void fail(const std::string& message) const;
 
     /**
-     * @brief The line the cursor is on, counted from one; the last line once the text has ended.
+     * @brief Returns the line the cursor is on, counted from one; the last line once the text has ended.
      * @return The line.
      */
     [[nodiscard]] std::size_t line() const noexcept;
 
     /**
-     * @brief Whether the text under the cursor begins with the given characters, within the span.
+     * @brief Returns whether the text under the cursor begins with the given characters, within the span.
      * @param prefix The characters.
      * @return True when it does.
      */
     [[nodiscard]] bool at(std::string_view prefix) const noexcept;
 
     /**
-     * @brief The line an offset is on, counted from one.
+     * @brief Returns the line an offset is on, counted from one.
      * @param offset The offset.
      * @return The line.
      */

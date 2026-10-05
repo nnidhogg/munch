@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+#include "munch/tools/audit/antlr_commands.hpp"
 #include "munch/tools/audit/antlr_cursor.hpp"
 #include "munch/tools/audit/antlr_members.hpp"
 #include "munch/tools/audit/antlr_rule.hpp"
@@ -56,28 +57,28 @@ private:
         /**
          * @brief Whether the grammar is a lexer grammar, which alone may declare modes and channels.
          */
-        bool lexer_only;
+        bool lexer_only{};
 
         /**
          * @brief Whether the grammar's `caseInsensitive` option is set.
          */
-        bool case_insensitive;
+        bool case_insensitive{};
 
         /**
          * @brief The mode the rules read next are in, empty for the default mode.
          */
-        std::string mode;
+        std::string mode{};
 
         /**
          * @brief The lexer's members actions, read once the grammar's options are known, since the option naming the
          *        target language may stand after them and decides what their code is written in.
          */
-        std::vector<Members_action> members;
+        std::vector<Members_action> members{};
 
         /**
          * @brief The code of every named action, whose macros the members may use.
          */
-        std::string actions_code;
+        std::string actions_code{};
     };
 
     /**
@@ -88,12 +89,12 @@ private:
         /**
          * @brief The name.
          */
-        std::string name;
+        std::string name{};
 
         /**
          * @brief Whether `fragment` stands before it.
          */
-        bool fragment;
+        bool fragment{};
     };
 
     /**
@@ -137,7 +138,7 @@ private:
     /**
      * @brief Reads the `options { name = value; ... }` block after its keyword, recording the options.
      * @param options Where the options go.
-     * @return Whether `caseInsensitive` was set among them.
+     * @return The value `caseInsensitive` was set to, or std::nullopt where no `true` or `false` set it.
      * @throws Spec_error If the block is malformed: an option with no name, no `=`, no value or no `;`.
      */
     [[nodiscard]] std::optional<bool> options_block(std::vector<std::string>& options);
@@ -198,6 +199,14 @@ private:
     [[nodiscard]] Rule_name rule_name();
 
     /**
+     * @brief Reads a lexer rule's `options { ... }` block from its keyword, which sets nothing but `caseInsensitive`.
+     * @param case_insensitive Whether the grammar's option is set, which holds where the rule's block does not set it.
+     * @return Whether the option is in force for the rule.
+     * @throws Spec_error As options_block() refuses the block.
+     */
+    [[nodiscard]] bool rule_options(bool case_insensitive);
+
+    /**
      * @brief Records a lexer rule's definition: the expression a reference to it expands to, the line it opens on and
      *        the formula of whether it matches the empty string.
      * @param spec The specification being filled, whose definitions gain the rule's.
@@ -211,6 +220,20 @@ private:
     [[nodiscard]] std::string define(
             Lexer_spec& spec, const std::string& name, const std::vector<Alternative>& alternatives,
             std::size_t opened);
+
+    /**
+     * @brief Records a lexer rule that is no fragment as one of the scanner's rules, its commands applied to its token.
+     * @param spec The specification being filled, whose rules gain the rule.
+     * @param mode The mode the rule is in, empty for the default mode.
+     * @param alternatives The rule's outermost alternatives.
+     * @param whole The expression the rule's token matches.
+     * @param rule The rule's name, line and whether it has a token type of its own.
+     * @param aliased Whether the rule spells a parser literal ANTLR maps onto it.
+     * @throws Spec_error As apply_commands() refuses the commands.
+     */
+    void record_rule(
+            Lexer_spec& spec, const std::string& mode, const std::vector<Alternative>& alternatives,
+            const std::string& whole, const Commanded_rule& rule, bool aliased);
 
     /**
      * @brief Skips a parser rule from its name through its `;` and the `catch` and `finally` blocks after it,

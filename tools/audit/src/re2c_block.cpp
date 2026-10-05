@@ -18,22 +18,111 @@ namespace munch::tools::audit
 {
 namespace
 {
-// Implements re2c_block.hpp: how a block's default rules are settled once it is read is private to this unit.
+/**
+ * @brief What a configuration opens with.
+ */
+constexpr std::string_view configuration_prefix{"re2c:"};
 
 /**
- * @brief Whether a default rule stands in every condition: it names none, or names `*`.
+ * @brief What a use directive opens with.
+ */
+constexpr std::string_view use_prefix{"!use:"};
+
+/**
+ * @brief What an include directive opens with.
+ */
+constexpr std::string_view include_prefix{"!include"};
+
+/**
+ * @brief Returns the indices of the default rules, `*`, from an index of the specification's rules on.
+ * @param spec The specification.
+ * @param first The index the rules looked at begin at.
+ * @return The indices, ascending.
+ */
+[[nodiscard]] std::vector<std::size_t> default_rules_from(const Lexer_spec& spec, const std::size_t first)
+{
+    std::vector<std::size_t> defaults{};
+
+    for (auto index{first}; index < spec.rules.size(); ++index)
+    {
+        if (spec.rules[index].pattern == default_rule)
+        {
+            defaults.push_back(index);
+        }
+    }
+
+    return defaults;
+}
+
+/**
+ * @brief Returns where a configuration ends: at its first `;` outside a quoted string, which may hold a `;` of its own,
+ *        as a YYFILL definition usually does.
+ * @param text The text.
+ * @param from The offset of the configuration's first byte.
+ * @param end The offset the text is read up to.
+ * @return The offset of the `;`, or one at or past the end when none stands.
+ */
+[[nodiscard]] std::size_t configuration_end(const std::string_view text, const std::size_t from, const std::size_t end)
+{
+    auto scan{from};
+
+    while (scan < end && text[scan] != ';')
+    {
+        if (text[scan] == '"' || text[scan] == '\'')
+        {
+            const auto quote{text[scan]};
+
+            for (++scan; scan < end && text[scan] != quote; ++scan)
+            {
+                scan += text[scan] == '\\' ? 1 : 0;
+            }
+        }
+
+        ++scan;
+    }
+
+    return scan;
+}
+
+/**
+ * @brief Appends a name to a list unless the list holds it already.
+ * @param names The list.
+ * @param name The name.
+ */
+void add_unique(std::vector<std::string>& names, const std::string& name)
+{
+    if (!std::ranges::contains(names, name))
+    {
+        names.push_back(name);
+    }
+}
+
+/**
+ * @brief Returns whether a default rule stands in every condition: it names none, or names `*`.
  * @param rule The default rule.
  * @return True when it does.
  */
 [[nodiscard]] bool in_every_condition(const Lexer_spec::Rule& rule)
 {
-    return rule.conditions.empty() || std::ranges::contains(rule.conditions, "*");
+    return rule.conditions.empty() || std::ranges::contains(rule.conditions, every_condition);
 }
 
 /**
- * @brief Whether two default rules stand in one condition to re2c: a default rule in every condition, `<*> *` or one
- *        naming no condition, and one naming conditions are rules of different conditions, so they stand together, and
- *        two naming conditions share one when a name is in both.
+ * @brief Returns the test of whether a rule stands in a condition, by the condition's name.
+ * @param rule The rule, which outlives the test.
+ * @return The test, true for a condition the rule names.
+ */
+[[nodiscard]] auto in_conditions_of(const Lexer_spec::Rule& rule)
+{
+    const auto in_conditions{[&rule](const std::string& name) { return std::ranges::contains(rule.conditions, name); }};
+
+    return in_conditions;
+}
+
+/**
+ * @brief Returns whether two default rules stand in one condition to re2c: a default rule in every condition, `<*> *`
+ *        or one naming no condition, and one naming conditions are rules of different conditions, so they stand
+ *        together, and two naming conditions share one when a name is in both.
  * @param one A default rule.
  * @param other Another.
  * @return True when they share a condition.
@@ -45,9 +134,9 @@ namespace
         return in_every_condition(one) && in_every_condition(other);
     }
 
-    return std::ranges::any_of(one.conditions, [&other](const std::string& name) {
-        return std::ranges::contains(other.conditions, name);
-    });
+    const auto in_other{in_conditions_of(other)};
+
+    return std::ranges::any_of(one.conditions, in_other);
 }
 
 /**
@@ -60,26 +149,28 @@ void refuse_doubled_defaults(const Lexer_spec& spec, const std::vector<std::size
 {
     for (auto second{own.begin()}; second != own.end(); ++second)
     {
-        const auto first{std::ranges::find_if(own.begin(), second, [&spec, second](const std::size_t index) {
+        const auto shares{[&spec, second](const std::size_t index) {
             return share_a_condition(spec.rules[index], spec.rules[*second]);
-        })};
+        }};
+
+        const auto first{std::ranges::find_if(own.begin(), second, shares)};
 
         if (first != second)
         {
-            throw Spec_error{
-                    std::format(
-                            "the default rule for this condition is already defined at line {}, which re2c refuses",
-                            spec.rules[*first].line),
-                    spec.rules[*second].line};
+            const auto message{std::format(
+                    "the default rule for this condition is already defined at line {}, which re2c refuses",
+                    spec.rules[*first].line)};
+
+            throw Spec_error{message, spec.rules[*second].line};
         }
     }
 }
 
 /**
- * @brief Settles a block's default rules as re2c 3.1 settles them once the block is read: a second default rule of
- *        the block's own for a condition it already gave one is refused, as re2c refuses it, and a default rule a
- *        `!use:` directive brought in yields to the block's own in every condition the block's own stands in, since
- *        the using block's default rule overrides the used block's wherever the two stand.
+ * @brief Settles a block's default rules as re2c 3.1 settles them once the block is read: a second default rule of the
+ *        block's own for a condition it already gave one is refused, as re2c refuses it, and a default rule a `!use:`
+ *        directive brought in yields to the block's own in every condition the block's own stands in, since the using
+ *        block's default rule overrides the used block's wherever the two stand.
  *
  * A default rule in every condition, `<*> *` or one naming no condition, and one naming conditions are rules of
  * different conditions to re2c, so the two stand together, and a used one of either kind yields only to an own one of
@@ -92,26 +183,16 @@ void refuse_doubled_defaults(const Lexer_spec& spec, const std::vector<std::size
  */
 void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vector<std::size_t>& used)
 {
-    std::vector<std::size_t> own;
+    const auto is_used{[&used](const std::size_t index) { return std::ranges::contains(used, index); }};
 
-    for (auto index{first}; index < spec.rules.size(); ++index)
-    {
-        if (spec.rules[index].pattern == "*" && !std::ranges::contains(used, index))
-        {
-            own.push_back(index);
-        }
-    }
+    auto own{default_rules_from(spec, first)};
+
+    std::erase_if(own, is_used);
 
     refuse_doubled_defaults(spec, own);
 
-    // A used rule loses the conditions an own rule of its kind stands in, and goes when none is left; the indices
-    // ascend as the directives were read, so the rules that go are erased from the back.
-    std::vector<std::size_t> yielded;
-
-    for (const auto index : used)
-    {
-        auto& rule{spec.rules[index]};
-
+    // Drops from a used rule naming conditions those an own one takes; it yields once none is left.
+    const auto yields_to_own{[&spec, &own](Lexer_spec::Rule& rule) {
         const auto everywhere{in_every_condition(rule)};
 
         auto yields{false};
@@ -127,27 +208,35 @@ void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vecto
 
             if (everywhere)
             {
-                yields = true;
-
-                break;
+                return true;
             }
 
-            std::erase_if(rule.conditions, [&other](const std::string& name) {
-                return std::ranges::contains(other.conditions, name);
-            });
+            const auto taken{in_conditions_of(other)};
+
+            std::erase_if(rule.conditions, taken);
 
             yields = rule.conditions.empty();
         }
 
-        if (yields)
+        return yields;
+    }};
+
+    std::vector<std::size_t> yielded{};
+
+    for (const auto index : used)
+    {
+        if (yields_to_own(spec.rules[index]))
         {
             yielded.push_back(index);
         }
     }
 
+    // The indices ascend as the directives were read, so the rules that go are erased from the back.
     for (const auto index : yielded | std::views::reverse)
     {
-        spec.rules.erase(spec.rules.begin() + static_cast<std::ptrdiff_t>(index));
+        const auto position{spec.rules.begin() + static_cast<std::ptrdiff_t>(index)};
+
+        spec.rules.erase(position);
     }
 }
 
@@ -184,53 +273,54 @@ void Block_reader::use(
     // The used block's actions are this block's to refuse, under the names this block's configurations leave.
     actions_.insert(actions_.end(), used.actions_.begin(), used.actions_.end());
 
-    for (auto index{before}; index < spec.rules.size(); ++index)
-    {
-        if (spec.rules[index].pattern == "*")
-        {
-            used_defaults_.push_back(index);
-        }
-    }
+    const auto brought{default_rules_from(spec, before)};
+
+    used_defaults_.insert(used_defaults_.end(), brought.begin(), brought.end());
 
     kinds_.merge(used.kinds_);
 
-    deferred_ = deferred_ ? deferred_ : used.deferred_;
+    if (!deferred_)
+    {
+        deferred_ = used.deferred_;
+    }
 
     configured_ = used.configured();
 
-    sites_.insert(sites_.end(), used.sites().begin(), used.sites().end());
+    const auto& used_sites{used.sites()};
+
+    sites_.insert(sites_.end(), used_sites.begin(), used_sites.end());
 }
 
 std::size_t Block_reader::read(Lexer_spec& spec, const Library_t& library, const Returning_t& returning)
 {
     returning_ = returning;
 
-    // The rules already there are the using block's when this one is read through a `!use:` directive; the block's
-    // own begin here, and its default rules are settled among these alone.
+    // The rules already there are the using block's when this one is read through a `!use:` directive; the block's own
+    // begin here, and its default rules are settled among these alone.
     const auto first{spec.rules.size()};
 
-    for (skip_blanks(); !at("*/"); skip_blanks())
+    for (skip_blanks(); !at(comment_closer); skip_blanks())
     {
         if (!peek())
         {
             fail("the block never closes");
         }
 
-        if (at("re2c:"))
+        if (at(configuration_prefix))
         {
             configuration(spec);
 
             continue;
         }
 
-        if (at("!use:"))
+        if (at(use_prefix))
         {
             use_directive(spec, library);
 
             continue;
         }
 
-        if (at("!include"))
+        if (at(include_prefix))
         {
             fail("the block includes a file, which is not here to read");
         }
@@ -240,50 +330,40 @@ std::size_t Block_reader::read(Lexer_spec& spec, const Library_t& library, const
 
     settle_defaults(spec, first, used_defaults_);
 
-    // An imported default rule this block's own default overrides is gone from the scanner, and its action with it:
-    // re2c emits no code for it, so what that code moves moves nothing.
-    std::erase_if(actions_, [&spec](const auto& entry) {
+    // An imported default rule the block's own default overrides is gone, and re2c emits no code for its action.
+    const auto dropped{[&spec](const Action& entry) {
         const auto& [code, line, what, of_rule]{entry};
 
-        return of_rule && std::ranges::none_of(spec.rules, [&line, &code](const auto& rule) {
-                   return rule.line == line && rule.action == code;
-               });
-    });
+        const auto owns{
+                [&line, &code](const Lexer_spec::Rule& rule) { return rule.line == line && rule.action == code; }};
 
-    // A block read through a `!use:` directive is compiled where it is used, under the using block's
-    // configurations, which may stand after the directive: its actions wait for that block to finish.
+        return of_rule && std::ranges::none_of(spec.rules, owns);
+    }};
+
+    std::erase_if(actions_, dropped);
+
+    // A block read through a `!use:` directive is compiled where it is used, under the using block's configurations,
+    // which may stand after the directive: its actions wait for that block to finish.
     if (!judged_later_)
     {
         refuse_actions();
     }
 
-    return at_ + 2;
+    return at_ + comment_closer.size();
 }
 
 void Block_reader::configuration(Lexer_spec& spec)
 {
-    // The value may be a quoted string holding a ';' of its own, as a YYFILL definition usually does.
-    auto end{at_};
-
-    while (end < end_ && text_[end] != ';')
-    {
-        if (text_[end] == '"' || text_[end] == '\'')
-        {
-            for (const auto quote{text_[end++]}; end < end_ && text_[end] != quote; ++end)
-            {
-                end += text_[end] == '\\' ? 1 : 0;
-            }
-        }
-
-        ++end;
-    }
+    const auto end{configuration_end(text_, at_, end_)};
 
     if (end >= end_)
     {
         fail("a configuration is never closed with ';'");
     }
 
-    std::string option{text_.substr(at_ + 5, end - at_ - 5)};
+    const auto value_at{at_ + configuration_prefix.size()};
+
+    std::string option{text_.substr(value_at, end - value_at)};
 
     // Blanks around the '=' say nothing; one spelling per configuration keeps the options comparable.
     std::erase_if(option, is_blank);
@@ -297,9 +377,9 @@ void Block_reader::configuration(Lexer_spec& spec)
 
 void Block_reader::use_directive(Lexer_spec& spec, const Library_t& library)
 {
-    at_ += 5;
+    at_ += use_prefix.size();
 
-    std::string name;
+    std::string name{};
 
     while (peek() && is_name_byte(*peek()))
     {
@@ -314,15 +394,17 @@ void Block_reader::use_directive(Lexer_spec& spec, const Library_t& library)
 
     if (found == library.end())
     {
-        fail("the used block '" + name + "' is not above this one");
+        fail(std::format("the used block '{}' is not above this one", name));
     }
 
-    use(found->second, spec, library, returning_);
+    const auto& [used_name, begin]{*found};
+
+    use(begin, spec, library, returning_);
 }
 
 void Block_reader::item(Lexer_spec& spec)
 {
-    const auto line{this->line()};
+    const auto rule_line{line()};
 
     const auto listed{peek() == '<'};
 
@@ -361,12 +443,12 @@ void Block_reader::item(Lexer_spec& spec)
 
     if (entry || !named)
     {
-        setup_action(std::move(code), line, entry);
+        setup_action(std::move(code), rule_line, entry);
 
         return;
     }
 
-    rule(spec, *std::move(named), std::move(pattern), std::move(expression), std::move(code), line);
+    rule(spec, *std::move(named), std::move(pattern), std::move(expression), std::move(code), rule_line);
 }
 
 std::optional<std::vector<std::string>> Block_reader::conditions()
@@ -376,9 +458,9 @@ std::optional<std::vector<std::string>> Block_reader::conditions()
 
     const auto setup{mark != std::string_view::npos && text_[mark] == '!'};
 
-    std::vector<std::string> names;
+    std::vector<std::string> names{};
 
-    std::string name;
+    std::string name{};
 
     for (;;)
     {
@@ -419,13 +501,17 @@ bool Block_reader::take_flex_definition(Lexer_spec& spec)
 
     const auto rest{text_.substr(at_)};
 
-    const auto name_end{at_ + static_cast<std::size_t>(std::ranges::find_if_not(rest, is_name_byte) - rest.begin())};
+    const auto past_name{std::ranges::find_if_not(rest, is_name_byte)};
+
+    const auto name_end{at_ + static_cast<std::size_t>(past_name - rest.begin())};
 
     const std::string name{text_.substr(at_, name_end - at_)};
 
     const auto blank_after{name_end < text_.size() && (text_[name_end] == ' ' || text_[name_end] == '\t')};
 
-    const auto after_blanks{std::min(text_.find_first_not_of(" \t", name_end), text_.size())};
+    const auto other{text_.find_first_not_of(" \t", name_end)};
+
+    const auto after_blanks{std::min(other, text_.size())};
 
     const auto opens_definition{blank_after && after_blanks < text_.size() && text_[after_blanks] != '{'};
 
@@ -434,7 +520,9 @@ bool Block_reader::take_flex_definition(Lexer_spec& spec)
         return false;
     }
 
-    const auto line_end{std::min(text_.find('\n', at_), text_.size())};
+    const auto newline{text_.find('\n', at_)};
+
+    const auto line_end{std::min(newline, text_.size())};
 
     // The body is read under the flex syntax, whose literals bare names are; the flag stays if it is one.
     const auto flex_before{std::exchange(reading_.flex_syntax, true)};
@@ -460,11 +548,17 @@ bool Block_reader::take_flex_definition(Lexer_spec& spec)
 
     if (!body.empty())
     {
-        fail("under the flex syntax '" + name +
-             "' followed by a blank opens a definition, which ends with its line, so re2c answers what follows the "
-             "regex on this line with a syntax error" +
-             (flex_before ? std::string{} :
-                            ", and without that syntax '" + name + "' is a symbol no definition binds"));
+        std::string unbound{};
+
+        if (!flex_before)
+        {
+            unbound = std::format(", and without that syntax '{}' is a symbol no definition binds", name);
+        }
+
+        fail(std::format(
+                "under the flex syntax '{}' followed by a blank opens a definition, which ends with its line, so re2c "
+                "answers what follows the regex on this line with a syntax error{}",
+                name, unbound));
     }
 
     reading_.flex_syntax = flex_before;
@@ -487,7 +581,7 @@ Regex_text Block_reader::regex_text(const regex::Definitions_t& definitions, con
 
 bool Block_reader::take_definition(const std::string& name, Lexer_spec& spec)
 {
-    if (peek() != '=' || at("=>"))
+    if (peek() != '=' || at(transition_opener))
     {
         return false;
     }
@@ -500,12 +594,12 @@ bool Block_reader::take_definition(const std::string& name, Lexer_spec& spec)
 
     if (body.empty())
     {
-        fail("the definition '" + name + "' has no regex");
+        fail(std::format("the definition '{}' has no regex", name));
     }
 
     if (peek() != ';')
     {
-        fail("expected ';' to close the definition '" + name + "'");
+        fail(std::format("expected ';' to close the definition '{}'", name));
     }
 
     ++at_;
@@ -521,11 +615,11 @@ bool Block_reader::take_definition(const std::string& name, Lexer_spec& spec)
 
 std::string Block_reader::action()
 {
-    std::string code;
+    std::string code{};
 
     // A shortcut rule, `:=> condition`, has no code at all: it ends with the condition's name, so the line ends it and
     // the lines after it are items of their own.
-    if (at(":=>"))
+    if (at(shortcut_opener))
     {
         while (peek() && *peek() != ';' && *peek() != '\n')
         {
@@ -542,9 +636,9 @@ std::string Block_reader::action()
 
     // A transition names a condition first and an action of either kind follows it; it is kept as text, since which
     // condition follows says nothing about the token.
-    if (at("=>"))
+    if (at(transition_opener))
     {
-        while (peek() && *peek() != '{' && !at(":=") && *peek() != ';' && *peek() != '\n')
+        while (peek() && *peek() != '{' && !at(line_action_opener) && *peek() != ';' && *peek() != '\n')
         {
             code.push_back(next("the transition"));
         }
@@ -557,10 +651,9 @@ std::string Block_reader::action()
         }
     }
 
-    if (at(":="))
+    if (at(line_action_opener))
     {
-        // A `:=` action ends on a newline followed by a non-whitespace character, so a line beginning with a blank,
-        // or an empty line, continues it; the block's own close, at the line's start, ends it like any other.
+        // A line beginning with a blank, or an empty line, continues a `:=` action; the block's close ends it too.
         const auto ends{[this] {
             const auto after{at_ + 1};
 
@@ -599,9 +692,12 @@ void Block_reader::setup_action(std::string code, const std::size_t line, const 
     // One whose code returns would return in its condition before any rule's own action, which no token set is.
     if (returned(code, returning_))
     {
-        fail(entry ? "the entry rule <> returns, so the scanner returns in its first condition before any rule is "
-                     "tried" :
-                     "a setup rule returns, so every rule of its conditions returns it before its own action");
+        const std::string_view refusal{
+                entry ? "the entry rule <> returns, so the scanner returns in its first condition before any rule is "
+                        "tried" :
+                        "a setup rule returns, so every rule of its conditions returns it before its own action"};
+
+        fail(std::string{refusal});
     }
 
     // The check waits for the block's last configuration, which names the pointers.
@@ -618,21 +714,27 @@ void Block_reader::rule(
 {
     kinds_.note(named, pattern, line);
 
+    static constexpr std::string_view double_quoted_empty{R"("")"};
+
+    static constexpr std::string_view single_quoted_empty{"''"};
+
     // The end rule is no token, and neither is the empty rule `""`, with or without trailing context, which consumes
     // nothing where nothing else matches.
-    const auto empty{
-            (pattern.starts_with(R"("")") || pattern.starts_with("''")) &&
-            (pattern.size() == 2 || pattern.find_first_not_of(' ', 2) == pattern.find('/', 2))};
+    const auto past{double_quoted_empty.size()};
 
-    if (pattern == "$" || empty)
+    const auto empty{
+            (pattern.starts_with(double_quoted_empty) || pattern.starts_with(single_quoted_empty)) &&
+            (pattern.size() == past || pattern.find_first_not_of(' ', past) == pattern.find('/', past))};
+
+    if (pattern == end_rule || empty)
     {
         return;
     }
 
     // The default rule `*` matches one code unit, one byte under every encoding the reading follows.
-    if (pattern == "*")
+    if (pattern == default_rule)
     {
-        expression = R"([\x00-\xff])";
+        expression = any_byte;
     }
 
     actions_.push_back({.code = code, .line = line, .what = "the action ", .of_rule = true});
@@ -702,36 +804,37 @@ void Rule_kinds::note(const std::vector<std::string>& named, const std::string& 
     {
         conditioned_ = true;
 
-        for (const auto& name : named)
+        const auto own_condition{[](const std::string& name) { return name != every_condition; }};
+
+        for (const auto& name : named | std::views::filter(own_condition))
         {
-            if (name != "*" && !std::ranges::contains(named_, name))
-            {
-                named_.push_back(name);
-            }
+            add_unique(named_, name);
         }
     }
-    else if (pattern == "$")
+    else if (pattern == end_rule && !plain_end_)
     {
-        plain_end_ = plain_end_ ? plain_end_ : std::optional{line};
+        plain_end_ = line;
     }
-    else
+    else if (pattern != end_rule && !plain_)
     {
-        plain_ = plain_ ? plain_ : std::optional{line};
+        plain_ = line;
     }
 
     // Which names the rule stands in, for re2c's own checks of the end rule: a rule naming none stands in the empty
     // name, and `<*>` is a name of its own here, since re2c counts an end rule under `<*>` against the other `<*>`
     // rules and not against each condition's.
-    for (const auto& name : named.empty() ? std::vector<std::string>{""} : named)
+    const auto names{named.empty() ? std::vector<std::string>{""} : named};
+
+    for (const auto& name : names)
     {
-        if (pattern == "$")
+        if (pattern == end_rule)
         {
             ends_.push_back({.name = name, .line = line});
+
+            continue;
         }
-        else if (!std::ranges::contains(ruled_, name))
-        {
-            ruled_.push_back(name);
-        }
+
+        add_unique(ruled_, name);
     }
 }
 
@@ -743,25 +846,25 @@ void Rule_kinds::merge(const Rule_kinds& used)
 
     for (const auto& name : used.named_)
     {
-        if (!std::ranges::contains(named_, name))
-        {
-            named_.push_back(name);
-        }
+        add_unique(named_, name);
     }
 
     for (const auto& name : used.ruled_)
     {
-        if (!std::ranges::contains(ruled_, name))
-        {
-            ruled_.push_back(name);
-        }
+        add_unique(ruled_, name);
     }
 
     ends_.insert(ends_.end(), used.ends_.begin(), used.ends_.end());
 
-    plain_ = plain_ ? plain_ : used.plain_;
+    if (!plain_)
+    {
+        plain_ = used.plain_;
+    }
 
-    plain_end_ = plain_end_ ? plain_end_ : used.plain_end_;
+    if (!plain_end_)
+    {
+        plain_end_ = used.plain_end_;
+    }
 }
 
 void Rule_kinds::refuse_mixed() const
@@ -792,33 +895,43 @@ void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const
 
     for (const auto& [name, at] : ends_)
     {
-        if (!std::ranges::contains(ruled_, name))
+        if (std::ranges::contains(ruled_, name))
         {
-            throw Spec_error{
-                    name.empty() ? "EOF rule without other rules doesn't make sense" :
-                                   "EOF rule in condition '" + name + "' without other rules doesn't make sense",
-                    at};
+            continue;
         }
+
+        if (name.empty())
+        {
+            throw Spec_error{"EOF rule without other rules doesn't make sense", at};
+        }
+
+        const auto message{std::format("EOF rule in condition '{}' without other rules doesn't make sense", name)};
+
+        throw Spec_error{message, at};
     }
 
-    auto eof_set{false};
+    static constexpr std::string_view eof_key{"eof="};
 
-    for (const auto& option : options)
-    {
-        if (option.starts_with("eof="))
-        {
-            eof_set = option.substr(4) != "-1";
-        }
-    }
+    const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
+
+    // The last setting stands.
+    const auto last_eof{std::ranges::find_last_if(options, sets_eof)};
+
+    const auto eof_set{!last_eof.empty() && last_eof.front().substr(eof_key.size()) != "-1"};
 
     if (!eof_set && !ends_.empty())
     {
         const auto& [name, at]{ends_.front()};
 
-        throw Spec_error{
-                name.empty() ? "$ rule found, but 're2c:eof' configuration is not set" :
-                               "in condition '" + name + "' $ rule found, but 're2c:eof' configuration is not set",
-                at};
+        if (name.empty())
+        {
+            throw Spec_error{"$ rule found, but 're2c:eof' configuration is not set", at};
+        }
+
+        const auto message{
+                std::format("in condition '{}' $ rule found, but 're2c:eof' configuration is not set", name)};
+
+        throw Spec_error{message, at};
     }
 
     if (!eof_set)
@@ -827,7 +940,9 @@ void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const
     }
 
     const auto ended{[this](const std::string& name) {
-        return std::ranges::any_of(ends_, [&name](const End_rule& end) { return end.name == name || end.name == "*"; });
+        const auto stands_in{[&name](const End_rule& end) { return end.name == name || end.name == every_condition; }};
+
+        return std::ranges::any_of(ends_, stands_in);
     }};
 
     if (named_.empty() && !ended(""))
@@ -839,7 +954,10 @@ void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const
     {
         if (!ended(name))
         {
-            throw Spec_error{"in condition '" + name + "' 're2c:eof' configuration is set, but no $ rule found", line};
+            const auto message{
+                    std::format("in condition '{}' 're2c:eof' configuration is set, but no $ rule found", name)};
+
+            throw Spec_error{message, line};
         }
     }
 }
