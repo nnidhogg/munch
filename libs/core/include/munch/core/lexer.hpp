@@ -32,12 +32,12 @@ namespace munch::core
 /**
  * @brief The main Lexer class for tokenizing input using a DFA.
  *
- * Provides methods to tokenize input from iterators or containers, returning the matched token and length.
- * Instances are obtainable through Builder::build(), the one supported path from patterns to a working Lexer.
+ * Provides methods to tokenize input from iterators or containers, returning the matched token and length. Instances
+ * are obtainable through Builder::build(), the one supported path from patterns to a working Lexer.
  *
- * The class reads top down as the scan, the certificates construction derived, the planners and the parallel scan
- * they feed, then the recovery queries and the decisions, each of the last two a forwarder to its dfa function.
- * The window search the planners share is Window_planner, in its own header.
+ * The class reads top down as the scan, the certificates construction derived, the planners and the parallel scan they
+ * feed, then the recovery queries and the decisions, each of the last two a forwarder to its dfa function. The window
+ * search the planners share is Window_planner, in its own header.
  */
 class Lexer
 {
@@ -49,46 +49,54 @@ public:
     template <typename T>
     struct Match
     {
+        /**
+         * @brief Equal when both attempts matched the same token at the same length.
+         */
+        bool operator==(const Match&) const = default;
+
+        /**
+         * @brief The token matched, or std::nullopt where nothing accepted.
+         */
         std::optional<T> token{};
 
+        /**
+         * @brief The length of input the match consumed, zero when nothing accepted.
+         */
         std::size_t length{};
-
-        bool operator==(const Match&) const = default;
     };
 
     /**
      * @brief The answer a certificate supports, together with the evidence that supports it.
      *
-     * The start is the certified token-start position; the evidence is the certified byte itself
-     * (evidence_begin == start, one byte) or the whole window occurrence, and the guarantee is exactly the
-     * certificate's: the repair-invariance transfer requires the evidence interval to survive whatever changed
-     * and the repaired scan to commit through it. A caller comparing evidence_begin against a known-clean
-     * lower bound decides the survival half alone, whether the evidence outlasted the damage; the transfer to the
-     * intended input additionally needs
-     * that input's scan to reach the evidence, with the whole intended input being completely tokenizable
-     * the simplest sufficient condition.
+     * The start is the certified token-start position; the evidence is the certified byte itself (evidence_begin ==
+     * start, one byte) or the whole window occurrence, and the guarantee is exactly the certificate's: the
+     * repair-invariance transfer requires the evidence interval to survive whatever changed and the repaired scan to
+     * commit through it. A caller comparing evidence_begin against a known-clean lower bound decides the survival half
+     * alone, whether the evidence outlasted the damage; the transfer to the intended input additionally needs that
+     * input's scan to reach the evidence, with the whole intended input being completely tokenizable the simplest
+     * sufficient condition.
      */
     struct Certified_start
     {
         /**
          * @brief The certified token-start position, the answer.
          */
-        std::size_t start;
+        std::size_t start{};
 
         /**
          * @brief First byte of the supporting evidence.
          */
-        std::size_t evidence_begin;
+        std::size_t evidence_begin{};
 
         /**
          * @brief One past the supporting evidence's last byte.
          */
-        std::size_t evidence_end;
+        std::size_t evidence_end{};
 
         /**
          * @brief True for window evidence; false for a certified byte at the start itself.
          */
-        bool window;
+        bool window{};
     };
 
     /**
@@ -104,7 +112,9 @@ public:
     {
         const auto [token, offset]{simulator_.run(begin, end)};
 
-        return {.token = token ? std::optional<T>{static_cast<T>(token->id())} : std::nullopt, .length = offset};
+        const auto converted{token ? std::optional<T>{static_cast<T>(token->id())} : std::optional<T>{}};
+
+        return {.token = converted, .length = offset};
     }
 
     /**
@@ -126,39 +136,38 @@ public:
      * Consumes the same positive-width tokens, IDs and lengths, as calling tokenize() repeatedly at each token
      * boundary, invoking the sink after each and stopping when the sink returns false, but the loop stays in one call
      * across tokens, amortizing the per-call overhead; the automaton restarts at each token as tokenize() does. Random
-     * access is required because longest match may read past the last accepting position and must resume from it.
+     * access is required because longest match may read past the last accepting position and must resume from it. The
+     * scan always delivers the payload, and a sink that does not take it has it dropped here, so the scan has one sink
+     * shape rather than one per arity.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator Random access iterator type.
      * @tparam Sink Callable receiving each consumed token and its length.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @param sink Invoked as sink(token, length) for every consumed token, in input order, or as
-     *        sink(token, length, payload) where the sink accepts that and the payload is what
-     *        Builder::set_token_payload() attached; a sink accepting both is called with two. A sink returning a
-     *        value convertible to bool stops the scan by returning false; the stopping token still counts as
-     *        tokenized.
-     * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at
-     *         the returned offset: no token matched there, a zero-width token did, or the sink returned false.
+     * @param sink Invoked as sink(token, length) for every consumed token, in input order, or as sink(token, length,
+     *        payload) where the sink accepts that and the payload is what Builder::set_token_payload() attached; a sink
+     *        accepting both is called with two. A sink returning a value convertible to bool stops the scan by
+     *        returning false; the stopping token still counts as tokenized.
+     * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at the
+     *         returned offset: no token matched there, a zero-width token did, or the sink returned false.
      */
     template <
             common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator,
             common::concepts::Token_sink<T> Sink>
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink) const
     {
-        // The payload is always delivered and dropped here for sinks that do not want it, so the scan itself has
-        // one sink shape rather than one per arity. A sink accepting both arities, which a generic or variadic one
-        // does, is called with two: that is what it received before the payload existed.
-        return simulator_.run_all(
-                begin, end, [&sink](const dfa::Token& token, const std::size_t length, const std::uint64_t payload) {
-                    if constexpr (std::invocable<Sink&, T, std::size_t>)
-                    {
-                        return sink(static_cast<T>(token.id()), length);
-                    }
-                    else
-                    {
-                        return sink(static_cast<T>(token.id()), length, payload);
-                    }
-                });
+        const auto forward{[&sink](const dfa::Token& token, const std::size_t length, const std::uint64_t payload) {
+            if constexpr (std::invocable<Sink&, T, std::size_t>)
+            {
+                return sink(static_cast<T>(token.id()), length);
+            }
+            else
+            {
+                return sink(static_cast<T>(token.id()), length, payload);
+            }
+        }};
+
+        return simulator_.run_all(begin, end, forward);
     }
 
     /**
@@ -168,8 +177,8 @@ public:
      * @tparam Sink Callable receiving each consumed token and its length, or those and its payload.
      * @param container The input container.
      * @param sink As for the iterator form above.
-     * @return The number of input elements tokenized; anything short of the container's size means the scan stopped
-     *         at the returned offset: no token matched there, a zero-width token did, or the sink returned false.
+     * @return The number of input elements tokenized; anything short of the container's size means the scan stopped at
+     *         the returned offset: no token matched there, a zero-width token did, or the sink returned false.
      */
     template <
             common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container,
@@ -182,30 +191,30 @@ public:
     /**
      * @brief Returns whether the given symbol is a certified safe split point of this lexer's token set.
      *
-     * For input the serial scan tokenizes completely, splitting immediately before a safe split point produces
-     * the identical token stream, so such symbols mark chunk boundaries at which one large input may be processed
-     * in independent pieces; on malformed input see tokenize_all_parallel() for the weaker prefix guarantee. Only
-     * the useful subset is reported: a symbol no live state consumes, a live state being one reachable from the
-     * initial state that can still reach an accepting one, is safe merely vacuously and answers false. The property
-     * is decided from the compiled transition table; the derivation is dfa::Simulator::is_split_point()'s.
+     * For input the serial scan tokenizes completely, splitting immediately before a safe split point produces the
+     * identical token stream, so such symbols mark chunk boundaries at which one large input may be processed in
+     * independent pieces; on malformed input see tokenize_all_parallel() for the weaker prefix guarantee. Only the
+     * useful subset is reported: a symbol no live state consumes, a live state being one reachable from the initial
+     * state that can still reach an accepting one, is safe merely vacuously and answers false. The property is decided
+     * from the compiled transition table; the derivation is dfa::Simulator::is_split_point()'s.
      * @param symbol The symbol to test.
      * @return True if every occurrence of the symbol begins a token and some live state consumes it.
      */
     [[nodiscard]] bool is_split_point(const char symbol) const noexcept { return simulator_.is_split_point(symbol); }
 
     /**
-     * @brief Reports whether the symbol is a safe split point once the discarded tokens are deleted.
+     * @brief Returns whether the symbol is a safe split point once the discarded tokens are deleted.
      *
-     * Never smaller than is_split_point(), and equal to it unless the builder was told which tokens are
-     * discarded. For input the serial scan tokenizes completely, chunks cut here reproduce the serial stream once
-     * tokens of those kinds are removed from both, so a caller that keeps them must use is_split_point(). The
-     * completeness condition is not decoration: past the offset where the serial scan first fails, a chunk cut
-     * here can emit kept tokens that scan never reaches. Note also that chunk_boundaries() and
-     * tokenize_all_parallel() plan with the exact certificate, so acting on this answer means planning boundaries
-     * yourself. The derivation is dfa::Simulator::is_split_point_ignoring()'s.
+     * Never smaller than is_split_point(), and equal to it unless the builder was told which tokens are discarded. For
+     * input the serial scan tokenizes completely, chunks cut here reproduce the serial stream once tokens of those
+     * kinds are removed from both, so a caller that keeps them must use is_split_point(). The completeness condition is
+     * not decoration: past the offset where the serial scan first fails, a chunk cut here can emit kept tokens that
+     * scan never reaches. Note also that chunk_boundaries() and tokenize_all_parallel() plan with the exact
+     * certificate, so acting on this answer means planning boundaries yourself. The derivation is
+     * dfa::Simulator::is_split_point_ignoring()'s.
      * @param symbol The symbol to test.
-     * @return True if the symbol can begin a token and every occurrence is safe under that weaker equivalence;
-     *         symbols satisfying the condition only vacuously report false.
+     * @return True if the symbol can begin a token and every occurrence is safe under that weaker equivalence; symbols
+     *         satisfying the condition only vacuously report false.
      */
     [[nodiscard]] bool is_split_point_ignoring(const char symbol) const noexcept
     {
@@ -234,34 +243,35 @@ public:
     }
 
     /**
-     * @brief A shortest window is_split_window() certifies, with its origin, found exactly rather than by trying
+     * @brief Finds a shortest window is_split_window() certifies, with its origin, exactly rather than by trying
      *        candidates; or the proof that the model certifies no window of any length; or a budget run out.
      *
      * Its window may be much longer than the state count, and a grammar whose shortest window is longer than
      * chunk_boundaries_with_windows() tries gains nothing from that planner. A found window is conditional on
      * occurrence like every window certificate, which window_occurrence() settles. The derivation is
      * dfa::shortest_split_window()'s.
-     * @param budget The most search nodes visited before the search gives up.
+     * @param budget The most search nodes visited before the search gives up, dfa::shortest_window_budget unless told.
      * @return The window and its origin, Outcome::none when none exists, or Outcome::budget.
      */
-    [[nodiscard]] dfa::Shortest_window shortest_split_window(const std::size_t budget = 1U << 20U) const
+    [[nodiscard]] dfa::Shortest_window shortest_split_window(
+            const std::size_t budget = dfa::shortest_window_budget) const
     {
         return dfa::shortest_split_window(simulator_, budget);
     }
 
     /**
-     * @brief Whether the given byte string occurs in some nonempty completely tokenizable input, with one that
+     * @brief Decides whether the given byte string occurs in some nonempty completely tokenizable input, with one that
      *        contains it.
      *
      * The question is_split_window() leaves open: its certificate is conditional on occurrence, so a window no
      * completely tokenizable input contains is certified vacuously and anchors nothing, and this call splits the two
-     * readings. A certified window whose witness comes back is an occurring certificate; one an exhaustive search
-     * finds no witness for is a vacuous one. Decided exactly, by the same boundary-guessing search as rescue() and
-     * boundary_difference() with a window matcher beside the scan, the witness the shortest such input: over
-     * {0, 00, 01} the window 1001 is certified at origin 2 and occurs in no completely tokenizable input, while 001
-     * occurs in 0001. The question is asked over nonempty inputs, the empty input, which contains the empty window
-     * alone, being no input a cut could fall in, so the empty window has a shortest token as its witness and, under
-     * a token set with no positive-width token, none. The derivation is dfa::window_occurrence()'s.
+     * readings. A certified window whose witness comes back is an occurring certificate; one an exhaustive search finds
+     * no witness for is a vacuous one. Decided exactly, by the same boundary-guessing search as rescue() and
+     * boundary_difference() with a window matcher beside the scan, the witness the shortest such input: over {0, 00,
+     * 01} the window 1001 is certified at origin 2 and occurs in no completely tokenizable input, while 001 occurs in
+     * the input 0001. The question is asked over nonempty inputs, the empty input, which contains the empty window
+     * alone, being no input a cut could fall in, so the empty window has a shortest token as its witness and, under a
+     * token set with no positive-width token, none. The derivation is dfa::window_occurrence()'s.
      * @param window The byte string to find.
      * @param cap The largest number of search states to hold before giving up, dfa::occurrence_cap unless told.
      * @return The witness and whether the search settled the question; an empty witness from an exhaustive search
@@ -274,8 +284,8 @@ public:
     }
 
     /**
-     * @brief Whether the window certificate (W, o) is failed by some completely tokenizable input, with one that
-     *        does.
+     * @brief Decides whether the window certificate (W, o) is failed by some completely tokenizable input, with one
+     *        that does.
      *
      * The certificate promises that in every completely tokenizable input containing W, the token covering the
      * occurrence's final byte begins exactly o bytes into it; a counterexample is a completely tokenizable input
@@ -303,8 +313,8 @@ public:
     }
 
     /**
-     * @brief Whether the gap g is a token boundary at every occurrence of the window W in every completely tokenizable
-     *        input, with an input holding an occurrence a token crosses there.
+     * @brief Decides whether the gap g is a token boundary at every occurrence of the window W in every completely
+     *        tokenizable input, with an input holding an occurrence a token crosses there.
      *
      * Gap g sits before byte g of the occurrence and gap |W| right after its final byte, and a boundary is a token
      * start or the input's end. It is the weaker guarantee beside the window certificate: a certificate places the
@@ -332,8 +342,8 @@ public:
     }
 
     /**
-     * @brief Whether a token crosses the gap g at every occurrence of the window W in every completely tokenizable
-     *        input, with an input holding an occurrence cut there.
+     * @brief Decides whether a token crosses the gap g at every occurrence of the window W in every completely
+     *        tokenizable input, with an input holding an occurrence cut there.
      *
      * The other side of boundary_counterexample(), decided by the same search with the gap's bit read the other way,
      * the input's end counting as a boundary for the gap after the window. The two claims together are the window
@@ -354,7 +364,7 @@ public:
     }
 
     /**
-     * @brief Every gap of the window decided both ways, each gap's verdict.
+     * @brief Decides every gap of the window both ways, returning each gap's verdict.
      *
      * Absence is a property of the window and given at every gap or at none: proved by window_occurrence() under the
      * cap, asked first, or by any gap whose two searches under the cap, boundary_counterexample() and
@@ -375,22 +385,22 @@ public:
     }
 
     /**
-     * @brief The compiled machine itself, for decisions written outside this class over its read-only view.
+     * @brief Returns the compiled machine itself, for decisions written outside this class over its read-only view.
      *
-     * Everything the class answers is answered from these tables; a tool reading a token set from elsewhere and
-     * asking its own questions, which state consumes a byte mid-token and on the way to which token, needs the same
-     * view the library's own decisions use, and gets it here rather than through a copy.
+     * Everything the class answers is answered from these tables; a tool reading a token set from elsewhere and asking
+     * its own questions, which state consumes a byte mid-token and on the way to which token, needs the same view the
+     * library's own decisions use, and gets it here rather than through a copy.
      * @return The simulator.
      */
     [[nodiscard]] const dfa::Simulator& simulator() const noexcept { return simulator_; }
 
     /**
-     * @brief The byte string every certified split window provably contains, or empty when none is proved.
+     * @brief Returns the byte string every certified split window provably contains, or empty when none is proved.
      *
-     * Every certified split window of this token set contains this string with at least one byte after it, so
-     * the window planner narrows its candidate windows to the string's occurrences whenever it is non-empty, with
-     * identical plans either way; empty means no such string is proved and the exhaustive walk stands. Decided
-     * from the compiled transition table; the derivation and its proof are dfa::Simulator::mandatory_core()'s.
+     * Every certified split window of this token set contains this string with at least one byte after it, so the
+     * window planner narrows its candidate windows to the string's occurrences whenever it is non-empty, with identical
+     * plans either way; empty means no such string is proved and the exhaustive walk stands. Decided from the compiled
+     * transition table; the derivation and its proof are dfa::Simulator::mandatory_core()'s.
      * @return The proved mandatory core, or an empty view.
      */
     [[nodiscard]] std::string_view mandatory_core() const noexcept { return simulator_.mandatory_core(); }
@@ -410,8 +420,8 @@ public:
      * @tparam Iterator Random access iterator type.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
-     * @param chunks The number of chunks aimed for; fewer result when certified points are scarce, and zero
-     *        behaves as one, the whole input as a single chunk.
+     * @param chunks The number of chunks aimed for; fewer result when certified points are scarce, and zero behaves as
+     *        one, the whole input as a single chunk.
      * @return Offsets from 0 to the input size inclusive; adjacent pairs delimit the chunks.
      */
     template <common::concepts::Random_access_byte_iterator Iterator>
@@ -420,47 +430,38 @@ public:
     {
         const auto size{static_cast<std::size_t>(end - begin)};
 
-        std::vector<std::size_t> boundaries{0};
-
         // A token set with no certified symbol that can occur in valid input yields the single whole-input chunk
         // without scanning. The test is the useful set, not the full certificate: symbols no live state consumes
         // certify vacuously, and searching for one scans to the end of the input and finds nothing.
-        const auto any_certified{simulator_.has_split_points()};
+        if (!simulator_.has_split_points())
+        {
+            return {0, size};
+        }
 
-        // A chunk needs at least one byte, so asking for more chunks than bytes only adds
-        // iterations that can find nothing.
+        std::vector<std::size_t> boundaries{0};
+
+        // A chunk needs at least one byte, so asking for more chunks than bytes only adds iterations that can find
+        // nothing.
         const auto usable{std::min(chunks, size)};
 
-        // The ideal offsets are size * index / usable, but that product overflows for a large input divided very
-        // finely, and so does any form that multiplies the remainder by the index: both are bounded below by
-        // (usable - 1) squared. Accumulating instead multiplies nothing. Adding the quotient each step and carrying
-        // the remainder when it fills a whole divisor yields exactly the same offsets, with target never exceeding
-        // size and carry never reaching usable, so no intermediate can leave the range the input already occupies.
-        const auto step{usable == 0 ? std::size_t{0} : size / usable};
+        // The ideal offsets size * index / usable, accumulated step by step so that nothing multiplies.
+        Division_targets targets{size, usable};
 
-        const auto step_remainder{usable == 0 ? std::size_t{0} : size % usable};
+        const auto byte_at{[begin](const std::size_t at) {
+            const auto element{begin[static_cast<std::ptrdiff_t>(at)]};
 
-        std::size_t target{0};
+            return static_cast<char>(element);
+        }};
 
-        std::size_t carry{0};
-
-        for (std::size_t index{1}; any_certified && index < usable; ++index)
+        for (std::size_t index{1}; index < usable; ++index)
         {
-            target += step;
+            const auto target{targets.next()};
 
-            if (carry += step_remainder; carry >= usable)
-            {
-                ++target;
-
-                carry -= usable;
-            }
-
-            // Start strictly after the previous boundary, not at the ideal offset. Two ideal offsets can walk
-            // forward onto the same certified byte; resuming from the ideal offset would rediscover it, drop it as
-            // a duplicate, and lose the next certified byte along with the chunk it would have opened.
+            // Start at the target or one past the previous boundary, whichever is later, so that adjacent certified
+            // bytes each open a chunk.
             auto offset{std::max(target, boundaries.back() + 1)};
 
-            while (offset < size && !is_split_point(static_cast<char>(begin[static_cast<std::ptrdiff_t>(offset)])))
+            while (offset < size && !is_split_point(byte_at(offset)))
             {
                 ++offset;
             }
@@ -490,23 +491,23 @@ public:
     }
 
     /**
-     * @brief Computes chunk boundaries like chunk_boundaries(), additionally recovering cuts from certified
-     *        split windows where the token set certifies no usable byte.
+     * @brief Computes chunk boundaries like chunk_boundaries(), additionally recovering cuts from certified split
+     *        windows where the token set certifies no usable byte.
      *
-     * From the later of each equal-division target and one past the previous boundary the input is walked for
-     * the first occurrence of a window of two to four bytes that is_split_window() certifies, and the cut is
-     * placed at the occurrence plus the reported origin. Each window decision is memoized per distinct byte
-     * string, so those decisions, the costly part, are bounded by the distinct windows tried, while the
-     * positional walk and its memo lookups scale with the positions examined. When neither certificate offers
-     * cuts, the single whole-input chunk results.
+     * From the later of each equal-division target and one past the previous boundary the input is walked for the first
+     * occurrence of a window of two to four bytes that is_split_window() certifies, and the cut is placed at the
+     * occurrence plus the reported origin. Each window decision is memoized per distinct byte string, so those
+     * decisions, the costly part, are bounded by the distinct windows tried, while the positional walk and its memo
+     * lookups scale with the positions examined. When neither certificate offers cuts, the single whole-input chunk
+     * results.
      *
-     * The window guarantee is conditional where the byte certificate's is not: a certified window pins the
-     * covering token's origin at occurrences in completely tokenizable input, a property of the whole input
-     * rather than of single transitions. On malformed input a window cut can land inside a token of the serial
-     * scan's doomed suffix, the fragments can each consume fully, and the serial stream is then not a prefix of
-     * the concatenated chunk streams; full per-chunk consumption does not imply the serial scan succeeds. Use
-     * these boundaries when the input is known completely tokenizable, or validate the result downstream;
-     * tokenize_all_parallel() deliberately plans with chunk_boundaries() and never uses windows implicitly.
+     * The window guarantee is conditional where the byte certificate's is not: a certified window pins the covering
+     * token's origin at occurrences in completely tokenizable input, a property of the whole input rather than of
+     * single transitions. On malformed input a window cut can land inside a token of the serial scan's doomed suffix,
+     * the fragments can each consume fully, and the serial stream is then not a prefix of the concatenated chunk
+     * streams; full per-chunk consumption does not imply the serial scan succeeds. Use these boundaries when the input
+     * is known completely tokenizable, or validate the result downstream; tokenize_all_parallel() deliberately plans
+     * with chunk_boundaries() and never uses windows implicitly.
      * @tparam Iterator Random access iterator type.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
@@ -530,28 +531,15 @@ public:
 
         const auto usable{std::min(chunks, size)};
 
-        const auto step{usable == 0 ? std::size_t{0} : size / usable};
+        Division_targets targets{size, usable};
 
-        const auto step_remainder{usable == 0 ? std::size_t{0} : size % usable};
-
-        Window_planner planner;
-
-        std::size_t window_target{0};
-
-        std::size_t window_carry{0};
+        Window_planner planner{};
 
         for (std::size_t index{1}; index < usable; ++index)
         {
-            window_target += step;
+            const auto target{targets.next()};
 
-            if (window_carry += step_remainder; window_carry >= usable)
-            {
-                ++window_target;
-
-                window_carry -= usable;
-            }
-
-            const auto floor{std::max(window_target, boundaries.back() + 1)};
+            const auto floor{std::max(target, boundaries.back() + 1)};
 
             if (const auto cut{planner.cut(simulator_, begin, size, floor)})
             {
@@ -565,7 +553,7 @@ public:
     }
 
     /**
-     * @brief Range overload of chunk_boundaries_with_windows(begin, end, chunks).
+     * @brief Computes chunk_boundaries_with_windows(begin, end, chunks) over a whole container.
      * @tparam Container The input container type (must offer random access).
      * @param container The input container.
      * @param chunks As for the iterator form above.
@@ -581,15 +569,17 @@ public:
     /**
      * @brief Tokenizes one input as concurrent chunks split at certified safe split points.
      *
-     * The input is divided by chunk_boundaries() and each chunk is scanned by tokenize_all() on its own thread,
-     * the last on the calling thread; for input the serial scan tokenizes completely, certification guarantees the
-     * concatenated per-chunk token streams are identical to the serial scan's. When no token matches somewhere,
-     * the serial stream is a prefix of the concatenation and chunks past the failure still scan independently, so
-     * treat the output as a successful tokenization only after checking every returned consumed length. Within a chunk
-     * the sink is invoked in input order. Across chunks it is invoked concurrently, so it must be safe to call from
-     * different threads for different chunk indices, which per-chunk state indexed by the chunk achieves without
-     * locking; give hot per-chunk accumulators their own cache lines, as adjacent counters false-share and cost real
-     * scaling. There is no early-stop form.
+     * The input is divided by chunk_boundaries() and each chunk is scanned by tokenize_all() on its own thread, the
+     * last on the calling thread; for input the serial scan tokenizes completely, certification guarantees the
+     * concatenated per-chunk token streams are identical to the serial scan's. When no token matches somewhere, the
+     * serial stream is a prefix of the concatenation and chunks past the failure still scan independently, so treat the
+     * output as a successful tokenization only after checking every returned consumed length. Within a chunk the sink
+     * is invoked in input order. Across chunks it is invoked concurrently, so it must be safe to call from different
+     * threads for different chunk indices, which per-chunk state indexed by the chunk achieves without locking; give
+     * hot per-chunk accumulators their own cache lines, as adjacent counters false-share and cost real scaling. There
+     * is no early-stop form. An exception a sink throws is kept and rethrown on the calling thread once every worker
+     * has joined, the first one when several chunks throw, since one escaping a jthread's callable would call
+     * std::terminate.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator Random access iterator type.
      * @tparam Sink Callable receiving the chunk index, each consumed token, and its length.
@@ -598,9 +588,9 @@ public:
      * @param chunks The number of chunks aimed for; fewer are scanned when certified points are scarce, and zero
      *        behaves as one, the serial scan on the calling thread.
      * @param sink Invoked as sink(chunk, token, length) for every consumed token.
-     * @return The number of input elements tokenized per chunk, aligned with chunk_boundaries(begin, end,
-     *         chunks); an entry short of its chunk's size means the scan stopped at that offset of the chunk, no
-     *         token matching there or a zero-width one doing so; this form's sink cannot stop a chunk.
+     * @return The number of input elements tokenized per chunk, aligned with chunk_boundaries(begin, end, chunks); an
+     *         entry short of its chunk's size means the scan stopped at that offset of the chunk, no token matching
+     *         there or a zero-width one doing so; this form's sink cannot stop a chunk.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires std::invocable<Sink&, std::size_t, T, std::size_t>
@@ -611,20 +601,21 @@ public:
 
         std::vector<std::size_t> consumed(boundaries.size() - 1, 0);
 
-        std::mutex failure_mutex;
+        std::mutex failure_mutex{};
 
-        std::exception_ptr failure;
+        std::exception_ptr failure{};
 
-        // An exception escaping a jthread's callable calls std::terminate, so a throwing sink would abort the
-        // process on a worker while the caller's own chunk merely propagated. Keep the first one and rethrow it
-        // after every worker has joined, so both paths behave alike and no thread outlives the throw.
         const auto scan{[&](const std::size_t chunk) {
+            const auto chunk_begin{begin + static_cast<std::ptrdiff_t>(boundaries[chunk])};
+
+            const auto chunk_end{begin + static_cast<std::ptrdiff_t>(boundaries[chunk + 1])};
+
+            const auto chunk_sink{
+                    [&sink, chunk](const T token, const std::size_t length) { sink(chunk, token, length); }};
+
             try
             {
-                consumed[chunk] = tokenize_all<T>(
-                        begin + static_cast<std::ptrdiff_t>(boundaries[chunk]),
-                        begin + static_cast<std::ptrdiff_t>(boundaries[chunk + 1]),
-                        [&sink, chunk](const T token, const std::size_t length) { sink(chunk, token, length); });
+                consumed[chunk] = tokenize_all<T>(chunk_begin, chunk_end, chunk_sink);
             }
             catch (...)
             {
@@ -638,7 +629,7 @@ public:
         }};
 
         {
-            std::vector<std::jthread> workers;
+            std::vector<std::jthread> workers{};
 
             workers.reserve(consumed.size() - 1);
 
@@ -680,12 +671,12 @@ public:
     /**
      * @brief Finds the first position at or after the given offset that a certificate marks as a token start.
      *
-     * One forward walk consulting both certificate kinds at every position: a certified byte answers at its
-     * own position, and a certified window of two to four bytes answers at its occurrence plus the certified
-     * origin. Unlike the planners, byte certificates do not switch the window search off. The answer is the first
-     * certificate met in evidence order, the order in which the walk meets
-     * the supporting evidence, which is not always the smallest answerable position: a window met earlier can
-     * answer a byte or two past one met later, and windows beginning before the given offset are not considered.
+     * One forward walk consulting both certificate kinds at every position: a certified byte answers at its own
+     * position, and a certified window of two to four bytes answers at its occurrence plus the certified origin. Unlike
+     * the planners, byte certificates do not switch the window search off. The answer is the first certificate met in
+     * evidence order, the order in which the walk meets the supporting evidence, which is not always the smallest
+     * answerable position: a window met earlier can answer a byte or two past one met later, and windows beginning
+     * before the given offset are not considered.
      *
      * The contract is complete-repair invariance: in every completely tokenizable replacement of the input before the
      * answer's supporting evidence, the answer's image begins a token of the repaired segmentation, which is more than
@@ -697,64 +688,32 @@ public:
      * the offset, there is no answer.
      * @param input The input being scanned.
      * @param from The offset the search starts at; at or past the input's size finds nothing.
-     * @return The first certified token-start position, or std::nullopt when no certified byte and no certified
-     *         window of two to four bytes lies at or after the offset, the widths the search consults.
+     * @return The first certified token-start position, or std::nullopt when no certified byte and no certified window
+     *         of two to four bytes lies at or after the offset, the widths the search consults.
      */
-    [[nodiscard]] std::optional<std::size_t> next_certified_start(
-            const std::string_view input, const std::size_t from) const
-    {
-        const auto found{next_certified_evidence(input, from)};
-
-        return found ? std::optional{found->start} : std::nullopt;
-    }
+    [[nodiscard]] std::optional<std::size_t> next_certified_start(std::string_view input, std::size_t from) const;
 
     /**
-     * @brief The certificate walk of next_certified_start(), reporting the supporting evidence with the answer.
+     * @brief Runs the certificate walk of next_certified_start(), reporting the supporting evidence with the answer.
      *
-     * Same walk, same evidence order, same refusal; the position-only form above is this one with the evidence
-     * dropped. The evidence lies wholly at or after the search offset by construction, which is what makes the
-     * comparison against a caller's clean bound meaningful; the guarantee is Certified_start's.
+     * Same walk, same evidence order, same refusal; the position-only form above is this one with the evidence dropped.
+     * The evidence lies wholly at or after the search offset by construction, which is what makes the comparison
+     * against a caller's clean bound meaningful; the guarantee is Certified_start's.
      * @param input The input being scanned.
      * @param from The offset the search starts at; at or past the input's size finds nothing.
      * @return The first certified answer in evidence order with its evidence interval, or std::nullopt.
      */
     [[nodiscard]] std::optional<Certified_start> next_certified_evidence(
-            const std::string_view input, const std::size_t from) const
-    {
-        const auto bytes{simulator_.has_split_points()};
-
-        Window_planner planner;
-
-        for (std::size_t at{from}; at < input.size(); ++at)
-        {
-            if (bytes && is_split_point(input[at]))
-            {
-                return Certified_start{.start = at, .evidence_begin = at, .evidence_end = at + 1, .window = false};
-            }
-
-            if (const auto found{planner.window_at(simulator_, input.data(), input.size(), at)})
-            {
-                const auto [origin, length]{*found};
-
-                return Certified_start{
-                        .start = at + origin,
-                        .evidence_begin = at,
-                        .evidence_end = at + length,
-                        .window = true};
-            }
-        }
-
-        return std::nullopt;
-    }
+            std::string_view input, std::size_t from) const;
 
     /**
-     * @brief The first anchored-certified start in the tail at or after the offset.
+     * @brief Returns the first anchored-certified start in the tail at or after the offset.
      *
-     * The anchored counterpart of next_certified_start(), exact where the walk is merely sound: with the
-     * tail's end known to be the end of the input, every completely tokenizable repair of whatever preceded
-     * the tail places a token boundary at the returned position. That quantifier is the whole contract; the
-     * certificates' guarantee over repairs that merely reach their evidence is a different one, which this
-     * decider does not speak about. A tail beyond repair refuses rather than answering vacuously.
+     * The anchored counterpart of next_certified_start(), exact where the walk is merely sound: with the tail's end
+     * known to be the end of the input, every completely tokenizable repair of whatever preceded the tail places a
+     * token boundary at the returned position. That quantifier is the whole contract; the certificates' guarantee over
+     * repairs that merely reach their evidence is a different one, which this decider does not speak about. A tail
+     * beyond repair refuses rather than answering vacuously.
      * @param tail The preserved suffix of the input, its end the end of the input.
      * @param from The offset the search starts at; at or past the tail's size finds nothing.
      * @return The first anchored-certified position, or std::nullopt when none exists or no repair does.
@@ -766,7 +725,7 @@ public:
     }
 
     /**
-     * @brief A shortest repair for the tail, empty when it already tokenizes; nothing when none exists.
+     * @brief Returns a shortest repair for the tail, empty when it already tokenizes; nothing when none exists.
      * @param tail The preserved suffix of the input.
      * @return A minimal repair, or std::nullopt when the tail is beyond repair.
      */
@@ -776,26 +735,26 @@ public:
     }
 
     /**
-     * @brief The lag of the token set: the longest run of nonaccepting states a scan can traverse after leaving
-     * an accepting state, or nothing when that run is unbounded.
+     * @brief Returns the lag of the token set: the longest run of nonaccepting states a scan can traverse after leaving
+     *        an accepting state, or nothing when that run is unbounded.
      *
-     * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether or
-     * not the excursion could still accept, so every defined continuation counts. Zero is the premise under
-     * which a scheme restarting at every accept executes serial maximal munch exactly; a bounded value prices
-     * the checkpoint a rollback-aware scheme must carry.
+     * States that can no longer reach an accepting one still count: a failed lookahead buffers bytes whether or not the
+     * excursion could still accept, so every defined continuation counts. Zero is the premise under which a scheme
+     * restarting at every accept executes serial maximal munch exactly; a bounded value prices the checkpoint a
+     * rollback-aware scheme must carry.
      * @return The lag, or std::nullopt when a post-accept nonaccepting cycle makes it unbounded.
      */
     [[nodiscard]] std::optional<std::size_t> lag() const { return dfa::lag(simulator_); }
 
     /**
-     * @brief Whether some completely tokenizable input makes the scan roll back, with a witness.
+     * @brief Decides whether some completely tokenizable input makes the scan roll back, with a witness.
      *
-     * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting at
-     * every accept would have declared the input malformed: a token of a completely tokenizable input whose scan
-     * read past the token's end before rolling back to it. Decided exactly, by the same boundary-guessing search
-     * as boundary_difference(), the witness the shortest such input: {a, abb, b, c} is rescued on ab, where the
-     * scan of a reads the b before rolling back, while {a, abc, bc} is rescue-free with lag one, since every
-     * completely tokenizable continuation of the stretch after a closes the longer token abc instead.
+     * A rescue is a rollback after a failed lookahead that lets the scan continue where a scheme restarting at every
+     * accept would have declared the input malformed: a token of a completely tokenizable input whose scan read past
+     * the token's end before rolling back to it. Decided exactly, by the same boundary-guessing search as
+     * boundary_difference(), the witness the shortest such input: {a, abb, b, c} is rescued on ab, where the scan of a
+     * reads the b before rolling back, while {a, abc, bc} is rescue-free with lag one, since every completely
+     * tokenizable continuation of the stretch after a closes the longer token abc instead.
      * @param cap The largest number of search states to hold before giving up, dfa::rescue_cap unless told.
      * @return The witness and whether the search settled the question; an empty witness from an exhaustive search
      *         proves the token set rescue-free.
@@ -806,20 +765,15 @@ public:
     }
 
     /**
-     * @brief Whether the token set is rescue-free, so that a scheme restarting at every accept emits the tokens of
-     * serial maximal munch on every completely tokenizable input.
-     * @return True when rescue() found no witness in an exhaustive search; false when a witness exists or the
-     *         search stopped at its cap, which rescue() tells apart.
+     * @brief Returns whether the token set is rescue-free, so that a scheme restarting at every accept emits the tokens
+     *        of serial maximal munch on every completely tokenizable input.
+     * @return True when rescue() found no witness in an exhaustive search; false when a witness exists or the search
+     *         stopped at its cap, which rescue() tells apart.
      */
-    [[nodiscard]] bool rescue_free() const
-    {
-        const auto found{rescue()};
-
-        return found.exhaustive && found.witness.empty();
-    }
+    [[nodiscard]] bool rescue_free() const;
 
     /**
-     * @brief The longest run of positions a tokenizable input can carry with no certified byte, or nothing when
+     * @brief Returns the longest run of positions a tokenizable input can carry with no certified byte, or nothing when
      *        such runs are unbounded.
      *
      * The gap chunk_boundaries() can be asked to span. The derivation is dfa::anchor_free_span()'s.
@@ -828,7 +782,8 @@ public:
     [[nodiscard]] std::optional<std::size_t> anchor_free_span() const { return dfa::anchor_free_span(simulator_); }
 
     /**
-     * @brief The same over a supplied inventory of certified windows, which can bound what the bytes cannot.
+     * @brief Returns the longest run of positions with no certified anchor over a supplied inventory of certified
+     *        windows, which can bound what the bytes cannot.
      *
      * The derivation is dfa::anchor_free_span()'s window overload.
      * @param inventory The certified windows and their origins, each refused by is_split_window() being an error.
@@ -841,11 +796,11 @@ public:
     }
 
     /**
-     * @brief Whether another token set cuts some input both tokenize differently, with a witness.
+     * @brief Decides whether another token set cuts some input both tokenize differently, with a witness.
      *
-     * The question a tokenizer change asks, answered from the two compiled tables rather than from a
-     * corpus, so a negative covers every input instead of the ones a suite happens to hold. The
-     * derivation is dfa::boundary_difference()'s.
+     * The question a tokenizer change asks, answered from the two compiled tables rather than from a corpus, so a
+     * negative covers every input instead of the ones a suite happens to hold. The derivation is
+     * dfa::boundary_difference()'s.
      * @param other The lexer to compare against.
      * @param cap The largest number of product states to hold before giving up, dfa::difference_cap unless told.
      * @return The witness and whether the search was exhaustive; an empty witness means identical only when it was.
@@ -857,24 +812,23 @@ public:
     }
 
     /**
-     * @brief Whether another token set is a different segmentation function, with an input the two segment
+     * @brief Decides whether another token set is a different segmentation function, with an input the two segment
      *        differently and the half it falls in.
      *
      * Full equivalence, the whole of it: the two sets tokenize the same inputs completely and cut every one of them
      * alike, which boundary_difference() decides only the second half of. A token set's segmentation function is the
      * set of marked runs its scan accepts, one marking per input of the domain, so two sets are fully equivalent
-     * exactly when those languages are equal, and the decision is that language equality, by the same
-     * boundary-guessing search as boundary_difference() with one guessed marking fed to both scans at once, the
-     * witness the bytes of the shortest marked run exactly one side accepts. The half is a fact about the witness: a
-     * domain witness one set tokenizes completely and the other does not, a boundary witness both do and cut apart,
-     * and a boundary witness here is a boundary_difference() witness, while an exhaustive negative here is one there
-     * too. The witnesses need not agree: over {a} against {aa} the shortest marked run only one side accepts is a,
-     * the domain witness, where boundary_difference() returns aa, one token against two. The derivation is
-     * dfa::segmentation_difference()'s.
+     * exactly when those languages are equal, and the decision is that language equality, by the same boundary-guessing
+     * search as boundary_difference() with one guessed marking fed to both scans at once, the witness the bytes of the
+     * shortest marked run exactly one side accepts. The half is a fact about the witness: a domain witness one set
+     * tokenizes completely and the other does not, a boundary witness both do and cut apart, and a boundary witness
+     * here is a boundary_difference() witness, while an exhaustive negative here is one there too. The witnesses need
+     * not agree: over {a} against {aa} the shortest marked run only one side accepts is a, the domain witness, where
+     * boundary_difference() returns aa, one token against two. The derivation is dfa::segmentation_difference()'s.
      * @param other The lexer to compare against.
      * @param cap The largest number of product states to hold before giving up, dfa::segmentation_cap unless told.
-     * @return The witness, the half it falls in, and whether the search settled the question; an empty witness from
-     *         an exhaustive search proves the two token sets the same segmentation function.
+     * @return The witness, the half it falls in, and whether the search settled the question; an empty witness from an
+     *         exhaustive search proves the two token sets the same segmentation function.
      */
     [[nodiscard]] dfa::Separation segmentation_difference(
             const Lexer& other, const std::size_t cap = dfa::segmentation_cap) const
@@ -883,9 +837,80 @@ public:
     }
 
 private:
-    // The Builder is the only construction path: a Lexer exists exclusively over a DFA the Builder
-    // compiled, so the constructors below stay private and the friendship is the whole public door.
+    // The Builder is the only construction path: a Lexer exists exclusively over a DFA the Builder compiled, so the
+    // constructors below stay private and the friendship is the whole public door.
     friend class Builder;
+
+    /**
+     * @brief The equal-division targets of an input, the offsets size * index / parts for index 1, 2 and so on, in
+     *        turn.
+     *
+     * The product overflows for a large input divided very finely, and so does any form that multiplies the remainder
+     * by the index: both are bounded below by (parts - 1) squared. Adding the quotient each step and carrying the
+     * remainder when it fills a whole divisor yields exactly the same offsets and multiplies nothing, with the target
+     * never exceeding the size and the carry never reaching the divisor, so no intermediate can leave the range the
+     * input already occupies.
+     */
+    class Division_targets
+    {
+    public:
+        /**
+         * @brief Constructs the walk over an input divided into parts, positioned before the first target.
+         * @param size The input's size.
+         * @param parts The number of parts; zero leaves every step at zero.
+         */
+        constexpr Division_targets(const std::size_t size, const std::size_t parts) noexcept
+            : step_{parts == 0 ? std::size_t{0} : size / parts}
+            , remainder_{parts == 0 ? std::size_t{0} : size % parts}
+            , parts_{parts}
+        {}
+
+        /**
+         * @brief Advances to the next target.
+         * @return The next equal-division offset.
+         */
+        constexpr std::size_t next() noexcept
+        {
+            target_ += step_;
+
+            carry_ += remainder_;
+
+            if (carry_ >= parts_)
+            {
+                ++target_;
+
+                carry_ -= parts_;
+            }
+
+            return target_;
+        }
+
+    private:
+        /**
+         * @brief The quotient of the size by the parts, added at every step.
+         */
+        std::size_t step_;
+
+        /**
+         * @brief The remainder of the size by the parts, accumulated into the carry at every step.
+         */
+        std::size_t remainder_;
+
+        /**
+         * @brief The number of parts, the divisor the carry is reduced by.
+         */
+        std::size_t parts_;
+
+        /**
+         * @brief The latest target, zero before the first step.
+         */
+        std::size_t target_{0};
+
+        /**
+         * @brief The accumulated remainders not yet carried into the target, always below the divisor.
+         */
+        std::size_t carry_{0};
+    };
 
     /**
      * @brief Constructs a Lexer from a DFA.
@@ -901,7 +926,7 @@ private:
     Lexer(const dfa::Dfa& dfa, const std::span<const std::size_t> ignored) : simulator_{dfa, ignored} {}
 
     /**
-     * @brief Compiles a DFA, attaching a caller's word to every match of the named tokens.
+     * @brief Constructs a lexer that also attaches a caller's word to every match of the named tokens.
      * @param dfa The compiled DFA.
      * @param ignored The IDs of tokens the caller deletes before using the stream.
      * @param payloads Token ID and word pairs; a token named more than once keeps the last word given.

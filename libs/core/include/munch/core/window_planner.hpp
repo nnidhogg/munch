@@ -8,6 +8,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -23,35 +24,39 @@ namespace munch::core
  * @brief The window search behind Lexer::chunk_boundaries_with_windows() and next_certified_evidence(): where in an
  *        input a certified split window first licenses a cut.
  *
- * One planner lives for one plan and holds that plan's state alone, the memo and the barren offset; the token set
- * is handed in with each question, so the planner owns nothing it could outlive. It memoizes every
- * window decision by byte string, so the decisions, the costly part, are bounded by the distinct windows tried
- * while the positional walks scale with the positions examined; and when the token set proved a mandatory core it
- * searches only where the core occurs, tightening the barren offset across calls so that targets falling in a
- * tail already proved occurrence-free refuse without rescanning it. Byte certificates are not its business: the
- * callers decide when windows are consulted at all.
+ * One planner lives for one plan and holds that plan's state alone, the memo and the barren offset; the token set is
+ * handed in with each question, so the planner owns nothing it could outlive. It memoizes every window decision by byte
+ * string, so the decisions, the costly part, are bounded by the distinct windows tried while the positional walks scale
+ * with the positions examined; and when the token set proved a mandatory core it searches only where the core occurs,
+ * tightening the barren offset across calls so that targets falling in a tail already proved occurrence-free refuse
+ * without rescanning it. Byte certificates are not its business: the callers decide when windows are consulted at all.
  */
 class Window_planner
 {
 public:
     /**
+     * @brief The shortest window the searches try, two bytes. The bound is not a guard: the planners consult windows
+     *        only when no exact byte certifies and the set is not nullable, where the length-one equivalence theorem
+     *        makes every one-byte window refuse, so skipping length one is provably inert rather than something a test
+     *        could pin.
+     */
+    static constexpr std::size_t shortest_window{2};
+
+    /**
      * @brief The longest window the searches try, four bytes. A grammar needing longer windows degrades to fewer
-     *        chunks, never to an unsafe cut. The shortest tried is two, and that bound is not a guard: the planners
-     *        consult windows only when no exact byte certifies and the set is not nullable, where the length-one
-     *        equivalence theorem makes every one-byte window refuse, so skipping length one is provably inert rather
-     *        than something a test could pin.
+     *        chunks, never to an unsafe cut.
      */
     static constexpr std::size_t longest_window{4};
 
     /**
-     * @brief The first window beginning at a position that certifies: lengths ascending from two, first certificate
-     *        wins.
+     * @brief Returns the first window beginning at a position that certifies: lengths ascending from two, first
+     *        certificate wins.
      * @tparam Iterator Random access iterator type.
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.
      * @param size The input's size.
-     * @param at The position the window begins at; at or past the input's size finds nothing, as the searches
-     *        beginning at an offset have it, so the length available is a length and never a difference that wrapped.
+     * @param at The position the window begins at; at or past the input's size finds nothing, as the searches beginning
+     *        at an offset have it.
      * @return The certified origin and the window's length, or std::nullopt when no window there certifies.
      */
     template <common::concepts::Random_access_byte_iterator Iterator>
@@ -60,7 +65,7 @@ public:
     {
         const auto limit{at < size ? std::min(longest_window, size - at) : 0UZ};
 
-        for (std::size_t length{2}; length <= limit; ++length)
+        for (auto length{shortest_window}; length <= limit; ++length)
         {
             if (const auto origin{certified_origin(simulator, begin, at, length)})
             {
@@ -72,14 +77,14 @@ public:
     }
 
     /**
-     * @brief The first cut a certified window licenses at or after a floor: the occurrence plus the certified
+     * @brief Returns the first cut a certified window licenses at or after a floor: the occurrence plus the certified
      *        origin, in the exhaustive walk's position-then-length order whether or not a core filters the walk.
      * @tparam Iterator Random access iterator type.
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.
      * @param size The input's size.
-     * @param floor The position the search starts at; at or past the input's size no window begins at or after it,
-     *        so the search finds nothing, as the search at one position has it.
+     * @param floor The position the search starts at; at or past the input's size no window begins at or after it, so
+     *        the search finds nothing, as the search at one position has it.
      * @return The cut, or std::nullopt when no window at or after the floor certifies.
      */
     template <common::concepts::Random_access_byte_iterator Iterator>
@@ -102,8 +107,8 @@ private:
     using Memo_t = std::map<std::string, std::optional<std::size_t>, std::less<>>;
 
     /**
-     * @brief One input element read as the scanners read it, through unsigned char, so every byte-domain element
-     *        type forms the same memo key; the string constructor's implicit conversion would reject std::byte.
+     * @brief Reads one input element as the scanners read it, through unsigned char, so every byte-domain element type
+     *        forms the same memo key; the string constructor's implicit conversion would reject std::byte.
      * @tparam Iterator Random access iterator type.
      * @param begin Iterator to the beginning of the input.
      * @param at The element's position.
@@ -112,11 +117,15 @@ private:
     template <common::concepts::Random_access_byte_iterator Iterator>
     [[nodiscard]] static char byte(Iterator begin, const std::size_t at)
     {
-        return static_cast<char>(static_cast<unsigned char>(begin[static_cast<std::ptrdiff_t>(at)]));
+        const auto element{begin[static_cast<std::ptrdiff_t>(at)]};
+
+        const auto value{static_cast<unsigned char>(element)};
+
+        return static_cast<char>(value);
     }
 
     /**
-     * @brief The memoized window decision at one occurrence: the certified origin, if any.
+     * @brief Returns the memoized window decision at one occurrence: the certified origin, if any.
      * @tparam Iterator Random access iterator type.
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.
@@ -128,7 +137,7 @@ private:
     [[nodiscard]] std::optional<std::size_t> certified_origin(
             const dfa::Simulator& simulator, Iterator begin, const std::size_t at, const std::size_t length)
     {
-        std::string window;
+        std::string window{};
 
         window.reserve(length);
 
@@ -137,20 +146,22 @@ private:
             window.push_back(byte(begin, at + offset));
         }
 
-        auto found{memo_.find(window)};
-
-        if (found == memo_.end())
+        if (const auto found{memo_.find(window)}; found != memo_.end())
         {
-            const auto verdict{dfa::is_split_window(simulator, window)};
+            const auto& [known_window, known_verdict]{*found};
 
-            found = memo_.emplace(std::move(window), verdict).first;
+            return known_verdict;
         }
 
-        return found->second;
+        const auto verdict{dfa::is_split_window(simulator, window)};
+
+        memo_.emplace(std::move(window), verdict);
+
+        return verdict;
     }
 
     /**
-     * @brief The exhaustive search: every position from the floor, lengths ascending, first certificate wins.
+     * @brief Runs the exhaustive search: every position from the floor, lengths ascending, first certificate wins.
      * @tparam Iterator Random access iterator type.
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.
@@ -162,11 +173,13 @@ private:
     [[nodiscard]] std::optional<std::size_t> exhaustive(
             const dfa::Simulator& simulator, Iterator begin, const std::size_t size, const std::size_t floor)
     {
-        for (auto occurrence{floor}; occurrence + 2 <= size; ++occurrence)
+        for (auto occurrence{floor}; occurrence + shortest_window <= size; ++occurrence)
         {
             if (const auto found{window_at(simulator, begin, size, occurrence)})
             {
-                return occurrence + found->first;
+                const auto [origin, length]{*found};
+
+                return occurrence + origin;
             }
         }
 
@@ -174,14 +187,18 @@ private:
     }
 
     /**
-     * @brief The core-filtered search: every certifying window provably contains the core with a byte after it,
-     *        so candidates exist only where the core occurs, and visiting them in the exhaustive walk's own
+     * @brief Runs the core-filtered search: every certifying window provably contains the core with a byte after it, so
+     *        candidates exist only where the core occurs, and visiting them in the exhaustive walk's own
      *        position-then-length order gives that walk's plan, refusals included.
      *
-     * Positions are still scanned one by one, but for a byte comparison each; windows are built and certified
-     * only at occurrences. A proved core longer than the longest window minus its trailing byte admits no
-     * candidate at all, so every target refuses at once, exactly as the exhaustive walk would conclude after
-     * scanning to the end of the input.
+     * Positions are still scanned one by one, but for a byte comparison each; windows are built and certified only at
+     * occurrences. A proved core longer than the longest window minus its trailing byte admits no candidate at all, so
+     * every target refuses at once, exactly as the exhaustive walk would conclude after scanning to the end of the
+     * input.
+     *
+     * A window of length in (m, longest] starting at t holds the m-byte core occurring at c, plus a byte after it,
+     * exactly when t lies in [c + m + 1 - length, c]; an occurrence starting past t + longest - m - 1 for the start t
+     * of the heap's least pair therefore contributes no smaller pair.
      * @tparam Iterator Random access iterator type.
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.
@@ -201,21 +218,16 @@ private:
         }
 
         const auto matches{[&](const std::size_t at) {
-            for (std::size_t offset{0}; offset < core.size(); ++offset)
-            {
-                if (byte(begin, at + offset) != core[offset])
-                {
-                    return false;
-                }
-            }
+            const auto agrees{[&](const std::size_t offset) { return byte(begin, at + offset) == core[offset]; }};
 
-            return true;
+            return std::ranges::all_of(std::views::iota(std::size_t{0}, core.size()), agrees);
         }};
 
         std::size_t cursor{floor};
 
         std::size_t latest{floor};
 
+        // Advances the cursor past the occurrence it returns, and tightens the barren offset once none is left.
         const auto next_occurrence{[&]() -> std::optional<std::size_t> {
             for (; cursor + core.size() <= size; ++cursor)
             {
@@ -232,10 +244,8 @@ private:
             return std::nullopt;
         }};
 
-        std::vector<std::pair<std::size_t, std::size_t>> heap;
+        std::vector<std::pair<std::size_t, std::size_t>> heap{};
 
-        // A window of length in (m, longest] starting at t holds the m-byte core occurring at c, plus a byte after
-        // it, exactly when t lies in [c + m + 1 - length, c].
         const auto ingest{[&](const std::size_t at) {
             for (auto length{core.size() + 1}; length <= longest_window; ++length)
             {
@@ -252,14 +262,31 @@ private:
 
         auto pending{next_occurrence()};
 
-        std::optional<std::pair<std::size_t, std::size_t>> last;
+        std::optional<std::pair<std::size_t, std::size_t>> last{};
 
-        // A pop waits until no unread occurrence can still contribute a smaller pair, which holds once the next
-        // occurrence starts past t + longest - m - 1; overlapping occurrences propose duplicate pairs, which pop
-        // adjacently and are skipped.
+        const auto pending_contributes{[&] {
+            if (!pending)
+            {
+                return false;
+            }
+
+            if (heap.empty())
+            {
+                return true;
+            }
+
+            const auto [least_start, least_length]{heap.front()};
+
+            const auto horizon{least_start + longest_window - core.size() - 1};
+
+            return *pending <= horizon;
+        }};
+
+        // A pop waits until no unread occurrence can still contribute a smaller pair; overlapping occurrences propose
+        // duplicate pairs, which pop adjacently and are skipped.
         while (true)
         {
-            while (pending && (heap.empty() || *pending <= heap.front().first + longest_window - core.size() - 1))
+            while (pending_contributes())
             {
                 ingest(*pending);
 
@@ -284,9 +311,11 @@ private:
 
             last = candidate;
 
-            if (const auto origin{certified_origin(simulator, begin, candidate.first, candidate.second)})
+            const auto [start, length]{candidate};
+
+            if (const auto origin{certified_origin(simulator, begin, start, length)})
             {
-                return candidate.first + *origin;
+                return start + *origin;
             }
         }
     }
@@ -297,7 +326,7 @@ private:
     Memo_t memo_;
 
     /**
-     * @brief No core occurrence begins at or after this offset; a scan that drains the input tightens it.
+     * @brief The offset at or after which no core occurrence begins, tightened by a scan that drains the input.
      */
     std::size_t barren_{std::numeric_limits<std::size_t>::max()};
 };

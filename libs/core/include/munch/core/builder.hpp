@@ -1,10 +1,12 @@
 #ifndef MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_BUILDER_HPP
 #define MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_BUILDER_HPP
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <iterator>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -26,8 +28,8 @@ namespace munch::core
  * Each registered pattern is kept as a separate NFA and determinized on its own. The resulting per-pattern DFAs are
  * then recombined into a single NFA by Thompson construction, which is determinized once more to produce the DFA
  * backing the Lexer. Determinizing each pattern in isolation resolves the non-determinism introduced by its own
- * combinators before the patterns are merged, leaving the final subset construction to resolve only the
- * non-determinism between patterns, such as shared prefixes.
+ * combinators before the patterns are merged, leaving the final subset construction to resolve only the non-determinism
+ * between patterns, such as shared prefixes.
  */
 class Builder
 {
@@ -46,13 +48,13 @@ public:
         /**
          * @brief Registered token values that never win any input, in registration order.
          */
-        std::vector<std::size_t> dead_tokens;
+        std::vector<std::size_t> dead_tokens{};
 
         /**
          * @brief Pairs of token values accepting the same input at the highest priority accepting it, each pair
          *        ascending.
          */
-        std::vector<std::pair<std::size_t, std::size_t>> equal_priority_ties;
+        std::vector<std::pair<std::size_t, std::size_t>> equal_priority_ties{};
     };
 
     /**
@@ -65,17 +67,19 @@ public:
     template <common::concepts::Token_id T>
     void add_token(const regex::Regex& regex, const T token, const std::size_t priority)
     {
-        add_token(regex, {static_cast<std::size_t>(token), priority});
+        const nfa::Token registered{static_cast<std::size_t>(token), priority};
+
+        add_token(regex, registered);
     }
 
     /**
      * @brief Declares the tokens the caller discards before using the stream.
      *
-     * Only affects Lexer::is_split_point_ignoring(), which certifies split points under the weaker equivalence
-     * that deletes these tokens from both streams before comparing, and only for input the serial scan
-     * tokenizes completely; the relaxed certificate has no malformed-input guarantee at all. The exact
-     * certificate is unaffected, so declaring a set never weakens a guarantee a caller was already relying on;
-     * it only makes the relaxed one available.
+     * Only affects Lexer::is_split_point_ignoring(), which certifies split points under the weaker equivalence that
+     * deletes these tokens from both streams before comparing, and only for input the serial scan tokenizes completely;
+     * the relaxed certificate has no malformed-input guarantee at all. The exact certificate is unaffected, so
+     * declaring a set never weakens a guarantee a caller was already relying on; it only makes the relaxed one
+     * available.
      * @tparam T The token type used with add_token().
      * @param tokens The tokens to treat as discarded.
      */
@@ -84,10 +88,9 @@ public:
     {
         ignored_.clear();
 
-        for (const auto token : tokens)
-        {
-            ignored_.push_back(static_cast<std::size_t>(token));
-        }
+        const auto as_id{[](const T token) { return static_cast<std::size_t>(token); }};
+
+        std::ranges::transform(tokens, std::back_inserter(ignored_), as_id);
     }
 
     /**
@@ -97,12 +100,11 @@ public:
     void set_ignored_tokens(std::vector<std::size_t> tokens) { ignored_ = std::move(tokens); }
 
     /**
-     * @brief Attaches a payload to a token, delivered to a three-argument tokenize_all() sink with every consumed
-     * token of it in the built Lexer.
+     * @brief Attaches a payload to a token, delivered to a three-argument tokenize_all() sink with every consumed token
+     *        of it in the built Lexer.
      *
-     * A three-argument tokenize_all() sink receives it, which is how Mode_lexer's batch driver reads a
-     * token's mode action without a lookup; its per-token driver looks the action up. It rides the sink
-     * rather than tokenize()'s Match.
+     * That is how Mode_lexer's batch driver reads a token's mode action without a lookup; its per-token driver looks
+     * the action up. It rides the sink rather than tokenize()'s Match.
      * @tparam T The token type used with add_token().
      * @param token The token to attach the payload to.
      * @param payload The payload to report, zero meaning none.
@@ -116,15 +118,15 @@ public:
     /**
      * @brief Caps how many DFA states determinization may discover before build() and diagnose() throw.
      *
-     * Subset construction has exponential worst cases, so a caller accepting untrusted token sets should cap the
-     * states it may discover; build() and diagnose() then throw State_limit_error when a grammar runs into the
-     * cap. Matching needs no guard against the automaton, which cannot backtrack the way a regex engine can, though
-     * longest match re-reads after a failed longer match; see docs/limits.md. Zero, the default,
-     * means unlimited. This caps determinization only: regex tree size, NFA expansion from large repetition counts, and
-     * the number of registered patterns are the caller's to bound. The dominant allocation, the transition table, stays
-     * within the cap times the number of symbol classes times four bytes per entry, one column more for a nullable
-     * token set: a set matching the empty string is compiled as its positive-width equivalent, whose fresh start state
-     * determinization never discovered and the cap therefore never counted.
+     * Subset construction has exponential worst cases, so a caller accepting untrusted token sets should cap the states
+     * it may discover; build() and diagnose() then throw State_limit_error when a grammar runs into the cap. Matching
+     * needs no guard against the automaton, which cannot backtrack the way a regex engine can, though longest match
+     * re-reads after a failed longer match; see docs/limits.md. Zero, the default, means unlimited. This caps
+     * determinization only: regex tree size, NFA expansion from large repetition counts, and the number of registered
+     * patterns are the caller's to bound. The dominant allocation, the transition table, stays within the cap times the
+     * number of symbol classes times four bytes per entry, one column more for a nullable token set: a set matching the
+     * empty string is compiled as its positive-width equivalent, whose fresh start state determinization never
+     * discovered and the cap therefore never counted.
      * @param limit The most states determinization may discover, zero for no cap.
      */
     void set_state_limit(const std::size_t limit) noexcept { state_limit_ = limit; }
@@ -138,39 +140,27 @@ public:
     /**
      * @brief Diagnoses the registered grammar; see Diagnostics.
      *
-     * Walks the merged automaton once and leaves the builder untouched, so it can be called before
-     * build(), after it, or not at all.
+     * Walks the merged automaton once and leaves the builder untouched, so it can be called before build(), after it,
+     * or not at all.
+     * @return The dead tokens and the equal-priority ties.
+     * @throws State_limit_error If the state limit is exceeded.
      */
     [[nodiscard]] Diagnostics diagnose() const;
 
 protected:
-    /**
-     * @brief Returns the NFA combining the determinized patterns of the registered tokens.
-     * @return The constructed NFA object.
-     */
-    [[nodiscard]] nfa::Nfa nfa() const;
-
     /**
      * @brief Returns the constructed DFA from the registered tokens.
      * @return The constructed DFA object.
      */
     [[nodiscard]] dfa::Dfa dfa() const;
 
-private:
     /**
-     * @brief Collects the accepting candidates of every reachable determinization subset.
-     *
-     * The traversal is determinize()'s own, so diagnose() judges exactly the subsets the build discovers
-     * rather than mirroring the walk with a second implementation. One entry per reachable subset holding at
-     * least one accepting state, in discovery order.
-     * @param nfa The NFA to walk.
-     * @param state_limit The largest number of subsets to discover before throwing; zero means unlimited.
-     * @return The accepting candidate tokens, one list per accepting subset.
-     * @throws State_limit_error If the state limit is exceeded.
+     * @brief Returns the NFA combining the determinized patterns of the registered tokens.
+     * @return The constructed NFA object.
      */
-    [[nodiscard]] static std::vector<std::vector<nfa::Token>> reachable_candidates(
-            const nfa::Nfa& nfa, std::size_t state_limit);
+    [[nodiscard]] nfa::Nfa nfa() const;
 
+private:
     /**
      * @brief A registered token pattern.
      */
@@ -188,7 +178,7 @@ private:
     };
 
     /**
-     * @brief Internal method to register a token with a regex and NFA token.
+     * @brief Registers a token with a regex and NFA token.
      * @param regex The regex pattern.
      * @param token The NFA token.
      */
@@ -199,6 +189,20 @@ private:
      * @return The NFA builder representing all registered patterns.
      */
     [[nodiscard]] nfa::Builder merged_nfa() const;
+
+    /**
+     * @brief Collects the accepting candidates of every reachable determinization subset.
+     *
+     * The traversal is determinize()'s own, so diagnose() judges exactly the subsets the build discovers rather than
+     * mirroring the walk with a second implementation. One entry per reachable subset holding at least one accepting
+     * state, in discovery order.
+     * @param nfa The NFA to walk.
+     * @param state_limit The largest number of subsets to discover before throwing; zero means unlimited.
+     * @return The accepting candidate tokens, one list per accepting subset.
+     * @throws State_limit_error If the state limit is exceeded.
+     */
+    [[nodiscard]] static std::vector<std::vector<nfa::Token>> reachable_candidates(
+            const nfa::Nfa& nfa, std::size_t state_limit);
 
     /**
      * @brief The determinization cap set_state_limit() installed; zero means unlimited.
@@ -217,8 +221,8 @@ private:
     std::vector<std::size_t> ignored_;
 
     /**
-     * @brief The token payloads set_token_payload() attached, passed to the Lexer at construction so it stays
-     *        immutable afterwards.
+     * @brief The token payloads set_token_payload() attached, passed to the Lexer at construction so it stays immutable
+     *        afterwards.
      */
     std::vector<std::pair<std::size_t, std::uint64_t>> payloads_;
 };

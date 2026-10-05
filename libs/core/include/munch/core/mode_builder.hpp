@@ -4,10 +4,14 @@
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
+#include <format>
+#include <limits>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "munch/common/concepts.hpp"
@@ -22,12 +26,50 @@ namespace munch::core
  * @brief Builds a Mode_lexer: one token set per mode, plus what each token does to the mode stack.
  *
  * Each mode compiles through the ordinary Builder, so determinization, minimization, longest match and priority
- * resolution are the same machinery a flat grammar uses, applied once per mode. Modes are dense indices starting
- * at zero, and mode 0 is where a scan begins.
+ * resolution are the same machinery a flat grammar uses, applied once per mode. Modes are dense indices starting at
+ * zero, and mode 0 is where a scan begins.
  */
 class Mode_builder
 {
 public:
+    /**
+     * @brief Diagnoses every mode, plus the faults only a modal grammar can have.
+     *
+     * Each mode is diagnosed by the ordinary Builder, so a token dead in one mode is reported against that mode rather
+     * than against the grammar as a whole: a token can be legitimately dead in four modes and live in the fifth, which
+     * a merged report would drown.
+     */
+    struct Mode_diagnostics
+    {
+        /**
+         * @brief One Builder::Diagnostics per mode, indexed by mode.
+         */
+        std::vector<Builder::Diagnostics> per_mode{};
+
+        /**
+         * @brief Modes no token can reach from mode 0 with an initially empty stack, in ascending order, excluding mode
+         *        0 itself where scanning starts.
+         *
+         * A mode nothing enters is a grammar fault the per-mode reports cannot see, since each of them is complete and
+         * consistent on its own. The judgment is about the grammar's own transitions; a caller-seeded Mode_stack can
+         * start a scan inside any mode regardless.
+         */
+        std::vector<std::size_t> unreachable_modes{};
+
+        /**
+         * @brief Modes with neither a live non-self push or go_to nor a live pop for which the default-start grammar
+         *        can establish a frame naming another mode, in ascending order.
+         *
+         * The two exits are judged differently: a live non-self push or go_to makes a mode escapable by itself, even
+         * when nothing reaches the mode, while pop escapability depends on the frames a scan from mode 0 with an
+         * initially empty stack can establish. A caller-supplied frame may provide the missing return context, but only
+         * where such a live pop exists; no frame helps a stay-only mode. Being inescapable is legitimate for a mode
+         * meant to consume the rest of the input, and a mistake everywhere else, so it is reported rather than
+         * rejected.
+         */
+        std::vector<std::size_t> inescapable_modes{};
+    };
+
     /**
      * @brief Registers a token in one mode.
      * @tparam M The mode type (enum or integral).
@@ -36,8 +78,8 @@ public:
      * @param regex The regex pattern for the token.
      * @param token The token value.
      * @param priority The priority for resolving conflicts within this mode (lower is higher priority).
-     * @param action What the token does to the mode stack once matched; tokens stay by default. A go_to or push
-     *        target may name a mode not yet registered; build() checks it once every mode is known.
+     * @param action What the token does to the mode stack once matched; tokens stay by default. A go_to or push target
+     *        may name a mode not yet registered; build() checks it once every mode is known.
      * @throws std::invalid_argument If the action kind is not one of the four, if the mode or the token is negative or
      *         the largest representable index, or if this token was already registered in this mode with a different
      *         action.
@@ -51,8 +93,8 @@ public:
 
         const auto id{as_index(token, "token")};
 
-        // An action kind outside the enumeration reaches apply(), which rejects it, while the batch driver ignores
-        // that rejection: the two drivers would disagree on the same input.
+        // An action kind outside the enumeration reaches apply(), which rejects it, while the batch driver ignores that
+        // rejection: the two drivers would disagree on the same input.
         switch (action.kind)
         {
         case Mode_action_kind::stay:
@@ -65,10 +107,8 @@ public:
             throw std::invalid_argument{"Mode_builder::add_token: the action kind is not one of the four"};
         }
 
-        // A target is only meaningful for the two kinds that name one; stay and pop document it as ignored, so it is
-        // normalized here rather than allowed to make two otherwise identical actions compare unequal. A go_to onto
-        // the mode it was registered in is observably a stay, and saying so lets a mode whose only action is that one
-        // take the driver's no-action path.
+        // Stay and pop carry target zero, so two otherwise identical actions compare equal, and a go_to onto its own
+        // mode is a stay, so a mode whose only action is that one takes the driver's no-action path.
         const auto targeted{action.kind == Mode_action_kind::go_to || action.kind == Mode_action_kind::push};
 
         const auto self_go_to{action.kind == Mode_action_kind::go_to && action.target == index};
@@ -77,19 +117,24 @@ public:
                 .kind = self_go_to ? Mode_action_kind::stay : action.kind,
                 .target = targeted && !self_go_to ? action.target : std::size_t{0}};
 
+        const auto conflicts{[&](const std::pair<std::size_t, Mode_action>& entry) {
+            const auto& [declared, previous]{entry};
+
+            const auto same{previous.kind == normalized.kind && previous.target == normalized.target};
+
+            return declared == id && !same;
+        }};
+
         // Patterns may share a token ID; conflicting actions for it cannot, since the scanner reports only the ID.
         // Checked before anything is resized or registered, so a caught exception leaves the builder as it was.
-        if (index < registered_.size())
+        const auto conflicting{index < registered_.size() && std::ranges::any_of(registered_[index], conflicts)};
+
+        if (conflicting)
         {
-            for (const auto& [declared, previous] : registered_[index])
-            {
-                if (declared == id && (previous.kind != normalized.kind || previous.target != normalized.target))
-                {
-                    throw std::invalid_argument{
-                            "Mode_builder::add_token: token " + std::to_string(id) + " in mode " +
-                            std::to_string(index) + " already carries a different action"};
-                }
-            }
+            const auto message{std::format(
+                    "Mode_builder::add_token: token {} in mode {} already carries a different action", id, index)};
+
+            throw std::invalid_argument{message};
         }
 
         if (index >= modes_.size())
@@ -105,7 +150,9 @@ public:
 
         populated_[index] = true;
 
-        if (!std::ranges::any_of(registered_[index], [id](const auto& pair) { return pair.first == id; }))
+        const auto known{std::ranges::contains(registered_[index] | std::views::keys, id)};
+
+        if (!known)
         {
             registered_[index].emplace_back(id, normalized);
         }
@@ -114,8 +161,8 @@ public:
     /**
      * @brief Caps how many DFA states determinization may discover, applied to each mode separately.
      *
-     * The cap is per mode rather than aggregate: a grammar with five modes may therefore discover up to five times
-     * the limit in total, which a caller bounding untrusted input should account for.
+     * The cap is per mode rather than aggregate: a grammar with five modes may therefore discover up to five times the
+     * limit in total, which a caller bounding untrusted input should account for.
      * @param limit The per-mode cap; zero, the default, means unlimited.
      */
     void set_state_limit(const std::size_t limit) noexcept { state_limit_ = limit; }
@@ -124,56 +171,20 @@ public:
      * @brief Builds the mode lexer.
      * @return The constructed Mode_lexer.
      * @throws State_limit_error If any mode's determinization exceeds the cap.
-     * @throws std::invalid_argument If no token was registered, a mode index was skipped, an action targets a mode
-     *         that does not exist, or a token whose empty match would win carries an action.
+     * @throws std::invalid_argument If no token was registered, a mode index was skipped, an action targets a mode that
+     *         does not exist, or a token whose empty match would win carries an action.
      */
     [[nodiscard]] Mode_lexer build() const;
 
     /**
-     * @brief One more than the highest mode index tokens have been registered in.
+     * @brief Returns the number of modes: one more than the highest mode index tokens have been registered in.
+     * @return The number of modes.
      */
     [[nodiscard]] std::size_t modes() const noexcept { return modes_.size(); }
 
     /**
-     * @brief Diagnoses every mode, plus the faults only a modal grammar can have.
-     *
-     * Each mode is diagnosed by the ordinary Builder, so a token dead in one mode is reported against that mode
-     * rather than against the grammar as a whole: a token can be legitimately dead in four modes and live in the
-     * fifth, which a merged report would drown.
-     */
-    struct Mode_diagnostics
-    {
-        /**
-         * @brief One Builder::Diagnostics per mode, indexed by mode.
-         */
-        std::vector<Builder::Diagnostics> per_mode;
-
-        /**
-         * @brief Modes no token can reach from mode 0 with an initially empty stack, in ascending order,
-         *        excluding mode 0 itself where scanning starts.
-         *
-         * A mode nothing enters is a grammar fault the per-mode reports cannot see, since each of them is complete
-         * and consistent on its own. The judgment is about the grammar's own transitions; a caller-seeded
-         * Mode_stack can start a scan inside any mode regardless.
-         */
-        std::vector<std::size_t> unreachable_modes;
-
-        /**
-         * @brief Modes with neither a live non-self push or go_to nor a live pop for which the default-start
-         *        grammar can establish a frame naming another mode, in ascending order.
-         *
-         * The two exits are judged differently: a live non-self push or go_to makes a mode escapable by itself,
-         * even when nothing reaches the mode, while pop escapability depends on the frames a scan from mode 0
-         * with an initially empty stack can establish. A caller-supplied frame may provide the missing return
-         * context, but only where such a live pop exists; no frame helps a stay-only mode. Being inescapable is
-         * legitimate for a mode meant to consume the rest of the input, and a mistake everywhere else, so it is
-         * reported rather than rejected.
-         */
-        std::vector<std::size_t> inescapable_modes;
-    };
-
-    /**
      * @brief Diagnoses the registered grammar; see Mode_diagnostics.
+     * @return The per-mode diagnostics, the unreachable modes and the inescapable modes.
      * @throws State_limit_error If any mode's determinization exceeds the cap.
      */
     [[nodiscard]] Mode_diagnostics diagnose() const;
@@ -193,33 +204,33 @@ private:
     template <typename V>
     [[nodiscard]] static std::size_t as_index(const V value, const std::string_view what)
     {
-        // An enum is dispatched through its underlying type rather than resolved with conditional_t, which would
-        // instantiate underlying_type for the integral case where it does not exist.
+        // An enum converts through its underlying type.
         if constexpr (std::is_enum_v<V>)
         {
-            return as_index(static_cast<std::underlying_type_t<V>>(value), what);
+            return as_index(std::to_underlying(value), what);
         }
-        else
+
+        if constexpr (std::is_signed_v<V>)
         {
-            if constexpr (std::is_signed_v<V>)
+            if (value < 0)
             {
-                if (value < 0)
-                {
-                    throw std::invalid_argument{std::string{"Mode_builder::add_token: negative "}.append(what)};
-                }
+                const auto message{std::format("Mode_builder::add_token: negative {}", what)};
+
+                throw std::invalid_argument{message};
             }
-
-            const auto index{static_cast<std::size_t>(value)};
-
-            // Sizing a row needs index + 1, so the largest representable value cannot be admitted either.
-            if (index == static_cast<std::size_t>(-1))
-            {
-                throw std::invalid_argument{std::string{"Mode_builder::add_token: "}.append(what).append(
-                        " is not representable as an index")};
-            }
-
-            return index;
         }
+
+        const auto index{static_cast<std::size_t>(value)};
+
+        // Sizing a row needs index + 1, so the largest representable value cannot be admitted either.
+        if (index == std::numeric_limits<std::size_t>::max())
+        {
+            const auto message{std::format("Mode_builder::add_token: {} is not representable as an index", what)};
+
+            throw std::invalid_argument{message};
+        }
+
+        return index;
     }
 
     /**
@@ -233,16 +244,16 @@ private:
     std::size_t state_limit_{0};
 
     /**
-     * @brief Whether each mode index received at least one token, so build() can reject a skipped mode rather
-     *        than compile a lexer for it that matches nothing.
+     * @brief Whether each mode index received at least one token, so build() can reject a skipped mode rather than
+     *        compile a lexer for it that matches nothing.
      */
     std::vector<bool> populated_;
 
     /**
      * @brief Every registered token and its normalized action, per mode.
      *
-     * A list of what was registered rather than a row indexed by token ID, so a sparse numbering costs nothing; it
-     * also answers whether a token was declared at all, which a table of non-stay actions cannot.
+     * A list of what was registered rather than a row indexed by token ID, so a sparse numbering costs nothing; it also
+     * answers whether a token was declared at all, which a table of non-stay actions cannot.
      */
     std::vector<std::vector<std::pair<std::size_t, Mode_action>>> registered_;
 };

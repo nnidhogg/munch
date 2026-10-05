@@ -9,7 +9,7 @@ namespace munch::core
 /**
  * @brief Thrown when determinization discovers more DFA states than the configured limit allows.
  *
- * Derives from std::runtime_error, so existing catch sites keep working; a caller sandboxing untrusted token sets
+ * Derives from std::runtime_error, so a handler for that type catches it too; a caller sandboxing untrusted token sets
  * catches this type to distinguish a rejected grammar from any other failure. See Builder::set_state_limit().
  */
 class State_limit_error : public std::runtime_error
@@ -22,11 +22,15 @@ public:
     explicit State_limit_error(std::size_t limit);
 
     /**
-     * @brief The configured state limit the construction ran into.
+     * @brief Returns the configured state limit the construction ran into.
+     * @return The limit.
      */
     [[nodiscard]] std::size_t limit() const noexcept;
 
 private:
+    /**
+     * @brief The configured state limit the construction ran into.
+     */
     std::size_t limit_;
 };
 

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <utility>
@@ -21,13 +22,96 @@ namespace
 class Random
 {
 public:
+    /**
+     * @brief Seeds the generator.
+     * @param seed The first state.
+     */
     explicit Random(const unsigned seed) : seed_{seed} {}
 
-    unsigned next(const unsigned bound) { return seed_ = seed_ * 1664525U + 1013904223U, (seed_ >> 8U) % bound; }
+    /**
+     * @brief Advances the generator and draws a value below a bound.
+     * @param bound One past the largest value drawn.
+     * @return The drawn value.
+     */
+    unsigned next(const unsigned bound)
+    {
+        seed_ = seed_ * multiplier + increment;
+
+        return (seed_ >> 8U) % bound;
+    }
 
 private:
+    /**
+     * @brief The generator's multiplier.
+     */
+    static constexpr unsigned multiplier{1664525U};
+
+    /**
+     * @brief The generator's increment.
+     */
+    static constexpr unsigned increment{1013904223U};
+
+    /**
+     * @brief The generator's state.
+     */
     unsigned seed_;
 };
+
+/**
+ * @brief The largest Unicode scalar value.
+ */
+constexpr char32_t max_code_point{0x10FFFF};
+
+/**
+ * @brief The number of Unicode code points, surrogates included.
+ */
+constexpr unsigned code_point_count{max_code_point + 1};
+
+/**
+ * @brief The first surrogate code point, which UTF-8 cannot carry.
+ */
+constexpr char32_t first_surrogate{0xD800};
+
+/**
+ * @brief The last surrogate code point.
+ */
+constexpr char32_t last_surrogate{0xDFFF};
+
+/**
+ * @brief The node budget every random regex is drawn under.
+ */
+constexpr int regex_budget{12};
+
+/**
+ * @brief The nesting depth every random regex is drawn to.
+ */
+constexpr int regex_depth{3};
+
+/**
+ * @brief The random grammars the lexer pipeline tests draw.
+ */
+constexpr std::size_t rounds{60};
+
+/**
+ * @brief The random inputs each of those grammars is run on against direct NFA simulation.
+ */
+constexpr std::size_t passes{40};
+
+/**
+ * @brief The runs tokenizable_run() draws before it gives up.
+ */
+constexpr std::size_t attempts{8};
+
+/**
+ * @brief The random code points the UTF-8 range test draws.
+ */
+constexpr std::size_t code_point_rounds{20000};
+
+/**
+ * @brief Ignores every token of a scan.
+ * @tparam T The token type.
+ */
+constexpr auto ignore_token{[]<typename T>(const T, const std::size_t) {}};
 
 /**
  * @brief Builds a random regex over 'a' to 'c', drawing from every combinator kind up to the given depth.
@@ -38,6 +122,7 @@ private:
  * @param random The source of every draw.
  * @param depth The nesting still allowed: at zero a leaf is drawn, a text or a set.
  * @param budget The remaining expanded-length allowance, decremented as the regex grows.
+ * @return The drawn regex.
  */
 Regex random_regex(Random& random, const int depth, int& budget)
 {
@@ -75,18 +160,47 @@ Regex random_regex(Random& random, const int depth, int& budget)
         return regex;
     }};
 
+    // The right operand is drawn first, which fixes the patterns a seed yields.
+    const auto operands{[&random, depth, &budget] {
+        auto right{random_regex(random, depth - 1, budget)};
+
+        auto left{random_regex(random, depth - 1, budget)};
+
+        return std::pair{std::move(left), std::move(right)};
+    }};
+
     switch (random.next(8))
     {
     case 0:
-        return concat(random_regex(random, depth - 1, budget), random_regex(random, depth - 1, budget));
+    {
+        auto [left, right]{operands()};
+
+        return concat(std::move(left), std::move(right));
+    }
     case 1:
-        return choice(random_regex(random, depth - 1, budget), random_regex(random, depth - 1, budget));
+    {
+        auto [left, right]{operands()};
+
+        return choice(std::move(left), std::move(right));
+    }
     case 2:
-        return kleene(random_regex(random, depth - 1, budget));
+    {
+        auto operand{random_regex(random, depth - 1, budget)};
+
+        return kleene(std::move(operand));
+    }
     case 3:
-        return plus(random_regex(random, depth - 1, budget));
+    {
+        auto operand{random_regex(random, depth - 1, budget)};
+
+        return plus(std::move(operand));
+    }
     case 4:
-        return optional(random_regex(random, depth - 1, budget));
+    {
+        auto operand{random_regex(random, depth - 1, budget)};
+
+        return optional(std::move(operand));
+    }
     case 5:
     {
         const auto count{random.next(3)};
@@ -112,10 +226,12 @@ Regex random_regex(Random& random, const int depth, int& budget)
 
 /**
  * @brief Generates a random input over 'a' to 'd'; 'd' appears in no pattern, exercising rejection.
+ * @param random The source of every draw.
+ * @return The input, up to twelve bytes.
  */
 std::string random_input(Random& random)
 {
-    std::string input;
+    std::string input{};
 
     for (auto length{random.next(13)}; length > 0; --length)
     {
@@ -128,21 +244,26 @@ std::string random_input(Random& random)
 /**
  * @brief Generates a run over 'a' to 'c' that the lexer tokenizes completely, or an empty run if it finds none.
  *
- * The splicing guarantee is stated for input that tokenizes completely, so the input has to be built from pieces
- * known to tokenize rather than from arbitrary bytes.
+ * The splicing guarantee is stated for input that tokenizes completely, so the input has to be built from pieces known
+ * to tokenize rather than from arbitrary bytes.
+ * @param random The source of every draw.
+ * @param lexer The lexer the run must tokenize completely under.
+ * @return The run, or an empty string when every attempt found none.
  */
 std::string tokenizable_run(Random& random, const core::Lexer& lexer)
 {
-    for (int attempt{0}; attempt < 8; ++attempt)
+    for (std::size_t attempt{0}; attempt < attempts; ++attempt)
     {
-        std::string candidate;
+        std::string candidate{};
 
         for (auto length{1U + random.next(5)}; length > 0; --length)
         {
             candidate += static_cast<char>('a' + random.next(3));
         }
 
-        if (lexer.tokenize_all<std::size_t>(candidate, [](std::size_t, std::size_t) {}) == candidate.size())
+        const auto consumed{lexer.tokenize_all<std::size_t>(candidate, ignore_token)};
+
+        if (consumed == candidate.size())
         {
             return candidate;
         }
@@ -151,78 +272,47 @@ std::string tokenizable_run(Random& random, const core::Lexer& lexer)
     return {};
 }
 
-/**
- * @brief Encodes a code point as UTF-8.
- */
-std::string encode(const char32_t code_point)
-{
-    std::string bytes;
-
-    if (code_point <= 0x7F)
-    {
-        bytes += static_cast<char>(code_point);
-    }
-    else if (code_point <= 0x7FF)
-    {
-        bytes += static_cast<char>(0xC0 | (code_point >> 6U));
-        bytes += static_cast<char>(0x80 | (code_point & 0x3FU));
-    }
-    else if (code_point <= 0xFFFF)
-    {
-        bytes += static_cast<char>(0xE0 | (code_point >> 12U));
-        bytes += static_cast<char>(0x80 | ((code_point >> 6U) & 0x3FU));
-        bytes += static_cast<char>(0x80 | (code_point & 0x3FU));
-    }
-    else
-    {
-        bytes += static_cast<char>(0xF0 | (code_point >> 18U));
-        bytes += static_cast<char>(0x80 | ((code_point >> 12U) & 0x3FU));
-        bytes += static_cast<char>(0x80 | ((code_point >> 6U) & 0x3FU));
-        bytes += static_cast<char>(0x80 | (code_point & 0x3FU));
-    }
-
-    return bytes;
-}
-
 } // namespace
 
 TEST(Pipeline_property_test, Lexer_agrees_with_direct_nfa_simulation)
 {
     Random random{7};
 
-    for (int round{0}; round < 60; ++round)
+    for (std::size_t round{0}; round < rounds; ++round)
     {
         const auto count{1U + random.next(4)};
 
-        std::vector<Regex> patterns;
+        std::vector<Regex> patterns{};
 
-        core::Builder builder;
+        core::Builder builder{};
 
         for (std::size_t index{0}; index < count; ++index)
         {
-            int budget{12};
+            int budget{regex_budget};
 
-            patterns.push_back(random_regex(random, 3, budget));
+            patterns.push_back(random_regex(random, regex_depth, budget));
 
             builder.add_token(patterns[index], index + 1, index);
         }
 
         const auto lexer{builder.build()};
 
-        std::vector<nfa::Nfa> nfas;
+        std::vector<nfa::Nfa> nfas{};
 
         for (std::size_t index{0}; index < count; ++index)
         {
-            nfas.push_back(to_nfa(patterns[index]).set_accept_token(nfa::Token{index + 1, index}).build());
+            const nfa::Token token{index + 1, index};
+
+            auto automaton{to_nfa(patterns[index])};
+
+            automaton.set_accept_token(token);
+
+            nfas.push_back(automaton.build());
         }
 
-        for (int pass{0}; pass < 40; ++pass)
-        {
-            const auto input{random_input(random)};
-
-            // The reference result: the longest match over the per-pattern NFAs, ties won by the earliest
-            // registration, which is the highest priority here.
-            std::optional<std::size_t> best_id;
+        // Longest match over the per-pattern NFAs, ties won by the earliest registration, the highest priority here.
+        const auto reference{[&nfas](const std::string& input) {
+            std::optional<std::size_t> best_id{};
 
             std::size_t best_length{0};
 
@@ -237,6 +327,15 @@ TEST(Pipeline_property_test, Lexer_agrees_with_direct_nfa_simulation)
                     best_length = length;
                 }
             }
+
+            return std::pair{best_id, best_length};
+        }};
+
+        for (std::size_t pass{0}; pass < passes; ++pass)
+        {
+            const auto input{random_input(random)};
+
+            const auto [best_id, best_length]{reference(input)};
 
             const auto [token, length]{lexer.tokenize<std::size_t>(input)};
 
@@ -253,20 +352,22 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
     Random random{0x5b1cU};
 
     std::size_t certified{0};
+
     std::size_t compared{0};
+
     std::size_t genuinely_split{0};
 
-    for (int round{0}; round < 60; ++round)
+    for (std::size_t round{0}; round < rounds; ++round)
     {
-        core::Builder builder;
+        core::Builder builder{};
 
         const auto count{1U + random.next(4)};
 
         for (std::size_t index{0}; index < count; ++index)
         {
-            int budget{12};
+            int budget{regex_budget};
 
-            builder.add_token(random_regex(random, 3, budget), index + 1, index);
+            builder.add_token(random_regex(random, regex_depth, budget), index + 1, index);
         }
 
         // 's' occurs in no generated pattern, so the initial state alone consumes it. That gives the certificate
@@ -275,9 +376,9 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
 
         const auto lexer{builder.build()};
 
-        // A nullable generated pattern is compiled behind a fresh start state, and the old start, re-entered by
-        // the pattern's loop, is then an ordinary live state consuming 's' mid-token, which de-certifies it.
-        // There is nothing to splice then.
+        // A nullable generated pattern is compiled behind a fresh start state, and the old start, re-entered by the
+        // pattern's loop, is then an ordinary live state consuming 's' mid-token, which de-certifies it. There is
+        // nothing to splice then.
         if (!lexer.is_split_point('s'))
         {
             continue;
@@ -285,7 +386,7 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
 
         ++certified;
 
-        std::string input;
+        std::string input{};
 
         for (auto segments{4U + random.next(9)}; segments > 0; --segments)
         {
@@ -294,11 +395,12 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
             input += 's';
         }
 
-        std::vector<Emitted> serial;
+        std::vector<Emitted> serial{};
 
-        const auto consumed{lexer.tokenize_all<std::size_t>(
-                input,
-                [&serial](const std::size_t token, const std::size_t length) { serial.emplace_back(token, length); })};
+        const auto collect{
+                [&serial](const std::size_t token, const std::size_t length) { serial.emplace_back(token, length); }};
+
+        const auto consumed{lexer.tokenize_all<std::size_t>(input, collect)};
 
         ASSERT_EQ(consumed, input.size()) << "round " << round << ", input " << input;
 
@@ -309,15 +411,16 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
             // Sized before the scan and never resized, so each worker writes only its own vector.
             std::vector<std::vector<Emitted>> parts(chunks);
 
-            const auto lengths{lexer.tokenize_all_parallel<std::size_t>(
-                    input, chunks,
+            const auto collect_chunk{
                     [&parts](const std::size_t chunk, const std::size_t token, const std::size_t length) {
                         parts[chunk].emplace_back(token, length);
-                    })};
+                    }};
+
+            const auto lengths{lexer.tokenize_all_parallel<std::size_t>(input, chunks, collect_chunk)};
 
             ASSERT_EQ(lengths.size() + 1, boundaries.size()) << "round " << round << ", chunks " << chunks;
 
-            std::vector<Emitted> spliced;
+            std::vector<Emitted> spliced{};
 
             for (std::size_t chunk{0}; chunk < lengths.size(); ++chunk)
             {
@@ -340,33 +443,33 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
         ++compared;
     }
 
-    // Guards against the test going quietly vacuous. Without them it would still pass if every grammar certified
-    // nothing, or if every plan collapsed to a single chunk, having compared the serial scan only against itself.
-    EXPECT_GT(certified, 40u);
-    EXPECT_GT(compared, 40u);
-    EXPECT_GT(genuinely_split, 100u);
+    // More than forty grammars certified 's' and were compared, and more than a hundred plans cut their input into
+    // several chunks.
+    EXPECT_GT(certified, 40U);
+    EXPECT_GT(compared, 40U);
+    EXPECT_GT(genuinely_split, 100U);
 }
 
 TEST(Pipeline_property_test, Utf8_range_matches_exactly_the_encodable_code_points)
 {
-    core::Builder builder;
+    core::Builder builder{};
 
-    builder.add_token(utf8::range(0x0, 0x10FFFF), 1, 0);
+    builder.add_token(utf8::range(0x0, max_code_point), 1, 0);
 
     const auto lexer{builder.build()};
 
     Random random{11};
 
-    for (int round{0}; round < 20000; ++round)
+    for (std::size_t round{0}; round < code_point_rounds; ++round)
     {
-        const auto code_point{static_cast<char32_t>(random.next(0x110000))};
+        const auto code_point{static_cast<char32_t>(random.next(code_point_count))};
 
-        if (code_point >= 0xD800 && code_point <= 0xDFFF)
+        if (code_point >= first_surrogate && code_point <= last_surrogate)
         {
             continue;
         }
 
-        const auto bytes{encode(code_point)};
+        const auto bytes{utf8::encode(code_point)};
 
         const auto [token, length]{lexer.tokenize<std::size_t>(bytes)};
 
@@ -378,6 +481,8 @@ TEST(Pipeline_property_test, Utf8_range_matches_exactly_the_encodable_code_point
     for (const std::string invalid :
          {"\x80", "\xC0\xAF", "\xC1\xBF", "\xE0\x80\x80", "\xF0\x80\x80\x80", "\xF5\x80\x80\x80", "\xFF"})
     {
-        EXPECT_EQ(lexer.tokenize<std::size_t>(invalid).token, std::nullopt);
+        const auto [token, length]{lexer.tokenize<std::size_t>(invalid)};
+
+        EXPECT_EQ(token, std::nullopt);
     }
 }

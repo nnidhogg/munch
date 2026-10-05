@@ -4,6 +4,7 @@ project(munch_core)
 
 add_library(${PROJECT_NAME}
         src/builder.cpp
+        src/lexer.cpp
         src/mode.cpp
         src/mode_builder.cpp
         src/mode_lexer.cpp

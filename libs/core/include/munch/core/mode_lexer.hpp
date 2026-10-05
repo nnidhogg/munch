@@ -4,6 +4,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <optional>
 #include <ranges>
 #include <stdexcept>
@@ -20,18 +21,18 @@ namespace munch::core
 /**
  * @brief A lexer whose token set depends on the scan's own history.
  *
- * One compiled Lexer per mode, selected by a Mode_stack the caller owns. This is what a front end needs for
- * separately tokenizing the interior of a string literal, string interpolation, and comments that nest. Be precise
- * about which of those a flat token set is denied: an ordinary escaped string literal is regular and a flat grammar
- * matches it whole, so modes buy the interior tokens rather than the literal. Arbitrarily nested comments are the
- * genuinely non-regular case, since counting to an unbounded depth is what one finite automaton cannot do.
- * A construct whose terminator is chosen per occurrence, such as a heredoc naming its own delimiter, is outside
- * this: a mode's token set is fixed at build time, so that needs the Tokenizer's hand-scanning hatch. Instances are
- * obtainable through Mode_builder::build().
+ * One compiled Lexer per mode, selected by a Mode_stack the caller owns. This is what a front end needs for separately
+ * tokenizing the interior of a string literal, string interpolation, and comments that nest. Be precise about which of
+ * those a flat token set is denied: an ordinary escaped string literal is regular and a flat grammar matches it whole,
+ * so modes buy the interior tokens rather than the literal. Arbitrarily nested comments are the genuinely non-regular
+ * case, since counting to an unbounded depth is what one finite automaton cannot do. A construct whose terminator is
+ * chosen per occurrence, such as a heredoc naming its own delimiter, is outside this: a mode's token set is fixed at
+ * build time, so that needs the Tokenizer's hand-scanning hatch. Instances are obtainable through
+ * Mode_builder::build().
  *
  * @par Why there is no parallel entry point
- * A byte cannot identify the mode where two or more modes admit it, so no byte certificate names a safe cut here;
- * use Lexer where the grammar admits a flat token set.
+ * A byte cannot identify the mode where two or more modes admit it, so no byte certificate names a safe cut here; use
+ * Lexer where the grammar admits a flat token set.
  */
 class Mode_lexer
 {
@@ -43,15 +44,24 @@ public:
     template <typename T>
     struct Match
     {
+        /**
+         * @brief Equal when both attempts matched the same token at the same length.
+         */
+        bool operator==(const Match&) const = default;
+
+        /**
+         * @brief The token matched, or std::nullopt where nothing matched or a pop found nothing saved.
+         */
         std::optional<T> token{};
 
+        /**
+         * @brief The length of input the match consumed.
+         */
         std::size_t length{};
-
-        bool operator==(const Match&) const = default;
     };
 
     /**
-     * @brief A mode lexer whose modes never switch on their own: one compiled Lexer per mode and no actions.
+     * @brief Constructs a mode lexer whose modes never switch on their own: one compiled Lexer per mode and no actions.
      *
      * The caller-driven case, for a driver that switches modes itself: every token stays in its mode, so the stack
      * changes only when the caller sets its current mode. This is what lets one representation serve both ways of
@@ -68,10 +78,10 @@ public:
      * @param begin Iterator to the beginning of the remaining input.
      * @param end Iterator to the end of the input.
      * @param stack The mode stack, advanced by the matched token's action.
-     * @return The match. An empty token means no pattern matched, or the token's pop found nothing saved; the
-     *         stack is unchanged in both cases, so a caller can report the position without losing context.
-     * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved
-     *         frame that is not.
+     * @return The match. An empty token means no pattern matched, or the token's pop found nothing saved; the stack is
+     *         unchanged in both cases, so a caller can report the position without losing context.
+     * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved frame
+     *         that is not.
      */
     template <common::concepts::Token_id T, common::concepts::Byte_iterator Iterator>
     [[nodiscard]] Match<T> tokenize(Iterator begin, Iterator end, Mode_stack& stack) const
@@ -86,16 +96,16 @@ public:
         }
 
         // A zero-width match leaves the mode alone. The batch driver stops without reporting one at all, so the two
-        // drivers differ on whether the token appears, and applying its action here would make them differ on the
-        // mode as well. See docs/limits.md.
+        // drivers differ on whether the token appears, and applying its action here would make them differ on the mode
+        // as well. See docs/limits.md.
         if (length == 0)
         {
             return {.token = static_cast<T>(*token), .length = 0};
         }
 
-        // A mode with no mode-changing token leaves the stack alone, so the lookup and the application are
-        // skipped, the same test the batch driver makes once per mode change; this keeps the actionless
-        // lexer of a caller-driven Tokenizer as cheap as the flat scan it replaces.
+        // A mode with no mode-changing token leaves the stack alone, so the lookup and the application are skipped, the
+        // same test the batch driver makes once per mode change; the actionless lexer of a caller-driven Tokenizer then
+        // costs what Lexer::tokenize() costs.
         if (!acting_[stack.current])
         {
             return {.token = static_cast<T>(*token), .length = length};
@@ -119,26 +129,26 @@ public:
     /**
      * @brief Tokenizes the whole input, driving its own mode stack.
      *
-     * Stays inside one mode's batch scan until a token carries any non-stay action, rather than re-entering the
-     * scanner once per token. Any such action ends the pass, including a push whose target is the mode already
-     * being scanned. Lexer::tokenize_all()'s sink may halt the scan by returning false, so a mode-changing
-     * token ends the inner pass and the outer loop resumes in the new mode. Most tokens leave the mode alone, so
-     * most of the input is scanned in the tight loop.
+     * Stays inside one mode's batch scan until a token carries any non-stay action, rather than re-entering the scanner
+     * once per token. Any such action ends the pass, including a push whose target is the mode already being scanned.
+     * Lexer::tokenize_all()'s sink may halt the scan by returning false, so a mode-changing token ends the inner pass
+     * and the outer loop resumes in the new mode. Most tokens leave the mode alone, so most of the input is scanned in
+     * the tight loop.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator The input iterator type.
      * @tparam Sink Callable receiving each consumed token, its length, and the mode it matched in.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.
      * @param sink Invoked as sink(token, length, mode) for every consumed token, in input order.
-     * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at
-     *         the returned offset: no token matched there, a zero-width token did, or a pop found nothing saved
-     *         there; this form's sink cannot stop the scan.
+     * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at the
+     *         returned offset: no token matched there, a zero-width token did, or a pop found nothing saved there; this
+     *         form's sink cannot stop the scan.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires std::invocable<Sink&, T, std::size_t, std::size_t>
     std::size_t tokenize_all(Iterator begin, Iterator end, Sink sink) const
     {
-        Mode_stack stack;
+        Mode_stack stack{};
 
         return tokenize_all<T>(begin, end, std::move(sink), stack);
     }
@@ -147,9 +157,11 @@ public:
      * @brief Tokenizes the whole input, reporting the mode and nesting depth the scan ended in.
      *
      * A short return says where a scan stopped but not what it was doing there, which for a modal grammar is most of
-     * the diagnosis: an unterminated string and an unrecognized byte in code both stop, and only the mode
-     * distinguishes them. The stack is left exactly as the scan left it, so `stack.current` names the mode and
-     * `stack.saved.size()` the depth.
+     * the diagnosis: an unterminated string and an unrecognized byte in code both stop, and only the mode distinguishes
+     * them. The stack is left exactly as the scan left it, so `stack.current` names the mode and `stack.saved.size()`
+     * the depth. Each pass scans one mode in a batch that the first token carrying an action ends, a push onto the mode
+     * being scanned included, so the outer loop resumes in the new mode; a pop with nothing saved is refused, never
+     * reaching the sink, and the scan stops before it.
      * @tparam T The token type (enum or integral).
      * @tparam Iterator Random access iterator type.
      * @tparam Sink Callable receiving each consumed token, its length and its mode.
@@ -157,8 +169,10 @@ public:
      * @param end Iterator to the end of the input.
      * @param sink Invoked as sink(token, length, mode) for every consumed token, in input order.
      * @param stack Receives the mode and saved frames at the stopping point; its incoming value starts the scan.
-     * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved
-     *         frame that is not.
+     * @return The number of input elements tokenized; anything short of the input's size means the scan stopped at the
+     *         returned offset: no token matched there, a zero-width token did, or a pop found nothing saved there.
+     * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved frame
+     *         that is not.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterator Iterator, typename Sink>
         requires std::invocable<Sink&, T, std::size_t, std::size_t>
@@ -174,14 +188,16 @@ public:
         {
             const auto mode{stack.current};
 
+            const auto resume{begin + static_cast<std::ptrdiff_t>(offset)};
+
             // A mode nothing can leave needs no halt condition, so its sink returns void and the pass runs to the end.
             if (!acting_[mode])
             {
-                const auto whole{lexers_[mode].tokenize_all<std::size_t>(
-                        begin + static_cast<std::ptrdiff_t>(offset), end,
-                        [&](const std::size_t token, const std::size_t length) {
-                            sink(static_cast<T>(token), length, mode);
-                        })};
+                const auto pass{[&](const std::size_t token, const std::size_t length) {
+                    sink(static_cast<T>(token), length, mode);
+                }};
+
+                const auto whole{lexers_[mode].tokenize_all<std::size_t>(resume, end, pass)};
 
                 return offset + whole;
             }
@@ -189,9 +205,6 @@ public:
             // A refused token is never passed to the sink, but the scan counts it, so its length is subtracted.
             std::size_t refused{0};
 
-            // Passes each token to the caller's sink and stops the inner pass at the first token carrying an action,
-            // a push onto the mode already being scanned included, so the outer loop resumes in the new mode. A pop
-            // with nothing saved is a lexing error: the token is refused, unreported, and its length recorded.
             const auto emit{[&](const std::size_t token, const std::size_t length, const std::uint64_t packed) {
                 if (packed == 0)
                 {
@@ -202,15 +215,17 @@ public:
 
                 const auto action{unpack(packed)};
 
-                if (action.kind == Mode_action_kind::pop)
+                const auto pop{action.kind == Mode_action_kind::pop};
+
+                if (pop && stack.saved.empty())
                 {
-                    if (stack.saved.empty())
-                    {
-                        refused = length;
+                    refused = length;
 
-                        return false;
-                    }
+                    return false;
+                }
 
+                if (pop)
+                {
                     check(stack.saved.back());
                 }
 
@@ -221,8 +236,7 @@ public:
                 return false;
             }};
 
-            const auto consumed{
-                    lexers_[mode].tokenize_all<std::size_t>(begin + static_cast<std::ptrdiff_t>(offset), end, emit)};
+            const auto consumed{lexers_[mode].tokenize_all<std::size_t>(resume, end, emit)};
 
             offset += consumed - refused;
 
@@ -260,8 +274,8 @@ public:
      * @param sink As for the iterator form above.
      * @param stack As for the iterator form above.
      * @return As for the iterator form above.
-     * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved
-     *         frame that is not.
+     * @throws std::out_of_range If the stack's current mode is not a mode of this lexer, or a pop exposes a saved frame
+     *         that is not.
      */
     template <common::concepts::Token_id T, common::concepts::Random_access_byte_iterable Container, typename Sink>
         requires std::invocable<Sink&, T, std::size_t, std::size_t>
@@ -271,20 +285,25 @@ public:
     }
 
     /**
-     * @brief The number of modes the grammar declared.
+     * @brief Returns the number of modes the grammar declared.
+     * @return The number of modes.
      */
     [[nodiscard]] std::size_t modes() const noexcept { return lexers_.size(); }
 
     /**
-     * @brief The lexer compiled for one mode, for callers wanting its diagnostics or its own certificate.
+     * @brief Returns the lexer compiled for one mode, for callers wanting its diagnostics or its own certificate.
      *
-     * The certificate a single mode reports is sound only for input known to be scanned entirely in that mode. It
-     * says nothing about a cut in a multi-mode scan, where the mode at the cut is exactly what is unknown.
+     * The certificate a single mode reports is sound only for input known to be scanned entirely in that mode. It says
+     * nothing about a cut in a multi-mode scan, where the mode at the cut is exactly what is unknown.
      * @param mode The mode to inspect.
+     * @return The mode's compiled Lexer.
+     * @throws std::out_of_range If the index names no mode of this lexer.
      */
     [[nodiscard]] const Lexer& mode(const std::size_t mode) const { return lexers_.at(mode); }
 
 private:
+    // Mode_builder is the construction path carrying actions: it alone compiles the per-mode lexers with their
+    // payloads, so the constructor taking actions stays private and the friendship is its door.
     friend class Mode_builder;
 
     /**
@@ -292,10 +311,19 @@ private:
      */
     struct Registered
     {
+        /**
+         * @brief The mode the token was registered in.
+         */
         std::size_t mode{0};
 
+        /**
+         * @brief The token's ID.
+         */
         std::size_t token{0};
 
+        /**
+         * @brief The token's packed action, never a stay.
+         */
         Packed_action_t action{0};
     };
 
@@ -304,14 +332,7 @@ private:
      * @param lexers One Lexer per mode, indexed by mode, each carrying its tokens' actions as payloads.
      * @param actions Each mode's mode-changing tokens and their actions, none of them stay.
      */
-    Mode_lexer(std::vector<Lexer> lexers, std::vector<Registered> actions)
-        : lexers_{std::move(lexers)}, actions_{std::move(actions)}, acting_(lexers_.size(), 0)
-    {
-        for (const auto& registered : actions_)
-        {
-            acting_[registered.mode] = 1;
-        }
-    }
+    Mode_lexer(std::vector<Lexer> lexers, std::vector<Registered> actions);
 
     /**
      * @brief Rejects a mode index this lexer does not have.
@@ -319,8 +340,8 @@ private:
      * The caller owns the stack, so nothing stops it carrying a mode index from another lexer, or a saved frame
      * poisoned by hand. Both would be indexed unchecked, and the batch path would take an out-of-range mode straight
      * into its no-actions branch. Only the current mode is checked on entry, and a saved frame just before the pop
-     * exposing it, since scanning every frame per call made a run of pushes quadratic in the nesting depth. The test
-     * is inline because every scanned token makes it; the throw beside it is not.
+     * exposing it, since scanning every frame per call would make a run of pushes quadratic in the nesting depth. The
+     * test is inline because every scanned token makes it; the throw beside it is not.
      * @param mode The mode index to test.
      * @throws std::out_of_range If the index names no mode of this lexer.
      */
@@ -333,17 +354,6 @@ private:
     }
 
     /**
-     * @brief The action registered for a token in a mode, defaulting to stay.
-     *
-     * Only the per-token entry point needs it; the batch driver reads each action from the matched token's payload.
-     * Defined out of line to keep its loop out of callers that inline aggressively.
-     * @param mode The mode the token was matched in.
-     * @param token The token matched.
-     * @return The action, a stay unless one was registered.
-     */
-    [[nodiscard]] Mode_action action_of(std::size_t mode, std::size_t token) const noexcept;
-
-    /**
      * @brief Throws for a mode index no mode lexer has.
      *
      * Held apart from check() so that its test inlines into the scanning loop while this throw stays out of it, and
@@ -354,6 +364,17 @@ private:
     [[noreturn]] static void reject(std::size_t mode);
 
     /**
+     * @brief Returns the action registered for a token in a mode, defaulting to stay.
+     *
+     * Only the per-token entry point needs it; the batch driver reads each action from the matched token's payload.
+     * Defined out of line to keep its loop out of callers that inline aggressively.
+     * @param mode The mode the token was matched in.
+     * @param token The token matched.
+     * @return The action, a stay unless one was registered.
+     */
+    [[nodiscard]] Mode_action action_of(std::size_t mode, std::size_t token) const noexcept;
+
+    /**
      * @brief One compiled Lexer per mode, each carrying its tokens' actions as accepting-state payloads.
      */
     std::vector<Lexer> lexers_;
@@ -361,15 +382,15 @@ private:
     /**
      * @brief Every mode-changing token in the grammar, read only by the per-token entry point.
      *
-     * One flat list rather than a list per mode: a grammar has a handful of these in total, so the scan is short,
-     * and the batch driver never reads them.
+     * One flat list rather than a list per mode: a grammar has a handful of these in total, so the scan is short, and
+     * the batch driver never reads them.
      */
     std::vector<Registered> actions_;
 
     /**
-     * @brief Whether each mode has any such token, derived from actions_ at construction and tested per token on
-     *        the single-token path and once per mode change on the batch one, so held apart from the lists
-     *        themselves; a byte per mode rather than a bit, since the test sits on the hot path.
+     * @brief Whether each mode has any such token, derived from actions_ at construction and tested per token on the
+     *        single-token path and once per mode change on the batch one, so held apart from the lists themselves; a
+     *        byte per mode rather than a bit, since the test sits on the hot path.
      */
     std::vector<std::uint8_t> acting_;
 };

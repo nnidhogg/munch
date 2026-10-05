@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace munch::core
@@ -10,9 +11,9 @@ namespace munch::core
 /**
  * @brief What a token does to the mode stack once it has matched.
  *
- * A lexer mode is a separate token set, selected by the scan's own history: the tokens legal inside a string
- * literal are not the tokens legal outside one. The four actions are the whole vocabulary needed to express the
- * constructs that motivate modes, and nesting comes from the stack rather than from a fifth action.
+ * A lexer mode is a separate token set, selected by the scan's own history: the tokens legal inside a string literal
+ * are not the tokens legal outside one. The four actions are the whole vocabulary needed to express the constructs that
+ * motivate modes, and nesting comes from the stack rather than from a fifth action.
  */
 enum class Mode_action_kind : std::size_t
 {
@@ -57,12 +58,22 @@ struct Mode_action
  * @brief A Mode_action packed into one word, with stay as zero.
  *
  * Every token's action travels as the payload of its own accepting states, so the batch driver receives it as
- * accepting-state payload while the per-token driver looks up the stored ones, which are the non-stay actions, by
- * token ID. An absent lookup denotes a stay, the same stay the zero payload denotes on the other driver. One word is
- * what that channel carries, and making stay zero lets the common case, a token that leaves the mode alone, be a test
+ * accepting-state payload while the per-token driver looks up the stored ones, which are the non-stay actions, by token
+ * ID. An absent lookup denotes a stay, the same stay the zero payload denotes on the other driver. One word is what
+ * that channel carries, and making stay zero lets the common case, a token that leaves the mode alone, be a test
  * against zero. Packed_action_t, pack() and unpack() serve the two drivers and are not part of the stable surface.
  */
 using Packed_action_t = std::uint64_t;
+
+/**
+ * @brief The low bits of a packed action that hold its kind, the target sitting above them.
+ */
+inline constexpr unsigned kind_bits{2U};
+
+/**
+ * @brief The mask selecting a packed action's kind.
+ */
+inline constexpr Packed_action_t kind_mask{(Packed_action_t{1} << kind_bits) - 1U};
 
 /**
  * @brief Packs an action, mapping every stay to zero whatever target it names.
@@ -71,9 +82,16 @@ using Packed_action_t = std::uint64_t;
  */
 [[nodiscard]] constexpr Packed_action_t pack(const Mode_action& action) noexcept
 {
-    return action.kind == Mode_action_kind::stay ?
-                   0 :
-                   static_cast<Packed_action_t>(action.kind) | static_cast<Packed_action_t>(action.target) << 2U;
+    if (action.kind == Mode_action_kind::stay)
+    {
+        return 0;
+    }
+
+    const auto kind{static_cast<Packed_action_t>(std::to_underlying(action.kind))};
+
+    const auto target{static_cast<Packed_action_t>(action.target) << kind_bits};
+
+    return kind | target;
 }
 
 /**
@@ -83,15 +101,19 @@ using Packed_action_t = std::uint64_t;
  */
 [[nodiscard]] constexpr Mode_action unpack(const Packed_action_t packed) noexcept
 {
-    return {.kind = static_cast<Mode_action_kind>(packed & 3U), .target = static_cast<std::size_t>(packed >> 2U)};
+    const auto kind{static_cast<Mode_action_kind>(packed & kind_mask)};
+
+    const auto target{static_cast<std::size_t>(packed >> kind_bits)};
+
+    return {.kind = kind, .target = target};
 }
 
 /**
  * @brief The scan position's mode, owned by the caller rather than by the lexer.
  *
- * Mode_lexer is const and holds no scan state, exactly as Lexer does, so the stack lives here and is threaded
- * through the calls. That keeps one compiled lexer usable from many threads, and keeps a mode-aware scan
- * resumable: a caller holding this value holds everything the next call needs.
+ * Mode_lexer is const and holds no scan state, exactly as Lexer does, so the stack lives here and is threaded through
+ * the calls. That keeps one compiled lexer usable from many threads, and keeps a mode-aware scan resumable: a caller
+ * holding this value holds everything the next call needs.
  */
 struct Mode_stack
 {
