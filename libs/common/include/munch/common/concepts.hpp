@@ -20,9 +20,9 @@ concept Iterator = std::input_iterator<T>;
 /**
  * @brief Concept that checks if a type is a range (iterable container).
  *
- * Checked against const T with matching begin and end types: the container overloads take a const reference and
- * forward a begin/end pair to a function templated on one iterator type, so a range that only iterates mutably, or
- * whose sentinel is not its iterator, would satisfy a looser concept and still fail inside the body.
+ * Checked against const T with matching begin and end types: the container overloads take a const reference and forward
+ * a begin/end pair to a function templated on one iterator type, so a range that only iterates mutably, or whose
+ * sentinel is not its iterator, would satisfy a looser concept and still fail inside the body.
  * @tparam T The type to check.
  */
 template <typename T>
@@ -42,8 +42,8 @@ concept Random_access_iterable = std::ranges::common_range<const T> && std::rang
  * @brief Concept that checks if a dereferenced element reads as a byte.
  *
  * Integral elements qualify, wider ones under the scanners' documented modulo-256 reading, and so does std::byte.
- * Floating-point elements do not: converting an unrepresentable floating value to an integral type is undefined,
- * so such inputs are rejected at overload resolution rather than deep inside a scan.
+ * Floating-point elements do not: converting an unrepresentable floating value to an integral type is undefined, so
+ * such inputs are rejected at overload resolution rather than deep inside a scan.
  * @tparam T The dereferenced element type to check.
  */
 template <typename T>
@@ -66,8 +66,8 @@ concept Random_access_byte_iterator = std::random_access_iterator<T> && Byte<std
 /**
  * @brief Concept that checks if a type is a range iterating as bytes.
  *
- * The element is checked against const T, for the reason Iterable states: a range that yields bytes only from
- * mutable iteration would satisfy a looser concept and still fail inside the body.
+ * The element is checked against const T, for the reason Iterable states: a range that yields bytes only from mutable
+ * iteration would satisfy a looser concept and still fail inside the body.
  * @tparam T The type to check.
  */
 template <typename T>
@@ -83,8 +83,8 @@ concept Random_access_byte_iterable = Random_access_iterable<T> && Byte<std::ran
 /**
  * @brief Concept that checks if a type can name a token: an enumeration or an integral type.
  *
- * Every tokenizing entry point takes its token type through this concept, in place of a requires clause
- * repeated at each declaration.
+ * Every tokenizing entry point takes its token type through this concept, in place of a requires clause repeated at
+ * each declaration.
  * @tparam T The type to check.
  */
 template <typename T>
@@ -93,8 +93,8 @@ concept Token_id = std::integral<T> || std::is_enum_v<T>;
 /**
  * @brief Concept for a sink receiving matched tokens.
  *
- * A sink is invocable with the token and its length, or with the token, its length, and the payload attached at
- * build time; the scanners deliver the payload and drop it for sinks of the shorter shape.
+ * A sink is invocable with the token and its length, or with the token, its length, and the payload attached at build
+ * time; the scanners deliver the payload and drop it for sinks of the shorter shape.
  * @tparam Sink The callable to check.
  * @tparam T The token type the sink receives.
  */
