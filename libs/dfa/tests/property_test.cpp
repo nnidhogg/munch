@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <ranges>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -18,25 +20,95 @@ using namespace munch::dfa;
 namespace
 {
 /**
+ * @brief The random tables the definition and minimization tests draw.
+ */
+constexpr std::size_t rounds{100};
+
+/**
+ * @brief The random inputs each of those tables is run on.
+ */
+constexpr std::size_t passes{50};
+
+/**
+ * @brief The random tables the discarded-token certificate tests draw.
+ */
+constexpr std::size_t trivia_rounds{200};
+
+/**
+ * @brief The symbols every random table and every enumerated input is drawn over.
+ */
+constexpr std::array alphabet{'a', 'b', 'c', 'd'};
+
+/**
+ * @brief A token stream, each token as its ID and its length.
+ */
+using Stream_t = std::vector<std::pair<std::size_t, std::size_t>>;
+
+/**
+ * @brief A tokenized input: the stream and how much of the input it covers.
+ */
+struct Tokenized
+{
+    /**
+     * @brief Each token's ID and length, in input order.
+     */
+    Stream_t stream{};
+
+    /**
+     * @brief How much of the input was tokenized.
+     */
+    std::size_t consumed{};
+};
+
+/**
  * @brief Deterministic linear congruential generator, keeping the tests reproducible across runs and platforms.
  */
 class Random
 {
 public:
+    /**
+     * @brief Seeds the generator.
+     * @param seed The seed.
+     */
     explicit Random(const unsigned seed) : seed_{seed} {}
 
-    unsigned next(const unsigned bound) { return seed_ = seed_ * 1664525U + 1013904223U, (seed_ >> 8U) % bound; }
+    /**
+     * @brief Draws the next number below a bound.
+     * @param bound The bound, positive.
+     * @return The number, from zero to the bound less one.
+     */
+    unsigned next(const unsigned bound)
+    {
+        seed_ = seed_ * multiplier + increment;
+
+        return (seed_ >> 8U) % bound;
+    }
 
 private:
+    /**
+     * @brief The generator's multiplier.
+     */
+    static constexpr unsigned multiplier{1664525U};
+
+    /**
+     * @brief The generator's increment.
+     */
+    static constexpr unsigned increment{1013904223U};
+
+    /**
+     * @brief The generator's state.
+     */
     unsigned seed_;
 };
 
 /**
  * @brief Builds a DFA with random transitions over 'a' to 'd' and random accept states.
+ * @param random The generator drawn from.
+ * @return The DFA.
  */
 Dfa random_dfa(Random& random)
 {
-    Builder builder;
+    Builder builder{};
 
     std::vector<Dfa::State_t> states{builder.init_state()};
 
@@ -47,11 +119,13 @@ Dfa random_dfa(Random& random)
 
     for (const auto from : states)
     {
-        for (const auto symbol : {'a', 'b', 'c', 'd'})
+        for (const auto symbol : alphabet)
         {
             if (random.next(100) < 70)
             {
-                builder.add_transition(from, Label{symbol}, states[random.next(states.size())]);
+                const auto target{states[random.next(states.size())]};
+
+                builder.add_transition(from, Label{symbol}, target);
             }
         }
     }
@@ -68,20 +142,21 @@ Dfa random_dfa(Random& random)
 }
 
 /**
- * @brief Builds a random DFA containing a self-looping run, the shape a split point modulo discarded tokens
- * lives in.
+ * @brief Builds a random DFA containing a self-looping run, the shape a split point modulo discarded tokens lives in.
  *
- * random_dfa() wires transitions densely, so nearly every symbol is consumed from nearly every state and almost
- * nothing certifies. That makes it a good source of refutations and a poor source of positive cases. This one
- * builds the two shapes deliberately: a run state reached from the initial state on some symbols and looping back
- * to itself on those same symbols, which is what makes advancing from the run and from the initial state agree;
- * and a state reached from the initial state on symbols nothing else consumes, which is what the exact certificate
- * admits. The remaining symbols get arbitrary structure, and a run symbol is sometimes wired out of an unrelated
- * state so that de-certifying cases occur too.
+ * random_dfa() wires transitions densely, so nearly every symbol is consumed from nearly every state and almost nothing
+ * certifies. That makes it a good source of refutations and a poor source of positive cases. This one builds the two
+ * shapes deliberately: a run state reached from the initial state on some symbols and looping back to itself on those
+ * same symbols, which is what makes advancing from the run and from the initial state agree; and a state reached from
+ * the initial state on symbols nothing else consumes, which is what the exact certificate admits. The remaining symbols
+ * get arbitrary structure, and a run symbol is sometimes wired out of an unrelated state so that de-certifying cases
+ * occur too.
+ * @param random The generator drawn from.
+ * @return The DFA.
  */
 Dfa random_run_dfa(Random& random)
 {
-    Builder builder;
+    Builder builder{};
 
     const auto init{builder.init_state()};
 
@@ -89,9 +164,12 @@ Dfa random_run_dfa(Random& random)
 
     const auto solo{builder.next_state()};
 
-    // One symbol is reserved for each shape up front rather than repaired afterwards: a partition left empty by
-    // chance would index an empty vector below, and random.next(0) divides by zero.
-    std::vector<char> run_symbols{'a'}, solo_symbols{'b'}, other_symbols;
+    // One symbol is reserved for each shape up front, so neither partition the draws below index is empty.
+    std::vector<char> run_symbols{'a'};
+
+    std::vector<char> solo_symbols{'b'};
+
+    std::vector<char> other_symbols{};
 
     for (const auto symbol : {'c', 'd'})
     {
@@ -125,7 +203,7 @@ Dfa random_run_dfa(Random& random)
 
     builder.add_accept_state(solo, Token{2});
 
-    std::vector<Dfa::State_t> others;
+    std::vector<Dfa::State_t> others{};
 
     for (auto count{1U + random.next(3)}; count > 0; --count)
     {
@@ -136,23 +214,24 @@ Dfa random_run_dfa(Random& random)
 
     sources.insert(sources.end(), others.begin(), others.end());
 
-    // Nothing ever targets the initial state: re-entrancy would cost the solo symbols their exact certificate,
-    // and this generator exists to produce them.
+    // Nothing ever targets the initial state: re-entrancy would cost the solo symbols their exact certificate, and this
+    // generator exists to produce them.
     for (const auto from : sources)
     {
         for (const auto symbol : other_symbols)
         {
             if (random.next(100) < 60)
             {
-                builder.add_transition(from, Label{symbol}, others[random.next(others.size())]);
+                const auto target{others[random.next(others.size())]};
+
+                builder.add_transition(from, Label{symbol}, target);
             }
         }
 
         // Occasionally let an unrelated state consume a run symbol, which must cost that symbol its certificate.
         if (from != init && random.next(100) < 25)
         {
-            // Bound to locals first: two draws in one argument list are unsequenced, so their order and therefore
-            // this generator's output would vary between compilers.
+            // Two draws, the symbol first, each in its own statement so that their order is fixed.
             const auto symbol{run_symbols[random.next(run_symbols.size())]};
 
             const auto target{others[random.next(others.size())]};
@@ -174,27 +253,34 @@ Dfa random_run_dfa(Random& random)
 
 /**
  * @brief Generates a random input over 'a' to 'e'; 'e' labels no transition, exercising rejection.
+ * @param random The generator drawn from.
+ * @return The input, up to nineteen bytes.
  */
 std::string random_input(Random& random)
 {
-    std::string input;
+    std::string input{};
 
     for (auto length{random.next(20)}; length > 0; --length)
     {
-        input += static_cast<char>('a' + random.next(5));
+        const auto symbol{static_cast<char>('a' + random.next(5))};
+
+        input += symbol;
     }
 
     return input;
 }
 
 /**
- * @brief Reference simulation stepping the DFA definition maps directly, mirroring Simulator::run.
+ * @brief Simulates by stepping the DFA definition maps directly, mirroring Simulator::run.
+ * @param dfa The DFA.
+ * @param input The input.
+ * @return The longest match from the input's start.
  */
 Simulator::Match reference_run(const Dfa& dfa, const std::string& input)
 {
     auto state{dfa.init_state()};
 
-    Simulator::Match result{.token = dfa.has_accept_token(state), .length = 0};
+    Simulator::Match longest{.token = dfa.has_accept_token(state), .length = 0};
 
     for (std::size_t index{0}; index < input.size(); ++index)
     {
@@ -209,20 +295,27 @@ Simulator::Match reference_run(const Dfa& dfa, const std::string& input)
 
         if (const auto token{dfa.has_accept_token(state)}; token)
         {
-            result = {.token = token, .length = index + 1};
+            longest = {.token = token, .length = index + 1};
         }
     }
 
-    return result;
+    return longest;
 }
 
+/**
+ * @brief Counts the distinct states a DFA names anywhere.
+ * @param dfa The DFA.
+ * @return The number of states.
+ */
 std::size_t count_states(const Dfa& dfa)
 {
     std::unordered_set<Dfa::State_t> states{dfa.init_state()};
 
     for (const auto& [key, to] : dfa.transitions())
     {
-        states.insert(key.first);
+        const auto& [from, label]{key};
+
+        states.insert(from);
 
         states.insert(to);
     }
@@ -235,53 +328,67 @@ std::size_t count_states(const Dfa& dfa)
     return states.size();
 }
 
-using Stream = std::vector<std::pair<std::size_t, std::size_t>>;
-
 /**
  * @brief Tokenizes the input, returning each token's ID and length, and how much of the input was consumed.
+ * @param simulator The compiled token set.
+ * @param input The input.
+ * @return The stream and the consumed length.
  */
-Stream tokenize(const Simulator& simulator, const std::string& input, std::size_t& consumed)
+Tokenized tokenize(const Simulator& simulator, const std::string& input)
 {
-    Stream stream;
+    Tokenized tokenized{};
 
-    consumed = simulator.run_all(
-            input.begin(), input.end(), [&stream](const Token& token, const std::size_t length, std::uint64_t) {
-                stream.emplace_back(token.id(), length);
-            });
+    const auto collect{[&tokenized](const Token& token, const std::size_t length, std::uint64_t) {
+        tokenized.stream.emplace_back(token.id(), length);
+    }};
 
-    return stream;
+    tokenized.consumed = simulator.run_all(input.begin(), input.end(), collect);
+
+    return tokenized;
 }
 
 /**
  * @brief Drops the tokens a caller discards, leaving what the weaker equivalence compares.
+ * @param stream The stream.
+ * @param trivia The IDs discarded.
+ * @return The tokens kept, in order.
  */
-Stream without(const Stream& stream, const std::unordered_set<std::size_t>& trivia)
+Stream_t without(const Stream_t& stream, const std::unordered_set<std::size_t>& trivia)
 {
-    Stream kept;
+    Stream_t kept{};
 
-    std::ranges::copy_if(
-            stream, std::back_inserter(kept), [&trivia](const auto& token) { return !trivia.contains(token.first); });
+    const auto kept_kind{[&trivia](const std::pair<std::size_t, std::size_t>& token) {
+        const auto& [id, length]{token};
+
+        return !trivia.contains(id);
+    }};
+
+    std::ranges::copy_if(stream, std::back_inserter(kept), kept_kind);
 
     return kept;
 }
 
 /**
- * @brief Every string of length one to max_length over 'a' to 'd'.
+ * @brief Lists every string of length one to max_length over 'a' to 'd'.
  *
  * Exhaustive rather than sampled on purpose. A sampled corpus reports a symbol as safe whenever it happens never to
  * generate an input placing it inside a token, which is indistinguishable from the symbol genuinely being safe.
+ * @param max_length The longest string.
+ * @return The strings, shortest first and in lexicographic order within a length.
  */
 std::vector<std::string> every_string(const std::size_t max_length)
 {
-    std::vector<std::string> corpus, frontier{""};
+    std::vector<std::string> corpus{};
+
+    std::vector<std::string> frontier{""};
 
     for (std::size_t length{0}; length < max_length; ++length)
     {
-        std::vector<std::string> next;
+        std::vector<std::string> next{};
 
         for (const auto& prefix : frontier)
         {
-            for (const auto symbol : {'a', 'b', 'c', 'd'})
+            for (const auto symbol : alphabet)
             {
                 next.push_back(prefix + symbol);
             }
@@ -297,10 +404,12 @@ std::vector<std::string> every_string(const std::size_t max_length)
 
 /**
  * @brief Picks a random subset of the token IDs random_dfa() assigns to stand for the kinds a caller discards.
+ * @param random The generator drawn from.
+ * @return The IDs.
  */
 std::unordered_set<std::size_t> random_trivia(Random& random)
 {
-    std::unordered_set<std::size_t> trivia;
+    std::unordered_set<std::size_t> trivia{};
 
     for (std::size_t kind{1}; kind <= 3; ++kind)
     {
@@ -319,13 +428,13 @@ TEST(Dfa_property_test, Simulator_agrees_with_the_definition_maps)
 {
     Random random{1};
 
-    for (int round{0}; round < 100; ++round)
+    for (std::size_t round{0}; round < rounds; ++round)
     {
         const auto dfa{random_dfa(random)};
 
         const Simulator simulator{dfa};
 
-        for (int pass{0}; pass < 50; ++pass)
+        for (std::size_t pass{0}; pass < passes; ++pass)
         {
             const auto input{random_input(random)};
 
@@ -338,7 +447,7 @@ TEST(Dfa_property_test, Minimization_preserves_the_language)
 {
     Random random{2};
 
-    for (int round{0}; round < 100; ++round)
+    for (std::size_t round{0}; round < rounds; ++round)
     {
         const auto dfa{random_dfa(random)};
 
@@ -346,7 +455,7 @@ TEST(Dfa_property_test, Minimization_preserves_the_language)
 
         const Simulator minimized{minimize(dfa)};
 
-        for (int pass{0}; pass < 50; ++pass)
+        for (std::size_t pass{0}; pass < passes; ++pass)
         {
             const auto input{random_input(random)};
 
@@ -359,22 +468,24 @@ TEST(Dfa_property_test, Minimization_is_idempotent)
 {
     Random random{3};
 
-    for (int round{0}; round < 100; ++round)
+    for (std::size_t round{0}; round < rounds; ++round)
     {
-        const auto once{minimize(random_dfa(random))};
+        const auto drawn{random_dfa(random)};
 
-        ASSERT_EQ(count_states(minimize(once)), count_states(once)) << "round " << round;
+        const auto once{minimize(drawn)};
+
+        const auto twice{minimize(once)};
+
+        ASSERT_EQ(count_states(twice), count_states(once)) << "round " << round;
     }
 }
 
-// The specification and the implementation disagreed here once: the report rejected any candidate the re-entrant
-// initial state consumes, while the predicate exempts only a non-re-entrant initial state and otherwise lets q0 earn
-// its place on the same three conditions as any other state. Random property tests could not see it, because they
-// check behaviour against an oracle rather than correspondence to an independently written rule. These two cases pin
-// the boundary: identical automata, differing only in whether the token is discarded.
 TEST(Dfa_property_test, Re_entrant_initial_state_is_admitted_only_when_its_token_is_discarded)
 {
-    Builder builder;
+    // The predicate exempts only a non-re-entrant initial state and otherwise lets q0 earn its place on the same three
+    // conditions as any other state. These two cases pin that boundary: identical automata, differing only in whether
+    // the token is discarded.
+    Builder builder{};
 
     const auto start{builder.init_state()};
 
@@ -385,27 +496,38 @@ TEST(Dfa_property_test, Re_entrant_initial_state_is_admitted_only_when_its_token
     const auto dfa{minimize(builder.build())};
 
     // Kept: splitting "aa" turns one length-2 token into two length-1 tokens, which a caller can see.
-    ASSERT_FALSE(Simulator(dfa, std::vector<std::size_t>{}).is_split_point_ignoring('a'));
+    const std::vector<std::size_t> none{};
+
+    const Simulator kept{dfa, none};
+
+    ASSERT_FALSE(kept.is_split_point_ignoring('a'));
 
     // Discarded: the same split replaces one deleted token with two, and both vanish under the projection.
-    ASSERT_TRUE(Simulator(dfa, std::vector<std::size_t>{1}).is_split_point_ignoring('a'));
+    const std::vector<std::size_t> discarded{1};
+
+    const Simulator ignoring{dfa, discarded};
+
+    ASSERT_TRUE(ignoring.is_split_point_ignoring('a'));
 
     // The exact certificate refuses it either way, since the initial state is re-entrant.
     ASSERT_FALSE(Simulator{dfa}.is_split_point('a'));
 }
 
-// Both certificates quantify over states that are reachable and co-accessible. Only a hand-built automaton separates
-// the two halves: subset construction discovers reachable subsets only, and minimization would drop the detached
-// state before a test could see it. So this one is assembled directly, and it pins the reachable half, which a state
-// no input enters must not be able to override.
 TEST(Dfa_property_test, Unreachable_states_do_not_de_certify_a_symbol)
 {
+    // Both certificates quantify over states that are reachable and co-accessible. Only a hand-built automaton
+    // separates the two halves: subset construction discovers reachable subsets only, and minimization would drop the
+    // detached state before a test could see it. So this one is assembled directly, and it pins the reachable half,
+    // which a state no input enters must not be able to override.
+
     // q0 -b-> q1 accepting, beside a detached q2 -b-> q3 accepting that no input can enter.
     const Dfa detached{0, {{{0, Label{'b'}}, 1}, {{2, Label{'b'}}, 3}}, {{1, Token{1}}, {3, Token{1}}}};
 
+    const std::vector<std::size_t> discarded{1};
+
     ASSERT_TRUE(Simulator{detached}.is_split_point('b'));
 
-    ASSERT_TRUE(Simulator(detached, std::vector<std::size_t>{1}).is_split_point_ignoring('b'));
+    ASSERT_TRUE((Simulator{detached, discarded}.is_split_point_ignoring('b')));
 
     // The same shape with q2 reachable through 'a'. It is now a live non-initial state consuming b into a state that
     // can still accept, so b is a byte that occurs inside a token and neither certificate may admit it.
@@ -416,7 +538,7 @@ TEST(Dfa_property_test, Unreachable_states_do_not_de_certify_a_symbol)
 
     ASSERT_FALSE(Simulator{reachable}.is_split_point('b'));
 
-    ASSERT_FALSE(Simulator(reachable, std::vector<std::size_t>{1}).is_split_point_ignoring('b'));
+    ASSERT_FALSE((Simulator{reachable, discarded}.is_split_point_ignoring('b')));
 }
 
 TEST(Dfa_property_test, Trivia_modulo_certificate_survives_every_split_it_admits)
@@ -427,72 +549,69 @@ TEST(Dfa_property_test, Trivia_modulo_certificate_survives_every_split_it_admits
 
     std::size_t exercised{0};
 
-    for (int round{0}; round < 200; ++round)
+    const auto check_cuts{[&exercised](
+                                  const Simulator& simulator, const std::unordered_set<std::size_t>& trivia,
+                                  const std::string& input, const char symbol, const std::size_t round) {
+        const auto [serial, consumed]{tokenize(simulator, input)};
+
+        // The promise is made only for input the token set tokenizes completely.
+        if (consumed != input.size())
+        {
+            return;
+        }
+
+        for (std::size_t at{1}; at < input.size(); ++at)
+        {
+            if (input[at] != symbol)
+            {
+                continue;
+            }
+
+            ++exercised;
+
+            const auto [left, left_consumed]{tokenize(simulator, input.substr(0, at))};
+
+            const auto [right, right_consumed]{tokenize(simulator, input.substr(at))};
+
+            ASSERT_EQ(left_consumed, at) << "round " << round << ", input " << input << " at " << at;
+
+            ASSERT_EQ(right_consumed, input.size() - at) << "round " << round << ", input " << input << " at " << at;
+
+            Stream_t spliced{left};
+
+            spliced.insert(spliced.end(), right.begin(), right.end());
+
+            ASSERT_EQ(without(spliced, trivia), without(serial, trivia))
+                    << "round " << round << ", input " << input << " at " << at << " on '" << symbol << '\'';
+        }
+    }};
+
+    for (std::size_t round{0}; round < trivia_rounds; ++round)
     {
         // Run-shaped grammars supply the positive cases; the dense ones keep the refuting coverage.
-        const auto dfa{minimize(round % 2 == 0 ? random_run_dfa(random) : random_dfa(random))};
+        const auto drawn{round % 2 == 0 ? random_run_dfa(random) : random_dfa(random)};
+
+        const auto dfa{minimize(drawn)};
 
         const auto trivia{random_trivia(random)};
 
         const std::vector<std::size_t> ignored{trivia.begin(), trivia.end()};
 
-        // The shipped predicate, not a copy of the rule: this test is what justifies the predicate, so testing a
-        // private reimplementation of it would justify nothing.
+        // The test runs the shipped predicate itself.
         const Simulator simulator{dfa, ignored};
 
-        for (const auto symbol : {'a', 'b', 'c', 'd'})
-        {
-            if (!simulator.is_split_point_ignoring(symbol))
-            {
-                continue;
-            }
+        const auto certified{[&simulator](const char symbol) { return simulator.is_split_point_ignoring(symbol); }};
 
+        for (const auto symbol : alphabet | std::views::filter(certified))
+        {
             for (const auto& input : corpus)
             {
-                std::size_t consumed{0};
-
-                const auto serial{tokenize(simulator, input, consumed)};
-
-                if (consumed != input.size())
-                {
-                    continue; // the promise is made only for input the token set tokenizes completely
-                }
-
-                // exempted the cut before the final byte from every check.
-                for (std::size_t at{1}; at < input.size(); ++at)
-                {
-                    if (input[at] != symbol)
-                    {
-                        continue;
-                    }
-
-                    ++exercised;
-
-                    std::size_t left_consumed{0}, right_consumed{0};
-
-                    const auto left{tokenize(simulator, input.substr(0, at), left_consumed)};
-
-                    const auto right{tokenize(simulator, input.substr(at), right_consumed)};
-
-                    ASSERT_EQ(left_consumed, at) << "round " << round << ", input " << input << " at " << at;
-
-                    ASSERT_EQ(right_consumed, input.size() - at)
-                            << "round " << round << ", input " << input << " at " << at;
-
-                    Stream spliced{left};
-
-                    spliced.insert(spliced.end(), right.begin(), right.end());
-
-                    ASSERT_EQ(without(spliced, trivia), without(serial, trivia))
-                            << "round " << round << ", input " << input << " at " << at << " on '" << symbol << '\'';
-                }
+                ASSERT_NO_FATAL_FAILURE(check_cuts(simulator, trivia, input, symbol, round));
             }
         }
     }
 
-    // Without this the test passes vacuously whenever nothing is certified, which would hide a rule gone inert.
-    // Deliberately far below what the generators produce: the floor is here to catch a collapse to near zero, not
-    // to pin a count that every change to the corpus or the generators would then have to chase.
+    // More than a thousand admitted cuts were checked, a floor far below what the generators produce.
     EXPECT_GT(exercised, 1000U);
 }
 
@@ -502,26 +621,27 @@ TEST(Dfa_property_test, Trivia_modulo_certificate_admits_every_exact_split_point
 
     std::size_t exercised{0};
 
-    for (int round{0}; round < 200; ++round)
+    for (std::size_t round{0}; round < trivia_rounds; ++round)
     {
-        const auto dfa{minimize(round % 2 == 0 ? random_run_dfa(random) : random_dfa(random))};
+        const auto drawn{round % 2 == 0 ? random_run_dfa(random) : random_dfa(random)};
+
+        const auto dfa{minimize(drawn)};
 
         const Simulator exact{dfa};
 
-        // Whatever a caller discards, a split point that reproduces the stream exactly reproduces it after
-        // deletion too, so the weaker certificate can only ever admit more.
+        const auto certified{[&exact](const char symbol) { return exact.is_split_point(symbol); }};
+
+        // Whatever a caller discards, a split point that reproduces the stream exactly reproduces it after deletion
+        // too, so the weaker certificate can only ever admit more.
         for (const auto& trivia :
              {std::unordered_set<std::size_t>{}, random_trivia(random), std::unordered_set<std::size_t>{1, 2, 3}})
         {
-            const Simulator relaxed{dfa, std::vector<std::size_t>{trivia.begin(), trivia.end()}};
+            const std::vector<std::size_t> ignored{trivia.begin(), trivia.end()};
 
-            for (const auto symbol : {'a', 'b', 'c', 'd'})
+            const Simulator relaxed{dfa, ignored};
+
+            for (const auto symbol : alphabet | std::views::filter(certified))
             {
-                if (!exact.is_split_point(symbol))
-                {
-                    continue;
-                }
-
                 ++exercised;
 
                 ASSERT_TRUE(relaxed.is_split_point_ignoring(symbol))
@@ -530,6 +650,6 @@ TEST(Dfa_property_test, Trivia_modulo_certificate_admits_every_exact_split_point
         }
     }
 
-    // As above: a rule that certified nothing would satisfy every assertion in the loop.
+    // More than fifty exact split points were checked against the relaxed certificate.
     EXPECT_GT(exercised, 50U);
 }

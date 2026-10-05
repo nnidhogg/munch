@@ -503,10 +503,6 @@ template <typename Result>
 {
     out.clear();
 
-    /**
-     * @brief Writes one move of the matcher, without a close and, where the segment may close, with one.
-     * @param matched How far the matcher has read after the byte.
-     */
     const auto branch{[&](const std::size_t matched) {
         out.push_back(Guess{.matched = matched, .closes = false});
 
@@ -569,12 +565,6 @@ template <typename Result>
 
     std::vector<Key> successors{};
 
-    /**
-     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it with the claim refuted.
-     * @param at The key the byte is read from.
-     * @param byte The byte read.
-     * @return The step.
-     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 
@@ -681,12 +671,6 @@ Rescue rescue(const Simulator& simulator, const std::size_t cap)
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
     std::vector<Key> successors{};
 
-    /**
-     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it after a rollback.
-     * @param at The key the byte is read from.
-     * @param byte The byte read.
-     * @return The step.
-     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 
@@ -731,13 +715,6 @@ Difference boundary_difference(const Simulator& simulator, const Simulator& othe
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
     std::vector<Key> successors{};
 
-    /**
-     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it with the markings
-     *        diverged.
-     * @param at The key the byte is read from.
-     * @param byte The byte read.
-     * @return The step.
-     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 
@@ -796,12 +773,6 @@ Occurrence window_occurrence(const Simulator& simulator, const std::string_view 
 
     std::vector<Key> successors{};
 
-    /**
-     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it with the window read.
-     * @param at The key the byte is read from.
-     * @param byte The byte read.
-     * @return The step.
-     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 
@@ -921,13 +892,6 @@ Separation segmentation_difference(const Simulator& simulator, const Simulator& 
     // One buffer for the whole search: cleared per byte, handed back as the step's view.
     std::vector<Key> successors{};
 
-    /**
-     * @brief Returns the keys a byte leads to from a key, and whether the input may end on it with exactly one side
-     *        accepting.
-     * @param at The key the byte is read from.
-     * @param byte The byte read.
-     * @return The step.
-     */
     const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
         successors.clear();
 

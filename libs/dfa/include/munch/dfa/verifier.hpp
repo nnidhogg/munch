@@ -21,6 +21,11 @@ namespace munch::dfa
 struct Marked
 {
     /**
+     * @brief Orders marked symbols by byte, then by the boundary bit.
+     */
+    auto operator<=>(const Marked&) const = default;
+
+    /**
      * @brief The byte read, as an unsigned value; the DFA's labels carry it as a char.
      */
     unsigned char byte{};
@@ -29,11 +34,6 @@ struct Marked
      * @brief Whether a token boundary follows the byte.
      */
     bool boundary_after{};
-
-    /**
-     * @brief Orders marked symbols by byte, then by the boundary bit.
-     */
-    auto operator<=>(const Marked&) const = default;
 };
 
 /**
@@ -42,8 +42,8 @@ struct Marked
  * The verifier accepts a marked string exactly when the marking is the policy's segmentation of the bytes, so its
  * projection to bytes is the policy's domain. It starts in one unconsumed state, distinct from every state a step
  * reaches, which accepts exactly when the empty input is in the domain. Trim means every state is reachable from the
- * start and can reach an accepting state; the constructor trims the table it is given, keeping the start in every
- * case, and numbers the states it keeps densely from zero, the start first and the rest in breadth-first order over the
+ * start and can reach an accepting state; the constructor trims the table it is given, keeping the start in every case,
+ * and numbers the states it keeps densely from zero, the start first and the rest in breadth-first order over the
  * marked symbols in ascending order.
  */
 class Verifier
@@ -116,7 +116,7 @@ public:
     [[nodiscard]] std::optional<State_t> step(State_t state, Marked symbol) const;
 
     /**
-     * @brief Checks whether a state is accepting.
+     * @brief Returns whether a state accepts.
      * @param state The state to check.
      * @return True if the state is accepting.
      */
@@ -140,6 +140,13 @@ private:
      *        numbered zero.
      */
     struct Trimmed;
+
+    /**
+     * @brief Constructs a verifier from trimmed parts.
+     * @param parts The trimmed parts.
+     */
+    explicit Verifier(Trimmed parts);
+
     /**
      * @brief Trims a table to the start and the states reachable from it that can reach acceptance, renumbered densely
      *        from zero in breadth-first order with the start first and a copy of the start taking its incoming
@@ -151,11 +158,7 @@ private:
      */
     [[nodiscard]] static Trimmed trim(
             State_t start, const Transitions_t& transitions, const Accept_states_t& accept_states);
-    /**
-     * @brief Constructs a verifier from trimmed parts.
-     * @param parts The trimmed parts.
-     */
-    explicit Verifier(Trimmed parts);
+
     /**
      * @brief The start state, zero.
      */
@@ -184,12 +187,12 @@ private:
  * armed runs, begun at earlier boundaries and still alive. A step reads the byte into every run, a run with no
  * transition dropping; the step is refused when an armed run reaches an accepting state or the unarmed run drops. On a
  * boundary the unarmed run must be accepting, joins the armed set, and a fresh unarmed run begins at the DFA's initial
- * state. A configuration accepts when its unarmed run accepts and no armed run does. The unconsumed start state is
- * its own state, accepting, and a step from it reads the byte as the configuration of one fresh unarmed run does.
+ * state. A configuration accepts when its unarmed run accepts and no armed run does. The unconsumed start state is its
+ * own state, accepting, and a step from it reads the byte as the configuration of one fresh unarmed run does.
  *
  * Built by exploration from the start over the bytes the DFA's transitions carry, each configuration interned as it is
- * found, so that the states are the reachable configurations only; the verifier's constructor then trims the result
- * by coaccessibility. The DFA's tokens are not read: "some token accepts" is the DFA state accepting.
+ * found, so that the states are the reachable configurations only; the verifier's constructor then trims the result by
+ * coaccessibility. The DFA's tokens are not read: "some token accepts" is the DFA state accepting.
  * @param dfa The DFA of the token set, whose initial state does not accept.
  * @return The armed-run verifier.
  * @throws std::invalid_argument If the DFA's initial state accepts.

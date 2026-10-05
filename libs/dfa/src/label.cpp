@@ -4,7 +4,12 @@
 
 namespace munch::dfa
 {
-Label::Label(const Symbol_t s) noexcept : symbol_{s}
+std::size_t Label::Hash::operator()(const Label& label) const noexcept
+{
+    return std::hash<Symbol_t>{}(label.symbol());
+}
+
+Label::Label(const Symbol_t symbol) noexcept : symbol_{symbol}
 {}
 
 bool Label::operator==(const Label& other) const noexcept
@@ -15,11 +20,6 @@ bool Label::operator==(const Label& other) const noexcept
 Label::Symbol_t Label::symbol() const noexcept
 {
     return symbol_;
-}
-
-std::size_t Label::Hash::operator()(const Label& label) const noexcept
-{
-    return std::hash<Symbol_t>{}(label.symbol());
 }
 
 } // namespace munch::dfa

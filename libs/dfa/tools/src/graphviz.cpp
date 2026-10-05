@@ -1,59 +1,84 @@
 #include "munch/dfa/tools/graphviz.hpp"
 
-#include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstring>
+#include <format>
 #include <fstream>
-#include <iomanip>
-#include <ranges>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
+#include <tuple>
 
 namespace munch::dfa::tools
 {
 void Graphviz::to_file(const Dfa& dfa, const std::filesystem::path& path)
 {
+    const auto directory{path.parent_path()};
+
+    std::error_code error{};
+
     // A bare filename has an empty parent, and create_directories("") fails; only a stated directory is created.
-    if (std::error_code ec;
-        !path.parent_path().empty() && (std::filesystem::create_directories(path.parent_path(), ec), ec))
+    if (!directory.empty())
     {
-        throw std::runtime_error("Unable to create directories " + path.parent_path().string() + "; " + ec.message());
+        std::ignore = std::filesystem::create_directories(directory, error);
+    }
+
+    if (error)
+    {
+        const auto message{std::format("Unable to create directories {}; {}", directory.string(), error.message())};
+
+        throw std::runtime_error{message};
     }
 
     std::ofstream file{path, std::ios::out};
 
     if (!file)
     {
-        throw std::runtime_error("Unable to create file " + path.string() + "; " + std::strerror(errno));
+        const auto message{std::format("Unable to create file {}; {}", path.string(), std::strerror(errno))};
+
+        throw std::runtime_error{message};
     }
 
-    if (file << to_dot(dfa); !file.flush())
+    file << to_dot(dfa);
+
+    if (!file.flush())
     {
-        throw std::runtime_error("Unable to write data to file " + path.string() + "; " + std::strerror(errno));
+        const auto message{std::format("Unable to write data to file {}; {}", path.string(), std::strerror(errno))};
+
+        throw std::runtime_error{message};
     }
 }
 
 std::string Graphviz::to_dot(const Dfa& dfa)
 {
-    std::ostringstream oss;
-    oss << "digraph DFA {\n";
-    oss << "    rankdir=LR;\n";
-    oss << "    ratio=1.0;\n";
-    oss << "    node [shape = circle];\n";
+    std::ostringstream oss{};
+
+    oss << R"(digraph DFA {
+    rankdir=LR;
+    ratio=1.0;
+    node [shape = circle];
+)";
 
     for (const auto& [state, token] : dfa.accept_states())
     {
-        oss << "    " << state << " [shape = doublecircle, label=\"" << state << " (" << token.id() << ")" << "\"];\n";
+        const auto node{
+                std::format(R"dot(    {} [shape = doublecircle, label="{} ({})"];)dot", state, state, token.id())};
+
+        oss << node << '\n';
     }
 
-    oss << "    __start__ [shape = none, label=\"\"];\n";
-    oss << "    __start__ -> " << dfa.init_state() << ";\n";
+    oss << R"dot(    __start__ [shape = none, label=""];)dot" << '\n';
+
+    oss << std::format("    __start__ -> {};\n", dfa.init_state());
 
     for (const auto& [key, state] : dfa.transitions())
     {
-        const auto& [from_state, transition]{key};
+        const auto& [from_state, label]{key};
 
-        oss << "    " << from_state << " -> " << state << " [label = " << create_label(transition) << "];\n";
+        const auto label_text{create_label(label)};
+
+        oss << std::format("    {} -> {} [label = {}];\n", from_state, state, label_text);
     }
 
     oss << "}\n";
@@ -63,34 +88,37 @@ std::string Graphviz::to_dot(const Dfa& dfa)
 
 std::string Graphviz::create_label(const Label& label)
 {
-    std::ostringstream oss;
+    std::ostringstream oss{};
 
     oss << '"';
 
     switch (const auto symbol{label.symbol()})
     {
-    case '\"':
-        oss << "\\\"";
+    case '"':
+        oss << R"(\")";
         break;
     case '\\':
-        oss << "\\\\";
+        oss << R"(\\)";
         break;
     case '\n':
-        oss << "\\n";
+        oss << R"(\n)";
         break;
     case '\t':
-        oss << "\\t";
+        oss << R"(\t)";
         break;
     default:
-        if (isprint(static_cast<unsigned char>(symbol)))
+    {
+        const auto value{static_cast<unsigned char>(symbol)};
+
+        if (std::isprint(value) != 0)
         {
             oss << symbol;
+
+            break;
         }
-        else
-        {
-            oss << "\\x" << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
-                << (static_cast<unsigned char>(symbol) & 0xFF);
-        }
+
+        oss << std::format(R"(\x{:02X})", value);
+    }
     }
 
     oss << '"';

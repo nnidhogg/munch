@@ -230,11 +230,6 @@ void dedup(std::vector<T>& values)
 {
     const auto& [unarmed, armed]{configuration};
 
-    /**
-     * @brief Returns whether a DFA state accepts.
-     * @param state The state.
-     * @return True when it does.
-     */
     const auto accepts{[&dfa](const Dfa::State_t state) { return is_accepting(dfa, state); }};
 
     return is_accepting(dfa, unarmed) && std::ranges::none_of(armed, accepts);

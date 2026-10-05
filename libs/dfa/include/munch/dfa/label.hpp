@@ -19,24 +19,6 @@ public:
     using Symbol_t = char;
 
     /**
-     * @brief Constructs a label with the given symbol.
-     * @param s The symbol for the label.
-     */
-    explicit Label(Symbol_t s) noexcept;
-    /**
-     * @brief Equality comparison operator for labels.
-     * @param other The label to compare with.
-     * @return True if the symbols are equal, false otherwise.
-     */
-    bool operator==(const Label& other) const noexcept;
-
-    /**
-     * @brief Returns the symbol associated with this label.
-     * @return The symbol character.
-     */
-    [[nodiscard]] Symbol_t symbol() const noexcept;
-
-    /**
      * @brief Hash functor for Label, suitable for use in unordered containers.
      */
     struct Hash
@@ -49,7 +31,29 @@ public:
         std::size_t operator()(const Label& label) const noexcept;
     };
 
+    /**
+     * @brief Constructs a label with the given symbol.
+     * @param symbol The symbol for the label.
+     */
+    explicit Label(Symbol_t symbol) noexcept;
+
+    /**
+     * @brief Equal when both symbols are equal.
+     * @param other The label to compare with.
+     * @return True if the symbols are equal, false otherwise.
+     */
+    bool operator==(const Label& other) const noexcept;
+
+    /**
+     * @brief Returns the symbol associated with this label.
+     * @return The symbol character.
+     */
+    [[nodiscard]] Symbol_t symbol() const noexcept;
+
 private:
+    /**
+     * @brief The symbol the label carries.
+     */
     Symbol_t symbol_;
 };
 

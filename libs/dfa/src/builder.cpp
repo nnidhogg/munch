@@ -1,6 +1,5 @@
 #include "munch/dfa/builder.hpp"
 
-#include <algorithm>
 #include <utility>
 
 namespace munch::dfa
@@ -15,7 +14,11 @@ Dfa::State_t Builder::init_state() const noexcept
 
 Dfa::State_t Builder::next_state() noexcept
 {
-    return next_state_++;
+    const auto state{next_state_};
+
+    ++next_state_;
+
+    return state;
 }
 
 Builder& Builder::add_transition(const Dfa::State_t from, const Label& label, const Dfa::State_t to)

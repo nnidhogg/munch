@@ -12,7 +12,6 @@ add_library(${PROJECT_NAME}
         src/recovery.cpp
         src/simulator.cpp
         src/split_window.cpp
-        src/token.cpp
         src/unroll_start.cpp
         src/verifier.cpp
         src/verifier_decisions.cpp

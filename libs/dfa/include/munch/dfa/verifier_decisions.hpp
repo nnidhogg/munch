@@ -11,6 +11,7 @@
 #include "munch/dfa/verifier.hpp"
 
 /**
+ * @file
  * @brief The four decisions over a verifier: miscovering(), boundary_gap(), realizable() and divergence().
  *
  * Each is a product with the verifier and a search on the product, and each witness is replayable through
@@ -26,24 +27,24 @@ struct Marked_string
     /**
      * @brief The bytes.
      */
-    std::string bytes;
+    std::string bytes{};
 
     /**
      * @brief Whether a boundary follows each byte, as many bits as bytes.
      */
-    std::vector<bool> boundaries;
+    std::vector<bool> boundaries{};
 };
 
 /**
- * @brief An accepted marked string with an occurrence of a window whose covering boundary is not the origin, and
- *        that occurrence.
+ * @brief An accepted marked string with an occurrence of a window whose covering boundary is not the origin, and that
+ *        occurrence.
  */
 struct Miscovering
 {
     /**
      * @brief The accepted marked string, the shortest one.
      */
-    Marked_string segmentation;
+    Marked_string segmentation{};
 
     /**
      * @brief The index of the window's first byte at an occurrence whose covering boundary is not the origin.
@@ -52,25 +53,25 @@ struct Miscovering
 };
 
 /**
- * @brief Three marked strings such that stem, then loop repeated any number of times, then suffix is accepted, the
- *        loop carrying no boundary.
+ * @brief Three marked strings such that stem, then loop repeated any number of times, then suffix is accepted, the loop
+ *        carrying no boundary.
  */
 struct Lasso
 {
     /**
      * @brief The marked string from the start to the loop.
      */
-    Marked_string stem;
+    Marked_string stem{};
 
     /**
      * @brief The markless cycle, nonempty.
      */
-    Marked_string loop;
+    Marked_string loop{};
 
     /**
      * @brief The marked string from the loop to an accepting state.
      */
-    Marked_string suffix;
+    Marked_string suffix{};
 };
 
 /**
@@ -114,12 +115,12 @@ struct Divergence
      * @brief The diverging input, the shortest one of its half, marked as the first verifier accepts it for the
      *        boundary half and as the accepting verifier accepts it for the domain half.
      */
-    Marked_string witness;
+    Marked_string witness{};
 };
 
 /**
- * @brief Decides the window certificate (window, origin): the token containing an occurrence's final byte begins at
- *        the occurrence's byte origin, at every occurrence in every accepted marked string.
+ * @brief Decides the window certificate (window, origin): the token containing an occurrence's final byte begins at the
+ *        occurrence's byte origin, at every occurrence in every accepted marked string.
  *
  * A breadth-first search over the product of the verifier with the window's matching progress, the boundary marks of
  * the last bytes read and a sticky flag raised at an occurrence whose covering boundary is elsewhere; the first
@@ -139,8 +140,8 @@ struct Divergence
  *
  * The distance counts the bytes of a segment, the final one closed by the end of the input. A markless cycle gives the
  * lasso: the shortest stem from the start to a state on it, the cycle from that state, and the shortest suffix from it
- * to an accepting state. Without one the markless steps form an acyclic graph, and the supremum is the longest
- * markless path, one more when a marked step leaves its end and as is when its end accepts.
+ * to an accepting state. Without one the markless steps form an acyclic graph, and the supremum is the longest markless
+ * path, one more when a marked step leaves its end and as is when its end accepts.
  * @param verifier The verifier, of a nonempty domain.
  * @return The supremum, or the lasso when the distance is unbounded.
  * @throws std::invalid_argument If the domain is empty.

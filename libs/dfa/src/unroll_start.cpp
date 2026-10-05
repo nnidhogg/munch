@@ -20,7 +20,9 @@ Dfa unroll_start(const Dfa& dfa)
 
     for (const auto& [key, to] : dfa.transitions())
     {
-        if (const auto& [from, label]{key}; from == dfa.init_state())
+        const auto& [from, label]{key};
+
+        if (from == dfa.init_state())
         {
             transitions.emplace(Dfa::Key_t{start, label}, to);
         }

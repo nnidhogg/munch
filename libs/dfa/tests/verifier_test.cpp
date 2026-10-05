@@ -358,12 +358,6 @@ void expect_trim(const Verifier& verifier)
         backward[to].push_back(from);
     }
 
-    /**
-     * @brief Returns the states reached from some of them along the given edges.
-     * @param edges Each state's successors along the direction walked.
-     * @param pending The states walked from.
-     * @return Every state reached, those walked from included.
-     */
     const auto closure{[](const std::unordered_map<Verifier::State_t, std::vector<Verifier::State_t>>& edges,
                           std::vector<Verifier::State_t> pending) {
         std::unordered_set<Verifier::State_t> seen{pending.cbegin(), pending.cend()};

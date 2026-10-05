@@ -368,11 +368,6 @@ Span_walk::Span_walk(
         present.insert(window.begin(), window.end());
     }
 
-    /**
-     * @brief Returns whether no window contains a byte.
-     * @param value The byte's value.
-     * @return True when the byte is outside the windows' alphabet.
-     */
     const auto absent{[&present](const std::size_t value) { return !present.contains(static_cast<char>(value)); }};
 
     const auto values{std::views::iota(std::size_t{0}, Simulator::symbol_count)};
@@ -536,12 +531,6 @@ Span_walk::Graph Span_walk::explore(const Simulator& simulator) const
 
     std::map<Node, Index_t> index{{start(simulator), 0}};
 
-    /**
-     * @brief Adds an edge to a node, numbering the node when it is new.
-     * @param at The node the edge leaves.
-     * @param target The node entered.
-     * @param inside Whether the byte read lies in the stretch.
-     */
     const auto add_edge{[&graph, &index](const Index_t at, Node target, const bool inside) {
         const auto number{static_cast<Index_t>(graph.nodes.size())};
 
@@ -559,13 +548,6 @@ Span_walk::Graph Span_walk::explore(const Simulator& simulator) const
         graph.edges[at].push_back(Edge{.target = entered, .inside = inside});
     }};
 
-    /**
-     * @brief Adds the edges one byte leads along from a node, the segment being read closed first or not.
-     * @param at The node's index.
-     * @param node The node.
-     * @param byte The byte read.
-     * @param mark Whether the segment being read closes before the byte.
-     */
     const auto follow{[&](const Index_t at, const Node& node, const unsigned char byte, const bool mark) {
         if (mark && !simulator.is_accepting(node.reading))
         {
@@ -755,30 +737,12 @@ std::vector<std::pair<Span_walk::Node, bool>> Span_walk::stretch(
 {
     const auto cap{static_cast<std::uint32_t>(reach_)};
 
-    /**
-     * @brief Returns whether a window completed by this byte anchors a position in a range of ages.
-     * @param low The fewest bytes back, inclusive.
-     * @param high The most bytes back, inclusive.
-     * @return True when one does.
-     */
     const auto anchors{[&ages](const std::size_t low, const std::size_t high) {
-        /**
-         * @brief Returns whether an age lies in the range.
-         * @param age The bytes back.
-         * @return True when it is from low to high inclusive.
-         */
         const auto in_range{[low, high](const std::size_t age) { return low <= age && age <= high; }};
 
         return std::ranges::any_of(ages, in_range);
     }};
 
-    /**
-     * @brief Returns the node with its stretch fields replaced.
-     * @param phase The phase.
-     * @param since_start How far back the stretch began.
-     * @param since_end How far back the stretch ended.
-     * @return The node.
-     */
     const auto with{[&node](const Phase phase, const std::uint32_t since_start, const std::uint32_t since_end) {
         auto next{node};
 
@@ -901,11 +865,6 @@ bool Span_walk::has_inside_cycle(const Graph& graph, const std::vector<bool>& fi
 {
     std::vector<Colour> colour(graph.nodes.size(), Colour::unseen);
 
-    /**
-     * @brief Returns whether an edge stays inside the stretch among the endable nodes.
-     * @param edge The edge.
-     * @return True when it does.
-     */
     const auto inside_endable{[&finishing](const Edge& edge) { return edge.inside && finishing[edge.target]; }};
 
     for (Index_t root{0}; root < graph.nodes.size(); ++root)
@@ -966,11 +925,6 @@ std::size_t Span_walk::longest_stretch(const Graph& graph, const std::vector<boo
 {
     std::vector<std::size_t> run(graph.nodes.size(), 0);
 
-    /**
-     * @brief Relaxes a node's edges inside the stretch among the endable nodes.
-     * @param at The node's index.
-     * @return True when some target's run grew.
-     */
     const auto relax{[&graph, &finishing, &run](const Index_t at) {
         auto grew{false};
 

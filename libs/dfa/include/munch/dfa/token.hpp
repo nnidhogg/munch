@@ -8,11 +8,13 @@ namespace munch::dfa
 /**
  * @brief Represents a token in the DFA, identified by a unique ID.
  *
- * Unlike NFA tokens, DFA tokens do not store priority information. This is by design:
- * priority resolution happens during subset construction (NFA → DFA conversion) when
- * multiple NFA accept states with different priorities are merged into a single DFA state.
- * At that point, the highest-priority (lowest priority value) token is selected, and only
- * its ID is preserved in the resulting DFA accept state.
+ * Unlike NFA tokens, DFA tokens do not store priority information. This is by design: priority resolution happens
+ * during subset construction (NFA → DFA conversion) when multiple NFA accept states with different priorities are
+ * merged into a single DFA state. At that point, the highest-priority (lowest priority value) token is selected, and
+ * only its ID is preserved in the resulting DFA accept state.
+ *
+ * The three members are defined here rather than in token.cpp: the scanners read a token's ID once per consumed token,
+ * and an out-of-line call there is measured on the per-token path.
  */
 class Token
 {
@@ -21,21 +23,25 @@ public:
      * @brief Constructs a token with the given ID.
      * @param id The unique identifier for the token.
      */
-    explicit Token(std::size_t id) noexcept;
+    explicit Token(const std::size_t id) noexcept : id_{id} {}
+
     /**
-     * @brief Equality comparison operator for tokens.
+     * @brief Equal when both IDs are equal.
      * @param other The token to compare with.
      * @return True if the IDs are equal, false otherwise.
      */
-    bool operator==(const Token& other) const noexcept;
+    bool operator==(const Token& other) const noexcept { return id_ == other.id_; }
 
     /**
      * @brief Returns the unique identifier of the token.
      * @return The token's ID.
      */
-    [[nodiscard]] std::size_t id() const noexcept;
+    [[nodiscard]] std::size_t id() const noexcept { return id_; }
 
 private:
+    /**
+     * @brief The token's unique identifier.
+     */
     std::size_t id_;
 };
 

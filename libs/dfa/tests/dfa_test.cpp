@@ -93,24 +93,10 @@ Simulator lcm_family(const std::size_t m)
         }
     }
 
-    /**
-     * @brief Adds one transition.
-     * @param from The state it leaves.
-     * @param symbol The byte it reads.
-     * @param to The state it enters.
-     */
     const auto edge{[&builder](const Dfa::State_t from, const char symbol, const Dfa::State_t to) {
         builder.add_transition(from, Label{symbol}, to);
     }};
 
-    /**
-     * @brief Makes a state accept the one kind, as every state but the root does, and wires its countdown letters, a
-     *        letter that would end the countdown resetting it.
-     * @param state The state.
-     * @param on_r The target on r.
-     * @param on_t The target on t.
-     * @param letters_reset Whether a and b lead to the error state.
-     */
     const auto accept_resetting{
             [&](const Dfa::State_t state, const Dfa::State_t on_r, const Dfa::State_t on_t, const bool letters_reset) {
                 builder.add_accept_state(state, Token{1});
@@ -652,12 +638,6 @@ TEST(Dfa_test, Dense_numbering_makes_the_state_count_the_identifier_unrolling_en
 
     const auto built{builder.build()};
 
-    /**
-     * @brief Returns the identifiers a definition names anywhere: its initial state, both ends of every transition, and
-     *        every accept state.
-     * @param automaton The DFA.
-     * @return The identifiers.
-     */
     const auto named{[](const Dfa& automaton) {
         std::set<Dfa::State_t> states{automaton.init_state()};
 
@@ -1106,11 +1086,6 @@ TEST(Dfa_test, Mandatory_core_keeps_the_longest_proved_candidate)
     // proposing states allocated in opposite orders, and both answer the longest proposal, whatever the state order or
     // the proposal order.
 
-    /**
-     * @brief Builds the chain of forced escapes, the proposing states allocated in either order.
-     * @param reversed Whether the proposing states are allocated in the opposite order.
-     * @return The compiled table.
-     */
     const auto build{[](const bool reversed) {
         Builder builder{};
 
@@ -1410,12 +1385,6 @@ TEST(Dfa_test, Mandatory_core_matcher_rows_start_fresh_for_every_candidate)
     // candidate, so the first proof's row-zero entry for byte 0x80 is gone when the second is refuted, and the third
     // core is the answer.
 
-    /**
-     * @brief Adds one loop region: a hub looping on every byte but its escape and refuter, both leading to a killer.
-     * @param escape The byte the hub escapes on.
-     * @param refuter A second byte leading to the killer, or nothing.
-     * @return The hub.
-     */
     const auto region{[&builder, &token](const char escape, const std::optional<char> refuter) {
         const auto hub{builder.next_state()};
         const auto killer{builder.next_state()};
@@ -1554,11 +1523,6 @@ TEST(Dfa_test, Mandatory_core_seeding_reads_both_ends_of_the_alphabet)
     // a seeding pass covering the full symbol range from zero to the last byte; both placements prove the core the
     // hub's escape carries.
 
-    /**
-     * @brief Builds the table with the killer missing one byte.
-     * @param missing The byte the killer does not consume.
-     * @return The compiled table.
-     */
     const auto build{[](const std::size_t missing) {
         Builder builder{};
 
@@ -1715,11 +1679,6 @@ TEST(Dfa_test, Mandatory_core_exemption_follows_the_initial_states_reentrancy)
     // to the absorbing loop instead, nothing re-enters q0, the window hypothesis at q0 renames rather than survives,
     // and the exemption must drop its proposal.
 
-    /**
-     * @brief Builds the table with the killer's surviving byte returning to the initial state or to the absorbing loop.
-     * @param reentrant Whether it returns to the initial state.
-     * @return The compiled table.
-     */
     const auto build{[](const bool reentrant) {
         Builder builder{};
 
@@ -1916,11 +1875,6 @@ TEST(Dfa_test, Mandatory_core_refutation_reaches_both_ends_of_the_alphabet)
     // proof search reads every symbol from 0x00 to 0xFF, so both deaths refute the 'a' the other route proposes. The
     // shape is otherwise the familiar two-route refutation.
 
-    /**
-     * @brief Builds the table with the refuting route dying on one byte.
-     * @param edge The byte it dies on.
-     * @return The compiled table.
-     */
     const auto build{[](const std::size_t edge) {
         Builder builder{};
 
@@ -2078,12 +2032,6 @@ TEST(Dfa_test, Mandatory_core_failure_links_chain_while_the_table_is_built)
     // "aaabb" test's job.
     builder.add_accept_state(chain[0], token);
 
-    /**
-     * @brief Adds a state's transitions on a and on b.
-     * @param from The state.
-     * @param on_a The target on a.
-     * @param on_b The target on b.
-     */
     const auto pair_edges{[&builder](const Dfa::State_t from, const Dfa::State_t on_a, const Dfa::State_t on_b) {
         builder.add_transition(from, Label{'a'}, on_a);
         builder.add_transition(from, Label{'b'}, on_b);
@@ -2148,11 +2096,6 @@ TEST(Dfa_test, Accelerated_runs_preserve_longest_match)
 
     std::vector<std::pair<std::size_t, std::size_t>> tokens{};
 
-    /**
-     * @brief Appends one token's ID and length to the stream.
-     * @param token The token.
-     * @param length Its length.
-     */
     const auto collect{[&tokens](const Token& token, const std::size_t length, std::uint64_t) {
         tokens.emplace_back(token.id(), length);
     }};
@@ -2203,10 +2146,6 @@ TEST(Dfa_test, Accelerated_runs_extend_accepting_tokens)
 
         std::vector<std::size_t> lengths{};
 
-        /**
-         * @brief Appends one token's length.
-         * @param matched The length.
-         */
         const auto collect{
                 [&lengths](const Token&, const std::size_t matched, std::uint64_t) { lengths.push_back(matched); }};
 
@@ -2300,11 +2239,6 @@ TEST(Dfa_test, Lag_and_rescue_freeness_ignore_accepting_states_no_input_reaches)
     // state no input reaches whose successor cycles on itself; no scan can ever stand in the island, so neither the lag
     // nor rescue-freeness may see its cycle.
 
-    /**
-     * @brief Builds {a, abc}, with or without the unreachable island.
-     * @param with_island Whether the island is added.
-     * @return The compiled table.
-     */
     const auto build{[](const bool with_island) {
         Builder builder{};
 
@@ -2396,11 +2330,6 @@ TEST(Dfa_test, Window_occurrence_places_a_window_in_a_tokenizable_input_or_prove
 
     const Simulator simulator{builder.build()};
 
-    /**
-     * @brief Returns whether a witness tokenizes completely under the machine itself.
-     * @param witness The witness.
-     * @return True when it does.
-     */
     const auto tokenizes{
             [&simulator](const std::string& witness) { return token_starts(simulator, witness).has_value(); }};
 
@@ -2477,15 +2406,7 @@ TEST(Dfa_test, Window_counterexample_finds_the_input_a_certificate_fails_on_or_p
 
     const Simulator simulator{builder.build()};
 
-    /**
-     * @brief Returns whether a witness is what it claims: a completely tokenizable input under the machine itself
-     *        holding an occurrence of the window whose final byte is covered by a token beginning elsewhere than the
-     *        origin.
-     * @param witness The witness.
-     * @param window The window.
-     * @param origin The origin.
-     * @return True when it is.
-     */
+    // A completely tokenizable input holding an occurrence whose last byte's token begins elsewhere than the origin.
     const auto fails{[&simulator](const std::string& witness, const std::string_view window, const std::size_t origin) {
         const auto starts{token_starts(simulator, witness)};
 
@@ -2542,11 +2463,6 @@ TEST(Dfa_test, Boundary_profile_finds_the_input_a_gap_is_crossed_or_cut_on_or_pr
     // none is a boundary at every occurrence; under {ab} they are the runs of ab, where every a begins a token and no b
     // does.
 
-    /**
-     * @brief Builds the chain q0 -a-> q1 -second-> q2 with q2 accepting.
-     * @param second The second byte.
-     * @return The compiled table.
-     */
     const auto build{[](const char second) {
         Builder builder{};
 
@@ -2565,15 +2481,7 @@ TEST(Dfa_test, Boundary_profile_finds_the_input_a_gap_is_crossed_or_cut_on_or_pr
 
     const auto alternating{build('b')};
 
-    /**
-     * @brief Returns whether a witness is what it claims: a completely tokenizable input under the machine itself
-     *        holding an occurrence of the window with no token beginning at the offset.
-     * @param simulator The machine.
-     * @param witness The witness.
-     * @param window The window.
-     * @param offset The offset into the window.
-     * @return True when it is.
-     */
+    // A completely tokenizable input holding an occurrence of the window with no token beginning at the offset.
     const auto misses{[](const Simulator& simulator, const std::string& witness, const std::string_view window,
                          const std::size_t offset) {
         const auto starts{token_starts(simulator, witness)};
@@ -2624,13 +2532,7 @@ TEST(Dfa_test, Boundary_profile_finds_the_input_a_gap_is_crossed_or_cut_on_or_pr
     EXPECT_EQ(refuted, "abab");
     EXPECT_TRUE(misses(alternating, refuted, "ba", 0));
 
-    /**
-     * @brief Expects one gap's verdict of must or never, the witness of the search refuting the other claim, and no
-     *        witness against the claim the verdict holds.
-     * @param entry The gap's verdict and its two searches.
-     * @param verdict The verdict expected, must or never.
-     * @param witness The witness expected of the refuting search: a cut for must, a crossing for never.
-     */
+    // The witness is the refuting search's: a cut for must, a crossing for never.
     const auto expect_gap{[](const Gap_verdict& entry, const Gap verdict, const std::string_view witness) {
         const auto& [found, crossed, cut]{entry};
 
@@ -2723,11 +2625,6 @@ TEST(Dfa_test, Boundary_profile_gives_absence_from_the_first_cap_at_which_a_gap_
     // every gap from the first cap at which any proof exhausts and at no gap below it, and never must, never or may at
     // any cap, the window occurring nowhere; the caps are read off the searches, four around each table's threshold.
 
-    /**
-     * @brief Builds one of the two tables with a dead state.
-     * @param looping Whether the table is a(aa)* rather than {a}.
-     * @return The compiled table.
-     */
     const auto table{[](const bool looping) {
         Builder builder{};
 
@@ -2743,12 +2640,6 @@ TEST(Dfa_test, Boundary_profile_gives_absence_from_the_first_cap_at_which_a_gap_
         return Simulator{builder.build()};
     }};
 
-    /**
-     * @brief Returns the smallest cap under which a search exhausts, by running it.
-     * @tparam Exhausts The predicate's type.
-     * @param exhausts Whether the search exhausts under a cap.
-     * @return The cap.
-     */
     const auto first_cap{[]<typename Exhausts>(const Exhausts& exhausts) {
         std::size_t cap{1};
 
@@ -2769,11 +2660,6 @@ TEST(Dfa_test, Boundary_profile_gives_absence_from_the_first_cap_at_which_a_gap_
 
         EXPECT_FALSE(simulator.is_live(2)) << window;
 
-        /**
-         * @brief Returns whether the occurrence search exhausts under a cap.
-         * @param cap The cap.
-         * @return True when it does.
-         */
         const auto occurrence_exhausts{[&](const std::size_t cap) {
             const auto [witness, exhaustive]{window_occurrence(simulator, window, cap)};
 
@@ -2791,11 +2677,6 @@ TEST(Dfa_test, Boundary_profile_gives_absence_from_the_first_cap_at_which_a_gap_
 
         for (std::size_t gap{0}; gap <= window.size(); ++gap)
         {
-            /**
-             * @brief Returns whether both refutations at the gap exhaust under a cap.
-             * @param cap The cap.
-             * @return True when they do.
-             */
             const auto gap_exhausts{[&](const std::size_t cap) {
                 const auto [boundary_witness, boundary_exhaustive]{
                         boundary_counterexample(simulator, window, gap, cap)};
@@ -2858,14 +2739,6 @@ TEST(Dfa_test, Boundary_profile_over_random_tables_is_absent_everywhere_or_nowhe
     // maximal-munch oracle over every input to length eight, which sees every witness that short: a side the oracle saw
     // is refuted by a witness as short as the oracle's, a witness inside the bound is a side the oracle saw, and where
     // the window occurs in no input or in one inside the bound, absent is exactly where the oracle saw no occurrence.
-    constexpr std::size_t large{1U << 16U};
-
-    constexpr std::size_t tables{60};
-
-    constexpr std::size_t caps_per_window{4};
-
-    constexpr std::size_t largest_small_cap{32};
-
     std::mt19937 sequence{0x5EEDU};
 
     const auto windows{ab_words(3)};
@@ -2876,16 +2749,6 @@ TEST(Dfa_test, Boundary_profile_over_random_tables_is_absent_everywhere_or_nowhe
 
     std::size_t stopped{0};
 
-    /**
-     * @brief Holds one gap's verdict under the large cap against the oracle's records of the gap.
-     * @param simulator The table.
-     * @param window The window.
-     * @param gap The gap.
-     * @param decided The verdict under the large cap.
-     * @param occurs_inside Whether the window occurs in an input inside the bound.
-     * @param shortest The oracle's records.
-     * @param label The failure message's label.
-     */
     const auto check_decided{[&](const Simulator& simulator, const std::string_view window, const std::size_t gap,
                                  const Gap_verdict& decided, const bool occurs_inside, const Shortest_t& shortest,
                                  const std::string& label) {
@@ -2895,11 +2758,6 @@ TEST(Dfa_test, Boundary_profile_over_random_tables_is_absent_everywhere_or_nowhe
 
         const auto& [cut_witness, cut_exhaustive]{cut};
 
-        /**
-         * @brief Returns the oracle's shortest input with the gap cut or crossed.
-         * @param was_cut Whether the gap is cut.
-         * @return Its length, or zero when the oracle saw none.
-         */
         const auto length{[&](const bool was_cut) {
             const auto found{shortest.find({window, gap, was_cut})};
 
@@ -2950,15 +2808,6 @@ TEST(Dfa_test, Boundary_profile_over_random_tables_is_absent_everywhere_or_nowhe
         }
     }};
 
-    /**
-     * @brief Holds a profile under a small cap against the one under the large cap: absent at every gap or at none, and
-     *        a verdict the cap left decided the large cap's, with its witnesses, showing the window occurring unless
-     *        absent.
-     * @param profile The profile under the small cap.
-     * @param decided The profile under the large cap.
-     * @param occurs Whether the window occurs.
-     * @param label The failure message's label.
-     */
     const auto check_capped{[&](const std::vector<Gap_verdict>& profile, const std::vector<Gap_verdict>& decided,
                                 const bool occurs, const std::string& label) {
         const auto absent{std::ranges::count(profile, Gap::absent, &Gap_verdict::verdict)};
@@ -2995,6 +2844,8 @@ TEST(Dfa_test, Boundary_profile_over_random_tables_is_absent_everywhere_or_nowhe
         }
     }};
 
+    constexpr std::size_t tables{60};
+
     for (std::size_t table{0}; table < tables; ++table)
     {
         const auto simulator{random_table(sequence)};
@@ -3005,11 +2856,13 @@ TEST(Dfa_test, Boundary_profile_over_random_tables_is_absent_everywhere_or_nowhe
         {
             const auto name{std::format("{} {}", table, window)};
 
-            const auto [witness, exhaustive]{window_occurrence(simulator, window, large)};
+            constexpr std::size_t unreached_cap{1U << 16U};
+
+            const auto [witness, exhaustive]{window_occurrence(simulator, window, unreached_cap)};
 
             ASSERT_TRUE(exhaustive) << name;
 
-            const auto decided{boundary_profile(simulator, window, large)};
+            const auto decided{boundary_profile(simulator, window, unreached_cap)};
 
             ASSERT_EQ(decided.size(), window.size() + 1) << name;
 
@@ -3021,6 +2874,10 @@ TEST(Dfa_test, Boundary_profile_over_random_tables_is_absent_everywhere_or_nowhe
 
                 check_decided(simulator, window, gap, decided[gap], occurs_inside, shortest, label);
             }
+
+            constexpr std::size_t caps_per_window{4};
+
+            constexpr std::size_t largest_small_cap{32};
 
             for (std::size_t round{0}; round < caps_per_window; ++round)
             {
@@ -3051,12 +2908,6 @@ TEST(Dfa_test, Segmentation_difference_separates_two_token_sets_by_domain_or_by_
     // even ones apart, {aa} tokenizes the even runs alone: the first pair separates on the boundary half, the other two
     // on the domain half, and each set is one segmentation function with itself.
 
-    /**
-     * @brief Builds {a}, {aa} or {aa, a}.
-     * @param pair Whether the chain has two a's.
-     * @param single Whether one a is a token.
-     * @return The compiled table.
-     */
     const auto build{[](const bool pair, const bool single) {
         Builder builder{};
 
@@ -3085,10 +2936,6 @@ TEST(Dfa_test, Segmentation_difference_separates_two_token_sets_by_domain_or_by_
     const auto pair{build(true, false)};
     const auto both{build(true, true)};
 
-    /**
-     * @brief Checks that a token set is one segmentation function with itself.
-     * @param simulator The token set.
-     */
     const auto one_function_with_itself{[](const Simulator& simulator) {
         const auto [witness, half, exhaustive]{segmentation_difference(simulator, simulator)};
 

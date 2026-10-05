@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <boost/container_hash/hash.hpp>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -26,6 +27,11 @@ using States_t = std::vector<std::uint64_t>;
  * @brief The number of states one word of a state set holds.
  */
 constexpr std::size_t word_bits{64};
+
+/**
+ * @brief The origin that marks a hypothesis whose token began before the window, a value no in-window offset can take.
+ */
+constexpr std::size_t before_window{std::numeric_limits<std::size_t>::max()};
 
 /**
  * @brief A node of the shortest-window search: before an origin is chosen, the states every hypothesis occupies; after,
@@ -190,14 +196,7 @@ void insert(States_t& states, const std::size_t state)
  */
 [[nodiscard]] bool empty(const States_t& states)
 {
-    /**
-     * @brief Returns whether a word of the set holds no state.
-     * @param word The word.
-     * @return True when it is zero.
-     */
-    const auto is_zero{[](const std::uint64_t word) { return word == 0; }};
-
-    return std::ranges::all_of(states, is_zero);
+    return std::ranges::all_of(states, std::logical_not{});
 }
 
 /**
@@ -251,11 +250,6 @@ void insert(States_t& states, const std::size_t state)
 [[nodiscard]] std::vector<std::pair<Search_node, bool>> advance(
         const Simulator& simulator, const Search_node& node, const unsigned char byte)
 {
-    /**
-     * @brief Returns the live successor of a state on the byte.
-     * @param state The state stepped from.
-     * @return The successor, or nothing when the step is undefined or leads to a dead state.
-     */
     const auto live_step{[&simulator, byte](const std::size_t state) -> std::optional<std::size_t> {
         const auto to{simulator.step(state, byte)};
 
@@ -341,10 +335,6 @@ void insert(States_t& states, const std::size_t state)
 
 std::optional<std::size_t> is_split_window(const Simulator& simulator, const std::string_view window)
 {
-    // The pre-window origin: a hypothesis whose token began before the window. Any value no in-window offset can take
-    // serves as the marker.
-    constexpr std::size_t before{std::numeric_limits<std::size_t>::max()};
-
     // The empty window certifies nothing.
     if (window.empty())
     {
@@ -362,25 +352,15 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
 
     next.reserve(simulator.state_count() + 1);
 
-    /**
-     * @brief Returns whether a state is live.
-     * @param state The state.
-     * @return True when some accepting state is reachable from it.
-     */
     const auto is_live{[&simulator](const std::size_t state) { return simulator.is_live(state); }};
 
-    /**
-     * @brief Returns whether a state accepts.
-     * @param state The state.
-     * @return True when it accepts.
-     */
     const auto is_accepting{[&simulator](const std::size_t state) { return simulator.is_accepting(state); }};
 
     const auto states{std::views::iota(std::size_t{0}, simulator.state_count())};
 
     for (const auto state : states | std::views::filter(is_live))
     {
-        cloud.emplace_back(state, before);
+        cloud.emplace_back(state, before_window);
     }
 
     for (std::size_t at{0}; at < window.size(); ++at)
@@ -440,11 +420,6 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
     // marker means the window never resolves where the covering token began.
     const auto& [first_state, origin]{cloud.front()};
 
-    /**
-     * @brief Returns whether a hypothesis's origin is the first one's.
-     * @param at The origin.
-     * @return True when they agree.
-     */
     const auto agrees{[origin](const std::size_t at) { return at == origin; }};
 
     if (!std::ranges::all_of(cloud | std::views::values, agrees))
@@ -452,7 +427,7 @@ std::optional<std::size_t> is_split_window(const Simulator& simulator, const std
         return std::nullopt;
     }
 
-    if (origin == before)
+    if (origin == before_window)
     {
         return std::nullopt;
     }
@@ -466,11 +441,6 @@ Shortest_window shortest_split_window(const Simulator& simulator, const std::siz
 
     Search_node start{.chosen = std::nullopt, .others = States_t(words, 0)};
 
-    /**
-     * @brief Returns whether a state is live.
-     * @param state The state.
-     * @return True when some accepting state is reachable from it.
-     */
     const auto is_live{[&simulator](const std::size_t state) { return simulator.is_live(state); }};
 
     const auto states{std::views::iota(std::size_t{0}, simulator.state_count())};
@@ -506,11 +476,6 @@ Shortest_window shortest_split_window(const Simulator& simulator, const std::siz
 
     std::vector<Reached> reached{{.parent = 0, .byte = 0, .chose = false}};
 
-    /**
-     * @brief Reads the window back from its last node along the trail.
-     * @param last The number of the certified node.
-     * @return The window found, with its origin.
-     */
     const auto window_to{[&reached](const std::size_t last) -> Shortest_window {
         std::string window{};
 
@@ -537,11 +502,6 @@ Shortest_window shortest_split_window(const Simulator& simulator, const std::siz
         return {.outcome = Shortest_window::Outcome::found, .window = std::move(window), .origin = origin};
     }};
 
-    /**
-     * @brief Expands one reached node on every byte class in order, numbering each new node as it is reached.
-     * @param at The number of the node expanded.
-     * @return The search's result when a new node is certified or the budget runs out, nothing otherwise.
-     */
     const auto expand{[&](const std::size_t at) -> std::optional<Shortest_window> {
         for (const auto byte : bytes)
         {

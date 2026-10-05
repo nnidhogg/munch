@@ -10,20 +10,22 @@ namespace munch::dfa
 namespace
 {
 /**
- * @brief The number of states a definition spans: one past the highest identifier it names anywhere.
+ * @brief Returns the number of states a definition spans: one past the highest identifier it names anywhere.
  * @param init_state The initial state.
  * @param transitions The transition table.
  * @param accept_states The accept states and their associated tokens.
  * @return The state count, zero when the highest identifier is the largest std::size_t and no count holds it.
  */
-Dfa::State_t span_of(
+[[nodiscard]] Dfa::State_t span_of(
         const Dfa::State_t init_state, const Dfa::Transitions_t& transitions, const Dfa::Accept_states_t& accept_states)
 {
     auto highest{init_state};
 
     for (const auto& [key, to] : transitions)
     {
-        highest = std::max({highest, key.first, to});
+        const auto& [from, label]{key};
+
+        highest = std::max({highest, from, to});
     }
 
     for (const auto& state : accept_states | std::views::keys)
@@ -38,8 +40,17 @@ Dfa::State_t span_of(
 
 std::size_t Dfa::Hash::operator()(const Key_t& key) const noexcept
 {
+    const auto& [state, label]{key};
+
+    const auto label_hash{Label::Hash{}(label)};
+
     std::size_t seed{};
-    return boost::hash_combine(seed, key.first), boost::hash_combine(seed, Label::Hash{}(key.second)), seed;
+
+    boost::hash_combine(seed, state);
+
+    boost::hash_combine(seed, label_hash);
+
+    return seed;
 }
 
 Dfa::Dfa(const State_t init_state, Transitions_t transitions, Accept_states_t accept_states)
@@ -71,16 +82,30 @@ const Dfa::Accept_states_t& Dfa::accept_states() const noexcept
 
 std::optional<Dfa::State_t> Dfa::advance(const State_t state, const char symbol) const
 {
-    const auto iterator{transitions_.find({state, Label{symbol}})};
+    const auto found{transitions_.find({state, Label{symbol}})};
 
-    return iterator != transitions_.cend() ? std::optional{iterator->second} : std::nullopt;
+    if (found == transitions_.cend())
+    {
+        return std::nullopt;
+    }
+
+    const auto& [key, to]{*found};
+
+    return to;
 }
 
 std::optional<Token> Dfa::has_accept_token(const State_t state) const
 {
-    const auto iterator{accept_states_.find(state)};
+    const auto found{accept_states_.find(state)};
 
-    return iterator != accept_states_.cend() ? std::optional{iterator->second} : std::nullopt;
+    if (found == accept_states_.cend())
+    {
+        return std::nullopt;
+    }
+
+    const auto& [accept_state, token]{*found};
+
+    return token;
 }
 
 } // namespace munch::dfa

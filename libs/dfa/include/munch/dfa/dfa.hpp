@@ -79,8 +79,8 @@ public:
      *
      * The subset construction numbers states densely from zero, so for a DFA it produced this is the number of states;
      * dfa::Builder takes the identifiers a caller names, so for a DFA built by hand it is the span they cover. Either
-     * way it is an identifier no state uses, which is what unroll_start() enters the automaton through. Counted once
-     * at construction, since every consumer of the definition needs it: the Simulator sizes its tables by it.
+     * way it is an identifier no state uses, which is what unroll_start() enters the automaton through. Counted once at
+     * construction, since every consumer of the definition needs it: the Simulator sizes its tables by it.
      *
      * It is neither of those where the span is not representable: a hand-built DFA naming a state at the largest
      * std::size_t spans one past it, and what this returns is then the wrap, zero, which is no count of anything and
@@ -111,7 +111,7 @@ public:
     [[nodiscard]] std::optional<State_t> advance(State_t state, char symbol) const;
 
     /**
-     * @brief Checks if a state is an accept state and returns its token if so.
+     * @brief Returns the token a state accepts, or std::nullopt when it accepts nothing.
      * @param state The state to check.
      * @return The associated token if the state is accepting, otherwise std::nullopt.
      */

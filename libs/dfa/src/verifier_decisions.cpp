@@ -203,11 +203,6 @@ template <typename Key, typename Goal, typename Expand>
 
     std::vector<typename std::map<Key, Parent>::const_iterator> admitted{first};
 
-    /**
-     * @brief Reads the symbols back from an admitted key to the start.
-     * @param last The number of the key.
-     * @return The symbols from the start to it.
-     */
     const auto path_to{[&admitted](const std::size_t last) {
         std::vector<Marked> path{};
 
@@ -234,11 +229,6 @@ template <typename Key, typename Goal, typename Expand>
             return path_to(next);
         }
 
-        /**
-         * @brief Admits a key reached from the one expanded, unless it was reached before.
-         * @param symbol The symbol read.
-         * @param child The key reached.
-         */
         const auto admit{[&](const Marked symbol, Key child) {
             const auto [entry, inserted]{seen.try_emplace(std::move(child), Parent{.from = next, .symbol = symbol})};
 
@@ -529,11 +519,6 @@ void dedup(std::vector<T>& values)
 [[nodiscard]] std::pair<State_t, std::vector<Marked>> markless_cycle(
         const Markless_graph& graph, const std::vector<bool>& ordered)
 {
-    /**
-     * @brief Returns whether a markless step leaves a state the topological order leaves out.
-     * @param edge The step, as the state left and the symbol read.
-     * @return True when its state is unordered.
-     */
     const auto unordered{[&ordered](const std::pair<State_t, Marked>& edge) {
         const auto& [from, symbol]{edge};
 
@@ -590,28 +575,12 @@ void dedup(std::vector<T>& values)
 
     const auto alphabet{alphabet_of(verifier)};
 
-    /**
-     * @brief Reads every marked symbol over the alphabet from a state.
-     * @tparam Emit The callback type.
-     * @param state The state read from.
-     * @param emit Called with each symbol that steps and the state it leads to.
-     */
     const auto expand{[&verifier, &alphabet]<typename Emit>(const State_t state, const Emit& emit) {
         expand_steps(verifier, alphabet, state, emit);
     }};
 
-    /**
-     * @brief Returns whether a state is the cycle's root.
-     * @param state The state.
-     * @return True when it is.
-     */
     const auto at_root{[root](const State_t state) { return state == root; }};
 
-    /**
-     * @brief Returns whether a state accepts.
-     * @param state The state.
-     * @return True when it does.
-     */
     const auto accepting{[&verifier](const State_t state) { return verifier.accepts(state); }};
 
     const auto stem{shortest_path(verifier.start(), at_root, expand)};
@@ -699,11 +668,6 @@ void dedup(std::vector<T>& values)
  */
 [[nodiscard]] bool accepts_any(const Verifier& verifier, const std::vector<State_t>& states)
 {
-    /**
-     * @brief Returns whether a state accepts.
-     * @param state The state.
-     * @return True when it does.
-     */
     const auto accepting{[&verifier](const State_t state) { return verifier.accepts(state); }};
 
     return std::ranges::any_of(states, accepting);
@@ -737,19 +701,8 @@ void dedup(std::vector<T>& values)
  */
 [[nodiscard]] Marked_string accepted_marking(const Verifier& verifier, const std::string_view bytes)
 {
-    /**
-     * @brief Returns whether a key has read the whole input into an accepting state.
-     * @param key The key.
-     * @return True when it has.
-     */
     const auto goal{[&](const Marking_key& key) { return key.read == bytes.size() && verifier.accepts(key.state); }};
 
-    /**
-     * @brief Reads the next byte of the input from a key under both marks.
-     * @tparam Emit The callback type.
-     * @param key The key read from.
-     * @param emit Called with each symbol that steps and the key it leads to.
-     */
     const auto expand{[&]<typename Emit>(const Marking_key& key, const Emit& emit) {
         const auto [read, state]{key};
 
@@ -787,25 +740,9 @@ void dedup(std::vector<T>& values)
 [[nodiscard]] std::optional<Marked_string> boundary_divergence(
         const Verifier& a, const Verifier& b, const std::vector<unsigned char>& alphabet)
 {
-    /**
-     * @brief Returns whether both verifiers accept after markings that differed.
-     * @param key The key.
-     * @return True when they do.
-     */
     const auto goal{[&](const Pair_key& key) { return key.differed && a.accepts(key.a) && b.accepts(key.b); }};
 
-    /**
-     * @brief Reads every byte of the alphabet from a key, under a mark for each verifier.
-     * @tparam Emit The callback type.
-     * @param key The key read from.
-     * @param emit Called with the first verifier's symbol and the key it leads to.
-     */
     const auto expand{[&]<typename Emit>(const Pair_key& key, const Emit& emit) {
-        /**
-         * @brief Pairs one step of the first verifier with every step of the second on the same byte.
-         * @param symbol The first verifier's symbol.
-         * @param to_a The state the first verifier enters.
-         */
         const auto pair_with_b{[&](const Marked symbol, const State_t to_a) {
             for (const auto mark_b : marks)
             {
@@ -846,19 +783,8 @@ void dedup(std::vector<T>& values)
 [[nodiscard]] std::optional<Marked_string> domain_divergence(
         const Verifier& a, const Verifier& b, const std::vector<unsigned char>& alphabet)
 {
-    /**
-     * @brief Returns whether exactly one verifier accepts after the bytes read.
-     * @param key The key.
-     * @return True when one does and the other does not.
-     */
     const auto goal{[&](const Subset_key& key) { return accepts_any(a, key.a) != accepts_any(b, key.b); }};
 
-    /**
-     * @brief Reads every byte of the alphabet from a key into both subsets.
-     * @tparam Emit The callback type.
-     * @param key The key read from.
-     * @param emit Called with each unmarked symbol and the key it leads to, unless both subsets die.
-     */
     const auto expand{[&]<typename Emit>(const Subset_key& key, const Emit& emit) {
         for (const auto byte : alphabet)
         {
@@ -907,35 +833,14 @@ std::optional<Miscovering> miscovering(
 
     start_marks.back() = true;
 
-    /**
-     * @brief Returns whether the covering boundary of an occurrence is its origin: the last boundary before one of its
-     *        bytes is the one before byte origin.
-     * @param marks The boundaries before each byte of the occurrence, as the certification key holds them.
-     * @return True when the token containing the occurrence's final byte begins at the origin.
-     */
+    // The token holding the occurrence's last byte begins at the origin: a mark before byte origin, none after it.
     const auto covered_at_origin{[origin](const std::vector<bool>& marks) {
         return marks[origin] && std::ranges::none_of(marks | std::views::drop(origin + 1), std::identity{});
     }};
 
-    /**
-     * @brief Returns whether a key has missed an occurrence and accepts.
-     * @param key The key.
-     * @return True when it has and does.
-     */
     const auto goal{[&verifier](const Certification_key& key) { return key.missed && verifier.accepts(key.state); }};
 
-    /**
-     * @brief Reads every marked symbol over the alphabet from a key, advancing the window's match and the marks.
-     * @tparam Emit The callback type.
-     * @param key The key read from.
-     * @param emit Called with each symbol that steps and the key it leads to.
-     */
     const auto expand{[&]<typename Emit>(const Certification_key& key, const Emit& emit) {
-        /**
-         * @brief Advances the key by one step of the verifier.
-         * @param symbol The symbol read.
-         * @param to The state entered.
-         */
         const auto advance{[&](const Marked symbol, const State_t to) {
             const auto matched{matched_after(window, borders, key.matched, symbol.byte)};
 
