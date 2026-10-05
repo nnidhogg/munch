@@ -1,92 +1,164 @@
 // The parallel scanner over certified anchors: the splitting theorem run as a program, not a policy.
 //
-// Parallel lexers reach an exact result by enumerating the states a chunk might start in and
-// resolving afterwards, paying for that enumeration per chunk. This probe splits at
-// certified anchors instead: positions where a decision procedure over the grammar has proved that every
-// completely tokenizable context places a token start, so a chunk scanned independently from one
-// reproduces the sequential segmentation exactly, no speculation window and no fixup pass. The anchor
-// table is computed outside this repository by the certification instruments and consumed here as
-// (window, origin) pairs over byte classes; the byte classifier below is built from the very sets
-// grammars.hpp defines, so the two derivations cannot drift apart silently.
+// Parallel lexers reach an exact result by enumerating the states a chunk might start in and resolving afterwards,
+// paying for that enumeration per chunk. This probe splits at certified anchors instead: positions where a decision
+// procedure over the grammar has proved that every completely tokenizable context places a token start, so a chunk
+// scanned independently from one reproduces the sequential segmentation exactly, no speculation window and no fixup
+// pass. The anchor table is computed outside this repository by the certification instruments and consumed here as
+// (window, origin) pairs over byte classes; the byte classifier below is built from the very sets grammars.hpp defines,
+// so the two derivations cannot drift apart silently.
 //
 // The probe runs the conventional C-like row exactly as the study composes it, scans the corpus sequentially, derives
-// the anchor positions from the table, verifies every anchor lands on the sequential boundary set, then for each
-// worker count snaps ideal cuts to their nearest anchors, scans every chunk in its own thread against the shared
-// lexer, and requires the concatenated boundary stream byte-identical to the sequential one. Equality is asserted, not
-// reported: a disagreement is a failed run. Wall-clock figures are printed on lines prefixed "timing:" and are
-// machine-dependent by nature; every other line is stable.
+// the anchor positions from the table, verifies every anchor lands on the sequential boundary set, then for each worker
+// count snaps ideal cuts to their nearest anchors, scans every chunk in its own thread against the shared lexer, and
+// requires the concatenated boundary stream byte-identical to the sequential one. Equality is asserted, not reported: a
+// disagreement is a failed run. Wall-clock figures are printed on lines prefixed "timing:" and are machine-dependent by
+// nature; every other line is stable.
 //
 // Usage: munch_parallel_scan <corpus file> <anchor table file> [worker counts...]
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <optional>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "grammars.hpp"
 #include "munch/core/builder.hpp"
+#include "munch/core/lexer.hpp"
+#include "munch/regex/set.hpp"
+#include "munch/tools/probes/files.hpp"
+#include "munch/tools/probes/study_rows.hpp"
 
 namespace
 {
-// A whole decimal number and nothing else, so a count that is not one is refused rather than read as zero.
-bool parse_count(const std::string_view text, std::size_t& value)
-{
-    const auto* const end{text.data() + text.size()};
-
-    const auto parsed{std::from_chars(text.data(), end, value)};
-
-    return parsed.ec == std::errc{} && parsed.ptr == end;
-}
-
 using namespace munch;
 
 using figures::Token;
 
-core::Lexer build_conventional_row()
+/**
+ * @brief The times each timed scan runs, the fastest kept.
+ */
+constexpr std::size_t timing_repetitions{5};
+
+/**
+ * @brief The first argument holding a worker count, past the program name, the corpus and the table.
+ */
+constexpr int first_worker_argument{3};
+
+/**
+ * @brief The worker counts timed when the arguments give none.
+ */
+constexpr std::array<std::size_t, 4> default_worker_counts{8, 16, 32, 64};
+
+/**
+ * @brief One line of the anchor table: a window over byte classes and the origin it certifies.
+ */
+struct Window
 {
-    core::Builder b;
+    /**
+     * @brief The window's class letters.
+     */
+    std::string classes{};
 
-    figures::c_like(b, false);
+    /**
+     * @brief The offset inside the window of the certified token start.
+     */
+    std::size_t origin{};
+};
 
-    b.add_token(figures::string_literal(), Token::String, 2);
+/**
+ * @brief The cuts of one worker count's split and the farthest any ideal cut moved to reach its anchor.
+ */
+struct Split
+{
+    /**
+     * @brief The chunk boundaries, 0 and the corpus size included, ascending and distinct.
+     */
+    std::vector<std::size_t> cuts{};
 
-    b.add_token(figures::line_comment(), Token::LineComment, 1);
+    /**
+     * @brief The largest distance in bytes between an ideal cut and the anchor it snapped to.
+     */
+    std::size_t snap_max{0};
+};
 
-    return b.build();
+/**
+ * @brief Reads a whole decimal number and nothing else, so a count that is not one is refused rather than read as zero.
+ * @param text The text.
+ * @return The number, std::nullopt when the text is not wholly one.
+ */
+std::optional<std::size_t> parse_count(const std::string_view text)
+{
+    const auto* const end{text.data() + text.size()};
+
+    std::size_t value{0};
+
+    const auto [stopped, error]{std::from_chars(text.data(), end, value)};
+
+    if (error != std::errc{} || stopped != end)
+    {
+        return std::nullopt;
+    }
+
+    return value;
 }
 
 /**
- * @brief The nine-class byte abstraction of the conventional row, built from the grammar's own sets.
+ * @brief Builds the conventional C-like row exactly as the study composes it: the C-like base with string literals and
+ *        line comments.
+ * @return The lexer.
+ */
+core::Lexer build_conventional_row()
+{
+    core::Builder builder{};
+
+    tools::probes::conventional_row(builder);
+
+    return builder.build();
+}
+
+/**
+ * @brief Classifies a byte by the nine-class abstraction of the conventional row, built from the sets the grammar's
+ *        tokens are built from: c_like's identifier start, digits and blank, its newline, the string's quote, the
+ *        comment's slash, then its operators and punctuation.
  * @param c The byte to classify.
  * @return The class letter the anchor table's windows are written in.
  */
 char byte_class(const char c)
 {
-    static const auto& operator_symbols{figures::operators().symbols()};
+    static const auto identifier_start{regex::Set::alpha() + '_'};
 
-    static const auto& punctuation_symbols{figures::punctuation().symbols()};
-
-    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_')
+    if (identifier_start.symbols().contains(c))
     {
         return 'L';
     }
 
-    if (c >= '0' && c <= '9')
+    static const auto digits{regex::Set::digits()};
+
+    if (digits.symbols().contains(c))
     {
         return 'D';
     }
 
-    if (c == ' ' || c == '\t')
+    static const regex::Set blank{' ', '\t'};
+
+    if (blank.symbols().contains(c))
     {
         return 'S';
     }
@@ -106,10 +178,14 @@ char byte_class(const char c)
         return 'C';
     }
 
+    static const auto& operator_symbols{figures::operators().symbols()};
+
     if (operator_symbols.contains(c))
     {
         return 'O';
     }
+
+    static const auto& punctuation_symbols{figures::punctuation().symbols()};
 
     if (punctuation_symbols.contains(c))
     {
@@ -119,17 +195,26 @@ char byte_class(const char c)
     return 'X';
 }
 
+/**
+ * @brief Returns the token starts of the sequential scan; a corpus that does not tokenize completely ends the run with
+ *        a diagnostic.
+ * @param lexer The lexer.
+ * @param input The input.
+ * @return The token starts, ascending.
+ */
 std::vector<std::size_t> boundaries(const core::Lexer& lexer, const std::string_view input)
 {
-    std::vector<std::size_t> begins;
+    std::vector<std::size_t> begins{};
 
     std::size_t at{0};
 
-    const auto consumed{lexer.tokenize_all<Token>(input, [&](const Token, const std::size_t length) {
+    const auto note_start{[&begins, &at](const Token, const std::size_t length) {
         begins.push_back(at);
 
         at += length;
-    })};
+    }};
+
+    const auto consumed{lexer.tokenize_all<Token>(input, note_start)};
 
     if (consumed != input.size())
     {
@@ -141,45 +226,45 @@ std::vector<std::size_t> boundaries(const core::Lexer& lexer, const std::string_
     return begins;
 }
 
-std::string read_file(const char* path)
+/**
+ * @brief Reads a whole file as bytes; a file that cannot be read ends the run with a diagnostic.
+ * @param path The file.
+ * @return Its bytes.
+ */
+std::string read_file(const std::filesystem::path& path)
 {
-    std::ifstream stream{path, std::ios::binary};
+    auto bytes{tools::probes::read_bytes(path)};
 
-    if (!stream)
+    if (!bytes)
     {
-        std::fprintf(stderr, "cannot read %s\n", path);
+        std::fprintf(stderr, "cannot read %s\n", path.string().c_str());
 
         std::exit(EXIT_FAILURE);
     }
 
-    std::ostringstream out;
-
-    out << stream.rdbuf();
-
-    return std::move(out).str();
+    return std::move(*bytes);
 }
 
-struct Window
-{
-    std::string classes{};
-
-    std::size_t origin{};
-};
-
-std::vector<Window> read_anchor_table(const char* path)
+/**
+ * @brief Reads the anchor table, one `window origin` pair per line, empty lines and `#` comments skipped; a table that
+ *        cannot be read, holds a malformed line or holds no window ends the run with a diagnostic.
+ * @param path The table.
+ * @return The windows, in table order.
+ */
+std::vector<Window> read_anchor_table(const std::filesystem::path& path)
 {
     std::ifstream stream{path};
 
     if (!stream)
     {
-        std::fprintf(stderr, "cannot read the anchor table at %s\n", path);
+        std::fprintf(stderr, "cannot read the anchor table at %s\n", path.string().c_str());
 
         std::exit(EXIT_FAILURE);
     }
 
-    std::vector<Window> windows;
+    std::vector<Window> windows{};
 
-    std::string line;
+    std::string line{};
 
     while (std::getline(stream, line))
     {
@@ -190,9 +275,11 @@ std::vector<Window> read_anchor_table(const char* path)
 
         std::istringstream fields{line};
 
-        Window window;
+        Window window{};
 
-        if (!(fields >> window.classes >> window.origin) || window.origin >= window.classes.size())
+        auto& [classes, origin]{window};
+
+        if (!(fields >> classes >> origin) || origin >= classes.size())
         {
             std::fprintf(stderr, "anchor table line is not `window origin`: %s\n", line.c_str());
 
@@ -204,7 +291,7 @@ std::vector<Window> read_anchor_table(const char* path)
 
     if (windows.empty())
     {
-        std::fprintf(stderr, "the anchor table at %s holds no windows\n", path);
+        std::fprintf(stderr, "the anchor table at %s holds no windows\n", path.string().c_str());
 
         std::exit(EXIT_FAILURE);
     }
@@ -212,16 +299,56 @@ std::vector<Window> read_anchor_table(const char* path)
     return windows;
 }
 
+/**
+ * @brief Reads the worker counts from the arguments past the corpus and the table, 8, 16, 32 and 64 when none is given;
+ *        a count that is not a positive whole number is refused with a diagnostic.
+ * @param argc The argument count.
+ * @param argv The arguments.
+ * @return The worker counts, std::nullopt after a refusal.
+ */
+std::optional<std::vector<std::size_t>> worker_counts_of(const int argc, char** argv)
+{
+    std::vector<std::size_t> worker_counts{};
+
+    for (int argument{first_worker_argument}; argument < argc; ++argument)
+    {
+        const auto count{parse_count(argv[argument])};
+
+        if (!count || *count == 0)
+        {
+            std::fprintf(stderr, "worker count must be a positive whole number: %s\n", argv[argument]);
+
+            return std::nullopt;
+        }
+
+        worker_counts.push_back(*count);
+    }
+
+    if (worker_counts.empty())
+    {
+        worker_counts.assign(default_worker_counts.begin(), default_worker_counts.end());
+    }
+
+    return worker_counts;
+}
+
+/**
+ * @brief Returns the anchor positions the table witnesses in a class string: every occurrence's position plus its
+ *        origin, the string's two ends left out.
+ * @param classes The corpus as class letters.
+ * @param windows The table's windows.
+ * @return The anchors, ascending and distinct.
+ */
 std::vector<std::size_t> anchor_positions(const std::string& classes, const std::vector<Window>& windows)
 {
-    std::set<std::size_t> anchors;
+    std::set<std::size_t> anchors{};
 
-    for (const auto& window : windows)
+    for (const auto& [window_classes, origin] : windows)
     {
-        for (auto found{classes.find(window.classes)}; found != std::string::npos;
-             found = classes.find(window.classes, found + 1))
+        for (auto found{classes.find(window_classes)}; found != std::string::npos;
+             found = classes.find(window_classes, found + 1))
         {
-            const auto position{found + window.origin};
+            const auto position{found + origin};
 
             if (position > 0 && position < classes.size())
             {
@@ -233,7 +360,39 @@ std::vector<std::size_t> anchor_positions(const std::string& classes, const std:
     return {anchors.begin(), anchors.end()};
 }
 
-double best_of_runs(const std::size_t repetitions, const auto& run)
+/**
+ * @brief Checks that every anchor lands on the sequential boundary set, the table's guarantee checked against the
+ *        library's own scan rather than trusted; the first anchor off it is reported with a diagnostic.
+ * @param anchors The anchors.
+ * @param sequential The sequential scan's token starts.
+ * @return True when every anchor is a sequential token start.
+ */
+bool check_anchors(const std::vector<std::size_t>& anchors, const std::vector<std::size_t>& sequential)
+{
+    const std::set<std::size_t> boundary_set{sequential.begin(), sequential.end()};
+
+    for (const auto anchor : anchors)
+    {
+        if (!boundary_set.contains(anchor))
+        {
+            std::fprintf(stderr, "anchor %zu is not on the sequential boundary set\n", anchor);
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * @brief Times a run several times and keeps the fastest.
+ * @tparam Run The run's type, callable with no argument.
+ * @param repetitions The runs timed.
+ * @param run The run.
+ * @return The fastest run's wall-clock time in milliseconds.
+ */
+template <typename Run>
+double best_of_runs(const std::size_t repetitions, const Run& run)
 {
     double best{0.0};
 
@@ -254,11 +413,136 @@ double best_of_runs(const std::size_t repetitions, const auto& run)
     return best;
 }
 
+/**
+ * @brief Returns the anchor nearest an ideal cut, the one above it on a tie, and the last anchor past every one.
+ * @param anchors The anchors, ascending and nonempty.
+ * @param ideal The ideal cut.
+ * @return The anchor.
+ */
+std::size_t nearest_anchor(const std::vector<std::size_t>& anchors, const std::size_t ideal)
+{
+    const auto after{std::ranges::lower_bound(anchors, ideal)};
+
+    if (after == anchors.end())
+    {
+        return anchors.back();
+    }
+
+    if (after == anchors.begin())
+    {
+        return *after;
+    }
+
+    const auto below{*std::prev(after)};
+
+    return ideal - below < *after - ideal ? below : *after;
+}
+
+/**
+ * @brief Splits a corpus for a worker count: each of the workers' ideal cuts snaps to its nearest anchor, and a cut
+ *        equal to the one before it is dropped.
+ * @param anchors The anchors, ascending and nonempty.
+ * @param size The corpus size.
+ * @param workers The worker count.
+ * @return The cuts and the largest snap.
+ */
+Split snap_to_anchors(const std::vector<std::size_t>& anchors, const std::size_t size, const std::size_t workers)
+{
+    Split split{.cuts = {0}, .snap_max = 0};
+
+    auto& [cuts, snap_max]{split};
+
+    for (std::size_t cut{1}; cut < workers; ++cut)
+    {
+        const auto ideal{size * cut / workers};
+
+        const auto nearest{nearest_anchor(anchors, ideal)};
+
+        const auto distance{nearest > ideal ? nearest - ideal : ideal - nearest};
+
+        snap_max = std::max(snap_max, distance);
+
+        if (cuts.back() != nearest)
+        {
+            cuts.push_back(nearest);
+        }
+    }
+
+    cuts.push_back(size);
+
+    return split;
+}
+
+/**
+ * @brief Scans one chunk, recording its token starts in the corpus's coordinates; a chunk that does not tokenize
+ *        completely ends the run with a diagnostic.
+ * @param lexer The lexer.
+ * @param corpus The corpus.
+ * @param cuts The chunk boundaries.
+ * @param chunk The chunk's index.
+ * @param begins The chunk's token starts, replaced.
+ */
+void scan_chunk(
+        const core::Lexer& lexer, const std::string_view corpus, const std::vector<std::size_t>& cuts,
+        const std::size_t chunk, std::vector<std::size_t>& begins)
+{
+    begins.clear();
+
+    std::size_t at{cuts[chunk]};
+
+    const auto piece{corpus.substr(cuts[chunk], cuts[chunk + 1] - cuts[chunk])};
+
+    const auto consumed{lexer.tokenize_all<Token>(piece, [&](const Token, const std::size_t length) {
+        begins.push_back(at);
+
+        at += length;
+    })};
+
+    if (consumed != piece.size())
+    {
+        std::fprintf(stderr, "chunk %zu not completely tokenizable\n", chunk);
+
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+/**
+ * @brief Scans every chunk in its own thread, each recording its token starts in the corpus's coordinates.
+ * @param lexer The lexer.
+ * @param corpus The corpus.
+ * @param cuts The chunk boundaries.
+ * @param chunk_begins Each chunk's token starts, one entry per chunk, replaced.
+ */
+void scan_chunks(
+        const core::Lexer& lexer, const std::string_view corpus, const std::vector<std::size_t>& cuts,
+        std::vector<std::vector<std::size_t>>& chunk_begins)
+{
+    std::vector<std::thread> threads{};
+
+    for (std::size_t chunk{0}; chunk < cuts.size() - 1; ++chunk)
+    {
+        threads.emplace_back([&, chunk] { scan_chunk(lexer, corpus, cuts, chunk, chunk_begins[chunk]); });
+    }
+
+    for (auto& thread : threads)
+    {
+        thread.join();
+    }
+}
+
 } // namespace
 
-int main(const int argc, const char** argv)
+/**
+ * @brief Splits the corpus at the table's anchors for every worker count, scans the chunks in parallel and holds the
+ *        concatenated boundary stream to the sequential scan, printing the figures and the timings.
+ * @param argc The argument count.
+ * @param argv The corpus, the anchor table and the worker counts, 8, 16, 32 and 64 when none is given.
+ * @return EXIT_SUCCESS when every configuration reproduces the sequential scan, EXIT_FAILURE on a usage error or a
+ *         disagreement.
+ */
+int main(const int argc, char** argv)
 {
-    if (argc < 3)
+    if (argc < first_worker_argument)
     {
         std::fprintf(stderr, "usage: munch_parallel_scan <corpus file> <anchor table file> [worker counts...]\n");
 
@@ -269,25 +553,11 @@ int main(const int argc, const char** argv)
 
     const auto windows{read_anchor_table(argv[2])};
 
-    std::vector<std::size_t> worker_counts;
+    const auto worker_counts{worker_counts_of(argc, argv)};
 
-    for (int argument{3}; argument < argc; ++argument)
+    if (!worker_counts)
     {
-        std::size_t count{0};
-
-        if (!parse_count(argv[argument], count) || count == 0)
-        {
-            std::fprintf(stderr, "worker count must be a positive whole number: %s\n", argv[argument]);
-
-            return EXIT_FAILURE;
-        }
-
-        worker_counts.push_back(count);
-    }
-
-    if (worker_counts.empty())
-    {
-        worker_counts = {8, 16, 32, 64};
+        return EXIT_FAILURE;
     }
 
     const auto lexer{build_conventional_row()};
@@ -300,18 +570,9 @@ int main(const int argc, const char** argv)
 
     const auto anchors{anchor_positions(classes, windows)};
 
-    // Every anchor must land on the sequential boundary set: the table's guarantee, checked against
-    // the library's own scan rather than trusted.
-    std::set<std::size_t> boundary_set{sequential.begin(), sequential.end()};
-
-    for (const auto anchor : anchors)
+    if (!check_anchors(anchors, sequential))
     {
-        if (!boundary_set.contains(anchor))
-        {
-            std::fprintf(stderr, "anchor %zu is not on the sequential boundary set\n", anchor);
-
-            return EXIT_FAILURE;
-        }
+        return EXIT_FAILURE;
     }
 
     std::printf("corpus: %zu bytes, %zu sequential token starts\n", corpus.size(), sequential.size());
@@ -328,95 +589,29 @@ int main(const int argc, const char** argv)
             "anchors: %zu from %zu table windows, every one on the sequential boundary set\n", anchors.size(),
             windows.size());
 
-    const auto sequential_ms{best_of_runs(5, [&] { boundaries(lexer, corpus); })};
+    const auto scan_sequentially{[&] { boundaries(lexer, corpus); }};
+
+    const auto sequential_ms{best_of_runs(timing_repetitions, scan_sequentially)};
 
     std::printf("timing: sequential scan %.2f ms best of five\n", sequential_ms);
 
     const std::string_view view{corpus};
 
-    for (const auto workers : worker_counts)
+    for (const auto workers : *worker_counts)
     {
-        std::vector<std::size_t> cuts{0};
+        const auto [cuts, snap_max]{snap_to_anchors(anchors, corpus.size(), workers)};
 
-        std::size_t snap_max{0};
+        const auto chunks{cuts.size() - 1};
 
-        for (std::size_t k{1}; k < workers; ++k)
-        {
-            const auto ideal{corpus.size() * k / workers};
+        std::vector<std::vector<std::size_t>> chunk_begins(chunks);
 
-            const auto after{std::ranges::lower_bound(anchors, ideal)};
+        const auto scan_in_parallel{[&] { scan_chunks(lexer, view, cuts, chunk_begins); }};
 
-            std::size_t nearest{after != anchors.end() ? *after : anchors.back()};
+        const auto parallel_ms{best_of_runs(timing_repetitions, scan_in_parallel)};
 
-            if (after != anchors.begin() && after != anchors.end())
-            {
-                const auto below{*std::prev(after)};
+        std::vector<std::size_t> chunked{};
 
-                if (ideal - below < *after - ideal)
-                {
-                    nearest = below;
-                }
-            }
-            else if (after == anchors.end())
-            {
-                nearest = anchors.back();
-            }
-
-            const auto distance{nearest > ideal ? nearest - ideal : ideal - nearest};
-
-            snap_max = std::max(snap_max, distance);
-
-            if (cuts.back() != nearest)
-            {
-                cuts.push_back(nearest);
-            }
-        }
-
-        cuts.push_back(corpus.size());
-
-        std::vector<std::vector<std::size_t>> chunk_begins(cuts.size() - 1);
-
-        const auto scan_chunks{[&] {
-            std::vector<std::thread> threads;
-
-            for (std::size_t chunk{0}; chunk < cuts.size() - 1; ++chunk)
-            {
-                threads.emplace_back([&, chunk] {
-                    chunk_begins[chunk].clear();
-
-                    std::size_t at{cuts[chunk]};
-
-                    const auto piece{view.substr(cuts[chunk], cuts[chunk + 1] - cuts[chunk])};
-
-                    const auto consumed{lexer.tokenize_all<Token>(piece, [&](const Token, const std::size_t length) {
-                        chunk_begins[chunk].push_back(at);
-
-                        at += length;
-                    })};
-
-                    if (consumed != piece.size())
-                    {
-                        std::fprintf(stderr, "chunk %zu not completely tokenizable\n", chunk);
-
-                        std::exit(EXIT_FAILURE);
-                    }
-                });
-            }
-
-            for (auto& thread : threads)
-            {
-                thread.join();
-            }
-        }};
-
-        const auto parallel_ms{best_of_runs(5, scan_chunks)};
-
-        std::vector<std::size_t> chunked;
-
-        for (const auto& begins : chunk_begins)
-        {
-            chunked.insert(chunked.end(), begins.begin(), begins.end());
-        }
+        std::ranges::copy(chunk_begins | std::views::join, std::back_inserter(chunked));
 
         if (chunked != sequential)
         {
@@ -425,14 +620,16 @@ int main(const int argc, const char** argv)
             return EXIT_FAILURE;
         }
 
+        const auto speedup{sequential_ms / parallel_ms};
+
         std::printf(
                 "workers %zu: %zu chunks, snap max %zu bytes, chunked boundary stream "
                 "byte-identical to the sequential scan\n",
-                workers, cuts.size() - 1, snap_max);
+                workers, chunks, snap_max);
 
         std::printf(
                 "timing: workers %zu parallel scan %.2f ms best of five, speedup %.2f\n", workers, parallel_ms,
-                sequential_ms / parallel_ms);
+                speedup);
     }
 
     std::printf("the split theorem held on every configuration: no speculation and no fixup pass\n");

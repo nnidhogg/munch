@@ -4,9 +4,13 @@
 #include <array>
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <iostream>
+#include <iterator>
 #include <map>
+#include <numeric>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <utility>
 #include <vector>
@@ -18,60 +22,35 @@ namespace munch::tools::probes
 {
 namespace
 {
-// Implements wall_carry.hpp: the kernel, its edges, the transfer semigroup, the labeling search, the state flavors, the
-// seed and the group are private to this unit.
+/**
+ * @brief The subset graph's node budget.
+ */
+constexpr std::size_t subset_graph_budget{4096};
 
 /**
- * @brief Where a byte sends each member of a kernel node: position i of the source subset maps to the position of its
- *        successor in the target subset, a dying accepting member continuing through the initial state's transition.
- * @param table The table.
- * @param graph The subset graph.
- * @param node The source node.
- * @param byte The byte.
- * @return Per source position, its target position, std::nullopt when the byte eliminates or merges a member.
+ * @brief The transfer closure's element budget.
  */
-std::optional<std::vector<std::size_t>> member_map(
-        const Table& table, const Subset_graph& graph, const std::size_t node, const int byte)
-{
-    const auto& source{graph.subsets[node]};
+constexpr std::size_t transfer_budget{4096};
 
-    const auto& target{graph.subsets[graph.successor[node][static_cast<std::size_t>(byte)]]};
+/**
+ * @brief The labeling search's assignment budget.
+ */
+constexpr std::size_t labeling_budget{100'000};
 
-    std::vector<std::size_t> mapped(source.size());
+/**
+ * @brief The most kernel subsets the labeling search admits.
+ */
+constexpr std::size_t kernel_subset_cap{6};
 
-    std::set<std::size_t> hit{};
+/**
+ * @brief The widest wall the labeling search admits.
+ */
+constexpr std::size_t wall_width_cap{6};
 
-    for (std::size_t at{0}; at < source.size(); ++at)
-    {
-        auto to{table.next[source[at]][static_cast<std::size_t>(byte)]};
-
-        if (to == kDead)
-        {
-            if (table.accept[source[at]] == 0)
-            {
-                return std::nullopt;
-            }
-
-            to = table.next[table.init][static_cast<std::size_t>(byte)];
-
-            if (to == kDead)
-            {
-                return std::nullopt;
-            }
-        }
-
-        const auto found{std::ranges::lower_bound(target, static_cast<std::size_t>(to))};
-
-        mapped[at] = static_cast<std::size_t>(found - target.begin());
-
-        if (!hit.insert(mapped[at]).second)
-        {
-            return std::nullopt;
-        }
-    }
-
-    return mapped;
-}
+/**
+ * @brief Per byte value, one permutation of flavors.
+ */
+using Byte_actions_t = std::array<std::vector<int>, byte_count>;
 
 /**
  * @brief One edge of the kernel, its nodes numbered by their rank in the kernel.
@@ -105,7 +84,71 @@ struct Kernel_edge
 using Summary_t = std::vector<std::pair<std::size_t, std::vector<std::size_t>>>;
 
 /**
- * @brief The composition of two transfers, the first applied before the second.
+ * @brief A flavor labeling of the kernel and the byte actions it explains.
+ */
+struct Labeling
+{
+    /**
+     * @brief Per kernel node's rank, the flavor of each member position.
+     */
+    std::vector<std::vector<int>> flavor_of{};
+
+    /**
+     * @brief Per byte, the permutation of flavors it acts by.
+     */
+    Byte_actions_t sigma{};
+};
+
+/**
+ * @brief Returns where a byte sends each member of a kernel node: position i of the source subset maps to the position
+ *        of its successor in the target subset, a dying accepting member continuing through the initial state's
+ *        transition.
+ * @param table The table.
+ * @param graph The subset graph.
+ * @param node The source node.
+ * @param byte The byte.
+ * @return Per source position, its target position, std::nullopt when the byte eliminates or merges a member.
+ */
+std::optional<std::vector<std::size_t>> member_map(
+        const Table& table, const Subset_graph& graph, const std::size_t node, const int byte)
+{
+    const auto& source{graph.subsets[node]};
+
+    const auto successor{graph.successor[node][static_cast<std::size_t>(byte)]};
+
+    const auto& target{graph.subsets[successor]};
+
+    std::vector<std::size_t> mapped(source.size());
+
+    std::set<std::size_t> hit{};
+
+    for (std::size_t at{0}; at < source.size(); ++at)
+    {
+        // A dying member continues through the initial state's transition when it accepts, and is eliminated otherwise.
+        const auto to{scan_step(table, source[at], static_cast<unsigned char>(byte))};
+
+        if (!to)
+        {
+            return std::nullopt;
+        }
+
+        const auto found{std::ranges::lower_bound(target, *to)};
+
+        mapped[at] = static_cast<std::size_t>(found - target.begin());
+
+        const auto [position, inserted]{hit.insert(mapped[at])};
+
+        if (!inserted)
+        {
+            return std::nullopt;
+        }
+    }
+
+    return mapped;
+}
+
+/**
+ * @brief Returns the composition of two transfers, the first applied before the second.
  * @param first The first transfer.
  * @param second The second transfer.
  * @param wall The kernel subsets' width.
@@ -121,21 +164,22 @@ Summary_t composed(const Summary_t& first, const Summary_t& second, const std::s
 
         const auto& [end, after]{second[middle]};
 
-        result[at].first = end;
+        auto& [target, map]{result[at]};
 
-        result[at].second.resize(wall);
+        target = end;
 
-        for (std::size_t member{0}; member < wall; ++member)
-        {
-            result[at].second[member] = after[before[member]];
-        }
+        map.resize(wall);
+
+        const auto through_second{[&after](const std::size_t position) { return after[position]; }};
+
+        std::ranges::transform(before | std::views::take(wall), map.begin(), through_second);
     }
 
     return result;
 }
 
 /**
- * @brief The identity permutation of a number of flavors.
+ * @brief Returns the identity permutation of a number of flavors.
  * @param wall The number of flavors.
  * @return 0, 1, ..., wall - 1.
  */
@@ -143,38 +187,36 @@ std::vector<int> identity(const std::size_t wall)
 {
     std::vector<int> result(wall);
 
-    for (std::size_t at{0}; at < wall; ++at)
-    {
-        result[at] = static_cast<int>(at);
-    }
+    std::ranges::iota(result, 0);
 
     return result;
 }
 
 /**
- * @brief The permutation each byte acts by under a labeling, when every edge on the byte derives the same one.
+ * @brief Returns the permutation each byte acts by under a labeling, when every edge on the byte derives the same one.
  * @param edges The kernel's edges.
  * @param flavor_of Per kernel node's rank, the flavor of each member position.
  * @param wall The number of flavors.
  * @return Per byte, its permutation, empty for a byte no edge carries; std::nullopt when two edges on one byte derive
  *         different permutations.
  */
-std::optional<std::array<std::vector<int>, 256>> byte_actions(
+std::optional<Byte_actions_t> byte_actions(
         const std::vector<Kernel_edge>& edges, const std::vector<std::vector<int>>& flavor_of, const std::size_t wall)
 {
-    std::array<std::vector<int>, 256> trial{};
+    Byte_actions_t trial{};
 
-    for (const auto& edge : edges)
+    for (const auto& [source, byte, target, map] : edges)
     {
         std::vector<int> derived(wall, -1);
 
         for (std::size_t member{0}; member < wall; ++member)
         {
-            derived[static_cast<std::size_t>(flavor_of[edge.source][member])] =
-                    flavor_of[edge.target][edge.map[member]];
+            const auto from{static_cast<std::size_t>(flavor_of[source][member])};
+
+            derived[from] = flavor_of[target][map[member]];
         }
 
-        auto& slot{trial[static_cast<std::size_t>(edge.byte)]};
+        auto& slot{trial[static_cast<std::size_t>(byte)]};
 
         if (slot.empty())
         {
@@ -190,24 +232,8 @@ std::optional<std::array<std::vector<int>, 256>> byte_actions(
 }
 
 /**
- * @brief A flavor labeling of the kernel and the byte actions it explains.
- */
-struct Labeling
-{
-    /**
-     * @brief Per kernel node's rank, the flavor of each member position.
-     */
-    std::vector<std::vector<int>> flavor_of{};
-
-    /**
-     * @brief Per byte, the permutation of flavors it acts by.
-     */
-    std::array<std::vector<int>, 256> sigma{};
-};
-
-/**
- * @brief The kernel: the nodes whose floor and width both equal the wall floor, which must be successor-closed. A
- *        kernel that is not is refused with `refused: the kernel is not successor-closed`.
+ * @brief Returns the kernel: the nodes whose floor and width both equal the wall floor, which must be successor-closed.
+ *        A kernel that is not is refused with `refused: the kernel is not successor-closed`.
  * @param graph The subset graph.
  * @param floor Per node, its floor.
  * @param wall The wall floor.
@@ -218,47 +244,40 @@ std::optional<std::vector<std::size_t>> kernel_of(
 {
     const auto count{graph.subsets.size()};
 
-    std::vector<char> kernel(count, 0);
+    std::vector<Flag> kernel(count, Flag::off);
 
     for (std::size_t node{0}; node < count; ++node)
     {
-        kernel[node] = floor[node] == wall && graph.subsets[node].size() == wall ? 1 : 0;
+        kernel[node] = floor[node] == wall && node_width(graph, node) == wall ? Flag::on : Flag::off;
     }
 
+    const auto in_kernel{[&kernel](const std::size_t node) { return kernel[node] == Flag::on; }};
+
     for (std::size_t node{0}; node < count; ++node)
     {
-        if (kernel[node] == 0)
+        if (!in_kernel(node))
         {
             continue;
         }
 
-        for (const auto to : graph.successor[node])
+        if (!std::ranges::all_of(graph.successor[node], in_kernel))
         {
-            if (kernel[to] == 0)
-            {
-                std::cout << "refused: the kernel is not successor-closed\n";
+            std::cout << "refused: the kernel is not successor-closed\n";
 
-                return std::nullopt;
-            }
+            return std::nullopt;
         }
     }
 
     std::vector<std::size_t> nodes{};
 
-    for (std::size_t node{0}; node < count; ++node)
-    {
-        if (kernel[node] != 0)
-        {
-            nodes.push_back(node);
-        }
-    }
+    std::ranges::copy_if(std::views::iota(std::size_t{0}, count), std::back_inserter(nodes), in_kernel);
 
     return nodes;
 }
 
 /**
- * @brief The kernel's edges, every kernel node's in ascending byte order, the nodes in ascending order. A byte that
- *        eliminates or merges a member is refused with `refused: a kernel byte action eliminates or merges`.
+ * @brief Returns the kernel's edges, every kernel node's in ascending byte order, the nodes in ascending order. A byte
+ *        that eliminates or merges a member is refused with `refused: a kernel byte action eliminates or merges`.
  * @param table The table.
  * @param graph The subset graph.
  * @param nodes The kernel's nodes, ascending.
@@ -269,16 +288,16 @@ std::optional<std::vector<Kernel_edge>> kernel_edges(
 {
     std::map<std::size_t, std::size_t> dense{};
 
-    for (std::size_t at{0}; at < nodes.size(); ++at)
+    for (const auto& [at, node] : std::views::enumerate(nodes))
     {
-        dense.emplace(nodes[at], at);
+        dense.emplace(node, static_cast<std::size_t>(at));
     }
 
     std::vector<Kernel_edge> edges{};
 
     for (const auto node : nodes)
     {
-        for (int byte{0}; byte < 256; ++byte)
+        for (int byte{0}; byte < byte_count; ++byte)
         {
             const auto mapped{member_map(table, graph, node, byte)};
 
@@ -289,11 +308,10 @@ std::optional<std::vector<Kernel_edge>> kernel_edges(
                 return std::nullopt;
             }
 
+            const auto successor{graph.successor[node][static_cast<std::size_t>(byte)]};
+
             edges.push_back(
-                    {.source = dense.at(node),
-                     .byte = byte,
-                     .target = dense.at(graph.successor[node][static_cast<std::size_t>(byte)]),
-                     .map = *mapped});
+                    Kernel_edge{.source = dense.at(node), .byte = byte, .target = dense.at(successor), .map = *mapped});
         }
     }
 
@@ -312,17 +330,16 @@ std::optional<std::vector<Kernel_edge>> kernel_edges(
 std::optional<std::size_t> transfer_semigroup(
         const std::vector<Kernel_edge>& edges, const std::size_t kernel_size, const std::size_t wall)
 {
-    // Planning composes nonempty chunks only, so the empty word's identity is outside the count; a model admitting
-    // empty chunks would add it and could round the price up one bit.
+    // Planning composes nonempty chunks only, so the empty word's identity is outside the count.
     std::map<int, Summary_t> letters{};
 
-    for (const auto& edge : edges)
+    for (const auto& [source, byte, target, map] : edges)
     {
-        auto& letter{letters[edge.byte]};
+        auto& letter{letters[byte]};
 
         letter.resize(kernel_size);
 
-        letter[edge.source] = {edge.target, edge.map};
+        letter[source] = {target, map};
     }
 
     std::set<Summary_t> semigroup{};
@@ -331,7 +348,9 @@ std::optional<std::size_t> transfer_semigroup(
 
     for (const auto& [byte, letter] : letters)
     {
-        if (semigroup.insert(letter).second)
+        const auto [position, inserted]{semigroup.insert(letter)};
+
+        if (inserted)
         {
             queue.push_back(letter);
         }
@@ -347,12 +366,14 @@ std::optional<std::size_t> transfer_semigroup(
         {
             const auto product{composed(element, letter, wall)};
 
-            if (semigroup.insert(product).second)
+            const auto [position, inserted]{semigroup.insert(product)};
+
+            if (inserted)
             {
                 queue.push_back(product);
             }
 
-            if (semigroup.size() > 4096)
+            if (semigroup.size() > transfer_budget)
             {
                 std::cout << "refused: the transfer closure exceeds the budget\n";
 
@@ -365,9 +386,9 @@ std::optional<std::size_t> transfer_semigroup(
 }
 
 /**
- * @brief Whether the labeling search's assignments, the wall's factorial to the power of the non-base kernel nodes,
- *        stay within 100,000. The division test is exact: the floor of the budget over the factorial is the largest
- *        count whose product stays within the budget, so no intermediate can wrap.
+ * @brief Returns whether the labeling search's assignments, the wall's factorial to the power of the non-base kernel
+ *        nodes, stay within 100,000. The division test is exact: the floor of the budget over the factorial is the
+ *        largest count whose product stays within the budget, so no intermediate can wrap.
  * @param wall The kernel subsets' width.
  * @param kernel_size The number of kernel nodes.
  * @return True when the search stays within the budget.
@@ -377,25 +398,23 @@ bool is_labeling_within_budget(const std::size_t wall, const std::size_t kernel_
     // Dimensional caps cannot bound the product: a table with a tiny closure can still demand ten to the fourteenth
     // assignments, so the budget refuses before any permutation is materialized. A retained value is at most the budget
     // times the largest admitted factorial, far inside the type even after one further multiply.
-    std::size_t factorial{1};
+    const auto factors{std::views::iota(std::size_t{1}, wall + 1)};
 
-    for (std::size_t at{2}; at <= wall; ++at)
-    {
-        factorial *= at;
-    }
+    const auto factorial{std::ranges::fold_left(factors, std::size_t{1}, std::multiplies{})};
 
     std::size_t assignments{1};
 
-    auto overflowed{false};
-
-    for (std::size_t at{1}; at < kernel_size && !overflowed; ++at)
+    for (std::size_t at{1}; at < kernel_size; ++at)
     {
-        overflowed = assignments > 100000 / factorial;
+        if (assignments > labeling_budget / factorial)
+        {
+            return false;
+        }
 
         assignments *= factorial;
     }
 
-    return !overflowed && assignments <= 100000;
+    return assignments <= labeling_budget;
 }
 
 /**
@@ -410,8 +429,6 @@ bool is_labeling_within_budget(const std::size_t wall, const std::size_t kernel_
 std::optional<Labeling> search_labeling(
         const std::vector<Kernel_edge>& edges, const std::size_t kernel_size, const std::size_t wall)
 {
-    constexpr std::size_t base{0};
-
     std::vector<std::vector<int>> permutations{};
 
     auto current{identity(wall)};
@@ -429,7 +446,7 @@ std::optional<Labeling> search_labeling(
     {
         for (std::size_t at{0}; at < kernel_size; ++at)
         {
-            flavor_of[at] = permutations[at == base ? 0 : choice[at]];
+            flavor_of[at] = permutations[choice[at]];
         }
 
         if (const auto sigma{byte_actions(edges, flavor_of, wall)})
@@ -439,13 +456,9 @@ std::optional<Labeling> search_labeling(
 
         searching = false;
 
-        for (std::size_t at{0}; at < kernel_size; ++at)
+        // The first node keeps the identity labeling, so the counter runs from the second.
+        for (std::size_t at{1}; at < kernel_size; ++at)
         {
-            if (at == base)
-            {
-                continue;
-            }
-
             if (++choice[at] < permutations.size())
             {
                 searching = true;
@@ -461,8 +474,9 @@ std::optional<Labeling> search_labeling(
 }
 
 /**
- * @brief Every state's flavor under a labeling, which must agree wherever a state appears across kernel subsets. A
- *        state with two flavors is refused with `refused: a state carries two flavors across kernel subsets`.
+ * @brief Returns every state's flavor under a labeling, which must agree wherever a state appears across kernel
+ *        subsets. A state with two flavors is refused with `refused: a state carries two flavors across kernel
+ *        subsets`.
  * @param table The table.
  * @param graph The subset graph.
  * @param nodes The kernel's nodes, ascending.
@@ -476,17 +490,19 @@ std::optional<std::vector<int>> state_flavors(
 {
     std::vector<int> state_flavor(table.states, -1);
 
-    for (std::size_t at{0}; at < nodes.size(); ++at)
+    for (const auto& [node, flavors] : std::views::zip(nodes, flavor_of))
     {
+        const auto& subset{graph.subsets[node]};
+
         for (std::size_t member{0}; member < wall; ++member)
         {
-            const auto state{graph.subsets[nodes[at]][member]};
+            const auto state{subset[member]};
 
             if (state_flavor[state] == -1)
             {
-                state_flavor[state] = flavor_of[at][member];
+                state_flavor[state] = flavors[member];
             }
-            else if (state_flavor[state] != flavor_of[at][member])
+            else if (state_flavor[state] != flavors[member])
             {
                 std::cout << "refused: a state carries two flavors across kernel subsets\n";
 
@@ -499,10 +515,10 @@ std::optional<std::vector<int>> state_flavors(
 }
 
 /**
- * @brief The boundary seed: every live image of the initial state, its byte's permutation undone, must name one flavor.
- *        It is refused with `refused: a live initial-state image is unflavored` at a live image no kernel subset holds,
- *        `refused: the boundary seed is byte-dependent` at an image naming another flavor, and `refused: no restart
- *        entry reaches a flavored state` when the initial state has no live image.
+ * @brief Returns the boundary seed: every live image of the initial state, its byte's permutation undone, must name one
+ *        flavor. It is refused with `refused: a live initial-state image is unflavored` at a live image no kernel
+ *        subset holds, `refused: the boundary seed is byte-dependent` at an image naming another flavor, and `refused:
+ *        no restart entry reaches a flavored state` when the initial state has no live image.
  * @param table The table.
  * @param state_flavor Per state, its flavor.
  * @param sigma Per byte, the permutation of flavors it acts by.
@@ -510,16 +526,15 @@ std::optional<std::vector<int>> state_flavors(
  * @return The seed, std::nullopt on a refusal.
  */
 std::optional<int> boundary_seed(
-        const Table& table, const std::vector<int>& state_flavor, const std::array<std::vector<int>, 256>& sigma,
-        const std::size_t wall)
+        const Table& table, const std::vector<int>& state_flavor, const Byte_actions_t& sigma, const std::size_t wall)
 {
     int seed{-1};
 
-    for (int byte{0}; byte < 256; ++byte)
+    for (int byte{0}; byte < byte_count; ++byte)
     {
         const auto to{table.next[table.init][static_cast<std::size_t>(byte)]};
 
-        if (to == kDead)
+        if (to == dead)
         {
             continue;
         }
@@ -535,15 +550,11 @@ std::optional<int> boundary_seed(
 
         const auto& perm{sigma[static_cast<std::size_t>(byte)]};
 
-        int undone{-1};
+        const auto flavors{perm | std::views::take(wall)};
 
-        for (std::size_t at{0}; at < wall; ++at)
-        {
-            if (perm[at] == state_flavor[static_cast<std::size_t>(to)])
-            {
-                undone = static_cast<int>(at);
-            }
-        }
+        const auto found{std::ranges::find(flavors, state_flavor[static_cast<std::size_t>(to)])};
+
+        const auto undone{found == flavors.end() ? -1 : static_cast<int>(found - flavors.begin())};
 
         if (seed == -1)
         {
@@ -568,22 +579,24 @@ std::optional<int> boundary_seed(
 }
 
 /**
- * @brief The carry group: the identity and the bytes' permutations closed under composition.
+ * @brief Returns the carry group: the identity and the bytes' permutations closed under composition.
  * @param sigma Per byte, the permutation of flavors it acts by.
  * @param wall The number of flavors.
  * @return The group's elements.
  */
-std::set<std::vector<int>> carry_group(const std::array<std::vector<int>, 256>& sigma, const std::size_t wall)
+std::set<std::vector<int>> carry_group(const Byte_actions_t& sigma, const std::size_t wall)
 {
     std::set<std::vector<int>> group{identity(wall)};
 
     std::deque<std::vector<int>> pending{};
 
-    for (int byte{0}; byte < 256; ++byte)
+    for (const auto& permutation : sigma)
     {
-        if (group.insert(sigma[static_cast<std::size_t>(byte)]).second)
+        const auto [position, inserted]{group.insert(permutation)};
+
+        if (inserted)
         {
-            pending.push_back(sigma[static_cast<std::size_t>(byte)]);
+            pending.push_back(permutation);
         }
     }
 
@@ -597,14 +610,16 @@ std::set<std::vector<int>> carry_group(const std::array<std::vector<int>, 256>& 
 
         for (const auto& generator : generators)
         {
+            const auto through_generator{
+                    [&generator](const int flavor) { return generator[static_cast<std::size_t>(flavor)]; }};
+
             std::vector<int> product(wall);
 
-            for (std::size_t at{0}; at < wall; ++at)
-            {
-                product[at] = generator[static_cast<std::size_t>(element[at])];
-            }
+            std::ranges::transform(element | std::views::take(wall), product.begin(), through_generator);
 
-            if (group.insert(product).second)
+            const auto [position, inserted]{group.insert(product)};
+
+            if (inserted)
             {
                 pending.push_back(product);
             }
@@ -618,9 +633,9 @@ std::set<std::vector<int>> carry_group(const std::array<std::vector<int>, 256>& 
 
 std::optional<Carry> synthesize(const Table& table)
 {
-    // The shipped window certificate refuses nullable token sets wholesale; the synthesis mirrors that scope rather
-    // than answering beyond it.
-    if (table.accept[table.init] != 0)
+    // The shipped window certificate refuses nullable token sets wholesale, and the synthesis refuses them the same
+    // way.
+    if (table.accept[table.init] == Flag::on)
     {
         std::cout << "refused: the token set is nullable\n";
 
@@ -634,7 +649,7 @@ std::optional<Carry> synthesize(const Table& table)
         return std::nullopt;
     }
 
-    const auto graph{subset_graph(table, 4096)};
+    const auto graph{subset_graph(table, subset_graph_budget)};
 
     if (!graph)
     {
@@ -662,18 +677,15 @@ std::optional<Carry> synthesize(const Table& table)
         return std::nullopt;
     }
 
-    // Resource caps run before any factorial or closure work, and the closure itself carries a hard element budget:
-    // dimensional caps alone cannot bound it, since six width-six subsets admit wreath-product closures beyond any
-    // enumeration. The labeling search is exhaustive over wall-factorial permutations and the summary closure grows
-    // with the kernel, so both are bounded here, refused fail-closed beyond.
-    if (nodes->size() > 6)
+    // The resource caps run before any factorial or closure work.
+    if (nodes->size() > kernel_subset_cap)
     {
         std::cout << "refused: the kernel has too many subsets for the labeling search\n";
 
         return std::nullopt;
     }
 
-    if (wall > 6)
+    if (wall > wall_width_cap)
     {
         std::cout << "refused: the wall is too wide for the labeling search\n";
 
@@ -711,27 +723,31 @@ std::optional<Carry> synthesize(const Table& table)
         return std::nullopt;
     }
 
-    auto state_flavor{state_flavors(table, *graph, *nodes, labeling->flavor_of, wall)};
+    const auto& [flavor_of, sigma]{*labeling};
+
+    auto state_flavor{state_flavors(table, *graph, *nodes, flavor_of, wall)};
 
     if (!state_flavor)
     {
         return std::nullopt;
     }
 
-    const auto seed{boundary_seed(table, *state_flavor, labeling->sigma, wall)};
+    const auto seed{boundary_seed(table, *state_flavor, sigma, wall)};
 
     if (!seed)
     {
         return std::nullopt;
     }
 
+    auto group{carry_group(sigma, wall)};
+
     return Carry{
             .width = wall,
             .kernel_subsets = nodes->size(),
             .semigroup = *semigroup,
             .state_flavor = std::move(*state_flavor),
-            .sigma = labeling->sigma,
-            .group = carry_group(labeling->sigma, wall),
+            .sigma = sigma,
+            .group = std::move(group),
             .seed = *seed};
 }
 

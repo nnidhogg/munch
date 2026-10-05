@@ -1,5 +1,7 @@
 #include "munch/tools/probes/wall_rows.hpp"
 
+#include <string>
+
 #include "grammars.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/set.hpp"
@@ -8,45 +10,67 @@
 
 namespace munch::tools::probes
 {
-using namespace regex;
+regex::Regex delimited(const char delimiter)
+{
+    using namespace regex;
+
+    const auto quote{text(std::string{delimiter})};
+
+    const auto body{kleene(any_of(Set::all() - Set{delimiter}))};
+
+    return concat(quote, body, quote);
+}
+
+void add_gadget_tokens(core::Builder& builder)
+{
+    using namespace regex;
+
+    builder.add_token(delimited('"'), Local::str, 1);
+
+    builder.add_token(plus(any_of(Set::all() - Set{'"'})), Local::chunk, 2);
+}
 
 Table gadget()
 {
     Builder_dbg builder{};
 
-    builder.add_token(concat(text("\""), kleene(any_of(Set::all() - Set{'"'})), text("\"")), Local::Str, 1);
-
-    builder.add_token(plus(any_of(Set::all() - Set{'"'})), Local::Chunk, 2);
+    add_gadget_tokens(builder);
 
     return extract(builder.dfa());
 }
 
 Table two_string()
 {
+    using namespace regex;
+
     Builder_dbg builder{};
 
-    builder.add_token(concat(text("\""), kleene(any_of(Set::all() - Set{'"'})), text("\"")), Local::Str, 1);
+    builder.add_token(delimited('"'), Local::str, 1);
 
-    builder.add_token(concat(text("`"), kleene(any_of(Set::all() - Set{'`'})), text("`")), Local::Tick, 1);
+    builder.add_token(delimited('`'), Local::tick, 1);
 
-    builder.add_token(plus(any_of(Set::all() - Set{'"', '`'})), Local::Chunk, 2);
+    builder.add_token(plus(any_of(Set::all() - Set{'"', '`'})), Local::chunk, 2);
 
     return extract(builder.dfa());
 }
 
 Table csv_row()
 {
+    using namespace regex;
+
     Builder_dbg builder{};
 
-    builder.add_token(
-            concat(text("\""), kleene(choice(any_of(Set::all() - Set{'"'}), text("\"\""))), text("\"")), Local::Quoted,
-            1);
+    const auto quote{text(R"(")")};
 
-    builder.add_token(plus(any_of(Set::all() - Set{'"', ',', '\n', '\r'})), Local::Bare, 2);
+    const auto field_byte{choice(any_of(Set::all() - Set{'"'}), text(R"("")"))};
 
-    builder.add_token(text(","), Local::Comma, 2);
+    builder.add_token(concat(quote, kleene(field_byte), quote), Local::quoted, 1);
 
-    builder.add_token(concat(optional(text("\r")), text("\n")), Local::Newline, 2);
+    builder.add_token(plus(any_of(Set::all() - Set{'"', ',', '\n', '\r'})), Local::bare, 2);
+
+    builder.add_token(text(","), Local::comma, 2);
+
+    builder.add_token(concat(optional(text("\r")), text("\n")), Local::newline, 2);
 
     return extract(builder.dfa());
 }
@@ -71,15 +95,17 @@ Table c_like_row()
 
 Table rollback_family()
 {
+    using namespace regex;
+
     Builder_dbg builder{};
 
-    builder.add_token(text("a"), Local::A, 1);
+    builder.add_token(text("a"), Local::a, 1);
 
-    builder.add_token(concat(text("a"), concat(kleene(text("b")), text("c"))), Local::Abc, 1);
+    builder.add_token(concat(text("a"), kleene(text("b")), text("c")), Local::abc, 1);
 
-    builder.add_token(text("b"), Local::B, 1);
+    builder.add_token(text("b"), Local::b, 1);
 
-    builder.add_token(text("x"), Local::X, 1);
+    builder.add_token(text("x"), Local::x, 1);
 
     return extract(builder.dfa());
 }

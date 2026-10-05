@@ -18,8 +18,8 @@ namespace munch::tools::probes
 void consumption_complete_c_row(core::Builder& builder);
 
 /**
- * @brief Adds the published cumulative C-like row: the conventional C-like base with string literals, line comments
- *        and block comments.
+ * @brief Adds the published cumulative C-like row: the conventional C-like base with string literals, line comments and
+ *        block comments.
  * @param builder The builder the row's tokens are added to.
  */
 void published_cumulative_row(core::Builder& builder);

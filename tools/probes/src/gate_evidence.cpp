@@ -1,9 +1,13 @@
 #include "munch/tools/probes/gate_evidence.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <deque>
+#include <iterator>
 #include <map>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -19,9 +23,6 @@ namespace munch::tools::probes
 {
 namespace
 {
-// Implements gate_evidence.hpp: the prefix family, the covering-token scan, the token completion and the rewind count
-// are private to this unit.
-
 using dfa::Dfa;
 using figures::Token;
 
@@ -29,61 +30,6 @@ using figures::Token;
  * @brief A live automaton state and how many bytes the scan has run past its last accepting position.
  */
 using Distance_key_t = std::pair<Dfa::State_t, std::size_t>;
-
-/**
- * @brief The shortest word reaching every live (state, distance past the last accepting position) pair from the
- *        initial state, breadth first, with the distance at most a bound; an accepting state resets the distance.
- * @param dfa The automaton.
- * @param live The automaton's trim states.
- * @param max_distance The largest distance kept.
- * @return Per reached pair, the shortest word reaching it, the initial pair's word empty.
- */
-std::map<Distance_key_t, std::string> distance_prefixes(
-        const Dfa& dfa, const States_t& live, const std::size_t max_distance)
-{
-    std::map<Distance_key_t, std::string> prefix{};
-
-    std::deque<Distance_key_t> pending{};
-
-    const auto seed{Distance_key_t{dfa.init_state(), 0}};
-
-    prefix[seed] = "";
-
-    pending.push_back(seed);
-
-    while (!pending.empty())
-    {
-        const auto [state, distance]{pending.front()};
-
-        pending.pop_front();
-
-        for (int symbol{0}; symbol < 256; ++symbol)
-        {
-            const auto next{dfa.advance(state, static_cast<char>(symbol))};
-
-            if (!next || !live.contains(*next))
-            {
-                continue;
-            }
-
-            const auto moved{dfa.has_accept_token(*next) ? std::size_t{0} : distance + 1};
-
-            if (moved > max_distance)
-            {
-                continue;
-            }
-
-            if (const auto key{Distance_key_t{*next, moved}}; !prefix.contains(key))
-            {
-                prefix[key] = prefix[{state, distance}] + static_cast<char>(symbol);
-
-                pending.push_back(key);
-            }
-        }
-    }
-
-    return prefix;
-}
 
 /**
  * @brief One scan of an input and the token covering one of its positions.
@@ -98,8 +44,95 @@ struct Covering
     /**
      * @brief Where the scanned token containing the position begins, std::nullopt when the scan stopped before it.
      */
-    std::optional<std::size_t> start;
+    std::optional<std::size_t> start{};
 };
+
+/**
+ * @brief Returns the shortest word reaching every live (state, distance past the last accepting position) pair from the
+ *        initial state, breadth first, with the distance at most a bound; an accepting state resets the distance.
+ * @param dfa The automaton.
+ * @param live The automaton's trim states.
+ * @param max_distance The largest distance kept.
+ * @return Per reached pair, the shortest word reaching it, the initial pair's word empty.
+ */
+std::map<Distance_key_t, std::string> distance_prefixes(
+        const Dfa& dfa, const States_t& live, const std::size_t max_distance)
+{
+    std::map<Distance_key_t, std::string> prefix{};
+
+    std::deque<Distance_key_t> pending{};
+
+    const Distance_key_t seed{dfa.init_state(), 0};
+
+    prefix[seed] = "";
+
+    pending.push_back(seed);
+
+    while (!pending.empty())
+    {
+        const auto [state, distance]{pending.front()};
+
+        pending.pop_front();
+
+        for (const auto symbol : every_byte())
+        {
+            const auto next{dfa.advance(state, symbol)};
+
+            if (!next || !live.contains(*next))
+            {
+                continue;
+            }
+
+            const auto moved{dfa.has_accept_token(*next) ? std::size_t{0} : distance + 1};
+
+            if (moved > max_distance)
+            {
+                continue;
+            }
+
+            const Distance_key_t key{*next, moved};
+
+            if (prefix.contains(key))
+            {
+                continue;
+            }
+
+            const auto word{prefix[{state, distance}] + symbol};
+
+            prefix[key] = word;
+
+            pending.push_back(key);
+        }
+    }
+
+    return prefix;
+}
+
+/**
+ * @brief Returns the empty head followed by every non-empty prefix whose state accepts, in the prefixes' order, until
+ *        the list holds a cap of entries.
+ * @param dfa The automaton.
+ * @param prefix The prefixes, by state and distance.
+ * @param cap The most entries the list holds.
+ * @return The heads.
+ */
+std::vector<std::string> accepted_heads(
+        const Dfa& dfa, const std::map<Distance_key_t, std::string>& prefix, const std::size_t cap)
+{
+    std::vector<std::string> heads{""};
+
+    for (const auto& [key, head] : prefix)
+    {
+        const auto& [state, distance]{key};
+
+        if (dfa.has_accept_token(state) && !head.empty() && heads.size() < cap)
+        {
+            heads.push_back(head);
+        }
+    }
+
+    return heads;
+}
 
 /**
  * @brief Scans an input and finds where the token containing one position begins.
@@ -114,14 +147,16 @@ Covering covering_start(const core::Lexer& lexer, const std::string& input, cons
 
     std::size_t offset{0};
 
-    covering.consumed = lexer.tokenize_all<Token>(input, [&](const Token, const std::size_t length) {
+    const auto locate{[&covering, &offset, last](const Token, const std::size_t length) {
         if (offset <= last && last < offset + length)
         {
             covering.start = offset;
         }
 
         offset += length;
-    });
+    }};
+
+    covering.consumed = lexer.tokenize_all<Token>(input, locate);
 
     return covering;
 }
@@ -175,7 +210,10 @@ std::size_t rewinds(const Dfa& dfa, const std::string& input)
             break;
         }
 
-        count += reached > last_accept ? 1 : 0;
+        if (reached > last_accept)
+        {
+            ++count;
+        }
 
         at = last_accept;
     }
@@ -184,9 +222,9 @@ std::size_t rewinds(const Dfa& dfa, const std::string& input)
 }
 
 /**
- * @brief The shortest bytes completing the token a window begins at its origin: walks the window from the origin in
- *        the automaton and, when the walk stays live and ends in a state that does not accept, searches breadth first
- *        for the nearest accepting state.
+ * @brief Returns the shortest bytes completing the token a window begins at its origin: walks the window from the
+ *        origin in the automaton and, when the walk stays live and ends in a state that does not accept, searches
+ *        breadth first for the nearest accepting state.
  * @param dfa The automaton.
  * @param live The automaton's trim states.
  * @param window The window.
@@ -230,21 +268,26 @@ std::optional<std::string> completion(
             return suffix[at];
         }
 
-        for (int symbol{0}; symbol < 256; ++symbol)
+        for (const auto symbol : every_byte())
         {
-            const auto next{dfa.advance(at, static_cast<char>(symbol))};
+            const auto next{dfa.advance(at, symbol)};
 
-            if (next && live.contains(*next) && !suffix.contains(*next))
+            if (!next || !live.contains(*next) || suffix.contains(*next))
             {
-                suffix[*next] = suffix[at] + static_cast<char>(symbol);
-
-                walk.push_back(*next);
+                continue;
             }
+
+            const auto word{suffix[at] + symbol};
+
+            suffix[*next] = word;
+
+            walk.push_back(*next);
         }
     }
 
     return std::nullopt;
 }
+
 } // namespace
 
 Backup backup_disagreements(
@@ -255,24 +298,20 @@ Backup backup_disagreements(
 
     const auto reentrant{is_init_reentrant(dfa, live)};
 
-    const auto prefix{distance_prefixes(dfa, live, 9)};
+    constexpr std::size_t prefix_distance{9};
+
+    const auto prefix{distance_prefixes(dfa, live, prefix_distance)};
+
+    constexpr std::size_t completed_heads{6};
 
     // An accepted word ahead of a prefix varies the distance from the last potential boundary to the window.
-    std::vector<std::string> completed{""};
-
-    for (const auto& [key, head] : prefix)
-    {
-        if (dfa.has_accept_token(key.first) && !head.empty() && completed.size() < 6)
-        {
-            completed.push_back(head);
-        }
-    }
+    const auto completed{accepted_heads(dfa, prefix, completed_heads)};
 
     std::vector<std::string> heads{};
 
     for (const auto& done : completed)
     {
-        for (const auto& [key, head] : prefix)
+        for (const auto& head : prefix | std::views::values)
         {
             heads.push_back(done + head);
         }
@@ -280,7 +319,42 @@ Backup backup_disagreements(
 
     backup.prefixes = heads.size();
 
-    constexpr std::string_view tails[]{"", " ", "\n", " x", ";\n", "\n}\n", " 1 ", "\"s\"\n"};
+    const auto scan_one{[&](const std::string& head, const std::string& window, const std::size_t origin,
+                            const std::string_view tail) {
+        auto input{head + window};
+
+        input += tail;
+
+        const auto last{head.size() + window.size() - 1};
+
+        const auto [consumed, start]{covering_start(lexer, input, last)};
+
+        if (consumed < head.size() + window.size())
+        {
+            return;
+        }
+
+        const auto rewound{rewinds(dfa, input) > 0};
+
+        if (rewound)
+        {
+            ++backup.exercised;
+        }
+
+        const auto complete{consumed == input.size()};
+
+        if (rewound && complete)
+        {
+            ++backup.tokenizable;
+        }
+
+        const auto starts_at_origin{start == head.size() + origin};
+
+        if (!starts_at_origin)
+        {
+            ++backup.disagreements;
+        }
+    }};
 
     for (const auto& window : windows)
     {
@@ -291,59 +365,70 @@ Backup backup_disagreements(
             continue;
         }
 
-        for (const auto& head : heads)
+        const auto origin{force_origin.value_or(*at)};
+
+        constexpr std::array<std::string_view, 8> tails{"", " ", "\n", " x", ";\n", "\n}\n", " 1 ", "\"s\"\n"};
+
+        for (const auto& [head, tail] : std::views::cartesian_product(heads, tails))
         {
-            for (const auto tail : tails)
-            {
-                auto input{head + window};
-
-                input += tail;
-
-                const auto covering{covering_start(lexer, input, head.size() + window.size() - 1)};
-
-                if (covering.consumed < head.size() + window.size())
-                {
-                    continue;
-                }
-
-                const auto rewound{rewinds(dfa, input) > 0};
-
-                backup.exercised += rewound ? 1 : 0;
-
-                backup.tokenizable += rewound && covering.consumed == input.size() ? 1 : 0;
-
-                backup.disagreements += covering.start == head.size() + force_origin.value_or(*at) ? 0 : 1;
-            }
+            scan_one(head, window, origin, tail);
         }
     }
 
     return backup;
 }
 
-std::optional<std::pair<std::string, std::string>> find_witness(
+std::optional<Occurrence_witness> find_witness(
         Gate_totals& totals, const Dfa& dfa, const core::Lexer& lexer, const States_t& live,
         const std::vector<Certified_window>& words)
 {
-    const auto prefix{distance_prefixes(dfa, live, 6)};
+    constexpr std::size_t prefix_distance{6};
+
+    const auto prefix{distance_prefixes(dfa, live, prefix_distance)};
 
     std::vector<std::string> heads{""};
 
-    std::vector<std::string> tails{""};
+    std::ranges::copy(prefix | std::views::values, std::back_inserter(heads));
 
-    for (const auto& [key, head] : prefix)
-    {
-        heads.push_back(head);
+    constexpr std::size_t accepted_tails{8};
 
-        if (dfa.has_accept_token(key.first) && !head.empty() && tails.size() < 8)
-        {
-            tails.push_back(head);
-        }
-    }
+    auto tails{accepted_heads(dfa, prefix, accepted_tails)};
 
-    for (const std::string_view generic : {" ", "\n", " x", ";\n", " 1 "})
+    constexpr std::array<std::string_view, 5> generic_tails{" ", "\n", " x", ";\n", " 1 "};
+
+    for (const auto generic : generic_tails)
     {
         tails.emplace_back(generic);
     }
+
+    const auto first_agreeing{
+            [&](const std::string& window, const std::size_t origin,
+                const std::vector<std::string>& tried) -> std::optional<std::string> {
+                for (const auto& [head, tail] : std::views::cartesian_product(heads, tried))
+                {
+                    const auto input{head + window + tail};
+
+                    const auto last{head.size() + window.size() - 1};
+
+                    const auto [consumed, start]{covering_start(lexer, input, last)};
+
+                    if (consumed != input.size())
+                    {
+                        continue;
+                    }
+
+                    if (start != head.size() + origin)
+                    {
+                        ++totals.witness_disagreements;
+
+                        continue;
+                    }
+
+                    return input;
+                }
+
+                return std::nullopt;
+            }};
 
     for (const auto& [window, origin] : words)
     {
@@ -354,35 +439,16 @@ std::optional<std::pair<std::string, std::string>> find_witness(
             tried.insert(tried.begin(), *ending);
         }
 
-        for (const auto& head : heads)
+        if (const auto input{first_agreeing(window, origin, tried)})
         {
-            for (const auto& tail : tried)
-            {
-                const auto input{head + window + tail};
-
-                const auto covering{covering_start(lexer, input, head.size() + window.size() - 1)};
-
-                if (covering.consumed != input.size())
-                {
-                    continue;
-                }
-
-                if (covering.start != head.size() + origin)
-                {
-                    ++totals.witness_disagreements;
-
-                    continue;
-                }
-
-                return std::pair{input, window};
-            }
+            return Occurrence_witness{.input = *input, .window = window};
         }
     }
 
     return std::nullopt;
 }
 
-std::pair<std::size_t, std::size_t> covering_violations(
+Coverage covering_violations(
         const core::Lexer& lexer, const std::string& window, const std::size_t origin, const std::string& alphabet,
         const std::size_t max_length)
 {
@@ -392,8 +458,46 @@ std::pair<std::size_t, std::size_t> covering_violations(
 
     std::string input{};
 
-    for (std::size_t length{window.size()}; length <= max_length; ++length)
-    {
+    const auto count_occurrences{[&](const std::size_t length) {
+        std::vector<std::size_t> covering(length, 0);
+
+        std::size_t offset{0};
+
+        const auto mark{[&covering, &offset](const Token, const std::size_t token_length) {
+            for (std::size_t inside{0}; inside < token_length; ++inside)
+            {
+                covering[offset + inside] = offset;
+            }
+
+            offset += token_length;
+        }};
+
+        const auto consumed{lexer.tokenize_all<Token>(input, mark)};
+
+        if (consumed < length)
+        {
+            return;
+        }
+
+        for (std::size_t at{0}; at + window.size() <= length; ++at)
+        {
+            if (input.compare(at, window.size(), window) != 0)
+            {
+                continue;
+            }
+
+            ++occurrences;
+
+            const auto covered_from_origin{covering[at + window.size() - 1] == at + origin};
+
+            if (!covered_from_origin)
+            {
+                ++violations;
+            }
+        }
+    }};
+
+    const auto inputs_of_length{[&alphabet](const std::size_t length) {
         std::size_t count{1};
 
         for (std::size_t i{0}; i < length; ++i)
@@ -401,46 +505,31 @@ std::pair<std::size_t, std::size_t> covering_violations(
             count *= alphabet.size();
         }
 
+        return count;
+    }};
+
+    const auto spell{[&alphabet, &input](const std::size_t length, const std::size_t index) {
+        input.assign(length, alphabet[0]);
+
+        for (std::size_t i{0}, rest{index}; i < length; ++i, rest /= alphabet.size())
+        {
+            input[i] = alphabet[rest % alphabet.size()];
+        }
+    }};
+
+    for (std::size_t length{window.size()}; length <= max_length; ++length)
+    {
+        const auto count{inputs_of_length(length)};
+
         for (std::size_t index{0}; index < count; ++index)
         {
-            input.assign(length, alphabet[0]);
+            spell(length, index);
 
-            for (std::size_t i{0}, rest{index}; i < length; ++i, rest /= alphabet.size())
-            {
-                input[i] = alphabet[rest % alphabet.size()];
-            }
-
-            std::vector<std::size_t> covering(length, 0);
-
-            std::size_t offset{0};
-
-            const auto consumed{lexer.tokenize_all<Token>(input, [&](const Token, const std::size_t token_length) {
-                for (std::size_t inside{0}; inside < token_length; ++inside)
-                {
-                    covering[offset + inside] = offset;
-                }
-
-                offset += token_length;
-            })};
-
-            if (consumed < length)
-            {
-                continue;
-            }
-
-            for (std::size_t at{0}; at + window.size() <= length; ++at)
-            {
-                if (input.compare(at, window.size(), window) == 0)
-                {
-                    ++occurrences;
-
-                    violations += covering[at + window.size() - 1] == at + origin ? 0 : 1;
-                }
-            }
+            count_occurrences(length);
         }
     }
 
-    return {occurrences, violations};
+    return {.occurrences = occurrences, .violations = violations};
 }
 
 } // namespace munch::tools::probes

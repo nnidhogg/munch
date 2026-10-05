@@ -11,29 +11,38 @@ std::uint32_t Lcg::bounded(const std::uint32_t span) noexcept
 {
     while (true)
     {
-        const auto x{next()};
+        const auto draw{next()};
 
-        const auto m{static_cast<std::uint64_t>(x) * span};
+        const auto product{static_cast<std::uint64_t>(draw) * span};
 
-        if (static_cast<std::uint32_t>(m) >= span || static_cast<std::uint32_t>(m) >= (0U - span) % span)
+        const auto low{static_cast<std::uint32_t>(product)};
+
+        if (low >= span || low >= (0U - span) % span)
         {
-            return static_cast<std::uint32_t>(m >> 32U);
+            return static_cast<std::uint32_t>(product >> 32U);
         }
     }
 }
 
 std::uint32_t Lcg::next() noexcept
 {
-    state_ = state_ * 1664525U + 1013904223U;
+    const auto state{advance()};
 
-    return state_ ^ (state_ >> 16U);
+    return state ^ (state >> 16U);
+}
+
+std::uint32_t Lcg::advance() noexcept
+{
+    state_ = state_ * multiplier + increment;
+
+    return state_;
 }
 
 char Lcg::byte() noexcept
 {
-    state_ = state_ * 1664525U + 1013904223U;
+    const auto state{advance()};
 
-    return static_cast<char>((state_ >> 16U) & 0xffU);
+    return static_cast<char>((state >> 16U) & 0xFFU);
 }
 
 } // namespace munch::tools::probes

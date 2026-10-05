@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.20.6)
 cmake_policy(SET CMP0097 NEW)
 project(munch_benchmark)
 
+# Every loop head of the benchmark programs, and under GCC every target reached only by a jump, starts on a 64-byte
+# line, so a row's figure does not depend on where the linker placed the code before it: a timed loop's 64-byte phase
+# moves its throughput by up to 20%. Clang has no jump-target alignment option.
+add_compile_options(-falign-loops=64 $<$<CXX_COMPILER_ID:GNU>:-falign-jumps=64>)
+
 add_executable(${PROJECT_NAME}
         src/harness.cpp
         src/main.cpp

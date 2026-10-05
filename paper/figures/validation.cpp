@@ -4,63 +4,193 @@
  * Two kinds of claim are made there and they deserve different treatment.
  *
  * The first two are properties: no symbol the relaxed condition admits ever fails to split, and no symbol the exact
- * condition admits is ever lost. Those are checked here over random token sets against an EXHAUSTIVE oracle, every
- * string up to a bounded length on a three-symbol alphabet, so no symbol can be judged safe merely because a
- * sampled corpus never exercised it.
+ * condition admits is ever lost. Those are checked here over random token sets against an exhaustive oracle, every
+ * string up to a bounded length on a three-symbol alphabet, so no symbol can be judged safe merely because a sampled
+ * corpus never exercised it.
  *
- * The third is that the condition is conservative. A percentage from a random sweep says as much about the generator
- * as about the condition, so the sweep counts are asserted for reproducibility while the report leans on a named
- * witness instead: a specific small token set, written out below, where splitting is safe modulo the ignored set and
- * the condition still refuses. That is checkable by hand and does not move when the generator changes.
+ * The third is that the condition is conservative. A percentage from a random sweep says as much about the generator as
+ * about the condition, so the sweep counts are asserted for reproducibility while the report leans on a named witness
+ * instead: a specific small token set, written out below, where splitting is safe modulo the ignored set and the
+ * condition still refuses. That is checkable by hand and does not move when the generator changes.
  */
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
+#include <exception>
+#include <format>
 #include <iostream>
 #include <iterator>
+#include <ranges>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "grammars.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/set.hpp"
+#include "random.hpp"
 
 namespace
 {
-using namespace munch::regex;
+using namespace figures;
 
-using Kinds = std::set<std::size_t>;
-
+/**
+ * @brief The three symbols every token set and every string is drawn over.
+ */
 constexpr std::string_view alphabet{"abc"};
 
-using Stream = std::vector<std::pair<std::size_t, std::size_t>>;
+/**
+ * @brief The most DFA states a swept token set may compile to; a set past it is skipped.
+ */
+constexpr std::size_t state_limit{400};
 
-class Random
+/**
+ * @brief The token sets each sweep draws.
+ */
+constexpr std::size_t sweep_rounds{400};
+
+/**
+ * @brief The string length the published sweep is exhaustive to.
+ */
+constexpr std::size_t longer_bound{8};
+
+/**
+ * @brief The shorter string length the sweep is repeated at, to show the conservative count is bound-sensitive.
+ */
+constexpr std::size_t shorter_bound{6};
+
+/**
+ * @brief The string length the conservatism witness's oracle is exhaustive to.
+ */
+constexpr std::size_t witness_bound{6};
+
+/**
+ * @brief The fewest token kinds a swept token set draws.
+ */
+constexpr unsigned fewest_kinds{2};
+
+/**
+ * @brief How many kind counts a swept token set's size is drawn from, so a set holds two to four kinds.
+ */
+constexpr unsigned kind_spread{3};
+
+/**
+ * @brief The nesting depth each swept token's regex is drawn to.
+ */
+constexpr unsigned regex_depth{3};
+
+/**
+ * @brief The lowest priority a swept token draws.
+ */
+constexpr unsigned lowest_priority{1};
+
+/**
+ * @brief How many priorities a swept token's priority is drawn from, so it is one or two.
+ */
+constexpr unsigned priority_spread{2};
+
+/**
+ * @brief The fewest symbols a drawn literal holds.
+ */
+constexpr unsigned fewest_symbols{1};
+
+/**
+ * @brief How many lengths a drawn literal's length is drawn from, so it holds one or two symbols.
+ */
+constexpr unsigned symbol_spread{2};
+
+/**
+ * @brief Conservative pairs, each the round a token set was drawn in and a symbol.
+ */
+using Pairs_t = std::set<std::pair<std::size_t, char>>;
+
+/**
+ * @brief The oracle's verdict on one symbol.
+ */
+struct Verdict
 {
-public:
-    explicit Random(const unsigned seed) : seed_{seed} {}
+    /**
+     * @brief Whether some completely tokenizable string places the symbol after its first byte.
+     */
+    bool exercised{false};
 
-    unsigned next(const unsigned bound)
-    {
-        seed_ = seed_ * 1664525U + 1013904223U;
-
-        return (seed_ >> 8U) % bound;
-    }
-
-private:
-    unsigned seed_;
+    /**
+     * @brief Whether every such cut splits the scan modulo the ignored kinds.
+     */
+    bool safe{true};
 };
 
-// Set exposes no emptiness query, so the count is tracked here: an empty class would register a token matching
-// nothing, which is not what this is sweeping.
+/**
+ * @brief The counts of one sweep over the exercised symbols of every token set.
+ */
+struct Sweep
+{
+    /**
+     * @brief The token sets within the state limit.
+     */
+    std::size_t token_sets{0};
+
+    /**
+     * @brief The symbols the report's condition admits.
+     */
+    std::size_t admitted{0};
+
+    /**
+     * @brief The admitted symbols the oracle finds unsafe.
+     */
+    std::size_t unsound{0};
+
+    /**
+     * @brief The symbols the exact certificate admits and the report's condition refuses.
+     */
+    std::size_t lost{0};
+
+    /**
+     * @brief The symbols the oracle finds safe and the report's condition refuses.
+     */
+    std::size_t conservative{0};
+
+    /**
+     * @brief The symbols the shipped predicate admits.
+     */
+    std::size_t shipped_admitted{0};
+
+    /**
+     * @brief The symbols the shipped predicate admits and the oracle finds unsafe.
+     */
+    std::size_t shipped_unsound{0};
+
+    /**
+     * @brief The symbols the report's condition admits and the shipped predicate refuses.
+     */
+    std::size_t shipped_lost{0};
+
+    /**
+     * @brief The (round, symbol) identity of every conservative pair, so a bound change must name what it reclassified.
+     */
+    Pairs_t conservative_pairs{};
+};
+
+/**
+ * @brief Draws a random nonempty class over the alphabet, each symbol drawn in or out until one is in.
+ *
+ * Set exposes no emptiness query, so the count is tracked here: an empty class would register a token matching nothing,
+ * which is not what this is sweeping.
+ * @param random The stream.
+ * @return The class.
+ */
 Set random_set(Random& random)
 {
-    Set set;
+    Set set{};
 
-    for (auto chosen{0U}; chosen == 0;)
+    auto chosen{0U};
+
+    do
     {
         for (const auto symbol : alphabet)
         {
@@ -71,11 +201,19 @@ Set random_set(Random& random)
                 ++chosen;
             }
         }
-    }
+    } while (chosen == 0);
 
     return set;
 }
 
+/**
+ * @brief Draws a random regex over the alphabet: at depth 0, or on one draw in three, a class or a literal of one or
+ *        two symbols; otherwise a concatenation, a choice, a plus, an optional or a star of regexes one level
+ *        shallower.
+ * @param random The stream.
+ * @param depth The deepest nesting left.
+ * @return The regex.
+ */
 Regex random_regex(Random& random, const unsigned depth)
 {
     if (depth == 0 || random.next(3) == 0)
@@ -85,55 +223,76 @@ Regex random_regex(Random& random, const unsigned depth)
             return any_of(random_set(random));
         }
 
-        std::string literal;
+        std::string literal{};
 
-        for (auto count{1U + random.next(2)}; count > 0; --count)
+        for (auto count{fewest_symbols + random.next(symbol_spread)}; count > 0; --count)
         {
-            literal += alphabet[random.next(static_cast<unsigned>(alphabet.size()))];
+            const auto drawn{random.next(static_cast<unsigned>(alphabet.size()))};
+
+            literal += alphabet[drawn];
         }
 
         return text(literal);
     }
 
-    // The two-operand cases bind their operands to locals first. Argument evaluation order is unspecified in C++, so
-    // concat(random_regex(...), random_regex(...)) draws from the generator in whichever order the compiler chooses,
-    // and GCC and Clang choose differently: the same seed then builds different token sets and every count below
-    // becomes compiler-dependent. That is not hypothetical, it is what this program reported before the fix.
+    // Argument evaluation order is unspecified, so the operands draw into locals, left first.
+    const auto operands{[&random, depth] {
+        auto first{random_regex(random, depth - 1)};
+
+        auto second{random_regex(random, depth - 1)};
+
+        return std::pair{std::move(first), std::move(second)};
+    }};
+
     switch (random.next(5))
     {
     case 0:
     {
-        const auto first{random_regex(random, depth - 1)};
-
-        const auto second{random_regex(random, depth - 1)};
+        const auto [first, second]{operands()};
 
         return concat(first, second);
     }
     case 1:
     {
-        const auto first{random_regex(random, depth - 1)};
-
-        const auto second{random_regex(random, depth - 1)};
+        const auto [first, second]{operands()};
 
         return choice(first, second);
     }
     case 2:
-        return plus(random_regex(random, depth - 1));
+    {
+        const auto operand{random_regex(random, depth - 1)};
+
+        return plus(operand);
+    }
     case 3:
-        return optional(random_regex(random, depth - 1));
+    {
+        const auto operand{random_regex(random, depth - 1)};
+
+        return optional(operand);
+    }
     default:
-        return kleene(random_regex(random, depth - 1));
+    {
+        const auto operand{random_regex(random, depth - 1)};
+
+        return kleene(operand);
+    }
     }
 }
 
-// Every string of length one to max_length. This is the point: no sampling, so no vacuous verdicts.
+/**
+ * @brief Lists every string over the alphabet of length one to a bound, with no sampling, so no vacuous verdicts.
+ * @param max_length The bound.
+ * @return The strings, by length and within one length in alphabet order.
+ */
 std::vector<std::string> every_string(const std::size_t max_length)
 {
-    std::vector<std::string> corpus, frontier{""};
+    std::vector<std::string> corpus{};
+
+    std::vector<std::string> frontier{""};
 
     for (std::size_t length{0}; length < max_length; ++length)
     {
-        std::vector<std::string> next;
+        std::vector<std::string> next{};
 
         for (const auto& prefix : frontier)
         {
@@ -151,78 +310,38 @@ std::vector<std::string> every_string(const std::size_t max_length)
     return corpus;
 }
 
-Stream scan(const munch::core::Lexer& lexer, const std::string& text, std::size_t& consumed)
-{
-    Stream stream;
-
-    consumed = lexer.tokenize_all<std::size_t>(
-            text, [&stream](const std::size_t kind, const std::size_t length) { stream.emplace_back(kind, length); });
-
-    return stream;
-}
-
-Stream without(const Stream& stream, const Kinds& ignored)
-{
-    Stream kept;
-
-    for (const auto& token : stream)
-    {
-        if (!ignored.contains(token.first))
-        {
-            kept.push_back(token);
-        }
-    }
-
-    return kept;
-}
-
-struct Verdict
-{
-    bool exercised{false};
-    bool safe{true};
-};
-
+/**
+ * @brief Runs the exhaustive oracle: every completely tokenizable string of the corpus cut before every byte but its
+ *        first, each cut held to the serial scan modulo the ignored kinds; the cut before the first byte is a boundary
+ *        of every scan and is exempted from every check.
+ * @param lexer The lexer.
+ * @param ignored The ignored kinds.
+ * @param corpus The strings.
+ * @return Per byte value, its verdict.
+ */
 std::vector<Verdict> oracle(
-        const munch::core::Lexer& lexer, const Kinds& ignored, const std::vector<std::string>& corpus)
+        const munch::core::Lexer& lexer, const Kinds_t& ignored, const std::vector<std::string>& corpus)
 {
-    std::vector<Verdict> verdicts(256);
+    std::vector<Verdict> verdicts(static_cast<std::size_t>(byte_values));
 
     for (const auto& text : corpus)
     {
-        std::size_t consumed{0};
-
-        const auto serial{scan(lexer, text, consumed)};
+        const auto [serial, consumed]{scan(lexer, text)};
 
         if (consumed != text.size())
         {
             continue;
         }
 
-        // The cut before the first byte is a boundary of every scan and is exempted from every check.
         for (std::size_t at{1}; at < text.size(); ++at)
         {
-            auto& verdict{verdicts[static_cast<unsigned char>(text[at])]};
+            auto& [exercised, safe]{verdicts[static_cast<unsigned char>(text[at])]};
 
-            verdict.exercised = true;
+            exercised = true;
 
-            std::size_t left_used{0}, right_used{0};
+            const auto agrees{cut_survives(lexer, ignored, text, serial, at)};
 
-            const auto left{scan(lexer, text.substr(0, at), left_used)};
-
-            const auto right{scan(lexer, text.substr(at), right_used)};
-
-            auto agrees{left_used == at && right_used == text.size() - at};
-
-            if (agrees)
-            {
-                Stream spliced{left};
-
-                spliced.insert(spliced.end(), right.begin(), right.end());
-
-                agrees = without(spliced, ignored) == without(serial, ignored);
-            }
-
-            verdict.safe = verdict.safe && agrees;
+            safe = safe && agrees;
         }
     }
 
@@ -230,14 +349,18 @@ std::vector<Verdict> oracle(
 }
 
 /**
- * @brief The relaxed condition as the report states it, evaluated on the compiled tables.
+ * @brief Evaluates the relaxed condition as the report states it on the compiled tables.
  *
- * The library has since strengthened its rule: the restart need only reach a state with the same future once ignored
- * kinds are not told apart, where the report's condition asks for the same state. The figures below are the report's,
- * so they are taken of the report's condition, and the shipped predicate is checked against it separately: it admits
- * at least as much and is never unsound.
+ * The library's rule is stronger: the restart need only reach a state with the same future once ignored kinds are not
+ * told apart, where the report's condition asks for the same state. The figures are the report's, so they are taken of
+ * the report's condition, and the shipped predicate is checked against it separately: it admits at least as much and is
+ * never unsound.
+ * @param lexer The lexer.
+ * @param ignored The ignored kinds.
+ * @param symbol The symbol.
+ * @return True when the report's condition admits the symbol.
  */
-bool published_condition(const munch::core::Lexer& lexer, const Kinds& ignored, const unsigned char symbol)
+bool published_condition(const munch::core::Lexer& lexer, const Kinds_t& ignored, const unsigned char symbol)
 {
     const auto& simulator{lexer.simulator()};
 
@@ -251,32 +374,37 @@ bool published_condition(const munch::core::Lexer& lexer, const Kinds& ignored, 
 
     std::vector<bool> reaches_kept(states, false);
 
+    const auto reaches_a_kept_accept{[&](const std::size_t state) {
+        if (simulator.is_accepting(state) && !discarded(state))
+        {
+            return true;
+        }
+
+        const auto steps_into_reaching{[&](const std::size_t byte) {
+            const auto to{simulator.step(state, static_cast<unsigned char>(byte))};
+
+            return to.has_value() && reaches_kept[*to];
+        }};
+
+        const auto bytes{std::views::iota(std::size_t{0}, static_cast<std::size_t>(byte_values))};
+
+        return std::ranges::any_of(bytes, steps_into_reaching);
+    }};
+
     for (bool changed{true}; changed;)
     {
         changed = false;
 
         for (std::size_t state{0}; state < states; ++state)
         {
-            if (reaches_kept[state])
+            if (reaches_kept[state] || !reaches_a_kept_accept(state))
             {
                 continue;
             }
 
-            auto reaches{simulator.is_accepting(state) && !discarded(state)};
+            reaches_kept[state] = true;
 
-            for (std::size_t byte{0}; byte < 256 && !reaches; ++byte)
-            {
-                const auto to{simulator.step(state, static_cast<unsigned char>(byte))};
-
-                reaches = to.has_value() && reaches_kept[*to];
-            }
-
-            if (reaches)
-            {
-                reaches_kept[state] = true;
-
-                changed = true;
-            }
+            changed = true;
         }
     }
 
@@ -290,12 +418,18 @@ bool published_condition(const munch::core::Lexer& lexer, const Kinds& ignored, 
 
     for (std::size_t state{0}; state < states; ++state)
     {
-        if (!simulator.is_live(state) || !consumes(state) || (state == init && !simulator.init_reentrant()))
+        const auto consumes_live{simulator.is_live(state) && consumes(state)};
+
+        const auto exempt_restart{state == init && !simulator.init_reentrant()};
+
+        if (!consumes_live || exempt_restart)
         {
             continue;
         }
 
-        if (!discarded(state) || reaches_kept[state] || simulator.step(state, symbol) != simulator.step(init, symbol))
+        const auto restarts_alike{simulator.step(state, symbol) == simulator.step(init, symbol)};
+
+        if (!discarded(state) || reaches_kept[state] || !restarts_alike)
         {
             return false;
         }
@@ -304,43 +438,92 @@ bool published_condition(const munch::core::Lexer& lexer, const Kinds& ignored, 
     return consumes(init);
 }
 
-struct Sweep
-{
-    std::size_t token_sets{0};
-    std::size_t admitted{0};
-    std::size_t unsound{0};
-    std::size_t lost{0};
-    std::size_t conservative{0};
-    std::size_t shipped_admitted{0};
-    std::size_t shipped_unsound{0};
-    std::size_t shipped_lost{0};
-
-    // The (round, symbol) identity of every conservative pair, so a bound change must name what it reclassified.
-    std::set<std::pair<std::size_t, char>> conservative_pairs;
-};
-
+/**
+ * @brief Sweeps random token sets of two to four kinds, each kind ignored on one draw in two, over the oracle and both
+ *        conditions; a token set past state_limit or with an empty language is skipped.
+ * @param rounds The token sets drawn.
+ * @param max_length The oracle's string length bound.
+ * @return The counts.
+ */
 Sweep sweep(const std::size_t rounds, const std::size_t max_length)
 {
     const auto corpus{every_string(max_length)};
 
-    Random random{20260801U};
+    Random random{figure_seed};
 
-    Sweep totals;
+    Sweep totals{};
+
+    const auto tally_round{[&](const munch::core::Lexer& lexer, const Kinds_t& ignored, const std::size_t round) {
+        const auto verdicts{oracle(lexer, ignored, corpus)};
+
+        ++totals.token_sets;
+
+        for (const auto symbol : alphabet)
+        {
+            const auto& [exercised, safe]{verdicts[static_cast<unsigned char>(symbol)]};
+
+            if (!exercised)
+            {
+                continue;
+            }
+
+            const auto claim{published_condition(lexer, ignored, static_cast<unsigned char>(symbol))};
+
+            const auto shipped{lexer.is_split_point_ignoring(symbol)};
+
+            if (shipped)
+            {
+                ++totals.shipped_admitted;
+            }
+
+            if (shipped && !safe)
+            {
+                ++totals.shipped_unsound;
+            }
+
+            if (claim && !shipped)
+            {
+                ++totals.shipped_lost;
+            }
+
+            if (claim)
+            {
+                ++totals.admitted;
+            }
+
+            if (claim && !safe)
+            {
+                ++totals.unsound;
+            }
+
+            if (!claim && safe)
+            {
+                ++totals.conservative;
+
+                totals.conservative_pairs.emplace(round, static_cast<char>(symbol));
+            }
+
+            if (lexer.is_split_point(symbol) && !claim)
+            {
+                ++totals.lost;
+            }
+        }
+    }};
 
     for (std::size_t round{0}; round < rounds; ++round)
     {
-        munch::core::Builder builder;
+        munch::core::Builder builder{};
 
-        const auto kinds{2U + random.next(3)};
+        const auto kinds{fewest_kinds + random.next(kind_spread)};
 
-        Kinds ignored;
+        Kinds_t ignored{};
 
         for (std::size_t kind{0}; kind < kinds; ++kind)
         {
             // Two draws in one argument list would be unsequenced, exactly as above.
-            const auto pattern{random_regex(random, 3)};
+            const auto pattern{random_regex(random, regex_depth)};
 
-            const auto priority{1 + random.next(2)};
+            const auto priority{lowest_priority + random.next(priority_spread)};
 
             builder.add_token(pattern, kind, priority);
 
@@ -350,54 +533,17 @@ Sweep sweep(const std::size_t rounds, const std::size_t max_length)
             }
         }
 
-        builder.set_state_limit(400);
+        builder.set_state_limit(state_limit);
 
         try
         {
-            builder.set_ignored_tokens(std::vector<std::size_t>{ignored.begin(), ignored.end()});
+            const auto lexer{build_ignoring(builder, ignored)};
 
-            const auto lexer{builder.build()};
-
-            const auto verdicts{oracle(lexer, ignored, corpus)};
-
-            ++totals.token_sets;
-
-            for (const auto symbol : alphabet)
-            {
-                const auto& verdict{verdicts[static_cast<unsigned char>(symbol)]};
-
-                if (!verdict.exercised)
-                {
-                    continue;
-                }
-
-                const auto claim{published_condition(lexer, ignored, static_cast<unsigned char>(symbol))};
-
-                const auto shipped{lexer.is_split_point_ignoring(symbol)};
-
-                totals.shipped_admitted += shipped ? 1 : 0;
-
-                totals.shipped_unsound += shipped && !verdict.safe ? 1 : 0;
-
-                totals.shipped_lost += claim && !shipped ? 1 : 0;
-
-                totals.admitted += claim ? 1 : 0;
-
-                totals.unsound += claim && !verdict.safe ? 1 : 0;
-
-                totals.conservative += !claim && verdict.safe ? 1 : 0;
-
-                if (!claim && verdict.safe)
-                {
-                    totals.conservative_pairs.emplace(round, static_cast<char>(symbol));
-                }
-
-                totals.lost += lexer.is_split_point(symbol) && !claim ? 1 : 0;
-            }
+            tally_round(lexer, ignored, round);
         }
         catch (const std::exception&)
         {
-            continue; // state limit or an empty language; neither is what this sweeps
+            // A state limit or an empty language throws, and neither is what this sweeps.
         }
     }
 
@@ -405,59 +551,56 @@ Sweep sweep(const std::size_t rounds, const std::size_t max_length)
 }
 
 /**
- * @brief A token set where splitting is safe modulo the ignored set and the condition still refuses.
+ * @brief Checks a token set where splitting is safe modulo the ignored set and the condition still refuses.
  *
- * Two ignored tokens, \c ab* and \c b+, and one kept token \c c. Splitting at a 'b' inside an \c ab* token is
- * always safe modulo the ignored kinds: the left piece is a shorter \c ab* and the right is a \c b+, and both are
- * discarded. The condition refuses because the two scans do not reconverge. Advancing on 'b' from inside \c ab*
- * stays in a state accepting \c ab*, while advancing on 'b' from the initial state enters one accepting \c b+, and
- * those accept different tokens so minimization keeps them apart. Insisting on immediate reconvergence is what makes
- * the test local, and this is what it costs.
+ * Two ignored tokens, \c ab* and \c b+, and one kept token \c c. Splitting at a 'b' inside an \c ab* token is always
+ * safe modulo the ignored kinds: the left piece is a shorter \c ab* and the right is a \c b+, and both are discarded.
+ * The condition refuses because the two scans do not reconverge. Advancing on 'b' from inside \c ab* stays in a state
+ * accepting \c ab*, while advancing on 'b' from the initial state enters one accepting \c b+, and those accept
+ * different tokens so minimization keeps them apart. Insisting on immediate reconvergence is what makes the test local,
+ * and this is what it costs.
+ * @return True when the oracle finds the cut at 'b' safe and exercised and the condition refuses it.
  */
 bool conservatism_witness()
 {
-    munch::core::Builder builder;
+    munch::core::Builder builder{};
 
     builder.add_token(concat(text("a"), kleene(any_of(Set{'b'}))), std::size_t{0}, 1);
+
     builder.add_token(plus(any_of(Set{'b'})), std::size_t{1}, 1);
+
     builder.add_token(text("c"), std::size_t{2}, 1);
-    builder.set_ignored_tokens(std::vector<std::size_t>{0, 1});
 
-    const auto lexer{builder.build()};
+    const Kinds_t ignored{0, 1};
 
-    const Kinds ignored{0, 1};
+    const auto lexer{build_ignoring(builder, ignored)};
 
-    const auto verdicts{oracle(lexer, ignored, every_string(6))};
+    const auto strings{every_string(witness_bound)};
 
-    const auto& verdict{verdicts[static_cast<unsigned char>('b')]};
+    const auto verdicts{oracle(lexer, ignored, strings)};
 
-    return verdict.exercised && verdict.safe && !published_condition(lexer, ignored, 'b');
+    const auto& [exercised, safe]{verdicts[static_cast<unsigned char>('b')]};
+
+    return exercised && safe && !published_condition(lexer, ignored, 'b');
 }
 
 } // namespace
 
+/**
+ * @brief Asserts the validation figures: the sweep at two bounds, the reclassified pairs, the conservatism witness and
+ *        the shipped predicate on the same sweep, and prints the verdict.
+ * @return EXIT_SUCCESS when every figure agrees with the report, EXIT_FAILURE otherwise.
+ */
 int main()
 {
-    int failures{0};
+    Figure_check check{};
 
-    const auto check{[&failures](const std::string& what, const auto actual, const auto expected) {
-        const auto agrees{actual == expected};
+    std::cout << std::format(
+            "{} random token sets, exhaustive to length {} over a three-symbol alphabet\n", sweep_rounds, longer_bound);
 
-        std::cout << (agrees ? "  ok   " : "  FAIL ") << what << ": " << actual << '\n';
+    const auto eight{sweep(sweep_rounds, longer_bound)};
 
-        if (!agrees)
-        {
-            std::cout << "         report says " << expected << '\n';
-
-            failures += 1;
-        }
-    }};
-
-    std::cout << "400 random token sets, exhaustive to length 8 over a three-symbol alphabet\n";
-
-    const auto eight{sweep(400, 8)};
-
-    check("token sets swept", eight.token_sets, std::size_t{400});
+    check("token sets swept", eight.token_sets, sweep_rounds);
 
     check("symbols the condition admits", eight.admitted, std::size_t{265});
 
@@ -469,7 +612,7 @@ int main()
 
     // Raising the bound reclassifies two pairs, which shows the count is bound-sensitive. It is the named witness
     // below, not this delta, that establishes the condition is genuinely conservative.
-    const auto six{sweep(400, 6)};
+    const auto six{sweep(sweep_rounds, shorter_bound)};
 
     check("safe yet refused at the shorter bound", six.conservative, std::size_t{99});
 
@@ -479,16 +622,16 @@ int main()
     // asserting the identities pins that no offsetting additions hide inside the aggregate difference of two.
     const auto contained{std::ranges::includes(six.conservative_pairs, eight.conservative_pairs)};
 
-    check("every length-eight conservative pair is conservative at length six too", contained ? 1U : 0U, 1U);
+    check("every length-eight conservative pair is conservative at length six too", contained, true);
 
-    std::set<std::pair<std::size_t, char>> reclassified;
+    Pairs_t reclassified{};
 
     std::ranges::set_difference(
             six.conservative_pairs, eight.conservative_pairs, std::inserter(reclassified, reclassified.begin()));
 
-    const std::set<std::pair<std::size_t, char>> expected{{4, 'a'}, {319, 'c'}};
+    const Pairs_t expected{{4, 'a'}, {319, 'c'}};
 
-    check("the reclassified pairs are the two named ones", reclassified == expected ? 1U : 0U, 1U);
+    check("the reclassified pairs are the two named ones", reclassified == expected, true);
 
     check("a named token set where splitting is safe and the condition refuses", conservatism_witness(), true);
 
@@ -500,9 +643,11 @@ int main()
 
     std::cout << "  info admitted by the library: " << eight.shipped_admitted << '\n';
 
+    const auto failures{check.failures()};
+
     std::cout
             << (failures == 0 ? "\nthe validation figures reproduce the report\n" :
                                 "\nfigures disagreeing with the report\n");
 
-    return failures == 0 ? 0 : 1;
+    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

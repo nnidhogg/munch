@@ -123,8 +123,10 @@
 #include <filesystem>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -148,6 +150,9 @@ namespace
 using figures::Token;
 using munch::core::Builder;
 using munch::tools::probes::Archive;
+using munch::tools::probes::Arm;
+using munch::tools::probes::arms;
+using munch::tools::probes::attempt_budget;
 using munch::tools::probes::boundaries;
 using munch::tools::probes::c_like_corpus;
 using munch::tools::probes::C_like_features;
@@ -161,11 +166,8 @@ using munch::tools::probes::failure_offset;
 using munch::tools::probes::first_true_boundary;
 using munch::tools::probes::Incident;
 using munch::tools::probes::json_corpus;
-using munch::tools::probes::kArms;
-using munch::tools::probes::kAttemptBudget;
-using munch::tools::probes::kOps;
-using munch::tools::probes::kWidths;
 using munch::tools::probes::Lcg;
+using munch::tools::probes::ops;
 using munch::tools::probes::print_pooled;
 using munch::tools::probes::print_seeds;
 using munch::tools::probes::print_strata;
@@ -180,22 +182,43 @@ using munch::tools::probes::score_of;
 using munch::tools::probes::split_friendly_conventional_row;
 using munch::tools::probes::tally_incident;
 using munch::tools::probes::Trial;
+using munch::tools::probes::widths;
 
 /**
- * @brief The shortest corpus the campaign accepts: the widest damage plus the position sampler's margins of 64 bytes
- *        on each side, plus one.
+ * @brief The bytes the position sampler keeps clear on each side of a damage position.
  */
-constexpr std::size_t kShortestCorpus{kWidths.back() + 128 + 1};
+constexpr std::size_t sampler_margin{64};
+
+/**
+ * @brief The shortest corpus the campaign accepts: the widest damage plus the position sampler's margins on each side,
+ *        plus one.
+ */
+constexpr std::size_t shortest_corpus{widths.back() + 2 * sampler_margin + 1};
 
 /**
  * @brief The widest span the 32-bit position samplers draw from; a corpus is at most one byte longer.
  */
-constexpr std::size_t kWidestSpan{std::numeric_limits<std::uint32_t>::max()};
+constexpr std::size_t widest_span{std::numeric_limits<std::uint32_t>::max()};
 
 /**
  * @brief The pristine oracle's samples per row.
  */
-constexpr std::size_t kOracleSamples{512};
+constexpr std::size_t oracle_samples{512};
+
+/**
+ * @brief The base seed every cell's schedule stream is salted from.
+ */
+constexpr std::uint32_t schedule_seed{0x5EEDC0DEU};
+
+/**
+ * @brief The base seed every cell's payload stream is salted from.
+ */
+constexpr std::uint32_t payload_seed{0x5EEDBEEFU};
+
+/**
+ * @brief The bytes in a KiB, the unit the corpus size is given in.
+ */
+constexpr std::size_t bytes_per_kib{1024};
 
 /**
  * @brief The campaign's command line.
@@ -234,12 +257,12 @@ struct Arguments
 struct Cell_streams
 {
     /**
-     * @brief The schedule stream the damage positions are drawn from, seeded from 0x5eedc0de.
+     * @brief The schedule stream the damage positions are drawn from, salted from schedule_seed.
      */
     Lcg positions;
 
     /**
-     * @brief The payload stream the damage bytes are drawn from, seeded from 0x5eedbeef.
+     * @brief The payload stream the damage bytes are drawn from, salted from payload_seed.
      */
     Lcg payload;
 
@@ -250,121 +273,116 @@ struct Cell_streams
 };
 
 /**
- * @brief Builds a damaging trial: the first true boundary, the blind tail's repair and the decider's direct answer at
- *        its anchor, one past the failure, and every arm's incident.
- * @param cell The trial's cell.
- * @param index The trial's index within its cell.
- * @param position The damage position.
- * @param failure The serial scan's failure offset on the damaged input, below its size.
- * @param damaged The damaged input.
- * @return The trial.
+ * @brief One generated row: its label, its grammar and the corpus it runs on.
  */
-Trial damaging_trial(
-        const Cell& cell, const std::size_t index, const std::size_t position, const std::size_t failure,
-        Damage damaged)
+struct Row_recipe
 {
-    const auto& row{cell.row};
+    /**
+     * @brief The row's label.
+     */
+    std::string_view label{};
 
-    const auto first_true{first_true_boundary(row.begins, damaged)};
+    /**
+     * @brief Adds the row's tokens to a builder.
+     */
+    void (&add_tokens)(Builder&);
 
-    const auto anchor{std::min(failure + 1, damaged.input.size())};
+    /**
+     * @brief The C-like corpus's token families, std::nullopt for the JSON corpus.
+     */
+    std::optional<C_like_features> c_like{};
+};
 
-    const auto tail{std::string_view{damaged.input}.substr(anchor)};
+/**
+ * @brief Reads a positive whole decimal count, refusing a text that is not wholly one, a zero, and a value past the
+ *        range of std::size_t.
+ * @param text The argument.
+ * @return The count, std::nullopt for a refusal.
+ */
+std::optional<std::size_t> positive_count(const std::string_view text)
+{
+    std::size_t value{0};
 
-    auto repair{row.lexer.minimal_repair(tail)};
+    const auto [stopped, error]{std::from_chars(text.data(), text.data() + text.size(), value)};
 
-    const auto found{row.lexer.next_anchored_start(tail, 0)};
-
-    const auto direct{found ? std::optional{anchor + *found} : std::nullopt};
-
-    std::array<Incident, kArms.size()> incidents{};
-
-    for (std::size_t arm_index{0}; arm_index < kArms.size(); ++arm_index)
+    if (error != std::errc{} || stopped != text.data() + text.size() || value == 0)
     {
-        incidents[arm_index] =
-                run_incident(row.lexer, damaged.input, failure, damaged.end, kArms[arm_index], kAttemptBudget);
+        return std::nullopt;
     }
 
-    return Trial{
-            .cell = cell,
-            .index = index,
-            .position = position,
-            .failure = failure,
-            .damaged = std::move(damaged),
-            .first_true = first_true,
-            .repair = std::move(repair),
-            .direct = direct,
-            .incidents = std::move(incidents)};
+    return value;
 }
 
 /**
- * @brief Runs one trial of a cell: draws its position, then its damage, and either archives it as absorbed or checks
- *        it, tallies every arm's incident and archives each arm's row and moves, arm by arm.
- * @param cell The cell.
- * @param index The trial's index within the cell.
- * @param streams The cell's streams, drawn once for the position and then for the payload.
- * @param totals The campaign's totals.
- * @param tallies The row's tallies.
- * @param archive The archive.
+ * @brief Reads the command line, refusing the counts in argument order with `<count> must be a positive whole number:
+ *        <argument>` on standard error; an argument past the fifth is ignored.
+ * @param command_line The arguments after the program's name.
+ * @return The arguments, std::nullopt after a refusal.
  */
-void run_trial(
-        const Cell& cell, const std::size_t index, Cell_streams& streams, Campaign_totals& totals, Row_tallies& tallies,
-        Archive& archive)
+std::optional<Arguments> arguments_of(const std::vector<std::string_view>& command_line)
 {
-    const auto& row{cell.row};
+    Arguments arguments{};
 
-    const auto span{row.corpus.size() - cell.k - 128};
+    const auto count_at{[&command_line](const std::size_t index, const std::string_view what) {
+        const auto count{positive_count(command_line[index])};
 
-    const auto position{64 + static_cast<std::size_t>(streams.positions.bounded(static_cast<std::uint32_t>(span)))};
+        if (!count)
+        {
+            std::fprintf(
+                    stderr, "%s must be a positive whole number: %s\n", std::string{what}.c_str(),
+                    std::string{command_line[index]}.c_str());
+        }
 
-    if (!streams.seen.insert(position).second)
+        return count;
+    }};
+
+    if (!command_line.empty())
     {
-        ++totals.duplicate_positions;
+        const auto kib{count_at(0, "corpus KiB")};
+
+        if (!kib)
+        {
+            return std::nullopt;
+        }
+
+        arguments.corpus_kib = *kib;
     }
 
-    auto damaged{damage(row.corpus, cell.op, position, cell.k, streams.payload)};
-
-    const auto failure{failure_offset(row.lexer, damaged.input)};
-
-    if (failure == damaged.input.size())
+    if (command_line.size() > 1)
     {
-        ++totals.absorbed_total;
+        const auto trials{count_at(1, "trials per cell")};
 
-        archive.absorbed_row(cell, index, position, damaged.end);
+        if (!trials)
+        {
+            return std::nullopt;
+        }
 
-        return;
+        arguments.trials = *trials;
     }
 
-    const auto trial{damaging_trial(cell, index, position, failure, std::move(damaged))};
-
-    check_trial(trial, totals);
-
-    for (std::size_t arm_index{0}; arm_index < kArms.size(); ++arm_index)
+    if (command_line.size() > 2 && !command_line[2].empty())
     {
-        const auto& incident{trial.incidents[arm_index]};
-
-        const auto score{score_of(row, trial.damaged, incident)};
-
-        tally_incident(tallies, trial, arm_index, incident, score);
-
-        archive.incident_row(trial, kArms[arm_index], incident, score);
-
-        archive.move_rows(trial, kArms[arm_index], incident);
+        arguments.csv_path = command_line[2];
     }
-}
 
-/**
- * @brief A cell's stream seed: a base salted by the seed index, the row index, the width and the operation, so no two
- *        cells of a campaign share a stream.
- * @param base The stream's base seed.
- * @param cell The cell.
- * @return base + 0x01000193 seed + 0x9e3779b9 row + 7 k + 131 op, modulo 2^32.
- */
-std::uint32_t cell_seed(const std::uint32_t base, const Cell& cell)
-{
-    return base + static_cast<std::uint32_t>(cell.seed) * 0x01000193U +
-           static_cast<std::uint32_t>(cell.row_index) * 0x9e3779b9U + static_cast<std::uint32_t>(cell.k) * 7U +
-           static_cast<std::uint32_t>(cell.op) * 131U;
+    if (command_line.size() > 3 && !command_line[3].empty())
+    {
+        arguments.real_path = command_line[3];
+    }
+
+    if (command_line.size() > 4)
+    {
+        const auto seeds{count_at(4, "seeds")};
+
+        if (!seeds)
+        {
+            return std::nullopt;
+        }
+
+        arguments.seeds = *seeds;
+    }
+
+    return arguments;
 }
 
 /**
@@ -397,7 +415,7 @@ void block_comments_row(Builder& builder)
 {
     figures::c_like(builder, false);
 
-    builder.add_token(figures::block_comment(), Token::BlockComment, 1);
+    builder.add_token(figures::block_comment(), Token::block_comment, 1);
 }
 
 /**
@@ -419,30 +437,9 @@ void json_row(Builder& builder)
 }
 
 /**
- * @brief One generated row: its label, its grammar and the corpus it runs on.
- */
-struct Row_recipe
-{
-    /**
-     * @brief The row's label.
-     */
-    std::string_view label;
-
-    /**
-     * @brief Adds the row's tokens to a builder.
-     */
-    void (&add_tokens)(Builder&);
-
-    /**
-     * @brief The C-like corpus's token families, std::nullopt for the JSON corpus.
-     */
-    std::optional<C_like_features> c_like;
-};
-
-/**
  * @brief The five generated rows, in the order the campaign runs them.
  */
-constexpr std::array<Row_recipe, 5> kRecipes{
+constexpr std::array recipes{
         Row_recipe{
                 .label = "c-like conventional with strings and line comments",
                 .add_tokens = conventional_row,
@@ -463,62 +460,23 @@ constexpr std::array<Row_recipe, 5> kRecipes{
 };
 
 /**
- * @brief Runs every trial of one cell from its own two streams.
- * @param cell The cell.
- * @param trials The trials per cell.
- * @param totals The campaign's totals.
- * @param tallies The row's tallies.
- * @param archive The archive.
- */
-void run_cell(
-        const Cell& cell, const std::size_t trials, Campaign_totals& totals, Row_tallies& tallies, Archive& archive)
-{
-    Cell_streams streams{.positions = Lcg{cell_seed(0x5eedc0deU, cell)}, .payload = Lcg{cell_seed(0x5eedbeefU, cell)}};
-
-    for (std::size_t index{0}; index < trials; ++index)
-    {
-        run_trial(cell, index, streams, totals, tallies, archive);
-    }
-}
-
-/**
- * @brief Reads a positive whole decimal count, refusing a text that is not wholly one, a zero, and a value past the
- *        range of std::size_t.
- * @param text The argument.
- * @return The count, std::nullopt for a refusal.
- */
-std::optional<std::size_t> positive_count(const std::string_view text)
-{
-    std::size_t value{0};
-
-    const auto parsed{std::from_chars(text.data(), text.data() + text.size(), value)};
-
-    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || value == 0)
-    {
-        return std::nullopt;
-    }
-
-    return value;
-}
-
-/**
  * @brief Builds the five generated rows, each grammar before its corpus.
  * @param bytes The corpora's size.
- * @return The rows, in kRecipes order.
+ * @return The rows, in recipes order.
  */
 std::vector<Row> generated_rows(const std::size_t bytes)
 {
     std::vector<Row> rows{};
 
-    for (const auto& recipe : kRecipes)
+    for (const auto& [label, add_tokens, c_like] : recipes)
     {
         Builder builder{};
 
-        recipe.add_tokens(builder);
+        add_tokens(builder);
 
-        auto corpus{recipe.c_like ? c_like_corpus(bytes, *recipe.c_like) : json_corpus(bytes)};
+        auto corpus{c_like ? c_like_corpus(bytes, *c_like) : json_corpus(bytes)};
 
-        rows.push_back(row_of(recipe.label, builder, std::move(corpus), true));
+        rows.push_back(row_of(label, builder, std::move(corpus), true));
     }
 
     return rows;
@@ -549,137 +507,41 @@ std::optional<Row> real_row(const std::string_view path)
 }
 
 /**
- * @brief Whether every row's corpus is long enough for the widest damage and short enough for the position samplers;
- *        the first that is not is reported with `corpus outside the harness's lengths` on standard error.
+ * @brief Returns whether every row's corpus is long enough for the widest damage and short enough for the position
+ *        samplers; the first that is not is reported with `corpus outside the harness's lengths` on standard error.
  * @param rows The rows.
- * @return True when every corpus holds from kShortestCorpus to kWidestSpan + 1 bytes.
+ * @return True when every corpus holds from shortest_corpus to widest_span + 1 bytes.
  */
 bool is_within_lengths(const std::vector<Row>& rows)
 {
-    for (const auto& row : rows)
-    {
-        if (row.corpus.size() < kShortestCorpus || row.corpus.size() - 1 > kWidestSpan)
-        {
-            std::fprintf(
-                    stderr, "corpus outside the harness's lengths: %s, %zu bytes, at least %zu and at most %zu\n",
-                    std::string{row.label}.c_str(), row.corpus.size(), kShortestCorpus, kWidestSpan + 1);
+    const auto is_outside{
+            [](const Row& row) { return row.corpus.size() < shortest_corpus || row.corpus.size() - 1 > widest_span; }};
 
-            return false;
-        }
+    const auto outside{std::ranges::find_if(rows, is_outside)};
+
+    if (outside == rows.end())
+    {
+        return true;
     }
 
-    return true;
+    const auto longest_corpus{widest_span + 1};
+
+    std::fprintf(
+            stderr, "corpus outside the harness's lengths: %s, %zu bytes, at least %zu and at most %zu\n",
+            std::string{outside->label}.c_str(), outside->corpus.size(), shortest_corpus, longest_corpus);
+
+    return false;
 }
 
 /**
- * @brief Runs one seed of a row: every operation and, within it, every width, each cell from its own streams.
- * @param row The row.
- * @param row_index The row's index among the rows.
- * @param seed The seed index.
- * @param trials The trials per cell.
- * @param totals The campaign's totals.
- * @param tallies The row's tallies.
- * @param archive The archive.
- */
-void run_seed(
-        const Row& row, const std::size_t row_index, const std::size_t seed, const std::size_t trials,
-        Campaign_totals& totals, Row_tallies& tallies, Archive& archive)
-{
-    for (std::size_t op_index{0}; op_index < kOps.size(); ++op_index)
-    {
-        for (std::size_t k_index{0}; k_index < kWidths.size(); ++k_index)
-        {
-            const Cell cell{
-                    .row = row,
-                    .row_index = row_index,
-                    .op = kOps[op_index],
-                    .op_index = op_index,
-                    .k = kWidths[k_index],
-                    .k_index = k_index,
-                    .seed = seed};
-
-            run_cell(cell, trials, totals, tallies, archive);
-        }
-    }
-}
-
-/**
- * @brief Reads the command line, refusing the counts in argument order with `<count> must be a positive whole number:
- *        <argument>` on standard error; an argument past the fifth is ignored.
- * @param command_line The arguments after the program's name.
- * @return The arguments, std::nullopt after a refusal.
- */
-std::optional<Arguments> arguments_of(const std::vector<std::string_view>& command_line)
-{
-    Arguments arguments{};
-
-    if (command_line.size() > 0)
-    {
-        const auto kib{positive_count(command_line[0])};
-
-        if (!kib)
-        {
-            std::fprintf(
-                    stderr, "corpus KiB must be a positive whole number: %s\n", std::string{command_line[0]}.c_str());
-
-            return std::nullopt;
-        }
-
-        arguments.corpus_kib = *kib;
-    }
-
-    if (command_line.size() > 1)
-    {
-        const auto trials{positive_count(command_line[1])};
-
-        if (!trials)
-        {
-            std::fprintf(
-                    stderr, "trials per cell must be a positive whole number: %s\n",
-                    std::string{command_line[1]}.c_str());
-
-            return std::nullopt;
-        }
-
-        arguments.trials = *trials;
-    }
-
-    if (command_line.size() > 2 && !command_line[2].empty())
-    {
-        arguments.csv_path = command_line[2];
-    }
-
-    if (command_line.size() > 3 && !command_line[3].empty())
-    {
-        arguments.real_path = command_line[3];
-    }
-
-    if (command_line.size() > 4)
-    {
-        const auto seeds{positive_count(command_line[4])};
-
-        if (!seeds)
-        {
-            std::fprintf(stderr, "seeds must be a positive whole number: %s\n", std::string{command_line[4]}.c_str());
-
-            return std::nullopt;
-        }
-
-        arguments.seeds = *seeds;
-    }
-
-    return arguments;
-}
-
-/**
- * @brief Builds the campaign's rows: the five generated ones, then the real one when a document is named, every
- *        corpus held to the harness's lengths.
+ * @brief Builds the campaign's rows: the five generated ones, then the real one when a document is named, every corpus
+ *        held to the harness's lengths.
  * @param arguments The command line.
  * @return The rows, std::nullopt after a refusal.
  */
 std::optional<std::vector<Row>> rows_of(const Arguments& arguments)
 {
-    auto rows{generated_rows(arguments.corpus_kib << 10U)};
+    auto rows{generated_rows(arguments.corpus_kib * bytes_per_kib)};
 
     if (arguments.real_path)
     {
@@ -713,19 +575,204 @@ std::size_t pristine_violations(const std::vector<Row>& rows, const std::size_t 
 
     for (const auto& row : rows)
     {
-        failures += pristine_oracle(row, kOracleSamples);
+        failures += pristine_oracle(row, oracle_samples);
     }
 
-    std::printf("pristine oracle: %zu violations over %zu rows x 512 samples\n", failures, rows.size());
+    std::printf("pristine oracle: %zu violations over %zu rows x %zu samples\n", failures, rows.size(), oracle_samples);
 
     std::printf(
             "deterministic: corpus seeds 0x5eed0001 and 0x5eed0002, the pristine-oracle sampling seed 0x5eed0003, "
-            "schedule seed 0x5eedc0de and payload seed "
-            "0x5eedbeef each offset per (row, seed, op, k) so no two rows share a stream, %zu independent seeds, "
-            "positions by unbiased rejection sampling, attempt budget 100 per incident\n",
-            seeds);
+            "schedule seed 0x5eedc0de and payload seed 0x5eedbeef each offset per (row, seed, op, k) "
+            "so no two rows share a stream, %zu independent seeds, "
+            "positions by unbiased rejection sampling, attempt budget %zu per incident\n",
+            seeds, attempt_budget);
 
     return failures;
+}
+
+/**
+ * @brief Builds a damaging trial: the first true boundary, the blind tail's repair and the decider's direct answer at
+ *        its anchor, one past the failure, and every arm's incident.
+ * @param cell The trial's cell.
+ * @param index The trial's index within its cell.
+ * @param position The damage position.
+ * @param failure The serial scan's failure offset on the damaged input, below its size.
+ * @param damaged The damaged input.
+ * @return The trial.
+ */
+Trial damaging_trial(
+        const Cell& cell, const std::size_t index, const std::size_t position, const std::size_t failure,
+        Damage damaged)
+{
+    const auto& row{cell.row};
+
+    const auto first_true{first_true_boundary(row.begins, damaged)};
+
+    const auto anchor{std::min(failure + 1, damaged.input.size())};
+
+    const auto tail{std::string_view{damaged.input}.substr(anchor)};
+
+    auto repair{row.lexer.minimal_repair(tail)};
+
+    const auto found{row.lexer.next_anchored_start(tail, 0)};
+
+    const auto in_input{[anchor](const std::size_t offset) { return anchor + offset; }};
+
+    const auto direct{found.transform(in_input)};
+
+    const auto incident_of{[&row, &damaged, failure](const Arm& arm) {
+        return run_incident(row.lexer, damaged.input, failure, damaged.end, arm, attempt_budget);
+    }};
+
+    std::array<Incident, arms.size()> incidents{};
+
+    std::ranges::transform(arms, incidents.begin(), incident_of);
+
+    return Trial{
+            .cell = cell,
+            .index = index,
+            .position = position,
+            .failure = failure,
+            .damaged = std::move(damaged),
+            .first_true = first_true,
+            .repair = std::move(repair),
+            .direct = direct,
+            .incidents = std::move(incidents)};
+}
+
+/**
+ * @brief Runs one trial of a cell: draws its position, then its damage, and either archives it as absorbed or checks
+ *        it, tallies every arm's incident and archives each arm's row and moves, arm by arm.
+ * @param cell The cell.
+ * @param index The trial's index within the cell.
+ * @param streams The cell's streams, drawn once for the position and then for the payload.
+ * @param totals The campaign's totals.
+ * @param tallies The row's tallies.
+ * @param archive The archive.
+ */
+void run_trial(
+        const Cell& cell, const std::size_t index, Cell_streams& streams, Campaign_totals& totals, Row_tallies& tallies,
+        Archive& archive)
+{
+    const auto& row{cell.row};
+
+    const auto span{row.corpus.size() - cell.width - 2 * sampler_margin};
+
+    const auto drawn{streams.positions.bounded(static_cast<std::uint32_t>(span))};
+
+    const auto position{sampler_margin + static_cast<std::size_t>(drawn)};
+
+    const auto [where, inserted]{streams.seen.insert(position)};
+
+    if (!inserted)
+    {
+        ++totals.duplicate_positions;
+    }
+
+    auto damaged{damage(row.corpus, cell.op, position, cell.width, streams.payload)};
+
+    const auto failure{failure_offset(row.lexer, damaged.input)};
+
+    if (failure == damaged.input.size())
+    {
+        ++totals.absorbed_total;
+
+        archive.absorbed_row(cell, index, position, damaged.end);
+
+        return;
+    }
+
+    const auto trial{damaging_trial(cell, index, position, failure, std::move(damaged))};
+
+    check_trial(trial, totals);
+
+    const auto arm_indices{std::views::iota(std::size_t{0}, arms.size())};
+
+    for (const auto& [arm_index, arm, incident] : std::views::zip(arm_indices, arms, trial.incidents))
+    {
+        const auto score{score_of(row, trial.damaged, incident)};
+
+        tally_incident(tallies, trial, arm_index, incident, score);
+
+        archive.incident_row(trial, arm, incident, score);
+
+        archive.move_rows(trial, arm, incident);
+    }
+}
+
+/**
+ * @brief Returns a cell's stream seed: a base salted by the seed index, the row index, the width and the operation, so
+ *        no two cells of a campaign share a stream.
+ * @param base The stream's base seed.
+ * @param cell The cell.
+ * @return base + 0x01000193 seed + 0x9E3779B9 row + 7 k + 131 op, modulo 2^32.
+ */
+std::uint32_t cell_seed(const std::uint32_t base, const Cell& cell)
+{
+    const auto seed_term{static_cast<std::uint32_t>(cell.seed) * 0x01000193U};
+
+    const auto row_term{static_cast<std::uint32_t>(cell.row_index) * 0x9E3779B9U};
+
+    const auto width_term{static_cast<std::uint32_t>(cell.width) * 7U};
+
+    const auto op_term{static_cast<std::uint32_t>(cell.op) * 131U};
+
+    return base + seed_term + row_term + width_term + op_term;
+}
+
+/**
+ * @brief Runs every trial of one cell from its own two streams.
+ * @param cell The cell.
+ * @param trials The trials per cell.
+ * @param totals The campaign's totals.
+ * @param tallies The row's tallies.
+ * @param archive The archive.
+ */
+void run_cell(
+        const Cell& cell, const std::size_t trials, Campaign_totals& totals, Row_tallies& tallies, Archive& archive)
+{
+    const Lcg positions{cell_seed(schedule_seed, cell)};
+
+    const Lcg payload{cell_seed(payload_seed, cell)};
+
+    Cell_streams streams{.positions = positions, .payload = payload};
+
+    for (std::size_t index{0}; index < trials; ++index)
+    {
+        run_trial(cell, index, streams, totals, tallies, archive);
+    }
+}
+
+/**
+ * @brief Runs one seed of a row: every operation and, within it, every width, each cell from its own streams.
+ * @param row The row.
+ * @param row_index The row's index among the rows.
+ * @param seed The seed index.
+ * @param trials The trials per cell.
+ * @param totals The campaign's totals.
+ * @param tallies The row's tallies.
+ * @param archive The archive.
+ */
+void run_seed(
+        const Row& row, const std::size_t row_index, const std::size_t seed, const std::size_t trials,
+        Campaign_totals& totals, Row_tallies& tallies, Archive& archive)
+{
+    const auto cells{std::views::cartesian_product(
+            std::views::iota(std::size_t{0}, ops.size()), std::views::iota(std::size_t{0}, widths.size()))};
+
+    for (const auto [op_index, width_index] : cells)
+    {
+        const Cell cell{
+                .row = row,
+                .row_index = row_index,
+                .op = ops[op_index],
+                .op_index = op_index,
+                .width = widths[width_index],
+                .width_index = width_index,
+                .seed = seed};
+
+        run_cell(cell, trials, totals, tallies, archive);
+    }
 }
 
 /**
@@ -770,7 +817,7 @@ int verdict(const std::size_t oracle_failures, const Campaign_totals& totals)
     if (oracle_failures != 0 || totals.theorem_failures != 0)
     {
         std::printf(
-                "FAILED: %zu oracle violations, %zu theorem violations\n", oracle_failures, totals.theorem_failures);
+                "failed: %zu oracle violations, %zu theorem violations\n", oracle_failures, totals.theorem_failures);
 
         return EXIT_FAILURE;
     }
@@ -797,9 +844,9 @@ int verdict(const std::size_t oracle_failures, const Campaign_totals& totals)
  * @param argc The argument count.
  * @param argv The corpus KiB, the trials per cell, the archive's path, the real document's path and the seeds, all
  *        optional.
- * @return 0 when every assertion held and every write succeeded, 1 otherwise.
+ * @return EXIT_SUCCESS when every assertion held and every write succeeded, EXIT_FAILURE otherwise.
  */
-int main(const int argc, const char** argv)
+int main(const int argc, char** argv)
 {
     std::vector<std::string_view> command_line{};
 
@@ -822,20 +869,22 @@ int main(const int argc, const char** argv)
         return EXIT_FAILURE;
     }
 
-    const auto oracle_failures{pristine_violations(*rows, arguments->seeds)};
+    const auto& [corpus_kib, trials, csv_path, real_path, seeds]{*arguments};
+
+    const auto oracle_failures{pristine_violations(*rows, seeds)};
 
     Archive archive{};
 
-    if (arguments->csv_path && !archive.open(*arguments->csv_path, *rows))
+    if (csv_path && !archive.open(*csv_path, *rows))
     {
         return EXIT_FAILURE;
     }
 
     Campaign_totals totals{};
 
-    for (std::size_t row_index{0}; row_index < rows->size(); ++row_index)
+    for (const auto& [row_index, row] : std::views::enumerate(*rows))
     {
-        run_row((*rows)[row_index], row_index, arguments->trials, arguments->seeds, totals, archive);
+        run_row(row, static_cast<std::size_t>(row_index), trials, seeds, totals, archive);
     }
 
     if (!archive.close())

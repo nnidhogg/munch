@@ -53,6 +53,16 @@ struct Prices
  *        every witness's cut lies off the serial segmentation, and prints the tower on standard output as `<name>:
  *        orbit ..., positional bits ..., compositional bits ... (group ...), summary bits ... (semigroup ...),
  *        witnesses ...`.
+ *
+ * Faithfulness holds by construction: group elements are stored as permutations, so distinct elements differ on some
+ * flavor. What the witnesses establish is a hazard relation: conditioning on the wrong flavor licenses a cut off the
+ * serial segmentation. The three prices bind three distinct services, named exactly: the orbit prices the conditioned
+ * flavor choice at a position; the group prices composable flavor transfer, owed only by a service required to compose
+ * arbitrary factors; the semigroup prices exact kernel transfer, a stronger service the cut machinery never needs. None
+ * of the three binds every scheme providing the same cuts: a serial flavor prepass realizes them without composing
+ * anything, and rescanning the raw prefix from the initial state at each query carries zero bits, paying work instead.
+ * A scheme-wide bit bound needs an explicit one-pass compositional interface and common-context fooling pairs, which
+ * live with the width program's summary model, not here.
  * @param assertions The probe's assertions.
  * @param name The row's name, which opens the printed line and every failure.
  * @param table The table.

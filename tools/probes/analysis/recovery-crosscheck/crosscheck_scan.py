@@ -627,7 +627,7 @@ def main():
         out.append("- **claim 2a, a completely tokenizable repair is evidence reaching: no violations.**")
         out.append("- **claim 2b, collapse: no violations.**")
     else:
-        out.append("- **VIOLATION in %s**" % failure.claim)
+        out.append("- **violation in %s**" % failure.claim)
         out.append("")
         out.append("```")
         out.append(failure.detail)

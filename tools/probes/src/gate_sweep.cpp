@@ -1,9 +1,10 @@
 #include "munch/tools/probes/gate_sweep.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
-#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -24,12 +25,35 @@ namespace munch::tools::probes
 {
 namespace
 {
-// Implements gate_sweep.hpp: the grammar generator and the check of one grammar are private to this unit.
-
 using dfa::Dfa;
 
 /**
- * @brief Whether a token of the grammar matches the empty string, which is whether the initial state accepts.
+ * @brief The multiplier of the sweep's 32-bit linear congruential stream.
+ */
+constexpr std::uint32_t lcg_multiplier{1664525U};
+
+/**
+ * @brief The increment of the sweep's 32-bit linear congruential stream.
+ */
+constexpr std::uint32_t lcg_increment{1013904223U};
+
+/**
+ * @brief The seed the sweep's stream starts from.
+ */
+constexpr std::uint32_t sweep_seed{20260803U};
+
+/**
+ * @brief The most DFA states a swept grammar may compile to; a grammar past it is skipped.
+ */
+constexpr std::size_t state_limit{400};
+
+/**
+ * @brief The deepest nesting of a swept token's regex.
+ */
+constexpr std::size_t regex_depth{3};
+
+/**
+ * @brief Returns whether a token of the grammar matches the empty string, which is whether the initial state accepts.
  * @param dfa The grammar's automaton.
  * @return True when the initial state accepts.
  */
@@ -39,42 +63,63 @@ bool nullable_grammar(const Dfa& dfa)
 }
 
 /**
+ * @brief Advances the sweep's 32-bit linear congruential stream and draws its high bits.
+ *
+ * The stream is the one recovery_lcg's Lcg advances, but its draws are the state's high half alone, a sequence none of
+ * Lcg's draws yields, so the sweep keeps its own.
+ * @param seed The stream's state, advanced.
+ * @return The advanced state shifted right by 16.
+ */
+std::uint32_t next_draw(std::uint32_t& seed)
+{
+    seed = seed * lcg_multiplier + lcg_increment;
+
+    return seed >> 16U;
+}
+
+/**
  * @brief Draws a regex over {a, b, c} from a 32-bit linear congruential stream: at depth 0, or on one draw in three,
  *        one of six atoms; otherwise a concatenation, a choice, a plus or a star of regexes one level shallower.
  * @param seed The stream's state, advanced by every draw.
  * @param depth The deepest nesting left.
  * @return The regex.
  */
-regex::Regex random_regex(unsigned& seed, const std::size_t depth)
+regex::Regex random_regex(std::uint32_t& seed, const std::size_t depth)
 {
     using namespace regex;
 
-    const auto next{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
-
-    if (depth == 0 || next() % 3 == 0)
-    {
-        constexpr std::string_view atoms[]{"a", "b", "c", "ab", "bc", "ca"};
-
-        return text(atoms[next() % std::size(atoms)]);
-    }
-
-    // The two operands are drawn through locals, the left one first.
-    switch (next() % 4)
-    {
-    case 0:
-    {
+    // The left operand draws before the right, which fixes the regex a seed yields.
+    const auto operands{[&seed, depth] {
         auto left{random_regex(seed, depth - 1)};
 
         auto right{random_regex(seed, depth - 1)};
+
+        return std::pair{std::move(left), std::move(right)};
+    }};
+
+    if (depth == 0 || next_draw(seed) % 3 == 0)
+    {
+        constexpr std::array<std::string_view, 6> atoms{"a", "b", "c", "ab", "bc", "ca"};
+
+        const auto drawn{next_draw(seed) % atoms.size()};
+
+        return text(atoms[drawn]);
+    }
+
+    const auto kind{next_draw(seed) % 4};
+
+    switch (kind)
+    {
+    case 0:
+    {
+        auto [left, right]{operands()};
 
         return concat(std::move(left), std::move(right));
     }
 
     case 1:
     {
-        auto left{random_regex(seed, depth - 1)};
-
-        auto right{random_regex(seed, depth - 1)};
+        auto [left, right]{operands()};
 
         return choice(std::move(left), std::move(right));
     }
@@ -88,10 +133,57 @@ regex::Regex random_regex(unsigned& seed, const std::size_t depth)
 }
 
 /**
- * @brief Checks the model on one grammar, decided through its positive-width equivalent, and adds what it finds to
- *        the sweep's counts: the length-one agreement, the shortest window and its witness where no byte is certified,
- *        and the backup check over every certified two-byte window, each certificate and refusal cross-checked
- *        against the shipped window decision. The counts reached before an exception stand.
+ * @brief Searches the shortest certified windows of a grammar certifying no byte, and adds the outcome to the sweep's
+ *        counts: rescued, proved to have none, or inconclusive, and witnessed-rescued when the bounded search completes
+ *        a tokenization around a certified word up to two bytes past the shortest certified length.
+ * @param totals The gate's totals.
+ * @param sweep The sweep's counts, added to.
+ * @param dfa The grammar's positive-width automaton.
+ * @param lexer The grammar's lexer.
+ * @param live The automaton's trim states.
+ * @param reentrant Whether a live transition re-enters the initial state.
+ */
+void sweep_windows(
+        Gate_totals& totals, Sweep& sweep, const Dfa& dfa, const core::Lexer& lexer, const States_t& live,
+        const bool reentrant)
+{
+    const auto [length, found, exhausted, visited]{shortest_windows(dfa, live)};
+
+    totals.visited_total += visited;
+
+    totals.visited_max = std::max(totals.visited_max, visited);
+
+    if (length == 0 && exhausted)
+    {
+        ++sweep.proved_none;
+
+        return;
+    }
+
+    if (length == 0)
+    {
+        ++sweep.inconclusive;
+
+        return;
+    }
+
+    ++sweep.rescued;
+
+    const auto words{certified_words_upto(dfa, live, reentrant, length + 2, kept_windows)};
+
+    const auto witnessed{find_witness(totals, dfa, lexer, live, words)};
+
+    if (witnessed)
+    {
+        ++sweep.witnessed_rescued;
+    }
+}
+
+/**
+ * @brief Checks the model on one grammar, decided through its positive-width equivalent, and adds what it finds to the
+ *        sweep's counts: the length-one agreement, the shortest window and its witness where no byte is certified, and
+ *        the backup check over every certified two-byte window, each certificate and refusal cross-checked against the
+ *        shipped window decision. The counts reached before an exception stand.
  * @param totals The gate's totals.
  * @param sweep The sweep's counts, added to.
  * @param builder The grammar.
@@ -120,9 +212,9 @@ void sweep_one(Gate_totals& totals, Sweep& sweep, const Builder_dbg& builder)
 
     std::size_t certified_bytes{0};
 
-    for (int symbol{0}; symbol < 256; ++symbol)
+    for (const auto symbol : every_byte())
     {
-        const std::string one(1, static_cast<char>(symbol));
+        const std::string one{symbol};
 
         const auto at{predicted(dfa, live, one, reentrant)};
 
@@ -130,37 +222,26 @@ void sweep_one(Gate_totals& totals, Sweep& sweep, const Builder_dbg& builder)
 
         const auto model{at.has_value()};
 
-        const auto shipped{lexer.is_split_point(static_cast<char>(symbol))};
+        const auto shipped{lexer.is_split_point(symbol)};
 
-        certified_bytes += shipped ? 1 : 0;
+        if (shipped)
+        {
+            ++certified_bytes;
+        }
 
-        sweep.disagreements += model != shipped ? 1 : 0;
+        if (model != shipped)
+        {
+            ++sweep.disagreements;
+        }
     }
 
-    sweep.with_certificate += certified_bytes > 0 ? 1 : 0;
-
-    if (certified_bytes == 0)
+    if (certified_bytes > 0)
     {
-        const auto [length, found, exhausted, visited]{shortest_windows(dfa, live)};
-
-        totals.visited_total += visited;
-
-        totals.visited_max = std::max(totals.visited_max, visited);
-
-        sweep.rescued += length > 0 ? 1 : 0;
-
-        sweep.proved_none += length == 0 && exhausted ? 1 : 0;
-
-        sweep.inconclusive += length == 0 && !exhausted ? 1 : 0;
-
-        // A grammar is witnessed-rescued only when the bounded search completes a tokenization around a certified
-        // word, searched up to two bytes past the shortest certified length.
-        if (length > 0)
-        {
-            const auto words{certified_words_upto(dfa, live, reentrant, length + 2, 400)};
-
-            sweep.witnessed_rescued += find_witness(totals, dfa, lexer, live, words) ? 1 : 0;
-        }
+        ++sweep.with_certificate;
+    }
+    else
+    {
+        sweep_windows(totals, sweep, dfa, lexer, live, reentrant);
     }
 
     std::vector<std::string> windows{};
@@ -173,27 +254,34 @@ void sweep_one(Gate_totals& totals, Sweep& sweep, const Builder_dbg& builder)
     }
 
     // The sweep's rewinding executions are not added to the named rows' totals.
-    sweep.disagreements += backup_disagreements(dfa, lexer, live, windows).disagreements;
+    const auto [disagreements, exercised, tokenizable, prefixes]{backup_disagreements(dfa, lexer, live, windows)};
+
+    sweep.disagreements += disagreements;
 }
+
 } // namespace
 
 Sweep random_grammars(Gate_totals& totals, const std::size_t count)
 {
     Sweep sweep{};
 
-    unsigned seed{20260803};
+    auto seed{sweep_seed};
 
     for (std::size_t index{0}; index < count; ++index)
     {
         Builder_dbg builder{};
 
-        builder.set_state_limit(400);
+        builder.set_state_limit(state_limit);
 
-        const auto tokens{2 + (seed >> 8U) % 4};
+        constexpr std::size_t fewest_tokens{2};
+
+        constexpr std::size_t token_counts{4};
+
+        const auto tokens{fewest_tokens + (seed >> 8U) % token_counts};
 
         for (std::size_t token{0}; token < tokens; ++token)
         {
-            builder.add_token(random_regex(seed, 3), token, 1 + token % 2);
+            builder.add_token(random_regex(seed, regex_depth), token, 1 + token % 2);
         }
 
         try

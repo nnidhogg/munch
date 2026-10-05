@@ -1,48 +1,55 @@
 #include "munch/tools/probes/wall_table.hpp"
 
-#include <array>
+#include <algorithm>
 #include <cstddef>
-#include <functional>
 #include <map>
 #include <optional>
+#include <ranges>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include "munch/dfa/dfa.hpp"
 
 namespace munch::tools::probes
 {
-Table table_of(
-        const std::size_t states, std::vector<char> accept, const std::function<int(std::size_t state, int byte)>& row)
+namespace
 {
-    Table table{
-            .states = states,
-            .init = 0,
-            .next = std::vector<std::array<int, 256>>(states),
-            .accept = std::move(accept)};
+/**
+ * @brief An automaton's states numbered in first-reached order with their dense rows.
+ */
+struct Numbered
+{
+    /**
+     * @brief The automaton's states, by index.
+     */
+    std::vector<dfa::Dfa::State_t> order{};
 
-    for (std::size_t state{0}; state < states; ++state)
-    {
-        for (int byte{0}; byte < 256; ++byte)
-        {
-            table.next[state][static_cast<std::size_t>(byte)] = row(state, byte);
-        }
-    }
+    /**
+     * @brief Per state index, its targets by byte, each a state index or dead.
+     */
+    std::vector<Row_t> rows{};
+};
 
-    return table;
-}
-
-Table extract(const dfa::Dfa& dfa)
+/**
+ * @brief Numbers an automaton's states in the order a breadth-first walk from the initial state, bytes ascending, first
+ *        meets them, and reads each state's row.
+ * @param dfa The compiled automaton.
+ * @return The states in index order and their rows.
+ */
+Numbered number_states(const dfa::Dfa& dfa)
 {
     std::map<dfa::Dfa::State_t, std::size_t> index{};
 
-    std::vector<dfa::Dfa::State_t> order{};
+    Numbered numbered{};
+
+    auto& [order, raw]{numbered};
 
     const auto intern{[&](const dfa::Dfa::State_t state) {
         if (const auto found{index.find(state)}; found != index.end())
         {
-            return found->second;
+            const auto& [found_state, at]{*found};
+
+            return at;
         }
 
         index.emplace(state, order.size());
@@ -54,68 +61,106 @@ Table extract(const dfa::Dfa& dfa)
 
     intern(dfa.init_state());
 
-    std::vector<std::array<int, 256>> raw{};
-
     for (std::size_t at{0}; at < order.size(); ++at)
     {
-        raw.emplace_back();
+        auto& row{raw.emplace_back()};
 
-        raw.back().fill(kDead);
+        row.fill(dead);
 
-        for (int byte{0}; byte < 256; ++byte)
+        for (std::size_t byte{0}; byte < row.size(); ++byte)
         {
             if (const auto to{dfa.advance(order[at], static_cast<char>(byte))})
             {
-                raw[at][static_cast<std::size_t>(byte)] = static_cast<int>(intern(*to));
+                row[byte] = static_cast<int>(intern(*to));
             }
         }
     }
 
-    std::vector<char> accept(order.size(), 0);
+    return numbered;
+}
 
-    for (std::size_t at{0}; at < order.size(); ++at)
-    {
-        accept[at] = dfa.has_accept_token(order[at]) ? 1 : 0;
-    }
+/**
+ * @brief Returns which of the numbered states accept.
+ * @param dfa The compiled automaton.
+ * @param order The states, by index.
+ * @return Per state index, Flag::on when the state accepts.
+ */
+std::vector<Flag> acceptance_of(const dfa::Dfa& dfa, const std::vector<dfa::Dfa::State_t>& order)
+{
+    const auto acceptance{
+            [&dfa](const dfa::Dfa::State_t state) { return dfa.has_accept_token(state) ? Flag::on : Flag::off; }};
 
-    std::vector<char> co{accept};
+    std::vector accept(order.size(), Flag::off);
+
+    std::ranges::transform(order, accept.begin(), acceptance);
+
+    return accept;
+}
+
+/**
+ * @brief Finds the states from which an accepting state is reachable, by growing the accepting set to a fixpoint.
+ * @param rows The states' rows.
+ * @param accept Per state, Flag::on when the state accepts.
+ * @return Per state, Flag::on when an accepting state is reachable from it.
+ */
+std::vector<Flag> coaccessible_states(const std::vector<Row_t>& rows, const std::vector<Flag>& accept)
+{
+    std::vector<Flag> coaccessible{accept};
+
+    const auto is_coaccessible{[&coaccessible](const int to) {
+        return to != dead && coaccessible[static_cast<std::size_t>(to)] == Flag::on;
+    }};
 
     for (auto grew{true}; grew;)
     {
         grew = false;
 
-        for (std::size_t at{0}; at < raw.size(); ++at)
+        for (std::size_t at{0}; at < rows.size(); ++at)
         {
-            if (co[at])
+            if (coaccessible[at] == Flag::on || !std::ranges::any_of(rows[at], is_coaccessible))
             {
                 continue;
             }
 
-            for (int byte{0}; byte < 256 && !co[at]; ++byte)
-            {
-                if (const auto to{raw[at][static_cast<std::size_t>(byte)]};
-                    to != kDead && co[static_cast<std::size_t>(to)])
-                {
-                    co[at] = 1;
+            coaccessible[at] = Flag::on;
 
-                    grew = true;
-                }
-            }
+            grew = true;
         }
     }
+
+    return coaccessible;
+}
+
+/**
+ * @brief Redirects every transition into a state from which no accepting state is reachable to dead.
+ * @param rows The rows redirected.
+ * @param coaccessible Per state, Flag::on when an accepting state is reachable from it.
+ */
+void prune(std::vector<Row_t>& rows, const std::vector<Flag>& coaccessible)
+{
+    const auto is_pruned{[&coaccessible](const int to) {
+        return to != dead && coaccessible[static_cast<std::size_t>(to)] == Flag::off;
+    }};
+
+    for (auto& row : rows)
+    {
+        std::ranges::replace_if(row, is_pruned, dead);
+    }
+}
+
+} // namespace
+
+Table extract(const dfa::Dfa& dfa)
+{
+    auto [order, raw]{number_states(dfa)};
+
+    auto accept{acceptance_of(dfa, order)};
+
+    const auto coaccessible{coaccessible_states(raw, accept)};
 
     Table table{.states = raw.size(), .init = 0, .next = std::move(raw), .accept = std::move(accept)};
 
-    for (auto& row : table.next)
-    {
-        for (auto& to : row)
-        {
-            if (to != kDead && !co[static_cast<std::size_t>(to)])
-            {
-                to = kDead;
-            }
-        }
-    }
+    prune(table.next, coaccessible);
 
     return table;
 }
@@ -124,14 +169,11 @@ std::vector<std::size_t> live_states(const Table& table)
 {
     std::vector<std::size_t> states{};
 
+    const auto is_transition{[](const int to) { return to != dead; }};
+
     for (std::size_t state{0}; state < table.states; ++state)
     {
-        auto live{table.accept[state] != 0};
-
-        for (int byte{0}; byte < 256 && !live; ++byte)
-        {
-            live = table.next[state][static_cast<std::size_t>(byte)] != kDead;
-        }
+        const auto live{table.accept[state] == Flag::on || std::ranges::any_of(table.next[state], is_transition)};
 
         if (live)
         {
@@ -144,33 +186,26 @@ std::vector<std::size_t> live_states(const Table& table)
 
 bool is_init_reentrant(const Table& table)
 {
-    for (std::size_t state{0}; state < table.states; ++state)
-    {
-        for (int byte{0}; byte < 256; ++byte)
-        {
-            if (table.next[state][static_cast<std::size_t>(byte)] == static_cast<int>(table.init))
-            {
-                return true;
-            }
-        }
-    }
+    const auto init{static_cast<int>(table.init)};
 
-    return false;
+    const auto enters_init{[init](const int to) { return to == init; }};
+
+    return std::ranges::any_of(table.next | std::views::join, enters_init);
 }
 
 std::optional<std::size_t> scan_step(const Table& table, const std::size_t state, const unsigned char byte)
 {
-    if (const auto to{table.next[state][byte]}; to != kDead)
+    if (const auto to{table.next[state][byte]}; to != dead)
     {
         return static_cast<std::size_t>(to);
     }
 
-    if (table.accept[state] == 0)
+    if (table.accept[state] == Flag::off)
     {
         return std::nullopt;
     }
 
-    if (const auto to{table.next[table.init][byte]}; to != kDead)
+    if (const auto to{table.next[table.init][byte]}; to != dead)
     {
         return static_cast<std::size_t>(to);
     }
@@ -201,39 +236,35 @@ std::optional<std::vector<std::size_t>> serial_boundaries(const Table& table, co
 
     std::size_t state{table.init};
 
-    auto consumed_first{false};
-
     for (std::size_t at{0}; at < input.size(); ++at)
     {
         const auto byte{static_cast<unsigned char>(input[at])};
 
-        if (const auto to{table.next[state][byte]}; to != kDead)
+        if (const auto to{table.next[state][byte]}; to != dead)
         {
             state = static_cast<std::size_t>(to);
+
+            continue;
         }
-        else
+
+        if (table.accept[state] == Flag::off)
         {
-            if (table.accept[state] == 0)
-            {
-                return std::nullopt;
-            }
-
-            starts.push_back(at);
-
-            const auto restart{table.next[table.init][byte]};
-
-            if (restart == kDead)
-            {
-                return std::nullopt;
-            }
-
-            state = static_cast<std::size_t>(restart);
+            return std::nullopt;
         }
 
-        consumed_first = true;
+        starts.push_back(at);
+
+        const auto restart{table.next[table.init][byte]};
+
+        if (restart == dead)
+        {
+            return std::nullopt;
+        }
+
+        state = static_cast<std::size_t>(restart);
     }
 
-    if (consumed_first && table.accept[state] == 0)
+    if (!input.empty() && table.accept[state] == Flag::off)
     {
         return std::nullopt;
     }

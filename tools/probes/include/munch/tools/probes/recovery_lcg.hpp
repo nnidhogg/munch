@@ -9,9 +9,10 @@
 namespace munch::tools::probes
 {
 /**
- * @brief A deterministic 32-bit linear congruential stream: each draw advances the state to
- *        `state * 1664525 + 1013904223`, so one seed always draws the same sequence. The study keeps one instance per
- *        purpose, so the corpus, sampling, schedule and payload streams never share a draw.
+ * @brief A deterministic 32-bit linear congruential stream: each draw advances the state to `state * 1664525 +
+ *        1013904223`, so one seed always draws the same sequence.
+ *
+ * The study keeps one instance per purpose, so the corpus, sampling, schedule and payload streams never share a draw.
  */
 class Lcg
 {
@@ -23,8 +24,8 @@ public:
     explicit Lcg(std::uint32_t seed) noexcept;
 
     /**
-     * @brief Advances the state and draws a full-width value, so a position sampled from it can reach every offset of
-     *        a span.
+     * @brief Advances the state and draws a full-width value, so a position sampled from it can reach every offset of a
+     *        span.
      * @return The advanced state xor that state shifted right by 16.
      */
     [[nodiscard]] std::uint32_t next() noexcept;
@@ -44,6 +45,22 @@ public:
     [[nodiscard]] char byte() noexcept;
 
 private:
+    /**
+     * @brief The multiplier of the state's advance.
+     */
+    static constexpr std::uint32_t multiplier{1664525U};
+
+    /**
+     * @brief The increment of the state's advance.
+     */
+    static constexpr std::uint32_t increment{1013904223U};
+
+    /**
+     * @brief Advances the state by one step of the congruence.
+     * @return The advanced state.
+     */
+    std::uint32_t advance() noexcept;
+
     /**
      * @brief The current state.
      */

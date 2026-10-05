@@ -10,9 +10,8 @@
 namespace munch::tools::probes
 {
 /**
- * @brief A deterministic 64-bit linear congruential stream: each draw advances the state to
- *        `state * 6364136223846793005 + 1442695040888963407` and returns `(state >> 33) % bound`, so one seed always
- *        draws the same sequence.
+ * @brief A deterministic 64-bit linear congruential stream: each draw advances the state to `state * multiplier +
+ *        increment` and returns `(state >> 33) % bound`, so one seed always draws the same sequence.
  */
 class Lcg64
 {
@@ -31,6 +30,16 @@ public:
     [[nodiscard]] std::size_t next(std::size_t bound) noexcept;
 
 private:
+    /**
+     * @brief The multiplier of the state's advance.
+     */
+    static constexpr std::uint64_t multiplier{6364136223846793005ULL};
+
+    /**
+     * @brief The increment of the state's advance.
+     */
+    static constexpr std::uint64_t increment{1442695040888963407ULL};
+
     /**
      * @brief The current state.
      */

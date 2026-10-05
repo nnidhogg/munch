@@ -44,7 +44,7 @@ struct Carry
     /**
      * @brief Per byte, the permutation of flavors it acts by.
      */
-    std::array<std::vector<int>, 256> sigma{};
+    std::array<std::vector<int>, byte_count> sigma{};
 
     /**
      * @brief The permutations the bytes' permutations generate under composition, the identity among them.
@@ -65,6 +65,11 @@ struct Carry
  *        within 100,000 assignments; one flavor labeling must make every byte act by one permutation, every state carry
  *        one flavor, and the initial state's live images name one seed. The first condition that fails is printed on
  *        standard output as a `refused: ` line.
+ *
+ * The resource caps run before any factorial or closure work, and the closure itself carries a hard element budget:
+ * dimensional caps alone cannot bound it, since six width-six subsets admit wreath-product closures beyond any
+ * enumeration. The labeling search is exhaustive over wall-factorial permutations and the summary closure grows with
+ * the kernel, so both are bounded, refused fail-closed beyond.
  * @param table The table.
  * @return The carry, std::nullopt on a refusal.
  */

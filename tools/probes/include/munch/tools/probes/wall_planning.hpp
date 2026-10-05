@@ -11,13 +11,60 @@
 #include "munch/tools/probes/wall_table.hpp"
 
 /**
- * @brief Windows certified behind the resolved flavor and the plans they license, held to the serial scan, window_walk,
- *        check_theorem, Plan, plan, Tally and run.
+ * @brief Windows certified behind the resolved flavor and the plans they license, held to the serial scan, Plan,
+ *        Planning_tally, window_walk, check_theorem, plan and run_planning.
  */
 namespace munch::tools::probes
 {
 /**
- * @brief The shipped window decision's cloud walk over a table from a chosen starting cloud: every live state for
+ * @brief The cuts of one carry-driven plan and the unconditional census taken beside it.
+ */
+struct Plan
+{
+    /**
+     * @brief The cuts, strictly ascending, each inside the input.
+     */
+    std::vector<std::size_t> cuts{};
+
+    /**
+     * @brief The windows the unconditional walk certified among every window the plan tried.
+     */
+    std::size_t unconditional_certificates{0};
+};
+
+/**
+ * @brief The counts of one planning campaign.
+ */
+struct Planning_tally
+{
+    /**
+     * @brief The cuts the right-flavor plans made.
+     */
+    std::size_t cuts{0};
+
+    /**
+     * @brief The right-flavor cuts off the serial segmentation.
+     */
+    std::size_t off_boundary{0};
+
+    /**
+     * @brief The trials whose corpus the serial scan refused or whose spliced boundaries differ from the serial ones.
+     */
+    std::size_t splice_mismatches{0};
+
+    /**
+     * @brief The windows the unconditional walk certified across the right-flavor plans.
+     */
+    std::size_t unconditional{0};
+
+    /**
+     * @brief The wrong-flavor cuts off the serial segmentation.
+     */
+    std::size_t wrong_flavor_off_boundary{0};
+};
+
+/**
+ * @brief Runs the shipped window decision's cloud walk over a table from a chosen starting cloud: every live state for
  *        flavor -1, the unconditional decision, or the states of one flavor alone, the conditional one. Each cloud
  *        member carries its token's origin, the window's start for a token begun inside it and unknown otherwise; a
  *        member whose byte has a transition advances, and when any member accepts, the initial state's transition on
@@ -35,7 +82,7 @@ namespace munch::tools::probes
 
 /**
  * @brief Holds the carry to the true maximal-munch scan, restarts included: over 200 trials of up to 400 bytes drawn
- *        from an alphabet by one Lcg64 seeded 0x5eed5eed5eed5eed, the scan's state after every byte must carry the
+ *        from an alphabet by one Lcg64 seeded 0x5EED5EED5EED5EED, the scan's state after every byte must carry the
  *        flavor the byte permutations predict from the seed. A trial ends early where the scan fails.
  * @param table The table.
  * @param carry The table's carry.
@@ -43,22 +90,6 @@ namespace munch::tools::probes
  * @return The positions checked before the first misprediction, 80,000 when every trial runs its length and agrees.
  */
 [[nodiscard]] std::size_t check_theorem(const Table& table, const Carry& carry, const std::string& alphabet);
-
-/**
- * @brief The cuts of one carry-driven plan and the unconditional census taken beside it.
- */
-struct Plan
-{
-    /**
-     * @brief The cuts, strictly ascending, each inside the input.
-     */
-    std::vector<std::size_t> cuts{};
-
-    /**
-     * @brief The windows the unconditional walk certified among every window the plan tried.
-     */
-    std::size_t unconditional_certificates{};
-};
 
 /**
  * @brief Plans cuts driven by prefix carries: the flavor at every position follows from the seed by the byte
@@ -78,37 +109,6 @@ struct Plan
         const Table& table, const Carry& carry, bool reentrant, std::string_view input, std::size_t chunks, bool flip);
 
 /**
- * @brief The counts of one planning campaign.
- */
-struct Tally
-{
-    /**
-     * @brief The cuts the right-flavor plans made.
-     */
-    std::size_t cuts{};
-
-    /**
-     * @brief The right-flavor cuts off the serial segmentation.
-     */
-    std::size_t off_boundary{};
-
-    /**
-     * @brief The trials whose corpus the serial scan refused or whose spliced boundaries differ from the serial ones.
-     */
-    std::size_t splice_mismatches{};
-
-    /**
-     * @brief The windows the unconditional walk certified across the right-flavor plans.
-     */
-    std::size_t unconditional{};
-
-    /**
-     * @brief The wrong-flavor cuts off the serial segmentation.
-     */
-    std::size_t teeth_bad{};
-};
-
-/**
  * @brief Runs the planning campaign over 30 generated corpora: each planned in eight chunks under the right flavors,
  *        its cuts held to the serial segmentation and its chunks, each scanned alone, spliced and held to the serial
  *        boundaries, then planned under the wrong flavors, whose cuts are held to the segmentation too.
@@ -117,7 +117,7 @@ struct Tally
  * @param ticks Whether the corpora mix backtick strings among the double-quoted ones.
  * @return The campaign's counts.
  */
-[[nodiscard]] Tally run(const Table& table, const Carry& carry, bool ticks);
+[[nodiscard]] Planning_tally run_planning(const Table& table, const Carry& carry, bool ticks);
 
 } // namespace munch::tools::probes
 

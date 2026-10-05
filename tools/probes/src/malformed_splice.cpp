@@ -2,13 +2,12 @@
 // succeeds, so window plans require the completely-tokenizable precondition or downstream validation. The recovery
 // report's motivation quotes a measurement of this hazard, and this probe is the program behind it.
 //
-// The hazard. chunk_boundaries_with_windows() documents that on malformed input a window cut can land inside
-// a token of the serial scan's doomed suffix, and the concatenated chunk streams then contain tokens the
-// serial scan never reaches. The undamaged fragments consume fully and silently; only chunks holding a
-// locally unconsumable byte report short consumption, so a caller checking the per-chunk counts is flagged,
-// and one accepting later-chunk output without checking swallows the overproduced stream. Continuation past
-// a failure needs an explicit restart contract, which is what certified recovery supplies; this probe
-// measures what ignoring the flags costs.
+// The hazard. chunk_boundaries_with_windows() documents that on malformed input a window cut can land inside a token of
+// the serial scan's doomed suffix, and the concatenated chunk streams then contain tokens the serial scan never
+// reaches. The undamaged fragments consume fully and silently; only chunks holding a locally unconsumable byte report
+// short consumption, so a caller checking the per-chunk counts is flagged, and one accepting later-chunk output without
+// checking swallows the overproduced stream. Continuation past a failure needs an explicit restart contract, which is
+// what certified recovery supplies; this probe measures what ignoring the flags costs.
 //
 // What runs as a test. A deterministic generated corpus is broken by one unconsumable byte near its front, so the
 // serial scan stops there. The window plan still recovers all eight chunks; the chunk holding the damage reports short
@@ -16,15 +15,16 @@
 // and the spliced token count dwarfs the serial one. The probe asserts exactly that shape with both counts pinned; the
 // caveat is thereby a checked behavior rather than a documentation sentence.
 //
-// Campaign mode. With a directory argument the probe concatenates the given extension's files in sorted
-// order, applies the consumption-complete C row (deliberately mismatched to languages whose strings span
-// lines, which is what makes real corpora malformed under it), and reports serial consumption, the plan,
-// per-chunk consumption, and the spliced-versus-serial token counts. Figures from campaign runs are archived
-// with their corpus pin; the collection this backs is paper/data/malformed-splice-2026-08.
+// Campaign mode. With a directory argument the probe concatenates the given extension's files in sorted order, applies
+// the consumption-complete C row (deliberately mismatched to languages whose strings span lines, which is what makes
+// real corpora malformed under it), and reports serial consumption, the plan, per-chunk consumption, and the
+// spliced-versus-serial token counts. Figures from campaign runs are archived with their corpus pin; the collection
+// this backs is paper/data/malformed-splice-2026-08.
 
-#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -34,7 +34,9 @@
 #include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
 #include "munch/tools/probes/assertions.hpp"
+#include "munch/tools/probes/chunks.hpp"
 #include "munch/tools/probes/files.hpp"
+#include "munch/tools/probes/generated_identifiers.hpp"
 #include "munch/tools/probes/lcg64.hpp"
 #include "munch/tools/probes/study_rows.hpp"
 
@@ -42,10 +44,17 @@ namespace
 {
 using figures::Token;
 using munch::tools::probes::Assertions;
+using munch::tools::probes::chunks_of;
 using munch::tools::probes::consumption_complete_c_row;
 using munch::tools::probes::files_under;
 using munch::tools::probes::Lcg64;
+using munch::tools::probes::pick_identifier;
 using munch::tools::probes::read_bytes;
+
+/**
+ * @brief The chunks the window plan of a spliced input is asked for.
+ */
+constexpr std::size_t planned_chunks{8};
 
 /**
  * @brief What one input does under the serial scan and under the window plan's eight chunks scanned apart.
@@ -55,27 +64,27 @@ struct Splice
     /**
      * @brief The bytes the serial scan consumes before it stops.
      */
-    std::size_t serial_consumed{};
+    std::size_t serial_consumed{0};
 
     /**
      * @brief The tokens the serial scan commits.
      */
-    std::size_t serial_tokens{};
+    std::size_t serial_tokens{0};
 
     /**
      * @brief The chunks the window plan cuts.
      */
-    std::size_t chunks{};
+    std::size_t chunks{0};
 
     /**
      * @brief The chunks whose own scan stops short of their end.
      */
-    std::size_t incomplete_chunks{};
+    std::size_t incomplete_chunks{0};
 
     /**
      * @brief The tokens the chunks' scans commit together.
      */
-    std::size_t spliced_tokens{};
+    std::size_t spliced_tokens{0};
 };
 
 /**
@@ -87,29 +96,37 @@ struct Splice
  */
 Splice splice(const munch::core::Lexer& lexer, const std::string_view input)
 {
-    Splice result{};
+    std::size_t serial_tokens{0};
 
-    result.serial_consumed =
-            lexer.tokenize_all<Token>(input, [&result](Token, std::size_t) { ++result.serial_tokens; });
+    std::size_t spliced_tokens{0};
 
-    const auto bounds{lexer.chunk_boundaries_with_windows(input, 8)};
+    std::size_t incomplete_chunks{0};
 
-    result.chunks = bounds.size() - 1;
+    const auto count_serial{[&serial_tokens](const Token, const std::size_t) { ++serial_tokens; }};
 
-    for (std::size_t index{1}; index < bounds.size(); ++index)
+    const auto count_spliced{[&spliced_tokens](const Token, const std::size_t) { ++spliced_tokens; }};
+
+    const auto serial_consumed{lexer.tokenize_all<Token>(input, count_serial)};
+
+    const auto bounds{lexer.chunk_boundaries_with_windows(input, planned_chunks)};
+
+    for (const auto chunk : chunks_of(input, bounds))
     {
-        const std::string_view chunk{input.data() + bounds[index - 1], bounds[index] - bounds[index - 1]};
-
-        const auto consumed{
-                lexer.tokenize_all<Token>(chunk, [&result](Token, std::size_t) { ++result.spliced_tokens; })};
+        const auto consumed{lexer.tokenize_all<Token>(chunk, count_spliced)};
 
         if (consumed != chunk.size())
         {
-            ++result.incomplete_chunks;
+            ++incomplete_chunks;
         }
     }
 
-    return result;
+    const auto chunks{bounds.size() - 1};
+
+    return {.serial_consumed = serial_consumed,
+            .serial_tokens = serial_tokens,
+            .chunks = chunks,
+            .incomplete_chunks = incomplete_chunks,
+            .spliced_tokens = spliced_tokens};
 }
 
 /**
@@ -120,44 +137,59 @@ Splice splice(const munch::core::Lexer& lexer, const std::string_view input)
  */
 std::string generated_c(const std::size_t bytes)
 {
-    Lcg64 lcg{0x9E3779B97F4A7C15ULL};
+    constexpr std::uint64_t seed{0x9E3779B97F4A7C15ULL};
 
-    static constexpr std::array<std::string_view, 8> idents{"count", "buffer", "index", "state",
-                                                            "value", "table",  "next",  "size"};
+    Lcg64 lcg{seed};
 
     std::string out{};
 
     while (out.size() < bytes)
     {
-        switch (lcg.next(6))
+        constexpr std::size_t statement_shapes{6};
+
+        const auto shape{lcg.next(statement_shapes)};
+
+        switch (shape)
         {
         case 0:
             out += "/* invariant: ";
-            out += idents[lcg.next(8)];
+            out += pick_identifier(lcg);
             out += " stays in range */\n";
+
             break;
+
         case 1:
             out += "#define LIMIT_";
-            out += idents[lcg.next(8)];
+            out += pick_identifier(lcg);
             out += " 4096\n";
+
             break;
+
         case 2:
             out += "    ";
-            out += idents[lcg.next(8)];
+            out += pick_identifier(lcg);
             out += " = ";
-            out += idents[lcg.next(8)];
+            out += pick_identifier(lcg);
             out += " + 17;\n";
+
             break;
+
         case 3:
-            out += "static const char* name = \"a \\\"quoted\\\" piece\";\n";
+            out += R"(static const char* name = "a \"quoted\" piece";)"
+                   "\n";
+
             break;
+
         case 4:
             out += "int ";
-            out += idents[lcg.next(8)];
+            out += pick_identifier(lcg);
             out += "[128]; // sized by the table\n";
+
             break;
-        default:
+
+        case 5:
             out += "}\n";
+
             break;
         }
     }
@@ -166,40 +198,67 @@ std::string generated_c(const std::size_t bytes)
 }
 
 /**
- * @brief Runs the pinned self-test: one unconsumable byte near the front of the generated corpus stops the serial
- *        scan, while the spliced chunks do not notice, and prints the figures and the verdict.
+ * @brief Runs the pinned self-test: one unconsumable byte near the front of the generated corpus stops the serial scan,
+ *        while the spliced chunks do not notice, and prints the figures and the verdict.
+ *
+ * A corpus holding no arithmetic statement to damage fails the test before either scan runs.
  * @param lexer The consumption-complete C row's lexer.
- * @return 0 when every assertion holds, 1 otherwise.
+ * @return EXIT_SUCCESS when every assertion holds, EXIT_FAILURE otherwise.
  */
 int self_test(const munch::core::Lexer& lexer)
 {
     Assertions assertions{};
 
-    auto corpus{generated_c(256 * 1024)};
+    constexpr std::size_t corpus_bytes{256 * 1024};
 
-    // The damaged byte must sit at top level, not inside a comment or string interior, which absorb control
-    // bytes; the first arithmetic statement past the target offset is provably top level.
-    const auto site{corpus.find("+ 17;", corpus.size() / 50)};
+    auto corpus{generated_c(corpus_bytes)};
+
+    constexpr std::string_view arithmetic_tail{"+ 17;"};
+
+    constexpr std::size_t target_fraction{50};
+
+    // The damaged byte must sit at top level, not inside a comment or string interior, which absorb control bytes; the
+    // first arithmetic statement past the target offset is provably top level.
+    const auto site{corpus.find(arithmetic_tail, corpus.size() / target_fraction)};
 
     assertions.expect(site != std::string::npos, "the generated corpus lost its arithmetic statements");
 
-    corpus[site + 2] = '\x01';
+    if (site == std::string::npos)
+    {
+        std::cout << "assertion failures\n";
 
-    const auto result{splice(lexer, corpus)};
+        return EXIT_FAILURE;
+    }
 
-    std::cout << "serial " << result.serial_consumed << "/" << corpus.size() << " (" << result.serial_tokens
-              << " tokens), chunks " << result.chunks << ", spliced " << result.spliced_tokens << " tokens\n";
+    constexpr auto damaged_offset{arithmetic_tail.find('1')};
 
-    assertions.expect(result.serial_consumed < corpus.size() / 40, "the damage did not stop the serial scan early");
-    assertions.expect(result.chunks == 8, "the malformed stream did not plan eight chunks");
-    assertions.expect(result.incomplete_chunks == 1, "only the damaged chunk may report short consumption");
-    assertions.expect(result.spliced_tokens > 20 * result.serial_tokens, "splicing did not overproduce");
-    assertions.expect(result.serial_tokens == 1487, "the pinned serial token count moved");
-    assertions.expect(result.spliced_tokens == 62309, "the pinned spliced token count moved");
+    corpus[site + damaged_offset] = '\x01';
 
-    std::cout << (assertions.has_failures() ? "ASSERTION FAILURES\n" : "all assertions hold\n");
+    const auto [serial_consumed, serial_tokens, chunks, incomplete_chunks, spliced_tokens]{splice(lexer, corpus)};
 
-    return assertions.has_failures() ? 1 : 0;
+    std::cout << "serial " << serial_consumed << "/" << corpus.size() << " (" << serial_tokens << " tokens), chunks "
+              << chunks << ", spliced " << spliced_tokens << " tokens\n";
+
+    constexpr std::size_t serial_stop_fraction{40};
+
+    assertions.expect(
+            serial_consumed < corpus.size() / serial_stop_fraction, "the damage did not stop the serial scan early");
+
+    assertions.expect(chunks == planned_chunks, "the malformed stream did not plan eight chunks");
+
+    assertions.expect(incomplete_chunks == 1, "only the damaged chunk may report short consumption");
+
+    constexpr std::size_t overproduction{20};
+
+    assertions.expect(spliced_tokens > overproduction * serial_tokens, "splicing did not overproduce");
+
+    assertions.expect(serial_tokens == 1487, "the pinned serial token count moved");
+
+    assertions.expect(spliced_tokens == 62'309, "the pinned spliced token count moved");
+
+    std::cout << (assertions.has_failures() ? "assertion failures\n" : "all assertions hold\n");
+
+    return assertions.has_failures() ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 /**
@@ -217,21 +276,26 @@ void campaign(const munch::core::Lexer& lexer, const std::filesystem::path& root
 
     for (const auto& path : files)
     {
-        stream.append(read_bytes(path).value_or(""));
+        const auto text{read_bytes(path).value_or("")};
+
+        stream.append(text);
 
         stream += '\n';
     }
 
-    const auto result{splice(lexer, stream)};
+    const auto [serial_consumed, serial_tokens, chunks, incomplete_chunks, spliced_tokens]{splice(lexer, stream)};
+
+    const auto consumed_percent{100.0 * static_cast<double>(serial_consumed) / static_cast<double>(stream.size())};
+
+    const auto ratio{static_cast<double>(spliced_tokens) / static_cast<double>(serial_tokens)};
 
     std::printf(
             "%zu files, %zu bytes; serial consumed %zu (%.1f%%), %zu tokens; %zu chunks, %zu "
             "incomplete; spliced %zu tokens, ratio %.2f\n",
-            files.size(), stream.size(), result.serial_consumed,
-            100.0 * static_cast<double>(result.serial_consumed) / static_cast<double>(stream.size()),
-            result.serial_tokens, result.chunks, result.incomplete_chunks, result.spliced_tokens,
-            static_cast<double>(result.spliced_tokens) / static_cast<double>(result.serial_tokens));
+            files.size(), stream.size(), serial_consumed, consumed_percent, serial_tokens, chunks, incomplete_chunks,
+            spliced_tokens, ratio);
 }
+
 } // namespace
 
 /**
@@ -239,9 +303,10 @@ void campaign(const munch::core::Lexer& lexer, const std::filesystem::path& root
  *        extension the second argument names or `.rs`, and otherwise runs the pinned self-test.
  * @param argc The argument count.
  * @param argv The directory and the extension, both optional.
- * @return 0 after a campaign or a self-test whose assertions hold, 1 when a self-test assertion fails.
+ * @return EXIT_SUCCESS after a campaign or a self-test whose assertions hold, EXIT_FAILURE when a self-test assertion
+ *         fails.
  */
-int main(const int argc, const char** argv)
+int main(const int argc, char** argv)
 {
     munch::core::Builder builder{};
 
@@ -251,9 +316,11 @@ int main(const int argc, const char** argv)
 
     if (argc > 1)
     {
-        campaign(lexer, argv[1], argc > 2 ? argv[2] : ".rs");
+        const std::string_view extension{argc > 2 ? argv[2] : ".rs"};
 
-        return 0;
+        campaign(lexer, argv[1], extension);
+
+        return EXIT_SUCCESS;
     }
 
     return self_test(lexer);

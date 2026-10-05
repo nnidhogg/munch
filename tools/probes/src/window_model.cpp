@@ -1,9 +1,13 @@
 #include "munch/tools/probes/window_model.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <deque>
+#include <iterator>
 #include <optional>
+#include <ranges>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "munch/dfa/dfa.hpp"
@@ -12,16 +16,23 @@ namespace munch::tools::probes
 {
 namespace
 {
-// Implements window_model.hpp over the automaton type, named Dfa in this unit.
+/**
+ * @brief Returns the predicate on an automaton's states that holds where a state accepts.
+ * @param dfa The automaton, which outlives the predicate.
+ * @return The predicate, true for a state that carries an accepted token.
+ */
+auto accepting_in(const dfa::Dfa& dfa)
+{
+    return [&dfa](const dfa::Dfa::State_t state) { return dfa.has_accept_token(state).has_value(); };
+}
 
-using dfa::Dfa;
 } // namespace
 
-States_t live_states(const Dfa& dfa)
+States_t live_states(const dfa::Dfa& dfa)
 {
     States_t reachable{dfa.init_state()};
 
-    std::deque<Dfa::State_t> pending{dfa.init_state()};
+    std::deque<dfa::Dfa::State_t> pending{dfa.init_state()};
 
     while (!pending.empty())
     {
@@ -29,9 +40,9 @@ States_t live_states(const Dfa& dfa)
 
         pending.pop_front();
 
-        for (int symbol{0}; symbol < 256; ++symbol)
+        for (const auto symbol : every_byte())
         {
-            if (const auto next{dfa.advance(state, static_cast<char>(symbol))}; next && !reachable.contains(*next))
+            if (const auto next{dfa.advance(state, symbol)}; next && !reachable.contains(*next))
             {
                 reachable.insert(*next);
 
@@ -40,15 +51,21 @@ States_t live_states(const Dfa& dfa)
         }
     }
 
-    States_t co_accessible;
+    States_t co_accessible{};
 
-    for (const auto state : reachable)
-    {
-        if (dfa.has_accept_token(state))
-        {
-            co_accessible.insert(state);
-        }
-    }
+    const auto accepts{accepting_in(dfa)};
+
+    std::ranges::copy_if(reachable, std::inserter(co_accessible, co_accessible.end()), accepts);
+
+    const auto reaches_accepting{[&dfa, &co_accessible](const dfa::Dfa::State_t state) {
+        const auto leads_to_accepting{[&dfa, &co_accessible, state](const char symbol) {
+            const auto next{dfa.advance(state, symbol)};
+
+            return next && co_accessible.contains(*next);
+        }};
+
+        return std::ranges::any_of(every_byte(), leads_to_accepting);
+    }};
 
     for (auto grew{true}; grew;)
     {
@@ -56,158 +73,142 @@ States_t live_states(const Dfa& dfa)
 
         for (const auto state : reachable)
         {
-            if (co_accessible.contains(state))
+            if (co_accessible.contains(state) || !reaches_accepting(state))
             {
                 continue;
             }
 
-            for (int symbol{0}; symbol < 256; ++symbol)
-            {
-                if (const auto next{dfa.advance(state, static_cast<char>(symbol))};
-                    next && co_accessible.contains(*next))
-                {
-                    co_accessible.insert(state);
+            co_accessible.insert(state);
 
-                    grew = true;
-
-                    break;
-                }
-            }
+            grew = true;
         }
     }
 
     return co_accessible;
 }
 
-bool is_init_reentrant(const Dfa& dfa, const States_t& live)
+bool is_init_reentrant(const dfa::Dfa& dfa, const States_t& live)
 {
-    for (const auto state : live)
-    {
-        for (int symbol{0}; symbol < 256; ++symbol)
-        {
-            if (const auto next{dfa.advance(state, static_cast<char>(symbol))}; next && *next == dfa.init_state())
-            {
-                return true;
-            }
-        }
-    }
+    const auto re_enters{[&dfa](const dfa::Dfa::State_t state) {
+        const auto enters_init{[&dfa, state](const char symbol) {
+            const auto next{dfa.advance(state, symbol)};
 
-    return false;
+            return next && *next == dfa.init_state();
+        }};
+
+        return std::ranges::any_of(every_byte(), enters_init);
+    }};
+
+    return std::ranges::any_of(live, re_enters);
 }
 
 std::optional<Cloud_t> step_cloud(
-        const Dfa& dfa, const States_t& live, const Cloud_t& from, const char symbol, const std::size_t at,
+        const dfa::Dfa& dfa, const States_t& live, const Cloud_t& from, const char symbol, const std::size_t at,
         const bool reentrant)
 {
     const auto restart{dfa.advance(dfa.init_state(), symbol)};
 
     const auto restart_ok{restart && live.contains(*restart)};
 
-    // A token can only end where the automaton accepted, so a boundary before this byte is possible exactly where
-    // some tracked state accepts. Hence the test runs on the cloud as it stands, ahead of the step.
-    auto accepting{false};
+    // A boundary before this byte is possible exactly where some tracked state accepts, so the test runs on the cloud
+    // as it stands, ahead of the step.
+    const auto accepts{accepting_in(dfa)};
+
+    const auto accepting{std::ranges::any_of(from | std::views::keys, accepts)};
+
+    Cloud_t next{};
 
     for (const auto& [state, origin] : from)
     {
-        accepting = accepting || dfa.has_accept_token(state);
-    }
+        const auto direct{dfa.advance(state, symbol)};
 
-    Cloud_t next;
-
-    for (const auto& [state, origin] : from)
-    {
-        if (const auto direct{dfa.advance(state, symbol)}; direct && live.contains(*direct))
+        // A trajectory that cannot consume the byte is an impossible history, not a token boundary, and ends here.
+        if (!direct || !live.contains(*direct))
         {
-            // Reading from the initial state begins a token here, so the origin is this offset rather than whatever
-            // the trajectory carried in. That holds only while nothing re-enters the initial state, since arriving
-            // there would then no longer prove the scan is between tokens. The shipped predicate withdraws its own
-            // exemption for the same reason, so the model must too or it certifies bytes the library correctly
-            // rejects.
-            const auto begins{state == dfa.init_state() && !reentrant};
-
-            next.emplace(*direct, begins ? at : origin);
+            continue;
         }
 
-        // No restart when a trajectory dies. A state that cannot consume the byte is an impossible history, not a
-        // token boundary; the discarded variant that restarted here is refuted by the executable legacy regression in
-        // window_gate.cpp's main(): over {a, abc, bx, x} and "abx" it certifies origin 2 where the scanner cuts at 0
-        // and 1.
+        // Reading from the initial state begins a token at this offset, unless the initial state is re-entered.
+        const auto begins{state == dfa.init_state() && !reentrant};
+
+        next.emplace(*direct, begins ? at : origin);
     }
 
-    // One fresh trajectory wherever the automaton had just accepted, which is the only place a token can begin.
-    // No special case for the window's first byte: the initial cloud is every live state and so contains an
-    // accepting one, making the guard true there anyway, and the transition stays the same at every offset. The
-    // final segmentation's actual token-prefix history is then contained in the cloud, alongside conservative
-    // hypotheses, so backup never has to be simulated.
+    // One fresh trajectory wherever the automaton had just accepted, the only place a token can begin.
     if (restart_ok && accepting)
     {
         next.emplace(*restart, at);
     }
 
-    return next.empty() ? std::nullopt : std::optional{next};
+    if (next.empty())
+    {
+        return std::nullopt;
+    }
+
+    return next;
 }
 
 bool is_certified(const Cloud_t& cloud)
 {
-    const auto origin{cloud.begin()->second};
+    const auto& [first_state, origin]{*cloud.begin()};
 
-    if (origin == kBefore)
+    if (origin == before_window)
     {
         return false;
     }
 
-    for (const auto& [state, at] : cloud)
-    {
-        if (at != origin)
-        {
-            return false;
-        }
-    }
+    const auto at_origin{[origin](const std::size_t at) { return at == origin; }};
 
-    return true;
+    return std::ranges::all_of(cloud | std::views::values, at_origin);
 }
 
 Cloud_t unknown_cloud(const States_t& live)
 {
-    Cloud_t cloud;
+    Cloud_t cloud{};
 
-    for (const auto state : live)
-    {
-        cloud.emplace(state, kBefore);
-    }
+    const auto from_before{[](const dfa::Dfa::State_t state) { return Trajectory_t{state, before_window}; }};
+
+    std::ranges::transform(live, std::inserter(cloud, cloud.end()), from_before);
 
     return cloud;
 }
 
 std::optional<std::size_t> predicted(
-        const Dfa& dfa, const States_t& live, const std::string& window, const bool reentrant)
+        const dfa::Dfa& dfa, const States_t& live, const std::string& window, const bool reentrant)
 {
     auto cloud{unknown_cloud(live)};
 
     for (std::size_t at{0}; at < window.size(); ++at)
     {
-        const auto next{step_cloud(dfa, live, cloud, window[at], at, reentrant)};
+        auto next{step_cloud(dfa, live, cloud, window[at], at, reentrant)};
 
         if (!next)
         {
             return std::nullopt;
         }
 
-        cloud = *next;
+        cloud = std::move(*next);
     }
 
-    return is_certified(cloud) ? std::optional{cloud.begin()->second} : std::nullopt;
+    if (!is_certified(cloud))
+    {
+        return std::nullopt;
+    }
+
+    const auto& [state, origin]{*cloud.begin()};
+
+    return origin;
 }
 
-std::vector<Certified_window> certified_pairs(const Dfa& dfa, const States_t& live, const bool reentrant)
+std::vector<Certified_window> certified_pairs(const dfa::Dfa& dfa, const States_t& live, const bool reentrant)
 {
-    std::vector<Certified_window> windows;
+    std::vector<Certified_window> windows{};
 
-    for (int first{0}; first < 256; ++first)
+    for (const auto first : every_byte())
     {
-        for (int second{0}; second < 256; ++second)
+        for (const auto second : every_byte())
         {
-            const std::string pair{static_cast<char>(first), static_cast<char>(second)};
+            const std::string pair{first, second};
 
             if (const auto at{predicted(dfa, live, pair, reentrant)})
             {

@@ -10,10 +10,20 @@
 
 /**
  * @brief The zero-lag premise and the subset graph it licenses, with the floors that bound the wall from below,
- *        Premise, zero_lag, Subset_graph, subset_graph, floors, Verdict and decide.
+ *        Premise, Subset_graph, Verdict, zero_lag, subset_graph, node_width, floors and decide.
  */
 namespace munch::tools::probes
 {
+/**
+ * @brief The witness byte that stands for the end of input, one past every byte value.
+ */
+inline constexpr int end_of_input_byte{byte_count};
+
+/**
+ * @brief The subset graph's node budget under which decide() answers.
+ */
+inline constexpr std::size_t decider_budget{128};
+
 /**
  * @brief The zero-lag premise's answer: once a run accepts, every later state accepts, so every rollback, at a byte or
  *        at the end of input, is zero bytes wide.
@@ -31,19 +41,10 @@ struct Premise
     std::size_t witness_state{};
 
     /**
-     * @brief The death that exposes the stale accept at the witness state, 256 for the end of input.
+     * @brief The death that exposes the stale accept at the witness state, end_of_input_byte for the end of input.
      */
     int witness_byte{};
 };
-
-/**
- * @brief Decides the zero-lag premise by a breadth-first walk of the (state, seen-accept) product from the initial
- *        state, seen recording an accept at or before the current position; the end of input is a death available at
- *        every position, so a seen run at a non-accepting state is a violation.
- * @param table The table.
- * @return The premise, with the first violation the walk meets when it fails.
- */
-[[nodiscard]] Premise zero_lag(const Table& table);
 
 /**
  * @brief The subset graph under the bare-state dynamics the zero-lag premise licenses: each node a set of live
@@ -61,26 +62,8 @@ struct Subset_graph
     /**
      * @brief Per node, the node every byte leads to.
      */
-    std::vector<std::array<std::size_t, 256>> successor{};
+    std::vector<std::array<std::size_t, byte_count>> successor{};
 };
-
-/**
- * @brief Builds the subset graph from the live states, nodes numbered in the order a breadth-first walk, bytes
- *        ascending, first meets them.
- * @param table The table.
- * @param budget The most nodes the graph may hold.
- * @return The graph, std::nullopt as soon as it holds more nodes than the budget.
- */
-[[nodiscard]] std::optional<Subset_graph> subset_graph(const Table& table, std::size_t budget);
-
-/**
- * @brief The floor of every node, the least width its forward closure reaches, by reverse propagation from the nodes in
- *        ascending width: the first propagation to touch a node carries the smallest width it reaches, so every node
- *        and reverse edge is visited once.
- * @param graph The subset graph.
- * @return Per node, its floor.
- */
-[[nodiscard]] std::vector<std::size_t> floors(const Subset_graph& graph);
 
 /**
  * @brief The wall verdict of a table's subset graph, whose quantities are state-granular lower bounds on
@@ -109,17 +92,52 @@ struct Verdict
     std::size_t wall_floor{};
 
     /**
-     * @brief Whether the graph exceeded the decider's budget of 128 nodes, every other field then zero.
+     * @brief Whether the graph exceeded decider_budget nodes, every other field then zero.
      */
-    bool bounded{};
+    bool over_budget{};
 };
+
+/**
+ * @brief Decides the zero-lag premise by a breadth-first walk of the (state, seen-accept) product from the initial
+ *        state, seen recording an accept at or before the current position; the end of input is a death available at
+ *        every position, so a seen run at a non-accepting state is a violation.
+ * @param table The table.
+ * @return The premise, with the first violation the walk meets when it fails.
+ */
+[[nodiscard]] Premise zero_lag(const Table& table);
+
+/**
+ * @brief Builds the subset graph from the live states, nodes numbered in the order a breadth-first walk, bytes
+ *        ascending, first meets them.
+ * @param table The table.
+ * @param budget The most nodes the graph may hold.
+ * @return The graph, std::nullopt as soon as it holds more nodes than the budget.
+ */
+[[nodiscard]] std::optional<Subset_graph> subset_graph(const Table& table, std::size_t budget);
+
+/**
+ * @brief Returns a node's width, the size of its subset.
+ * @param graph The subset graph.
+ * @param node The node.
+ * @return The width.
+ */
+[[nodiscard]] std::size_t node_width(const Subset_graph& graph, std::size_t node);
+
+/**
+ * @brief Returns the floor of every node, the least width its forward closure reaches, by reverse propagation from the
+ *        nodes in ascending width: the first propagation to touch a node carries the smallest width it reaches, so
+ *        every node and reverse edge is visited once.
+ * @param graph The subset graph.
+ * @return Per node, its floor.
+ */
+[[nodiscard]] std::vector<std::size_t> floors(const Subset_graph& graph);
 
 /**
  * @brief Decides a table's wall from its subset graph. A direct arrival and a restart arrival at one state merge
  *        although their tokens began at different places, so a wall floor of two or more is a real wall, while a
  *        smaller floor does not conclude the absence of an origin-level wall.
  * @param table The table.
- * @return The verdict, bounded when the graph holds more than 128 nodes.
+ * @return The verdict, over budget when the graph holds more than decider_budget nodes.
  */
 [[nodiscard]] Verdict decide(const Table& table);
 

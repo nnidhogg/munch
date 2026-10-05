@@ -1,12 +1,13 @@
 cmake_minimum_required(VERSION 3.20.6)
 project(munch_probes)
 
-# The units two or more probes share, their headers under include/munch/tools/probes; paper4_recompute and
-# parallel_scan are built without it.
+# The units two or more probes share, their headers under include/munch/tools/probes.
 add_library(munch_probes
         src/assertions.cpp
+        src/chunks.cpp
         src/crosscheck_session.cpp
         src/files.cpp
+        src/generated_identifiers.cpp
         src/lcg64.cpp
         src/study_rows.cpp
         src/window_model.cpp
@@ -28,9 +29,15 @@ target_link_libraries(munch_probes
 # against what the shipped predicates answer, so a note citing them cannot drift from the library silently.
 add_executable(munch_mode_cut_gate src/mode_cut_gate.cpp)
 
+target_include_directories(munch_mode_cut_gate
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/paper/figures
+)
+
 target_link_libraries(munch_mode_cut_gate
         PRIVATE
         munch_core
+        munch_probes
 )
 
 # The window search reuses the applicability figures' grammars, so a row measured here is the same row the table
@@ -130,6 +137,7 @@ target_include_directories(munch_parallel_scan
 target_link_libraries(munch_parallel_scan
         PRIVATE
         munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)
@@ -302,8 +310,9 @@ target_include_directories(munch_paper4_recompute
 
 target_link_libraries(munch_paper4_recompute
         PRIVATE
-        munch_core
         munch_audit
+        munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)
@@ -327,6 +336,7 @@ target_include_directories(munch_verifier_supply
 target_link_libraries(munch_verifier_supply
         PRIVATE
         munch_core
+        munch_probes
 )
 
 if (MUNCH_BUILD_TESTS)

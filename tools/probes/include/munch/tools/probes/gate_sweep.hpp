@@ -6,8 +6,7 @@
 #include "munch/tools/probes/gate_totals.hpp"
 
 /**
- * @brief The window model against the shipped predicates over deterministic random grammars, Sweep and
- *        random_grammars.
+ * @brief The window model against the shipped predicates over deterministic random grammars, Sweep and random_grammars.
  */
 namespace munch::tools::probes
 {
@@ -48,7 +47,7 @@ struct Sweep
     std::size_t proved_none{0};
 
     /**
-     * @brief The grammars certifying no byte whose search exceeded kSubsetBudget without a window.
+     * @brief The grammars certifying no byte whose search exceeded subset_budget without a window.
      */
     std::size_t inconclusive{0};
 
@@ -60,9 +59,9 @@ struct Sweep
 };
 
 /**
- * @brief Draws grammars of two to five random tokens over the alphabet {a, b, c} from a fixed seed and checks the
- *        model on each against the shipped scanner and predicates: the length-one certificate, the shortest window
- *        and its witness where no byte is certified, and the backup check over every certified two-byte window, each
+ * @brief Draws grammars of two to five random tokens over the alphabet {a, b, c} from a fixed seed and checks the model
+ *        on each against the shipped scanner and predicates: the length-one certificate, the shortest window and its
+ *        witness where no byte is certified, and the backup check over every certified two-byte window, each
  *        cross-checked against the shipped window decision. A grammar that exceeds the state limit of 400 is skipped.
  * @param totals The gate's totals, which count the cross-checks, the retained search keys and the witness rejections.
  * @param count The grammars drawn.

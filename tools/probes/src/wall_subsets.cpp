@@ -6,7 +6,9 @@
 #include <deque>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <utility>
 #include <vector>
@@ -17,11 +19,9 @@ namespace munch::tools::probes
 {
 namespace
 {
-// Implements wall_subsets.hpp: the subset walk's step and the reachability the decider reads are private to this unit.
-
 /**
- * @brief One byte's step of the subset walk: every member advancing through its transition, and the initial state's
- *        transition on the byte when a dying member accepts.
+ * @brief Returns one byte's step of the subset walk: every member advancing through its transition, and the initial
+ *        state's transition on the byte when a dying member accepts.
  * @param table The table.
  * @param subset The node's member states.
  * @param byte The byte.
@@ -35,40 +35,48 @@ std::vector<std::size_t> stepped_subset(const Table& table, const std::vector<st
 
     for (const auto state : subset)
     {
-        if (const auto to{table.next[state][static_cast<std::size_t>(byte)]}; to != kDead)
+        if (const auto to{table.next[state][static_cast<std::size_t>(byte)]}; to != dead)
         {
             stepped.insert(static_cast<std::size_t>(to));
         }
-        else if (table.accept[state] != 0)
+        else if (table.accept[state] == Flag::on)
         {
             restart = true;
         }
     }
 
-    if (restart)
+    if (const auto to{table.next[table.init][static_cast<std::size_t>(byte)]}; restart && to != dead)
     {
-        if (const auto to{table.next[table.init][static_cast<std::size_t>(byte)]}; to != kDead)
-        {
-            stepped.insert(static_cast<std::size_t>(to));
-        }
+        stepped.insert(static_cast<std::size_t>(to));
     }
 
     return {stepped.begin(), stepped.end()};
 }
 
 /**
- * @brief Which nodes each node reaches by a path of one or more edges.
- * @param graph The subset graph.
- * @return Per node, 1 at every node it reaches and 0 elsewhere.
+ * @brief Returns the projection from a node of a subset graph to its width, the size of its subset.
+ * @param graph The subset graph, which the projection refers to.
+ * @return The projection, taking a node and returning its width.
  */
-std::vector<std::vector<char>> reachability(const Subset_graph& graph)
+auto width_in(const Subset_graph& graph)
+{
+    return [&graph](const std::size_t node) { return node_width(graph, node); };
+}
+
+/**
+ * @brief Returns which nodes each node reaches by a path of one or more edges.
+ * @param graph The subset graph.
+ * @return Per node, Flag::on at every node it reaches.
+ */
+std::vector<std::vector<Flag>> reachability(const Subset_graph& graph)
 {
     const auto count{graph.subsets.size()};
 
-    std::vector<std::vector<char>> reaches(count, std::vector<char>(count, 0));
+    std::vector<std::vector<Flag>> reaches(count, std::vector<Flag>(count, Flag::off));
 
-    for (std::size_t from{0}; from < count; ++from)
-    {
+    const auto walk_from{[&graph, &reaches](const std::size_t from) {
+        auto& reached{reaches[from]};
+
         std::deque<std::size_t> pending{from};
 
         while (!pending.empty())
@@ -79,14 +87,21 @@ std::vector<std::vector<char>> reachability(const Subset_graph& graph)
 
             for (const auto to : graph.successor[node])
             {
-                if (reaches[from][to] == 0)
+                if (reached[to] == Flag::on)
                 {
-                    reaches[from][to] = 1;
-
-                    pending.push_back(to);
+                    continue;
                 }
+
+                reached[to] = Flag::on;
+
+                pending.push_back(to);
             }
         }
+    }};
+
+    for (std::size_t from{0}; from < count; ++from)
+    {
+        walk_from(from);
     }
 
     return reaches;
@@ -96,11 +111,11 @@ std::vector<std::vector<char>> reachability(const Subset_graph& graph)
 
 Premise zero_lag(const Table& table)
 {
-    std::vector<std::array<char, 2>> visited(table.states, {0, 0});
+    std::vector<std::array<Flag, 2>> visited(table.states, {Flag::off, Flag::off});
 
-    std::deque<std::pair<std::size_t, int>> pending{{table.init, 0}};
+    std::deque<std::pair<std::size_t, bool>> pending{{table.init, false}};
 
-    visited[table.init][0] = 1;
+    visited[table.init][0] = Flag::on;
 
     while (!pending.empty())
     {
@@ -108,34 +123,36 @@ Premise zero_lag(const Table& table)
 
         pending.pop_front();
 
-        if (seen != 0 && table.accept[state] == 0)
+        if (seen && table.accept[state] == Flag::off)
         {
-            return {.holds = false, .witness_state = state, .witness_byte = 256};
+            return {.holds = false, .witness_state = state, .witness_byte = end_of_input_byte};
         }
 
-        for (int byte{0}; byte < 256; ++byte)
+        for (int byte{0}; byte < byte_count; ++byte)
         {
             const auto to{table.next[state][static_cast<std::size_t>(byte)]};
 
-            if (to == kDead)
+            if (to == dead)
             {
                 continue;
             }
 
             const auto target{static_cast<std::size_t>(to)};
 
-            const auto next_seen{seen != 0 || table.accept[target] != 0 ? 1 : 0};
+            const auto next_seen{seen || table.accept[target] == Flag::on};
 
-            if (visited[target][static_cast<std::size_t>(next_seen)] == 0)
+            const auto seen_index{static_cast<std::size_t>(next_seen)};
+
+            if (visited[target][seen_index] == Flag::off)
             {
-                visited[target][static_cast<std::size_t>(next_seen)] = 1;
+                visited[target][seen_index] = Flag::on;
 
                 pending.emplace_back(target, next_seen);
             }
         }
     }
 
-    return {};
+    return {.holds = true};
 }
 
 std::optional<Subset_graph> subset_graph(const Table& table, const std::size_t budget)
@@ -147,7 +164,9 @@ std::optional<Subset_graph> subset_graph(const Table& table, const std::size_t b
     const auto intern{[&](std::vector<std::size_t> subset) {
         if (const auto found{ids.find(subset)}; found != ids.end())
         {
-            return found->second;
+            const auto& [member_states, id]{*found};
+
+            return id;
         }
 
         ids.emplace(subset, graph.subsets.size());
@@ -163,10 +182,12 @@ std::optional<Subset_graph> subset_graph(const Table& table, const std::size_t b
 
     for (std::size_t at{0}; at < graph.subsets.size(); ++at)
     {
-        for (int byte{0}; byte < 256; ++byte)
+        for (int byte{0}; byte < byte_count; ++byte)
         {
             // Interning may grow the vectors, so the target is taken before the source's row is addressed.
-            const auto target{intern(stepped_subset(table, graph.subsets[at], byte))};
+            auto stepped{stepped_subset(table, graph.subsets[at], byte)};
+
+            const auto target{intern(std::move(stepped))};
 
             graph.successor[at][static_cast<std::size_t>(byte)] = target;
 
@@ -178,6 +199,11 @@ std::optional<Subset_graph> subset_graph(const Table& table, const std::size_t b
     }
 
     return graph;
+}
+
+std::size_t node_width(const Subset_graph& graph, const std::size_t node)
+{
+    return graph.subsets[node].size();
 }
 
 std::vector<std::size_t> floors(const Subset_graph& graph)
@@ -200,23 +226,14 @@ std::vector<std::size_t> floors(const Subset_graph& graph)
 
     std::vector<std::size_t> order(count);
 
-    for (std::size_t node{0}; node < count; ++node)
-    {
-        order[node] = node;
-    }
+    std::ranges::iota(order, std::size_t{0});
 
-    std::ranges::sort(order, [&](const auto left, const auto right) {
-        return graph.subsets[left].size() < graph.subsets[right].size();
-    });
+    const auto width_of{width_in(graph)};
 
-    for (const auto origin : order)
-    {
-        if (floor[origin] != untouched)
-        {
-            continue;
-        }
+    std::ranges::sort(order, {}, width_of);
 
-        floor[origin] = graph.subsets[origin].size();
+    const auto spread_from{[&](const std::size_t origin) {
+        floor[origin] = width_of(origin);
 
         std::vector<std::size_t> pending{origin};
 
@@ -228,13 +245,23 @@ std::vector<std::size_t> floors(const Subset_graph& graph)
 
             for (const auto from : predecessors[node])
             {
-                if (floor[from] == untouched)
+                if (floor[from] != untouched)
                 {
-                    floor[from] = floor[origin];
-
-                    pending.push_back(from);
+                    continue;
                 }
+
+                floor[from] = floor[origin];
+
+                pending.push_back(from);
             }
+        }
+    }};
+
+    for (const auto origin : order)
+    {
+        if (floor[origin] == untouched)
+        {
+            spread_from(origin);
         }
     }
 
@@ -245,40 +272,39 @@ Verdict decide(const Table& table)
 {
     // The sustained-width phase is quadratic in the node count, so the decider's budget is far tighter than the
     // synthesizer's.
-    const auto graph{subset_graph(table, 128)};
+    const auto graph{subset_graph(table, decider_budget)};
 
     if (!graph)
     {
-        return {.bounded = true};
+        return {.over_budget = true};
     }
-
-    constexpr std::size_t origin{0};
 
     const auto count{graph->subsets.size()};
 
     const auto reaches{reachability(*graph)};
 
-    std::size_t sustained{0};
+    const auto nodes{std::views::iota(std::size_t{0}, count)};
 
-    for (std::size_t node{0}; node < count; ++node)
-    {
-        if (reaches[node][node] != 0)
-        {
-            sustained = std::max(sustained, graph->subsets[node].size());
-        }
-    }
+    const auto on_cycle{[&reaches](const std::size_t node) { return reaches[node][node] == Flag::on; }};
+
+    const auto width_of{width_in(*graph)};
+
+    auto cycle_widths{nodes | std::views::filter(on_cycle) | std::views::transform(width_of)};
+
+    const auto sustained{std::ranges::fold_left(cycle_widths, std::size_t{0}, std::ranges::max)};
 
     const auto floor{floors(*graph)};
 
-    std::size_t wall{0};
+    constexpr std::size_t origin{0};
 
-    for (std::size_t node{0}; node < count; ++node)
-    {
-        if (reaches[origin][node] != 0 || node == origin)
-        {
-            wall = std::max(wall, floor[node]);
-        }
-    }
+    const auto from_origin{
+            [&reaches](const std::size_t node) { return reaches[origin][node] == Flag::on || node == origin; }};
+
+    const auto floor_of{[&floor](const std::size_t node) { return floor[node]; }};
+
+    auto reached_floors{nodes | std::views::filter(from_origin) | std::views::transform(floor_of)};
+
+    const auto wall{std::ranges::fold_left(reached_floors, std::size_t{0}, std::ranges::max)};
 
     return {.nodes = count, .sustained = sustained, .floor_start = floor[origin], .wall_floor = wall};
 }

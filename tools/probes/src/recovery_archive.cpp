@@ -5,9 +5,11 @@
 #include <cstddef>
 #include <cstdio>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <ios>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,7 +24,22 @@ namespace munch::tools::probes
 {
 namespace
 {
-// Implements recovery_archive.hpp: the corpus writing and the field groups of a row are private to this unit.
+/**
+ * @brief The certified moves of an incident whose evidence begins at or past the corruption end, and those among them
+ *        inside the input that landed.
+ */
+struct Covered_moves
+{
+    /**
+     * @brief The covered moves.
+     */
+    std::size_t covered{0};
+
+    /**
+     * @brief Those that landed.
+     */
+    std::size_t landed{0};
+};
 
 /**
  * @brief Writes a count, or nothing when it is absent, which leaves its field blank.
@@ -51,53 +68,6 @@ void write_flag(std::FILE* stream, const std::optional<bool>& value)
 }
 
 /**
- * @brief The certified moves of an incident whose evidence begins at or past the corruption end, and those among them
- *        inside the input that landed.
- */
-struct Covered_moves
-{
-    /**
-     * @brief The covered moves.
-     */
-    std::size_t covered{0};
-
-    /**
-     * @brief Those that landed.
-     */
-    std::size_t landed{0};
-};
-
-/**
- * @brief Counts an incident's covered moves and those that landed.
- * @param trial The trial.
- * @param incident The incident.
- * @return The two counts.
- */
-Covered_moves covered_moves(const Trial& trial, const Incident& incident)
-{
-    const auto& y{trial.damaged};
-
-    Covered_moves counts{};
-
-    for (const auto& move : incident.moves)
-    {
-        if (move[1] < y.end)
-        {
-            continue;
-        }
-
-        ++counts.covered;
-
-        if (move[0] < y.input.size() && is_landed(trial.cell.row.begins, y, move[0]))
-        {
-            ++counts.landed;
-        }
-    }
-
-    return counts;
-}
-
-/**
  * @brief Writes every generated row's corpus to corpus_path(), each file closed and checked; the first that fails stops
  *        the writing after printing `corpus write failed: <path>` on standard error.
  * @param csv_path The archive's path.
@@ -106,18 +76,19 @@ Covered_moves covered_moves(const Trial& trial, const Incident& incident)
  */
 bool write_corpora(const std::string_view csv_path, const std::vector<Row>& rows)
 {
-    for (const auto& row : rows)
+    for (const auto& [label, lexer, corpus, begins, generated] : rows)
     {
-        if (!row.generated)
+        if (!generated)
         {
             continue;
         }
 
-        const auto corpus_file{corpus_path(csv_path, row.label)};
+        const auto corpus_file{corpus_path(csv_path, label)};
 
         std::ofstream out{corpus_file, std::ios::binary};
 
-        out.write(row.corpus.data(), static_cast<std::streamsize>(row.corpus.size()));
+        out.write(corpus.data(), static_cast<std::streamsize>(corpus.size()));
+
         out.close();
 
         if (!out)
@@ -132,6 +103,19 @@ bool write_corpora(const std::string_view csv_path, const std::vector<Row>& rows
 }
 
 /**
+ * @brief Writes the fields that name a cell, the grammar, the operation, the width and the seed, each followed by its
+ *        comma.
+ * @param stream The archive's stream.
+ * @param cell The cell.
+ */
+void write_cell_fields(std::FILE* stream, const Cell& cell)
+{
+    std::fprintf(
+            stream, "%s,%s,%zu,%zu,", std::string{cell.row.label}.c_str(), std::string{name(cell.op)}.c_str(),
+            cell.width, cell.seed);
+}
+
+/**
  * @brief Writes the fields every arm's row of a trial shares, from the grammar to the direct decider answer, each
  *        followed by its comma.
  * @param stream The archive's stream.
@@ -139,18 +123,19 @@ bool write_corpora(const std::string_view csv_path, const std::vector<Row>& rows
  */
 void write_trial_fields(std::FILE* stream, const Trial& trial)
 {
-    const auto& cell{trial.cell};
+    write_cell_fields(stream, trial.cell);
 
-    std::fprintf(
-            stream, "%s,%s,%zu,%zu,%zu,%zu,%zu,%zu,", std::string{cell.row.label}.c_str(),
-            std::string{name(cell.op)}.c_str(), cell.k, cell.seed, trial.index, trial.position, trial.failure,
-            trial.damaged.end);
+    std::fprintf(stream, "%zu,%zu,%zu,%zu,", trial.index, trial.position, trial.failure, trial.damaged.end);
 
     write_count(stream, trial.first_true);
 
     std::fprintf(stream, ",%d,", trial.repair ? 1 : 0);
 
-    write_count(stream, trial.repair ? std::optional{trial.repair->size()} : std::nullopt);
+    const auto length_of{[](const std::string& repair) { return repair.size(); }};
+
+    const auto repair_length{trial.repair.transform(length_of)};
+
+    write_count(stream, repair_length);
 
     std::fprintf(stream, ",");
 
@@ -184,15 +169,47 @@ void write_answer_fields(
         return;
     }
 
-    std::fprintf(
-            stream, ",%zu,%zu,%s,", incident.evidence->evidence_begin, incident.evidence->evidence_end,
-            incident.evidence->window ? "window" : "byte");
+    const auto& [start, evidence_begin, evidence_end, window]{*incident.evidence};
 
-    const auto& y{trial.damaged};
+    std::fprintf(stream, ",%zu,%zu,%s,", evidence_begin, evidence_end, window ? "window" : "byte");
 
-    const auto from{arm.clean ? std::max(y.end, trial.failure + 1) : trial.failure + 1};
+    const auto& damaged{trial.damaged};
 
-    std::fprintf(stream, "%zu", minimal_answer(trial.cell.row.lexer, y.input, from, *incident.first));
+    const auto from{search_start(arm, trial.failure, damaged.end)};
+
+    const auto smallest{minimal_answer(trial.cell.row.lexer, damaged.input, from, *incident.first)};
+
+    std::fprintf(stream, "%zu", smallest);
+}
+
+/**
+ * @brief Counts an incident's covered moves and those that landed.
+ * @param trial The trial.
+ * @param incident The incident.
+ * @return The two counts.
+ */
+Covered_moves covered_moves(const Trial& trial, const Incident& incident)
+{
+    const auto& damaged{trial.damaged};
+
+    Covered_moves counts{};
+
+    for (const auto& [answer, evidence_begin, evidence_end] : incident.moves)
+    {
+        if (evidence_begin < damaged.end)
+        {
+            continue;
+        }
+
+        ++counts.covered;
+
+        if (answer < damaged.input.size() && is_landed(trial.cell.row.begins, damaged, answer))
+        {
+            ++counts.landed;
+        }
+    }
+
+    return counts;
 }
 
 /**
@@ -214,26 +231,27 @@ void write_outcome_fields(std::FILE* stream, const Trial& trial, const Incident&
 
     std::fprintf(stream, ",%s,%zu,", std::string{outcome_name(incident.outcome)}.c_str(), incident.attempts);
 
-    if (!incident.moves.empty())
-    {
-        const auto counts{covered_moves(trial, incident)};
-
-        std::fprintf(stream, "%zu,%zu,", counts.covered, counts.landed);
-    }
-    else
+    if (incident.moves.empty())
     {
         std::fprintf(stream, ",,");
     }
-
-    if (score.convergence)
-    {
-        std::fprintf(
-                stream, "%zu,%zu,%zu\n", score.convergence->at, score.convergence->lost, score.convergence->spurious);
-    }
     else
     {
-        std::fprintf(stream, ",,\n");
+        const auto [covered, landed]{covered_moves(trial, incident)};
+
+        std::fprintf(stream, "%zu,%zu,", covered, landed);
     }
+
+    if (!score.convergence)
+    {
+        std::fprintf(stream, ",,\n");
+
+        return;
+    }
+
+    const auto& [at, lost, spurious]{*score.convergence};
+
+    std::fprintf(stream, "%zu,%zu,%zu\n", at, lost, spurious);
 }
 
 } // namespace
@@ -242,12 +260,11 @@ std::string corpus_path(const std::string_view csv_path, const std::string_view 
 {
     std::string slug{label};
 
-    for (auto& byte : slug)
-    {
-        byte = static_cast<char>(std::isalnum(static_cast<unsigned char>(byte)) != 0 ? byte : '-');
-    }
+    const auto is_not_alphanumeric{[](const char byte) { return std::isalnum(static_cast<unsigned char>(byte)) == 0; }};
 
-    return std::string{csv_path} + ".corpus-" + slug + ".bin";
+    std::ranges::replace_if(slug, is_not_alphanumeric, '-');
+
+    return std::format("{}.corpus-{}.bin", csv_path, slug);
 }
 
 bool Archive::open(const std::string_view csv_path, const std::vector<Row>& rows)
@@ -261,7 +278,7 @@ bool Archive::open(const std::string_view csv_path, const std::vector<Row>& rows
         return false;
     }
 
-    const auto moves_path{std::string{csv_path} + ".moves.csv"};
+    const auto moves_path{std::format("{}.moves.csv", csv_path)};
 
     moves_ = Output_file{std::filesystem::path{moves_path}};
 
@@ -296,10 +313,9 @@ void Archive::absorbed_row(const Cell& cell, const std::size_t trial, const std:
         return;
     }
 
-    std::fprintf(
-            campaign_.stream(), "%s,%s,%zu,%zu,%zu,%zu,,%zu,,,,,absorbed,,,,,,,,,,,,,,,\n",
-            std::string{cell.row.label}.c_str(), std::string{name(cell.op)}.c_str(), cell.k, cell.seed, trial, position,
-            end);
+    write_cell_fields(campaign_.stream(), cell);
+
+    std::fprintf(campaign_.stream(), "%zu,%zu,,%zu,,,,,absorbed,,,,,,,,,,,,,,,\n", trial, position, end);
 }
 
 void Archive::incident_row(const Trial& trial, const Arm& arm, const Incident& incident, const Score& score)
@@ -323,16 +339,17 @@ void Archive::move_rows(const Trial& trial, const Arm& arm, const Incident& inci
         return;
     }
 
-    const auto& cell{trial.cell};
-
-    for (std::size_t move_index{0}; move_index < incident.moves.size(); ++move_index)
+    for (const auto& [move_index, move] : std::views::enumerate(incident.moves))
     {
-        const auto& move{incident.moves[move_index]};
+        const auto& [answer, evidence_begin, evidence_end]{move};
+
+        const auto index{static_cast<std::size_t>(move_index)};
+
+        write_cell_fields(moves_.stream(), trial.cell);
 
         std::fprintf(
-                moves_.stream(), "%s,%s,%zu,%zu,%zu,%s,%zu,%zu,%zu,%zu\n", std::string{cell.row.label}.c_str(),
-                std::string{name(cell.op)}.c_str(), cell.k, cell.seed, trial.index, std::string{arm.name}.c_str(),
-                move_index, move[0], move[1], move[2]);
+                moves_.stream(), "%zu,%s,%zu,%zu,%zu,%zu\n", trial.index, std::string{arm.name}.c_str(), index, answer,
+                evidence_begin, evidence_end);
     }
 }
 

@@ -65,7 +65,7 @@ struct Tally
     /**
      * @brief The convergence point minus the corruption end, summed over completed incidents.
      */
-    std::ptrdiff_t conv_sum{0};
+    std::ptrdiff_t convergence_sum{0};
 
     /**
      * @brief The incidents that ended refused, at the first move or a later one.
@@ -75,7 +75,7 @@ struct Tally
     /**
      * @brief The completed incidents, the convergence figures' denominator.
      */
-    std::size_t conv_count{0};
+    std::size_t convergence_count{0};
 
     /**
      * @brief The lost boundaries, summed over completed incidents.
@@ -110,34 +110,34 @@ struct Tally
 struct Row_tallies
 {
     /**
-     * @brief The tallies, indexed by operation, width and arm in kOps, kWidths and kArms order.
+     * @brief The tallies, indexed by operation, width and arm in ops, widths and arms order.
      */
-    std::array<std::array<std::array<Tally, kArms.size()>, kWidths.size()>, kOps.size()> cells{};
+    std::array<std::array<std::array<Tally, arms.size()>, widths.size()>, ops.size()> cells{};
 
     /**
      * @brief The first answers per seed and arm.
      */
-    std::vector<std::array<std::size_t, kArms.size()>> seed_answers;
+    std::vector<std::array<std::size_t, arms.size()>> seed_answers{};
 
     /**
      * @brief The first answers that landed, per seed and arm.
      */
-    std::vector<std::array<std::size_t, kArms.size()>> seed_landings;
+    std::vector<std::array<std::size_t, arms.size()>> seed_landings{};
 };
 
 /**
- * @brief A row's tallies, every count zero.
+ * @brief Returns a row's tallies, every count zero.
  * @param seeds The seeds the row runs under.
  * @return The tallies, with a per-seed entry for each seed.
  */
 [[nodiscard]] Row_tallies row_tallies(std::size_t seeds);
 
 /**
- * @brief Adds one arm's incident of a damaging trial to the tally of its operation, width and arm, and its first
- *        answer to its seed's figures.
+ * @brief Adds one arm's incident of a damaging trial to the tally of its operation, width and arm, and its first answer
+ *        to its seed's figures.
  * @param tallies The row's tallies.
  * @param trial The trial.
- * @param arm_index The arm's index in kArms.
+ * @param arm_index The arm's index in arms.
  * @param incident The arm's incident.
  * @param score The incident's score.
  */

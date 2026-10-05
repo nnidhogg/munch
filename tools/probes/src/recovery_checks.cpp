@@ -4,7 +4,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdio>
+#include <format>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 
@@ -16,7 +18,11 @@ namespace munch::tools::probes
 {
 namespace
 {
-// Implements recovery_checks.hpp: one function per assertion family is private to this unit.
+/**
+ * @brief The width of the seam band [end, end + seam_band) past the corruption end, where a certified answer may rest
+ *        on an occurrence straddling the seam: the longest window is four bytes with origin at most three.
+ */
+constexpr std::size_t seam_band{3};
 
 /**
  * @brief The first field in which the replica walk and the library's evidence differ, with both values.
@@ -26,7 +32,7 @@ struct Mismatch
     /**
      * @brief The field's name: `existence`, `start`, `evidence_begin`, `evidence_end` or `class`.
      */
-    std::string_view field;
+    std::string_view field{};
 
     /**
      * @brief The library's value, -1 for a refusal.
@@ -40,6 +46,27 @@ struct Mismatch
 };
 
 /**
+ * @brief Two arms placing the same delimiter, one past it and one at it.
+ */
+struct Placement_pair
+{
+    /**
+     * @brief The index in arms of the arm resuming one past the delimiter.
+     */
+    std::size_t past{0};
+
+    /**
+     * @brief The index in arms of the arm resuming at it.
+     */
+    std::size_t at{0};
+
+    /**
+     * @brief The delimiter.
+     */
+    char delimiter{'\0'};
+};
+
+/**
  * @brief Compares the certified arm's first evidence with the replica walk from one past the failure: first whether
  *        either found a certificate, then the answer, both evidence ends and the byte-or-window class.
  * @param trial The trial.
@@ -49,19 +76,22 @@ std::optional<Mismatch> replica_mismatch(const Trial& trial)
 {
     const auto replica{evidence_of(trial.cell.row.lexer, trial.damaged.input, trial.failure + 1)};
 
-    const auto& answer{trial.incidents[kCertifiedArm].evidence};
+    const auto& answer{trial.incidents[certified_arm].evidence};
 
     // The replica in the library's terms: the answer it yields, and one past its evidence.
-    const auto replica_start{replica ? replica->begin + (replica->byte ? 0 : replica->origin) : 0};
+    const auto origin_offset{replica && !replica->byte ? replica->origin : 0};
+
+    const auto replica_start{replica ? replica->begin + origin_offset : 0};
 
     const auto replica_end{replica ? replica->begin + replica->length : 0};
 
     if (replica.has_value() != answer.has_value())
     {
-        return Mismatch{
-                .field = "existence",
-                .library = answer ? static_cast<std::ptrdiff_t>(answer->start) : -1,
-                .replica = replica ? static_cast<std::ptrdiff_t>(replica_start) : -1};
+        const auto library{answer ? static_cast<std::ptrdiff_t>(answer->start) : -1};
+
+        const auto replica_answer{replica ? static_cast<std::ptrdiff_t>(replica_start) : -1};
+
+        return Mismatch{.field = "existence", .library = library, .replica = replica_answer};
     }
 
     if (!answer)
@@ -69,22 +99,22 @@ std::optional<Mismatch> replica_mismatch(const Trial& trial)
         return std::nullopt;
     }
 
-    constexpr std::array<std::string_view, 4> names{"start", "evidence_begin", "evidence_end", "class"};
-
-    const std::array<std::size_t, 4> library_fields{
+    const std::array library_fields{
             answer->start, answer->evidence_begin, answer->evidence_end, static_cast<std::size_t>(answer->window)};
 
-    const std::array<std::size_t, 4> replica_fields{
+    const std::array replica_fields{
             replica_start, replica->begin, replica_end, static_cast<std::size_t>(!replica->byte)};
 
-    for (std::size_t f{0}; f < names.size(); ++f)
+    constexpr std::array<std::string_view, 4> names{"start", "evidence_begin", "evidence_end", "class"};
+
+    for (const auto& [field, library_value, replica_value] : std::views::zip(names, library_fields, replica_fields))
     {
-        if (library_fields[f] != replica_fields[f])
+        if (library_value != replica_value)
         {
             return Mismatch{
-                    .field = names[f],
-                    .library = static_cast<std::ptrdiff_t>(library_fields[f]),
-                    .replica = static_cast<std::ptrdiff_t>(replica_fields[f])};
+                    .field = field,
+                    .library = static_cast<std::ptrdiff_t>(library_value),
+                    .replica = static_cast<std::ptrdiff_t>(replica_value)};
         }
     }
 
@@ -92,8 +122,38 @@ std::optional<Mismatch> replica_mismatch(const Trial& trial)
 }
 
 /**
- * @brief Counts the trial as repairable or not and executes the repair witness: the repair prepended to the blind
- *        tail must scan to the end of input, or `REPAIR WITNESS VIOLATION` is reported.
+ * @brief Reports one violation on standard error, a heading, the trial's row, operation, width, damage position and
+ *        failure offset, then a detail, and counts it in theorem_failures.
+ * @param trial The trial.
+ * @param heading The violation's name, such as `theorem violation`.
+ * @param detail The text after the failure offset, empty or led by a space.
+ * @param totals The campaign's totals.
+ */
+void report_violation(
+        const Trial& trial, const std::string_view heading, const std::string_view detail, Campaign_totals& totals)
+{
+    const auto& [row, row_index, op, op_index, width, width_index, seed]{trial.cell};
+
+    std::fprintf(
+            stderr, "%s: %s %s k=%zu p=%zu e=%zu%s\n", std::string{heading}.c_str(), std::string{row.label}.c_str(),
+            std::string{name(op)}.c_str(), width, trial.position, trial.failure, std::string{detail}.c_str());
+
+    ++totals.theorem_failures;
+}
+
+/**
+ * @brief Formats the answered position a violation names.
+ * @param answer The position.
+ * @return The detail ` answered ` and the position.
+ */
+std::string answered(const std::size_t answer)
+{
+    return std::format(" answered {}", answer);
+}
+
+/**
+ * @brief Counts the trial as repairable or not and executes the repair witness: the repair prepended to the blind tail
+ *        must scan to the end of input, or `repair witness violation` is reported.
  * @param trial The trial.
  * @param totals The campaign's totals.
  */
@@ -112,20 +172,22 @@ void check_repair_witness(const Trial& trial, Campaign_totals& totals)
 
     const auto& input{trial.damaged.input};
 
-    const auto witness{*trial.repair + input.substr(std::min(trial.failure + 1, input.size()))};
+    const auto anchor{std::min(trial.failure + 1, input.size())};
 
-    if (failure_offset(row.lexer, witness) != witness.size())
+    const auto blind_tail{input.substr(anchor)};
+
+    const auto witness{*trial.repair + blind_tail};
+
+    const auto consumed{failure_offset(row.lexer, witness)};
+
+    if (consumed != witness.size())
     {
-        std::fprintf(
-                stderr, "REPAIR WITNESS VIOLATION: %s %s k=%zu p=%zu e=%zu\n", std::string{row.label}.c_str(),
-                std::string{name(trial.cell.op)}.c_str(), trial.cell.k, trial.position, trial.failure);
-
-        ++totals.theorem_failures;
+        report_violation(trial, "repair witness violation", "", totals);
     }
 }
 
 /**
- * @brief Reports `EVIDENCE MISMATCH` naming the differing field when the replica walk and the certified arm's first
+ * @brief Reports `evidence mismatch` naming the differing field when the replica walk and the certified arm's first
  *        evidence differ.
  * @param trial The trial.
  * @param totals The campaign's totals.
@@ -139,26 +201,23 @@ void check_replica(const Trial& trial, Campaign_totals& totals)
         return;
     }
 
-    const auto& row{trial.cell.row};
+    const auto& [field, library, replica]{*mismatch};
 
-    std::fprintf(
-            stderr, "EVIDENCE MISMATCH: %s %s k=%zu p=%zu e=%zu field %s library %td replica %td\n",
-            std::string{row.label}.c_str(), std::string{name(trial.cell.op)}.c_str(), trial.cell.k, trial.position,
-            trial.failure, std::string{mismatch->field}.c_str(), mismatch->library, mismatch->replica);
+    const auto detail{std::format(" field {} library {} replica {}", field, library, replica)};
 
-    ++totals.theorem_failures;
+    report_violation(trial, "evidence mismatch", detail, totals);
 }
 
 /**
- * @brief The transfer over the certified arm's first answer: an answer whose evidence begins at or past the
- *        corruption end must land (`EVIDENCE VIOLATION`), an answer at or past the corruption end plus three must land
- *        (`THEOREM VIOLATION`), and the covered, uncovered and nonminimal answers are counted.
+ * @brief Checks the transfer over the certified arm's first answer: an answer whose evidence begins at or past the
+ *        corruption end must land (`evidence violation`), an answer at or past the corruption end plus three must land
+ *        (`theorem violation`), and the covered, uncovered and nonminimal answers are counted.
  * @param trial The trial.
  * @param totals The campaign's totals.
  */
 void check_first_transfer(const Trial& trial, Campaign_totals& totals)
 {
-    const auto& incident{trial.incidents[kCertifiedArm]};
+    const auto& incident{trial.incidents[certified_arm]};
 
     if (!incident.first)
     {
@@ -167,22 +226,17 @@ void check_first_transfer(const Trial& trial, Campaign_totals& totals)
 
     const auto& row{trial.cell.row};
 
-    const auto& y{trial.damaged};
+    const auto& damaged{trial.damaged};
 
-    const auto landed_first{is_landed(row.begins, y, *incident.first)};
+    const auto landed_first{is_landed(row.begins, damaged, *incident.first)};
 
-    if (incident.evidence && incident.evidence->evidence_begin >= y.end)
+    if (incident.evidence && incident.evidence->evidence_begin >= damaged.end)
     {
         ++totals.evidence_covered;
 
         if (!landed_first)
         {
-            std::fprintf(
-                    stderr, "EVIDENCE VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n",
-                    std::string{row.label}.c_str(), std::string{name(trial.cell.op)}.c_str(), trial.cell.k,
-                    trial.position, trial.failure, *incident.first);
-
-            ++totals.theorem_failures;
+            report_violation(trial, "evidence violation", answered(*incident.first), totals);
         }
     }
     else
@@ -195,16 +249,12 @@ void check_first_transfer(const Trial& trial, Campaign_totals& totals)
         }
     }
 
-    if (*incident.first >= y.end + 3 && !landed_first)
+    if (*incident.first >= damaged.end + seam_band && !landed_first)
     {
-        std::fprintf(
-                stderr, "THEOREM VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n", std::string{row.label}.c_str(),
-                std::string{name(trial.cell.op)}.c_str(), trial.cell.k, trial.position, trial.failure, *incident.first);
-
-        ++totals.theorem_failures;
+        report_violation(trial, "theorem violation", answered(*incident.first), totals);
     }
 
-    const auto minimal{minimal_answer(row.lexer, y.input, trial.failure + 1, *incident.first)};
+    const auto minimal{minimal_answer(row.lexer, damaged.input, trial.failure + 1, *incident.first)};
 
     if (minimal < *incident.first)
     {
@@ -215,59 +265,57 @@ void check_first_transfer(const Trial& trial, Campaign_totals& totals)
 }
 
 /**
- * @brief The transfer over every move of one certified arm: a move inside the input whose evidence begins at or past
- *        the corruption end must land (`MOVE EVIDENCE VIOLATION`); the certified arm's moves are counted.
+ * @brief Checks the transfer over every move of one certified arm: a move inside the input whose evidence begins at or
+ *        past the corruption end must land (`move evidence violation`); the certified arm's moves are counted.
  * @param trial The trial.
- * @param arm_index The arm, kCertifiedArm or kCertifiedCleanArm.
+ * @param arm_index The arm, certified_arm or certified_clean_arm.
  * @param totals The campaign's totals.
  */
 void check_moves(const Trial& trial, const std::size_t arm_index, Campaign_totals& totals)
 {
     const auto& row{trial.cell.row};
 
-    const auto& y{trial.damaged};
+    const auto& damaged{trial.damaged};
 
-    for (const auto& move : trial.incidents[arm_index].moves)
+    const auto& moves{trial.incidents[arm_index].moves};
+
+    const auto counted{arm_index == certified_arm};
+
+    if (counted)
     {
-        const auto move_at{move[0]};
+        totals.certified_moves_total += moves.size();
+    }
 
-        const auto move_evidence{move[1]};
-
-        if (arm_index == kCertifiedArm)
-        {
-            ++totals.certified_moves_total;
-        }
-
-        if (move_evidence < y.end)
+    for (const auto& [move_at, move_evidence, move_end] : moves)
+    {
+        if (move_evidence < damaged.end)
         {
             continue;
         }
 
-        if (arm_index == kCertifiedArm)
+        if (counted)
         {
             ++totals.certified_moves_covered;
         }
 
-        if (move_at < y.input.size() && !is_landed(row.begins, y, move_at))
+        if (move_at < damaged.input.size() && !is_landed(row.begins, damaged, move_at))
         {
-            std::fprintf(
-                    stderr, "MOVE EVIDENCE VIOLATION: %s %s k=%zu p=%zu e=%zu at %zu\n", std::string{row.label}.c_str(),
-                    std::string{name(trial.cell.op)}.c_str(), trial.cell.k, trial.position, trial.failure, move_at);
+            const auto detail{std::format(" at {}", move_at)};
 
-            ++totals.theorem_failures;
+            report_violation(trial, "move evidence violation", detail, totals);
         }
     }
 }
 
 /**
- * @brief The clean certified arm's contract: every first answer rests on evidence at or past the corruption end and
- *        lands (`CLEAN-ARM VIOLATION`); its answers and refusals are counted.
+ * @brief Checks the clean certified arm's contract: every first answer rests on evidence at or past the corruption end
+ *        and lands (`clean-arm violation`); its answers and refusals are counted.
  * @param trial The trial.
  * @param totals The campaign's totals.
  */
 void check_clean(const Trial& trial, Campaign_totals& totals)
 {
-    const auto& incident{trial.incidents[kCertifiedCleanArm]};
+    const auto& incident{trial.incidents[certified_clean_arm]};
 
     if (!incident.first)
     {
@@ -280,47 +328,34 @@ void check_clean(const Trial& trial, Campaign_totals& totals)
 
     const auto& row{trial.cell.row};
 
-    const auto& y{trial.damaged};
+    const auto& damaged{trial.damaged};
 
-    if (!incident.evidence || incident.evidence->evidence_begin < y.end || !is_landed(row.begins, y, *incident.first))
+    if (!incident.evidence || incident.evidence->evidence_begin < damaged.end ||
+        !is_landed(row.begins, damaged, *incident.first))
     {
-        std::fprintf(
-                stderr, "CLEAN-ARM VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n", std::string{row.label}.c_str(),
-                std::string{name(trial.cell.op)}.c_str(), trial.cell.k, trial.position, trial.failure, *incident.first);
-
-        ++totals.theorem_failures;
+        report_violation(trial, "clean-arm violation", answered(*incident.first), totals);
     }
 }
 
 /**
- * @brief The decider's consistency with the walk at the blind anchor: on a repairable trial a walk answer implies a
- *        direct answer at or before it (`EXACT ORDER VIOLATION`), and on an unrepairable trial the direct call refuses
- *        (`EXACT REFUSAL VIOLATION`); walk answers on unrepairable trials are counted.
+ * @brief Checks the decider's consistency with the walk at the blind anchor: on a repairable trial a walk answer
+ *        implies a direct answer at or before it (`exact order violation`), and on an unrepairable trial the direct
+ *        call refuses (`exact refusal violation`); walk answers on unrepairable trials are counted.
  * @param trial The trial.
  * @param totals The campaign's totals.
  */
 void check_consistency(const Trial& trial, Campaign_totals& totals)
 {
-    const auto& row{trial.cell.row};
-
-    const auto& first{trial.incidents[kCertifiedArm].first};
+    const auto& first{trial.incidents[certified_arm].first};
 
     if (trial.repair && first && (!trial.direct || *trial.direct > *first))
     {
-        std::fprintf(
-                stderr, "EXACT ORDER VIOLATION: %s %s k=%zu p=%zu e=%zu\n", std::string{row.label}.c_str(),
-                std::string{name(trial.cell.op)}.c_str(), trial.cell.k, trial.position, trial.failure);
-
-        ++totals.theorem_failures;
+        report_violation(trial, "exact order violation", "", totals);
     }
 
     if (!trial.repair && trial.direct)
     {
-        std::fprintf(
-                stderr, "EXACT REFUSAL VIOLATION: %s %s k=%zu p=%zu e=%zu\n", std::string{row.label}.c_str(),
-                std::string{name(trial.cell.op)}.c_str(), trial.cell.k, trial.position, trial.failure);
-
-        ++totals.theorem_failures;
+        report_violation(trial, "exact refusal violation", "", totals);
     }
 
     if (!trial.repair && first)
@@ -337,9 +372,9 @@ void check_consistency(const Trial& trial, Campaign_totals& totals)
  */
 void count_exact_pairs(const Trial& trial, Campaign_totals& totals)
 {
-    const auto& exact{trial.incidents[kExactArm].first};
+    const auto& exact{trial.incidents[exact_arm].first};
 
-    const auto& walk{trial.incidents[kCertifiedArm].first};
+    const auto& walk{trial.incidents[certified_arm].first};
 
     if (!exact)
     {
@@ -364,8 +399,8 @@ void count_exact_pairs(const Trial& trial, Campaign_totals& totals)
 }
 
 /**
- * @brief The clean exact arm's first answer inside the input lands (`EXACT-CLEAN VIOLATION`): the pristine prefix is a
- *        repair of what precedes the preserved suffix.
+ * @brief Checks the clean exact arm's first answer inside the input lands (`exact-clean violation`): the pristine
+ *        prefix is a repair of what precedes the preserved suffix.
  * @param trial The trial.
  * @param totals The campaign's totals.
  */
@@ -373,52 +408,27 @@ void check_exact_clean(const Trial& trial, Campaign_totals& totals)
 {
     const auto& row{trial.cell.row};
 
-    const auto& first{trial.incidents[kExactCleanArm].first};
+    const auto& first{trial.incidents[exact_clean_arm].first};
 
-    const auto& y{trial.damaged};
+    const auto& damaged{trial.damaged};
 
-    if (first && *first < y.input.size() && !is_landed(row.begins, y, *first))
+    if (first && *first < damaged.input.size() && !is_landed(row.begins, damaged, *first))
     {
-        std::fprintf(
-                stderr, "EXACT-CLEAN VIOLATION: %s %s k=%zu p=%zu e=%zu answered %zu\n", std::string{row.label}.c_str(),
-                std::string{name(trial.cell.op)}.c_str(), trial.cell.k, trial.position, trial.failure, *first);
-
-        ++totals.theorem_failures;
+        report_violation(trial, "exact-clean violation", answered(*first), totals);
     }
 }
 
 /**
- * @brief Two arms placing the same delimiter, one past it and one at it.
- */
-struct Placement_pair
-{
-    /**
-     * @brief The index in kArms of the arm resuming one past the delimiter.
-     */
-    std::size_t past;
-
-    /**
-     * @brief The index in kArms of the arm resuming at it.
-     */
-    std::size_t at;
-
-    /**
-     * @brief The delimiter.
-     */
-    char delimiter;
-};
-
-/**
- * @brief The delimiter conventions: the two placements of each delimiter answer together, and the past answer is the
- *        at answer plus one over the delimiter itself (`CONVENTION VIOLATION`).
+ * @brief Checks the delimiter conventions: the two placements of each delimiter answer together, and the past answer is
+ *        the at answer plus one over the delimiter itself (`convention violation`).
  * @param trial The trial.
  * @param totals The campaign's totals.
  */
 void check_conventions(const Trial& trial, Campaign_totals& totals)
 {
-    constexpr std::array<Placement_pair, 2> pairs{
-            Placement_pair{.past = 5, .at = 6, .delimiter = '\n'},
-            Placement_pair{.past = 7, .at = 8, .delimiter = ';'}};
+    constexpr std::array pairs{
+            Placement_pair{.past = newline_arm, .at = newline_at_arm, .delimiter = '\n'},
+            Placement_pair{.past = semicolon_arm, .at = semicolon_at_arm, .delimiter = ';'}};
 
     for (const auto& [past, at, delimiter] : pairs)
     {
@@ -426,10 +436,15 @@ void check_conventions(const Trial& trial, Campaign_totals& totals)
 
         const auto& at_first{trial.incidents[at].first};
 
-        if (past_first.has_value() != at_first.has_value() ||
-            (past_first && (*past_first != *at_first + 1 || trial.damaged.input[*at_first] != delimiter)))
+        const auto answered_together{past_first.has_value() == at_first.has_value()};
+
+        const auto one_past_delimiter{
+                !past_first || !at_first ||
+                (*past_first == *at_first + 1 && trial.damaged.input[*at_first] == delimiter)};
+
+        if (!answered_together || !one_past_delimiter)
         {
-            std::fprintf(stderr, "CONVENTION VIOLATION\n");
+            std::fprintf(stderr, "convention violation\n");
 
             ++totals.theorem_failures;
         }
@@ -446,9 +461,9 @@ void check_trial(const Trial& trial, Campaign_totals& totals)
 
     check_first_transfer(trial, totals);
 
-    check_moves(trial, kCertifiedArm, totals);
+    check_moves(trial, certified_arm, totals);
 
-    check_moves(trial, kCertifiedCleanArm, totals);
+    check_moves(trial, certified_clean_arm, totals);
 
     check_clean(trial, totals);
 

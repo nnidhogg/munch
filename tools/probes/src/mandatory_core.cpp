@@ -1,15 +1,15 @@
-// Decides the mandatory-core premise of the proof-directed planner: for a state q and a family K of byte
-// strings, does every death word from q contain some member of K ending strictly before the killing byte?
+// Decides the mandatory-core premise of the proof-directed planner: for a state q and a family K of byte strings, does
+// every death word from q contain some member of K ending strictly before the killing byte?
 //
-// The planned prefilter narrows its candidate windows to core occurrences, and its exact-plan-equality argument
-// rests on the premise above (the mandatory-death-core theorem). The premise is decided per grammar, not recognized
-// by shape: there is a concrete automaton where a plausible component satisfies the first-exit intuition while an
-// internal death bypasses the core entirely. The decision procedure: an Aho-Corasick matcher over K is producted with
-// the live automaton, and the premise fails exactly when a pair of a live state and a match-free matcher
-// state is reachable whose live state is not input-total, since any missing byte there ends a K-avoiding
-// death word. The matcher reads only the live prefix; the killing byte is never fed to it, because a core
-// completed on the killing byte is too late. Families are nonempty strings by contract; a state that can
-// die with no core before the killing byte gets a refuted verdict with a reconstructed witness.
+// The planned prefilter narrows its candidate windows to core occurrences, and its exact-plan-equality argument rests
+// on the premise above (the mandatory-death-core theorem). The premise is decided per grammar, not recognized by shape:
+// there is a concrete automaton where a plausible component satisfies the first-exit intuition while an internal death
+// bypasses the core entirely. The decision procedure: an Aho-Corasick matcher over K is producted with the live
+// automaton, and the premise fails exactly when a pair of a live state and a match-free matcher state is reachable
+// whose live state is not input-total, since any missing byte there ends a K-avoiding death word. The matcher reads
+// only the live prefix; the killing byte is never fed to it, because a core completed on the killing byte is too late.
+// Families are nonempty strings by contract; a state that can die with no core before the killing byte gets a refuted
+// verdict with a reconstructed witness.
 //
 // What runs as a test. The shipped instances and the counterexamples, all pinned:
 //   - the C-like cumulative row proves the family {*/} at its comment-interior state;
@@ -21,10 +21,11 @@
 //   - a synthetic automaton refutes K = {c} with the witness ab, and a repaired variant of the same table proves
 //     it.
 //
-// The checker runs over any view with advance(state, byte), so hand-built tables and compiled automata run
-// through the identical decision procedure.
+// The checker runs over any view with advance(state, byte), so hand-built tables and compiled automata run through the
+// identical decision procedure.
 
 #include <cstddef>
+#include <cstdlib>
 #include <deque>
 #include <iostream>
 #include <map>
@@ -47,8 +48,10 @@ namespace
 using figures::Token;
 using munch::tools::probes::Assertions;
 using munch::tools::probes::Builder_dbg;
+using munch::tools::probes::every_byte;
 using munch::tools::probes::live_states;
 using munch::tools::probes::published_cumulative_row;
+using munch::tools::probes::States_t;
 using namespace munch::regex;
 using munch::dfa::Dfa;
 
@@ -64,69 +67,7 @@ public:
      *        over its fail link.
      * @param family The family, nonempty strings.
      */
-    explicit Matcher(const std::vector<std::string>& family)
-    {
-        nodes_.push_back({});
-
-        for (const auto& word : family)
-        {
-            std::size_t at{0};
-
-            for (const char byte : word)
-            {
-                const auto key{static_cast<unsigned char>(byte)};
-
-                if (nodes_[at].next.contains(key))
-                {
-                    at = nodes_[at].next.at(key);
-                }
-                else
-                {
-                    nodes_.push_back({});
-
-                    nodes_[at].next.emplace(key, nodes_.size() - 1);
-
-                    at = nodes_[at].next.at(key);
-                }
-            }
-
-            nodes_[at].terminal = true;
-        }
-
-        std::deque<std::size_t> pending{};
-
-        for (const auto& [key, child] : nodes_[0].next)
-        {
-            nodes_[child].fail = 0;
-
-            pending.push_back(child);
-        }
-
-        while (!pending.empty())
-        {
-            const auto at{pending.front()};
-
-            pending.pop_front();
-
-            nodes_[at].terminal = nodes_[at].terminal || nodes_[nodes_[at].fail].terminal;
-
-            for (const auto& [key, child] : nodes_[at].next)
-            {
-                auto fall{nodes_[at].fail};
-
-                while (fall != 0 && !nodes_[fall].next.contains(key))
-                {
-                    fall = nodes_[fall].fail;
-                }
-
-                nodes_[child].fail = nodes_[fall].next.contains(key) && nodes_[fall].next.at(key) != child ?
-                                             nodes_[fall].next.at(key) :
-                                             0;
-
-                pending.push_back(child);
-            }
-        }
-    }
+    explicit Matcher(const std::vector<std::string>& family);
 
     /**
      * @brief One byte of matching; std::nullopt once a family member has completed.
@@ -159,10 +100,115 @@ private:
     };
 
     /**
+     * @brief Adds one family member to the trie, marking the node it ends at terminal.
+     * @param word The member, nonempty.
+     */
+    void insert(const std::string& word);
+
+    /**
+     * @brief Links every node below the root to its fail node breadth first, propagating the terminal flag over each
+     *        link.
+     */
+    void link_failures();
+
+    /**
      * @brief The trie, the root at index 0.
      */
     std::vector<Node> nodes_;
 };
+
+Matcher::Matcher(const std::vector<std::string>& family)
+{
+    nodes_.push_back({});
+
+    for (const auto& word : family)
+    {
+        insert(word);
+    }
+
+    link_failures();
+}
+
+void Matcher::insert(const std::string& word)
+{
+    std::size_t at{0};
+
+    for (const char byte : word)
+    {
+        const auto key{static_cast<unsigned char>(byte)};
+
+        if (!nodes_[at].next.contains(key))
+        {
+            nodes_.push_back({});
+
+            nodes_[at].next.emplace(key, nodes_.size() - 1);
+        }
+
+        at = nodes_[at].next.at(key);
+    }
+
+    nodes_[at].terminal = true;
+}
+
+void Matcher::link_failures()
+{
+    std::deque<std::size_t> pending{};
+
+    for (const auto& [key, child] : nodes_[0].next)
+    {
+        nodes_[child].fail = 0;
+
+        pending.push_back(child);
+    }
+
+    while (!pending.empty())
+    {
+        const auto at{pending.front()};
+
+        pending.pop_front();
+
+        nodes_[at].terminal = nodes_[at].terminal || nodes_[nodes_[at].fail].terminal;
+
+        for (const auto& [key, child] : nodes_[at].next)
+        {
+            auto fall{nodes_[at].fail};
+
+            while (fall != 0 && !nodes_[fall].next.contains(key))
+            {
+                fall = nodes_[fall].fail;
+            }
+
+            const auto found{nodes_[fall].next.find(key)};
+
+            const auto extends{found != nodes_[fall].next.end() && found->second != child};
+
+            nodes_[child].fail = extends ? found->second : 0;
+
+            pending.push_back(child);
+        }
+    }
+}
+
+std::optional<std::size_t> Matcher::step(const std::size_t at, const unsigned char byte) const
+{
+    auto node{at};
+
+    while (node != 0 && !nodes_[node].next.contains(byte))
+    {
+        node = nodes_[node].fail;
+    }
+
+    const auto found{nodes_[node].next.find(byte)};
+
+    const auto next{found != nodes_[node].next.end() ? found->second : 0};
+
+    if (nodes_[next].terminal)
+    {
+        return std::nullopt;
+    }
+
+    return next;
+}
 
 /**
  * @brief The checker's answer for one state and one family.
@@ -172,7 +218,7 @@ struct Verdict
     /**
      * @brief Whether every death word from the state holds a member ending strictly before its killing byte.
      */
-    bool proved{};
+    bool proved{false};
 
     /**
      * @brief A death word no member precedes, empty when proved.
@@ -181,11 +227,32 @@ struct Verdict
 };
 
 /**
+ * @brief A pair of a live state and a matcher node, the decision procedure's search key.
+ */
+using Pair_t = std::pair<std::size_t, std::size_t>;
+
+/**
+ * @brief How the search first reached a pair: the pair it came from and the byte between them.
+ */
+struct Parent
+{
+    /**
+     * @brief The pair the byte was read from.
+     */
+    Pair_t from{};
+
+    /**
+     * @brief The byte.
+     */
+    char byte{0};
+};
+
+/**
  * @brief The decision procedure: BFS over pairs of a live state and a match-free matcher state.
  *
- * The premise fails exactly when a reachable pair's live state is missing some byte, since appending that
- * byte to the pair's prefix is a death word no family member precedes; the witness is that word. Pairs
- * whose matcher has completed a member are satisfied for every continuation and are not expanded.
+ * The premise fails exactly when a reachable pair's live state is missing some byte, since appending that byte to the
+ * pair's prefix is a death word no family member precedes; the witness is that word. Pairs whose matcher has completed
+ * a member are satisfied for every continuation and are not expanded.
  *
  * @tparam View An automaton as the checker sees it: `advance(state, byte)` gives the live state a byte leads to, or
  *         std::nullopt where the byte kills the state.
@@ -199,11 +266,26 @@ Verdict check(const View& view, const std::size_t q, const std::vector<std::stri
 {
     const Matcher matcher{family};
 
-    std::map<std::pair<std::size_t, std::size_t>, std::pair<std::pair<std::size_t, std::size_t>, char>> parent{};
+    std::map<Pair_t, Parent> parent{};
 
-    std::deque<std::pair<std::size_t, std::size_t>> pending{{q, 0}};
+    std::deque<Pair_t> pending{{q, 0}};
 
-    std::set<std::pair<std::size_t, std::size_t>> seen{{q, 0}};
+    std::set<Pair_t> seen{{q, 0}};
+
+    const auto witness_of{[&parent, q](const Pair_t reached, const unsigned char byte) {
+        std::string witness{static_cast<char>(byte)};
+
+        for (auto at{reached}; at != Pair_t{q, 0};)
+        {
+            const auto& [from, by]{parent.at(at)};
+
+            witness.insert(witness.begin(), by);
+
+            at = from;
+        }
+
+        return witness;
+    }};
 
     while (!pending.empty())
     {
@@ -211,68 +293,55 @@ Verdict check(const View& view, const std::size_t q, const std::vector<std::stri
 
         pending.pop_front();
 
-        for (int value{0}; value < 256; ++value)
+        for (const auto symbol : every_byte())
         {
-            const auto byte{static_cast<unsigned char>(value)};
+            const auto byte{static_cast<unsigned char>(symbol)};
 
             const auto next{view.advance(state, byte)};
 
+            // A killing byte with no completed member on the prefix refutes the family.
             if (!next)
             {
-                // A killing byte with no completed member on the prefix: reconstruct the witness.
-                std::string witness{static_cast<char>(byte)};
-
-                for (auto at{std::pair{state, node}}; at != std::pair{q, std::size_t{0}}; at = parent.at(at).first)
-                {
-                    witness.insert(witness.begin(), parent.at(at).second);
-                }
-
-                return {.proved = false, .witness = std::move(witness)};
+                return {.proved = false, .witness = witness_of({state, node}, byte)};
             }
 
             const auto stepped{matcher.step(node, byte)};
 
+            // A member completed strictly before any later killing byte.
             if (!stepped)
             {
-                continue; // a member completed strictly before any later killing byte
+                continue;
             }
 
-            if (const auto pair{std::pair{*next, *stepped}}; seen.insert(pair).second)
+            const Pair_t reached{*next, *stepped};
+
+            const auto [where, inserted]{seen.insert(reached)};
+
+            if (!inserted)
             {
-                parent.emplace(pair, std::pair{std::pair{state, node}, static_cast<char>(byte)});
-
-                pending.push_back(pair);
+                continue;
             }
+
+            parent.emplace(reached, Parent{.from = {state, node}, .byte = static_cast<char>(byte)});
+
+            pending.push_back(reached);
         }
     }
 
     return {.proved = true, .witness = {}};
 }
 
-std::optional<std::size_t> Matcher::step(const std::size_t at, const unsigned char byte) const
-{
-    auto node{at};
-
-    while (node != 0 && !nodes_[node].next.contains(byte))
-    {
-        node = nodes_[node].fail;
-    }
-
-    const auto next{nodes_[node].next.contains(byte) ? nodes_[node].next.at(byte) : 0};
-
-    return nodes_[next].terminal ? std::nullopt : std::optional{next};
-}
-
 /**
  * @brief The live subautomaton of a compiled DFA as a checker view, with a state finder for the tests.
  */
-struct Compiled
+class Compiled
 {
+public:
     /**
      * @brief Keeps the automaton and its live states.
      * @param dfa The compiled automaton.
      */
-    explicit Compiled(const Dfa& dfa) : dfa_{dfa}, live_{live_states(dfa_)} {}
+    explicit Compiled(const Dfa& dfa);
 
     /**
      * @brief One byte of the live subautomaton.
@@ -280,12 +349,7 @@ struct Compiled
      * @param byte The byte.
      * @return The live state the byte leads to, std::nullopt when it leads to no state or to a dead one.
      */
-    [[nodiscard]] std::optional<std::size_t> advance(const std::size_t state, const unsigned char byte) const
-    {
-        const auto next{dfa_.advance(state, static_cast<char>(byte))};
-
-        return next && live_.contains(*next) ? next : std::nullopt;
-    }
+    [[nodiscard]] std::optional<std::size_t> advance(std::size_t state, unsigned char byte) const;
 
     /**
      * @brief The live state a completely tokenizable prefix leaves the automaton in, for locating interiors.
@@ -303,8 +367,35 @@ private:
     /**
      * @brief The automaton's trim states, the only ones advance() leads to.
      */
-    std::set<std::size_t> live_;
+    States_t live_;
 };
+
+Compiled::Compiled(const Dfa& dfa) : dfa_{dfa}, live_{live_states(dfa_)}
+{}
+
+std::optional<std::size_t> Compiled::advance(const std::size_t state, const unsigned char byte) const
+{
+    const auto next{dfa_.advance(state, static_cast<char>(byte))};
+
+    if (!next || !live_.contains(*next))
+    {
+        return std::nullopt;
+    }
+
+    return next;
+}
+
+std::size_t Compiled::after(const std::string_view prefix) const
+{
+    auto state{dfa_.init_state()};
+
+    for (const char byte : prefix)
+    {
+        state = *dfa_.advance(state, byte);
+    }
+
+    return state;
+}
 
 /**
  * @brief Renders a word for a verdict line: a newline as `\n`, a tab as `\t`, a printable byte as a 0x01 byte
@@ -318,13 +409,44 @@ std::string printable(const std::string& word)
 
     for (const char byte : word)
     {
-        out += byte == '\n'             ? std::string{"\\n"} :
-               byte == '\t'             ? std::string{"\\t"} :
-               byte >= 32 && byte < 127 ? std::string{1, byte} :
-                                          std::string{"\\x"};
+        switch (byte)
+        {
+        case '\n':
+            out += R"(\n)";
+            break;
+        case '\t':
+            out += R"(\t)";
+            break;
+        default:
+            if (byte >= ' ' && byte <= '~')
+            {
+                out += std::string{1, byte};
+            }
+            else
+            {
+                out += R"(\x)";
+            }
+            break;
+        }
     }
 
     return out;
+}
+
+/**
+ * @brief Renders a verdict for its line: `proved`, or `refuted, witness [<witness>]` with the witness rendered.
+ * @param proved Whether the family is proved.
+ * @param witness The refutation's witness, empty when proved.
+ * @return The rendering.
+ */
+std::string verdict_text(const bool proved, const std::string& witness)
+{
+    if (proved)
+    {
+        return "proved";
+    }
+
+    return "refuted, witness [" + printable(witness) + "]";
 }
 
 /**
@@ -342,29 +464,16 @@ void comment_interior(Assertions& assertions)
 
     const auto interior{compiled.after("/*x")};
 
-    const auto closer{check(compiled, interior, {"*/"})};
+    const auto [proved, witness]{check(compiled, interior, {"*/"})};
 
-    std::cout << "C comment interior, K={*/}: "
-              << (closer.proved ? "proved" : "refuted, witness [" + printable(closer.witness) + "]") << "\n";
+    std::cout << "C comment interior, K={*/}: " << verdict_text(proved, witness) << "\n";
 
-    assertions.expect(closer.proved, "the C row's comment interior does not prove {*/}");
+    assertions.expect(proved, "the C row's comment interior does not prove {*/}");
 
     // Negative control: a family the interior can be killed around must be refuted.
-    const auto wrong{check(compiled, interior, {"@@"})};
+    const auto [wrong_proved, wrong_witness]{check(compiled, interior, {"@@"})};
 
-    assertions.expect(!wrong.proved, "the C row's comment interior proves an unrelated family");
-}
-
-std::size_t Compiled::after(const std::string_view prefix) const
-{
-    auto state{dfa_.init_state()};
-
-    for (const char byte : prefix)
-    {
-        state = *dfa_.advance(state, byte);
-    }
-
-    return state;
+    assertions.expect(!wrong_proved, "the C row's comment interior proves an unrelated family");
 }
 
 /**
@@ -376,31 +485,36 @@ void triple_quote_interior(Assertions& assertions)
 {
     Builder_dbg builder{};
 
-    builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::Identifier, 2);
-    builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), Token::Whitespace, 2);
+    const auto identifier_start{any_of(Set::alpha() + '_')};
+
+    const auto identifier{concat(identifier_start, kleene(any_of(Set::alphanum() + '_')))};
+
+    builder.add_token(identifier, Token::identifier, 2);
+    builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), Token::whitespace, 2);
 
     const auto quote{'"'};
 
     const std::string one{quote};
 
+    const auto two{one + one};
+
+    const auto triple{two + one};
+
     const auto other{any_of(Set::all() - Set{quote})};
 
-    builder.add_token(
-            concat(text(one + one + one),
-                   kleene(choice(other, concat(text(one), other), concat(text(one + one), other))),
-                   text(one + one + one)),
-            Token::String, 1);
+    const auto body{kleene(choice(other, concat(text(one), other), concat(text(two), other)))};
+
+    builder.add_token(concat(text(triple), body, text(triple)), Token::string, 1);
 
     const Compiled compiled{builder.dfa()};
 
-    const auto interior{compiled.after("\"\"\"x")};
+    const auto interior{compiled.after(R"("""x)")};
 
-    const auto triple{check(compiled, interior, {one + one + one})};
+    const auto [proved, witness]{check(compiled, interior, {triple})};
 
-    std::cout << "Python triple interior, K={\"\"\"}: "
-              << (triple.proved ? "proved" : "refuted, witness [" + printable(triple.witness) + "]") << "\n";
+    std::cout << R"(Python triple interior, K={"""}: )" << verdict_text(proved, witness) << "\n";
 
-    assertions.expect(triple.proved, "the triple-quote interior does not prove its delimiter family");
+    assertions.expect(proved, "the triple-quote interior does not prove its delimiter family");
 }
 
 /**
@@ -416,16 +530,15 @@ void json_string_interior(Assertions& assertions)
 
     const Compiled compiled{builder.dfa()};
 
-    const auto interior{compiled.after("\"x")};
+    const auto interior{compiled.after(R"("x)")};
 
-    const auto refuted{check(compiled, interior, {"\","})};
+    const auto [proved, witness]{check(compiled, interior, {R"(",)"})};
 
-    std::cout << "JSON string interior, any K: "
-              << (refuted.proved ? "proved" : "refuted, witness [" + printable(refuted.witness) + "]") << "\n";
+    std::cout << "JSON string interior, any K: " << verdict_text(proved, witness) << "\n";
 
-    assertions.expect(!refuted.proved, "the JSON string interior proves a family although a control byte kills it");
+    assertions.expect(!proved, "the JSON string interior proves a family although a control byte kills it");
 
-    assertions.expect(refuted.witness.size() == 1, "the JSON refutation witness is not the immediate one-byte death");
+    assertions.expect(witness.size() == 1, "the JSON refutation witness is not the immediate one-byte death");
 }
 
 /**
@@ -437,18 +550,18 @@ void two_letter_accept(Assertions& assertions)
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("a"), Token::Identifier, 2);
-    builder.add_token(text("b"), Token::Number, 2);
+    builder.add_token(text("a"), Token::identifier, 2);
+    builder.add_token(text("b"), Token::number, 2);
 
     const Compiled compiled{builder.dfa()};
 
     const auto accept{compiled.after("a")};
 
-    const auto refuted{check(compiled, accept, {"a"})};
+    const auto [proved, witness]{check(compiled, accept, {"a"})};
 
-    assertions.expect(!refuted.proved, "the {a, b} accept state proves a family although it dies immediately");
+    assertions.expect(!proved, "the {a, b} accept state proves a family although it dies immediately");
 
-    std::cout << "{a, b} accept state, any K: refuted, witness [" << printable(refuted.witness) << "]\n";
+    std::cout << "{a, b} accept state, any K: refuted, witness [" << printable(witness) << "]\n";
 }
 
 /**
@@ -459,11 +572,6 @@ void two_letter_accept(Assertions& assertions)
 struct Synthetic
 {
     /**
-     * @brief Whether s survives b.
-     */
-    bool repaired{};
-
-    /**
      * @brief One byte of the table.
      * @param state The state, below three.
      * @param byte The byte.
@@ -471,9 +579,19 @@ struct Synthetic
      */
     [[nodiscard]] std::optional<std::size_t> advance(const std::size_t state, const unsigned char byte) const
     {
+        if (state == 0 && byte == 'a')
+        {
+            return 1;
+        }
+
+        if (state == 0 && byte == 'c')
+        {
+            return 2;
+        }
+
         if (state == 0)
         {
-            return byte == 'a' ? 1 : byte == 'c' ? 2 : 0;
+            return 0;
         }
 
         if (state == 1)
@@ -493,6 +611,11 @@ struct Synthetic
 
         return 2;
     }
+
+    /**
+     * @brief Whether s survives b.
+     */
+    bool repaired{false};
 };
 
 /**
@@ -503,26 +626,30 @@ struct Synthetic
  */
 void synthetic_counterexample(Assertions& assertions)
 {
-    const auto broken{check(Synthetic{.repaired = false}, 0, {"c"})};
+    const Synthetic broken_table{.repaired = false};
 
-    std::cout << "synthetic counterexample, K={c}: "
-              << (broken.proved ? "proved" : "refuted, witness [" + printable(broken.witness) + "]") << "\n";
+    const auto [proved, witness]{check(broken_table, 0, {"c"})};
 
-    assertions.expect(!broken.proved, "the counterexample table proves {c} although ab is a c-free death word");
+    std::cout << "synthetic counterexample, K={c}: " << verdict_text(proved, witness) << "\n";
 
-    assertions.expect(broken.witness == "ab", "the counterexample witness is not ab");
+    assertions.expect(!proved, "the counterexample table proves {c} although ab is a c-free death word");
 
-    const auto fixed{check(Synthetic{.repaired = true}, 0, {"c"})};
+    assertions.expect(witness == "ab", "the counterexample witness is not ab");
+
+    const Synthetic repaired_table{.repaired = true};
+
+    const auto [fixed_proved, fixed_witness]{check(repaired_table, 0, {"c"})};
 
     // Repairing s removes the table's only death, so the premise holds vacuously: a state with no death words
     // constrains nothing, and the checker must say so rather than hunt for cores that need not exist.
-    assertions.expect(fixed.proved, "a table with no death words must prove any family vacuously");
+    assertions.expect(fixed_proved, "a table with no death words must prove any family vacuously");
 }
+
 } // namespace
 
 /**
  * @brief Decides the five pinned cases and prints the verdict.
- * @return 0 when every assertion holds, 1 otherwise.
+ * @return EXIT_SUCCESS when every assertion holds, EXIT_FAILURE otherwise.
  */
 int main()
 {
@@ -538,7 +665,7 @@ int main()
 
     synthetic_counterexample(assertions);
 
-    std::cout << (assertions.has_failures() ? "ASSERTION FAILURES\n" : "all assertions hold\n");
+    std::cout << (assertions.has_failures() ? "assertion failures\n" : "all assertions hold\n");
 
-    return assertions.has_failures() ? 1 : 0;
+    return assertions.has_failures() ? EXIT_FAILURE : EXIT_SUCCESS;
 }

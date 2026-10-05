@@ -1,8 +1,8 @@
 // Searches for candidate multi-byte windows in the grammars whose single-byte certificate is empty, and checks the
 // search's model against the shipped scanner and the shipped window decision: fifteen named rows, two strictness rows
-// and the oracle's teeth row, the legacy regression, the false-origin controls, the vacuity witness and a sweep of 400
-// random grammars, every figure pinned. The quotient search is gate_search, the scanner evidence gate_evidence, the
-// sweep gate_sweep and the running totals gate_totals.
+// and the oracle's teeth row, the failure-restart regression, the false-origin controls, the vacuity witness and a
+// sweep of 400 random grammars, every figure pinned. The quotient search is gate_search, the scanner evidence
+// gate_evidence, the sweep gate_sweep and the running totals gate_totals.
 //
 // Usage: munch_window_gate, with no arguments. It exits 0 when every row, control and pinned figure holds, 1 otherwise.
 //
@@ -65,7 +65,7 @@
 // trajectory per step and ends certifying origin 2, yet the input "abx" itself tokenizes as a|bx with the covering
 // token beginning at offset 1, a false certificate at a witnessed occurrence. A trajectory that cannot consume a byte
 // is an impossible history rather than a token boundary, and restarting it manufactures support no execution justifies.
-// The legacy regression keeps that refutation executable.
+// The failure-restart regression keeps that refutation executable.
 //
 // The model seeds one fresh trajectory at the window's first byte and thereafter only where some tracked state accepts,
 // because a token can only end where the automaton accepted. The cloud then contains the final segmentation's actual
@@ -128,9 +128,11 @@
 // in.
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
+#include <format>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -154,6 +156,7 @@
 namespace
 {
 using figures::Token;
+using munch::tools::probes::Backup;
 using munch::tools::probes::backup_disagreements;
 using munch::tools::probes::Builder_dbg;
 using munch::tools::probes::certified_pairs;
@@ -161,22 +164,28 @@ using munch::tools::probes::Certified_window;
 using munch::tools::probes::Cloud_t;
 using munch::tools::probes::conventional_row;
 using munch::tools::probes::covering_violations;
+using munch::tools::probes::every_byte;
 using munch::tools::probes::find_witness;
 using munch::tools::probes::Gate_totals;
 using munch::tools::probes::is_certified;
 using munch::tools::probes::is_init_reentrant;
-using munch::tools::probes::kSubsetBudget;
 using munch::tools::probes::live_states;
 using munch::tools::probes::predicted;
 using munch::tools::probes::published_cumulative_row;
 using munch::tools::probes::random_grammars;
 using munch::tools::probes::shortest_windows;
 using munch::tools::probes::States_t;
+using munch::tools::probes::subset_budget;
 using munch::tools::probes::Sweep;
 using munch::tools::probes::unknown_cloud;
 using namespace munch::regex;
 
 using munch::dfa::Dfa;
+
+/**
+ * @brief The random grammars the sweep draws, every one of which the pinned figures count as usable.
+ */
+constexpr std::size_t sweep_grammars{400};
 
 /**
  * @brief A named row: the grammar's name and every figure its check pins.
@@ -186,38 +195,102 @@ struct Row
     /**
      * @brief The row's name, printed in its first column.
      */
-    std::string_view name;
+    std::string_view name{};
 
     /**
      * @brief The length of the shortest certified window, 0 for a row with none.
      */
-    std::size_t shortest;
+    std::size_t shortest{0};
 
     /**
      * @brief Whether the backup check's own generated inputs rewind at least once, which the row asserts.
      */
-    bool rewinds_expected;
+    bool rewinds_expected{false};
 
     /**
      * @brief The quotient keys the shortest-window search retains.
      */
-    std::size_t keys;
+    std::size_t keys{0};
 
     /**
      * @brief The displayed example window, escaped; empty for a row with none.
      */
-    std::string_view example;
+    std::string_view example{};
 
     /**
      * @brief The origin the model certifies the example window at.
      */
-    std::size_t example_origin;
+    std::size_t example_origin{0};
 
     /**
-     * @brief The completely tokenizable input the witness search finds around the example window, escaped; empty for
-     *        a row with no window.
+     * @brief The completely tokenizable input the witness search finds around the example window, escaped; empty for a
+     *        row with no window.
      */
-    std::string_view witness;
+    std::string_view witness{};
+};
+
+/**
+ * @brief What the covering-token check of a claim found: whether the model refuses the window, and the window's
+ *        occurrences and violations over every completely tokenizable input up to the bound.
+ */
+struct Claim_counts
+{
+    /**
+     * @brief Whether the model refuses the window.
+     */
+    bool refused{false};
+
+    /**
+     * @brief The window's occurrences.
+     */
+    std::size_t occurrences{0};
+
+    /**
+     * @brief The occurrences whose covering token begins elsewhere than the claimed origin.
+     */
+    std::size_t violations{0};
+};
+
+/**
+ * @brief A strictness or teeth claim about one window: where its covering tokens begin, over which inputs, and the
+ *        counts its check pins.
+ */
+struct Claim
+{
+    /**
+     * @brief The row's name, printed in its first column.
+     */
+    std::string_view name{};
+
+    /**
+     * @brief The window.
+     */
+    std::string window{};
+
+    /**
+     * @brief The claimed origin inside the window.
+     */
+    std::size_t origin{0};
+
+    /**
+     * @brief The bytes the inputs are drawn from.
+     */
+    std::string alphabet{};
+
+    /**
+     * @brief The longest input.
+     */
+    std::size_t max_length{0};
+
+    /**
+     * @brief The occurrences pinned.
+     */
+    std::size_t occurrences_expected{0};
+
+    /**
+     * @brief The violations pinned, for a teeth claim.
+     */
+    std::size_t violations_expected{0};
 };
 
 /**
@@ -238,7 +311,7 @@ struct Compiled
     /**
      * @brief The automaton's trim states.
      */
-    States_t live;
+    States_t live{};
 };
 
 /**
@@ -258,21 +331,23 @@ Compiled compile(const Builder_dbg& builder)
 }
 
 /**
- * @brief Whether a compiled grammar can carry evidence: its trim states are not empty and contain the initial state.
- *        Prints the row's rejection when they cannot.
+ * @brief Returns whether a compiled grammar can carry evidence: its trim states are not empty and contain the initial
+ *        state. Prints the row's rejection when they cannot.
  * @param name The row's name.
  * @param compiled The compiled grammar.
  * @return True when the initial state is live.
  */
 bool usable_or_rejected(const std::string_view name, const Compiled& compiled)
 {
-    if (!compiled.live.empty() && compiled.live.contains(compiled.dfa.init_state()))
+    const auto& [dfa, lexer, live]{compiled};
+
+    if (!live.empty() && live.contains(dfa.init_state()))
     {
         return true;
     }
 
     std::printf(
-            "  %-30s REJECTED: no live path from the initial state, evidence would be vacuous\n",
+            "  %-30s rejected: no live path from the initial state, evidence would be vacuous\n",
             std::string{name}.c_str());
 
     return false;
@@ -293,43 +368,63 @@ std::size_t single_byte_disagreements(Gate_totals& totals, const Compiled& compi
 
     std::size_t disagreements{0};
 
-    for (int symbol{0}; symbol < 256; ++symbol)
+    for (const auto symbol : every_byte())
     {
-        const std::string one(1, static_cast<char>(symbol));
+        const std::string one{symbol};
 
         const auto at{predicted(dfa, live, one, reentrant)};
 
         totals.cross_check(lexer, one, at);
 
-        disagreements += at.has_value() != lexer.is_split_point(static_cast<char>(symbol));
+        const auto differs{at.has_value() != lexer.is_split_point(symbol)};
+
+        if (differs)
+        {
+            ++disagreements;
+        }
     }
 
     return disagreements;
 }
 
 /**
- * @brief The example a row displays: the first of the found windows whose bytes are printable, newline or tab, else
- *        the first found.
+ * @brief Returns whether a byte is printable ASCII, a space through a tilde.
+ * @param byte The byte.
+ * @return Whether it is.
+ */
+bool is_printable(const char byte)
+{
+    return byte >= ' ' && byte <= '~';
+}
+
+/**
+ * @brief Returns the example a row displays: the first of the found windows whose bytes are printable, newline or tab,
+ *        else the first found.
  * @param found The windows the search found, in its order.
  * @return The example, empty when nothing was found.
  */
 std::string readable_example(const std::vector<std::string>& found)
 {
-    for (const auto& candidate : found)
+    const auto readable{[](const char byte) { return is_printable(byte) || byte == '\n' || byte == '\t'; }};
+
+    const auto all_readable{
+            [&readable](const std::string& candidate) { return std::ranges::all_of(candidate, readable); }};
+
+    if (const auto first_readable{std::ranges::find_if(found, all_readable)}; first_readable != found.end())
     {
-        if (std::ranges::all_of(candidate, [](const char byte) {
-                return (byte >= 32 && byte < 127) || byte == '\n' || byte == '\t';
-            }))
-        {
-            return candidate;
-        }
+        return *first_readable;
     }
 
-    return found.empty() ? std::string{} : found.front();
+    if (found.empty())
+    {
+        return {};
+    }
+
+    return found.front();
 }
 
 /**
- * @brief A window rendered printably: newline, tab and carriage return as their escapes, other bytes outside the
+ * @brief Renders a window printably: newline, tab and carriage return as their escapes, other bytes outside the
  *        printable range as `\xhh`.
  * @param window The window.
  * @return The rendering.
@@ -343,33 +438,33 @@ std::string escaped(const std::string& window)
         switch (byte)
         {
         case '\n':
-            out += "\\n";
+            out += R"(\n)";
 
             break;
 
         case '\t':
-            out += "\\t";
+            out += R"(\t)";
 
             break;
 
         case '\r':
-            out += "\\r";
+            out += R"(\r)";
 
             break;
 
         default:
-            if (byte >= 32 && byte < 127)
+            if (is_printable(byte))
             {
                 out += byte;
             }
             else
             {
-                std::array<char, 8> buffer{};
+                const unsigned value{static_cast<unsigned char>(byte)};
 
-                std::snprintf(buffer.data(), buffer.size(), "\\x%02x", static_cast<unsigned char>(byte));
-
-                out += buffer.data();
+                out += std::format(R"(\x{:02x})", value);
             }
+
+            break;
         }
     }
 
@@ -377,8 +472,8 @@ std::string escaped(const std::string& window)
 }
 
 /**
- * @brief Whether a strictness claim is well formed: the window is not empty and the origin lies inside it. Prints the
- *        row's rejection when it is not.
+ * @brief Returns whether a strictness claim is well formed: the window is not empty and the origin lies inside it.
+ *        Prints the row's rejection when it is not.
  * @param name The row's name.
  * @param window The window.
  * @param origin The claimed origin.
@@ -392,9 +487,98 @@ bool well_formed_claim(const std::string_view name, const std::string& window, c
     }
 
     std::printf(
-            "  %-30s REJECTED: empty window or origin outside it, the claim is malformed\n", std::string{name}.c_str());
+            "  %-30s rejected: empty window or origin outside it, the claim is malformed\n", std::string{name}.c_str());
 
     return false;
+}
+
+/**
+ * @brief Runs the backup check of a row over the windows of the reported minimum length and every certified two-byte
+ *        window, cross-checking each certified pair, and adds its rewinding executions to the gate's totals.
+ * @param totals The gate's totals.
+ * @param compiled The row's compiled grammar.
+ * @param found The windows of the reported minimum length.
+ * @param reentrant Whether a live transition re-enters the initial state.
+ * @return The backup check's counts.
+ */
+Backup row_backup(
+        Gate_totals& totals, const Compiled& compiled, const std::vector<std::string>& found, const bool reentrant)
+{
+    const auto& [dfa, lexer, live]{compiled};
+
+    auto windows{found};
+
+    const auto pairs{certified_pairs(dfa, live, reentrant)};
+
+    std::ranges::transform(pairs, std::back_inserter(windows), &Certified_window::window);
+
+    const auto backup{backup_disagreements(dfa, lexer, live, windows)};
+
+    totals.exercised_total += backup.exercised;
+
+    totals.exercised_tokenizable += backup.tokenizable;
+
+    return backup;
+}
+
+/**
+ * @brief Returns the origin the model certifies a row's displayed example at, cross-checked against the shipped window
+ *        decision.
+ * @param totals The gate's totals.
+ * @param compiled The row's compiled grammar.
+ * @param example The displayed example, empty for none.
+ * @param reentrant Whether a live transition re-enters the initial state.
+ * @return The origin, std::nullopt when there is no example or the model refuses it.
+ */
+std::optional<std::size_t> example_origin(
+        Gate_totals& totals, const Compiled& compiled, const std::string& example, const bool reentrant)
+{
+    if (example.empty())
+    {
+        return std::nullopt;
+    }
+
+    const auto& [dfa, lexer, live]{compiled};
+
+    const auto at{predicted(dfa, live, example, reentrant)};
+
+    totals.cross_check(lexer, example, at);
+
+    return at;
+}
+
+/**
+ * @brief Returns the witness around a row's displayed example: the search is restricted to that example at its
+ *        certified origin.
+ * @param totals The gate's totals.
+ * @param compiled The row's compiled grammar.
+ * @param example The displayed example.
+ * @param origin The example's certified origin, std::nullopt when it has none.
+ * @return The witness input, escaped, std::nullopt when the search found none.
+ */
+std::optional<std::string> example_witness(
+        Gate_totals& totals, const Compiled& compiled, const std::string& example,
+        const std::optional<std::size_t> origin)
+{
+    const auto& [dfa, lexer, live]{compiled};
+
+    std::vector<Certified_window> witness_words{};
+
+    if (origin)
+    {
+        witness_words.push_back({.window = example, .origin = *origin});
+    }
+
+    const auto witness{find_witness(totals, dfa, lexer, live, witness_words)};
+
+    if (!witness)
+    {
+        return std::nullopt;
+    }
+
+    const auto& [input, window]{*witness};
+
+    return escaped(input);
 }
 
 /**
@@ -409,9 +593,12 @@ bool well_formed_claim(const std::string_view name, const std::string& window, c
  */
 bool run(Gate_totals& totals, const Row& row, const Builder_dbg& builder)
 {
+    const auto& [name, pinned_shortest, rewinds_expected, pinned_keys, pinned_example, pinned_origin, pinned_witness]{
+            row};
+
     const auto compiled{compile(builder)};
 
-    if (!usable_or_rejected(row.name, compiled))
+    if (!usable_or_rejected(name, compiled))
     {
         return false;
     }
@@ -424,81 +611,58 @@ bool run(Gate_totals& totals, const Row& row, const Builder_dbg& builder)
 
     const auto [shortest, found, exhausted, visited]{shortest_windows(dfa, live)};
 
-    // The backup check runs over the windows of the reported minimum length and every certified two-byte window.
-    auto windows{found};
+    const auto [backup, exercised, tokenizable, prefixes]{row_backup(totals, compiled, found, reentrant)};
 
-    for (const auto& [pair, at] : certified_pairs(dfa, live, reentrant))
-    {
-        windows.push_back(pair);
-    }
-
-    const auto [backup, exercised, tokenizable, prefixes]{backup_disagreements(dfa, lexer, live, windows)};
-
-    totals.exercised_total += exercised;
-
-    totals.exercised_tokenizable += tokenizable;
-
-    const auto covered{row.rewinds_expected == (exercised > 0)};
+    const auto covered{rewinds_expected == (exercised > 0)};
 
     // A search without a window is conclusive only when it exhausted the quotient.
     const auto conclusive{shortest != 0 || exhausted};
 
     const auto example{readable_example(found)};
 
-    // A flag and a value in place of a std::optional, whose reads inside the assertion expression below GCC's
-    // -Wmaybe-uninitialized reports.
-    auto example_has_origin{false};
+    const auto origin{example_origin(totals, compiled, example, reentrant)};
 
-    std::size_t example_at{0};
+    const auto witness{example_witness(totals, compiled, example, origin)};
 
-    if (!example.empty())
-    {
-        const auto at{predicted(dfa, live, example, reentrant)};
+    const auto witness_input{witness.value_or("")};
 
-        totals.cross_check(lexer, example, at);
+    const auto no_witness_expected{!witness && pinned_witness.empty()};
 
-        if (at)
-        {
-            example_has_origin = true;
+    const auto witness_pinned{witness.has_value() && witness_input == pinned_witness};
 
-            example_at = *at;
-        }
-    }
+    const auto witness_ok{shortest == 0 ? no_witness_expected : witness_pinned};
 
-    // The witness search is restricted to the example the row displays.
-    std::vector<Certified_window> witness_words{};
+    const auto shown_example{escaped(example)};
 
-    if (example_has_origin)
-    {
-        witness_words.push_back({.window = example, .origin = example_at});
-    }
-
-    const auto witness{find_witness(totals, dfa, lexer, live, witness_words)};
-
-    const auto witness_ok{
-            shortest == 0 ? !witness && row.witness.empty() :
-                            witness.has_value() && escaped(witness->first) == row.witness};
+    const auto origin_ok{example.empty() || origin == pinned_origin};
 
     const auto ok{
-            disagreements == 0 && shortest == row.shortest && backup == 0 && covered && conclusive &&
-            visited == row.keys && escaped(example) == row.example &&
-            (example.empty() || (example_has_origin && example_at == row.example_origin)) && witness_ok};
+            disagreements == 0 && shortest == pinned_shortest && backup == 0 && covered && conclusive &&
+            visited == pinned_keys && shown_example == pinned_example && origin_ok && witness_ok};
 
-    const std::string_view status{shortest != 0 ? "certified" : exhausted ? "exhausted" : "INCONCLUSIVE"};
+    const auto search_status{exhausted ? "exhausted" : "inconclusive"};
+
+    const auto status{shortest != 0 ? "certified" : search_status};
+
+    const auto origin_text{origin ? std::format(R"(" at {})", *origin) : std::string{}};
+
+    const auto witness_text{witness ? std::format(R"(, witness "{}")", witness_input) : std::string{}};
+
+    const auto example_lead{example.empty() ? "" : R"(, e.g. ")"};
+
+    const auto marker{ok ? "" : "   <- moved"};
 
     std::printf(
             "  %-30s k=1 %zu, window %zu/%zu %s, backup %zu over %7zu rewinding executions from %4zu prefixes, "
-            "%4zu keys%s%s%s%s%s%s\n",
-            std::string{row.name}.c_str(), disagreements, shortest, row.shortest, std::string{status}.c_str(), backup,
-            exercised, prefixes, visited, example.empty() ? "" : ", e.g. \"", escaped(example).c_str(),
-            example_has_origin ? ("\" at " + std::to_string(example_at)).c_str() : "",
-            witness ? (", witness \"" + escaped(witness->first) + "\"").c_str() : "", ok ? "" : "   <- MOVED", "");
+            "%4zu keys%s%s%s%s%s\n",
+            std::string{name}.c_str(), disagreements, shortest, pinned_shortest, status, backup, exercised, prefixes,
+            visited, example_lead, shown_example.c_str(), origin_text.c_str(), witness_text.c_str(), marker);
 
     return ok;
 }
 
 /**
- * @brief C-like with string literals.
+ * @brief Builds the C-like row with string literals.
  * @return The grammar.
  */
 Builder_dbg c_like_strings()
@@ -507,13 +671,13 @@ Builder_dbg c_like_strings()
 
     figures::c_like(builder, false);
 
-    builder.add_token(figures::string_literal(), Token::String, 2);
+    builder.add_token(figures::string_literal(), Token::string, 2);
 
     return builder;
 }
 
 /**
- * @brief C-like with `//` line comments.
+ * @brief Builds the C-like row with `//` line comments.
  * @return The grammar.
  */
 Builder_dbg c_like_line_comments()
@@ -522,13 +686,13 @@ Builder_dbg c_like_line_comments()
 
     figures::c_like(builder, false);
 
-    builder.add_token(figures::line_comment(), Token::LineComment, 1);
+    builder.add_token(figures::line_comment(), Token::line_comment, 1);
 
     return builder;
 }
 
 /**
- * @brief C-like with block comments.
+ * @brief Builds the C-like row with block comments.
  * @return The grammar.
  */
 Builder_dbg c_like_block_comments()
@@ -537,14 +701,14 @@ Builder_dbg c_like_block_comments()
 
     figures::c_like(builder, false);
 
-    builder.add_token(figures::block_comment(), Token::BlockComment, 1);
+    builder.add_token(figures::block_comment(), Token::block_comment, 1);
 
     return builder;
 }
 
 /**
- * @brief The conventional C-like row: strings and line comments over whitespace runs that include newline, with no
- *        block-comment token.
+ * @brief Builds the conventional C-like row: strings and line comments over whitespace runs that include newline, with
+ *        no block-comment token.
  * @return The grammar.
  */
 Builder_dbg conventional()
@@ -557,7 +721,7 @@ Builder_dbg conventional()
 }
 
 /**
- * @brief The split-friendly C-like base, newline its own token, with strings, line comments and block comments.
+ * @brief Builds the split-friendly C-like base, newline its own token, with strings, line comments and block comments.
  * @return The grammar.
  */
 Builder_dbg split_friendly_block_comments()
@@ -566,17 +730,18 @@ Builder_dbg split_friendly_block_comments()
 
     figures::c_like(builder, true);
 
-    builder.add_token(figures::string_literal(), Token::String, 2);
+    builder.add_token(figures::string_literal(), Token::string, 2);
 
-    builder.add_token(figures::line_comment(), Token::LineComment, 1);
+    builder.add_token(figures::line_comment(), Token::line_comment, 1);
 
-    builder.add_token(figures::block_comment(), Token::BlockComment, 1);
+    builder.add_token(figures::block_comment(), Token::block_comment, 1);
 
     return builder;
 }
 
 /**
- * @brief The published cumulative C-like row: the conventional base with strings, line comments and block comments.
+ * @brief Builds the published cumulative C-like row: the conventional base with strings, line comments and block
+ *        comments.
  * @return The grammar.
  */
 Builder_dbg cumulative()
@@ -589,7 +754,7 @@ Builder_dbg cumulative()
 }
 
 /**
- * @brief JSON, RFC 8259.
+ * @brief Builds the RFC 8259 JSON row.
  * @return The grammar.
  */
 Builder_dbg rfc_json()
@@ -603,8 +768,8 @@ Builder_dbg rfc_json()
 
 /**
  * @brief Checks a named window against the scanner and the model on a grammar whose search stops at a shorter length:
- *        the backup check over the window must agree and rewind, and the model must certify the window at the
- *        expected origin. Prints the row's line.
+ *        the backup check over the window must agree and rewind, and the model must certify the window at the expected
+ *        origin. Prints the row's line.
  * @param totals The gate's totals.
  * @param name The row's name.
  * @param window The window.
@@ -637,56 +802,109 @@ bool named_window_agrees(
 
     totals.cross_check(lexer, window, at);
 
-    std::printf(
-            "  %-30s window \"%s\" %s, backup %zu over %zu rewinding executions%s\n", std::string{name}.c_str(),
-            window.c_str(), at ? ("origin " + std::to_string(*at)).c_str() : "refused", disagreements, exercised,
-            disagreements == 0 ? "" : "   <- MODEL IS WRONG");
+    const auto verdict{at ? std::format("origin {}", *at) : std::string{"refused"}};
 
-    return disagreements == 0 && exercised > 0 && at && *at == expected;
+    const auto marker{disagreements == 0 ? "" : "   <- model is wrong"};
+
+    std::printf(
+            R"(  %-30s window "%s" %s, backup %zu over %zu rewinding executions%s)"
+            "\n",
+            std::string{name}.c_str(), window.c_str(), verdict.c_str(), disagreements, exercised, marker);
+
+    return disagreements == 0 && exercised > 0 && at == expected;
 }
 
 /**
- * @brief {a, abc, b, d} and a space run: "a" accepts, "ab" does not, "abc" does, so scanning "abd" accepts "a" and
- *        rewinds two bytes.
+ * @brief Builds a run of spaces, the whitespace token of the literal-token grammars.
+ * @return The regex.
+ */
+Regex space_run()
+{
+    return plus(any_of(Set{' '}));
+}
+
+/**
+ * @brief Builds the grammar of {a, abc, b, d} and a space run: "a" accepts, "ab" does not, "abc" does, so scanning
+ *        "abd" accepts "a" and rewinds two bytes.
  * @return The grammar.
  */
 Builder_dbg rewind_stress()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("a"), Token::Identifier, 2);
+    builder.add_token(text("a"), Token::identifier, 2);
 
-    builder.add_token(text("abc"), Token::Keyword, 1);
+    builder.add_token(text("abc"), Token::keyword, 1);
 
-    builder.add_token(text("b"), Token::Number, 2);
+    builder.add_token(text("b"), Token::number, 2);
 
-    builder.add_token(text("d"), Token::Operator, 2);
+    builder.add_token(text("d"), Token::operator_, 2);
 
-    builder.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
+    builder.add_token(space_run(), Token::whitespace, 2);
 
     return builder;
 }
 
 /**
- * @brief {a, abc, bx, x} and a space run, "bx" at priority 1: a failure-restart transition certifies "abx" at origin
- *        2, while the scanner backs up to the accepted "a" and matches "bx", with boundaries 0 and 1.
+ * @brief Builds the grammar of {a, abc, bx, x} and a space run, "bx" at priority 1: a failure-restart transition
+ *        certifies "abx" at origin 2, while the scanner backs up to the accepted "a" and matches "bx", with boundaries
+ *        0 and 1.
  * @return The grammar.
  */
 Builder_dbg refuted_model_witness()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("a"), Token::Identifier, 2);
+    builder.add_token(text("a"), Token::identifier, 2);
 
-    builder.add_token(text("abc"), Token::Keyword, 1);
+    builder.add_token(text("abc"), Token::keyword, 1);
 
-    builder.add_token(text("bx"), Token::Number, 1);
+    builder.add_token(text("bx"), Token::number, 1);
 
-    builder.add_token(text("x"), Token::Operator, 2);
+    builder.add_token(text("x"), Token::operator_, 2);
 
-    builder.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
+    builder.add_token(space_run(), Token::whitespace, 2);
 
     return builder;
+}
+
+/**
+ * @brief Runs the shared step of the strictness and teeth rows: checks the claim is well formed and the grammar usable,
+ *        asks the model about the window, cross-checks the refusal it expects against the shipped window decision, and
+ *        counts the window's occurrences and violations over every completely tokenizable input on the alphabet up to
+ *        the bound. Prints the row's rejection when the claim or the grammar is not usable.
+ * @param totals The gate's totals.
+ * @param claim The claim.
+ * @param builder The grammar.
+ * @return The counts, std::nullopt when the row was rejected.
+ */
+std::optional<Claim_counts> claim_counts(Gate_totals& totals, const Claim& claim, const Builder_dbg& builder)
+{
+    const auto& [name, window, origin, alphabet, max_length, occurrences_expected, violations_expected]{claim};
+
+    if (!well_formed_claim(name, window, origin))
+    {
+        return std::nullopt;
+    }
+
+    const auto compiled{compile(builder)};
+
+    if (!usable_or_rejected(name, compiled))
+    {
+        return std::nullopt;
+    }
+
+    const auto& [dfa, lexer, live]{compiled};
+
+    const auto reentrant{is_init_reentrant(dfa, live)};
+
+    const auto refused{!predicted(dfa, live, window, reentrant)};
+
+    totals.cross_check(lexer, window, std::nullopt);
+
+    const auto [occurrences, violations]{covering_violations(lexer, window, origin, alphabet, max_length)};
+
+    return Claim_counts{.refused = refused, .occurrences = occurrences, .violations = violations};
 }
 
 /**
@@ -694,45 +912,32 @@ Builder_dbg refuted_model_witness()
  *        alphabet up to the bound the window occurs the expected number of times, each with its covering token at the
  *        claimed origin. Prints the row's line.
  * @param totals The gate's totals.
- * @param name The row's name.
- * @param window The window.
- * @param origin The claimed origin.
- * @param alphabet The bytes the inputs are drawn from.
- * @param max_length The longest input.
- * @param occurrences_expected The occurrences pinned.
+ * @param claim The claim, its violations pinned at none.
  * @param builder The grammar.
  * @return True when the model refuses, no occurrence violates the claim, and the occurrence count holds.
  */
-bool strict_refusal(
-        Gate_totals& totals, const std::string_view name, const std::string& window, const std::size_t origin,
-        const std::string& alphabet, const std::size_t max_length, const std::size_t occurrences_expected,
-        const Builder_dbg& builder)
+bool strict_refusal(Gate_totals& totals, const Claim& claim, const Builder_dbg& builder)
 {
-    if (!well_formed_claim(name, window, origin))
+    const auto counts{claim_counts(totals, claim, builder)};
+
+    const auto& [name, window, origin, alphabet, max_length, occurrences_expected, violations_expected]{claim};
+
+    if (!counts)
     {
         return false;
     }
 
-    const auto compiled{compile(builder)};
-
-    if (!usable_or_rejected(name, compiled))
-    {
-        return false;
-    }
-
-    const auto& [dfa, lexer, live]{compiled};
-
-    const auto refused{!predicted(dfa, live, window, is_init_reentrant(dfa, live))};
-
-    totals.cross_check(lexer, window, std::nullopt);
-
-    const auto [occurrences, violations]{covering_violations(lexer, window, origin, alphabet, max_length)};
+    const auto& [refused, occurrences, violations]{*counts};
 
     const auto ok{refused && violations == 0 && occurrences == occurrences_expected};
 
+    const auto answer{refused ? "refuses" : "certifies"};
+
+    const auto marker{ok ? "" : "   <- strictness claim moved"};
+
     std::printf(
-            "  %-30s model %s, %zu violations over %zu occurrences%s\n", std::string{name}.c_str(),
-            refused ? "refuses" : "CERTIFIES", violations, occurrences, ok ? "" : "   <- STRICTNESS CLAIM MOVED");
+            "  %-30s model %s, %zu violations over %zu occurrences%s\n", std::string{name}.c_str(), answer, violations,
+            occurrences, marker);
 
     return ok;
 }
@@ -742,236 +947,231 @@ bool strict_refusal(
  *        alphabet up to the bound the covering-token check counts the expected occurrences and violations, at least
  *        one. Prints the row's line.
  * @param totals The gate's totals.
- * @param name The row's name.
- * @param window The window.
- * @param origin The claimed origin.
- * @param alphabet The bytes the inputs are drawn from.
- * @param max_length The longest input.
- * @param occurrences_expected The occurrences pinned.
- * @param violations_expected The violations pinned.
+ * @param claim The claim.
  * @param builder The grammar.
  * @return True when the model refuses and both counts hold with a violation among them.
  */
-bool oracle_teeth(
-        Gate_totals& totals, const std::string_view name, const std::string& window, const std::size_t origin,
-        const std::string& alphabet, const std::size_t max_length, const std::size_t occurrences_expected,
-        const std::size_t violations_expected, const Builder_dbg& builder)
+bool oracle_teeth(Gate_totals& totals, const Claim& claim, const Builder_dbg& builder)
 {
-    if (!well_formed_claim(name, window, origin))
+    const auto counts{claim_counts(totals, claim, builder)};
+
+    const auto& [name, window, origin, alphabet, max_length, occurrences_expected, violations_expected]{claim};
+
+    if (!counts)
     {
         return false;
     }
 
-    const auto compiled{compile(builder)};
-
-    if (!usable_or_rejected(name, compiled))
-    {
-        return false;
-    }
-
-    const auto& [dfa, lexer, live]{compiled};
-
-    const auto refused{!predicted(dfa, live, window, is_init_reentrant(dfa, live))};
-
-    totals.cross_check(lexer, window, std::nullopt);
-
-    const auto [occurrences, violations]{covering_violations(lexer, window, origin, alphabet, max_length)};
+    const auto& [refused, occurrences, violations]{*counts};
 
     const auto ok{
             refused && occurrences == occurrences_expected && violations == violations_expected && violations > 0};
 
+    const auto answer{refused ? "refuses" : "certifies"};
+
+    const auto marker{ok ? "" : "   <- oracle lost its teeth"};
+
     std::printf(
             "  %-30s model %s, oracle counts %zu violations over %zu occurrences%s\n", std::string{name}.c_str(),
-            refused ? "refuses" : "CERTIFIES", violations, occurrences, ok ? "" : "   <- ORACLE LOST ITS TEETH");
+            answer, violations, occurrences, marker);
 
     return ok;
 }
 
 /**
- * @brief {a, ab, b}, all at priority 1: the scanner always takes "ab", but the accepting "a" seeds a competing origin
- *        for "b", so the model refuses "ab" at origin 0.
+ * @brief Builds the grammar of {a, ab, b}, all at priority 1: the scanner always takes "ab", but the accepting "a"
+ *        seeds a competing origin for "b", so the model refuses "ab" at origin 0.
  * @return The grammar.
  */
 Builder_dbg strict_a_ab_b()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("a"), Token::Identifier, 1);
+    builder.add_token(text("a"), Token::identifier, 1);
 
-    builder.add_token(text("ab"), Token::Keyword, 1);
+    builder.add_token(text("ab"), Token::keyword, 1);
 
-    builder.add_token(text("b"), Token::Operator, 1);
+    builder.add_token(text("b"), Token::operator_, 1);
 
     return builder;
 }
 
 /**
- * @brief {ab, abc, c}, all at priority 1: the competing origin comes from the accepting proper prefix "ab" inside
- *        "abc", two bytes into the window.
+ * @brief Builds the grammar of {ab, abc, c}, all at priority 1: the competing origin comes from the accepting proper
+ *        prefix "ab" inside "abc", two bytes into the window.
  * @return The grammar.
  */
 Builder_dbg strict_ab_abc_c()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("ab"), Token::Identifier, 1);
+    builder.add_token(text("ab"), Token::identifier, 1);
 
-    builder.add_token(text("abc"), Token::Keyword, 1);
+    builder.add_token(text("abc"), Token::keyword, 1);
 
-    builder.add_token(text("c"), Token::Operator, 1);
+    builder.add_token(text("c"), Token::operator_, 1);
 
     return builder;
 }
 
 /**
- * @brief {a, abx, b, x}, all at priority 1: "ab" tokenizes as a|b, so a token begins at offset 0 while the token
- *        covering the window's final byte begins at 1.
+ * @brief Builds the grammar of {a, abx, b, x}, all at priority 1: "ab" tokenizes as a|b, so a token begins at offset 0
+ *        while the token covering the window's final byte begins at 1.
  * @return The grammar.
  */
 Builder_dbg teeth_a_abx_b_x()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("a"), Token::Identifier, 1);
+    builder.add_token(text("a"), Token::identifier, 1);
 
-    builder.add_token(text("abx"), Token::Keyword, 1);
+    builder.add_token(text("abx"), Token::keyword, 1);
 
-    builder.add_token(text("b"), Token::Operator, 1);
+    builder.add_token(text("b"), Token::operator_, 1);
 
-    builder.add_token(text("x"), Token::Separator, 1);
+    builder.add_token(text("x"), Token::separator, 1);
 
     return builder;
 }
 
 /**
- * @brief Digits, digits `e` digits, a letter and a space run: "12e" followed by a non-digit accepts "12" and rewinds
- *        one byte.
+ * @brief Builds the grammar of digits, digits `e` digits, a letter and a space run: "12e" followed by a non-digit
+ *        accepts "12" and rewinds one byte.
  * @return The grammar.
  */
 Builder_dbg digits_exponent()
 {
     Builder_dbg builder{};
 
-    builder.add_token(plus(any_of(Set::digits())), Token::Number, 2);
+    const auto digits{plus(any_of(Set::digits()))};
 
-    builder.add_token(
-            concat(plus(any_of(Set::digits())), concat(text("e"), plus(any_of(Set::digits())))), Token::Literal, 1);
+    const auto exponent{concat(text("e"), digits)};
 
-    builder.add_token(any_of(Set::alpha()), Token::Identifier, 2);
+    builder.add_token(digits, Token::number, 2);
 
-    builder.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
+    builder.add_token(concat(digits, exponent), Token::literal, 1);
+
+    builder.add_token(any_of(Set::alpha()), Token::identifier, 2);
+
+    builder.add_token(space_run(), Token::whitespace, 2);
 
     return builder;
 }
 
 /**
- * @brief Digits, a float, the range operator `..` and a space run: "1..2" accepts "1" and rewinds off the dot.
+ * @brief Builds the grammar of digits, a float, the range operator `..` and a space run: "1..2" accepts "1" and rewinds
+ *        off the dot.
  * @return The grammar.
  */
 Builder_dbg float_range()
 {
     Builder_dbg builder{};
 
-    builder.add_token(plus(any_of(Set::digits())), Token::Number, 2);
+    const auto digits{plus(any_of(Set::digits()))};
 
-    builder.add_token(
-            concat(plus(any_of(Set::digits())), concat(text("."), plus(any_of(Set::digits())))), Token::Literal, 1);
+    const auto fraction{concat(text("."), digits)};
 
-    builder.add_token(text(".."), Token::Operator, 1);
+    builder.add_token(digits, Token::number, 2);
 
-    builder.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
+    builder.add_token(concat(digits, fraction), Token::literal, 1);
+
+    builder.add_token(text(".."), Token::operator_, 1);
+
+    builder.add_token(space_run(), Token::whitespace, 2);
 
     return builder;
 }
 
 /**
- * @brief `<`, `<<=`, a letter and a space run: "<<x" accepts "<" and rewinds, since "<<" accepts nothing.
+ * @brief Builds the grammar of `<`, `<<=`, a letter and a space run: "<<x" accepts "<" and rewinds, since "<<" accepts
+ *        nothing.
  * @return The grammar.
  */
 Builder_dbg operator_ladder()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("<"), Token::Operator, 2);
+    builder.add_token(text("<"), Token::operator_, 2);
 
-    builder.add_token(text("<<="), Token::Punctuation, 1);
+    builder.add_token(text("<<="), Token::punctuation, 1);
 
-    builder.add_token(any_of(Set::alpha()), Token::Identifier, 2);
+    builder.add_token(any_of(Set::alpha()), Token::identifier, 2);
 
-    builder.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
+    builder.add_token(space_run(), Token::whitespace, 2);
 
     return builder;
 }
 
 /**
- * @brief `f`, `for`, a letter and a space run: "fox" accepts "f" and rewinds, since "fo" accepts nothing.
+ * @brief Builds the grammar of `f`, `for`, a letter and a space run: "fox" accepts "f" and rewinds, since "fo" accepts
+ *        nothing.
  * @return The grammar.
  */
 Builder_dbg keyword_extension()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("f"), Token::Identifier, 2);
+    builder.add_token(text("f"), Token::identifier, 2);
 
-    builder.add_token(text("for"), Token::Keyword, 1);
+    builder.add_token(text("for"), Token::keyword, 1);
 
-    builder.add_token(any_of(Set::alpha()), Token::Separator, 2);
+    builder.add_token(any_of(Set::alpha()), Token::separator, 2);
 
-    builder.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
+    builder.add_token(space_run(), Token::whitespace, 2);
 
     return builder;
 }
 
 /**
- * @brief `a`, `abcdefgh`, a letter and a space run: seven bytes are scanned past the accepting "a" before the token
- *        dies.
+ * @brief Builds the grammar of `a`, `abcdefgh`, a letter and a space run: seven bytes are scanned past the accepting
+ *        "a" before the token dies.
  * @return The grammar.
  */
 Builder_dbg deep_rewind()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("a"), Token::Identifier, 2);
+    builder.add_token(text("a"), Token::identifier, 2);
 
-    builder.add_token(text("abcdefgh"), Token::Keyword, 1);
+    builder.add_token(text("abcdefgh"), Token::keyword, 1);
 
-    builder.add_token(any_of(Set::alpha()), Token::Separator, 2);
+    builder.add_token(any_of(Set::alpha()), Token::separator, 2);
 
-    builder.add_token(plus(any_of(Set{' '})), Token::Whitespace, 2);
+    builder.add_token(space_run(), Token::whitespace, 2);
 
     return builder;
 }
 
 /**
- * @brief `a+` alone: every byte continues the run as readily as it starts one, so the search exhausts the quotient
- *        without a window.
+ * @brief Builds the grammar of `a+` alone: every byte continues the run as readily as it starts one, so the search
+ *        exhausts the quotient without a window.
  * @return The grammar.
  */
 Builder_dbg a_plus()
 {
     Builder_dbg builder{};
 
-    builder.add_token(plus(text("a")), Token::Identifier, 1);
+    builder.add_token(plus(text("a")), Token::identifier, 1);
 
     return builder;
 }
 
 /**
- * @brief {a, abc, bx, x}, "abc" at priority 1 and the others at 2, with no space run: the grammar of the legacy
- *        regression and the false-origin controls.
+ * @brief Builds the grammar of {a, abc, bx, x}, "abc" at priority 1 and the others at 2, with no space run: the grammar
+ *        of the failure-restart regression and the false-origin controls.
  * @return The grammar.
  */
-Builder_dbg legacy_grammar()
+Builder_dbg restart_grammar()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("a"), Token::Identifier, 2);
+    builder.add_token(text("a"), Token::identifier, 2);
 
-    builder.add_token(text("abc"), Token::Keyword, 1);
+    builder.add_token(text("abc"), Token::keyword, 1);
 
-    builder.add_token(text("bx"), Token::Number, 2);
+    builder.add_token(text("bx"), Token::number, 2);
 
-    builder.add_token(text("x"), Token::Operator, 2);
+    builder.add_token(text("x"), Token::operator_, 2);
 
     return builder;
 }
@@ -1018,33 +1218,33 @@ std::optional<Cloud_t> restart_cloud(
             return std::nullopt;
         }
 
-        cloud = next;
+        cloud = std::move(next);
     }
 
     return cloud;
 }
 
 /**
- * @brief {0, 00, 01}, all at priority 2: the model certifies "1001" at origin 2, and no completely tokenizable input
- *        contains it.
+ * @brief Builds the grammar of {0, 00, 01}, all at priority 2: the model certifies "1001" at origin 2, and no
+ *        completely tokenizable input contains it.
  * @return The grammar.
  */
 Builder_dbg vacuity_grammar()
 {
     Builder_dbg builder{};
 
-    builder.add_token(text("0"), Token::Number, 2);
+    builder.add_token(text("0"), Token::number, 2);
 
-    builder.add_token(text("00"), Token::Identifier, 2);
+    builder.add_token(text("00"), Token::identifier, 2);
 
-    builder.add_token(text("01"), Token::Keyword, 2);
+    builder.add_token(text("01"), Token::keyword, 2);
 
     return builder;
 }
 
 /**
- * @brief The study-table rows, none of which certifies a byte, each checked by run(): C-like with strings, with line
- *        comments, with block comments, the conventional row, the split-friendly row with block comments, the
+ * @brief Checks the study-table rows, none of which certifies a byte, each checked by run(): C-like with strings, with
+ *        line comments, with block comments, the conventional row, the split-friendly row with block comments, the
  *        cumulative row and JSON. Their backup checks' inputs do not rewind.
  * @param totals The gate's totals.
  * @return True when every row holds.
@@ -1053,89 +1253,89 @@ bool study_table_rows(Gate_totals& totals)
 {
     auto ok{true};
 
-    ok = run(totals,
-             {.name = "C-like + string literals",
-              .shortest = 2,
-              .rewinds_expected = false,
-              .keys = 24,
-              .example = "\\n!",
-              .example_origin = 1,
-              .witness = "\\n!"},
-             c_like_strings()) &&
-         ok;
+    const Row c_like_strings_pins{
+            .name = "C-like + string literals",
+            .shortest = 2,
+            .rewinds_expected = false,
+            .keys = 24,
+            .example = R"(\n!)",
+            .example_origin = 1,
+            .witness = R"(\n!)"};
 
-    ok = run(totals,
-             {.name = "C-like + // line comments",
-              .shortest = 2,
-              .rewinds_expected = false,
-              .keys = 18,
-              .example = "\\n!",
-              .example_origin = 1,
-              .witness = "\\n!"},
-             c_like_line_comments()) &&
-         ok;
+    ok = run(totals, c_like_strings_pins, c_like_strings()) && ok;
 
-    ok = run(totals,
-             {.name = "C-like + block comments",
-              .shortest = 4,
-              .rewinds_expected = false,
-              .keys = 53,
-              .example = "\\t*/\\t",
-              .example_origin = 3,
-              .witness = "\\t*/\\t"},
-             c_like_block_comments()) &&
-         ok;
+    const Row c_like_line_comments_pins{
+            .name = "C-like + // line comments",
+            .shortest = 2,
+            .rewinds_expected = false,
+            .keys = 18,
+            .example = R"(\n!)",
+            .example_origin = 1,
+            .witness = R"(\n!)"};
 
-    ok = run(totals,
-             {.name = "C-like conventional",
-              .shortest = 2,
-              .rewinds_expected = false,
-              .keys = 27,
-              .example = "\\n!",
-              .example_origin = 1,
-              .witness = "\\n!"},
-             conventional()) &&
-         ok;
+    ok = run(totals, c_like_line_comments_pins, c_like_line_comments()) && ok;
 
-    ok = run(totals,
-             {.name = "split-friendly + block comments",
-              .shortest = 4,
-              .rewinds_expected = false,
-              .keys = 188,
-              .example = "\\n*/\\t",
-              .example_origin = 3,
-              .witness = "\\n*/\\t"},
-             split_friendly_block_comments()) &&
-         ok;
+    const Row c_like_block_comments_pins{
+            .name = "C-like + block comments",
+            .shortest = 4,
+            .rewinds_expected = false,
+            .keys = 53,
+            .example = R"(\t*/\t)",
+            .example_origin = 3,
+            .witness = R"(\t*/\t)"};
 
-    ok = run(totals,
-             {.name = "C-like cumulative (new here)",
-              .shortest = 4,
-              .rewinds_expected = false,
-              .keys = 189,
-              .example = "\\n*/\\t",
-              .example_origin = 3,
-              .witness = "\\n*/\\t"},
-             cumulative()) &&
-         ok;
+    ok = run(totals, c_like_block_comments_pins, c_like_block_comments()) && ok;
 
-    ok = run(totals,
-             {.name = "JSON, RFC 8259",
-              .shortest = 2,
-              .rewinds_expected = false,
-              .keys = 69,
-              .example = "\\t\"",
-              .example_origin = 1,
-              .witness = "\\t\"\""},
-             rfc_json()) &&
-         ok;
+    const Row conventional_pins{
+            .name = "C-like conventional",
+            .shortest = 2,
+            .rewinds_expected = false,
+            .keys = 27,
+            .example = R"(\n!)",
+            .example_origin = 1,
+            .witness = R"(\n!)"};
+
+    ok = run(totals, conventional_pins, conventional()) && ok;
+
+    const Row split_friendly_block_comments_pins{
+            .name = "split-friendly + block comments",
+            .shortest = 4,
+            .rewinds_expected = false,
+            .keys = 188,
+            .example = R"(\n*/\t)",
+            .example_origin = 3,
+            .witness = R"(\n*/\t)"};
+
+    ok = run(totals, split_friendly_block_comments_pins, split_friendly_block_comments()) && ok;
+
+    const Row cumulative_pins{
+            .name = "C-like cumulative (new here)",
+            .shortest = 4,
+            .rewinds_expected = false,
+            .keys = 189,
+            .example = R"(\n*/\t)",
+            .example_origin = 3,
+            .witness = R"(\n*/\t)"};
+
+    ok = run(totals, cumulative_pins, cumulative()) && ok;
+
+    const Row rfc_json_pins{
+            .name = "JSON, RFC 8259",
+            .shortest = 2,
+            .rewinds_expected = false,
+            .keys = 69,
+            .example = R"(\t")",
+            .example_origin = 1,
+            .witness = R"(\t"")"};
+
+    ok = run(totals, rfc_json_pins, rfc_json()) && ok;
 
     return ok;
 }
 
 /**
- * @brief The two rewinding rows over grammars built from literal tokens, checked by run(), and the three-byte window
- *        "abx" the second one's search never reaches, checked by named_window_agrees().
+ * @brief Checks the two rewinding rows over grammars built from literal tokens, checked by run(), and the three-byte
+ *        window "abx" the second one's search never reaches, checked by named_window_agrees().
  * @param totals The gate's totals.
  * @return True when the three hold.
  */
@@ -1143,27 +1343,27 @@ bool rewind_stress_rows(Gate_totals& totals)
 {
     auto ok{true};
 
-    ok = run(totals,
-             {.name = "rewind stress: a | abc | b | d",
-              .shortest = 1,
-              .rewinds_expected = true,
-              .keys = 4,
-              .example = "a",
-              .example_origin = 0,
-              .witness = "a"},
-             rewind_stress()) &&
-         ok;
+    const Row rewind_stress_pins{
+            .name = "rewind stress: a | abc | b | d",
+            .shortest = 1,
+            .rewinds_expected = true,
+            .keys = 4,
+            .example = "a",
+            .example_origin = 0,
+            .witness = "a"};
 
-    ok = run(totals,
-             {.name = "refuted-model witness grammar",
-              .shortest = 1,
-              .rewinds_expected = true,
-              .keys = 5,
-              .example = "a",
-              .example_origin = 0,
-              .witness = "a"},
-             refuted_model_witness()) &&
-         ok;
+    ok = run(totals, rewind_stress_pins, rewind_stress()) && ok;
+
+    const Row refuted_model_witness_pins{
+            .name = "refuted-model witness grammar",
+            .shortest = 1,
+            .rewinds_expected = true,
+            .keys = 5,
+            .example = "a",
+            .example_origin = 0,
+            .witness = "a"};
+
+    ok = run(totals, refuted_model_witness_pins, refuted_model_witness()) && ok;
 
     ok = named_window_agrees(totals, "refuted-model witness abx", "abx", 1, refuted_model_witness()) && ok;
 
@@ -1171,8 +1371,8 @@ bool rewind_stress_rows(Gate_totals& totals)
 }
 
 /**
- * @brief The two strictness rows, windows the model refuses although every occurrence's covering token begins at the
- *        claimed origin, and the oracle's teeth row, a window whose occurrences violate the claim.
+ * @brief Checks the two strictness rows, windows the model refuses although every occurrence's covering token begins at
+ *        the claimed origin, and the oracle's teeth row, a window whose occurrences violate the claim.
  * @param totals The gate's totals.
  * @return True when the three hold.
  */
@@ -1180,18 +1380,42 @@ bool strictness_rows(Gate_totals& totals)
 {
     auto ok{true};
 
-    ok = strict_refusal(totals, "strict: {a, ab, b} at \"ab\"", "ab", 0, "ab", 14, 98305, strict_a_ab_b()) && ok;
+    const Claim strict_a_ab_b_claim{
+            .name = R"(strict: {a, ab, b} at "ab")",
+            .window = "ab",
+            .origin = 0,
+            .alphabet = "ab",
+            .max_length = 14,
+            .occurrences_expected = 98'305};
 
-    ok = strict_refusal(totals, "strict: {ab, abc, c} at \"abc\"", "abc", 0, "abc", 12, 932, strict_ab_abc_c()) && ok;
+    ok = strict_refusal(totals, strict_a_ab_b_claim, strict_a_ab_b()) && ok;
 
-    ok = oracle_teeth(totals, "teeth: {a, abx, b, x} at \"ab\"", "ab", 0, "abx", 10, 83653, 59049, teeth_a_abx_b_x()) &&
-         ok;
+    const Claim strict_ab_abc_c_claim{
+            .name = R"(strict: {ab, abc, c} at "abc")",
+            .window = "abc",
+            .origin = 0,
+            .alphabet = "abc",
+            .max_length = 12,
+            .occurrences_expected = 932};
+
+    ok = strict_refusal(totals, strict_ab_abc_c_claim, strict_ab_abc_c()) && ok;
+
+    const Claim teeth_claim{
+            .name = R"(teeth: {a, abx, b, x} at "ab")",
+            .window = "ab",
+            .origin = 0,
+            .alphabet = "abx",
+            .max_length = 10,
+            .occurrences_expected = 83'653,
+            .violations_expected = 59'049};
+
+    ok = oracle_teeth(totals, teeth_claim, teeth_a_abx_b_x()) && ok;
 
     return ok;
 }
 
 /**
- * @brief The five rewinding rows, each accepting a short prefix and continuing into a longer token that can die:
+ * @brief Checks the five rewinding rows, each accepting a short prefix and continuing into a longer token that can die:
  *        a numeric exponent, a float against a range operator, an operator ladder, a keyword extending a shorter token
  *        and a seven-byte rewind; each checked by run().
  * @param totals The gate's totals.
@@ -1201,60 +1425,60 @@ bool rewind_rows(Gate_totals& totals)
 {
     auto ok{true};
 
-    ok = run(totals,
-             {.name = "rewind: digits | digits e digits",
-              .shortest = 1,
-              .rewinds_expected = true,
-              .keys = 4,
-              .example = "A",
-              .example_origin = 0,
-              .witness = "A"},
-             digits_exponent()) &&
-         ok;
+    const Row digits_exponent_pins{
+            .name = "rewind: digits | digits e digits",
+            .shortest = 1,
+            .rewinds_expected = true,
+            .keys = 4,
+            .example = "A",
+            .example_origin = 0,
+            .witness = "A"};
 
-    ok = run(totals,
-             {.name = "rewind: float vs range operator",
-              .shortest = 2,
-              .rewinds_expected = true,
-              .keys = 9,
-              .example = " .",
-              .example_origin = 1,
-              .witness = " .."},
-             float_range()) &&
-         ok;
+    ok = run(totals, digits_exponent_pins, digits_exponent()) && ok;
 
-    ok = run(totals,
-             {.name = "rewind: < | <<=",
-              .shortest = 1,
-              .rewinds_expected = true,
-              .keys = 4,
-              .example = "A",
-              .example_origin = 0,
-              .witness = "A"},
-             operator_ladder()) &&
-         ok;
+    const Row float_range_pins{
+            .name = "rewind: float vs range operator",
+            .shortest = 2,
+            .rewinds_expected = true,
+            .keys = 9,
+            .example = " .",
+            .example_origin = 1,
+            .witness = " .."};
 
-    ok = run(totals,
-             {.name = "rewind: f | for",
-              .shortest = 1,
-              .rewinds_expected = true,
-              .keys = 4,
-              .example = "A",
-              .example_origin = 0,
-              .witness = "A"},
-             keyword_extension()) &&
-         ok;
+    ok = run(totals, float_range_pins, float_range()) && ok;
 
-    ok = run(totals,
-             {.name = "rewind: a | abcdefgh (depth 7)",
-              .shortest = 1,
-              .rewinds_expected = true,
-              .keys = 9,
-              .example = "A",
-              .example_origin = 0,
-              .witness = "A"},
-             deep_rewind()) &&
-         ok;
+    const Row operator_ladder_pins{
+            .name = "rewind: < | <<=",
+            .shortest = 1,
+            .rewinds_expected = true,
+            .keys = 4,
+            .example = "A",
+            .example_origin = 0,
+            .witness = "A"};
+
+    ok = run(totals, operator_ladder_pins, operator_ladder()) && ok;
+
+    const Row keyword_extension_pins{
+            .name = "rewind: f | for",
+            .shortest = 1,
+            .rewinds_expected = true,
+            .keys = 4,
+            .example = "A",
+            .example_origin = 0,
+            .witness = "A"};
+
+    ok = run(totals, keyword_extension_pins, keyword_extension()) && ok;
+
+    const Row deep_rewind_pins{
+            .name = "rewind: a | abcdefgh (depth 7)",
+            .shortest = 1,
+            .rewinds_expected = true,
+            .keys = 9,
+            .example = "A",
+            .example_origin = 0,
+            .witness = "A"};
+
+    ok = run(totals, deep_rewind_pins, deep_rewind()) && ok;
 
     return ok;
 }
@@ -1266,28 +1490,28 @@ bool rewind_rows(Gate_totals& totals)
  */
 bool no_window_row(Gate_totals& totals)
 {
-    return run(
-            totals,
-            {.name = "a+: no window found",
-             .shortest = 0,
-             .rewinds_expected = false,
-             .keys = 3,
-             .example = "",
-             .example_origin = 0,
-             .witness = ""},
-            a_plus());
+    const Row a_plus_pins{
+            .name = "a+: no window found",
+            .shortest = 0,
+            .rewinds_expected = false,
+            .keys = 3,
+            .example = "",
+            .example_origin = 0,
+            .witness = ""};
+
+    return run(totals, a_plus_pins, a_plus());
 }
 
 /**
- * @brief The legacy regression on "abx" over the legacy grammar: the failure-restart transition certifies it at 2,
- *        the model at 1, and the scan consumes it with the tokens covering its bytes beginning at 0, 1 and 1. Prints
- *        the row's line.
+ * @brief Checks the failure-restart regression on "abx" over the failure-restart grammar: the failure-restart
+ *        transition certifies it at 2, the model at 1, and the scan consumes it with the tokens covering its bytes
+ *        beginning at 0, 1 and 1. Prints the row's line.
  * @param totals The gate's totals.
  * @return True when all three hold.
  */
-bool legacy_restart(Gate_totals& totals)
+bool restart_regression(Gate_totals& totals)
 {
-    const auto builder{legacy_grammar()};
+    const auto builder{restart_grammar()};
 
     const auto dfa{builder.dfa()};
 
@@ -1307,14 +1531,16 @@ bool legacy_restart(Gate_totals& totals)
 
     std::size_t offset{0};
 
-    const auto consumed{lexer.tokenize_all<Token>(window, [&](const Token, const std::size_t length) {
+    const auto cover{[&covering, &offset](const Token, const std::size_t length) {
         for (std::size_t inside{0}; inside < length; ++inside)
         {
             covering[offset + inside] = offset;
         }
 
         offset += length;
-    })};
+    }};
+
+    const auto consumed{lexer.tokenize_all<Token>(window, cover)};
 
     const auto scan_ok{consumed == window.size() && covering[0] == 0 && covering[1] == 1 && covering[2] == 1};
 
@@ -1322,29 +1548,44 @@ bool legacy_restart(Gate_totals& totals)
 
     totals.cross_check(lexer, window, repaired);
 
-    const auto legacy_ok{scan_ok && repaired && *repaired == 1 && restart_certified && cloud->begin()->second == 2};
+    const auto restart_origin{[&cloud, restart_certified] {
+        if (!restart_certified)
+        {
+            return std::size_t{0};
+        }
+
+        const auto& [state, origin]{*cloud->begin()};
+
+        return origin;
+    }()};
+
+    const auto regression_holds{scan_ok && repaired == 1 && restart_certified && restart_origin == 2};
+
+    const auto restart_text{restart_certified ? std::to_string(restart_origin) : std::string{"none"}};
+
+    const auto repaired_text{repaired ? std::to_string(*repaired) : std::string{"refused"}};
+
+    const auto marker{regression_holds ? "" : "   <- moved"};
 
     std::printf(
-            "  %-30s restart transition certifies \"abx\" at %s, repaired model at %s, the scan covers its "
+            R"(  %-30s restart transition certifies "abx" at %s, repaired model at %s, the scan covers its )"
             "final byte from %zu%s\n",
-            "legacy: {a, abc, bx, x} at abx",
-            restart_certified ? std::to_string(cloud->begin()->second).c_str() : "none",
-            repaired ? std::to_string(*repaired).c_str() : "refused", covering[2], legacy_ok ? "" : "   <- MOVED");
+            "legacy: {a, abc, bx, x} at abx", restart_text.c_str(), repaired_text.c_str(), covering[2], marker);
 
-    return legacy_ok;
+    return regression_holds;
 }
 
 /**
- * @brief The false-origin controls on "abx" over the legacy grammar: the witness search at the false origin 2 finds
- *        nothing after rejecting 30 candidates, which count into totals of their own; at the true origin 1 it finds a
- *        witness; and the backup check forced to origin 2 counts 200 disagreements, its executions outside the gate's
- *        totals. Prints the row's line.
+ * @brief Checks the false-origin controls on "abx" over the failure-restart grammar: the witness search at the false
+ *        origin 2 finds nothing after rejecting 30 candidates, which count into totals of their own; at the true origin
+ *        1 it finds a witness; and the backup check forced to origin 2 counts 200 disagreements, its executions outside
+ *        the gate's totals. Prints the row's line.
  * @param totals The gate's totals.
  * @return True when all three hold.
  */
 bool false_origin_controls(Gate_totals& totals)
 {
-    const auto builder{legacy_grammar()};
+    const auto builder{restart_grammar()};
 
     const auto dfa{builder.dfa()};
 
@@ -1360,21 +1601,23 @@ bool false_origin_controls(Gate_totals& totals)
 
     const auto right{find_witness(totals, dfa, lexer, live, {{.window = "abx", .origin = 1}})};
 
-    const auto forced{backup_disagreements(dfa, lexer, live, {"abx"}, 2).disagreements};
+    const auto [forced, exercised, tokenizable, prefixes]{backup_disagreements(dfa, lexer, live, {"abx"}, 2)};
 
     const auto fixture_ok{!wrong && rejected == 30 && right.has_value() && forced == 200};
+
+    const auto marker{fixture_ok ? "" : "   <- control lost its teeth"};
 
     std::printf(
             "  %-30s witness at 2 refused with %zu rejections, witnessed at 1, forced origin 2 counts %zu "
             "disagreements%s\n",
-            "false-origin controls: abx", rejected, forced, fixture_ok ? "" : "   <- CONTROL LOST ITS TEETH");
+            "false-origin controls: abx", rejected, forced, marker);
 
     return fixture_ok;
 }
 
 /**
- * @brief The vacuity witness over {0, 00, 01}: the model certifies "1001" at origin 2 and the bounded witness search
- *        for exactly that word comes back empty. Prints the row's line.
+ * @brief Checks the vacuity witness over {0, 00, 01}: the model certifies "1001" at origin 2 and the bounded witness
+ *        search for exactly that word comes back empty. Prints the row's line.
  * @param totals The gate's totals.
  * @return True when both hold.
  */
@@ -1398,84 +1641,106 @@ bool vacuity_witness(Gate_totals& totals)
 
     const auto witness{at ? find_witness(totals, dfa, lexer, live, only) : std::nullopt};
 
-    const auto vacuous_ok{at.has_value() && *at == 2 && !witness.has_value()};
+    const auto vacuous_ok{at == 2 && !witness.has_value()};
+
+    const auto at_text{at ? std::to_string(*at) : std::string{"none"}};
+
+    const auto search_empty{witness ? "no" : "yes"};
+
+    const auto marker{vacuous_ok ? "" : "   <- moved"};
 
     std::printf(
-            "  %-30s model certifies \"1001\" at %s, bounded witness search empty: %s%s\n",
-            "vacuity: {0, 00, 01} at \"1001\"", at ? std::to_string(*at).c_str() : "none", witness ? "NO" : "yes",
-            vacuous_ok ? "" : "   <- MOVED");
+            R"(  %-30s model certifies "1001" at %s, bounded witness search empty: %s%s)"
+            "\n",
+            R"(vacuity: {0, 00, 01} at "1001")", at_text.c_str(), search_empty, marker);
 
     return vacuous_ok;
 }
 
 /**
- * @brief Prints the summary: the random sweep's disagreements and applicability, the witnessed applicability, the
- *        named rows' rewinding executions and witness disagreements, the retained search keys, and the shipped window
+ * @brief Prints the summary: the random sweep's disagreements and applicability, the witnessed applicability, the named
+ *        rows' rewinding executions and witness disagreements, the retained search keys, and the shipped window
  *        decision's cross-checks.
  * @param totals The gate's totals.
  * @param sweep The random sweep's counts.
  */
 void print_summary(const Gate_totals& totals, const Sweep& sweep)
 {
+    const auto model_marker{sweep.disagreements == 0 ? "" : "   <- model is wrong"};
+
     std::printf(
             "\n  %-30s %zu disagreements over %zu grammars, %zu with a non-empty certificate, %zu of them nullable "
             "and decided through their positive-width equivalent%s\n",
-            "random grammars", sweep.disagreements, sweep.usable, sweep.with_certificate, sweep.nullable,
-            sweep.disagreements == 0 ? "" : "   <- MODEL IS WRONG");
+            "random grammars", sweep.disagreements, sweep.usable, sweep.with_certificate, sweep.nullable, model_marker);
+
+    const auto no_byte{sweep.usable - sweep.with_certificate};
 
     std::printf(
             "  %-30s of %zu certifying no byte: %zu model-positive, %zu with none found, %zu inconclusive\n",
-            "window applicability", sweep.usable - sweep.with_certificate, sweep.rescued, sweep.proved_none,
-            sweep.inconclusive);
+            "window applicability", no_byte, sweep.rescued, sweep.proved_none, sweep.inconclusive);
+
+    const auto unresolved{sweep.rescued - sweep.witnessed_rescued};
 
     std::printf(
             "  %-30s %zu of %zu model-positive grammars have an occurrence-witnessed certificate, %zu unresolved\n",
-            "witnessed applicability", sweep.witnessed_rescued, sweep.rescued, sweep.rescued - sweep.witnessed_rescued);
+            "witnessed applicability", sweep.witnessed_rescued, sweep.rescued, unresolved);
+
+    const auto malformed{totals.exercised_total - totals.exercised_tokenizable};
 
     std::printf(
             "  %-30s %zu rewinding executions across every named row, %zu with a completely tokenizable input, "
             "%zu with a malformed suffix, %zu witness origin disagreements\n",
-            "backup total", totals.exercised_total, totals.exercised_tokenizable,
-            totals.exercised_total - totals.exercised_tokenizable, totals.witness_disagreements);
+            "backup total", totals.exercised_total, totals.exercised_tokenizable, malformed,
+            totals.witness_disagreements);
 
     // Keys retained before shortest-window stopping ends each search, not the complete reachable quotient space.
-    const auto no_byte{sweep.usable - sweep.with_certificate};
+    const auto mean_keys{no_byte == 0 ? 0.0 : static_cast<double>(totals.visited_total) / static_cast<double>(no_byte)};
 
     std::printf(
             "  %-30s max %zu, mean %.1f over the no-byte grammars, total %zu, against a 6^|Q+| worst case\n",
-            "retained search keys", totals.visited_max,
-            no_byte ? static_cast<double>(totals.visited_total) / no_byte : 0.0, totals.visited_total);
+            "retained search keys", totals.visited_max, mean_keys, totals.visited_total);
+
+    const auto port_marker{totals.port_disagreements == 0 ? "" : "   <- port diverges"};
 
     std::printf(
             "  %-30s %zu checks against the probe's model, %zu disagreements%s\n", "shipped window decision",
-            totals.port_checks, totals.port_disagreements, totals.port_disagreements == 0 ? "" : "   <- PORT DIVERGES");
+            totals.port_checks, totals.port_disagreements, port_marker);
 }
 
 /**
- * @brief Whether the pinned figures of the sweep and the totals hold: no disagreement anywhere, 107,198 port checks,
- *        400 usable grammars of which 266 nullable and 63 with a certificate, 326 of the 337 no-byte grammars rescued
- *        and 322 witnessed, 11 proved empty and none inconclusive, 1,079,392 rewinding executions of which 418,466
- *        tokenize completely, and 32 and 3,343 retained keys at most and in total.
+ * @brief Returns whether the pinned figures of the sweep and the totals hold: no disagreement anywhere, 107,198 port
+ *        checks, 400 usable grammars of which 266 nullable and 63 with a certificate, 326 of the 337 no-byte grammars
+ *        rescued and 322 witnessed, 11 proved empty and none inconclusive, 1,079,392 rewinding executions of which
+ *        418,466 tokenize completely, and 32 and 3,343 retained keys at most and in total.
  * @param totals The gate's totals.
  * @param sweep The random sweep's counts.
  * @return True when every figure holds.
  */
 bool has_pinned_figures(const Gate_totals& totals, const Sweep& sweep)
 {
-    return totals.port_disagreements == 0 && totals.port_checks == 107'198 && sweep.disagreements == 0 &&
-           sweep.usable == 400 && sweep.nullable == 266 && sweep.with_certificate == 63 &&
-           sweep.usable - sweep.with_certificate == 337 && sweep.rescued == 326 && sweep.witnessed_rescued == 322 &&
-           sweep.proved_none == 11 && sweep.inconclusive == 0 && totals.exercised_total == 1'079'392 &&
-           totals.exercised_tokenizable == 418'466 &&
-           totals.exercised_total - totals.exercised_tokenizable == 660'926 && totals.witness_disagreements == 0 &&
-           totals.visited_max == 32 && totals.visited_total == 3343;
+    const auto malformed{totals.exercised_total - totals.exercised_tokenizable};
+
+    const auto totals_hold{
+            totals.port_disagreements == 0 && totals.port_checks == 107'198 && totals.exercised_total == 1'079'392 &&
+            totals.exercised_tokenizable == 418'466 && malformed == 660'926 && totals.witness_disagreements == 0 &&
+            totals.visited_max == 32 && totals.visited_total == 3'343};
+
+    const auto no_byte{sweep.usable - sweep.with_certificate};
+
+    const auto sweep_holds{
+            sweep.disagreements == 0 && sweep.usable == sweep_grammars && sweep.nullable == 266 &&
+            sweep.with_certificate == 63 && no_byte == 337 && sweep.rescued == 326 && sweep.witnessed_rescued == 322 &&
+            sweep.proved_none == 11 && sweep.inconclusive == 0};
+
+    return totals_hold && sweep_holds;
 }
+
 } // namespace
 
 /**
- * @brief Runs the gate: every named row, the strictness and teeth rows, the legacy regression, the false-origin
- *        controls, the vacuity witness and the random sweep, then prints the summary and the verdict.
- * @return 0 when every row, control and pinned figure holds, 1 otherwise.
+ * @brief Runs the gate: every named row, the strictness and teeth rows, the failure-restart regression, the
+ *        false-origin controls, the vacuity witness and the random sweep, then prints the summary and the verdict.
+ * @return EXIT_SUCCESS when every row, control and pinned figure holds, EXIT_FAILURE otherwise.
  */
 int main()
 {
@@ -1484,7 +1749,7 @@ int main()
 
     std::printf(
             "  subset search threshold: inconclusive beyond %zu retained keys, pinned by static_assert\n",
-            kSubsetBudget);
+            subset_budget);
 
     Gate_totals totals{};
 
@@ -1500,25 +1765,27 @@ int main()
 
     ok = no_window_row(totals) && ok;
 
-    ok = legacy_restart(totals) && ok;
+    ok = restart_regression(totals) && ok;
 
     ok = false_origin_controls(totals) && ok;
 
     ok = vacuity_witness(totals) && ok;
 
-    const auto sweep{random_grammars(totals, 400)};
+    const auto sweep{random_grammars(totals, sweep_grammars)};
 
     print_summary(totals, sweep);
 
     ok = has_pinned_figures(totals, sweep) && ok;
 
-    std::printf(
-            "\n%s\n", ok ? "The model reproduces is_split_point at length one on six named grammars with a "
-                           "non-empty certificate and on all 400 grammars of the random sweep, the 266 nullable ones "
-                           "decided through their positive-width equivalent, and wherever it predicts an origin the "
-                           "shipped scanner starts the token covering the window's last byte exactly there. The model "
-                           "is proved sound, so this checks the implementation rather than the argument." :
-                           "A measurement moved. The window results must be re-derived before being relied on.");
+    const std::string verdict{
+            ok ? "The model reproduces is_split_point at length one on six named grammars with a non-empty certificate "
+                 "and on all 400 grammars of the random sweep, the 266 nullable ones decided through their "
+                 "positive-width equivalent, and wherever it predicts an origin the shipped scanner starts the token "
+                 "covering the window's last byte exactly there. The model is proved sound, so this checks the "
+                 "implementation rather than the argument." :
+                 "A measurement moved. The window results must be re-derived before being relied on."};
 
-    return ok ? 0 : 1;
+    std::printf("\n%s\n", verdict.c_str());
+
+    return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

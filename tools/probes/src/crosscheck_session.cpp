@@ -200,10 +200,6 @@ void Crosscheck_session::tokenize(std::istream& in, std::ostream& out) const
 
     std::vector<std::size_t> lengths{};
 
-    /**
-     * @brief Records each committed token's length.
-     * @param length The token's length.
-     */
     const auto record{[&lengths](const std::size_t, const std::size_t length) { lengths.push_back(length); }};
 
     const auto committed{lexer_->tokenize_all<std::size_t>(input, record)};

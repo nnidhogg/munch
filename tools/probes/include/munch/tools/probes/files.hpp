@@ -22,8 +22,8 @@ namespace munch::tools::probes
 [[nodiscard]] std::optional<std::string> read_bytes(const std::filesystem::path& path);
 
 /**
- * @brief Lists the regular files under a directory and its subdirectories in sorted order, optionally only those of
- *        one extension; a directory that cannot be walked throws std::filesystem::filesystem_error.
+ * @brief Lists the regular files under a directory and its subdirectories in sorted order, optionally only those of one
+ *        extension; a directory that cannot be walked throws std::filesystem::filesystem_error.
  * @param root The directory walked.
  * @param extension The extension, dot included, a listed file must have, or std::nullopt to list every regular file.
  * @return The files' paths, sorted.
@@ -39,7 +39,7 @@ class Output_file
 {
 public:
     /**
-     * @brief No file: is_open() is false and nothing is written.
+     * @brief Constructs no file: is_open() is false and nothing is written.
      */
     Output_file() = default;
 
@@ -50,13 +50,13 @@ public:
     explicit Output_file(const std::filesystem::path& path);
 
     /**
-     * @brief Whether a file is open.
+     * @brief Returns whether a file is open.
      * @return True from a successful open until close().
      */
     [[nodiscard]] bool is_open() const noexcept;
 
     /**
-     * @brief The open file's stream, for writing with the C formatted output functions.
+     * @brief Returns the open file's stream, for writing with the C formatted output functions.
      * @return The stream, null when no file is open.
      */
     [[nodiscard]] std::FILE* stream() const noexcept;

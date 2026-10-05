@@ -10,21 +10,21 @@
 namespace munch::tools::probes
 {
 /**
- * @brief The assertions of one probe run: a failed one prints `FAIL: <what>` on standard output and is counted, and the
+ * @brief The assertions of one probe run: a failed one prints `fail: <what>` on standard output and is counted, and the
  *        count decides the probe's verdict.
  */
 class Assertions
 {
 public:
     /**
-     * @brief Checks one assertion, printing `FAIL: ` and its description on standard output when it does not hold.
+     * @brief Checks one assertion, printing `fail: ` and its description on standard output when it does not hold.
      * @param condition Whether the assertion holds.
      * @param what What the assertion states.
      */
     void expect(bool condition, std::string_view what);
 
     /**
-     * @brief Whether any assertion checked so far failed.
+     * @brief Returns whether any assertion checked so far failed.
      * @return True after the first failure.
      */
     [[nodiscard]] bool has_failures() const noexcept;

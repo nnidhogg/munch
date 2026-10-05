@@ -13,9 +13,9 @@
 namespace munch::tools::probes
 {
 /**
- * @brief The window gate's running totals: the shipped window decision's cross-checks against the model, the
- *        rewinding executions of the named rows, the quotient keys the random sweep walked, and the witness searches'
- *        origin disagreements.
+ * @brief The window gate's running totals: the shipped window decision's cross-checks against the model, the rewinding
+ *        executions of the named rows, the quotient keys the random sweep walked, and the witness searches' origin
+ *        disagreements.
  */
 struct Gate_totals
 {

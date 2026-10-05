@@ -11,7 +11,7 @@ void Assertions::expect(const bool condition, const std::string_view what)
     {
         ++failures_;
 
-        std::cout << "FAIL: " << what << "\n";
+        std::cout << "fail: " << what << "\n";
     }
 }
 

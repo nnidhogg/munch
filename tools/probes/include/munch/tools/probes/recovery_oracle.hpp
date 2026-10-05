@@ -12,9 +12,9 @@
 #include "munch/tools/probes/recovery_damage.hpp"
 
 /**
- * @brief The recovery study's mapped pristine oracle, Row, Evidence, evidence_of, minimal_answer, pristine_oracle,
- *        Convergence, converge, Score and score_of: where an answer lands, what evidence a walk answer rests on, and
- *        where a resumed stream converges to the mapped pristine one.
+ * @brief The recovery study's mapped pristine oracle, Row, Evidence, Convergence, Score, evidence_of, minimal_answer,
+ *        pristine_oracle, converge and score_of: where an answer lands, what evidence a walk answer rests on, and where
+ *        a resumed stream converges to the mapped pristine one.
  */
 namespace munch::tools::probes
 {
@@ -26,7 +26,7 @@ struct Row
     /**
      * @brief The row's label, as the tables and the archive print it.
      */
-    std::string_view label;
+    std::string_view label{};
 
     /**
      * @brief The row's lexer.
@@ -36,12 +36,12 @@ struct Row
     /**
      * @brief The pristine corpus, completely tokenizable by the lexer.
      */
-    std::string corpus;
+    std::string corpus{};
 
     /**
      * @brief The corpus's token starts, ascending.
      */
-    std::vector<std::size_t> begins;
+    std::vector<std::size_t> begins{};
 
     /**
      * @brief Whether the corpus was generated, and so is written beside the archive; a real document is not.
@@ -77,42 +77,8 @@ struct Evidence
 };
 
 /**
- * @brief Walks the input from an offset for the first certificate in evidence order: at each position a certified
- *        byte, then a certified window of length 2 to 4 starting there, each decided by the library's split-point and
- *        split-window predicates.
- * @param lexer The row's lexer.
- * @param input The damaged input.
- * @param from The offset the walk starts at.
- * @return The first certificate's evidence, std::nullopt when none occurs.
- */
-[[nodiscard]] std::optional<Evidence> evidence_of(const core::Lexer& lexer, std::string_view input, std::size_t from);
-
-/**
- * @brief The smallest answer any certificate at or after an offset yields, for the nonminimality figure; evidence
- *        beginning past the walk's answer cannot yield a smaller one, so the scan stops there.
- * @param lexer The row's lexer.
- * @param input The damaged input.
- * @param from The offset the scan starts at.
- * @param answer The walk's answer.
- * @return The smallest certified position found, the answer when none is smaller.
- */
-[[nodiscard]] std::size_t minimal_answer(
-        const core::Lexer& lexer, std::string_view input, std::size_t from, std::size_t answer);
-
-/**
- * @brief The hard oracle on a pristine corpus: from offsets sampled by unbiased rejection sampling over
- *        [0, size - 2] with the stream seeded 0x5eed0003, every core::Lexer::next_certified_start() answer must be a
- *        boundary at or past its offset. Each violation prints `PRISTINE ORACLE VIOLATION: <row> from <offset> answered
- *        <answer>` on standard error.
- * @param row The row.
- * @param samples The offsets sampled.
- * @return The violations.
- */
-[[nodiscard]] std::size_t pristine_oracle(const Row& row, std::size_t samples);
-
-/**
- * @brief Where a resumed boundary stream and the mapped pristine stream agree forever after, and what the region
- *        before it cost.
+ * @brief Where a resumed boundary stream and the mapped pristine stream agree forever after, and what the region before
+ *        it cost.
  */
 struct Convergence
 {
@@ -134,10 +100,68 @@ struct Convergence
 };
 
 /**
- * @brief Finds where a resumed stream converges: the emitted starts and the mapped pristine boundaries at or above
- *        the floor are walked backward from their ends, in step, to their first disagreement. A convergence at or
- * before the corruption end with a lost or spurious start ends the program with exit status one after printing
- * `CONVERGENCE REGION VIOLATION` on standard error.
+ * @brief One incident scored against the mapped pristine oracle.
+ */
+struct Score
+{
+    /**
+     * @brief Whether the first answer landed, for a first answer inside the input.
+     */
+    std::optional<bool> first_landed{};
+
+    /**
+     * @brief Whether the terminal position landed, for a terminal position inside the input.
+     */
+    std::optional<bool> terminal_landed{};
+
+    /**
+     * @brief Where the resumed stream converged, for a completed incident.
+     */
+    std::optional<Convergence> convergence{};
+};
+
+/**
+ * @brief Walks the input from an offset for the first certificate in evidence order: at each position a certified byte,
+ *        then a certified window of length 2 to 4 starting there, each decided by the library's split-point and
+ *        split-window predicates.
+ * @param lexer The row's lexer.
+ * @param input The damaged input.
+ * @param from The offset the walk starts at.
+ * @return The first certificate's evidence, std::nullopt when none occurs.
+ */
+[[nodiscard]] std::optional<Evidence> evidence_of(const core::Lexer& lexer, std::string_view input, std::size_t from);
+
+/**
+ * @brief Returns the smallest answer any certificate at or after an offset yields, for the nonminimality figure;
+ *        evidence beginning past the walk's answer cannot yield a smaller one, so the scan stops there.
+ * @param lexer The row's lexer.
+ * @param input The damaged input.
+ * @param from The offset the scan starts at.
+ * @param answer The walk's answer.
+ * @return The smallest certified position found, the answer when none is smaller.
+ */
+[[nodiscard]] std::size_t minimal_answer(
+        const core::Lexer& lexer, std::string_view input, std::size_t from, std::size_t answer);
+
+/**
+ * @brief Runs the hard oracle on a pristine corpus: from offsets sampled by unbiased rejection sampling over [0, size -
+ *        2] with the stream seeded 0x5EED0003, every core::Lexer::next_certified_start() answer must be a boundary at
+ *        or past its offset. Each violation prints `pristine oracle violation: <row> from <offset> answered <answer>`
+ *        on standard error.
+ * @param row The row.
+ * @param samples The offsets sampled.
+ * @return The violations.
+ */
+[[nodiscard]] std::size_t pristine_oracle(const Row& row, std::size_t samples);
+
+/**
+ * @brief Finds where a resumed stream converges: the emitted starts and the mapped pristine boundaries at or above the
+ *        floor are walked backward from their ends, in step, to their first disagreement. A convergence at or before
+ *        the corruption end with a lost or spurious start ends the program with exit status one after printing
+ *        `convergence region violation` on standard error.
+ *
+ * Both counts range over the divergence region, from the corruption end to the convergence point, so the initial jump's
+ * skipped boundaries count as lost and emitted starts before the corruption end never count.
  * @param pristine The pristine boundaries, ascending.
  * @param damaged The damaged input's coordinate map.
  * @param starts The emitted starts, ascending.
@@ -147,27 +171,6 @@ struct Convergence
 [[nodiscard]] Convergence converge(
         const std::vector<std::size_t>& pristine, const Damage& damaged, const std::vector<std::size_t>& starts,
         std::size_t floor);
-
-/**
- * @brief One incident scored against the mapped pristine oracle.
- */
-struct Score
-{
-    /**
-     * @brief Whether the first answer landed, for a first answer inside the input.
-     */
-    std::optional<bool> first_landed;
-
-    /**
-     * @brief Whether the terminal position landed, for a terminal position inside the input.
-     */
-    std::optional<bool> terminal_landed;
-
-    /**
-     * @brief Where the resumed stream converged, for a completed incident.
-     */
-    std::optional<Convergence> convergence;
-};
 
 /**
  * @brief Scores an incident: its first and terminal positions against the oracle, and for a completed incident its

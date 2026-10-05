@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,30 +20,15 @@ namespace munch::tools::probes
 {
 namespace
 {
-// Implements recovery_oracle.hpp: the pristine-to-damaged image and the backward walks of converge are private to this
-// unit.
+/**
+ * @brief The shortest window the certificate scans consult.
+ */
+constexpr std::size_t shortest_window{2};
 
 /**
- * @brief A pristine boundary's damaged image.
- * @param damaged The damaged input's coordinate map.
- * @param boundary The pristine boundary.
- * @return The boundary itself below low, the boundary plus the shift at or past cut, std::nullopt inside the damaged
- *         window.
+ * @brief The longest window the certificate scans consult, beside the single byte.
  */
-std::optional<std::size_t> image_of(const Damage& damaged, const std::size_t boundary)
-{
-    if (boundary < damaged.low)
-    {
-        return boundary;
-    }
-
-    if (boundary >= damaged.cut)
-    {
-        return static_cast<std::size_t>(static_cast<std::ptrdiff_t>(boundary) + damaged.shift);
-    }
-
-    return std::nullopt;
-}
+constexpr std::size_t longest_window{4};
 
 /**
  * @brief The next mapped pristine boundary at or below an index, walking backward past the imageless window.
@@ -52,43 +38,13 @@ struct Mapped
     /**
      * @brief The boundary's image, std::nullopt when the walk ran out or reached an image below the floor.
      */
-    std::optional<std::size_t> image;
+    std::optional<std::size_t> image{};
 
     /**
      * @brief The boundary's index, -1 when there is no image.
      */
     std::ptrdiff_t index{-1};
 };
-
-/**
- * @brief Walks the pristine boundaries backward from an index to the first one with an image.
- * @param pristine The pristine boundaries, ascending.
- * @param damaged The damaged input's coordinate map.
- * @param index The index the walk starts at, -1 for none.
- * @param floor The smallest image matched.
- * @return The image and its index, or no image when the walk runs out or the first image lies below the floor.
- */
-Mapped next_mapped(
-        const std::vector<std::size_t>& pristine, const Damage& damaged, const std::ptrdiff_t index,
-        const std::size_t floor)
-{
-    for (auto j{index}; j >= 0; --j)
-    {
-        const auto image{image_of(damaged, pristine[static_cast<std::size_t>(j)])};
-
-        if (image && *image < floor)
-        {
-            return Mapped{.image = std::nullopt, .index = -1};
-        }
-
-        if (image)
-        {
-            return Mapped{.image = image, .index = j};
-        }
-    }
-
-    return Mapped{.image = std::nullopt, .index = -1};
-}
 
 /**
  * @brief Where the backward walk of both streams stopped.
@@ -108,12 +64,97 @@ struct Common_suffix
     /**
      * @brief The smallest position both suffixes agree on, std::nullopt when they share no suffix.
      */
-    std::optional<std::size_t> agreed;
+    std::optional<std::size_t> agreed{};
 };
 
 /**
- * @brief Walks the emitted starts at or above the floor and the mapped pristine boundaries backward from their ends,
- *        in step, to their first disagreement.
+ * @brief Returns the window lengths the certificate scans consult at an offset: two up to the longest window, cut at
+ *        the end of the input.
+ * @param input The input.
+ * @param at The offset, below the input's size.
+ * @return The lengths, ascending.
+ */
+auto window_lengths(const std::string_view input, const std::size_t at)
+{
+    const auto limit{std::min(longest_window, input.size() - at)};
+
+    return std::views::iota(shortest_window, limit + 1);
+}
+
+/**
+ * @brief Returns a pristine boundary's damaged image.
+ * @param damaged The damaged input's coordinate map.
+ * @param boundary The pristine boundary.
+ * @return The boundary itself below low, the boundary plus the shift at or past cut, std::nullopt inside the damaged
+ *         window.
+ */
+std::optional<std::size_t> image_of(const Damage& damaged, const std::size_t boundary)
+{
+    const auto& [input, end, shift, low, cut]{damaged};
+
+    if (boundary < low)
+    {
+        return boundary;
+    }
+
+    if (boundary >= cut)
+    {
+        return shifted(boundary, shift);
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief Walks the pristine boundaries backward from an index to the first one with an image, the largest image at or
+ *        below the index since images ascend with their boundaries.
+ * @param pristine The pristine boundaries, ascending.
+ * @param damaged The damaged input's coordinate map.
+ * @param index The index the walk starts at, -1 for none.
+ * @return The image and its index, or no image when the walk runs out.
+ */
+Mapped first_mapped(const std::vector<std::size_t>& pristine, const Damage& damaged, const std::ptrdiff_t index)
+{
+    for (auto j{index}; j >= 0; --j)
+    {
+        const auto image{image_of(damaged, pristine[static_cast<std::size_t>(j)])};
+
+        if (image)
+        {
+            return Mapped{.image = image, .index = j};
+        }
+    }
+
+    return Mapped{.image = std::nullopt, .index = -1};
+}
+
+/**
+ * @brief Walks the pristine boundaries backward from an index to the first one with an image at or above a floor.
+ * @param pristine The pristine boundaries, ascending.
+ * @param damaged The damaged input's coordinate map.
+ * @param index The index the walk starts at, -1 for none.
+ * @param floor The smallest image matched.
+ * @return The image and its index, or no image when the walk runs out or the first image lies below the floor.
+ */
+Mapped next_mapped(
+        const std::vector<std::size_t>& pristine, const Damage& damaged, const std::ptrdiff_t index,
+        const std::size_t floor)
+{
+    const auto mapped{first_mapped(pristine, damaged, index)};
+
+    const auto& [image, image_index]{mapped};
+
+    if (!image || *image < floor)
+    {
+        return Mapped{.image = std::nullopt, .index = -1};
+    }
+
+    return mapped;
+}
+
+/**
+ * @brief Walks the emitted starts at or above the floor and the mapped pristine boundaries backward from their ends, in
+ *        step, to their first disagreement.
  * @param pristine The pristine boundaries, ascending.
  * @param damaged The damaged input's coordinate map.
  * @param starts The emitted starts, ascending.
@@ -129,50 +170,27 @@ Common_suffix common_suffix(
             .boundary = static_cast<std::ptrdiff_t>(pristine.size()) - 1,
             .agreed = std::nullopt};
 
-    while (walk.start >= 0 && starts[static_cast<std::size_t>(walk.start)] >= floor)
+    auto& [start, boundary, agreed]{walk};
+
+    while (start >= 0 && starts[static_cast<std::size_t>(start)] >= floor)
     {
-        const auto mapped{next_mapped(pristine, damaged, walk.boundary, floor)};
+        const auto [image, index]{next_mapped(pristine, damaged, boundary, floor)};
 
-        walk.boundary = mapped.index;
+        boundary = index;
 
-        if (!mapped.image || *mapped.image != starts[static_cast<std::size_t>(walk.start)])
+        if (!image || *image != starts[static_cast<std::size_t>(start)])
         {
             break;
         }
 
-        walk.agreed = mapped.image;
+        agreed = image;
 
-        --walk.start;
+        --start;
 
-        --walk.boundary;
+        --boundary;
     }
 
     return walk;
-}
-
-/**
- * @brief Whether a pristine boundary at or below an index maps to an image at or above the floor.
- * @param pristine The pristine boundaries, ascending.
- * @param damaged The damaged input's coordinate map.
- * @param index The index the backward search starts at, -1 for none.
- * @param floor The floor.
- * @return True when such a boundary exists.
- */
-bool has_mapped_at_or_above(
-        const std::vector<std::size_t>& pristine, const Damage& damaged, const std::ptrdiff_t index,
-        const std::size_t floor)
-{
-    for (auto j{index}; j >= 0; --j)
-    {
-        const auto image{image_of(damaged, pristine[static_cast<std::size_t>(j)])};
-
-        if (image && *image >= floor)
-        {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 } // namespace
@@ -186,11 +204,11 @@ std::optional<Evidence> evidence_of(const core::Lexer& lexer, const std::string_
             return Evidence{.begin = at, .byte = true, .length = 1, .origin = 0};
         }
 
-        const auto limit{std::min<std::size_t>(4, input.size() - at)};
-
-        for (std::size_t length{2}; length <= limit; ++length)
+        for (const auto length : window_lengths(input, at))
         {
-            if (const auto origin{lexer.is_split_window(input.substr(at, length))})
+            const auto window{input.substr(at, length)};
+
+            if (const auto origin{lexer.is_split_window(window)})
             {
                 return Evidence{.begin = at, .byte = false, .length = length, .origin = *origin};
             }
@@ -214,11 +232,11 @@ std::size_t minimal_answer(
             continue;
         }
 
-        const auto limit{std::min<std::size_t>(4, input.size() - at)};
-
-        for (std::size_t length{2}; length <= limit; ++length)
+        for (const auto length : window_lengths(input, at))
         {
-            if (const auto origin{lexer.is_split_window(input.substr(at, length))})
+            const auto window{input.substr(at, length)};
+
+            if (const auto origin{lexer.is_split_window(window)})
             {
                 minimal = std::min(minimal, at + *origin);
             }
@@ -230,23 +248,27 @@ std::size_t minimal_answer(
 
 std::size_t pristine_oracle(const Row& row, const std::size_t samples)
 {
-    Lcg random{0x5eed0003U};
+    Lcg random{0x5EED0003U};
 
     std::size_t failures{0};
 
+    const auto& [label, lexer, corpus, begins, generated]{row};
+
+    // The final byte is excluded, so this oracle never checks the last starting offset; there the split-friendly row
+    // answers with a final newline's one-byte certificate, while the other rows refuse.
+    const auto span{static_cast<std::uint32_t>(corpus.size() - 1)};
+
     for (std::size_t sample{0}; sample < samples; ++sample)
     {
-        // The final byte is excluded, so this oracle never checks the last starting offset; there the split-friendly
-        // row answers with a final newline's one-byte certificate, while the other rows refuse.
-        const auto from{static_cast<std::size_t>(random.bounded(static_cast<std::uint32_t>(row.corpus.size() - 1)))};
+        const auto from{static_cast<std::size_t>(random.bounded(span))};
 
-        const auto found{row.lexer.next_certified_start(row.corpus, from)};
+        const auto found{lexer.next_certified_start(corpus, from)};
 
-        if (found && (!std::binary_search(row.begins.begin(), row.begins.end(), *found) || *found < from))
+        if (found && (!std::ranges::binary_search(begins, *found) || *found < from))
         {
             std::fprintf(
-                    stderr, "PRISTINE ORACLE VIOLATION: %s from %zu answered %zu\n", std::string{row.label}.c_str(),
-                    from, *found);
+                    stderr, "pristine oracle violation: %s from %zu answered %zu\n", std::string{label}.c_str(), from,
+                    *found);
 
             ++failures;
         }
@@ -259,45 +281,44 @@ Convergence converge(
         const std::vector<std::size_t>& pristine, const Damage& damaged, const std::vector<std::size_t>& starts,
         const std::size_t floor)
 {
-    const auto walk{common_suffix(pristine, damaged, starts, floor)};
+    const auto [unmatched, boundary_index, agreed]{common_suffix(pristine, damaged, starts, floor)};
 
     Convergence result{};
 
+    auto& [at, lost, spurious]{result};
+
     // Agreement down to the floor on both sides converges at the floor; no common suffix converges only at the end of
     // input.
-    if ((walk.start < 0 || starts[static_cast<std::size_t>(walk.start)] < floor) &&
-        !has_mapped_at_or_above(pristine, damaged, walk.boundary, floor))
+    const auto starts_matched{unmatched < 0 || starts[static_cast<std::size_t>(unmatched)] < floor};
+
+    const auto [mapped_above_floor, mapped_index]{next_mapped(pristine, damaged, boundary_index, floor)};
+
+    if (starts_matched && !mapped_above_floor)
     {
-        result.at = floor;
+        at = floor;
     }
     else
     {
-        result.at = walk.agreed ? *walk.agreed : damaged.input.size();
+        at = agreed.value_or(damaged.input.size());
     }
 
-    // Both counts range over the divergence region, from the corruption end to the convergence point, so the initial
-    // jump's skipped boundaries count as lost and emitted starts before the corruption end never count.
-    for (const auto boundary : pristine)
-    {
+    const auto is_lost{[&damaged, at](const std::size_t boundary) {
         const auto image{image_of(damaged, boundary)};
 
-        if (image && *image >= damaged.end && *image < result.at)
-        {
-            ++result.lost;
-        }
-    }
+        return image && *image >= damaged.end && *image < at;
+    }};
 
-    for (const auto start : starts)
-    {
-        if (start >= damaged.end && start < result.at && !is_landed(pristine, damaged, start))
-        {
-            ++result.spurious;
-        }
-    }
+    const auto is_spurious{[&pristine, &damaged, at](const std::size_t start) {
+        return start >= damaged.end && start < at && !is_landed(pristine, damaged, start);
+    }};
 
-    if (result.at <= damaged.end && (result.lost != 0 || result.spurious != 0))
+    lost = static_cast<std::size_t>(std::ranges::count_if(pristine, is_lost));
+
+    spurious = static_cast<std::size_t>(std::ranges::count_if(starts, is_spurious));
+
+    if (at <= damaged.end && (lost != 0 || spurious != 0))
     {
-        std::fprintf(stderr, "CONVERGENCE REGION VIOLATION\n");
+        std::fprintf(stderr, "convergence region violation\n");
 
         std::exit(EXIT_FAILURE);
     }
@@ -319,10 +340,16 @@ Score score_of(const Row& row, const Damage& damaged, const Incident& incident)
         score.terminal_landed = is_landed(row.begins, damaged, *incident.terminal);
     }
 
-    if (incident.outcome == Outcome::Completed)
+    if (incident.outcome == Outcome::completed)
     {
-        score.convergence = incident.first ? converge(row.begins, damaged, incident.starts, *incident.first) :
-                                             Convergence{.at = damaged.input.size(), .lost = 0, .spurious = 0};
+        if (incident.first)
+        {
+            score.convergence = converge(row.begins, damaged, incident.starts, *incident.first);
+        }
+        else
+        {
+            score.convergence = Convergence{.at = damaged.input.size(), .lost = 0, .spurious = 0};
+        }
     }
 
     return score;

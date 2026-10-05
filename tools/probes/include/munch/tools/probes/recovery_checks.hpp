@@ -29,32 +29,32 @@ struct Cell
     /**
      * @brief The row's index among the rows, which salts the cell's streams.
      */
-    std::size_t row_index;
+    std::size_t row_index{0};
 
     /**
      * @brief The damage operation.
      */
-    Op op;
+    Op op{Op::substitution};
 
     /**
-     * @brief The operation's index in kOps.
+     * @brief The operation's index in ops.
      */
-    std::size_t op_index;
+    std::size_t op_index{0};
 
     /**
      * @brief The damage width.
      */
-    std::size_t k;
+    std::size_t width{0};
 
     /**
-     * @brief The width's index in kWidths.
+     * @brief The width's index in widths.
      */
-    std::size_t k_index;
+    std::size_t width_index{0};
 
     /**
      * @brief The seed index, from zero.
      */
-    std::size_t seed;
+    std::size_t seed{0};
 };
 
 /**
@@ -70,43 +70,43 @@ struct Trial
     /**
      * @brief The trial's index within its cell.
      */
-    std::size_t index;
+    std::size_t index{0};
 
     /**
      * @brief The damage position p.
      */
-    std::size_t position;
+    std::size_t position{0};
 
     /**
      * @brief The serial scan's failure offset e on the damaged input, below its size.
      */
-    std::size_t failure;
+    std::size_t failure{0};
 
     /**
      * @brief The damaged input and its coordinate map.
      */
-    Damage damaged;
+    Damage damaged{};
 
     /**
      * @brief The first image of a pristine boundary at or past the corruption end.
      */
-    std::optional<std::size_t> first_true;
+    std::optional<std::size_t> first_true{};
 
     /**
-     * @brief core::Lexer::minimal_repair() of the blind tail, the input from one past the failure: a repair exists
-     *        when it answers.
+     * @brief core::Lexer::minimal_repair() of the blind tail, the input from one past the failure: a repair exists when
+     *        it answers.
      */
-    std::optional<std::string> repair;
+    std::optional<std::string> repair{};
 
     /**
      * @brief core::Lexer::next_anchored_start() at the blind anchor, in damaged coordinates.
      */
-    std::optional<std::size_t> direct;
+    std::optional<std::size_t> direct{};
 
     /**
-     * @brief Every arm's incident, in kArms order.
+     * @brief Every arm's incident, in arms order.
      */
-    std::array<Incident, kArms.size()> incidents;
+    std::array<Incident, arms.size()> incidents{};
 };
 
 /**
@@ -212,11 +212,11 @@ struct Campaign_totals
 };
 
 /**
- * @brief Checks every assertion over one trial in a fixed order, printing each violation on standard error and
- *        counting it in theorem_failures, and adds the trial to the totals: the repair witness, the replica walk
- *        against the certified arm's first evidence, the transfer of the first answer, every certified move, the clean
- *        certified arm, the decider's consistency with the walk, the exact arm's pairing, the clean exact arm and the
- *        delimiter conventions.
+ * @brief Checks every assertion over one trial in a fixed order, printing each violation on standard error and counting
+ *        it in theorem_failures, and adds the trial to the totals: the repair witness, the replica walk against the
+ *        certified arm's first evidence, the transfer of the first answer, every certified move, the clean certified
+ *        arm, the decider's consistency with the walk, the exact arm's pairing, the clean exact arm and the delimiter
+ *        conventions.
  * @param trial The trial.
  * @param totals The campaign's totals.
  */

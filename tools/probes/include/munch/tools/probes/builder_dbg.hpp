@@ -14,6 +14,9 @@ namespace munch::tools::probes
 class Builder_dbg : public core::Builder
 {
 public:
+    /**
+     * @brief The Builder's compiled automaton, made public.
+     */
     using Builder::dfa;
 };
 

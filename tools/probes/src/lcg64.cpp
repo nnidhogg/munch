@@ -10,7 +10,7 @@ Lcg64::Lcg64(const std::uint64_t seed) noexcept : state_{seed}
 
 std::size_t Lcg64::next(const std::size_t bound) noexcept
 {
-    state_ = state_ * 6364136223846793005ULL + 1442695040888963407ULL;
+    state_ = state_ * multiplier + increment;
 
     return static_cast<std::size_t>((state_ >> 33U) % bound);
 }

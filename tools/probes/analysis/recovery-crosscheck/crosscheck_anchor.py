@@ -1015,7 +1015,7 @@ def main():
         ),
     ):
         if offenders:
-            out.append("- **VIOLATION, %s: %d cases.** The first is:" % (name, len(offenders)))
+            out.append("- **violation, %s: %d cases.** The first is:" % (name, len(offenders)))
             out.append("")
             out.append("```")
             out.append(repr(offenders[0]))
@@ -1154,7 +1154,7 @@ def main():
     out.append("")
 
     if long_failures:
-        out.append("- **VIOLATIONS in the long family: %d.**" % len(long_failures))
+        out.append("- **violations in the long family: %d.**" % len(long_failures))
         out.append("")
 
         for tokens, claim, detail in long_failures[:5]:
@@ -1274,7 +1274,7 @@ def main():
         out.append("")
 
     if pristine.violations:
-        out.append("- **VIOLATION: %d covered answers failed to land.** The first is:" % len(pristine.violations))
+        out.append("- **violation: %d covered answers failed to land.** The first is:" % len(pristine.violations))
         out.append("")
         out.append("```")
         out.append(repr(pristine.violations[0]))

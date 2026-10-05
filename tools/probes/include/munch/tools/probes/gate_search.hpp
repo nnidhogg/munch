@@ -9,18 +9,24 @@
 #include "munch/tools/probes/window_model.hpp"
 
 /**
- * @brief The window model decided exactly over its finite quotient, kSubsetBudget, Search, shortest_windows and
- *        certified_words_upto: the shortest certified windows and the certified words up to a bound.
+ * @brief The window model decided exactly over its finite quotient, subset_budget, kept_windows, Search,
+ *        shortest_windows and certified_words_upto: the shortest certified windows and the certified words up to a
+ *        bound.
  */
 namespace munch::tools::probes
 {
 /**
- * @brief The quotient keys a search may retain; a search that exceeds it is reported inconclusive rather than
- *        negative.
+ * @brief The quotient keys a search may retain; a search that exceeds it is reported inconclusive rather than negative.
  */
-inline constexpr std::size_t kSubsetBudget{200'000};
+inline constexpr std::size_t subset_budget{200'000};
 
-static_assert(kSubsetBudget == 200'000, "the paper states a fixed safety threshold of 200,000 keys");
+static_assert(subset_budget == 200'000, "the paper states a fixed safety threshold of 200,000 keys");
+
+/**
+ * @brief The most certified windows a shortest-window search keeps, and the most words the sweep's witness search
+ *        collects.
+ */
+inline constexpr std::size_t kept_windows{400};
 
 /**
  * @brief What a breadth-first search for the shortest certified windows found.
@@ -33,13 +39,13 @@ struct Search
     std::size_t shortest{0};
 
     /**
-     * @brief Certified windows of the shortest length, in the order the walk met them, at most 400.
+     * @brief Certified windows of the shortest length, in the order the walk met them, at most kept_windows.
      */
-    std::vector<std::string> found;
+    std::vector<std::string> found{};
 
     /**
-     * @brief Whether the walk exhausted the quotient without exceeding kSubsetBudget, which makes a negative
-     *        conclusive under the model.
+     * @brief Whether the walk exhausted the quotient without exceeding subset_budget, which makes a negative conclusive
+     *        under the model.
      */
     bool exhausted{true};
 
@@ -51,18 +57,18 @@ struct Search
 
 /**
  * @brief Walks the model's quotient breadth first from the maximum uncertainty, one key per class, and stops each
- *        branch at the first length that certified a window or once more than kSubsetBudget keys are retained.
+ *        branch at the first length that certified a window or once more than subset_budget keys are retained.
  * @param dfa The automaton.
  * @param live The automaton's trim states.
- * @return The shortest certified length, up to 400 windows of that length, whether the walk exhausted the quotient,
- *         and the keys it retained.
+ * @return The shortest certified length, up to kept_windows windows of that length, whether the walk exhausted the
+ *         quotient, and the keys it retained.
  */
 [[nodiscard]] Search shortest_windows(const dfa::Dfa& dfa, const States_t& live);
 
 /**
  * @brief Collects certified words up to a length, continuing past certified clouds so a longer word is found where a
- *        shorter one certifies too; one representative word per fresh quotient key, stopping at the cap or once
- *        more than kSubsetBudget keys are retained.
+ *        shorter one certifies too; one representative word per fresh quotient key, stopping at the cap or once more
+ *        than subset_budget keys are retained.
  * @param dfa The automaton.
  * @param live The automaton's trim states.
  * @param reentrant Whether a live transition re-enters the initial state.

@@ -2,12 +2,13 @@
 
 #include <sys/utsname.h>
 
-#include <cstring>
+#include <array>
 #include <ctime>
 #include <fstream>
 #include <limits>
 #include <numeric>
 #include <random>
+#include <string_view>
 #include <thread>
 
 #include "munch/core/builder.hpp"
@@ -25,27 +26,60 @@ namespace
  */
 struct Observation
 {
-    std::size_t scenario;
-    int round;
-    double seconds;
+    /**
+     * @brief The scenario's index.
+     */
+    std::size_t scenario{0};
+
+    /**
+     * @brief The round the pass ran in.
+     */
+    int round{0};
+
+    /**
+     * @brief The pass's wall-clock time.
+     */
+    double seconds{0.0};
 };
+
 } // namespace
+
+unsigned Corpus_random::operator()() noexcept
+{
+    return next_random(seed_, corpus_dropped_bits);
+}
+
+regex::Regex ascii_identifier()
+{
+    using namespace munch::regex;
+
+    auto identifier{concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_')))};
+
+    return identifier;
+}
 
 core::Lexer build_lexer(const bool greek_identifiers)
 {
     using namespace munch::regex;
 
-    const auto letter{[greek_identifiers](Regex ascii) {
+    const auto widened{[greek_identifiers](Regex ascii) {
         return greek_identifiers ? choice(std::move(ascii), utf8::range(U'Α', U'ω')) : std::move(ascii);
     }};
 
-    core::Builder builder;
+    auto identifier{concat(widened(any_of(Set::alpha() + '_')), kleene(widened(any_of(Set::alphanum() + '_'))))};
+
+    return build_lexer(std::move(identifier));
+}
+
+core::Lexer build_lexer(regex::Regex identifier)
+{
+    using namespace munch::regex;
+
+    core::Builder builder{};
 
     builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 2);
 
-    builder.add_token(
-            concat(letter(any_of(Set::alpha() + '_')), kleene(letter(any_of(Set::alphanum() + '_')))),
-            Token::identifier, 2);
+    builder.add_token(std::move(identifier), Token::identifier, 2);
 
     builder.add_token(plus(any_of(Set::digits())), Token::number, 2);
 
@@ -67,7 +101,7 @@ void keyword_scale_tokens(core::Builder& builder)
     using namespace munch::regex;
 
     // Roughly the C++ keyword set plus common fixed-width type names: 100 entries.
-    static constexpr const char* keywords[]{
+    static constexpr std::array<std::string_view, 100> keywords{
             "alignas",     "alignof",   "and",        "and_eq",    "asm",      "auto",         "bitand",
             "bitor",       "bool",      "break",      "case",      "catch",    "char",         "char8_t",
             "char16_t",    "char32_t",  "class",      "compl",     "concept",  "const",        "consteval",
@@ -84,12 +118,12 @@ void keyword_scale_tokens(core::Builder& builder)
             "xor_eq",      "final",     "override",   "import",    "module",   "int8_t",       "int16_t",
             "int32_t",     "int64_t"};
 
-    for (const auto* keyword : keywords)
+    for (const auto keyword : keywords)
     {
         builder.add_token(text(keyword), Token::keyword, 1);
     }
 
-    builder.add_token(concat(any_of(Set::alpha() + '_'), kleene(any_of(Set::alphanum() + '_'))), Token::identifier, 2);
+    builder.add_token(ascii_identifier(), Token::identifier, 2);
 
     builder.add_token(patterns::decimal_float(), Token::number, 1);
 
@@ -97,39 +131,40 @@ void keyword_scale_tokens(core::Builder& builder)
 
     builder.add_token(plus(any_of(Set{' ', '\t', '\n'})), Token::whitespace, 1);
 
-    for (const auto* op : {"==", "!=", "<=", ">=", "<<", ">>", "&&", "||", "++", "--", "->", "+=", "-=", "*=",
-                           "/=", "+",  "-",  "*",  "/",  "%",  "=",  "<",  ">",  "!",  "~",  "&",  "|",  "^"})
+    for (const std::string_view op : {"==", "!=", "<=", ">=", "<<", ">>", "&&", "||", "++", "--",
+                                      "->", "+=", "-=", "*=", "/=", "+",  "-",  "*",  "/",  "%",
+                                      "=",  "<",  ">",  "!",  "~",  "&",  "|",  "^"})
     {
         builder.add_token(text(op), Token::operator_, 2);
     }
 
-    for (const auto* punct : {"(", ")", "{", "}", "[", "]", ";", ",", ".", ":", "?"})
+    for (const std::string_view punct : {"(", ")", "{", "}", "[", "]", ";", ",", ".", ":", "?"})
     {
         builder.add_token(text(punct), Token::punctuation, 2);
     }
 }
 
-std::string generate_input(const std::size_t size, const std::span<const char* const> identifiers)
+std::string generate_input(const std::size_t size, const std::span<const std::string_view> identifiers)
 {
-    std::string input;
+    std::string input{};
 
     input.reserve(size + 128);
 
     // A fixed-seed linear congruential generator keeps the input identical across runs and builds.
-    unsigned seed{12345};
+    Corpus_random random{};
 
-    const auto random{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
+    const auto draw_identifier{[&] { return identifiers[random() % identifiers.size()]; }};
 
     while (input.size() < size)
     {
         input += "while (";
-        input += identifiers[random() % identifiers.size()];
+        input += draw_identifier();
         input += " <= ";
         input += std::to_string(random() % 100000);
         input += ") { ";
-        input += identifiers[random() % identifiers.size()];
+        input += draw_identifier();
         input += " = ";
-        input += identifiers[random() % identifiers.size()];
+        input += draw_identifier();
         input += " + ";
         input += std::to_string(random() % 997);
         input += "; if (x1 != 42) { return counter; } }\n";
@@ -140,7 +175,14 @@ std::string generate_input(const std::size_t size, const std::span<const char* c
 
 std::string generate_source_input(const std::size_t size)
 {
-    constexpr const char* identifiers[]{
+    std::string input{};
+
+    input.reserve(size + 256);
+
+    // The same fixed-seed generator as generate_input(), so ports stay byte-identical.
+    Corpus_random random{};
+
+    constexpr std::array<std::string_view, 10> identifiers{
             "configuration_manager",
             "total_element_count",
             "process_next_request",
@@ -152,37 +194,28 @@ std::string generate_source_input(const std::size_t size)
             "acc",
             "idx"};
 
-    std::string input;
-
-    input.reserve(size + 256);
-
-    // The same fixed-seed generator as generate_input(), so ports stay byte-identical.
-    unsigned seed{12345};
-
-    const auto random{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
-
-    const auto identifier{[&] { return identifiers[random() % std::size(identifiers)]; }};
+    const auto draw_identifier{[&] { return identifiers[random() % identifiers.size()]; }};
 
     while (input.size() < size)
     {
         input += "while (";
-        input += identifier();
+        input += draw_identifier();
         input += " <= ";
         input += std::to_string(random() % 10000000);
         input += ") {\n    ";
-        input += identifier();
+        input += draw_identifier();
         input += " = ";
-        input += identifier();
+        input += draw_identifier();
         input += " * ";
-        input += identifier();
+        input += draw_identifier();
         input += " + ";
         input += std::to_string(random() % 100000);
         input += ";\n    if (";
-        input += identifier();
+        input += draw_identifier();
         input += " != ";
         input += std::to_string(random() % 997);
         input += ") { return ";
-        input += identifier();
+        input += draw_identifier();
         input += "; }\n}\n";
     }
 
@@ -193,7 +226,7 @@ core::Lexer build_json_lexer(const bool discard_whitespace)
 {
     using namespace munch::regex;
 
-    core::Builder builder;
+    core::Builder builder{};
 
     // ws = *( %x20 / %x09 / %x0A / %x0D ).
     builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), Json_token::whitespace, 2);
@@ -203,13 +236,20 @@ core::Lexer build_json_lexer(const bool discard_whitespace)
 
     const auto hex{Set::digits() + Set::range('a', 'f') + Set::range('A', 'F')};
 
-    const auto escape{concat(
-            text("\\"),
-            choice(any_of(Set{'"', '\\', '/', 'b', 'f', 'n', 'r', 't'}),
-                   concat(text("u"), concat(any_of(hex), concat(any_of(hex), concat(any_of(hex), any_of(hex)))))))};
+    const auto hex_digit{any_of(hex)};
 
-    builder.add_token(
-            concat(text("\""), concat(kleene(choice(any_of(unescaped), escape)), text("\""))), Json_token::string, 2);
+    const auto two_hex_digits{concat(hex_digit, hex_digit)};
+
+    const auto three_hex_digits{concat(hex_digit, two_hex_digits)};
+
+    const auto unicode_escape{concat(text("u"), concat(hex_digit, three_hex_digits))};
+
+    const auto escape{
+            concat(text(R"(\)"), choice(any_of(Set{'"', '\\', '/', 'b', 'f', 'n', 'r', 't'}), unicode_escape))};
+
+    const auto string_body{kleene(choice(any_of(unescaped), escape))};
+
+    builder.add_token(concat(text(R"(")"), concat(string_body, text(R"(")"))), Json_token::string, 2);
 
     const auto digits{plus(any_of(Set::digits()))};
 
@@ -217,10 +257,13 @@ core::Lexer build_json_lexer(const bool discard_whitespace)
 
     const auto exponent{concat(any_of(Set{'e', 'E'}), concat(optional(any_of(Set{'+', '-'})), digits))};
 
-    builder.add_token(
-            concat(optional(text("-")),
-                   concat(integer, concat(optional(concat(text("."), digits)), optional(exponent)))),
-            Json_token::number, 2);
+    const auto fraction{concat(text("."), digits)};
+
+    const auto fraction_and_exponent{concat(optional(fraction), optional(exponent))};
+
+    const auto number{concat(optional(text("-")), concat(integer, fraction_and_exponent))};
+
+    builder.add_token(number, Json_token::number, 2);
 
     builder.add_token(choice(text("true"), text("false"), text("null")), Json_token::literal, 1);
 
@@ -236,18 +279,13 @@ core::Lexer build_json_lexer(const bool discard_whitespace)
 
 std::string generate_json_input(const std::size_t size, const bool pretty)
 {
-    constexpr const char* keys[]{"configuration_manager", "total_element_count", "process_next_request",
-                                 "buffer_capacity",       "validation_result",   "iterator_position"};
+    const std::string_view line_end{pretty ? "\n" : ""};
 
-    constexpr std::size_t fields{6};
+    const std::string_view indent{pretty ? "    " : ""};
 
-    const char* const line_end{pretty ? "\n" : ""};
+    const std::string_view gap{pretty ? " " : ""};
 
-    const char* const indent{pretty ? "    " : ""};
-
-    const char* const gap{pretty ? " " : ""};
-
-    std::string input;
+    std::string input{};
 
     input.reserve(size + 256);
 
@@ -255,9 +293,13 @@ std::string generate_json_input(const std::size_t size, const bool pretty)
     input += line_end;
 
     // The same fixed-seed generator as generate_input(), so both shapes carry the same values in the same order.
-    unsigned seed{12345};
+    Corpus_random random{};
 
-    const auto random{[&seed] { return seed = seed * 1664525U + 1013904223U, seed >> 16U; }};
+    constexpr std::array<std::string_view, 6> keys{"configuration_manager", "total_element_count",
+                                                   "process_next_request",  "buffer_capacity",
+                                                   "validation_result",     "iterator_position"};
+
+    const auto draw_key{[&] { return keys[random() % keys.size()]; }};
 
     while (input.size() < size)
     {
@@ -265,30 +307,39 @@ std::string generate_json_input(const std::size_t size, const bool pretty)
         input += "{";
         input += line_end;
 
+        constexpr std::size_t fields{6};
+
         for (std::size_t field{0}; field < fields; ++field)
         {
             input += indent;
             input += indent;
-            input += "\"";
-            input += keys[random() % std::size(keys)];
-            input += "\":";
+            input += R"(")";
+            input += draw_key();
+            input += R"(":)";
             input += gap;
 
             switch (random() % 4)
             {
             case 0:
                 input += std::to_string(random() % 1000000);
+
                 break;
+
             case 1:
-                input += "\"";
-                input += keys[random() % std::size(keys)];
-                input += "\"";
+                input += R"(")";
+                input += draw_key();
+                input += R"(")";
+
                 break;
+
             case 2:
                 input += random() % 2 != 0 ? "true" : "false";
+
                 break;
+
             default:
                 input += "null";
+
                 break;
             }
 
@@ -314,16 +365,44 @@ std::string generate_json_input(const std::size_t size, const bool pretty)
     return input;
 }
 
+double median_of(const std::vector<double>& sorted)
+{
+    const auto lower{sorted[(sorted.size() - 1) / 2]};
+
+    const auto upper{sorted[sorted.size() / 2]};
+
+    return (lower + upper) / 2.0;
+}
+
+void print_summary(
+        const std::string_view name, const std::size_t bytes, const std::size_t tokens, const int passes,
+        const std::vector<double>& sorted_seconds)
+{
+    const auto mib{static_cast<double>(bytes) / bytes_per_mebibyte};
+
+    const auto median{median_of(sorted_seconds)};
+
+    const auto best_rate{mib / sorted_seconds.front()};
+
+    const auto median_rate{mib / median};
+
+    const auto worst_rate{mib / sorted_seconds.back()};
+
+    std::printf(
+            "%-16s %.1f MiB, %zu tokens, %d passes: best %.1f, median %.1f, worst %.1f MiB/s\n",
+            std::string{name}.c_str(), mib, tokens, passes, best_rate, median_rate, worst_rate);
+}
+
 bool measure_interleaved(
         const std::span<const Scenario> scenarios, const int passes, const std::size_t input_mebibytes,
-        const char* const observations_path)
+        const std::optional<std::string_view> observations_path)
 {
-    std::vector<std::size_t> expected;
+    std::vector<std::size_t> expected{};
 
     expected.reserve(scenarios.size());
 
-    // The warmup pass also fixes the token count every timed pass must reproduce, so a scenario that stops
-    // scanning the whole corpus fails loudly. Content is checked once, against the reference stream, before timing.
+    // The warmup pass also fixes the token count every timed pass must reproduce, so a scenario that stops scanning the
+    // whole corpus fails loudly. Content is checked once, against the reference stream, before timing.
     for (const auto& scenario : scenarios)
     {
         expected.push_back(scenario.pass());
@@ -338,19 +417,19 @@ bool measure_interleaved(
 
     std::vector<std::size_t> order(scenarios.size());
 
-    std::iota(order.begin(), order.end(), std::size_t{0});
+    std::ranges::iota(order, std::size_t{0});
 
-    // Seeded rather than random: the order must vary between rounds to spread drift, and repeat exactly between
-    // runs so a measurement can be reproduced.
-    std::mt19937 sequence{0x5eedU};
+    // Seeded rather than random: the order must vary between rounds to spread drift, and repeat exactly between runs so
+    // a measurement can be reproduced.
+    std::mt19937 sequence{0x5EEDU};
 
-    std::vector<Observation> observations;
+    std::vector<Observation> observations{};
 
     observations.reserve(scenarios.size() * static_cast<std::size_t>(passes));
 
     for (int round{0}; round < passes; ++round)
     {
-        std::shuffle(order.begin(), order.end(), sequence);
+        std::ranges::shuffle(order, sequence);
 
         for (const auto index : order)
         {
@@ -362,7 +441,7 @@ bool measure_interleaved(
 
             if (result != expected[index])
             {
-                std::printf("%s: the result changed between passes\n", scenarios[index].name);
+                std::printf("%s: the result changed between passes\n", std::string{scenarios[index].name}.c_str());
 
                 return false;
             }
@@ -375,36 +454,33 @@ bool measure_interleaved(
 
     for (std::size_t index{0}; index < scenarios.size(); ++index)
     {
+        const auto& [name, bytes, pass]{scenarios[index]};
+
         auto samples{seconds[index]};
 
-        std::sort(samples.begin(), samples.end());
+        std::ranges::sort(samples);
 
-        const auto mib{static_cast<double>(scenarios[index].bytes) / (1024.0 * 1024.0)};
-
-        const auto median{(samples[(samples.size() - 1) / 2] + samples[samples.size() / 2]) / 2.0};
-
-        std::printf(
-                "%-16s %.1f MiB, %zu tokens, %d passes: best %.1f, median %.1f, worst %.1f MiB/s\n",
-                scenarios[index].name, mib, expected[index], passes, mib / samples.front(), mib / median,
-                mib / samples.back());
+        print_summary(name, bytes, expected[index], passes, samples);
     }
 
-    if (observations_path == nullptr)
+    if (!observations_path)
     {
         return true;
     }
 
-    // The CSV is appended to, and rounds restart at zero in every call, so without this the rows of separate runs
-    // are separable only by position. One identifier per process keeps them apart.
+    const std::string path{*observations_path};
+
+    // The CSV is appended to, and rounds restart at zero in every call, so without this the rows of separate runs are
+    // separable only by position. One identifier per process keeps them apart.
     static const auto run{std::chrono::system_clock::now().time_since_epoch() / std::chrono::seconds{1}};
 
-    const bool fresh{!std::ifstream{observations_path}.good()};
+    const bool fresh{!std::ifstream{path}.good()};
 
-    std::ofstream csv{observations_path, std::ios::app};
+    std::ofstream csv{path, std::ios::app};
 
     if (!csv)
     {
-        std::printf("unable to write observations to %s\n", observations_path);
+        std::printf("unable to write observations to %s\n", path.c_str());
 
         return false;
     }
@@ -419,19 +495,21 @@ bool measure_interleaved(
     }
 
     // The commit rides on every row: a row separated from its header must still say which tree produced it.
-    for (const auto& observation : observations)
+    for (const auto& [scenario, round, seconds_taken] : observations)
     {
-        const auto mib{static_cast<double>(scenarios[observation.scenario].bytes) / (1024.0 * 1024.0)};
+        const auto& [name, bytes, pass]{scenarios[scenario]};
 
-        csv << run << ',' << kCommit << ',' << (kDirty ? "yes" : "no") << ',' << scenarios[observation.scenario].name
-            << ',' << input_mebibytes << ',' << observation.round << ',' << observation.seconds << ','
-            << mib / observation.seconds << '\n';
+        const auto mib{static_cast<double>(bytes) / bytes_per_mebibyte};
+
+        csv << run << ',' << commit << ',' << (dirty ? "yes" : "no") << ',' << name << ',' << input_mebibytes << ','
+            << round << ',' << seconds_taken << ',' << mib / seconds_taken << '\n';
     }
 
     return csv.flush().good();
 }
 
-void print_provenance(const char* const benchmark, const int passes, const char* const observations_path)
+void print_provenance(
+        const std::string_view benchmark, const int passes, const std::optional<std::string_view> observations_path)
 {
     const auto now{std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())};
 
@@ -439,14 +517,18 @@ void print_provenance(const char* const benchmark, const int passes, const char*
 
     gmtime_r(&now, &utc);
 
-    char stamp[32]{};
+    std::array<char, 32> stamp{};
 
-    std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S UTC", &utc);
+    std::strftime(stamp.data(), stamp.size(), "%Y-%m-%d %H:%M:%S UTC", &utc);
 
-    std::printf("%s\n", benchmark);
-    std::printf("  commit      %s%s\n", kCommit, kDirty ? " (uncommitted changes present)" : "");
-    std::printf("  collected   %s\n", stamp);
+    std::printf("%s\n", std::string{benchmark}.c_str());
+
+    std::printf("  commit      %s%s\n", std::string{commit}.c_str(), dirty ? " (uncommitted changes present)" : "");
+
+    std::printf("  collected   %s\n", stamp.data());
+
     std::printf("  passes      %d\n", passes);
+
     std::printf("  hardware    %u threads visible\n", std::thread::hardware_concurrency());
 
 #ifdef __VERSION__
@@ -461,13 +543,25 @@ void print_provenance(const char* const benchmark, const int passes, const char*
         std::printf("  system      %s %s %s\n", system.sysname, system.release, system.machine);
     }
 
-    // The file name, never the path. This line is archived beside the CSV it names, and a directory from whoever
-    // ran the benchmark identifies their machine, which tools/benchmark/collect.sh promises its output does not.
-    const auto* const name{observations_path == nullptr ? nullptr : std::strrchr(observations_path, '/')};
+    // The file name, never the path. This line is archived beside the CSV it names, and a directory from whoever ran
+    // the benchmark identifies their machine, which tools/benchmark/collect.sh promises its output does not.
+    const auto file_name{[&observations_path]() -> std::string {
+        if (!observations_path)
+        {
+            return "not recorded";
+        }
 
-    std::printf(
-            "  observations %s\n\n",
-            observations_path == nullptr ? "not recorded" : (name != nullptr ? name + 1 : observations_path));
+        const auto slash{observations_path->rfind('/')};
+
+        if (slash == std::string_view::npos)
+        {
+            return std::string{*observations_path};
+        }
+
+        return std::string{observations_path->substr(slash + 1)};
+    }()};
+
+    std::printf("  observations %s\n\n", file_name.c_str());
 }
 
 } // namespace munch::tools::benchmark

@@ -55,6 +55,12 @@ endforeach()
 # must carry. That is the whole of its argument, so it is computed from the automaton rather than counted by hand.
 add_executable(munch_composition composition.cpp)
 
+# The benchmark's harness header carries the one fixed-seed generator the figures' corpora draw from.
+target_include_directories(munch_composition
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/tools/benchmark/include
+)
+
 target_link_libraries(munch_composition
         PRIVATE
         munch_core
@@ -65,6 +71,12 @@ add_test(NAME munch_composition COMMAND munch_composition)
 # The soundness and conservatism figures of paper/split-points/split-points.tex. The sweep is exhaustive over a small alphabet
 # rather than sampled, because a sampled corpus reports a symbol as safe whenever it never exercised it.
 add_executable(munch_validation validation.cpp)
+
+# The benchmark's harness header carries the one fixed-seed generator the figures' corpora draw from.
+target_include_directories(munch_validation
+        PRIVATE
+        ${MUNCH_SOURCE_DIR}/tools/benchmark/include
+)
 
 target_link_libraries(munch_validation
         PRIVATE
