@@ -69,13 +69,7 @@ void check_success(const std::string_view input, const std::size_t offset, const
 
     require(delimiter.size() <= max_delimiter_length);
 
-    /**
-     * @brief Returns whether a character is a C++23 d-char, which every accepted delimiter character must be.
-     *
-     * The test is stated here independently of the scanner's own predicate, so a loosened predicate fails the harness.
-     * @param symbol The character.
-     * @return Whether it is a letter, a digit or basic-set punctuation.
-     */
+    // The C++23 d-char test, stated apart from the scanner's own predicate.
     const auto is_d_char{[](const char symbol) {
         return (symbol >= 'A' && symbol <= 'Z') || (symbol >= 'a' && symbol <= 'z') ||
                (symbol >= '0' && symbol <= '9') || d_char_punctuation.contains(symbol);
@@ -109,6 +103,12 @@ void check_success(const std::string_view input, const std::size_t offset, const
 
 /**
  * @brief Checks one fuzz input, the fuzz entry point run once per input.
+ *
+ * The first byte chooses how the text to scan is decoded from the rest. Mode zero takes arbitrary bytes at an arbitrary
+ * offset: the malformed direction, where the scanner must reject rather than read past the end of a truncated delimiter
+ * or an unterminated body. Mode one assembles a literal from fuzz bytes, so the success path is reached often rather
+ * than by accident. The pieces are still fuzz-controlled, so delimiters containing ')' or '"', bodies containing the
+ * closing sequence, and over-long delimiters all arise on their own.
  * @param data The fuzz input.
  * @param size The input's size.
  * @return Zero; a violated invariant traps instead.
@@ -121,16 +121,6 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* const data, const std:
 
     const auto offset_byte{static_cast<std::size_t>(reader.byte())};
 
-    /**
-     * @brief Decodes the text to scan from the rest of the input, as the mode byte chose.
-     *
-     * Mode zero takes arbitrary bytes at an arbitrary offset: the malformed direction, where the scanner must reject
-     * rather than read past the end of a truncated delimiter or an unterminated body. Mode one assembles a literal from
-     * fuzz bytes, so the success path is reached often rather than by accident. The pieces are still fuzz-controlled,
-     * so delimiters containing ')' or '"', bodies containing the closing sequence, and over-long delimiters all arise
-     * on their own.
-     * @return The text to scan.
-     */
     const auto decode_input{[&reader, mode] {
         if (mode == 0)
         {

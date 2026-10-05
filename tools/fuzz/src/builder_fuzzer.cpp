@@ -48,11 +48,6 @@ munch::regex::Regex make_regex(Reader& reader, const std::size_t depth, const st
 {
     using namespace munch::regex;
 
-    /**
-     * @brief Returns how many node kinds may decode here: only the two leaves at depth zero, every kind but counted
-     *        repetition once two ranges nest, and all eight otherwise.
-     * @return The number of node kinds.
-     */
     const auto kinds_here{[depth, repeats] {
         if (depth == 0)
         {
@@ -62,11 +57,7 @@ munch::regex::Regex make_regex(Reader& reader, const std::size_t depth, const st
         return repeats == 0 ? 7U : 8U;
     }};
 
-    /**
-     * @brief Decodes the two operands of a binary node, the left before the right, which fixes the grammar an input
-     *        yields.
-     * @return The left and the right operand.
-     */
+    // The left operand decodes before the right, which fixes the grammar an input yields.
     const auto operands{[&reader, depth, repeats] {
         auto left{make_regex(reader, depth - 1, repeats)};
 
@@ -167,11 +158,6 @@ std::pair<Stream_t, std::size_t> check_serial_scan(
 
     std::size_t total{0};
 
-    /**
-     * @brief Checks one token's ID and length and records it in the serial stream.
-     * @param token The token's ID.
-     * @param length The token's length.
-     */
     const auto record{[&serial, &total, count](const unsigned token, const std::size_t length) {
         require(token < count);
 
@@ -247,27 +233,11 @@ bool is_certified_cut(const munch::core::Lexer& lexer, const std::string_view in
         return true;
     }
 
-    /**
-     * @brief Returns whether a certified window starting a number of bytes before the cut reports the cut as its
-     *        origin.
-     * @param back The bytes between the window's start and the cut.
-     * @return Whether some window of two to four bytes from there, long enough to reach the cut, reports it.
-     */
     const auto window_reports_cut{[&lexer, input, cut](const std::size_t back) {
         const auto start{cut - back};
 
-        /**
-         * @brief Returns whether a window of a length starting there fits in the input.
-         * @param length The window's length.
-         * @return Whether it fits.
-         */
         const auto fits{[&input, start](const std::size_t length) { return start + length <= input.size(); }};
 
-        /**
-         * @brief Returns whether the window of a length starting there reports the cut as its origin.
-         * @param length The window's length.
-         * @return Whether it does.
-         */
         const auto reports_cut{[&lexer, input, start, back](const std::size_t length) {
             const auto window{input.substr(start, length)};
 
@@ -310,11 +280,6 @@ void check_rejoined(
 {
     Stream_t rejoined{};
 
-    /**
-     * @brief Appends one token of a chunk's stream to the rejoined stream.
-     * @param token The token's ID.
-     * @param length The token's length.
-     */
     const auto append{
             [&rejoined](const unsigned token, const std::size_t length) { rejoined.emplace_back(token, length); }};
 
@@ -351,12 +316,6 @@ void check_parallel(
 {
     std::vector<Stream_t> streams(boundaries.size() - 1);
 
-    /**
-     * @brief Appends one token to its chunk's stream.
-     * @param chunk The chunk the token was scanned in.
-     * @param token The token's ID.
-     * @param length The token's length.
-     */
     const auto append{[&streams](const std::size_t chunk, const unsigned token, const std::size_t length) {
         streams[chunk].emplace_back(token, length);
     }};
@@ -414,11 +373,6 @@ void check_lexer(
 
     const auto boundaries{lexer.chunk_boundaries(input, chunks)};
 
-    /**
-     * @brief Returns whether a byte plan's cut is a certified byte.
-     * @param cut The cut.
-     * @return Whether it is certified.
-     */
     const auto is_split_cut{[&lexer, &input](const std::size_t cut) { return lexer.is_split_point(input[cut]); }};
 
     check_cuts(boundaries, input.size(), is_split_cut);
@@ -428,11 +382,6 @@ void check_lexer(
     // documentation, so the stream comparison is made on complete inputs only.
     const auto windowed{lexer.chunk_boundaries_with_windows(input, chunks)};
 
-    /**
-     * @brief Returns whether a window plan's cut is certified.
-     * @param cut The cut.
-     * @return Whether it is certified.
-     */
     const auto is_window_cut{[&lexer, &input](const std::size_t cut) { return is_certified_cut(lexer, input, cut); }};
 
     check_cuts(windowed, input.size(), is_window_cut);
