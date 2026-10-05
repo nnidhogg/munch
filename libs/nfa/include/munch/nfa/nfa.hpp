@@ -1,9 +1,11 @@
 #ifndef MUNCH_LIBS_NFA_INCLUDE_MUNCH_NFA_NFA_HPP
 #define MUNCH_LIBS_NFA_INCLUDE_MUNCH_NFA_NFA_HPP
 
+#include <cstddef>
 #include <optional>
 #include <set>
 #include <unordered_map>
+#include <utility>
 
 #include "munch/nfa/label.hpp"
 #include "munch/nfa/token.hpp"
@@ -13,8 +15,8 @@ namespace munch::nfa
 /**
  * @brief Represents a non-deterministic finite automaton (NFA).
  *
- * Provides methods for querying states, transitions, and accept states, as well as advancing the NFA
- * and computing epsilon closures.
+ * Provides methods for querying states, transitions, and accept states, as well as advancing the NFA and computing
+ * epsilon closures.
  */
 class Nfa
 {
@@ -27,8 +29,8 @@ public:
     /**
      * @brief Ordered set of NFA states.
      *
-     * Using std::set ensures deterministic iteration order so state-sets can be safely used as keys
-     * during DFA subset construction.
+     * Using std::set ensures deterministic iteration order so state-sets can be safely used as keys during DFA subset
+     * construction.
      */
     using States_t = std::set<State_t>;
 
@@ -44,6 +46,11 @@ public:
      */
     struct Hash
     {
+        /**
+         * @brief Hashes a transition key.
+         * @param key The key.
+         * @return The combined hash of its state and label.
+         */
         std::size_t operator()(const Key_t& key) const noexcept;
     };
 
@@ -97,8 +104,8 @@ public:
     /**
      * @brief Advances the NFA from a set of states on an input symbol.
      *
-     * The given set must already be epsilon-closed, from epsilon_closure() or from an earlier advance(), since a
-     * state reachable only by an epsilon step out of it is otherwise never consulted for the symbol.
+     * The given set must already be epsilon-closed, from epsilon_closure() or from an earlier advance(), since a state
+     * reachable only by an epsilon step out of it is otherwise never consulted for the symbol.
      * @param states The current set of states, epsilon-closed.
      * @param symbol The input symbol.
      * @return The epsilon closure of the states reachable on the symbol.
@@ -106,20 +113,26 @@ public:
     [[nodiscard]] States_t advance(const States_t& states, char symbol) const;
 
     /**
-     * @brief Checks if any state in the set is an accept state and returns its token if so.
+     * @brief Returns the token of an accept state in the set, or std::nullopt when none accepts.
      * @param states The set of states to check.
      * @return The associated token if any state is accepting, otherwise std::nullopt.
      */
     [[nodiscard]] std::optional<Token> has_accept_token(const States_t& states) const;
 
 private:
-    /// The initial state of the NFA.
+    /**
+     * @brief The initial state of the NFA.
+     */
     State_t init_state_;
 
-    /// The transition table mapping `(state, label)` pairs to destination state sets.
+    /**
+     * @brief The transition table mapping `(state, label)` pairs to destination state sets.
+     */
     Transitions_t transitions_;
 
-    /// The accept states and their associated tokens.
+    /**
+     * @brief The accept states and their associated tokens.
+     */
     Accept_states_t accept_states_;
 };
 

@@ -4,257 +4,219 @@
 
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <tuple>
 
 #include "munch/nfa/builder.hpp"
 #include "munch/nfa/nfa.hpp"
 
-using namespace munch;
 using namespace munch::nfa;
 using namespace munch::nfa::tools;
 
-using Graphviz_test = testing::Test;
-
-TEST_F(Graphviz_test, Graphviz_to_dot)
+namespace
 {
-    nfa::Builder nfa;
+/**
+ * @brief The DOT text of a_to_accept().
+ */
+constexpr std::string_view expected_dot{R"dot(digraph NFA {
+    rankdir=LR;
+    ratio=1.0;
+    node [shape = circle];
+    1 [shape = doublecircle, label="1 (1)"];
+    __start__ [shape = none, label=""];
+    __start__ -> 0;
+    0 -> 1 [label = "a"];
+}
+)dot"};
 
-    const auto q0{nfa.init_state()};
-    const auto q1{nfa.next_state()};
+/**
+ * @brief Builds the NFA with one transition from q0 to q1 on each given label, q1 accepting token 1.
+ * @param labels The labels.
+ * @return The NFA.
+ */
+Nfa parallel_edges(const std::initializer_list<Label> labels)
+{
+    Builder builder{};
+
+    const auto q0{builder.init_state()};
+    const auto q1{builder.next_state()};
 
     const Token token{1, 1};
 
-    nfa.add_accept_state(q1, token);
-    nfa.add_transition(q0, nfa::Label('a'), q1);
+    builder.add_accept_state(q1, token);
 
-    const auto result{nfa.build()};
+    for (const auto& label : labels)
+    {
+        builder.add_transition(q0, label, q1);
+    }
 
-    const std::string dot_output{Graphviz::to_dot(result)};
-
-    const std::string expected_output{
-            "digraph NFA {\n"
-            "    rankdir=LR;\n"
-            "    ratio=1.0;\n"
-            "    node [shape = circle];\n"
-            "    1 [shape = doublecircle, label=\"1 (1)\"];\n"
-            "    __start__ [shape = none, label=\"\"];\n"
-            "    __start__ -> 0;\n"
-            "    0 -> 1 [label = \"a\"];\n"
-            "}\n"};
-
-    EXPECT_EQ(dot_output, expected_output);
+    return builder.build();
 }
 
-TEST_F(Graphviz_test, Graphviz_to_dot_accept_state_without_a_token)
+/**
+ * @brief Builds the NFA q0 -a-> q1, q1 accepting token 1.
+ * @return The NFA.
+ */
+Nfa a_to_accept()
 {
-    // add_accept_state(state) with no token marks an intermediate accept state (e.g. inside kleene()/optional()'s
-    // construction), rendered as "n/a" rather than a token id.
-    nfa::Builder nfa;
-
-    const auto q0{nfa.init_state()};
-
-    nfa.add_accept_state(q0);
-
-    const auto result{nfa.build()};
-
-    const auto dot_output{Graphviz::to_dot(result)};
-
-    EXPECT_NE(dot_output.find("0 [shape = doublecircle, label=\"0 (n/a)\"]"), std::string::npos);
+    return parallel_edges({Label{'a'}});
 }
 
-TEST_F(Graphviz_test, Graphviz_to_file)
+/**
+ * @brief Expects the graph's elements besides its transitions: the layout, the node shape and the accepting q1.
+ * @param dot The DOT text.
+ */
+void expect_graph_frame(const std::string_view dot)
 {
-    nfa::Builder nfa;
+    EXPECT_TRUE(dot.contains("rankdir=LR"));
+    EXPECT_TRUE(dot.contains("node [shape = circle]"));
+    EXPECT_TRUE(dot.contains(R"dot(1 [shape = doublecircle, label="1 (1)"])dot"));
+}
 
-    const auto q0{nfa.init_state()};
-    const auto q1{nfa.next_state()};
+/**
+ * @brief Reads an open file to its end.
+ * @param file The file.
+ * @return Its contents.
+ */
+std::string contents_of(const std::ifstream& file)
+{
+    std::stringstream buffer{};
 
-    const Token token{1, 1};
-
-    nfa.add_accept_state(q1, token);
-    nfa.add_transition(q0, nfa::Label('a'), q1);
-
-    const auto result{nfa.build()};
-
-    const std::filesystem::path file_path{"./nfa_test_output.dot"};
-    Graphviz::to_file(result, file_path);
-
-    std::ifstream file(file_path);
-    ASSERT_TRUE(file.is_open());
-
-    std::stringstream buffer;
     buffer << file.rdbuf();
 
-    const std::string expected_output{
-            "digraph NFA {\n"
-            "    rankdir=LR;\n"
-            "    ratio=1.0;\n"
-            "    node [shape = circle];\n"
-            "    1 [shape = doublecircle, label=\"1 (1)\"];\n"
-            "    __start__ [shape = none, label=\"\"];\n"
-            "    __start__ -> 0;\n"
-            "    0 -> 1 [label = \"a\"];\n"
-            "}\n"};
-
-    EXPECT_EQ(buffer.str(), expected_output);
+    return buffer.str();
 }
 
-TEST_F(Graphviz_test, Graphviz_to_file_exceptions)
+} // namespace
+
+TEST(Graphviz_test, To_dot_renders_the_states_the_start_and_the_transitions)
 {
-    nfa::Builder nfa;
+    const auto nfa{a_to_accept()};
 
-    const auto q0{nfa.init_state()};
-    const auto q1{nfa.next_state()};
+    const auto dot_output{Graphviz::to_dot(nfa)};
 
-    const Token token{1, 1};
+    EXPECT_EQ(dot_output, expected_dot);
+}
 
-    nfa.add_accept_state(q1, token);
-    nfa.add_transition(q0, nfa::Label('a'), q1);
+TEST(Graphviz_test, To_dot_renders_an_accept_state_without_a_token_as_n_a)
+{
+    // add_accept_state(state) with no token marks an intermediate accept state, as inside the constructions of kleene()
+    // and optional(), rendered as "n/a" rather than a token id.
+    Builder builder{};
 
-    const auto result{nfa.build()};
+    const auto q0{builder.init_state()};
 
-    // Test invalid file path
-    EXPECT_THROW(Graphviz::to_file(result, ""), std::runtime_error);
+    builder.add_accept_state(q0);
 
-    // Test valid file path
+    const auto nfa{builder.build()};
+
+    const auto dot_output{Graphviz::to_dot(nfa)};
+
+    EXPECT_TRUE(dot_output.contains(R"dot(0 [shape = doublecircle, label="0 (n/a)"])dot"));
+}
+
+TEST(Graphviz_test, To_file_writes_the_dot_text)
+{
+    const auto nfa{a_to_accept()};
+
     const std::filesystem::path file_path{"./nfa_test_output.dot"};
-    EXPECT_NO_THROW(Graphviz::to_file(result, file_path));
 
-    std::ifstream file(file_path);
+    Graphviz::to_file(nfa, file_path);
+
+    const std::ifstream file{file_path};
+
     ASSERT_TRUE(file.is_open());
 
-    std::stringstream buffer;
-    buffer << file.rdbuf();
+    const auto written{contents_of(file)};
 
-    const std::string expected_output{
-            "digraph NFA {\n"
-            "    rankdir=LR;\n"
-            "    ratio=1.0;\n"
-            "    node [shape = circle];\n"
-            "    1 [shape = doublecircle, label=\"1 (1)\"];\n"
-            "    __start__ [shape = none, label=\"\"];\n"
-            "    __start__ -> 0;\n"
-            "    0 -> 1 [label = \"a\"];\n"
-            "}\n"};
+    std::ignore = std::filesystem::remove(file_path);
 
-    EXPECT_EQ(buffer.str(), expected_output);
+    EXPECT_EQ(written, expected_dot);
 }
 
-TEST_F(Graphviz_test, Graphviz_to_file_throws_when_the_target_path_is_a_directory)
+TEST(Graphviz_test, To_file_throws_on_an_empty_path)
 {
-    nfa::Builder nfa;
+    const auto nfa{a_to_accept()};
 
-    const auto q0{nfa.init_state()};
-    const auto q1{nfa.next_state()};
-
-    const Token token{1, 1};
-
-    nfa.add_accept_state(q1, token);
-    nfa.add_transition(q0, nfa::Label('a'), q1);
-
-    const auto result{nfa.build()};
-
-    std::filesystem::create_directories("./graphviz_dir_target");
-    EXPECT_THROW(Graphviz::to_file(result, "./graphviz_dir_target"), std::runtime_error);
+    EXPECT_THROW(Graphviz::to_file(nfa, ""), std::runtime_error);
 }
 
-TEST_F(Graphviz_test, Graphviz_to_file_throws_when_writing_fails)
+TEST(Graphviz_test, To_file_accepts_a_bare_filename)
 {
-    nfa::Builder nfa;
+    // A bare filename has an empty parent path, for which no directory is created; only a stated directory is.
+    const auto nfa{a_to_accept()};
 
-    const auto q0{nfa.init_state()};
-    const auto q1{nfa.next_state()};
+    const std::filesystem::path bare{"graphviz_bare_nfa_test.dot"};
 
-    const Token token{1, 1};
+    Graphviz::to_file(nfa, bare);
 
-    nfa.add_accept_state(q1, token);
-    nfa.add_transition(q0, nfa::Label('a'), q1);
+    EXPECT_TRUE(std::filesystem::exists(bare));
 
-    const auto result{nfa.build()};
-
-    // /dev/full opens successfully but fails every write with ENOSPC, exercising the "unable to write data"
-    // branch, which is otherwise unreachable through ordinary filesystem failures.
-    EXPECT_THROW(Graphviz::to_file(result, "/dev/full"), std::runtime_error);
+    std::ignore = std::filesystem::remove(bare);
 }
 
-TEST_F(Graphviz_test, Graphviz_to_dot_epsilon_transition)
+TEST(Graphviz_test, To_file_throws_when_the_target_path_is_a_directory)
 {
-    nfa::Builder nfa;
+    const auto nfa{a_to_accept()};
 
-    const auto q0{nfa.init_state()};
-    const auto q1{nfa.next_state()};
+    const std::filesystem::path directory{"./graphviz_dir_target"};
 
-    const Token token{1, 1};
+    std::ignore = std::filesystem::create_directories(directory);
 
-    nfa.add_accept_state(q1, token);
-    nfa.add_transition(q0, nfa::Label::epsilon(), q1);
+    EXPECT_THROW(Graphviz::to_file(nfa, directory), std::runtime_error);
 
-    const auto result{nfa.build()};
-
-    const auto dot_output{Graphviz::to_dot(result)};
-
-    EXPECT_NE(dot_output.find("0 -> 1 [label = \"ε\"]"), std::string::npos);
+    std::ignore = std::filesystem::remove(directory);
 }
 
-TEST_F(Graphviz_test, Graphviz_to_dot_special_characters)
+TEST(Graphviz_test, To_file_throws_when_writing_fails)
 {
-    nfa::Builder nfa;
+    const auto nfa{a_to_accept()};
 
-    const auto q0{nfa.init_state()};
-    const auto q1{nfa.next_state()};
-
-    const Token token{1, 1};
-
-    nfa.add_accept_state(q1, token);
-
-    nfa.add_transition(q0, nfa::Label('"'), q1);
-    nfa.add_transition(q0, nfa::Label('\\'), q1);
-    nfa.add_transition(q0, nfa::Label('\n'), q1);
-    nfa.add_transition(q0, nfa::Label('\t'), q1);
-
-    const auto result{nfa.build()};
-
-    const auto dot_output{Graphviz::to_dot(result)};
-
-    // Check that all expected transitions are present in the output
-    EXPECT_NE(dot_output.find("0 -> 1 [label = \"\\t\"]"), std::string::npos);
-    EXPECT_NE(dot_output.find("0 -> 1 [label = \"\\n\"]"), std::string::npos);
-    EXPECT_NE(dot_output.find("0 -> 1 [label = \"\\\\\"]"), std::string::npos);
-    EXPECT_NE(dot_output.find("0 -> 1 [label = \"\\\"\"]"), std::string::npos);
-
-    // Check other structural elements of the dot output
-    EXPECT_NE(dot_output.find("rankdir=LR"), std::string::npos);
-    EXPECT_NE(dot_output.find("node [shape = circle]"), std::string::npos);
-    EXPECT_NE(dot_output.find("1 [shape = doublecircle, label=\"1 (1)\"]"), std::string::npos);
+    // /dev/full opens successfully but fails every write with ENOSPC, exercising the "unable to write data" branch,
+    // which is otherwise unreachable through ordinary filesystem failures.
+    EXPECT_THROW(Graphviz::to_file(nfa, "/dev/full"), std::runtime_error);
 }
 
-TEST_F(Graphviz_test, Graphviz_to_dot_non_printable_characters)
+TEST(Graphviz_test, To_dot_labels_an_epsilon_transition_with_epsilon)
 {
-    nfa::Builder nfa;
+    const auto nfa{parallel_edges({Label::epsilon()})};
 
-    const auto q0{nfa.init_state()};
-    const auto q1{nfa.next_state()};
+    const auto dot_output{Graphviz::to_dot(nfa)};
 
-    const Token token{1, 1};
+    EXPECT_TRUE(dot_output.contains(R"(0 -> 1 [label = "ε"])"));
+}
 
-    nfa.add_accept_state(q1, token);
+TEST(Graphviz_test, To_dot_escapes_quotes_backslashes_newlines_and_tabs)
+{
+    const auto nfa{parallel_edges({Label{'"'}, Label{'\\'}, Label{'\n'}, Label{'\t'}})};
 
-    // Add transitions with non-printable characters
-    nfa.add_transition(q0, nfa::Label(static_cast<char>(0x01)), q1); // SOH
-    nfa.add_transition(q0, nfa::Label(static_cast<char>(0x7F)), q1); // DEL
-    nfa.add_transition(q0, nfa::Label(static_cast<char>(0xFF)), q1); // Extended ASCII
+    const auto dot_output{Graphviz::to_dot(nfa)};
 
-    const auto result{nfa.build()};
+    // Every transition is present with its escaped label.
+    EXPECT_TRUE(dot_output.contains(R"(0 -> 1 [label = "\t"])"));
+    EXPECT_TRUE(dot_output.contains(R"(0 -> 1 [label = "\n"])"));
+    EXPECT_TRUE(dot_output.contains(R"(0 -> 1 [label = "\\"])"));
+    EXPECT_TRUE(dot_output.contains(R"(0 -> 1 [label = "\""])"));
 
-    const auto dot_output{Graphviz::to_dot(result)};
+    expect_graph_frame(dot_output);
+}
 
-    // Check that all expected transitions are present in the output
-    EXPECT_NE(dot_output.find("0 -> 1 [label = \"\\x01\"]"), std::string::npos);
-    EXPECT_NE(dot_output.find("0 -> 1 [label = \"\\x7F\"]"), std::string::npos);
-    EXPECT_NE(dot_output.find("0 -> 1 [label = \"\\xFF\"]"), std::string::npos);
+TEST(Graphviz_test, To_dot_writes_unprintable_bytes_as_hex_escapes)
+{
+    // The start-of-heading control byte, the delete byte and a byte past ASCII.
+    const auto nfa{parallel_edges(
+            {Label{static_cast<char>(0x01)}, Label{static_cast<char>(0x7F)}, Label{static_cast<char>(0xFF)}})};
 
-    // Check other structural elements of the dot output
-    EXPECT_NE(dot_output.find("rankdir=LR"), std::string::npos);
-    EXPECT_NE(dot_output.find("node [shape = circle]"), std::string::npos);
-    EXPECT_NE(dot_output.find("1 [shape = doublecircle, label=\"1 (1)\"]"), std::string::npos);
+    const auto dot_output{Graphviz::to_dot(nfa)};
+
+    // Every transition is present with its label as a hex escape.
+    EXPECT_TRUE(dot_output.contains(R"(0 -> 1 [label = "\x01"])"));
+    EXPECT_TRUE(dot_output.contains(R"(0 -> 1 [label = "\x7F"])"));
+    EXPECT_TRUE(dot_output.contains(R"(0 -> 1 [label = "\xFF"])"));
+
+    expect_graph_frame(dot_output);
 }

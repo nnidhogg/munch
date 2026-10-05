@@ -13,18 +13,22 @@ class Epsilon
 {
 public:
     /**
-     * @brief Equality comparison operator for epsilon labels.
-     * @return True if both are epsilon labels.
-     */
-    bool operator==(const Epsilon&) const noexcept;
-
-    /**
      * @brief Hash functor for Epsilon, suitable for use in unordered containers.
      */
     struct Hash
     {
+        /**
+         * @brief Hashes an epsilon label; every one hashes alike.
+         * @return Zero.
+         */
         std::size_t operator()(const Epsilon&) const noexcept;
     };
+
+    /**
+     * @brief Equal always, every epsilon label being the same.
+     * @return True if both are epsilon labels.
+     */
+    bool operator==(const Epsilon&) const noexcept;
 };
 
 /**
@@ -46,12 +50,26 @@ public:
     using Variant_t = std::variant<Symbol_t, Epsilon>;
 
     /**
-     * @brief Constructs a label with the given symbol.
-     * @param s The symbol for the label.
+     * @brief Hash functor for Label, suitable for use in unordered containers.
      */
-    explicit Label(Symbol_t s) noexcept;
+    struct Hash
+    {
+        /**
+         * @brief Hashes a label by its symbol or as epsilon.
+         * @param label The label.
+         * @return The hash of the label's alternative.
+         */
+        std::size_t operator()(const Label& label) const noexcept;
+    };
+
     /**
-     * @brief Equality comparison operator for labels.
+     * @brief Constructs a label with the given symbol.
+     * @param symbol The symbol for the label.
+     */
+    explicit Label(Symbol_t symbol) noexcept;
+
+    /**
+     * @brief Equal when both hold the same symbol or both are epsilon.
      * @param other The label to compare with.
      * @return True if the variants are equal, false otherwise.
      */
@@ -64,13 +82,13 @@ public:
     [[nodiscard]] static Label epsilon() noexcept;
 
     /**
-     * @brief Checks if the label is a symbol.
+     * @brief Returns whether the label is a symbol.
      * @return True if the label is a symbol, false if epsilon.
      */
     [[nodiscard]] bool is_symbol() const noexcept;
 
     /**
-     * @brief Checks if the label is an epsilon transition.
+     * @brief Returns whether the label is an epsilon transition.
      * @return True if the label is epsilon, false otherwise.
      */
     [[nodiscard]] bool is_epsilon() const noexcept;
@@ -88,22 +106,16 @@ public:
      */
     [[nodiscard]] const Variant_t& variant() const noexcept;
 
-    /**
-     * @brief Hash functor for Label, suitable for use in unordered containers.
-     */
-    struct Hash
-    {
-        std::size_t operator()(const Label& label) const noexcept;
-    };
-
 private:
     /**
      * @brief Constructs an epsilon label.
-     * @param e The epsilon marker.
+     * @param epsilon The epsilon marker.
      */
-    explicit Label(Epsilon e) noexcept;
+    explicit Label(Epsilon epsilon) noexcept;
 
-    /// The underlying symbol-or-epsilon value.
+    /**
+     * @brief The underlying symbol-or-epsilon value.
+     */
     Variant_t variant_;
 };
 

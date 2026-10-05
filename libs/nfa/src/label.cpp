@@ -1,23 +1,40 @@
 #include "munch/nfa/label.hpp"
 
 #include <functional>
+#include <type_traits>
 
 namespace munch::nfa
 {
-bool Epsilon::operator==(const Epsilon&) const noexcept
-{
-    return true;
-}
-
 std::size_t Epsilon::Hash::operator()(const Epsilon&) const noexcept
 {
     return 0;
 }
 
-Label::Label(const Symbol_t s) noexcept : variant_{s}
+bool Epsilon::operator==(const Epsilon&) const noexcept
+{
+    return true;
+}
+
+std::size_t Label::Hash::operator()(const Label& label) const noexcept
+{
+    const auto hash_of{[]<typename T>(const T& arg) {
+        if constexpr (std::is_same_v<T, Epsilon>)
+        {
+            return Epsilon::Hash{}(arg);
+        }
+        else
+        {
+            return std::hash<T>{}(arg);
+        }
+    }};
+
+    return std::visit(hash_of, label.variant());
+}
+
+Label::Label(const Symbol_t symbol) noexcept : variant_{symbol}
 {}
 
-Label::Label(const Epsilon e) noexcept : variant_{e}
+Label::Label(const Epsilon epsilon) noexcept : variant_{epsilon}
 {}
 
 bool Label::operator==(const Label& other) const noexcept
@@ -48,22 +65,6 @@ Label::Symbol_t Label::symbol() const
 const Label::Variant_t& Label::variant() const noexcept
 {
     return variant_;
-}
-
-std::size_t Label::Hash::operator()(const Label& label) const noexcept
-{
-    return std::visit(
-            []<typename T>(const T& arg) {
-                if constexpr (std::is_same_v<T, Epsilon>)
-                {
-                    return Epsilon::Hash{}(arg);
-                }
-                else
-                {
-                    return std::hash<T>{}(arg);
-                }
-            },
-            label.variant());
 }
 
 } // namespace munch::nfa

@@ -1,17 +1,22 @@
 #include "munch/nfa/nfa.hpp"
 
-#include <algorithm>
 #include <boost/container_hash/hash.hpp>
 #include <queue>
-#include <ranges>
 
 namespace munch::nfa
 {
 std::size_t Nfa::Hash::operator()(const Key_t& key) const noexcept
 {
+    const auto& [state, label]{key};
+
+    const auto label_hash{Label::Hash{}(label)};
+
     std::size_t seed{};
-    boost::hash_combine(seed, key.first);
-    boost::hash_combine(seed, Label::Hash{}(key.second));
+
+    boost::hash_combine(seed, state);
+
+    boost::hash_combine(seed, label_hash);
+
     return seed;
 }
 
@@ -42,18 +47,27 @@ Nfa::States_t Nfa::epsilon_closure(const States_t& states) const
 
     while (!queue.empty())
     {
-        const std::pair transition{queue.front(), Label::epsilon()};
+        const Key_t key{queue.front(), Label::epsilon()};
 
         queue.pop();
 
-        if (const auto iterator{transitions_.find(transition)}; iterator != transitions_.end())
+        const auto found{transitions_.find(key)};
+
+        if (found == transitions_.end())
         {
-            std::ranges::for_each(iterator->second, [&result, &queue](const auto state) {
-                if (result.insert(state).second)
-                {
-                    queue.push(state);
-                }
-            });
+            continue;
+        }
+
+        const auto& [found_key, targets]{*found};
+
+        for (const auto state : targets)
+        {
+            const auto [position, inserted]{result.insert(state)};
+
+            if (inserted)
+            {
+                queue.push(state);
+            }
         }
     }
 
@@ -62,14 +76,22 @@ Nfa::States_t Nfa::epsilon_closure(const States_t& states) const
 
 Nfa::States_t Nfa::advance(const States_t& states, const char symbol) const
 {
-    States_t result;
+    States_t result{};
 
-    for (const auto& state : states)
+    for (const auto state : states)
     {
-        if (const auto iterator{transitions_.find({state, Label{symbol}})}; iterator != transitions_.end())
+        const Key_t key{state, Label{symbol}};
+
+        const auto found{transitions_.find(key)};
+
+        if (found == transitions_.end())
         {
-            result.insert(iterator->second.begin(), iterator->second.end());
+            continue;
         }
+
+        const auto& [found_key, targets]{*found};
+
+        result.insert(targets.begin(), targets.end());
     }
 
     return epsilon_closure(result);
@@ -77,23 +99,32 @@ Nfa::States_t Nfa::advance(const States_t& states, const char symbol) const
 
 std::optional<Token> Nfa::has_accept_token(const States_t& states) const
 {
-    const auto has_state{[this](const auto state) { return accept_states_.contains(state); }};
+    std::optional<Token> best{};
 
-    const auto has_token{[this](const auto state) { return accept_states_.at(state).has_value(); }};
-
-    const auto get_token{[this](const auto state) { return accept_states_.at(state).value(); }};
-
-    auto view{
-            states | std::views::filter(has_state) | std::views::filter(has_token) | std::views::transform(get_token)};
-
-    const auto comparator{[](const auto& lhs, const auto& rhs) { return lhs < rhs; }};
-
-    if (auto iterator{std::ranges::min_element(view, comparator)}; iterator != view.end())
+    for (const auto state : states)
     {
-        return {*iterator};
+        const auto found{accept_states_.find(state)};
+
+        if (found == accept_states_.cend())
+        {
+            continue;
+        }
+
+        const auto& [accept_state, token]{*found};
+
+        if (!token)
+        {
+            continue;
+        }
+
+        // A later token replaces the best only when it wins by priority, then identifier.
+        if (!best || *token < *best)
+        {
+            best = token;
+        }
     }
 
-    return std::nullopt;
+    return best;
 }
 
 } // namespace munch::nfa

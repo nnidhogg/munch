@@ -30,11 +30,11 @@ public:
     /**
      * @brief Generates and returns the next state identifier from the builder's own allocator.
      *
-     * States added with explicit identifiers do not advance the allocator, so a caller mixing both must keep
-     * its own identifiers clear of the allocator's range.
+     * States added with explicit identifiers do not advance the allocator, so a caller mixing both must keep its own
+     * identifiers clear of the allocator's range.
      * @return The next state identifier.
-     * @throws std::runtime_error If the allocator is exhausted: a composition may legally park the cursor at
-     *         the last identifier, and advancing past it would wrap onto existing states.
+     * @throws std::runtime_error If the allocator is exhausted: a composition may legally park the cursor at the last
+     *         identifier, and advancing past it would wrap onto existing states.
      */
     [[nodiscard]] Nfa::State_t next_state();
 
@@ -98,9 +98,9 @@ public:
 
     /**
      * @brief Returns a new Builder with all state indices offset by the given value.
-     * @throws std::runtime_error If the shift would overflow any state identifier.
      * @param offset The value to offset state indices by.
      * @return A new Builder with offset state indices.
+     * @throws std::runtime_error If the shift would overflow any state identifier.
      */
     [[nodiscard]] Builder offset(Nfa::State_t offset) const;
 
@@ -125,25 +125,25 @@ public:
     /**
      * @brief Returns a new Builder recognizing the union of this and another Builder's NFA.
      *
-     * A fresh start state is created with ε-transitions to both operands' initial states (Thompson union),
-     * so the union stays correct even when an operand's initial state has incoming transitions. Both
-     * operands' accept states are kept.
+     * A fresh start state is created with ε-transitions to both operands' initial states (Thompson union), so the union
+     * stays correct even when an operand's initial state has incoming transitions. Both operands' accept states are
+     * kept.
      * @param other The Builder to merge.
      * @return A new Builder representing the merged NFA.
-     * @throws std::runtime_error If renumbering the merged operand would overflow the identifier range, or if
-     *         no identifier remains for the fresh root.
+     * @throws std::runtime_error If renumbering the merged operand would overflow the identifier range, or if no
+     *         identifier remains for the fresh root.
      */
     [[nodiscard]] Builder merge(const Builder& other) const;
 
     /**
      * @brief Merges the builders into one union: a fresh initial state epsilon-branches to every alternative.
      *
-     * The n-ary counterpart of merge(). A fold over merge() copies the accumulated union once per alternative
-     * and chains one extra initial state each, quadratic work that dominates lowering the generated Unicode
-     * classes; this single pass renumbers every alternative once and adds one initial state in total.
+     * The n-ary counterpart of merge(). A fold over merge() copies the accumulated union once per alternative and
+     * chains one extra initial state each, quadratic work that dominates lowering the generated Unicode classes; this
+     * single pass renumbers every alternative once and adds one initial state in total.
      * @param builders The builders to merge; read, not consumed.
-     * @throws std::runtime_error If renumbering any merged operand would overflow the identifier range.
      * @return The merged Builder.
+     * @throws std::runtime_error If renumbering any merged operand would overflow the identifier range.
      */
     [[nodiscard]] static Builder merge_all(std::span<const Builder> builders);
 
@@ -170,16 +170,24 @@ private:
     Builder(Nfa::State_t init_state, Nfa::State_t next_state, Nfa::Transitions_t transitions,
             Nfa::Accept_states_t accept_states);
 
-    /// The initial state of the NFA.
+    /**
+     * @brief The initial state of the NFA.
+     */
     Nfa::State_t init_state_;
 
-    /// The next unused state identifier.
+    /**
+     * @brief The next unused state identifier.
+     */
     Nfa::State_t next_state_;
 
-    /// The transition table under construction.
+    /**
+     * @brief The transition table under construction.
+     */
     Nfa::Transitions_t transitions_;
 
-    /// The accept states and their associated tokens under construction.
+    /**
+     * @brief The accept states and their associated tokens under construction.
+     */
     Nfa::Accept_states_t accept_states_;
 };
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <utility>
@@ -11,12 +12,31 @@ namespace munch::nfa
 namespace
 {
 /**
+ * @brief The largest state identifier, which no allocation or renumbering may step past.
+ */
+constexpr Nfa::State_t largest_state{std::numeric_limits<Nfa::State_t>::max()};
+
+/**
+ * @brief Refuses a renumbering whose identifiers would leave the identifier range.
+ * @throws std::runtime_error Always.
+ */
+[[noreturn]] void refuse_renumbering()
+{
+    throw std::runtime_error{"NFA state renumbering would overflow the identifier range"};
+}
+
+/**
  * @brief Returns the highest state identifier the builder holds, the allocator's next identifier included.
  *
- * The renumbering guard wants the identifier itself rather than a count, so an oversized builder is rejected
- * before any addition can wrap.
+ * The renumbering guard wants the identifier itself rather than a count, so an oversized builder is rejected before any
+ * addition can wrap.
+ * @param init_state The builder's initial state.
+ * @param next_state The builder's next unused identifier.
+ * @param transitions The builder's transition table.
+ * @param accept_states The builder's accept states.
+ * @return The highest identifier among them.
  */
-std::size_t highest_state(
+[[nodiscard]] Nfa::State_t highest_state(
         const Nfa::State_t init_state, const Nfa::State_t next_state, const Nfa::Transitions_t& transitions,
         const Nfa::Accept_states_t& accept_states)
 {
@@ -24,7 +44,9 @@ std::size_t highest_state(
 
     for (const auto& [key, states] : transitions)
     {
-        highest = std::max(highest, key.first);
+        const auto& [from, label]{key};
+
+        highest = std::max(highest, from);
 
         for (const auto state : states)
         {
@@ -39,6 +61,7 @@ std::size_t highest_state(
 
     return highest;
 }
+
 } // namespace
 
 Builder::Builder() : init_state_{0}, next_state_{1}
@@ -60,11 +83,11 @@ Nfa::State_t Builder::init_state() const noexcept
 
 Nfa::State_t Builder::next_state()
 {
-    // A composition may legally park the cursor at the last identifier; handing it out would wrap the cursor to
-    // zero and the following allocation would silently reuse an existing state.
-    if (next_state_ == std::numeric_limits<std::size_t>::max())
+    // A composition may legally park the cursor at the last identifier; handing it out would wrap the cursor to zero
+    // and the following allocation would silently reuse an existing state.
+    if (next_state_ == largest_state)
     {
-        throw std::runtime_error("NFA state allocator is exhausted");
+        throw std::runtime_error{"NFA state allocator is exhausted"};
     }
 
     return next_state_++;
@@ -117,50 +140,67 @@ Builder& Builder::set_accept_states(Nfa::Accept_states_t accept_states)
 
 Builder& Builder::set_accept_token(const Token& token)
 {
-    const auto transform{[&token](const auto state) { return std::pair{state, token}; }};
+    const auto with_token{[&token](const Nfa::State_t state) { return std::pair{state, token}; }};
 
-    const auto view{std::views::keys(accept_states_) | std::views::transform(transform)};
+    const auto with_tokens{std::views::keys(accept_states_) | std::views::transform(with_token)};
 
-    Nfa::Accept_states_t accept_states{view.begin(), view.end()};
+    Nfa::Accept_states_t accept_states{with_tokens.begin(), with_tokens.end()};
 
     return set_accept_states(std::move(accept_states));
 }
 
-Builder Builder::offset(const std::size_t offset) const
+Builder Builder::offset(const Nfa::State_t offset) const
 {
-    // A shift that wraps any identifier would silently collide renumbered states with existing ones and change
-    // the language; composing an automaton that numbers states near the top of the range refuses instead.
-    if (highest_state(init_state_, next_state_, transitions_, accept_states_) >
-        std::numeric_limits<std::size_t>::max() - offset)
+    // A shift that wraps any identifier would silently collide renumbered states with existing ones and change the
+    // language; composing an automaton that numbers states near the top of the range refuses instead.
+    const auto highest{highest_state(init_state_, next_state_, transitions_, accept_states_)};
+
+    const auto headroom{largest_state - offset};
+
+    if (highest > headroom)
     {
-        throw std::runtime_error("NFA state renumbering would overflow the identifier range");
+        refuse_renumbering();
     }
 
-    Nfa::Transitions_t transitions;
+    const auto shift{[offset](const Nfa::State_t state) { return state + offset; }};
+
+    Nfa::Transitions_t transitions{};
 
     for (const auto& [key, states] : transitions_)
     {
-        const auto view{states | std::views::transform([offset](const auto state) { return state + offset; })};
+        const auto shifted_targets{states | std::views::transform(shift)};
 
-        const auto& [state, transition]{key};
+        const auto& [state, label]{key};
 
-        transitions[{state + offset, transition}] = {view.begin(), view.end()};
+        const auto shifted{shift(state)};
+
+        Nfa::States_t targets{shifted_targets.begin(), shifted_targets.end()};
+
+        transitions[{shifted, label}] = std::move(targets);
     }
 
-    const auto transform{[offset](const auto& pair) { return std::pair{pair.first + offset, pair.second}; }};
+    const auto shift_accept{[offset](const Nfa::Accept_states_t::value_type& accept) {
+        const auto& [state, token]{accept};
 
-    const auto view{accept_states_ | std::views::transform(transform)};
+        return std::pair{state + offset, token};
+    }};
 
-    Nfa::Accept_states_t accept_states{view.begin(), view.end()};
+    const auto shifted_accepts{accept_states_ | std::views::transform(shift_accept)};
 
-    return {init_state_ + offset, next_state_ + offset, std::move(transitions), std::move(accept_states)};
+    Nfa::Accept_states_t accept_states{shifted_accepts.begin(), shifted_accepts.end()};
+
+    const auto shifted_init{shift(init_state_)};
+
+    const auto shifted_next{shift(next_state_)};
+
+    return {shifted_init, shifted_next, std::move(transitions), std::move(accept_states)};
 }
 
 Builder Builder::prepend_init_state() const
 {
-    if (next_state_ == std::numeric_limits<std::size_t>::max())
+    if (next_state_ == largest_state)
     {
-        throw std::runtime_error("NFA state renumbering would overflow the identifier range");
+        refuse_renumbering();
     }
 
     Builder nfa{next_state_, next_state_ + 1, transitions_, accept_states_};
@@ -177,9 +217,10 @@ Builder Builder::append(const Builder& other) const
     Builder nfa{init_state_, offset_nfa.next_state_, transitions_, accept_states_};
 
     // Add ε transition from current accept states to offset initial state.
-    std::ranges::for_each(std::views::keys(nfa.accept_states_), [&nfa, &offset_nfa](const auto accept_state) {
+    for (const auto accept_state : std::views::keys(nfa.accept_states_))
+    {
         nfa.add_epsilon_transition(accept_state, offset_nfa.init_state_);
-    });
+    }
 
     nfa.transitions_.insert(offset_nfa.transitions_.begin(), offset_nfa.transitions_.end());
 
@@ -195,14 +236,15 @@ Builder Builder::merge(const Builder& other) const
 
     const auto init_state{offset_nfa.next_state_};
 
-    if (init_state == std::numeric_limits<std::size_t>::max())
+    if (init_state == largest_state)
     {
-        throw std::runtime_error("NFA state renumbering would overflow the identifier range");
+        refuse_renumbering();
     }
 
     Builder nfa{init_state, init_state + 1, transitions_, accept_states_};
 
     nfa.add_epsilon_transition(init_state, init_state_);
+
     nfa.add_epsilon_transition(init_state, offset_nfa.init_state_);
 
     nfa.transitions_.insert(offset_nfa.transitions_.begin(), offset_nfa.transitions_.end());
@@ -214,7 +256,7 @@ Builder Builder::merge(const Builder& other) const
 
 Builder Builder::merge_all(const std::span<const Builder> builders)
 {
-    Builder nfa;
+    Builder nfa{};
 
     for (const auto& builder : builders)
     {

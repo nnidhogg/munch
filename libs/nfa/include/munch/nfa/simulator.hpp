@@ -1,6 +1,7 @@
 #ifndef MUNCH_LIBS_NFA_INCLUDE_MUNCH_NFA_SIMULATOR_HPP
 #define MUNCH_LIBS_NFA_INCLUDE_MUNCH_NFA_SIMULATOR_HPP
 
+#include <cstddef>
 #include <optional>
 #include <ranges>
 
@@ -22,11 +23,20 @@ public:
      */
     struct Match
     {
+        /**
+         * @brief Equal when both attempts matched the same token at the same length.
+         */
+        bool operator==(const Match&) const = default;
+
+        /**
+         * @brief The token matched, or std::nullopt where nothing accepted.
+         */
         std::optional<Token> token{};
 
+        /**
+         * @brief The length of input the match consumed, zero when nothing accepted.
+         */
         std::size_t length{};
-
-        bool operator==(const Match&) const = default;
     };
 
     /**
@@ -40,11 +50,13 @@ public:
     template <common::concepts::Byte_iterator Iterator>
     [[nodiscard]] static Match run(const Nfa& nfa, Iterator begin, Iterator end)
     {
-        auto states{nfa.epsilon_closure({nfa.init_state()})};
+        const Nfa::States_t initial{nfa.init_state()};
+
+        auto states{nfa.epsilon_closure(initial)};
 
         Match result{.token = nfa.has_accept_token(states), .length = 0};
 
-        // Counted, not measured: std::distance would need begin, which a single-pass iterator invalidates.
+        // The bytes consumed so far, counted as the scan advances.
         std::size_t consumed{0};
 
         for (Iterator current{begin}; current != end && !states.empty(); ++current)
@@ -53,12 +65,18 @@ public:
 
             // Elements are read as the scanners read them, through unsigned char, so every byte-domain element type
             // reaches the transition alphabet; advance() takes char and std::byte converts to it only explicitly.
-            if (states = nfa.advance(states, static_cast<char>(static_cast<unsigned char>(*current))); states.empty())
+            const auto byte{static_cast<unsigned char>(*current)};
+
+            const auto symbol{static_cast<char>(byte)};
+
+            states = nfa.advance(states, symbol);
+
+            if (states.empty())
             {
                 continue;
             }
 
-            if (const auto token{nfa.has_accept_token(states)}; token)
+            if (const auto token{nfa.has_accept_token(states)})
             {
                 result = {.token = token, .length = consumed};
             }
@@ -75,7 +93,7 @@ public:
      * @return The match: the token, if any, and the length it consumed.
      */
     template <common::concepts::Byte_iterable Container>
-    [[nodiscard]] static auto run(const Nfa& nfa, const Container& container)
+    [[nodiscard]] static Match run(const Nfa& nfa, const Container& container)
     {
         return run(nfa, std::ranges::begin(container), std::ranges::end(container));
     }

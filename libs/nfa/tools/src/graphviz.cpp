@@ -1,63 +1,93 @@
 #include "munch/nfa/tools/graphviz.hpp"
 
-#include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstring>
+#include <format>
 #include <fstream>
-#include <iomanip>
-#include <ranges>
+#include <optional>
+#include <sstream>
 #include <stdexcept>
+#include <system_error>
+#include <tuple>
 
 namespace munch::nfa::tools
 {
 void Graphviz::to_file(const Nfa& nfa, const std::filesystem::path& path)
 {
     // A bare filename has an empty parent, and create_directories("") fails; only a stated directory is created.
-    if (std::error_code ec;
-        !path.parent_path().empty() && (std::filesystem::create_directories(path.parent_path(), ec), ec))
+    if (const auto directory{path.parent_path()}; !directory.empty())
     {
-        throw std::runtime_error("Unable to create directories " + path.parent_path().string() + "; " + ec.message());
+        std::error_code ec{};
+
+        std::ignore = std::filesystem::create_directories(directory, ec);
+
+        if (ec)
+        {
+            const auto message{std::format("Unable to create directories {}; {}", directory.string(), ec.message())};
+
+            throw std::runtime_error{message};
+        }
     }
 
     std::ofstream file{path, std::ios::out};
 
     if (!file)
     {
-        throw std::runtime_error("Unable to create file " + path.string() + "; " + std::strerror(errno));
+        const auto message{std::format("Unable to create file {}; {}", path.string(), std::strerror(errno))};
+
+        throw std::runtime_error{message};
     }
 
-    if (file << to_dot(nfa); !file.flush())
+    const auto dot{to_dot(nfa)};
+
+    file << dot;
+
+    if (!file.flush())
     {
-        throw std::runtime_error("Unable to write data to file " + path.string() + "; " + std::strerror(errno));
+        const auto message{std::format("Unable to write data to file {}; {}", path.string(), std::strerror(errno))};
+
+        throw std::runtime_error{message};
     }
 }
 
 std::string Graphviz::to_dot(const Nfa& nfa)
 {
-    std::ostringstream oss;
-    oss << "digraph NFA {\n";
-    oss << "    rankdir=LR;\n";
-    oss << "    ratio=1.0;\n";
-    oss << "    node [shape = circle];\n";
+    std::ostringstream oss{};
 
-    const auto format_token{[](const auto token) { return token.has_value() ? std::to_string(token->id()) : "n/a"; }};
+    oss << R"(digraph NFA {
+    rankdir=LR;
+    ratio=1.0;
+    node [shape = circle];
+)";
+
+    const auto format_token{
+            [](const std::optional<Token>& token) { return token.has_value() ? std::to_string(token->id()) : "n/a"; }};
 
     for (const auto& [state, token] : nfa.accept_states())
     {
-        oss << "    " << state << " [shape = doublecircle, label=\"" << state << " (" << format_token(token) << ")"
-            << "\"];\n";
+        const auto token_label{format_token(token)};
+
+        const auto node{
+                std::format(R"dot(    {} [shape = doublecircle, label="{} ({})"];)dot", state, state, token_label)};
+
+        oss << node << '\n';
     }
 
-    oss << "    __start__ [shape = none, label=\"\"];\n";
-    oss << "    __start__ -> " << nfa.init_state() << ";\n";
+    oss << R"dot(    __start__ [shape = none, label=""];)dot" << '\n';
+
+    oss << std::format("    __start__ -> {};\n", nfa.init_state());
 
     for (const auto& [key, states] : nfa.transitions())
     {
-        const auto& [from_state, transition]{key};
+        const auto& [from_state, label]{key};
 
-        std::ranges::for_each(states, [&oss, from_state, transition](const auto& to_state) {
-            oss << "    " << from_state << " -> " << to_state << " [label = " << create_label(transition) << "];\n";
-        });
+        const auto label_text{create_label(label)};
+
+        for (const auto to_state : states)
+        {
+            oss << std::format("    {} -> {} [label = {}];\n", from_state, to_state, label_text);
+        }
     }
 
     oss << "}\n";
@@ -69,37 +99,40 @@ std::string Graphviz::create_label(const Label& label)
 {
     if (label.is_epsilon())
     {
-        return "\"ε\"";
+        return R"("ε")";
     }
 
-    std::ostringstream oss;
+    std::ostringstream oss{};
 
     oss << '"';
 
     switch (const auto symbol{label.symbol()})
     {
-    case '\"':
-        oss << "\\\"";
+    case '"':
+        oss << R"(\")";
         break;
     case '\\':
-        oss << "\\\\";
+        oss << R"(\\)";
         break;
     case '\n':
-        oss << "\\n";
+        oss << R"(\n)";
         break;
     case '\t':
-        oss << "\\t";
+        oss << R"(\t)";
         break;
     default:
-        if (isprint(static_cast<unsigned char>(symbol)))
+    {
+        const auto value{static_cast<unsigned char>(symbol)};
+
+        if (std::isprint(value) != 0)
         {
             oss << symbol;
+
+            break;
         }
-        else
-        {
-            oss << "\\x" << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
-                << (static_cast<unsigned char>(symbol) & 0xFF);
-        }
+
+        oss << std::format(R"(\x{:02X})", value);
+    }
     }
 
     oss << '"';
