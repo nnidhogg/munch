@@ -14,12 +14,11 @@
 // What runs as a test. The shipped instances and the counterexamples, all pinned:
 //   - the C-like cumulative row proves the family {*/} at its comment-interior state;
 //   - a Python-like triple-quote row proves the family {three quotes} at its string-interior state;
-//   - the RFC 8259 row refutes every family at its string-interior state with a one-byte witness, since a
-//     control byte kills it immediately: JSON gets no filter and the planner's exhaustive walk stays;
-//   - the token set {a, b} has no provable family anywhere although it certifies the window ab: the checker
-//     refuses, and such grammars keep the exhaustive walk;
-//   - a synthetic automaton refutes K = {c} with the witness ab, and a repaired variant of the same table proves
-//     it.
+//   - the RFC 8259 row refutes every family at its string-interior state with a one-byte witness, since a control byte
+//     kills it immediately: JSON gets no filter and the planner's exhaustive walk stays;
+//   - the token set {a, b} has no provable family anywhere although it certifies the window ab: the checker refuses,
+//     and such grammars keep the exhaustive walk;
+//   - a synthetic automaton refutes K = {c} with the witness ab, and a repaired variant of the same table proves it.
 //
 // The checker runs over any view with advance(state, byte), so hand-built tables and compiled automata run through the
 // identical decision procedure.
@@ -27,6 +26,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <deque>
+#include <format>
 #include <iostream>
 #include <map>
 #include <optional>
@@ -38,6 +38,8 @@
 
 #include "grammars.hpp"
 #include "munch/dfa/dfa.hpp"
+#include "munch/regex/regex.hpp"
+#include "munch/regex/set.hpp"
 #include "munch/tools/probes/assertions.hpp"
 #include "munch/tools/probes/builder_dbg.hpp"
 #include "munch/tools/probes/study_rows.hpp"
@@ -56,21 +58,21 @@ using namespace munch::regex;
 using munch::dfa::Dfa;
 
 /**
- * @brief Aho-Corasick matcher over a family of nonempty byte strings, reporting only whether a member has
- *        completed; goto and fail links are precomputed, and terminal reachability propagates over fails.
+ * @brief Aho-Corasick matcher over a family of nonempty byte strings, reporting only whether a member has completed;
+ *        goto and fail links are precomputed, and terminal reachability propagates over fails.
  */
 class Matcher
 {
 public:
     /**
-     * @brief Builds the trie of the family, its fail links breadth first, and each node's terminal flag propagated
-     *        over its fail link.
+     * @brief Builds the trie of the family, its fail links breadth first, and each node's terminal flag propagated over
+     *        its fail link.
      * @param family The family, nonempty strings.
      */
     explicit Matcher(const std::vector<std::string>& family);
 
     /**
-     * @brief One byte of matching; std::nullopt once a family member has completed.
+     * @brief Matches one byte; std::nullopt once a family member has completed.
      * @param at The matcher node before the byte.
      * @param byte The byte.
      * @return The node after the byte, std::nullopt when a member completes on it.
@@ -86,7 +88,7 @@ private:
         /**
          * @brief The goto links by byte.
          */
-        std::map<unsigned char, std::size_t> next;
+        std::map<unsigned char, std::size_t> next{};
 
         /**
          * @brief The node of the longest proper suffix of this node's string that is in the trie, 0 for none.
@@ -110,6 +112,22 @@ private:
      *        link.
      */
     void link_failures();
+
+    /**
+     * @brief Walks down the fail links from a node to the first one with a goto link on a byte, or to the root.
+     * @param node The node the walk starts at.
+     * @param byte The byte.
+     * @return The first node on the walk with a goto link on the byte, 0 when none has one.
+     */
+    [[nodiscard]] std::size_t fall_back(std::size_t node, unsigned char byte) const;
+
+    /**
+     * @brief Follows a node's goto link on a byte.
+     * @param node The node.
+     * @param byte The byte.
+     * @return The link's target, 0 when the node has no link on the byte.
+     */
+    [[nodiscard]] std::size_t goto_target(std::size_t node, unsigned char byte) const;
 
     /**
      * @brief The trie, the root at index 0.
@@ -171,36 +189,48 @@ void Matcher::link_failures()
 
         for (const auto& [key, child] : nodes_[at].next)
         {
-            auto fall{nodes_[at].fail};
+            const auto fall{fall_back(nodes_[at].fail, key)};
 
-            while (fall != 0 && !nodes_[fall].next.contains(key))
-            {
-                fall = nodes_[fall].fail;
-            }
+            const auto target{goto_target(fall, key)};
 
-            const auto found{nodes_[fall].next.find(key)};
-
-            const auto extends{found != nodes_[fall].next.end() && found->second != child};
-
-            nodes_[child].fail = extends ? found->second : 0;
+            nodes_[child].fail = target != child ? target : 0;
 
             pending.push_back(child);
         }
     }
 }
 
-std::optional<std::size_t> Matcher::step(const std::size_t at, const unsigned char byte) const
+std::size_t Matcher::fall_back(const std::size_t node, const unsigned char byte) const
 {
-    auto node{at};
+    auto fall{node};
 
-    while (node != 0 && !nodes_[node].next.contains(byte))
+    while (fall != 0 && !nodes_[fall].next.contains(byte))
     {
-        node = nodes_[node].fail;
+        fall = nodes_[fall].fail;
     }
 
+    return fall;
+}
+
+std::size_t Matcher::goto_target(const std::size_t node, const unsigned char byte) const
+{
     const auto found{nodes_[node].next.find(byte)};
 
-    const auto next{found != nodes_[node].next.end() ? found->second : 0};
+    if (found == nodes_[node].next.end())
+    {
+        return 0;
+    }
+
+    const auto& [symbol, target]{*found};
+
+    return target;
+}
+
+std::optional<std::size_t> Matcher::step(const std::size_t at, const unsigned char byte) const
+{
+    const auto node{fall_back(at, byte)};
+
+    const auto next{goto_target(node, byte)};
 
     if (nodes_[next].terminal)
     {
@@ -223,7 +253,7 @@ struct Verdict
     /**
      * @brief A death word no member precedes, empty when proved.
      */
-    std::string witness;
+    std::string witness{};
 };
 
 /**
@@ -248,7 +278,142 @@ struct Parent
 };
 
 /**
- * @brief The decision procedure: BFS over pairs of a live state and a match-free matcher state.
+ * @brief The live subautomaton of a compiled DFA as a checker view, with a state finder for the tests.
+ */
+class Compiled
+{
+public:
+    /**
+     * @brief Keeps the automaton and its live states.
+     * @param dfa The compiled automaton.
+     */
+    explicit Compiled(const Dfa& dfa);
+
+    /**
+     * @brief Advances the live subautomaton by one byte.
+     * @param state A live state.
+     * @param byte The byte.
+     * @return The live state the byte leads to, std::nullopt when it leads to no state or to a dead one.
+     */
+    [[nodiscard]] std::optional<std::size_t> advance(std::size_t state, unsigned char byte) const;
+
+    /**
+     * @brief Returns the live state a completely tokenizable prefix leaves the automaton in, for locating interiors.
+     * @param prefix The prefix, every byte of it leading to a state.
+     * @return The state after the prefix.
+     */
+    [[nodiscard]] std::size_t after(std::string_view prefix) const;
+
+private:
+    /**
+     * @brief The automaton, a copy of the one given.
+     */
+    Dfa dfa_;
+
+    /**
+     * @brief The automaton's trim states, the only ones advance() leads to.
+     */
+    States_t live_;
+};
+
+Compiled::Compiled(const Dfa& dfa) : dfa_{dfa}, live_{live_states(dfa_)}
+{}
+
+std::optional<std::size_t> Compiled::advance(const std::size_t state, const unsigned char byte) const
+{
+    const auto next{dfa_.advance(state, static_cast<char>(byte))};
+
+    if (!next || !live_.contains(*next))
+    {
+        return std::nullopt;
+    }
+
+    return next;
+}
+
+std::size_t Compiled::after(const std::string_view prefix) const
+{
+    auto state{dfa_.init_state()};
+
+    for (const char byte : prefix)
+    {
+        state = *dfa_.advance(state, byte);
+    }
+
+    return state;
+}
+
+/**
+ * @brief The synthetic counterexample's table over the states q, s and t. Both S-states loop on every byte not named,
+ *        so the only death in the whole table is s on b: exactly the counterexample's shape, an internal death
+ *        bypassing every c-bearing first-exit word. The repaired table lets s survive b.
+ */
+struct Synthetic
+{
+    /**
+     * @brief The state q, the initial one.
+     */
+    static constexpr std::size_t q{0};
+
+    /**
+     * @brief The state s, entered from q on a.
+     */
+    static constexpr std::size_t s{1};
+
+    /**
+     * @brief The state t, entered on c, which loops on every byte.
+     */
+    static constexpr std::size_t t{2};
+
+    /**
+     * @brief Advances the table by one byte.
+     * @param state The state, below three.
+     * @param byte The byte.
+     * @return The state the byte leads to, std::nullopt when it kills the state.
+     */
+    [[nodiscard]] std::optional<std::size_t> advance(const std::size_t state, const unsigned char byte) const
+    {
+        if (state == q && byte == 'a')
+        {
+            return s;
+        }
+
+        if (state == q && byte == 'c')
+        {
+            return t;
+        }
+
+        if (state == q)
+        {
+            return q;
+        }
+
+        if (state == s)
+        {
+            if (byte == 'c')
+            {
+                return t;
+            }
+
+            if (byte == 'b' && !repaired)
+            {
+                return std::nullopt;
+            }
+
+            return s;
+        }
+
+        return t;
+    }
+
+    /**
+     * @brief Whether s survives b.
+     */
+    bool repaired{false};
+};
+
+/**
+ * @brief Decides the premise by its procedure: BFS over pairs of a live state and a match-free matcher state.
  *
  * The premise fails exactly when a reachable pair's live state is missing some byte, since appending that byte to the
  * pair's prefix is a death word no family member precedes; the witness is that word. Pairs whose matcher has completed
@@ -332,74 +497,8 @@ Verdict check(const View& view, const std::size_t q, const std::vector<std::stri
 }
 
 /**
- * @brief The live subautomaton of a compiled DFA as a checker view, with a state finder for the tests.
- */
-class Compiled
-{
-public:
-    /**
-     * @brief Keeps the automaton and its live states.
-     * @param dfa The compiled automaton.
-     */
-    explicit Compiled(const Dfa& dfa);
-
-    /**
-     * @brief One byte of the live subautomaton.
-     * @param state A live state.
-     * @param byte The byte.
-     * @return The live state the byte leads to, std::nullopt when it leads to no state or to a dead one.
-     */
-    [[nodiscard]] std::optional<std::size_t> advance(std::size_t state, unsigned char byte) const;
-
-    /**
-     * @brief The live state a completely tokenizable prefix leaves the automaton in, for locating interiors.
-     * @param prefix The prefix, every byte of it leading to a state.
-     * @return The state after the prefix.
-     */
-    [[nodiscard]] std::size_t after(std::string_view prefix) const;
-
-private:
-    /**
-     * @brief The automaton, a copy of the one given.
-     */
-    Dfa dfa_;
-
-    /**
-     * @brief The automaton's trim states, the only ones advance() leads to.
-     */
-    States_t live_;
-};
-
-Compiled::Compiled(const Dfa& dfa) : dfa_{dfa}, live_{live_states(dfa_)}
-{}
-
-std::optional<std::size_t> Compiled::advance(const std::size_t state, const unsigned char byte) const
-{
-    const auto next{dfa_.advance(state, static_cast<char>(byte))};
-
-    if (!next || !live_.contains(*next))
-    {
-        return std::nullopt;
-    }
-
-    return next;
-}
-
-std::size_t Compiled::after(const std::string_view prefix) const
-{
-    auto state{dfa_.init_state()};
-
-    for (const char byte : prefix)
-    {
-        state = *dfa_.advance(state, byte);
-    }
-
-    return state;
-}
-
-/**
- * @brief Renders a word for a verdict line: a newline as `\n`, a tab as `\t`, a printable byte as a 0x01 byte
- *        followed by the byte itself, and any other byte as `\x`.
+ * @brief Renders a word for a verdict line: a newline as `\n`, a tab as `\t`, a printable byte as itself, and any other
+ *        byte as `\x`.
  * @param word The word.
  * @return The rendering.
  */
@@ -413,19 +512,24 @@ std::string printable(const std::string& word)
         {
         case '\n':
             out += R"(\n)";
+
             break;
+
         case '\t':
             out += R"(\t)";
+
             break;
+
         default:
             if (byte >= ' ' && byte <= '~')
             {
-                out += std::string{1, byte};
+                out.push_back(byte);
             }
             else
             {
                 out += R"(\x)";
             }
+
             break;
         }
     }
@@ -446,7 +550,7 @@ std::string verdict_text(const bool proved, const std::string& witness)
         return "proved";
     }
 
-    return "refuted, witness [" + printable(witness) + "]";
+    return std::format("refuted, witness [{}]", printable(witness));
 }
 
 /**
@@ -485,11 +589,10 @@ void triple_quote_interior(Assertions& assertions)
 {
     Builder_dbg builder{};
 
-    const auto identifier_start{any_of(Set::alpha() + '_')};
-
-    const auto identifier{concat(identifier_start, kleene(any_of(Set::alphanum() + '_')))};
+    const auto identifier{figures::identifier()};
 
     builder.add_token(identifier, Token::identifier, 2);
+
     builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), Token::whitespace, 2);
 
     const auto quote{'"'};
@@ -551,6 +654,7 @@ void two_letter_accept(Assertions& assertions)
     Builder_dbg builder{};
 
     builder.add_token(text("a"), Token::identifier, 2);
+
     builder.add_token(text("b"), Token::number, 2);
 
     const Compiled compiled{builder.dfa()};
@@ -561,62 +665,8 @@ void two_letter_accept(Assertions& assertions)
 
     assertions.expect(!proved, "the {a, b} accept state proves a family although it dies immediately");
 
-    std::cout << "{a, b} accept state, any K: refuted, witness [" << printable(witness) << "]\n";
+    std::cout << "{a, b} accept state, any K: " << verdict_text(proved, witness) << "\n";
 }
-
-/**
- * @brief The synthetic counterexample's table. States 0 = q, 1 = s, 2 = t. Both S-states loop on every byte not named,
- *        so the only death in the whole table is s on b: exactly the counterexample's shape, an internal death
- *        bypassing every c-bearing first-exit word. The repaired table lets s survive b.
- */
-struct Synthetic
-{
-    /**
-     * @brief One byte of the table.
-     * @param state The state, below three.
-     * @param byte The byte.
-     * @return The state the byte leads to, std::nullopt when it kills the state.
-     */
-    [[nodiscard]] std::optional<std::size_t> advance(const std::size_t state, const unsigned char byte) const
-    {
-        if (state == 0 && byte == 'a')
-        {
-            return 1;
-        }
-
-        if (state == 0 && byte == 'c')
-        {
-            return 2;
-        }
-
-        if (state == 0)
-        {
-            return 0;
-        }
-
-        if (state == 1)
-        {
-            if (byte == 'c')
-            {
-                return 2;
-            }
-
-            if (byte == 'b' && !repaired)
-            {
-                return std::nullopt;
-            }
-
-            return 1;
-        }
-
-        return 2;
-    }
-
-    /**
-     * @brief Whether s survives b.
-     */
-    bool repaired{false};
-};
 
 /**
  * @brief Decides the synthetic counterexample: S = {q, s}, s dies on b, every first-exit word contains c, yet ab is a
@@ -628,7 +678,7 @@ void synthetic_counterexample(Assertions& assertions)
 {
     const Synthetic broken_table{.repaired = false};
 
-    const auto [proved, witness]{check(broken_table, 0, {"c"})};
+    const auto [proved, witness]{check(broken_table, Synthetic::q, {"c"})};
 
     std::cout << "synthetic counterexample, K={c}: " << verdict_text(proved, witness) << "\n";
 
@@ -638,7 +688,7 @@ void synthetic_counterexample(Assertions& assertions)
 
     const Synthetic repaired_table{.repaired = true};
 
-    const auto [fixed_proved, fixed_witness]{check(repaired_table, 0, {"c"})};
+    const auto [fixed_proved, fixed_witness]{check(repaired_table, Synthetic::q, {"c"})};
 
     // Repairing s removes the table's only death, so the premise holds vacuously: a state with no death words
     // constrains nothing, and the checker must say so rather than hunt for cores that need not exist.
