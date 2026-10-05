@@ -1,15 +1,15 @@
 #include "munch/tools/tokenizer/tokenizer.hpp"
 
 #include <algorithm>
+#include <format>
 #include <utility>
 
 namespace munch::tools::tokenizer
 {
-Tokenizer::Tokenizer(core::Lexer lexer) : offset_{0}, lexer_{std::move(lexer)}
+Tokenizer::Tokenizer(core::Lexer lexer) : lexer_{std::move(lexer)}
 {}
 
-Tokenizer::Tokenizer(core::Lexer lexer, std::string input)
-    : input_{std::move(input)}, offset_{0}, lexer_{std::move(lexer)}
+Tokenizer::Tokenizer(core::Lexer lexer, std::string input) : input_{std::move(input)}, lexer_{std::move(lexer)}
 {}
 
 std::string_view Tokenizer::input() const noexcept
@@ -46,14 +46,18 @@ void Tokenizer::seek(const std::size_t offset) noexcept
 
 std::optional<std::size_t> Tokenizer::recover()
 {
-    // The search starts past the current position: after an error that position is the failure offset, the scan's
-    // final committed offset where the failed token attempt began, and recovering to where the scan already
-    // stands would not be a recovery.
     const auto before{offset_};
 
     const auto found{recover_from_failure()};
 
-    return found ? std::optional{found->start - before} : std::nullopt;
+    if (!found)
+    {
+        return std::nullopt;
+    }
+
+    const auto& [start, evidence_begin, evidence_end, window]{*found};
+
+    return start - before;
 }
 
 std::optional<core::Lexer::Certified_start> Tokenizer::recover_from_failure()
@@ -63,16 +67,30 @@ std::optional<core::Lexer::Certified_start> Tokenizer::recover_from_failure()
 
 std::optional<core::Lexer::Certified_start> Tokenizer::recover_from_clean(const std::size_t clean_from)
 {
-    const auto found{lexer_.next_certified_evidence(input_, std::max(clean_from, offset_ + 1))};
+    const auto from{std::max(clean_from, offset_ + 1)};
+
+    const auto found{lexer_.next_certified_evidence(input_, from)};
 
     if (!found)
     {
         return std::nullopt;
     }
 
-    offset_ = found->start;
+    const auto& [start, evidence_begin, evidence_end, window]{*found};
+
+    offset_ = start;
 
     return found;
+}
+
+Error Tokenizer::unrecognized() const
+{
+    return Error{std::format("Unrecognized character at position {}", offset_), offset_};
+}
+
+Error Tokenizer::zero_width() const
+{
+    return Error{std::format("Zero-width match at position {}", offset_), offset_};
 }
 
 } // namespace munch::tools::tokenizer

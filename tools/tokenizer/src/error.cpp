@@ -1,5 +1,9 @@
 #include "munch/tools/tokenizer/error.hpp"
 
+#include <cstddef>
+#include <string>
+#include <utility>
+
 namespace munch::tools::tokenizer
 {
 Error::Error(std::string message, const std::size_t position) : message_{std::move(message)}, position_{position}

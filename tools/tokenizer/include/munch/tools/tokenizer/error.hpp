@@ -13,19 +13,21 @@ class Error
 {
 public:
     /**
-     * @brief Construct an Error.
+     * @brief Constructs an Error.
      * @param message Human-readable description of the error.
      * @param position Byte offset in the input where the error occurred.
      */
     Error(std::string message, std::size_t position);
 
     /**
-     * @brief Return the error message.
+     * @brief Returns the error message.
+     * @return The human-readable description of the error.
      */
     [[nodiscard]] const std::string& message() const noexcept;
 
     /**
-     * @brief Return the error position (byte offset) in the input.
+     * @brief Returns the error position (byte offset) in the input.
+     * @return The byte offset in the input where the error occurred.
      */
     [[nodiscard]] std::size_t position() const noexcept;
 

@@ -1,5 +1,8 @@
 #include "munch/tools/tokenizer/raw_string.hpp"
 
+#include <cstddef>
+#include <expected>
+#include <format>
 #include <string>
 #include <string_view>
 
@@ -13,35 +16,43 @@ namespace
 constexpr std::size_t max_delimiter_length{16};
 
 /**
- * @brief Checks whether a character may appear in a raw string delimiter.
- *
- * C++23 restricts a d-char to the basic character set less spaces, parentheses, backslashes, and control
- * characters, so the check is a whitelist of exactly those members: letters, digits, and the set's punctuation.
- * Dollar, at-sign, and grave accent become d-chars only when P2558 lands in a later standard, and bytes outside
- * ASCII are never d-chars; the opening parenthesis never reaches this check, as it ends the delimiter.
+ * @brief The prefix that opens every raw string literal.
  */
-bool is_delimiter_character(const char c)
+constexpr std::string_view raw_opener{R"(R")"};
+
+/**
+ * @brief Returns whether a character may appear in a raw string delimiter.
+ *
+ * C++23 restricts a d-char to the basic character set less spaces, parentheses, backslashes, and control characters, so
+ * the check is a whitelist of exactly those members: letters, digits, and the set's punctuation. Dollar, at-sign, and
+ * grave accent become d-chars only when P2558 lands in a later standard, and bytes outside ASCII are never d-chars; the
+ * opening parenthesis never reaches this check, as it ends the delimiter.
+ * @param character The character.
+ * @return True when the character is a d-char.
+ */
+bool is_delimiter_character(const char character)
 {
-    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+    if ((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') ||
+        (character >= '0' && character <= '9'))
     {
         return true;
     }
 
     constexpr std::string_view punctuation{R"(!"#%&'*+,-./:;<=>?[]^_{|}~)"};
 
-    return punctuation.find(c) != std::string_view::npos;
+    return punctuation.contains(character);
 }
 
 } // namespace
 
 std::expected<std::size_t, Error> scan_raw_string(const std::string_view input, const std::size_t offset)
 {
-    if (offset >= input.size() || input.size() - offset < 2 || input[offset] != 'R' || input[offset + 1] != '"')
+    if (offset >= input.size() || !input.substr(offset).starts_with(raw_opener))
     {
         return std::unexpected{Error{"Not a raw string literal", offset}};
     }
 
-    const auto delimiter_start{offset + 2};
+    const auto delimiter_start{offset + raw_opener.size()};
 
     auto position{delimiter_start};
 
@@ -60,11 +71,11 @@ std::expected<std::size_t, Error> scan_raw_string(const std::string_view input, 
         return std::unexpected{Error{"Unterminated raw string literal", offset}};
     }
 
-    // The literal closes at ')' delimiter '"'; repeating the delimiter makes any other content,
-    // including `)"`, plain characters.
-    std::string closing{")"};
-    closing += input.substr(delimiter_start, position - delimiter_start);
-    closing += '"';
+    // The literal closes at ')' delimiter '"'; repeating the delimiter makes any other content, including `)"`, plain
+    // characters.
+    const auto delimiter{input.substr(delimiter_start, position - delimiter_start)};
+
+    const auto closing{std::format(R"(){}")", delimiter)};
 
     const auto end{input.find(closing, position + 1)};
 

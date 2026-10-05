@@ -9,7 +9,6 @@ namespace munch::tools::tokenizer
  * @brief Single token produced by a Tokenizer.
  *
  * The template parameter @p T is the token kind type (typically an enum) used by the underlying lexer.
- *
  * @tparam T Token kind type.
  */
 template <typename T>
@@ -17,21 +16,23 @@ class Token
 {
 public:
     /**
-     * @brief Construct a Token.
+     * @brief Constructs a Token.
      * @param kind Semantic kind/value of the token (usually an enum value).
      * @param lexeme View into the original input corresponding to the token text.
      */
-    Token(T kind, const std::string_view lexeme) noexcept : kind_{kind}, lexeme_{lexeme} {}
+    Token(const T kind, const std::string_view lexeme) noexcept : kind_{kind}, lexeme_{lexeme} {}
 
     /**
-     * @brief Return the token kind.
+     * @brief Returns the token kind.
+     * @return The semantic kind of the token.
      */
     [[nodiscard]] T kind() const noexcept { return kind_; }
 
     /**
-     * @brief Return the token lexeme.
+     * @brief Returns the token lexeme.
      *
      * The returned view always refers to the underlying input string owned by the Tokenizer that produced this token.
+     * @return The view into the original input holding the token's text.
      */
     [[nodiscard]] std::string_view lexeme() const noexcept { return lexeme_; }
 

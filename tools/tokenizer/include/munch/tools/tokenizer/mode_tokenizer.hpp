@@ -1,6 +1,9 @@
 #ifndef MUNCH_TOOLS_TOKENIZER_INCLUDE_MUNCH_TOOLS_TOKENIZER_MODE_TOKENIZER_HPP
 #define MUNCH_TOOLS_TOKENIZER_INCLUDE_MUNCH_TOOLS_TOKENIZER_MODE_TOKENIZER_HPP
 
+#include <cstddef>
+#include <cstdint>
+#include <format>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -22,22 +25,22 @@ namespace munch::tools::tokenizer
  * This is the modal tokenizer, for languages whose tokenization is context-dependent. Constructed from lexers, the
  * modes never switch on their own and the driver switches them explicitly with set_mode(), which suits a parser that
  * knows what is coming. Constructed from a core::Mode_lexer, the grammar carries the switches instead: each token
- * declares its effect on a mode stack, so nested comments and string escapes need no bookkeeping from the driver.
- * Under a mode lexer the mode is scan state, and load() and reset() rewind it to zero with the position; under
+ * declares its effect on a mode stack, so nested comments and string escapes need no bookkeeping from the driver. Under
+ * a mode lexer the mode is scan state, and load() and reset() rewind it to zero with the position; under
  * caller-supplied lexers it is the caller's choice and survives them. mode() reads it either way, and depth() reports
  * the nesting the stack has reached.
  *
  * There is no accessor for the lexer here, and no parallel entry point, because a mode lexer has none. A worker
  * starting mid-input would have to recover the mode and every saved frame, and `docs/limits.md` records both what is
- * proved unavailable and what is merely unmeasured. Where a grammar admits a flat token set, Tokenizer is the type
- * to use and it reaches the parallel path.
+ * proved unavailable and what is merely unmeasured. Where a grammar admits a flat token set, Tokenizer is the type to
+ * use and it reaches the parallel path.
  *
- * @warning This class is not thread-safe. Concurrent calls to next() or load() on the same instance
- *          will result in undefined behavior.
+ * @warning This class is not thread-safe. Concurrent calls to next() or load() on the same instance will result in
+ *          undefined behavior.
  *
- * @warning The Token objects returned by next() contain a std::string_view that references the internal
- *          input buffer. These views become invalid if load() is called or if the Mode_tokenizer is destroyed.
- *          If tokens need to outlive it or persist across load() calls, copy the lexeme to a std::string.
+ * @warning The Token objects returned by next() contain a std::string_view that references the internal input buffer.
+ *          These views become invalid if load() is called or if the Mode_tokenizer is destroyed. If tokens need to
+ *          outlive it or persist across load() calls, copy the lexeme to a std::string.
  */
 class Mode_tokenizer
 {
@@ -51,14 +54,14 @@ public:
     using Result_t = Result<T>;
 
     /**
-     * @brief Construct a tokenizer from one lexer per mode.
+     * @brief Constructs a tokenizer from one lexer per mode.
      * @param lexers The lexers, indexed by mode; mode 0 starts active.
      * @throws std::invalid_argument If no lexer is given.
      */
     explicit Mode_tokenizer(std::vector<core::Lexer> lexers);
 
     /**
-     * @brief Construct a tokenizer from one lexer per mode and an input string held in memory.
+     * @brief Constructs a tokenizer from one lexer per mode and an input string held in memory.
      * @param lexers The lexers, indexed by mode; mode 0 starts active.
      * @param input Input text to tokenize.
      * @throws std::invalid_argument If no lexer is given.
@@ -66,28 +69,30 @@ public:
     explicit Mode_tokenizer(std::vector<core::Lexer> lexers, std::string input);
 
     /**
-     * @brief Construct a tokenizer whose grammar carries its own mode transitions.
+     * @brief Constructs a tokenizer whose grammar carries its own mode transitions.
      * @param lexer The mode lexer; its mode 0 starts active with an empty stack.
      */
     explicit Mode_tokenizer(core::Mode_lexer lexer);
 
     /**
-     * @brief Construct a tokenizer from a mode lexer and an input string held in memory.
+     * @brief Constructs a tokenizer from a mode lexer and an input string held in memory.
      * @param lexer The mode lexer; its mode 0 starts active with an empty stack.
      * @param input Input text to tokenize.
      */
     explicit Mode_tokenizer(core::Mode_lexer lexer, std::string input);
 
     /**
-     * @brief Return the next token, recognized by the active mode's lexer.
+     * @brief Returns the next token, recognized by the active mode's lexer.
      *
-     * On success, returns a Token<T>; End_of_input indicates the input is exhausted.
-     * On failure, returns an Error describing the lexical error at the current position.
+     * On success, returns a Token<T>; End_of_input indicates the input is exhausted. On failure, returns an Error
+     * describing the lexical error at the current position.
      *
-     * An error does not advance the reading position: guessing a skip would invent tokens. Recovery is the
-     * driver's choice of three: stop; seek() past the offending bytes by its own rule; or recover(), which asks
-     * the active mode's automaton for the next certified token start. A loop that only tests end_of_input() and
-     * ignores has_error() will not terminate.
+     * An error does not advance the reading position: guessing a skip would invent tokens. Recovery is the driver's
+     * choice of three: stop; seek() past the offending bytes by its own rule; or recover(), which asks the active
+     * mode's automaton for the next certified token start. A loop that only tests end_of_input() and ignores
+     * has_error() will not terminate.
+     * @tparam T The token kind type.
+     * @return The token, End_of_input at the end of the input, or the Error at the current position.
      */
     template <common::concepts::Token_id T>
     [[nodiscard]] Result_t<T> next()
@@ -104,12 +109,12 @@ public:
 
         if (!token)
         {
-            return Error{"Unrecognized character at position " + std::to_string(offset_), offset_};
+            return unrecognized();
         }
 
         if (consumed == 0)
         {
-            return Error{"Zero-width match at position " + std::to_string(offset_), offset_};
+            return zero_width();
         }
 
         const auto lexeme{std::string_view{input_}.substr(offset_, consumed)};
@@ -120,40 +125,39 @@ public:
     }
 
     /**
-     * @brief Return the input text being tokenized.
+     * @brief Returns the input text being tokenized.
      *
      * Lets a driver scan tokens by hand next to the automaton; see seek().
-     *
      * @return View of the input buffer, invalidated by load() and destruction.
      */
     [[nodiscard]] std::string_view input() const noexcept;
 
     /**
-     * @brief Return the current byte offset in the input.
+     * @brief Returns the current byte offset in the input.
      *
      * Useful for error reporting and tracking tokenization progress.
-     *
      * @return The current byte position in the input buffer.
      */
     [[nodiscard]] std::size_t offset() const noexcept;
 
     /**
-     * @brief Return the active mode.
+     * @brief Returns the active mode.
      * @return The mode whose lexer recognizes the following tokens.
      */
     [[nodiscard]] std::size_t mode() const noexcept;
 
     /**
-     * @brief Return the number of saved mode frames, i.e. how deeply nested the scan is.
+     * @brief Returns the number of saved mode frames, i.e. how deeply nested the scan is.
      *
      * Zero unless the grammar carries its own transitions, since only a grammar-carried transition pushes. Together
-     * with mode() this says what a stopped scan was doing, which is what distinguishes an unterminated string from
-     * an unrecognized byte in code.
+     * with mode() this says what a stopped scan was doing, which is what distinguishes an unterminated string from an
+     * unrecognized byte in code.
+     * @return The saved frames on the mode stack.
      */
     [[nodiscard]] std::size_t depth() const noexcept;
 
     /**
-     * @brief Make the lexer of the given mode recognize the following tokens.
+     * @brief Makes the lexer of the given mode recognize the following tokens.
      * @tparam T The mode type (enum or integral).
      * @param mode The mode to activate, as passed to the constructor.
      * @throws std::out_of_range If no lexer was given for the mode.
@@ -165,16 +169,16 @@ public:
 
         if (index >= lexer_.modes())
         {
-            throw std::out_of_range("No lexer was given for mode " + std::to_string(index));
+            throw std::out_of_range{std::format("No lexer was given for mode {}", index)};
         }
 
-        // Forcing a mode is still allowed when the grammar drives them, and is the recovery hatch after an error:
-        // the saved frames are left alone, since the driver may well intend to return through them.
+        // Forcing a mode is still allowed when the grammar drives them, and is the recovery hatch after an error: the
+        // saved frames are left alone, since the driver may well intend to return through them.
         stack_.current = index;
     }
 
     /**
-     * @brief Replace the input text and start over.
+     * @brief Replaces the input text and starts over.
      *
      * Under a mode lexer the mode is scan state and returns to zero with the saved frames, since both describe nesting
      * in input that is being replaced: keeping either would scan a fresh buffer inside a half open string literal it
@@ -186,8 +190,8 @@ public:
     void load(std::string input);
 
     /**
-     * @brief Reset the reading position to the beginning of the current input; a grammar-driven mode rewinds with
-     *        it, a caller-driven one survives.
+     * @brief Resets the reading position to the beginning of the current input; a grammar-driven mode rewinds with it,
+     *        a caller-driven one survives.
      *
      * The mode is treated exactly as load() treats it: returned to zero with the saved frames under a mode lexer,
      * however it was reached, and kept where the caller drives it.
@@ -195,7 +199,7 @@ public:
     void reset() noexcept;
 
     /**
-     * @brief Move the reading position to the given byte offset, clamped to the end of the input.
+     * @brief Moves the reading position to the given byte offset, clamped to the end of the input.
      *
      * The escape hatch for tokens no automaton can recognize, such as C++ raw string literals: a driver reads the
      * prefix token, scans the remainder by hand, and seeks past it before reading on.
@@ -216,32 +220,31 @@ public:
      * since a repair could reach the resume point in a different mode; a forced or grammar-driven mode change is the
      * driver's business exactly as for next(). When the search finds no certificate ahead, the position does not move.
      * @return The number of bytes skipped from the current position, or std::nullopt when no certified byte and no
-     *         certified window of two to four bytes lies ahead in the remaining input, the widths the search
-     *         consults.
+     *         certified window of two to four bytes lies ahead in the remaining input, the widths the search consults.
      */
     [[nodiscard]] std::optional<std::size_t> recover();
 
     /**
-     * @brief recover(), with the supporting evidence returned: certified relative to the damaged suffix.
+     * @brief Recovers as recover() does, returning the supporting evidence: certified relative to the damaged suffix.
      *
-     * The failure-anchored contract, named as such: the search starts one past the current position, which
-     * after an error is the failure offset, and the answer carries core::Lexer::Certified_start's guarantee.
-     * The scanner does not know the damage's true extent, so when the corruption reaches past the evidence,
-     * the transfer to the intended input is forfeit; the returned interval is exactly what a caller needs to
-     * check that condition against knowledge of its own. Under modes the answer is per-automaton, as for recover().
+     * The failure-anchored contract, named as such: the search starts one past the current position, which after an
+     * error is the failure offset, and the answer carries core::Lexer::Certified_start's guarantee. The scanner does
+     * not know the damage's true extent, so when the corruption reaches past the evidence, the transfer to the intended
+     * input is forfeit; the returned interval is exactly what a caller needs to check that condition against knowledge
+     * of its own. Under modes the answer is per-automaton, as for recover().
      * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
      */
     [[nodiscard]] std::optional<core::Lexer::Certified_start> recover_from_failure();
 
     /**
-     * @brief Recovery under a caller-supplied clean bound, so the answer transfers to the intended input.
+     * @brief Recovers under a caller-supplied clean bound, so the answer transfers to the intended input.
      *
-     * The clean-anchored contract: the search starts at the later of one past the current position and
-     * clean_from, so the returned evidence begins at or after clean_from by construction. When the caller's
-     * bound is truly at or past the damage's end, an editor's edit span or a transport frame's boundary, the
-     * evidence lies in undamaged text, which settles the survival half of core::Lexer::Certified_start's
-     * guarantee, that the evidence outlasted the damage, which the failure-anchored form cannot establish alone.
-     * Under modes the answer is per-automaton, as for recover().
+     * The clean-anchored contract: the search starts at the later of one past the current position and clean_from, so
+     * the returned evidence begins at or after clean_from by construction. When the caller's bound is truly at or past
+     * the damage's end, an editor's edit span or a transport frame's boundary, the evidence lies in undamaged text,
+     * which settles the survival half of core::Lexer::Certified_start's guarantee, that the evidence outlasted the
+     * damage, which the failure-anchored form cannot establish alone. Under modes the answer is per-automaton, as for
+     * recover().
      * @param clean_from The caller's lower bound on undamaged text.
      * @return The certified answer with its evidence interval, the position moved there, or std::nullopt.
      */
@@ -249,12 +252,40 @@ public:
 
 private:
     /**
-     * @brief The one constructor the four public ones delegate to.
+     * @brief Who switches the modes, which decides whether reset() and load() keep the mode and its frames.
+     */
+    enum class Driver : std::uint8_t
+    {
+        /**
+         * @brief The grammar's declared actions switch the modes, so reset() and load() return to mode zero.
+         */
+        grammar,
+
+        /**
+         * @brief The caller switches the modes itself, so reset() and load() leave the mode and its frames alone.
+         */
+        caller
+    };
+
+    /**
+     * @brief Constructs from the lexer, the input and the driver; the four public constructors delegate to it.
      * @param lexer The mode lexer.
      * @param input Input text to tokenize.
-     * @param caller_driven Whether the caller switches modes itself, in which case reset() and load() keep the mode.
+     * @param driver Who switches the modes.
      */
-    Mode_tokenizer(core::Mode_lexer lexer, std::string input, bool caller_driven);
+    Mode_tokenizer(core::Mode_lexer lexer, std::string input, Driver driver);
+
+    /**
+     * @brief Returns the error for a position no token matches, at the reading position.
+     * @return The error.
+     */
+    [[nodiscard]] Error unrecognized() const;
+
+    /**
+     * @brief Returns the error for a match that consumed nothing, at the reading position.
+     * @return The error.
+     */
+    [[nodiscard]] Error zero_width() const;
 
     /**
      * @brief The input text being tokenized.
@@ -264,7 +295,7 @@ private:
     /**
      * @brief The reading position as a byte offset into the input.
      */
-    std::size_t offset_;
+    std::size_t offset_{0};
 
     /**
      * @brief The lexer, one compiled mode per index; without actions when the driver switches modes itself.
@@ -277,9 +308,9 @@ private:
     core::Mode_stack stack_;
 
     /**
-     * @brief Whether the caller drives the modes, so that reset() and load() leave the mode and its frames alone.
+     * @brief Who switches the modes.
      */
-    bool caller_driven_;
+    Driver driver_;
 };
 
 } // namespace munch::tools::tokenizer

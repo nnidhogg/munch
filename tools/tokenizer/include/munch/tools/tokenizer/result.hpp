@@ -19,19 +19,14 @@ struct End_of_input
 /**
  * @brief The outcome of reading one token: a token, the end of the input, or a lexical error.
  *
- * The three outcomes are alternatives of one sum type rather than nested layers, so a caller tells them apart with
- * a single query, or handles them exhaustively with visit(). The constructors convert implicitly, letting each
- * outcome be returned as itself.
+ * The three outcomes are alternatives of one sum type rather than nested layers, so a caller tells them apart with a
+ * single query, or handles them exhaustively with visit(). The constructors convert implicitly, letting each outcome be
+ * returned as itself.
  * @tparam T The token kind type (enum or integral).
  */
 template <typename T>
 class Result
 {
-    /**
-     * @brief The outcome alternatives a result can hold.
-     */
-    using Variant_t = std::variant<Token<T>, End_of_input, Error>;
-
 public:
     /**
      * @brief Constructs a result holding a token.
@@ -52,19 +47,19 @@ public:
     Result(Error error) noexcept : variant_{std::move(error)} {}
 
     /**
-     * @brief Checks whether the result holds a token.
+     * @brief Returns whether the result holds a token.
      * @return True if a token was matched.
      */
     [[nodiscard]] bool has_token() const noexcept { return std::holds_alternative<Token<T>>(variant_); }
 
     /**
-     * @brief Checks whether the result holds a lexical error.
+     * @brief Returns whether the result holds a lexical error.
      * @return True if tokenization failed.
      */
     [[nodiscard]] bool has_error() const noexcept { return std::holds_alternative<Error>(variant_); }
 
     /**
-     * @brief Checks whether the result marks the end of the input.
+     * @brief Returns whether the result marks the end of the input.
      * @return True if the input was exhausted.
      */
     [[nodiscard]] bool end_of_input() const noexcept { return std::holds_alternative<End_of_input>(variant_); }
@@ -85,6 +80,7 @@ public:
 
     /**
      * @brief Applies a visitor to the held outcome, handling all three exhaustively.
+     * @tparam Visitor The visitor's type.
      * @param visitor Callable invocable with Token<T>, End_of_input, and Error.
      * @return Whatever the visitor returns.
      */
@@ -95,6 +91,11 @@ public:
     }
 
 private:
+    /**
+     * @brief The outcome alternatives a result can hold.
+     */
+    using Variant_t = std::variant<Token<T>, End_of_input, Error>;
+
     /**
      * @brief The outcome this result holds.
      */

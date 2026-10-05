@@ -2,10 +2,13 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <format>
 #include <string>
 
 #include "munch/core/builder.hpp"
 #include "munch/regex/regex.hpp"
+#include "munch/regex/set.hpp"
 #include "munch/tools/tokenizer/tokenizer.hpp"
 
 using namespace munch;
@@ -60,7 +63,7 @@ TEST(Raw_string_test, Rejects_unterminated_literal)
         const auto length{scan_raw_string(input, 0)};
 
         ASSERT_FALSE(length.has_value());
-        EXPECT_EQ(length.error().position(), 0u);
+        EXPECT_EQ(length.error().position(), 0U);
         EXPECT_FALSE(length.error().message().empty());
     }
 }
@@ -68,40 +71,41 @@ TEST(Raw_string_test, Rejects_unterminated_literal)
 TEST(Raw_string_test, Rejects_invalid_delimiter)
 {
     // A space in the delimiter, then a delimiter past sixteen characters.
-    const std::string spaced{"R\" (a)\""};
+    const std::string spaced{R"input(R" (a)")input"};
 
     EXPECT_FALSE(scan_raw_string(spaced, 0).has_value());
 
-    const std::string overlong{"R\"aaaaaaaaaaaaaaaaa(x)aaaaaaaaaaaaaaaaa\""};
+    const std::string overlong{R"input(R"aaaaaaaaaaaaaaaaa(x)aaaaaaaaaaaaaaaaa")input"};
 
     EXPECT_FALSE(scan_raw_string(overlong, 0).has_value());
 }
 
 TEST(Raw_string_test, Rejects_delimiter_characters_the_standard_forbids)
 {
-    EXPECT_FALSE(scan_raw_string("R\")(\"", 0).has_value());    // ')' in the delimiter
-    EXPECT_FALSE(scan_raw_string("R\"\\(\"", 0).has_value());   // '\' in the delimiter
-    EXPECT_FALSE(scan_raw_string("R\"\t(\"", 0).has_value());   // A control character in the delimiter
-    EXPECT_FALSE(scan_raw_string("R\"\x7F(\"", 0).has_value()); // DEL in the delimiter
+    // A closing parenthesis, a backslash, a control character and DEL in the delimiter.
+    EXPECT_FALSE(scan_raw_string(R"input(R")(")input", 0).has_value());
+    EXPECT_FALSE(scan_raw_string(R"input(R"\(")input", 0).has_value());
+    EXPECT_FALSE(scan_raw_string("R\"\t(\"", 0).has_value());
+    EXPECT_FALSE(scan_raw_string("R\"\x7F(\"", 0).has_value());
 
-    // C++23 d-chars are the basic character set only: dollar, at-sign, and grave accent arrive with P2558 in a
-    // later standard, and bytes outside ASCII were never members, so a compiler rejects every one of these.
-    EXPECT_FALSE(scan_raw_string("R\"$(x)$\"", 0).has_value());
-    EXPECT_FALSE(scan_raw_string("R\"@(x)@\"", 0).has_value());
-    EXPECT_FALSE(scan_raw_string("R\"`(x)`\"", 0).has_value());
+    // C++23 d-chars are the basic character set only: dollar, at-sign, and grave accent arrive with P2558 in a later
+    // standard, and bytes outside ASCII were never members, so a compiler rejects every one of these.
+    EXPECT_FALSE(scan_raw_string(R"input(R"$(x)$")input", 0).has_value());
+    EXPECT_FALSE(scan_raw_string(R"input(R"@(x)@")input", 0).has_value());
+    EXPECT_FALSE(scan_raw_string(R"input(R"`(x)`")input", 0).has_value());
     EXPECT_FALSE(scan_raw_string("R\"\x80(x)\x80\"", 0).has_value());
     EXPECT_FALSE(scan_raw_string("R\"\xC3\xA9(x)\xC3\xA9\"", 0).has_value());
 }
 
 TEST(Raw_string_test, Accepts_every_basic_set_delimiter_character)
 {
-    // The whitelist must not overshoot: every legal d-char scans, including the double quote the basic set
-    // surprisingly permits inside a delimiter.
+    // The whitelist must not overshoot: every legal d-char scans, including the double quote the basic set surprisingly
+    // permits inside a delimiter.
     const std::string punctuation{R"(!"#%&'*+,-./:;<=>?[]^_{|}~)"};
 
     for (const char legal : punctuation)
     {
-        const std::string input{std::string{"R\""} + legal + "(x)" + legal + "\""};
+        const auto input{std::format(R"(R"{}(x){}")", legal, legal)};
 
         EXPECT_TRUE(scan_raw_string(input, 0).has_value()) << legal;
     }
@@ -109,7 +113,7 @@ TEST(Raw_string_test, Accepts_every_basic_set_delimiter_character)
 
 TEST(Raw_string_test, Rejects_other_input)
 {
-    EXPECT_FALSE(scan_raw_string("Q\"(x)\"", 0).has_value());
+    EXPECT_FALSE(scan_raw_string(R"input(Q"(x)")input", 0).has_value());
     EXPECT_FALSE(scan_raw_string("Rx", 0).has_value());
     EXPECT_FALSE(scan_raw_string("R", 0).has_value());
     EXPECT_FALSE(scan_raw_string("", 0).has_value());
@@ -119,30 +123,32 @@ TEST(Raw_string_test, Drives_the_tokenizer_escape_hatch)
 {
     enum class Token_kind : std::size_t
     {
-        Whitespace = 1,
-        Identifier,
-        Raw_string_prefix
+        whitespace,
+        identifier,
+        raw_string_prefix
     };
 
-    core::Builder builder;
+    core::Builder builder{};
 
-    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::Whitespace, 1);
-    builder.add_token(plus(any_of(Set::alpha())), Token_kind::Identifier, 1);
+    builder.add_token(plus(any_of(Set::whitespace())), Token_kind::whitespace, 1);
+    builder.add_token(plus(any_of(Set::alpha())), Token_kind::identifier, 1);
 
     // Two bytes beat the one-byte identifier `R` by maximal munch, so the prefix needs no special priority.
-    builder.add_token(text("R\""), Token_kind::Raw_string_prefix, 0);
+    builder.add_token(text(R"(R")"), Token_kind::raw_string_prefix, 0);
 
     Tokenizer tokenizer{builder.build(), std::string{R"input(x R"d(a)"b)d" y)input"}};
 
     auto result{tokenizer.next<Token_kind>()};
+
     ASSERT_TRUE(result.has_token());
-    EXPECT_EQ(result.token().kind(), Token_kind::Identifier);
+    EXPECT_EQ(result.token().kind(), Token_kind::identifier);
 
     ASSERT_TRUE(tokenizer.next<Token_kind>().has_token());
 
     result = tokenizer.next<Token_kind>();
+
     ASSERT_TRUE(result.has_token());
-    ASSERT_EQ(result.token().kind(), Token_kind::Raw_string_prefix);
+    ASSERT_EQ(result.token().kind(), Token_kind::raw_string_prefix);
 
     // The automaton found the prefix; scan the full literal by hand and seek past it.
     const auto start{tokenizer.offset() - result.token().lexeme().size()};
@@ -157,8 +163,9 @@ TEST(Raw_string_test, Drives_the_tokenizer_escape_hatch)
     ASSERT_TRUE(tokenizer.next<Token_kind>().has_token());
 
     result = tokenizer.next<Token_kind>();
+
     ASSERT_TRUE(result.has_token());
-    EXPECT_EQ(result.token().kind(), Token_kind::Identifier);
+    EXPECT_EQ(result.token().kind(), Token_kind::identifier);
     EXPECT_EQ(result.token().lexeme(), "y");
 
     EXPECT_TRUE(tokenizer.next<Token_kind>().end_of_input());

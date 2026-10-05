@@ -1,28 +1,30 @@
 #include "munch/tools/tokenizer/mode_tokenizer.hpp"
 
 #include <algorithm>
+#include <format>
 #include <utility>
 #include <vector>
 
 namespace munch::tools::tokenizer
 {
 Mode_tokenizer::Mode_tokenizer(std::vector<core::Lexer> lexers)
-    : Mode_tokenizer{core::Mode_lexer{std::move(lexers)}, std::string{}, true}
+    : Mode_tokenizer{core::Mode_lexer{std::move(lexers)}, std::string{}, Driver::caller}
 {}
 
 Mode_tokenizer::Mode_tokenizer(std::vector<core::Lexer> lexers, std::string input)
-    : Mode_tokenizer{core::Mode_lexer{std::move(lexers)}, std::move(input), true}
+    : Mode_tokenizer{core::Mode_lexer{std::move(lexers)}, std::move(input), Driver::caller}
 {}
 
-Mode_tokenizer::Mode_tokenizer(core::Mode_lexer lexer) : Mode_tokenizer{std::move(lexer), std::string{}, false}
+Mode_tokenizer::Mode_tokenizer(core::Mode_lexer lexer)
+    : Mode_tokenizer{std::move(lexer), std::string{}, Driver::grammar}
 {}
 
 Mode_tokenizer::Mode_tokenizer(core::Mode_lexer lexer, std::string input)
-    : Mode_tokenizer{std::move(lexer), std::move(input), false}
+    : Mode_tokenizer{std::move(lexer), std::move(input), Driver::grammar}
 {}
 
-Mode_tokenizer::Mode_tokenizer(core::Mode_lexer lexer, std::string input, const bool caller_driven)
-    : input_{std::move(input)}, offset_{0}, lexer_{std::move(lexer)}, caller_driven_{caller_driven}
+Mode_tokenizer::Mode_tokenizer(core::Mode_lexer lexer, std::string input, const Driver driver)
+    : input_{std::move(input)}, lexer_{std::move(lexer)}, driver_{driver}
 {}
 
 std::string_view Mode_tokenizer::input() const noexcept
@@ -56,9 +58,7 @@ void Mode_tokenizer::reset() noexcept
 {
     offset_ = 0;
 
-    // Under a mode lexer the stack describes the text just rewound past, so it is rewound to mode 0 whatever set
-    // it, set_mode() included. Under caller-supplied lexers the current mode is the caller's and survives.
-    if (!caller_driven_)
+    if (driver_ == Driver::grammar)
     {
         stack_ = core::Mode_stack{};
     }
@@ -71,14 +71,18 @@ void Mode_tokenizer::seek(const std::size_t offset) noexcept
 
 std::optional<std::size_t> Mode_tokenizer::recover()
 {
-    // The search starts past the current position: after an error that position is the failure offset, the scan's
-    // final committed offset where the failed token attempt began, and recovering to where the scan already
-    // stands would not be a recovery.
     const auto before{offset_};
 
     const auto found{recover_from_failure()};
 
-    return found ? std::optional{found->start - before} : std::nullopt;
+    if (!found)
+    {
+        return std::nullopt;
+    }
+
+    const auto& [start, evidence_begin, evidence_end, window]{*found};
+
+    return start - before;
 }
 
 std::optional<core::Lexer::Certified_start> Mode_tokenizer::recover_from_failure()
@@ -90,16 +94,30 @@ std::optional<core::Lexer::Certified_start> Mode_tokenizer::recover_from_clean(c
 {
     const auto& lexer{lexer_.mode(stack_.current)};
 
-    const auto found{lexer.next_certified_evidence(input_, std::max(clean_from, offset_ + 1))};
+    const auto from{std::max(clean_from, offset_ + 1)};
+
+    const auto found{lexer.next_certified_evidence(input_, from)};
 
     if (!found)
     {
         return std::nullopt;
     }
 
-    offset_ = found->start;
+    const auto& [start, evidence_begin, evidence_end, window]{*found};
+
+    offset_ = start;
 
     return found;
+}
+
+Error Mode_tokenizer::unrecognized() const
+{
+    return Error{std::format("Unrecognized character at position {}", offset_), offset_};
+}
+
+Error Mode_tokenizer::zero_width() const
+{
+    return Error{std::format("Zero-width match at position {}", offset_), offset_};
 }
 
 } // namespace munch::tools::tokenizer
