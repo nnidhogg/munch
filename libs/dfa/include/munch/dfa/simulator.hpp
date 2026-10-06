@@ -434,6 +434,15 @@ public:
     [[nodiscard]] std::optional<std::size_t> step(std::size_t state, unsigned char symbol) const noexcept;
 
     /**
+     * @brief Groups the byte values into the classes the tables hold one row for.
+     *
+     * Two bytes share a class when every state moves on both to the same state or on neither, so a decision that
+     * enumerates bytes enumerates one per class and lets it stand for the rest.
+     * @return The classes in the order of their lowest byte, each its bytes ascending.
+     */
+    [[nodiscard]] std::vector<std::vector<unsigned char>> symbol_classes() const;
+
+    /**
      * @brief Returns whether the state accepts some token; the flag test, named once.
      * @param state The state to test.
      * @return True when the state's flag byte marks it accepting.
@@ -570,6 +579,30 @@ private:
     static constexpr std::uint8_t live_flag_{2};
 
     /**
+     * @brief Compiles the DFA, through its positive-width equivalent where it has one.
+     *
+     * A nullable set is compiled as its positive-width equivalent; the old start state keeps its index, so the empty
+     * match it accepts can still be reported where the scan reports one.
+     * @param dfa The DFA to simulate.
+     * @param unrolled Its positive-width equivalent when its start state accepts, nothing otherwise.
+     * @param ignored The IDs of tokens the caller discards before the stream is used.
+     * @param payloads Token ID and word pairs; a token named more than once keeps the last word given.
+     * @throws std::runtime_error If the compiled DFA has more states than a table entry can index, or if the
+     *         transition table's size would overflow std::size_t, which only a 32-bit platform can reach.
+     */
+    Simulator(
+            const Dfa& dfa, const std::optional<Dfa>& unrolled, std::span<const std::size_t> ignored,
+            std::span<const std::pair<std::size_t, std::uint64_t>> payloads);
+
+    /**
+     * @brief Unrolls the start state of a DFA whose start state accepts.
+     * @param dfa The DFA to simulate, refused as given when no table entry can index its states.
+     * @return The unrolled DFA when the given one accepts the empty word, nothing otherwise.
+     * @throws std::runtime_error If the DFA has more states than a table entry can index.
+     */
+    [[nodiscard]] static std::optional<Dfa> unrolled_start(const Dfa& dfa);
+
+    /**
      * @brief Refuses a state count no table entry can index.
      *
      * One table column per state the definition spans. A hand-built DFA may number states sparsely, up to a highest
@@ -681,20 +714,6 @@ private:
     void mark_live(const std::vector<bool>& reachable, const std::vector<bool>& co_accessible);
 
     /**
-     * @brief Fills split_points_ from the tables already built.
-     *
-     * A symbol no live state consumes is certified vacuously: no input this lexer accepts can contain it, so it is
-     * useless to a caller and searching for one scans to the end of the input for nothing. Since a certified symbol is
-     * consumed only by the initial state, it can occur in valid input exactly when the initial state consumes it into a
-     * state that can still accept, and only those are reported.
-     * @param reachable Which states a scan can arrive in.
-     * @param co_accessible Which states can still reach acceptance.
-     * @param init_reentrant Whether a reachable state re-enters the initial state.
-     */
-    void derive_split_points(
-            const std::vector<bool>& reachable, const std::vector<bool>& co_accessible, bool init_reentrant);
-
-    /**
      * @brief Returns whether a state consumes a symbol into a state that can still accept.
      * @param symbol The symbol value.
      * @param state The state.
@@ -704,7 +723,13 @@ private:
     [[nodiscard]] bool consumes(std::size_t symbol, std::size_t state, const std::vector<bool>& co_accessible) const;
 
     /**
-     * @brief Fills split_points_ignoring_ from the tables the constructor has already built.
+     * @brief Derives the certified symbols from the tables already built, modulo a set of discarded tokens; the exact
+     *        map is the derivation over no discarded token.
+     *
+     * A symbol no live state consumes is certified vacuously: no input this lexer accepts can contain it, so it is
+     * useless to a caller and searching for one scans to the end of the input for nothing. Since a certified symbol is
+     * consumed only by the initial state, it can occur in valid input exactly when the initial state consumes it into a
+     * state that can still accept, and only those are reported.
      *
      * Condition three of the weaker certificate asks whether every token still reachable from a state is discarded: the
      * complement of "some kept token is still reachable", which one backward closure settles for every state at once.
@@ -719,12 +744,13 @@ private:
      * @param reachable Which states a scan can arrive in.
      * @param co_accessible Which states can still reach acceptance.
      * @param predecessors The reverse index the constructor built for co-accessibility, reused here.
-     * @param init_reentrant Whether a reachable state re-enters the initial state, as the exact map judges it.
+     * @param init_reentrant Whether a reachable state re-enters the initial state.
+     * @return The certified symbols as a 256-bit mask indexed by symbol value.
      */
-    void derive_split_points_ignoring(
+    [[nodiscard]] std::array<std::uint64_t, 4> derive_split_points(
             std::span<const std::size_t> ignored, const std::vector<bool>& reachable,
             const std::vector<bool>& co_accessible, const std::vector<std::vector<Entry_t>>& predecessors,
-            bool init_reentrant);
+            bool init_reentrant) const;
 
     /**
      * @brief Returns the right-language classes of the states once every discarded kind shares one colour.
@@ -746,17 +772,20 @@ private:
      * and refutes the candidate on the first one found. The matcher reads only the live prefix; the killing byte is
      * never fed to it, since a core completing on the killing byte is too late. Refusal leaves the core empty and the
      * planner exhaustive: the core is an accelerator's licence, never a certificate.
+     * @param predecessors The reverse index the constructor built for co-accessibility, which the depth search reads.
      */
-    void derive_mandatory_core();
+    void derive_mandatory_core(const std::vector<std::vector<Entry_t>>& predecessors);
 
     /**
      * @brief Returns the shortest death word depths by search from the deaths backward.
      *
-     * Depth one where some byte has no live target, and each layer of the reverse traversal one byte deeper, every live
-     * transition read once. A state no death word leaves keeps no_death_word_ and proposes nothing.
+     * Depth one where some byte has no live target, and each layer of the reverse traversal one byte deeper, every
+     * transition read once; a source that is not live is skipped. A state no death word leaves keeps no_death_word_ and
+     * proposes nothing.
+     * @param predecessors The reverse index the constructor built for co-accessibility, reused here.
      * @return The depths, with the killing byte of every depth-one state; the chains are not linked yet.
      */
-    [[nodiscard]] Death_words death_depths() const;
+    [[nodiscard]] Death_words death_depths(const std::vector<std::vector<Entry_t>>& predecessors) const;
 
     /**
      * @brief Returns the live successor of a state on a symbol.
@@ -765,12 +794,6 @@ private:
      * @return The successor, or std::nullopt when the step is undefined or leads to a dead state.
      */
     [[nodiscard]] std::optional<std::size_t> advance_live(std::size_t state, std::size_t symbol) const;
-
-    /**
-     * @brief Returns, for each live state, the live states stepping into it, each once.
-     * @return The reverse live index, sources ascending.
-     */
-    [[nodiscard]] std::vector<std::vector<std::size_t>> live_sources() const;
 
     /**
      * @brief Links each death word's chain once the depths are final: each state of depth two or more keeps the

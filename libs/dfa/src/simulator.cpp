@@ -94,20 +94,16 @@ Simulator::Simulator(const Dfa& dfa, const std::span<const std::size_t> ignored)
 Simulator::Simulator(
         const Dfa& dfa, const std::span<const std::size_t> ignored,
         const std::span<const std::pair<std::size_t, std::uint64_t>> payloads)
+    : Simulator{dfa, unrolled_start(dfa), ignored, payloads}
+{}
+
+Simulator::Simulator(
+        const Dfa& dfa, const std::optional<Dfa>& unrolled, const std::span<const std::size_t> ignored,
+        const std::span<const std::pair<std::size_t, std::uint64_t>> payloads)
+    : init_state_{unrolled ? unrolled->init_state() : dfa.init_state()}
+    , empty_state_{unrolled ? static_cast<Entry_t>(dfa.init_state()) : no_state_}
 {
-    require_indexable(dfa.state_count());
-
-    // A nullable set is compiled as its positive-width equivalent; the old start state keeps its index, so the empty
-    // match it accepts can still be reported where the scan reports one.
-    const auto nullable{dfa.has_accept_token(dfa.init_state()).has_value()};
-
-    const std::optional<Dfa> unrolled{nullable ? std::optional{unroll_start(dfa)} : std::nullopt};
-
     const Dfa& compiled{unrolled ? *unrolled : dfa};
-
-    init_state_ = compiled.init_state();
-
-    empty_state_ = nullable ? static_cast<Entry_t>(dfa.init_state()) : no_state_;
 
     // The fresh start is one more state, which may be the one the given DFA stayed under the sentinel by.
     const auto states{compiled.state_count()};
@@ -137,19 +133,16 @@ Simulator::Simulator(
 
     const auto reachable{reachable_states()};
 
-    const auto init_reentrant{reenters_init(reachable)};
-
-    // Persist what the window walk needs at call time: liveness per state, and whether the initial-state exemption
-    // survives. Everything else it uses, the tables already carry.
-    init_reentrant_ = init_reentrant;
+    // Whether the initial-state exemption survives is kept for the window walk, beside the liveness it reads.
+    init_reentrant_ = reenters_init(reachable);
 
     mark_live(reachable, co_accessible);
 
-    derive_split_points(reachable, co_accessible, init_reentrant);
+    split_points_ = derive_split_points({}, reachable, co_accessible, reverse, init_reentrant_);
 
-    derive_split_points_ignoring(ignored, reachable, co_accessible, reverse, init_reentrant);
+    split_points_ignoring_ = derive_split_points(ignored, reachable, co_accessible, reverse, init_reentrant_);
 
-    derive_mandatory_core();
+    derive_mandatory_core(reverse);
 }
 
 std::optional<std::size_t> Simulator::step(const std::size_t state, const unsigned char symbol) const noexcept
@@ -157,6 +150,39 @@ std::optional<std::size_t> Simulator::step(const std::size_t state, const unsign
     const auto to{entry(symbol, state)};
 
     return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
+}
+
+std::vector<std::vector<unsigned char>> Simulator::symbol_classes() const
+{
+    const auto states{state_count()};
+
+    std::vector<std::vector<unsigned char>> classes{};
+
+    for (std::size_t value{0}; value < symbol_count; ++value)
+    {
+        const auto symbol_class{row_offsets_[value] / states};
+
+        if (symbol_class == classes.size())
+        {
+            classes.emplace_back();
+        }
+
+        classes[symbol_class].push_back(static_cast<unsigned char>(value));
+    }
+
+    return classes;
+}
+
+std::optional<Dfa> Simulator::unrolled_start(const Dfa& dfa)
+{
+    require_indexable(dfa.state_count());
+
+    if (!dfa.has_accept_token(dfa.init_state()).has_value())
+    {
+        return std::nullopt;
+    }
+
+    return unroll_start(dfa);
 }
 
 void Simulator::require_indexable(const std::size_t states)
@@ -359,27 +385,6 @@ void Simulator::mark_live(const std::vector<bool>& reachable, const std::vector<
     }
 }
 
-void Simulator::derive_split_points(
-        const std::vector<bool>& reachable, const std::vector<bool>& co_accessible, const bool init_reentrant)
-{
-    const auto all_states{std::views::iota(std::size_t{0}, flags_.size())};
-
-    for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
-    {
-        const auto harmless{[&](const std::size_t state) {
-            return !reachable[state] || (state == init_state_ && !init_reentrant) ||
-                   !consumes(symbol, state, co_accessible);
-        }};
-
-        const auto safe{std::ranges::all_of(all_states, harmless)};
-
-        if (safe && consumes(symbol, init_state_, co_accessible))
-        {
-            split_points_[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
-        }
-    }
-}
-
 bool Simulator::consumes(
         const std::size_t symbol, const std::size_t state, const std::vector<bool>& co_accessible) const
 {
@@ -388,11 +393,13 @@ bool Simulator::consumes(
     return to != no_state_ && co_accessible[to];
 }
 
-void Simulator::derive_split_points_ignoring(
+std::array<std::uint64_t, 4> Simulator::derive_split_points(
         const std::span<const std::size_t> ignored, const std::vector<bool>& reachable,
         const std::vector<bool>& co_accessible, const std::vector<std::vector<Entry_t>>& predecessors,
-        const bool init_reentrant)
+        const bool init_reentrant) const
 {
+    std::array<std::uint64_t, 4> points{};
+
     const auto states{accept_table_.size()};
 
     const std::set<std::size_t> discarded{ignored.begin(), ignored.end()};
@@ -449,12 +456,13 @@ void Simulator::derive_split_points_ignoring(
 
         const auto safe{std::ranges::all_of(all_states, harmless)};
 
-        // Vacuity is judged as for the exact map: a symbol no live state consumes is useless to a caller.
         if (safe && consumes(symbol, init_state_, co_accessible))
         {
-            split_points_ignoring_[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
+            points[symbol >> 6U] |= std::uint64_t{1} << (symbol & 63U);
         }
     }
+
+    return points;
 }
 
 std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& accepts_discarded) const
@@ -542,9 +550,9 @@ std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& ac
     }
 }
 
-void Simulator::derive_mandatory_core()
+void Simulator::derive_mandatory_core(const std::vector<std::vector<Entry_t>>& predecessors)
 {
-    const auto depths{death_depths()};
+    const auto depths{death_depths(predecessors)};
 
     const auto words{chain_death_words(depths)};
 
@@ -594,7 +602,7 @@ void Simulator::derive_mandatory_core()
     }
 }
 
-Simulator::Death_words Simulator::death_depths() const
+Simulator::Death_words Simulator::death_depths(const std::vector<std::vector<Entry_t>>& predecessors) const
 {
     const auto states{flags_.size()};
 
@@ -631,15 +639,13 @@ Simulator::Death_words Simulator::death_depths() const
         frontier.push_back(state);
     }
 
-    const auto sources{live_sources()};
-
     for (std::size_t head{0}; head < frontier.size(); ++head)
     {
         const auto to{frontier[head]};
 
-        for (const auto from : sources[to])
+        for (const auto from : predecessors[to])
         {
-            if (words.depth[from] != no_death_word_)
+            if (!is_live(from) || words.depth[from] != no_death_word_)
             {
                 continue;
             }
@@ -663,33 +669,6 @@ std::optional<std::size_t> Simulator::advance_live(const std::size_t state, cons
     }
 
     return to;
-}
-
-std::vector<std::vector<std::size_t>> Simulator::live_sources() const
-{
-    const auto states{flags_.size()};
-
-    std::vector<std::vector<std::size_t>> sources(states);
-
-    for (std::size_t state{0}; state < states; ++state)
-    {
-        if (!is_live(state))
-        {
-            continue;
-        }
-
-        for (std::size_t symbol{0}; symbol < symbol_count; ++symbol)
-        {
-            const auto to{advance_live(state, symbol)};
-
-            if (to && (sources[*to].empty() || sources[*to].back() != state))
-            {
-                sources[*to].push_back(state);
-            }
-        }
-    }
-
-    return sources;
 }
 
 Simulator::Death_words Simulator::chain_death_words(Death_words words) const

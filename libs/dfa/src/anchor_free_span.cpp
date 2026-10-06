@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -26,6 +27,60 @@ namespace
  * @brief A state as the walk stores it: narrowed, since a node holds a set of them and the graph holds many nodes.
  */
 using State_t = std::uint32_t;
+
+/**
+ * @brief Orders the vertices of a graph so that every edge leads forward, which a graph with a cycle does not admit.
+ *
+ * A vertex is placed once every vertex with an edge into it has been placed, so a vertex on a cycle, or past one, is
+ * never placed and the order comes back short.
+ * @param count The number of vertices, numbered from zero.
+ * @param successors Returns the vertices the edges out of the given one lead to.
+ * @return The vertices in an order every edge respects, or std::nullopt when the graph has a cycle.
+ */
+template <typename Successors>
+    requires std::invocable<Successors, std::size_t>
+[[nodiscard]] std::optional<std::vector<std::size_t>> forward_order(const std::size_t count, Successors successors)
+{
+    std::vector<std::size_t> incoming(count, 0);
+
+    for (std::size_t vertex{0}; vertex < count; ++vertex)
+    {
+        for (const auto target : successors(vertex))
+        {
+            ++incoming[target];
+        }
+    }
+
+    std::vector<std::size_t> order{};
+
+    for (std::size_t vertex{0}; vertex < count; ++vertex)
+    {
+        if (incoming[vertex] == 0)
+        {
+            order.push_back(vertex);
+        }
+    }
+
+    for (std::size_t at{0}; at < order.size(); ++at)
+    {
+        for (const auto target : successors(order[at]))
+        {
+            --incoming[target];
+
+            if (incoming[target] == 0)
+            {
+                order.push_back(target);
+            }
+        }
+    }
+
+    if (order.size() < count)
+    {
+        return std::nullopt;
+    }
+
+    return order;
+}
 
 /**
  * @brief The walk behind anchor_free_span(): a guessed marking of the input read one byte at a time, beside a guessed
@@ -92,27 +147,6 @@ private:
          * @brief The stretch has ended and no window can reach back into it.
          */
         settled
-    };
-
-    /**
-     * @brief Where a depth-first search stands with a vertex.
-     */
-    enum class Colour : std::uint8_t
-    {
-        /**
-         * @brief Not reached yet.
-         */
-        unseen,
-
-        /**
-         * @brief On the search's stack, its successors still being read.
-         */
-        open,
-
-        /**
-         * @brief Every successor read and the vertex left.
-         */
-        done
     };
 
     /**
@@ -212,18 +246,8 @@ private:
     };
 
     /**
-     * @brief Returns whether the token set matches any positive-length input at all.
-     *
-     * With no window every position is anchor-free, so the span is as long as inputs can be: unbounded whenever a token
-     * matches, since a match repeats, and zero when nothing does.
-     * @param simulator The simulator whose tables the walk reads.
-     * @return True when some reachable state has a transition into an accepting one.
-     */
-    [[nodiscard]] static bool matches_any_token(const Simulator& simulator);
-
-    /**
-     * @brief Returns whether some token is arbitrarily long: a cycle among the live states reachable from the start,
-     *        found depth first with an explicit stack.
+     * @brief Returns whether some token is arbitrarily long: a cycle among the live states, every one of which the
+     *        start reaches through live states alone.
      * @param simulator The simulator whose tables the walk reads.
      * @return True when such a cycle exists.
      */
@@ -298,24 +322,14 @@ private:
     [[nodiscard]] static std::vector<bool> endable(const Simulator& simulator, const Graph& graph);
 
     /**
-     * @brief Returns whether the endable nodes carry a cycle of bytes inside the stretch, which is a stretch with no
-     *        end.
-     *
-     * Walked with an explicit stack rather than by recursion, since the product graph is as deep as it is wide.
+     * @brief Returns the longest stretch: the most edges inside it along a path among the endable nodes, or nothing
+     *        when those edges carry a cycle of bytes inside the stretch, which is a stretch with no end.
      * @param graph The product graph.
      * @param finishing The endable nodes.
-     * @return True when such a cycle exists.
+     * @return The supremum, or std::nullopt when it is unbounded.
      */
-    [[nodiscard]] static bool has_inside_cycle(const Graph& graph, const std::vector<bool>& finishing);
-
-    /**
-     * @brief Returns the longest stretch: the most edges inside it along a path among the endable nodes, relaxed to a
-     *        fixed point over those edges, which have no cycle by then.
-     * @param graph The product graph.
-     * @param finishing The endable nodes.
-     * @return The supremum.
-     */
-    [[nodiscard]] static std::size_t longest_stretch(const Graph& graph, const std::vector<bool>& finishing);
+    [[nodiscard]] static std::optional<std::size_t> longest_stretch(
+            const Graph& graph, const std::vector<bool>& finishing);
 
     /**
      * @brief The certified windows and their origins, the walk's own copy, folded like the bytes read.
@@ -398,9 +412,12 @@ Span_walk::Span_walk(
 
 std::optional<std::size_t> Span_walk::decide(const Simulator& simulator) const
 {
+    // With no window every position is anchor-free, so the span is as long as inputs can be: unbounded when some token
+    // matches, since a match repeats, and zero when none does. The compiled start state never accepts, so it is live
+    // exactly when some token matches.
     if (inventory_.empty())
     {
-        if (matches_any_token(simulator))
+        if (simulator.is_live(simulator.init_state()))
         {
             return std::nullopt;
         }
@@ -423,104 +440,35 @@ std::optional<std::size_t> Span_walk::decide(const Simulator& simulator) const
         return 0;
     }
 
-    if (has_inside_cycle(graph, finishing))
-    {
-        return std::nullopt;
-    }
-
     return longest_stretch(graph, finishing);
-}
-
-bool Span_walk::matches_any_token(const Simulator& simulator)
-{
-    std::vector<bool> seen(simulator.state_count(), false);
-
-    std::deque<std::size_t> pending{simulator.init_state()};
-
-    seen[simulator.init_state()] = true;
-
-    while (!pending.empty())
-    {
-        const auto at{pending.front()};
-
-        pending.pop_front();
-
-        for (std::size_t value{0}; value < Simulator::symbol_count; ++value)
-        {
-            const auto next{simulator.step(at, static_cast<unsigned char>(value))};
-
-            if (!next)
-            {
-                continue;
-            }
-
-            if (simulator.is_accepting(*next))
-            {
-                return true;
-            }
-
-            if (seen[*next])
-            {
-                continue;
-            }
-
-            seen[*next] = true;
-
-            pending.push_back(*next);
-        }
-    }
-
-    return false;
 }
 
 bool Span_walk::unbounded_token(const Simulator& simulator)
 {
-    std::vector<Colour> colour(simulator.state_count(), Colour::unseen);
+    const auto live_successors{[&simulator](const std::size_t state) {
+        std::vector<std::size_t> targets{};
 
-    std::vector<std::pair<std::size_t, std::size_t>> stack{{simulator.init_state(), 0}};
-
-    colour[simulator.init_state()] = Colour::open;
-
-    while (!stack.empty())
-    {
-        auto& [state, value]{stack.back()};
-
-        if (value == Simulator::symbol_count)
+        if (!simulator.is_live(state))
         {
-            colour[state] = Colour::done;
-
-            stack.pop_back();
-
-            continue;
+            return targets;
         }
 
-        const auto byte{static_cast<unsigned char>(value)};
-
-        ++value;
-
-        const auto next{simulator.step(state, byte)};
-
-        if (!next || !simulator.is_live(*next))
+        for (std::size_t value{0}; value < Simulator::symbol_count; ++value)
         {
-            continue;
+            const auto next{simulator.step(state, static_cast<unsigned char>(value))};
+
+            if (next && simulator.is_live(*next))
+            {
+                targets.push_back(*next);
+            }
         }
 
-        if (colour[*next] == Colour::open)
-        {
-            return true;
-        }
+        return targets;
+    }};
 
-        if (colour[*next] != Colour::unseen)
-        {
-            continue;
-        }
+    const auto order{forward_order(simulator.state_count(), live_successors)};
 
-        colour[*next] = Colour::open;
-
-        stack.emplace_back(*next, 0);
-    }
-
-    return false;
+    return !order;
 }
 
 Span_walk::Graph Span_walk::explore(const Simulator& simulator) const
@@ -589,38 +537,24 @@ Span_walk::Graph Span_walk::explore(const Simulator& simulator) const
 
 std::vector<unsigned char> Span_walk::representatives(const Simulator& simulator) const
 {
-    std::set<std::vector<std::size_t>> signatures{};
-
     std::vector<unsigned char> bytes{};
 
-    for (std::size_t value{0}; value < Simulator::symbol_count; ++value)
+    for (const auto& symbol_class : simulator.symbol_classes())
     {
-        const auto byte{static_cast<unsigned char>(value)};
+        std::set<char> folds{};
 
-        std::vector<std::size_t> signature{};
-
-        signature.reserve(simulator.state_count() + 1);
-
-        for (std::size_t state{0}; state < simulator.state_count(); ++state)
+        for (const auto byte : symbol_class)
         {
-            const auto successor{simulator.step(state, byte).value_or(simulator.state_count())};
+            const auto [position, inserted]{folds.insert(fold_[byte])};
 
-            signature.push_back(successor);
+            if (inserted)
+            {
+                bytes.push_back(byte);
+            }
         }
-
-        const auto folded{static_cast<unsigned char>(fold_[value])};
-
-        signature.push_back(folded);
-
-        const auto [position, inserted]{signatures.insert(std::move(signature))};
-
-        if (!inserted)
-        {
-            continue;
-        }
-
-        bytes.push_back(byte);
     }
+
+    std::ranges::sort(bytes);
 
     return bytes;
 }
@@ -861,102 +795,40 @@ std::vector<bool> Span_walk::endable(const Simulator& simulator, const Graph& gr
     return finishing;
 }
 
-bool Span_walk::has_inside_cycle(const Graph& graph, const std::vector<bool>& finishing)
+std::optional<std::size_t> Span_walk::longest_stretch(const Graph& graph, const std::vector<bool>& finishing)
 {
-    std::vector<Colour> colour(graph.nodes.size(), Colour::unseen);
-
     const auto inside_endable{[&finishing](const Edge& edge) { return edge.inside && finishing[edge.target]; }};
 
-    for (Index_t root{0}; root < graph.nodes.size(); ++root)
-    {
-        if (!finishing[root] || colour[root] != Colour::unseen)
+    const auto stretch_successors{[&graph, &finishing, &inside_endable](const std::size_t at) {
+        std::vector<std::size_t> targets{};
+
+        if (!finishing[at])
         {
-            continue;
+            return targets;
         }
 
-        std::vector<std::pair<Index_t, std::size_t>> stack{{root, 0}};
-
-        colour[root] = Colour::open;
-
-        while (!stack.empty())
+        for (const auto& edge : graph.edges[at] | std::views::filter(inside_endable))
         {
-            auto& [node, next]{stack.back()};
-
-            const auto& out{graph.edges[node]};
-
-            while (next < out.size() && !inside_endable(out[next]))
-            {
-                ++next;
-            }
-
-            if (next == out.size())
-            {
-                colour[node] = Colour::done;
-
-                stack.pop_back();
-
-                continue;
-            }
-
-            const auto [target, inside]{out[next]};
-
-            ++next;
-
-            if (colour[target] == Colour::open)
-            {
-                return true;
-            }
-
-            if (colour[target] != Colour::unseen)
-            {
-                continue;
-            }
-
-            colour[target] = Colour::open;
-
-            stack.emplace_back(target, 0);
-        }
-    }
-
-    return false;
-}
-
-std::size_t Span_walk::longest_stretch(const Graph& graph, const std::vector<bool>& finishing)
-{
-    std::vector<std::size_t> run(graph.nodes.size(), 0);
-
-    const auto relax{[&graph, &finishing, &run](const Index_t at) {
-        auto grew{false};
-
-        for (const auto& [target, inside] : graph.edges[at])
-        {
-            if (!inside || !finishing[target] || run[at] + 1 <= run[target])
-            {
-                continue;
-            }
-
-            run[target] = run[at] + 1;
-
-            grew = true;
+            targets.push_back(edge.target);
         }
 
-        return grew;
+        return targets;
     }};
 
-    for (bool changed{true}; changed;)
+    const auto order{forward_order(graph.nodes.size(), stretch_successors)};
+
+    if (!order)
     {
-        changed = false;
+        return std::nullopt;
+    }
 
-        for (Index_t at{0}; at < graph.nodes.size(); ++at)
+    std::vector<std::size_t> run(graph.nodes.size(), 0);
+
+    for (const auto at : *order)
+    {
+        for (const auto target : stretch_successors(at))
         {
-            if (!finishing[at])
-            {
-                continue;
-            }
-
-            const auto grew{relax(at)};
-
-            changed = changed || grew;
+            run[target] = std::max(run[target], run[at] + 1);
         }
     }
 

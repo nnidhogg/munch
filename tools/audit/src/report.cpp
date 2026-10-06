@@ -35,45 +35,6 @@ namespace
 }
 
 /**
- * @brief Returns the byte classes of the tables: two bytes are one class when every state moves on both to the same
- *        state, so any decision over transitions gives one answer for the whole class.
- * @param simulator The tables.
- * @return Every class's members, ascending, the classes in order of their lowest byte.
- */
-[[nodiscard]] std::vector<std::vector<unsigned char>> byte_classes(const dfa::Simulator& simulator)
-{
-    std::map<std::vector<std::optional<std::size_t>>, std::vector<unsigned char>> by_signature{};
-
-    for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
-    {
-        const auto byte{static_cast<unsigned char>(value)};
-
-        std::vector<std::optional<std::size_t>> signature{};
-
-        signature.reserve(simulator.state_count());
-
-        for (std::size_t state{0}; state < simulator.state_count(); ++state)
-        {
-            signature.push_back(simulator.step(state, byte));
-        }
-
-        by_signature[std::move(signature)].push_back(byte);
-    }
-
-    std::vector<std::vector<unsigned char>> classes{};
-
-    std::ranges::move(by_signature | std::views::values, std::back_inserter(classes));
-
-    // Each class gathers its bytes ascending.
-    const auto lowest_member{[](const std::vector<unsigned char>& members) { return members.front(); }};
-
-    // Ordered by lowest byte, so the enumeration and the report are deterministic and read in byte order.
-    std::ranges::sort(classes, {}, lowest_member);
-
-    return classes;
-}
-
-/**
  * @brief Returns every certified window over class representatives up to a width, widths ascending.
  * @param lexer The token set.
  * @param classes The byte classes.
@@ -499,7 +460,7 @@ Report audit(const core::Lexer& lexer, const std::size_t window_limit)
         }
     }
 
-    auto classes{byte_classes(simulator)};
+    auto classes{simulator.symbol_classes()};
 
     const auto class_of{class_indices(classes)};
 
