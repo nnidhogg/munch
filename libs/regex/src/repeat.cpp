@@ -1,7 +1,6 @@
 #include <cstddef>
 #include <ranges>
 #include <stdexcept>
-#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -50,7 +49,7 @@ namespace
  * @param regex The sub-pattern to repeat.
  * @return NFA builder representing the repetition.
  */
-[[nodiscard]] nfa::Builder to_kleene(const Regex& regex)
+[[nodiscard]] nfa::Builder to_nfa(const Regex& regex, Kleene)
 {
     // Matches zero or more occurrences of a sub-pattern:
     //
@@ -73,7 +72,7 @@ namespace
  * @param regex The sub-pattern to repeat.
  * @return NFA builder representing the repetition.
  */
-[[nodiscard]] nfa::Builder to_plus(const Regex& regex)
+[[nodiscard]] nfa::Builder to_nfa(const Regex& regex, Plus)
 {
     // Matches one or more occurrences of a sub-pattern:
     //
@@ -92,7 +91,7 @@ namespace
  * @param regex The sub-pattern to make optional.
  * @return NFA builder representing the repetition.
  */
-[[nodiscard]] nfa::Builder to_optional(const Regex& regex)
+[[nodiscard]] nfa::Builder to_nfa(const Regex& regex, Optional)
 {
     // Matches zero or one occurrences of a sub-pattern:
     //
@@ -109,10 +108,10 @@ namespace
 /**
  * @brief Builds the NFA for an exact repetition.
  * @param regex The sub-pattern to repeat.
- * @param count The exact number of repetitions.
+ * @param exact The repetition, carrying its count.
  * @return NFA builder representing the repetition.
  */
-[[nodiscard]] nfa::Builder to_exact(const Regex& regex, const std::size_t count)
+[[nodiscard]] nfa::Builder to_nfa(const Regex& regex, const Exact& exact)
 {
     // Matches an exact number of occurrences of a sub-pattern:
     //
@@ -121,16 +120,16 @@ namespace
 
     nfa.add_accept_state(nfa.init_state());
 
-    return append_copies(nfa, regex, count);
+    return append_copies(nfa, regex, exact.count);
 }
 
 /**
  * @brief Builds the NFA for a lower-bound repetition.
  * @param regex The sub-pattern to repeat.
- * @param min The minimum number of repetitions.
+ * @param at_least The repetition, carrying its minimum.
  * @return NFA builder representing the repetition.
  */
-[[nodiscard]] nfa::Builder to_at_least(const Regex& regex, const std::size_t min)
+[[nodiscard]] nfa::Builder to_nfa(const Regex& regex, const At_least& at_least)
 {
     // Matches at least `min` occurrences of a sub-pattern:
     //
@@ -139,16 +138,16 @@ namespace
     // (nfa) --ε--> ... ((regex n)) --ε---+
     //
     // At least zero occurrences is the Kleene star; otherwise min - 1 plain copies precede the looping one.
-    if (min == 0)
+    if (at_least.min == 0)
     {
-        return to_kleene(regex);
+        return to_nfa(regex, Kleene{});
     }
 
     nfa::Builder start{};
 
     start.add_accept_state(start.init_state());
 
-    const auto nfa{append_copies(start, regex, min - 1)};
+    const auto nfa{append_copies(start, regex, at_least.min - 1)};
 
     const auto body{to_nfa(regex)};
 
@@ -160,11 +159,10 @@ namespace
 /**
  * @brief Builds the NFA for a bounded repetition.
  * @param regex The sub-pattern to repeat.
- * @param min The minimum number of repetitions.
- * @param max The maximum number of repetitions.
+ * @param range The repetition, carrying its bounds.
  * @return NFA builder representing the repetition.
  */
-[[nodiscard]] nfa::Builder to_range(const Regex& regex, const std::size_t min, const std::size_t max)
+[[nodiscard]] nfa::Builder to_nfa(const Regex& regex, const Range& range)
 {
     // Matches a range of occurrences of a sub-pattern: the first `min` copies are required, and the state reached after
     // each further copy accepts, so the scan may stop at any count in the range:
@@ -177,11 +175,11 @@ namespace
 
     start.add_accept_state(start.init_state());
 
-    auto nfa{append_copies(start, regex, min)};
+    auto nfa{append_copies(start, regex, range.min)};
 
     nfa::Nfa::States_t pending{};
 
-    for (std::size_t copy{min}; copy < max; ++copy)
+    for (std::size_t copy{range.min}; copy < range.max; ++copy)
     {
         const auto reached{std::views::keys(nfa.accept_states())};
 
@@ -207,36 +205,7 @@ nfa::Builder to_nfa(const Repeat& repeat)
     // The child needs no emptiness check: an Indirect always holds exactly one value.
     const auto& regex{*repeat.regex};
 
-    const auto lower{[&regex]<typename T>(const T& kind) {
-        if constexpr (std::is_same_v<T, Kleene>)
-        {
-            return to_kleene(regex);
-        }
-        else if constexpr (std::is_same_v<T, Plus>)
-        {
-            return to_plus(regex);
-        }
-        else if constexpr (std::is_same_v<T, Optional>)
-        {
-            return to_optional(regex);
-        }
-        else if constexpr (std::is_same_v<T, Exact>)
-        {
-            return to_exact(regex, kind.count);
-        }
-        else if constexpr (std::is_same_v<T, At_least>)
-        {
-            return to_at_least(regex, kind.min);
-        }
-        else
-        {
-            // Adding a repetition kind without handling it above is a compile error rather than a silent fall-through
-            // returning nothing.
-            static_assert(std::is_same_v<T, Range>, "Unhandled repetition kind");
-
-            return to_range(regex, kind.min, kind.max);
-        }
-    }};
+    const auto lower{[&regex](const auto& kind) { return to_nfa(regex, kind); }};
 
     return std::visit(lower, repeat.kind);
 }

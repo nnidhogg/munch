@@ -2,12 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <format>
 #include <limits>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -90,102 +90,9 @@ constexpr std::string_view difference_operator{"{-}"};
 constexpr std::string_view union_operator{"{+}"};
 
 /**
- * @brief The POSIX bracket classes, `[:alpha:]` and its kin, in the order of posix_names.
- */
-enum class Posix : std::uint8_t
-{
-    /**
-     * @brief The letters.
-     */
-    alpha,
-
-    /**
-     * @brief The decimal digits.
-     */
-    digit,
-
-    /**
-     * @brief The letters and the digits.
-     */
-    alnum,
-
-    /**
-     * @brief The upper-case letters.
-     */
-    upper,
-
-    /**
-     * @brief The lower-case letters.
-     */
-    lower,
-
-    /**
-     * @brief The blank, tab, newline, return, form feed and vertical tab.
-     */
-    space,
-
-    /**
-     * @brief The blank and the tab.
-     */
-    blank,
-
-    /**
-     * @brief The printable bytes that are neither letters, digits nor the blank.
-     */
-    punct,
-
-    /**
-     * @brief The printable bytes.
-     */
-    print,
-
-    /**
-     * @brief The printable bytes but the blank.
-     */
-    graph,
-
-    /**
-     * @brief The control bytes.
-     */
-    cntrl,
-
-    /**
-     * @brief The hexadecimal digits.
-     */
-    xdigit
-};
-
-/**
- * @brief The names between the colons of the POSIX classes, indexed by Posix.
- */
-constexpr std::array<std::string_view, 12> posix_names{"alpha", "digit", "alnum", "upper", "lower", "space",
-                                                       "blank", "punct", "print", "graph", "cntrl", "xdigit"};
-
-/**
- * @brief One bracket expression's members with its negation applied: over bytes, or over scalars when a code point
- *        escape turned the bracket wide, which is the reading flex's class operators have no answer for.
- */
-struct Members
-{
-    /**
-     * @brief The members as bytes, when the bracket is read over bytes.
-     */
-    Set bytes{};
-
-    /**
-     * @brief The members as code point ranges, when the bracket is read over scalars.
-     */
-    std::vector<utf8::Code_point_range> scalars{};
-
-    /**
-     * @brief Whether the bracket is read over scalars rather than over bytes.
-     */
-    bool wide{};
-};
-
-/**
  * @brief One bracket expression's members as read up to its close, held both ways, since which reading the bracket
- *        takes is known only there.
+ *        takes is known only there; once bracket_members() has settled the reading, only the side wide selects is
+ *        meaningful.
  */
 struct Bracket_reading
 {
@@ -309,12 +216,12 @@ private:
     [[nodiscard]] Regex bracket();
 
     /**
-     * @brief Reads one bracket expression's members after its `[`, through its `]`, then applies its negation and
-     *        settles whether the bracket reads over bytes or over scalars.
+     * @brief Reads one bracket expression's members after its `[`, through its `]`, settles whether the bracket reads
+     *        over bytes or over scalars, and applies its negation to that reading.
      * @return The members, over bytes or over scalars.
      * @throws Syntax_error If a range is reversed, or bytes beyond ASCII stand beside code points.
      */
-    [[nodiscard]] Members bracket_members();
+    [[nodiscard]] Bracket_reading bracket_members();
 
     /**
      * @brief Reads one bracket expression's members after its `[` and any negating `^`, through its `]`, holding each
@@ -331,7 +238,7 @@ private:
      * @return The regex: any_of over the bytes, or the encodings of the scalars.
      * @throws Syntax_error If the members are empty, so that nothing can match.
      */
-    [[nodiscard]] Regex matching(const Members& members, std::size_t opened);
+    [[nodiscard]] Regex matching(const Bracket_reading& members, std::size_t opened);
 
     /**
      * @brief Reads a POSIX class after its `[:`, through its `:]`, negated when a `^` opens its name.
@@ -401,6 +308,14 @@ private:
      * @throws Syntax_error If the number does not fit.
      */
     [[nodiscard]] std::optional<std::size_t> number();
+
+    /**
+     * @brief Reads up to a limit of digits in a base from the current position, advancing past them.
+     * @param base The base, 8 or 16.
+     * @param limit The most digits read.
+     * @return The value read and how many digits made it; no digit leaves the position where it was.
+     */
+    [[nodiscard]] std::pair<char32_t, std::size_t> digits(int base, std::size_t limit);
 
     /**
      * @brief Returns the byte at the current position, or nothing at the end.
@@ -639,16 +554,6 @@ template <typename Node>
 }
 
 /**
- * @brief Returns whether a byte is a hexadecimal digit, tested directly so no locale is consulted.
- * @param byte The byte.
- * @return True for 0 to 9, a to f and A to F.
- */
-[[nodiscard]] constexpr bool is_hex_digit(const char byte) noexcept
-{
-    return is_digit(byte) || (byte >= 'a' && byte <= 'f') || (byte >= 'A' && byte <= 'F');
-}
-
-/**
  * @brief Returns whether a byte is an octal digit, tested directly so no locale is consulted.
  * @param byte The byte.
  * @return True for 0 to 7.
@@ -656,26 +561,6 @@ template <typename Node>
 [[nodiscard]] constexpr bool is_octal_digit(const char byte) noexcept
 {
     return byte >= '0' && byte <= '7';
-}
-
-/**
- * @brief Returns the value of a hexadecimal digit.
- * @param digit The digit, one is_hex_digit() admits.
- * @return Its value, 0 to 15.
- */
-[[nodiscard]] constexpr unsigned hex_value(const char digit) noexcept
-{
-    if (digit >= 'a')
-    {
-        return static_cast<unsigned>(digit - 'a' + 10);
-    }
-
-    if (digit >= 'A')
-    {
-        return static_cast<unsigned>(digit - 'A' + 10);
-    }
-
-    return static_cast<unsigned>(digit - '0');
 }
 
 /**
@@ -716,41 +601,73 @@ template <typename Node>
 }
 
 /**
- * @brief Returns the bytes a POSIX class stands for.
- * @param posix The class.
- * @return Its bytes.
+ * @brief Returns the bytes a POSIX bracket class names, `[:alpha:]` and its kin.
+ * @param name The name between the colons.
+ * @return Its bytes, or std::nullopt for a name no class carries.
  */
-[[nodiscard]] Set posix_bytes(const Posix posix)
+[[nodiscard]] std::optional<Set> posix_bytes(const std::string_view name)
 {
-    switch (posix)
+    if (name == "alpha")
     {
-    case Posix::alpha:
         return Set::alpha();
-    case Posix::digit:
+    }
+
+    if (name == "digit")
+    {
         return Set::digits();
-    case Posix::alnum:
+    }
+
+    if (name == "alnum")
+    {
         return Set::alphanum();
-    case Posix::upper:
+    }
+
+    if (name == "upper")
+    {
         return Set::range('A', 'Z');
-    case Posix::lower:
+    }
+
+    if (name == "lower")
+    {
         return Set::range('a', 'z');
-    case Posix::space:
+    }
+
+    if (name == "space")
+    {
         return Set{' ', '\t', '\n', '\r', '\f', '\v'};
-    case Posix::blank:
+    }
+
+    if (name == "blank")
+    {
         return Set{' ', '\t'};
-    case Posix::punct:
+    }
+
+    if (name == "punct")
+    {
         return Set::printable() - Set::alphanum() - Set{' '};
-    case Posix::print:
+    }
+
+    if (name == "print")
+    {
         return Set::printable();
-    case Posix::graph:
+    }
+
+    if (name == "graph")
+    {
         return Set::printable() - Set{' '};
-    case Posix::cntrl:
+    }
+
+    if (name == "cntrl")
+    {
         return Set::range('\x00', '\x1F') + Set{'\x7F'};
-    case Posix::xdigit:
+    }
+
+    if (name == "xdigit")
+    {
         return Set::digits() + Set::range('a', 'f') + Set::range('A', 'F');
     }
 
-    std::unreachable();
+    return std::nullopt;
 }
 
 Reader::Reader(const std::string_view pattern, std::vector<std::string> expanding, const Parse_options options)
@@ -1097,37 +1014,38 @@ Regex Reader::bracket()
     return matching(members, opened);
 }
 
-Members Reader::bracket_members()
+Bracket_reading Reader::bracket_members()
 {
     const auto opened{at_ - 1};
 
     const auto negated{accept('^')};
 
-    auto [set, ranges, wide, byte_beyond_ascii]{read_both_ways()};
+    auto reading{read_both_ways()};
 
-    if (!wide)
+    if (!reading.wide)
     {
-        auto bytes{negated ? Set::all() - set : set};
+        if (negated)
+        {
+            reading.bytes = Set::all() - reading.bytes;
+        }
 
-        return {.bytes = std::move(bytes), .scalars = {}, .wide = false};
+        return reading;
     }
 
     // Read as scalars: a byte beyond ASCII is no scalar, so one beside a code point is refused.
-    if (byte_beyond_ascii)
+    if (reading.byte_beyond_ascii)
     {
         at_ = opened;
 
         fail("a bracket mixes bytes beyond ASCII with code points; write the bytes as code points");
     }
 
-    if (!negated)
+    if (negated)
     {
-        return {.bytes = {}, .scalars = std::move(ranges), .wide = true};
+        reading.scalars = complement_of(std::move(reading.scalars));
     }
 
-    auto complement{complement_of(std::move(ranges))};
-
-    return {.bytes = {}, .scalars = std::move(complement), .wide = true};
+    return reading;
 }
 
 Bracket_reading Reader::read_both_ways()
@@ -1237,9 +1155,9 @@ Bracket_reading Reader::read_both_ways()
     return reading;
 }
 
-Regex Reader::matching(const Members& members, const std::size_t opened)
+Regex Reader::matching(const Bracket_reading& members, const std::size_t opened)
 {
-    const auto& [bytes, scalars, wide]{members};
+    [[maybe_unused]] const auto& [bytes, scalars, wide, byte_beyond_ascii]{members};
 
     if (!wide && bytes.symbols().empty())
     {
@@ -1314,9 +1232,9 @@ Set Reader::posix_class()
 
     expect(']', "':]' to close the class");
 
-    const auto found{std::ranges::find(posix_names, std::string_view{name})};
+    const auto named{posix_bytes(name)};
 
-    if (found == posix_names.end())
+    if (!named)
     {
         at_ = open;
 
@@ -1337,16 +1255,12 @@ Set Reader::posix_class()
         fail(message);
     }
 
-    const auto index{std::ranges::distance(posix_names.begin(), found)};
-
-    const auto named{posix_bytes(static_cast<Posix>(index))};
-
     if (negated)
     {
-        return Set::all() - named;
+        return Set::all() - *named;
     }
 
-    return named;
+    return *named;
 }
 
 bool Reader::class_stands(const std::size_t at) const noexcept
@@ -1456,23 +1370,6 @@ Regex Reader::literal(std::string run) const
 
 Escaped Reader::escape()
 {
-    const auto hex_digits{[this](const std::size_t limit) {
-        char32_t value{0};
-
-        std::size_t digits{0};
-
-        while (digits < limit && peek() && is_hex_digit(*peek()))
-        {
-            const auto digit{next("a hex digit")};
-
-            value = value * 16 + static_cast<char32_t>(hex_value(digit));
-
-            ++digits;
-        }
-
-        return std::pair{value, digits};
-    }};
-
     const auto byte{next("the escaped byte")};
 
     switch (byte)
@@ -1495,9 +1392,9 @@ Escaped Reader::escape()
     {
         constexpr std::size_t max_hex_byte_digits{2};
 
-        const auto [value, digits]{hex_digits(max_hex_byte_digits)};
+        const auto [value, read]{digits(16, max_hex_byte_digits)};
 
-        if (digits == 0)
+        if (read == 0)
         {
             fail(R"('\x' needs a hex digit)");
         }
@@ -1518,11 +1415,11 @@ Escaped Reader::escape()
 
         constexpr std::size_t max_code_point_digits{6};
 
-        const auto [value, digits]{hex_digits(max_code_point_digits)};
+        const auto [value, read]{digits(16, max_code_point_digits)};
 
         expect('}', "'}' to close the code point");
 
-        if (digits == 0 || value > max_scalar || (value >= surrogate_first && value <= surrogate_last))
+        if (read == 0 || value > max_scalar || (value >= surrogate_first && value <= surrogate_last))
         {
             at_ = open;
 
@@ -1538,16 +1435,11 @@ Escaped Reader::escape()
     // Up to three octal digits, the first already read; anything else escaped is itself.
     if (is_octal_digit(byte))
     {
-        unsigned value{static_cast<unsigned>(byte - '0')};
-
         constexpr std::size_t max_octal_byte_digits{3};
 
-        for (std::size_t digits{1}; digits < max_octal_byte_digits && peek() && is_octal_digit(*peek()); ++digits)
-        {
-            const auto digit{next("an octal digit")};
+        --at_;
 
-            value = value * 8 + static_cast<unsigned>(digit - '0');
-        }
+        const auto [value, read]{digits(8, max_octal_byte_digits)};
 
         if (value > std::numeric_limits<unsigned char>::max())
         {
@@ -1712,6 +1604,21 @@ std::optional<std::size_t> Reader::number()
     }
 
     return value;
+}
+
+std::pair<char32_t, std::size_t> Reader::digits(const int base, const std::size_t limit)
+{
+    const auto text{pattern_.substr(at_, limit)};
+
+    std::uint32_t value{0};
+
+    const auto [end, error]{std::from_chars(text.data(), text.data() + text.size(), value, base)};
+
+    const auto count{static_cast<std::size_t>(end - text.data())};
+
+    at_ += count;
+
+    return {static_cast<char32_t>(value), count};
 }
 
 std::optional<char> Reader::peek() const noexcept
