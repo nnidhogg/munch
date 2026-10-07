@@ -27,10 +27,8 @@ public:
 
     /**
      * @brief Equal when both IDs and both priorities are equal.
-     * @param other The token to compare with.
-     * @return True if the IDs and priorities are equal, false otherwise.
      */
-    bool operator==(const Token& other) const noexcept;
+    bool operator==(const Token&) const noexcept = default;
 
     /**
      * @brief Returns the unique identifier of the token.

@@ -10,11 +10,6 @@ bool Token::operator<(const Token& other) const noexcept
     return priority_ != other.priority_ ? priority_ < other.priority_ : id_ < other.id_;
 }
 
-bool Token::operator==(const Token& other) const noexcept
-{
-    return id_ == other.id_ && priority_ == other.priority_;
-}
-
 std::size_t Token::id() const noexcept
 {
     return id_;

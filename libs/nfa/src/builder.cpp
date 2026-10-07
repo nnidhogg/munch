@@ -46,18 +46,10 @@ constexpr Nfa::State_t largest_state{std::numeric_limits<Nfa::State_t>::max()};
     {
         const auto& [from, label]{key};
 
-        highest = std::max(highest, from);
-
-        for (const auto state : states)
-        {
-            highest = std::max(highest, state);
-        }
+        highest = std::ranges::fold_left(states, std::max(highest, from), std::ranges::max);
     }
 
-    for (const auto state : std::views::keys(accept_states))
-    {
-        highest = std::max(highest, state);
-    }
+    highest = std::ranges::fold_left(std::views::keys(accept_states), highest, std::ranges::max);
 
     return highest;
 }
@@ -65,15 +57,6 @@ constexpr Nfa::State_t largest_state{std::numeric_limits<Nfa::State_t>::max()};
 } // namespace
 
 Builder::Builder() : init_state_{0}, next_state_{1}
-{}
-
-Builder::Builder(
-        const Nfa::State_t init_state, const Nfa::State_t next_state, Nfa::Transitions_t transitions,
-        Nfa::Accept_states_t accept_states)
-    : init_state_{init_state}
-    , next_state_{next_state}
-    , transitions_{std::move(transitions)}
-    , accept_states_{std::move(accept_states)}
 {}
 
 Nfa::State_t Builder::init_state() const noexcept
@@ -284,5 +267,14 @@ Nfa Builder::build() &&
 {
     return {init_state_, std::move(transitions_), std::move(accept_states_)};
 }
+
+Builder::Builder(
+        const Nfa::State_t init_state, const Nfa::State_t next_state, Nfa::Transitions_t transitions,
+        Nfa::Accept_states_t accept_states)
+    : init_state_{init_state}
+    , next_state_{next_state}
+    , transitions_{std::move(transitions)}
+    , accept_states_{std::move(accept_states)}
+{}
 
 } // namespace munch::nfa

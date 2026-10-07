@@ -26,9 +26,8 @@ public:
 
     /**
      * @brief Equal always, every epsilon label being the same.
-     * @return True if both are epsilon labels.
      */
-    bool operator==(const Epsilon&) const noexcept;
+    bool operator==(const Epsilon&) const noexcept = default;
 };
 
 /**
@@ -70,10 +69,8 @@ public:
 
     /**
      * @brief Equal when both hold the same symbol or both are epsilon.
-     * @param other The label to compare with.
-     * @return True if the variants are equal, false otherwise.
      */
-    bool operator==(const Label& other) const noexcept;
+    bool operator==(const Label&) const noexcept = default;
 
     /**
      * @brief Returns a label representing an epsilon transition.

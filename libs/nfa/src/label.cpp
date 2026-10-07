@@ -10,11 +10,6 @@ std::size_t Epsilon::Hash::operator()(const Epsilon&) const noexcept
     return 0;
 }
 
-bool Epsilon::operator==(const Epsilon&) const noexcept
-{
-    return true;
-}
-
 std::size_t Label::Hash::operator()(const Label& label) const noexcept
 {
     const auto hash_of{[]<typename T>(const T& arg) {
@@ -33,14 +28,6 @@ std::size_t Label::Hash::operator()(const Label& label) const noexcept
 
 Label::Label(const Symbol_t symbol) noexcept : variant_{symbol}
 {}
-
-Label::Label(const Epsilon epsilon) noexcept : variant_{epsilon}
-{}
-
-bool Label::operator==(const Label& other) const noexcept
-{
-    return variant_ == other.variant_;
-}
 
 Label Label::epsilon() noexcept
 {
@@ -66,5 +53,8 @@ const Label::Variant_t& Label::variant() const noexcept
 {
     return variant_;
 }
+
+Label::Label(const Epsilon epsilon) noexcept : variant_{epsilon}
+{}
 
 } // namespace munch::nfa

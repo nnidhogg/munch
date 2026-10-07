@@ -62,7 +62,7 @@ std::string Graphviz::to_dot(const Nfa& nfa)
 )";
 
     const auto format_token{
-            [](const std::optional<Token>& token) { return token.has_value() ? std::to_string(token->id()) : "n/a"; }};
+            [](const std::optional<Token>& token) { return token ? std::to_string(token->id()) : "n/a"; }};
 
     for (const auto& [state, token] : nfa.accept_states())
     {
