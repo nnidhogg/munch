@@ -84,16 +84,6 @@ public:
 
 private:
     /**
-     * @brief The number of bits in one word of a state set.
-     */
-    static constexpr std::size_t word_bits{64};
-
-    /**
-     * @brief The number of byte values, one edge list each.
-     */
-    static constexpr std::size_t symbol_count{256};
-
-    /**
      * @brief A set of NFA states as one bit per dense state index.
      */
     using Bits_t = std::vector<std::uint64_t>;
@@ -136,6 +126,11 @@ private:
     };
 
     /**
+     * @brief The number of byte values, one edge list each.
+     */
+    static constexpr std::size_t symbol_count{256};
+
+    /**
      * @brief The edges of one state set grouped by symbol, one list per byte value.
      */
     using Buckets_t = std::array<std::vector<Edge>, symbol_count>;
@@ -165,6 +160,11 @@ private:
      * @brief The discovered state sets not yet expanded, with their DFA states, in discovery order.
      */
     using Queue_t = std::queue<std::pair<Bits_t, dfa::Dfa::State_t>>;
+
+    /**
+     * @brief The number of bits in one word of a state set.
+     */
+    static constexpr std::size_t word_bits{64};
 
     /**
      * @brief Sizes every per-state table for the NFA's dense indices and files its transitions and accept states.
@@ -205,18 +205,10 @@ private:
         {
             const auto& [state, label]{key};
 
-            highest = std::max(highest, state);
-
-            for (const auto target : targets)
-            {
-                highest = std::max(highest, target);
-            }
+            highest = std::ranges::fold_left(targets, std::max(highest, state), std::ranges::max);
         }
 
-        for (const auto state : std::views::keys(nfa.accept_states()))
-        {
-            highest = std::max(highest, state);
-        }
+        highest = std::ranges::fold_left(std::views::keys(nfa.accept_states()), highest, std::ranges::max);
 
         if (highest >= std::numeric_limits<std::uint32_t>::max())
         {

@@ -70,15 +70,6 @@ namespace
 
 } // namespace
 
-void Builder::add_token(const regex::Regex& regex, const nfa::Token& token)
-{
-    auto automaton{regex::to_nfa(regex)};
-
-    automaton.set_accept_token(token);
-
-    patterns_.push_back({.nfa = std::move(automaton), .token = token});
-}
-
 Lexer Builder::build() const
 {
     const auto compiled{dfa()};
@@ -86,26 +77,8 @@ Lexer Builder::build() const
     return Lexer{compiled, ignored_, payloads_};
 }
 
-dfa::Dfa Builder::dfa() const
-{
-    const auto merged{nfa()};
-
-    const auto determinized{determinize(merged, state_limit_)};
-
-    return dfa::minimize(determinized);
-}
-
-nfa::Nfa Builder::nfa() const
-{
-    auto merged{merged_nfa()};
-
-    return std::move(merged).build();
-}
-
 Builder::Diagnostics Builder::diagnose() const
 {
-    const auto merged{nfa()};
-
     std::set<std::size_t> winners{};
 
     std::set<std::pair<std::size_t, std::size_t>> ties{};
@@ -119,6 +92,8 @@ Builder::Diagnostics Builder::diagnose() const
             }
         }
     }};
+
+    const auto merged{nfa()};
 
     // The walk is determinize()'s own traversal, so it visits exactly the reachable state sets, which is what makes
     // absence a proof: a token no reachable set awards is dead for every input there is.
@@ -155,6 +130,31 @@ Builder::Diagnostics Builder::diagnose() const
     result.equal_priority_ties.assign(ties.cbegin(), ties.cend());
 
     return result;
+}
+
+dfa::Dfa Builder::dfa() const
+{
+    const auto merged{nfa()};
+
+    const auto determinized{determinize(merged, state_limit_)};
+
+    return dfa::minimize(determinized);
+}
+
+nfa::Nfa Builder::nfa() const
+{
+    auto merged{merged_nfa()};
+
+    return std::move(merged).build();
+}
+
+void Builder::add_token(const regex::Regex& regex, const nfa::Token& token)
+{
+    auto automaton{regex::to_nfa(regex)};
+
+    automaton.set_accept_token(token);
+
+    patterns_.push_back({.nfa = std::move(automaton), .token = token});
 }
 
 nfa::Builder Builder::merged_nfa() const

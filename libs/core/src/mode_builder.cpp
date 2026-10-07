@@ -198,6 +198,29 @@ struct Closure
         return changed;
     }};
 
+    const auto sweep_mode{[&](const std::size_t mode) {
+        auto changed{false};
+
+        for (const auto& [token, action] : registered[mode])
+        {
+            if (!live(per_mode, mode, token) || !targets_a_mode(action) || action.target >= framed.size())
+            {
+                continue;
+            }
+
+            if (!entered[action.target])
+            {
+                entered[action.target] = true;
+
+                changed = true;
+            }
+
+            changed = carry(mode, action) || changed;
+        }
+
+        return changed;
+    }};
+
     const auto sweep{[&] {
         auto changed{false};
 
@@ -208,22 +231,7 @@ struct Closure
                 continue;
             }
 
-            for (const auto& [token, action] : registered[mode])
-            {
-                if (!live(per_mode, mode, token) || !targets_a_mode(action) || action.target >= framed.size())
-                {
-                    continue;
-                }
-
-                if (!entered[action.target])
-                {
-                    entered[action.target] = true;
-
-                    changed = true;
-                }
-
-                changed = carry(mode, action) || changed;
-            }
+            changed = sweep_mode(mode) || changed;
         }
 
         return changed;
@@ -388,8 +396,8 @@ void Mode_builder::register_token(
         throw std::invalid_argument{"Mode_builder::add_token: the action kind is not one of the four"};
     }
 
-    // Stay and pop carry target zero, so two otherwise identical actions compare equal, and a go_to onto its own
-    // mode is a stay, so a mode whose only action is that one takes the driver's no-action path.
+    // Stay and pop carry target zero, so two otherwise identical actions compare equal, and a go_to onto its own mode
+    // is a stay, so a mode whose only action is that one takes the driver's no-action path.
     const auto self_go_to{action.kind == Mode_action_kind::go_to && action.target == index};
 
     const Mode_action normalized{
@@ -404,8 +412,8 @@ void Mode_builder::register_token(
         return declared == id && !same;
     }};
 
-    // Patterns may share a token ID; conflicting actions for it cannot, since the scanner reports only the ID.
-    // Checked before anything is resized or registered, so a caught exception leaves the builder as it was.
+    // Patterns may share a token ID; conflicting actions for it cannot, since the scanner reports only the ID. Checked
+    // before anything is resized or registered, so a caught exception leaves the builder as it was.
     const auto conflicting{index < registered_.size() && std::ranges::any_of(registered_[index], conflicts)};
 
     if (conflicting)

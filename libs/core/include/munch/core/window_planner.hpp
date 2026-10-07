@@ -36,20 +36,6 @@ class Window_planner
 {
 public:
     /**
-     * @brief The shortest window the searches try, two bytes. The bound is not a guard: the planners consult windows
-     *        only when no exact byte certifies and the set is not nullable, where the length-one equivalence theorem
-     *        makes every one-byte window refuse, so skipping length one is provably inert rather than something a test
-     *        could pin.
-     */
-    static constexpr std::size_t shortest_window{2};
-
-    /**
-     * @brief The longest window the searches try, four bytes. A grammar needing longer windows degrades to fewer
-     *        chunks, never to an unsafe cut.
-     */
-    static constexpr std::size_t longest_window{4};
-
-    /**
      * @brief Returns the first window beginning at a position that certifies: lengths ascending from two, first
      *        certificate wins.
      * @tparam Iterator Random access iterator type.
@@ -100,6 +86,20 @@ public:
         return simulator.mandatory_core().empty() ? exhaustive(simulator, begin, size, floor) :
                                                     at_core(simulator, begin, size, floor);
     }
+
+    /**
+     * @brief The shortest window the searches try, two bytes. The bound is not a guard: the planners consult windows
+     *        only when no exact byte certifies and the set is not nullable, where the length-one equivalence theorem
+     *        makes every one-byte window refuse, so skipping length one is provably inert rather than something a test
+     *        could pin.
+     */
+    static constexpr std::size_t shortest_window{2};
+
+    /**
+     * @brief The longest window the searches try, four bytes. A grammar needing longer windows degrades to fewer
+     *        chunks, never to an unsafe cut.
+     */
+    static constexpr std::size_t longest_window{4};
 
 private:
     /**
