@@ -120,8 +120,7 @@ using Kinds_t = std::set<std::size_t>;
 using Stream_t = std::vector<std::pair<std::size_t, std::size_t>>;
 
 /**
- * @brief A Builder whose compiled automaton, protected in Builder, is public, the way the unit tests expose it; build()
- *        returns Lexer{dfa()}.
+ * @brief A Builder whose compiled automaton, protected in Builder, is public, the way the unit tests expose it.
  */
 class Builder_dbg : public munch::core::Builder
 {

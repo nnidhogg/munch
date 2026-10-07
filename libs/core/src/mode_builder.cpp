@@ -24,19 +24,19 @@ using Registered_t = std::vector<std::vector<std::pair<std::size_t, Mode_action>
  *
  * A skipped index would otherwise compile to a lexer matching nothing, so every scan reaching that mode would fail at
  * its first byte with no indication that the grammar, rather than the input, was wrong.
- * @param populated Whether each mode index received at least one token.
+ * @param registered The registered tokens and actions, per mode.
  * @throws std::invalid_argument If some mode received none.
  */
-void require_populated(const std::vector<bool>& populated)
+void require_populated(const Registered_t& registered)
 {
-    const auto skipped{std::ranges::find(populated, false)};
+    const auto skipped{std::ranges::find_if(registered, [](const auto& tokens) { return tokens.empty(); })};
 
-    if (skipped == populated.cend())
+    if (skipped == registered.cend())
     {
         return;
     }
 
-    const auto mode{std::distance(populated.cbegin(), skipped)};
+    const auto mode{std::distance(registered.cbegin(), skipped)};
 
     const auto message{std::format("Mode_builder::build: mode {} has no tokens", mode)};
 
@@ -79,23 +79,6 @@ void require_targets_exist(const Registered_t& registered, const std::size_t mod
             throw std::invalid_argument{message};
         }
     }
-}
-
-/**
- * @brief Returns the tokens registered in one mode with their actions, none for a mode past the registered rows.
- * @param registered The registered tokens and actions, per mode.
- * @param mode The mode whose tokens are wanted.
- * @return The mode's registered tokens and their normalized actions.
- */
-[[nodiscard]] std::span<const std::pair<std::size_t, Mode_action>> actions_in(
-        const Registered_t& registered, const std::size_t mode)
-{
-    if (mode >= registered.size())
-    {
-        return {};
-    }
-
-    return registered[mode];
 }
 
 /**
@@ -149,70 +132,42 @@ void reject_nullable_actions(
 }
 
 /**
- * @brief Walks the live go_to and push actions from mode 0 and marks every mode entered.
- *
- * A target named only by an unreachable mode is not reached.
- * @param registered The registered tokens and actions, per mode.
- * @param per_mode The per-mode diagnostics, indexed by mode.
- * @return Whether each mode is entered, indexed by mode.
+ * @brief What one walk of the live go_to and push actions from mode 0 establishes.
  */
-[[nodiscard]] std::vector<bool> reachable_modes(
-        const Registered_t& registered, const std::vector<Builder::Diagnostics>& per_mode)
+struct Closure
 {
-    std::vector<bool> entered(per_mode.size(), false);
+    /**
+     * @brief Whether each mode is entered, indexed by mode; a target named only by an unreachable mode is not.
+     */
+    std::vector<bool> entered{};
 
-    std::vector<std::size_t> pending{};
-
-    if (!entered.empty())
-    {
-        entered[0] = true;
-
-        pending.push_back(0);
-    }
-
-    while (!pending.empty())
-    {
-        const auto mode{pending.back()};
-
-        pending.pop_back();
-
-        for (const auto& [token, action] : actions_in(registered, mode))
-        {
-            if (!live(per_mode, mode, token) || !targets_a_mode(action))
-            {
-                continue;
-            }
-
-            if (action.target >= entered.size() || entered[action.target])
-            {
-                continue;
-            }
-
-            entered[action.target] = true;
-
-            pending.push_back(action.target);
-        }
-    }
-
-    return entered;
-}
+    /**
+     * @brief For each mode, the modes its frames can name.
+     */
+    std::vector<std::vector<bool>> framed{};
+};
 
 /**
- * @brief Closes the frames each mode's outstanding pushes can name, to a fixpoint.
+ * @brief Walks the live go_to and push actions from mode 0, marking every mode entered and closing the frames each
+ *        mode's outstanding pushes can name, to one fixpoint.
  *
  * Which modes the outstanding frames can name matters since that is where a pop returns: presence alone would let a
  * self-push fake an escape. Closing over push and go_to reaches every frame a pop can expose, because those buried
  * under one naming f are a stack f once held.
  * @param registered The registered tokens and actions, per mode.
  * @param per_mode The per-mode diagnostics, indexed by mode.
- * @param entered Whether each mode is entered, indexed by mode.
- * @return For each mode, the modes its frames can name.
+ * @return The modes entered and the modes each mode's frames can name.
  */
-[[nodiscard]] std::vector<std::vector<bool>> frame_closure(
-        const Registered_t& registered, const std::vector<Builder::Diagnostics>& per_mode,
-        const std::vector<bool>& entered)
+[[nodiscard]] Closure frame_closure(const Registered_t& registered, const std::vector<Builder::Diagnostics>& per_mode)
 {
     const auto modes{per_mode.size()};
+
+    std::vector<bool> entered(modes, false);
+
+    if (modes > 0)
+    {
+        entered[0] = true;
+    }
 
     std::vector<std::vector<bool>> framed(modes, std::vector<bool>(modes, false));
 
@@ -260,6 +215,13 @@ void reject_nullable_actions(
                     continue;
                 }
 
+                if (!entered[action.target])
+                {
+                    entered[action.target] = true;
+
+                    changed = true;
+                }
+
                 changed = carry(mode, action) || changed;
             }
         }
@@ -272,7 +234,7 @@ void reject_nullable_actions(
     {
     }
 
-    return framed;
+    return {.entered = std::move(entered), .framed = std::move(framed)};
 }
 
 /**
@@ -335,7 +297,7 @@ Mode_lexer Mode_builder::build() const
         throw std::invalid_argument{"Mode_builder::build: no tokens were registered"};
     }
 
-    require_populated(populated_);
+    require_populated(registered_);
 
     require_targets_exist(registered_, modes_.size());
 
@@ -353,9 +315,7 @@ Mode_lexer Mode_builder::build() const
 
         builder.set_state_limit(state_limit_);
 
-        const auto actions{actions_in(registered_, mode)};
-
-        for (const auto& [token, action] : actions)
+        for (const auto& [token, action] : registered_[mode])
         {
             if (action.kind == Mode_action_kind::stay)
             {
@@ -371,7 +331,7 @@ Mode_lexer Mode_builder::build() const
 
         lexers.push_back(builder.build());
 
-        reject_nullable_actions(lexers.back(), actions, mode);
+        reject_nullable_actions(lexers.back(), registered_[mode], mode);
     }
 
     return Mode_lexer{std::move(lexers), std::move(mode_actions)};
@@ -390,9 +350,7 @@ Mode_builder::Mode_diagnostics Mode_builder::diagnose() const
         out.per_mode.push_back(builder.diagnose());
     }
 
-    const auto entered{reachable_modes(registered_, out.per_mode)};
-
-    const auto framed{frame_closure(registered_, out.per_mode, entered)};
+    const auto [entered, framed]{frame_closure(registered_, out.per_mode)};
 
     const auto leaves{escaping_modes(registered_, out.per_mode, framed)};
 
@@ -410,6 +368,69 @@ Mode_builder::Mode_diagnostics Mode_builder::diagnose() const
     }
 
     return out;
+}
+
+void Mode_builder::register_token(
+        const std::size_t index, const regex::Regex& regex, const std::size_t id, const std::size_t priority,
+        const Mode_action action)
+{
+    // An action kind outside the enumeration reaches apply(), which rejects it, while the batch driver ignores that
+    // rejection: the two drivers would disagree on the same input.
+    switch (action.kind)
+    {
+    case Mode_action_kind::stay:
+    case Mode_action_kind::go_to:
+    case Mode_action_kind::push:
+    case Mode_action_kind::pop:
+        break;
+
+    default:
+        throw std::invalid_argument{"Mode_builder::add_token: the action kind is not one of the four"};
+    }
+
+    // Stay and pop carry target zero, so two otherwise identical actions compare equal, and a go_to onto its own
+    // mode is a stay, so a mode whose only action is that one takes the driver's no-action path.
+    const auto self_go_to{action.kind == Mode_action_kind::go_to && action.target == index};
+
+    const Mode_action normalized{
+            .kind = self_go_to ? Mode_action_kind::stay : action.kind,
+            .target = targets_a_mode(action) && !self_go_to ? action.target : std::size_t{0}};
+
+    const auto conflicts{[&](const std::pair<std::size_t, Mode_action>& entry) {
+        const auto& [declared, previous]{entry};
+
+        const auto same{previous.kind == normalized.kind && previous.target == normalized.target};
+
+        return declared == id && !same;
+    }};
+
+    // Patterns may share a token ID; conflicting actions for it cannot, since the scanner reports only the ID.
+    // Checked before anything is resized or registered, so a caught exception leaves the builder as it was.
+    const auto conflicting{index < registered_.size() && std::ranges::any_of(registered_[index], conflicts)};
+
+    if (conflicting)
+    {
+        const auto message{std::format(
+                "Mode_builder::add_token: token {} in mode {} already carries a different action", id, index)};
+
+        throw std::invalid_argument{message};
+    }
+
+    if (index >= modes_.size())
+    {
+        modes_.resize(index + 1);
+
+        registered_.resize(index + 1);
+    }
+
+    modes_[index].add_token(regex, id, priority);
+
+    const auto known{std::ranges::contains(registered_[index] | std::views::keys, id)};
+
+    if (!known)
+    {
+        registered_[index].emplace_back(id, normalized);
+    }
 }
 
 } // namespace munch::core

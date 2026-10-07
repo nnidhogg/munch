@@ -8,6 +8,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <queue>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -244,7 +245,9 @@ private:
             return std::nullopt;
         }};
 
-        std::vector<std::pair<std::size_t, std::size_t>> heap{};
+        using Pair_t = std::pair<std::size_t, std::size_t>;
+
+        std::priority_queue<Pair_t, std::vector<Pair_t>, std::greater<>> heap{};
 
         const auto ingest{[&](const std::size_t at) {
             for (auto length{core.size() + 1}; length <= longest_window; ++length)
@@ -253,9 +256,7 @@ private:
 
                 for (auto t{std::max(floor, lowest)}; t <= at && t + length <= size; ++t)
                 {
-                    heap.emplace_back(t, length);
-
-                    std::ranges::push_heap(heap, std::greater{});
+                    heap.emplace(t, length);
                 }
             }
         }};
@@ -275,7 +276,7 @@ private:
                 return true;
             }
 
-            const auto [least_start, least_length]{heap.front()};
+            const auto [least_start, least_length]{heap.top()};
 
             const auto horizon{least_start + longest_window - core.size() - 1};
 
@@ -298,11 +299,9 @@ private:
                 return std::nullopt;
             }
 
-            std::ranges::pop_heap(heap, std::greater{});
+            const auto candidate{heap.top()};
 
-            const auto candidate{heap.back()};
-
-            heap.pop_back();
+            heap.pop();
 
             if (last == std::optional{candidate})
             {

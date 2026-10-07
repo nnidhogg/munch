@@ -16,7 +16,6 @@
 #include <utility>
 #include <vector>
 
-#include "munch/core/builder.hpp"
 #include "munch/core/exceptions/state_limit_error.hpp"
 #include "munch/dfa/builder.hpp"
 
@@ -589,7 +588,7 @@ dfa::Dfa determinize(const nfa::Nfa& nfa, const std::size_t state_limit)
     return Determinizer{nfa, state_limit}.run();
 }
 
-std::vector<std::vector<nfa::Token>> Builder::reachable_candidates(const nfa::Nfa& nfa, const std::size_t state_limit)
+std::vector<std::vector<nfa::Token>> reachable_candidates(const nfa::Nfa& nfa, const std::size_t state_limit)
 {
     return Determinizer{nfa, state_limit}.candidates();
 }

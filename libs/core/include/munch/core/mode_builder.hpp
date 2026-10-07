@@ -1,12 +1,10 @@
 #ifndef MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_MODE_BUILDER_HPP
 #define MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_MODE_BUILDER_HPP
 
-#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <format>
 #include <limits>
-#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -93,69 +91,7 @@ public:
 
         const auto id{as_index(token, "token")};
 
-        // An action kind outside the enumeration reaches apply(), which rejects it, while the batch driver ignores that
-        // rejection: the two drivers would disagree on the same input.
-        switch (action.kind)
-        {
-        case Mode_action_kind::stay:
-        case Mode_action_kind::go_to:
-        case Mode_action_kind::push:
-        case Mode_action_kind::pop:
-            break;
-
-        default:
-            throw std::invalid_argument{"Mode_builder::add_token: the action kind is not one of the four"};
-        }
-
-        // Stay and pop carry target zero, so two otherwise identical actions compare equal, and a go_to onto its own
-        // mode is a stay, so a mode whose only action is that one takes the driver's no-action path.
-        const auto targeted{action.kind == Mode_action_kind::go_to || action.kind == Mode_action_kind::push};
-
-        const auto self_go_to{action.kind == Mode_action_kind::go_to && action.target == index};
-
-        const Mode_action normalized{
-                .kind = self_go_to ? Mode_action_kind::stay : action.kind,
-                .target = targeted && !self_go_to ? action.target : std::size_t{0}};
-
-        const auto conflicts{[&](const std::pair<std::size_t, Mode_action>& entry) {
-            const auto& [declared, previous]{entry};
-
-            const auto same{previous.kind == normalized.kind && previous.target == normalized.target};
-
-            return declared == id && !same;
-        }};
-
-        // Patterns may share a token ID; conflicting actions for it cannot, since the scanner reports only the ID.
-        // Checked before anything is resized or registered, so a caught exception leaves the builder as it was.
-        const auto conflicting{index < registered_.size() && std::ranges::any_of(registered_[index], conflicts)};
-
-        if (conflicting)
-        {
-            const auto message{std::format(
-                    "Mode_builder::add_token: token {} in mode {} already carries a different action", id, index)};
-
-            throw std::invalid_argument{message};
-        }
-
-        if (index >= modes_.size())
-        {
-            modes_.resize(index + 1);
-
-            registered_.resize(index + 1);
-
-            populated_.resize(index + 1, false);
-        }
-
-        modes_[index].add_token(regex, id, priority);
-
-        populated_[index] = true;
-
-        const auto known{std::ranges::contains(registered_[index] | std::views::keys, id)};
-
-        if (!known)
-        {
-            registered_[index].emplace_back(id, normalized);
-        }
+        register_token(index, regex, id, priority, action);
     }
 
     /**
@@ -190,6 +126,19 @@ public:
     [[nodiscard]] Mode_diagnostics diagnose() const;
 
 private:
+    /**
+     * @brief Registers a token in a mode by index: the validation and the bookkeeping add_token() forwards to.
+     * @param index The mode's index.
+     * @param regex The token's pattern.
+     * @param id The token's index.
+     * @param priority The priority for resolving conflicts within the mode.
+     * @param action What the token does to the mode stack once matched, normalized here.
+     * @throws std::invalid_argument If the action kind is not one of the four, or if this token was already registered
+     *         in this mode with a different action.
+     */
+    void register_token(
+            std::size_t index, const regex::Regex& regex, std::size_t id, std::size_t priority, Mode_action action);
+
     /**
      * @brief Converts a caller's mode or token value to an index, rejecting what cannot survive the conversion.
      *
@@ -242,12 +191,6 @@ private:
      * @brief The per-mode determinization cap; zero means unlimited.
      */
     std::size_t state_limit_{0};
-
-    /**
-     * @brief Whether each mode index received at least one token, so build() can reject a skipped mode rather than
-     *        compile a lexer for it that matches nothing.
-     */
-    std::vector<bool> populated_;
 
     /**
      * @brief Every registered token and its normalized action, per mode.

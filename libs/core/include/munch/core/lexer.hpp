@@ -518,16 +518,14 @@ public:
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
             Iterator begin, Iterator end, const std::size_t chunks) const
     {
-        const auto size{static_cast<std::size_t>(end - begin)};
-
-        auto boundaries{chunk_boundaries(begin, end, chunks)};
-
-        if (boundaries.size() > 2 || size < 2 || simulator_.has_split_points())
+        if (simulator_.has_split_points())
         {
-            return boundaries;
+            return chunk_boundaries(begin, end, chunks);
         }
 
-        boundaries.pop_back();
+        const auto size{static_cast<std::size_t>(end - begin)};
+
+        std::vector<std::size_t> boundaries{0};
 
         const auto usable{std::min(chunks, size)};
 
@@ -838,7 +836,7 @@ public:
 
 private:
     // The Builder is the only construction path: a Lexer exists exclusively over a DFA the Builder compiled, so the
-    // constructors below stay private and the friendship is the whole public door.
+    // constructor below stays private and the friendship is the whole public door.
     friend class Builder;
 
     /**
@@ -913,20 +911,7 @@ private:
     };
 
     /**
-     * @brief Constructs a Lexer from a DFA.
-     * @param dfa The DFA to use for tokenization.
-     */
-    explicit Lexer(const dfa::Dfa& dfa) : simulator_{dfa} {}
-
-    /**
-     * @brief Constructs a lexer that also certifies split points modulo the tokens the caller discards.
-     * @param dfa The compiled DFA.
-     * @param ignored The IDs of tokens the caller deletes before using the stream.
-     */
-    Lexer(const dfa::Dfa& dfa, const std::span<const std::size_t> ignored) : simulator_{dfa, ignored} {}
-
-    /**
-     * @brief Constructs a lexer that also attaches a caller's word to every match of the named tokens.
+     * @brief Constructs a lexer over a compiled DFA, attaching a caller's word to every match of the named tokens.
      * @param dfa The compiled DFA.
      * @param ignored The IDs of tokens the caller deletes before using the stream.
      * @param payloads Token ID and word pairs; a token named more than once keeps the last word given.

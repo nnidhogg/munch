@@ -2,9 +2,11 @@
 #define MUNCH_LIBS_CORE_INCLUDE_MUNCH_CORE_DETERMINIZE_HPP
 
 #include <cstddef>
+#include <vector>
 
 #include "munch/dfa/dfa.hpp"
 #include "munch/nfa/nfa.hpp"
+#include "munch/nfa/token.hpp"
 
 namespace munch::core
 {
@@ -26,6 +28,20 @@ namespace munch::core
  *         are used as given rather than remapped.
  */
 [[nodiscard]] dfa::Dfa determinize(const nfa::Nfa& nfa, std::size_t state_limit = 0);
+
+/**
+ * @brief Walks determinize()'s subset construction and reports the accepting candidates of every subset it discovers.
+ *
+ * The traversal is determinize()'s own, so a diagnosis judges exactly the subsets the build discovers rather than
+ * mirroring the walk with a second implementation. One entry per reachable subset holding at least one accepting state,
+ * in discovery order.
+ * @param nfa The NFA to walk.
+ * @param state_limit The largest number of subsets to discover before throwing; zero means unlimited.
+ * @return The accepting candidate tokens, one list per accepting subset.
+ * @throws State_limit_error If the state limit is exceeded.
+ */
+[[nodiscard]] std::vector<std::vector<nfa::Token>> reachable_candidates(
+        const nfa::Nfa& nfa, std::size_t state_limit = 0);
 
 } // namespace munch::core
 
