@@ -12,11 +12,6 @@ std::size_t Label::Hash::operator()(const Label& label) const noexcept
 Label::Label(const Symbol_t symbol) noexcept : symbol_{symbol}
 {}
 
-bool Label::operator==(const Label& other) const noexcept
-{
-    return symbol_ == other.symbol_;
-}
-
 Label::Symbol_t Label::symbol() const noexcept
 {
     return symbol_;

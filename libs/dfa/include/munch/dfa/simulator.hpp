@@ -92,12 +92,6 @@ public:
     };
 
     /**
-     * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables;
-     *        the one member of the read-only view below that is a constant rather than a function.
-     */
-    static constexpr std::size_t symbol_count{1U << (sizeof(Label::Symbol_t) * 8U)};
-
-    /**
      * @brief Compiles the given DFA into transition and accept tables.
      * @param dfa The DFA to simulate.
      * @throws std::runtime_error If the DFA has more states than a table entry can index, or if the transition table's
@@ -224,7 +218,7 @@ public:
      * matches, both answered with the token the old start state accepted and length zero.
      * @return True when some token matches the empty string.
      */
-    [[nodiscard]] bool nullable() const noexcept { return empty_state_ != no_state_; }
+    [[nodiscard]] bool nullable() const noexcept;
 
     /**
      * @brief Returns the byte string every certified split window provably contains, or empty when none is proved.
@@ -239,7 +233,7 @@ public:
      * weakens: the core is an accelerator's licence, never a certificate itself.
      * @return The proved mandatory core, or an empty view.
      */
-    [[nodiscard]] std::string_view mandatory_core() const noexcept { return mandatory_core_; }
+    [[nodiscard]] std::string_view mandatory_core() const noexcept;
 
     /**
      * @brief Runs the DFA over a range defined by iterators.
@@ -421,7 +415,7 @@ public:
      * token boundary, and both the byte certificate and the window decision withdraw the initial-state exemption.
      * @return True when a live transition leads back to init_state().
      */
-    [[nodiscard]] bool init_reentrant() const noexcept { return init_reentrant_; }
+    [[nodiscard]] bool init_reentrant() const noexcept;
 
     /**
      * @brief Follows one transition of the compiled table.
@@ -473,6 +467,12 @@ public:
 
         return accept_table_[state].token;
     }
+
+    /**
+     * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables;
+     *        the one member of the read-only view above that is a constant rather than a function.
+     */
+    static constexpr std::size_t symbol_count{1U << (sizeof(Label::Symbol_t) * 8U)};
 
 private:
     /**
@@ -559,26 +559,6 @@ private:
     using Prefix_t = std::size_t;
 
     /**
-     * @brief Table entry marking the absence of a transition.
-     */
-    static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
-
-    /**
-     * @brief The death word depth of a state no death word leaves.
-     */
-    static constexpr std::size_t no_death_word_{std::numeric_limits<std::size_t>::max()};
-
-    /**
-     * @brief Per-state flag marking an accepting state.
-     */
-    static constexpr std::uint8_t accept_flag_{1};
-
-    /**
-     * @brief Per-state flag marking a live state: reachable from the initial state and able to still accept.
-     */
-    static constexpr std::uint8_t live_flag_{2};
-
-    /**
      * @brief Compiles the DFA, through its positive-width equivalent where it has one.
      *
      * A nullable set is compiled as its positive-width equivalent; the old start state keeps its index, so the empty
@@ -587,8 +567,8 @@ private:
      * @param unrolled Its positive-width equivalent when its start state accepts, nothing otherwise.
      * @param ignored The IDs of tokens the caller discards before the stream is used.
      * @param payloads Token ID and word pairs; a token named more than once keeps the last word given.
-     * @throws std::runtime_error If the compiled DFA has more states than a table entry can index, or if the
-     *         transition table's size would overflow std::size_t, which only a 32-bit platform can reach.
+     * @throws std::runtime_error If the compiled DFA has more states than a table entry can index, or if the transition
+     *         table's size would overflow std::size_t, which only a 32-bit platform can reach.
      */
     Simulator(
             const Dfa& dfa, const std::optional<Dfa>& unrolled, std::span<const std::size_t> ignored,
@@ -838,7 +818,7 @@ private:
      * @return True when the core is proved.
      */
     [[nodiscard]] bool proves_core(
-            std::size_t origin, const std::string& core, Stamp_t stamp, std::vector<Stamp_t>& seen) const;
+            std::size_t origin, std::string_view core, Stamp_t stamp, std::vector<Stamp_t>& seen) const;
 
     /**
      * @brief Returns the matcher of a core precomputed as a table, one lookup per transition.
@@ -848,7 +828,7 @@ private:
      * @param core The core.
      * @return Per prefix length and symbol value, the prefix length after reading the symbol.
      */
-    [[nodiscard]] static std::vector<Prefix_t> core_matcher(const std::string& core);
+    [[nodiscard]] static std::vector<Prefix_t> core_matcher(std::string_view core);
 
     /**
      * @brief Returns the token the empty string matches, or std::nullopt when no token does.
@@ -878,6 +858,26 @@ private:
      * docs/performance.md for the numbers.
      */
     static void prevent_if_conversion() noexcept { asm(""); }
+
+    /**
+     * @brief Table entry marking the absence of a transition.
+     */
+    static constexpr Entry_t no_state_{std::numeric_limits<Entry_t>::max()};
+
+    /**
+     * @brief The death word depth of a state no death word leaves.
+     */
+    static constexpr std::size_t no_death_word_{std::numeric_limits<std::size_t>::max()};
+
+    /**
+     * @brief Per-state flag marking an accepting state.
+     */
+    static constexpr std::uint8_t accept_flag_{1};
+
+    /**
+     * @brief Per-state flag marking a live state: reachable from the initial state and able to still accept.
+     */
+    static constexpr std::uint8_t live_flag_{2};
 
     /**
      * @brief The state a simulation starts in.

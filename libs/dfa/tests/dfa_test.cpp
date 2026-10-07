@@ -55,8 +55,8 @@ constexpr std::size_t oracle_bound{8};
 const Match no_match{.token = std::nullopt, .length = 0};
 
 /**
- * @brief Builds the long-window family: one token kind, symbols a, b, r, t and #, and m sources, the j-th a cycle
- *        of j + 1 states accepting at its last, so a window must carry a common accepted length of every cycle.
+ * @brief Builds the long-window family: one token kind, symbols a, b, r, t and #, and m sources, the j-th a cycle of
+ *        j + 1 states accepting at its last, so a window must carry a common accepted length of every cycle.
  * @param m The number of sources.
  * @return The token set.
  */

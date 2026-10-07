@@ -426,37 +426,46 @@ Shortest_window shortest_split_window(const Simulator& simulator, const std::siz
         return {.outcome = Shortest_window::Outcome::found, .window = std::move(window), .origin = origin};
     }};
 
+    const auto expand_byte{[&](const std::size_t at, const unsigned char byte) -> std::optional<Shortest_window> {
+        for (auto& [next, chose] : advance(simulator, nodes[at], byte))
+        {
+            const auto certified{next.chosen && empty(next.others)};
+
+            nodes.push_back(std::move(next));
+
+            const auto number{nodes.size() - 1};
+
+            const auto [position, inserted]{index.insert(number)};
+
+            if (!inserted)
+            {
+                nodes.pop_back();
+
+                continue;
+            }
+
+            if (number >= budget)
+            {
+                return Shortest_window{.outcome = Shortest_window::Outcome::budget, .window = {}, .origin = 0};
+            }
+
+            reached.push_back({.parent = at, .byte = byte, .chose = chose});
+
+            if (certified)
+            {
+                return window_to(number);
+            }
+        }
+
+        return std::nullopt;
+    }};
+
     const auto expand{[&](const std::size_t at) -> std::optional<Shortest_window> {
         for (const auto byte : bytes)
         {
-            for (auto& [next, chose] : advance(simulator, nodes[at], byte))
+            if (auto finished{expand_byte(at, byte)})
             {
-                const auto certified{next.chosen && empty(next.others)};
-
-                nodes.push_back(std::move(next));
-
-                const auto number{nodes.size() - 1};
-
-                const auto [position, inserted]{index.insert(number)};
-
-                if (!inserted)
-                {
-                    nodes.pop_back();
-
-                    continue;
-                }
-
-                if (number >= budget)
-                {
-                    return Shortest_window{.outcome = Shortest_window::Outcome::budget, .window = {}, .origin = 0};
-                }
-
-                reached.push_back({.parent = at, .byte = byte, .chose = chose});
-
-                if (certified)
-                {
-                    return window_to(number);
-                }
+                return finished;
             }
         }
 

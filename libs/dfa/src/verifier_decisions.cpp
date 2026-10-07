@@ -742,24 +742,27 @@ void dedup(std::vector<T>& values)
 {
     const auto goal{[&](const Pair_key& key) { return key.differed && a.accepts(key.a) && b.accepts(key.b); }};
 
-    const auto expand{[&]<typename Emit>(const Pair_key& key, const Emit& emit) {
-        const auto pair_with_b{[&](const Marked symbol, const State_t to_a) {
-            for (const auto mark_b : marks)
-            {
-                const auto to_b{b.step(key.b, {.byte = symbol.byte, .boundary_after = mark_b})};
-
-                if (!to_b)
+    const auto pair_with_b{
+            [&b]<typename Emit>(const Pair_key& key, const Marked symbol, const State_t to_a, const Emit& emit) {
+                for (const auto mark_b : marks)
                 {
-                    continue;
+                    const auto to_b{b.step(key.b, {.byte = symbol.byte, .boundary_after = mark_b})};
+
+                    if (!to_b)
+                    {
+                        continue;
+                    }
+
+                    const auto differed{key.differed || mark_b != symbol.boundary_after};
+
+                    emit(symbol, Pair_key{.a = to_a, .b = *to_b, .differed = differed});
                 }
+            }};
 
-                const auto differed{key.differed || mark_b != symbol.boundary_after};
+    const auto expand{[&]<typename Emit>(const Pair_key& key, const Emit& emit) {
+        const auto pair_step{[&](const Marked symbol, const State_t to_a) { pair_with_b(key, symbol, to_a, emit); }};
 
-                emit(symbol, Pair_key{.a = to_a, .b = *to_b, .differed = differed});
-            }
-        }};
-
-        expand_steps(a, alphabet, key.a, pair_with_b);
+        expand_steps(a, alphabet, key.a, pair_step);
     }};
 
     const auto path{shortest_path(Pair_key{.a = a.start(), .b = b.start(), .differed = false}, goal, expand)};
@@ -825,8 +828,6 @@ std::optional<Miscovering> miscovering(
         throw std::invalid_argument{"miscovering: the window is empty or its origin lies outside it"};
     }
 
-    const auto alphabet{alphabet_of(verifier)};
-
     const auto borders{borders_of(window)};
 
     std::vector<bool> start_marks(window.size(), false);
@@ -839,6 +840,8 @@ std::optional<Miscovering> miscovering(
     }};
 
     const auto goal{[&verifier](const Certification_key& key) { return key.missed && verifier.accepts(key.state); }};
+
+    const auto alphabet{alphabet_of(verifier)};
 
     const auto expand{[&]<typename Emit>(const Certification_key& key, const Emit& emit) {
         const auto advance{[&](const Marked symbol, const State_t to) {

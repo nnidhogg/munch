@@ -28,10 +28,7 @@ namespace
         highest = std::max({highest, from, to});
     }
 
-    for (const auto& state : accept_states | std::views::keys)
-    {
-        highest = std::max(highest, state);
-    }
+    highest = std::ranges::fold_left(accept_states | std::views::keys, highest, std::ranges::max);
 
     return highest + 1;
 }

@@ -39,10 +39,8 @@ public:
 
     /**
      * @brief Equal when both symbols are equal.
-     * @param other The label to compare with.
-     * @return True if the symbols are equal, false otherwise.
      */
-    bool operator==(const Label& other) const noexcept;
+    bool operator==(const Label&) const noexcept = default;
 
     /**
      * @brief Returns the symbol associated with this label.

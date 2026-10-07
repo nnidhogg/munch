@@ -157,10 +157,7 @@ void dedup(std::vector<T>& values)
         highest = std::max({highest, from, to});
     }
 
-    for (const auto state : accept_states)
-    {
-        highest = std::max(highest, state);
-    }
+    highest = std::ranges::fold_left(accept_states, highest, std::ranges::max);
 
     return highest;
 }
@@ -376,6 +373,21 @@ void expand(
 
 } // namespace
 
+std::size_t Verifier::Hash::operator()(const Key_t& key) const noexcept
+{
+    const auto& [state, symbol]{key};
+
+    std::size_t seed{};
+
+    boost::hash_combine(seed, state);
+
+    boost::hash_combine(seed, symbol.byte);
+
+    boost::hash_combine(seed, symbol.boundary_after);
+
+    return seed;
+}
+
 /**
  * @brief The parts of a trimmed table: the state count, the transitions and the accepting states, the start numbered
  *        zero.
@@ -398,30 +410,8 @@ struct Verifier::Trimmed
     Accept_states_t accept_states{};
 };
 
-std::size_t Verifier::Hash::operator()(const Key_t& key) const noexcept
-{
-    const auto& [state, symbol]{key};
-
-    std::size_t seed{};
-
-    boost::hash_combine(seed, state);
-
-    boost::hash_combine(seed, symbol.byte);
-
-    boost::hash_combine(seed, symbol.boundary_after);
-
-    return seed;
-}
-
 Verifier::Verifier(const State_t start, Transitions_t transitions, Accept_states_t accept_states)
     : Verifier{trim(start, transitions, accept_states)}
-{}
-
-Verifier::Verifier(Trimmed parts)
-    : start_{0}
-    , state_count_{parts.state_count}
-    , transitions_{std::move(parts.transitions)}
-    , accept_states_{std::move(parts.accept_states)}
 {}
 
 Verifier::State_t Verifier::start() const noexcept
@@ -462,6 +452,13 @@ const Verifier::Accept_states_t& Verifier::accept_states() const noexcept
 {
     return accept_states_;
 }
+
+Verifier::Verifier(Trimmed parts)
+    : start_{0}
+    , state_count_{parts.state_count}
+    , transitions_{std::move(parts.transitions)}
+    , accept_states_{std::move(parts.accept_states)}
+{}
 
 Verifier::Trimmed Verifier::trim(
         const State_t start, const Transitions_t& transitions, const Accept_states_t& accept_states)

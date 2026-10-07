@@ -97,6 +97,54 @@ Simulator::Simulator(
     : Simulator{dfa, unrolled_start(dfa), ignored, payloads}
 {}
 
+bool Simulator::nullable() const noexcept
+{
+    return empty_state_ != no_state_;
+}
+
+std::string_view Simulator::mandatory_core() const noexcept
+{
+    return mandatory_core_;
+}
+
+bool Simulator::init_reentrant() const noexcept
+{
+    return init_reentrant_;
+}
+
+std::optional<std::size_t> Simulator::step(const std::size_t state, const unsigned char symbol) const noexcept
+{
+    const auto to{entry(symbol, state)};
+
+    return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
+}
+
+std::vector<std::vector<unsigned char>> Simulator::symbol_classes() const
+{
+    const auto states{state_count()};
+
+    std::vector<std::vector<unsigned char>> classes{};
+
+    for (std::size_t value{0}; value < symbol_count; ++value)
+    {
+        const auto symbol_class{row_offsets_[value] / states};
+
+        if (symbol_class == classes.size())
+        {
+            classes.emplace_back();
+        }
+
+        classes[symbol_class].push_back(static_cast<unsigned char>(value));
+    }
+
+    return classes;
+}
+
+bool Simulator::Death_words::has_chain(const std::size_t state) const noexcept
+{
+    return depth[state] != no_death_word_ && depth[state] >= 2U;
+}
+
 Simulator::Simulator(
         const Dfa& dfa, const std::optional<Dfa>& unrolled, const std::span<const std::size_t> ignored,
         const std::span<const std::pair<std::size_t, std::uint64_t>> payloads)
@@ -112,7 +160,7 @@ Simulator::Simulator(
 
     const auto classes{classify(compiled)};
 
-    const auto class_count{static_cast<std::size_t>(std::ranges::max(classes)) + 1};
+    const auto class_count{static_cast<std::size_t>(std::ranges::max(classes)) + 1U};
 
     // The table is class_count rows of states entries; on a 32-bit size_t the product can wrap where the per-state
     // vectors still allocate, so the product is checked before the table is sized from it.
@@ -145,39 +193,11 @@ Simulator::Simulator(
     derive_mandatory_core(reverse);
 }
 
-std::optional<std::size_t> Simulator::step(const std::size_t state, const unsigned char symbol) const noexcept
-{
-    const auto to{entry(symbol, state)};
-
-    return to == no_state_ ? std::nullopt : std::optional<std::size_t>{to};
-}
-
-std::vector<std::vector<unsigned char>> Simulator::symbol_classes() const
-{
-    const auto states{state_count()};
-
-    std::vector<std::vector<unsigned char>> classes{};
-
-    for (std::size_t value{0}; value < symbol_count; ++value)
-    {
-        const auto symbol_class{row_offsets_[value] / states};
-
-        if (symbol_class == classes.size())
-        {
-            classes.emplace_back();
-        }
-
-        classes[symbol_class].push_back(static_cast<unsigned char>(value));
-    }
-
-    return classes;
-}
-
 std::optional<Dfa> Simulator::unrolled_start(const Dfa& dfa)
 {
     require_indexable(dfa.state_count());
 
-    if (!dfa.has_accept_token(dfa.init_state()).has_value())
+    if (!dfa.has_accept_token(dfa.init_state()))
     {
         return std::nullopt;
     }
@@ -187,7 +207,7 @@ std::optional<Dfa> Simulator::unrolled_start(const Dfa& dfa)
 
 void Simulator::require_indexable(const std::size_t states)
 {
-    if (states == 0 || states >= no_state_)
+    if (states == 0U || states >= no_state_)
     {
         throw std::runtime_error{"DFA has too many states to be indexed by a transition table entry"};
     }
@@ -469,8 +489,6 @@ std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& ac
 {
     const auto states{accept_table_.size()};
 
-    const auto rows{distinct_rows()};
-
     // What colours a state before its token is told apart.
     enum class Shade : std::uint8_t
     {
@@ -494,7 +512,7 @@ std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& ac
         return {Shade::kept, accept_table_[state].token.id()};
     }};
 
-    std::vector<std::size_t> current(states + 1);
+    std::vector<std::size_t> current(states + 1U);
 
     std::map<std::pair<Shade, std::size_t>, std::size_t> first_classes{};
 
@@ -511,11 +529,13 @@ std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& ac
 
     auto count{first_classes.size()};
 
+    const auto rows{distinct_rows()};
+
     for (;;)
     {
         std::map<std::vector<std::size_t>, std::size_t> signatures{};
 
-        std::vector<std::size_t> next(states + 1);
+        std::vector<std::size_t> next(states + 1U);
 
         for (std::size_t state{0}; state <= states; ++state)
         {
@@ -568,18 +588,18 @@ void Simulator::derive_mandatory_core(const std::vector<std::vector<Entry_t>>& p
     std::ranges::stable_sort(candidates, longer);
 
     // The longest core is the first candidate's death word without its killing byte.
-    const auto longest{candidates.empty() ? std::size_t{0} : words.depth[candidates.front()] - 1};
+    const auto longest{candidates.empty() ? std::size_t{0} : words.depth[candidates.front()] - 1U};
 
     // States are capped below the 32-bit sentinel and at most one candidate proposes per state, so a stamp holds any
     // proof ordinal and a prefix cell every matcher position a supported table can reach. Both widths are pinned here,
     // integrality included.
     static_assert(
             std::numeric_limits<Stamp_t>::is_integer &&
-            std::numeric_limits<Stamp_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
+            std::numeric_limits<Stamp_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1U);
 
     static_assert(
             std::numeric_limits<Prefix_t>::is_integer &&
-            std::numeric_limits<Prefix_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1);
+            std::numeric_limits<Prefix_t>::max() >= std::numeric_limits<std::uint32_t>::max() - 1U);
 
     // One stamped buffer serves every proof: an entry from an older search reads as unseen under the current stamp, so
     // nothing is cleared or reallocated between candidates, and a four-byte stamp is wrap-safe because there are fewer
@@ -650,7 +670,7 @@ Simulator::Death_words Simulator::death_depths(const std::vector<std::vector<Ent
                 continue;
             }
 
-            words.depth[from] = words.depth[to] + 1;
+            words.depth[from] = words.depth[to] + 1U;
 
             frontier.push_back(from);
         }
@@ -684,7 +704,7 @@ Simulator::Death_words Simulator::chain_death_words(Death_words words) const
         {
             const auto to{advance_live(state, symbol)};
 
-            if (to && words.depth[*to] != no_death_word_ && words.depth[*to] + 1 == words.depth[state])
+            if (to && words.depth[*to] != no_death_word_ && words.depth[*to] + 1U == words.depth[state])
             {
                 words.entered_by[state] = static_cast<char>(symbol);
 
@@ -696,11 +716,6 @@ Simulator::Death_words Simulator::chain_death_words(Death_words words) const
     }
 
     return words;
-}
-
-bool Simulator::Death_words::has_chain(const std::size_t state) const noexcept
-{
-    return depth[state] != no_death_word_ && depth[state] >= 2;
 }
 
 std::vector<std::size_t> Simulator::core_candidates(const Death_words& words) const
@@ -729,7 +744,7 @@ std::string Simulator::spell_core(const Death_words& words, const std::size_t or
 {
     std::string core{};
 
-    for (auto state{origin}; words.depth[state] > 1; state = words.onward[state])
+    for (auto state{origin}; words.depth[state] > 1U; state = words.onward[state])
     {
         core.push_back(words.entered_by[state]);
     }
@@ -738,7 +753,7 @@ std::string Simulator::spell_core(const Death_words& words, const std::size_t or
 }
 
 bool Simulator::proves_core(
-        const std::size_t origin, const std::string& core, const Stamp_t stamp, std::vector<Stamp_t>& seen) const
+        const std::size_t origin, const std::string_view core, const Stamp_t stamp, std::vector<Stamp_t>& seen) const
 {
     const auto length{core.size()};
 
@@ -788,7 +803,7 @@ bool Simulator::proves_core(
     return true;
 }
 
-std::vector<Simulator::Prefix_t> Simulator::core_matcher(const std::string& core)
+std::vector<Simulator::Prefix_t> Simulator::core_matcher(const std::string_view core)
 {
     const auto length{core.size()};
 
@@ -796,11 +811,11 @@ std::vector<Simulator::Prefix_t> Simulator::core_matcher(const std::string& core
 
     for (std::size_t at{1}; at < length; ++at)
     {
-        auto matched{fall[at - 1]};
+        auto matched{fall[at - 1U]};
 
-        while (matched != 0 && core[at] != core[matched])
+        while (matched != 0U && core[at] != core[matched])
         {
-            matched = fall[matched - 1];
+            matched = fall[matched - 1U];
         }
 
         if (core[at] == core[matched])
@@ -821,11 +836,11 @@ std::vector<Simulator::Prefix_t> Simulator::core_matcher(const std::string& core
         {
             if (core[at] == static_cast<char>(symbol))
             {
-                next_matched[at, symbol] = at + 1;
+                next_matched[at, symbol] = at + 1U;
             }
-            else if (at > 0)
+            else if (at > 0U)
             {
-                next_matched[at, symbol] = next_matched[fall[at - 1], symbol];
+                next_matched[at, symbol] = next_matched[fall[at - 1U], symbol];
             }
         }
     }

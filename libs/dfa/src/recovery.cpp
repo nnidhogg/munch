@@ -161,7 +161,7 @@ struct Region
 
         table.end[offset] = end;
 
-        table.tokenizes[offset] = end.has_value() && table.tokenizes[*end];
+        table.tokenizes[offset] = end && table.tokenizes[*end];
     }
 
     return table;

@@ -473,8 +473,6 @@ bool Span_walk::unbounded_token(const Simulator& simulator)
 
 Span_walk::Graph Span_walk::explore(const Simulator& simulator) const
 {
-    const auto bytes{representatives(simulator)};
-
     Graph graph{.nodes = {start(simulator)}, .edges = {{}}};
 
     std::map<Node, Index_t> index{{start(simulator), 0}};
@@ -518,6 +516,8 @@ Span_walk::Graph Span_walk::explore(const Simulator& simulator) const
             add_edge(at, std::move(target), inside);
         }
     }};
+
+    const auto bytes{representatives(simulator)};
 
     for (Index_t at{0}; at < graph.nodes.size(); ++at)
     {

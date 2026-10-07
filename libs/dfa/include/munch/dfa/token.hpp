@@ -27,10 +27,8 @@ public:
 
     /**
      * @brief Equal when both IDs are equal.
-     * @param other The token to compare with.
-     * @return True if the IDs are equal, false otherwise.
      */
-    bool operator==(const Token& other) const noexcept { return id_ == other.id_; }
+    bool operator==(const Token&) const noexcept = default;
 
     /**
      * @brief Returns the unique identifier of the token.
