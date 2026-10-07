@@ -552,7 +552,9 @@ Regex_reader::Rewritten_literal Regex_reader::literal(const char quote, const bo
 
     // Counts a character read and keeps the class of the first.
     const auto character{[&characters, &first](Class points) {
-        if (++characters == 1)
+        ++characters;
+
+        if (characters == 1)
         {
             first = std::move(points);
         }

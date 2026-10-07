@@ -255,7 +255,7 @@ constexpr std::array option_keys{
             return !all;
         }
 
-        decided = decided && value.has_value();
+        decided = decided && value;
 
         arguments.skip_trivia();
 

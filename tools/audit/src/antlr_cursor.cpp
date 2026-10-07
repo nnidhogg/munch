@@ -313,75 +313,6 @@ std::optional<char32_t> Antlr_cursor::character(const char closing)
     return unicode_escape();
 }
 
-char32_t Antlr_cursor::typed_scalar(const unsigned char lead)
-{
-    if (lead <= last_ascii)
-    {
-        return lead;
-    }
-
-    auto scalar{lead_bits(lead)};
-
-    for (auto count{1UZ}; count < sequence_length(lead); ++count)
-    {
-        const auto continuation{static_cast<unsigned char>(next("a continuation byte"))};
-
-        scalar = continued(scalar, continuation);
-    }
-
-    return scalar;
-}
-
-char32_t Antlr_cursor::unicode_escape()
-{
-    // \uXXXX, or \u{X...} of one to six digits.
-    const auto braced{peek() == '{'};
-
-    if (braced)
-    {
-        ++at_;
-    }
-
-    const auto most_digits{braced ? braced_escape_digits : unbraced_escape_digits};
-
-    char32_t scalar{0};
-
-    std::size_t digits{0};
-
-    while (digits < most_digits && peek() && is_hex_digit(*peek()))
-    {
-        const auto digit{next("a hex digit")};
-
-        scalar = scalar * 16 + hex_value(digit);
-
-        ++digits;
-    }
-
-    const std::string malformed{R"(a Unicode escape is \uXXXX or \u{X...} up to U+10FFFF)"};
-
-    if (digits == 0 || (!braced && digits < most_digits))
-    {
-        fail(malformed);
-    }
-
-    if (braced)
-    {
-        const auto close{next("'}'")};
-
-        if (close != '}')
-        {
-            fail(malformed);
-        }
-    }
-
-    if (scalar > last_scalar)
-    {
-        fail(malformed);
-    }
-
-    return scalar;
-}
-
 void Antlr_cursor::element_options()
 {
     skip_blanks();
@@ -556,6 +487,75 @@ void Antlr_cursor::skip_quoted(const char quote)
             ++at_;
         }
     }
+}
+
+char32_t Antlr_cursor::typed_scalar(const unsigned char lead)
+{
+    if (lead <= last_ascii)
+    {
+        return lead;
+    }
+
+    auto scalar{lead_bits(lead)};
+
+    for (auto count{1UZ}; count < sequence_length(lead); ++count)
+    {
+        const auto continuation{static_cast<unsigned char>(next("a continuation byte"))};
+
+        scalar = continued(scalar, continuation);
+    }
+
+    return scalar;
+}
+
+char32_t Antlr_cursor::unicode_escape()
+{
+    // \uXXXX, or \u{X...} of one to six digits.
+    const auto braced{peek() == '{'};
+
+    if (braced)
+    {
+        ++at_;
+    }
+
+    const auto most_digits{braced ? braced_escape_digits : unbraced_escape_digits};
+
+    char32_t scalar{0};
+
+    std::size_t digits{0};
+
+    while (digits < most_digits && peek() && is_hex_digit(*peek()))
+    {
+        const auto digit{next("a hex digit")};
+
+        scalar = scalar * 16 + hex_value(digit);
+
+        ++digits;
+    }
+
+    const std::string malformed{R"(a Unicode escape is \uXXXX or \u{X...} up to U+10FFFF)"};
+
+    if (digits == 0 || (!braced && digits < most_digits))
+    {
+        fail(malformed);
+    }
+
+    if (braced)
+    {
+        const auto close{next("'}'")};
+
+        if (close != '}')
+        {
+            fail(malformed);
+        }
+    }
+
+    if (scalar > last_scalar)
+    {
+        fail(malformed);
+    }
+
+    return scalar;
 }
 
 } // namespace munch::tools::audit

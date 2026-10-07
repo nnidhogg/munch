@@ -511,16 +511,6 @@ void Members_reader::refuse_method(const std::size_t index) const
 void refuse_lexer_class(
         const Lexer_spec& spec, const std::vector<Members_action>& members, const std::string_view actions_code)
 {
-    static constexpr std::string_view language_option{"language="};
-
-    const auto names_language{[](const std::string& option) { return option.starts_with(language_option); }};
-
-    const auto language{std::ranges::find_if(spec.options, names_language)};
-
-    const auto target{
-            language == spec.options.end() ? std::string_view{"Java"} :
-                                             std::string_view{*language}.substr(language_option.size())};
-
     static constexpr std::string_view superclass_option{"superClass="};
 
     const auto names_superclass{[](const std::string& option) { return option.starts_with(superclass_option); }};
@@ -538,6 +528,16 @@ void refuse_lexer_class(
     }
 
     static constexpr std::array<std::string_view, 3> known{"Java", "Cpp", "CSharp"};
+
+    static constexpr std::string_view language_option{"language="};
+
+    const auto names_language{[](const std::string& option) { return option.starts_with(language_option); }};
+
+    const auto language{std::ranges::find_if(spec.options, names_language)};
+
+    const auto target{
+            language == spec.options.end() ? std::string_view{"Java"} :
+                                             std::string_view{*language}.substr(language_option.size())};
 
     if (!members.empty() && !std::ranges::contains(known, target))
     {

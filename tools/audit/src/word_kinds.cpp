@@ -250,6 +250,36 @@ Word_kinds Word_kinds::followed_by(const Word_kinds second) const noexcept
     return out;
 }
 
+Word_kinds Word_kinds::repeated(const std::size_t min, const std::optional<std::size_t> max) const noexcept
+{
+    Word_kinds out{};
+
+    Word_kinds count{Word::empty};
+
+    std::uint16_t seen{0U};
+
+    for (std::size_t n{0}; !max || n <= *max; ++n)
+    {
+        if (n >= min)
+        {
+            const auto bit{1U << count.bits_};
+
+            if ((seen & bit) != 0U)
+            {
+                break;
+            }
+
+            seen |= static_cast<std::uint16_t>(bit);
+
+            out |= count;
+        }
+
+        count = count.followed_by(*this);
+    }
+
+    return out;
+}
+
 bool Word_kinds::has(const Word word) const noexcept
 {
     return (bits_ & std::to_underlying(word)) != 0;
@@ -274,36 +304,6 @@ Word_kinds::Word Word_kinds::join(const Word first, const Word second) noexcept
 
     // A fixed first byte of the second word stands past the first byte of a nonempty first word.
     return second == Word::leading ? Word::mid : first;
-}
-
-Word_kinds Word_kinds::repeated(const std::size_t min, const std::optional<std::size_t> max) const noexcept
-{
-    Word_kinds out{};
-
-    Word_kinds count{Word::empty};
-
-    std::uint16_t seen{0};
-
-    for (std::size_t n{0}; !max || n <= *max; ++n)
-    {
-        if (n >= min)
-        {
-            const auto bit{1U << count.bits_};
-
-            if ((seen & bit) != 0)
-            {
-                break;
-            }
-
-            seen |= static_cast<std::uint16_t>(bit);
-
-            out |= count;
-        }
-
-        count = count.followed_by(*this);
-    }
-
-    return out;
 }
 
 } // namespace

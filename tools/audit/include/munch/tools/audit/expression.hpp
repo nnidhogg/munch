@@ -315,7 +315,7 @@ constexpr std::string_view comment_closer{"*/"};
  */
 [[nodiscard]] constexpr std::size_t sequence_length(const unsigned char lead) noexcept
 {
-    return lead < 0x80 ? 1 : lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : 2;
+    return lead < 0x80U ? 1 : lead >= 0xF0U ? 4 : lead >= 0xE0U ? 3 : 2;
 }
 
 /**
@@ -356,11 +356,11 @@ constexpr std::string_view comment_closer{"*/"};
     const auto lead{static_cast<unsigned char>(text[at])};
 
     const auto length{
-            lead < 0x80                 ? 1UZ :
-            lead >= 0xC2 && lead < 0xE0 ? 2UZ :
-            lead >= 0xE0 && lead < 0xF0 ? 3UZ :
-            lead >= 0xF0 && lead < 0xF5 ? 4UZ :
-                                          0UZ};
+            lead < 0x80U                  ? 1UZ :
+            lead >= 0xC2U && lead < 0xE0U ? 2UZ :
+            lead >= 0xE0U && lead < 0xF0U ? 3UZ :
+            lead >= 0xF0U && lead < 0xF5U ? 4UZ :
+                                            0UZ};
 
     if (length == 0 || at + length > text.size())
     {
@@ -378,8 +378,8 @@ constexpr std::string_view comment_closer{"*/"};
     const auto second{static_cast<unsigned char>(text[at + (length > 1 ? 1 : 0)])};
 
     const auto malformed{
-            (lead == 0xE0 && second < 0xA0) || (lead == 0xED && second >= 0xA0) || (lead == 0xF0 && second < 0x90) ||
-            (lead == 0xF4 && second >= 0x90)};
+            (lead == 0xE0U && second < 0xA0U) || (lead == 0xEDU && second >= 0xA0U) ||
+            (lead == 0xF0U && second < 0x90U) || (lead == 0xF4U && second >= 0x90U)};
 
     return malformed ? 0 : length;
 }

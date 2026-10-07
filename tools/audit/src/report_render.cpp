@@ -770,8 +770,6 @@ std::string render(const Report& report, const std::function<std::string(std::si
 
 std::string verdict(const Report& report)
 {
-    const std::string_view priced{report.prices.empty() ? "" : ", priced below"};
-
     if (!report.exact.empty())
     {
         const auto count{report.exact.size()};
@@ -786,6 +784,8 @@ std::string verdict(const Report& report)
         const auto count{report.modulo.size()};
 
         const auto verb{certifies_ending(count)};
+
+        const std::string_view priced{report.prices.empty() ? "" : ", priced below"};
 
         return std::format(
                 "no byte certifies exactly; {} certif{} once the discarded tokens are deleted{}", count, verb, priced);

@@ -150,15 +150,15 @@ std::optional<Class> code_points(
 
     const auto negated{bracket.starts_with(negated_opener)};
 
-    // The negation is taken over the code points here, so the parser is asked for the members alone; a member that is
-    // itself a caret, `[^^]`, keeps its place with an escape rather than reading as a second negation.
-    const auto past_negation{bracket.substr(negated_opener.size())};
-
     static constexpr std::string_view opener{"["};
 
     const auto opener_size{negated ? negated_opener.size() : opener.size()};
 
     std::string members{};
+
+    // The negation is taken over the code points here, so the parser is asked for the members alone; a member that is
+    // itself a caret, `[^^]`, keeps its place with an escape rather than reading as a second negation.
+    const auto past_negation{bracket.substr(negated_opener.size())};
 
     if (negated && past_negation.starts_with('^'))
     {

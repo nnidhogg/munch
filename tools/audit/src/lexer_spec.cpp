@@ -50,7 +50,7 @@ Token_set token_set(const Lexer_spec& spec, const std::string_view condition)
                     {.regex = std::move(regex),
                      .id = index,
                      .priority = priority ? highest_priority - *priority : index,
-                     .discarded = !token.has_value()});
+                     .discarded = !token});
         }
         catch (const regex::Syntax_error& refused)
         {

@@ -242,6 +242,175 @@ void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vecto
 
 } // namespace
 
+void Rule_kinds::note(const std::vector<std::string>& named, const std::string& pattern, const std::size_t line)
+{
+    if (!named.empty())
+    {
+        conditioned_ = true;
+
+        const auto own_condition{[](const std::string& name) { return name != every_condition; }};
+
+        for (const auto& name : named | std::views::filter(own_condition))
+        {
+            add_unique(named_, name);
+        }
+    }
+    else if (pattern == end_rule && !plain_end_)
+    {
+        plain_end_ = line;
+    }
+    else if (pattern != end_rule && !plain_)
+    {
+        plain_ = line;
+    }
+
+    // Which names the rule stands in, for re2c's own checks of the end rule: a rule naming none stands in the empty
+    // name, and `<*>` is a name of its own here, since re2c counts an end rule under `<*>` against the other `<*>`
+    // rules and not against each condition's.
+    const auto names{named.empty() ? std::vector<std::string>{""} : named};
+
+    for (const auto& name : names)
+    {
+        if (pattern == end_rule)
+        {
+            ends_.push_back({.name = name, .line = line});
+
+            continue;
+        }
+
+        add_unique(ruled_, name);
+    }
+}
+
+void Rule_kinds::merge(const Rule_kinds& used)
+{
+    // The used block's rules are of the kinds they are wherever they stand, the first of a kind the using block's own
+    // if it read one before the directive.
+    conditioned_ = conditioned_ || used.conditioned_;
+
+    for (const auto& name : used.named_)
+    {
+        add_unique(named_, name);
+    }
+
+    for (const auto& name : used.ruled_)
+    {
+        add_unique(ruled_, name);
+    }
+
+    ends_.insert(ends_.end(), used.ends_.begin(), used.ends_.end());
+
+    if (!plain_)
+    {
+        plain_ = used.plain_;
+    }
+
+    if (!plain_end_)
+    {
+        plain_end_ = used.plain_end_;
+    }
+}
+
+void Rule_kinds::refuse_mixed() const
+{
+    if (conditioned_ && plain_)
+    {
+        throw Spec_error{
+                "cannot mix conditions with normal rules, as re2c answers a scanner holding a rule that names a "
+                "condition beside one that names none",
+                *plain_};
+    }
+
+    if (conditioned_ && plain_end_)
+    {
+        throw Spec_error{
+                "EOF rule without other rules doesn't make sense, as re2c answers an end rule naming no condition in a "
+                "scanner whose other rules name one",
+                *plain_end_};
+    }
+}
+
+void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const std::size_t line) const
+{
+    if (ruled_.empty() && ends_.empty())
+    {
+        return;
+    }
+
+    for (const auto& [name, at] : ends_)
+    {
+        if (std::ranges::contains(ruled_, name))
+        {
+            continue;
+        }
+
+        if (name.empty())
+        {
+            throw Spec_error{"EOF rule without other rules doesn't make sense", at};
+        }
+
+        const auto message{std::format("EOF rule in condition '{}' without other rules doesn't make sense", name)};
+
+        throw Spec_error{message, at};
+    }
+
+    static constexpr std::string_view eof_key{"eof="};
+
+    const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
+
+    // The last setting stands.
+    const auto last_eof{std::ranges::find_last_if(options, sets_eof)};
+
+    const auto eof_set{!last_eof.empty() && last_eof.front().substr(eof_key.size()) != "-1"};
+
+    if (!eof_set && !ends_.empty())
+    {
+        const auto& [name, at]{ends_.front()};
+
+        if (name.empty())
+        {
+            throw Spec_error{"$ rule found, but 're2c:eof' configuration is not set", at};
+        }
+
+        const auto message{
+                std::format("in condition '{}' $ rule found, but 're2c:eof' configuration is not set", name)};
+
+        throw Spec_error{message, at};
+    }
+
+    if (!eof_set)
+    {
+        return;
+    }
+
+    const auto ended{[this](const std::string& name) {
+        const auto stands_in{[&name](const End_rule& end) { return end.name == name || end.name == every_condition; }};
+
+        return std::ranges::any_of(ends_, stands_in);
+    }};
+
+    if (named_.empty() && !ended(""))
+    {
+        throw Spec_error{"'re2c:eof' configuration is set, but no $ rule found", line};
+    }
+
+    for (const auto& name : named_)
+    {
+        if (!ended(name))
+        {
+            const auto message{
+                    std::format("in condition '{}' 're2c:eof' configuration is set, but no $ rule found", name)};
+
+            throw Spec_error{message, line};
+        }
+    }
+}
+
+const std::vector<std::string>& Rule_kinds::named() const noexcept
+{
+    return named_;
+}
+
 Block_reader::Block_reader(
         const std::string_view source, const std::size_t begin, const Re2c_flags reading, const Re2c_flags configured,
         Pass_state& pass, const Macros_t& macros)
@@ -350,6 +519,31 @@ std::size_t Block_reader::read(Lexer_spec& spec, const Library_t& library, const
     }
 
     return at_ + comment_closer.size();
+}
+
+const Rule_kinds& Block_reader::kinds() const noexcept
+{
+    return kinds_;
+}
+
+Re2c_flags Block_reader::configured() const noexcept
+{
+    return configured_;
+}
+
+std::size_t Block_reader::encoding_line() const noexcept
+{
+    return encoding_line_;
+}
+
+const std::vector<Definition_site>& Block_reader::sites() const noexcept
+{
+    return sites_;
+}
+
+const std::optional<Spec_error>& Block_reader::deferred() const noexcept
+{
+    return deferred_;
 }
 
 void Block_reader::configuration(Lexer_spec& spec)
@@ -771,200 +965,6 @@ void Block_reader::refuse_actions()
     }
 
     actions_.clear();
-}
-
-const Rule_kinds& Block_reader::kinds() const noexcept
-{
-    return kinds_;
-}
-
-Re2c_flags Block_reader::configured() const noexcept
-{
-    return configured_;
-}
-
-std::size_t Block_reader::encoding_line() const noexcept
-{
-    return encoding_line_;
-}
-
-const std::vector<Definition_site>& Block_reader::sites() const noexcept
-{
-    return sites_;
-}
-
-const std::optional<Spec_error>& Block_reader::deferred() const noexcept
-{
-    return deferred_;
-}
-
-void Rule_kinds::note(const std::vector<std::string>& named, const std::string& pattern, const std::size_t line)
-{
-    if (!named.empty())
-    {
-        conditioned_ = true;
-
-        const auto own_condition{[](const std::string& name) { return name != every_condition; }};
-
-        for (const auto& name : named | std::views::filter(own_condition))
-        {
-            add_unique(named_, name);
-        }
-    }
-    else if (pattern == end_rule && !plain_end_)
-    {
-        plain_end_ = line;
-    }
-    else if (pattern != end_rule && !plain_)
-    {
-        plain_ = line;
-    }
-
-    // Which names the rule stands in, for re2c's own checks of the end rule: a rule naming none stands in the empty
-    // name, and `<*>` is a name of its own here, since re2c counts an end rule under `<*>` against the other `<*>`
-    // rules and not against each condition's.
-    const auto names{named.empty() ? std::vector<std::string>{""} : named};
-
-    for (const auto& name : names)
-    {
-        if (pattern == end_rule)
-        {
-            ends_.push_back({.name = name, .line = line});
-
-            continue;
-        }
-
-        add_unique(ruled_, name);
-    }
-}
-
-void Rule_kinds::merge(const Rule_kinds& used)
-{
-    // The used block's rules are of the kinds they are wherever they stand, the first of a kind the using block's own
-    // if it read one before the directive.
-    conditioned_ = conditioned_ || used.conditioned_;
-
-    for (const auto& name : used.named_)
-    {
-        add_unique(named_, name);
-    }
-
-    for (const auto& name : used.ruled_)
-    {
-        add_unique(ruled_, name);
-    }
-
-    ends_.insert(ends_.end(), used.ends_.begin(), used.ends_.end());
-
-    if (!plain_)
-    {
-        plain_ = used.plain_;
-    }
-
-    if (!plain_end_)
-    {
-        plain_end_ = used.plain_end_;
-    }
-}
-
-void Rule_kinds::refuse_mixed() const
-{
-    if (conditioned_ && plain_)
-    {
-        throw Spec_error{
-                "cannot mix conditions with normal rules, as re2c answers a scanner holding a rule that names a "
-                "condition beside one that names none",
-                *plain_};
-    }
-
-    if (conditioned_ && plain_end_)
-    {
-        throw Spec_error{
-                "EOF rule without other rules doesn't make sense, as re2c answers an end rule naming no condition in a "
-                "scanner whose other rules name one",
-                *plain_end_};
-    }
-}
-
-void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const std::size_t line) const
-{
-    if (ruled_.empty() && ends_.empty())
-    {
-        return;
-    }
-
-    for (const auto& [name, at] : ends_)
-    {
-        if (std::ranges::contains(ruled_, name))
-        {
-            continue;
-        }
-
-        if (name.empty())
-        {
-            throw Spec_error{"EOF rule without other rules doesn't make sense", at};
-        }
-
-        const auto message{std::format("EOF rule in condition '{}' without other rules doesn't make sense", name)};
-
-        throw Spec_error{message, at};
-    }
-
-    static constexpr std::string_view eof_key{"eof="};
-
-    const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
-
-    // The last setting stands.
-    const auto last_eof{std::ranges::find_last_if(options, sets_eof)};
-
-    const auto eof_set{!last_eof.empty() && last_eof.front().substr(eof_key.size()) != "-1"};
-
-    if (!eof_set && !ends_.empty())
-    {
-        const auto& [name, at]{ends_.front()};
-
-        if (name.empty())
-        {
-            throw Spec_error{"$ rule found, but 're2c:eof' configuration is not set", at};
-        }
-
-        const auto message{
-                std::format("in condition '{}' $ rule found, but 're2c:eof' configuration is not set", name)};
-
-        throw Spec_error{message, at};
-    }
-
-    if (!eof_set)
-    {
-        return;
-    }
-
-    const auto ended{[this](const std::string& name) {
-        const auto stands_in{[&name](const End_rule& end) { return end.name == name || end.name == every_condition; }};
-
-        return std::ranges::any_of(ends_, stands_in);
-    }};
-
-    if (named_.empty() && !ended(""))
-    {
-        throw Spec_error{"'re2c:eof' configuration is set, but no $ rule found", line};
-    }
-
-    for (const auto& name : named_)
-    {
-        if (!ended(name))
-        {
-            const auto message{
-                    std::format("in condition '{}' 're2c:eof' configuration is set, but no $ rule found", name)};
-
-            throw Spec_error{message, line};
-        }
-    }
-}
-
-const std::vector<std::string>& Rule_kinds::named() const noexcept
-{
-    return named_;
 }
 
 } // namespace munch::tools::audit

@@ -64,7 +64,7 @@ std::string grammar(const std::string_view name)
  */
 [[nodiscard]] constexpr bool never_in_utf8(const std::size_t value) noexcept
 {
-    return value == 0xC0 || value == 0xC1 || value >= 0xF5;
+    return value == 0xC0U || value == 0xC1U || value >= 0xF5U;
 }
 
 } // namespace

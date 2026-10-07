@@ -328,7 +328,7 @@ void strip_leading_segments(Resolution& state)
 
         const auto [binding, holder]{visible(names, module, prefix, prefix_space)};
 
-        const auto followed{binding.has_value() && (!external || names_crate(*binding))};
+        const auto followed{binding && (!external || names_crate(*binding))};
 
         const auto crate{crate_path(prefix)};
 

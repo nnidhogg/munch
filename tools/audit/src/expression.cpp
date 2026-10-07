@@ -43,7 +43,7 @@ std::string bracket(const regex::Set& set)
 {
     std::string text{'['};
 
-    for (unsigned first{0}; first < byte_values; ++first)
+    for (unsigned first{0U}; first < byte_values; ++first)
     {
         if (!set.symbols().contains(static_cast<char>(first)))
         {
@@ -52,7 +52,7 @@ std::string bracket(const regex::Set& set)
 
         auto last{first};
 
-        while (last + 1 < byte_values && set.symbols().contains(static_cast<char>(last + 1)))
+        while (last + 1U < byte_values && set.symbols().contains(static_cast<char>(last + 1U)))
         {
             ++last;
         }

@@ -178,7 +178,7 @@ void check_repetitions(const Node& node, const Byte_set_t& follow, const std::si
 
             const auto inside{once ? follow : (follow | begins)};
 
-            if (!kind.max.has_value() && (begins & follow).any())
+            if (!kind.max && (begins & follow).any())
             {
                 throw Spec_error{
                         "a repetition whose body can begin with a byte that may also follow it is one logos 0.15.1 "
@@ -228,7 +228,7 @@ void check_dot_repetitions(const Node& node, const std::string& written, const s
         }
         else if constexpr (std::is_same_v<Kind, Repeat>)
         {
-            const auto seen{kind.max.has_value() || kind.min > 1 ? std::nullopt : merged(*kind.operand)};
+            const auto seen{kind.max || kind.min > 1 ? std::nullopt : merged(*kind.operand)};
 
             if (seen && every_scalar(*seen))
             {

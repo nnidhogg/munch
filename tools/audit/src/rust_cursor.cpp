@@ -188,63 +188,6 @@ void Rust_cursor::skip_token()
     }
 }
 
-std::optional<std::size_t> Rust_cursor::string_end() const
-{
-    auto scan{at_};
-
-    // The prefixes: b for a byte string, r for a raw one, br for both; c and cr, the C strings, have no pattern to give
-    // but are skipped like the rest.
-    if (scan < end_ && (text_[scan] == 'b' || text_[scan] == 'c'))
-    {
-        ++scan;
-    }
-
-    const auto raw{scan < end_ && text_[scan] == 'r'};
-
-    if (raw)
-    {
-        ++scan;
-    }
-
-    std::size_t hashes{0};
-
-    for (; raw && scan < end_ && text_[scan] == '#'; ++scan)
-    {
-        ++hashes;
-    }
-
-    if (scan >= end_ || text_[scan] != '"')
-    {
-        return std::nullopt;
-    }
-
-    const auto opened_line{line()};
-
-    const auto closing_hashes{std::string(hashes, '#')};
-
-    for (++scan; scan < end_; ++scan)
-    {
-        if (text_[scan] == '\\' && !raw)
-        {
-            ++scan;
-
-            continue;
-        }
-
-        if (text_[scan] != '"' || scan + hashes >= end_)
-        {
-            continue;
-        }
-
-        if (text_.substr(scan + 1, hashes) == closing_hashes)
-        {
-            return scan + 1 + hashes;
-        }
-    }
-
-    throw Spec_error{"a string literal is never closed", opened_line};
-}
-
 void Rust_cursor::skip_group()
 {
     const auto open{next("a group")};
@@ -347,6 +290,93 @@ String_literal Rust_cursor::literal()
     at_ = *end;
 
     return literal;
+}
+
+Rust_cursor Rust_cursor::inside(const std::size_t begin, const std::size_t end) const noexcept
+{
+    return {text_, begin, end};
+}
+
+std::string_view Rust_cursor::slice(const std::size_t begin, const std::size_t end) const noexcept
+{
+    return text_.substr(begin, end - begin);
+}
+
+Rust_cursor Rust_cursor::group_inside(const std::size_t open) const noexcept
+{
+    return inside(open + 1, offset() - 1);
+}
+
+std::string_view Rust_cursor::group_text(const std::size_t open) const noexcept
+{
+    return slice(open + 1, offset() - 1);
+}
+
+bool Rust_cursor::at_string() const
+{
+    return string_end().has_value();
+}
+
+bool Rust_cursor::at_literal() const
+{
+    return at_string() || at(character_opener) || at(byte_opener);
+}
+
+std::optional<std::size_t> Rust_cursor::string_end() const
+{
+    auto scan{at_};
+
+    // The prefixes: b for a byte string, r for a raw one, br for both; c and cr, the C strings, have no pattern to give
+    // but are skipped like the rest.
+    if (scan < end_ && (text_[scan] == 'b' || text_[scan] == 'c'))
+    {
+        ++scan;
+    }
+
+    const auto raw{scan < end_ && text_[scan] == 'r'};
+
+    if (raw)
+    {
+        ++scan;
+    }
+
+    std::size_t hashes{0};
+
+    for (; raw && scan < end_ && text_[scan] == '#'; ++scan)
+    {
+        ++hashes;
+    }
+
+    if (scan >= end_ || text_[scan] != '"')
+    {
+        return std::nullopt;
+    }
+
+    const auto opened_line{line()};
+
+    const auto closing_hashes{std::string(hashes, '#')};
+
+    for (++scan; scan < end_; ++scan)
+    {
+        if (text_[scan] == '\\' && !raw)
+        {
+            ++scan;
+
+            continue;
+        }
+
+        if (text_[scan] != '"' || scan + hashes >= end_)
+        {
+            continue;
+        }
+
+        if (text_.substr(scan + 1, hashes) == closing_hashes)
+        {
+            return scan + 1 + hashes;
+        }
+    }
+
+    throw Spec_error{"a string literal is never closed", opened_line};
 }
 
 void Rust_cursor::escape(std::string& bytes, const bool byte_string)
@@ -454,36 +484,6 @@ char32_t Rust_cursor::unicode_escape()
     }
 
     return value;
-}
-
-Rust_cursor Rust_cursor::inside(const std::size_t begin, const std::size_t end) const noexcept
-{
-    return {text_, begin, end};
-}
-
-std::string_view Rust_cursor::slice(const std::size_t begin, const std::size_t end) const noexcept
-{
-    return text_.substr(begin, end - begin);
-}
-
-Rust_cursor Rust_cursor::group_inside(const std::size_t open) const noexcept
-{
-    return inside(open + 1, offset() - 1);
-}
-
-std::string_view Rust_cursor::group_text(const std::size_t open) const noexcept
-{
-    return slice(open + 1, offset() - 1);
-}
-
-bool Rust_cursor::at_string() const
-{
-    return string_end().has_value();
-}
-
-bool Rust_cursor::at_literal() const
-{
-    return at_string() || at(character_opener) || at(byte_opener);
 }
 
 bool at_attribute(const Rust_cursor& cursor)

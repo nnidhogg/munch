@@ -1714,8 +1714,8 @@ TEST(Read_flex_test, A_file_the_copied_code_includes_defines_what_the_file_s_own
     EXPECT_EQ(including("#include <one.h>\n#include \"two.h\"", noting), "");
     EXPECT_EQ(forms, (std::vector<std::string>{"one.h angled", "two.h quoted"}));
 
-    // An angle-bracket include ending the header without a newline names its file whole.
-    // `outer.h` includes `<hook.h>` with no newline after it, and `hook.h` defines the hook.
+    // An angle-bracket include ending the header without a newline names its file whole. `outer.h` includes `<hook.h>`
+    // with no newline after it, and `hook.h` defines the hook.
     const Include_reader_t bare{
             [](const std::string_view name, std::string_view, Include_form) -> std::optional<Included> {
                 if (name == "outer.h")

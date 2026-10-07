@@ -340,7 +340,7 @@ void write_text(
 
     if (!report)
     {
-        out << "refused: " << refused << "\n\n";
+        out << std::format("refused: {}\n\n", refused);
 
         return;
     }
@@ -531,7 +531,7 @@ void write_scanner_tail(std::ostream& out, const bool last)
     {
         const auto outcome{audit_condition(spec, condition, options, input)};
 
-        findings.every = findings.every && outcome.report.has_value();
+        findings.every = findings.every && outcome.report;
 
         // A requirement is checked where the report stands.
         if (outcome.report)
@@ -975,7 +975,7 @@ int main(const int argc, char** argv)
         // requirements could not be checked.
         for (const auto& line : unmet)
         {
-            std::cerr << diagnostic_prefix << line << '\n';
+            std::cerr << std::format("{}{}\n", diagnostic_prefix, line);
         }
 
         if (!every)
@@ -987,13 +987,13 @@ int main(const int argc, char** argv)
     }
     catch (const std::invalid_argument& error)
     {
-        std::cerr << diagnostic_prefix << error.what() << "\n\n" << usage();
+        std::cerr << std::format("{}{}\n\n{}", diagnostic_prefix, error.what(), usage());
 
         return exit_command_error;
     }
     catch (const std::exception& error)
     {
-        std::cerr << diagnostic_prefix << error.what() << '\n';
+        std::cerr << std::format("{}{}\n", diagnostic_prefix, error.what());
 
         return exit_command_error;
     }

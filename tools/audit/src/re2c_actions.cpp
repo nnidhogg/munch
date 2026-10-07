@@ -381,7 +381,7 @@ void reduce(std::vector<Word>& out)
 
     std::erase(digits, '\'');
 
-    unsigned base{10};
+    unsigned base{10U};
 
     std::size_t at{0};
 
@@ -397,19 +397,19 @@ void reduce(std::vector<Word>& out)
 
     if (digits.starts_with(hex_prefix) || digits.starts_with(capital_hex_prefix))
     {
-        base = 16;
+        base = 16U;
 
         at = hex_prefix.size();
     }
     else if (digits.starts_with(binary_prefix) || digits.starts_with(capital_binary_prefix))
     {
-        base = 2;
+        base = 2U;
 
         at = binary_prefix.size();
     }
     else if (digits.size() > octal_prefix.size() && digits.starts_with(octal_prefix))
     {
-        base = 8;
+        base = 8U;
 
         at = octal_prefix.size();
     }
@@ -518,12 +518,6 @@ public:
 
 private:
     /**
-     * @brief The largest value an int holds, which every value read is kept within, the smallest being one below its
-     *        negation.
-     */
-    static constexpr long long bound{std::numeric_limits<int>::max()};
-
-    /**
      * @brief Returns the operands of one precedence level joined by its operators, the multiplicative ones at 0 and the
      *        additive ones at 1, and a unary operand below 0.
      * @param depth The level.
@@ -543,6 +537,12 @@ private:
      * @return The token, empty once they are all read.
      */
     [[nodiscard]] std::string_view peek() const noexcept;
+
+    /**
+     * @brief The largest value an int holds, which every value read is kept within, the smallest being one below its
+     *        negation.
+     */
+    static constexpr long long bound{std::numeric_limits<int>::max()};
 
     /**
      * @brief The tokens.
@@ -875,6 +875,11 @@ std::optional<std::string> Pointer_reader::refusal()
     return std::nullopt;
 }
 
+const std::optional<std::string>& Pointer_reader::unread() const noexcept
+{
+    return unread_;
+}
+
 std::vector<Word> Pointer_reader::plain(const std::vector<C_token>& raw)
 {
     // The words are reduced in passes until nothing changes, so that a group inside a group, `((in))->cur`, comes down
@@ -1057,11 +1062,6 @@ bool Pointer_reader::is_joined(const std::vector<Word>& plainly, const std::size
     }
 
     return between.empty();
-}
-
-const std::optional<std::string>& Pointer_reader::unread() const noexcept
-{
-    return unread_;
 }
 
 /**
@@ -1357,8 +1357,6 @@ void refuse_action(
 
     std::ranges::transform(pointers, std::back_inserter(names), &Pointer_name::name);
 
-    const std::vector<std::string_view> pointer_names{names.begin(), names.end()};
-
     const auto& [code, line, what, of_rule]{action};
 
     const auto refuse_use{[&line](const std::string_view use) { throw Spec_error{action_refusal(use), line}; }};
@@ -1385,6 +1383,8 @@ void refuse_action(
     {
         refuse_use(*use);
     }
+
+    const std::vector<std::string_view> pointer_names{names.begin(), names.end()};
 
     if (const auto use{macro_use(code, macros, pointer_names)})
     {

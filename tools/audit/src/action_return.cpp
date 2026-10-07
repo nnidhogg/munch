@@ -727,6 +727,18 @@ bool Return_paths::is_jump(const Range statement) const
             restarts_.contains(tokens_[statement.begin + 1].text));
 }
 
+bool Return_paths::ends_returning(const Range range) const
+{
+    auto own{statements(range)};
+
+    if (ends_in_trailing_jump(own))
+    {
+        own.pop_back();
+    }
+
+    return !own.empty() && returns(own.back());
+}
+
 bool Return_paths::returns(const Range range) const
 {
     if (range.begin >= range.end)
@@ -758,18 +770,6 @@ bool Return_paths::returns(const Range range) const
     }
 
     return false;
-}
-
-bool Return_paths::ends_returning(const Range range) const
-{
-    auto own{statements(range)};
-
-    if (ends_in_trailing_jump(own))
-    {
-        own.pop_back();
-    }
-
-    return !own.empty() && returns(own.back());
 }
 
 bool Return_paths::if_returns(const Range range) const
