@@ -102,32 +102,6 @@ nfa::Nfa Builder::nfa() const
     return std::move(merged).build();
 }
 
-nfa::Builder Builder::merged_nfa() const
-{
-    if (patterns_.empty())
-    {
-        return {};
-    }
-
-    const auto lower{[this](const Pattern& pattern) {
-        const auto built{pattern.nfa.build()};
-
-        const auto determinized{determinize(built, state_limit_)};
-
-        const auto minimized{dfa::minimize(determinized)};
-
-        return to_nfa(minimized, pattern.token);
-    }};
-
-    std::vector<nfa::Builder> lowered{};
-
-    lowered.reserve(patterns_.size());
-
-    std::ranges::transform(patterns_, std::back_inserter(lowered), lower);
-
-    return nfa::Builder::merge_all(lowered);
-}
-
 Builder::Diagnostics Builder::diagnose() const
 {
     const auto merged{nfa()};
@@ -181,6 +155,32 @@ Builder::Diagnostics Builder::diagnose() const
     result.equal_priority_ties.assign(ties.cbegin(), ties.cend());
 
     return result;
+}
+
+nfa::Builder Builder::merged_nfa() const
+{
+    if (patterns_.empty())
+    {
+        return {};
+    }
+
+    const auto lower{[this](const Pattern& pattern) {
+        const auto built{pattern.nfa.build()};
+
+        const auto determinized{determinize(built, state_limit_)};
+
+        const auto minimized{dfa::minimize(determinized)};
+
+        return to_nfa(minimized, pattern.token);
+    }};
+
+    std::vector<nfa::Builder> lowered{};
+
+    lowered.reserve(patterns_.size());
+
+    std::ranges::transform(patterns_, std::back_inserter(lowered), lower);
+
+    return nfa::Builder::merge_all(lowered);
 }
 
 } // namespace munch::core

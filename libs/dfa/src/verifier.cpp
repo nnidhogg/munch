@@ -424,6 +424,45 @@ Verifier::Verifier(Trimmed parts)
     , accept_states_{std::move(parts.accept_states)}
 {}
 
+Verifier::State_t Verifier::start() const noexcept
+{
+    return start_;
+}
+
+Verifier::State_t Verifier::state_count() const noexcept
+{
+    return state_count_;
+}
+
+std::optional<Verifier::State_t> Verifier::step(const State_t state, const Marked symbol) const
+{
+    const auto found{transitions_.find({state, symbol})};
+
+    if (found == transitions_.cend())
+    {
+        return std::nullopt;
+    }
+
+    const auto& [key, to]{*found};
+
+    return to;
+}
+
+bool Verifier::accepts(const State_t state) const
+{
+    return accept_states_.contains(state);
+}
+
+const Verifier::Transitions_t& Verifier::transitions() const noexcept
+{
+    return transitions_;
+}
+
+const Verifier::Accept_states_t& Verifier::accept_states() const noexcept
+{
+    return accept_states_;
+}
+
 Verifier::Trimmed Verifier::trim(
         const State_t start, const Transitions_t& transitions, const Accept_states_t& accept_states)
 {
@@ -507,45 +546,6 @@ Verifier::Trimmed Verifier::trim(
     trimmed.state_count = order.size();
 
     return trimmed;
-}
-
-Verifier::State_t Verifier::start() const noexcept
-{
-    return start_;
-}
-
-Verifier::State_t Verifier::state_count() const noexcept
-{
-    return state_count_;
-}
-
-std::optional<Verifier::State_t> Verifier::step(const State_t state, const Marked symbol) const
-{
-    const auto found{transitions_.find({state, symbol})};
-
-    if (found == transitions_.cend())
-    {
-        return std::nullopt;
-    }
-
-    const auto& [key, to]{*found};
-
-    return to;
-}
-
-bool Verifier::accepts(const State_t state) const
-{
-    return accept_states_.contains(state);
-}
-
-const Verifier::Transitions_t& Verifier::transitions() const noexcept
-{
-    return transitions_;
-}
-
-const Verifier::Accept_states_t& Verifier::accept_states() const noexcept
-{
-    return accept_states_;
 }
 
 Verifier armed_run(const Dfa& dfa)
