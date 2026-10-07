@@ -570,7 +570,7 @@ void comment_interior(Assertions& assertions)
 
     const auto [proved, witness]{check(compiled, interior, {"*/"})};
 
-    std::cout << "C comment interior, K={*/}: " << verdict_text(proved, witness) << "\n";
+    std::cout << std::format("C comment interior, K={{*/}}: {}\n", verdict_text(proved, witness));
 
     assertions.expect(proved, "the C row's comment interior does not prove {*/}");
 
@@ -615,7 +615,7 @@ void triple_quote_interior(Assertions& assertions)
 
     const auto [proved, witness]{check(compiled, interior, {triple})};
 
-    std::cout << R"(Python triple interior, K={"""}: )" << verdict_text(proved, witness) << "\n";
+    std::cout << std::format("Python triple interior, K={{\"\"\"}}: {}\n", verdict_text(proved, witness));
 
     assertions.expect(proved, "the triple-quote interior does not prove its delimiter family");
 }
@@ -637,7 +637,7 @@ void json_string_interior(Assertions& assertions)
 
     const auto [proved, witness]{check(compiled, interior, {R"(",)"})};
 
-    std::cout << "JSON string interior, any K: " << verdict_text(proved, witness) << "\n";
+    std::cout << std::format("JSON string interior, any K: {}\n", verdict_text(proved, witness));
 
     assertions.expect(!proved, "the JSON string interior proves a family although a control byte kills it");
 
@@ -665,7 +665,7 @@ void two_letter_accept(Assertions& assertions)
 
     assertions.expect(!proved, "the {a, b} accept state proves a family although it dies immediately");
 
-    std::cout << "{a, b} accept state, any K: " << verdict_text(proved, witness) << "\n";
+    std::cout << std::format("{{a, b}} accept state, any K: {}\n", verdict_text(proved, witness));
 }
 
 /**
@@ -680,7 +680,7 @@ void synthetic_counterexample(Assertions& assertions)
 
     const auto [proved, witness]{check(broken_table, Synthetic::q, {"c"})};
 
-    std::cout << "synthetic counterexample, K={c}: " << verdict_text(proved, witness) << "\n";
+    std::cout << std::format("synthetic counterexample, K={{c}}: {}\n", verdict_text(proved, witness));
 
     assertions.expect(!proved, "the counterexample table proves {c} although ab is a c-free death word");
 

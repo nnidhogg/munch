@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
+#include <format>
 #include <iostream>
 #include <optional>
 #include <ranges>
@@ -129,8 +130,7 @@ void check_verdicts(Assertions& assertions, const Pinned& pinned)
 {
     const auto [nodes, sustained, floor_start, wall_floor, over_budget]{decide(pinned.gadget)};
 
-    std::cout << "parity gadget: nodes " << nodes << ", sustained " << sustained << ", wall floor " << wall_floor
-              << "\n";
+    std::cout << std::format("parity gadget: nodes {}, sustained {}, wall floor {}\n", nodes, sustained, wall_floor);
 
     assertions.expect(zero_lag(pinned.gadget).holds, "the parity gadget fails the zero-lag premise");
 
@@ -140,8 +140,8 @@ void check_verdicts(Assertions& assertions, const Pinned& pinned)
 
     const auto [two_nodes, two_sustained, two_floor_start, two_wall_floor, two_over_budget]{decide(pinned.two_string)};
 
-    std::cout << "two-string gadget: nodes " << two_nodes << ", sustained " << two_sustained << ", wall floor "
-              << two_wall_floor << "\n";
+    std::cout << std::format(
+            "two-string gadget: nodes {}, sustained {}, wall floor {}\n", two_nodes, two_sustained, two_wall_floor);
 
     assertions.expect(zero_lag(pinned.two_string).holds, "the two-string gadget fails the zero-lag premise");
 
@@ -196,9 +196,9 @@ void check_synthesis_refusals(Assertions& assertions, const Pinned& pinned)
  */
 void check_carries(Assertions& assertions, const Pinned& pinned, const Carry& gadget_carry, const Carry& two_carry)
 {
-    std::cout << "parity gadget carry: semigroup " << gadget_carry.semigroup << ", group " << gadget_carry.group.size()
-              << "; two-string carry: semigroup " << two_carry.semigroup << ", group " << two_carry.group.size()
-              << "\n";
+    std::cout << std::format(
+            "parity gadget carry: semigroup {}, group {}; two-string carry: semigroup {}, group {}\n",
+            gadget_carry.semigroup, gadget_carry.group.size(), two_carry.semigroup, two_carry.group.size());
 
     assertions.expect(
             gadget_carry.semigroup == 4 && gadget_carry.group.size() == 2,
@@ -279,9 +279,10 @@ void check_certificates(Assertions& assertions, const Pinned& pinned, const Carr
     const auto [cuts, off_boundary, splice_mismatches, unconditional, wrong_flavor_off_boundary]{
             run_planning(gadget_table, gadget_carry, double_quoted_only)};
 
-    std::cout << "parity gadget planning: cuts " << cuts << ", off-boundary " << off_boundary << ", splice mismatches "
-              << splice_mismatches << ", unconditional " << unconditional << ", wrong-flavor bad cuts "
-              << wrong_flavor_off_boundary << "\n";
+    std::cout << std::format(
+            "parity gadget planning: cuts {}, off-boundary {}, splice mismatches {}, unconditional {}, wrong-flavor "
+            "bad cuts {}\n",
+            cuts, off_boundary, splice_mismatches, unconditional, wrong_flavor_off_boundary);
 
     assertions.expect(
             cuts == 210 && off_boundary == 0 && splice_mismatches == 0 && unconditional == 0 &&
@@ -293,9 +294,10 @@ void check_certificates(Assertions& assertions, const Pinned& pinned, const Carr
     const auto [two_cuts, two_off_boundary, two_splice_mismatches, two_unconditional, two_wrong_flavor_off_boundary]{
             run_planning(two_table, two_carry, with_ticks)};
 
-    std::cout << "two-string planning: cuts " << two_cuts << ", off-boundary " << two_off_boundary
-              << ", splice mismatches " << two_splice_mismatches << ", unconditional " << two_unconditional
-              << ", wrong-flavor bad cuts " << two_wrong_flavor_off_boundary << "\n";
+    std::cout << std::format(
+            "two-string planning: cuts {}, off-boundary {}, splice mismatches {}, unconditional {}, wrong-flavor bad "
+            "cuts {}\n",
+            two_cuts, two_off_boundary, two_splice_mismatches, two_unconditional, two_wrong_flavor_off_boundary);
 
     assertions.expect(
             two_cuts == 210 && two_off_boundary == 0 && two_splice_mismatches == 0 && two_unconditional == 0 &&

@@ -253,7 +253,7 @@ Decision decide(const dfa::Verifier& verifier, const core::Lexer& lexer, const s
 
     auto& [verifier_origins, route_origins]{origins};
 
-    if (route_origin.has_value() && *route_origin >= window.size())
+    if (route_origin && *route_origin >= window.size())
     {
         std::cout << std::format("disagreement: window {} window route origin {} outside", hex(window), *route_origin)
                   << '\n';
@@ -265,7 +265,7 @@ Decision decide(const dfa::Verifier& verifier, const core::Lexer& lexer, const s
     {
         const auto miscovered{dfa::miscovering(verifier, window, origin)};
 
-        const auto by_verifier{!miscovered.has_value()};
+        const auto by_verifier{!miscovered};
 
         const auto by_route{route_origin == origin};
 
@@ -467,7 +467,7 @@ int main(const int argc, char** argv)
 
     const auto corpus_bytes{read_file(std::filesystem::path{argv[1]})};
 
-    if (!corpus_bytes.has_value())
+    if (!corpus_bytes)
     {
         std::cerr << std::format("munch_verifier_supply: cannot read {}", argv[1]) << '\n';
 

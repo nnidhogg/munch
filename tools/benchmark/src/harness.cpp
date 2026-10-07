@@ -160,13 +160,13 @@ std::string generate_input(const std::size_t size, const std::span<const std::st
         input += "while (";
         input += draw_identifier();
         input += " <= ";
-        input += std::to_string(random() % 100000);
+        input += std::to_string(random() % 100000U);
         input += ") { ";
         input += draw_identifier();
         input += " = ";
         input += draw_identifier();
         input += " + ";
-        input += std::to_string(random() % 997);
+        input += std::to_string(random() % 997U);
         input += "; if (x1 != 42) { return counter; } }\n";
     }
 
@@ -201,7 +201,7 @@ std::string generate_source_input(const std::size_t size)
         input += "while (";
         input += draw_identifier();
         input += " <= ";
-        input += std::to_string(random() % 10000000);
+        input += std::to_string(random() % 10000000U);
         input += ") {\n    ";
         input += draw_identifier();
         input += " = ";
@@ -209,11 +209,11 @@ std::string generate_source_input(const std::size_t size)
         input += " * ";
         input += draw_identifier();
         input += " + ";
-        input += std::to_string(random() % 100000);
+        input += std::to_string(random() % 100000U);
         input += ";\n    if (";
         input += draw_identifier();
         input += " != ";
-        input += std::to_string(random() % 997);
+        input += std::to_string(random() % 997U);
         input += ") { return ";
         input += draw_identifier();
         input += "; }\n}\n";
@@ -318,10 +318,10 @@ std::string generate_json_input(const std::size_t size, const bool pretty)
             input += R"(":)";
             input += gap;
 
-            switch (random() % 4)
+            switch (random() % 4U)
             {
             case 0:
-                input += std::to_string(random() % 1000000);
+                input += std::to_string(random() % 1000000U);
 
                 break;
 
@@ -333,7 +333,7 @@ std::string generate_json_input(const std::size_t size, const bool pretty)
                 break;
 
             case 2:
-                input += random() % 2 != 0 ? "true" : "false";
+                input += random() % 2U != 0 ? "true" : "false";
 
                 break;
 
@@ -543,8 +543,8 @@ void print_provenance(
         std::printf("  system      %s %s %s\n", system.sysname, system.release, system.machine);
     }
 
-    // The file name, never the path. This line is archived beside the CSV it names, and a directory from whoever ran
-    // the benchmark identifies their machine, which tools/benchmark/collect.sh promises its output does not.
+    // The observations file's name with its directory stripped, so the record names no machine, or not recorded when
+    // no path is given.
     const auto file_name{[&observations_path]() -> std::string {
         if (!observations_path)
         {

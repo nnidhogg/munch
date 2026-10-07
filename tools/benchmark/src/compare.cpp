@@ -388,7 +388,7 @@ lexertl::state_machine build_lexertl()
 template <typename Results, typename Sink>
 bool scan_lexertl(const lexertl::state_machine& machine, const std::string& input, Sink&& sink)
 {
-    Results results(input.cbegin(), input.cend());
+    Results results{input.cbegin(), input.cend()};
 
     for (;;)
     {
@@ -820,14 +820,14 @@ std::string generate_mode_input(const std::size_t size)
     while (input.size() < size)
     {
         input += "  name";
-        input += std::to_string(random() % 100);
+        input += std::to_string(random() % 100U);
         input += " = value";
-        input += std::to_string(random() % 100);
+        input += std::to_string(random() % 100U);
         input += " + ";
-        input += std::to_string(random() % 100000);
+        input += std::to_string(random() % 100000U);
         input += ";\n";
         input += R"(  label = "text body )";
-        input += std::to_string(random() % 1000);
+        input += std::to_string(random() % 1000U);
         input += R"( with words";)";
         input += "\n";
     }
@@ -965,7 +965,7 @@ bool compare_modes(const std::size_t mebibytes, const int passes, const std::opt
                          return tally_of([&](auto&& sink) {
                                     const auto consumed{flat_lexer.tokenize_all<Mode_token>(
                                             input, [&sink](const Mode_token token, const std::size_t length) {
-                                                sink(static_cast<std::size_t>(token), length);
+                                                sink(std::to_underlying(token), length);
                                             })};
 
                                     return consumed == input.size();
@@ -978,10 +978,9 @@ bool compare_modes(const std::size_t mebibytes, const int passes, const std::opt
                      [&] {
                          return tally_of([&](auto&& sink) {
                                     const auto consumed{lexer.tokenize_all<Mode_token>(
-                                            input, [&sink](const Mode_token token, const std::size_t length,
-                                                           const std::size_t) {
-                                                sink(static_cast<std::size_t>(token), length);
-                                            })};
+                                            input,
+                                            [&sink](const Mode_token token, const std::size_t length,
+                                                    const std::size_t) { sink(std::to_underlying(token), length); })};
 
                                     return consumed == input.size();
                                 })
@@ -1020,13 +1019,13 @@ std::string generate_nested_input(const std::size_t size)
     while (input.size() < size)
     {
         input += "  name";
-        input += std::to_string(random() % 100);
+        input += std::to_string(random() % 100U);
         input += " = value";
-        input += std::to_string(random() % 100);
+        input += std::to_string(random() % 100U);
         input += ";\n";
 
         // Depths one to deepest_nesting, so the stack is exercised rather than merely entered.
-        const auto depth{random() % deepest_nesting + 1};
+        const auto depth{random() % deepest_nesting + 1U};
 
         for (std::size_t level{0}; level < depth; ++level)
         {
@@ -1034,7 +1033,7 @@ std::string generate_nested_input(const std::size_t size)
         }
 
         input += "note ";
-        input += std::to_string(random() % 1000);
+        input += std::to_string(random() % 1000U);
 
         for (std::size_t level{0}; level < depth; ++level)
         {
@@ -1163,10 +1162,9 @@ bool compare_nested(const std::size_t mebibytes, const int passes, const std::op
                      [&] {
                          return tally_of([&](auto&& sink) {
                                     const auto consumed{lexer.tokenize_all<Mode_token>(
-                                            input, [&sink](const Mode_token token, const std::size_t length,
-                                                           const std::size_t) {
-                                                sink(static_cast<std::size_t>(token), length);
-                                            })};
+                                            input,
+                                            [&sink](const Mode_token token, const std::size_t length,
+                                                    const std::size_t) { sink(std::to_underlying(token), length); })};
 
                                     return consumed == input.size();
                                 })
@@ -1206,7 +1204,7 @@ int main(const int argc, char** argv)
         std::string input{};
     };
 
-    const std::size_t mebibytes{argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 8};
+    const std::size_t mebibytes{argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 8U};
 
     const int passes{argc > 2 ? std::atoi(argv[2]) : default_passes};
 

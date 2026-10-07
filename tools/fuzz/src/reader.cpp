@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <span>
 #include <string>
 
@@ -34,7 +35,7 @@ void require(const bool condition)
 {
     if (!condition)
     {
-        __builtin_trap();
+        std::abort();
     }
 }
 

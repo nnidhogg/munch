@@ -584,9 +584,7 @@ void check_nullable_walk(Assertions& assertions)
 
     const auto reentrant{is_init_reentrant(pair)};
 
-    assertions.expect(
-            !window_walk(pair, idle, reentrant, "b", -1).has_value(),
-            "the walk certified a window over a nullable pair");
+    assertions.expect(!window_walk(pair, idle, reentrant, "b", -1), "the walk certified a window over a nullable pair");
 }
 
 /**
@@ -610,8 +608,7 @@ void check_topmost_generator(Assertions& assertions)
 
     const auto carry{synthesize(table)};
 
-    assertions.expect(
-            carry.has_value() && carry->group.size() == 2, "the topmost-delimiter gadget lost its swap generator");
+    assertions.expect(carry && carry->group.size() == 2, "the topmost-delimiter gadget lost its swap generator");
 }
 
 /**
@@ -641,7 +638,7 @@ void check_caps_admitted(Assertions& assertions)
     const auto six_nodes{synthesize(five_phases)};
 
     assertions.expect(
-            six_nodes.has_value() && six_nodes->kernel_subsets == 6 && six_nodes->group.size() == 2,
+            six_nodes && six_nodes->kernel_subsets == 6 && six_nodes->group.size() == 2,
             "the six-subset boundary instance did not synthesize its parity carry");
 
     const auto six_rotation{rotation(6)};
@@ -649,7 +646,7 @@ void check_caps_admitted(Assertions& assertions)
     const auto six_wide{synthesize(six_rotation)};
 
     assertions.expect(
-            six_wide.has_value() && six_wide->width == 6 && six_wide->group.size() == 6,
+            six_wide && six_wide->width == 6 && six_wide->group.size() == 6,
             "the width-six boundary instance did not synthesize its rotation carry");
 }
 

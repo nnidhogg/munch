@@ -207,7 +207,7 @@ std::string generate(const std::size_t size, const int action_percent, const std
 
     while (input.size() < size)
     {
-        if (depth > 0 && random() % 100 < 10)
+        if (depth > 0 && random() % 100U < 10U)
         {
             for (std::size_t level{0}; level < depth; ++level)
             {
@@ -223,7 +223,7 @@ std::string generate(const std::size_t size, const int action_percent, const std
 
             input += "\n";
         }
-        else if (static_cast<int>(random() % 100) < action_percent)
+        else if (static_cast<int>(random() % 100U) < action_percent)
         {
             input += R"(  m = ")";
             input += filler;
@@ -233,9 +233,9 @@ std::string generate(const std::size_t size, const int action_percent, const std
         else
         {
             input += "  value";
-            input += std::to_string(random() % 100);
+            input += std::to_string(random() % 100U);
             input += " = ";
-            input += std::to_string(random() % 100000);
+            input += std::to_string(random() % 100000U);
             input += ";\n";
         }
     }
@@ -269,7 +269,7 @@ int main(const int argc, char** argv)
         bool batched{true};
     };
 
-    const std::size_t mebibytes{argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 4};
+    const std::size_t mebibytes{argc > 1 ? std::strtoull(argv[1], nullptr, 10) : 4U};
 
     const int passes{argc > 2 ? std::atoi(argv[2]) : default_passes};
 

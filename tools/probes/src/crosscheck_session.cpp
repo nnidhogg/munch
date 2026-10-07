@@ -1,6 +1,7 @@
 #include "munch/tools/probes/crosscheck_session.hpp"
 
 #include <cstddef>
+#include <format>
 #include <istream>
 #include <ostream>
 #include <string>
@@ -38,7 +39,7 @@ bool Crosscheck_session::run(
     {
         if (command != "SET" && command != "END" && !ready())
         {
-            err << program << ": " << command << " before any SET\n";
+            err << std::format("{}: {} before any SET\n", program, command);
 
             return false;
         }
@@ -83,7 +84,7 @@ bool Crosscheck_session::run(
             continue;
         }
 
-        err << program << ": unknown command " << command << '\n';
+        err << std::format("{}: unknown command {}\n", program, command);
 
         return false;
     }

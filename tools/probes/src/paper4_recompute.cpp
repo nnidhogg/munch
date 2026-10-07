@@ -1310,7 +1310,8 @@ struct Row_supply
         {
             for (std::size_t byte{0}; byte < 4; ++byte)
             {
-                schedule[word] = (schedule[word] << 8) | static_cast<unsigned char>(padded[block + (word * 4) + byte]);
+                schedule[word] =
+                        (schedule[word] << 8U) | static_cast<unsigned char>(padded[block + (word * 4U) + byte]);
             }
         }
 
@@ -2005,18 +2006,13 @@ template <typename T>
 template <typename Worker>
 void on_every_thread(const Worker& worker)
 {
-    const auto thread_count{std::max(1U, std::thread::hardware_concurrency())};
+    const auto thread_count{std::max(1U, std::jthread::hardware_concurrency())};
 
-    std::vector<std::thread> threads{};
+    std::vector<std::jthread> threads{};
 
     for (unsigned thread{0}; thread < thread_count; ++thread)
     {
         threads.emplace_back(worker);
-    }
-
-    for (auto& thread : threads)
-    {
-        thread.join();
     }
 }
 
@@ -5958,7 +5954,7 @@ int main(const int argc, char** argv)
     }
     catch (const std::exception& failure)
     {
-        std::cerr << "munch_paper4_recompute: " << failure.what() << '\n';
+        std::cerr << std::format("munch_paper4_recompute: {}\n", failure.what());
 
         return EXIT_FAILURE;
     }

@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <deque>
+#include <format>
 #include <functional>
 #include <iostream>
 #include <iterator>
@@ -664,8 +665,8 @@ std::optional<Carry> synthesize(const Table& table)
 
     if (wall < 2)
     {
-        std::cout << "refused: state-granular wall floor " << wall
-                  << " is below two; the origin-level verdict is unavailable\n";
+        std::cout << std::format(
+                "refused: state-granular wall floor {} is below two; the origin-level verdict is unavailable\n", wall);
 
         return std::nullopt;
     }
@@ -717,8 +718,9 @@ std::optional<Carry> synthesize(const Table& table)
 
     if (!labeling)
     {
-        std::cout << "refused: no flavor labeling makes the byte actions source-independent; exact summary count "
-                  << *semigroup << "\n";
+        std::cout << std::format(
+                "refused: no flavor labeling makes the byte actions source-independent; exact summary count {}\n",
+                *semigroup);
 
         return std::nullopt;
     }

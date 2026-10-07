@@ -43,6 +43,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -794,7 +795,7 @@ void published_row_facts(Assertions& assertions)
 
     const auto [windows, whitespace_anchored]{census_two(json_lexer, whitespace_bytes)};
 
-    std::cout << "json two-byte windows " << windows << ", whitespace-anchored " << whitespace_anchored << "\n";
+    std::cout << std::format("json two-byte windows {}, whitespace-anchored {}\n", windows, whitespace_anchored);
 
     assertions.expect(windows == 120, "RFC 8259 two-byte census moved");
 
@@ -823,8 +824,7 @@ void published_row_facts(Assertions& assertions)
 
     assertions.expect(!json_lexer.is_split_window(R"(",)").has_value(), R"(two-byte {",} certifies)");
 
-    assertions.expect(
-            !json_lexer.is_split_window(R"(,"9)").has_value(), R"({,"9} certifies although 9 can begin a Number)");
+    assertions.expect(!json_lexer.is_split_window(R"(,"9)"), R"({,"9} certifies although 9 can begin a Number)");
 }
 
 /**

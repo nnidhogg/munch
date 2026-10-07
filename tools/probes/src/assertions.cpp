@@ -1,5 +1,6 @@
 #include "munch/tools/probes/assertions.hpp"
 
+#include <format>
 #include <iostream>
 #include <string_view>
 
@@ -11,7 +12,7 @@ void Assertions::expect(const bool condition, const std::string_view what)
     {
         ++failures_;
 
-        std::cout << "fail: " << what << "\n";
+        std::cout << std::format("fail: {}\n", what);
     }
 }
 

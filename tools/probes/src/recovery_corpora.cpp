@@ -74,7 +74,7 @@ void append_two_word_string(std::string& out, Lcg& random)
  */
 void append_piece(std::string& out, Lcg& random, const bool strings)
 {
-    switch (random.next() % 10)
+    switch (random.next() % 10U)
     {
     case 0:
         out += std::to_string(random.next());
@@ -137,13 +137,13 @@ void append_block_comment(std::string& out, Lcg& random)
 {
     out += "/*";
 
-    const auto lines{1 + random.next() % 4};
+    const auto lines{1U + random.next() % 4U};
 
     for (std::size_t line{0}; line < lines; ++line)
     {
         out += '\n';
 
-        const auto interior{2 + random.next() % 4};
+        const auto interior{2U + random.next() % 4U};
 
         for (std::size_t piece{0}; piece < interior; ++piece)
         {
@@ -167,7 +167,7 @@ void append_code_line(std::string& out, Lcg& random, const C_like_features& feat
 {
     const auto& [strings, line_comments, block_comments]{features};
 
-    const auto pieces{3 + random.next() % 6};
+    const auto pieces{3U + random.next() % 6U};
 
     for (std::size_t piece{0}; piece < pieces; ++piece)
     {
@@ -176,7 +176,7 @@ void append_code_line(std::string& out, Lcg& random, const C_like_features& feat
         out += ' ';
     }
 
-    if (line_comments && random.next() % 4 == 0)
+    if (line_comments && random.next() % 4U == 0)
     {
         out += "// ";
 
@@ -209,7 +209,7 @@ void cut_to_size(std::string& out, const std::size_t bytes)
  */
 void append_json_value(std::string& out, Lcg& random)
 {
-    switch (random.next() % 3)
+    switch (random.next() % 3U)
     {
     case 0:
         out += pick(values, random);
@@ -245,7 +245,7 @@ void append_json_line(std::string& out, Lcg& random)
 {
     out += '{';
 
-    const auto members{1 + random.next() % 4};
+    const auto members{1U + random.next() % 4U};
 
     for (std::size_t member{0}; member < members; ++member)
     {
@@ -280,7 +280,7 @@ std::string c_like_corpus(const std::size_t bytes, const C_like_features& featur
 
     while (out.size() < bytes)
     {
-        if (block_comments && random.next() % 3 == 0)
+        if (block_comments && random.next() % 3U == 0)
         {
             append_block_comment(out, random);
 

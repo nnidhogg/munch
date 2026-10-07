@@ -88,7 +88,8 @@ regex::Regex random_regex(std::uint32_t& seed, const std::size_t depth)
 {
     using namespace regex;
 
-    // The left operand draws before the right, which fixes the regex a seed yields.
+    // Draws the left operand before the right, so a seed yields one grammar whichever order the compiler evaluates
+    // arguments in.
     const auto operands{[&seed, depth] {
         auto left{random_regex(seed, depth - 1)};
 
@@ -97,7 +98,7 @@ regex::Regex random_regex(std::uint32_t& seed, const std::size_t depth)
         return std::pair{std::move(left), std::move(right)};
     }};
 
-    if (depth == 0 || next_draw(seed) % 3 == 0)
+    if (depth == 0 || next_draw(seed) % 3U == 0)
     {
         constexpr std::array<std::string_view, 6> atoms{"a", "b", "c", "ab", "bc", "ca"};
 
@@ -106,7 +107,7 @@ regex::Regex random_regex(std::uint32_t& seed, const std::size_t depth)
         return text(atoms[drawn]);
     }
 
-    const auto kind{next_draw(seed) % 4};
+    const auto kind{next_draw(seed) % 4U};
 
     switch (kind)
     {

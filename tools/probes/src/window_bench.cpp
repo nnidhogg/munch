@@ -545,11 +545,11 @@ std::string source_corpus(const std::size_t bytes)
 
     while (out.size() < bytes)
     {
-        const auto pieces{3 + stream.next() % 6};
+        const auto pieces{3U + stream.next() % 6U};
 
         for (std::size_t piece{0}; piece < pieces; ++piece)
         {
-            const auto shape{stream.next() % 8};
+            const auto shape{stream.next() % 8U};
 
             switch (shape)
             {
@@ -624,7 +624,7 @@ Reference serial_reference(const munch::core::Lexer& lexer, const std::string& c
 
         reference.lengths.push_back(static_cast<std::uint32_t>(length));
 
-        reference.tally.checksum = reference.tally.checksum * checksum_base + static_cast<std::size_t>(token);
+        reference.tally.checksum = reference.tally.checksum * checksum_base + std::to_underlying(token);
 
         ++reference.tally.tokens;
     }};
@@ -712,7 +712,7 @@ Tally chunked_scan(const munch::core::Lexer& lexer, const std::string& corpus, c
                 auto& mine{tallies[chunk].tally};
 
                 mine.consumed = lexer.tokenize_all<Token>(piece, [&mine](const Token token, const std::size_t) {
-                    mine.checksum = mine.checksum * 31 + static_cast<std::size_t>(token);
+                    mine.checksum = mine.checksum * 31U + std::to_underlying(token);
 
                     ++mine.tokens;
                 });
@@ -726,7 +726,7 @@ Tally chunked_scan(const munch::core::Lexer& lexer, const std::string& corpus, c
         auto& mine{tallies[last].tally};
 
         mine.consumed = lexer.tokenize_all<Token>(piece, [&mine](const Token token, const std::size_t) {
-            mine.checksum = mine.checksum * 31 + static_cast<std::size_t>(token);
+            mine.checksum = mine.checksum * 31U + std::to_underlying(token);
 
             ++mine.tokens;
         });
@@ -1208,7 +1208,7 @@ bool no_byte_measurement(
         timed_serial = {};
 
         timed_serial.consumed = lexer.tokenize_all<Token>(corpus, [&](const Token token, const std::size_t) {
-            timed_serial.checksum = timed_serial.checksum * checksum_base + static_cast<std::size_t>(token);
+            timed_serial.checksum = timed_serial.checksum * checksum_base + std::to_underlying(token);
 
             ++timed_serial.tokens;
         });

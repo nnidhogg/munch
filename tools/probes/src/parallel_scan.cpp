@@ -517,16 +517,11 @@ void scan_chunks(
         const core::Lexer& lexer, const std::string_view corpus, const std::vector<std::size_t>& cuts,
         std::vector<std::vector<std::size_t>>& chunk_begins)
 {
-    std::vector<std::thread> threads{};
+    std::vector<std::jthread> threads{};
 
     for (std::size_t chunk{0}; chunk < cuts.size() - 1; ++chunk)
     {
         threads.emplace_back([&, chunk] { scan_chunk(lexer, corpus, cuts, chunk, chunk_begins[chunk]); });
-    }
-
-    for (auto& thread : threads)
-    {
-        thread.join();
     }
 }
 

@@ -57,7 +57,8 @@ munch::regex::Regex make_regex(Reader& reader, const std::size_t depth, const st
         return repeats == 0 ? 7U : 8U;
     }};
 
-    // The left operand decodes before the right, which fixes the grammar an input yields.
+    // Decodes the left operand before the right, so an input yields one regex whichever order the compiler evaluates
+    // arguments in.
     const auto operands{[&reader, depth, repeats] {
         auto left{make_regex(reader, depth - 1, repeats)};
 

@@ -895,10 +895,9 @@ TEST(Mode_tokenizer_test, Set_mode_still_forces_a_mode_when_the_grammar_drives_t
 
 TEST(Mode_tokenizer_test, Forcing_a_mode_is_the_documented_recovery_hatch_after_an_error)
 {
-    // set_mode()'s documentation names forcing as the recovery hatch after an error and promises the saved frames are
-    // left alone. A newline is illegal inside this string mode, so the scan stops mid-string with the stack still
-    // holding the frame, exactly the unterminated-string diagnosis depth() exists for; the driver forces code mode,
-    // seeks past the wreck, and reads on, and the frame stays put throughout.
+    // set_mode() documents forcing as the recovery hatch after an error, leaving the saved frames alone. A newline is
+    // illegal in this string mode, so the scan stops mid-string with the frame on the stack, as depth() diagnoses an
+    // unterminated string; the driver forces code mode, seeks past the wreck and reads on, the frame kept throughout.
     Mode_builder builder{};
 
     builder.add_token(Context::code, plus(any_of(Set::alpha())), Context_token::identifier, 2);

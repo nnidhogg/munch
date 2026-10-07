@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -236,8 +237,9 @@ int self_test(const munch::core::Lexer& lexer)
 
     const auto [serial_consumed, serial_tokens, chunks, incomplete_chunks, spliced_tokens]{splice(lexer, corpus)};
 
-    std::cout << "serial " << serial_consumed << "/" << corpus.size() << " (" << serial_tokens << " tokens), chunks "
-              << chunks << ", spliced " << spliced_tokens << " tokens\n";
+    std::cout << std::format(
+            "serial {}/{} ({} tokens), chunks {}, spliced {} tokens\n", serial_consumed, corpus.size(), serial_tokens,
+            chunks, spliced_tokens);
 
     constexpr std::size_t serial_stop_fraction{40};
 

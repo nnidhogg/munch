@@ -628,7 +628,7 @@ bool run(Gate_totals& totals, const Row& row, const Builder_dbg& builder)
 
     const auto no_witness_expected{!witness && pinned_witness.empty()};
 
-    const auto witness_pinned{witness.has_value() && witness_input == pinned_witness};
+    const auto witness_pinned{witness && witness_input == pinned_witness};
 
     const auto witness_ok{shortest == 0 ? no_witness_expected : witness_pinned};
 
@@ -1603,7 +1603,7 @@ bool false_origin_controls(Gate_totals& totals)
 
     const auto [forced, exercised, tokenizable, prefixes]{backup_disagreements(dfa, lexer, live, {"abx"}, 2)};
 
-    const auto fixture_ok{!wrong && rejected == 30 && right.has_value() && forced == 200};
+    const auto fixture_ok{!wrong && rejected == 30 && right && forced == 200};
 
     const auto marker{fixture_ok ? "" : "   <- control lost its teeth"};
 
@@ -1641,7 +1641,7 @@ bool vacuity_witness(Gate_totals& totals)
 
     const auto witness{at ? find_witness(totals, dfa, lexer, live, only) : std::nullopt};
 
-    const auto vacuous_ok{at == 2 && !witness.has_value()};
+    const auto vacuous_ok{at == 2 && !witness};
 
     const auto at_text{at ? std::to_string(*at) : std::string{"none"}};
 

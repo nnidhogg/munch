@@ -274,10 +274,11 @@ Prices price(
         }
     }
 
-    std::cout << name << ": orbit " << prices.orbit << ", positional bits " << prices.positional
-              << ", compositional bits " << prices.compositional << " (group " << carry.group.size()
-              << "), summary bits " << prices.summary << " (semigroup " << carry.semigroup << "), witnesses "
-              << prices.witnesses << "\n";
+    std::cout << std::format(
+            "{}: orbit {}, positional bits {}, compositional bits {} (group {}), summary bits {} (semigroup {}), "
+            "witnesses {}\n",
+            name, prices.orbit, prices.positional, prices.compositional, carry.group.size(), prices.summary,
+            carry.semigroup, prices.witnesses);
 
     return prices;
 }
