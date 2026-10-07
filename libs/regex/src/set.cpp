@@ -42,7 +42,7 @@ Set Set::range(const Symbol_t start, const Symbol_t end)
 
     const auto symbol_of{[](const unsigned value) { return static_cast<Symbol_t>(value); }};
 
-    const auto symbols{std::views::iota(first, last + 1) | std::views::transform(symbol_of)};
+    const auto symbols{std::views::iota(first, last + 1U) | std::views::transform(symbol_of)};
 
     Symbols_t chosen{symbols.begin(), symbols.end()};
 

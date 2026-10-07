@@ -141,10 +141,6 @@ constexpr std::array<Block, 5> blocks{{
         return concat(std::move(lead), std::move(rest));
     }
 
-    Bytes_t lowest{};
-
-    lowest.fill(continuation_first);
-
     Bytes_t highest{};
 
     highest.fill(continuation_last);
@@ -177,6 +173,10 @@ constexpr std::array<Block, 5> blocks{{
 
         parts.push_back({.node = Concat{.regexes = std::move(middle)}});
     }
+
+    Bytes_t lowest{};
+
+    lowest.fill(continuation_first);
 
     auto below_last{sequence(lowest, last, index + 1, length)};
 
@@ -301,27 +301,27 @@ std::string encode(const char32_t code_point)
 
         return bytes;
     case 2:
-        bytes.push_back(static_cast<char>(0xC0 | (code_point >> 6U)));
+        bytes.push_back(static_cast<char>(0xC0U | (code_point >> 6U)));
 
-        bytes.push_back(static_cast<char>(0x80 | (code_point & 0x3FU)));
+        bytes.push_back(static_cast<char>(0x80U | (code_point & 0x3FU)));
 
         return bytes;
     case 3:
-        bytes.push_back(static_cast<char>(0xE0 | (code_point >> 12U)));
+        bytes.push_back(static_cast<char>(0xE0U | (code_point >> 12U)));
 
-        bytes.push_back(static_cast<char>(0x80 | ((code_point >> 6U) & 0x3FU)));
+        bytes.push_back(static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU)));
 
-        bytes.push_back(static_cast<char>(0x80 | (code_point & 0x3FU)));
+        bytes.push_back(static_cast<char>(0x80U | (code_point & 0x3FU)));
 
         return bytes;
     default:
-        bytes.push_back(static_cast<char>(0xF0 | (code_point >> 18U)));
+        bytes.push_back(static_cast<char>(0xF0U | (code_point >> 18U)));
 
-        bytes.push_back(static_cast<char>(0x80 | ((code_point >> 12U) & 0x3FU)));
+        bytes.push_back(static_cast<char>(0x80U | ((code_point >> 12U) & 0x3FU)));
 
-        bytes.push_back(static_cast<char>(0x80 | ((code_point >> 6U) & 0x3FU)));
+        bytes.push_back(static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU)));
 
-        bytes.push_back(static_cast<char>(0x80 | (code_point & 0x3FU)));
+        bytes.push_back(static_cast<char>(0x80U | (code_point & 0x3FU)));
 
         return bytes;
     }

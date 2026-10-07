@@ -350,7 +350,7 @@ private:
      * @brief Refuses the pattern at the current position.
      * @param message Why.
      */
-    [[noreturn]] void fail(const std::string& message) const;
+    [[noreturn]] void fail(std::string_view message) const;
 
     /**
      * @brief Refuses the pattern for ending where the syntax expected more.
@@ -529,10 +529,10 @@ template <typename Node>
     {
         if (low > from)
         {
-            complement.push_back({.first = from, .last = low - 1});
+            complement.push_back({.first = from, .last = low - 1U});
         }
 
-        from = std::max(from, static_cast<char32_t>(high + 1));
+        from = std::max(from, static_cast<char32_t>(high + 1U));
     }
 
     if (from <= max_scalar)
@@ -582,7 +582,7 @@ template <typename Node>
             continue;
         }
 
-        if (merged.empty() || first > merged.back().last + 1)
+        if (merged.empty() || first > merged.back().last + 1U)
         {
             merged.push_back({.first = first, .last = last});
 
@@ -755,7 +755,7 @@ Piece Reader::repetition(const Definitions_t& definitions)
     }};
 
     const auto count_opens{
-            [this] { return peek() == '{' && at_ + 1 < pattern_.size() && is_digit(pattern_[at_ + 1]); }};
+            [this] { return peek() == '{' && at_ + 1U < pattern_.size() && is_digit(pattern_[at_ + 1U]); }};
 
     const auto repeat_by{[&piece, &claim](const char postfix) {
         claim();
@@ -850,7 +850,7 @@ Piece Reader::atom(const Definitions_t& definitions)
     {
         auto quoted_text{quoted()};
 
-        if (quoted_text.size() == 1)
+        if (quoted_text.size() == 1U)
         {
             return {.literal = quoted_text.front(), .regex = std::nullopt};
         }
@@ -891,7 +891,7 @@ Piece Reader::atom(const Definitions_t& definitions)
     {
         // Anchors only where flex reads them as anchors, a '^' opening the pattern and a '$' closing it; a '$' inside a
         // pattern is the byte, which a Pascal hex literal or a shell variable spells.
-        const auto anchors{(byte == '^' && open == 0) || (byte == '$' && at_ == pattern_.size())};
+        const auto anchors{(byte == '^' && open == 0U) || (byte == '$' && at_ == pattern_.size())};
 
         if (!anchors)
         {
@@ -916,7 +916,7 @@ Piece Reader::atom(const Definitions_t& definitions)
         // reads wherever it stands, and refuses away from the start.
         const auto end_of_file{pattern_.substr(open).starts_with("<<EOF>>")};
 
-        const auto prefix_stands{open == 0 && !expansion()};
+        const auto prefix_stands{open == 0U && !expansion()};
 
         if (!end_of_file && !prefix_stands)
         {
@@ -969,7 +969,7 @@ void Reader::group_flags()
 
 Regex Reader::bracket()
 {
-    const auto opened{at_ - 1};
+    const auto opened{at_ - 1U};
 
     auto members{bracket_members()};
 
@@ -985,7 +985,7 @@ Regex Reader::bracket()
     {
         const auto operator_at{at_};
 
-        const auto difference{pattern_[at_ + 1] == '-'};
+        const auto difference{pattern_[at_ + 1U] == '-'};
 
         at_ += difference_operator.size();
 
@@ -1016,7 +1016,7 @@ Regex Reader::bracket()
 
 Bracket_reading Reader::bracket_members()
 {
-    const auto opened{at_ - 1};
+    const auto opened{at_ - 1U};
 
     const auto negated{accept('^')};
 
@@ -1118,7 +1118,7 @@ Bracket_reading Reader::read_both_ways()
         auto last{first};
 
         // A '-' between two members is a range; at either edge it is itself.
-        if (peek() == '-' && at_ + 1 < pattern_.size() && pattern_[at_ + 1] != ']')
+        if (peek() == '-' && at_ + 1U < pattern_.size() && pattern_[at_ + 1U] != ']')
         {
             ++at_;
 
@@ -1180,7 +1180,7 @@ Regex Reader::matching(const Bracket_reading& members, const std::size_t opened)
     {
         if (low < first_beyond_ascii)
         {
-            const auto ascii_high{std::min<char32_t>(high, first_beyond_ascii - 1)};
+            const auto ascii_high{std::min<char32_t>(high, first_beyond_ascii - 1U)};
 
             ascii += Set::range(static_cast<char>(low), static_cast<char>(ascii_high));
         }
@@ -1394,7 +1394,7 @@ Escaped Reader::escape()
 
         const auto [value, read]{digits(16, max_hex_byte_digits)};
 
-        if (read == 0)
+        if (read == 0U)
         {
             fail(R"('\x' needs a hex digit)");
         }
@@ -1419,7 +1419,7 @@ Escaped Reader::escape()
 
         expect('}', "'}' to close the code point");
 
-        if (read == 0 || value > max_scalar || (value >= surrogate_first && value <= surrogate_last))
+        if (read == 0U || value > max_scalar || (value >= surrogate_first && value <= surrogate_last))
         {
             at_ = open;
 
@@ -1595,12 +1595,12 @@ std::optional<std::size_t> Reader::number()
     {
         const auto digit{static_cast<std::size_t>(next("a digit") - '0')};
 
-        if (value > (std::numeric_limits<std::size_t>::max() - digit) / 10)
+        if (value > (std::numeric_limits<std::size_t>::max() - digit) / 10U)
         {
             fail("the count does not fit");
         }
 
-        value = value * 10 + digit;
+        value = value * 10U + digit;
     }
 
     return value;
@@ -1676,7 +1676,7 @@ void Reader::expect(const char byte, const std::string_view what)
     fail_at_end(what);
 }
 
-void Reader::fail(const std::string& message) const
+void Reader::fail(const std::string_view message) const
 {
     throw Syntax_error{message, at_};
 }
@@ -1690,7 +1690,7 @@ void Reader::fail_at_end(const std::string_view what) const
 
 } // namespace
 
-Syntax_error::Syntax_error(const std::string& message, const std::size_t offset)
+Syntax_error::Syntax_error(const std::string_view message, const std::size_t offset)
     : std::invalid_argument{std::format("{} at offset {}", message, offset)}, offset_{offset}
 {}
 
