@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <initializer_list>
 #include <iostream>
 #include <ranges>
@@ -67,7 +68,7 @@ bool check_captions(
 
     auto agrees{true};
 
-    std::cout << name << ": ";
+    std::cout << std::format("{}: ", name);
 
     for (const auto& [byte, wanted] : std::views::zip(bytes, expected))
     {
@@ -75,8 +76,8 @@ bool check_captions(
 
         const auto matches{certified == wanted};
 
-        std::cout << '\'' << byte << "' " << (certified ? "certified" : "rejected")
-                  << (matches ? "" : " <- caption says otherwise") << "  ";
+        std::cout << std::format(
+                "'{}' {}{}  ", byte, certified ? "certified" : "rejected", matches ? "" : " <- caption says otherwise");
 
         agrees = agrees && matches;
     }

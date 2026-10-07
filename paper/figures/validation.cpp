@@ -235,7 +235,8 @@ Regex random_regex(Random& random, const unsigned depth)
         return text(literal);
     }
 
-    // Argument evaluation order is unspecified, so the operands draw into locals, left first.
+    // Draws the left operand into a local before the right, so a seed yields one expression whichever order the
+    // compiler evaluates arguments in.
     const auto operands{[&random, depth] {
         auto first{random_regex(random, depth - 1)};
 
@@ -641,7 +642,7 @@ int main()
 
     check("admitted by the library yet unsafe to split at", eight.shipped_unsound, std::size_t{0});
 
-    std::cout << "  info admitted by the library: " << eight.shipped_admitted << '\n';
+    std::cout << std::format("  info admitted by the library: {}\n", eight.shipped_admitted);
 
     const auto failures{check.failures()};
 

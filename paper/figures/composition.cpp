@@ -449,7 +449,7 @@ int main()
 
         for (const auto state : structural)
         {
-            std::cout << "         context: " << describe(dfa, state) << '\n';
+            std::cout << std::format("         context: {}\n", describe(dfa, state));
         }
 
         return std::pair{std::move(dfa), std::move(structural)};
@@ -479,8 +479,9 @@ int main()
     // Corpus-dependent, so reported rather than published as a property of the grammar.
     const auto boundary_percent{line_starts == 0 ? 0 : 100 * boundaries / line_starts};
 
-    std::cout << "         corpus: " << documents << " documents, " << line_starts << " line starts, " << boundaries
-              << " already token boundaries (" << boundary_percent << "%)\n";
+    std::cout << std::format(
+            "         corpus: {} documents, {} line starts, {} already token boundaries ({}%)\n", documents,
+            line_starts, boundaries, boundary_percent);
 
     // The conventional variant, the grammar a hand-written C lexer has: its states and line-start contexts.
     std::ignore = check_variant(

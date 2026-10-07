@@ -440,7 +440,7 @@ bool same_scanner(const munch::core::Lexer& copy, const munch::core::Lexer& orig
 
     if (const auto first{std::ranges::find_if(bytes, differs)}; first != bytes.end())
     {
-        std::cout << "         certified sets differ at byte " << *first << '\n';
+        std::cout << std::format("         certified sets differ at byte {}\n", *first);
 
         return false;
     }
@@ -453,8 +453,8 @@ bool same_scanner(const munch::core::Lexer& copy, const munch::core::Lexer& orig
 
     if (copy_consumed != original_consumed || !same_lengths)
     {
-        std::cout << "         token streams differ: consumed " << copy_consumed << " against " << original_consumed
-                  << '\n';
+        std::cout << std::format(
+                "         token streams differ: consumed {} against {}\n", copy_consumed, original_consumed);
 
         return false;
     }
@@ -759,14 +759,15 @@ void Table_checker::check(
 
     if (!agrees)
     {
-        std::cout << "         certified: " << actual_exact << ", cell says " << exact
-                  << "\n         modulo:    " << actual_relaxed << ", cell says " << relaxed << '\n';
+        std::cout << std::format(
+                "         certified: {}, cell says {}\n         modulo:    {}, cell says {}\n", actual_exact, exact,
+                actual_relaxed, relaxed);
     }
 }
 
 void Table_checker::record(const bool agrees, const std::string_view line)
 {
-    std::cout << verdict_label(agrees) << line << '\n';
+    std::cout << std::format("{}{}\n", verdict_label(agrees), line);
 
     if (!agrees)
     {
@@ -883,8 +884,9 @@ void Table_checker::ratio(
 
     if (!agrees)
     {
-        std::cout << "         candidates: " << distinct.size() << " distinct, cell says " << total
-                  << "\n         certified:  " << actual << ", cell says " << expected << '\n';
+        std::cout << std::format(
+                "         candidates: {} distinct, cell says {}\n         certified:  {}, cell says {}\n",
+                distinct.size(), total, actual, expected);
     }
 }
 
@@ -974,14 +976,15 @@ void Table_checker::modulo(
 
     if (!agrees)
     {
-        std::cout << "         certified:      " << actual_exact << ", cell says " << exact
-                  << "\n         modulo ignored: " << actual_relaxed << ", cell says " << relaxed
-                  << "\n         survives split: " << actual_survives << ", cell says " << relaxed << '\n';
+        std::cout << std::format(
+                "         certified:      {}, cell says {}\n         modulo ignored: {}, cell says {}\n         "
+                "survives split: {}, cell says {}\n",
+                actual_exact, exact, actual_relaxed, relaxed, actual_survives, relaxed);
     }
 
     if (!unexercised.empty())
     {
-        std::cout << "         never exercised by the corpus: " << unexercised << '\n';
+        std::cout << std::format("         never exercised by the corpus: {}\n", unexercised);
     }
 }
 
@@ -1013,7 +1016,7 @@ void Table_checker::framing_row()
 
     if (!agrees)
     {
-        std::cout << "         expected 0x1E certified, got: " << actual << '\n';
+        std::cout << std::format("         expected 0x1E certified, got: {}\n", actual);
     }
 }
 
@@ -1050,7 +1053,7 @@ void Table_checker::utf8_row()
 
     if (!agrees)
     {
-        std::cout << "         bytes disagreeing with the lead-byte set: " << disagreeing << '\n';
+        std::cout << std::format("         bytes disagreeing with the lead-byte set: {}\n", disagreeing);
     }
 }
 
