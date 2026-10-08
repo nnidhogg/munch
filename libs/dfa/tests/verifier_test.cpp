@@ -11,6 +11,7 @@
 #include <optional>
 #include <ranges>
 #include <set>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -123,6 +124,157 @@ struct Fixture_check
      */
     Fixture_counts counts{};
 };
+
+/**
+ * @brief What the cut fixture holds, counted as it is checked.
+ */
+struct Cut_counts
+{
+    /**
+     * @brief The universe lines.
+     */
+    std::size_t universes{0};
+
+    /**
+     * @brief The accepting lines, one per table universe.
+     */
+    std::size_t tables{0};
+
+    /**
+     * @brief The cut lines.
+     */
+    std::size_t cuts{0};
+
+    /**
+     * @brief The cut lines whose pair is not certified.
+     */
+    std::size_t uncertified{0};
+
+    /**
+     * @brief The cut lines whose answer is independence.
+     */
+    std::size_t independent{0};
+
+    /**
+     * @brief The cut lines whose answer is a dependence.
+     */
+    std::size_t dependent{0};
+
+    /**
+     * @brief The dependences whose prefix fails.
+     */
+    std::size_t prefix_failures{0};
+
+    /**
+     * @brief The dependences whose suffix fails.
+     */
+    std::size_t suffix_failures{0};
+};
+
+/**
+ * @brief The cut fixture under check: the current universe's verifier, the transitions of a table universe read so
+ *        far, the current universe's line, and the counts so far.
+ */
+struct Cut_check
+{
+    /**
+     * @brief The verifier the lines are checked on, none while a table universe's lines are still being read.
+     */
+    std::optional<Verifier> current{};
+
+    /**
+     * @brief The transitions of the table universe read so far.
+     */
+    Verifier::Transitions_t transitions{};
+
+    /**
+     * @brief The current universe's line, for the failure messages.
+     */
+    std::string universe{};
+
+    /**
+     * @brief The lines checked so far, by kind.
+     */
+    Cut_counts counts{};
+};
+
+/**
+ * @brief What the chunk fixture holds, counted as it is checked.
+ */
+struct Chunk_counts
+{
+    /**
+     * @brief The universe lines.
+     */
+    std::size_t universes{0};
+
+    /**
+     * @brief The accepting lines, one per table universe.
+     */
+    std::size_t tables{0};
+
+    /**
+     * @brief The inventory lines.
+     */
+    std::size_t inventories{0};
+
+    /**
+     * @brief The inventory lines whose answer is chunk independence.
+     */
+    std::size_t independent{0};
+
+    /**
+     * @brief The inventory lines whose answer is a chunk dependence.
+     */
+    std::size_t dependent{0};
+
+    /**
+     * @brief The inventories whose pairs are all independent by dependence(), each checked chunk-independent.
+     */
+    std::size_t cut_independent{0};
+
+    /**
+     * @brief The chunk-independent inventories with a pair that is not independent by dependence().
+     */
+    std::size_t converse{0};
+};
+
+/**
+ * @brief The chunk fixture under check: the current universe's verifier, the transitions of a table universe read so
+ *        far, the current universe's line, and the counts so far.
+ */
+struct Chunk_check
+{
+    /**
+     * @brief The verifier the lines are checked on, none while a table universe's lines are still being read.
+     */
+    std::optional<Verifier> current{};
+
+    /**
+     * @brief The transitions of the table universe read so far.
+     */
+    Verifier::Transitions_t transitions{};
+
+    /**
+     * @brief The current universe's line, for the failure messages.
+     */
+    std::string universe{};
+
+    /**
+     * @brief The lines checked so far, by kind.
+     */
+    Chunk_counts counts{};
+};
+
+/**
+ * @brief The sides of a cut that fail, the prefix then the suffix.
+ */
+using Failures_t = std::pair<bool, bool>;
+
+/**
+ * @brief The pairs of an inventory line, each a window and its origin, and the verdict that follows them.
+ */
+using Inventory_line_t = std::pair<std::vector<std::pair<std::string, std::size_t>>, std::string>;
 
 /**
  * @brief Builds the trie DFA of a set of literal tokens, each token numbered by its position.
@@ -1042,6 +1194,761 @@ void expect_fixture_line(Fixture_check& check, const std::string& line)
     }
 }
 
+/**
+ * @brief Returns the marked symbol of a fixture step field, a byte and a mark bit, a0 reading a unmarked.
+ * @param field The field.
+ * @return The symbol.
+ */
+Marked symbol_of(const std::string& field)
+{
+    return {.byte = static_cast<unsigned char>(field.at(0)), .boundary_after = field.at(1) == '1'};
+}
+
+/**
+ * @brief Returns the sides of a cut of a marked string that fail when each is replayed through the verifier: the
+ *        prefix before the cut, its last mark cleared, and the suffix from it, a side failing when the verifier's
+ *        accepted markings of its bytes are not exactly the whole string's marking restricted to it.
+ * @param verifier The verifier.
+ * @param marked The marked string.
+ * @param cut The cut, at most the string's length.
+ * @return Whether the prefix fails, and whether the suffix fails.
+ */
+Failures_t replayed_failures(const Verifier& verifier, const Marked_string& marked, const std::size_t cut)
+{
+    const auto& [bytes, boundaries]{marked};
+
+    const auto length{static_cast<std::ptrdiff_t>(cut)};
+
+    Marking_t prefix_marking{boundaries.cbegin(), boundaries.cbegin() + length};
+
+    if (cut > 0)
+    {
+        prefix_marking.back() = false;
+    }
+
+    const Marking_t suffix_marking{boundaries.cbegin() + length, boundaries.cend()};
+
+    const auto prefix{accepted_markings(verifier, std::string_view{bytes}.substr(0, cut))};
+    const auto suffix{accepted_markings(verifier, std::string_view{bytes}.substr(cut))};
+
+    return {prefix != std::set<Marking_t>{prefix_marking}, suffix != std::set<Marking_t>{suffix_marking}};
+}
+
+/**
+ * @brief Checks a dependence: its marked string is the verifier's one accepted marking of its bytes, the window occurs
+ *        at the occurrence, the cut is the occurrence plus the origin and a boundary of the marking, and replaying the
+ *        prefix and the suffix through the verifier fails exactly the sides named, at least one.
+ * @param verifier The verifier.
+ * @param found The dependence.
+ * @param window The window.
+ * @param origin The origin.
+ * @param context The fixture line checked.
+ */
+void expect_dependence(
+        const Verifier& verifier, const Dependence& found, const std::string_view window, const std::size_t origin,
+        const std::string& context)
+{
+    const auto& [segmentation, occurrence, cut, prefix_fails, suffix_fails]{found};
+
+    const auto& [bytes, boundaries]{segmentation};
+
+    EXPECT_EQ(accepted_markings(verifier, bytes), std::set<Marking_t>{boundaries}) << context << " on " << bytes;
+    ASSERT_LE(occurrence + window.size(), bytes.size()) << context << " on " << bytes;
+    EXPECT_EQ(std::string_view{bytes}.substr(occurrence, window.size()), window) << context << " on " << bytes;
+    EXPECT_EQ(cut, occurrence + origin) << context << " on " << bytes;
+    EXPECT_TRUE(cut == 0 || boundaries[cut - 1]) << context << " on " << bytes;
+    EXPECT_TRUE(prefix_fails || suffix_fails) << context << " on " << bytes;
+    EXPECT_EQ(replayed_failures(verifier, segmentation, cut), (Failures_t{prefix_fails, suffix_fails}))
+            << context << " on " << bytes;
+}
+
+/**
+ * @brief Checks a dependent cut line: the decision's witness as long as the reference's text, and both dependences,
+ *        the reference's under the verifier's one marking of its text, checked.
+ * @param check The fixture under check.
+ * @param found The decision's dependence.
+ * @param fields The line after its verdict.
+ * @param window The window.
+ * @param origin The origin.
+ * @param context The line.
+ */
+void expect_dependent_line(
+        Cut_check& check, const Dependence& found, std::istringstream& fields, const std::string_view window,
+        const std::size_t origin, const std::string& context)
+{
+    std::string text{};
+    std::size_t position{};
+    std::size_t cut{};
+    std::string side{};
+
+    fields >> text >> position >> cut >> side;
+
+    const auto& verifier{*check.current};
+
+    ++check.counts.dependent;
+
+    if (found.prefix_fails)
+    {
+        ++check.counts.prefix_failures;
+    }
+
+    if (found.suffix_fails)
+    {
+        ++check.counts.suffix_failures;
+    }
+
+    EXPECT_EQ(found.segmentation.bytes.size(), text.size()) << context;
+
+    expect_dependence(verifier, found, window, origin, context);
+
+    const auto markings{accepted_markings(verifier, text)};
+
+    ASSERT_EQ(markings.size(), 1U) << context;
+
+    const Dependence expected{
+            .segmentation = {.bytes = text, .boundaries = *markings.cbegin()},
+            .occurrence = position,
+            .cut = cut,
+            .prefix_fails = side != "suffix",
+            .suffix_fails = side != "prefix"};
+
+    expect_dependence(verifier, expected, window, origin, context);
+}
+
+/**
+ * @brief Checks a cut line: an uncertified pair refused, an independent one answered so, and a dependent one checked
+ *        with its witness.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_cut(Cut_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string window{};
+    std::size_t origin{};
+    std::string verdict{};
+
+    fields >> window >> origin >> verdict;
+
+    ASSERT_TRUE(check.current) << context;
+
+    const auto& verifier{*check.current};
+
+    ++check.counts.cuts;
+
+    if (verdict == "uncertified")
+    {
+        ++check.counts.uncertified;
+
+        EXPECT_THROW(std::ignore = dependence(verifier, window, origin), std::invalid_argument) << context;
+
+        return;
+    }
+
+    const auto found{dependence(verifier, window, origin)};
+
+    if (verdict == "independent")
+    {
+        ++check.counts.independent;
+
+        EXPECT_FALSE(found) << context;
+
+        return;
+    }
+
+    ASSERT_TRUE(found) << context;
+
+    expect_dependent_line(check, *found, fields, window, origin, context);
+}
+
+/**
+ * @brief Starts a universe line's universe: the armed run of a literal token set or of a regular universe by index, or
+ *        nothing yet for a table, whose steps and accepting line follow.
+ * @tparam Check The fixture under check's type, the cut or the chunk fixture's.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+template <typename Check>
+void start_verifier_universe(Check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string kind{};
+
+    fields >> kind;
+
+    ++check.counts.universes;
+    check.universe = context;
+    check.current.reset();
+    check.transitions.clear();
+
+    if (kind == "table")
+    {
+        return;
+    }
+
+    if (kind == "regular")
+    {
+        std::size_t index{};
+
+        fields >> index;
+
+        check.current.emplace(armed_run(regular_dfa(index)));
+
+        return;
+    }
+
+    std::vector<std::string> tokens{};
+
+    for (std::string token{}; fields >> token;)
+    {
+        tokens.push_back(token);
+    }
+
+    check.current.emplace(armed_run(literal_dfa(tokens)));
+}
+
+/**
+ * @brief Reads a step line into the table universe's transitions.
+ * @tparam Check The fixture under check's type, the cut or the chunk fixture's.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+template <typename Check>
+void read_step(Check& check, std::istringstream& fields, const std::string& context)
+{
+    Verifier::State_t from{};
+    std::string symbol{};
+    Verifier::State_t to{};
+
+    fields >> from >> symbol >> to;
+
+    const auto [entry, inserted]{check.transitions.try_emplace({from, symbol_of(symbol)}, to)};
+
+    EXPECT_TRUE(inserted) << context;
+}
+
+/**
+ * @brief Builds the table universe's verifier from its transitions and an accepting line, the start being state zero.
+ * @tparam Check The fixture under check's type, the cut or the chunk fixture's.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+template <typename Check>
+void build_table(Check& check, std::istringstream& fields, const std::string& context)
+{
+    Verifier::Accept_states_t accepting{};
+
+    for (Verifier::State_t state{}; fields >> state;)
+    {
+        accepting.insert(state);
+    }
+
+    EXPECT_FALSE(check.current) << context;
+
+    check.current.emplace(0, std::exchange(check.transitions, {}), std::move(accepting));
+
+    ++check.counts.tables;
+}
+
+/**
+ * @brief Checks one cut fixture line against the decision, a comment or blank line checking nothing.
+ * @param check The fixture under check.
+ * @param line The line.
+ */
+void expect_cut_fixture_line(Cut_check& check, const std::string& line)
+{
+    std::istringstream fields{line};
+
+    std::string kind{};
+
+    if (!(fields >> kind) || kind.starts_with('#'))
+    {
+        return;
+    }
+
+    const auto context{std::format("{} | {}", check.universe, line)};
+
+    if (kind == "universe")
+    {
+        start_verifier_universe(check, fields, line);
+    }
+    else if (kind == "step")
+    {
+        read_step(check, fields, context);
+    }
+    else if (kind == "accepting")
+    {
+        build_table(check, fields, context);
+    }
+    else if (kind == "cut")
+    {
+        expect_cut(check, fields, context);
+    }
+    else
+    {
+        ADD_FAILURE() << "unknown cut fixture line: " << line;
+    }
+}
+
+/**
+ * @brief Returns the numbers of a comma-separated fixture field, at least one.
+ * @param field The field.
+ * @return The numbers, in order.
+ */
+std::vector<std::size_t> numbers_of(const std::string& field)
+{
+    std::vector<std::size_t> numbers{};
+
+    for (const auto part : field | std::views::split(','))
+    {
+        const std::string number{part.begin(), part.end()};
+
+        numbers.push_back(std::stoul(number));
+    }
+
+    return numbers;
+}
+
+/**
+ * @brief Returns the chunks of a comma-separated fixture field of begin:end ranges, at least one.
+ * @param field The field.
+ * @return The chunks, in order.
+ */
+std::vector<Chunk> chunks_of(const std::string& field)
+{
+    std::vector<Chunk> chunks{};
+
+    for (const auto part : field | std::views::split(','))
+    {
+        const std::string range{part.begin(), part.end()};
+
+        const auto colon{range.find(':')};
+
+        const auto begin{std::stoul(range.substr(0, colon))};
+
+        const auto end{std::stoul(range.substr(colon + 1))};
+
+        chunks.push_back({.begin = begin, .end = end});
+    }
+
+    return chunks;
+}
+
+/**
+ * @brief Reads the pairs of an inventory line up to its verdict.
+ * @param fields The line after its first word.
+ * @return The windows with their origins, and the verdict.
+ */
+Inventory_line_t read_inventory(std::istringstream& fields)
+{
+    Inventory_line_t line{};
+
+    auto& [pairs, verdict]{line};
+
+    for (std::string word{}; fields >> word;)
+    {
+        if (word == "independent" || word == "dependent")
+        {
+            verdict = word;
+
+            break;
+        }
+
+        std::size_t origin{};
+
+        fields >> origin;
+
+        pairs.emplace_back(word, origin);
+    }
+
+    return line;
+}
+
+/**
+ * @brief Returns the anchors of an inventory in a text, the positions the windows' origins land on at every
+ *        occurrence of every window, ascending and without repeats.
+ * @param text The text.
+ * @param inventory The pairs.
+ * @return The anchors.
+ */
+std::vector<std::size_t> anchors_in(const std::string_view text, const std::span<const Certified_pair> inventory)
+{
+    std::set<std::size_t> anchors{};
+
+    for (const auto& [window, origin] : inventory)
+    {
+        for (auto at{text.find(window)}; at != std::string_view::npos; at = text.find(window, at + 1))
+        {
+            anchors.insert(at + origin);
+        }
+    }
+
+    return {anchors.cbegin(), anchors.cend()};
+}
+
+/**
+ * @brief Returns the chunks between consecutive anchors of a marked string, the first from position zero and the last
+ *        to the end, that fail when replayed through the verifier: a chunk fails when the verifier's accepted markings
+ *        of its bytes are not exactly the whole string's marking restricted to it, its last mark cleared.
+ * @param verifier The verifier.
+ * @param marked The marked string.
+ * @param anchors The anchors, ascending and at most the string's length.
+ * @return The failing chunks, ascending.
+ */
+std::vector<Chunk> replayed_failing_chunks(
+        const Verifier& verifier, const Marked_string& marked, const std::vector<std::size_t>& anchors)
+{
+    const auto& [bytes, boundaries]{marked};
+
+    std::vector<std::size_t> ends{anchors};
+
+    ends.push_back(bytes.size());
+
+    std::vector<Chunk> failing{};
+
+    std::size_t begin{0};
+
+    for (const auto end : ends)
+    {
+        const auto first{boundaries.cbegin() + static_cast<std::ptrdiff_t>(begin)};
+
+        const auto last{boundaries.cbegin() + static_cast<std::ptrdiff_t>(end)};
+
+        Marking_t restricted{first, last};
+
+        if (!restricted.empty())
+        {
+            restricted.back() = false;
+        }
+
+        const auto chunk{std::string_view{bytes}.substr(begin, end - begin)};
+
+        if (accepted_markings(verifier, chunk) != std::set<Marking_t>{restricted})
+        {
+            failing.push_back({.begin = begin, .end = end});
+        }
+
+        begin = end;
+    }
+
+    return failing;
+}
+
+/**
+ * @brief Checks a chunk dependence: its marked string is the verifier's one accepted marking of its bytes, its anchors
+ *        are the inventory's in the text and each a boundary of the marking, and replaying every chunk between them
+ *        through the verifier fails exactly the chunks named, at least one.
+ * @param verifier The verifier.
+ * @param found The chunk dependence.
+ * @param inventory The pairs.
+ * @param context The fixture line checked.
+ */
+void expect_chunk_dependence(
+        const Verifier& verifier, const Chunk_dependence& found, const std::span<const Certified_pair> inventory,
+        const std::string& context)
+{
+    const auto& [segmentation, anchors, failing]{found};
+
+    const auto& [bytes, boundaries]{segmentation};
+
+    EXPECT_EQ(accepted_markings(verifier, bytes), std::set<Marking_t>{boundaries}) << context << " on " << bytes;
+    EXPECT_EQ(anchors, anchors_in(bytes, inventory)) << context << " on " << bytes;
+
+    for (const auto anchor : anchors)
+    {
+        EXPECT_TRUE(anchor == 0 || boundaries[anchor - 1]) << context << " on " << bytes << " at " << anchor;
+    }
+
+    EXPECT_FALSE(failing.empty()) << context << " on " << bytes;
+    EXPECT_EQ(failing, replayed_failing_chunks(verifier, segmentation, anchors)) << context << " on " << bytes;
+}
+
+/**
+ * @brief Checks a dependent inventory line: the decision's witness as long as the reference's text, and both chunk
+ *        dependences, the reference's under the verifier's one marking of its text, checked.
+ * @param verifier The verifier.
+ * @param found The decision's chunk dependence.
+ * @param fields The line after its verdict.
+ * @param inventory The pairs.
+ * @param context The line.
+ */
+void expect_dependent_inventory_line(
+        const Verifier& verifier, const Chunk_dependence& found, std::istringstream& fields,
+        const std::span<const Certified_pair> inventory, const std::string& context)
+{
+    std::string text{};
+    std::string anchors{};
+    std::string chunks{};
+
+    fields >> text >> anchors >> chunks;
+
+    EXPECT_EQ(found.segmentation.bytes.size(), text.size()) << context;
+
+    expect_chunk_dependence(verifier, found, inventory, context);
+
+    const auto markings{accepted_markings(verifier, text)};
+
+    ASSERT_EQ(markings.size(), 1U) << context;
+
+    const Chunk_dependence expected{
+            .segmentation = {.bytes = text, .boundaries = *markings.cbegin()},
+            .anchors = numbers_of(anchors),
+            .failing = chunks_of(chunks)};
+
+    expect_chunk_dependence(verifier, expected, inventory, context);
+}
+
+/**
+ * @brief Checks an inventory line: an independent inventory answered so, a dependent one checked with its witness, and
+ *        an inventory whose pairs are all independent by dependence() answered independent, the relation of the two
+ *        decisions checked on the data.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_inventory(Chunk_check& check, std::istringstream& fields, const std::string& context)
+{
+    const auto [pairs, verdict]{read_inventory(fields)};
+
+    std::vector<Certified_pair> inventory{};
+
+    for (const auto& [window, origin] : pairs)
+    {
+        inventory.push_back({.window = window, .origin = origin});
+    }
+
+    ASSERT_TRUE(check.current) << context;
+
+    const auto& verifier{*check.current};
+
+    ++check.counts.inventories;
+
+    const auto found{chunk_dependence(verifier, inventory)};
+
+    const auto independent_pair{
+            [&verifier](const Certified_pair& pair) { return !dependence(verifier, pair.window, pair.origin); }};
+
+    const auto every_pair_independent{std::ranges::all_of(inventory, independent_pair)};
+
+    if (every_pair_independent)
+    {
+        ++check.counts.cut_independent;
+
+        EXPECT_FALSE(found) << context << " with every pair independent";
+    }
+
+    if (verdict == "independent")
+    {
+        ++check.counts.independent;
+
+        if (!every_pair_independent)
+        {
+            ++check.counts.converse;
+        }
+
+        EXPECT_FALSE(found) << context;
+
+        return;
+    }
+
+    ASSERT_TRUE(found) << context;
+
+    ++check.counts.dependent;
+
+    expect_dependent_inventory_line(verifier, *found, fields, inventory, context);
+}
+
+/**
+ * @brief Checks one chunk fixture line against the decision, a comment or blank line checking nothing.
+ * @param check The fixture under check.
+ * @param line The line.
+ */
+void expect_chunk_fixture_line(Chunk_check& check, const std::string& line)
+{
+    std::istringstream fields{line};
+
+    std::string kind{};
+
+    if (!(fields >> kind) || kind.starts_with('#'))
+    {
+        return;
+    }
+
+    const auto context{std::format("{} | {}", check.universe, line)};
+
+    if (kind == "universe")
+    {
+        start_verifier_universe(check, fields, line);
+    }
+    else if (kind == "step")
+    {
+        read_step(check, fields, context);
+    }
+    else if (kind == "accepting")
+    {
+        build_table(check, fields, context);
+    }
+    else if (kind == "inventory")
+    {
+        expect_inventory(check, fields, context);
+    }
+    else
+    {
+        ADD_FAILURE() << "unknown chunk fixture line: " << line;
+    }
+}
+
+/**
+ * @brief Builds the verifier of the two-mode scan over the initial tokens a and ab and the continuation token b: the
+ *        maximal-munch scan whose fresh runs come from the continuation set once a token has closed, so that the
+ *        domain is the empty input, a, ab and ab followed by any number of b, each b after ab a token of its own.
+ * @return The verifier.
+ */
+Verifier two_mode_a_ab_then_b()
+{
+    constexpr Verifier::State_t start{0};
+    constexpr Verifier::State_t a_read{1};
+    constexpr Verifier::State_t ab_read{2};
+    constexpr Verifier::State_t ab_closed{3};
+    constexpr Verifier::State_t b_read{4};
+    constexpr Verifier::State_t b_closed{5};
+
+    constexpr Marked a{.byte = 'a', .boundary_after = false};
+    constexpr Marked b{.byte = 'b', .boundary_after = false};
+    constexpr Marked b_closing{.byte = 'b', .boundary_after = true};
+
+    return Verifier{
+            start,
+            {{{start, a}, a_read},
+             {{a_read, b}, ab_read},
+             {{a_read, b_closing}, ab_closed},
+             {{ab_closed, b}, b_read},
+             {{ab_closed, b_closing}, b_closed},
+             {{b_closed, b}, b_read},
+             {{b_closed, b_closing}, b_closed}},
+            {start, a_read, ab_read, b_read}};
+}
+
+/**
+ * @brief Builds the verifier of the two-mode scan over the initial tokens a, ab and b and the continuation tokens a and
+ *        b: the domain is every string, segmented as the initial ab followed by single bytes when the string begins
+ *        with ab and as single bytes otherwise, so that a single initial a is followed by a.
+ * @return The verifier.
+ */
+Verifier two_mode_a_ab_b_then_a_b()
+{
+    constexpr Verifier::State_t start{0};
+    constexpr Verifier::State_t a_read{1};
+    constexpr Verifier::State_t a_closed{2};
+    constexpr Verifier::State_t closed{3};
+    constexpr Verifier::State_t last{4};
+
+    constexpr Marked a{.byte = 'a', .boundary_after = false};
+    constexpr Marked a_closing{.byte = 'a', .boundary_after = true};
+    constexpr Marked b{.byte = 'b', .boundary_after = false};
+    constexpr Marked b_closing{.byte = 'b', .boundary_after = true};
+
+    return Verifier{
+            start,
+            {{{start, a}, a_read},
+             {{start, a_closing}, a_closed},
+             {{start, b}, last},
+             {{start, b_closing}, closed},
+             {{a_read, b}, last},
+             {{a_read, b_closing}, closed},
+             {{a_closed, a}, last},
+             {{a_closed, a_closing}, closed},
+             {{closed, a}, last},
+             {{closed, a_closing}, closed},
+             {{closed, b}, last},
+             {{closed, b_closing}, closed}},
+            {start, a_read, last}};
+}
+
+/**
+ * @brief Builds the verifier of the two-mode scan over the initial tokens a, aa and ba and the continuation token a:
+ *        the domain is the empty input and the runs of a with or without a leading b, segmented as the initial aa or
+ *        ba, or a alone, followed by single a's.
+ * @return The verifier.
+ */
+Verifier two_mode_a_aa_ba_then_a()
+{
+    constexpr Verifier::State_t start{0};
+    constexpr Verifier::State_t a_read{1};
+    constexpr Verifier::State_t b_read{2};
+    constexpr Verifier::State_t closed{3};
+    constexpr Verifier::State_t last{4};
+
+    constexpr Marked a{.byte = 'a', .boundary_after = false};
+    constexpr Marked a_closing{.byte = 'a', .boundary_after = true};
+    constexpr Marked b{.byte = 'b', .boundary_after = false};
+
+    return Verifier{
+            start,
+            {{{start, a}, a_read},
+             {{start, b}, b_read},
+             {{a_read, a}, last},
+             {{a_read, a_closing}, closed},
+             {{b_read, a}, last},
+             {{b_read, a_closing}, closed},
+             {{closed, a}, last},
+             {{closed, a_closing}, closed}},
+            {start, a_read, last}};
+}
+
+/**
+ * @brief Builds the verifier of the threshold splice of the tokens a and b below length three and the tokens ab, a and
+ *        b from it: the domain is every string, segmented byte by byte when shorter than three bytes and by maximal
+ *        munch over ab, a and b otherwise, so that an a marked at length one or two is followed by a and an a read at
+ *        length three or more is the last byte or the a of ab.
+ * @return The verifier.
+ */
+Verifier splice_single_below_three_then_merged()
+{
+    constexpr Verifier::State_t start{0};
+    constexpr Verifier::State_t a_read{1};
+    constexpr Verifier::State_t a_closed{2};
+    constexpr Verifier::State_t b_closed{3};
+    constexpr Verifier::State_t second_a_read{4};
+    constexpr Verifier::State_t pending{5};
+    constexpr Verifier::State_t single_a{6};
+    constexpr Verifier::State_t free{7};
+    constexpr Verifier::State_t last{8};
+
+    constexpr Marked a{.byte = 'a', .boundary_after = false};
+    constexpr Marked a_closing{.byte = 'a', .boundary_after = true};
+    constexpr Marked b{.byte = 'b', .boundary_after = false};
+    constexpr Marked b_closing{.byte = 'b', .boundary_after = true};
+
+    return Verifier{
+            start,
+            {{{start, a}, a_read},
+             {{start, a_closing}, a_closed},
+             {{start, b}, last},
+             {{start, b_closing}, b_closed},
+             {{a_read, b_closing}, free},
+             {{a_closed, a}, second_a_read},
+             {{a_closed, a_closing}, single_a},
+             {{a_closed, b}, last},
+             {{b_closed, a}, second_a_read},
+             {{b_closed, a_closing}, single_a},
+             {{b_closed, b}, last},
+             {{b_closed, b_closing}, free},
+             {{second_a_read, b}, last},
+             {{second_a_read, b_closing}, free},
+             {{pending, b}, last},
+             {{pending, b_closing}, free},
+             {{single_a, a}, pending},
+             {{single_a, a_closing}, single_a},
+             {{free, a}, pending},
+             {{free, a_closing}, single_a},
+             {{free, b}, last},
+             {{free, b_closing}, free}},
+            {start, a_read, second_a_read, pending, last}};
+}
+
 } // namespace
 
 TEST(Verifier_test, Literal_a_aab_accepts_exactly_the_munch_markings)
@@ -1215,6 +2122,8 @@ TEST(Verifier_test, The_decisions_refuse_a_malformed_window_and_an_empty_domain)
 
     EXPECT_THROW(std::ignore = miscovering(verifier, "", 0), std::invalid_argument);
     EXPECT_THROW(std::ignore = miscovering(verifier, "ab", 2), std::invalid_argument);
+    EXPECT_THROW(std::ignore = dependence(verifier, "", 0), std::invalid_argument);
+    EXPECT_THROW(std::ignore = dependence(verifier, "ab", 2), std::invalid_argument);
 
     constexpr Marked a{.byte = 'a', .boundary_after = false};
 
@@ -1222,4 +2131,262 @@ TEST(Verifier_test, The_decisions_refuse_a_malformed_window_and_an_empty_domain)
 
     EXPECT_THROW(std::ignore = boundary_gap(empty_domain), std::invalid_argument);
     EXPECT_FALSE(realizable(empty_domain));
+}
+
+TEST(Verifier_test, Dependence_gives_the_reference_answers_on_every_universe_of_the_cut_fixture)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/cut_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    Cut_check check{};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        expect_cut_fixture_line(check, line);
+    }
+
+    EXPECT_EQ(check.counts.universes, 489U);
+    EXPECT_EQ(check.counts.tables, 15U);
+    EXPECT_EQ(check.counts.cuts, 16626U);
+    EXPECT_EQ(check.counts.uncertified, 11047U);
+    EXPECT_EQ(check.counts.independent, 5517U);
+    EXPECT_EQ(check.counts.dependent, 62U);
+    EXPECT_EQ(check.counts.prefix_failures, 34U);
+    EXPECT_EQ(check.counts.suffix_failures, 31U);
+}
+
+TEST(Verifier_test, Every_certified_cut_of_a_maximal_munch_scan_is_independent_and_an_uncertified_pair_is_refused)
+{
+    const auto verifier{armed_run(literal_dfa({"ab", "a", "b"}))};
+
+    for (const auto& window : strings_up_to("ab", 3) | std::views::drop(1))
+    {
+        for (std::size_t origin{0}; origin < window.size(); ++origin)
+        {
+            if (miscovering(verifier, window, origin))
+            {
+                EXPECT_THROW(std::ignore = dependence(verifier, window, origin), std::invalid_argument)
+                        << window << " " << origin;
+
+                continue;
+            }
+
+            EXPECT_FALSE(dependence(verifier, window, origin)) << window << " " << origin;
+        }
+    }
+
+    EXPECT_FALSE(miscovering(verifier, "ab", 0));
+    EXPECT_TRUE(miscovering(verifier, "ab", 1));
+}
+
+TEST(Verifier_test, A_two_mode_scan_certifies_a_cut_whose_suffix_leaves_the_domain)
+{
+    const auto verifier{two_mode_a_ab_then_b()};
+
+    const auto found{dependence(verifier, "bb", 1)};
+
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->segmentation.bytes, "abb");
+    EXPECT_EQ(found->segmentation.boundaries, marking_of("abb", {1}));
+    EXPECT_EQ(found->occurrence, 1U);
+    EXPECT_EQ(found->cut, 2U);
+    EXPECT_FALSE(found->prefix_fails);
+    EXPECT_TRUE(found->suffix_fails);
+
+    expect_dependence(verifier, *found, "bb", 1, "bb 1");
+
+    EXPECT_FALSE(dependence(verifier, "ab", 0));
+    EXPECT_FALSE(dependence(verifier, "a", 0));
+}
+
+TEST(Verifier_test, The_cut_at_position_zero_fails_when_the_start_does_not_accept)
+{
+    constexpr Marked a_closing{.byte = 'a', .boundary_after = true};
+    constexpr Marked b{.byte = 'b', .boundary_after = false};
+
+    // The domain is ab alone, segmented a|b, so (a, 0) is certified and the cut at zero leaves an empty prefix outside
+    // the domain.
+    const Verifier verifier{0, {{{0, a_closing}, 1}, {{1, b}, 2}}, {2}};
+
+    const auto found{dependence(verifier, "a", 0)};
+
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->segmentation.bytes, "ab");
+    EXPECT_EQ(found->segmentation.boundaries, marking_of("ab", {0}));
+    EXPECT_EQ(found->occurrence, 0U);
+    EXPECT_EQ(found->cut, 0U);
+    EXPECT_TRUE(found->prefix_fails);
+    EXPECT_FALSE(found->suffix_fails);
+
+    expect_dependence(verifier, *found, "a", 0, "a 0");
+}
+
+TEST(Verifier_test, A_certified_cut_can_fail_on_both_sides)
+{
+    constexpr Marked a{.byte = 'a', .boundary_after = false};
+    constexpr Marked a_closing{.byte = 'a', .boundary_after = true};
+
+    // The domain is the empty input and aa segmented a|a: the cut at zero is independent, and the cut at one leaves a
+    // on each side, outside the domain.
+    const Verifier verifier{0, {{{0, a_closing}, 1}, {{1, a}, 2}}, {0, 2}};
+
+    const auto found{dependence(verifier, "a", 0)};
+
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->segmentation.bytes, "aa");
+    EXPECT_EQ(found->occurrence, 1U);
+    EXPECT_EQ(found->cut, 1U);
+    EXPECT_TRUE(found->prefix_fails);
+    EXPECT_TRUE(found->suffix_fails);
+
+    expect_dependence(verifier, *found, "a", 0, "a 0");
+}
+
+TEST(Verifier_test, Chunk_dependence_gives_the_reference_answers_on_every_universe_of_the_chunk_fixture)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/chunk_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    Chunk_check check{};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        expect_chunk_fixture_line(check, line);
+    }
+
+    EXPECT_EQ(check.counts.universes, 494U);
+    EXPECT_EQ(check.counts.tables, 20U);
+    EXPECT_EQ(check.counts.inventories, 29085U);
+    EXPECT_EQ(check.counts.independent, 27326U);
+    EXPECT_EQ(check.counts.dependent, 1759U);
+    EXPECT_EQ(check.counts.cut_independent, 27278U);
+    EXPECT_EQ(check.counts.converse, 48U);
+}
+
+TEST(Verifier_test, Chunk_dependence_refuses_an_empty_inventory_and_an_uncertified_pair)
+{
+    const auto verifier{armed_run(literal_dfa({"ab", "a", "b"}))};
+
+    const std::vector<Certified_pair> none{};
+    const std::vector<Certified_pair> uncertified{{.window = "ab", .origin = 0}, {.window = "ab", .origin = 1}};
+    const std::vector<Certified_pair> empty_window{{.window = "", .origin = 0}};
+    const std::vector<Certified_pair> outside{{.window = "ab", .origin = 2}};
+    const std::vector<Certified_pair> certified{{.window = "ab", .origin = 0}, {.window = "a", .origin = 0}};
+
+    EXPECT_THROW(std::ignore = chunk_dependence(verifier, none), std::invalid_argument);
+    EXPECT_THROW(std::ignore = chunk_dependence(verifier, uncertified), std::invalid_argument);
+    EXPECT_THROW(std::ignore = chunk_dependence(verifier, empty_window), std::invalid_argument);
+    EXPECT_THROW(std::ignore = chunk_dependence(verifier, outside), std::invalid_argument);
+    EXPECT_FALSE(chunk_dependence(verifier, certified));
+}
+
+TEST(Verifier_test, Another_pair_anchors_the_suffix_that_fails_alone_so_the_inventory_is_chunk_independent)
+{
+    const auto verifier{two_mode_a_ab_b_then_a_b()};
+
+    const std::vector<Certified_pair> alone{{.window = "aa", .origin = 1}};
+    const std::vector<Certified_pair> with_aab{{.window = "aa", .origin = 1}, {.window = "aab", .origin = 2}};
+
+    const auto cut{dependence(verifier, "aa", 1)};
+
+    ASSERT_TRUE(cut);
+    EXPECT_EQ(cut->segmentation.bytes, "aab");
+    EXPECT_TRUE(cut->suffix_fails);
+
+    const auto found{chunk_dependence(verifier, alone)};
+
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->segmentation.bytes, "aab");
+    EXPECT_EQ(found->segmentation.boundaries, marking_of("aab", {0, 1}));
+    EXPECT_EQ(found->anchors, std::vector<std::size_t>{1});
+    EXPECT_EQ(found->failing, (std::vector<Chunk>{{.begin = 1, .end = 3}}));
+
+    expect_chunk_dependence(verifier, *found, alone, "aa 1");
+
+    EXPECT_FALSE(chunk_dependence(verifier, with_aab));
+}
+
+TEST(Verifier_test, A_self_overlapping_pair_is_chunk_independent_alone_while_its_cut_is_not_independent)
+{
+    const auto verifier{two_mode_a_aa_ba_then_a()};
+
+    const std::vector<Certified_pair> aaa{{.window = "aaa", .origin = 2}};
+    const std::vector<Certified_pair> baa{{.window = "baa", .origin = 2}};
+
+    const auto cut{dependence(verifier, "aaa", 2)};
+
+    ASSERT_TRUE(cut);
+    EXPECT_EQ(cut->segmentation.bytes, "aaaa");
+    EXPECT_TRUE(cut->suffix_fails);
+
+    EXPECT_FALSE(chunk_dependence(verifier, aaa));
+
+    const auto found{chunk_dependence(verifier, baa)};
+
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->segmentation.bytes, "baaa");
+    EXPECT_EQ(found->segmentation.boundaries, marking_of("baaa", {1, 2}));
+    EXPECT_EQ(found->anchors, std::vector<std::size_t>{2});
+    EXPECT_EQ(found->failing, (std::vector<Chunk>{{.begin = 2, .end = 4}}));
+
+    expect_chunk_dependence(verifier, *found, baa, "baa 2");
+}
+
+TEST(Verifier_test, A_threshold_splice_fails_a_middle_chunk_shorter_than_the_threshold)
+{
+    const auto verifier{splice_single_below_three_then_merged()};
+
+    const std::vector<Certified_pair> at_zero{{.window = "a", .origin = 0}};
+    const std::vector<Certified_pair> aa_bb{{.window = "aa", .origin = 1}, {.window = "bb", .origin = 1}};
+
+    // The anchor at zero leaves an empty first chunk, and the middle chunk ab is segmented a|b alone.
+    const auto found{chunk_dependence(verifier, at_zero)};
+
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->segmentation.bytes, "aba");
+    EXPECT_EQ(found->segmentation.boundaries, marking_of("aba", {1}));
+    EXPECT_EQ(found->anchors, (std::vector<std::size_t>{0, 2}));
+    EXPECT_EQ(found->failing, (std::vector<Chunk>{{.begin = 0, .end = 2}}));
+
+    expect_chunk_dependence(verifier, *found, at_zero, "a 0");
+
+    // Between two chunks that hold, the middle chunk ab of a|ab|b fails; the shortest witness of the inventory is abb,
+    // its first chunk failing.
+    const Marked_string aabb{.bytes = "aabb", .boundaries = marking_of("aabb", {0, 2})};
+
+    EXPECT_EQ(anchors_in(aabb.bytes, aa_bb), (std::vector<std::size_t>{1, 3}));
+    EXPECT_EQ(replayed_failing_chunks(verifier, aabb, {1, 3}), (std::vector<Chunk>{{.begin = 1, .end = 3}}));
+
+    const auto shortest{chunk_dependence(verifier, aa_bb)};
+
+    ASSERT_TRUE(shortest);
+    EXPECT_EQ(shortest->segmentation.bytes, "abb");
+    EXPECT_EQ(shortest->anchors, std::vector<std::size_t>{2});
+    EXPECT_EQ(shortest->failing, (std::vector<Chunk>{{.begin = 0, .end = 2}}));
+
+    expect_chunk_dependence(verifier, *shortest, aa_bb, "aa 1 bb 1");
+}
+
+TEST(Verifier_test, The_anchor_at_position_zero_fails_when_the_start_does_not_accept)
+{
+    constexpr Marked a_closing{.byte = 'a', .boundary_after = true};
+    constexpr Marked b{.byte = 'b', .boundary_after = false};
+
+    // The domain is ab alone, segmented a|b, so (a, 0) anchors position zero and the empty first chunk lies outside the
+    // domain.
+    const Verifier verifier{0, {{{0, a_closing}, 1}, {{1, b}, 2}}, {2}};
+
+    const std::vector<Certified_pair> at_zero{{.window = "a", .origin = 0}};
+
+    const auto found{chunk_dependence(verifier, at_zero)};
+
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->segmentation.bytes, "ab");
+    EXPECT_EQ(found->segmentation.boundaries, marking_of("ab", {0}));
+    EXPECT_EQ(found->anchors, std::vector<std::size_t>{0});
+    EXPECT_EQ(found->failing, (std::vector<Chunk>{{.begin = 0, .end = 0}}));
+
+    expect_chunk_dependence(verifier, *found, at_zero, "a 0");
 }

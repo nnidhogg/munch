@@ -553,7 +553,7 @@ questions about, so that the same decisions can be made about any segmentation a
 token boundary follows it, and it accepts exactly the marked strings of a policy: an input with its boundaries, one
 marking per input the policy segments. `dfa::armed_run(dfa)` builds the verifier of maximal-munch scanning over a token
 set's DFA, and the constructor builds one from any transition table, trimming it to the states reachable from the start
-that can reach acceptance. The four decisions of `munch/dfa/verifier_decisions.hpp` then run on the product of the
+that can reach acceptance. The six decisions of `munch/dfa/verifier_decisions.hpp` then run on the product of the
 verifier with a search, each with a witness replayable through `Verifier::step()`. `miscovering(verifier, window,
 origin)` decides the window certificate `(window, origin)`, that the token containing an occurrence's final byte begins
 at the origin at every occurrence in every accepted marked string, and returns the shortest accepted marked string that
@@ -568,6 +568,37 @@ the domain, with the half it falls in; over two armed runs it is `segmentation_d
 The verifier is a library-level interface: `core::Lexer` forwards none of it, and a caller reaches a token set's DFA
 through `dfa::Builder` or by deriving from `core::Builder`, whose `dfa()` is protected.
 
+`dependence(verifier, window, origin)` asks a second question of a pair the verifier certifies, and refuses one it does
+not: the certificate makes the cut at the origin a boundary of the whole string's segmentation, and independence says
+that each side of the cut is segmented alone as the whole string segments it, the prefix before the cut and the suffix
+from it each in the domain under the whole string's marking restricted to them, so that a scan may stop at the cut or
+begin there. The decision returns the shortest accepted marked string with an occurrence whose cut is not independent,
+with the occurrence, the cut and the side or sides that fail, by a search over a product that carries the verifier's
+state and the window's progress before the cut and a continuing and a restarted copy of the verifier after it. On an
+armed run every certified cut is independent, which is the splitting theorem of maximal munch; the decision separates
+the certificate from the split for a verifier built from a caller's table, where a scan that carries state across a
+boundary, the mode of a two-mode scan or the length of the input, can certify a cut whose suffix alone leaves the
+domain.
+
+`chunk_dependence(verifier, inventory)` asks the question parallel scanning needs of an inventory of certified pairs,
+and refuses an inventory with a pair the verifier does not certify: cutting every accepted marked string at every
+anchor, the position a window's origin lands on at every occurrence of every window of the inventory, each chunk between
+consecutive anchors, the first from position zero and the last to the end, is accepted under the whole string's marking
+restricted to it, so that each chunk may be scanned alone. A middle chunk has an anchor at both ends, so this is not
+`dependence()` taken over the pairs. Cut independence of every pair implies chunk independence, a middle chunk being the
+suffix side of a certified cut within the prefix side of the next, and the converse fails, since an inventory is
+chunk-independent when its strings are cut finely enough that no chunk shows what a whole side would, by another pair's
+anchors or by a window's overlapping occurrences. Over the two-mode scan with initial tokens a, ab and b and
+continuation tokens a and b the pair (aa, 1) is certified and not cut-independent, the suffix ab of aab reading as one
+token alone, while the inventory {(aa, 1), (aab, 2)} is chunk-independent, the second pair anchoring the b of every aab.
+Over initial tokens a, aa and ba with continuation a the inventory of the one pair (aaa, 2) is chunk-independent while
+the pair is not cut-independent, its occurrences anchoring every later position of a run of a's. The decision returns
+the shortest accepted marked string with a chunk that fails, with its anchors and the failing chunks as half-open
+ranges, by a search over a product of a continuing copy of the verifier reading the string and a restarted copy reading
+the current chunk, fed with a lag of the longest window's length so that every occurrence anchoring a position has
+completed when its byte reaches the copy. On an armed run every inventory is chunk-independent, since every certified
+cut is independent.
+
 ```cpp
 #include "munch/dfa/verifier.hpp"
 #include "munch/dfa/verifier_decisions.hpp"
@@ -579,6 +610,11 @@ dfa::miscovering(verifier, "ab", 0);                // std::nullopt: exact, wher
 dfa::miscovering(verifier, "ab", 1);                // the marked ab itself, its token beginning at offset 0
 dfa::boundary_gap(verifier);                        // 2, the longest token, since no token grows forever
 dfa::divergence(verifier, dfa::armed_run(other));   // std::nullopt when the two scans segment alike
+dfa::dependence(verifier, "ab", 0);                 // std::nullopt: every certified cut of an armed run splits
+
+const std::vector<dfa::Certified_pair> pairs{{.window = "ab", .origin = 0}, {.window = "a", .origin = 0}};
+
+dfa::chunk_dependence(verifier, pairs);             // std::nullopt: cut at every anchor, every chunk scans alone
 ```
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
