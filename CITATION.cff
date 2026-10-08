@@ -61,3 +61,14 @@ references:
       - type: other
         value: "arXiv:2609.10600"
     url: "https://arxiv.org/abs/2609.10600"
+  - type: article
+    title: "Certified Splitting: Decidability and Anchor Supply for Maximal-Munch Tokenization"
+    authors:
+      - family-names: "Nidhögg"
+        given-names: "Nicklas"
+        orcid: "https://orcid.org/0009-0006-6161-6150"
+    year: 2026
+    identifiers:
+      - type: other
+        value: "arXiv:2610.08854"
+    url: "https://arxiv.org/abs/2610.08854"
