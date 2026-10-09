@@ -553,21 +553,23 @@ questions about, so that the same decisions can be made about any segmentation a
 token boundary follows it, and it accepts exactly the marked strings of a policy: an input with its boundaries, one
 marking per input the policy segments. `dfa::armed_run(dfa)` builds the verifier of maximal-munch scanning over a token
 set's DFA, `dfa::merge_tower(merges)` of `munch/dfa/merge_tower.hpp` the verifier of canonical byte-pair encoding over a
-merge table, and the constructor builds one from any transition table, trimming it to the states reachable from the
-start that can reach acceptance. The six decisions of `munch/dfa/verifier_decisions.hpp` then run on the product of the
-verifier with a search, each with a witness replayable through `Verifier::step()`. `miscovering(verifier, window,
-origin)` decides the window certificate `(window, origin)`, that the token containing an occurrence's final byte begins
-at the origin at every occurrence in every accepted marked string, and returns the shortest accepted marked string that
-miscovers it; on the armed run this is the exact side of `is_split_window()`, and the online decision is conservative
-against it, refusing 17 of 53,074 window origin pairs on `twitter.json` under the JSON grammar that the verifier
-certifies, each confirmed by exact search. `boundary_gap(verifier)` decides whether the distance between consecutive
-boundaries is bounded, and returns the supremum or, when it is not, a stem, a loop and a suffix whose pumping grows the
-gap. `realizable(verifier)` decides whether generation restricted to completion-preserving steps never strands, and
-returns each state's admitted steps. `divergence(a, b)` decides whether two functional verifiers accept the same marked
-strings, and returns the shortest input they diverge on in the first half that has one, the boundaries searched before
-the domain, with the half it falls in; over two armed runs it is `segmentation_difference()` decided on the verifiers.
-The verifier is a library-level interface: `core::Lexer` forwards none of it, and a caller reaches a token set's DFA
-through `dfa::Builder` or by deriving from `core::Builder`, whose `dfa()` is protected.
+merge table, `dfa::trie_chain(initial, continuation)` of `munch/dfa/trie_chain.hpp` the verifier of WordPiece
+segmentation over a two-mode vocabulary, and the constructor builds one from any transition table, trimming it to the
+states reachable from the start that can reach acceptance. The six decisions of `munch/dfa/verifier_decisions.hpp` then
+run on the product of the verifier with a search, each with a witness replayable through `Verifier::step()`.
+`miscovering(verifier, window, origin)` decides the window certificate `(window, origin)`, that the token containing an
+occurrence's final byte begins at the origin at every occurrence in every accepted marked string, and returns the
+shortest accepted marked string that miscovers it; on the armed run this is the exact side of `is_split_window()`, and
+the online decision is conservative against it, refusing 17 of 53,074 window origin pairs on `twitter.json` under the
+JSON grammar that the verifier certifies, each confirmed by exact search. `boundary_gap(verifier)` decides whether the
+distance between consecutive boundaries is bounded, and returns the supremum or, when it is not, a stem, a loop and a
+suffix whose pumping grows the gap. `realizable(verifier)` decides whether generation restricted to
+completion-preserving steps never strands, and returns each state's admitted steps. `divergence(a, b)` decides whether
+two functional verifiers accept the same marked strings, and returns the shortest input they diverge on in the first
+half that has one, the boundaries searched before the domain, with the half it falls in; over two armed runs it is
+`segmentation_difference()` decided on the verifiers. The verifier is a library-level interface: `core::Lexer` forwards
+none of it, and a caller reaches a token set's DFA through `dfa::Builder` or by deriving from `core::Builder`, whose
+`dfa()` is protected.
 
 `dependence(verifier, window, origin)` asks a second question of a pair the verifier certifies, and refuses one it does
 not: the certificate makes the cut at the origin a boundary of the whole string's segmentation, and independence says
@@ -648,6 +650,39 @@ dfa::miscovering(tower, "ab", 0);                   // std::nullopt: every ab li
 dfa::miscovering(tower, "ab", 1);                   // the marked ab itself, its token beginning at offset 0
 dfa::boundary_gap(tower);                           // 3, the longest token aba
 dfa::divergence(tower, dfa::merge_tower(first));    // aba, one token here and ab|a under the first merge alone
+```
+
+`dfa::trie_chain(initial, continuation)` takes a two-mode vocabulary, the initial tokens and the continuation tokens,
+and builds the verifier of WordPiece segmentation over it, the scanner that takes the longest initial token at the start
+of the input and then, at each boundary, the longest continuation token, failing where no token of the mode matches; the
+verifier accepts a byte string under exactly the scanner's segmentation of it and under no marking when the scanner does
+not consume it whole, so a byte no token names is in no domain string. A run of the scanner is a node of its mode's trie
+begun at a boundary, and a state of the verifier is the node of the oldest run still armed, which spells the unresolved
+tail, with the depth inside the tail at which the unarmed run began: the armed runs between are not stored, since every
+boundary inside the tail is forced by longest match, the scanner's own reading of the tail, which is done once per trie
+node at construction as the node's chain. A step is refused when an armed run reaches a token or the unarmed run drops,
+and a boundary requires the unarmed run to be at a token. With N the nodes of both tries, P the nodes other than the
+root with a child and c the longest chain, at most the longest token, the states are at most 1 + (N - 1) + P * c. A
+token may be in both sets and a set may be empty; an empty token is refused with `std::invalid_argument` naming its set
+and position. The four decisions then run on the chain as on any verifier, `miscovering()` deciding a window certificate
+under the vocabulary, `boundary_gap()` returning the length of the longest token the scanner emits, `realizable()` the
+mask of every state, and `divergence()` over two chains deciding whether two vocabularies segment every byte string
+alike, with the shortest string they segment apart or only one of them scans whole:
+
+```cpp
+#include "munch/dfa/trie_chain.hpp"
+#include "munch/dfa/verifier_decisions.hpp"
+
+const std::vector<std::string> initial{"a", "ab"};
+const std::vector<std::string> continuation{"b"};
+const std::vector<std::string> with_b{"a", "ab", "b"};
+
+const auto chain{dfa::trie_chain(initial, continuation)};      // a alone, or ab followed by any number of b
+
+dfa::miscovering(chain, "ab", 0);                               // std::nullopt: every ab is a token beginning at its a
+dfa::miscovering(chain, "b", 0);                                // the marked ab itself, its b in a token beginning at 0
+dfa::boundary_gap(chain);                                       // 2, the longest token ab
+dfa::divergence(chain, dfa::trie_chain(with_b, continuation));  // b, scanned whole only where b is an initial token
 ```
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose

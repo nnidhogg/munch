@@ -13,6 +13,7 @@ add_library(${PROJECT_NAME}
         src/recovery.cpp
         src/simulator.cpp
         src/split_window.cpp
+        src/trie_chain.cpp
         src/unroll_start.cpp
         src/verifier.cpp
         src/verifier_decisions.cpp
@@ -65,6 +66,7 @@ if (MUNCH_BUILD_TESTS)
             tests/merge_tower_test.cpp
             tests/minimize_test.cpp
             tests/property_test.cpp
+            tests/trie_chain_test.cpp
             tests/verifier_test.cpp
     )
 
