@@ -285,6 +285,13 @@ admitted steps, and `divergence()`, whether two functional verifiers accept the 
 diverging input of the first half that has one, the boundaries searched before the domain. Every witness replays through
 `Verifier::step()`.
 
+Two more decisions over the verifier joined that surface in 2.3.0, and two constructions of it: `dependence()`, whether
+every cut a certified window places lets the prefix and the suffix each scan alone as the whole string segments them,
+with the shortest marked string whose cut does not and the side or sides that fail; `chunk_dependence()`, whether every
+chunk between the anchors of an inventory of certified pairs scans alone, with the shortest such string, its anchors and
+the failing chunks; `dfa::merge_tower()`, the verifier of canonical byte-pair encoding over a merge table; and
+`dfa::trie_chain()`, the verifier of two-mode WordPiece segmentation over its initial and continuation tokens.
+
 The supported platform is 64-bit Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds and tests on
 x86-64 and ARM64, so both signednesses of plain `char` are exercised, and sanitizes and fuzzes on x86-64. Other
 platforms, 32-bit ones included, may work but carry no promise; macOS specifically is known not to build, because
