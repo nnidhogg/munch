@@ -8,6 +8,7 @@ add_library(${PROJECT_NAME}
         src/builder.cpp
         src/dfa.cpp
         src/label.cpp
+        src/merge_tower.cpp
         src/minimize.cpp
         src/recovery.cpp
         src/simulator.cpp
@@ -61,6 +62,7 @@ endif ()
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/dfa_test.cpp
+            tests/merge_tower_test.cpp
             tests/minimize_test.cpp
             tests/property_test.cpp
             tests/verifier_test.cpp

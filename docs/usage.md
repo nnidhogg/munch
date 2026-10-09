@@ -552,8 +552,9 @@ questions about, so that the same decisions can be made about any segmentation a
 `dfa::Verifier` is a deterministic, trim automaton over marked symbols, a byte together with the bit saying whether a
 token boundary follows it, and it accepts exactly the marked strings of a policy: an input with its boundaries, one
 marking per input the policy segments. `dfa::armed_run(dfa)` builds the verifier of maximal-munch scanning over a token
-set's DFA, and the constructor builds one from any transition table, trimming it to the states reachable from the start
-that can reach acceptance. The six decisions of `munch/dfa/verifier_decisions.hpp` then run on the product of the
+set's DFA, `dfa::merge_tower(merges)` of `munch/dfa/merge_tower.hpp` the verifier of canonical byte-pair encoding over a
+merge table, and the constructor builds one from any transition table, trimming it to the states reachable from the
+start that can reach acceptance. The six decisions of `munch/dfa/verifier_decisions.hpp` then run on the product of the
 verifier with a search, each with a witness replayable through `Verifier::step()`. `miscovering(verifier, window,
 origin)` decides the window certificate `(window, origin)`, that the token containing an occurrence's final byte begins
 at the origin at every occurrence in every accepted marked string, and returns the shortest accepted marked string that
@@ -615,6 +616,38 @@ dfa::dependence(verifier, "ab", 0);                 // std::nullopt: every certi
 const std::vector<dfa::Certified_pair> pairs{{.window = "ab", .origin = 0}, {.window = "a", .origin = 0}};
 
 dfa::chunk_dependence(verifier, pairs);             // std::nullopt: cut at every anchor, every chunk scans alone
+```
+
+`dfa::merge_tower(merges)` takes a byte-pair merge table in rank order, each merge two parts, a byte or the product of
+an earlier merge, whose concatenation is its product, and builds the verifier of canonical byte-pair encoding over it,
+the encoder that applies the lowest-ranked merge present anywhere at its leftmost occurrence until none applies; the
+verifier accepts every byte string under exactly the encoder's segmentation of it. Each merge is one stage over the
+stage below, a one-symbol-lookahead transducer that holds a symbol while it equals the merge's left part, joins it with
+an arriving right part into the product and otherwise passes what it holds and what arrives upward, so a state of the
+verifier is the symbol each stage holds with the boundary claimed after it, together with whether the top stage has
+emitted nothing, a token with a boundary claimed after it, or a token claimed to be the last. A step refuses a boundary
+claimed inside a product or after a token claimed to be the last, and a held symbol whose merge no possible next arrival
+completes is passed upward at once, which keeps the states few. The products must be distinct from the bytes and from
+one another, since the encoder merges a recreated token again where a stage above cannot: the table (c,c), (c,cc),
+(ccc,a), (cc,c) encodes `ccca` as one token, and `merge_tower()` refuses it with `std::invalid_argument` naming the
+merge. The four decisions then run on the tower as on any verifier, `miscovering()` deciding a window certificate under
+the table, `boundary_gap()` returning the length of the longest token the encoder emits, `realizable()` the mask of
+every state, and `divergence()` over two towers deciding whether two tables segment every byte string alike, with the
+shortest string they segment apart:
+
+```cpp
+#include "munch/dfa/merge_tower.hpp"
+#include "munch/dfa/verifier_decisions.hpp"
+
+const std::vector<dfa::Merge> first{{.left = "a", .right = "b"}};
+const std::vector<dfa::Merge> merges{{.left = "a", .right = "b"}, {.left = "ab", .right = "a"}};
+
+const auto tower{dfa::merge_tower(merges)};         // ab, then ab followed by a
+
+dfa::miscovering(tower, "ab", 0);                   // std::nullopt: every ab lies in a token beginning at its a
+dfa::miscovering(tower, "ab", 1);                   // the marked ab itself, its token beginning at offset 0
+dfa::boundary_gap(tower);                           // 3, the longest token aba
+dfa::divergence(tower, dfa::merge_tower(first));    // aba, one token here and ab|a under the first merge alone
 ```
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
