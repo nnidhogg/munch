@@ -31,12 +31,12 @@ namespace munch::dfa
  * reachable ones only; the verifier's constructor then trims the result by coaccessibility. With N the nodes of both
  * tries, P the nodes other than the root with a child and c the longest chain, which is at most the longest token, the
  * states are at most 1 + (N - 1) + P * c: the start, each node as the unarmed run with nothing armed, and each pending
- * tail with the unarmed run begun at a boundary of its chain. The chains cost time with the cube of the longest token
- * and memory with its square, since each pending node's chain walks the rest of the tail from every boundary and is
- * stored whole. The verifier accepts at most one marking per byte string, the scanner's segmentation of it, so its
- * domain is the byte strings the scanner consumes whole; a byte no token names is in no domain string. A token may be
- * in both sets, and a set may be empty: with no initial token the domain is the empty input alone, with no continuation
- * token it is the initial tokens. An empty token is refused.
+ * tail with the unarmed run begun at a boundary of its chain. With L the longest token, the chains cost O(P c L) time
+ * and O(P c) memory, so O(P L^2) and O(P L), since each pending node's chain walks the rest of the tail from each of
+ * its at most c boundaries and is stored as one link per boundary. The verifier accepts at most one marking per byte
+ * string, the scanner's segmentation of it, so its domain is the byte strings the scanner consumes whole; a byte no
+ * token names is in no domain string. A token may be in both sets, and a set may be empty: with no initial token the
+ * domain is the empty input alone, with no continuation token it is the initial tokens. An empty token is refused.
  * @param initial The initial tokens, the tokens of the first segment.
  * @param continuation The continuation tokens, the tokens of every later segment.
  * @return The trie-chain verifier.

@@ -10,6 +10,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -147,6 +148,44 @@ struct Exploration
 }
 
 /**
+ * @brief Returns a token's spelling as a refusal quotes it: a printable ASCII byte as itself, the quote and the
+ *        backslash escaped, and every other byte as `\xHH`, so that a NUL in a spelling cannot cut the message short.
+ * @param spelling The spelling.
+ * @return The spelling, quoted.
+ */
+[[nodiscard]] std::string quoted(const std::string_view spelling)
+{
+    constexpr unsigned char first_printable{0x20};
+    constexpr unsigned char last_printable{0x7E};
+
+    std::string out{'"'};
+
+    for (const auto byte : spelling)
+    {
+        const auto value{static_cast<unsigned char>(byte)};
+
+        const auto printable{value >= first_printable && value <= last_printable};
+
+        if (byte == '"' || byte == '\\')
+        {
+            out += std::format(R"(\{})", byte);
+        }
+        else if (printable)
+        {
+            out += byte;
+        }
+        else
+        {
+            out += std::format(R"(\x{:02X})", value);
+        }
+    }
+
+    out += '"';
+
+    return out;
+}
+
+/**
  * @brief Resolves a merge table to tokens, each part looked up among the bytes and the earlier products.
  * @param merges The merge table in rank order.
  * @return The resolved table.
@@ -176,9 +215,9 @@ struct Exploration
             const auto& missing{left_found == tokens.cend() ? left : right};
 
             throw std::invalid_argument{std::format(
-                    R"(merge_tower: the merge ("{}", "{}") at rank {} names "{}", which neither the alphabet nor an )"
-                    R"(earlier merge carries)",
-                    left, right, rank, missing)};
+                    "merge_tower: the merge ({}, {}) at rank {} names {}, which neither the alphabet nor an earlier "
+                    "merge carries",
+                    quoted(left), quoted(right), rank, quoted(missing))};
         }
 
         const auto& [left_spelling, left_token]{*left_found};
@@ -194,9 +233,9 @@ struct Exploration
         if (!inserted)
         {
             throw std::invalid_argument{std::format(
-                    R"(merge_tower: the merge ("{}", "{}") at rank {} recreates the token "{}", which the alphabet )"
-                    R"(or an earlier merge already carries)",
-                    left, right, rank, spelling)};
+                    "merge_tower: the merge ({}, {}) at rank {} recreates the token {}, which the alphabet or an "
+                    "earlier merge already carries",
+                    quoted(left), quoted(right), rank, quoted(spelling))};
         }
     }
 

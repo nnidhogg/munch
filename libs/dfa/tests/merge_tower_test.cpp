@@ -739,6 +739,22 @@ TEST(Merge_tower_test, Refuses_a_table_whose_later_merge_recreates_a_token_an_ea
     EXPECT_TRUE(refusal.contains(R"(("cc", "c") at rank 3 recreates the token "ccc")")) << refusal;
 }
 
+TEST(Merge_tower_test, A_refusal_quotes_a_spelling_holding_a_NUL_and_still_names_the_rank)
+{
+    // A raw NUL in the message would end it there for every reader of what(), so a byte outside printable ASCII is
+    // written as an escape, and the quote and the backslash are escaped beside it.
+    const std::string nul(1, '\0');
+
+    const auto refusal{
+            refusal_of({{.left = nul, .right = "a"}, {.left = "\"", .right = "\\"}, {.left = nul, .right = "a"}})};
+
+    EXPECT_TRUE(refusal.contains(R"(("\x00", "a") at rank 2 recreates the token "\x00a")")) << refusal;
+
+    const auto missing{refusal_of({{.left = "\xFF", .right = "\"\\"}})};
+
+    EXPECT_TRUE(missing.contains(R"(("\xFF", "\"\\") at rank 0 names "\"\\")")) << missing;
+}
+
 TEST(Merge_tower_test, The_tower_and_the_decisions_give_the_reference_answers_on_every_universe_of_the_fixture)
 {
     std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/bpe_reference.txt"};

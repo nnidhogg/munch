@@ -50,7 +50,8 @@ struct Merge
  * @param merges The merge table in rank order, each part a byte or the product of an earlier merge.
  * @return The merge-tower verifier.
  * @throws std::invalid_argument If a merge names a part that neither the alphabet nor an earlier merge carries, or a
- *         product that the alphabet or an earlier merge already carries; the message names the merge and its rank.
+ *         product that the alphabet or an earlier merge already carries; the message names the merge and its rank,
+ *         each spelling quoted, a byte outside printable ASCII written `\xHH` and the quote and the backslash escaped.
  */
 [[nodiscard]] Verifier merge_tower(std::span<const Merge> merges);
 
