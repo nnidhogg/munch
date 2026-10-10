@@ -40,6 +40,7 @@ add_library(${PROJECT_NAME}
         src/read_flex.cpp
         src/read_logos.cpp
         src/read_re2c.cpp
+        src/repair.cpp
         src/report.cpp
         src/report_render.cpp
         src/rust_cursor.cpp

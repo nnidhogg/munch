@@ -35,6 +35,7 @@ that, so that a string literal or a comment quoting an opener or a derive says n
 | `--windows N` | The longest window tried, 3 unless given; 4 is the planners' own limit. The enumeration tries every string of byte-class representatives up to this width, so it is the one cost that grows with the grammar. |
 | `--price BYTE` | Price this byte as well as the newline and the near misses. A character, `\n`, `\t`, `\r`, `\0` or `0xHH`. Repeatable. |
 | `--input FILE` | Measure the certified-anchor supply on this file: how many of its positions the certificates cut at, per kibibyte, and the gaps between them. One file, measured under every report. |
+| `--repairs` | Where a condition certifies no byte, a window certifying or not, try every byte as a token of its own, visible and discarded, and report each that certifies once added. |
 | `--json` | One JSON document for the whole run instead of text. |
 | `--require-certified BYTE` | Require every audited scanner and condition to certify this byte exactly, the report's `certified bytes` row. The byte is written as for `--price`. Repeatable. |
 | `--require-certified-modulo BYTE` | Require every audited scanner and condition to certify this byte once the discarded tokens are deleted, the report's `certified modulo discarded` row, which an exact certificate meets as well. Repeatable. |
@@ -214,6 +215,20 @@ Row by row:
   certificate reported, then every consuming token takes its own shape's edit together; a terminated token's fixed
   newline, immovable for the narrowing above, is movable here. A token whose fixed spelling holds the byte and has none
   of these shapes stays *fixed*.
+- **what a token of one byte's own would certify**: with `--repairs`, for a condition that certifies no byte, a window
+  certifying or not, the section that names the bytes under which safe cut points would exist once the grammar gave them
+  a token of their own. Every byte is tried twice, as a visible token, a delimiter the parser sees as JSON text
+  sequences add the record separator 0x1E, and as a discarded one, a separator it never sees, each time on its own: the
+  set is compiled again with one rule added, matching the byte alone at a priority past every rule's, so that no rule's
+  match changes, under the smallest id no rule carries, which is the token the pricing gives a byte no token begins
+  with. A visible token's byte is reported where it then certifies exactly and a discarded token's where it certifies
+  once the discarded tokens are deleted, a byte that did so before not tried as discarded, each row with the other bytes
+  the addition certifies as well; where no byte certifies either way, one row says so. The rows are the library's
+  decisions over the compiled modified sets and claim nothing more: not that the input format can carry the byte, nor
+  that no larger edit does better. On the bundled flex JSON grammar the 29 control bytes but the tab, the newline and
+  the carriage return certify, RFC 8259 admitting them in no token; on the flex and re2c block-comment grammars none
+  does, their comment admitting every byte, while the ANTLR and logos ones, read over UTF-8, gain the bytes no
+  well-formed UTF-8 holds. The at most 512 compilations are the section's cost, which is why the flag is off by default.
 - **certified-anchor supply on FILE**: with `--input`, the section that measures what the report's certificates come to
   on real input, the guarantee a parallel scanner lives on: how often a certified anchor occurs and how long the
   stretches between anchors are. An anchor is an interior position of the file at which a certificate places a token
@@ -732,8 +747,10 @@ were none), `lag`, `rescue_free` as true, false or null when the search stopped 
 shortest completely tokenizable input on which the scan rolls back or null, `blame` and `prices`, tokens given as their
 id and name. Byte strings are JSON strings holding each byte as the code point of its value, so a reader recovers the
 bytes exactly; names, paths and messages are text, their UTF-8 passed through and a byte that is part of no well-formed
-sequence escaped as the code point of its value, so the document is JSON whatever the file holds. With `--input` each
-condition carries a `supply` object beside its `report`, absent otherwise: the `input` named, its `bytes` and the bytes
-the serial scan `tokenized`, the same number when the file tokenizes completely, and under `exact`, `modulo` and
-`windows`, the last null when the report found no window, the `anchors`, the `per_kibibyte` figure and `gap_p50`,
-`gap_p90`, `gap_p99` and `gap_max`, each null where the anchors leave no gap.
+sequence escaped as the code point of its value, so the document is JSON whatever the file holds. With `--repairs` a
+condition that certifies no byte carries a `repairs` object beside its `report`, absent otherwise: `visible` and
+`discarded`, each an array of the bytes that certify once added, as their `byte` value and the values of the other bytes
+`gained` with it. With `--input` each condition carries a `supply` object beside its `report`, absent otherwise: the
+`input` named, its `bytes` and the bytes the serial scan `tokenized`, the same number when the file tokenizes
+completely, and under `exact`, `modulo` and `windows`, the last null when the report found no window, the `anchors`, the
+`per_kibibyte` figure and `gap_p50`, `gap_p90`, `gap_p99` and `gap_max`, each null where the anchors leave no gap.

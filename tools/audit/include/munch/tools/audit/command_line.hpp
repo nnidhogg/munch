@@ -96,6 +96,11 @@ struct Options
     std::size_t window_limit{default_window_limit};
 
     /**
+     * @brief Whether a condition that certifies no byte is told what a token of one byte's own would certify.
+     */
+    bool repairs{false};
+
+    /**
      * @brief Whether the output is JSON rather than text.
      */
     bool json{false};

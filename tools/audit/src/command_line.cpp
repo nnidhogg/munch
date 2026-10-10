@@ -139,6 +139,8 @@ would cost.
   --price BYTE          price this byte as well, written as a character, \n \t \r \0, or 0xHH; may repeat
   --input FILE          measure the certified-anchor supply on this file: how many positions its certificates cut
                         at, per kibibyte, and the gaps between them
+  --repairs             where no byte certifies, try every byte as a token of its own, visible and discarded, and
+                        report each that certifies once added
   --json                one JSON document instead of text
   --require-certified BYTE
                         require every audited scanner and condition to certify this byte exactly, written as for
@@ -229,6 +231,10 @@ Options parse_options(const std::span<const std::string_view> arguments)
         else if (argument == "--input")
         {
             options.input = value();
+        }
+        else if (argument == "--repairs")
+        {
+            options.repairs = true;
         }
         else if (argument == "--json")
         {
