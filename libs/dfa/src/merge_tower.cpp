@@ -203,21 +203,7 @@ struct Exploration
     return table;
 }
 
-/**
- * @brief Delivers a token with the boundary claimed after it to a stage, cascading upward.
- *
- * A stage holding its merge's left part joins an arriving right part into the product, delivered to the stage above
- * with the arriving claim, and refuses the delivery when a boundary is claimed after the held part; a held symbol the
- * arrival does not complete is passed upward first. A stage holds an arrival equal to its left part, and any other
- * arrival passes to the stage above. Above the top stage the token is emitted, refused after a token claimed to be the
- * last.
- * @param table The resolved merge table.
- * @param configuration The configuration, changed in place.
- * @param level The stage delivered to; the stage count names the top stage's emission.
- * @param token The token delivered.
- * @param claim Whether a boundary is claimed after the token.
- * @return True when the delivery is not refused.
- */
+// Declared ahead of its definition, since deliver() and pass_upward() call each other.
 [[nodiscard]] bool deliver(
         const Table& table, Configuration& configuration, std::size_t level, Token_t token, bool claim);
 
@@ -235,6 +221,21 @@ struct Exploration
     return deliver(table, configuration, level + 1, *held, held_claim);
 }
 
+/**
+ * @brief Delivers a token with the boundary claimed after it to a stage, cascading upward.
+ *
+ * A stage holding its merge's left part joins an arriving right part into the product, delivered to the stage above
+ * with the arriving claim, and refuses the delivery when a boundary is claimed after the held part; a held symbol the
+ * arrival does not complete is passed upward first. A stage holds an arrival equal to its left part, and any other
+ * arrival passes to the stage above. Above the top stage the token is emitted, refused after a token claimed to be the
+ * last.
+ * @param table The resolved merge table.
+ * @param configuration The configuration, changed in place.
+ * @param level The stage delivered to; the stage count names the top stage's emission.
+ * @param token The token delivered.
+ * @param claim Whether a boundary is claimed after the token.
+ * @return True when the delivery is not refused.
+ */
 bool deliver(const Table& table, Configuration& configuration, std::size_t level, Token_t token, const bool claim)
 {
     while (level < table.lefts.size())
