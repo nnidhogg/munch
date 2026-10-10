@@ -632,9 +632,9 @@ File_reader::File_reader(
               .options = {},
               .definitions = {},
               .pointers =
-                      {{.canonical = "YYCURSOR", .name = "YYCURSOR"},
-                       {.canonical = "YYMARKER", .name = "YYMARKER"},
-                       {.canonical = "YYCTXMARKER", .name = "YYCTXMARKER"}},
+                      {{.canonical = "YYCURSOR", .name = "YYCURSOR", .line = 0},
+                       {.canonical = "YYMARKER", .name = "YYMARKER", .line = 0},
+                       {.canonical = "YYCTXMARKER", .name = "YYCTXMARKER", .line = 0}},
               .api_custom = std::nullopt}
 {}
 
@@ -681,10 +681,11 @@ std::size_t File_reader::block(const Opener& opener)
     }
 
     // A rules block is a library for the blocks that use it and no scanner itself: re2c holds it to none of the
-    // end-rule checks until a use block takes it up, only `re2c:eof`'s bound at its end, which the reading does not
-    // hold.
+    // end-rule checks until a use block takes it up, only `re2c:eof`'s bound at its end.
     if (rules)
     {
+        refuse_eof_past_code_unit(outcome.spec.options, outcome.spec.line);
+
         return outcome.end;
     }
 

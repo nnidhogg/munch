@@ -44,9 +44,226 @@ constexpr std::array<Encoding_names, 5> encodings{
          {.encoding = Re2c_encoding::utf32, .names = {"encoding:utf32", "flags:unicode", "flags:u"}}}};
 
 /**
+ * @brief The configurations whose value re2c 3.1 reads as a number, under every name its configuration lexer gives
+ *        them.
+ */
+constexpr std::array<std::string_view, 62> number_configurations{
+        "eof",
+        "sentinel",
+        "yyfill:enable",
+        "yyfill:parameter",
+        "yyfill:check",
+        "tags",
+        "flags:tags",
+        "flags:T",
+        "leftmost-captures",
+        "flags:leftmost-captures",
+        "posix-captures",
+        "flags:posix-captures",
+        "flags:P",
+        "invert-captures",
+        "define:YYFILL:naked",
+        "define:YYGETCONDITION:naked",
+        "define:YYGETSTATE:naked",
+        "define:YYSETCONDITION:naked",
+        "define:YYSETSTATE:naked",
+        "variable:yych:conversion",
+        "yych:conversion",
+        "variable:yych:emit",
+        "yych:emit",
+        "variable:yybm:hex",
+        "yybm:hex",
+        "state:abort",
+        "state:nextlabel",
+        "bit-vectors",
+        "flags:bit-vectors",
+        "flags:b",
+        "debug-output",
+        "flags:debug-output",
+        "flags:d",
+        "computed-gotos",
+        "flags:computed-gotos",
+        "flags:g",
+        "nested-ifs",
+        "flags:nested-ifs",
+        "flags:s",
+        "case-insensitive",
+        "flags:case-insensitive",
+        "case-inverted",
+        "flags:case-inverted",
+        "case-ranges",
+        "flags:case-ranges",
+        "unsafe",
+        "flags:unsafe",
+        "encoding:ebcdic",
+        "flags:ecb",
+        "flags:e",
+        "encoding:utf32",
+        "flags:unicode",
+        "flags:u",
+        "encoding:ucs2",
+        "flags:wide-chars",
+        "flags:w",
+        "encoding:utf16",
+        "flags:utf-16",
+        "flags:x",
+        "encoding:utf8",
+        "flags:utf-8",
+        "flags:8"};
+
+/**
+ * @brief The configurations whose value re2c 3.1 reads as a number that is not negative.
+ */
+constexpr std::array<std::string_view, 3> nonnegative_configurations{
+        "computed-gotos:threshold", "cgoto:threshold", "indent:top"};
+
+/**
+ * @brief The configurations whose value re2c 3.1 reads as a string, under every name its configuration lexer gives
+ *        them.
+ */
+constexpr std::array<std::string_view, 58> string_configurations{
+        "api:sigil",
+        "header",
+        "flags:type-header",
+        "flags:t",
+        "tags:prefix",
+        "tags:expression",
+        "define:YYBACKUP",
+        "define:YYBACKUPCTX",
+        "define:YYCONDTYPE",
+        "define:YYCTYPE",
+        "define:YYCTXMARKER",
+        "define:YYCURSOR",
+        "define:YYDEBUG",
+        "define:YYFILL",
+        "define:YYFILL@len",
+        "define:YYGETCONDITION",
+        "define:YYGETSTATE",
+        "define:YYLESSTHAN",
+        "define:YYLIMIT",
+        "define:YYMARKER",
+        "define:YYMTAGN",
+        "define:YYMTAGP",
+        "define:YYPEEK",
+        "define:YYRESTORE",
+        "define:YYRESTORECTX",
+        "define:YYRESTORETAG",
+        "define:YYSETCONDITION",
+        "define:YYSETCONDITION@cond",
+        "define:YYSETSTATE",
+        "define:YYSETSTATE@state",
+        "define:YYSHIFT",
+        "define:YYSHIFTSTAG",
+        "define:YYSHIFTMTAG",
+        "define:YYSKIP",
+        "define:YYSTAGN",
+        "define:YYSTAGP",
+        "variable:yyctable",
+        "variable:yyaccept",
+        "variable:yytarget",
+        "variable:yystate",
+        "variable:yych",
+        "variable:yybm",
+        "variable:yystable",
+        "cond:prefix",
+        "condprefix",
+        "cond:enumprefix",
+        "condenumprefix",
+        "cond:divider",
+        "cond:divider@cond",
+        "cond:goto",
+        "cond:goto@cond",
+        "indent:string",
+        "label:prefix",
+        "labelprefix",
+        "label:yyfill",
+        "label:yyFillLabel",
+        "label:yyloop",
+        "label:yyNext"};
+
+/**
+ * @brief The names of the start label's configuration, whose value re2c 3.1 reads as a number where one follows the
+ *        `=` and as a string where none does.
+ */
+constexpr std::array<std::string_view, 2> label_configurations{"label:start", "startlabel"};
+
+/**
+ * @brief A set of configurations whose values re2c 3.1 reads alike: their names and what it reads the value as.
+ */
+struct Valued_configurations
+{
+    /**
+     * @brief The names, every alias among them.
+     */
+    std::span<const std::string_view> names{};
+
+    /**
+     * @brief What the value is read as.
+     */
+    Configuration_value value{};
+};
+
+/**
+ * @brief The configurations whose value is no choice among words, by what re2c 3.1 reads the value as.
+ */
+constexpr std::array<Valued_configurations, 4> valued_configurations{
+        {{.names = number_configurations, .value = Configuration_value::number},
+         {.names = nonnegative_configurations, .value = Configuration_value::nonnegative_number},
+         {.names = string_configurations, .value = Configuration_value::string},
+         {.names = label_configurations, .value = Configuration_value::number_or_string}}};
+
+/**
+ * @brief The words the API configuration chooses among.
+ */
+constexpr std::array<std::string_view, 2> api_words{"default", "custom"};
+
+/**
+ * @brief The words the API style configuration chooses among.
+ */
+constexpr std::array<std::string_view, 2> api_style_words{"functions", "free-form"};
+
+/**
+ * @brief The words the encoding policy configuration chooses among.
+ */
+constexpr std::array<std::string_view, 3> policy_words{"ignore", "substitute", "fail"};
+
+/**
+ * @brief The words the empty class configuration chooses among.
+ */
+constexpr std::array<std::string_view, 3> empty_class_words{"match-empty", "match-none", "error"};
+
+/**
+ * @brief A configuration that chooses among words: a name it goes by and the words.
+ */
+struct Choice_configuration
+{
+    /**
+     * @brief The name.
+     */
+    std::string_view name{};
+
+    /**
+     * @brief The words, in the order re2c lists them.
+     */
+    std::span<const std::string_view> words{};
+};
+
+/**
+ * @brief The configurations that choose among words, under every name re2c 3.1's configuration lexer gives them.
+ */
+constexpr std::array<Choice_configuration, 7> choice_configurations{
+        {{.name = "api", .words = api_words},
+         {.name = "flags:input", .words = api_words},
+         {.name = "api:style", .words = api_style_words},
+         {.name = "encoding-policy", .words = policy_words},
+         {.name = "flags:encoding-policy", .words = policy_words},
+         {.name = "empty-class", .words = empty_class_words},
+         {.name = "flags:empty-class", .words = empty_class_words}}};
+
+/**
  * @brief Returns the value a configuration gives a flag, when the configuration names it under one of its names: a flag
  *        is set by any value but `0`.
- * @param option The configuration, its blanks taken off.
+ * @param option The configuration as read, its name, `=` and its value.
  * @param names The names the flag's configuration goes by.
  * @return Whether the flag is set, or std::nullopt when the configuration is another.
  */
@@ -125,7 +342,7 @@ constexpr std::array<Encoding_names, 5> encodings{
  *
  * There is no configuration for the flex syntax, `re2c:flags:F` being a configuration re2c rejects, so only the command
  * line brings that one.
- * @param option The configuration, its blanks taken off.
+ * @param option The configuration as read, its name, `=` and its value.
  * @param flags The flags the block's configurations leave, the configuration's applied.
  */
 void set_case_flags(const std::string& option, Re2c_flags& flags)
@@ -148,7 +365,7 @@ void set_case_flags(const std::string& option, Re2c_flags& flags)
 /**
  * @brief Applies a configuration of an encoding: an encoding is a configuration of its own, under the three names the
  *        manual gives each, and setting one to 0 leaves the block reading ASCII again.
- * @param option The configuration, its blanks taken off.
+ * @param option The configuration as read, its name, `=` and its value.
  * @param flags The flags the block's configurations leave, the configuration's applied.
  * @return Whether the configuration is one of an encoding.
  */
@@ -199,6 +416,26 @@ void set_case_flags(const std::string& option, Re2c_flags& flags)
 }
 
 } // namespace
+
+std::optional<Configuration_syntax> syntax_of(const std::string_view name)
+{
+    const auto chooser{std::ranges::find(choice_configurations, name, &Choice_configuration::name)};
+
+    if (chooser != choice_configurations.end())
+    {
+        return Configuration_syntax{.value = Configuration_value::choice, .choices = chooser->words};
+    }
+
+    for (const auto& [names, value] : valued_configurations)
+    {
+        if (std::ranges::contains(names, name))
+        {
+            return Configuration_syntax{.value = value, .choices = {}};
+        }
+    }
+
+    return std::nullopt;
+}
 
 std::string unreadable(const Re2c_encoding encoding)
 {
@@ -254,13 +491,15 @@ void configure(
     }
 
     // A `define:` configuration renaming a scan pointer says what the actions of this block call it.
-    for (auto& [canonical, name] : pointers)
+    for (auto& [canonical, name, named_at] : pointers)
     {
         if (const auto key{std::format("define:{}=", canonical)}; option.starts_with(key))
         {
             auto value{option.substr(key.size())};
 
             name = pointer_name(std::move(value));
+
+            named_at = line;
         }
     }
 }

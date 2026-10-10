@@ -471,7 +471,7 @@ TEST(Read_re2c_test, A_condition_is_the_scanner_s_when_any_rule_names_it_and_INI
     EXPECT_EQ(eof_of("255", ""), "line 1: 're2c:eof' configuration is set, but no $ rule found");
     EXPECT_EQ(eof_of("abc", ""), "line 2: bad configuration value (expected number)");
     EXPECT_EQ(eof_of("-0", ""), "line 2: bad configuration value (expected number)");
-    EXPECT_EQ(eof_of("007", ""), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("007", ""), "line 2: missing ending ';' in configuration");
     EXPECT_EQ(eof_of("2147483648", ""), "line 2: configuration value overflow");
 
     // re2c reads each setting as a number where it is written, so a blank within the value is refused and a later
@@ -492,16 +492,16 @@ TEST(Read_re2c_test, A_condition_is_the_scanner_s_when_any_rule_names_it_and_INI
 
     // Around the value re2c lets a space or a tab stand, never a newline or a carriage return; and it holds a block
     // without rules to the code unit too.
-    EXPECT_EQ(eof_of("-1\n", ""), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("-1\n", ""), "line 2: missing ending ';' in configuration");
     EXPECT_EQ(eof_of("\n 0", "$ { return 0; }\n"), "line 2: bad configuration value (expected number)");
-    EXPECT_EQ(eof_of("0\r", "$ { return 0; }\n"), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("0\r", "$ { return 0; }\n"), "line 2: missing ending ';' in configuration");
     EXPECT_EQ(
             refusal_of("/*!re2c\nre2c:eof = 256;\n*/\n/*!re2c\nre2c:eof = -1;\n\"a\"+ { return 1; }\n*/\n"),
             "line 1: EOF exceeds maximum code unit value for given encoding");
 
     // The checks hold where re2c holds them: a block whose rules are no tokens is held once it is read, where it
     // declares no scanner; a rules block is held only where a use block takes it up, with the rules and the
-    // configuration that block supplies, and an unused one is held to nothing.
+    // configuration that block supplies, and an unused one is held to the code unit alone.
     EXPECT_EQ(
             refusal_of("/*!re2c\n\"\" { return 2; }\n$ { return 0; }\n*/\n/*!re2c\n\"a\" { return 1; }\n*/\n"),
             "line 3: $ rule found, but 're2c:eof' configuration is not set");
@@ -520,6 +520,21 @@ TEST(Read_re2c_test, A_condition_is_the_scanner_s_when_any_rule_names_it_and_INI
             refusal_of("/*!rules:re2c\n<B> $ { return 0; }\n*/\n/*!use:re2c\nre2c:eof = 0;\n"
                        "<*> \"a\" { return 1; }\n*/\n"),
             "line 2: EOF rule in condition 'B' without other rules doesn't make sense");
+
+    // re2c 3.1 holds `re2c:eof` to the code unit at a rules block's end, used or not, and at each `!use:` directive
+    // once the used block's configurations stand: a setting after either takes neither refusal back, while the used
+    // block's own setting counts at the directive.
+    EXPECT_EQ(
+            refusal_of("/*!rules:re2c\nre2c:eof = 256;\n\"a\" { return 1; }\n*/\n"),
+            "line 1: EOF exceeds maximum code unit value for given encoding");
+    EXPECT_TRUE(refusal_of("/*!rules:re2c\nre2c:eof = 256;\nre2c:eof = -1;\n\"a\" { return 1; }\n*/\n").empty());
+    EXPECT_EQ(
+            refusal_of("/*!rules:re2c:base\n\"a\" { return 1; }\n*/\n/*!re2c\nre2c:eof = 256;\n!use:base;\n"
+                       "re2c:eof = -1;\n*/\n"),
+            "line 6: EOF exceeds maximum code unit value for given encoding");
+    EXPECT_TRUE(refusal_of("/*!rules:re2c:base\nre2c:eof = -1;\n\"a\" { return 1; }\n*/\n/*!re2c\nre2c:eof = 256;\n"
+                           "!use:base;\nre2c:eof = -1;\n*/\n")
+                        .empty());
 
     // The same brought in by a `!use:` directive is the reading's own restriction: re2c 3.1 compiles that form.
     EXPECT_EQ(
@@ -1353,6 +1368,65 @@ TEST(Read_re2c_test, Configurations_govern_the_whole_block_under_every_name_re2c
     EXPECT_EQ(turned.rules.front().expression, R"([\x00-\xff])");
 }
 
+TEST(Read_re2c_test, A_configuration_is_a_name_re2c_knows_an_equals_sign_and_a_value_of_the_name_s_kind)
+{
+    const auto configured{[](const std::string_view configuration) {
+        return refusal_of(std::format("/*!re2c\n{}\n\"a\" {{ return 1; }}\n*/\n", configuration));
+    }};
+
+    // The name runs as far as letters, digits, `_`, `:` and `-` do, or through a known name's `@` part, and must be one
+    // re2c 3.1 knows, an alias as good as the canonical name; a blank ends it, so `re2c:e of` names `e`.
+    EXPECT_EQ(configured("re2c:foo = 1;"), "line 2: unrecognized configuration 'foo'");
+    EXPECT_EQ(configured("re2c:eofx = 0;"), "line 2: unrecognized configuration 'eofx'");
+    EXPECT_EQ(configured("re2c:e of = -1;"), "line 2: unrecognized configuration 'e'");
+    EXPECT_EQ(configured("re2c:flags:F = 1;"), "line 2: unrecognized configuration 'flags:F'");
+    EXPECT_TRUE(configured("re2c:flags:8 = 0;").empty());
+    EXPECT_TRUE(configured("re2c:variable:yych = c;").empty());
+    EXPECT_TRUE(configured("re2c:define:YYFILL@len = n;").empty());
+    EXPECT_TRUE(configured("re2c:cond:goto@cond = c;").empty());
+    EXPECT_TRUE(configured("re2c:flags:empty-class = match-empty;").empty());
+    EXPECT_EQ(configured("re2c:define:YYFILL@size = n;"), "line 2: missing '=' in configuration");
+
+    // Around the `=` and the value a space or a tab may stand and nothing else: a newline or a carriage return before
+    // the `=`, after it or after the value is refused in re2c's words, whatever the configuration's kind.
+    EXPECT_EQ(configured("re2c:eof\n= -1;"), "line 2: missing '=' in configuration");
+    EXPECT_EQ(configured("re2c:yyfill:enable\r= 0;"), "line 2: missing '=' in configuration");
+    EXPECT_EQ(configured("re2c:yyfill:enable =\n 0;"), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(configured("re2c:define:YYCTYPE = char\n;"), "line 2: missing ending ';' in configuration");
+    EXPECT_EQ(configured("re2c:api =\ncustom;"), "line 2: bad configuration value (expected: 'default', 'custom')");
+    EXPECT_TRUE(configured("re2c:define:YYCTYPE =\t\tchar\t;").empty());
+
+    // A bare string runs to the first blank, newline, NUL or `;`, a carriage return being part of it, and a quoted one
+    // to its closing quote on the same line, a `;` inside included.
+    EXPECT_EQ(configured("re2c:define:YYCTYPE = unsigned char;"), "line 2: missing ending ';' in configuration");
+    EXPECT_TRUE(configured("re2c:define:YYCTYPE = \"unsigned char\";").empty());
+    EXPECT_TRUE(configured("re2c:define:YYCTYPE = char\r;").empty());
+    EXPECT_TRUE(configured("re2c:define:YYCTYPE = ;").empty());
+    EXPECT_EQ(configured("re2c:define:YYCTYPE = \"unsigned\nchar\";"), "line 2: newline in character string");
+    EXPECT_EQ(configured("re2c:define:YYCTYPE = \"unsigned\\\nchar\";"), "line 2: newline in character string");
+    EXPECT_EQ(configured("re2c:define:YYCTYPE = \"ab\"c;"), "line 2: missing ending ';' in configuration");
+
+    // A number is `0` or a decimal opening with a digit other than zero, and what follows it is the `;`'s to answer
+    // for; a choice is one of its words, and the start label a number where one follows the `=` and a string where none
+    // does.
+    EXPECT_EQ(configured("re2c:yyfill:enable = 0x;"), "line 2: missing ending ';' in configuration");
+    EXPECT_EQ(configured("re2c:indent:top = -1;"), "line 2: expected nonnegative value in configuration");
+    EXPECT_EQ(configured("re2c:api = defaultx;"), "line 2: missing ending ';' in configuration");
+    EXPECT_EQ(
+            configured("re2c:empty-class = none;"),
+            "line 2: bad configuration value (expected: 'match-empty', 'match-none', 'error')");
+    EXPECT_EQ(configured("re2c:startlabel = 1x;"), "line 2: missing ending ';' in configuration");
+    EXPECT_TRUE(configured("re2c:startlabel = x1;").empty());
+
+    // The option keeps the name, `=` and the value, a number in decimal and a string as written.
+    const auto read{
+            read_re2c("/*!re2c\nre2c:define:YYCTYPE = \"unsigned char\";\nre2c:yyfill:enable = 0 ;\n"
+                      "\"a\" { return 1; }\n*/\n")};
+
+    ASSERT_EQ(read.size(), 1U);
+    EXPECT_EQ(read.front().options, (std::vector<std::string>{"define:YYCTYPE=\"unsigned char\"", "yyfill:enable=0"}));
+}
+
 TEST(Read_re2c_test, An_unnamed_use_block_takes_the_most_recent_rules_block_with_its_configurations)
 {
     // A use block with no name of its own uses the most recent rules block, named or not, and reads its own rules under
@@ -1723,6 +1797,59 @@ TEST(Read_re2c_test, A_constant_index_is_read_to_its_value_and_any_other_is_out_
                         .contains("moves slots[0].cursors[0]"));
 }
 
+TEST(Read_re2c_test, An_index_holding_a_suffixed_operand_is_out_of_sight)
+{
+    // A suffix gives a literal a type of its own, which the arithmetic around it then takes: `(0U - 1) % 2` is 1, the
+    // unsigned difference wrapping, where a reading over int says -1, so `cursors[(0U - 1) % 2]` is the configured
+    // `cursors[1]`, and the scanner re2c 3.1 builds moves its cursor past the b of "ab" under gcc 13, the suffix
+    // written out or through `#define SLOT 0U`. An index holding a suffixed operand is out of sight, while a suffixed
+    // literal alone is its value whatever its type, `cursors[0U]` moving `cursors[0]`.
+    const auto indexed{[](const std::string_view head, const std::string_view index) {
+        return std::format(
+                "{}/*!re2c\nre2c:define:YYCTYPE = char;\nre2c:define:YYCURSOR = \"cursors[1]\";\n\"a\" {{ "
+                "++cursors[{}]; return 7; }}\n\"b\" {{ return 8; }}\n*/\n",
+                head, index);
+    }};
+
+    EXPECT_TRUE(
+            refusal_of(indexed("", "(0U - 1) % 2")).contains("line 4: the action indexes cursors by an expression"));
+    EXPECT_TRUE(
+            refusal_of(indexed("#define SLOT 0U\n", "(SLOT - 1) % 2")).contains("indexes cursors by an expression"));
+    EXPECT_TRUE(refusal_of(indexed("", "0ULL + 1")).contains("indexes cursors by an expression"));
+    EXPECT_TRUE(refusal_of(indexed("", "1U")).contains("line 4: the action moves cursors[1]"));
+    EXPECT_TRUE(refusal_of(indexed("", "0x1")).contains("line 4: the action moves cursors[1]"));
+    EXPECT_TRUE(refusal_of(indexed("", "2 - 0x1")).contains("line 4: the action moves cursors[1]"));
+    EXPECT_EQ(refusal_of(indexed("", "(0 - 1) % 2")), "");
+
+    // A configured spelling indexed so is refused against its configuration, whatever the actions index.
+    EXPECT_EQ(
+            refusal_of("/*!re2c\nre2c:define:YYCTYPE = char;\nre2c:define:YYCURSOR = \"cursors[(0U - 1) % 2]\";\n"
+                       "\"a\" { return 7; }\n*/\n"),
+            "line 3: the configuration names YYCURSOR `cursors[(0U - 1) % 2]`, which indexes cursors by an expression "
+            "the reading does not evaluate, so which slot the scanner steps is out of sight");
+}
+
+TEST(Read_re2c_test, An_earlier_index_of_a_configured_pointer_is_read_to_its_value_as_the_action_s_is)
+{
+    // The configured `slots[1-1].cursors[0]` is `slots[0].cursors[0]`, and its array `slots[0].cursors`, so the
+    // action's `++slots[0].cursors[1-1]` moves it, which the scanner re2c 3.1 builds does past the b of "ab", and
+    // `slots[0].cursors[i]` stands for any of its slots.
+    const auto acted{[](const std::string_view configured, const std::string_view moved) {
+        return std::format(
+                "/*!re2c\nre2c:define:YYCTYPE = char;\nre2c:define:YYCURSOR = \"{}\";\n\"a\" {{ ++{}; return 7; }}\n"
+                "\"b\" {{ return 8; }}\n*/\n",
+                configured, moved);
+    }};
+
+    EXPECT_TRUE(refusal_of(acted("slots[1-1].cursors[0]", "slots[0].cursors[1-1]"))
+                        .contains("line 4: the action moves slots[0].cursors[0]"));
+    EXPECT_TRUE(refusal_of(acted("slots[1-1].cursors[0]", "slots[1-1].cursors[0]"))
+                        .contains("line 4: the action moves slots[0].cursors[0]"));
+    EXPECT_TRUE(refusal_of(acted("slots[1-1].cursors[0]", "slots[0].cursors[i]"))
+                        .contains("line 4: the action indexes slots[0].cursors by an expression"));
+    EXPECT_EQ(refusal_of(acted("slots[1-1].cursors[0]", "slots[1].cursors[1-1]")), "");
+}
+
 TEST(Read_re2c_test, A_pointer_handed_on_rather_than_moved_is_out_of_sight)
 {
     // The pointer handed on rather than moved here is out of sight: a reference bound to it, its address taken, or the
@@ -1757,6 +1884,23 @@ TEST(Read_re2c_test, A_pointer_handed_on_rather_than_moved_is_out_of_sight)
             refusal_of(acting("", "auto& cursor = (cursors[0]); ++cursor; return 7;")).contains("hands on cursors[0]"));
     EXPECT_TRUE(refusal_of(acting("", "auto cursor = &(cursors[0]); ++*cursor; return 7;"))
                         .contains("hands on cursors[0]"));
+
+    // A cast to a reference type binds a reference as `auto&` does: `static_cast<const char*&>(cursors[0])` and
+    // `(const char*&)cursors[0]` bound to `auto& cursor` and stepped each moves the cursor past the b of "ab" under
+    // re2c 3.1, while a cast to the pointer's own type copies it.
+    for (const std::string_view cast :
+         {"static_cast<const char*&>(cursors[0])", "const_cast<const char*&>(cursors[0])",
+          "reinterpret_cast<const char*&>((cursors[0]))", "static_cast<const char*&&>(cursors[0])",
+          "(const char*&)cursors[0]", "(const char*&)(cursors[0])", "(const char*&&)cursors[0]"})
+    {
+        const auto action{std::format("auto& cursor = {}; ++cursor; return 7;", cast)};
+
+        EXPECT_TRUE(refusal_of(acting("", action)).contains("line 4: the action hands on cursors[0]")) << cast;
+    }
+
+    EXPECT_EQ(refusal_of(acting("", "long n = static_cast<const char*>(cursors[0]) - start; return (int)n;")), "");
+    EXPECT_EQ(refusal_of(acting("", "long n = (const char*)cursors[0] - start; return (int)n;")), "");
+    EXPECT_EQ(refusal_of(acting("", "return (n & 1) & (cursors[0] == start);")), "");
 }
 
 TEST(Read_re2c_test, A_break_a_continue_and_a_goto_leave_or_restart_the_scan_as_re2c_has_them)
@@ -1803,6 +1947,12 @@ TEST(Read_re2c_test, An_action_returning_nowhere_leaves_by_a_jump)
     // shortcut rule, `:=> COMMENT`, and a transition rule's `=> COMMENT { continue; }` leave as re2c writes them.
     EXPECT_TRUE(refusal_of(acting("", "++count;")).contains("ends without returning or leaving"));
     EXPECT_TRUE(refusal_of(acting("", "++count; break;")).contains("leaves by `break` the loop"));
+
+    // A block ending the action ends it as its own last statement does, re2c 3.1 rescanning after `++count; {
+    // continue; }` as after `++count; continue;`.
+    EXPECT_EQ(refusal_of(acting("", "++count; { continue; }")), "");
+    EXPECT_EQ(refusal_of(acting("", "++count; { { continue; } }")), "");
+    EXPECT_TRUE(refusal_of(acting("", "++count; { }")).contains("ends without returning or leaving"));
     EXPECT_EQ(
             refusal_of("/*!re2c\nre2c:define:YYCTYPE = char;\n<A> \"a\" :=> B\n<B> \"b\" => A { continue; }\n"
                        "<A> \"c\" { return 3; }\n*/\n"),
@@ -1912,6 +2062,56 @@ TEST(Read_re2c_test, A_braced_hexadecimal_escape_is_refused_as_re2c_refuses_it)
     EXPECT_EQ(line_of("/*!re2c\n [\\x100] { return X; }\n*/"), std::nullopt);
 }
 
+TEST(Read_re2c_test, A_setup_rule_s_code_heads_each_action_of_its_conditions_as_re2c_writes_it)
+{
+    // re2c 3.1 writes a `<!A>` setup rule's code into each action of A ahead of the action's own, a `<*>` rule's and
+    // the default rule's among them, a transition rule's after it sets the condition and a shortcut rule's not at all,
+    // and `<!*>` heads every condition no setup rule names: a `continue` there leaves before the `return 7`, the match
+    // rescanned rather than returned, so the action is judged with that code before it and refused at the rule's line,
+    // wherever in the block the setup rule stands.
+    const std::string headed{
+            "the action, after the code of the setup rule at line 2 that re2c writes before it, leaves by `continue` "
+            "on some path before it returns"};
+
+    EXPECT_TRUE(
+            refusal_of("/*!re2c\n<!A> { continue; }\n<A> \"a\" { return 7; }\n*/\n").starts_with("line 3: " + headed));
+    EXPECT_TRUE(
+            refusal_of("/*!re2c\n<!*> { continue; }\n<A> \"a\" { return 7; }\n*/\n").starts_with("line 3: " + headed));
+    EXPECT_TRUE(
+            refusal_of(
+                    "/*!re2c\n<!A> { if (n) continue; }\n<A> \"a\" => B { return 7; }\n<B> \"b\" { continue; }\n*/\n")
+                    .starts_with("line 3: " + headed));
+    EXPECT_TRUE(refusal_of("/*!re2c\n<!A> { continue; }\n<A> \"a\" { continue; }\n<*> \"b\" { return 8; }\n*/\n")
+                        .starts_with("line 4: " + headed));
+    EXPECT_TRUE(refusal_of("/*!re2c\n<A> \"a\" { return 7; }\n<!A> { continue; }\n*/\n")
+                        .starts_with("line 2: the action, after the code of the setup rule at line 3"));
+
+    // A setup rule heads no rule of another condition and no shortcut rule, and code leaving by a jump before an action
+    // leaving by one leaves the match discarded on every path, which the action alone says.
+    const auto source{
+            "/*!re2c\n<!A> { if (n) continue; }\n<A> \"a\" { continue; }\n<A> \"c\" :=> B\n<B> \"b\" { return 8; }\n"
+            "*/\n"};
+
+    EXPECT_EQ(refusal_of(source), "");
+
+    const auto rules{read_re2c(source).front().rules};
+
+    ASSERT_EQ(rules.size(), 3U);
+    EXPECT_EQ(rules[0].token, std::nullopt);
+    EXPECT_EQ(rules[2].token, std::optional<std::string>{"8"});
+    EXPECT_EQ(refusal_of("/*!re2c\n<!A> { setup(); }\n<A> \"a\" { return 7; }\n<*> * { return 0; }\n*/\n"), "");
+
+    // A condition's own setup rule takes the place of `<!*>` there: re2c 3.1 writes `{ setup(); } { return 1; }` for
+    // the a rule below and `{ if (n) continue; }` only before the actions of C.
+    EXPECT_EQ(
+            refusal_of("/*!re2c\n<!A> { setup(); }\n<!*> { if (n) continue; }\n<A> \"a\" { return 1; }\n"
+                       "<C> \"c\" { continue; }\n<*> * { continue; }\n*/\n"),
+            "");
+    EXPECT_TRUE(refusal_of("/*!re2c\n<!A> { setup(); }\n<!*> { if (n) continue; }\n<A> \"a\" { continue; }\n"
+                           "<C> \"c\" { return 3; }\n*/\n")
+                        .starts_with("line 5: the action, after the code of the setup rule at line 3"));
+}
+
 TEST(Read_re2c_test, A_scan_pointer_an_action_moves_is_refused_at_the_rule_s_line)
 {
     // A setup rule's code and the entry rule's are written into the actions re2c runs them before, so a scan pointer
@@ -1982,7 +2182,8 @@ TEST(Read_re2c_test, The_custom_API_is_refused_where_rules_read_under_it)
 
     // A spelling of the pointer is compared in the reading's own: parentheses around one name are grouping, `(*in).cur`
     // is `in->cur`, and every other parenthesis is a call's or an index's and stays, so a pointer reached through an
-    // accessor is moved by the operator after the call and `slots[(i+j)*k]` is not `slots[i+(j*k)]`.
+    // accessor is moved by the operator after the call; a configured `slots[(i+j)*k]` indexes the array by an
+    // expression the reading does not evaluate and is refused at its configuration's line.
     EXPECT_EQ(line_of("/*!re2c\n re2c:define:YYCURSOR = \"(in)->cur\";\n [a] { ++in->cur; return X; }\n*/"), 3);
     EXPECT_EQ(line_of("/*!re2c\n re2c:define:YYCURSOR = \"in->cur\";\n [a] { ++(*in).cur; return X; }\n*/"), 3);
     EXPECT_EQ(line_of("/*!re2c\n re2c:define:YYCURSOR = \"in->cursor()\";\n [a] { in->cursor()++; return X; }\n*/"), 3);
@@ -1992,7 +2193,7 @@ TEST(Read_re2c_test, The_custom_API_is_refused_where_rules_read_under_it)
             3);
     EXPECT_EQ(
             line_of("/*!re2c\n re2c:define:YYCURSOR = \"slots[(i+j)*k]\";\n [a] { ++slots[i+(j*k)]; return X; }\n*/"),
-            3);
+            2);
 }
 
 TEST(Read_re2c_test, A_used_block_is_judged_where_the_block_using_it_reads_it)

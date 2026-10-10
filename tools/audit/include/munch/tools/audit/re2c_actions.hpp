@@ -6,6 +6,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "munch/tools/audit/action_return.hpp"
 #include "munch/tools/audit/directives.hpp"
@@ -51,6 +52,12 @@ struct Action
      *        rule's or the entry rule's.
      */
     bool of_rule{};
+
+    /**
+     * @brief The conditions a rule names or a setup rule sets up, `*` for all; none for a rule naming none and for the
+     *        entry rule.
+     */
+    std::vector<std::string> conditions{};
 };
 
 /**
@@ -74,16 +81,21 @@ struct Action
 /**
  * @brief Refuses an action that moves a scan pointer, holds a directive, returns on some paths only or uses a macro
  *        that could hide what it does, the pointers named as the block's own configurations name them.
+ *
+ * re2c writes the code of each setup rule of a condition a rule stands in ahead of the rule's own action, a transition
+ * rule's after it sets the condition and a shortcut rule's not at all, so how a rule's action leaves is judged with
+ * each such code before it as well: a `continue` there leaves before the action's `return`.
  * @param action The action.
  * @param pointers The names the block's configurations give the scan pointers.
  * @param macros The macros the C around the blocks defines, which an action may call.
  * @param returning The forms besides `return` an action returns a token through.
  * @param restarts The labels a `goto` in the action restarts the scan by.
+ * @param heads The setup rules whose code re2c writes before a rule's action, none for any other action.
  * @throws Spec_error If the action is refused, at its line.
  */
 void refuse_action(
         const Action& action, const Pointers_t& pointers, const Macros_t& macros, const Returning_t& returning,
-        const std::set<std::string, std::less<>>& restarts);
+        const std::set<std::string, std::less<>>& restarts, const std::vector<Action>& heads);
 
 } // namespace munch::tools::audit
 

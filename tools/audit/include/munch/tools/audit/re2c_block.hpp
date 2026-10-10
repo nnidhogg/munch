@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -24,7 +25,7 @@
  * @brief One re2c block read item by item, Block_reader, with where the blocks a later one may use begin, Library_t,
  *        where a definition a later block may use stands, Definition_site, what the blocks of one pass share,
  *        Pass_state, and the kinds of rule a scanner holds, Rule_kinds, with the patterns of the end rule and of the
- *        default rule, end_rule and default_rule.
+ *        default rule, end_rule and default_rule, and the bound re2c holds `re2c:eof` to, refuse_eof_past_code_unit().
  *
  * A block's close is found as re2c finds it, its regexes are read by Regex_reader and its configurations applied by
  * configure(); what a block leaves for the blocks after it, its flags, its pointer names and its definitions, is kept
@@ -110,6 +111,16 @@ struct Pass_state
 };
 
 /**
+ * @brief Refuses the configurations when the last `re2c:eof` setting among them passes 255, the largest code unit, in
+ *        re2c's words: re2c 3.1 holds the value to the code unit at the end of every block, a rules block's among them,
+ *        and at each `!use:` directive, once the used block's configurations stand.
+ * @param options The configurations, as options, each `re2c:eof` value read as a number already.
+ * @param line The line the refusal points at.
+ * @throws Spec_error If the value passes 255.
+ */
+void refuse_eof_past_code_unit(const std::vector<std::string>& options, std::size_t line);
+
+/**
  * @brief The kinds of rule a scanner's blocks hold and the names the rules stand in, which re2c holds a scanner to once
  *        it is read: rules naming conditions and rules naming none never together, and an end rule `$` only where the
  *        file's configuration and the other rules make sense of it.
@@ -156,13 +167,13 @@ public:
      *
      * re2c holds a block of its own to them once it is read, its rules all tokens or none, and a rules block only where
      * a use block takes it up, its rules and end rules counted with the using block's, since re2c reads a rules block
-     * as a library and holds none of these checks against it until then, only `re2c:eof`'s bound at its end, which the
-     * reading does not hold; a block holding no rule at all is held to none of them.
+     * as a library and holds none of these checks against it until then, only `re2c:eof`'s bound at its end,
+     * refuse_eof_past_code_unit(); a block holding no rule at all is held to none of them.
      * @param options The scanner's configurations, as options.
      * @param line The scanner's line, where a check naming no end rule points.
-     * @throws Spec_error If one of the checks fails, at the end rule's line or the scanner's; or if the last `re2c:eof`
-     *         value passes 255, the largest code unit, at the scanner's line. The last value stands, and a negative one
-     *         leaves `re2c:eof` unset, as re2c reads every one.
+     * @throws Spec_error If one of the checks fails, at the end rule's line or the scanner's; or as
+     *         refuse_eof_past_code_unit() does, at the scanner's line. The last value stands, and a negative one leaves
+     *         `re2c:eof` unset, as re2c reads every one.
      */
     void refuse_end_rules(const std::vector<std::string>& options, std::size_t line) const;
 
@@ -325,18 +336,58 @@ private:
     /**
      * @brief Reads a `re2c:` configuration through its `;` into the options, a flag among them into the flags the
      *        configurations leave, never into the ones the patterns of this pass are read under.
+     *
+     * The configuration is read as re2c 3.1's configuration lexer reads it, the escapes inside a quoted value aside,
+     * which are not checked: a name running as far as letters, digits, `_`, `:` and `-` do, or further where a name
+     * re2c knows with an `@` in it stands, which must be one re2c knows, then `=` and a value of the kind the name
+     * takes, with spaces and tabs around the `=` and the value and nothing else, and `;`. The option keeps the name,
+     * `=` and the value, a number in decimal and anything else as written.
      * @param spec The specification being filled.
-     * @throws Spec_error If the configuration is never closed with `;`, or as configure() does; or if it sets
-     *         `re2c:eof` to a value that is no number re2c reads, a blank within it among them, at its line, as re2c
-     *         reads every setting where it is written.
+     * @throws Spec_error If re2c refuses the configuration, at its line and in its words: a name it does not know, a
+     *         missing `=` or `;`, or a value that is not of the name's kind; or as configure() does.
      */
     void configuration(Lexer_spec& spec);
+
+    /**
+     * @brief Reads a configuration's value at the cursor as re2c 3.1 reads a value of its kind, and leaves the cursor
+     *        where the value ends.
+     * @param syntax What the value is read as.
+     * @return The value, a number in decimal and anything else as written.
+     * @throws Spec_error If the value is not of its kind, in re2c's words, as choice_value(), string_value() and
+     *         number_value() refuse it, or a number is negative where the configuration takes none.
+     */
+    [[nodiscard]] std::string configuration_value(const Configuration_syntax& syntax);
+
+    /**
+     * @brief Reads one of the words a configuration chooses among at the cursor.
+     * @param choices The words.
+     * @return The word.
+     * @throws Spec_error If none of them stands there, the words listed in re2c's words.
+     */
+    [[nodiscard]] std::string choice_value(std::span<const std::string_view> choices);
+
+    /**
+     * @brief Reads a string value at the cursor as re2c 3.1 reads one: quoted, through the quote closing it, or bare,
+     *        through the bytes Configuration_value::string admits, or nothing.
+     * @return The value as written, its quotes included.
+     * @throws Spec_error If a quoted value meets a newline before its closing quote, escaped or not, in re2c's
+     *         words, or the text ends before it.
+     */
+    [[nodiscard]] std::string string_value();
+
+    /**
+     * @brief Reads a number at the cursor as re2c 3.1 reads one, Configuration_value::number.
+     * @return The number.
+     * @throws Spec_error If no number stands there or it overflows, in re2c's words.
+     */
+    [[nodiscard]] int number_value();
 
     /**
      * @brief Reads a `!use:name;` directive, the named block read into the specification where the directive stands.
      * @param spec The specification being filled.
      * @param library The named blocks read so far.
-     * @throws Spec_error If the directive is malformed or names no block above this one, or as use() does.
+     * @throws Spec_error If the directive is malformed or names no block above this one, or as use() does; or as
+     *         refuse_eof_past_code_unit() does, at the directive's line, once the used block's configurations stand.
      */
     void use_directive(Lexer_spec& spec, const Library_t& library);
 
@@ -349,11 +400,18 @@ private:
     void item(Lexer_spec& spec);
 
     /**
-     * @brief Reads a `<...>` condition list after its `<`, through its `>`.
-     * @return The names, `*` for all; std::nullopt for a `<!...>` setup rule, which is no token.
+     * @brief Returns whether the condition list after its `<` opens a `<!...>` setup rule, which is no token, its `!`
+     *        standing after blanks or none.
+     * @return True when it does.
+     */
+    [[nodiscard]] bool opens_setup() const noexcept;
+
+    /**
+     * @brief Reads a `<...>` condition list after its `<`, through its `>`, a setup rule's `!` dropped.
+     * @return The names, `*` for all.
      * @throws Spec_error If the list is never closed.
      */
-    [[nodiscard]] std::optional<std::vector<std::string>> conditions();
+    [[nodiscard]] std::vector<std::string> conditions();
 
     /**
      * @brief Reads a flex-style definition when one stands at the cursor, as re2c 3.1 reads one under its flex syntax:
@@ -405,13 +463,15 @@ private:
      *
      * A scan pointer the code moves is so moved in those actions, leaving the next token beginning somewhere other than
      * where a match ended, exactly as a rule's own action moving it would. The pointer's name is the block's, which the
-     * block settles, so the check waits for the block's last configuration.
+     * block settles, so the check waits for the block's last configuration, and so does the check of how each action a
+     * setup rule's code heads leaves, refuse_action(), since a rule after the setup rule may stand in its conditions.
      * @param code The code.
      * @param line The rule's line.
      * @param entry Whether it is the entry rule.
+     * @param conditions The conditions a setup rule sets up, `*` for all, none for the entry rule.
      * @throws Spec_error If the code returns, which would return in its condition before any rule's own action.
      */
-    void setup_action(std::string code, std::size_t line, bool entry);
+    void setup_action(std::string code, std::size_t line, bool entry, std::vector<std::string> conditions);
 
     /**
      * @brief Adds a rule to the specification, the end rule and the empty rule aside, which are no tokens, and keeps

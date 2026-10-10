@@ -451,76 +451,85 @@ line that holds it, rather than read it as something else:
   declared that this block's flags cannot read at all is refused where a rule of this block reaches it, directly or
   through the definitions the rule names, and nowhere else, one no rule reaches being left out, an alias of it that no
   rule names along with it, and one the block itself declares is read where it stands and refused there; `re2c:`
-  configurations recorded as options (a quoted value may hold a `;`) and honoured under the canonical name and the
-  `flags:` aliases the manual's configuration list gives, the case flags and the encoding among them; a configuration
-  governs the whole block wherever in it it stands, as re2c scopes it, and of two assignments to one name the last is
-  the one that governs, so every pattern of a block is translated under what its configurations leave and a rule
-  standing above an assignment reads under it like the rest, while the flex syntax has no configuration and comes from
-  the command line or from the evidence of a definition written that way; `name = regex;` and flex-style definitions, a
-  name followed by a blank and regex to the end of the line wherever the name stands, as re2c -F reads them, a `{` after
-  the blank making the name a rule's literal instead and an action on the definition's line refused as the syntax error
-  re2c answers it with, conditions, each the scanner's when any rule names it, the end rule and the empty rule counted,
-  so that a scanner whose rules name conditions has no INITIAL unless a rule names one, and `<*>`, whose rules re2c
-  appends to each condition's own, so that they stand in every condition a rule names and in no other, rank below a
-  condition's own rules wherever they stand and are placed after every rule naming a condition, a block whose rules name
-  only `<*>` refused, since re2c compiles no condition for them to stand in, the end rule `$` held as re2c holds it, in
-  its words: one whose condition, `<*>` counted as one of its own, has no other rule is refused, one without `re2c:eof`
-  set is refused, and `re2c:eof` set without an end rule in some condition, its own or under `<*>`, or in a block naming
-  none, is refused, each setting of `re2c:eof` read as a number where it is written, as re2c 3.1 reads it, a space or a
-  tab around it and nothing else, and one that is no number refused at its line as re2c refuses it, the last setting of
-  a block standing, setting `re2c:eof` when it is zero or positive and leaving it unset when negative, and refused past
-  255, the largest code unit under the encodings the reading follows, at the end of a block with rules or without, where
-  re2c holds the bound also at a rules block's end and at a `!use:` directive and the reading does not, a block of its
-  own held once it is read, whether or not its rules are tokens, and a `rules:re2c` block only where a `use:re2c` block
-  or a `!use:` directive takes it up, with the rules and configurations that block supplies, the one restriction of the
-  reading's own being an end rule a `!use:` directive brings in whose condition has `<*>` rules alone beside it, which
-  re2c 3.1 compiles in that form and refuses in the `use:re2c` block form, refused here in both, `=>` transitions, the
-  `:=> c` shortcut rule, which carries no code and ends with its condition, `:=` actions, whose code runs on to the
-  first line that begins with a character other than a blank, tags `@name` and `#name` (dropped, they match nothing),
-  the default rule `*`, which re2c runs where no other rule matches, over one byte under ASCII and UTF-8 alike, where
-  `[^]` is a whole code point, and at the lowest priority wherever it stands, so it is read as the class of every byte
-  and placed after every other rule of its scanner, a `<*> *` after a named condition's own default rule, which beats it
-  there, a second one of a block's own for a condition it already gave one refused as re2c refuses it and one a `!use:`
-  directive or a use block brought in yielding to the block's own in every condition the own one stands in, and the end,
-  setup, entry `<>` and empty `""` rules (not tokens; a setup or entry rule whose code returns is refused, since re2c
-  runs that code before any rule's own action); a scanner's rules name conditions or name none, never both, one holding
-  a rule of each kind, a used block's rules counted, refused as re2c refuses it, which cannot mix conditions with normal
-  rules, at the first rule naming none. The dialect is rewritten for the pattern parser and the rewriting is kept beside
-  the pattern as written: bare names become `{name}`, `'abc'` becomes `[aA][bB][cC]`, `[^]` is spelled out as the bytes
-  it admits, and a class difference `A \ B` becomes the class of the code points left, its operands the char sets re2c
-  takes there, a bracket, the dot, a one-character literal, a name defined as one of these or a group of alternatives
-  that each are, and on either side the whole term as re2c's grammar has it, so that a concatenation, a repetition or a
-  two-character literal beside one, `[a-z] \ [x] [y]` or `[a-z] \ "xy"`, is refused as re2c refuses it, which can only
-  difference char sets, and a difference leaving no code point is refused under the configuration the block leaves and
-  no other, `[^] \ [\x00-\xff]` being every code point past the bytes once the block turns UTF-8 on. Under the UTF-8
-  encoding a pattern names code points and the scanner reads their encodings, so a class, the dot, `[^]`, which is any
-  code point and not any byte, and a class difference, subtracted over code points before any encoding, so that `[^] \
-  [\x00-\x7f]` is every code point beyond ASCII, become the code point ranges they admit, written as `\u{...}` members
-  with the three bytes of the surrogates beside them where the set holds those, which re2c's default encoding policy
-  encodes like any other code point; an all-ASCII class or literal stands as it is, its encoding being itself. Refused:
-  `!include` inside a block and the `!include:re2c` directive outside one, whose file is not there to read; the Unicode
-  escapes `\u`, `\U` and `\X`, which need an encoding the byte reading has not got, and a braced hexadecimal escape
-  `\x{...}`, which re2c has no form for and answers with a syntax error, its own being `\xHH`; the encodings a reading
-  over bytes cannot follow, wherever they come from, a configuration or the flags the caller passes, each with its own
-  reason, EBCDIC giving a byte another code point than ASCII does and UCS-2, UTF-16 and UTF-32 having a code unit of
-  more than one byte; an `encoding-policy` other than the default, which leaves the surrogates matched otherwise; and a
-  byte beyond ASCII written straight into the source under UTF-8, since the code points it stands for are the
-  `--input-encoding` option's to say and no file carries it. What a command line asks for beyond those flags is beyond
-  the reading: an `--encoding-policy` there is taken to be the default one, as an `--input-encoding` is taken to be
-  ASCII.
+  configurations read as re2c 3.1's configuration lexer reads them, the escapes inside a quoted value aside, which are
+  not checked, a name it knows, an alias as good as the canonical name and any other refused as an unrecognized
+  configuration, then `=` and a value of the name's kind, a number, a string quoted or bare (a quoted one may hold a
+  `;`) or one of the configuration's words, with spaces and tabs around the `=` and the value and nothing else, each
+  refusal in re2c's words, recorded as options and honoured under the canonical name and the `flags:` aliases the
+  manual's configuration list gives, the case flags and the encoding among them; a configuration governs the whole block
+  wherever in it it stands, as re2c scopes it, and of two assignments to one name the last is the one that governs, so
+  every pattern of a block is translated under what its configurations leave and a rule standing above an assignment
+  reads under it like the rest, while the flex syntax has no configuration and comes from the command line or from the
+  evidence of a definition written that way; `name = regex;` and flex-style definitions, a name followed by a blank and
+  regex to the end of the line wherever the name stands, as re2c -F reads them, a `{` after the blank making the name a
+  rule's literal instead and an action on the definition's line refused as the syntax error re2c answers it with,
+  conditions, each the scanner's when any rule names it, the end rule and the empty rule counted, so that a scanner
+  whose rules name conditions has no INITIAL unless a rule names one, and `<*>`, whose rules re2c appends to each
+  condition's own, so that they stand in every condition a rule names and in no other, rank below a condition's own
+  rules wherever they stand and are placed after every rule naming a condition, a block whose rules name only `<*>`
+  refused, since re2c compiles no condition for them to stand in, the end rule `$` held as re2c holds it, in its words:
+  one whose condition, `<*>` counted as one of its own, has no other rule is refused, one without `re2c:eof` set is
+  refused, and `re2c:eof` set without an end rule in some condition, its own or under `<*>`, or in a block naming none,
+  is refused, each setting of `re2c:eof` read as a number where it is written, as re2c 3.1 reads it, a space or a tab
+  around it and nothing else, and one that is no number refused at its line as re2c refuses it, the last setting of a
+  block standing, setting `re2c:eof` when it is zero or positive and leaving it unset when negative, and refused past
+  255, the largest code unit under the encodings the reading follows, at the end of every block, with rules or without,
+  a rules block's among them, used or not, and at each `!use:` directive once the used block's configurations stand, a
+  block of its own held once it is read, whether or not its rules are tokens, and a `rules:re2c` block only where a
+  `use:re2c` block or a `!use:` directive takes it up, with the rules and configurations that block supplies, the one
+  restriction of the reading's own being an end rule a `!use:` directive brings in whose condition has `<*>` rules alone
+  beside it, which re2c 3.1 compiles in that form and refuses in the `use:re2c` block form, refused here in both, `=>`
+  transitions, the `:=> c` shortcut rule, which carries no code and ends with its condition, `:=` actions, whose code
+  runs on to the first line that begins with a character other than a blank, tags `@name` and `#name` (dropped, they
+  match nothing), the default rule `*`, which re2c runs where no other rule matches, over one byte under ASCII and UTF-8
+  alike, where `[^]` is a whole code point, and at the lowest priority wherever it stands, so it is read as the class of
+  every byte and placed after every other rule of its scanner, a `<*> *` after a named condition's own default rule,
+  which beats it there, a second one of a block's own for a condition it already gave one refused as re2c refuses it and
+  one a `!use:` directive or a use block brought in yielding to the block's own in every condition the own one stands
+  in, and the end, setup, entry `<>` and empty `""` rules (not tokens; a setup or entry rule whose code returns is
+  refused, since re2c runs that code before any rule's own action); a scanner's rules name conditions or name none,
+  never both, one holding a rule of each kind, a used block's rules counted, refused as re2c refuses it, which cannot
+  mix conditions with normal rules, at the first rule naming none. The dialect is rewritten for the pattern parser and
+  the rewriting is kept beside the pattern as written: bare names become `{name}`, `'abc'` becomes `[aA][bB][cC]`, `[^]`
+  is spelled out as the bytes it admits, and a class difference `A \ B` becomes the class of the code points left, its
+  operands the char sets re2c takes there, a bracket, the dot, a one-character literal, a name defined as one of these
+  or a group of alternatives that each are, and on either side the whole term as re2c's grammar has it, so that a
+  concatenation, a repetition or a two-character literal beside one, `[a-z] \ [x] [y]` or `[a-z] \ "xy"`, is refused as
+  re2c refuses it, which can only difference char sets, and a difference leaving no code point is refused under the
+  configuration the block leaves and no other, `[^] \ [\x00-\xff]` being every code point past the bytes once the block
+  turns UTF-8 on. Under the UTF-8 encoding a pattern names code points and the scanner reads their encodings, so a
+  class, the dot, `[^]`, which is any code point and not any byte, and a class difference, subtracted over code points
+  before any encoding, so that `[^] \ [\x00-\x7f]` is every code point beyond ASCII, become the code point ranges they
+  admit, written as `\u{...}` members with the three bytes of the surrogates beside them where the set holds those,
+  which re2c's default encoding policy encodes like any other code point; an all-ASCII class or literal stands as it is,
+  its encoding being itself. Refused: `!include` inside a block and the `!include:re2c` directive outside one, whose
+  file is not there to read; the Unicode escapes `\u`, `\U` and `\X`, which need an encoding the byte reading has not
+  got, and a braced hexadecimal escape `\x{...}`, which re2c has no form for and answers with a syntax error, its own
+  being `\xHH`; the encodings a reading over bytes cannot follow, wherever they come from, a configuration or the flags
+  the caller passes, each with its own reason, EBCDIC giving a byte another code point than ASCII does and UCS-2, UTF-16
+  and UTF-32 having a code unit of more than one byte; an `encoding-policy` other than the default, which leaves the
+  surrogates matched otherwise; and a byte beyond ASCII written straight into the source under UTF-8, since the code
+  points it stands for are the `--input-encoding` option's to say and no file carries it. What a command line asks for
+  beyond those flags is beyond the reading: an `--encoding-policy` there is taken to be the default one, as an
+  `--input-encoding` is taken to be ASCII.
 - flex and re2c: whether an action returns a token is read from the action's text as C reads it, a `return` or a form
   named with `--returns` standing outside every comment and literal, on every path through the action, else the action
   is refused; the token is named by the expression returned as it is written, `7`, `IDENT` or `yyleng == 1 ? 7 : 8`,
   since a rule is one token to the certificates whatever value its action computes; and, for a flex action, whether it
   makes one of the calls named above, and for a re2c action whether it moves one of the scan pointers, `YYCURSOR`,
   `YYMARKER` or `YYCTXMARKER` under whatever names the block's configurations give them, which leaves the next token
-  beginning elsewhere than where the match ended, or hands one on, by its address, a reference bound to it or a call it
-  is passed to, or indexes the array a pointer is configured in by an expression the reading does not evaluate, each of
-  which is refused; and how the action leaves, since re2c writes the actions one after another and control falls from an
-  action's end into the next rule's: an action returns on every path, or leaves by `continue` or by a `goto` to a label
-  before the block from which nothing but the block follows, which rescans and discards the match, or by a `break` after
-  a stored token, and any other end, a `break`, a `goto` elsewhere or no jump at all, is refused. Nothing else in the
-  action is interpreted.
+  beginning elsewhere than where the match ended, or hands one on, by its address, a reference bound to it, a cast to a
+  reference type or a call it is passed to, or indexes the array a pointer is configured in by an expression the reading
+  does not evaluate, an index holding an operand with a suffix among them, whose type the arithmetic around it takes,
+  each of which is refused, an earlier index of a configured spelling read to its value as the action's is and a
+  configured spelling indexed by such an expression refused at its configuration's line; and how the action leaves,
+  since re2c writes the actions one after another and control falls from an action's end into the next rule's: an action
+  returns on every path, or leaves by `continue` or by a `goto` to a label before the block from which nothing but the
+  block follows, which rescans and discards the match, or by a `break` after a stored token, and any other end, a
+  `break`, a `goto` elsewhere or no jump at all, is refused, the action judged so with the code of each setup rule of
+  its conditions before it as well, which re2c writes there, `<!*>` in the conditions no setup rule names, a transition
+  rule's after it sets the condition and a shortcut rule's not at all, so that a `continue` in the setup code leaves
+  before the action's return. Nothing else in the action is interpreted.
 - ANTLR 4: `lexer grammar` and combined `grammar` files, modes as the start conditions, a lexer grammar's alone, a byte
   order mark as a blank wherever it stands outside a literal, a set or an action, as ANTLR's lexer drops one, `fragment`
   rules as definitions, a reference to any lexer rule as `{NAME}`, a rule's commands, which end its single outermost

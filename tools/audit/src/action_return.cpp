@@ -897,6 +897,37 @@ bool Return_paths::if_returns(const Range range) const
 }
 
 /**
+ * @brief Returns the statement an action's own statements end with, read into a block that ends them as far as its own
+ *        last statement, `count(); { continue; }` ending in its `continue`.
+ * @param paths The paths through the action.
+ * @param tokens The action's own tokens.
+ * @param own The action's own statements.
+ * @return The statement, or std::nullopt when none ends them, an empty block's nothing included.
+ */
+[[nodiscard]] std::optional<Return_paths::Range> last_statement(
+        const Return_paths& paths, const std::vector<C_token>& tokens, std::vector<Return_paths::Range> own)
+{
+    const auto block_last{[&tokens](const std::vector<Return_paths::Range>& statements) {
+        return !statements.empty() && tokens[statements.back().begin].text == "{" &&
+               tokens[statements.back().end - 1].text == "}";
+    }};
+
+    while (block_last(own))
+    {
+        const auto [begin, end]{own.back()};
+
+        own = paths.statements({.begin = begin + 1, .end = end - 1});
+    }
+
+    if (own.empty())
+    {
+        return std::nullopt;
+    }
+
+    return own.back();
+}
+
+/**
  * @brief Returns why a jump outside the one allowed after the last return leaves what a match does out of sight, when
  *        one does.
  *
@@ -990,7 +1021,9 @@ std::optional<std::string> returns_undecided(
     {
         // flex's `YY_BREAK` discards the match of an action returning nowhere; a chained re2c action returning nowhere
         // falls into the next rule's action unless it leaves by a jump, `continue;` or a restarting `goto`.
-        const auto leaves_by_jump{!own.empty() && paths.is_jump(own.back())};
+        const auto last{last_statement(paths, tokens, own)};
+
+        const auto leaves_by_jump{last && paths.is_jump(*last)};
 
         if (chained && !leaves_by_jump)
         {

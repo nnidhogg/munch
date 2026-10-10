@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cstddef>
 #include <format>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -32,7 +33,7 @@ constexpr std::string_view configuration_prefix{"re2c:"};
 constexpr std::string_view use_prefix{"!use:"};
 
 /**
- * @brief What the configuration of the end-of-input sentinel opens with once its `re2c:` and its blanks are taken off.
+ * @brief What the configuration of the end-of-input sentinel opens with as an option, its name and `=`.
  */
 constexpr std::string_view eof_key{"eof="};
 
@@ -60,36 +61,6 @@ constexpr std::string_view include_prefix{"!include"};
     }
 
     return defaults;
-}
-
-/**
- * @brief Returns where a configuration ends: at its first `;` outside a quoted string, which may hold a `;` of its own,
- *        as a YYFILL definition usually does.
- * @param text The text.
- * @param from The offset of the configuration's first byte.
- * @param end The offset the text is read up to.
- * @return The offset of the `;`, or one at or past the end when none stands.
- */
-[[nodiscard]] std::size_t configuration_end(const std::string_view text, const std::size_t from, const std::size_t end)
-{
-    auto scan{from};
-
-    while (scan < end && text[scan] != ';')
-    {
-        if (text[scan] == '"' || text[scan] == '\'')
-        {
-            const auto quote{text[scan]};
-
-            for (++scan; scan < end && text[scan] != quote; ++scan)
-            {
-                scan += text[scan] == '\\' ? 1 : 0;
-            }
-        }
-
-        ++scan;
-    }
-
-    return scan;
 }
 
 /**
@@ -249,6 +220,28 @@ void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vecto
 }
 
 /**
+ * @brief Returns the value the configurations leave `re2c:eof` at: the last setting's, each read as a number already,
+ *        or -1, re2c's default, while none sets it.
+ * @param options The configurations, as options, each number in decimal.
+ * @return The value.
+ */
+[[nodiscard]] int last_eof(const std::vector<std::string>& options)
+{
+    const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
+
+    int eof{-1};
+
+    for (const auto& option : options | std::views::filter(sets_eof))
+    {
+        const auto value{std::string_view{option}.substr(eof_key.size())};
+
+        std::ignore = std::from_chars(value.data(), value.data() + value.size(), eof);
+    }
+
+    return eof;
+}
+
+/**
  * @brief Returns whether a byte is one re2c lets stand around a configuration's value, a space or a tab; a newline or
  *        a carriage return there it refuses.
  * @param byte The byte.
@@ -260,58 +253,129 @@ void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vecto
 }
 
 /**
- * @brief Returns the text without the spaces and tabs at either end.
- * @param text The text.
- * @return The view of what lies between them.
+ * @brief Returns whether a byte may stand in a configuration's name as re2c 3.1 reads one: a letter, a digit, `_`, `:`
+ *        or `-`; the name runs as far as such bytes do, and only then is it looked up.
+ * @param byte The byte.
+ * @return True when it may.
  */
-[[nodiscard]] std::string_view without_spaces_around(std::string_view text) noexcept
+[[nodiscard]] constexpr bool is_configuration_name_byte(const char byte) noexcept
 {
-    while (!text.empty() && is_space_or_tab(text.front()))
-    {
-        text.remove_prefix(1);
-    }
-
-    while (!text.empty() && is_space_or_tab(text.back()))
-    {
-        text.remove_suffix(1);
-    }
-
-    return text;
+    return is_name_byte(byte) || byte == ':' || byte == '-';
 }
 
 /**
- * @brief Returns the value of a `re2c:eof` configuration as re2c 3.1 reads it: a number, `0` or a decimal opening with
- *        a digit other than zero, a minus before it or none, within the range of an `int`.
- * @param value The value as written, the spaces and tabs around it taken off.
- * @param line The line a refusal of the value points at.
- * @return The number.
- * @throws Spec_error If the value is no number, `007`, `-0`, `- 2` and `abc` among them, or it overflows, in re2c's
- *         words.
+ * @brief Returns whether a byte may stand in a bare configuration value as re2c 3.1 reads one: any but a space, a
+ *        tab, a newline, a NUL and `;`, a carriage return included.
+ * @param byte The byte.
+ * @return True when it may.
  */
-[[nodiscard]] int eof_value(const std::string_view value, const std::size_t line)
+[[nodiscard]] constexpr bool is_bare_value_byte(const char byte) noexcept
 {
-    const auto digits{value.starts_with('-') ? value.substr(1) : value};
+    return !is_space_or_tab(byte) && byte != '\n' && byte != '\0' && byte != ';';
+}
 
-    const auto leading_zero{digits.starts_with('0') && value != "0"};
-
-    int number{};
-
-    const auto [end, error]{std::from_chars(value.data(), value.data() + value.size(), number)};
-
-    if (error == std::errc::result_out_of_range)
+/**
+ * @brief Returns the length of the number re2c 3.1 reads at the start of a text: `0`, or a decimal opening with a digit
+ *        other than zero, a minus before it or none; what follows it is the configuration's to answer for.
+ * @param text The text.
+ * @return The length, zero when no number stands there, `-0` and `abc` among them.
+ */
+[[nodiscard]] std::size_t number_length(const std::string_view text) noexcept
+{
+    if (text.starts_with('0'))
     {
-        throw Spec_error{"configuration value overflow", line};
+        return 1;
     }
 
-    if (error != std::errc{} || end != value.data() + value.size() || leading_zero)
+    const auto sign{text.starts_with('-') ? 1UZ : 0UZ};
+
+    const auto digits{text.substr(sign)};
+
+    if (digits.empty() || digits.front() < '1' || digits.front() > '9')
     {
-        throw Spec_error{"bad configuration value (expected number)", line};
+        return 0;
     }
 
-    return number;
+    const auto past{digits.find_first_not_of("0123456789")};
+
+    const auto length{past == std::string_view::npos ? digits.size() : past};
+
+    return sign + length;
+}
+
+/**
+ * @brief Returns whether a rule's action stands in a condition: the rule names the condition or `*`.
+ * @param action The action.
+ * @param condition The condition.
+ * @return True when it does.
+ */
+[[nodiscard]] bool stands_in(const Action& action, const std::string& condition)
+{
+    return std::ranges::contains(action.conditions, condition) ||
+           std::ranges::contains(action.conditions, every_condition);
+}
+
+/**
+ * @brief Returns whether a setup rule of the block names a condition itself, rather than through `*`.
+ * @param actions The block's actions, the setup rules among them.
+ * @param condition The condition.
+ * @return True when one does.
+ */
+[[nodiscard]] bool set_up_by_name(const std::vector<Action>& actions, const std::string& condition)
+{
+    const auto names{[&condition](const Action& setup) {
+        return !setup.of_rule && std::ranges::contains(setup.conditions, condition);
+    }};
+
+    return std::ranges::any_of(actions, names);
+}
+
+/**
+ * @brief Returns the setup rules whose code re2c writes before a rule's action: each setting up a condition the rule
+ *        stands in, where a rule naming `*` stands in every condition a rule of the block names, and `<!*>` sets up
+ *        only the conditions no setup rule names, as re2c 3.1 writes it.
+ * @param action The action, a rule's or another's, which none heads.
+ * @param actions The block's actions, the setup rules among them.
+ * @param named The conditions the block's rules name.
+ * @return The setup rules, in the order the block holds them.
+ */
+[[nodiscard]] std::vector<Action> heads_of(
+        const Action& action, const std::vector<Action>& actions, const std::vector<std::string>& named)
+{
+    std::vector<Action> heads{};
+
+    for (const auto& setup : actions)
+    {
+        const auto sets_up{[&setup, &action, &actions](const std::string& condition) {
+            const auto by_name{std::ranges::contains(setup.conditions, condition)};
+
+            const auto by_star{
+                    std::ranges::contains(setup.conditions, every_condition) && !set_up_by_name(actions, condition)};
+
+            return (by_name || by_star) && stands_in(action, condition);
+        }};
+
+        if (action.of_rule && !setup.of_rule && std::ranges::any_of(named, sets_up))
+        {
+            heads.push_back(setup);
+        }
+    }
+
+    return heads;
 }
 
 } // namespace
+
+void refuse_eof_past_code_unit(const std::vector<std::string>& options, const std::size_t line)
+{
+    const auto eof{last_eof(options)};
+
+    // The code unit is a byte under every encoding the reading follows.
+    if (eof > std::numeric_limits<unsigned char>::max())
+    {
+        throw Spec_error{"EOF exceeds maximum code unit value for given encoding", line};
+    }
+}
 
 void Rule_kinds::note(const std::vector<std::string>& named, const std::string& pattern, const std::size_t line)
 {
@@ -403,25 +467,9 @@ void Rule_kinds::refuse_mixed() const
 
 void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const std::size_t line) const
 {
-    const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
+    refuse_eof_past_code_unit(options, line);
 
-    // Each setting was read as a number where it was written, as re2c 3.1 reads it; the last stands, and unset the
-    // value is its default -1.
-    int eof{-1};
-
-    for (const auto& option : options | std::views::filter(sets_eof))
-    {
-        const auto value{std::string_view{option}.substr(eof_key.size())};
-
-        eof = eof_value(value, line);
-    }
-
-    // The code unit is a byte under every encoding the reading follows, so re2c refuses a value past 255, in a block
-    // with rules or without.
-    if (eof > std::numeric_limits<unsigned char>::max())
-    {
-        throw Spec_error{"EOF exceeds maximum code unit value for given encoding", line};
-    }
+    const auto eof{last_eof(options)};
 
     if (ruled_.empty() && ends_.empty())
     {
@@ -586,7 +634,7 @@ std::size_t Block_reader::read(Lexer_spec& spec, const Library_t& library, const
 
     // An imported default rule the block's own default overrides is gone, and re2c emits no code for its action.
     const auto dropped{[&spec](const Action& entry) {
-        const auto& [code, line, what, of_rule]{entry};
+        const auto& [code, line, what, of_rule, conditions]{entry};
 
         const auto owns{
                 [&line, &code](const Lexer_spec::Rule& rule) { return rule.line == line && rule.action == code; }};
@@ -633,42 +681,204 @@ const std::optional<Spec_error>& Block_reader::deferred() const noexcept
 
 void Block_reader::configuration(Lexer_spec& spec)
 {
-    const auto end{configuration_end(text_, at_, end_)};
+    at_ += configuration_prefix.size();
 
-    if (end >= end_)
+    std::string name{};
+
+    while (peek() && is_configuration_name_byte(*peek()))
     {
-        fail("a configuration is never closed with ';'");
+        name.push_back(next("a configuration name"));
     }
 
-    const auto value_at{at_ + configuration_prefix.size()};
+    // A name re2c knows with an `@` in it, `define:YYFILL@len`, is read whole, the longest such name that stands here.
+    const auto rest{text_.substr(at_, end_ - at_)};
 
-    std::string option{text_.substr(value_at, end - value_at)};
+    const auto in_suffix{[](const char byte) { return byte == '@' || is_configuration_name_byte(byte); }};
 
-    // Blanks around the '=' say nothing; one spelling per configuration keeps the options comparable.
-    std::erase_if(option, is_blank);
+    const auto suffix_end{std::ranges::find_if_not(rest, in_suffix)};
 
-    // re2c reads the value of `re2c:eof` as a number where it is written, so a blank within it is refused there, and
-    // the option keeps the number it reads.
-    if (option.starts_with(eof_key))
+    std::string suffix{rest.begin(), suffix_end};
+
+    while (!suffix.empty() && !syntax_of(name + suffix))
     {
-        const auto written{std::string_view{text_}.substr(value_at, end - value_at)};
-
-        const auto after_equals{written.substr(written.find('=') + 1)};
-
-        const auto value{without_spaces_around(after_equals)};
-
-        option = std::format("{}{}", eof_key, eof_value(value, line()));
+        suffix.pop_back();
     }
+
+    name += suffix;
+
+    at_ += suffix.size();
+
+    const auto syntax{syntax_of(name)};
+
+    if (!syntax)
+    {
+        fail(std::format("unrecognized configuration '{}'", name));
+    }
+
+    // Around the `=` and the value re2c lets a space or a tab stand and nothing else, a newline and a carriage return
+    // refused in its words.
+    const auto skip_spaces_and_tabs{[this] {
+        while (peek() && is_space_or_tab(*peek()))
+        {
+            ++at_;
+        }
+    }};
+
+    skip_spaces_and_tabs();
+
+    if (!accept('='))
+    {
+        fail("missing '=' in configuration");
+    }
+
+    skip_spaces_and_tabs();
+
+    const auto value{configuration_value(*syntax)};
+
+    skip_spaces_and_tabs();
+
+    if (!accept(';'))
+    {
+        fail("missing ending ';' in configuration");
+    }
+
+    auto option{std::format("{}={}", name, value)};
 
     configure(option, line(), configured_, encoding_line_, pass_.api_custom, pass_.pointers);
 
     spec.options.push_back(std::move(option));
+}
 
-    at_ = end + 1;
+std::string Block_reader::configuration_value(const Configuration_syntax& syntax)
+{
+    const auto& [value, choices]{syntax};
+
+    if (value == Configuration_value::choice)
+    {
+        return choice_value(choices);
+    }
+
+    const auto rest{text_.substr(at_, end_ - at_)};
+
+    const auto number_follows{number_length(rest) > 0};
+
+    const auto reads_string{
+            value == Configuration_value::string ||
+            (value == Configuration_value::number_or_string && !number_follows)};
+
+    if (reads_string)
+    {
+        return string_value();
+    }
+
+    const auto number{number_value()};
+
+    if (value == Configuration_value::nonnegative_number && number < 0)
+    {
+        fail("expected nonnegative value in configuration");
+    }
+
+    return std::format("{}", number);
+}
+
+std::string Block_reader::choice_value(const std::span<const std::string_view> choices)
+{
+    const auto at_word{[this](const std::string_view word) { return at(word); }};
+
+    const auto chosen{std::ranges::find_if(choices, at_word)};
+
+    if (chosen == choices.end())
+    {
+        const auto quoted{[](const std::string_view word) { return std::format("'{}'", word); }};
+
+        auto words{choices | std::views::transform(quoted) | std::views::join_with(std::string_view{", "})};
+
+        std::string expected{};
+
+        std::ranges::copy(words, std::back_inserter(expected));
+
+        fail(std::format("bad configuration value (expected: {})", expected));
+    }
+
+    at_ += chosen->size();
+
+    return std::string{*chosen};
+}
+
+std::string Block_reader::string_value()
+{
+    const auto begin{at_};
+
+    const auto opening{peek()};
+
+    if (opening != '"' && opening != '\'')
+    {
+        while (peek() && is_bare_value_byte(*peek()))
+        {
+            ++at_;
+        }
+
+        return std::string{text_.substr(begin, at_ - begin)};
+    }
+
+    ++at_;
+
+    while (peek() != opening)
+    {
+        if (peek() == '\n')
+        {
+            fail("newline in character string");
+        }
+
+        const auto byte{next("the quote closing the configuration's value")};
+
+        if (byte == '\\' && peek() == '\n')
+        {
+            fail("newline in character string");
+        }
+
+        if (byte == '\\')
+        {
+            std::ignore = next("an escaped character");
+        }
+    }
+
+    ++at_;
+
+    return std::string{text_.substr(begin, at_ - begin)};
+}
+
+int Block_reader::number_value()
+{
+    const auto rest{text_.substr(at_, end_ - at_)};
+
+    const auto length{number_length(rest)};
+
+    if (length == 0)
+    {
+        fail("bad configuration value (expected number)");
+    }
+
+    const auto written{rest.substr(0, length)};
+
+    int number{};
+
+    const auto read{std::from_chars(written.data(), written.data() + written.size(), number)};
+
+    if (read.ec == std::errc::result_out_of_range)
+    {
+        fail("configuration value overflow");
+    }
+
+    at_ += length;
+
+    return number;
 }
 
 void Block_reader::use_directive(Lexer_spec& spec, const Library_t& library)
 {
+    const auto directive_line{line()};
+
     at_ += use_prefix.size();
 
     std::string name{};
@@ -692,6 +902,9 @@ void Block_reader::use_directive(Lexer_spec& spec, const Library_t& library)
     const auto& [used_name, begin]{*found};
 
     use(begin, spec, library, returning_);
+
+    // re2c holds `re2c:eof` to the code unit at the directive, once the used block's configurations stand.
+    refuse_eof_past_code_unit(spec.options, directive_line);
 }
 
 void Block_reader::item(Lexer_spec& spec)
@@ -700,16 +913,20 @@ void Block_reader::item(Lexer_spec& spec)
 
     const auto listed{peek() == '<'};
 
-    std::optional<std::vector<std::string>> named{std::vector<std::string>{}};
+    std::vector<std::string> named{};
+
+    auto setup{false};
 
     if (listed)
     {
         ++at_;
 
+        setup = opens_setup();
+
         named = conditions();
     }
 
-    if (named && named->empty() && take_flex_definition(spec))
+    if (!setup && named.empty() && take_flex_definition(spec))
     {
         return;
     }
@@ -724,32 +941,35 @@ void Block_reader::item(Lexer_spec& spec)
     // The entry rule `<>`, an empty condition list and no regex, whose code re2c runs in the condition it numbers zero
     // before any rule is tried, and a `<!c>` setup rule, whose code it runs before every action of its conditions,
     // match nothing and are no tokens.
-    const auto entry{listed && named && named->empty() && pattern.empty()};
+    const auto entry{listed && !setup && named.empty() && pattern.empty()};
 
-    if (named && !entry && pattern.empty())
+    if (!setup && !entry && pattern.empty())
     {
         fail("a rule has no regex");
     }
 
     auto code{action()};
 
-    if (entry || !named)
+    if (entry || setup)
     {
-        setup_action(std::move(code), rule_line, entry);
+        setup_action(std::move(code), rule_line, entry, std::move(named));
 
         return;
     }
 
-    rule(spec, *std::move(named), std::move(pattern), std::move(expression), std::move(code), rule_line);
+    rule(spec, std::move(named), std::move(pattern), std::move(expression), std::move(code), rule_line);
 }
 
-std::optional<std::vector<std::string>> Block_reader::conditions()
+bool Block_reader::opens_setup() const noexcept
 {
     // A setup rule's `!` may stand after blanks, `< ! C >`, as re2c reads it.
     const auto mark{text_.find_first_not_of(" \t", at_)};
 
-    const auto setup{mark != std::string_view::npos && text_[mark] == '!'};
+    return mark != std::string_view::npos && text_[mark] == '!';
+}
 
+std::vector<std::string> Block_reader::conditions()
+{
     std::vector<std::string> names{};
 
     std::string name{};
@@ -779,7 +999,7 @@ std::optional<std::vector<std::string>> Block_reader::conditions()
         }
     }
 
-    return setup ? std::nullopt : std::optional{std::move(names)};
+    return names;
 }
 
 bool Block_reader::take_flex_definition(Lexer_spec& spec)
@@ -979,7 +1199,8 @@ std::string Block_reader::action()
     return code;
 }
 
-void Block_reader::setup_action(std::string code, const std::size_t line, const bool entry)
+void Block_reader::setup_action(
+        std::string code, const std::size_t line, const bool entry, std::vector<std::string> conditions)
 {
     // One whose code returns would return in its condition before any rule's own action, which no token set is.
     if (returned(code, returning_))
@@ -997,7 +1218,8 @@ void Block_reader::setup_action(std::string code, const std::size_t line, const 
             {.code = std::move(code),
              .line = line,
              .what = entry ? "the entry rule <> moves " : "a setup rule moves ",
-             .of_rule = false});
+             .of_rule = false,
+             .conditions = std::move(conditions)});
 }
 
 void Block_reader::rule(
@@ -1029,7 +1251,7 @@ void Block_reader::rule(
         expression = any_byte;
     }
 
-    actions_.push_back({.code = code, .line = line, .what = "the action ", .of_rule = true});
+    actions_.push_back({.code = code, .line = line, .what = "the action ", .of_rule = true, .conditions = named});
 
     auto token{returned(code, returning_)};
 
@@ -1057,9 +1279,19 @@ void Block_reader::refuse_actions()
 
     const auto restarts{restart_labels(text_, opener_, returning_)};
 
+    // The conditions the rules name, which a `*` stands for.
+    std::vector<std::string> named{};
+
+    const auto is_named{[](const std::string& condition) { return condition != every_condition; }};
+
+    for (const auto& action : actions_ | std::views::filter(&Action::of_rule))
+    {
+        std::ranges::copy_if(action.conditions, std::back_inserter(named), is_named);
+    }
+
     for (const auto& action : actions_)
     {
-        refuse_action(action, pass_.pointers, macros_, returning_, restarts);
+        refuse_action(action, pass_.pointers, macros_, returning_, restarts, heads_of(action, actions_, named));
     }
 
     actions_.clear();
