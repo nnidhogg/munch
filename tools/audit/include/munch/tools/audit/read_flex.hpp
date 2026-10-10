@@ -22,14 +22,15 @@ namespace munch::tools::audit
  * and actions of the second, and flex_options.hpp resolves the `%option` words in the order the file sets them, the
  * last word naming a setting deciding it.
  *
- * Patterns are kept as written, each rule's expression its pattern, since a flex pattern is already in the syntax the
- * parser reads; flex_pattern.hpp finds where a pattern ends on its line, and regex::parse() reads the patterns against
- * the definitions when a token set is built, so a pattern the parser refuses is refused then, with the rule's line.
- * `<<EOF>>` rules are skipped, end of input being no token, once a `|` rule above has taken their action. Whether an
- * action returns a token is read by returned(). After the file's rules stands flex's default rule, add_default_rule(),
- * which makes a byte no rule of the file's matches a one-byte discarded token; `%option nodefault` drops it, since
- * under it such a byte stops the scanner with a fatal error, which is what a token set answers of itself where no rule
- * matches.
+ * Patterns are kept as written, each rule's expression its pattern and each definition's its text with the backslash
+ * before a `u` dropped, since a flex pattern is otherwise already in the syntax the parser reads and flex reads `\u` as
+ * the letter, where the parser reads a code point; flex_pattern.hpp finds where a pattern ends on its line, and
+ * regex::parse() reads the patterns against the definitions when a token set is built, so a pattern the parser refuses
+ * is refused then, with the rule's line. `<<EOF>>` rules are skipped, end of input being no token, once a `|` rule
+ * above has taken their action. Whether an action returns a token is read by returned(). After the file's rules stands
+ * flex's default rule, add_default_rule(), which makes a byte no rule of the file's matches a one-byte discarded token;
+ * `%option nodefault` drops it, since under it such a byte stops the scanner with a fatal error, which is what a token
+ * set answers of itself where no rule matches.
  *
  * What the reading cannot follow is refused by name, with its line, rather than recorded and ignored: an option that
  * changes what a rule matches beyond what the pattern parser reads, or declares out of sight a call that moves a match,

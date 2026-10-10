@@ -61,8 +61,9 @@ struct Lexer_spec
         std::string pattern{};
 
         /**
-         * @brief The pattern in the syntax regex::parse() reads, `{name}` for a definition; the same as the pattern for
-         *        a flex file, and the file's dialect rewritten for others.
+         * @brief The pattern in the syntax regex::parse() reads, `{name}` for a definition; for a flex file the pattern
+         *        with the backslash before a `u` dropped, flex reading the escape as the letter, and the file's dialect
+         *        rewritten for others.
          */
         std::string expression{};
 
