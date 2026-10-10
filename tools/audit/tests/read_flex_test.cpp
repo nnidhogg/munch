@@ -1013,6 +1013,13 @@ TEST(Read_flex_test, The_actions_that_move_a_match_s_bounds_or_rerun_it_are_refu
     EXPECT_EQ(refusal_of(rules("a |\n<<EOF>> { return 7; }")), "");
     EXPECT_EQ(refusal_of(rules("<<EOF>> { yymore(); }")), "");
 
+    // An end-of-input action runs once the input is wholly tokenized, its last token ending at the buffer's end, so a
+    // buffer it switches to is scanned from a fresh boundary and moves no cut inside the input read: flex 2.6.4 with
+    // `a+ { return 1; }`, `b { return 2; }` and `<<EOF>> { yy_switch_to_buffer(yy_scan_string("ab")); }` once returns 1
+    // for "aa", then 1 for a and 2 for b, so the action is read as any other end-of-input action is.
+    EXPECT_EQ(refusal_of(rules(R"(<<EOF>> { yy_switch_to_buffer(yy_scan_string("ab")); })")), "");
+    EXPECT_EQ(refusal_of(rules("<<EOF>> { yy_delete_buffer(YY_CURRENT_BUFFER); yyrestart(next); }")), "");
+
     // The line is the call's rule's, wherever in a multi-line action the call stands.
     EXPECT_TRUE(refusal_of(rules("a      {\n    return 7;\n}\nab     {\n    yyless(1);\n}")).starts_with("line 6: "));
 

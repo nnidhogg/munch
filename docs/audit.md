@@ -380,16 +380,18 @@ line that holds it, rather than read it as something else:
   quote or at its line's end, whichever comes first, a backslash before the newline carrying it on to the next line as C
   splices lines, a `//` comment hiding nothing, since that scanner has no state for one, so that a brace after it on the
   line counts and a quote there opens a literal, and an action opening with `%{` running to the end of the first line
-  holding `%}`, no comment or literal read inside it, and `<<EOF>>` rules (not tokens). After the file's rules stands
-  flex's default rule, the one it adds once the section is read, which matches one byte where no rule of the file's does
-  and echoes it: read as the rule `.|\n` in every start condition, at the lowest priority and returning nothing, so that
-  such a byte is a one-byte discarded token wherever the scanner stands and every byte begins a token, with the line the
-  rules section ends on; `%option nodefault` drops it, since under it such a byte stops the scanner with a fatal error,
-  which is what a token set answers of itself where no rule matches, and `%option default` restores it. The grammars
-  under `tools/audit/grammars/` say `nodefault`, being the study's token sets, which have no such rule. A rule's pattern
-  ends at the first blank outside a quote and a bracket expression, whose own first `]` is a member and whose
-  `[:class:]` is one token, so that the blank of `[[:alpha:] ]+` is a member and `[^^]` is every byte but the caret, its
-  members the ASCII ones whatever locale flex runs under, which is how flex fills the class, and its negation
+  holding `%}`, no comment or literal read inside it, and `<<EOF>>` rules (not tokens; an end-of-input action that
+  switches, deletes or restarts a buffer is read, since it runs once the input is wholly tokenized, its last token
+  ending at the buffer's end, and the buffer it leaves for is scanned from a fresh boundary). After the file's rules
+  stands flex's default rule, the one it adds once the section is read, which matches one byte where no rule of the
+  file's does and echoes it: read as the rule `.|\n` in every start condition, at the lowest priority and returning
+  nothing, so that such a byte is a one-byte discarded token wherever the scanner stands and every byte begins a token,
+  with the line the rules section ends on; `%option nodefault` drops it, since under it such a byte stops the scanner
+  with a fatal error, which is what a token set answers of itself where no rule matches, and `%option default` restores
+  it. The grammars under `tools/audit/grammars/` say `nodefault`, being the study's token sets, which have no such rule.
+  A rule's pattern ends at the first blank outside a quote and a bracket expression, whose own first `]` is a member and
+  whose `[:class:]` is one token, so that the blank of `[[:alpha:] ]+` is a member and `[^^]` is every byte but the
+  caret, its members the ASCII ones whatever locale flex runs under, which is how flex fills the class, and its negation
   `[:^class:]` refused, since flex fills that one under the locale it runs under, dropping the bytes that locale counts
   in the class beside the ASCII ones, which the file does not decide, as a byte beyond ASCII in a pattern or a
   definition is refused under the case option, and once a `(?i:` group outside a quote and a bracket folds case anywhere
