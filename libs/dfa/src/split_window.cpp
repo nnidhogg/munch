@@ -55,25 +55,49 @@ struct Search_node
 };
 
 /**
- * @brief Hashes a reached node by its number, so the set of reached nodes holds numbers into the list of nodes.
+ * @brief Hashes a node for the set of nodes already reached.
+ */
+struct Node_hash
+{
+    /**
+     * @brief Combines the hashes of the packed states and of the chosen state.
+     * @param node The node hashed.
+     * @return Its hash.
+     */
+    std::size_t operator()(const Search_node& node) const noexcept
+    {
+        auto seed{boost::hash_range(node.others.cbegin(), node.others.cend())};
+
+        boost::hash_combine(seed, node.chosen);
+
+        return seed;
+    }
+};
+
+/**
+ * @brief Hashes a reached node by its number, or a node by value, alike, so the set of reached nodes holds numbers and
+ *        is searched by a node's value before that node has a number.
  */
 struct Number_hash
 {
     /**
-     * @brief Combines the hashes of the packed states and of the chosen state of the node with this number.
+     * @brief Admits lookups by a node's value beside lookups by number.
+     */
+    using is_transparent = void;
+
+    /**
+     * @brief Returns the hash of the node with this number.
      * @param number The node's number.
      * @return The hash of the node it names.
      */
-    std::size_t operator()(const std::size_t number) const noexcept
-    {
-        const auto& [chosen, others]{nodes[number]};
+    std::size_t operator()(const std::size_t number) const noexcept { return Node_hash{}(nodes[number]); }
 
-        auto seed{boost::hash_range(others.cbegin(), others.cend())};
-
-        boost::hash_combine(seed, chosen);
-
-        return seed;
-    }
+    /**
+     * @brief Returns the hash of a node by value.
+     * @param node The node.
+     * @return Its hash.
+     */
+    std::size_t operator()(const Search_node& node) const noexcept { return Node_hash{}(node); }
 
     /**
      * @brief The nodes reached, numbered by position.
@@ -82,10 +106,15 @@ struct Number_hash
 };
 
 /**
- * @brief Compares reached nodes by number.
+ * @brief Compares reached nodes by number with each other and with a node by value.
  */
 struct Number_equal
 {
+    /**
+     * @brief Admits comparisons with a node's value beside comparisons of numbers.
+     */
+    using is_transparent = void;
+
     /**
      * @brief Returns whether the nodes with these numbers are equal.
      * @param left The first node's number.
@@ -93,6 +122,22 @@ struct Number_equal
      * @return True when the nodes they name are equal.
      */
     bool operator()(const std::size_t left, const std::size_t right) const { return nodes[left] == nodes[right]; }
+
+    /**
+     * @brief Returns whether the node with this number equals a node by value.
+     * @param number The reached node's number.
+     * @param node The node by value.
+     * @return True when they are equal.
+     */
+    bool operator()(const std::size_t number, const Search_node& node) const { return nodes[number] == node; }
+
+    /**
+     * @brief Returns whether a node by value equals the node with this number.
+     * @param node The node by value.
+     * @param number The reached node's number.
+     * @return True when they are equal.
+     */
+    bool operator()(const Search_node& node, const std::size_t number) const { return node == nodes[number]; }
 
     /**
      * @brief The nodes reached, numbered by position.
@@ -386,8 +431,7 @@ Shortest_window shortest_split_window(const Simulator& simulator, const std::siz
     }
 
     // Each node is held once, in the list of nodes reached in the order they were reached, which is also the queue; the
-    // set of reached nodes holds their numbers in that list. A candidate takes the next number before it is looked up
-    // and gives it back when it was reached before.
+    // set of reached nodes holds their numbers in that list, and a number always names the same node.
     std::vector<Search_node> nodes{};
 
     nodes.push_back(std::move(start));
@@ -429,25 +473,23 @@ Shortest_window shortest_split_window(const Simulator& simulator, const std::siz
     const auto expand_byte{[&](const std::size_t at, const unsigned char byte) -> std::optional<Shortest_window> {
         for (auto& [next, chose] : advance(simulator, nodes[at], byte))
         {
+            if (index.contains(next))
+            {
+                continue;
+            }
+
+            if (nodes.size() >= budget)
+            {
+                return Shortest_window{.outcome = Shortest_window::Outcome::budget, .window = {}, .origin = 0};
+            }
+
             const auto certified{next.chosen && empty(next.others)};
 
             nodes.push_back(std::move(next));
 
             const auto number{nodes.size() - 1};
 
-            const auto [position, inserted]{index.insert(number)};
-
-            if (!inserted)
-            {
-                nodes.pop_back();
-
-                continue;
-            }
-
-            if (number >= budget)
-            {
-                return Shortest_window{.outcome = Shortest_window::Outcome::budget, .window = {}, .origin = 0};
-            }
+            index.insert(number);
 
             reached.push_back({.parent = at, .byte = byte, .chose = chose});
 
