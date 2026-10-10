@@ -3,6 +3,7 @@ project(munch_probes)
 
 # The units two or more probes share, their headers under include/munch/tools/probes.
 add_library(munch_probes
+        src/arguments.cpp
         src/assertions.cpp
         src/chunks.cpp
         src/crosscheck_session.cpp
@@ -169,6 +170,30 @@ target_link_libraries(munch_corpus_windows
 
 if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_corpus_windows COMMAND munch_corpus_windows)
+    # The campaign's chunk count, refused rather than read as zero: a figure that is not wholly a number and a zero.
+    add_test(NAME munch_corpus_windows_refuses_nonnumeric_chunks
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_corpus_windows>
+                    "chunks must be a positive whole number" "" ${CMAKE_CURRENT_SOURCE_DIR} bogus)
+    add_test(NAME munch_corpus_windows_refuses_zero_chunks
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_corpus_windows>
+                    "chunks must be a positive whole number" "" ${CMAKE_CURRENT_SOURCE_DIR} 0)
+    # The campaign's CSV, refused rather than dropped: a path in a missing directory and a write to /dev/full.
+    add_test(NAME munch_corpus_windows_refuses_unopenable_csv
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_corpus_windows>
+                    "cannot open CSV" "" ${CMAKE_CURRENT_SOURCE_DIR}/analysis/paper4-recompute 8
+                    ${CMAKE_CURRENT_BINARY_DIR}/no-such-dir/rows.csv)
+    add_test(NAME munch_corpus_windows_refuses_unwritable_csv
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_corpus_windows>
+                    "CSV write failed" "" ${CMAKE_CURRENT_SOURCE_DIR}/analysis/paper4-recompute 8 /dev/full)
+    # A corpus directory that is not there, refused by name rather than aborting the campaign.
+    add_test(NAME munch_corpus_windows_refuses_missing_corpus
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_corpus_windows>
+                    "cannot walk the corpus" "" ${CMAKE_CURRENT_BINARY_DIR}/no-such-corpus)
+    # A corpus holding no file, refused rather than measured as a stream of nothing.
+    add_test(NAME munch_corpus_windows_refuses_empty_corpus
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_corpus_windows>
+                    "no regular files under" ${CMAKE_CURRENT_BINARY_DIR}/empty-windows-corpus
+                    ${CMAKE_CURRENT_BINARY_DIR}/empty-windows-corpus)
 endif ()
 
 # Decides the mandatory-core premise of the proof-directed planner: an Aho-Corasick matcher over the family
@@ -210,6 +235,15 @@ target_link_libraries(munch_malformed_splice
 
 if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_malformed_splice COMMAND munch_malformed_splice)
+    # A corpus directory that is not there, refused by name rather than aborting the campaign.
+    add_test(NAME munch_malformed_splice_refuses_missing_corpus
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_malformed_splice>
+                    "cannot walk the corpus" "" ${CMAKE_CURRENT_BINARY_DIR}/no-such-corpus .c)
+    # A corpus holding no file of the extension, refused rather than measured as a fraction of nothing.
+    add_test(NAME munch_malformed_splice_refuses_empty_corpus
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_malformed_splice>
+                    "no .c files under" ${CMAKE_CURRENT_BINARY_DIR}/empty-corpus
+                    ${CMAKE_CURRENT_BINARY_DIR}/empty-corpus .c)
 endif ()
 
 # Dev-grade preview of the split-windows benchmark campaign: plans cuts at window-recovered origins, asserts
@@ -233,6 +267,14 @@ target_link_libraries(munch_window_bench
 
 if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_window_bench COMMAND munch_window_bench)
+    # An occurrence file that cannot be read, refused rather than skipped, and a first argument that is not wholly a
+    # number, which names such a file rather than a size.
+    add_test(NAME munch_window_bench_refuses_unreadable_file
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_window_bench>
+                    "cannot read occurrence file" "" ${CMAKE_CURRENT_BINARY_DIR}/no-such-file)
+    add_test(NAME munch_window_bench_reads_a_partly_numeric_argument_as_a_file
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_window_bench>
+                    "cannot read occurrence file 16x" "" 16x)
 endif ()
 
 # Synthesizes carry prepasses from the compiled tables for token sets whose split certificates a wall

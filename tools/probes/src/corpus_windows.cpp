@@ -31,10 +31,13 @@
 // .json uses the RFC 8259 row, everything else the consumption-complete C row), concatenates them in sorted order, and
 // reports per file and for the stream: bytes, consumed fraction, chunks achieved against requested, balance (largest
 // chunk over ideal), and boundary-deviation quantiles against equal-division targets, the planning-granularity proxy
-// for the certificate gap distribution. Rows go to the CSV path when given. The stream row is one grammar's
-// measurement, so a corpus whose extensions select both grammars is refused it: the per-file rows still stand, but no
-// single certificate plans the aggregate. Figures from campaign runs are quoted from archives kept with their
-// provenance beside a clean commit, as the benchmark's and the recovery harness's are.
+// for the certificate gap distribution. The chunks requested, eight unless given, are refused with exit status one
+// unless the argument is wholly a positive whole number. Rows go to the CSV path when given, a CSV that does not open
+// or whose writes fail refused with exit status one as well, and so is a directory that cannot be walked or holds no
+// regular file, while an empty file's row gives its balance as undefined. The stream row is one grammar's measurement,
+// so a corpus whose extensions select both grammars is refused it: the per-file rows still stand, but no single
+// certificate plans the aggregate. Figures from campaign runs are quoted from archives kept with their provenance
+// beside a clean commit, as the benchmark's and the recovery harness's are.
 
 #include <algorithm>
 #include <array>
@@ -58,6 +61,7 @@
 #include "grammars.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
+#include "munch/tools/probes/arguments.hpp"
 #include "munch/tools/probes/assertions.hpp"
 #include "munch/tools/probes/chunks.hpp"
 #include "munch/tools/probes/files.hpp"
@@ -77,6 +81,7 @@ using munch::tools::probes::files_under;
 using munch::tools::probes::Lcg64;
 using munch::tools::probes::Output_file;
 using munch::tools::probes::pick_identifier;
+using munch::tools::probes::positive_count;
 using munch::tools::probes::published_cumulative_row;
 using munch::tools::probes::read_bytes;
 
@@ -405,6 +410,18 @@ Deviation_summary summarize(const std::vector<std::size_t>& deviations)
 }
 
 /**
+ * @brief Returns a plan's balance as a CSV row gives it, to five places, or `undefined` for an empty input, which has
+ * no ideal chunk to measure the largest against.
+ * @param bytes The input's size.
+ * @param balance The plan's balance.
+ * @return The column's text.
+ */
+std::string balance_text(const std::size_t bytes, const double balance)
+{
+    return bytes == 0 ? std::string{"undefined"} : std::format("{:.5f}", balance);
+}
+
+/**
  * @brief Writes one CSV row: its label, the grammar, the input's size, the bytes consumed, the chunks requested, and
  *        the plan's achieved chunks, balance and deviation summary.
  * @param csv The CSV, open.
@@ -425,9 +442,11 @@ void write_csv_row(
 
     const std::string grammar_name{name_of(grammar)};
 
+    const auto balance_column{balance_text(bytes, balance)};
+
     std::fprintf(
-            csv.stream(), "%s,%s,%zu,%zu,%zu,%zu,%.5f,%zu,%zu,%zu\n", label.c_str(), grammar_name.c_str(), bytes,
-            consumed, chunks, achieved, balance, median, p95, largest);
+            csv.stream(), "%s,%s,%zu,%zu,%zu,%zu,%s,%zu,%zu,%zu\n", label.c_str(), grammar_name.c_str(), bytes,
+            consumed, chunks, achieved, balance_column.c_str(), median, p95, largest);
 }
 
 /**
@@ -485,13 +504,13 @@ Campaign_stream file_rows(
 }
 
 /**
- * @brief Scans and plans the stream under its one grammar, prints the stream row, and writes it to the CSV and closes
- *        the CSV when it is open.
+ * @brief Scans and plans the stream under its one grammar, prints the stream row, and writes it to the CSV when it is
+ *        open.
  * @param stream The stream, of the one grammar its grammar field names.
  * @param lexer The lexer of the stream's grammar.
  * @param files The number of files in the stream.
  * @param chunks The chunks requested of the plan.
- * @param csv The CSV, written and closed only when open.
+ * @param csv The CSV, written only when open.
  */
 void stream_row(
         const Campaign_stream& stream, const munch::core::Lexer& lexer, const std::size_t files,
@@ -514,8 +533,6 @@ void stream_row(
     if (csv.is_open())
     {
         write_csv_row(csv, "STREAM", *grammar, bytes.size(), consumed, chunks, planned);
-
-        std::ignore = csv.close();
     }
 }
 
@@ -718,22 +735,19 @@ std::filesystem::path mixed_corpus()
 
 /**
  * @brief Scans and plans the files under a directory, per file and as one stream, printing the stream row and writing
- *        every row to the CSV when a path is given; the stream row is refused when there is no file or the files mix
+ *        every row to the CSV when it is open; the stream row is refused when there is no file or the files mix
  *        grammars.
  * @param root The directory walked.
  * @param chunks The chunks requested of each plan.
- * @param csv_path The CSV to write, std::nullopt for none.
- * @return Whether one certificate planned the aggregate stream.
+ * @param csv The CSV, written only when open and left for the caller to close.
+ * @return Whether one certificate planned the aggregate stream, std::nullopt when the directory holds no regular file,
+ *         which `no regular files under <directory>` on standard error says.
  */
-bool campaign(
-        const std::filesystem::path& root, const std::size_t chunks,
-        const std::optional<std::filesystem::path>& csv_path)
+std::optional<bool> campaign(const std::filesystem::path& root, const std::size_t chunks, Output_file& csv)
 {
     const Row_lexers lexers{.json_row = rfc_json(), .c_row = consumption_complete_c()};
 
     const auto files{files_under(root, std::nullopt)};
-
-    auto csv{csv_path ? Output_file{*csv_path} : Output_file{}};
 
     if (csv.is_open())
     {
@@ -749,20 +763,15 @@ bool campaign(
 
     if (!grammar)
     {
-        std::cout << "campaign: no regular files under " << root << "\n";
+        std::fprintf(stderr, "no regular files under %s\n", root.c_str());
 
-        return false;
+        return std::nullopt;
     }
 
     if (is_mixed)
     {
         std::cout << "campaign: mixed grammars under " << root
                   << ", stream row refused: no single certificate plans the aggregate\n";
-
-        if (csv.is_open())
-        {
-            std::ignore = csv.close();
-        }
 
         return false;
     }
@@ -897,14 +906,84 @@ void stream_row_refuses_mixed(Assertions& assertions)
 {
     const Removed_on_exit scratch{mixed_corpus()};
 
+    Output_file no_csv{};
+
     assertions.expect(
-            !campaign(scratch.root, self_test_chunks, std::nullopt), "a mixed corpus planned its aggregate stream");
+            campaign(scratch.root, self_test_chunks, no_csv) == std::optional{false},
+            "a mixed corpus planned its aggregate stream");
 
     std::filesystem::remove(scratch.root / "b.c");
 
     assertions.expect(
-            campaign(scratch.root, self_test_chunks, std::nullopt),
+            campaign(scratch.root, self_test_chunks, no_csv) == std::optional{true},
             "a single-grammar corpus refused its aggregate stream");
+}
+
+/**
+ * @brief Asserts that an empty file's row gives its balance as undefined, the plan of no bytes having no ideal chunk.
+ * @param assertions The probe's assertions.
+ * @param c_lexer The consumption-complete C row's lexer.
+ */
+void empty_file_row(Assertions& assertions, const munch::core::Lexer& c_lexer)
+{
+    const auto empty_plan{plan(c_lexer, "", self_test_chunks)};
+
+    assertions.expect(balance_text(0, empty_plan.balance) == "undefined", "an empty file's row gave a balance");
+}
+
+/**
+ * @brief Runs a campaign over the directory, the chunks requested and the CSV path the command line gives, refusing a
+ *        chunk count that is not wholly a positive whole number with `chunks must be a positive whole number:
+ *        <argument>`, a CSV that does not open with `cannot open CSV <path>`, a directory that cannot be walked with
+ *        `cannot walk the corpus: <reason>`, one holding no regular file with `no regular files under <directory>` and
+ *        a CSV whose writes or close fail with `CSV write failed: <path>`, each on standard error.
+ * @param command_line The arguments after the program's name, the directory first.
+ * @return EXIT_SUCCESS after the campaign, EXIT_FAILURE after a refusal.
+ */
+int run_campaign(const std::vector<std::string_view>& command_line)
+{
+    const auto chunks{command_line.size() > 1 ? positive_count(command_line[1]) : std::optional{planned_chunks}};
+
+    if (!chunks)
+    {
+        std::fprintf(stderr, "chunks must be a positive whole number: %s\n", std::string{command_line[1]}.c_str());
+
+        return EXIT_FAILURE;
+    }
+
+    const auto csv_path{command_line.size() > 2 ? std::string{command_line[2]} : std::string{}};
+
+    auto csv{csv_path.empty() ? Output_file{} : Output_file{std::filesystem::path{csv_path}}};
+
+    if (!csv_path.empty() && !csv.is_open())
+    {
+        std::fprintf(stderr, "cannot open CSV %s\n", csv_path.c_str());
+
+        return EXIT_FAILURE;
+    }
+
+    try
+    {
+        if (!campaign(command_line[0], *chunks, csv))
+        {
+            return EXIT_FAILURE;
+        }
+    }
+    catch (const std::filesystem::filesystem_error& error)
+    {
+        std::fprintf(stderr, "cannot walk the corpus: %s\n", error.what());
+
+        return EXIT_FAILURE;
+    }
+
+    if (csv.is_open() && !csv.close())
+    {
+        std::fprintf(stderr, "CSV write failed: %s\n", csv_path.c_str());
+
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
 }
 
 } // namespace
@@ -915,7 +994,7 @@ void stream_row_refuses_mixed(Assertions& assertions)
  * @param argc The argument count.
  * @param argv The directory, the chunks requested (8 by default) and the CSV path, all optional.
  * @return EXIT_SUCCESS after a campaign or a self-test whose assertions hold, EXIT_FAILURE when a self-test assertion
- *         fails.
+ *         fails or the campaign's command line is refused.
  */
 int main(const int argc, char** argv)
 {
@@ -923,13 +1002,14 @@ int main(const int argc, char** argv)
 
     if (argc > 1)
     {
-        const std::size_t chunks{argc > 2 ? std::strtoull(argv[2], nullptr, 10) : planned_chunks};
+        std::vector<std::string_view> command_line{};
 
-        const auto csv_path{argc > 3 ? std::optional<std::filesystem::path>{argv[3]} : std::nullopt};
+        for (int index{1}; index < argc; ++index)
+        {
+            command_line.emplace_back(argv[index]);
+        }
 
-        std::ignore = campaign(argv[1], chunks, csv_path);
-
-        return EXIT_SUCCESS;
+        return run_campaign(command_line);
     }
 
     published_row_facts(assertions);
@@ -941,6 +1021,8 @@ int main(const int argc, char** argv)
     generated_corpus_splices(assertions, c_lexer);
 
     stream_row_refuses_mixed(assertions);
+
+    empty_file_row(assertions, c_lexer);
 
     std::cout << (assertions.has_failures() ? "assertion failures\n" : "all assertions hold\n");
 

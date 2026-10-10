@@ -18,8 +18,9 @@
 // Campaign mode. With a directory argument the probe concatenates the given extension's files in sorted order, applies
 // the consumption-complete C row (deliberately mismatched to languages whose strings span lines, which is what makes
 // real corpora malformed under it), and reports serial consumption, the plan, per-chunk consumption, and the
-// spliced-versus-serial token counts. Figures from campaign runs are archived with their corpus pin; the collection
-// this backs is paper/data/malformed-splice-2026-08.
+// spliced-versus-serial token counts, the ratio undefined where the serial scan commits no token; a directory that
+// cannot be walked or holds no file of the extension is refused with exit status one. Figures from campaign runs are
+// archived with their corpus pin; the collection this backs is paper/data/malformed-splice-2026-08.
 
 #include <cstddef>
 #include <cstdint>
@@ -199,6 +200,32 @@ std::string generated_c(const std::size_t bytes)
 }
 
 /**
+ * @brief Returns the campaign's line for a spliced stream: the files and bytes, the serial consumption as a share of
+ * the bytes, the plan, and the spliced token count with its ratio to the serial one, which a serial scan committing no
+ * token leaves undefined.
+ * @param files The files concatenated.
+ * @param bytes The stream's bytes, at least one.
+ * @param spliced The stream's splice.
+ * @return The line, its newline included.
+ */
+std::string summary_line(const std::size_t files, const std::size_t bytes, const Splice& spliced)
+{
+    const auto& [serial_consumed, serial_tokens, chunks, incomplete_chunks, spliced_tokens]{spliced};
+
+    const auto consumed_percent{100.0 * static_cast<double>(serial_consumed) / static_cast<double>(bytes)};
+
+    const auto ratio{static_cast<double>(spliced_tokens) / static_cast<double>(serial_tokens)};
+
+    const auto ratio_text{serial_tokens == 0 ? std::string{"undefined"} : std::format("{:.2f}", ratio)};
+
+    return std::format(
+            "{} files, {} bytes; serial consumed {} ({:.1f}%), {} tokens; {} chunks, {} incomplete; spliced {} tokens, "
+            "ratio {}\n",
+            files, bytes, serial_consumed, consumed_percent, serial_tokens, chunks, incomplete_chunks, spliced_tokens,
+            ratio_text);
+}
+
+/**
  * @brief Runs the pinned self-test: one unconsumable byte near the front of the generated corpus stops the serial scan,
  *        while the spliced chunks do not notice, and prints the figures and the verdict.
  *
@@ -258,6 +285,11 @@ int self_test(const munch::core::Lexer& lexer)
 
     assertions.expect(spliced_tokens == 62'309, "the pinned spliced token count moved");
 
+    // A stream whose first byte no token takes commits no serial token, so the campaign's ratio is undefined.
+    const auto unconsumable{summary_line(1, 2, splice(lexer, "\x01\n"))};
+
+    assertions.expect(unconsumable.ends_with("ratio undefined\n"), "a serial scan of no token gave a ratio");
+
     std::cout << (assertions.has_failures() ? "assertion failures\n" : "all assertions hold\n");
 
     return assertions.has_failures() ? EXIT_FAILURE : EXIT_SUCCESS;
@@ -265,14 +297,23 @@ int self_test(const munch::core::Lexer& lexer)
 
 /**
  * @brief Splices the concatenation of a directory's files of one extension, in sorted order and each followed by a
- *        newline, an unreadable file read as empty, and prints the serial and spliced figures on one line.
+ *        newline, an unreadable file read as empty, and prints the serial and spliced figures on one line; a directory
+ *        holding no such file is refused with `no <extension> files under <directory>` on standard error.
  * @param lexer The lexer both scans run.
  * @param root The directory walked.
  * @param extension The extension, dot included, a file must have.
+ * @return Whether the directory held a file to splice.
  */
-void campaign(const munch::core::Lexer& lexer, const std::filesystem::path& root, const std::string_view extension)
+bool campaign(const munch::core::Lexer& lexer, const std::filesystem::path& root, const std::string_view extension)
 {
     const auto files{files_under(root, extension)};
+
+    if (files.empty())
+    {
+        std::fprintf(stderr, "no %s files under %s\n", std::string{extension}.c_str(), root.c_str());
+
+        return false;
+    }
 
     std::string stream{};
 
@@ -285,17 +326,9 @@ void campaign(const munch::core::Lexer& lexer, const std::filesystem::path& root
         stream += '\n';
     }
 
-    const auto [serial_consumed, serial_tokens, chunks, incomplete_chunks, spliced_tokens]{splice(lexer, stream)};
+    std::cout << summary_line(files.size(), stream.size(), splice(lexer, stream));
 
-    const auto consumed_percent{100.0 * static_cast<double>(serial_consumed) / static_cast<double>(stream.size())};
-
-    const auto ratio{static_cast<double>(spliced_tokens) / static_cast<double>(serial_tokens)};
-
-    std::printf(
-            "%zu files, %zu bytes; serial consumed %zu (%.1f%%), %zu tokens; %zu chunks, %zu "
-            "incomplete; spliced %zu tokens, ratio %.2f\n",
-            files.size(), stream.size(), serial_consumed, consumed_percent, serial_tokens, chunks, incomplete_chunks,
-            spliced_tokens, ratio);
+    return true;
 }
 
 } // namespace
@@ -306,7 +339,8 @@ void campaign(const munch::core::Lexer& lexer, const std::filesystem::path& root
  * @param argc The argument count.
  * @param argv The directory and the extension, both optional.
  * @return EXIT_SUCCESS after a campaign or a self-test whose assertions hold, EXIT_FAILURE when a self-test assertion
- *         fails.
+ *         fails, the directory cannot be walked, which `cannot walk the corpus: <reason>` on standard error names, or
+ *         it holds no file of the extension.
  */
 int main(const int argc, char** argv)
 {
@@ -320,9 +354,16 @@ int main(const int argc, char** argv)
     {
         const std::string_view extension{argc > 2 ? argv[2] : ".rs"};
 
-        campaign(lexer, argv[1], extension);
+        try
+        {
+            return campaign(lexer, argv[1], extension) ? EXIT_SUCCESS : EXIT_FAILURE;
+        }
+        catch (const std::filesystem::filesystem_error& error)
+        {
+            std::fprintf(stderr, "cannot walk the corpus: %s\n", error.what());
 
-        return EXIT_SUCCESS;
+            return EXIT_FAILURE;
+        }
     }
 
     return self_test(lexer);

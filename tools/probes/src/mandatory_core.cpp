@@ -11,7 +11,8 @@
 // Families are nonempty strings by contract; a state that can die with no core before the killing byte gets a refuted
 // verdict with a reconstructed witness.
 //
-// What runs as a test. The shipped instances and the counterexamples, all pinned:
+// What runs as a test. The shipped instances and the counterexamples, all pinned, and how a witness is rendered:
+//   - a witness's byte that is neither printable nor a newline or a tab renders as `\x` and its two hexadecimal digits;
 //   - the C-like cumulative row proves the family {*/} at its comment-interior state;
 //   - a Python-like triple-quote row proves the family {three quotes} at its string-interior state;
 //   - the RFC 8259 row refutes every family at its string-interior state with a one-byte witness, since a control byte
@@ -498,7 +499,7 @@ Verdict check(const View& view, const std::size_t q, const std::vector<std::stri
 
 /**
  * @brief Renders a word for a verdict line: a newline as `\n`, a tab as `\t`, a printable byte as itself, and any other
- *        byte as `\x`.
+ *        byte as `\x` and its two hexadecimal digits.
  * @param word The word.
  * @return The rendering.
  */
@@ -527,7 +528,7 @@ std::string printable(const std::string& word)
             }
             else
             {
-                out += R"(\x)";
+                out += std::format(R"(\x{:02x})", static_cast<unsigned char>(byte));
             }
 
             break;
@@ -551,6 +552,17 @@ std::string verdict_text(const bool proved, const std::string& witness)
     }
 
     return std::format("refuted, witness [{}]", printable(witness));
+}
+
+/**
+ * @brief Asserts that a witness renders every byte so that the line names it: a byte that is neither printable nor a
+ *        newline or a tab by its two hexadecimal digits.
+ * @param assertions The probe's assertions.
+ */
+void witness_rendering(Assertions& assertions)
+{
+    assertions.expect(
+            printable("a\x01\n\t\x7f\xff") == R"(a\x01\n\t\x7f\xff)", "a witness renders a byte it cannot name");
 }
 
 /**
@@ -698,12 +710,14 @@ void synthetic_counterexample(Assertions& assertions)
 } // namespace
 
 /**
- * @brief Decides the five pinned cases and prints the verdict.
+ * @brief Checks the witness rendering, decides the five pinned cases and prints the verdict.
  * @return EXIT_SUCCESS when every assertion holds, EXIT_FAILURE otherwise.
  */
 int main()
 {
     Assertions assertions{};
+
+    witness_rendering(assertions);
 
     comment_interior(assertions);
 

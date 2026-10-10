@@ -115,7 +115,6 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -126,7 +125,6 @@
 #include <ranges>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -134,6 +132,7 @@
 #include "grammars.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
+#include "munch/tools/probes/arguments.hpp"
 #include "munch/tools/probes/files.hpp"
 #include "munch/tools/probes/recovery_archive.hpp"
 #include "munch/tools/probes/recovery_arms.hpp"
@@ -168,6 +167,7 @@ using munch::tools::probes::Incident;
 using munch::tools::probes::json_corpus;
 using munch::tools::probes::Lcg;
 using munch::tools::probes::ops;
+using munch::tools::probes::positive_count;
 using munch::tools::probes::print_pooled;
 using munch::tools::probes::print_seeds;
 using munch::tools::probes::print_strata;
@@ -292,26 +292,6 @@ struct Row_recipe
      */
     std::optional<C_like_features> c_like{};
 };
-
-/**
- * @brief Reads a positive whole decimal count, refusing a text that is not wholly one, a zero, and a value past the
- *        range of std::size_t.
- * @param text The argument.
- * @return The count, std::nullopt for a refusal.
- */
-std::optional<std::size_t> positive_count(const std::string_view text)
-{
-    std::size_t value{0};
-
-    const auto [stopped, error]{std::from_chars(text.data(), text.data() + text.size(), value)};
-
-    if (error != std::errc{} || stopped != text.data() + text.size() || value == 0)
-    {
-        return std::nullopt;
-    }
-
-    return value;
-}
 
 /**
  * @brief Reads the command line, refusing the counts in argument order with `<count> must be a positive whole number:

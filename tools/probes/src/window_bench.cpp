@@ -7,14 +7,14 @@
 // What it checks. The premise that the first grammar certifies no byte and the second certifies newline; that every
 // planned boundary lands on a token start of the serial scan; that the chunks' concatenated (kind, length) stream
 // equals the serial one element for element; and that every timed pass reproduces the serial token count and checksum.
-// Any failure exits 1, as does a failed CSV open or write.
+// Any failure exits 1, as does a failed CSV open or write and an occurrence file that cannot be read.
 //
 // Usage: munch_window_bench [size MiB [passes [csv path | -]]] [occurrence file...]
-// A first argument std::atoi reads as positive is the size (16 MiB by default), then a second so read is the passes
-// (5), then a third is the CSV the observations are appended to, `-` for none; every remaining argument is a file whose
-// certified window occurrences are counted, and a file that cannot be read is skipped. Every number printed is
-// run-local: the CSV and stdout carry commit and dirty-state provenance, and no figure from a casual run may be quoted
-// without the collect.sh ritual on a quiet machine.
+// A first argument that is wholly a positive whole number is the size (16 MiB by default), then a second one so is the
+// passes (5), then a third is the CSV the observations are appended to, `-` for none; every remaining argument is a
+// file whose certified window occurrences are counted, so a first argument such as `16x` names a file. Every number
+// printed is run-local: the CSV and stdout carry commit and dirty-state provenance, and no figure from a casual run may
+// be quoted without the collect.sh ritual on a quiet machine.
 //
 // The window model is window_model's, the one window_gate.cpp states and proves in its header comment: the
 // representation lemma, the soundness argument and the quotient. The gate asserts the model against the scanner, and
@@ -43,6 +43,7 @@
 #include "munch/core/lexer.hpp"
 #include "munch/dfa/dfa.hpp"
 #include "munch/tools/benchmark/provenance.hpp"
+#include "munch/tools/probes/arguments.hpp"
 #include "munch/tools/probes/builder_dbg.hpp"
 #include "munch/tools/probes/files.hpp"
 #include "munch/tools/probes/window_model.hpp"
@@ -58,6 +59,7 @@ using munch::tools::probes::certified_pairs;
 using munch::tools::probes::every_byte;
 using munch::tools::probes::is_init_reentrant;
 using munch::tools::probes::live_states;
+using munch::tools::probes::positive_count;
 using munch::tools::probes::read_bytes;
 using munch::tools::probes::States_t;
 
@@ -952,9 +954,9 @@ Bench_grammar bench_grammar(const bool split_friendly)
 }
 
 /**
- * @brief Reads the command line positionally: a first argument std::atoi reads as positive is the size in MiB, then a
- *        second one read so is the passes, then a third is the CSV path, `-` for none; every argument after those taken
- *        is an occurrence file.
+ * @brief Reads the command line positionally: a first argument that is wholly a positive whole number is the size in
+ *        MiB, then a second one so, within an int's range, is the passes, then a third is the CSV path, `-` for none;
+ *        every argument after those taken is an occurrence file.
  * @param arguments The arguments after the program name.
  * @return The options, each one not given at its default: 16 MiB, 5 passes, no CSV.
  */
@@ -970,25 +972,27 @@ Bench_options options_of(const std::vector<std::string>& arguments)
         return options;
     }};
 
-    const auto number_at{[&arguments](const std::size_t index) { return std::atoi(arguments[index].c_str()); }};
+    const auto number_at{[&arguments](const std::size_t index) {
+        return index < arguments.size() ? positive_count(arguments[index]) : std::nullopt;
+    }};
 
-    const auto size_mib{arguments.empty() ? 0 : number_at(0)};
+    const auto size_mib{number_at(0)};
 
-    if (size_mib <= 0)
+    if (!size_mib)
     {
         return with_files(0);
     }
 
-    options.size_mib = static_cast<std::size_t>(size_mib);
+    options.size_mib = *size_mib;
 
-    const auto passes{arguments.size() <= 1 ? 0 : number_at(1)};
+    const auto passes{number_at(1)};
 
-    if (passes <= 0)
+    if (!passes || *passes > static_cast<std::size_t>(std::numeric_limits<int>::max()))
     {
         return with_files(1);
     }
 
-    options.passes = passes;
+    options.passes = static_cast<int>(*passes);
 
     if (arguments.size() <= 2)
     {
@@ -1076,12 +1080,13 @@ std::optional<Origins> window_census(const Bench_grammar& grammar)
 }
 
 /**
- * @brief Prints, per readable file, how often a certified window occurs in its bytes and the mean gap between
- *        occurrences; a file that cannot be opened prints nothing.
+ * @brief Prints, per file, how often a certified window occurs in its bytes and the mean gap between occurrences,
+ *        refusing a file that cannot be opened with `cannot read occurrence file <path>` on standard error.
  * @param files The files.
  * @param origins The origin table.
+ * @return Whether every file was read.
  */
-void report_occurrences(const std::vector<std::string>& files, const Origins& origins)
+bool report_occurrences(const std::vector<std::string>& files, const Origins& origins)
 {
     for (const auto& file : files)
     {
@@ -1089,7 +1094,9 @@ void report_occurrences(const std::vector<std::string>& files, const Origins& or
 
         if (!data)
         {
-            continue;
+            std::fprintf(stderr, "cannot read occurrence file %s\n", file.c_str());
+
+            return false;
         }
 
         const auto occurrences{window_boundaries(*data, origins).size()};
@@ -1100,6 +1107,8 @@ void report_occurrences(const std::vector<std::string>& files, const Origins& or
                 "  %-40s %zu occurrences over %zu bytes, mean gap %.1f\n", file.c_str(), occurrences, data->size(),
                 gap);
     }
+
+    return true;
 }
 
 /**
@@ -1350,8 +1359,8 @@ bool byte_versus_window(const Bench_options& options, Observations& observations
  *        the no-byte measurement and the byte-versus-window measurement, in turn.
  * @param argc The argument count.
  * @param argv The size in MiB, the passes, the CSV path or `-`, and the occurrence files, all optional.
- * @return EXIT_SUCCESS when every premise and stream equality holds and every CSV write succeeded, EXIT_FAILURE
- *         otherwise.
+ * @return EXIT_SUCCESS when every premise and stream equality holds, every occurrence file was read and every CSV
+ *         write succeeded, EXIT_FAILURE otherwise.
  */
 int main(const int argc, char** argv)
 {
@@ -1386,7 +1395,10 @@ int main(const int argc, char** argv)
         return EXIT_FAILURE;
     }
 
-    report_occurrences(options.occurrence_files, *origins);
+    if (!report_occurrences(options.occurrence_files, *origins))
+    {
+        return EXIT_FAILURE;
+    }
 
     if (!no_byte_measurement(grammar, *origins, options, observations))
     {
