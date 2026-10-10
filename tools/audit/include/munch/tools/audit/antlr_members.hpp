@@ -28,6 +28,13 @@ struct Members_action
      * @brief The line the code opens on, which a refusal of it names.
      */
     std::size_t line{};
+
+    /**
+     * @brief Whether the code stands outside the lexer class, the C++ target's `definitions`, which its template writes
+     *        into the source file after the lexer's constructor and accessors, where a member is defined by its
+     *        qualified name.
+     */
+    bool out_of_line{};
 };
 
 /**
@@ -36,20 +43,25 @@ struct Members_action
  *        runtime's own methods or run when the lexer is built.
  *
  * ANTLR writes the members into the lexer class it generates for the target language, and the reading reads the
- * declarations of three targets, Java, C++ and C#, which all write a method as a name, a parameter list and a body.
+ * declarations of three targets, Java, C++ and C#, which all write a method as a name, a parameter list and a body,
+ * and the C++ target's out-of-line definitions, which write one under the lexer class's name.
  * Another target writes one its own way, JavaScript assigning a function to an instance member among them, which is no
  * declaration this reading would find at all, so a grammar naming one is refused by name rather than read as though its
  * members declared nothing.
  * @param spec The scanner read, whose options name the target language and the superclass and whose line is the
  *        declaration's.
- * @param members The actions written into the lexer class, `members` and the C++ target's `declarations`.
- * @param actions_code The code of every named action, `header` among them, whose macros the members may use.
+ * @param lexer_class The class ANTLR generates the lexer as, which an out-of-line definition qualifies a member by.
+ * @param members The actions written into the lexer class, `members` and the C++ target's `declarations`, and its
+ *        `definitions`, written outside it.
+ * @param actions_code The code of every named action the lexer's header holds, `header` among them, whose macros the
+ *        members may use.
  * @throws Spec_error If the grammar sets superClass, its target is none of Java, C++ and C# while it has members, or
  *         the members define a method, an initializer block, an initializer that is more than a value or an accessor
  *         with a body.
  */
 void refuse_lexer_class(
-        const Lexer_spec& spec, const std::vector<Members_action>& members, std::string_view actions_code);
+        const Lexer_spec& spec, std::string_view lexer_class, const std::vector<Members_action>& members,
+        std::string_view actions_code);
 
 } // namespace munch::tools::audit
 

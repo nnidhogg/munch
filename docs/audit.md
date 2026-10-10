@@ -562,55 +562,63 @@ line that holds it, rather than read it as something else:
   reading as ever, and where the body can only be empty the string matches alone; over a literal of one length whose
   first byte that string cannot begin with, its letters folded or not, the iterations are aligned to that length and the
   greedy loop is the same language; `+?` reads one character before the rest can stop it; and a non-greedy option whose
-  body cannot begin the rest and has one length in characters is the greedy one. Refused: `import`, `-> more`, `->
-  type(EOF)`, which ends the token stream where the rule matches, whatever its channel, a command ANTLR has not got or
-  one of its seven given an argument it takes none of or none where it takes one, its errors 149, 150 and 151 in its own
-  words at the command's line, a `type` naming what its commands and channels reserve, its error 171, a fragment named
-  otherwise than a lexer rule is, capitalised, its parser's error 50 in its words, a rule defined twice, its error 51,
-  as is a rule named `T__k` where a combined grammar's k-th implicit token is, a parser rule in a lexer grammar, its
-  error 53, a rule named as its commands and channels reserve, DEFAULT_MODE, SKIP, MORE, EOF, HIDDEN and the rest, its
-  error 159, a mode or a channel so named, its errors 173 and 172, a mode named as a token is, DEFAULT_MODE among the
-  `tokens` entries included, its error 170, a channel named as a token or a mode is, its errors 161 and 162, a `type`
-  naming no token the grammar has, its error 175, where the grammar's tokens are its `tokens` entries, its rules that
-  are no fragments and carry no `type` command or spell one literal, and `T__k`, the implicit tokens a combined grammar
-  makes of the parser's literals no rule spells, numbered in the order the parser uses them and spelled exactly so, a
-  rule typed `T__k` emitting that literal's token, a `mode` section holding no rule of its own, its error 145, where a
-  mode named again reopens it and `mode DEFAULT_MODE` reopens the default mode, each section held on its own, a `mode`
-  or `pushMode` naming no mode the grammar declares, DEFAULT_MODE and a number being modes, its error 176, a mode line
-  before any rule, its syntax error, each in its words, a mode named INITIAL, since the audit reports the default mode
-  under that name and could not tell the two apart, and what ANTLR's parser rejects as a syntax error, at that byte's
-  line in words naming the cause: a command with parens holding nothing, `skip()`, the syntax error its parser reports
-  at the `)`, a command with no comma before it, `skip type(B)`, the syntax error its parser reports at `type`, a comma
-  no command name follows, `, skip`, `skip,, type(B)` or `skip,`, the syntax error it reports at the comma, an arrow no
-  command follows, `-> ;`, parens holding more than one token or anything but a name or a number, `type(Y Z)` or
-  `type(-1)`, parens never closed, `type(Y`, any other byte where a name, an argument or a comma should stand, the
-  second `)` of `type(Y))`, and a `tokens` or `channels` block whose names no commas part or a comma ends, `{ ONE TWO }`
-  and `{ ONE, }`, a channel named by another reserved name, `SKIP`, its error 172, by a number beyond its int or by a
-  name nothing declares, its error 177, and a `channels` block in a combined grammar, its error 164, each in its words,
-  one of the seven with its first letter capitalised, `Skip`, which names a code template of ANTLR's target that the
-  generated lexer runs as an action and ANTLR's own interpreter leaves out, a parser literal two lexer rules spell, its
-  error 126, a literal holding a surrogate on its own or a set holding nothing else, which ANTLR's lexer never matches,
-  a range's end or a negated literal ANTLR's error 144 calls multi-character, a pair of escapes or a character beyond
-  the basic multilingual plane written out among them, a range whose end is below its start or an empty set, its error
-  174, an escape ANTLR has not got, `'\q'`, or a braced Unicode escape whose closing brace stands twelve or more UTF-16
-  units into its literal, which its lexer counts from the quote, its error 156, a raw line break inside a literal, its
-  error 152, or a set, its syntax error at the break, each in its words, element options on a set, a range or a group,
-  which take none, `EOF` inside a rule, semantic predicates `{...}?`, an action inside a rule whose body is anything but
-  blanks and comments, since ANTLR runs it where it stands and its code may produce another token than the rule's own,
-  an inert one matching nothing so that an alternative of one alone is the empty alternative, `({} | 'a') 'b'` matching
-  `b`, Unicode property classes `\p{...}`, a character beyond ASCII named under `caseInsensitive`, whose Unicode case
-  mappings the library has not got, the forms ANTLR itself rejects, a command on the alternatives of a rule with
-  several, a `mode` line in a combined grammar and a closure, `*` or `+` in either form, whose body can match the empty
-  string, which is its error 153 and runs through every rule the body reaches, a rule reaching itself, and a non-greedy
-  loop before a rest of any other shape, one whose rest reaches past the sequence it stands in, inside a group or in a
-  rule another rule inlines, one after elements of more than one length or of a length unknown, a reference among them,
-  one in an alternative an earlier alternative can begin with the same character as, one in a rule an alternative of
-  which can match the empty string, since the empty match reaches the rule's end at the loop's decision and stops it,
-  one over a body of several lengths, a group among them, whose alternatives ANTLR takes in order, stopping at the
-  fewest characters of them all, which `('x'|'xa')*? 'a'` and `('xa'|'x')*? 'a'` answer differently on "xaa" and no
-  greedy loop over the group tells apart, and a non-greedy option over such a body, `('x'|'xa')?? 'a'` and `('xa'|'x')??
-  'a'` answering the same way, or before a string its body could begin, which the bypass ANTLR tries first ends the rule
-  with at once.
+  body cannot begin the rest and has one length in characters is the greedy one. The code ANTLR writes into the lexer
+  class, `members` under every target and the C++ target's `declarations`, is read as Java, C++ or C# declares it, and
+  so is the C++ target's `definitions`, which its template writes into the source file after the lexer's constructor and
+  accessors, where a method defined under the lexer class's name, `A::nextToken()` in `lexer grammar A` or
+  `GLexer::emit()` in a combined `G`, is a member of the lexer: a method so defined in the class or out of it is
+  refused, since it may stand in place of one the runtime calls at every token, an attribute before it, C#'s `[Attr]` or
+  C++'s `[[nodiscard]]`, declaring nothing that would hide it, while `final` in a C++ class head, `struct Inner final {
+  ... };`, leaves the type a type whose members are its own, and a macro stands for its replacement in a member's
+  initializer only where an action the lexer's header holds defines it, the definitions and the parser's own actions
+  defining none there. Refused: `import`, `-> more`, `-> type(EOF)`, which ends the token stream where the rule matches,
+  whatever its channel, a command ANTLR has not got or one of its seven given an argument it takes none of or none where
+  it takes one, its errors 149, 150 and 151 in its own words at the command's line, a `type` naming what its commands
+  and channels reserve, its error 171, a fragment named otherwise than a lexer rule is, capitalised, its parser's error
+  50 in its words, a rule defined twice, its error 51, as is a rule named `T__k` where a combined grammar's k-th
+  implicit token is, a parser rule in a lexer grammar, its error 53, a rule named as its commands and channels reserve,
+  DEFAULT_MODE, SKIP, MORE, EOF, HIDDEN and the rest, its error 159, a mode or a channel so named, its errors 173 and
+  172, a mode named as a token is, DEFAULT_MODE among the `tokens` entries included, its error 170, a channel named as a
+  token or a mode is, its errors 161 and 162, a `type` naming no token the grammar has, its error 175, where the
+  grammar's tokens are its `tokens` entries, its rules that are no fragments and carry no `type` command or spell one
+  literal, and `T__k`, the implicit tokens a combined grammar makes of the parser's literals no rule spells, numbered in
+  the order the parser uses them and spelled exactly so, a rule typed `T__k` emitting that literal's token, a `mode`
+  section holding no rule of its own, its error 145, where a mode named again reopens it and `mode DEFAULT_MODE` reopens
+  the default mode, each section held on its own, a `mode` or `pushMode` naming no mode the grammar declares,
+  DEFAULT_MODE and a number being modes, its error 176, a mode line before any rule, its syntax error, each in its
+  words, a mode named INITIAL, since the audit reports the default mode under that name and could not tell the two
+  apart, and what ANTLR's parser rejects as a syntax error, at that byte's line in words naming the cause: a command
+  with parens holding nothing, `skip()`, the syntax error its parser reports at the `)`, a command with no comma before
+  it, `skip type(B)`, the syntax error its parser reports at `type`, a comma no command name follows, `, skip`, `skip,,
+  type(B)` or `skip,`, the syntax error it reports at the comma, an arrow no command follows, `-> ;`, parens holding
+  more than one token or anything but a name or a number, `type(Y Z)` or `type(-1)`, parens never closed, `type(Y`, any
+  other byte where a name, an argument or a comma should stand, the second `)` of `type(Y))`, and a `tokens` or
+  `channels` block whose names no commas part or a comma ends, `{ ONE TWO }` and `{ ONE, }`, a channel named by another
+  reserved name, `SKIP`, its error 172, by a number beyond its int or by a name nothing declares, its error 177, and a
+  `channels` block in a combined grammar, its error 164, each in its words, one of the seven with its first letter
+  capitalised, `Skip`, which names a code template of ANTLR's target that the generated lexer runs as an action and
+  ANTLR's own interpreter leaves out, a parser literal two lexer rules spell, its error 126, a literal holding a
+  surrogate on its own or a set holding nothing else, which ANTLR's lexer never matches, a range's end or a negated
+  literal ANTLR's error 144 calls multi-character, a pair of escapes or a character beyond the basic multilingual plane
+  written out among them, a range whose end is below its start or an empty set, its error 174, an escape ANTLR has not
+  got, `'\q'`, or a braced Unicode escape whose closing brace stands twelve or more UTF-16 units into its literal, which
+  its lexer counts from the quote, its error 156, a raw line break inside a literal, its error 152, or a set, its syntax
+  error at the break, each in its words, element options on a set, a range or a group, which take none, `EOF` inside a
+  rule, semantic predicates `{...}?`, an action inside a rule whose body is anything but blanks and comments, since
+  ANTLR runs it where it stands and its code may produce another token than the rule's own, an inert one matching
+  nothing so that an alternative of one alone is the empty alternative, `({} | 'a') 'b'` matching `b`, Unicode property
+  classes `\p{...}`, a character beyond ASCII named under `caseInsensitive`, whose Unicode case mappings the library has
+  not got, the forms ANTLR itself rejects, a command on the alternatives of a rule with several, a `mode` line in a
+  combined grammar and a closure, `*` or `+` in either form, whose body can match the empty string, which is its error
+  153 and runs through every rule the body reaches, a rule reaching itself, and a non-greedy loop before a rest of any
+  other shape, one whose rest reaches past the sequence it stands in, inside a group or in a rule another rule inlines,
+  one after elements of more than one length or of a length unknown, a reference among them, one in an alternative an
+  earlier alternative can begin with the same character as, one in a rule an alternative of which can match the empty
+  string, since the empty match reaches the rule's end at the loop's decision and stops it, one over a body of several
+  lengths, a group among them, whose alternatives ANTLR takes in order, stopping at the fewest characters of them all,
+  which `('x'|'xa')*? 'a'` and `('xa'|'x')*? 'a'` answer differently on "xaa" and no greedy loop over the group tells
+  apart, and a non-greedy option over such a body, `('x'|'xa')?? 'a'` and `('xa'|'x')?? 'a'` answering the same way, or
+  before a string its body could begin, which the bypass ANTLR tries first ends the rule with at once.
 - logos: every enum deriving `Logos`, except one a `#[cfg(...)]` strips, its predicate false by its form alone, `any()`
   of nothing among them, as a variant under one is no rule and any other item under one, a function or a constant, binds
   no name, a `pub` before it notwithstanding, while an enum or a variant under a predicate the build alone decides,
