@@ -458,6 +458,22 @@ TEST(Read_re2c_test, A_condition_is_the_scanner_s_when_any_rule_names_it_and_INI
             "line 1: in condition 'B' 're2c:eof' configuration is set, but no $ rule found");
     EXPECT_TRUE(refusal_of("/*!re2c\nre2c:eof = -1;\n\"a\"+ { return 1; }\n*/\n").empty());
 
+    // re2c 3.1 reads the value as a number and leaves end-of-input handling off for every negative one, as for its
+    // default -1, while zero and a positive value turn it on; a value that is no number, or overflows, it refuses.
+    const auto eof_of{[](const std::string_view value, const std::string_view end_rule) {
+        return refusal_of(std::format("/*!re2c\nre2c:eof = {};\n\"a\"+ {{ return 1; }}\n{}*/\n", value, end_rule));
+    }};
+
+    EXPECT_TRUE(eof_of("-2", "").empty());
+    EXPECT_TRUE(eof_of("-2147483648", "").empty());
+    EXPECT_EQ(eof_of("-2", "$ { return 0; }\n"), "line 4: $ rule found, but 're2c:eof' configuration is not set");
+    EXPECT_TRUE(eof_of("255", "$ { return 0; }\n").empty());
+    EXPECT_EQ(eof_of("255", ""), "line 1: 're2c:eof' configuration is set, but no $ rule found");
+    EXPECT_EQ(eof_of("abc", ""), "line 1: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("-0", ""), "line 1: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("007", ""), "line 1: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("2147483648", ""), "line 1: configuration value overflow");
+
     // The checks hold where re2c holds them: a block whose rules are no tokens is held once it is read, where it
     // declares no scanner; a rules block is held only where a use block takes it up, with the rules and the
     // configuration that block supplies, and an unused one is held to nothing.
@@ -1851,6 +1867,12 @@ TEST(Read_re2c_test, An_include_and_a_Unicode_escape_are_refused_at_their_line)
     EXPECT_EQ(line_of("/*!re2c\n \"\\\\u\" [0-9a-fA-F]{4} { return X; }\n*/"), std::nullopt);
     EXPECT_EQ(line_of("/*!re2c\n [\\\\u] { return X; }\n*/"), std::nullopt);
     EXPECT_EQ(line_of("/*!re2c\n '\\X00e9' { return X; }\n*/"), 2);
+
+    // The directive outside a block includes another file's blocks where it stands, and what they configure holds for
+    // the blocks after it, so it is refused at its line as the one inside a block is.
+    EXPECT_EQ(line_of("/*!include:re2c \"flags.re\" */\n/*!re2c\n \"ab\" { return X; }\n*/"), 1);
+    EXPECT_EQ(line_of("/*!re2c\n \"ab\" { return X; }\n*/\n/*!include:re2c \"more.re\" */\n"), 4);
+    EXPECT_EQ(line_of("/*!max:re2c*/\n/*!re2c\n \"ab\" { return X; }\n*/"), std::nullopt);
 }
 
 TEST(Read_re2c_test, A_braced_hexadecimal_escape_is_refused_as_re2c_refuses_it)

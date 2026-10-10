@@ -75,6 +75,11 @@ enum class Block_kind : std::uint8_t
 constexpr std::string_view block_comment{"/*!"};
 
 /**
+ * @brief The word after a block's comment opening that includes another file's text where the directive stands.
+ */
+constexpr std::string_view include_word{"include:re2c"};
+
+/**
  * @brief The most files the reading follows the code's includes into.
  */
 constexpr std::size_t most_included_files{64};
@@ -317,10 +322,18 @@ void references(const std::string_view text, std::vector<std::string>& into)
  * @param source The file's text.
  * @param at The offset of the comment opening it.
  * @return The offset just past its close.
- * @throws Spec_error If it is never closed.
+ * @throws Spec_error If it is never closed, or it is an `!include:re2c` directive, whose file is not here to read: re2c
+ *         reads the included file's blocks where the directive stands, configurations such as `re2c:case-insensitive`
+ *         among them, which then hold for the blocks after it.
  */
 [[nodiscard]] std::size_t other_block_end(const std::string_view source, const std::size_t at)
 {
+    if (source.substr(at + block_comment.size()).starts_with(include_word))
+    {
+        throw Spec_error{
+                "the file includes another through '!include:re2c', which is not here to read", line_at(source, at)};
+    }
+
     const auto close{source.find(comment_closer, at + block_comment.size())};
 
     if (close == std::string_view::npos)

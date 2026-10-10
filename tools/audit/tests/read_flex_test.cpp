@@ -1984,3 +1984,34 @@ TEST(Read_flex_test, Refusals_name_the_line)
     EXPECT_EQ(line, 2U);
     EXPECT_TRUE(message.contains("anchor"));
 }
+
+TEST(Read_flex_test, An_escaped_u_is_the_letter_and_the_braces_after_it_a_count)
+{
+    // flex reads `\u` as the letter and `{61}` after it as a count, so flex 2.6.4 scans sixty-one u's as one token of
+    // `\u{61}`, as it scans them for `u{61}`; the pattern parser's code point escape is no flex syntax. Each assertion
+    // is what flex 2.6.4 matched with the pattern as a rule of its own: in a bracket the letter and the brace are
+    // members, in a quoted text the letter and the four bytes after it, an escaped backslash leaves the `u` after it a
+    // letter, and a definition is read as a pattern is.
+    const std::string sixty_one(61, 'u');
+
+    const auto matched{[](const std::string_view pattern, const std::string_view input) {
+        const auto file{read_flex(std::format("%%\n{}   return A;\n", pattern)).front()};
+
+        const auto lexer{build(file, "INITIAL")};
+
+        return std::pair{scan_of(lexer, input).tokens, length_at(lexer, input)};
+    }};
+
+    EXPECT_EQ(matched(R"(\u{61})", sixty_one).first, (Tokens_t{{0, 61}}));
+    EXPECT_EQ(matched(R"(u{61})", sixty_one).first, (Tokens_t{{0, 61}}));
+    EXPECT_EQ(matched(R"(\u{2})", "uu").second, 2U);
+    EXPECT_EQ(matched(R"(\u{2})", "a").first, (Tokens_t{{1, 1}}));
+    EXPECT_EQ(matched(R"([\u{61}])", "u{a").first, (Tokens_t{{0, 1}, {0, 1}, {1, 1}}));
+    EXPECT_EQ(matched(R"("\u{61}")", "u{61}a").first, (Tokens_t{{0, 5}, {1, 1}}));
+    EXPECT_EQ(matched(R"(\U{2})", "UU").second, 2U);
+    EXPECT_EQ(matched(R"(\\u{2})", R"(\uu)").second, 3U);
+
+    const auto defined{read_flex("U  \\u{2}\n%%\n{U}   return A;\n").front()};
+
+    EXPECT_EQ(length_at(build(defined, "INITIAL"), "uu"), 2U);
+}

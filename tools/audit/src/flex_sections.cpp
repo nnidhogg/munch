@@ -496,7 +496,7 @@ void take_definition(const Lines& lines, const std::string_view text, Lexer_spec
         throw Spec_error{std::format("the definition '{}' {}", name, negated_class_refusal(*negated)), lines.number()};
     }
 
-    spec.definitions.insert_or_assign(std::string{name}, std::string{pattern});
+    spec.definitions.insert_or_assign(std::string{name}, expression_of(pattern));
 }
 
 /**
@@ -972,7 +972,7 @@ void skip_copied_code(Lines& lines, const std::size_t from)
     auto token{returned(action, returning)};
 
     return {.pattern = pattern,
-            .expression = pattern,
+            .expression = expression_of(pattern),
             .conditions = std::move(conditions),
             .action = std::move(action),
             .token = std::move(token),

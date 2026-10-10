@@ -40,6 +40,12 @@ constexpr std::string_view group_opener{"(?"};
 constexpr std::string_view hex_escape_opener{R"(\x)"};
 
 /**
+ * @brief The escaped letter flex reads as itself and the pattern parser does not, `\u{61}` being a code point to the
+ *        parser: the letter alone is the same byte to both.
+ */
+constexpr char code_point_escape{'u'};
+
+/**
  * @brief The base an octal escape writes its number in.
  */
 constexpr int octal_base{8};
@@ -384,6 +390,34 @@ std::optional<std::string> beyond_ascii(const std::string_view pattern)
     }
 
     return std::nullopt;
+}
+
+std::string expression_of(const std::string_view pattern)
+{
+    std::string expression{};
+
+    expression.reserve(pattern.size());
+
+    for (std::size_t at{0}; at < pattern.size(); ++at)
+    {
+        const auto escape{pattern[at] == '\\' && at + 1 < pattern.size()};
+
+        // The escape and the byte it carries are copied as one, so that an escaped backslash escapes nothing after it.
+        if (escape && pattern[at + 1] != code_point_escape)
+        {
+            expression.push_back(pattern[at]);
+
+            ++at;
+        }
+        else if (escape)
+        {
+            ++at;
+        }
+
+        expression.push_back(pattern[at]);
+    }
+
+    return expression;
 }
 
 } // namespace munch::tools::audit

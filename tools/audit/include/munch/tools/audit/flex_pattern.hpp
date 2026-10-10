@@ -10,7 +10,8 @@
  * @brief Where a flex rule's pattern ends on its line, pattern_length(), and the pattern forms whose bytes flex decides
  *        under the locale it runs under, which the byte-level reading refuses: a negated POSIX class, negated_class()
  *        and negated_class_refusal(), and a byte beyond ASCII where case folds, beyond_ascii(), the case folding either
- *        the case option or a group turning it on, folding_group().
+ *        the case option or a group turning it on, folding_group(); and the pattern in the parser's syntax,
+ *        expression_of().
  *
  * A pattern is read here as flex lexes it, not as the pattern parser does: a quote opens text only outside a bracket, a
  * bracket holds no bracket of its own and a `[:class:]` inside one is one token, so each scan tracks which state of a
@@ -73,6 +74,21 @@ namespace munch::tools::audit
  * @return The byte as written, or nothing.
  */
 [[nodiscard]] std::optional<std::string> beyond_ascii(std::string_view pattern);
+
+/**
+ * @brief Returns a pattern or definition text in the syntax regex::parse() reads, as flex reads it.
+ *
+ * The parser's escapes are flex's but for one: it reads `\u{X...}` as a code point, for the readers of character-level
+ * generators, where flex reads `\u` as the letter, as it reads every escaped byte it gives no meaning, and the braces
+ * after it as a count, so flex 2.6.4 matches `\u{61}` on sixty-one u's as one token. The backslash before a `u` is
+ * dropped, the letter alone being the same byte to both, in a bracket and a quoted text as outside them; every other
+ * escape is kept as written, an escaped backslash among them, so the `u` after `\\` stays a letter, and `\U` the
+ * parser reads as the letter already. The escapes flex reads as bytes the parser refuses, `\x` without a hex digit and
+ * an octal escape past 255, which flex 2.6.4 truncates to a byte, stay refused.
+ * @param pattern The pattern or definition text.
+ * @return The text the parser reads.
+ */
+[[nodiscard]] std::string expression_of(std::string_view pattern);
 
 } // namespace munch::tools::audit
 

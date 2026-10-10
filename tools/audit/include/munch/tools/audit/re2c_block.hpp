@@ -159,7 +159,9 @@ public:
      * as a library and holds nothing against it until then; a block holding no rule at all is held to none of them.
      * @param options The scanner's configurations, as options.
      * @param line The scanner's line, where a check naming no end rule points.
-     * @throws Spec_error If one of the checks fails, at the end rule's line or the scanner's.
+     * @throws Spec_error If one of the checks fails, at the end rule's line or the scanner's; or if the last `re2c:eof`
+     *         value is no number re2c reads, at the scanner's line. A negative value leaves `re2c:eof` unset, as re2c
+     *         reads every one.
      */
     void refuse_end_rules(const std::vector<std::string>& options, std::size_t line) const;
 

@@ -1,12 +1,14 @@
 #include "munch/tools/audit/re2c_block.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cstddef>
 #include <format>
 #include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -27,6 +29,11 @@ constexpr std::string_view configuration_prefix{"re2c:"};
  * @brief What a use directive opens with.
  */
 constexpr std::string_view use_prefix{"!use:"};
+
+/**
+ * @brief What the configuration of the end-of-input sentinel opens with once its `re2c:` and its blanks are taken off.
+ */
+constexpr std::string_view eof_key{"eof="};
 
 /**
  * @brief What an include directive opens with.
@@ -240,6 +247,39 @@ void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vecto
     }
 }
 
+/**
+ * @brief Returns the value of a `re2c:eof` configuration as re2c 3.1 reads it: a number, `0` or a decimal opening with
+ *        a digit other than zero, a minus before it or none, within the range of an `int`.
+ * @param option The configuration, `eof=-1`, its blanks taken off.
+ * @param line The scanner's line, where a refusal of the value points.
+ * @return The number.
+ * @throws Spec_error If the value is no number, `007`, `-0` and `abc` among them, or it overflows, in re2c's words.
+ */
+[[nodiscard]] int eof_value(const std::string_view option, const std::size_t line)
+{
+    const auto value{option.substr(eof_key.size())};
+
+    const auto digits{value.starts_with('-') ? value.substr(1) : value};
+
+    const auto leading_zero{digits.starts_with('0') && value != "0"};
+
+    int number{};
+
+    const auto [end, error]{std::from_chars(value.data(), value.data() + value.size(), number)};
+
+    if (error == std::errc::result_out_of_range)
+    {
+        throw Spec_error{"configuration value overflow", line};
+    }
+
+    if (error != std::errc{} || end != value.data() + value.size() || leading_zero)
+    {
+        throw Spec_error{"bad configuration value (expected number)", line};
+    }
+
+    return number;
+}
+
 } // namespace
 
 void Rule_kinds::note(const std::vector<std::string>& named, const std::string& pattern, const std::size_t line)
@@ -354,14 +394,13 @@ void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const
         throw Spec_error{message, at};
     }
 
-    static constexpr std::string_view eof_key{"eof="};
-
     const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
 
     // The last setting stands.
     const auto last_eof{std::ranges::find_last_if(options, sets_eof)};
 
-    const auto eof_set{!last_eof.empty() && last_eof.front().substr(eof_key.size()) != "-1"};
+    // re2c 3.1 leaves end-of-input handling off for every negative value, its default being -1.
+    const auto eof_set{!last_eof.empty() && eof_value(last_eof.front(), line) >= 0};
 
     if (!eof_set && !ends_.empty())
     {
