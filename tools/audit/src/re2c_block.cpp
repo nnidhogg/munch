@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cstddef>
 #include <format>
+#include <limits>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -248,17 +249,47 @@ void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vecto
 }
 
 /**
+ * @brief Returns whether a byte is one re2c lets stand around a configuration's value, a space or a tab; a newline or
+ *        a carriage return there it refuses.
+ * @param byte The byte.
+ * @return True for a space or a tab.
+ */
+[[nodiscard]] constexpr bool is_space_or_tab(const char byte) noexcept
+{
+    return byte == ' ' || byte == '\t';
+}
+
+/**
+ * @brief Returns the text without the spaces and tabs at either end.
+ * @param text The text.
+ * @return The view of what lies between them.
+ */
+[[nodiscard]] std::string_view without_spaces_around(std::string_view text) noexcept
+{
+    while (!text.empty() && is_space_or_tab(text.front()))
+    {
+        text.remove_prefix(1);
+    }
+
+    while (!text.empty() && is_space_or_tab(text.back()))
+    {
+        text.remove_suffix(1);
+    }
+
+    return text;
+}
+
+/**
  * @brief Returns the value of a `re2c:eof` configuration as re2c 3.1 reads it: a number, `0` or a decimal opening with
  *        a digit other than zero, a minus before it or none, within the range of an `int`.
- * @param option The configuration, `eof=-1`, its blanks taken off.
- * @param line The scanner's line, where a refusal of the value points.
+ * @param value The value as written, the spaces and tabs around it taken off.
+ * @param line The line a refusal of the value points at.
  * @return The number.
- * @throws Spec_error If the value is no number, `007`, `-0` and `abc` among them, or it overflows, in re2c's words.
+ * @throws Spec_error If the value is no number, `007`, `-0`, `- 2` and `abc` among them, or it overflows, in re2c's
+ *         words.
  */
-[[nodiscard]] int eof_value(const std::string_view option, const std::size_t line)
+[[nodiscard]] int eof_value(const std::string_view value, const std::size_t line)
 {
-    const auto value{option.substr(eof_key.size())};
-
     const auto digits{value.starts_with('-') ? value.substr(1) : value};
 
     const auto leading_zero{digits.starts_with('0') && value != "0"};
@@ -372,6 +403,26 @@ void Rule_kinds::refuse_mixed() const
 
 void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const std::size_t line) const
 {
+    const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
+
+    // Each setting was read as a number where it was written, as re2c 3.1 reads it; the last stands, and unset the
+    // value is its default -1.
+    int eof{-1};
+
+    for (const auto& option : options | std::views::filter(sets_eof))
+    {
+        const auto value{std::string_view{option}.substr(eof_key.size())};
+
+        eof = eof_value(value, line);
+    }
+
+    // The code unit is a byte under every encoding the reading follows, so re2c refuses a value past 255, in a block
+    // with rules or without.
+    if (eof > std::numeric_limits<unsigned char>::max())
+    {
+        throw Spec_error{"EOF exceeds maximum code unit value for given encoding", line};
+    }
+
     if (ruled_.empty() && ends_.empty())
     {
         return;
@@ -394,13 +445,8 @@ void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const
         throw Spec_error{message, at};
     }
 
-    const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
-
-    // The last setting stands.
-    const auto last_eof{std::ranges::find_last_if(options, sets_eof)};
-
-    // re2c 3.1 leaves end-of-input handling off for every negative value, its default being -1.
-    const auto eof_set{!last_eof.empty() && eof_value(last_eof.front(), line) >= 0};
+    // re2c 3.1 leaves end-of-input handling off for every negative value.
+    const auto eof_set{eof >= 0};
 
     if (!eof_set && !ends_.empty())
     {
@@ -600,6 +646,19 @@ void Block_reader::configuration(Lexer_spec& spec)
 
     // Blanks around the '=' say nothing; one spelling per configuration keeps the options comparable.
     std::erase_if(option, is_blank);
+
+    // re2c reads the value of `re2c:eof` as a number where it is written, so a blank within it is refused there, and
+    // the option keeps the number it reads.
+    if (option.starts_with(eof_key))
+    {
+        const auto written{std::string_view{text_}.substr(value_at, end - value_at)};
+
+        const auto after_equals{written.substr(written.find('=') + 1)};
+
+        const auto value{without_spaces_around(after_equals)};
+
+        option = std::format("{}{}", eof_key, eof_value(value, line()));
+    }
 
     configure(option, line(), configured_, encoding_line_, pass_.api_custom, pass_.pointers);
 

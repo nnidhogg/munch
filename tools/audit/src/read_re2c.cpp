@@ -680,8 +680,9 @@ std::size_t File_reader::block(const Opener& opener)
         carry(outcome);
     }
 
-    // A rules block is a library for the blocks that use it and no scanner itself: re2c holds it to nothing until a use
-    // block takes it up.
+    // A rules block is a library for the blocks that use it and no scanner itself: re2c holds it to none of the
+    // end-rule checks until a use block takes it up, only `re2c:eof`'s bound at its end, which the reading does not
+    // hold.
     if (rules)
     {
         return outcome.end;

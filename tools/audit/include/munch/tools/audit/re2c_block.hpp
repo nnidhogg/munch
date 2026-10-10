@@ -156,12 +156,13 @@ public:
      *
      * re2c holds a block of its own to them once it is read, its rules all tokens or none, and a rules block only where
      * a use block takes it up, its rules and end rules counted with the using block's, since re2c reads a rules block
-     * as a library and holds nothing against it until then; a block holding no rule at all is held to none of them.
+     * as a library and holds none of these checks against it until then, only `re2c:eof`'s bound at its end, which the
+     * reading does not hold; a block holding no rule at all is held to none of them.
      * @param options The scanner's configurations, as options.
      * @param line The scanner's line, where a check naming no end rule points.
      * @throws Spec_error If one of the checks fails, at the end rule's line or the scanner's; or if the last `re2c:eof`
-     *         value is no number re2c reads, at the scanner's line. A negative value leaves `re2c:eof` unset, as re2c
-     *         reads every one.
+     *         value passes 255, the largest code unit, at the scanner's line. The last value stands, and a negative one
+     *         leaves `re2c:eof` unset, as re2c reads every one.
      */
     void refuse_end_rules(const std::vector<std::string>& options, std::size_t line) const;
 
@@ -325,7 +326,9 @@ private:
      * @brief Reads a `re2c:` configuration through its `;` into the options, a flag among them into the flags the
      *        configurations leave, never into the ones the patterns of this pass are read under.
      * @param spec The specification being filled.
-     * @throws Spec_error If the configuration is never closed with `;`, or as configure() does.
+     * @throws Spec_error If the configuration is never closed with `;`, or as configure() does; or if it sets
+     *         `re2c:eof` to a value that is no number re2c reads, a blank within it among them, at its line, as re2c
+     *         reads every setting where it is written.
      */
     void configuration(Lexer_spec& spec);
 

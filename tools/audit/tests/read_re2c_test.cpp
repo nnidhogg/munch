@@ -469,10 +469,35 @@ TEST(Read_re2c_test, A_condition_is_the_scanner_s_when_any_rule_names_it_and_INI
     EXPECT_EQ(eof_of("-2", "$ { return 0; }\n"), "line 4: $ rule found, but 're2c:eof' configuration is not set");
     EXPECT_TRUE(eof_of("255", "$ { return 0; }\n").empty());
     EXPECT_EQ(eof_of("255", ""), "line 1: 're2c:eof' configuration is set, but no $ rule found");
-    EXPECT_EQ(eof_of("abc", ""), "line 1: bad configuration value (expected number)");
-    EXPECT_EQ(eof_of("-0", ""), "line 1: bad configuration value (expected number)");
-    EXPECT_EQ(eof_of("007", ""), "line 1: bad configuration value (expected number)");
-    EXPECT_EQ(eof_of("2147483648", ""), "line 1: configuration value overflow");
+    EXPECT_EQ(eof_of("abc", ""), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("-0", ""), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("007", ""), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("2147483648", ""), "line 2: configuration value overflow");
+
+    // re2c reads each setting as a number where it is written, so a blank within the value is refused and a later
+    // setting does not take back the refusal of an earlier one; blanks around the value say nothing.
+    EXPECT_EQ(eof_of("- 2", ""), "line 2: bad configuration value (expected number)");
+    EXPECT_TRUE(eof_of("\t-2 ", "").empty());
+    EXPECT_EQ(eof_of("abc;\nre2c:eof = -1", ""), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("2147483648;\nre2c:eof = -1", ""), "line 2: configuration value overflow");
+    EXPECT_TRUE(eof_of("0;\nre2c:eof = -1", "").empty());
+    EXPECT_TRUE(eof_of("-1;\nre2c:eof = 0", "$ { return 0; }\n").empty());
+
+    // The last value stands and is held to the code unit, a byte, whether or not an end rule is there; an earlier value
+    // past it is taken back by a later one.
+    EXPECT_EQ(eof_of("256", "$ { return 0; }\n"), "line 1: EOF exceeds maximum code unit value for given encoding");
+    EXPECT_EQ(eof_of("256", ""), "line 1: EOF exceeds maximum code unit value for given encoding");
+    EXPECT_TRUE(eof_of("256;\nre2c:eof = -1", "").empty());
+    EXPECT_TRUE(eof_of("300;\nre2c:eof = 5", "$ { return 0; }\n").empty());
+
+    // Around the value re2c lets a space or a tab stand, never a newline or a carriage return; and it holds a block
+    // without rules to the code unit too.
+    EXPECT_EQ(eof_of("-1\n", ""), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("\n 0", "$ { return 0; }\n"), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(eof_of("0\r", "$ { return 0; }\n"), "line 2: bad configuration value (expected number)");
+    EXPECT_EQ(
+            refusal_of("/*!re2c\nre2c:eof = 256;\n*/\n/*!re2c\nre2c:eof = -1;\n\"a\"+ { return 1; }\n*/\n"),
+            "line 1: EOF exceeds maximum code unit value for given encoding");
 
     // The checks hold where re2c holds them: a block whose rules are no tokens is held once it is read, where it
     // declares no scanner; a rules block is held only where a use block takes it up, with the rules and the
