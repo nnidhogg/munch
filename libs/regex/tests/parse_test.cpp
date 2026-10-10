@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -87,6 +88,18 @@ std::optional<std::size_t> refused_at(
 
     return refused.transform(&Syntax_error::offset);
 }
+
+/**
+ * @brief A message of the caller's own that converts to a string, the conversion a refusal's message may take.
+ */
+struct Diagnostic
+{
+    /**
+     * @brief Returns the message.
+     * @return The message.
+     */
+    operator std::string() const { return "invalid repetition bound"; }
+};
 
 } // namespace
 
@@ -437,4 +450,20 @@ TEST(Parse_test, Refusals_name_the_offset_and_the_reason)
 
     EXPECT_EQ(stray->offset(), 3U);
     EXPECT_TRUE(stray_message.contains("got 'x'"));
+}
+
+TEST(Parse_test, A_refusal_takes_every_message_a_string_is_made_from)
+{
+    // The message is a string, so a braced list of bytes, a type converting to a string and a path are messages as a
+    // literal is, each through the one conversion a string parameter allows.
+    const Syntax_error braced{{'b', 'a', 'd'}, 4};
+    const Syntax_error converted{Diagnostic{}, 3};
+    const Syntax_error path{std::filesystem::path{"grammar.l"}, 0};
+    const Syntax_error literal{"bad", 1};
+
+    EXPECT_STREQ(braced.what(), "bad at offset 4");
+    EXPECT_STREQ(converted.what(), "invalid repetition bound at offset 3");
+    EXPECT_STREQ(path.what(), "grammar.l at offset 0");
+    EXPECT_STREQ(literal.what(), "bad at offset 1");
+    EXPECT_EQ(braced.offset(), 4U);
 }

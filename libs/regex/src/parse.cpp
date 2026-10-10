@@ -1678,7 +1678,7 @@ void Reader::expect(const char byte, const std::string_view what)
 
 void Reader::fail(const std::string_view message) const
 {
-    throw Syntax_error{message, at_};
+    throw Syntax_error{std::string{message}, at_};
 }
 
 void Reader::fail_at_end(const std::string_view what) const
@@ -1690,7 +1690,7 @@ void Reader::fail_at_end(const std::string_view what) const
 
 } // namespace
 
-Syntax_error::Syntax_error(const std::string_view message, const std::size_t offset)
+Syntax_error::Syntax_error(const std::string& message, const std::size_t offset)
     : std::invalid_argument{std::format("{} at offset {}", message, offset)}, offset_{offset}
 {}
 

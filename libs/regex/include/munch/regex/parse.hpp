@@ -32,7 +32,7 @@ public:
      * @param message What was refused and why.
      * @param offset The byte offset into the pattern.
      */
-    Syntax_error(std::string_view message, std::size_t offset);
+    Syntax_error(const std::string& message, std::size_t offset);
 
     /**
      * @brief Returns the byte offset into the pattern the refusal points at.
