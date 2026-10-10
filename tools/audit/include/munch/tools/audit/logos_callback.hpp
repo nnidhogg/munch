@@ -357,8 +357,9 @@ private:
     [[nodiscard]] Outcomes_t of_callback() const;
 
     /**
-     * @brief Refuses a body that moves the lexer or lets it out of sight.
-     * @param body The body's text, a closure's or a function's.
+     * @brief Refuses a body that moves the lexer or lets it out of sight, each block inside it read in its own scope,
+     *        so that a macro is read under the names the block invoking it sees, whatever in that block binds them.
+     * @param body The body's text, a closure's or a function's, read in the reader's scope.
      * @param parameter The lexer parameter's name, empty when the callback binds none.
      * @throws Spec_error If the body names a method moving the cursor, uses the parameter other than through the
      *         members that read the lexer, or invokes a macro other than a standard one, whose expansion may return

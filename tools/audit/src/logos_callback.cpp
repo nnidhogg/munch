@@ -194,32 +194,6 @@ constexpr std::array expression_openers{
 }
 
 /**
- * @brief Returns whether a `use` statement binds `std` or `core`: an alias `as std` or a path ending in `std` binds the
- *        name.
- * @param look A cursor just past the `use`, over the statement's words to its `;`.
- * @return True when it does.
- * @throws Spec_error If a block comment in the statement is left open.
- */
-[[nodiscard]] bool use_binds_std(Rust_cursor look)
-{
-    std::vector<std::string> path{};
-
-    for (look.skip_trivia(); !look.done() && !look.at(";"); look.skip_trivia())
-    {
-        if (const auto piece{look.word()}; !piece.empty())
-        {
-            path.emplace_back(piece);
-        }
-        else
-        {
-            std::ignore = look.next("a token");
-        }
-    }
-
-    return !path.empty() && (path.back() == "std" || path.back() == "core");
-}
-
-/**
  * @brief Returns the path before a macro's name, as Macro_path has it.
  * @param recent The tokens read before the name, the name last among them.
  * @return The path.
@@ -499,8 +473,9 @@ Callback_reader::Outcomes_t Callback_reader::of_callback() const
 
         check_lexer_use(body, parameter == "_" ? std::string_view{} : parameter);
 
-        // A name the attribute's closure binds is bound nowhere the reading can find, so a body binding one is refused.
-        if (variant_ && binds_names(body))
+        // A name the attribute's closure binds is bound nowhere the reading can find, so a body binding one is refused,
+        // a skip's among them, whose macros the name may stand before.
+        if (binds_names(body))
         {
             fail("its body binds a name of its own, and a name bound inside a callback written in the attribute is "
                  "out of this reading's sight, so what the body returns cannot be read");
@@ -550,12 +525,30 @@ void Callback_reader::check_lexer_use(const std::string_view body, const std::st
     // `compat::std` of `compat::std::println!` with any comment inside it, is read as Rust reads it.
     std::vector<std::string> recent{};
 
-    // Whether the body or the file binds `std` or `core` to something of its own: a `use crate::local as std;` in the
-    // body or at item level, or a `mod std`, stands before the crate under a path.
-    auto std_bound{binds_std()};
+    // Whether the scope or the file binds `std` or `core` to something of its own: a `use crate::local as std;` or a
+    // `mod std` in the body, in a block around the text or at item level, wherever in it it stands.
+    const auto std_bound{binds_std()};
 
     for (cursor.skip_trivia(); !cursor.done(); cursor.skip_trivia())
     {
+        // A block is a scope of its own, read under the names it binds and the ones around it.
+        if (cursor.peek() == '{')
+        {
+            const auto open{cursor.offset()};
+
+            cursor.skip_group();
+
+            const auto block{cursor.slice(open, cursor.offset())};
+
+            scoped_at(block).check_lexer_use(cursor.group_text(open), parameter);
+
+            dots = 0;
+
+            recent.emplace_back("}");
+
+            continue;
+        }
+
         if (cursor.at_literal())
         {
             cursor.skip_token();
@@ -579,11 +572,6 @@ void Callback_reader::check_lexer_use(const std::string_view body, const std::st
         }
 
         recent.emplace_back(word);
-
-        if (word == "use")
-        {
-            std_bound = use_binds_std(cursor) || std_bound;
-        }
 
         const auto after_dot{dots == 1};
 
@@ -1556,13 +1544,6 @@ Callback_reader::Outcomes_t Callback_reader::of_function(const std::string_view 
                 name));
     }
 
-    check_lexer_use(*body, *parameter);
-
-    if (!variant_)
-    {
-        return {skipped()};
-    }
-
     Callback_reader inner{*this};
 
     inner.scope_ = {
@@ -1578,6 +1559,13 @@ Callback_reader::Outcomes_t Callback_reader::of_function(const std::string_view 
             // which is the name the walk bound that block's items under.
             .body = *body,
             .body_at = body_at};
+
+    inner.check_lexer_use(*body, *parameter);
+
+    if (!variant_)
+    {
+        return {skipped()};
+    }
 
     // The return type with its aliases and imports resolved: `Filter`, `FilterResult` and `Result<Skip, E>` leave the
     // decision to the value; the enum takes the variant returned, for a variant without a payload; the crate's `Skip`

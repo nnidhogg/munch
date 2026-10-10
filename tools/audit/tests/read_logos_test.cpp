@@ -1219,6 +1219,44 @@ TEST(Read_logos_test, A_callback_whose_result_or_macro_is_out_of_sight_is_refuse
             callback_line);
 }
 
+TEST(Read_logos_test, A_body_s_use_and_mod_items_bind_std_throughout_their_block)
+{
+    // A `use` or a `mod` in a block binds its name throughout the block, wherever in it it stands, so `std::println!`
+    // before `use crate::fake as std;` is the file's macro, and so is one after a grouped `use crate::{fake as std, T
+    // as U};` or a block-level `mod std`: logos 0.15.1 emits Other for each under a macro returning it where the
+    // callback names its own variant. A binding in an inner block binds nothing outside it, and `std::println!("x")`
+    // after `{ use crate::fake as std; }` is the standard one, the scanner printing x and emitting X.
+    const auto refused{[](const std::string_view body) {
+        return callback_refused_at(
+                R"rs(#[token("#", cb)])rs",
+                std::format(
+                        "mod fake {{ macro_rules! println {{ () => {{ return crate::T::Other; }}; }} pub(crate) use "
+                        "println; }}\nfn cb(_lex: &mut Lexer<T>) -> T {{ {} }}\n",
+                        body));
+    }};
+
+    EXPECT_EQ(refused("std::println!(); use crate::fake as std; T::V"), callback_line);
+    EXPECT_EQ(refused("let _n = 1; std::println!(); use crate::fake as std; T::V"), callback_line);
+    EXPECT_EQ(refused("use crate::{fake as std, T as U}; std::println!(); T::V"), callback_line);
+    EXPECT_EQ(refused("use crate::{T as U, fake as std}; std::println!(); T::V"), callback_line);
+    EXPECT_EQ(refused("{ use crate::fake as std; std::println!(); } T::V"), callback_line);
+    EXPECT_EQ(refused("{ std::println!(); use crate::{fake as std, T as U}; } T::V"), callback_line);
+    EXPECT_EQ(
+            refused("mod std { macro_rules! println { () => { return crate::T::Other; }; } pub(crate) use println; } "
+                    "std::println!(); T::V"),
+            callback_line);
+    EXPECT_EQ(refused("{ use crate::fake as std; } std::println!(\"x\"); T::V"), std::nullopt);
+    EXPECT_EQ(refused("{ mod std {} } std::println!(\"x\"); T::V"), std::nullopt);
+
+    // A closure in the attribute binds its names nowhere the walk reaches, a skip's as a variant's, so one binding a
+    // name is refused whatever it returns.
+    EXPECT_EQ(
+            line_of("use logos::Logos;\nmod fake { macro_rules! println { () => {}; } pub(crate) use println; }\n"
+                    "#[derive(Logos)]\n#[logos(skip(\"x\", |_| { std::println!(); use crate::fake as std; }))]\n"
+                    "enum T {\n    #[token(\"y\")]\n    V,\n}\n"),
+            4);
+}
+
 TEST(Read_logos_test, A_wrapped_result_is_read_against_the_variant_s_payload)
 {
     // For a variant without a payload, `Filter::Emit`, `FilterResult::Emit` and `Ok` may wrap `()` or any variant of

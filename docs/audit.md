@@ -646,46 +646,50 @@ line that holds it, rather than read it as something else:
   body, a closure's, a named function's or a skip's, is read only where its lexer parameter is used through `slice`,
   `span`, `remainder`, `source`, `extras` and `clone`; one naming `bump`, `bump_unchecked` or `trivia` as a method, or
   using the parameter any other way, is refused by name, as is a function declared without a body or one binding the
-  lexer with a pattern rather than a name, `lex`, `mut lex`, `ref lex`, `ref mut lex` or `_`. `ignore(case)` hands the
-  pattern to the regex crate's case-insensitive parse, Unicode-aware in a string pattern and ASCII-only in a byte
-  string, while `ignore(ascii_case)` parses the pattern as it stands and folds the ASCII letters of the compiled tree
-  afterwards, a class gaining the other case of its ASCII members and a literal being taken apart one piece per byte,
-  except in a byte string, where logos hands it the same parse as the other flag; logos refuses the two flags together.
-  The priority is logos's own, computed as logos 0.14 and later compute it, over the pattern with its subpatterns pasted
-  in as text, which is what the crate parses, merging adjacent literals across a reference, or taken from `priority =
-  n`, higher winning, and mapped onto the builder's scale; a literal counts two per character, and two per byte where
-  the run is not UTF-8 as strictly as Rust's own validation reads it, an encoded surrogate, an overlong form and a
-  scalar above U+10FFFF being bytes rather than characters, since logos asks `std::str::from_utf8` and counts bytes
-  where it fails, so that a scalar whose UTF-8 is split between a pattern and a subpattern is one scalar and a run the
-  pasting joins into invalid UTF-8 is bytes. An ignore flag takes a `#[token]` out of the literals: logos escapes the
-  literal for the regex crate and compiles that regex, so the priority comes from its tree like any other regex's, and
-  the escaping writes a byte string's byte beyond ASCII out as the characters of its `\xNN` escape and escapes the
-  backslash again, which is why `#[token(b"\xC3\xA9", ignore(case))]` matches those eight characters and never the two
-  bytes. The regex is the regex crate's in Unicode mode, rewritten over the UTF-8 bytes the lexer scans: classes, the
-  dot and negated classes as code point ranges, the flags `i`, `s` and `u` with their scoping, and `\d`, `\w` and `\s`
-  in Unicode mode as the crate's classes, Nd, White_Space and the word class, over the tables of the Unicode version the
-  regex-syntax logos is locked to was generated from rather than the library's own pinned one, since the audited
-  language is the scanner's; the report's options name that version, `unicode-classes=16.0.0` for logos 0.15.1. Refused:
-  `\p{...}`, whose property tables the library has not got, a non-ASCII scalar under `i`, anchors and lookaround, the
-  flags `x`, `m`, `U` and `R`, the class operators, the lazy operators, which logos 0.15.1 refuses as unsupported
-  non-greedy parsing, a `*` or `+` over the dot under `s` or over a class of every scalar or every byte, an alternation
-  of classes the regex crate merges into one among them, which logos 0.15.1 refuses as consuming the source to its end,
-  while the plain dot, a captured one and `[\x00-\x{D7FF}\x{E000}-\x{10FFFF}]`, two ranges to the crate where its dot is
-  one, pass as they pass the crate, an `allow_greedy` argument, which logos 0.15.1 does not know and calls an unknown
-  nested attribute, as it calls an `ignore` flag on a skip, any `#[logos(...)]` key beyond the eight it knows, an entry
-  after a `skip(...)` or `error(...)` in one attribute, a bare key, a key with a value of another shape than it takes,
-  `extras`, `error`, `source` or the type of one parameter given twice, `#[logos]`, `#[token]` or `#[regex]` without its
-  parentheses or with nothing in them, a second `priority` or callback in one attribute, `priority(...)`, any argument
-  after `ignore(...)`, the legacy `#[error]` attribute, a variant with several or named fields, a second lifetime, a
-  const generic and a type parameter without its `type T = ...` or a `type` for none, each as the crate refuses it, a
-  byte beyond ASCII written or admitted under `(?-u)` in a string pattern, a nested class checked on its own, which the
-  regex crate refuses as able to match invalid UTF-8, a token or regex matching only the empty string once its
-  subpatterns are pasted in, which logos 0.15.1 panics on as a token and compiles into a rule matching no input as a
-  regex, while an empty `subpattern` definition is valid and adds nothing to the patterns referencing it, and an
-  unbounded repetition whose body can begin with a byte that may also follow it, which logos 0.15.1 compiles into a
-  scanner matching no input at all, its graph deciding a repetition's end on one byte: the flex spelling of the block
-  comment is one of those, so the `.rs` grammars spell it with a loop that cannot begin with a star, the same language
-  and the one the crate scans, while a bounded repetition, which the crate unrolls, is read however its boundary falls.
+  lexer with a pattern rather than a name, `lex`, `mut lex`, `ref lex`, `ref mut lex` or `_`. A macro the body invokes
+  through `std::` or `core::` is the standard one only while no `use` or `mod` binds that name in the block invoking it
+  or a block around it, wherever in the block it stands, since a block's items bind throughout it, and a closure written
+  in the attribute, a skip's among them, that binds a name of its own is refused, the walk binding the file's names
+  never entering an attribute. `ignore(case)` hands the pattern to the regex crate's case-insensitive parse,
+  Unicode-aware in a string pattern and ASCII-only in a byte string, while `ignore(ascii_case)` parses the pattern as it
+  stands and folds the ASCII letters of the compiled tree afterwards, a class gaining the other case of its ASCII
+  members and a literal being taken apart one piece per byte, except in a byte string, where logos hands it the same
+  parse as the other flag; logos refuses the two flags together. The priority is logos's own, computed as logos 0.14 and
+  later compute it, over the pattern with its subpatterns pasted in as text, which is what the crate parses, merging
+  adjacent literals across a reference, or taken from `priority = n`, higher winning, and mapped onto the builder's
+  scale; a literal counts two per character, and two per byte where the run is not UTF-8 as strictly as Rust's own
+  validation reads it, an encoded surrogate, an overlong form and a scalar above U+10FFFF being bytes rather than
+  characters, since logos asks `std::str::from_utf8` and counts bytes where it fails, so that a scalar whose UTF-8 is
+  split between a pattern and a subpattern is one scalar and a run the pasting joins into invalid UTF-8 is bytes. An
+  ignore flag takes a `#[token]` out of the literals: logos escapes the literal for the regex crate and compiles that
+  regex, so the priority comes from its tree like any other regex's, and the escaping writes a byte string's byte beyond
+  ASCII out as the characters of its `\xNN` escape and escapes the backslash again, which is why `#[token(b"\xC3\xA9",
+  ignore(case))]` matches those eight characters and never the two bytes. The regex is the regex crate's in Unicode
+  mode, rewritten over the UTF-8 bytes the lexer scans: classes, the dot and negated classes as code point ranges, the
+  flags `i`, `s` and `u` with their scoping, and `\d`, `\w` and `\s` in Unicode mode as the crate's classes, Nd,
+  White_Space and the word class, over the tables of the Unicode version the regex-syntax logos is locked to was
+  generated from rather than the library's own pinned one, since the audited language is the scanner's; the report's
+  options name that version, `unicode-classes=16.0.0` for logos 0.15.1. Refused: `\p{...}`, whose property tables the
+  library has not got, a non-ASCII scalar under `i`, anchors and lookaround, the flags `x`, `m`, `U` and `R`, the class
+  operators, the lazy operators, which logos 0.15.1 refuses as unsupported non-greedy parsing, a `*` or `+` over the dot
+  under `s` or over a class of every scalar or every byte, an alternation of classes the regex crate merges into one
+  among them, which logos 0.15.1 refuses as consuming the source to its end, while the plain dot, a captured one and
+  `[\x00-\x{D7FF}\x{E000}-\x{10FFFF}]`, two ranges to the crate where its dot is one, pass as they pass the crate, an
+  `allow_greedy` argument, which logos 0.15.1 does not know and calls an unknown nested attribute, as it calls an
+  `ignore` flag on a skip, any `#[logos(...)]` key beyond the eight it knows, an entry after a `skip(...)` or
+  `error(...)` in one attribute, a bare key, a key with a value of another shape than it takes, `extras`, `error`,
+  `source` or the type of one parameter given twice, `#[logos]`, `#[token]` or `#[regex]` without its parentheses or
+  with nothing in them, a second `priority` or callback in one attribute, `priority(...)`, any argument after
+  `ignore(...)`, the legacy `#[error]` attribute, a variant with several or named fields, a second lifetime, a const
+  generic and a type parameter without its `type T = ...` or a `type` for none, each as the crate refuses it, a byte
+  beyond ASCII written or admitted under `(?-u)` in a string pattern, a nested class checked on its own, which the regex
+  crate refuses as able to match invalid UTF-8, a token or regex matching only the empty string once its subpatterns are
+  pasted in, which logos 0.15.1 panics on as a token and compiles into a rule matching no input as a regex, while an
+  empty `subpattern` definition is valid and adds nothing to the patterns referencing it, and an unbounded repetition
+  whose body can begin with a byte that may also follow it, which logos 0.15.1 compiles into a scanner matching no input
+  at all, its graph deciding a repetition's end on one byte: the flex spelling of the block comment is one of those, so
+  the `.rs` grammars spell it with a loop that cannot begin with a star, the same language and the one the crate scans,
+  while a bounded repetition, which the crate unrolls, is read however its boundary falls.
 
 The grammars under `tools/audit/grammars/` are the study's rows in every syntax, and the tests hold each `.re`, `.g4`
 and `.rs` file to its `.l` twin: the readers must build token sets that cut no input differently, decided by
