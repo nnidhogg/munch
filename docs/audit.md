@@ -92,7 +92,7 @@ certified windows (<= 3)    16 at width 2, 187 at width 3 over 9 byte classes, 9
                             "\n\t" at 1
                             "\n\n" at 1
                             "\n!" at 1
-                            "\n"" at 1
+                            "\n\"" at 1
                             ... 197 more
 mandatory core              none
 anchor-free span, bytes     unbounded
@@ -103,7 +103,7 @@ rescue-free                 yes
 why candidate bytes do not certify
   IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
   NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
-  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after """
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
   "//"[^\n]*                 consumes 90 candidate bytes mid-token, e.g. '/' after "/"
   [ \t]+                     consumes 2 candidate bytes mid-token, e.g. '\t' after "\t"
 
@@ -131,7 +131,7 @@ rescue-free                 no: the scan rolls back and continues on "/*"
 why candidate bytes do not certify
   IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
   NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
-  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after """
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
   "//"[^\n]*                 consumes 90 candidate bytes mid-token, e.g. '/' after "/"
   "/*"([^*]|\*+[^*/])*\*+"/" consumes 91 candidate bytes mid-token, e.g. '*' after "/"
   [ \t\n]+                   consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
@@ -239,6 +239,126 @@ Row by row:
   matching there, and the rows count the occurrences as they stand and promise no boundary, the exact byte row alone
   keeping the serial-prefix relation `tokenize_all_parallel()` states for malformed input, which the window rows have
   not got.
+
+## An External Grammar: JSON.g4
+
+The grammars above are the study's own. `JSON.g4` from the grammars-v4 collection was written for ANTLR's users, taken
+from *The Definitive ANTLR 4 Reference* as its first line says, and the auditor reads it as it stands. The file carries
+no licence header and is not copied into this repository: it is pinned at grammars-v4 commit
+`30c6ea0dac4a03f0f8bb454a6d15435c424b6f69`, where its SHA-256 is
+`1ec0e422caf2855be3497efaeb5e23f91adc6a65068757e2dcf83467119986f4`, and is fetched and audited with
+
+```
+curl -sSO https://raw.githubusercontent.com/antlr/grammars-v4/30c6ea0dac4a03f0f8bb454a6d15435c424b6f69/json/JSON.g4
+sha256sum JSON.g4
+munch-audit JSON.g4
+```
+
+which prints
+
+```
+== JSON.g4
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 8, condition INITIAL: 12 rules
+verdict                     no byte certifies exactly; 3 certify once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  '\t' '\n' '\r'
+discarded tokens            1: [ \t\n\r]+
+certified windows (<= 3)    24 at width 2, 988 at width 3 over 40 byte classes, 10259 once classes expand
+                            " \"!" at 1
+                            " \"+" at 1
+                            " \"." at 1
+                            " \"/" at 1
+                            " \"A" at 1
+                            " \"E" at 1
+                            ... 1006 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         2
+rescue-free                 yes
+
+why candidate bytes do not certify
+  STRING                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
+  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  [ \t\n\r]+                 consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\t'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\t', and '\t' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\r'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\r', and '\r' becomes a token of its own, discarded
+                              certifies exactly
+
+```
+
+It is a combined grammar, so the literals its parser rules spell, the braces, the brackets, the comma, the colon,
+`true`, `false` and `null`, stand as implicit tokens ahead of `STRING`, `NUMBER` and `WS`, together the report's
+`12 rules`, and `WS`, whose `-> skip` makes it the one discarded token, is printed by its pattern, `[ \t\n\r]+`. The
+grammar declares no mode, so the caveat above the report asks nothing of a cut here: every byte is scanned in INITIAL,
+and a cut needs to know its position alone.
+
+No byte certifies exactly, the `certified bytes` row reading `none`, because the whitespace run consumes its own bytes
+mid-token, `'\t' after "\t"`: a tab followed by a newline is one token to the serial scan, so no token begins at that
+newline. Once the discarded tokens are deleted, `'\t' '\n' '\r'` certify. `SAFECODEPOINT` excludes `\u0000-\u001F`, so a
+string holds none of the three raw, its escapes writing them as `\t`, `\n` and `\r`, and no other token admits them;
+every occurrence lies in a whitespace run, and a cut before one splits at most that run, which the parser never sees.
+The space does not certify even so, since a string holds it, and a string holds every candidate byte but those three:
+`STRING consumes 22 candidate bytes mid-token, e.g. ' ' after "\""`. A number holds the digits after its first and the
+minus sign of an exponent, `NUMBER consumes 11 candidate bytes mid-token, e.g. '0' after "1"`.
+
+The three `what it would cost` sections give the one edit that makes each of the three exact: the run no longer admits
+the byte, and the byte becomes a discarded token of its own. For the newline that is
+
+```
+WS
+    : [ \t\r]+ -> skip
+    ;
+
+NL
+    : '\n' -> skip
+    ;
+```
+
+in place of the file's `WS`, under which the verdict becomes
+`1 byte certifies exactly: a cut is safe at any occurrence`, with `'\n'` in the `certified bytes` row. The parser's
+tokens are unchanged, and a tool that reads the raw token stream, a formatter or a highlighter, gets a boundary before
+every newline as well.
+
+Where no byte certifies, the windows do:
+`24 at width 2, 988 at width 3 over 40 byte classes, 10259 once classes expand`. They are mostly a quote beside a byte
+that settles whether the quote opens a string or closes one. In `" \"!" at 1` the quote follows a space, so it is no
+escaped quote, and were it a string's closing quote the `!` would have to begin a token, which no token does; so it
+opens a string, and a token begins at offset 1. Both anchor-free spans are `unbounded`, and that holds for any
+certificate whatever: a string as long as one likes is one token, with no boundary inside it for a byte or a window to
+name. With `--windows 4` the windows row becomes
+`24 at width 2, 988 at width 3, 34369 at width 4 over 40 byte classes, 1158901 once classes expand` and the window span
+`not decided: more than 131072 windows once classes expand`, the rest of the report unchanged; the longer windows add
+anchors, and the long string leaves the span unbounded at every width. The `lag` of `2` and the `rescue-free` `yes` say
+that a scan reads at most two bytes past a token's end before it knows where the token ends, the `e+` of `1e+5` after
+its `1`, and that on input the grammar tokenizes completely it never rolls them back.
+
+For a parallel lexer of JSON this is the whole plan. It may cut before any tab, newline or carriage return, scan each
+piece alone from INITIAL with no coordination, drop the `WS` tokens and concatenate, and the result is the token stream
+the parser gets from the serial scan, while the raw streams differ where a cut split a whitespace run. Pretty-printed
+JSON carries a newline on every line and so a cut on every line; minified JSON carries none of the three bytes, and its
+cuts come from the windows alone; a document holding one long string has no cut inside that string under any
+certificate, which is the anchor-free span's `unbounded` met in an input. `--input` measures what a given file offers,
+the anchors per kibibyte and the gaps between them. With `--json` the same figures stand in the report as
+`"modulo": [9, 10, 13]`, `"window_count": 10259`, `"byte_span": "unbounded"` and `"window_span": "unbounded"`, the last
+`"undecided"` under `--windows 4`, and a project whose lexer relies on the three cuts holds its copy of the grammar to
+them with the three `--require-certified-modulo` options of [Asserting a Certificate in
+CI](#asserting-a-certificate-in-ci), which exit 0 on this file, while `--require-certified '\n'` exits 3 until the
+newline is split out as above.
 
 ## What Is Read, and What Is Refused
 
