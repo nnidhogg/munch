@@ -13,11 +13,11 @@
 
 /**
  * @file
- * @brief The six decisions over a verifier: miscovering(), boundary_gap(), realizable(), divergence(), dependence()
- *        and chunk_dependence().
+ * @brief The eight decisions over a verifier: miscovering(), boundary_gap(), realizable(), divergence(), dependence(),
+ *        chunk_dependence(), fanout() and smallest_fanout().
  *
- * Each is a product with the verifier and a search on the product, and each witness is replayable through
- * Verifier::step().
+ * Each is a search on a product with the verifier or on its minimal automaton, fanout() two subset runs on the latter,
+ * and each witness is replayable through Verifier::step().
  */
 namespace munch::dfa
 {
@@ -217,6 +217,50 @@ struct Chunk_dependence
 };
 
 /**
+ * @brief The fan-out of a pair: its rank, the number of configurations its cut can carry, and those configurations.
+ */
+struct Fanout
+{
+    /**
+     * @brief The rank, the number of configurations, zero when no occurrence has its cut after position zero.
+     */
+    std::size_t rank{};
+
+    /**
+     * @brief The configurations, each as the least verifier state of its class, ascending.
+     */
+    std::vector<Verifier::State_t> configurations{};
+};
+
+/**
+ * @brief The smallest fan-out of a pumpable window, the degree, a window (ww, |w|) of that rank, and a lasso whose loop
+ *        reads w.
+ */
+struct Smallest_fanout
+{
+    /**
+     * @brief The degree, the least rank of a pumpable window.
+     */
+    std::size_t degree{};
+
+    /**
+     * @brief The window ww, its rank the degree at the origin.
+     */
+    std::string window{};
+
+    /**
+     * @brief The origin |w|, the cut between the two copies of w.
+     */
+    std::size_t origin{};
+
+    /**
+     * @brief The lasso, its loop the marked w, from a state of a configuration of the window back to one of the same
+     *        configuration.
+     */
+    Lasso lasso{};
+};
+
+/**
  * @brief Decides the window certificate (window, origin): the token containing an occurrence's final byte begins at the
  *        occurrence's byte origin, at every occurrence in every accepted marked string.
  *
@@ -327,6 +371,57 @@ struct Chunk_dependence
  */
 [[nodiscard]] std::optional<Chunk_dependence> chunk_dependence(
         const Verifier& verifier, std::span<const Certified_pair> inventory);
+
+/**
+ * @brief Decides the fan-out of the pair (window, origin): its rank, the number of configurations the cut at the origin
+ *        can carry at an occurrence of the window in an accepted marked string, over every occurrence whose cut lies
+ *        after position zero.
+ *
+ * A configuration is a state of the minimal automaton of the accepted marked strings, a class of verifier states that
+ * no marked continuation tells apart, reached on the string's marked prefix before the cut. It is all a scan resumed at
+ * the cut needs, so a worker beginning there runs one copy per configuration and the configuration the scan before it
+ * ends in selects the copy; counting the verifier's own states could only split configurations the future does not
+ * distinguish. The cut at position zero carries the start alone, known without selection, and is left out. The
+ * configurations are the states the window's first origin bytes lead to under any marks from any state that can
+ * complete, which can also read the remaining bytes under some marks to a state that can complete: a forward subset run
+ * over the window's first origin bytes and a backward one over the rest, on the byte projection of the minimal
+ * automaton. At origin zero the forward set is the states some byte enters, since the cut follows the byte before the
+ * occurrence. A rank of one fixes the configuration at every such cut in advance, which is not certification: the token
+ * covering the window may begin elsewhere at different occurrences, and a certified cut may carry several
+ * configurations. Minimizing takes at most |Q| passes of Moore refinement over the 2 |Q| |Sigma| marked steps, Q the
+ * verifier's states and Sigma the bytes on its transitions, and the two subset runs O(|window| |Q|) steps.
+ * @param verifier The verifier, functional.
+ * @param window The window, nonempty.
+ * @param origin The origin, a byte index of the window.
+ * @return The rank and the configurations.
+ * @throws std::invalid_argument If the window is empty or the origin lies outside it.
+ */
+[[nodiscard]] Fanout fanout(const Verifier& verifier, std::string_view window, std::size_t origin);
+
+/**
+ * @brief Decides the smallest fan-out of a pumpable window, one that occurs any number of times in some accepted marked
+ *        strings: the degree, the fewest fixed points of a nonzero idempotent among the relations that nonempty byte
+ *        strings induce on the states of the minimal automaton.
+ *
+ * Only a pumpable window occurs in some string more often than any bound, so the degree is the least number of copies a
+ * worker must run at a cut that recurs. A byte string relates two states of the minimal automaton that can complete
+ * when it can be read under some marks from one to the other, and these relations form a monoid, searched breadth first
+ * from the bytes. Every pumpable window has rank at least the degree d at every origin, and for w the shortest byte
+ * string, the least in byte order among the shortest, whose relation is an idempotent with d fixed points, the pair
+ * (ww, |w|) has rank exactly d, its configurations the fixed points. Over windows that occur a bounded number of times
+ * the least rank can lie below the degree, a window after the first token of a two-mode scan occurring once per string.
+ * The witness pumps w at the least fixed point: the stem reaches it from the start, the loop reads w under the marks
+ * that return to it, and the suffix completes. The search is exponential in the worst case: with m the states of the
+ * minimal automaton the monoid N holds at most 2^(m^2) relations, each found once by the one search that finds the
+ * degree and its string, multiplied by every byte in O(m^2), looked up in O(m^2 log |N|) and squared in O(m^3), so the
+ * time is O(|N| (|Sigma| m^2 log |N| + m^3)) and the memory O(|N| m^2), Sigma the bytes on the verifier's transitions,
+ * besides the minimization fanout() takes and the witness searches over the verifier, the loop one over at most |w| |Q|
+ * keys, Q the verifier's states.
+ * @param verifier The verifier, functional.
+ * @return The degree, the window (ww, |w|) and its origin, and the stem, loop and suffix.
+ * @throws std::invalid_argument If the domain is finite, so that no window recurs.
+ */
+[[nodiscard]] Smallest_fanout smallest_fanout(const Verifier& verifier);
 
 } // namespace munch::dfa
 

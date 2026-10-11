@@ -10,6 +10,7 @@
 #include <map>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -29,6 +30,17 @@ namespace
  * @brief A verifier state, as the decisions name one.
  */
 using State_t = Verifier::State_t;
+
+/**
+ * @brief A set of states of a verifier's minimal automaton, one bit per class.
+ */
+using Class_set_t = std::vector<bool>;
+
+/**
+ * @brief A relation between the states of a verifier's minimal automaton, one bit per pair of classes in row-major
+ *        order.
+ */
+using Relation_t = std::vector<bool>;
 
 /**
  * @brief The two boundary bits a byte can carry, no boundary first.
@@ -272,6 +284,37 @@ struct Chunk_key
      * @brief Whether a chunk was refused.
      */
     bool refused{};
+};
+
+/**
+ * @brief The byte projection of a verifier's minimal automaton: the class of each verifier state, the classes being the
+ *        states no marked continuation tells apart, the least state of each class, and per byte the steps from each
+ *        class.
+ *
+ * The verifier is trim, so every class can complete but the start's of an empty domain, which takes no step.
+ */
+struct Projection
+{
+    /**
+     * @brief The bytes on the verifier's transitions, ascending.
+     */
+    std::vector<unsigned char> alphabet{};
+
+    /**
+     * @brief Per verifier state, its class, the classes numbered in the order of their least states.
+     */
+    std::vector<std::size_t> class_of{};
+
+    /**
+     * @brief Per class, its least verifier state.
+     */
+    std::vector<State_t> representatives{};
+
+    /**
+     * @brief Per byte of the alphabet and class, the steps the byte takes from it as the boundary bit and the class
+     *        entered, no boundary first.
+     */
+    std::vector<std::vector<std::vector<std::pair<bool, std::size_t>>>> steps{};
 };
 
 /**
@@ -811,14 +854,20 @@ void dedup(std::vector<T>& values)
 }
 
 /**
- * @brief Searches the positions and states for a marking under which a verifier accepts an input.
+ * @brief Searches the positions and states for a marking under which a verifier reads an input from a state to a state
+ *        that ends the search.
+ * @tparam Ends The end predicate's type.
  * @param verifier The verifier.
- * @param bytes The input, in the verifier's domain.
+ * @param from The state the input is read from.
+ * @param bytes The input, which some marking reads from the state to an end.
+ * @param ends Whether a state the whole input reaches ends the search.
  * @return The marked input.
  */
-[[nodiscard]] Marked_string accepted_marking(const Verifier& verifier, const std::string_view bytes)
+template <typename Ends>
+[[nodiscard]] Marked_string marking_between(
+        const Verifier& verifier, const State_t from, const std::string_view bytes, const Ends& ends)
 {
-    const auto goal{[&](const Marking_key& key) { return key.read == bytes.size() && verifier.accepts(key.state); }};
+    const auto goal{[&](const Marking_key& key) { return key.read == bytes.size() && ends(key.state); }};
 
     const auto expand{[&]<typename Emit>(const Marking_key& key, const Emit& emit) {
         const auto [read, state]{key};
@@ -841,9 +890,22 @@ void dedup(std::vector<T>& values)
         }
     }};
 
-    const auto path{shortest_path(Marking_key{.read = 0, .state = verifier.start()}, goal, expand)};
+    const auto path{shortest_path(Marking_key{.read = 0, .state = from}, goal, expand)};
 
     return marked_string_of(path->symbols);
+}
+
+/**
+ * @brief Searches the positions and states for a marking under which a verifier accepts an input.
+ * @param verifier The verifier.
+ * @param bytes The input, in the verifier's domain.
+ * @return The marked input.
+ */
+[[nodiscard]] Marked_string accepted_marking(const Verifier& verifier, const std::string_view bytes)
+{
+    const auto accepting{[&verifier](const State_t state) { return verifier.accepts(state); }};
+
+    return marking_between(verifier, verifier.start(), bytes, accepting);
 }
 
 /**
@@ -1064,6 +1126,401 @@ void dedup(std::vector<T>& values)
     std::ranges::copy_if(chunks, std::back_inserter(failing), fails);
 
     return failing;
+}
+
+/**
+ * @brief Returns the classes of a verifier's states under Moore refinement: the states are told apart by acceptance and
+ *        then by the class each marked symbol leads to or its refusal, until no class splits.
+ * @param verifier The verifier, trim.
+ * @param alphabet The bytes on its transitions.
+ * @return Per state, its class, the classes numbered in the order of their least states.
+ */
+[[nodiscard]] std::vector<std::size_t> classes_of(const Verifier& verifier, const std::vector<unsigned char>& alphabet)
+{
+    const auto count{verifier.state_count()};
+
+    const auto numbered{[count]<typename Signature>(const Signature& signature_of) {
+        std::map<std::vector<std::size_t>, std::size_t> numbers{};
+
+        std::vector<std::size_t> classes(count, 0);
+
+        for (State_t state{0}; state < count; ++state)
+        {
+            auto signature{signature_of(state)};
+
+            const auto [entry, inserted]{numbers.try_emplace(std::move(signature), numbers.size())};
+
+            const auto& [interned, number]{*entry};
+
+            classes[state] = number;
+        }
+
+        return std::pair{classes, numbers.size()};
+    }};
+
+    const auto acceptance{[&verifier](const State_t state) {
+        return std::vector{verifier.accepts(state) ? std::size_t{1} : std::size_t{0}};
+    }};
+
+    auto [classes, class_count]{numbered(acceptance)};
+
+    // A refused step is told apart from a step into any class.
+    const auto refined_signature{[&](const State_t state) {
+        std::vector signature{classes[state]};
+
+        for (const auto byte : alphabet)
+        {
+            for (const auto boundary_after : marks)
+            {
+                const auto to{verifier.step(state, {.byte = byte, .boundary_after = boundary_after})};
+
+                const auto entered{to ? classes[*to] + 1 : 0};
+
+                signature.push_back(entered);
+            }
+        }
+
+        return signature;
+    }};
+
+    for (;;)
+    {
+        auto [refined, refined_count]{numbered(refined_signature)};
+
+        if (refined_count == class_count)
+        {
+            return refined;
+        }
+
+        classes = std::move(refined);
+        class_count = refined_count;
+    }
+}
+
+/**
+ * @brief Returns the byte projection of a verifier's minimal automaton.
+ * @param verifier The verifier, trim.
+ * @return The projection.
+ */
+[[nodiscard]] Projection projection_of(const Verifier& verifier)
+{
+    auto alphabet{alphabet_of(verifier)};
+
+    auto class_of{classes_of(verifier, alphabet)};
+
+    std::vector<State_t> representatives{};
+
+    for (State_t state{0}; state < verifier.state_count(); ++state)
+    {
+        if (class_of[state] == representatives.size())
+        {
+            representatives.push_back(state);
+        }
+    }
+
+    const auto steps_from{[&](const unsigned char byte, const State_t state) {
+        std::vector<std::pair<bool, std::size_t>> steps{};
+
+        for (const auto boundary_after : marks)
+        {
+            if (const auto to{verifier.step(state, {.byte = byte, .boundary_after = boundary_after})})
+            {
+                steps.emplace_back(boundary_after, class_of[*to]);
+            }
+        }
+
+        return steps;
+    }};
+
+    std::vector<std::vector<std::vector<std::pair<bool, std::size_t>>>> steps{};
+
+    for (const auto byte : alphabet)
+    {
+        auto& row{steps.emplace_back()};
+
+        for (const auto representative : representatives)
+        {
+            row.push_back(steps_from(byte, representative));
+        }
+    }
+
+    return {.alphabet = std::move(alphabet),
+            .class_of = std::move(class_of),
+            .representatives = std::move(representatives),
+            .steps = std::move(steps)};
+}
+
+/**
+ * @brief Returns the states some byte enters under some mark from a state of a projection.
+ * @param projection The projection.
+ * @return The entered states.
+ */
+[[nodiscard]] Class_set_t entered_classes(const Projection& projection)
+{
+    Class_set_t entered(projection.representatives.size(), false);
+
+    for (const auto to : projection.steps | std::views::join | std::views::join | std::views::values)
+    {
+        entered[to] = true;
+    }
+
+    return entered;
+}
+
+/**
+ * @brief Returns the index of a byte in a projection's alphabet.
+ * @param projection The projection.
+ * @param byte The byte.
+ * @return The index, or std::nullopt when no transition carries the byte.
+ */
+[[nodiscard]] std::optional<std::size_t> byte_index(const Projection& projection, const unsigned char byte)
+{
+    const auto found{std::ranges::lower_bound(projection.alphabet, byte)};
+
+    if (found == projection.alphabet.cend() || *found != byte)
+    {
+        return std::nullopt;
+    }
+
+    const auto index{std::ranges::distance(projection.alphabet.cbegin(), found)};
+
+    return static_cast<std::size_t>(index);
+}
+
+/**
+ * @brief Returns the states a byte string leads to under some marks from a set of states of a projection.
+ * @param projection The projection.
+ * @param classes The states read from.
+ * @param bytes The byte string.
+ * @return The states reached.
+ */
+[[nodiscard]] Class_set_t image_of(const Projection& projection, Class_set_t classes, const std::string_view bytes)
+{
+    for (const auto byte : bytes)
+    {
+        const auto index{byte_index(projection, static_cast<unsigned char>(byte))};
+
+        Class_set_t next(classes.size(), false);
+
+        if (!index)
+        {
+            return next;
+        }
+
+        for (std::size_t from{0}; from < classes.size(); ++from)
+        {
+            if (!classes[from])
+            {
+                continue;
+            }
+
+            for (const auto to : projection.steps[*index][from] | std::views::values)
+            {
+                next[to] = true;
+            }
+        }
+
+        classes = std::move(next);
+    }
+
+    return classes;
+}
+
+/**
+ * @brief Returns the states of a projection from which a byte string can be read under some marks.
+ * @param projection The projection.
+ * @param bytes The byte string.
+ * @return The states it can be read from.
+ */
+[[nodiscard]] Class_set_t coimage_of(const Projection& projection, const std::string_view bytes)
+{
+    Class_set_t classes(projection.representatives.size(), true);
+
+    for (const auto byte : bytes | std::views::reverse)
+    {
+        const auto index{byte_index(projection, static_cast<unsigned char>(byte))};
+
+        Class_set_t previous(classes.size(), false);
+
+        if (!index)
+        {
+            return previous;
+        }
+
+        const auto into_classes{[&classes](const std::size_t to) { return classes[to]; }};
+
+        for (std::size_t from{0}; from < classes.size(); ++from)
+        {
+            previous[from] = std::ranges::any_of(projection.steps[*index][from] | std::views::values, into_classes);
+        }
+
+        classes = std::move(previous);
+    }
+
+    return classes;
+}
+
+/**
+ * @brief Returns the composition of two relations, the pairs joined by a step of the first and then one of the second.
+ * @param first The first relation.
+ * @param second The second relation.
+ * @param count The number of states.
+ * @return The composition.
+ */
+[[nodiscard]] Relation_t composed(const Relation_t& first, const Relation_t& second, const std::size_t count)
+{
+    Relation_t composition(first.size(), false);
+
+    for (std::size_t pair{0}; pair < first.size(); ++pair)
+    {
+        if (!first[pair])
+        {
+            continue;
+        }
+
+        const auto from{pair / count};
+
+        const auto through{pair % count};
+
+        for (std::size_t to{0}; to < count; ++to)
+        {
+            if (second[through * count + to])
+            {
+                composition[from * count + to] = true;
+            }
+        }
+    }
+
+    return composition;
+}
+
+/**
+ * @brief Returns whether a relation joins no pair of states.
+ * @param relation The relation.
+ * @return True when it is empty.
+ */
+[[nodiscard]] bool is_zero(const Relation_t& relation)
+{
+    return std::ranges::none_of(relation, std::identity{});
+}
+
+/**
+ * @brief Returns the identity relation on the states of a projection, the relation of the empty string.
+ * @param count The number of states.
+ * @return The identity.
+ */
+[[nodiscard]] Relation_t identity_of(const std::size_t count)
+{
+    Relation_t identity(count * count, false);
+
+    for (std::size_t state{0}; state < count; ++state)
+    {
+        identity[state * count + state] = true;
+    }
+
+    return identity;
+}
+
+/**
+ * @brief Returns the relation of a byte string followed by one more byte: the pairs of states it joins under some
+ *        marks.
+ * @param projection The projection.
+ * @param relation The relation of the byte string.
+ * @param index The byte, as its index in the projection's alphabet.
+ * @return The relation of the longer string.
+ */
+[[nodiscard]] Relation_t relation_after(
+        const Projection& projection, const Relation_t& relation, const std::size_t index)
+{
+    const auto count{projection.representatives.size()};
+
+    Relation_t extended(relation.size(), false);
+
+    for (std::size_t pair{0}; pair < relation.size(); ++pair)
+    {
+        if (!relation[pair])
+        {
+            continue;
+        }
+
+        const auto from{pair / count};
+
+        const auto through{pair % count};
+
+        for (const auto to : projection.steps[index][through] | std::views::values)
+        {
+            extended[from * count + to] = true;
+        }
+    }
+
+    return extended;
+}
+
+/**
+ * @brief Returns the relations of the byte strings over a projection's alphabet, the empty string's identity first and
+ *        then the nonzero relations of the nonempty strings, each with how the search reached it.
+ *
+ * Found breadth first from the empty string, each string extended by the bytes in ascending order and a relation kept
+ * where it is first reached, so the relations follow their shortest strings, the least in byte order among the
+ * shortest, in that order, and the parents spell those strings.
+ * @param projection The projection.
+ * @return The relations and their parents, in the order reached.
+ */
+[[nodiscard]] std::vector<std::pair<Relation_t, Parent>> relations_of(const Projection& projection)
+{
+    std::vector<std::pair<Relation_t, Parent>> relations{{identity_of(projection.representatives.size()), Parent{}}};
+
+    std::set<Relation_t> seen{};
+
+    for (std::size_t next{0}; next < relations.size(); ++next)
+    {
+        // A copy, since the relations grow below.
+        const auto [relation, parent]{relations[next]};
+
+        for (std::size_t index{0}; index < projection.alphabet.size(); ++index)
+        {
+            auto extended{relation_after(projection, relation, index)};
+
+            if (is_zero(extended))
+            {
+                continue;
+            }
+
+            const auto [entry, inserted]{seen.insert(extended)};
+
+            if (!inserted)
+            {
+                continue;
+            }
+
+            const Marked symbol{.byte = projection.alphabet[index], .boundary_after = false};
+
+            relations.emplace_back(std::move(extended), Parent{.from = next, .symbol = symbol});
+        }
+    }
+
+    return relations;
+}
+
+/**
+ * @brief Returns the number of states a relation joins to themselves.
+ * @param relation The relation.
+ * @param count The number of states.
+ * @return The number of fixed points.
+ */
+[[nodiscard]] std::size_t fixed_points(const Relation_t& relation, const std::size_t count)
+{
+    std::size_t fixed{0};
+
+    for (std::size_t state{0}; state < count; ++state)
+    {
+        if (relation[state * count + state])
+        {
+            ++fixed;
+        }
+    }
+
+    return fixed;
 }
 
 } // namespace
@@ -1501,6 +1958,128 @@ std::optional<Chunk_dependence> chunk_dependence(
             .segmentation = std::move(segmentation),
             .anchors = std::move(anchors),
             .failing = std::move(failing)};
+}
+
+Fanout fanout(const Verifier& verifier, const std::string_view window, const std::size_t origin)
+{
+    if (window.empty() || origin >= window.size())
+    {
+        throw std::invalid_argument{"fanout: the window is empty or its origin lies outside it"};
+    }
+
+    const auto projection{projection_of(verifier)};
+
+    const auto head{window.substr(0, origin)};
+
+    const auto tail{window.substr(origin)};
+
+    const Class_set_t every_class(projection.representatives.size(), true);
+
+    // At origin zero the cut follows the byte before the occurrence, so its configuration is one a byte enters.
+    const auto before{origin == 0 ? entered_classes(projection) : image_of(projection, every_class, head)};
+
+    const auto after{coimage_of(projection, tail)};
+
+    std::vector<State_t> configurations{};
+
+    for (std::size_t index{0}; index < projection.representatives.size(); ++index)
+    {
+        if (before[index] && after[index])
+        {
+            configurations.push_back(projection.representatives[index]);
+        }
+    }
+
+    const auto rank{configurations.size()};
+
+    return Fanout{.rank = rank, .configurations = std::move(configurations)};
+}
+
+Smallest_fanout smallest_fanout(const Verifier& verifier)
+{
+    const auto projection{projection_of(verifier)};
+
+    const auto count{projection.representatives.size()};
+
+    const auto relations{relations_of(projection)};
+
+    const auto is_idempotent{[&relations, count](const std::size_t number) {
+        const auto& [relation, parent]{relations[number]};
+
+        return composed(relation, relation, count) == relation;
+    }};
+
+    const auto degree_of{[&relations, count](const std::size_t number) {
+        const auto& [relation, parent]{relations[number]};
+
+        return fixed_points(relation, count);
+    }};
+
+    // Past the empty string's identity, the first idempotent of the least degree has the shortest string, the least in
+    // byte order among the shortest.
+    auto idempotents{std::views::iota(std::size_t{1}, relations.size()) | std::views::filter(is_idempotent)};
+
+    const auto least{std::ranges::min_element(idempotents, {}, degree_of)};
+
+    if (least == idempotents.end())
+    {
+        throw std::invalid_argument{"smallest_fanout: the domain is finite, so no window recurs"};
+    }
+
+    const auto& [idempotent, reached]{relations[*least]};
+
+    const auto degree{fixed_points(idempotent, count)};
+
+    std::vector<Marked> symbols{};
+
+    for (auto at{*least}; at != 0;)
+    {
+        const auto& [relation, parent]{relations[at]};
+
+        symbols.push_back(parent.symbol);
+
+        at = parent.from;
+    }
+
+    std::ranges::reverse(symbols);
+
+    const auto [word, unmarked]{marked_string_of(symbols)};
+
+    const auto is_fixed{[&idempotent, count](const std::size_t state) { return idempotent[state * count + state]; }};
+
+    const auto states{std::views::iota(std::size_t{0}, count)};
+
+    const auto fixed{*std::ranges::find_if(states, is_fixed)};
+
+    const auto in_fixed{[&projection, fixed](const State_t state) { return projection.class_of[state] == fixed; }};
+
+    const auto accepting{[&verifier](const State_t state) { return verifier.accepts(state); }};
+
+    const auto expand_states{[&verifier, &projection]<typename Emit>(const State_t state, const Emit& emit) {
+        expand_steps(verifier, projection.alphabet, state, emit);
+    }};
+
+    const auto stem{shortest_path(verifier.start(), in_fixed, expand_states)};
+
+    const auto entry{stem->keys.back()};
+
+    const auto suffix{shortest_path(entry, accepting, expand_states)};
+
+    auto stem_string{marked_string_of(stem->symbols)};
+
+    auto loop_string{marking_between(verifier, entry, word, in_fixed)};
+
+    auto suffix_string{marked_string_of(suffix->symbols)};
+
+    auto window{word + word};
+
+    Lasso lasso{.stem = std::move(stem_string), .loop = std::move(loop_string), .suffix = std::move(suffix_string)};
+
+    return Smallest_fanout{
+            .degree = degree,
+            .window = std::move(window),
+            .origin = word.size(),
+            .lasso = std::move(lasso)};
 }
 
 } // namespace munch::dfa

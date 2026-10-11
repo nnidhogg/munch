@@ -555,21 +555,21 @@ marking per input the policy segments. `dfa::armed_run(dfa)` builds the verifier
 set's DFA, `dfa::merge_tower(merges)` of `munch/dfa/merge_tower.hpp` the verifier of canonical byte-pair encoding over a
 merge table, `dfa::trie_chain(initial, continuation)` of `munch/dfa/trie_chain.hpp` the verifier of WordPiece
 segmentation over a two-mode vocabulary, and the constructor builds one from any transition table, trimming it to the
-states reachable from the start that can reach acceptance. The six decisions of `munch/dfa/verifier_decisions.hpp` then
-run on the product of the verifier with a search, each with a witness replayable through `Verifier::step()`.
-`miscovering(verifier, window, origin)` decides the window certificate `(window, origin)`, that the token containing an
-occurrence's final byte begins at the origin at every occurrence in every accepted marked string, and returns the
-shortest accepted marked string that miscovers it; on the armed run this is the exact side of `is_split_window()`, and
-the online decision is conservative against it, refusing 17 of 53,074 window origin pairs on `twitter.json` under the
-JSON grammar that the verifier certifies, each confirmed by exact search. `boundary_gap(verifier)` decides whether the
-distance between consecutive boundaries is bounded, and returns the supremum or, when it is not, a stem, a loop and a
-suffix whose pumping grows the gap. `realizable(verifier)` decides whether generation restricted to
-completion-preserving steps never strands, and returns each state's admitted steps. `divergence(a, b)` decides whether
-two functional verifiers accept the same marked strings, and returns the shortest input they diverge on in the first
-half that has one, the boundaries searched before the domain, with the half it falls in; over two armed runs it is
-`segmentation_difference()` decided on the verifiers. The verifier is a library-level interface: `core::Lexer` forwards
-none of it, and a caller reaches a token set's DFA through `dfa::Builder` or by deriving from `core::Builder`, whose
-`dfa()` is protected.
+states reachable from the start that can reach acceptance. The eight decisions of `munch/dfa/verifier_decisions.hpp`
+then run on the product of the verifier with a search or on its minimal automaton, each with a witness replayable
+through `Verifier::step()` but `fanout()`, which returns states. `miscovering(verifier, window, origin)` decides the
+window certificate `(window, origin)`, that the token containing an occurrence's final byte begins at the origin at
+every occurrence in every accepted marked string, and returns the shortest accepted marked string that miscovers it; on
+the armed run this is the exact side of `is_split_window()`, and the online decision is conservative against it,
+refusing 17 of 53,074 window origin pairs on `twitter.json` under the JSON grammar that the verifier certifies, each
+confirmed by exact search. `boundary_gap(verifier)` decides whether the distance between consecutive boundaries is
+bounded, and returns the supremum or, when it is not, a stem, a loop and a suffix whose pumping grows the gap.
+`realizable(verifier)` decides whether generation restricted to completion-preserving steps never strands, and returns
+each state's admitted steps. `divergence(a, b)` decides whether two functional verifiers accept the same marked strings,
+and returns the shortest input they diverge on in the first half that has one, the boundaries searched before the
+domain, with the half it falls in; over two armed runs it is `segmentation_difference()` decided on the verifiers. The
+verifier is a library-level interface: `core::Lexer` forwards none of it, and a caller reaches a token set's DFA through
+`dfa::Builder` or by deriving from `core::Builder`, whose `dfa()` is protected.
 
 `dependence(verifier, window, origin)` asks a second question of a pair the verifier certifies, and refuses one it does
 not: the certificate makes the cut at the origin a boundary of the whole string's segmentation, and independence says
@@ -602,6 +602,29 @@ the current chunk, fed with a lag of the longest window's length so that every o
 completed when its byte reaches the copy. On an armed run every inventory is chunk-independent, since every certified
 cut is independent.
 
+`fanout(verifier, window, origin)` asks what a worker beginning at the cut of any pair, certified or not, must know: the
+configurations the cut at the origin can carry over every occurrence of the window in every accepted marked string whose
+cut lies after position zero, a configuration being the state of the verifier's minimal automaton reached on the
+string's marked prefix, which is all a scan resumed at the cut needs. A worker that begins at the cut runs one copy of
+the scan per configuration, and the configuration the scan before it ends in selects the copy, so the rank, the number
+of configurations, is the fan-out the cut costs, known before any input is read. The decision is two subset runs over
+the byte projection of the minimal automaton, forward over the window's first origin bytes from every state and backward
+over the rest, the forward set at origin zero being the states a byte enters, and it returns the rank with each
+configuration as the least verifier state of its class. Rank one is not certification: under maximal munch over a, b and
+aa the certified pair (b, 0) has rank 2, the cut before a b following either a lone a, with aa still armed, or a token
+with nothing armed. Over aa and a no window is certified, a run of a's being cut by its parity, and every cut before an
+a has rank 2, inside a token aa or between tokens, so two copies split the input at every byte.
+
+`smallest_fanout(verifier)` returns the smallest fan-out of a pumpable window, one that occurs any number of times in
+some accepted marked strings and so places cuts that recur: the degree, the fewest fixed points of a nonzero idempotent
+among the relations nonempty byte strings induce on the states of the minimal automaton, with the window (ww, |w|) of
+that rank for w the shortest such string, and a stem, a loop reading w and a suffix whose pumping repeats the window.
+Every pumpable window has rank at least the degree, so no cut that recurs costs fewer copies, while a window that occurs
+a bounded number of times can cost fewer, as (ab, 1) does under the initial token a and the continuation token bb, rank
+one after the initial token where the degree is two. Over aa and a the degree is 2, attained by aaaa at origin 2. The
+search runs over the monoid of those relations and is exponential in the states of the minimal automaton in the worst
+case, and a verifier whose domain is finite is refused with `std::invalid_argument`, since no window recurs.
+
 ```cpp
 #include "munch/dfa/verifier.hpp"
 #include "munch/dfa/verifier_decisions.hpp"
@@ -618,6 +641,8 @@ dfa::dependence(verifier, "ab", 0);                 // std::nullopt: every certi
 const std::vector<dfa::Certified_pair> pairs{{.window = "ab", .origin = 0}, {.window = "a", .origin = 0}};
 
 dfa::chunk_dependence(verifier, pairs);             // std::nullopt: cut at every anchor, every chunk scans alone
+dfa::fanout(verifier, "ab", 0);                     // rank 2: a lone a before the cut leaves ab armed, a b does not
+dfa::smallest_fanout(verifier);                     // degree 1, the window aa at origin 1
 ```
 
 `dfa::merge_tower(merges)` takes a byte-pair merge table in rank order, each merge two parts, a byte or the product of

@@ -25,6 +25,7 @@
 
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/dfa.hpp"
+#include "munch/dfa/trie_chain.hpp"
 #include "munch/dfa/verifier_decisions.hpp"
 
 using namespace munch::dfa;
@@ -264,6 +265,69 @@ struct Chunk_check
      * @brief The lines checked so far, by kind.
      */
     Chunk_counts counts{};
+};
+
+/**
+ * @brief What the fan-out fixture holds, counted as it is checked.
+ */
+struct Fanout_counts
+{
+    /**
+     * @brief The universe lines.
+     */
+    std::size_t universes{0};
+
+    /**
+     * @brief The accepting lines, one per table universe.
+     */
+    std::size_t tables{0};
+
+    /**
+     * @brief The fanout lines, one per window.
+     */
+    std::size_t windows{0};
+
+    /**
+     * @brief The ranks the fanout lines give, one per window and origin.
+     */
+    std::size_t pairs{0};
+
+    /**
+     * @brief The smallest lines that give a degree.
+     */
+    std::size_t degrees{0};
+
+    /**
+     * @brief The smallest lines whose domain is finite.
+     */
+    std::size_t finite{0};
+};
+
+/**
+ * @brief The fan-out fixture under check: the current universe's verifier, the transitions of a table universe read so
+ *        far, the current universe's line, and the counts so far.
+ */
+struct Fanout_check
+{
+    /**
+     * @brief The verifier the lines are checked on, none while a table universe's lines are still being read.
+     */
+    std::optional<Verifier> current{};
+
+    /**
+     * @brief The transitions of the table universe read so far.
+     */
+    Verifier::Transitions_t transitions{};
+
+    /**
+     * @brief The current universe's line, for the failure messages.
+     */
+    std::string universe{};
+
+    /**
+     * @brief The lines checked so far, by kind.
+     */
+    Fanout_counts counts{};
 };
 
 /**
@@ -1801,6 +1865,153 @@ void expect_chunk_fixture_line(Chunk_check& check, const std::string& line)
 }
 
 /**
+ * @brief Checks a fanout line: the decision's rank at every origin of the window the reference's, with as many
+ *        configurations, ascending and without repeats.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_fanout(Fanout_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string window{};
+
+    fields >> window;
+
+    ASSERT_TRUE(check.current) << context;
+
+    const auto& verifier{*check.current};
+
+    ++check.counts.windows;
+
+    std::size_t origin{0};
+
+    for (std::size_t expected{}; fields >> expected; ++origin)
+    {
+        const auto [rank, configurations]{fanout(verifier, window, origin)};
+
+        ++check.counts.pairs;
+
+        EXPECT_EQ(rank, expected) << context << " at origin " << origin;
+        EXPECT_EQ(configurations.size(), rank) << context << " at origin " << origin;
+        EXPECT_EQ(std::ranges::adjacent_find(configurations, std::greater_equal{}), configurations.cend())
+                << context << " at origin " << origin;
+    }
+
+    EXPECT_EQ(origin, window.size()) << context;
+}
+
+/**
+ * @brief Checks a smallest fan-out: the loop's bytes the window's first origin bytes and the window those bytes twice,
+ *        the window's fan-out at the origin the degree, and stem, loop repeated zero, one and two times, and suffix
+ *        accepted.
+ * @param verifier The verifier.
+ * @param found The smallest fan-out.
+ * @param context The fixture line checked.
+ */
+void expect_smallest_fanout_replays(const Verifier& verifier, const Smallest_fanout& found, const std::string& context)
+{
+    const auto& [degree, window, origin, lasso]{found};
+
+    const auto& [stem, loop, suffix]{lasso};
+
+    const auto word{std::string_view{window}.substr(0, origin)};
+
+    EXPECT_FALSE(word.empty()) << context;
+    EXPECT_EQ(loop.bytes, word) << context;
+    EXPECT_EQ(window.size(), 2 * origin) << context;
+    EXPECT_EQ(window.substr(origin), word) << context;
+    EXPECT_EQ(fanout(verifier, window, origin).rank, degree) << context;
+
+    for (const auto& pumped :
+         {std::vector{stem, suffix}, std::vector{stem, loop, suffix}, std::vector{stem, loop, loop, suffix}})
+    {
+        EXPECT_TRUE(is_accepted(verifier, concatenated(pumped))) << context;
+    }
+}
+
+/**
+ * @brief Checks a smallest line: a finite domain refused, or the degree and the window of the reference's word, and the
+ *        witness replayed.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_smallest(Fanout_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string degree{};
+    std::string word{};
+
+    fields >> degree >> word;
+
+    ASSERT_TRUE(check.current) << context;
+
+    const auto& verifier{*check.current};
+
+    if (degree == "finite")
+    {
+        ++check.counts.finite;
+
+        EXPECT_THROW(std::ignore = smallest_fanout(verifier), std::invalid_argument) << context;
+
+        return;
+    }
+
+    ++check.counts.degrees;
+
+    const auto found{smallest_fanout(verifier)};
+
+    EXPECT_EQ(found.degree, std::stoul(degree)) << context;
+    EXPECT_EQ(found.window, word + word) << context;
+    EXPECT_EQ(found.origin, word.size()) << context;
+
+    expect_smallest_fanout_replays(verifier, found, context);
+}
+
+/**
+ * @brief Checks one fan-out fixture line against the decisions, a comment or blank line checking nothing.
+ * @param check The fixture under check.
+ * @param line The line.
+ */
+void expect_fanout_fixture_line(Fanout_check& check, const std::string& line)
+{
+    std::istringstream fields{line};
+
+    std::string kind{};
+
+    if (!(fields >> kind) || kind.starts_with('#'))
+    {
+        return;
+    }
+
+    const auto context{std::format("{} | {}", check.universe, line)};
+
+    if (kind == "universe")
+    {
+        start_verifier_universe(check, fields, line);
+    }
+    else if (kind == "step")
+    {
+        read_step(check, fields, context);
+    }
+    else if (kind == "accepting")
+    {
+        build_table(check, fields, context);
+    }
+    else if (kind == "fanout")
+    {
+        expect_fanout(check, fields, context);
+    }
+    else if (kind == "smallest")
+    {
+        expect_smallest(check, fields, context);
+    }
+    else
+    {
+        ADD_FAILURE() << "unknown fan-out fixture line: " << line;
+    }
+}
+
+/**
  * @brief Builds the verifier of the two-mode scan over the initial tokens a and ab and the continuation token b: the
  *        maximal-munch scan whose fresh runs come from the continuation set once a token has closed, so that the
  *        domain is the empty input, a, ab and ab followed by any number of b, each b after ab a token of its own.
@@ -2389,4 +2600,98 @@ TEST(Verifier_test, The_anchor_at_position_zero_fails_when_the_start_does_not_ac
     EXPECT_EQ(found->failing, (std::vector<Chunk>{{.begin = 0, .end = 0}}));
 
     expect_chunk_dependence(verifier, *found, at_zero, "a 0");
+}
+
+TEST(Verifier_test, Fanout_and_smallest_fanout_give_the_reference_answers_on_every_universe_of_the_fanout_fixture)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/fanout_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    Fanout_check check{};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        expect_fanout_fixture_line(check, line);
+    }
+
+    EXPECT_EQ(check.counts.universes, 4154U);
+    EXPECT_EQ(check.counts.tables, 1660U);
+    EXPECT_EQ(check.counts.windows, 55047U);
+    EXPECT_EQ(check.counts.pairs, 133338U);
+    EXPECT_EQ(check.counts.degrees, 4148U);
+    EXPECT_EQ(check.counts.finite, 6U);
+}
+
+TEST(Verifier_test, Fanout_refuses_a_malformed_window_and_smallest_fanout_a_finite_domain)
+{
+    const auto verifier{armed_run(literal_dfa({"a", "ab"}))};
+
+    EXPECT_THROW(std::ignore = fanout(verifier, "", 0), std::invalid_argument);
+    EXPECT_THROW(std::ignore = fanout(verifier, "ab", 2), std::invalid_argument);
+
+    constexpr Marked a{.byte = 'a', .boundary_after = false};
+    constexpr Marked a_closing{.byte = 'a', .boundary_after = true};
+
+    const Verifier empty_domain{0, {{{0, a}, 1}}, {}};
+
+    // The domain is the empty input and aa segmented a|a, so the cut after the first a carries one configuration.
+    const Verifier a_then_a{0, {{{0, a_closing}, 1}, {{1, a}, 2}}, {0, 2}};
+
+    EXPECT_EQ(fanout(empty_domain, "a", 0).rank, 0U);
+    EXPECT_EQ(fanout(a_then_a, "a", 0).rank, 1U);
+    EXPECT_THROW(std::ignore = smallest_fanout(empty_domain), std::invalid_argument);
+    EXPECT_THROW(std::ignore = smallest_fanout(a_then_a), std::invalid_argument);
+}
+
+TEST(Verifier_test, Maximal_munch_over_aa_and_a_certifies_no_window_and_cuts_before_every_a_with_two_configurations)
+{
+    const auto verifier{armed_run(literal_dfa({"aa", "a"}))};
+
+    for (const auto& window : strings_up_to("a", 3) | std::views::drop(1))
+    {
+        for (std::size_t origin{0}; origin < window.size(); ++origin)
+        {
+            EXPECT_TRUE(miscovering(verifier, window, origin)) << window << " " << origin;
+            EXPECT_EQ(fanout(verifier, window, origin).rank, 2U) << window << " " << origin;
+        }
+    }
+
+    const auto found{smallest_fanout(verifier)};
+
+    EXPECT_EQ(found.degree, 2U);
+    EXPECT_EQ(found.window, "aaaa");
+    EXPECT_EQ(found.origin, 2U);
+
+    expect_smallest_fanout_replays(verifier, found, "aa a");
+}
+
+TEST(Verifier_test, At_origin_zero_only_entered_states_count_so_a_has_fan_out_one_under_initial_a_and_continuation_ab)
+{
+    const std::vector<std::string> initial{"a"};
+    const std::vector<std::string> continuation{"ab"};
+
+    const auto verifier{trie_chain(initial, continuation)};
+
+    // The domain is a followed by any number of ab: the start reads a as a lone token or as one that ab follows, while
+    // an a after position zero always follows a boundary.
+    EXPECT_EQ(fanout(verifier, "a", 0).rank, 1U);
+    EXPECT_EQ(fanout(verifier, "ab", 0).rank, 1U);
+
+    // The configurations at origin zero are those at origin one of the window with any byte before it.
+    for (const auto& window : strings_up_to("ab", 3) | std::views::drop(1))
+    {
+        std::set<Verifier::State_t> after_a_byte{};
+
+        for (const auto byte : std::string_view{"ab"})
+        {
+            const auto [rank, configurations]{fanout(verifier, byte + window, 1)};
+
+            after_a_byte.insert(configurations.cbegin(), configurations.cend());
+        }
+
+        const auto [rank, configurations]{fanout(verifier, window, 0)};
+
+        EXPECT_EQ(std::set(configurations.cbegin(), configurations.cend()), after_a_byte) << window;
+    }
 }
