@@ -685,6 +685,38 @@ dfa::boundary_gap(chain);                                       // 2, the longes
 dfa::divergence(chain, dfa::trie_chain(with_b, continuation));  // b, scanned whole only where b is an initial token
 ```
 
+`dfa::ripple_radius(merges)` of `munch/dfa/ripple_radius.hpp` decides the lookbehind of canonical byte-pair encoding
+over a merge table: how far a byte prepended to an input can change the input's tokens. The origin ripple of a byte and
+an input is one past the last byte of the input whose covering token, as an interval, differs once the byte is
+prepended, a token that reaches into the prepended byte differing wherever it reaches; the origin radius is its supremum
+over every byte and input, and the mirrored constant the supremum of one past the start of the last changed token, the
+least length beyond which every boundary survives every prepended string. A table `merge_tower()` takes, each part a
+byte or an earlier product and no product spelled twice, satisfies the ordering condition, every merge producing a token
+ranked before every merge consuming it, and under it the radius is infinite exactly when an effective self-pair exists:
+a merge (t,t) whose two copies of t the merges before it leave as two tokens, so that prepending t to an even power of t
+moves the covering token of every byte. The decision takes the merges in rank order and returns the first such merge as
+`dfa::Effective_self_pair`. Without one it explores the overlap graph, two copies of the automaton that spells the
+canonical tokens reading one input, the second having read the prepended byte first, and returns `dfa::Finite_ripple`,
+the radius and the mirrored constant read off the longest path to a step on which the two copies' covering tokens
+differ, each with a prepended input attaining it when it is not zero. The overlap graph decides the radius for any table
+and a polynomial computation decides it in the number of merges under the ordering condition; on the tables munch takes
+the two answer alike, so one function serves both. It refuses what `merge_tower()` refuses, with `std::invalid_argument`
+naming the merge and its rank:
+
+```cpp
+#include "munch/dfa/ripple_radius.hpp"
+
+const std::vector<dfa::Merge> merges{{.left = "b", .right = "c"}, {.left = "a", .right = "bc"}};
+const std::vector<dfa::Merge> doubled{{.left = "a", .right = "b"}, {.left = "ab", .right = "ab"}};
+
+const auto ripple{dfa::ripple_radius(merges)};      // finite: a prepended to bc makes the one token abc
+const auto& finite{std::get<dfa::Finite_ripple>(ripple)};
+
+finite.radius;                                      // 2, both bytes of bc covered anew
+finite.mirrored;                                    // 1, the changed token bc beginning at 0
+dfa::ripple_radius(doubled);                        // the effective self-pair at rank 1: (a,b) leaves abab as ab|ab
+```
+
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
 nothing. Since the tokens responsible are usually the ones a parser throws away, `set_ignored_tokens()` lets a builder

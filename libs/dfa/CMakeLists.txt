@@ -11,6 +11,7 @@ add_library(${PROJECT_NAME}
         src/merge_tower.cpp
         src/minimize.cpp
         src/recovery.cpp
+        src/ripple_radius.cpp
         src/simulator.cpp
         src/split_window.cpp
         src/trie_chain.cpp
@@ -66,6 +67,7 @@ if (MUNCH_BUILD_TESTS)
             tests/merge_tower_test.cpp
             tests/minimize_test.cpp
             tests/property_test.cpp
+            tests/ripple_radius_test.cpp
             tests/trie_chain_test.cpp
             tests/verifier_test.cpp
     )
