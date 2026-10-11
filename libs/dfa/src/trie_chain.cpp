@@ -161,55 +161,6 @@ struct Runs
 };
 
 /**
- * @brief The trie chain under exploration: the state each verifier state reads as, the interned states with their
- *        verifier states, and the transitions and accepting states found so far.
- */
-struct Exploration
-{
-    /**
-     * @brief The state each verifier state reads as, by verifier state.
-     */
-    std::vector<State> sources{};
-
-    /**
-     * @brief The interned states with their verifier states.
-     */
-    std::map<State, Verifier::State_t> interned{};
-
-    /**
-     * @brief The transitions found so far.
-     */
-    Verifier::Transitions_t transitions{};
-
-    /**
-     * @brief The accepting states found so far.
-     */
-    Verifier::Accept_states_t accept_states{};
-};
-
-/**
- * @brief Returns the trie a mode reads.
- * @param tries The two tries.
- * @param mode The mode.
- * @return The mode's trie.
- */
-[[nodiscard]] const Trie& trie_of(const Tries& tries, const Mode mode) noexcept
-{
-    return tries[std::to_underlying(mode)];
-}
-
-/**
- * @brief Returns the node of a run.
- * @param tries The two tries.
- * @param run The run.
- * @return The node.
- */
-[[nodiscard]] const Node& node_of(const Tries& tries, const Run run) noexcept
-{
-    return trie_of(tries, run.mode)[run.node];
-}
-
-/**
  * @brief Returns the child of a node on a byte.
  * @param node The node.
  * @param byte The byte.
@@ -326,20 +277,167 @@ void add_token(Trie& trie, const std::string_view token)
 }
 
 /**
- * @brief Reads a tail as the scanner reads it: a link at depth zero in the tail's mode, then one at the longest token
- *        of the mode from there, in continuation mode from the second link on, until no token matches.
- * @param tries The two tries.
- * @param mode The tail's mode.
- * @param tail The tail.
- * @return The chain.
+ * @brief The trie chain under exploration: the two tries, the state each verifier state reads as, the transitions and
+ *        accepting states found so far, and the interned states with their verifier states.
  */
-[[nodiscard]] std::vector<Link> chain_of(const Tries& tries, const Mode mode, const std::string_view tail)
+class Exploration
 {
-    const auto& first{trie_of(tries, mode)};
+public:
+    /**
+     * @brief Builds the two tries and reads the chain of every pending tail, nothing explored yet.
+     * @param initial The initial tokens.
+     * @param continuation The continuation tokens.
+     * @throws std::invalid_argument If a token is empty.
+     */
+    Exploration(std::span<const std::string> initial, std::span<const std::string> continuation);
+
+    /**
+     * @brief Explores every state reachable from the initial trie's root and returns the verifier they make.
+     * @return The verifier, its start the initial trie's root.
+     */
+    [[nodiscard]] Verifier run() &&;
+
+private:
+    /**
+     * @brief Reads the chain of every pending tail of both tries, a node other than the root with a child.
+     */
+    void read_chains();
+
+    /**
+     * @brief Reads a tail as the scanner reads it: a link at depth zero in the tail's mode, then one at the longest
+     *        token of the mode from there, in continuation mode from the second link on, until no token matches.
+     * @param mode The tail's mode.
+     * @param tail The tail.
+     * @return The chain.
+     */
+    [[nodiscard]] std::vector<Link> chain_of(Mode mode, std::string_view tail) const;
+
+    /**
+     * @brief Returns the trie a mode reads.
+     * @param mode The mode.
+     * @return The mode's trie.
+     */
+    [[nodiscard]] const Trie& trie_of(Mode mode) const noexcept;
+
+    /**
+     * @brief Returns the verifier state of a state, interning it as a new one when it is first found.
+     * @param state The state.
+     * @return The verifier state.
+     */
+    [[nodiscard]] Verifier::State_t intern(const State& state);
+
+    /**
+     * @brief Returns the runs a state carries: with nothing armed the unarmed run alone, and otherwise the chain's runs
+     *        before the unarmed run's boundary that are alive and may grow, armed, with the run begun at that boundary.
+     * @param state The state.
+     * @return The runs.
+     */
+    [[nodiscard]] Runs runs_of(const State& state) const;
+
+    /**
+     * @brief Returns the node of a run.
+     * @param run The run.
+     * @return The node.
+     */
+    [[nodiscard]] const Node& node_of(Run run) const noexcept;
+
+    /**
+     * @brief Reads every byte the unarmed run has a child on from one verifier state, with and without a boundary after
+     *        it, interning the states reached.
+     * @param from The verifier state read from.
+     */
+    void expand(Verifier::State_t from);
+
+    /**
+     * @brief Reads a byte into every run: the unarmed run steps to its child, an armed run steps to its child or drops.
+     * @param from The runs read from.
+     * @param byte The byte.
+     * @return The runs after the byte, or std::nullopt when the unarmed run has no child or an armed run reaches a
+     *         token.
+     */
+    [[nodiscard]] std::optional<Runs> read(const Runs& from, unsigned char byte) const;
+
+    /**
+     * @brief Records a transition from a verifier state on a marked symbol to the state the runs make.
+     * @param from The verifier state read from.
+     * @param symbol The marked symbol.
+     * @param to The runs reached.
+     */
+    void record(Verifier::State_t from, Marked symbol, const Runs& to);
+
+    /**
+     * @brief Returns the state the runs make: the oldest armed run with the depth of the unarmed run's start inside it,
+     *        or the unarmed run alone.
+     * @param runs The runs.
+     * @return The state.
+     */
+    [[nodiscard]] State state_of(const Runs& runs) const;
+
+    /**
+     * @brief Closes the unarmed run at a boundary: it joins the armed runs when a longer token extends it, and a fresh
+     *        unarmed run begins at the continuation trie's root.
+     * @param runs The runs, closed in a copy.
+     * @return The runs after the boundary, or std::nullopt when the unarmed run is not at a token.
+     */
+    [[nodiscard]] std::optional<Runs> close(Runs runs) const;
+
+    /**
+     * @brief The two tries.
+     */
+    Tries tries_{};
+
+    /**
+     * @brief The state each verifier state reads as, by verifier state.
+     */
+    std::vector<State> sources_{};
+
+    /**
+     * @brief The transitions found so far.
+     */
+    Verifier::Transitions_t transitions_{};
+
+    /**
+     * @brief The accepting states found so far.
+     */
+    Verifier::Accept_states_t accept_states_{};
+
+    /**
+     * @brief The interned states with their verifier states.
+     */
+    std::map<State, Verifier::State_t> interned_{};
+};
+
+Exploration::Exploration(const std::span<const std::string> initial, const std::span<const std::string> continuation)
+    : tries_{build_trie(initial, "initial"), build_trie(continuation, "continuation")}
+{
+    read_chains();
+}
+
+void Exploration::read_chains()
+{
+    for (const auto mode : {Mode::initial, Mode::continuation})
+    {
+        auto& trie{tries_[std::to_underlying(mode)]};
+
+        for (Node_t node{1}; node < trie.size(); ++node)
+        {
+            if (trie[node].children.empty())
+            {
+                continue;
+            }
+
+            trie[node].chain = chain_of(mode, trie[node].spelling);
+        }
+    }
+}
+
+std::vector<Link> Exploration::chain_of(const Mode mode, const std::string_view tail) const
+{
+    const auto& first{trie_of(mode)};
 
     std::vector<Link> chain{{.boundary = 0, .mode = mode, .node = walk(first, tail)}};
 
-    const auto& trie{trie_of(tries, Mode::continuation)};
+    const auto& trie{trie_of(Mode::continuation)};
 
     for (auto step{longest(first, tail)}; step != 0; step = longest(trie, tail.substr(chain.back().boundary)))
     {
@@ -351,43 +449,55 @@ void add_token(Trie& trie, const std::string_view token)
     return chain;
 }
 
-/**
- * @brief Reads the chain of every pending tail of both tries, a node other than the root with a child.
- * @param tries The two tries, their chains filled in place.
- */
-void read_chains(Tries& tries)
+const Trie& Exploration::trie_of(const Mode mode) const noexcept
 {
-    for (const auto mode : {Mode::initial, Mode::continuation})
-    {
-        auto& trie{tries[std::to_underlying(mode)]};
-
-        for (Node_t node{1}; node < trie.size(); ++node)
-        {
-            if (trie[node].children.empty())
-            {
-                continue;
-            }
-
-            trie[node].chain = chain_of(tries, mode, trie[node].spelling);
-        }
-    }
+    return tries_[std::to_underlying(mode)];
 }
 
-/**
- * @brief Returns the runs a state carries: with nothing armed the unarmed run alone, and otherwise the chain's runs
- *        before the unarmed run's boundary that are alive and may grow, armed, with the run begun at that boundary.
- * @param tries The two tries.
- * @param state The state.
- * @return The runs.
- */
-[[nodiscard]] Runs runs_of(const Tries& tries, const State& state)
+Verifier Exploration::run() &&
+{
+    const auto start{intern({.tail = {.mode = Mode::initial, .node = 0}, .began = 0})};
+
+    // The start accepts the empty input, which the scan consumes whole; no step returns to it.
+    accept_states_.insert(start);
+
+    for (auto state{start}; state < sources_.size(); ++state)
+    {
+        expand(state);
+    }
+
+    return Verifier{start, std::move(transitions_), std::move(accept_states_)};
+}
+
+Verifier::State_t Exploration::intern(const State& state)
+{
+    const auto [entry, inserted]{interned_.try_emplace(state, sources_.size())};
+
+    const auto& [key, number]{*entry};
+
+    if (!inserted)
+    {
+        return number;
+    }
+
+    if (node_of(runs_of(state).unarmed).accepting)
+    {
+        accept_states_.insert(number);
+    }
+
+    sources_.push_back(state);
+
+    return number;
+}
+
+Runs Exploration::runs_of(const State& state) const
 {
     if (state.began == 0)
     {
         return {.armed = {}, .unarmed = state.tail};
     }
 
-    const auto& chain{node_of(tries, state.tail).chain};
+    const auto& chain{node_of(state.tail).chain};
 
     const auto reached{std::ranges::find(chain, state.began, &Link::boundary)};
 
@@ -395,7 +505,7 @@ void read_chains(Tries& tries)
 
     for (const auto& link : std::ranges::subrange(chain.cbegin(), reached))
     {
-        if (link.node && !trie_of(tries, link.mode)[*link.node].children.empty())
+        if (link.node && !trie_of(link.mode)[*link.node].children.empty())
         {
             runs.armed.push_back({.mode = link.mode, .node = *link.node});
         }
@@ -404,37 +514,40 @@ void read_chains(Tries& tries)
     return runs;
 }
 
-/**
- * @brief Returns the state the runs make: the oldest armed run with the depth of the unarmed run's start inside it, or
- *        the unarmed run alone.
- * @param tries The two tries.
- * @param runs The runs.
- * @return The state.
- */
-[[nodiscard]] State state_of(const Tries& tries, const Runs& runs)
+const Node& Exploration::node_of(const Run run) const noexcept
 {
-    if (runs.armed.empty())
-    {
-        return {.tail = runs.unarmed, .began = 0};
-    }
-
-    const auto& oldest{runs.armed.front()};
-
-    const auto began{node_of(tries, oldest).spelling.size() - node_of(tries, runs.unarmed).spelling.size()};
-
-    return {.tail = oldest, .began = began};
+    return trie_of(run.mode)[run.node];
 }
 
-/**
- * @brief Reads a byte into every run: the unarmed run steps to its child, an armed run steps to its child or drops.
- * @param tries The two tries.
- * @param from The runs read from.
- * @param byte The byte.
- * @return The runs after the byte, or std::nullopt when the unarmed run has no child or an armed run reaches a token.
- */
-[[nodiscard]] std::optional<Runs> read(const Tries& tries, const Runs& from, const unsigned char byte)
+void Exploration::expand(const Verifier::State_t from)
 {
-    const auto unarmed{child_of(node_of(tries, from.unarmed), byte)};
+    const auto runs{runs_of(sources_[from])};
+
+    for (const auto byte : std::views::keys(node_of(runs.unarmed).children))
+    {
+        const auto unmarked{read(runs, byte)};
+
+        if (!unmarked)
+        {
+            continue;
+        }
+
+        record(from, {.byte = byte, .boundary_after = false}, *unmarked);
+
+        const auto marked{close(*unmarked)};
+
+        if (!marked)
+        {
+            continue;
+        }
+
+        record(from, {.byte = byte, .boundary_after = true}, *marked);
+    }
+}
+
+std::optional<Runs> Exploration::read(const Runs& from, const unsigned char byte) const
+{
+    const auto unarmed{child_of(node_of(from.unarmed), byte)};
 
     if (!unarmed)
     {
@@ -445,14 +558,14 @@ void read_chains(Tries& tries)
 
     for (const auto& run : from.armed)
     {
-        const auto stepped{child_of(node_of(tries, run), byte)};
+        const auto stepped{child_of(node_of(run), byte)};
 
         if (!stepped)
         {
             continue;
         }
 
-        if (trie_of(tries, run.mode)[*stepped].accepting)
+        if (trie_of(run.mode)[*stepped].accepting)
         {
             return std::nullopt;
         }
@@ -463,16 +576,30 @@ void read_chains(Tries& tries)
     return runs;
 }
 
-/**
- * @brief Closes the unarmed run at a boundary: it joins the armed runs when a longer token extends it, and a fresh
- *        unarmed run begins at the continuation trie's root.
- * @param tries The two tries.
- * @param runs The runs, closed in a copy.
- * @return The runs after the boundary, or std::nullopt when the unarmed run is not at a token.
- */
-[[nodiscard]] std::optional<Runs> close(const Tries& tries, Runs runs)
+void Exploration::record(const Verifier::State_t from, const Marked symbol, const Runs& to)
 {
-    const auto& node{node_of(tries, runs.unarmed)};
+    const auto target{intern(state_of(to))};
+
+    transitions_.emplace(Verifier::Key_t{from, symbol}, target);
+}
+
+State Exploration::state_of(const Runs& runs) const
+{
+    if (runs.armed.empty())
+    {
+        return {.tail = runs.unarmed, .began = 0};
+    }
+
+    const auto& oldest{runs.armed.front()};
+
+    const auto began{node_of(oldest).spelling.size() - node_of(runs.unarmed).spelling.size()};
+
+    return {.tail = oldest, .began = began};
+}
+
+std::optional<Runs> Exploration::close(Runs runs) const
+{
+    const auto& node{node_of(runs.unarmed)};
 
     if (!node.accepting)
     {
@@ -489,104 +616,13 @@ void read_chains(Tries& tries)
     return runs;
 }
 
-/**
- * @brief Returns the verifier state of a state, interning it as a new one when it is first found.
- * @param tries The two tries.
- * @param exploration The exploration, extended in place.
- * @param state The state.
- * @return The verifier state.
- */
-[[nodiscard]] Verifier::State_t intern(const Tries& tries, Exploration& exploration, const State& state)
-{
-    const auto [entry, inserted]{exploration.interned.try_emplace(state, exploration.sources.size())};
-
-    const auto& [key, number]{*entry};
-
-    if (!inserted)
-    {
-        return number;
-    }
-
-    if (node_of(tries, runs_of(tries, state).unarmed).accepting)
-    {
-        exploration.accept_states.insert(number);
-    }
-
-    exploration.sources.push_back(state);
-
-    return number;
-}
-
-/**
- * @brief Records a transition from a verifier state on a marked symbol to the state the runs make.
- * @param tries The two tries.
- * @param exploration The exploration, extended in place.
- * @param from The verifier state read from.
- * @param symbol The marked symbol.
- * @param to The runs reached.
- */
-void record(
-        const Tries& tries, Exploration& exploration, const Verifier::State_t from, const Marked symbol, const Runs& to)
-{
-    const auto target{intern(tries, exploration, state_of(tries, to))};
-
-    exploration.transitions.emplace(Verifier::Key_t{from, symbol}, target);
-}
-
-/**
- * @brief Reads every byte the unarmed run has a child on from one verifier state, with and without a boundary after
- *        it, interning the states reached.
- * @param tries The two tries.
- * @param exploration The exploration, extended in place.
- * @param from The verifier state read from.
- */
-void expand(const Tries& tries, Exploration& exploration, const Verifier::State_t from)
-{
-    const auto runs{runs_of(tries, exploration.sources[from])};
-
-    for (const auto byte : std::views::keys(node_of(tries, runs.unarmed).children))
-    {
-        const auto unmarked{read(tries, runs, byte)};
-
-        if (!unmarked)
-        {
-            continue;
-        }
-
-        record(tries, exploration, from, {.byte = byte, .boundary_after = false}, *unmarked);
-
-        const auto marked{close(tries, *unmarked)};
-
-        if (!marked)
-        {
-            continue;
-        }
-
-        record(tries, exploration, from, {.byte = byte, .boundary_after = true}, *marked);
-    }
-}
-
 } // namespace
 
 Verifier trie_chain(const std::span<const std::string> initial, const std::span<const std::string> continuation)
 {
-    Tries tries{build_trie(initial, "initial"), build_trie(continuation, "continuation")};
+    Exploration exploration{initial, continuation};
 
-    read_chains(tries);
-
-    Exploration exploration{};
-
-    const auto start{intern(tries, exploration, {.tail = {.mode = Mode::initial, .node = 0}, .began = 0})};
-
-    // The start accepts the empty input, which the scan consumes whole; no step returns to it.
-    exploration.accept_states.insert(start);
-
-    for (auto state{start}; state < exploration.sources.size(); ++state)
-    {
-        expand(tries, exploration, state);
-    }
-
-    return Verifier{start, std::move(exploration.transitions), std::move(exploration.accept_states)};
+    return std::move(exploration).run();
 }
 
 } // namespace munch::dfa

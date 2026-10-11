@@ -111,33 +111,6 @@ struct Table
 };
 
 /**
- * @brief The tower under exploration: the configuration each state reads as, the interned configurations with their
- *        states, and the transitions and accepting states found so far.
- */
-struct Exploration
-{
-    /**
-     * @brief The configuration each state reads as, by state.
-     */
-    std::vector<Configuration> sources{};
-
-    /**
-     * @brief The interned configurations with their states.
-     */
-    std::map<Configuration, Verifier::State_t> interned{};
-
-    /**
-     * @brief The transitions found so far.
-     */
-    Verifier::Transitions_t transitions{};
-
-    /**
-     * @brief The accepting states found so far.
-     */
-    Verifier::Accept_states_t accept_states{};
-};
-
-/**
  * @brief Returns the token of a merge's product.
  * @param rank The merge's rank.
  * @return The product's token.
@@ -242,46 +215,196 @@ struct Exploration
     return table;
 }
 
-// Declared ahead of its definition, since deliver() and pass_upward() call each other.
-[[nodiscard]] bool deliver(
-        const Table& table, Configuration& configuration, std::size_t level, Token_t token, bool claim);
-
 /**
- * @brief Takes the symbol a stage holds, with its claim, and delivers it to the stage above.
- * @param table The resolved merge table.
- * @param configuration The configuration, changed in place.
- * @param level The holding stage.
- * @return True when the delivery is not refused.
+ * @brief The tower under exploration: the merge table resolved to tokens, the configuration each state reads as, the
+ *        transitions and accepting states found so far, and the interned configurations with their states.
  */
-[[nodiscard]] bool pass_upward(const Table& table, Configuration& configuration, const std::size_t level)
+class Exploration
+{
+public:
+    /**
+     * @brief Resolves the merge table to tokens, nothing explored yet.
+     * @param merges The merge table in rank order.
+     * @throws std::invalid_argument If a merge names a part the vocabulary so far does not carry, or a product it
+     *         already carries.
+     */
+    explicit Exploration(std::span<const Merge> merges);
+
+    /**
+     * @brief Explores every state reachable from the configuration of empty stages and returns the verifier they make.
+     * @return The verifier, its start the configuration of empty stages.
+     */
+    [[nodiscard]] Verifier run() &&;
+
+private:
+    /**
+     * @brief Returns the state of a configuration, interning it as a new state when it is first found.
+     * @param configuration The configuration.
+     * @return The configuration's state.
+     */
+    [[nodiscard]] Verifier::State_t intern(Configuration configuration);
+
+    /**
+     * @brief Returns whether a configuration accepts: passing every held symbol upward, from the lowest stage, is not
+     *        refused, and the top stage's last token carries no claimed boundary.
+     * @param configuration The configuration, flushed in a copy.
+     * @return True when the input may end in the configuration.
+     */
+    [[nodiscard]] bool is_accepting(Configuration configuration) const;
+
+    /**
+     * @brief Takes the symbol a stage holds, with its claim, and delivers it to the stage above.
+     * @param configuration The configuration, changed in place.
+     * @param level The holding stage.
+     * @return True when the delivery is not refused.
+     */
+    [[nodiscard]] bool pass_upward(Configuration& configuration, std::size_t level) const;
+
+    /**
+     * @brief Delivers a token with the boundary claimed after it to a stage, cascading upward.
+     *
+     * A stage holding its merge's left part joins an arriving right part into the product, delivered to the stage above
+     * with the arriving claim, and refuses the delivery when a boundary is claimed after the held part; a held symbol
+     * the arrival does not complete is passed upward first. A stage holds an arrival equal to its left part, and any
+     * other arrival passes to the stage above. Above the top stage the token is emitted, refused after a token claimed
+     * to be the last.
+     * @param configuration The configuration, changed in place.
+     * @param level The stage delivered to; the stage count names the top stage's emission.
+     * @param token The token delivered.
+     * @param claim Whether a boundary is claimed after the token.
+     * @return True when the delivery is not refused.
+     */
+    [[nodiscard]] bool deliver(Configuration& configuration, std::size_t level, Token_t token, bool claim) const;
+
+    /**
+     * @brief Reads every marked symbol over the bytes from one state, interning the configurations reached.
+     * @param state The state read from.
+     */
+    void expand(Verifier::State_t state);
+
+    /**
+     * @brief Reads one marked symbol into a configuration: the byte with its boundary bit is delivered to the lowest
+     *        stage and the result normalized.
+     * @param from The configuration read from.
+     * @param symbol The marked symbol.
+     * @return The configuration after the symbol, or std::nullopt when the step is refused.
+     */
+    [[nodiscard]] std::optional<Configuration> successor(const Configuration& from, Marked symbol) const;
+
+    /**
+     * @brief Passes upward every held symbol whose merge no possible next arrival completes, from the lowest such stage
+     *        and again until no stage changes.
+     * @param configuration The configuration, changed in place.
+     * @return True when no delivery is refused.
+     */
+    [[nodiscard]] bool normalize(Configuration& configuration) const;
+
+    /**
+     * @brief Returns the tokens that can next arrive at a stage from the nearest holding stage below it: that stage's
+     *        held symbol alone or merged, extended through the empty stages between, each of which may hold a token
+     *        equal to its left part and later pass it alone or merged.
+     * @param low The nearest holding stage below.
+     * @param level The stage the arrivals are for.
+     * @return The possible arrivals, without repeats.
+     */
+    [[nodiscard]] std::vector<Token_t> arrivals(std::size_t low, std::size_t level) const;
+
+    /**
+     * @brief The resolved merge table.
+     */
+    Table table_{};
+
+    /**
+     * @brief The configuration each state reads as, by state.
+     */
+    std::vector<Configuration> sources_{};
+
+    /**
+     * @brief The transitions found so far.
+     */
+    Verifier::Transitions_t transitions_{};
+
+    /**
+     * @brief The accepting states found so far.
+     */
+    Verifier::Accept_states_t accept_states_{};
+
+    /**
+     * @brief The interned configurations with their states.
+     */
+    std::map<Configuration, Verifier::State_t> interned_{};
+};
+
+Exploration::Exploration(const std::span<const Merge> merges) : table_{table_of(merges)}
+{}
+
+Verifier Exploration::run() &&
+{
+    const auto start{intern({.tail = Tail::empty, .stages = std::vector<Stage>(table_.lefts.size())})};
+
+    for (auto state{start}; state < sources_.size(); ++state)
+    {
+        expand(state);
+    }
+
+    return Verifier{start, std::move(transitions_), std::move(accept_states_)};
+}
+
+Verifier::State_t Exploration::intern(Configuration configuration)
+{
+    const auto [entry, inserted]{interned_.try_emplace(configuration, sources_.size())};
+
+    const auto& [key, state]{*entry};
+
+    if (!inserted)
+    {
+        return state;
+    }
+
+    if (is_accepting(configuration))
+    {
+        accept_states_.insert(state);
+    }
+
+    sources_.push_back(std::move(configuration));
+
+    return state;
+}
+
+bool Exploration::is_accepting(Configuration configuration) const
+{
+    for (std::size_t level{0}; level < configuration.stages.size(); ++level)
+    {
+        if (!configuration.stages[level].held)
+        {
+            continue;
+        }
+
+        const auto passed{pass_upward(configuration, level)};
+
+        if (!passed)
+        {
+            return false;
+        }
+    }
+
+    return configuration.tail != Tail::open;
+}
+
+bool Exploration::pass_upward(Configuration& configuration, const std::size_t level) const
 {
     const auto [held, held_claim]{std::exchange(configuration.stages[level], Stage{})};
 
-    return deliver(table, configuration, level + 1, *held, held_claim);
+    return deliver(configuration, level + 1, *held, held_claim);
 }
 
-/**
- * @brief Delivers a token with the boundary claimed after it to a stage, cascading upward.
- *
- * A stage holding its merge's left part joins an arriving right part into the product, delivered to the stage above
- * with the arriving claim, and refuses the delivery when a boundary is claimed after the held part; a held symbol the
- * arrival does not complete is passed upward first. A stage holds an arrival equal to its left part, and any other
- * arrival passes to the stage above. Above the top stage the token is emitted, refused after a token claimed to be the
- * last.
- * @param table The resolved merge table.
- * @param configuration The configuration, changed in place.
- * @param level The stage delivered to; the stage count names the top stage's emission.
- * @param token The token delivered.
- * @param claim Whether a boundary is claimed after the token.
- * @return True when the delivery is not refused.
- */
-bool deliver(const Table& table, Configuration& configuration, std::size_t level, Token_t token, const bool claim)
+bool Exploration::deliver(Configuration& configuration, std::size_t level, Token_t token, const bool claim) const
 {
-    while (level < table.lefts.size())
+    while (level < table_.lefts.size())
     {
         auto& [held, held_claim]{configuration.stages[level]};
 
-        if (held && token == table.rights[level])
+        if (held && token == table_.rights[level])
         {
             if (held_claim)
             {
@@ -297,7 +420,7 @@ bool deliver(const Table& table, Configuration& configuration, std::size_t level
 
         if (held)
         {
-            const auto passed{pass_upward(table, configuration, level)};
+            const auto passed{pass_upward(configuration, level)};
 
             if (!passed)
             {
@@ -305,7 +428,7 @@ bool deliver(const Table& table, Configuration& configuration, std::size_t level
             }
         }
 
-        if (token == table.lefts[level])
+        if (token == table_.lefts[level])
         {
             held = token;
             held_claim = claim;
@@ -326,93 +449,58 @@ bool deliver(const Table& table, Configuration& configuration, std::size_t level
     return true;
 }
 
-/**
- * @brief Returns whether a configuration accepts: passing every held symbol upward, from the lowest stage, is not
- *        refused, and the top stage's last token carries no claimed boundary.
- * @param table The resolved merge table.
- * @param configuration The configuration, flushed in a copy.
- * @return True when the input may end in the configuration.
- */
-[[nodiscard]] bool is_accepting(const Table& table, Configuration configuration)
+void Exploration::expand(const Verifier::State_t state)
 {
-    for (std::size_t level{0}; level < configuration.stages.size(); ++level)
+    // The state's configuration, read from a copy while interning grows the sources.
+    const auto from{sources_[state]};
+
+    for (Token_t byte{0}; byte < byte_count; ++byte)
     {
-        if (!configuration.stages[level].held)
+        for (const auto boundary_after : {false, true})
         {
-            continue;
-        }
+            const Marked symbol{.byte = static_cast<unsigned char>(byte), .boundary_after = boundary_after};
 
-        const auto passed{pass_upward(table, configuration, level)};
+            auto next{successor(from, symbol)};
 
-        if (!passed)
-        {
-            return false;
-        }
-    }
+            if (!next)
+            {
+                continue;
+            }
 
-    return configuration.tail != Tail::open;
-}
+            const auto to{intern(std::move(*next))};
 
-/**
- * @brief Returns the state of a configuration, interning it as a new state when it is first found.
- * @param table The resolved merge table.
- * @param exploration The exploration, extended in place.
- * @param configuration The configuration.
- * @return The configuration's state.
- */
-[[nodiscard]] Verifier::State_t intern(const Table& table, Exploration& exploration, Configuration configuration)
-{
-    const auto [entry, inserted]{exploration.interned.try_emplace(configuration, exploration.sources.size())};
-
-    const auto& [key, state]{*entry};
-
-    if (!inserted)
-    {
-        return state;
-    }
-
-    if (is_accepting(table, configuration))
-    {
-        exploration.accept_states.insert(state);
-    }
-
-    exploration.sources.push_back(std::move(configuration));
-
-    return state;
-}
-
-/**
- * @brief Returns the tokens that can next arrive at a stage from the nearest holding stage below it: that stage's held
- *        symbol alone or merged, extended through the empty stages between, each of which may hold a token equal to its
- *        left part and later pass it alone or merged.
- * @param table The resolved merge table.
- * @param low The nearest holding stage below.
- * @param level The stage the arrivals are for.
- * @return The possible arrivals, without repeats.
- */
-[[nodiscard]] std::vector<Token_t> arrivals(const Table& table, const std::size_t low, const std::size_t level)
-{
-    std::vector<Token_t> possible{table.lefts[low], product_of(low)};
-
-    for (auto between{low + 1}; between < level; ++between)
-    {
-        if (std::ranges::contains(possible, table.lefts[between]))
-        {
-            possible.push_back(product_of(between));
+            transitions_.emplace(Verifier::Key_t{state, symbol}, to);
         }
     }
-
-    return possible;
 }
 
-/**
- * @brief Passes upward every held symbol whose merge no possible next arrival completes, from the lowest such stage and
- *        again until no stage changes.
- * @param table The resolved merge table.
- * @param configuration The configuration, changed in place.
- * @return True when no delivery is refused.
- */
-[[nodiscard]] bool normalize(const Table& table, Configuration& configuration)
+std::optional<Configuration> Exploration::successor(const Configuration& from, const Marked symbol) const
+{
+    if (from.tail == Tail::closed)
+    {
+        return std::nullopt;
+    }
+
+    auto next{from};
+
+    const auto delivered{deliver(next, 0, symbol.byte, symbol.boundary_after)};
+
+    if (!delivered)
+    {
+        return std::nullopt;
+    }
+
+    const auto normalized{normalize(next)};
+
+    if (!normalized)
+    {
+        return std::nullopt;
+    }
+
+    return next;
+}
+
+bool Exploration::normalize(Configuration& configuration) const
 {
     for (auto changed{true}; changed;)
     {
@@ -434,16 +522,16 @@ bool deliver(const Table& table, Configuration& configuration, std::size_t level
                 continue;
             }
 
-            const auto possible{arrivals(table, *below, level)};
+            const auto possible{arrivals(*below, level)};
 
-            if (std::ranges::contains(possible, table.rights[level]))
+            if (std::ranges::contains(possible, table_.rights[level]))
             {
                 below = level;
 
                 continue;
             }
 
-            const auto passed{pass_upward(table, configuration, level)};
+            const auto passed{pass_upward(configuration, level)};
 
             if (!passed)
             {
@@ -457,87 +545,28 @@ bool deliver(const Table& table, Configuration& configuration, std::size_t level
     return true;
 }
 
-/**
- * @brief Reads one marked symbol into a configuration: the byte with its boundary bit is delivered to the lowest stage
- *        and the result normalized.
- * @param table The resolved merge table.
- * @param from The configuration read from.
- * @param symbol The marked symbol.
- * @return The configuration after the symbol, or std::nullopt when the step is refused.
- */
-[[nodiscard]] std::optional<Configuration> successor(const Table& table, const Configuration& from, const Marked symbol)
+std::vector<Token_t> Exploration::arrivals(const std::size_t low, const std::size_t level) const
 {
-    if (from.tail == Tail::closed)
+    std::vector<Token_t> possible{table_.lefts[low], product_of(low)};
+
+    for (auto between{low + 1}; between < level; ++between)
     {
-        return std::nullopt;
-    }
-
-    auto next{from};
-
-    const auto delivered{deliver(table, next, 0, symbol.byte, symbol.boundary_after)};
-
-    if (!delivered)
-    {
-        return std::nullopt;
-    }
-
-    const auto normalized{normalize(table, next)};
-
-    if (!normalized)
-    {
-        return std::nullopt;
-    }
-
-    return next;
-}
-
-/**
- * @brief Reads every marked symbol over the bytes from one state, interning the configurations reached.
- * @param table The resolved merge table.
- * @param exploration The exploration, extended in place.
- * @param state The state read from.
- */
-void expand(const Table& table, Exploration& exploration, const Verifier::State_t state)
-{
-    // The state's configuration, read from a copy while interning grows the sources.
-    const auto from{exploration.sources[state]};
-
-    for (Token_t byte{0}; byte < byte_count; ++byte)
-    {
-        for (const auto boundary_after : {false, true})
+        if (std::ranges::contains(possible, table_.lefts[between]))
         {
-            const Marked symbol{.byte = static_cast<unsigned char>(byte), .boundary_after = boundary_after};
-
-            auto next{successor(table, from, symbol)};
-
-            if (!next)
-            {
-                continue;
-            }
-
-            const auto to{intern(table, exploration, std::move(*next))};
-
-            exploration.transitions.emplace(Verifier::Key_t{state, symbol}, to);
+            possible.push_back(product_of(between));
         }
     }
+
+    return possible;
 }
 
 } // namespace
 
 Verifier merge_tower(const std::span<const Merge> merges)
 {
-    const auto table{table_of(merges)};
+    Exploration exploration{merges};
 
-    Exploration exploration{};
-
-    const auto start{intern(table, exploration, {.tail = Tail::empty, .stages = std::vector<Stage>(merges.size())})};
-
-    for (auto state{start}; state < exploration.sources.size(); ++state)
-    {
-        expand(table, exploration, state);
-    }
-
-    return Verifier{start, std::move(exploration.transitions), std::move(exploration.accept_states)};
+    return std::move(exploration).run();
 }
 
 } // namespace munch::dfa

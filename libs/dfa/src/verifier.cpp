@@ -49,36 +49,6 @@ struct Configuration
 };
 
 /**
- * @brief The armed-run automaton under exploration: the configuration each state reads as, the interned configurations
- *        with their states, and the transitions and accepting states found so far.
- *
- * State zero is the unconsumed start, which reads as the configuration of one fresh unarmed run and is not interned; a
- * step reaching that configuration reaches a state of its own.
- */
-struct Exploration
-{
-    /**
-     * @brief The configuration each state reads as, by state.
-     */
-    std::vector<Configuration> sources{};
-
-    /**
-     * @brief The interned configurations with their states.
-     */
-    std::map<Configuration, Verifier::State_t> interned{};
-
-    /**
-     * @brief The transitions found so far.
-     */
-    Verifier::Transitions_t transitions{};
-
-    /**
-     * @brief The accepting states found so far.
-     */
-    Verifier::Accept_states_t accept_states{};
-};
-
-/**
  * @brief Sorts a list and drops the repeats.
  * @tparam T The element type.
  * @param values The list, sorted and without repeats on return.
@@ -207,41 +177,122 @@ void dedup(std::vector<T>& values)
 }
 
 /**
- * @brief Returns whether a DFA state accepts.
- * @param dfa The DFA.
- * @param state The state.
- * @return True when the state is accepting.
+ * @brief The armed-run automaton under exploration: the DFA and the bytes it reads, the configuration each state reads
+ *        as, the transitions and accepting states found so far, and the interned configurations with their states.
+ *
+ * State zero is the unconsumed start, which reads as the configuration of one fresh unarmed run and is not interned; a
+ * step reaching that configuration reaches a state of its own.
  */
-[[nodiscard]] bool is_accepting(const Dfa& dfa, const Dfa::State_t state)
+class Exploration
 {
-    return dfa.accept_states().contains(state);
+public:
+    /**
+     * @brief Takes the DFA and the bytes it reads, the unconsumed start as state zero, accepting, nothing explored yet.
+     * @param dfa The DFA, which outlives the exploration.
+     * @throws std::invalid_argument If the DFA's initial state accepts, so that a token matches the empty string.
+     */
+    explicit Exploration(const Dfa& dfa);
+
+    /**
+     * @brief Explores every state reachable from the unconsumed start and returns the verifier they make.
+     * @return The verifier, its start the unconsumed start.
+     */
+    [[nodiscard]] Verifier run() &&;
+
+private:
+    /**
+     * @brief Returns the bytes the DFA's transitions carry, ascending as unsigned bytes and without repeats.
+     * @return The alphabet.
+     */
+    [[nodiscard]] std::vector<unsigned char> alphabet_of() const;
+
+    /**
+     * @brief Returns whether a DFA state accepts.
+     * @param state The state.
+     * @return True when the state is accepting.
+     */
+    [[nodiscard]] bool is_accepting(Dfa::State_t state) const;
+
+    /**
+     * @brief Reads every marked symbol over the alphabet from one state, interning the configurations reached.
+     * @param state The state read from.
+     */
+    void expand(Verifier::State_t state);
+
+    /**
+     * @brief Reads one marked symbol into a configuration.
+     *
+     * The byte is read into every run, a run with no transition dropping. The step is refused when the unarmed run
+     * drops or an armed run reaches an accepting state. On a boundary the unarmed run must accept, joins the armed
+     * runs, and a fresh unarmed run begins at the DFA's initial state.
+     * @param from The configuration read from.
+     * @param symbol The marked symbol.
+     * @return The configuration after the symbol, or std::nullopt when the step is refused.
+     */
+    [[nodiscard]] std::optional<Configuration> successor(const Configuration& from, Marked symbol) const;
+
+    /**
+     * @brief Returns the state of a configuration, interning it as a new state when it is first found.
+     * @param configuration The configuration.
+     * @return The configuration's state.
+     */
+    [[nodiscard]] Verifier::State_t intern(Configuration configuration);
+
+    /**
+     * @brief Returns whether a configuration accepts: its unarmed run accepts and no armed run does.
+     * @param configuration The configuration.
+     * @return True when the input may end in the configuration.
+     */
+    [[nodiscard]] bool is_accepting(const Configuration& configuration) const;
+
+    /**
+     * @brief The DFA.
+     */
+    const Dfa& dfa_;
+
+    /**
+     * @brief The configuration each state reads as, by state.
+     */
+    std::vector<Configuration> sources_{};
+
+    /**
+     * @brief The transitions found so far.
+     */
+    Verifier::Transitions_t transitions_{};
+
+    /**
+     * @brief The bytes the DFA's transitions carry, which every state is read over.
+     */
+    std::vector<unsigned char> alphabet_{};
+
+    /**
+     * @brief The accepting states found so far.
+     */
+    Verifier::Accept_states_t accept_states_{};
+
+    /**
+     * @brief The interned configurations with their states.
+     */
+    std::map<Configuration, Verifier::State_t> interned_{};
+};
+
+Exploration::Exploration(const Dfa& dfa)
+    : dfa_{dfa}
+    , sources_{Configuration{.unarmed = dfa.init_state(), .armed = {}}}
+    , alphabet_{alphabet_of()}
+    , accept_states_{0}
+{
+    if (is_accepting(dfa_.init_state()))
+    {
+        throw std::invalid_argument{"armed_run: the DFA's initial state accepts, so a token matches the empty string"};
+    }
 }
 
-/**
- * @brief Returns whether a configuration accepts: its unarmed run accepts and no armed run does.
- * @param dfa The DFA.
- * @param configuration The configuration.
- * @return True when the input may end in the configuration.
- */
-[[nodiscard]] bool is_accepting(const Dfa& dfa, const Configuration& configuration)
-{
-    const auto& [unarmed, armed]{configuration};
-
-    const auto accepts{[&dfa](const Dfa::State_t state) { return is_accepting(dfa, state); }};
-
-    return is_accepting(dfa, unarmed) && std::ranges::none_of(armed, accepts);
-}
-
-/**
- * @brief Returns the bytes the DFA's transitions carry, ascending as unsigned bytes and without repeats.
- * @param dfa The DFA.
- * @return The alphabet.
- */
-[[nodiscard]] std::vector<unsigned char> alphabet_of(const Dfa& dfa)
+std::vector<unsigned char> Exploration::alphabet_of() const
 {
     std::vector<unsigned char> alphabet{};
 
-    for (const auto& [from, label] : dfa.transitions() | std::views::keys)
+    for (const auto& [from, label] : dfa_.transitions() | std::views::keys)
     {
         alphabet.push_back(static_cast<unsigned char>(label.symbol()));
     }
@@ -251,22 +302,51 @@ void dedup(std::vector<T>& values)
     return alphabet;
 }
 
-/**
- * @brief Reads one marked symbol into a configuration.
- *
- * The byte is read into every run, a run with no transition dropping. The step is refused when the unarmed run drops or
- * an armed run reaches an accepting state. On a boundary the unarmed run must accept, joins the armed runs, and a fresh
- * unarmed run begins at the DFA's initial state.
- * @param dfa The DFA.
- * @param from The configuration read from.
- * @param symbol The marked symbol.
- * @return The configuration after the symbol, or std::nullopt when the step is refused.
- */
-[[nodiscard]] std::optional<Configuration> successor(const Dfa& dfa, const Configuration& from, const Marked symbol)
+bool Exploration::is_accepting(const Dfa::State_t state) const
+{
+    return dfa_.accept_states().contains(state);
+}
+
+Verifier Exploration::run() &&
+{
+    for (Verifier::State_t state{0}; state < sources_.size(); ++state)
+    {
+        expand(state);
+    }
+
+    return Verifier{0, std::move(transitions_), std::move(accept_states_)};
+}
+
+void Exploration::expand(const Verifier::State_t state)
+{
+    // The state's configuration, read from a copy while interning grows the sources.
+    const auto from{sources_[state]};
+
+    for (const auto byte : alphabet_)
+    {
+        for (const auto boundary_after : {false, true})
+        {
+            const Marked symbol{.byte = byte, .boundary_after = boundary_after};
+
+            auto next{successor(from, symbol)};
+
+            if (!next)
+            {
+                continue;
+            }
+
+            const auto to{intern(std::move(*next))};
+
+            transitions_.emplace(Verifier::Key_t{state, symbol}, to);
+        }
+    }
+}
+
+std::optional<Configuration> Exploration::successor(const Configuration& from, const Marked symbol) const
 {
     const auto byte{static_cast<char>(symbol.byte)};
 
-    const auto unarmed{dfa.advance(from.unarmed, byte)};
+    const auto unarmed{dfa_.advance(from.unarmed, byte)};
 
     if (!unarmed)
     {
@@ -277,14 +357,14 @@ void dedup(std::vector<T>& values)
 
     for (const auto state : from.armed)
     {
-        const auto moved{dfa.advance(state, byte)};
+        const auto moved{dfa_.advance(state, byte)};
 
         if (!moved)
         {
             continue;
         }
 
-        if (is_accepting(dfa, *moved))
+        if (is_accepting(*moved))
         {
             return std::nullopt;
         }
@@ -292,7 +372,7 @@ void dedup(std::vector<T>& values)
         next.armed.push_back(*moved);
     }
 
-    if (symbol.boundary_after && !is_accepting(dfa, next.unarmed))
+    if (symbol.boundary_after && !is_accepting(next.unarmed))
     {
         return std::nullopt;
     }
@@ -301,7 +381,7 @@ void dedup(std::vector<T>& values)
     {
         next.armed.push_back(next.unarmed);
 
-        next.unarmed = dfa.init_state();
+        next.unarmed = dfa_.init_state();
     }
 
     dedup(next.armed);
@@ -309,16 +389,9 @@ void dedup(std::vector<T>& values)
     return next;
 }
 
-/**
- * @brief Returns the state of a configuration, interning it as a new state when it is first found.
- * @param dfa The DFA.
- * @param exploration The exploration, extended in place.
- * @param configuration The configuration.
- * @return The configuration's state.
- */
-[[nodiscard]] Verifier::State_t intern(const Dfa& dfa, Exploration& exploration, Configuration configuration)
+Verifier::State_t Exploration::intern(Configuration configuration)
 {
-    const auto [entry, inserted]{exploration.interned.try_emplace(configuration, exploration.sources.size())};
+    const auto [entry, inserted]{interned_.try_emplace(configuration, sources_.size())};
 
     const auto& [key, state]{*entry};
 
@@ -327,48 +400,23 @@ void dedup(std::vector<T>& values)
         return state;
     }
 
-    if (is_accepting(dfa, configuration))
+    if (is_accepting(configuration))
     {
-        exploration.accept_states.insert(state);
+        accept_states_.insert(state);
     }
 
-    exploration.sources.push_back(std::move(configuration));
+    sources_.push_back(std::move(configuration));
 
     return state;
 }
 
-/**
- * @brief Reads every marked symbol over the alphabet from one state, interning the configurations reached.
- * @param dfa The DFA.
- * @param alphabet The bytes read.
- * @param exploration The exploration, extended in place.
- * @param state The state read from.
- */
-void expand(
-        const Dfa& dfa, const std::vector<unsigned char>& alphabet, Exploration& exploration,
-        const Verifier::State_t state)
+bool Exploration::is_accepting(const Configuration& configuration) const
 {
-    // The state's configuration, read from a copy while interning grows the sources.
-    const auto from{exploration.sources[state]};
+    const auto& [unarmed, armed]{configuration};
 
-    for (const auto byte : alphabet)
-    {
-        for (const auto boundary_after : {false, true})
-        {
-            const Marked symbol{.byte = byte, .boundary_after = boundary_after};
+    const auto accepts{[this](const Dfa::State_t state) { return is_accepting(state); }};
 
-            auto next{successor(dfa, from, symbol)};
-
-            if (!next)
-            {
-                continue;
-            }
-
-            const auto to{intern(dfa, exploration, std::move(*next))};
-
-            exploration.transitions.emplace(Verifier::Key_t{state, symbol}, to);
-        }
-    }
+    return is_accepting(unarmed) && std::ranges::none_of(armed, accepts);
 }
 
 } // namespace
@@ -547,26 +595,9 @@ Verifier::Trimmed Verifier::trim(
 
 Verifier armed_run(const Dfa& dfa)
 {
-    if (is_accepting(dfa, dfa.init_state()))
-    {
-        throw std::invalid_argument{"armed_run: the DFA's initial state accepts, so a token matches the empty string"};
-    }
+    Exploration exploration{dfa};
 
-    const auto alphabet{alphabet_of(dfa)};
-
-    Exploration exploration{
-            .sources = {Configuration{.unarmed = dfa.init_state(), .armed = {}}},
-            .interned = {},
-            .transitions = {},
-            .accept_states = {0},
-    };
-
-    for (Verifier::State_t state{0}; state < exploration.sources.size(); ++state)
-    {
-        expand(dfa, alphabet, exploration, state);
-    }
-
-    return Verifier{0, std::move(exploration.transitions), std::move(exploration.accept_states)};
+    return std::move(exploration).run();
 }
 
 } // namespace munch::dfa
