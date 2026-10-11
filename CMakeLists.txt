@@ -100,6 +100,7 @@ add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME}
         INTERFACE
         munch_core
+        munch_pattern
         munch_tokenizer
         munch_verifier
 )

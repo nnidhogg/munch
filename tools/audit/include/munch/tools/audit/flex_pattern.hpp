@@ -76,7 +76,7 @@ namespace munch::tools::audit
 [[nodiscard]] std::optional<std::string> beyond_ascii(std::string_view pattern);
 
 /**
- * @brief Returns a pattern or definition text in the syntax regex::parse() reads, as flex reads it.
+ * @brief Returns a pattern or definition text in the syntax pattern::parse() reads, as flex reads it.
  *
  * The parser's escapes are flex's but for one: it reads `\u{X...}` as a code point, for the readers of character-level
  * generators, where flex reads `\u` as the letter, as it reads every escaped byte it gives no meaning, and the braces

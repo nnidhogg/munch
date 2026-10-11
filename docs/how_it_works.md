@@ -48,9 +48,11 @@ both passes each time it is called.
 
 | Module                                    | Responsibility                                                                                        |
 |-------------------------------------------|-------------------------------------------------------------------------------------------------------|
-| `munch::regex`                            | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...), `parse()`, NFA lowering.    |
+| `munch::regex`                            | The combinator DSL (`concat`, `choice`, `kleene`, `any_of`, `text`, ...), NFA lowering, UTF-8.        |
+| `munch::pattern`                          | `parse()`: a pattern in a lexer generator's syntax read into the combinators' nodes.                  |
 | `munch::nfa`                              | `Nfa` / `nfa::Builder`: NFA representation, epsilon closures, Thompson-style append/merge.            |
 | `munch::dfa`                              | `Dfa` / `dfa::Builder`; `minimize()`; `Simulator`, and the decisions over it in their own headers.    |
+| `munch::verifier`                         | `Verifier` over marked symbols, its decisions, and the verifiers of maximal munch, BPE and WordPiece. |
 | `munch::core`                             | `Builder`: runs the full pipeline described above; `Lexer`: the public, one-shot matching API.        |
 | `munch::tools::tokenizer`                 | `Tokenizer`: resumable cursor over `core::Lexer`. `Mode_tokenizer`: the same, with modes.             |
 | `munch::nfa::tools` / `munch::dfa::tools` | `Graphviz`: DOT export for NFAs and DFAs, renders debugging.md's diagrams.                            |
@@ -59,16 +61,17 @@ both passes each time it is called.
 ## **Directory Structure**
 
 ```
-docs/                     The documentation, one page per subject as the README's index lists them, the three
+docs/                     The documentation, one page per subject as the README's index lists them, the four
                           mirrored technical reports, and the SVG diagrams debugging.md shows.
 libs/
   common/                 Shared concepts (Byte_iterable, Random_access_byte_iterable, Token_id, Token_sink).
-  regex/                  The combinator DSL: Regex nodes, parse() for flex-style patterns, and their lowering to
-                          munch::nfa::Builder.
+  regex/                  The combinator DSL: Regex nodes and their lowering to munch::nfa::Builder.
+  pattern/                parse() for flex-style patterns, read into the regex nodes.
   nfa/                    NFA representation and builder (Thompson construction, epsilon closure, merge/append).
     tools/                Graphviz DOT export for NFAs.
   dfa/                    DFA representation, minimize() (Moore partition refinement), the table Simulator.
     tools/                Graphviz DOT export for DFAs.
+  verifier/               Verifiers over marked symbols, their decisions, and the BPE and WordPiece constructions.
   core/                   Builder (drives the full pipeline) and Lexer (the public matching API).
 tools/
   tokenizer/              Tokenizer and Mode_tokenizer: resumable cursors, seek, recovery, raw strings.

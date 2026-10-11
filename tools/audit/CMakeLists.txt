@@ -66,6 +66,7 @@ target_compile_features(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
         PUBLIC
         munch_core
+        munch_pattern
         munch_regex
 )
 

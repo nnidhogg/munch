@@ -217,7 +217,7 @@ check the whole pipeline against direct NFA simulation.
 ## **Versioning and Stability**
 
 munch follows semantic versioning. The stable surface is what this README and [docs/usage.md](docs/usage.md) document:
-the regex combinators with `Set`, `regex::parse()` reading a generator's pattern into them, `utf8::range`,
+the regex combinators with `Set`, `pattern::parse()` reading a generator's pattern into them, `utf8::range`,
 `utf8::ranges`, and the `unicode` XID classes, `core::Builder` with `add_token()`, `build()`, `diagnose()`,
 `set_state_limit()`, and `set_ignored_tokens()`, `core::determinize()`, `core::Lexer` with `Match`, `tokenize()`,
 `tokenize_all()`, `is_split_point()`, `is_split_point_ignoring()`, `chunk_boundaries()`, and `tokenize_all_parallel()`,
@@ -245,12 +245,12 @@ shortest witness under its cap; `window_occurrence()`, whether a window occurs i
 input, with the shortest such input under its cap, which tells a certified window from one certified vacuously;
 `window_counterexample()`, whether some completely tokenizable input fails a window certificate, with the shortest such
 input under its cap, which proves a certificate exact where `is_split_window()` answers for its model; and
-`segmentation_difference()`, whether two token sets are the same segmentation function, domains and cuts alike, with
-the shortest input they segment differently under its cap and the half it falls in. The five that search are declared
+`segmentation_difference()`, whether two token sets are the same segmentation function, domains and cuts alike, with the
+shortest input they segment differently under its cap and the half it falls in. The five that search are declared
 together in `munch/dfa/boundary_search.hpp`, one search over guessed token boundaries answering all of them. So did
-`regex::parse()` and the `munch-audit` command with the readers under it for flex, re2c, ANTLR 4 and logos files, whose
-report is those decisions applied to another generator's token set; the readers accept what a token language can say and
-refuse the rest by name. Decisions over a nullable token set are made on its positive-width equivalent, and
+`pattern::parse()` and the `munch-audit` command with the readers under it for flex, re2c, ANTLR 4 and logos files,
+whose report is those decisions applied to another generator's token set; the readers accept what a token language can
+say and refuse the rest by name. Decisions over a nullable token set are made on its positive-width equivalent, and
 `rescue_free()` answers exactly where 1.6.0 documented it as sufficient only.
 
 2.0.0 is a major version for one move and one weakened bound. The moded tokenizer is `Mode_tokenizer`, with the

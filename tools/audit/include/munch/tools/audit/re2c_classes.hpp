@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-#include "munch/regex/parse.hpp"
+#include "munch/pattern/parse.hpp"
 #include "munch/regex/utf8.hpp"
 #include "munch/tools/audit/read_re2c.hpp"
 
@@ -41,7 +41,7 @@ using Classes_t = std::map<std::string, Class, std::less<>>;
  * @brief What the parser reads every re2c pattern under: a bracket range written backwards spans its members as re2c
  *        reads it, `[z-a]` being `[a-z]`; the case flags re2c has are spelled into the patterns instead.
  */
-constexpr regex::Parse_options re2c_parse{.caseless = false, .ranges_either_way = true};
+constexpr pattern::Parse_options re2c_parse{.caseless = false, .ranges_either_way = true};
 
 /**
  * @brief The class of every byte, which `[^]` and the default rule `*` stand for where they match one byte.
@@ -71,7 +71,7 @@ constexpr std::string_view any_byte{R"([\x00-\xff])"};
  * @return The class, or std::nullopt when the parser reads the bracket as something else.
  */
 [[nodiscard]] std::optional<Class> code_points(
-        std::string_view bracket, const regex::Definitions_t& definitions, char32_t space);
+        std::string_view bracket, const pattern::Definitions_t& definitions, char32_t space);
 
 /**
  * @brief Returns the union of two classes.

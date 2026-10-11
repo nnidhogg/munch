@@ -780,9 +780,9 @@ enum T {
 TEST(Read_logos_test, An_empty_subpattern_is_valid_and_emptiness_is_decided_on_the_rule)
 {
     // logos 0.15.1 takes an empty definition, a pattern pasting it in matching what the rest of it matches, so `x` is
-    // the token V to it; the reference expands to nothing, since regex::parse() takes no empty definition. A rule that
-    // is empty once its subpatterns are pasted in is no token to logos: it panics on an empty token and compiles an
-    // empty regex, or an empty skip, into a rule matching no input, so each is refused at its own line.
+    // the token V to it; the reference expands to nothing, since pattern::parse() takes no empty definition. A rule
+    // that is empty once its subpatterns are pasted in is no token to logos: it panics on an empty token and compiles
+    // an empty regex, or an empty skip, into a rule matching no input, so each is refused at its own line.
     constexpr std::string_view spec_source{R"rs(#[derive(Logos)]
 #[logos(subpattern empty = "")]
 enum T {

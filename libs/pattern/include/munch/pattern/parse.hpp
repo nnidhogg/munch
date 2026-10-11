@@ -1,5 +1,5 @@
-#ifndef MUNCH_LIBS_REGEX_INCLUDE_MUNCH_REGEX_PARSE_HPP
-#define MUNCH_LIBS_REGEX_INCLUDE_MUNCH_REGEX_PARSE_HPP
+#ifndef MUNCH_LIBS_PATTERN_INCLUDE_MUNCH_PATTERN_PARSE_HPP
+#define MUNCH_LIBS_PATTERN_INCLUDE_MUNCH_PATTERN_PARSE_HPP
 
 #include <cstddef>
 #include <functional>
@@ -10,7 +10,7 @@
 
 #include "munch/regex/regex.hpp"
 
-namespace munch::regex
+namespace munch::pattern
 {
 /**
  * @brief The named patterns a pattern may refer to as {name}, each a pattern in the same syntax.
@@ -114,8 +114,9 @@ struct Parse_options
  * @return The regex.
  * @throws Syntax_error If the pattern is refused, with the offset and the reason.
  */
-[[nodiscard]] Regex parse(std::string_view pattern, const Definitions_t& definitions = {}, Parse_options options = {});
+[[nodiscard]] regex::Regex parse(
+        std::string_view pattern, const Definitions_t& definitions = {}, Parse_options options = {});
 
-} // namespace munch::regex
+} // namespace munch::pattern
 
-#endif // MUNCH_LIBS_REGEX_INCLUDE_MUNCH_REGEX_PARSE_HPP
+#endif // MUNCH_LIBS_PATTERN_INCLUDE_MUNCH_PATTERN_PARSE_HPP

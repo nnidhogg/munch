@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "munch/core/lexer.hpp"
-#include "munch/regex/parse.hpp"
+#include "munch/pattern/parse.hpp"
 #include "munch/tools/audit/token_set.hpp"
 
 /**
@@ -61,9 +61,9 @@ struct Lexer_spec
         std::string pattern{};
 
         /**
-         * @brief The pattern in the syntax regex::parse() reads, `{name}` for a definition; for a flex file the pattern
-         *        with the backslash before a `u` dropped, flex reading the escape as the letter, and the file's dialect
-         *        rewritten for others.
+         * @brief The pattern in the syntax pattern::parse() reads, `{name}` for a definition; for a flex file the
+         *        pattern with the backslash before a `u` dropped, flex reading the escape as the letter, and the file's
+         *        dialect rewritten for others.
          */
         std::string expression{};
 
@@ -114,9 +114,9 @@ struct Lexer_spec
     };
 
     /**
-     * @brief The named patterns, in the syntax regex::parse() reads, `{name}` in an expression expanding to one.
+     * @brief The named patterns, in the syntax pattern::parse() reads, `{name}` in an expression expanding to one.
      */
-    regex::Definitions_t definitions{};
+    pattern::Definitions_t definitions{};
 
     /**
      * @brief The start conditions besides INITIAL: the ones a flex file declares, the ones a re2c file's rules name,
@@ -137,7 +137,7 @@ struct Lexer_spec
      * A reader that spells such a setting into the patterns themselves, as re2c's and logos's do with their case flags,
      * leaves the parser's defaults here.
      */
-    regex::Parse_options parse{};
+    pattern::Parse_options parse{};
 
     /**
      * @brief The rules, in the order their generator ranks them, which is file order except where a reader says
@@ -200,7 +200,7 @@ private:
  * @param spec The specification.
  * @param condition The condition, INITIAL for the default one.
  * @return The token set, its expressions parsed against the definitions.
- * @throws Spec_error If a rule's pattern is refused by regex::parse(), naming the rule's line and the reason, or a
+ * @throws Spec_error If a rule's pattern is refused by pattern::parse(), naming the rule's line and the reason, or a
  *         rule's priority number lies beyond the scale.
  */
 [[nodiscard]] Token_set token_set(const Lexer_spec& spec, std::string_view condition);

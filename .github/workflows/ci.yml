@@ -166,8 +166,8 @@ jobs:
           pattern='^[[:space:]]*cmake_minimum_required\('
           exact='^[[:space:]]*cmake_minimum_required\(VERSION 3\.20\.6\)[[:space:]]*$'
           declared=$(git grep -hiE "$pattern" -- '*CMakeLists.txt' '.github/workflows' | wc -l)
-          if [ "$declared" != "17" ]; then
-            echo "expected 17 cmake_minimum_required declarations, found $declared"
+          if [ "$declared" != "19" ]; then
+            echo "expected 19 cmake_minimum_required declarations, found $declared"
             exit 1
           fi
           if git grep -hiE "$pattern" -- '*CMakeLists.txt' '.github/workflows' | grep -ivE "$exact"; then
@@ -419,6 +419,7 @@ jobs:
           #include <string>
 
           #include <munch/core/builder.hpp>
+          #include <munch/pattern/parse.hpp>
           #include <munch/regex/regex.hpp>
           #include <munch/regex/set.hpp>
           #include <munch/regex/unicode.hpp>
@@ -451,6 +452,68 @@ jobs:
           }
           EOF
           cmake -G Ninja -S consumer -B consumer/build -DCMAKE_PREFIX_PATH="$PWD/prefix"
+          cmake --build consumer/build
+          ./consumer/build/consumer
+
+  subdirectory-consumer:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: munch
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      # The consumer adds the checkout with add_subdirectory and links the libraries one by one, which is what proves
+      # the build tree spells each target the README names as the installed package does.
+      - name: Compile and run a consumer of the source tree
+        run: |
+          mkdir -p consumer
+          cat > consumer/CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.20.6)
+          project(consumer CXX)
+
+          set(CMAKE_CXX_STANDARD 23)
+          set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+          add_subdirectory(../munch munch)
+
+          add_executable(consumer main.cpp)
+
+          target_link_libraries(consumer PRIVATE munch::munch_pattern munch::munch_verifier)
+          EOF
+          cat > consumer/main.cpp <<'EOF'
+          #include <tuple>
+          #include <vector>
+
+          #include <munch/pattern/parse.hpp>
+          #include <munch/verifier/merge_tower.hpp>
+          #include <munch/verifier/verifier.hpp>
+          #include <munch/verifier/verifier_decisions.hpp>
+
+          int main()
+          {
+              std::ignore = munch::pattern::parse("[0-9]+");
+
+              const std::vector<munch::verifier::Merge> merges{
+                      {.left = "b", .right = "c"}, {.left = "a", .right = "bc"}};
+
+              const auto tower{munch::verifier::merge_tower(merges)};
+
+              const auto [rank, configurations]{munch::verifier::fanout(tower, "a", 0)};
+
+              return rank == 3 ? 0 : 1;
+          }
+          EOF
+          cmake -G Ninja -S consumer -B consumer/build -DCMAKE_BUILD_TYPE=Release
           cmake --build consumer/build
           ./consumer/build/consumer
 

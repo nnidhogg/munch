@@ -65,7 +65,7 @@ namespace munch::tools::audit
  * The pattern is a Rust string literal, and the rule keeps it as written: a plain string has its escapes decoded, a raw
  * string `r"..."`, `r#"..."#` is taken verbatim, and a byte string `b"..."` makes the pattern a byte one. A token's
  * text is matched byte for byte. A regex is the regex crate's, in Unicode mode unless the string is a byte string or
- * `(?-u)` turns the mode off, and it is rewritten into the syntax regex::parse() reads over the bytes the lexer
+ * `(?-u)` turns the mode off, and it is rewritten into the syntax pattern::parse() reads over the bytes the lexer
  * actually scans, the UTF-8 of its `&str` source, which is the rule's expression: a scalar's UTF-8 bytes stand where
  * the scalar stood; a class, the dot and a negated class are the set of scalars they admit, written as one bracket of
  * the ASCII members and the code point ranges of the others, which the parser reads as the encodings of those scalars,
@@ -91,7 +91,7 @@ namespace munch::tools::audit
  * scanner's; the version is the first of the scanner's options, `unicode-classes=16.0.0`. Under `(?-u)` the escapes are
  * their ASCII forms beside the `[[:digit:]]` family; a non-ASCII scalar under `i`, whose case folding is not modelled;
  * the anchors `^`, `$`, `\A`, `\z`, `\b`, `\B` and lookaround, which condition the context a match stands in, as
- * regex::parse() refuses flex's; the flags `x`, `m`, `U` and `R`; the class operators `&&`, `--` and `~~`; the lazy
+ * pattern::parse() refuses flex's; the flags `x`, `m`, `U` and `R`; the class operators `&&`, `--` and `~~`; the lazy
  * operators, which logos 0.15.1 refuses as unsupported non-greedy parsing; a `*` or `+` over the dot under `s` or over
  * a class of every scalar or every byte, as check_dot_repetitions() says; an `allow_greedy` argument, which logos
  * 0.15.1 does not know and calls an unknown nested attribute, as it calls an `ignore` flag on a `skip`; a token or a

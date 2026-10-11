@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-#include "munch/regex/parse.hpp"
+#include "munch/pattern/parse.hpp"
 #include "munch/tools/audit/action_return.hpp"
 #include "munch/tools/audit/cursor.hpp"
 #include "munch/tools/audit/directives.hpp"
@@ -524,7 +524,7 @@ private:
      *         names it refers to.
      * @throws Spec_error As Regex_reader::regex_text() does.
      */
-    [[nodiscard]] Regex_text regex_text(const regex::Definitions_t& definitions, bool line_bound);
+    [[nodiscard]] Regex_text regex_text(const pattern::Definitions_t& definitions, bool line_bound);
 
     /**
      * @brief Holds the refusal of a regex referring to a name in braces outside the flex syntax, which re2c 3.1 refuses

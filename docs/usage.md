@@ -42,10 +42,10 @@ requirement themselves. Do not install from a `MUNCH_BENCHMARK_COMPARE` build, w
 installing alongside. Install rules are generated only when munch is the top-level project, or when `MUNCH_INSTALL=ON`
 is passed explicitly.
 
-The `munch::munch` target is an interface umbrella over `munch_core`, `munch_tokenizer` and `munch_verifier`, which pull
-in `munch_regex`, `munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers of
-[docs/debugging.md](debugging.md) are not part of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools`
-(installed as `munch::munch_nfa_tools` / `munch::munch_dfa_tools`) directly to use them.
+The `munch::munch` target is an interface umbrella over `munch_core`, `munch_pattern`, `munch_tokenizer` and
+`munch_verifier`, which pull in `munch_regex`, `munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz
+debugging helpers of [docs/debugging.md](debugging.md) are not part of the umbrella target; link `munch_nfa_tools`
+and/or `munch_dfa_tools` (installed as `munch::munch_nfa_tools` / `munch::munch_dfa_tools`) directly to use them.
 
 ## **Defining Token Kinds**
 
@@ -153,9 +153,9 @@ reason rather than approximated: the anchors, trailing context and a start-condi
 opening the pattern is. A parsed pattern and its hand-built equivalent compile to the same automaton.
 
 ```cpp
-#include <munch/regex/parse.hpp>
+#include <munch/pattern/parse.hpp>
 
-using namespace munch::regex;
+using namespace munch::pattern;
 
 const Definitions_t definitions{{"DIGIT", "[0-9]"}};
 

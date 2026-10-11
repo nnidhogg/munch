@@ -1311,7 +1311,7 @@ bool Block_reader::take_flex_definition(Lexer_spec& spec)
     return false;
 }
 
-Regex_text Block_reader::regex_text(const regex::Definitions_t& definitions, const bool line_bound)
+Regex_text Block_reader::regex_text(const pattern::Definitions_t& definitions, const bool line_bound)
 {
     Regex_reader reader{text_, at_, reading_, line_bound, pass_.classes, deferred_};
 

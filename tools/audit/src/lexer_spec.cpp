@@ -44,7 +44,7 @@ Token_set token_set(const Lexer_spec& spec, const std::string_view condition)
 
         try
         {
-            auto regex{regex::parse(expression, spec.definitions, spec.parse)};
+            auto regex{pattern::parse(expression, spec.definitions, spec.parse)};
 
             set.rules.push_back(
                     {.regex = std::move(regex),
@@ -52,7 +52,7 @@ Token_set token_set(const Lexer_spec& spec, const std::string_view condition)
                      .priority = priority ? highest_priority - *priority : index,
                      .discarded = !token});
         }
-        catch (const regex::Syntax_error& refused)
+        catch (const pattern::Syntax_error& refused)
         {
             throw Spec_error{std::format("the pattern '{}' is refused: {}", pattern, refused.what()), line};
         }

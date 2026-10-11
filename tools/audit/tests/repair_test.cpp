@@ -12,14 +12,14 @@
 #include <utility>
 #include <vector>
 
-#include "munch/regex/parse.hpp"
+#include "munch/pattern/parse.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/tools/audit/expression.hpp"
 #include "munch/tools/audit/report.hpp"
 #include "munch/tools/audit/token_set.hpp"
 
 using namespace munch::tools::audit;
-using munch::regex::parse;
+using munch::pattern::parse;
 
 namespace
 {
@@ -50,7 +50,7 @@ std::size_t draw(std::mt19937& sequence, const std::size_t below)
 /**
  * @brief Draws a pattern: one to three pieces, each an atom with or without an operator, or a choice of two atoms.
  * @param sequence The sequence the pattern is drawn from.
- * @return The pattern, as regex::parse() reads it.
+ * @return The pattern, as pattern::parse() reads it.
  */
 std::string random_pattern(std::mt19937& sequence)
 {

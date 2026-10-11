@@ -130,8 +130,8 @@ struct Subpattern
 
     /**
      * @brief Whether the definition matches only the empty string, which logos allows of a definition, the patterns
-     *        pasting it in being the rules, and which a reference then expands to, since regex::parse() takes no empty
-     *        definition.
+     *        pasting it in being the rules, and which a reference then expands to, since pattern::parse() takes no
+     *        empty definition.
      */
     bool empty{};
 };
@@ -277,7 +277,7 @@ struct Node
 struct Compiled
 {
     /**
-     * @brief The expression in the syntax regex::parse() reads.
+     * @brief The expression in the syntax pattern::parse() reads.
      */
     std::string expression{};
 

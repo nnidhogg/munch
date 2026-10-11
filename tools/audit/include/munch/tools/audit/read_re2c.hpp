@@ -110,7 +110,7 @@ struct Re2c_flags
  * Definition_site say. re2c declares no conditions, so the ones a block's rules name are that scanner's, each
  * exclusive.
  *
- * The regex is re2c's, and it is rewritten into the syntax regex::parse() reads, which each rule keeps as its
+ * The regex is re2c's, and it is rewritten into the syntax pattern::parse() reads, which each rule keeps as its
  * expression beside the pattern as written: a bare name is a definition and becomes `{name}`, or under the flex syntax
  * stays the literal it is; a case-insensitive literal `'abc'` becomes `[aA][bB][cC]` and an exact one in single quotes
  * a bracket sequence too; `[^]`, any byte, is spelled out; blanks between tokens are dropped; a double-quoted literal,

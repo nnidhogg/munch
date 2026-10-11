@@ -75,7 +75,7 @@ constexpr std::string_view beyond_ascii_source{
  * @return The bytes, or std::nullopt when the parser reads the literal as something else or refuses it.
  */
 [[nodiscard]] std::optional<std::string> literal_bytes(
-        const std::string& copied, const regex::Definitions_t& definitions)
+        const std::string& copied, const pattern::Definitions_t& definitions)
 {
     if (copied == R"("")")
     {
@@ -95,11 +95,11 @@ constexpr std::string_view beyond_ascii_source{
 
     try
     {
-        const auto parsed{regex::parse(copied, definitions, re2c_parse)};
+        const auto parsed{pattern::parse(copied, definitions, re2c_parse)};
 
         return std::visit(text_of, parsed.node);
     }
-    catch (const regex::Syntax_error&)
+    catch (const pattern::Syntax_error&)
     {
         return std::nullopt;
     }
@@ -183,7 +183,7 @@ Regex_reader::Regex_reader(
     , levels_{Level{}}
 {}
 
-Regex_text Regex_reader::regex_text(const regex::Definitions_t& definitions)
+Regex_text Regex_reader::regex_text(const pattern::Definitions_t& definitions)
 {
     for (;;)
     {
@@ -343,7 +343,7 @@ bool Regex_reader::take_blank()
     return true;
 }
 
-bool Regex_reader::take_bracket(const regex::Definitions_t& definitions)
+bool Regex_reader::take_bracket(const pattern::Definitions_t& definitions)
 {
     if (peek() != '[')
     {
@@ -465,7 +465,7 @@ bool Regex_reader::in_utf8() const noexcept
     return flags_.encoding == Re2c_encoding::utf8;
 }
 
-bool Regex_reader::take_exact_literal(const regex::Definitions_t& definitions)
+bool Regex_reader::take_exact_literal(const pattern::Definitions_t& definitions)
 {
     if (peek() != '"' || is_insensitive('"'))
     {

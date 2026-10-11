@@ -1,4 +1,4 @@
-#include "munch/regex/parse.hpp"
+#include "munch/pattern/parse.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,7 +16,7 @@
 #include "munch/regex/set.hpp"
 #include "munch/regex/utf8.hpp"
 
-namespace munch::regex
+namespace munch::pattern
 {
 namespace
 {
@@ -34,7 +34,7 @@ struct Piece
     /**
      * @brief The regex, when it is anything else.
      */
-    std::optional<Regex> regex{};
+    std::optional<regex::Regex> regex{};
 };
 
 /**
@@ -99,12 +99,12 @@ struct Bracket_reading
     /**
      * @brief The members below 0x100, as bytes.
      */
-    Set bytes{};
+    regex::Set bytes{};
 
     /**
      * @brief Every member, as code point ranges.
      */
-    std::vector<utf8::Code_point_range> scalars{};
+    std::vector<regex::utf8::Code_point_range> scalars{};
 
     /**
      * @brief Whether a member is a code point escape, which reads the bracket over scalars.
@@ -157,7 +157,7 @@ public:
      * @return The regex.
      * @throws Syntax_error If anything is left over or the pattern is refused.
      */
-    [[nodiscard]] Regex read(const Definitions_t& definitions);
+    [[nodiscard]] regex::Regex read(const Definitions_t& definitions);
 
 private:
     /**
@@ -165,7 +165,7 @@ private:
      * @param definitions The named patterns.
      * @return The regex, a choice when there is more than one sequence.
      */
-    [[nodiscard]] Regex alternation(const Definitions_t& definitions);
+    [[nodiscard]] regex::Regex alternation(const Definitions_t& definitions);
 
     /**
      * @brief Reads a sequence: repetitions up to a `|`, a `)` or the end, adjacent literals merged into one text node.
@@ -173,7 +173,7 @@ private:
      * @return The regex.
      * @throws Syntax_error If the sequence is empty, which the standard refuses.
      */
-    [[nodiscard]] Regex sequence(const Definitions_t& definitions);
+    [[nodiscard]] regex::Regex sequence(const Definitions_t& definitions);
 
     /**
      * @brief Reads an atom under its postfix operators.
@@ -213,7 +213,7 @@ private:
      * @throws Syntax_error If a range is reversed, bytes beyond ASCII stand beside code points, a class operator has no
      *         bracket on its right or combines brackets of code points, or nothing is left to match.
      */
-    [[nodiscard]] Regex bracket();
+    [[nodiscard]] regex::Regex bracket();
 
     /**
      * @brief Reads one bracket expression's members after its `[`, through its `]`, settles whether the bracket reads
@@ -238,7 +238,7 @@ private:
      * @return The regex: any_of over the bytes, or the encodings of the scalars.
      * @throws Syntax_error If the members are empty, so that nothing can match.
      */
-    [[nodiscard]] Regex matching(const Bracket_reading& members, std::size_t opened);
+    [[nodiscard]] regex::Regex matching(const Bracket_reading& members, std::size_t opened);
 
     /**
      * @brief Reads a POSIX class after its `[:`, through its `:]`, negated when a `^` opens its name.
@@ -246,7 +246,7 @@ private:
      * @throws Syntax_error If the name is not one of the twelve, or a negated case class stands under the case option,
      *         which flex calls ambiguous.
      */
-    [[nodiscard]] Set posix_class();
+    [[nodiscard]] regex::Set posix_class();
 
     /**
      * @brief Returns whether a POSIX class stands at an offset: `[:`, an optional negating `^`, letters and `:]`, which
@@ -268,7 +268,7 @@ private:
      * @param run The bytes.
      * @return The regex.
      */
-    [[nodiscard]] Regex literal(std::string run) const;
+    [[nodiscard]] regex::Regex literal(std::string run) const;
 
     /**
      * @brief Reads an escape after its backslash: a named control, octal, hex, a code point `\u{...}`, or the byte
@@ -293,7 +293,7 @@ private:
      * @return The definition's regex.
      * @throws Syntax_error If the name is unknown or its expansion cycles.
      */
-    [[nodiscard]] Regex definition(std::size_t open, const Definitions_t& definitions);
+    [[nodiscard]] regex::Regex definition(std::size_t open, const Definitions_t& definitions);
 
     /**
      * @brief Returns whether this reader reads a definition's expansion, which flex encloses in parentheses, so that
@@ -386,7 +386,7 @@ private:
  * @return The regex.
  */
 template <typename Node>
-[[nodiscard]] Regex one_or(std::vector<Regex> parts)
+[[nodiscard]] regex::Regex one_or(std::vector<regex::Regex> parts)
 {
     if (parts.size() == 1)
     {
@@ -454,13 +454,14 @@ template <typename Node>
  * @param wide Whether the bracket reads its members as scalars, the one reading a range reaches past ASCII in.
  * @return The ranges to add, empty when the folding adds none.
  */
-[[nodiscard]] std::vector<utf8::Code_point_range> folded(const char32_t low, const char32_t high, const bool wide)
+[[nodiscard]] std::vector<regex::utf8::Code_point_range> folded(
+        const char32_t low, const char32_t high, const bool wide)
 {
     if (wide && high >= first_beyond_ascii)
     {
-        std::vector<utf8::Code_point_range> ranges{};
+        std::vector<regex::utf8::Code_point_range> ranges{};
 
-        constexpr std::array<utf8::Code_point_range, 2> cases{
+        constexpr std::array<regex::utf8::Code_point_range, 2> cases{
                 {{.first = 'a', .last = 'z'}, {.first = 'A', .last = 'Z'}}};
 
         for (const auto& [first, last] : cases)
@@ -497,10 +498,10 @@ template <typename Node>
  * @param wide Whether the bracket reads its members as scalars.
  * @return The ranges to add.
  */
-[[nodiscard]] std::vector<utf8::Code_point_range> case_folds(
-        const std::vector<utf8::Code_point_range>& ranges, const bool wide)
+[[nodiscard]] std::vector<regex::utf8::Code_point_range> case_folds(
+        const std::vector<regex::utf8::Code_point_range>& ranges, const bool wide)
 {
-    std::vector<utf8::Code_point_range> added{};
+    std::vector<regex::utf8::Code_point_range> added{};
 
     for (const auto& [low, high] : ranges)
     {
@@ -517,13 +518,14 @@ template <typename Node>
  * @param ranges The ranges, in any order, possibly overlapping.
  * @return The complement over every scalar up to U+10FFFF.
  */
-[[nodiscard]] std::vector<utf8::Code_point_range> complement_of(std::vector<utf8::Code_point_range> ranges)
+[[nodiscard]] std::vector<regex::utf8::Code_point_range> complement_of(
+        std::vector<regex::utf8::Code_point_range> ranges)
 {
-    std::vector<utf8::Code_point_range> complement{};
+    std::vector<regex::utf8::Code_point_range> complement{};
 
     char32_t from{0};
 
-    std::ranges::sort(ranges, {}, &utf8::Code_point_range::first);
+    std::ranges::sort(ranges, {}, &regex::utf8::Code_point_range::first);
 
     for (const auto& [low, high] : ranges)
     {
@@ -569,11 +571,11 @@ template <typename Node>
  * @param ranges The ranges, in any order, possibly overlapping.
  * @return The regex, or std::nullopt when nothing remains.
  */
-[[nodiscard]] std::optional<Regex> encodings(std::vector<utf8::Code_point_range> ranges)
+[[nodiscard]] std::optional<regex::Regex> encodings(std::vector<regex::utf8::Code_point_range> ranges)
 {
-    std::ranges::sort(ranges, {}, &utf8::Code_point_range::first);
+    std::ranges::sort(ranges, {}, &regex::utf8::Code_point_range::first);
 
-    std::vector<utf8::Code_point_range> merged{};
+    std::vector<regex::utf8::Code_point_range> merged{};
 
     for (const auto& [first, last] : ranges)
     {
@@ -597,7 +599,7 @@ template <typename Node>
         return std::nullopt;
     }
 
-    return utf8::ranges(merged);
+    return regex::utf8::ranges(merged);
 }
 
 /**
@@ -605,66 +607,66 @@ template <typename Node>
  * @param name The name between the colons.
  * @return Its bytes, or std::nullopt for a name no class carries.
  */
-[[nodiscard]] std::optional<Set> posix_bytes(const std::string_view name)
+[[nodiscard]] std::optional<regex::Set> posix_bytes(const std::string_view name)
 {
     if (name == "alpha")
     {
-        return Set::alpha();
+        return regex::Set::alpha();
     }
 
     if (name == "digit")
     {
-        return Set::digits();
+        return regex::Set::digits();
     }
 
     if (name == "alnum")
     {
-        return Set::alphanum();
+        return regex::Set::alphanum();
     }
 
     if (name == "upper")
     {
-        return Set::range('A', 'Z');
+        return regex::Set::range('A', 'Z');
     }
 
     if (name == "lower")
     {
-        return Set::range('a', 'z');
+        return regex::Set::range('a', 'z');
     }
 
     if (name == "space")
     {
-        return Set{' ', '\t', '\n', '\r', '\f', '\v'};
+        return regex::Set{' ', '\t', '\n', '\r', '\f', '\v'};
     }
 
     if (name == "blank")
     {
-        return Set{' ', '\t'};
+        return regex::Set{' ', '\t'};
     }
 
     if (name == "punct")
     {
-        return Set::printable() - Set::alphanum() - Set{' '};
+        return regex::Set::printable() - regex::Set::alphanum() - regex::Set{' '};
     }
 
     if (name == "print")
     {
-        return Set::printable();
+        return regex::Set::printable();
     }
 
     if (name == "graph")
     {
-        return Set::printable() - Set{' '};
+        return regex::Set::printable() - regex::Set{' '};
     }
 
     if (name == "cntrl")
     {
-        return Set::range('\x00', '\x1F') + Set{'\x7F'};
+        return regex::Set::range('\x00', '\x1F') + regex::Set{'\x7F'};
     }
 
     if (name == "xdigit")
     {
-        return Set::digits() + Set::range('a', 'f') + Set::range('A', 'F');
+        return regex::Set::digits() + regex::Set::range('a', 'f') + regex::Set::range('A', 'F');
     }
 
     return std::nullopt;
@@ -674,7 +676,7 @@ Reader::Reader(const std::string_view pattern, std::vector<std::string> expandin
     : pattern_{pattern}, expanding_{std::move(expanding)}, options_{options}
 {}
 
-Regex Reader::read(const Definitions_t& definitions)
+regex::Regex Reader::read(const Definitions_t& definitions)
 {
     auto regex{alternation(definitions)};
 
@@ -688,9 +690,9 @@ Regex Reader::read(const Definitions_t& definitions)
     return regex;
 }
 
-Regex Reader::alternation(const Definitions_t& definitions)
+regex::Regex Reader::alternation(const Definitions_t& definitions)
 {
-    std::vector<Regex> branches{};
+    std::vector<regex::Regex> branches{};
 
     branches.push_back(sequence(definitions));
 
@@ -699,12 +701,12 @@ Regex Reader::alternation(const Definitions_t& definitions)
         branches.push_back(sequence(definitions));
     }
 
-    return one_or<Choice>(std::move(branches));
+    return one_or<regex::Choice>(std::move(branches));
 }
 
-Regex Reader::sequence(const Definitions_t& definitions)
+regex::Regex Reader::sequence(const Definitions_t& definitions)
 {
-    std::vector<Regex> parts{};
+    std::vector<regex::Regex> parts{};
 
     std::string run{};
 
@@ -738,7 +740,7 @@ Regex Reader::sequence(const Definitions_t& definitions)
         fail("empty pattern: a branch or group must match at least one byte");
     }
 
-    return one_or<Concat>(std::move(parts));
+    return one_or<regex::Concat>(std::move(parts));
 }
 
 Piece Reader::repetition(const Definitions_t& definitions)
@@ -765,15 +767,15 @@ Piece Reader::repetition(const Definitions_t& definitions)
         switch (postfix)
         {
         case '*':
-            piece.regex = kleene(std::move(body));
+            piece.regex = regex::kleene(std::move(body));
             break;
 
         case '+':
-            piece.regex = plus(std::move(body));
+            piece.regex = regex::plus(std::move(body));
             break;
 
         default:
-            piece.regex = optional(std::move(body));
+            piece.regex = regex::optional(std::move(body));
             break;
         }
     }};
@@ -802,19 +804,19 @@ Piece Reader::repetition(const Definitions_t& definitions)
 
         if (!max)
         {
-            piece.regex = at_least(std::move(*piece.regex), min);
+            piece.regex = regex::at_least(std::move(*piece.regex), min);
 
             continue;
         }
 
         if (*max == min)
         {
-            piece.regex = exact(std::move(*piece.regex), min);
+            piece.regex = regex::exact(std::move(*piece.regex), min);
 
             continue;
         }
 
-        piece.regex = range(std::move(*piece.regex), min, *max);
+        piece.regex = regex::range(std::move(*piece.regex), min, *max);
     }
 }
 
@@ -860,7 +862,7 @@ Piece Reader::atom(const Definitions_t& definitions)
     case '{':
         return {.literal = std::nullopt, .regex = definition(open, definitions)};
     case '.':
-        return {.literal = std::nullopt, .regex = any_of(Set::all() - Set{'\n'})};
+        return {.literal = std::nullopt, .regex = regex::any_of(regex::Set::all() - regex::Set{'\n'})};
     case '\\':
     {
         const auto [value, scalar]{escape()};
@@ -870,7 +872,7 @@ Piece Reader::atom(const Definitions_t& definitions)
             return {.literal = static_cast<char>(value), .regex = std::nullopt};
         }
 
-        return {.literal = std::nullopt, .regex = text(utf8::encode(value))};
+        return {.literal = std::nullopt, .regex = regex::text(regex::utf8::encode(value))};
     }
     case '*':
     case '+':
@@ -967,7 +969,7 @@ void Reader::group_flags()
     }
 }
 
-Regex Reader::bracket()
+regex::Regex Reader::bracket()
 {
     const auto opened{at_ - 1U};
 
@@ -1026,7 +1028,7 @@ Bracket_reading Reader::bracket_members()
     {
         if (negated)
         {
-            reading.bytes = Set::all() - reading.bytes;
+            reading.bytes = regex::Set::all() - reading.bytes;
         }
 
         return reading;
@@ -1055,7 +1057,7 @@ Bracket_reading Reader::read_both_ways()
     const auto add{[&reading](const char32_t low, const char32_t high) {
         if (high < first_beyond_byte)
         {
-            reading.bytes += Set::range(static_cast<char>(low), static_cast<char>(high));
+            reading.bytes += regex::Set::range(static_cast<char>(low), static_cast<char>(high));
         }
 
         reading.scalars.push_back({.first = low, .last = high});
@@ -1155,7 +1157,7 @@ Bracket_reading Reader::read_both_ways()
     return reading;
 }
 
-Regex Reader::matching(const Bracket_reading& members, const std::size_t opened)
+regex::Regex Reader::matching(const Bracket_reading& members, const std::size_t opened)
 {
     [[maybe_unused]] const auto& [bytes, scalars, wide, byte_beyond_ascii]{members};
 
@@ -1168,13 +1170,13 @@ Regex Reader::matching(const Bracket_reading& members, const std::size_t opened)
 
     if (!wide)
     {
-        return any_of(bytes);
+        return regex::any_of(bytes);
     }
 
     // The ASCII part as a set, the rest as encodings.
-    Set ascii{};
+    regex::Set ascii{};
 
-    std::vector<utf8::Code_point_range> beyond{};
+    std::vector<regex::utf8::Code_point_range> beyond{};
 
     for (const auto& [low, high] : scalars)
     {
@@ -1182,7 +1184,7 @@ Regex Reader::matching(const Bracket_reading& members, const std::size_t opened)
         {
             const auto ascii_high{std::min<char32_t>(high, first_beyond_ascii - 1U)};
 
-            ascii += Set::range(static_cast<char>(low), static_cast<char>(ascii_high));
+            ascii += regex::Set::range(static_cast<char>(low), static_cast<char>(ascii_high));
         }
 
         if (high >= first_beyond_ascii)
@@ -1207,13 +1209,13 @@ Regex Reader::matching(const Bracket_reading& members, const std::size_t opened)
 
     if (!rest)
     {
-        return any_of(ascii);
+        return regex::any_of(ascii);
     }
 
-    return choice(any_of(ascii), std::move(*rest));
+    return regex::choice(regex::any_of(ascii), std::move(*rest));
 }
 
-Set Reader::posix_class()
+regex::Set Reader::posix_class()
 {
     const auto open{at_};
 
@@ -1257,7 +1259,7 @@ Set Reader::posix_class()
 
     if (negated)
     {
-        return Set::all() - *named;
+        return regex::Set::all() - *named;
     }
 
     return *named;
@@ -1312,7 +1314,7 @@ std::string Reader::quoted()
 
         const auto [value, scalar]{escape()};
 
-        literal += scalar ? utf8::encode(value) : std::string{static_cast<char>(value)};
+        literal += scalar ? regex::utf8::encode(value) : std::string{static_cast<char>(value)};
     }
 
     if (literal.empty())
@@ -1323,14 +1325,14 @@ std::string Reader::quoted()
     return literal;
 }
 
-Regex Reader::literal(std::string run) const
+regex::Regex Reader::literal(std::string run) const
 {
     if (!options_.caseless)
     {
-        return text(std::move(run));
+        return regex::text(std::move(run));
     }
 
-    std::vector<Regex> pieces{};
+    std::vector<regex::Regex> pieces{};
 
     std::string plain{};
 
@@ -1347,25 +1349,25 @@ Regex Reader::literal(std::string run) const
 
         if (!plain.empty())
         {
-            pieces.push_back(text(std::exchange(plain, {})));
+            pieces.push_back(regex::text(std::exchange(plain, {})));
         }
 
         const auto other{static_cast<char>(swapped(scalar))};
 
-        pieces.push_back(any_of(Set{byte, other}));
+        pieces.push_back(regex::any_of(regex::Set{byte, other}));
     }
 
     if (pieces.empty())
     {
-        return text(std::move(plain));
+        return regex::text(std::move(plain));
     }
 
     if (!plain.empty())
     {
-        pieces.push_back(text(std::move(plain)));
+        pieces.push_back(regex::text(std::move(plain)));
     }
 
-    return one_or<Concat>(std::move(pieces));
+    return one_or<regex::Concat>(std::move(pieces));
 }
 
 Escaped Reader::escape()
@@ -1490,7 +1492,7 @@ Count Reader::count()
     return {.min = *min, .max = *max};
 }
 
-Regex Reader::definition(const std::size_t open, const Definitions_t& definitions)
+regex::Regex Reader::definition(const std::size_t open, const Definitions_t& definitions)
 {
     std::string name{};
 
@@ -1699,11 +1701,11 @@ std::size_t Syntax_error::offset() const noexcept
     return offset_;
 }
 
-Regex parse(const std::string_view pattern, const Definitions_t& definitions, const Parse_options options)
+regex::Regex parse(const std::string_view pattern, const Definitions_t& definitions, const Parse_options options)
 {
     Reader reader{pattern, {}, options};
 
     return reader.read(definitions);
 }
 
-} // namespace munch::regex
+} // namespace munch::pattern

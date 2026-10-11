@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "munch/regex/parse.hpp"
+#include "munch/pattern/parse.hpp"
 #include "munch/tools/audit/cursor.hpp"
 #include "munch/tools/audit/lexer_spec.hpp"
 #include "munch/tools/audit/re2c_classes.hpp"
@@ -88,7 +88,7 @@ struct Regex_text
 };
 
 /**
- * @brief A re2c regex read to its end and rewritten into the syntax regex::parse() reads, its class kept where it is
+ * @brief A re2c regex read to its end and rewritten into the syntax pattern::parse() reads, its class kept where it is
  *        one, which is what re2c's class difference takes.
  *
  * The reader stands on the block's text at the regex, reads under the flags every pattern of the block is translated
@@ -129,7 +129,7 @@ public:
      * @throws Spec_error If a quote or bracket is left open, or the regex uses a refused construct, an operand of a
      *         class difference that is no char set among them.
      */
-    [[nodiscard]] Regex_text regex_text(const regex::Definitions_t& definitions);
+    [[nodiscard]] Regex_text regex_text(const pattern::Definitions_t& definitions);
 
 private:
     /**
@@ -271,7 +271,7 @@ private:
      * @return Whether one was read.
      * @throws Spec_error If the bracket is refused, or under UTF-8 is no class whose code points the reading can take.
      */
-    [[nodiscard]] bool take_bracket(const regex::Definitions_t& definitions);
+    [[nodiscard]] bool take_bracket(const pattern::Definitions_t& definitions);
 
     /**
      * @brief Refuses the regex at an offset of it.
@@ -315,7 +315,7 @@ private:
      * @throws Spec_error As copied_text() does, or under UTF-8 if the literal is no text whose code points the reading
      *         can take.
      */
-    [[nodiscard]] bool take_exact_literal(const regex::Definitions_t& definitions);
+    [[nodiscard]] bool take_exact_literal(const pattern::Definitions_t& definitions);
 
     /**
      * @brief Returns whether a quote opens a case-insensitive literal, which is the flags' to say.

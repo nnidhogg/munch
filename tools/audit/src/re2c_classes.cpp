@@ -144,7 +144,7 @@ template <typename Keep>
 } // namespace
 
 std::optional<Class> code_points(
-        const std::string_view bracket, const regex::Definitions_t& definitions, const char32_t space)
+        const std::string_view bracket, const pattern::Definitions_t& definitions, const char32_t space)
 {
     static constexpr std::string_view negated_opener{"[^"};
 
@@ -176,11 +176,11 @@ std::optional<Class> code_points(
     const auto parsed_bytes{[&positive, &definitions]() -> std::optional<regex::Set> {
         try
         {
-            const auto parsed{regex::parse(positive, definitions, re2c_parse)};
+            const auto parsed{pattern::parse(positive, definitions, re2c_parse)};
 
             return class_of(parsed);
         }
-        catch (const regex::Syntax_error&)
+        catch (const pattern::Syntax_error&)
         {
             return std::nullopt;
         }

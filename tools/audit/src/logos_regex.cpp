@@ -362,8 +362,8 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 }
 
 /**
- * @brief Returns a class in the syntax regex::parse() reads: over bytes, a bracket of its byte ranges; over scalars, a
- *        bracket of its ASCII members and its other ranges as code point escapes, which the parser reads as the
+ * @brief Returns a class in the syntax pattern::parse() reads: over bytes, a bracket of its byte ranges; over scalars,
+ *        a bracket of its ASCII members and its other ranges as code point escapes, which the parser reads as the
  *        encodings of the scalars they span.
  * @param char_class The class.
  * @return The bracket.
@@ -397,7 +397,7 @@ void resolve(Node& node, const Subpatterns_t& subpatterns, const std::size_t lin
 }
 
 /**
- * @brief Returns a node in the syntax regex::parse() reads.
+ * @brief Returns a node in the syntax pattern::parse() reads.
  * @param node The node.
  * @param top Whether the node is the whole pattern, which an alternation needs no parentheses around.
  * @return The text.

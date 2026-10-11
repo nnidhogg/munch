@@ -1,4 +1,4 @@
-#include "munch/regex/parse.hpp"
+#include "munch/pattern/parse.hpp"
 
 #include <gtest/gtest.h>
 
@@ -17,6 +17,7 @@
 #include "munch/regex/regex.hpp"
 
 using namespace munch::nfa;
+using namespace munch::pattern;
 using namespace munch::regex;
 
 namespace

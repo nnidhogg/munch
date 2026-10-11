@@ -17,7 +17,7 @@
 
 #include "munch/dfa/boundary_search.hpp"
 #include "munch/dfa/simulator.hpp"
-#include "munch/regex/parse.hpp"
+#include "munch/pattern/parse.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/set.hpp"
 #include "munch/tools/audit/lexer_spec.hpp"
@@ -27,11 +27,11 @@
 #include "munch/tools/audit/token_set.hpp"
 
 using namespace munch::tools::audit;
+using munch::pattern::parse;
 using munch::regex::any_of;
 using munch::regex::choice;
 using munch::regex::concat;
 using munch::regex::kleene;
-using munch::regex::parse;
 using munch::regex::Set;
 using munch::regex::text;
 
@@ -124,7 +124,7 @@ std::vector<unsigned char> bytes(const std::string_view text)
 
 /**
  * @brief Returns a rule of a token set that is kept, not discarded.
- * @param pattern The rule's pattern, as regex::parse() reads it.
+ * @param pattern The rule's pattern, as pattern::parse() reads it.
  * @param id The token id.
  * @param priority The rule's priority.
  * @return The rule.

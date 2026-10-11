@@ -36,7 +36,7 @@ namespace munch::tools::audit
  * as admit() says, and a character beyond ASCII named under it is refused, since ANTLR folds it with the Unicode case
  * mappings the library has not got.
  *
- * The body is rewritten by Expression_reader into the syntax regex::parse() reads, kept beside the body as written:
+ * The body is rewritten by Expression_reader into the syntax pattern::parse() reads, kept beside the body as written:
  * `'abc'` and `'a'..'z'` become a quoted literal and a bracket, `[...]` a bracket, `.` and `~[...]` the UTF-8 encodings
  * of the scalars they admit, since ANTLR reads characters and the audit reads bytes. A literal is read as
  * Antlr_cursor::literal() reads it, a surrogate pair the one character it encodes and a lone surrogate refused; a
