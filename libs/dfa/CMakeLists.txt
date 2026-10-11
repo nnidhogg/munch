@@ -8,17 +8,11 @@ add_library(${PROJECT_NAME}
         src/builder.cpp
         src/dfa.cpp
         src/label.cpp
-        src/merge_tower.cpp
         src/minimize.cpp
         src/recovery.cpp
-        src/ripple_radius.cpp
         src/simulator.cpp
         src/split_window.cpp
-        src/token_automaton.cpp
-        src/trie_chain.cpp
         src/unroll_start.cpp
-        src/verifier.cpp
-        src/verifier_decisions.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -65,13 +59,8 @@ endif ()
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/dfa_test.cpp
-            tests/merge_tower_test.cpp
             tests/minimize_test.cpp
             tests/property_test.cpp
-            tests/ripple_radius_test.cpp
-            tests/token_automaton_test.cpp
-            tests/trie_chain_test.cpp
-            tests/verifier_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests

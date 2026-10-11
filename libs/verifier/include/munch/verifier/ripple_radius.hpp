@@ -1,5 +1,5 @@
-#ifndef MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_RIPPLE_RADIUS_HPP
-#define MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_RIPPLE_RADIUS_HPP
+#ifndef MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_RIPPLE_RADIUS_HPP
+#define MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_RIPPLE_RADIUS_HPP
 
 #include <cstddef>
 #include <optional>
@@ -7,9 +7,9 @@
 #include <string>
 #include <variant>
 
-#include "munch/dfa/merge_tower.hpp"
+#include "munch/verifier/merge_tower.hpp"
 
-namespace munch::dfa
+namespace munch::verifier
 {
 /**
  * @brief A symbol prepended to an input, the pair whose ripple attains a value.
@@ -121,6 +121,6 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  */
 [[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges);
 
-} // namespace munch::dfa
+} // namespace munch::verifier
 
-#endif // MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_RIPPLE_RADIUS_HPP
+#endif // MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_RIPPLE_RADIUS_HPP

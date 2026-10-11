@@ -1,4 +1,4 @@
-#include "munch/dfa/token_automaton.hpp"
+#include "munch/verifier/token_automaton.hpp"
 
 #include <gtest/gtest.h>
 
@@ -17,11 +17,11 @@
 #include <utility>
 #include <vector>
 
-#include "munch/dfa/merge_tower.hpp"
-#include "munch/dfa/verifier.hpp"
-#include "munch/dfa/verifier_decisions.hpp"
+#include "munch/verifier/merge_tower.hpp"
+#include "munch/verifier/verifier.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
-using namespace munch::dfa;
+using namespace munch::verifier;
 
 namespace
 {
@@ -571,7 +571,7 @@ TEST(Token_automaton_test, A_refusal_quotes_a_spelling_holding_a_NUL_and_still_n
 TEST(Token_automaton_test,
      The_decision_gives_the_reference_answers_on_every_universe_of_the_fixture_and_agrees_with_the_tower)
 {
-    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/token_automaton_reference.txt"};
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/token_automaton_reference.txt"};
 
     ASSERT_TRUE(file.is_open());
 

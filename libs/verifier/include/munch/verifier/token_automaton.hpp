@@ -1,5 +1,5 @@
-#ifndef MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_TOKEN_AUTOMATON_HPP
-#define MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_TOKEN_AUTOMATON_HPP
+#ifndef MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_TOKEN_AUTOMATON_HPP
+#define MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_TOKEN_AUTOMATON_HPP
 
 #include <cstddef>
 #include <optional>
@@ -9,10 +9,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "munch/dfa/merge_tower.hpp"
-#include "munch/dfa/verifier_decisions.hpp"
+#include "munch/verifier/merge_tower.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
-namespace munch::dfa
+namespace munch::verifier
 {
 /**
  * @brief The token automaton of canonical byte-pair encoding over a merge table, whose language is the encoder's
@@ -208,6 +208,6 @@ private:
 [[nodiscard]] std::optional<Miscovering> miscovering(
         const Token_automaton& automaton, std::string_view window, std::size_t origin);
 
-} // namespace munch::dfa
+} // namespace munch::verifier
 
-#endif // MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_TOKEN_AUTOMATON_HPP
+#endif // MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_TOKEN_AUTOMATON_HPP

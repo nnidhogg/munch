@@ -1,4 +1,4 @@
-#include "munch/dfa/trie_chain.hpp"
+#include "munch/verifier/trie_chain.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace munch::dfa
+namespace munch::verifier
 {
 namespace
 {
@@ -625,4 +625,4 @@ Verifier trie_chain(const std::span<const std::string> initial, const std::span<
     return std::move(exploration).run();
 }
 
-} // namespace munch::dfa
+} // namespace munch::verifier

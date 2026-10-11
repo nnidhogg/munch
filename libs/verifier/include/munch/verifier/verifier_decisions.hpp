@@ -1,5 +1,5 @@
-#ifndef MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_VERIFIER_DECISIONS_HPP
-#define MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_VERIFIER_DECISIONS_HPP
+#ifndef MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_VERIFIER_DECISIONS_HPP
+#define MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_VERIFIER_DECISIONS_HPP
 
 #include <cstddef>
 #include <optional>
@@ -9,7 +9,7 @@
 #include <variant>
 #include <vector>
 
-#include "munch/dfa/verifier.hpp"
+#include "munch/verifier/verifier.hpp"
 
 /**
  * @file
@@ -19,7 +19,7 @@
  * Each is a search on a product with the verifier or on its minimal automaton, fanout() two subset runs on the latter,
  * and each witness is replayable through Verifier::step().
  */
-namespace munch::dfa
+namespace munch::verifier
 {
 /**
  * @brief An input with its boundary marking, one bit per byte saying whether a boundary follows it.
@@ -423,6 +423,6 @@ struct Smallest_fanout
  */
 [[nodiscard]] Smallest_fanout smallest_fanout(const Verifier& verifier);
 
-} // namespace munch::dfa
+} // namespace munch::verifier
 
-#endif // MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_VERIFIER_DECISIONS_HPP
+#endif // MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_VERIFIER_DECISIONS_HPP

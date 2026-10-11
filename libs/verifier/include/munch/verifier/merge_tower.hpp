@@ -1,12 +1,12 @@
-#ifndef MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_MERGE_TOWER_HPP
-#define MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_MERGE_TOWER_HPP
+#ifndef MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_MERGE_TOWER_HPP
+#define MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_MERGE_TOWER_HPP
 
 #include <span>
 #include <string>
 
-#include "munch/dfa/verifier.hpp"
+#include "munch/verifier/verifier.hpp"
 
-namespace munch::dfa
+namespace munch::verifier
 {
 /**
  * @brief One merge of a byte-pair table: the two tokens it joins, in order, whose concatenation is its product.
@@ -55,6 +55,6 @@ struct Merge
  */
 [[nodiscard]] Verifier merge_tower(std::span<const Merge> merges);
 
-} // namespace munch::dfa
+} // namespace munch::verifier
 
-#endif // MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_MERGE_TOWER_HPP
+#endif // MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_MERGE_TOWER_HPP

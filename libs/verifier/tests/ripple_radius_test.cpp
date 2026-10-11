@@ -1,4 +1,4 @@
-#include "munch/dfa/ripple_radius.hpp"
+#include "munch/verifier/ripple_radius.hpp"
 
 #include <gtest/gtest.h>
 
@@ -16,9 +16,9 @@
 #include <variant>
 #include <vector>
 
-#include "munch/dfa/merge_tower.hpp"
+#include "munch/verifier/merge_tower.hpp"
 
-using namespace munch::dfa;
+using namespace munch::verifier;
 
 namespace
 {
@@ -639,7 +639,7 @@ TEST(Ripple_radius_test, A_refusal_quotes_a_spelling_holding_a_NUL_and_still_nam
 
 TEST(Ripple_radius_test, The_decision_gives_the_reference_answers_on_every_universe_of_the_fixture)
 {
-    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/ripple_reference.txt"};
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/ripple_reference.txt"};
 
     ASSERT_TRUE(file.is_open());
 

@@ -1,4 +1,4 @@
-#include "munch/dfa/verifier.hpp"
+#include "munch/verifier/verifier.hpp"
 
 #include <gtest/gtest.h>
 
@@ -25,10 +25,11 @@
 
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/dfa.hpp"
-#include "munch/dfa/trie_chain.hpp"
-#include "munch/dfa/verifier_decisions.hpp"
+#include "munch/verifier/trie_chain.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
 using namespace munch::dfa;
+using namespace munch::verifier;
 
 namespace
 {
@@ -2306,7 +2307,7 @@ TEST(Verifier_test, Armed_run_refuses_an_accepting_initial_state)
 
 TEST(Verifier_test, The_decisions_give_the_reference_answers_on_every_universe_of_the_fixture)
 {
-    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/verifier_reference.txt"};
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/verifier_reference.txt"};
 
     ASSERT_TRUE(file.is_open());
 
@@ -2346,7 +2347,7 @@ TEST(Verifier_test, The_decisions_refuse_a_malformed_window_and_an_empty_domain)
 
 TEST(Verifier_test, Dependence_gives_the_reference_answers_on_every_universe_of_the_cut_fixture)
 {
-    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/cut_reference.txt"};
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/cut_reference.txt"};
 
     ASSERT_TRUE(file.is_open());
 
@@ -2456,7 +2457,7 @@ TEST(Verifier_test, A_certified_cut_can_fail_on_both_sides)
 
 TEST(Verifier_test, Chunk_dependence_gives_the_reference_answers_on_every_universe_of_the_chunk_fixture)
 {
-    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/chunk_reference.txt"};
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/chunk_reference.txt"};
 
     ASSERT_TRUE(file.is_open());
 
@@ -2604,7 +2605,7 @@ TEST(Verifier_test, The_anchor_at_position_zero_fails_when_the_start_does_not_ac
 
 TEST(Verifier_test, Fanout_and_smallest_fanout_give_the_reference_answers_on_every_universe_of_the_fanout_fixture)
 {
-    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/fanout_reference.txt"};
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/fanout_reference.txt"};
 
     ASSERT_TRUE(file.is_open());
 

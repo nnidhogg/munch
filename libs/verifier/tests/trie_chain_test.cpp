@@ -1,8 +1,7 @@
-#include "munch/dfa/merge_tower.hpp"
+#include "munch/verifier/trie_chain.hpp"
 
 #include <gtest/gtest.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <format>
 #include <fstream>
@@ -16,10 +15,10 @@
 #include <variant>
 #include <vector>
 
-#include "munch/dfa/verifier.hpp"
-#include "munch/dfa/verifier_decisions.hpp"
+#include "munch/verifier/verifier.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
-using namespace munch::dfa;
+using namespace munch::verifier;
 
 namespace
 {
@@ -49,6 +48,11 @@ struct Fixture_counts
     std::size_t strings{0};
 
     /**
+     * @brief The string lines whose text the scanner does not consume whole.
+     */
+    std::size_t outsides{0};
+
+    /**
      * @brief The certify lines.
      */
     std::size_t certifications{0};
@@ -72,22 +76,43 @@ struct Fixture_counts
      * @brief The pair lines.
      */
     std::size_t pairs{0};
+
+    /**
+     * @brief The pair lines whose witness falls in the domain half.
+     */
+    std::size_t domains{0};
 };
 
 /**
- * @brief A universe of the fixture: its merge table and the merge tower of the table.
+ * @brief A two-mode vocabulary: the initial tokens and the continuation tokens.
+ */
+struct Vocabulary
+{
+    /**
+     * @brief The initial tokens.
+     */
+    std::vector<std::string> initial{};
+
+    /**
+     * @brief The continuation tokens.
+     */
+    std::vector<std::string> continuation{};
+};
+
+/**
+ * @brief A universe of the fixture: its vocabulary and the trie chain of the vocabulary.
  */
 struct Universe
 {
     /**
-     * @brief The merge table in rank order.
+     * @brief The vocabulary.
      */
-    std::vector<Merge> merges;
+    Vocabulary vocabulary;
 
     /**
-     * @brief The merge tower of the table.
+     * @brief The trie chain of the vocabulary.
      */
-    Verifier tower;
+    Verifier chain;
 };
 
 /**
@@ -112,73 +137,80 @@ struct Fixture_check
 };
 
 /**
- * @brief Returns the token sequence canonical byte-pair encoding produces for a text: at every step the lowest-rank
- *        merge present anywhere is applied at its leftmost occurrence.
- * @param merges The merge table in rank order.
+ * @brief Returns the length of the longest token of a set that is a prefix of a text.
+ * @param tokens The tokens.
  * @param text The text.
- * @return The tokens.
+ * @return The length, zero when no token is a prefix.
  */
-std::vector<std::string> reference_tokens(const std::vector<Merge>& merges, const std::string_view text)
+std::size_t longest_prefix(const std::vector<std::string>& tokens, const std::string_view text)
 {
-    std::vector<std::string> sequence{};
+    std::size_t best{0};
 
-    for (const auto byte : text)
+    for (const auto& token : tokens)
     {
-        sequence.push_back(std::string{byte});
-    }
-
-    for (auto merged{true}; merged;)
-    {
-        merged = false;
-
-        for (const auto& [left, right] : merges)
+        if (token.size() > best && text.starts_with(token))
         {
-            const auto is_pair{[&](const std::string& first, const std::string& second) {
-                return first == left && second == right;
-            }};
-
-            const auto at{std::ranges::adjacent_find(sequence, is_pair)};
-
-            if (at == sequence.end())
-            {
-                continue;
-            }
-
-            *at = left + right;
-            sequence.erase(at + 1);
-            merged = true;
-
-            break;
+            best = token.size();
         }
     }
 
-    return sequence;
+    return best;
 }
 
 /**
- * @brief Returns the boundary marking of the reference encoder's segmentation of a text, a boundary after every token
- *        but the last.
- * @param merges The merge table in rank order.
+ * @brief Returns the boundary marking of the reference scanner's segmentation of a text, longest match among the
+ *        initial tokens first and among the continuation tokens from then on, a boundary after every token but the
+ *        last.
+ * @param vocabulary The vocabulary.
  * @param text The text.
- * @return The marking.
+ * @return The marking, or std::nullopt when no token of the mode matches before the text ends.
  */
-Marking_t reference_marking(const std::vector<Merge>& merges, const std::string_view text)
+std::optional<Marking_t> reference_marking(const Vocabulary& vocabulary, const std::string_view text)
 {
     Marking_t marking(text.size(), false);
 
-    std::size_t end{0};
+    auto first{true};
 
-    for (const auto& token : reference_tokens(merges, text))
+    for (std::size_t position{0}; position < text.size(); first = false)
     {
-        end += token.size();
+        const auto& tokens{first ? vocabulary.initial : vocabulary.continuation};
 
-        if (end < text.size())
+        const auto length{longest_prefix(tokens, text.substr(position))};
+
+        if (length == 0)
         {
-            marking[end - 1] = true;
+            return std::nullopt;
+        }
+
+        position += length;
+
+        if (position < text.size())
+        {
+            marking[position - 1] = true;
         }
     }
 
     return marking;
+}
+
+/**
+ * @brief Returns the markings the reference scanner gives a text: its segmentation, or none.
+ * @param vocabulary The vocabulary.
+ * @param text The text.
+ * @return The set of the reference marking, empty when the scanner does not consume the text whole.
+ */
+std::set<Marking_t> reference_markings(const Vocabulary& vocabulary, const std::string_view text)
+{
+    std::set<Marking_t> markings{};
+
+    const auto marking{reference_marking(vocabulary, text)};
+
+    if (marking)
+    {
+        markings.insert(*marking);
+    }
+
+    return markings;
 }
 
 /**
@@ -262,40 +294,40 @@ Marking_t marking_of(const std::string_view input, const std::vector<std::size_t
 }
 
 /**
- * @brief Checks that the tower's accepted markings of a text are exactly the reference encoder's marking.
+ * @brief Checks that the chain's accepted markings of a text are exactly the reference scanner's.
  * @param universe The universe.
  * @param text The text.
  * @param context The fixture line or test checked.
  */
 void expect_reference_marking(const Universe& universe, const std::string_view text, const std::string& context)
 {
-    const auto expected{std::set<Marking_t>{reference_marking(universe.merges, text)}};
-
-    EXPECT_EQ(accepted_markings(universe.tower, text), expected) << context << " on " << text;
+    EXPECT_EQ(accepted_markings(universe.chain, text), reference_markings(universe.vocabulary, text))
+            << context << " on " << text;
 }
 
 /**
- * @brief Builds a universe: a merge table with the merge tower of it.
- * @param merges The merge table in rank order.
+ * @brief Builds a universe: a vocabulary with the trie chain of it.
+ * @param vocabulary The vocabulary.
  * @return The universe.
  */
-Universe universe_of(std::vector<Merge> merges)
+Universe universe_of(Vocabulary vocabulary)
 {
-    auto tower{merge_tower(merges)};
+    auto chain{trie_chain(vocabulary.initial, vocabulary.continuation)};
 
-    return {.merges = std::move(merges), .tower = std::move(tower)};
+    return {.vocabulary = std::move(vocabulary), .chain = std::move(chain)};
 }
 
 /**
- * @brief Returns the message the merge tower refuses a table with, or the empty text when it takes the table.
- * @param merges The merge table in rank order.
+ * @brief Returns the message the trie chain refuses a vocabulary with, or the empty text when it takes the
+ *        vocabulary.
+ * @param vocabulary The vocabulary.
  * @return The refusal.
  */
-std::string refusal_of(const std::vector<Merge>& merges)
+std::string refusal_of(const Vocabulary& vocabulary)
 {
     try
     {
-        std::ignore = merge_tower(merges);
+        std::ignore = trie_chain(vocabulary.initial, vocabulary.continuation);
     }
     catch (const std::invalid_argument& refusal)
     {
@@ -369,7 +401,7 @@ bool has_miscovered_occurrence(const Marked_string& marked, const std::string_vi
 }
 
 /**
- * @brief Checks that the tower's one accepted marking of a text is the reference encoder's, and that under it some
+ * @brief Checks that the chain's one accepted marking of a text is the reference scanner's, and that under it some
  *        occurrence of the window is mis-covered.
  * @param universe The universe.
  * @param bytes The text.
@@ -383,14 +415,18 @@ void expect_miscovered(
 {
     expect_reference_marking(universe, bytes, context);
 
-    const Marked_string marked{.bytes = bytes, .boundaries = reference_marking(universe.merges, bytes)};
+    const auto marking{reference_marking(universe.vocabulary, bytes)};
+
+    ASSERT_TRUE(marking) << context << " on " << bytes;
+
+    const Marked_string marked{.bytes = bytes, .boundaries = *marking};
 
     EXPECT_TRUE(has_miscovered_occurrence(marked, window, origin)) << context << " on " << bytes;
 }
 
 /**
- * @brief Checks that two universes segment a text apart: each tower's one accepted marking is its reference encoder's,
- *        and the two markings differ.
+ * @brief Checks that two universes segment a text apart: each chain's one accepted marking is its reference
+ *        scanner's, and the two markings differ.
  * @param a The first universe.
  * @param b The second universe.
  * @param bytes The text.
@@ -401,38 +437,68 @@ void expect_diverging(const Universe& a, const Universe& b, const std::string& b
     expect_reference_marking(a, bytes, context);
     expect_reference_marking(b, bytes, context);
 
-    EXPECT_NE(reference_marking(a.merges, bytes), reference_marking(b.merges, bytes)) << context << " on " << bytes;
+    const auto first{reference_marking(a.vocabulary, bytes)};
+    const auto second{reference_marking(b.vocabulary, bytes)};
+
+    EXPECT_TRUE(first && second) << context << " on " << bytes;
+    EXPECT_NE(first, second) << context << " on " << bytes;
 }
 
 /**
- * @brief Starts a universe line's universe: reads its merges, each a left and a right part joined by a comma, and
- *        builds the merge tower of the table.
+ * @brief Checks that exactly one of two universes scans a text whole: each chain's accepted markings are its reference
+ *        scanner's, and exactly one scanner has one.
+ * @param a The first universe.
+ * @param b The second universe.
+ * @param bytes The text.
+ * @param context The fixture line checked.
+ */
+void expect_one_domain(const Universe& a, const Universe& b, const std::string& bytes, const std::string& context)
+{
+    expect_reference_marking(a, bytes, context);
+    expect_reference_marking(b, bytes, context);
+
+    const auto first{reference_marking(a.vocabulary, bytes)};
+    const auto second{reference_marking(b.vocabulary, bytes)};
+
+    EXPECT_NE(first.has_value(), second.has_value()) << context << " on " << bytes;
+}
+
+/**
+ * @brief Starts a universe line's universe: reads its initial tokens, a bar, and its continuation tokens, and builds
+ *        the trie chain of the vocabulary.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
  */
 void start_universe(Fixture_check& check, std::istringstream& fields, const std::string& context)
 {
-    std::vector<Merge> merges{};
+    Vocabulary vocabulary{};
 
-    for (std::string merge{}; fields >> merge;)
+    auto barred{false};
+
+    for (std::string token{}; fields >> token;)
     {
-        const auto comma{merge.find(',')};
+        if (token == "|")
+        {
+            barred = true;
 
-        ASSERT_NE(comma, std::string::npos) << context;
+            continue;
+        }
 
-        merges.push_back({.left = merge.substr(0, comma), .right = merge.substr(comma + 1)});
+        auto& tokens{barred ? vocabulary.continuation : vocabulary.initial};
+
+        tokens.push_back(token);
     }
 
-    auto tower{merge_tower(merges)};
+    ASSERT_TRUE(barred) << context;
 
     ++check.counts.universes;
     check.universe = context;
-    check.universes.push_back(Universe{.merges = std::move(merges), .tower = std::move(tower)});
+    check.universes.push_back(universe_of(std::move(vocabulary)));
 }
 
 /**
- * @brief Checks a states line: the tower's state count equal to the reference's.
+ * @brief Checks a states line: the chain's state count equal to the reference's.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
@@ -445,12 +511,12 @@ void expect_state_count(Fixture_check& check, std::istringstream& fields, const 
 
     ++check.counts.state_counts;
 
-    EXPECT_EQ(check.universes.back().tower.state_count(), expected) << context;
+    EXPECT_EQ(check.universes.back().chain.state_count(), expected) << context;
 }
 
 /**
- * @brief Checks a string line: the reference marking equal to the encoder's here, and the tower's accepted markings of
- *        the text exactly that one.
+ * @brief Checks a string line: the reference marking equal to the scanner's here, "outside" standing for a text the
+ *        scanner does not consume whole, and the chain's accepted markings of the text exactly that one or none.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
@@ -468,14 +534,23 @@ void expect_string(Fixture_check& check, std::istringstream& fields, const std::
 
     ++check.counts.strings;
 
-    EXPECT_EQ(reference_marking(universe.merges, bytes), marking_of(bits)) << context;
+    if (bits == "outside")
+    {
+        ++check.counts.outsides;
+
+        EXPECT_FALSE(reference_marking(universe.vocabulary, bytes)) << context;
+    }
+    else
+    {
+        EXPECT_EQ(reference_marking(universe.vocabulary, bytes), marking_of(bits)) << context;
+    }
 
     expect_reference_marking(universe, bytes, context);
 }
 
 /**
- * @brief Checks a certify line: the certificate's answer, and for a miscovering its witness marked as the encoder marks
- *        it and as long as the reference's text, and both texts mis-covered under that marking.
+ * @brief Checks a certify line: the certificate's answer, and for a miscovering its witness marked as the scanner
+ *        marks it and as long as the reference's text, and both texts mis-covered under that marking.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
@@ -491,7 +566,7 @@ void expect_certification(Fixture_check& check, std::istringstream& fields, cons
 
     const auto& universe{check.universes.back()};
 
-    const auto found{miscovering(universe.tower, window, origin)};
+    const auto found{miscovering(universe.chain, window, origin)};
 
     ++check.counts.certifications;
 
@@ -510,8 +585,8 @@ void expect_certification(Fixture_check& check, std::istringstream& fields, cons
 
     const auto& [bytes, boundaries]{segmentation};
 
-    EXPECT_TRUE(is_accepted(universe.tower, segmentation)) << context;
-    EXPECT_EQ(boundaries, reference_marking(universe.merges, bytes)) << context;
+    EXPECT_TRUE(is_accepted(universe.chain, segmentation)) << context;
+    EXPECT_EQ(boundaries, reference_marking(universe.vocabulary, bytes)) << context;
     EXPECT_EQ(bytes.size(), text_of(text).size()) << context;
     ASSERT_LE(occurrence + window.size(), bytes.size()) << context;
     EXPECT_EQ(std::string_view{bytes}.substr(occurrence, window.size()), window) << context;
@@ -533,7 +608,7 @@ void expect_gap(Fixture_check& check, std::istringstream& fields, const std::str
 
     fields >> expected;
 
-    const auto gap{boundary_gap(check.universes.back().tower)};
+    const auto gap{boundary_gap(check.universes.back().chain)};
 
     ++check.counts.gaps;
 
@@ -554,9 +629,9 @@ void expect_realizable(Fixture_check& check, std::istringstream& fields, const s
 
     fields >> expected;
 
-    const auto& tower{check.universes.back().tower};
+    const auto& chain{check.universes.back().chain};
 
-    const auto mask{realizable(tower)};
+    const auto mask{realizable(chain)};
 
     ++check.counts.realizabilities;
 
@@ -564,13 +639,14 @@ void expect_realizable(Fixture_check& check, std::istringstream& fields, const s
 
     if (mask)
     {
-        EXPECT_EQ(mask->size(), tower.state_count()) << context;
+        EXPECT_EQ(mask->size(), chain.state_count()) << context;
     }
 }
 
 /**
- * @brief Checks a pair line: the divergence's half the boundary one as the reference's is, its witness marked as the
- *        first table's encoder marks it and as long as the reference's text, and both texts segmented apart.
+ * @brief Checks a pair line: the divergence's half the reference's, its witness as long as the reference's text, and
+ *        both texts segmented apart by the two scanners for the boundary half, or scanned whole by exactly one of them
+ *        for the domain half, the witness marked as that scanner marks it.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
@@ -587,7 +663,7 @@ void expect_divergence(Fixture_check& check, std::istringstream& fields, const s
     const auto& a{check.universes.at(first)};
     const auto& b{check.universes.at(second)};
 
-    const auto found{divergence(a.tower, b.tower)};
+    const auto found{divergence(a.chain, b.chain)};
 
     ++check.counts.pairs;
 
@@ -599,22 +675,39 @@ void expect_divergence(Fixture_check& check, std::istringstream& fields, const s
     }
 
     ASSERT_TRUE(found) << context;
-    ASSERT_EQ(half, "boundary") << context;
 
     const auto& [found_half, witness]{*found};
 
     const auto& [bytes, boundaries]{witness};
 
-    EXPECT_EQ(found_half, Half::boundary) << context;
     EXPECT_EQ(bytes.size(), text_of(text).size()) << context;
-    EXPECT_EQ(boundaries, reference_marking(a.merges, bytes)) << context;
 
-    expect_diverging(a, b, bytes, context);
-    expect_diverging(a, b, text_of(text), context);
+    if (half == "boundary")
+    {
+        EXPECT_EQ(found_half, Half::boundary) << context;
+        EXPECT_EQ(boundaries, reference_marking(a.vocabulary, bytes)) << context;
+
+        expect_diverging(a, b, bytes, context);
+        expect_diverging(a, b, text_of(text), context);
+
+        return;
+    }
+
+    ASSERT_EQ(half, "domain") << context;
+
+    ++check.counts.domains;
+
+    const auto& accepting{is_accepted(a.chain, witness) ? a : b};
+
+    EXPECT_EQ(found_half, Half::domain) << context;
+    EXPECT_EQ(boundaries, reference_marking(accepting.vocabulary, bytes)) << context;
+
+    expect_one_domain(a, b, bytes, context);
+    expect_one_domain(a, b, text_of(text), context);
 }
 
 /**
- * @brief Checks one fixture line against the tower and the decisions, a comment or blank line checking nothing.
+ * @brief Checks one fixture line against the chain and the decisions, a comment or blank line checking nothing.
  * @param check The fixture under check.
  * @param line The line.
  */
@@ -671,93 +764,81 @@ void expect_fixture_line(Fixture_check& check, const std::string& line)
 
 } // namespace
 
-TEST(Merge_tower_test, One_merge_over_a_segments_aaa_as_aa_then_a)
+TEST(Trie_chain_test, Initial_a_and_ab_with_continuation_b_segment_abb_as_ab_then_b)
 {
-    const auto universe{universe_of({{.left = "a", .right = "a"}})};
+    const auto universe{universe_of({.initial = {"a", "ab"}, .continuation = {"b"}})};
 
-    EXPECT_EQ(accepted_markings(universe.tower, "aaa"), std::set<Marking_t>{marking_of("aaa", {1})});
-    EXPECT_EQ(accepted_markings(universe.tower, "aaaa"), std::set<Marking_t>{marking_of("aaaa", {1})});
-    EXPECT_EQ(accepted_markings(universe.tower, "a"), std::set<Marking_t>{marking_of("a", {})});
-    EXPECT_TRUE(universe.tower.accepts(universe.tower.start()));
+    EXPECT_EQ(accepted_markings(universe.chain, "abb"), std::set<Marking_t>{marking_of("abb", {1})});
+    EXPECT_EQ(accepted_markings(universe.chain, "ab"), std::set<Marking_t>{marking_of("ab", {})});
+    EXPECT_EQ(accepted_markings(universe.chain, "abbb"), std::set<Marking_t>{marking_of("abbb", {1, 2})});
+    EXPECT_EQ(accepted_markings(universe.chain, "a"), std::set<Marking_t>{marking_of("a", {})});
+    EXPECT_EQ(accepted_markings(universe.chain, ""), std::set<Marking_t>{Marking_t{}});
+    EXPECT_TRUE(universe.chain.accepts(universe.chain.start()));
 
-    for (const auto text : {"", "aa", "aaaaa", "aaaaaaaa", "ab", "ba", "aaba", "aabaaa"})
+    for (const auto text : {"b", "ba", "aa", "aab", "abab", "abba", "bbb", "ababab"})
     {
-        expect_reference_marking(universe, text, "one merge over a");
+        expect_reference_marking(universe, text, "a, ab | b");
     }
 }
 
-TEST(Merge_tower_test, A_later_merge_may_name_an_earlier_product)
+TEST(Trie_chain_test, A_run_that_dies_leaves_the_text_outside_the_domain)
 {
-    const auto universe{
-            universe_of({{.left = "a", .right = "b"}, {.left = "ab", .right = "a"}, {.left = "aba", .right = "b"}})};
+    const auto universe{universe_of({.initial = {"a"}, .continuation = {"ba", "a"}})};
 
-    EXPECT_EQ(accepted_markings(universe.tower, "abaab"), std::set<Marking_t>{marking_of("abaab", {2})});
-    EXPECT_EQ(accepted_markings(universe.tower, "abab"), std::set<Marking_t>{marking_of("abab", {1})});
-    EXPECT_EQ(accepted_markings(universe.tower, "ababb"), std::set<Marking_t>{marking_of("ababb", {1, 3})});
+    EXPECT_EQ(accepted_markings(universe.chain, "ab"), std::set<Marking_t>{});
+    EXPECT_EQ(accepted_markings(universe.chain, "abab"), std::set<Marking_t>{});
+    EXPECT_EQ(accepted_markings(universe.chain, "aba"), std::set<Marking_t>{marking_of("aba", {0})});
+    EXPECT_EQ(accepted_markings(universe.chain, "aa"), std::set<Marking_t>{marking_of("aa", {0})});
+    EXPECT_EQ(accepted_markings(universe.chain, "abaa"), std::set<Marking_t>{marking_of("abaa", {0, 2})});
 
-    for (const auto text : {"aba", "abb", "baba", "abaaba", "ababa", "abababab", "abaabab"})
+    for (const auto text : {"b", "abb", "aaba", "ababa", "abaaba"})
     {
-        expect_reference_marking(universe, text, "ab, ab+a, aba+b");
+        expect_reference_marking(universe, text, "a | ba, a");
     }
 }
 
-TEST(Merge_tower_test, The_empty_table_segments_byte_by_byte)
+TEST(Trie_chain_test, A_token_in_both_sets_is_read_by_the_mode_of_its_segment)
 {
-    const auto universe{universe_of({})};
+    const auto universe{universe_of({.initial = {"a", "ab", "b"}, .continuation = {"a", "b"}})};
 
-    EXPECT_EQ(accepted_markings(universe.tower, "xyz"), std::set<Marking_t>{marking_of("xyz", {0, 1})});
-    EXPECT_EQ(accepted_markings(universe.tower, ""), std::set<Marking_t>{Marking_t{}});
-    EXPECT_EQ(universe.tower.state_count(), 3U);
+    EXPECT_EQ(accepted_markings(universe.chain, "abab"), std::set<Marking_t>{marking_of("abab", {1, 2})});
+    EXPECT_EQ(accepted_markings(universe.chain, "bab"), std::set<Marking_t>{marking_of("bab", {0, 1})});
+
+    for (const auto text : {"aab", "abb", "baba", "abba", "bbab"})
+    {
+        expect_reference_marking(universe, text, "a, ab, b | a, b");
+    }
 }
 
-TEST(Merge_tower_test, Refuses_a_merge_naming_a_part_the_vocabulary_does_not_carry)
+TEST(Trie_chain_test, An_empty_set_is_taken)
 {
-    const auto refusal{refusal_of({{.left = "a", .right = "b"}, {.left = "a", .right = "bc"}})};
+    const auto no_initial{universe_of({.initial = {}, .continuation = {"a"}})};
 
-    EXPECT_TRUE(refusal.contains(R"(("a", "bc") at rank 1 names "bc")")) << refusal;
+    EXPECT_EQ(no_initial.chain.state_count(), 1U);
+    EXPECT_TRUE(no_initial.chain.accepts(no_initial.chain.start()));
+    EXPECT_EQ(accepted_markings(no_initial.chain, "a"), std::set<Marking_t>{});
+
+    const auto no_continuation{universe_of({.initial = {"a", "b"}, .continuation = {}})};
+
+    EXPECT_EQ(no_continuation.chain.state_count(), 3U);
+    EXPECT_EQ(accepted_markings(no_continuation.chain, "a"), std::set<Marking_t>{marking_of("a", {})});
+    EXPECT_EQ(accepted_markings(no_continuation.chain, "ab"), std::set<Marking_t>{});
 }
 
-TEST(Merge_tower_test, Refuses_a_merge_whose_product_an_earlier_merge_already_carries)
+TEST(Trie_chain_test, Refuses_an_empty_token)
 {
-    const auto refusal{refusal_of(
-            {{.left = "a", .right = "b"},
-             {.left = "a", .right = "a"},
-             {.left = "aa", .right = "b"},
-             {.left = "a", .right = "ab"}})};
+    const auto initial{refusal_of({.initial = {"a", ""}, .continuation = {"b"}})};
 
-    EXPECT_TRUE(refusal.contains(R"(("a", "ab") at rank 3 recreates the token "aab")")) << refusal;
+    EXPECT_TRUE(initial.contains("the initial token at index 1 is empty")) << initial;
+
+    const auto continuation{refusal_of({.initial = {"a"}, .continuation = {""}})};
+
+    EXPECT_TRUE(continuation.contains("the continuation token at index 0 is empty")) << continuation;
 }
 
-TEST(Merge_tower_test, Refuses_a_table_whose_later_merge_recreates_a_token_an_earlier_one_consumed)
+TEST(Trie_chain_test, The_chain_and_the_decisions_give_the_reference_answers_on_every_universe_of_the_fixture)
 {
-    const auto refusal{refusal_of(
-            {{.left = "c", .right = "c"},
-             {.left = "c", .right = "cc"},
-             {.left = "ccc", .right = "a"},
-             {.left = "cc", .right = "c"}})};
-
-    EXPECT_TRUE(refusal.contains(R"(("cc", "c") at rank 3 recreates the token "ccc")")) << refusal;
-}
-
-TEST(Merge_tower_test, A_refusal_quotes_a_spelling_holding_a_NUL_and_still_names_the_rank)
-{
-    // A raw NUL in the message would end it there for every reader of what(), so a byte outside printable ASCII is
-    // written as an escape, and the quote and the backslash are escaped beside it.
-    const std::string nul(1, '\0');
-
-    const auto refusal{
-            refusal_of({{.left = nul, .right = "a"}, {.left = "\"", .right = "\\"}, {.left = nul, .right = "a"}})};
-
-    EXPECT_TRUE(refusal.contains(R"(("\x00", "a") at rank 2 recreates the token "\x00a")")) << refusal;
-
-    const auto missing{refusal_of({{.left = "\xFF", .right = "\"\\"}})};
-
-    EXPECT_TRUE(missing.contains(R"(("\xFF", "\"\\") at rank 0 names "\"\\")")) << missing;
-}
-
-TEST(Merge_tower_test, The_tower_and_the_decisions_give_the_reference_answers_on_every_universe_of_the_fixture)
-{
-    std::ifstream file{std::string{SOURCE_DIR} + "/libs/dfa/tests/data/bpe_reference.txt"};
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/wordpiece_reference.txt"};
 
     ASSERT_TRUE(file.is_open());
 
@@ -768,12 +849,14 @@ TEST(Merge_tower_test, The_tower_and_the_decisions_give_the_reference_answers_on
         expect_fixture_line(check, line);
     }
 
-    EXPECT_EQ(check.counts.universes, 14U);
-    EXPECT_EQ(check.counts.state_counts, 14U);
-    EXPECT_EQ(check.counts.strings, 10177U);
-    EXPECT_EQ(check.counts.certifications, 1008U);
-    EXPECT_EQ(check.counts.miscoverings, 718U);
-    EXPECT_EQ(check.counts.gaps, 14U);
-    EXPECT_EQ(check.counts.realizabilities, 14U);
-    EXPECT_EQ(check.counts.pairs, 105U);
+    EXPECT_EQ(check.counts.universes, 16U);
+    EXPECT_EQ(check.counts.state_counts, 16U);
+    EXPECT_EQ(check.counts.strings, 13713U);
+    EXPECT_EQ(check.counts.outsides, 12328U);
+    EXPECT_EQ(check.counts.certifications, 1280U);
+    EXPECT_EQ(check.counts.miscoverings, 412U);
+    EXPECT_EQ(check.counts.gaps, 16U);
+    EXPECT_EQ(check.counts.realizabilities, 16U);
+    EXPECT_EQ(check.counts.pairs, 136U);
+    EXPECT_EQ(check.counts.domains, 80U);
 }

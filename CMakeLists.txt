@@ -101,6 +101,7 @@ target_link_libraries(${PROJECT_NAME}
         INTERFACE
         munch_core
         munch_tokenizer
+        munch_verifier
 )
 
 if (MUNCH_INSTALL)

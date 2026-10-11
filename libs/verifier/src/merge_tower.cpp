@@ -1,4 +1,4 @@
-#include "munch/dfa/merge_tower.hpp"
+#include "munch/verifier/merge_tower.hpp"
 
 #include <algorithm>
 #include <compare>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace munch::dfa
+namespace munch::verifier
 {
 namespace
 {
@@ -569,4 +569,4 @@ Verifier merge_tower(const std::span<const Merge> merges)
     return std::move(exploration).run();
 }
 
-} // namespace munch::dfa
+} // namespace munch::verifier

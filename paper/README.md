@@ -31,7 +31,7 @@ reproduces the sequential segmentation, an edit moves boundaries only strictly b
 side of it, a delimiter admits a sound cut exactly where it sits only token-initial or only token-final, the anchor-free
 span of a finite inventory is decided bounded or not with its exact supremum, and a differential auditor decides whether
 two token sets place different boundaries on an input both tokenize. The decisions ship in the library as
-`dfa::Verifier`, `Lexer::shortest_split_window()`, `Lexer::anchor_free_span()`, `Lexer::boundary_profile()` and
+`verifier::Verifier`, `Lexer::shortest_split_window()`, `Lexer::anchor_free_span()`, `Lexer::boundary_profile()` and
 `Lexer::segmentation_difference()`, and the auditor as `munch-audit`.
 
 The markdown reports are the accessible form, linked from the README and kept next to the implementation they describe;

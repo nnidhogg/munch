@@ -379,6 +379,7 @@ target_link_libraries(munch_verifier_supply
         PRIVATE
         munch_core
         munch_probes
+        munch_verifier
 )
 
 if (MUNCH_BUILD_TESTS)

@@ -1,5 +1,5 @@
-#ifndef MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_VERIFIER_HPP
-#define MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_VERIFIER_HPP
+#ifndef MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_VERIFIER_HPP
+#define MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_VERIFIER_HPP
 
 #include <compare>
 #include <cstddef>
@@ -10,7 +10,7 @@
 
 #include "munch/dfa/dfa.hpp"
 
-namespace munch::dfa
+namespace munch::verifier
 {
 /**
  * @brief One symbol a verifier reads: a byte, and whether a token boundary follows it.
@@ -197,8 +197,8 @@ private:
  * @return The armed-run verifier.
  * @throws std::invalid_argument If the DFA's initial state accepts.
  */
-[[nodiscard]] Verifier armed_run(const Dfa& dfa);
+[[nodiscard]] Verifier armed_run(const dfa::Dfa& dfa);
 
-} // namespace munch::dfa
+} // namespace munch::verifier
 
-#endif // MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_VERIFIER_HPP
+#endif // MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_VERIFIER_HPP

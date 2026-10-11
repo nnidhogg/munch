@@ -166,8 +166,8 @@ jobs:
           pattern='^[[:space:]]*cmake_minimum_required\('
           exact='^[[:space:]]*cmake_minimum_required\(VERSION 3\.20\.6\)[[:space:]]*$'
           declared=$(git grep -hiE "$pattern" -- '*CMakeLists.txt' '.github/workflows' | wc -l)
-          if [ "$declared" != "16" ]; then
-            echo "expected 16 cmake_minimum_required declarations, found $declared"
+          if [ "$declared" != "17" ]; then
+            echo "expected 17 cmake_minimum_required declarations, found $declared"
             exit 1
           fi
           if git grep -hiE "$pattern" -- '*CMakeLists.txt' '.github/workflows' | grep -ivE "$exact"; then
@@ -422,6 +422,7 @@ jobs:
           #include <munch/regex/regex.hpp>
           #include <munch/regex/set.hpp>
           #include <munch/regex/unicode.hpp>
+          #include <munch/verifier/verifier.hpp>
 
           int main()
           {

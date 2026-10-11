@@ -1,4 +1,4 @@
-#include "munch/dfa/ripple_radius.hpp"
+#include "munch/verifier/ripple_radius.hpp"
 
 #include <algorithm>
 #include <compare>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace munch::dfa
+namespace munch::verifier
 {
 namespace
 {
@@ -1089,4 +1089,4 @@ Ripple_radius ripple_radius(const std::span<const Merge> merges)
     return std::move(exploration).run();
 }
 
-} // namespace munch::dfa
+} // namespace munch::verifier

@@ -1,4 +1,4 @@
-#include "munch/dfa/token_automaton.hpp"
+#include "munch/verifier/token_automaton.hpp"
 
 #include <algorithm>
 #include <compare>
@@ -15,10 +15,10 @@
 #include <utility>
 #include <vector>
 
-#include "munch/dfa/merge_tower.hpp"
-#include "munch/dfa/verifier_decisions.hpp"
+#include "munch/verifier/merge_tower.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
-namespace munch::dfa
+namespace munch::verifier
 {
 namespace
 {
@@ -539,4 +539,4 @@ std::optional<Miscovering> miscovering(
     return std::move(search).run();
 }
 
-} // namespace munch::dfa
+} // namespace munch::verifier

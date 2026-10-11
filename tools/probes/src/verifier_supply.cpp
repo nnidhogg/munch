@@ -31,9 +31,9 @@
 #include "grammars.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
-#include "munch/dfa/verifier.hpp"
-#include "munch/dfa/verifier_decisions.hpp"
 #include "munch/tools/probes/builder_dbg.hpp"
+#include "munch/verifier/verifier.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
 namespace
 {
@@ -243,7 +243,7 @@ std::string hex(const std::string_view window)
  * @param window The window, nonempty.
  * @return The decision.
  */
-Decision decide(const dfa::Verifier& verifier, const core::Lexer& lexer, const std::string_view window)
+Decision decide(const verifier::Verifier& verifier, const core::Lexer& lexer, const std::string_view window)
 {
     const auto route_origin{lexer.is_split_window(window)};
 
@@ -263,7 +263,7 @@ Decision decide(const dfa::Verifier& verifier, const core::Lexer& lexer, const s
 
     for (std::size_t origin{0}; origin < window.size(); ++origin)
     {
-        const auto miscovered{dfa::miscovering(verifier, window, origin)};
+        const auto miscovered{verifier::miscovering(verifier, window, origin)};
 
         const auto by_verifier{!miscovered};
 
@@ -328,7 +328,7 @@ Decision decide(const dfa::Verifier& verifier, const core::Lexer& lexer, const s
  * @param lexer The lexer of the same token set.
  * @return The decided windows and the tallies.
  */
-Decided decide_all(const std::string_view corpus, const dfa::Verifier& verifier, const core::Lexer& lexer)
+Decided decide_all(const std::string_view corpus, const verifier::Verifier& verifier, const core::Lexer& lexer)
 {
     Decided decided{};
 
@@ -482,7 +482,7 @@ int main(const int argc, char** argv)
 
     const auto lexer{builder.build()};
 
-    const auto verifier{dfa::armed_run(builder.dfa())};
+    const auto verifier{verifier::armed_run(builder.dfa())};
 
     std::cout << std::format("corpus bytes: {}", corpus.size()) << '\n';
 

@@ -30,7 +30,7 @@ cmake --install munch/build --prefix /your/prefix
 ```
 
 ```cmake
-find_package(munch 2.0 CONFIG REQUIRED)
+find_package(munch 3.0 CONFIG REQUIRED)
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE munch::munch)
@@ -42,10 +42,10 @@ requirement themselves. Do not install from a `MUNCH_BENCHMARK_COMPARE` build, w
 installing alongside. Install rules are generated only when munch is the top-level project, or when `MUNCH_INSTALL=ON`
 is passed explicitly.
 
-The `munch::munch` target is an interface umbrella over `munch_core` and `munch_tokenizer`, which pull in `munch_regex`,
-`munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers of
-[docs/debugging.md](debugging.md) are not part of the umbrella target; link `munch_nfa_tools` and/or
-`munch_dfa_tools` (installed as `munch::munch_nfa_tools` / `munch::munch_dfa_tools`) directly to use them.
+The `munch::munch` target is an interface umbrella over `munch_core`, `munch_tokenizer` and `munch_verifier`, which pull
+in `munch_regex`, `munch_nfa`, `munch_dfa`, and `munch_common` transitively. The Graphviz debugging helpers of
+[docs/debugging.md](debugging.md) are not part of the umbrella target; link `munch_nfa_tools` and/or `munch_dfa_tools`
+(installed as `munch::munch_nfa_tools` / `munch::munch_dfa_tools`) directly to use them.
 
 ## **Defining Token Kinds**
 
@@ -463,7 +463,7 @@ builder.add_token(text("b"), Token::Operator, 1);
 
 const auto lexer{builder.build()};
 
-lexer.is_split_window("ab");                // std::nullopt: the model refuses it
+lexer.is_split_window("ab");                     // std::nullopt: the model refuses it
 lexer.window_counterexample("ab", 0);            // {"", true}: no input fails it, the certificate is exact
 lexer.window_counterexample("ab", 1);            // {"ab", true}: ab itself, one token beginning at offset 0
 ```
@@ -547,29 +547,30 @@ These six decisions and `rescue()` under Error Recovery are declared together in
 instances of one search over guessed token boundaries, with `boundary_profile()` beside the two it asks at every gap,
 and each is forwarded by `core::Lexer`.
 
-The searches above decide questions about one token set's scan. `munch/dfa/verifier.hpp` states the object they are
+The searches above decide questions about one token set's scan. `munch/verifier/verifier.hpp` states the object they are
 questions about, so that the same decisions can be made about any segmentation a finite automaton recognizes.
-`dfa::Verifier` is a deterministic, trim automaton over marked symbols, a byte together with the bit saying whether a
-token boundary follows it, and it accepts exactly the marked strings of a policy: an input with its boundaries, one
-marking per input the policy segments. `dfa::armed_run(dfa)` builds the verifier of maximal-munch scanning over a token
-set's DFA, `dfa::merge_tower(merges)` of `munch/dfa/merge_tower.hpp` the verifier of canonical byte-pair encoding over a
-merge table, `dfa::trie_chain(initial, continuation)` of `munch/dfa/trie_chain.hpp` the verifier of WordPiece
-segmentation over a two-mode vocabulary, and the constructor builds one from any transition table, trimming it to the
-states reachable from the start that can reach acceptance. The eight decisions of `munch/dfa/verifier_decisions.hpp`
-then run on the product of the verifier with a search or on its minimal automaton, each with a witness replayable
-through `Verifier::step()` but `fanout()`, which returns states. `miscovering(verifier, window, origin)` decides the
-window certificate `(window, origin)`, that the token containing an occurrence's final byte begins at the origin at
-every occurrence in every accepted marked string, and returns the shortest accepted marked string that miscovers it; on
-the armed run this is the exact side of `is_split_window()`, and the online decision is conservative against it,
-refusing 17 of 53,074 window origin pairs on `twitter.json` under the JSON grammar that the verifier certifies, each
-confirmed by exact search. `boundary_gap(verifier)` decides whether the distance between consecutive boundaries is
-bounded, and returns the supremum or, when it is not, a stem, a loop and a suffix whose pumping grows the gap.
-`realizable(verifier)` decides whether generation restricted to completion-preserving steps never strands, and returns
-each state's admitted steps. `divergence(a, b)` decides whether two functional verifiers accept the same marked strings,
-and returns the shortest input they diverge on in the first half that has one, the boundaries searched before the
-domain, with the half it falls in; over two armed runs it is `segmentation_difference()` decided on the verifiers. The
-verifier is a library-level interface: `core::Lexer` forwards none of it, and a caller reaches a token set's DFA through
-`dfa::Builder` or by deriving from `core::Builder`, whose `dfa()` is protected.
+`verifier::Verifier` is a deterministic, trim automaton over marked symbols, a byte together with the bit saying whether
+a token boundary follows it, and it accepts exactly the marked strings of a policy: an input with its boundaries, one
+marking per input the policy segments. `verifier::armed_run(dfa)` builds the verifier of maximal-munch scanning over a
+token set's DFA, `verifier::merge_tower(merges)` of `munch/verifier/merge_tower.hpp` the verifier of canonical byte-pair
+encoding over a merge table, `verifier::trie_chain(initial, continuation)` of `munch/verifier/trie_chain.hpp` the
+verifier of WordPiece segmentation over a two-mode vocabulary, and the constructor builds one from any transition table,
+trimming it to the states reachable from the start that can reach acceptance. The eight decisions of
+`munch/verifier/verifier_decisions.hpp` then run on the product of the verifier with a search or on its minimal
+automaton, each with a witness replayable through `Verifier::step()` but `fanout()`, which returns states.
+`miscovering(verifier, window, origin)` decides the window certificate `(window, origin)`, that the token containing an
+occurrence's final byte begins at the origin at every occurrence in every accepted marked string, and returns the
+shortest accepted marked string that miscovers it; on the armed run this is the exact side of `is_split_window()`, and
+the online decision is conservative against it, refusing 17 of 53,074 window origin pairs on `twitter.json` under the
+JSON grammar that the verifier certifies, each confirmed by exact search. `boundary_gap(verifier)` decides whether the
+distance between consecutive boundaries is bounded, and returns the supremum or, when it is not, a stem, a loop and a
+suffix whose pumping grows the gap. `realizable(verifier)` decides whether generation restricted to
+completion-preserving steps never strands, and returns each state's admitted steps. `divergence(a, b)` decides whether
+two functional verifiers accept the same marked strings, and returns the shortest input they diverge on in the first
+half that has one, the boundaries searched before the domain, with the half it falls in; over two armed runs it is
+`segmentation_difference()` decided on the verifiers. The verifier is a library-level interface: `core::Lexer` forwards
+none of it, and a caller reaches a token set's DFA through `dfa::Builder` or by deriving from `core::Builder`, whose
+`dfa()` is protected.
 
 `dependence(verifier, window, origin)` asks a second question of a pair the verifier certifies, and refuses one it does
 not: the certificate makes the cut at the origin a boundary of the whole string's segmentation, and independence says
@@ -626,28 +627,28 @@ search runs over the monoid of those relations and is exponential in the states 
 case, and a verifier whose domain is finite is refused with `std::invalid_argument`, since no window recurs.
 
 ```cpp
-#include "munch/dfa/verifier.hpp"
-#include "munch/dfa/verifier_decisions.hpp"
+#include "munch/verifier/verifier.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
 // over the tokens a, ab and b of the example above, with dfa their DFA
-const auto verifier{dfa::armed_run(dfa)};           // the maximal-munch scan over the token set's DFA
+const auto verifier{verifier::armed_run(dfa)};               // the maximal-munch scan over the token set's DFA
 
-dfa::miscovering(verifier, "ab", 0);                // std::nullopt: exact, where is_split_window() refuses
-dfa::miscovering(verifier, "ab", 1);                // the marked ab itself, its token beginning at offset 0
-dfa::boundary_gap(verifier);                        // 2, the longest token, since no token grows forever
-dfa::divergence(verifier, dfa::armed_run(other));   // std::nullopt when the two scans segment alike
-dfa::dependence(verifier, "ab", 0);                 // std::nullopt: every certified cut of an armed run splits
+verifier::miscovering(verifier, "ab", 0);                    // std::nullopt: exact, where is_split_window() refuses
+verifier::miscovering(verifier, "ab", 1);                    // the marked ab itself, its token beginning at offset 0
+verifier::boundary_gap(verifier);                            // 2, the longest token, since no token grows forever
+verifier::divergence(verifier, verifier::armed_run(other));  // std::nullopt when the two scans segment alike
+verifier::dependence(verifier, "ab", 0);                     // std::nullopt: every certified cut of an armed run splits
 
-const std::vector<dfa::Certified_pair> pairs{{.window = "ab", .origin = 0}, {.window = "a", .origin = 0}};
+const std::vector<verifier::Certified_pair> pairs{{.window = "ab", .origin = 0}, {.window = "a", .origin = 0}};
 
-dfa::chunk_dependence(verifier, pairs);             // std::nullopt: cut at every anchor, every chunk scans alone
-dfa::fanout(verifier, "ab", 0);                     // rank 2: a lone a before the cut leaves ab armed, a b does not
-dfa::smallest_fanout(verifier);                     // degree 1, the window aa at origin 1
+verifier::chunk_dependence(verifier, pairs);    // std::nullopt: cut at every anchor, every chunk scans alone
+verifier::fanout(verifier, "ab", 0);            // rank 2: a lone a before the cut leaves ab armed, a b does not
+verifier::smallest_fanout(verifier);            // degree 1, the window aa at origin 1
 ```
 
-`dfa::merge_tower(merges)` takes a byte-pair merge table in rank order, each merge two parts, a byte or the product of
-an earlier merge, whose concatenation is its product, and builds the verifier of canonical byte-pair encoding over it,
-the encoder that applies the lowest-ranked merge present anywhere at its leftmost occurrence until none applies; the
+`verifier::merge_tower(merges)` takes a byte-pair merge table in rank order, each merge two parts, a byte or the product
+of an earlier merge, whose concatenation is its product, and builds the verifier of canonical byte-pair encoding over
+it, the encoder that applies the lowest-ranked merge present anywhere at its leftmost occurrence until none applies; the
 verifier accepts every byte string under exactly the encoder's segmentation of it. Each merge is one stage over the
 stage below, a one-symbol-lookahead transducer that holds a symbol while it equals the merge's left part, joins it with
 an arriving right part into the product and otherwise passes what it holds and what arrives upward, so a state of the
@@ -663,89 +664,90 @@ every state, and `divergence()` over two towers deciding whether two tables segm
 shortest string they segment apart:
 
 ```cpp
-#include "munch/dfa/merge_tower.hpp"
-#include "munch/dfa/verifier_decisions.hpp"
+#include "munch/verifier/merge_tower.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
-const std::vector<dfa::Merge> first{{.left = "a", .right = "b"}};
-const std::vector<dfa::Merge> merges{{.left = "a", .right = "b"}, {.left = "ab", .right = "a"}};
+const std::vector<verifier::Merge> first{{.left = "a", .right = "b"}};
+const std::vector<verifier::Merge> merges{{.left = "a", .right = "b"}, {.left = "ab", .right = "a"}};
 
-const auto tower{dfa::merge_tower(merges)};         // ab, then ab followed by a
+const auto tower{verifier::merge_tower(merges)};            // ab, then ab followed by a
 
-dfa::miscovering(tower, "ab", 0);                   // std::nullopt: every ab lies in a token beginning at its a
-dfa::miscovering(tower, "ab", 1);                   // the marked ab itself, its token beginning at offset 0
-dfa::boundary_gap(tower);                           // 3, the longest token aba
-dfa::divergence(tower, dfa::merge_tower(first));    // aba, one token here and ab|a under the first merge alone
+verifier::miscovering(tower, "ab", 0);                      // std::nullopt: every ab lies in a token beginning at its a
+verifier::miscovering(tower, "ab", 1);                      // the marked ab itself, its token beginning at offset 0
+verifier::boundary_gap(tower);                              // 3, the longest token aba
+verifier::divergence(tower, verifier::merge_tower(first));  // aba, one token here and ab|a under the first merge alone
 ```
 
-`dfa::token_automaton(merges)` of `munch/dfa/token_automaton.hpp` builds the token automaton of canonical byte-pair
-encoding over a merge table, and `dfa::miscovering(automaton, window, origin)` decides on it the same window certificate
-under the same encoder as `miscovering()` on `merge_tower(merges)`, without building the tower. It rests on the
-canonical adjacency theorem, Theorem 2 of the report *The Left Ripple of Byte-Pair Encoding*: a list of tokens is the
-encoder's segmentation of its spelling exactly when every token is the segmentation of its own spelling and so is every
-adjacent pair. A run of consecutive tokens of a segmentation is then the segmentation of its own spelling, so a
-miscovering, when there is one, is spelled by the tokens over one occurrence of the window with nothing on either side,
-and it is at most 2L + |window| - 2 bytes long, L the longest token. The decision searches those runs: a token holding
-the whole window anywhere but at its start when the origin is zero, or a first token whose tail spells the start of the
-window, then tokens inside the window, then a last token that contains the window's final byte and begins anywhere but
-at the origin. Which token may follow which is read off the token automaton of Berglund, Martens and van der Merwe
-(Theoretical Computer Science 2026, by Theorem 1, Corollary 2 and Algorithm 2 of its preprint arXiv:2405.07671v2), in
-which a token enters the same state wherever it is read, so a node of the search is that state with the number of the
-window's bytes spelled so far, each node is expanded once, and the search stops at the first miscovering. The automaton
-has one base state plus one per merge whose product can be read, and on a large table building it costs far more than a
-decision on it, so a caller deciding many windows builds it once; the search then reads every token against the window
-and explores at most |window| - 1 nodes per state. `Token_automaton::state_count()` counts the states, and
-`allowed_tokens(state)` lists the tokens a state may read, ascending, those `is_allowed(state, token)` admits. The
-miscovering returned is the encoder's segmentation of the first string the search finds, not necessarily the shortest,
-and a table `merge_tower()` refuses is refused the same way:
+`verifier::token_automaton(merges)` of `munch/verifier/token_automaton.hpp` builds the token automaton of canonical
+byte-pair encoding over a merge table, and `verifier::miscovering(automaton, window, origin)` decides on it the same
+window certificate under the same encoder as `miscovering()` on `merge_tower(merges)`, without building the tower. It
+rests on the canonical adjacency theorem, Theorem 2 of the report *The Left Ripple of Byte-Pair Encoding*: a list of
+tokens is the encoder's segmentation of its spelling exactly when every token is the segmentation of its own spelling
+and so is every adjacent pair. A run of consecutive tokens of a segmentation is then the segmentation of its own
+spelling, so a miscovering, when there is one, is spelled by the tokens over one occurrence of the window with nothing
+on either side, and it is at most 2L + |window| - 2 bytes long, L the longest token. The decision searches those runs: a
+token holding the whole window anywhere but at its start when the origin is zero, or a first token whose tail spells the
+start of the window, then tokens inside the window, then a last token that contains the window's final byte and begins
+anywhere but at the origin. Which token may follow which is read off the token automaton of Berglund, Martens and van
+der Merwe (Theoretical Computer Science 2026, by Theorem 1, Corollary 2 and Algorithm 2 of its preprint
+arXiv:2405.07671v2), in which a token enters the same state wherever it is read, so a node of the search is that state
+with the number of the window's bytes spelled so far, each node is expanded once, and the search stops at the first
+miscovering. The automaton has one base state plus one per merge whose product can be read, and on a large table
+building it costs far more than a decision on it, so a caller deciding many windows builds it once; the search then
+reads every token against the window and explores at most |window| - 1 nodes per state. `Token_automaton::state_count()`
+counts the states, and `allowed_tokens(state)` lists the tokens a state may read, ascending, those
+`is_allowed(state, token)` admits. The miscovering returned is the encoder's segmentation of the first string the search
+finds, not necessarily the shortest, and a table `merge_tower()` refuses is refused the same way:
 
 ```cpp
-#include "munch/dfa/token_automaton.hpp"
+#include "munch/verifier/token_automaton.hpp"
 
-const std::vector<dfa::Merge> merges{{.left = "a", .right = "b"}, {.left = "ab", .right = "a"}};
+const std::vector<verifier::Merge> merges{{.left = "a", .right = "b"}, {.left = "ab", .right = "a"}};
 
-const auto automaton{dfa::token_automaton(merges)};     // built once for every window decided on it
+const auto automaton{verifier::token_automaton(merges)};        // built once for every window decided on it
 
-dfa::miscovering(automaton, "ab", 0);                   // std::nullopt, as miscovering() on the tower answers
-dfa::miscovering(automaton, "ab", 1);                   // the marked ab itself, its token beginning at offset 0
-dfa::miscovering(dfa::token_automaton({}), "ab", 0);    // a|b, the empty table cutting between every two bytes
+verifier::miscovering(automaton, "ab", 0);                      // std::nullopt, as miscovering() on the tower answers
+verifier::miscovering(automaton, "ab", 1);                      // the marked ab itself, its token beginning at offset 0
+verifier::miscovering(verifier::token_automaton({}), "ab", 0);  // a|b, the empty table cutting between every two bytes
 ```
 
-`dfa::trie_chain(initial, continuation)` takes a two-mode vocabulary, the initial tokens and the continuation tokens,
-and builds the verifier of WordPiece segmentation over it, the scanner that takes the longest initial token at the start
-of the input and then, at each boundary, the longest continuation token, failing where no token of the mode matches; the
-verifier accepts a byte string under exactly the scanner's segmentation of it and under no marking when the scanner does
-not consume it whole, so a byte no token names is in no domain string. A run of the scanner is a node of its mode's trie
-begun at a boundary, and a state of the verifier is the node of the oldest run still armed, which spells the unresolved
-tail, with the depth inside the tail at which the unarmed run began: the armed runs between are not stored, since every
-boundary inside the tail is forced by longest match, the scanner's own reading of the tail, which is done once per trie
-node at construction as the node's chain. A step is refused when an armed run reaches a token or the unarmed run drops,
-and a boundary requires the unarmed run to be at a token. With N the nodes of both tries, P the nodes other than the
-root with a child and c the longest chain, at most the longest token, the states are at most 1 + (N - 1) + P * c. A
-token may be in both sets and a set may be empty; an empty token is refused with `std::invalid_argument` naming its set
-and position. The four decisions then run on the chain as on any verifier, `miscovering()` deciding a window certificate
-under the vocabulary, `boundary_gap()` returning the length of the longest token the scanner emits, `realizable()` the
-mask of every state, and `divergence()` over two chains deciding whether two vocabularies segment every byte string
-alike, with the shortest string they segment apart or only one of them scans whole:
+`verifier::trie_chain(initial, continuation)` takes a two-mode vocabulary, the initial tokens and the continuation
+tokens, and builds the verifier of WordPiece segmentation over it, the scanner that takes the longest initial token at
+the start of the input and then, at each boundary, the longest continuation token, failing where no token of the mode
+matches; the verifier accepts a byte string under exactly the scanner's segmentation of it and under no marking when the
+scanner does not consume it whole, so a byte no token names is in no domain string. A run of the scanner is a node of
+its mode's trie begun at a boundary, and a state of the verifier is the node of the oldest run still armed, which spells
+the unresolved tail, with the depth inside the tail at which the unarmed run began: the armed runs between are not
+stored, since every boundary inside the tail is forced by longest match, the scanner's own reading of the tail, which is
+done once per trie node at construction as the node's chain. A step is refused when an armed run reaches a token or the
+unarmed run drops, and a boundary requires the unarmed run to be at a token. With N the nodes of both tries, P the nodes
+other than the root with a child and c the longest chain, at most the longest token, the states are at most 1 + (N - 1)
++ P * c. A token may be in both sets and a set may be empty; an empty token is refused with `std::invalid_argument`
+naming its set and position. The four decisions then run on the chain as on any verifier, `miscovering()` deciding a
+window certificate under the vocabulary, `boundary_gap()` returning the length of the longest token the scanner emits,
+`realizable()` the mask of every state, and `divergence()` over two chains deciding whether two vocabularies segment
+every byte string alike, with the shortest string they segment apart or only one of them scans whole:
 
 ```cpp
-#include "munch/dfa/trie_chain.hpp"
-#include "munch/dfa/verifier_decisions.hpp"
+#include "munch/verifier/trie_chain.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
 const std::vector<std::string> initial{"a", "ab"};
 const std::vector<std::string> continuation{"b"};
 const std::vector<std::string> with_b{"a", "ab", "b"};
 
-const auto chain{dfa::trie_chain(initial, continuation)};      // a alone, or ab followed by any number of b
+const auto chain{verifier::trie_chain(initial, continuation)};    // a alone, or ab followed by any number of b
 
-dfa::miscovering(chain, "ab", 0);                               // std::nullopt: every ab is a token beginning at its a
-dfa::miscovering(chain, "b", 0);                                // the marked ab itself, its b in a token beginning at 0
-dfa::boundary_gap(chain);                                       // 2, the longest token ab
-dfa::divergence(chain, dfa::trie_chain(with_b, continuation));  // b, scanned whole only where b is an initial token
+verifier::miscovering(chain, "ab", 0);    // std::nullopt: every ab is a token beginning at its a
+verifier::miscovering(chain, "b", 0);     // the marked ab itself, its b in a token beginning at 0
+verifier::boundary_gap(chain);            // 2, the longest token ab
+
+verifier::divergence(chain, verifier::trie_chain(with_b, continuation));  // b, scanned whole only where b is initial
 ```
 
-`dfa::ripple_radius(merges)` of `munch/dfa/ripple_radius.hpp` decides the lookbehind of canonical byte-pair encoding
-over a merge table: how far a byte prepended to an input can change the input's tokens. The origin ripple of a byte and
-an input is one past the last byte of the input whose covering token, as an interval, differs once the byte is
+`verifier::ripple_radius(merges)` of `munch/verifier/ripple_radius.hpp` decides the lookbehind of canonical byte-pair
+encoding over a merge table: how far a byte prepended to an input can change the input's tokens. The origin ripple of a
+byte and an input is one past the last byte of the input whose covering token, as an interval, differs once the byte is
 prepended, a token that reaches into the prepended byte differing wherever it reaches; the origin radius is its supremum
 over every byte and input, and the mirrored constant the supremum of one past the start of the last changed token, the
 least length beyond which every boundary survives every prepended string. A table `merge_tower()` takes, each part a
@@ -753,26 +755,26 @@ byte or an earlier product and no product spelled twice, satisfies the ordering 
 ranked before every merge consuming it, and under it the radius is infinite exactly when an effective self-pair exists:
 a merge (t,t) whose two copies of t the merges before it leave as two tokens, so that prepending t to an even power of t
 moves the covering token of every byte. The decision takes the merges in rank order and returns the first such merge as
-`dfa::Effective_self_pair`. Without one it explores the overlap graph, two copies of the automaton that spells the
-canonical tokens reading one input, the second having read the prepended byte first, and returns `dfa::Finite_ripple`,
-the radius and the mirrored constant read off the longest path to a step on which the two copies' covering tokens
-differ, each with a prepended input attaining it when it is not zero. The overlap graph decides the radius for any table
-and a polynomial computation decides it in the number of merges under the ordering condition; on the tables munch takes
-the two answer alike, so one function serves both. It refuses what `merge_tower()` refuses, with `std::invalid_argument`
-naming the merge and its rank:
+`verifier::Effective_self_pair`. Without one it explores the overlap graph, two copies of the automaton that spells the
+canonical tokens reading one input, the second having read the prepended byte first, and returns
+`verifier::Finite_ripple`, the radius and the mirrored constant read off the longest path to a step on which the two
+copies' covering tokens differ, each with a prepended input attaining it when it is not zero. The overlap graph decides
+the radius for any table and a polynomial computation decides it in the number of merges under the ordering condition;
+on the tables munch takes the two answer alike, so one function serves both. It refuses what `merge_tower()` refuses,
+with `std::invalid_argument` naming the merge and its rank:
 
 ```cpp
-#include "munch/dfa/ripple_radius.hpp"
+#include "munch/verifier/ripple_radius.hpp"
 
-const std::vector<dfa::Merge> merges{{.left = "b", .right = "c"}, {.left = "a", .right = "bc"}};
-const std::vector<dfa::Merge> doubled{{.left = "a", .right = "b"}, {.left = "ab", .right = "ab"}};
+const std::vector<verifier::Merge> merges{{.left = "b", .right = "c"}, {.left = "a", .right = "bc"}};
+const std::vector<verifier::Merge> doubled{{.left = "a", .right = "b"}, {.left = "ab", .right = "ab"}};
 
-const auto ripple{dfa::ripple_radius(merges)};      // finite: a prepended to bc makes the one token abc
-const auto& finite{std::get<dfa::Finite_ripple>(ripple)};
+const auto ripple{verifier::ripple_radius(merges)};  // finite: a prepended to bc makes the one token abc
+const auto& finite{std::get<verifier::Finite_ripple>(ripple)};
 
-finite.radius;                                      // 2, both bytes of bc covered anew
-finite.mirrored;                                    // 1, the changed token bc beginning at 0
-dfa::ripple_radius(doubled);                        // the effective self-pair at rank 1: (a,b) leaves abab as ab|ab
+finite.radius;                                       // 2, both bytes of bc covered anew
+finite.mirrored;                                     // 1, the changed token bc beginning at 0
+verifier::ripple_radius(doubled);                    // the effective self-pair at rank 1: (a,b) leaves abab as ab|ab
 ```
 
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose

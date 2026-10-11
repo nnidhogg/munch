@@ -1,4 +1,4 @@
-#include "munch/dfa/verifier.hpp"
+#include "munch/verifier/verifier.hpp"
 
 #include <algorithm>
 #include <boost/container_hash/hash.hpp>
@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace munch::dfa
+namespace munch::verifier
 {
 namespace
 {
@@ -40,12 +40,12 @@ struct Configuration
     /**
      * @brief The DFA state of the unarmed run, begun at the last boundary.
      */
-    Dfa::State_t unarmed{};
+    dfa::Dfa::State_t unarmed{};
 
     /**
      * @brief The DFA states of the armed runs, sorted and without repeats.
      */
-    std::vector<Dfa::State_t> armed{};
+    std::vector<dfa::Dfa::State_t> armed{};
 };
 
 /**
@@ -191,7 +191,7 @@ public:
      * @param dfa The DFA, which outlives the exploration.
      * @throws std::invalid_argument If the DFA's initial state accepts, so that a token matches the empty string.
      */
-    explicit Exploration(const Dfa& dfa);
+    explicit Exploration(const dfa::Dfa& dfa);
 
     /**
      * @brief Explores every state reachable from the unconsumed start and returns the verifier they make.
@@ -211,7 +211,7 @@ private:
      * @param state The state.
      * @return True when the state is accepting.
      */
-    [[nodiscard]] bool is_accepting(Dfa::State_t state) const;
+    [[nodiscard]] bool is_accepting(dfa::Dfa::State_t state) const;
 
     /**
      * @brief Reads every marked symbol over the alphabet from one state, interning the configurations reached.
@@ -248,7 +248,7 @@ private:
     /**
      * @brief The DFA.
      */
-    const Dfa& dfa_;
+    const dfa::Dfa& dfa_;
 
     /**
      * @brief The configuration each state reads as, by state.
@@ -276,7 +276,7 @@ private:
     std::map<Configuration, Verifier::State_t> interned_{};
 };
 
-Exploration::Exploration(const Dfa& dfa)
+Exploration::Exploration(const dfa::Dfa& dfa)
     : dfa_{dfa}
     , sources_{Configuration{.unarmed = dfa.init_state(), .armed = {}}}
     , alphabet_{alphabet_of()}
@@ -302,7 +302,7 @@ std::vector<unsigned char> Exploration::alphabet_of() const
     return alphabet;
 }
 
-bool Exploration::is_accepting(const Dfa::State_t state) const
+bool Exploration::is_accepting(const dfa::Dfa::State_t state) const
 {
     return dfa_.accept_states().contains(state);
 }
@@ -414,7 +414,7 @@ bool Exploration::is_accepting(const Configuration& configuration) const
 {
     const auto& [unarmed, armed]{configuration};
 
-    const auto accepts{[this](const Dfa::State_t state) { return is_accepting(state); }};
+    const auto accepts{[this](const dfa::Dfa::State_t state) { return is_accepting(state); }};
 
     return is_accepting(unarmed) && std::ranges::none_of(armed, accepts);
 }
@@ -593,11 +593,11 @@ Verifier::Trimmed Verifier::trim(
     return trimmed;
 }
 
-Verifier armed_run(const Dfa& dfa)
+Verifier armed_run(const dfa::Dfa& dfa)
 {
     Exploration exploration{dfa};
 
     return std::move(exploration).run();
 }
 
-} // namespace munch::dfa
+} // namespace munch::verifier

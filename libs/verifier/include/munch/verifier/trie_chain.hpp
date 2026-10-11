@@ -1,12 +1,12 @@
-#ifndef MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_TRIE_CHAIN_HPP
-#define MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_TRIE_CHAIN_HPP
+#ifndef MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_TRIE_CHAIN_HPP
+#define MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_TRIE_CHAIN_HPP
 
 #include <span>
 #include <string>
 
-#include "munch/dfa/verifier.hpp"
+#include "munch/verifier/verifier.hpp"
 
-namespace munch::dfa
+namespace munch::verifier
 {
 /**
  * @brief Builds the trie chain of a two-mode vocabulary: the verifier of WordPiece segmentation over its initial and
@@ -44,6 +44,6 @@ namespace munch::dfa
  */
 [[nodiscard]] Verifier trie_chain(std::span<const std::string> initial, std::span<const std::string> continuation);
 
-} // namespace munch::dfa
+} // namespace munch::verifier
 
-#endif // MUNCH_LIBS_DFA_INCLUDE_MUNCH_DFA_TRIE_CHAIN_HPP
+#endif // MUNCH_LIBS_VERIFIER_INCLUDE_MUNCH_VERIFIER_TRIE_CHAIN_HPP

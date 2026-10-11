@@ -1,4 +1,4 @@
-#include "munch/dfa/verifier_decisions.hpp"
+#include "munch/verifier/verifier_decisions.hpp"
 
 #include <algorithm>
 #include <array>
@@ -20,9 +20,9 @@
 #include <variant>
 #include <vector>
 
-#include "munch/dfa/verifier.hpp"
+#include "munch/verifier/verifier.hpp"
 
-namespace munch::dfa
+namespace munch::verifier
 {
 namespace
 {
@@ -2082,4 +2082,4 @@ Smallest_fanout smallest_fanout(const Verifier& verifier)
             .lasso = std::move(lasso)};
 }
 
-} // namespace munch::dfa
+} // namespace munch::verifier

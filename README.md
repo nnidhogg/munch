@@ -276,21 +276,21 @@ byte exactly or once the discarded tokens are deleted, and its exit status 3, wh
 certify a byte required of it.
 
 `shortest_split_window()`, forwarded by `core::Lexer`, joined that surface in 2.2.0, and so did the verifier, at the
-library level and forwarded by nothing: `dfa::Verifier`, a deterministic trim automaton over marked symbols accepting
-exactly the marked strings of a policy, built from any transition table or by `dfa::armed_run()` from a token set's DFA
-as the maximal-munch scan; and the four decisions over it, `miscovering()`, the window certificate decided exactly with
-the shortest miscovering marked string, `boundary_gap()`, whether the distance between boundaries is bounded, with the
-supremum or the lasso, `realizable()`, whether completion-preserving generation never strands, with each state's
-admitted steps, and `divergence()`, whether two functional verifiers accept the same marked strings, with the shortest
-diverging input of the first half that has one, the boundaries searched before the domain. Every witness replays through
-`Verifier::step()`.
+library level and forwarded by nothing: `verifier::Verifier`, a deterministic trim automaton over marked symbols
+accepting exactly the marked strings of a policy, built from any transition table or by `verifier::armed_run()` from a
+token set's DFA as the maximal-munch scan; and the four decisions over it, `miscovering()`, the window certificate
+decided exactly with the shortest miscovering marked string, `boundary_gap()`, whether the distance between boundaries
+is bounded, with the supremum or the lasso, `realizable()`, whether completion-preserving generation never strands, with
+each state's admitted steps, and `divergence()`, whether two functional verifiers accept the same marked strings, with
+the shortest diverging input of the first half that has one, the boundaries searched before the domain. Every witness
+replays through `Verifier::step()`.
 
 Two more decisions over the verifier joined that surface in 2.3.0, and two constructions of it: `dependence()`, whether
 every cut a certified window places lets the prefix and the suffix each scan alone as the whole string segments them,
 with the shortest marked string whose cut does not and the side or sides that fail; `chunk_dependence()`, whether every
 chunk between the anchors of an inventory of certified pairs scans alone, with the shortest such string, its anchors and
-the failing chunks; `dfa::merge_tower()`, the verifier of canonical byte-pair encoding over a merge table; and
-`dfa::trie_chain()`, the verifier of two-mode WordPiece segmentation over its initial and continuation tokens.
+the failing chunks; `verifier::merge_tower()`, the verifier of canonical byte-pair encoding over a merge table; and
+`verifier::trie_chain()`, the verifier of two-mode WordPiece segmentation over its initial and continuation tokens.
 
 The supported platform is 64-bit Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds and tests on
 x86-64 and ARM64, so both signednesses of plain `char` are exercised, and sanitizes and fuzzes on x86-64. Other
