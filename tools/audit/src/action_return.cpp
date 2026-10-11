@@ -24,7 +24,8 @@ namespace
 /**
  * @brief The statements of an action's own tokens and whether they return on every path through them, as
  *        returns_undecided() reads the action: a return, a block ending in one, an `if` whose both branches do, a
- *        labelled statement that does, or such a statement followed by the one jump a stored token allows.
+ *        labelled statement that does, or such a statement followed by the one jump a stored token allows; and whether
+ *        they leave by a jump on every path, the statements after one never reached.
  *
  * A loop, a `switch`, a `try` and an `if` without an `else` may fall through, and are out of sight rather than
  * followed.
@@ -106,7 +107,32 @@ public:
      */
     [[nodiscard]] bool ends_returning(Range range) const;
 
+    /**
+     * @brief Returns whether a run of statements leaves by a jump on every path through it: one of them does, and the
+     *        statements after that one are never reached, `continue; ++count;` leaving as `continue;` does.
+     * @param statements The statements, in order.
+     * @return True when the run's end is out of reach.
+     */
+    [[nodiscard]] bool leaves(const std::vector<Range>& statements) const;
+
 private:
+    /**
+     * @brief The two branches an `if` with an `else` parts, the then-statement before the `else` and the other after
+     *        it.
+     */
+    struct Branches
+    {
+        /**
+         * @brief The then-statement.
+         */
+        Range then{};
+
+        /**
+         * @brief The statement after the `else`, itself an `if` when the chain goes on.
+         */
+        Range otherwise{};
+    };
+
     /**
      * @brief Returns whether a statement returns on every path through it: a return of the action's own; a block whose
      *        last statement does, dead code after a return counted as returning still; an `if` with an `else` whose
@@ -117,13 +143,21 @@ private:
     [[nodiscard]] bool returns(Range range) const;
 
     /**
-     * @brief Returns whether an `if` statement returns on every path through it: it has an `else`, and the branches the
-     *        `else` outside every brace of theirs parts, the then-statement before it and the other after it, itself an
-     *        `if` when the chain goes on, both return.
+     * @brief Returns the branches of an `if` statement with an `else`, parted by the `else` outside every brace of
+     *        theirs.
      * @param range The statement, its first token the `if`.
-     * @return True when both branches return.
+     * @return The branches, or std::nullopt for an `if` without an `else`.
      */
-    [[nodiscard]] bool if_returns(Range range) const;
+    [[nodiscard]] std::optional<Branches> branches(Range range) const;
+
+    /**
+     * @brief Returns whether a statement leaves by a jump on every path through it: a jump, as is_jump() reads one; a
+     *        block holding a statement that does; an `if` with an `else` whose both branches do; a labelled statement
+     *        that does, `next: { continue; }`.
+     * @param range The statement.
+     * @return True when its end is out of reach.
+     */
+    [[nodiscard]] bool jumps_away(Range range) const;
 
     /**
      * @brief The action's own tokens.
@@ -760,7 +794,9 @@ bool Return_paths::returns(const Range range) const
 
     if (first == "if")
     {
-        return if_returns(range);
+        const auto parted{branches(range)};
+
+        return parted && returns(parted->then) && returns(parted->otherwise);
     }
 
     // A label, `done: return 7;`.
@@ -772,7 +808,7 @@ bool Return_paths::returns(const Range range) const
     return false;
 }
 
-bool Return_paths::if_returns(const Range range) const
+std::optional<Return_paths::Branches> Return_paths::branches(const Range range) const
 {
     // Past the condition: the words of `if constexpr` and the parenthesised condition, or `if !consteval` and its kin,
     // which have none.
@@ -788,14 +824,14 @@ bool Return_paths::if_returns(const Range range) const
         at = group_close(tokens_, at, "(", ")") + 1;
     }
 
-    const auto branches{statements({.begin = at, .end = range.end})};
+    const auto parts{statements({.begin = at, .end = range.end})};
 
-    if (branches.size() != 1)
+    if (parts.size() != 1)
     {
-        return false;
+        return std::nullopt;
     }
 
-    const auto [first, end]{branches.front()};
+    const auto [first, end]{parts.front()};
 
     auto depth{0};
 
@@ -805,8 +841,52 @@ bool Return_paths::if_returns(const Range range) const
 
         if (depth == 0 && tokens_[split].text == "else")
         {
-            return returns({.begin = first, .end = split}) && returns({.begin = split + 1, .end = end});
+            return Branches{.then = {.begin = first, .end = split}, .otherwise = {.begin = split + 1, .end = end}};
         }
+    }
+
+    return std::nullopt;
+}
+
+bool Return_paths::leaves(const std::vector<Range>& statements) const
+{
+    const auto jumps{[this](const Range statement) { return jumps_away(statement); }};
+
+    return std::ranges::any_of(statements, jumps);
+}
+
+bool Return_paths::jumps_away(const Range range) const
+{
+    if (range.begin >= range.end)
+    {
+        return false;
+    }
+
+    if (is_jump(range))
+    {
+        return true;
+    }
+
+    const auto& first{tokens_[range.begin].text};
+
+    if (first == "{")
+    {
+        const auto inner{statements({.begin = range.begin + 1, .end = range.end - 1})};
+
+        return tokens_[range.end - 1].text == "}" && leaves(inner);
+    }
+
+    if (first == "if")
+    {
+        const auto parted{branches(range)};
+
+        return parted && jumps_away(parted->then) && jumps_away(parted->otherwise);
+    }
+
+    // A label, `next: { continue; }`.
+    if (range.end - range.begin > 2 && tokens_[range.begin + 1].text == ":")
+    {
+        return jumps_away({.begin = range.begin + 2, .end = range.end});
     }
 
     return false;
@@ -989,10 +1069,9 @@ std::optional<std::string> returns_undecided(
     if (values.empty())
     {
         // flex's `YY_BREAK` discards the match of an action returning nowhere; a chained re2c action returning nowhere
-        // falls into the next rule's action unless it leaves by a jump, `continue;` or a restarting `goto`.
-        const auto leaves_by_jump{!own.empty() && paths.is_jump(own.back())};
-
-        if (chained && !leaves_by_jump)
+        // falls into the next rule's action unless it leaves by a jump on every path, `continue;` or a restarting
+        // `goto`.
+        if (chained && !paths.leaves(own))
         {
             return "ends without returning or leaving, and re2c writes the next rule's action right after it, so "
                    "what a match of this rule does is out of sight until the action leaves by a jump or a return";

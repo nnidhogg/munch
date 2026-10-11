@@ -15,6 +15,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -41,6 +42,34 @@ struct Word
      * @brief The index of the token it came from in the spelling read, a macro's words all coming from its name.
      */
     std::size_t origin{};
+
+    /**
+     * @brief Whether the token was an integer literal with a suffix, `0U` or `1ULL`, whose type the arithmetic around
+     *        it then takes.
+     */
+    bool suffixed{};
+};
+
+/**
+ * @brief A run of words a scan pointer's configured spelling opens with, and the word that continues it there: `slots`
+ *        and `[`, `slots[0]` and `.`, and `slots[0].cursors` and `[` of `slots[0].cursors[0]`.
+ */
+struct Step
+{
+    /**
+     * @brief The run, in the reading's own spelling.
+     */
+    std::vector<std::string> run{};
+
+    /**
+     * @brief The word after it, `[`, `.` or `->`.
+     */
+    std::string next{};
+
+    /**
+     * @brief The spelling it opens, written together.
+     */
+    std::string spelling{};
 };
 
 /**
@@ -57,6 +86,18 @@ using Values_t = std::map<std::string, std::vector<std::vector<std::string>>, st
  * @brief The most ways of defining the transparent macros at an action the reading follows together.
  */
 constexpr std::size_t most_choices{64};
+
+/**
+ * @brief The named casts, whose template argument is the type cast to and whose parentheses are no call's.
+ */
+constexpr std::array<std::string_view, 4> named_casts{"static_cast", "const_cast", "reinterpret_cast", "dynamic_cast"};
+
+/**
+ * @brief The words of the builtin types and their qualifiers, which a cast or a declaration may open or end with.
+ */
+constexpr std::array<std::string_view, 15> type_words{"int",    "char",   "long",      "short",  "unsigned",
+                                                      "signed", "void",   "float",     "double", "bool",
+                                                      "const",  "size_t", "ptrdiff_t", "auto",   "volatile"};
 
 /**
  * @brief Returns a text without the bytes of a set that open it.
@@ -96,15 +137,109 @@ constexpr std::size_t most_choices{64};
 }
 
 /**
- * @brief Returns whether a word is a name declared as a reference or a pointer, `auto& cursor`, `char* cursor`.
+ * @brief Returns the index of the parenthesis opening the group a `)` closes.
+ * @param words The action's words.
+ * @param close The index of the `)`.
+ * @return The index of its `(`, 0 when none opens it.
+ */
+[[nodiscard]] std::size_t group_open(const std::vector<Word>& words, const std::size_t close) noexcept
+{
+    auto open{close};
+
+    for (auto inner{0}; open > 0; --open)
+    {
+        inner += depth_step(text_at(words, open), ")", "(");
+
+        if (inner == 0)
+        {
+            break;
+        }
+    }
+
+    return open;
+}
+
+/**
+ * @brief Returns whether a type may be a reference: one ending in `&`, or in a word the reading cannot tell from an
+ *        alias of one, a name of the file's, `R` under `using R = const char*&;`, a template's `>`,
+ *        `std::add_lvalue_reference_t<const char*>`, or a `)`, `decltype(auto)`; one ending in `*` or in a builtin
+ *        type's word, a `const` or a `volatile` after either dropped, is none.
+ * @param words The action's words.
+ * @param from The index of the type's first word.
+ * @param to One past the index of its last.
+ * @return True when it may.
+ */
+[[nodiscard]] bool may_be_reference(const std::vector<Word>& words, const std::size_t from, std::size_t to)
+{
+    while (to > from && (text_at(words, to - 1) == "const" || text_at(words, to - 1) == "volatile"))
+    {
+        --to;
+    }
+
+    if (to == from)
+    {
+        return false;
+    }
+
+    const auto last{text_at(words, to - 1)};
+
+    return last != "*" && !std::ranges::contains(type_words, last);
+}
+
+/**
+ * @brief Returns whether a name ends the expression it stands in, a `;`, a `,`, a `)` or a `}` after it, so that what
+ *        binds or casts it takes the pointer itself.
+ * @param words The action's words.
+ * @param last The index of the name's last word.
+ * @return True when it does.
+ */
+[[nodiscard]] bool stands_alone(const std::vector<Word>& words, const std::size_t last)
+{
+    static constexpr std::array<std::string_view, 4> ends{";", ",", ")", "}"};
+
+    return std::ranges::contains(ends, text_at(words, last + 1));
+}
+
+/**
+ * @brief Returns whether a word is a name declared as a pointer or as what may be a reference: `char* cursor`, `auto&
+ *        cursor`, or, where the initializer is the pointer alone, a type may_be_reference() cannot tell from one, `R
+ *        cursor` under `using R = const char*&;` and `decltype(auto) cursor`, while `R n = cursor - start` binds no
+ *        reference to the pointer whatever `R` is; a name after a condition, `if (n) cursor`, or after a keyword
+ *        opening an expression, `return cursor`, is no declaration's.
  * @param words The action's words.
  * @param name The index of the declared name.
+ * @param alone Whether the initializer is the pointer alone.
  * @return True when it is.
  */
-[[nodiscard]] bool declares(const std::vector<Word>& words, const std::size_t name) noexcept
+[[nodiscard]] bool declares(const std::vector<Word>& words, const std::size_t name, const bool alone)
 {
-    return value_before(words, name) && name >= 1 &&
-           (text_at(words, name - 1) == "&" || text_at(words, name - 1) == "*");
+    if (name < 1 || !value_before(words, name))
+    {
+        return false;
+    }
+
+    const auto before{text_at(words, name - 1)};
+
+    if (before == "*")
+    {
+        return true;
+    }
+
+    if (before == ")")
+    {
+        const auto open{group_open(words, name - 1)};
+
+        return alone && open > 0 && text_at(words, open - 1) == "decltype";
+    }
+
+    static constexpr std::array<std::string_view, 7> expression_keywords{"return", "else", "do",    "case",
+                                                                         "throw",  "new",  "delete"};
+
+    const auto typed{before == ">" || before == "&" || starts_name(before)};
+
+    const auto reference{before == "&" || (alone && may_be_reference(words, 0, name))};
+
+    return typed && !std::ranges::contains(expression_keywords, before) && reference;
 }
 
 /**
@@ -120,26 +255,12 @@ constexpr std::size_t most_choices{64};
 {
     const auto opener{text_at(words, back - 2)};
 
-    static constexpr std::array<std::string_view, 15> types{"int",    "char",   "long",      "short",  "unsigned",
-                                                            "signed", "void",   "float",     "double", "bool",
-                                                            "const",  "size_t", "ptrdiff_t", "auto",   "volatile"};
-
     if (opener != ")")
     {
-        return std::ranges::contains(types, opener);
+        return std::ranges::contains(type_words, opener);
     }
 
-    auto open{back - 2};
-
-    for (auto inner{0}; open > 0; --open)
-    {
-        inner += depth_step(text_at(words, open), ")", "(");
-
-        if (inner == 0)
-        {
-            break;
-        }
-    }
+    const auto open{group_open(words, back - 2)};
 
     const auto head{text_at(words, open + 1)};
 
@@ -152,7 +273,7 @@ constexpr std::size_t most_choices{64};
 
     const auto stars{std::ranges::any_of(group_words, indirect)};
 
-    return std::ranges::contains(types, head) || (stars && starts_name(head));
+    return std::ranges::contains(type_words, head) || (stars && starts_name(head));
 }
 
 /**
@@ -174,7 +295,51 @@ constexpr std::size_t most_choices{64};
 
     const auto braced{text_at(words, first - 1) == "{" && text_at(words, last + 1) == "}"};
 
-    return (assigned || braced) && declares(words, first - 2);
+    const auto alone{stands_alone(words, last)};
+
+    return (assigned || braced) && declares(words, first - 2, alone);
+}
+
+/**
+ * @brief Returns whether the parenthesis before a word opens a call's arguments: a value stands before it that is no
+ *        keyword, and it is no cast's, is_cast(); or the template arguments of a name that is no named cast's do,
+ *        `std::forward<const char*&>(...)` or `step<const char*>(...)`, whose function may take the argument by
+ *        reference as well.
+ * @param words The action's words.
+ * @param back One past the parenthesis's index, at least 1.
+ * @return True when it does.
+ */
+[[nodiscard]] bool opens_call(const std::vector<Word>& words, const std::size_t back)
+{
+    if (back < 2)
+    {
+        return false;
+    }
+
+    const auto before{text_at(words, back - 2)};
+
+    if (before == ">")
+    {
+        auto open{back - 2};
+
+        for (auto depth{0}; open > 0; --open)
+        {
+            depth += depth_step(text_at(words, open), ">", "<");
+
+            if (depth == 0)
+            {
+                break;
+            }
+        }
+
+        const auto head{open > 0 ? text_at(words, open - 1) : std::string_view{}};
+
+        return starts_name(head) && !std::ranges::contains(named_casts, head);
+    }
+
+    static constexpr std::array<std::string_view, 6> keywords{"if", "while", "for", "switch", "return", "sizeof"};
+
+    return value_before(words, back - 2) && !is_cast(words, back) && !std::ranges::contains(keywords, before);
 }
 
 /**
@@ -212,15 +377,7 @@ constexpr std::size_t most_choices{64};
             return false;
         }
 
-        if (word != "(" || back < 2)
-        {
-            continue;
-        }
-
-        static constexpr std::array<std::string_view, 6> keywords{"if", "while", "for", "switch", "return", "sizeof"};
-
-        if (value_before(words, back - 2) && !is_cast(words, back) &&
-            !std::ranges::contains(keywords, text_at(words, back - 2)))
+        if (word == "(" && opens_call(words, back))
         {
             return true;
         }
@@ -263,11 +420,59 @@ constexpr std::size_t most_choices{64};
 }
 
 /**
+ * @brief Returns whether a name is the operand of a cast to what may be a reference type, may_be_reference(), which
+ *        binds a reference to it as `auto&` does: a named cast, `static_cast<const char*&>(cursors[0])` or
+ *        `static_cast<R>(cursors[0])` under `using R = const char*&;`, or a C cast, `(const char*&)cursors[0]` or
+ *        `(R)cursors[0]`, the second `&` of an rvalue reference ending one as well, a C cast to a type not ending in
+ *        `&` taking the pointer only where it stands alone, since `(R)cursors[0][-1]` casts a byte. A parenthesised
+ * group before an operand is a cast's in any statement the compiler takes unless a value stands before it, `if (n)
+ * cursors[0]` holding a condition.
+ * @param words The action's words.
+ * @param first The index of the name's first word.
+ * @param last The index of its last word.
+ * @return True when it is.
+ */
+[[nodiscard]] bool is_reference_cast(const std::vector<Word>& words, const std::size_t first, const std::size_t last)
+{
+    if (first >= 2 && text_at(words, first - 1) == ")")
+    {
+        const auto open{group_open(words, first - 1)};
+
+        const auto conditioned{open > 0 && value_before(words, open - 1) && text_at(words, open - 1) != "return"};
+
+        const auto aliased{stands_alone(words, last) && may_be_reference(words, open + 1, first - 1)};
+
+        return !conditioned && (text_at(words, first - 2) == "&" || aliased);
+    }
+
+    if (first < 4 || !is_wrapped(words, first, last) || text_at(words, first - 2) != ">")
+    {
+        return false;
+    }
+
+    auto open{first - 2};
+
+    for (auto depth{0}; open > 0; --open)
+    {
+        depth += depth_step(text_at(words, open), ">", "<");
+
+        if (depth == 0)
+        {
+            break;
+        }
+    }
+
+    return open > 0 && std::ranges::contains(named_casts, text_at(words, open - 1)) &&
+           may_be_reference(words, open + 1, first - 2);
+}
+
+/**
  * @brief Returns whether a name is handed on rather than moved where it stands, which leaves what becomes of it out of
  *        sight: its address taken, `&cursors[0]`, a reference bound to it, `auto& cursor = cursors[0]`, or the name
- *        passed to a call, `advance(cursors[0])`, which may take it by reference; a cast's or a grouping's parentheses
- *        pass nothing. It is handed on as much at every level of parentheses around it, `(cursors[0])` bound to a
- *        reference or passed as `cursors[0]` is, so the checks run on the name and again on each pair wrapping it.
+ *        passed to a call, `advance(cursors[0])`, which may take it by reference, or cast to a reference type,
+ *        is_reference_cast(); a cast's or a grouping's parentheses pass nothing otherwise. It is handed on as much at
+ *        every level of parentheses around it, `(cursors[0])` bound to a reference or passed as `cursors[0]` is, so the
+ *        checks run on the name and again on each pair wrapping it.
  * @param words The action's words.
  * @param first The index of the name's first word.
  * @param last The index of its last word.
@@ -282,7 +487,8 @@ constexpr std::size_t most_choices{64};
 
     for (;;)
     {
-        if (is_addressed(first) || is_bound(words, first, last) || is_passed(words, first))
+        if (is_addressed(first) || is_bound(words, first, last) || is_passed(words, first) ||
+            is_reference_cast(words, first, last))
         {
             return true;
         }
@@ -309,10 +515,12 @@ constexpr std::size_t most_choices{64};
 }
 
 /**
- * @brief Reduces a spelling until nothing changes: parentheses around one name or one value are grouping and name
- *        nothing, `(in)->cur` being `in->cur`, `(cursors)[0]` being `cursors[0]` and `cursors[(0)]` being `cursors[0]`;
- *        a dereference and a dot are an arrow, `(*in).cur` being `in->cur`; every other parenthesis is a call's or an
- *        index's and stays.
+ * @brief Reduces a spelling until nothing changes: parentheses around one name or one value, or around a chain of
+ *        indices and members on one, are grouping and name nothing, `(in)->cur` being `in->cur`, `(cursors)[0]` being
+ *        `cursors[0]`, `cursors[(0)]` being `cursors[0]` and `(slots[0]).cursors[0]` being `slots[0].cursors[0]`,
+ *        unless they are a call's, `advance(YYCURSOR)`, a named cast's, `static_cast<R>(cursors[0])`, or a cast's,
+ *        `(R)cursors[0]`; a dereference and a dot are an arrow, `(*in).cur` being `in->cur`; every other parenthesis
+ *        is a call's or an index's and stays.
  * @param out The spelling, reduced in place.
  */
 void reduce(std::vector<Word>& out)
@@ -320,6 +528,37 @@ void reduce(std::vector<Word>& out)
     const auto word{[&out](const std::size_t index) { return text_at(out, index); }};
 
     const auto valued{[](const std::string_view text) { return !text.empty() && is_digit(text.front()); }};
+
+    const auto value_at{
+            [&word, &valued](const std::size_t index) { return starts_name(word(index)) || valued(word(index)); }};
+
+    // The `)` ending a chain of indices and members on a name or a value, `slots[0].cursors`, when one begins there.
+    const auto chain_close{[&word, &value_at](const std::size_t from) -> std::optional<std::size_t> {
+        if (!value_at(from))
+        {
+            return std::nullopt;
+        }
+
+        auto at{from + 1};
+
+        for (;;)
+        {
+            if (word(at) == "[" && value_at(at + 1) && word(at + 2) == "]")
+            {
+                at += 3;
+            }
+            else if ((word(at) == "." || word(at) == "->") && starts_name(word(at + 1)))
+            {
+                at += 2;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return word(at) == ")" ? std::optional{at} : std::nullopt;
+    }};
 
     auto changed{false};
 
@@ -345,12 +584,19 @@ void reduce(std::vector<Word>& out)
                 continue;
             }
 
-            // A value in parentheses is the value, `cursors[(0)]` being `cursors[0]`.
-            if (word(at) == "(" && (starts_name(word(at + 1)) || valued(word(at + 1))) && word(at + 2) == ")")
-            {
-                next.push_back(out[at + 1]);
+            // A chain in parentheses is the chain, `cursors[(0)]` being `cursors[0]`, unless they are a call's, a named
+            // cast's or a cast's, before an operand.
+            const auto close{word(at) == "(" ? chain_close(at + 1) : std::nullopt};
 
-                at += 2;
+            const auto templated{at > 0 && word(at - 1) == ">"};
+
+            if (close && !value_at(*close + 1) && !templated && !opens_call(out, at + 1))
+            {
+                const auto chain{std::span{out}.subspan(at + 1, *close - at - 1)};
+
+                next.insert(next.end(), chain.begin(), chain.end());
+
+                at = *close;
 
                 changed = true;
 
@@ -458,6 +704,17 @@ void reduce(std::vector<Word>& out)
 }
 
 /**
+ * @brief Returns whether a word is an integer literal with a suffix, `0U`, `1ull` or `0x1L`, none of whose letters is a
+ *        hexadecimal digit.
+ * @param word The word.
+ * @return True when it is.
+ */
+[[nodiscard]] bool is_suffixed(const std::string_view word) noexcept
+{
+    return !word.empty() && is_digit(word.front()) && std::string_view{"uUlLzZ"}.contains(word.back());
+}
+
+/**
  * @brief Returns an arithmetic operator applied to its two operands.
  * @param symbol The operator, `*`, `/`, `%`, `+` or `-`.
  * @param left The left operand.
@@ -492,9 +749,10 @@ void reduce(std::vector<Word>& out)
 /**
  * @brief The value of a constant integer expression over the tokens given: decimal literals within an int's range, `+`,
  *        `-`, `*`, `/`, `%`, unary signs and parentheses, with C's precedence, every value kept within an int's range;
- *        or nothing where a token is anything else, a shift, a bitwise operator or a suffixed or hexadecimal literal
- *        among them, whose type and width the reading does not model, `~0U >> 31` being 1 and `(1U << 31) << 1` being 0
- *        under the compiler where a signed reading says otherwise.
+ *        or nothing where a token is anything else, a shift or a bitwise operator among them, whose width the reading
+ *        does not model, `~0U >> 31` being 1 and `(1U << 31) << 1` being 0 under the compiler where a signed reading
+ *        says otherwise. A literal comes as canonical() writes it, an unsuffixed one of any base within an int's range
+ *        being an int as it is to the compiler, while an expression holding a suffixed one never reaches the reader.
  *
  * The expression is read by precedence climbing: a level reads the operands of its operators at the level below, and
  * the lowest level, a unary sign, a parenthesised expression or a literal, reads a whole expression again inside
@@ -675,6 +933,16 @@ std::string_view Constant_reader::peek() const noexcept
  * re2c writes into the scanner as it stands, so the name is looked for as the run of tokens it is and an operator
  * beside that run moves it as one beside a bare name would. Both sides are read in one spelling, plain(), so that the
  * spellings the compiler takes for one are one to the comparison.
+ *
+ * The arrays the configured spellings index are each run before a bracket of a configured spelling read so, `cursors`
+ * of `cursors[0]`, `in->cursors` of `in->cursors[0]`, and both `slots` and `slots[0].cursors` of
+ * `slots[1-1].cursors[0]`, its earlier index read to its value before the later run is taken. An index into one of
+ * them, in the action or in a configured spelling, is read to its value when it is a constant expression, `+0`, `1-1`
+ * and `(0)` being `0`, and is out of sight when it is not, `cursors[i]` and `cursors[SLOT]` under `constexpr unsigned
+ * SLOT` standing for any slot, the scan pointer's among them. Every run a configured spelling opens with, an array's or
+ * a member's owner's, `in` of `in->cur` and `slots[0]` of `slots[0].cursors[0]`, is reached in the action only through
+ * the word that continues it there, since `*(cursors + 1)`, `1[cursors]`, `for (auto& c : cursors)` and `advance(in)`
+ * reach the pointer through it out of sight.
  */
 class Pointer_reader
 {
@@ -685,13 +953,11 @@ public:
      * @param tokens The action's tokens, as c_tokens() reads them.
      * @param spelled The pointers' configured spellings, as c_tokens() reads each.
      * @param macros The macros the file defines.
-     * @param arrays The arrays the configured spellings index, each as the run of words before its bracket.
      * @param choice The way the transparent macros are defined, one value each.
      */
     Pointer_reader(
             std::string_view code, const std::vector<C_token>& tokens, const std::vector<std::vector<C_token>>& spelled,
-            const Macros_t& macros, const std::vector<std::vector<std::string>>& arrays,
-            const Choice_t& choice) noexcept;
+            const Macros_t& macros, const Choice_t& choice) noexcept;
 
     /**
      * @brief Returns what the action does to a scan pointer under this way of defining the macros, when it moves one or
@@ -721,9 +987,10 @@ private:
      *        arrays is read to its value. Every other parenthesis is a call's or an index's and stays, since
      *        `in->cursor()` reaches the pointer through a call and `slots[(i+j)*k]` is not `slots[i+(j*k)]`.
      * @param raw The tokens.
+     * @param configured Whether they are a configured spelling, every bracket of which indexes an array.
      * @return The words, each with the index of the token it came from.
      */
-    [[nodiscard]] std::vector<Word> plain(const std::vector<C_token>& raw);
+    [[nodiscard]] std::vector<Word> plain(const std::vector<C_token>& raw, bool configured);
 
     /**
      * @brief Returns the tokens with each transparent macro replaced by its value, read as the action's own words are,
@@ -736,19 +1003,36 @@ private:
     [[nodiscard]] std::vector<Word> substituted(const std::vector<C_token>& raw) const;
 
     /**
-     * @brief Reads every index into one of the arrays to its value, or marks the array out of sight, the earlier of two
-     *        in one spelling first so that `slots[1-1].cursors` is `slots[0].cursors` before the second is looked at.
+     * @brief Reads every index into one of the arrays to its value, or marks the array out of sight, an index holding
+     *        a suffixed operand among them, the earlier of two in one spelling first so that `slots[1-1].cursors` is
+     *        `slots[0].cursors` before the second is looked at; in a configured spelling every bracket indexes an
+     *        array, whose run is kept as it stands once the earlier indices are read.
      * @param out The spelling, its indices replaced by their values where they are constant.
+     * @param configured Whether it is a configured spelling.
      */
-    void evaluate_indices(std::vector<Word>& out);
+    void evaluate_indices(std::vector<Word>& out, bool configured);
 
     /**
-     * @brief Returns the array whose run ends at a word followed by an index's `[`, when one of the arrays does.
+     * @brief Returns the array whose run ends at a word followed by an index's `[`, when one of the arrays does, or,
+     *        in a configured spelling, where every bracket indexes an array, whatever run it is.
      * @param out The spelling.
      * @param at The index of the run's last word.
+     * @param configured Whether it is a configured spelling.
      * @return The array, its run written together, or std::nullopt.
      */
-    [[nodiscard]] std::optional<std::string> indexed(const std::vector<Word>& out, std::size_t at) const;
+    [[nodiscard]] std::optional<std::string> indexed(
+            const std::vector<Word>& out, std::size_t at, bool configured) const;
+
+    /**
+     * @brief Returns why a run a configured spelling opens with is reached otherwise than through the word that
+     *        continues it there, when one is at a word of the action: `cursors` in `*(cursors + 1)` or `in` in
+     *        `advance(in)`, which reach the pointer out of sight; a run after a `.` or an `->`, `tok.in`, is another
+     *        object's member.
+     * @param plainly The action's words.
+     * @param here The index of the word.
+     * @return What the refusal says after "the action", or std::nullopt when no run opens there or one is continued.
+     */
+    [[nodiscard]] std::optional<std::string> stray_step(const std::vector<Word>& plainly, std::size_t here) const;
 
     /**
      * @brief Returns whether the name between two words is moved: stepped by `++` or `--` on either side, or assigned
@@ -792,14 +1076,15 @@ private:
     const Macros_t& macros_;
 
     /**
-     * @brief The arrays the configured spellings index.
-     */
-    const std::vector<std::vector<std::string>>& arrays_;
-
-    /**
      * @brief The way the transparent macros are defined.
      */
     const Choice_t& choice_;
+
+    /**
+     * @brief The runs the configured spellings open with, each with the word continuing it, the arrays they index
+     *        among them, as the run before a bracket.
+     */
+    std::vector<Step> steps_;
 
     /**
      * @brief The first array indexed by an expression the reading does not evaluate.
@@ -809,9 +1094,8 @@ private:
 
 Pointer_reader::Pointer_reader(
         const std::string_view code, const std::vector<C_token>& tokens,
-        const std::vector<std::vector<C_token>>& spelled, const Macros_t& macros,
-        const std::vector<std::vector<std::string>>& arrays, const Choice_t& choice) noexcept
-    : code_{code}, tokens_{tokens}, spelled_{spelled}, macros_{macros}, arrays_{arrays}, choice_{choice}
+        const std::vector<std::vector<C_token>>& spelled, const Macros_t& macros, const Choice_t& choice) noexcept
+    : code_{code}, tokens_{tokens}, spelled_{spelled}, macros_{macros}, choice_{choice}
 {}
 
 std::optional<std::string> Pointer_reader::refusal()
@@ -820,7 +1104,7 @@ std::optional<std::string> Pointer_reader::refusal()
 
     for (const auto& pointer : spelled_)
     {
-        const auto words{plain(pointer)};
+        const auto words{plain(pointer, true)};
 
         std::vector<std::string> spelling{};
 
@@ -832,10 +1116,33 @@ std::optional<std::string> Pointer_reader::refusal()
         }
     }
 
-    const auto plainly{plain(tokens_)};
+    static constexpr std::array<std::string_view, 3> continuations{"[", ".", "->"};
+
+    for (const auto& spelling : spellings)
+    {
+        for (std::size_t next{1}; next < spelling.size(); ++next)
+        {
+            if (!std::ranges::contains(continuations, spelling[next]))
+            {
+                continue;
+            }
+
+            const auto run_end{spelling.begin() + static_cast<std::ptrdiff_t>(next)};
+
+            steps_.push_back(
+                    {.run = {spelling.begin(), run_end}, .next = spelling[next], .spelling = concatenated(spelling)});
+        }
+    }
+
+    const auto plainly{plain(tokens_, false)};
 
     for (std::size_t here{0}; here < plainly.size(); ++here)
     {
+        if (auto stray{stray_step(plainly, here)})
+        {
+            return stray;
+        }
+
         const auto spelled_here{
                 [&plainly, here](const std::vector<std::string>& one) { return spells_at(plainly, here, one); }};
 
@@ -880,7 +1187,7 @@ const std::optional<std::string>& Pointer_reader::unread() const noexcept
     return unread_;
 }
 
-std::vector<Word> Pointer_reader::plain(const std::vector<C_token>& raw)
+std::vector<Word> Pointer_reader::plain(const std::vector<C_token>& raw, const bool configured)
 {
     // The words are reduced in passes until nothing changes, so that a group inside a group, `((in))->cur`, comes down
     // to the name as `(in)->cur` does, and again once the indices are read to their values.
@@ -888,7 +1195,7 @@ std::vector<Word> Pointer_reader::plain(const std::vector<C_token>& raw)
 
     reduce(out);
 
-    evaluate_indices(out);
+    evaluate_indices(out, configured);
 
     reduce(out);
 
@@ -922,7 +1229,7 @@ std::vector<Word> Pointer_reader::substituted(const std::vector<C_token>& raw) c
 
         if (value == choice_.end() || (function_like && !invoked))
         {
-            out.push_back({.text = canonical(text), .origin = at});
+            out.push_back({.text = canonical(text), .origin = at, .suffixed = is_suffixed(text)});
 
             continue;
         }
@@ -931,7 +1238,7 @@ std::vector<Word> Pointer_reader::substituted(const std::vector<C_token>& raw) c
 
         for (const auto& word : words)
         {
-            out.push_back({.text = canonical(word), .origin = at});
+            out.push_back({.text = canonical(word), .origin = at, .suffixed = is_suffixed(word)});
         }
 
         if (function_like)
@@ -943,11 +1250,11 @@ std::vector<Word> Pointer_reader::substituted(const std::vector<C_token>& raw) c
     return out;
 }
 
-void Pointer_reader::evaluate_indices(std::vector<Word>& out)
+void Pointer_reader::evaluate_indices(std::vector<Word>& out, const bool configured)
 {
     for (std::size_t at{0}; at + 1 < out.size(); ++at)
     {
-        const auto array{indexed(out, at)};
+        const auto array{indexed(out, at, configured)};
 
         if (!array)
         {
@@ -969,7 +1276,10 @@ void Pointer_reader::evaluate_indices(std::vector<Word>& out)
 
         Constant_reader reader{words};
 
-        if (const auto value{reader.value()})
+        // A suffixed operand gives the arithmetic its type, `(0U - 1) % 2` being 1; alone it is its value.
+        const auto typed{index.size() > 1 && std::ranges::any_of(index, &Word::suffixed)};
+
+        if (const auto value{typed ? std::nullopt : reader.value()})
         {
             const auto index_begin{out.begin() + static_cast<std::ptrdiff_t>(at) + 2};
 
@@ -986,15 +1296,30 @@ void Pointer_reader::evaluate_indices(std::vector<Word>& out)
     }
 }
 
-std::optional<std::string> Pointer_reader::indexed(const std::vector<Word>& out, const std::size_t at) const
+std::optional<std::string> Pointer_reader::indexed(
+        const std::vector<Word>& out, const std::size_t at, const bool configured) const
 {
     if (out[at + 1].text != "[")
     {
         return std::nullopt;
     }
 
-    for (const auto& run : arrays_)
+    if (configured)
     {
+        std::vector<std::string> run{};
+
+        std::ranges::transform(out | std::views::take(at + 1), std::back_inserter(run), &Word::text);
+
+        return concatenated(run);
+    }
+
+    for (const auto& [run, next, spelling] : steps_)
+    {
+        if (next != "[")
+        {
+            continue;
+        }
+
         if (run.size() > at + 1)
         {
             continue;
@@ -1009,6 +1334,45 @@ std::optional<std::string> Pointer_reader::indexed(const std::vector<Word>& out,
     }
 
     return std::nullopt;
+}
+
+std::optional<std::string> Pointer_reader::stray_step(const std::vector<Word>& plainly, const std::size_t here) const
+{
+    // A run after a `.` or an `->` is a member of another object's, `tok.in`.
+    const auto member{here > 0 && (text_at(plainly, here - 1) == "." || text_at(plainly, here - 1) == "->")};
+
+    if (member)
+    {
+        return std::nullopt;
+    }
+
+    const auto spelled_here{[&plainly, here](const Step& step) { return spells_at(plainly, here, step.run); }};
+
+    auto opened{steps_ | std::views::filter(spelled_here)};
+
+    const auto continued{
+            [&plainly, here](const Step& step) { return text_at(plainly, here + step.run.size()) == step.next; }};
+
+    // Of the runs opening here, `slots` and `slots[0]` of `slots[0].cursors`, each must be continued as some spelling
+    // continues it.
+    const auto stray{[&opened, &continued](const Step& step) {
+        const auto same_run{[&step](const Step& other) { return other.run == step.run; }};
+
+        return std::ranges::none_of(opened | std::views::filter(same_run), continued);
+    }};
+
+    const auto left{std::ranges::find_if(opened, stray)};
+
+    if (left == std::ranges::end(opened))
+    {
+        return std::nullopt;
+    }
+
+    const auto& [run, next, spelling]{*left};
+
+    return std::format(
+            "names {} without the `{}` that continues it in {}, so whether it reaches the scan pointer is out of sight",
+            concatenated(run), next, spelling);
 }
 
 bool Pointer_reader::is_moved(const std::vector<Word>& plainly, const std::size_t first, const std::size_t last) const
@@ -1168,54 +1532,6 @@ bool Pointer_reader::is_joined(const std::vector<Word>& plainly, const std::size
 }
 
 /**
- * @brief Returns the arrays the configured spellings index, each run before a bracket of a reduced spelling: `cursors`
- *        of `cursors[0]`, `in->cursors` of `in->cursors[0]`, and both `slots` and `slots[0].cursors` of
- *        `slots[0].cursors[0]`.
- *
- * An index into one of them, in the action or in a configured spelling, is read to its value when it is a constant
- * expression, `+0`, `1-1` and `(0)` being `0`, and is out of sight when it is not, `cursors[i]` and `cursors[SLOT]`
- * under `constexpr unsigned SLOT` standing for any slot, the scan pointer's among them.
- * @param spelled The pointers' configured spellings.
- * @return The arrays, each as the run of words before its bracket.
- */
-[[nodiscard]] std::vector<std::vector<std::string>> indexed_arrays(const std::vector<std::vector<C_token>>& spelled)
-{
-    std::vector<std::vector<std::string>> arrays{};
-
-    for (const auto& pointer : spelled)
-    {
-        // An integer literal reads as its value.
-        const auto as_word{[]<typename Entry>(const Entry& entry) {
-            const auto& [at, token]{entry};
-
-            return Word{.text = canonical(token.text), .origin = static_cast<std::size_t>(at)};
-        }};
-
-        std::vector<Word> reduced{};
-
-        std::ranges::transform(std::views::enumerate(pointer), std::back_inserter(reduced), as_word);
-
-        reduce(reduced);
-
-        for (std::size_t at{1}; at < reduced.size(); ++at)
-        {
-            if (reduced[at].text != "[")
-            {
-                continue;
-            }
-
-            std::vector<std::string> run{};
-
-            std::ranges::transform(reduced | std::views::take(at), std::back_inserter(run), &Word::text);
-
-            arrays.push_back(std::move(run));
-        }
-    }
-
-    return arrays;
-}
-
-/**
  * @brief Returns whether a token names a label: a name followed by a lone colon, `loop:`, a `::` and the `case` and
  *        `default` labels of a switch being none.
  * @param tokens The tokens, as c_tokens() reads them.
@@ -1266,11 +1582,9 @@ bool Pointer_reader::is_joined(const std::vector<Word>& plainly, const std::size
         return choices.error();
     }
 
-    const auto arrays{indexed_arrays(spelled)};
-
     for (const auto& choice : *choices)
     {
-        Pointer_reader reader{code, tokens, spelled, macros, arrays, choice};
+        Pointer_reader reader{code, tokens, spelled, macros, choice};
 
         if (auto refusal{reader.refusal()})
         {
@@ -1287,6 +1601,44 @@ bool Pointer_reader::is_joined(const std::vector<Word>& plainly, const std::size
     }
 
     return std::nullopt;
+}
+
+/**
+ * @brief Refuses a scan pointer whose configured spelling indexes an array by an expression the reading does not
+ *        evaluate, `cursors[(0U - 1) % 2]` or `cursors[i]`, under some way of defining the macros it names, since which
+ *        slot the scanner steps is then out of sight; a spelling naming more macros than the reading follows together
+ *        is moved_cursor()'s to refuse.
+ * @param pointers The names the block's configurations give the scan pointers.
+ * @param macros The macros the file defines.
+ * @throws Spec_error If one does, at the line of the configuration naming it.
+ */
+void refuse_configured_index(const Pointers_t& pointers, const Macros_t& macros)
+{
+    const std::vector<C_token> no_action{};
+
+    for (const auto& [canonical, name, line] : pointers)
+    {
+        const std::vector<std::vector<C_token>> spelled{c_tokens(name)};
+
+        const auto choices{macro_choices(macro_values(macros, spelled, no_action))};
+
+        for (const auto& choice : choices.value_or(std::vector<Choice_t>{}))
+        {
+            Pointer_reader reader{{}, no_action, spelled, macros, choice};
+
+            std::ignore = reader.refusal();
+
+            if (reader.unread())
+            {
+                throw Spec_error{
+                        std::format(
+                                "the configuration names {} `{}`, which indexes {} by an expression the reading does "
+                                "not evaluate, so which slot the scanner steps is out of sight",
+                                canonical, name, *reader.unread()),
+                        line};
+            }
+        }
+    }
 }
 
 /**
@@ -1351,15 +1703,17 @@ std::set<std::string, std::less<>> restart_labels(
 
 void refuse_action(
         const Action& action, const Pointers_t& pointers, const Macros_t& macros, const Returning_t& returning,
-        const std::set<std::string, std::less<>>& restarts)
+        const std::set<std::string, std::less<>>& restarts, const std::vector<Action>& heads)
 {
     std::vector<std::string> names{};
 
     std::ranges::transform(pointers, std::back_inserter(names), &Pointer_name::name);
 
-    const auto& [code, line, what, of_rule]{action};
+    const auto& [code, line, what, of_rule, conditions]{action};
 
     const auto refuse_use{[&line](const std::string_view use) { throw Spec_error{action_refusal(use), line}; }};
+
+    refuse_configured_index(pointers, macros);
 
     if (const auto moved{moved_cursor(code, names, macros)})
     {
@@ -1382,6 +1736,20 @@ void refuse_action(
     if (const auto use{returns_undecided(judged, returning, false, restarts, of_rule && !shortcut)})
     {
         refuse_use(*use);
+    }
+
+    for (const auto& head : shortcut ? std::span<const Action>{} : std::span{heads})
+    {
+        const auto headed{std::format("{}\n{}", head.code, judged)};
+
+        if (const auto use{returns_undecided(headed, returning, false, restarts, true)})
+        {
+            throw Spec_error{
+                    std::format(
+                            "the action, after the code of the setup rule at line {} that re2c writes before it, {}",
+                            head.line, *use),
+                    line};
+        }
     }
 
     const std::vector<std::string_view> pointer_names{names.begin(), names.end()};

@@ -51,10 +51,10 @@ using Returning_t = std::vector<std::string>;
  *        write `goto loop;` to a label before the block; none unless given, under which every `goto` is refused, and a
  *        `goto` to any label but these is refused whatever is given, its target being out of sight.
  * @param chained Whether control falls from the action's end into the next rule's action, as it does in re2c's
- *        generated code for a rule's action, so that one returning nowhere must leave by a jump, `continue;` or a
- *        restarting `goto`, `"a"+ { ++count; }` before `"b" { return 8; }` returning 8 for "a" under re2c 3.1; false
- *        for flex, whose `YY_BREAK` ends every action, and for re2c's setup and entry rules, whose code runs before the
- *        scan.
+ *        generated code for a rule's action, so that one returning nowhere must leave by a jump on every path,
+ *        `continue;` or a restarting `goto`, the statements after one never reached, `"a"+ { ++count; }` before `"b" {
+ *        return 8; }` returning 8 for "a" under re2c 3.1; false for flex, whose `YY_BREAK` ends every action, and for
+ *        re2c's setup and entry rules, whose code runs before the scan.
  * @return What the refusal says after "the action", or std::nullopt.
  */
 [[nodiscard]] std::optional<std::string> returns_undecided(

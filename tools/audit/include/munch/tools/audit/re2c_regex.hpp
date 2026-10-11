@@ -73,6 +73,18 @@ struct Regex_text
      * @brief The class the whole regex is, where it is one, which a definition keeps for the differences that name it.
      */
     std::optional<Class> points{};
+
+    /**
+     * @brief The names the regex refers to, bare or braced, in the order read: re2c binds a name where its definition
+     *        stands, so each must be bound by a definition above the regex.
+     */
+    std::vector<std::string> names{};
+
+    /**
+     * @brief Whether the regex refers to a name in braces, `{name}`, outside the flex syntax, which re2c 3.1 reads only
+     *        under it.
+     */
+    bool braced{};
 };
 
 /**
@@ -109,9 +121,11 @@ public:
      * token: bare names become `{name}` unless the flex syntax makes them literals, quoted literals other than an exact
      * double-quoted one become bracket sequences, blanks are dropped, and a class difference `A \ B` becomes the class
      * of the code points left, its operands the char sets re2c takes there. With them comes the class the whole regex
-     * is, where it is one, which a definition keeps for the differences that name it.
+     * is, where it is one, which a definition keeps for the differences that name it, and the names the regex refers
+     * to, which its owner holds to the definitions above it.
      * @param definitions The definitions read so far, which a difference's operand may name.
-     * @return The pattern as written, its expression, both empty when an action follows at once, and its class.
+     * @return The pattern as written, its expression, both empty when an action follows at once, its class and the
+     *         names it refers to.
      * @throws Spec_error If a quote or bracket is left open, or the regex uses a refused construct, an operand of a
      *         class difference that is no char set among them.
      */
@@ -459,6 +473,16 @@ private:
      * @brief The expression rewritten for the parser, read so far.
      */
     std::string expression_;
+
+    /**
+     * @brief The names the regex refers to, read so far.
+     */
+    std::vector<std::string> names_;
+
+    /**
+     * @brief Whether the regex read so far refers to a name in braces outside the flex syntax.
+     */
+    bool braced_{false};
 
     /**
      * @brief The groups open where the reader stands, the whole regex first.

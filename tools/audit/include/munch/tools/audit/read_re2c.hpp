@@ -95,11 +95,12 @@ struct Re2c_flags
  * re2c lives inside C: every block opened by a comment beginning `!re2c` or `!rules:re2c` is read, in order, through
  * its close, and the other block kinds, which carry no rules, are skipped along with the code around them. A block is
  * read as Block_reader reads it, as re2c 3.1 does: its close, its `re2c:` configurations, which configure() honours for
- * the whole block the last assignment governing, its definitions in either syntax, and its rules, with their actions,
- * the ranks re2c gives the `<*>` rules and the default rule `*`, and the default rules a block brings in yielding to
- * its own; what re2c refuses of a scanner's mix of rules, conditions with normal rules and end rules without other
- * rules, is refused in its words by Rule_kinds::note() and Rule_kinds::refuse_end_rules(). The end rule `$`, `<!c>`
- * setup rules and the entry rule `<>` are not tokens and are skipped.
+ * the whole block the last assignment governing, its definitions in either syntax, each binding its name where it
+ * stands, so that a name defined twice and one used before its definition are refused as re2c refuses them, and its
+ * rules, with their actions, the ranks re2c gives the `<*>` rules and the default rule `*`, and the default rules a
+ * block brings in yielding to its own; what re2c refuses of a scanner's mix of rules, conditions with normal rules and
+ * end rules without other rules, is refused in its words by Rule_kinds::note() and Rule_kinds::refuse_end_rules(). The
+ * end rule `$`, `<!c>` setup rules and the entry rule `<>` are not tokens and are skipped.
  *
  * Each block with rules is a scanner of its own, as re2c compiles it, and comes back as its own specification, named by
  * the line its opener is on, with the definitions and configurations in force when it closed; a block holding only
@@ -134,9 +135,10 @@ struct Re2c_flags
  * escapes cannot name, the bytes of those beside them; an all-ASCII class or literal stands as it is, its encoding
  * being itself. Refused by name there: a byte beyond ASCII written straight into the source, which code points it
  * stands for being the `--input-encoding` option's to say and no file carrying it. The configurations and encodings a
- * reading over bytes cannot follow are refused wherever they come from, a configuration or the flags the caller passes,
- * as configure() and unreadable() say. What a command line asks for beyond the flags is beyond the reading: an
- * `--encoding-policy` there is taken to be the default one, as an `--input-encoding` is taken to be ASCII.
+ * reading over bytes cannot follow are refused where a scanner reads under them, wherever they come from, a
+ * configuration or the flags the caller passes, as configure() and unreadable() say. What a command line asks for
+ * beyond the flags is beyond the reading: an `--encoding-policy` there is taken to be the default one, as an
+ * `--input-encoding` is taken to be ASCII.
  * @param source The file's text.
  * @param flags The command line's flags, none unless given.
  * @param returning The forms besides `return` an action returns a token through, none unless given.

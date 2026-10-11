@@ -171,6 +171,12 @@ struct Carried
      *        the pointer names are.
      */
     std::optional<std::size_t> api_custom{};
+
+    /**
+     * @brief Where the blocks so far set the encoding and left its policy otherwise than the default, carried as the
+     *        API is.
+     */
+    Encoding_lines encoding{};
 };
 
 /**
@@ -208,6 +214,11 @@ struct Block_reading
      * @brief The API setting the block's configurations leave.
      */
     std::optional<std::size_t> api_custom{};
+
+    /**
+     * @brief Where the encoding and its policy the block's configurations leave were set.
+     */
+    Encoding_lines encoding{};
 
     /**
      * @brief The offset just past the block's close.
@@ -524,13 +535,13 @@ private:
     [[nodiscard]] std::size_t block(const Opener& opener);
 
     /**
-     * @brief Returns where the rules block a use block uses begins: a use block names the rules block it uses, not
+     * @brief Returns where the rules block a use block uses stands: a use block names the rules block it uses, not
      *        itself, and with no name it uses the most recent one.
      * @param opener The block's opener.
-     * @return The offset just past the used block's opener, or std::nullopt for a block that uses none.
+     * @return Where the used block stands, or std::nullopt for a block that uses none.
      * @throws Spec_error If a use block names no block above it, or names none where no rules block is above it.
      */
-    [[nodiscard]] std::optional<std::size_t> used_block(const Opener& opener) const;
+    [[nodiscard]] std::optional<Used_site> used_block(const Opener& opener) const;
 
     /**
      * @brief Reads a block until a pass reads it under the flags its configurations leave.
@@ -540,11 +551,11 @@ private:
      * What the configurations leave is the inherited flags with the block's own applied, whichever pass reads it, and
      * the evidence of the flex syntax only ever turns its flag on, so the reading settles.
      * @param opener The block's opener.
-     * @param used Where the rules block a use block uses begins.
+     * @param used Where the rules block a use block uses stands.
      * @return What the settled pass read.
      * @throws Spec_error As pass() does.
      */
-    [[nodiscard]] Block_reading settled(const Opener& opener, std::optional<std::size_t> used);
+    [[nodiscard]] Block_reading settled(const Opener& opener, const std::optional<Used_site>& used);
 
     /**
      * @brief Reads a block once, under the flags given; a use block's rules are the used block's, read at the head of
@@ -554,16 +565,18 @@ private:
      * reads under, `[^] \ [\x00-\xff]`, holds every code point past the bytes once the block turns UTF-8 on, and one
      * empty under the case flags inherited, `"a" \ 'A'`, holds the exact `a` once the block inverts which quote folds.
      * It is a scanner's to make, at that: a rules block's and a block of definitions alone are compiled where they are
-     * used, under the flags there, and are refused there.
+     * used, under the flags there, and are refused there; so are an encoding the reading has not got and an encoding
+     * policy other than the default, which a block that only configures leaves to the blocks after it.
      * @param opener The block's opener.
-     * @param used Where the rules block a use block uses begins.
+     * @param used Where the rules block a use block uses stands.
      * @param reading The flags the pass translates the block's patterns under.
      * @return What the pass read.
-     * @throws Spec_error If the block is refused, or its configurations leave an encoding the reading has not got; and
-     *         for the pass reading under the flags the block leaves, if a rule reaches a carried definition those flags
-     *         cannot read, or a class difference is left empty.
+     * @throws Spec_error If the block is refused, or it is a scanner and reads under an encoding the reading has not
+     *         got or an encoding policy other than the default; and for the pass reading under the flags the block
+     *         leaves, if a rule reaches a carried definition those flags cannot read, or a class difference is left
+     *         empty.
      */
-    [[nodiscard]] Block_reading pass(const Opener& opener, std::optional<std::size_t> used, Re2c_flags reading);
+    [[nodiscard]] Block_reading pass(const Opener& opener, const std::optional<Used_site>& used, Re2c_flags reading);
 
     /**
      * @brief Translates the definitions the blocks above left again, under the flags this block reads its own patterns
@@ -578,8 +591,8 @@ private:
             Re2c_flags reading, Lexer_spec& spec, Pass_state& pass) const;
 
     /**
-     * @brief Carries what a global block leaves into the global scope; a name the block declared again keeps the place
-     *        it had, since a definition's own regex may name the ones declared before it.
+     * @brief Carries what a global block leaves into the global scope; a definition the block sees again, through a
+     *        second use of the block declaring it, is carried once, since re2c binds a name to one definition.
      * @param outcome What the block's settled pass read.
      */
     void carry(const Block_reading& outcome);
@@ -632,10 +645,11 @@ File_reader::File_reader(
               .options = {},
               .definitions = {},
               .pointers =
-                      {{.canonical = "YYCURSOR", .name = "YYCURSOR"},
-                       {.canonical = "YYMARKER", .name = "YYMARKER"},
-                       {.canonical = "YYCTXMARKER", .name = "YYCTXMARKER"}},
-              .api_custom = std::nullopt}
+                      {{.canonical = "YYCURSOR", .name = "YYCURSOR", .line = 0},
+                       {.canonical = "YYMARKER", .name = "YYMARKER", .line = 0},
+                       {.canonical = "YYCTXMARKER", .name = "YYCTXMARKER", .line = 0}},
+              .api_custom = std::nullopt,
+              .encoding = {}}
 {}
 
 std::vector<Lexer_spec> File_reader::read() &&
@@ -668,9 +682,12 @@ std::size_t File_reader::block(const Opener& opener)
         recent_ = opener.name;
     }
 
+    // The encoding in force where the block stands is the one the blocks above it left.
     if (rules || (opener.kind != Block_kind::use && !opener.name.empty()))
     {
-        library_.insert_or_assign(opener.name, opener.begin);
+        const Used_site site{.begin = opener.begin, .encoding = carried_.flags.encoding, .lines = carried_.encoding};
+
+        library_.insert_or_assign(opener.name, site);
     }
 
     // A global block's names and configurations join the global scope; a local block's, a rules block's and a use
@@ -681,10 +698,11 @@ std::size_t File_reader::block(const Opener& opener)
     }
 
     // A rules block is a library for the blocks that use it and no scanner itself: re2c holds it to none of the
-    // end-rule checks until a use block takes it up, only `re2c:eof`'s bound at its end, which the reading does not
-    // hold.
+    // end-rule checks until a use block takes it up, only `re2c:eof`'s bound at its end.
     if (rules)
     {
+        refuse_eof_past_code_unit(outcome.spec.options, outcome.spec.line);
+
         return outcome.end;
     }
 
@@ -700,7 +718,7 @@ std::size_t File_reader::block(const Opener& opener)
     return outcome.end;
 }
 
-std::optional<std::size_t> File_reader::used_block(const Opener& opener) const
+std::optional<Used_site> File_reader::used_block(const Opener& opener) const
 {
     if (opener.kind != Block_kind::use)
     {
@@ -721,12 +739,12 @@ std::optional<std::size_t> File_reader::used_block(const Opener& opener) const
         throw Spec_error{std::format("the used block '{}' is not above this one", name), opener.line};
     }
 
-    const auto& [used_name, begin]{*used};
+    const auto& [used_name, site]{*used};
 
-    return begin;
+    return site;
 }
 
-Block_reading File_reader::settled(const Opener& opener, const std::optional<std::size_t> used)
+Block_reading File_reader::settled(const Opener& opener, const std::optional<Used_site>& used)
 {
     auto reading{carried_.flags};
 
@@ -745,7 +763,7 @@ Block_reading File_reader::settled(const Opener& opener, const std::optional<std
     }
 }
 
-Block_reading File_reader::pass(const Opener& opener, const std::optional<std::size_t> used, const Re2c_flags reading)
+Block_reading File_reader::pass(const Opener& opener, const std::optional<Used_site>& used, const Re2c_flags reading)
 {
     const auto rules{opener.kind == Block_kind::rules};
 
@@ -760,7 +778,12 @@ Block_reading File_reader::pass(const Opener& opener, const std::optional<std::s
     // The classes among the definitions, which a class difference takes its operands from, are the pass's as the
     // definitions are, and each pass begins from the pointer names and the API the blocks above this one left, as each
     // pass rereads this block alone.
-    Pass_state state{.classes = {}, .pointers = carried_.pointers, .api_custom = carried_.api_custom};
+    Pass_state state{
+            .classes = {},
+            .pointers = carried_.pointers,
+            .api_custom = carried_.api_custom,
+            .encoding = carried_.encoding,
+            .bound = {}};
 
     const auto unreadable_definitions{carried_definitions(reading, spec, state)};
 
@@ -771,25 +794,34 @@ Block_reading File_reader::pass(const Opener& opener, const std::optional<std::s
         block.judge_later();
     }
 
-    if (used)
-    {
-        block.use(*used, spec, library_, returning_);
-    }
+    const auto end{block.read(spec, library_, returning_, used)};
 
-    const auto end{block.read(spec, library_, returning_)};
-
-    // re2c compiles a rules block where it is used and refuses rules of both kinds there, so a rules block is checked
-    // as part of the scanners using it and never on its own.
+    // re2c compiles a rules block where it is used and refuses rules of both kinds there, and setup rules for no
+    // condition, so a rules block is checked as part of the scanners using it and never on its own.
     if (!rules)
     {
         block.kinds().refuse_mixed();
+
+        block.kinds().refuse_setups(block.setups());
     }
 
-    // The encoding the configurations leave is what the block reads under, whichever pass; one the reading has not got
-    // is refused before any pass reads under it.
-    if (const auto refusal{unreadable(block.configured().encoding)}; !refusal.empty())
+    // The encoding the configurations leave is what a scanner reads under, whichever pass; one the reading has not got
+    // is refused before any pass reads under it, and a block compiling no scanner leaves it to the blocks after it.
+    const auto scanner{!rules && !spec.rules.empty()};
+
+    if (const auto refusal{unreadable(block.configured().encoding)}; scanner && !refusal.empty())
     {
-        throw Spec_error{refusal, block.encoding_line()};
+        throw Spec_error{refusal, state.encoding.encoding.value_or(opener.line)};
+    }
+
+    // An encoding policy other than the default is refused the same way, since it decides what becomes of the
+    // surrogates.
+    if (const auto policy{state.encoding.policy}; scanner && policy)
+    {
+        throw Spec_error{
+                "an encoding policy other than the default leaves the surrogates matched otherwise than the audit "
+                "reads them",
+                *policy};
     }
 
     Block_reading outcome{
@@ -799,11 +831,19 @@ Block_reading File_reader::pass(const Opener& opener, const std::optional<std::s
             .flags = block.configured(),
             .pointers = std::move(state.pointers),
             .api_custom = state.api_custom,
+            .encoding = state.encoding,
             .end = end};
 
     if (outcome.flags != reading)
     {
         return outcome;
+    }
+
+    // A name read before a definition binds it is refused by the settled pass, whose flags say which bare names are
+    // literals, in a block of any kind, as re2c refuses it where it reads the block.
+    if (block.unbound())
+    {
+        throw *block.unbound();
     }
 
     // A definition the settled flags cannot read is refused where a rule of this block reaches it, directly or through
@@ -820,7 +860,7 @@ Block_reading File_reader::pass(const Opener& opener, const std::optional<std::s
     }
 
     // A class difference left empty is refused by the settled pass, and only in a scanner.
-    if (block.deferred() && !rules && !outcome.spec.rules.empty())
+    if (block.deferred() && scanner)
     {
         throw *block.deferred();
     }
@@ -835,6 +875,9 @@ std::vector<Unreadable_definition> File_reader::carried_definitions(
 
     for (const auto& [name, at_definition, line_bound] : carried_.definitions)
     {
+        // The name stays bound where these flags cannot read its regex, which is refused where a rule reaches it.
+        pass.bound.insert_or_assign(name, at_definition);
+
         // A flex-style definition's body is read under the flex syntax, whose literals bare names are, and ends where
         // its line does; the re2c spelling ends at the `;` that closes it.
         auto flags{reading};
@@ -847,7 +890,7 @@ std::vector<Unreadable_definition> File_reader::carried_definitions(
         {
             Regex_reader body{source_, at_definition, flags, line_bound, pass.classes, deferred};
 
-            auto [pattern, expression, points]{body.regex_text(spec.definitions)};
+            auto [pattern, expression, points, names, braced]{body.regex_text(spec.definitions)};
 
             if (deferred)
             {
@@ -879,6 +922,8 @@ void File_reader::carry(const Block_reading& outcome)
 
     carried_.api_custom = outcome.api_custom;
 
+    carried_.encoding = outcome.encoding;
+
     carried_.options = outcome.spec.options;
 
     for (const auto& site : outcome.sites)
@@ -888,10 +933,6 @@ void File_reader::carry(const Block_reading& outcome)
         if (known == carried_.definitions.end())
         {
             carried_.definitions.push_back(site);
-        }
-        else
-        {
-            *known = site;
         }
     }
 }

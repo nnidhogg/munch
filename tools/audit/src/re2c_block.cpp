@@ -4,6 +4,8 @@
 #include <charconv>
 #include <cstddef>
 #include <format>
+#include <functional>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <ranges>
@@ -32,7 +34,7 @@ constexpr std::string_view configuration_prefix{"re2c:"};
 constexpr std::string_view use_prefix{"!use:"};
 
 /**
- * @brief What the configuration of the end-of-input sentinel opens with once its `re2c:` and its blanks are taken off.
+ * @brief What the configuration of the end-of-input sentinel opens with as an option, its name and `=`.
  */
 constexpr std::string_view eof_key{"eof="};
 
@@ -60,36 +62,6 @@ constexpr std::string_view include_prefix{"!include"};
     }
 
     return defaults;
-}
-
-/**
- * @brief Returns where a configuration ends: at its first `;` outside a quoted string, which may hold a `;` of its own,
- *        as a YYFILL definition usually does.
- * @param text The text.
- * @param from The offset of the configuration's first byte.
- * @param end The offset the text is read up to.
- * @return The offset of the `;`, or one at or past the end when none stands.
- */
-[[nodiscard]] std::size_t configuration_end(const std::string_view text, const std::size_t from, const std::size_t end)
-{
-    auto scan{from};
-
-    while (scan < end && text[scan] != ';')
-    {
-        if (text[scan] == '"' || text[scan] == '\'')
-        {
-            const auto quote{text[scan]};
-
-            for (++scan; scan < end && text[scan] != quote; ++scan)
-            {
-                scan += text[scan] == '\\' ? 1 : 0;
-            }
-        }
-
-        ++scan;
-    }
-
-    return scan;
 }
 
 /**
@@ -186,10 +158,12 @@ void refuse_doubled_defaults(const Lexer_spec& spec, const std::vector<std::size
  * @param spec The specification the block filled, its rules in the order they were read.
  * @param first The index into spec.rules of the block's first rule, the ones before it being another block's, which
  *        read this one through a `!use:` directive and settles its own once it is read.
- * @param used The indices into spec.rules of the default rules the block's `!use:` directives brought in.
+ * @param used The indices into spec.rules of the default rules the block's `!use:` directives brought in, ascending.
+ * @return The indices into spec.rules of the ones that stand, ascending, once those that yield are erased.
  * @throws Spec_error If the block gives one condition two default rules of its own, at the second's line.
  */
-void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vector<std::size_t>& used)
+[[nodiscard]] std::vector<std::size_t> settle_defaults(
+        Lexer_spec& spec, const std::size_t first, const std::vector<std::size_t>& used)
 {
     const auto is_used{[&used](const std::size_t index) { return std::ranges::contains(used, index); }};
 
@@ -231,12 +205,19 @@ void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vecto
 
     std::vector<std::size_t> yielded{};
 
+    std::vector<std::size_t> standing{};
+
     for (const auto index : used)
     {
         if (yields_to_own(spec.rules[index]))
         {
             yielded.push_back(index);
+
+            continue;
         }
+
+        // Each rule erased before this one moves it down by one.
+        standing.push_back(index - yielded.size());
     }
 
     // The indices ascend as the directives were read, so the rules that go are erased from the back.
@@ -246,6 +227,30 @@ void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vecto
 
         spec.rules.erase(position);
     }
+
+    return standing;
+}
+
+/**
+ * @brief Returns the value the configurations leave `re2c:eof` at: the last setting's, each read as a number already,
+ *        or -1, re2c's default, while none sets it.
+ * @param options The configurations, as options, each number in decimal.
+ * @return The value.
+ */
+[[nodiscard]] int last_eof(const std::vector<std::string>& options)
+{
+    const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
+
+    int eof{-1};
+
+    for (const auto& option : options | std::views::filter(sets_eof))
+    {
+        const auto value{std::string_view{option}.substr(eof_key.size())};
+
+        std::ignore = std::from_chars(value.data(), value.data() + value.size(), eof);
+    }
+
+    return eof;
 }
 
 /**
@@ -260,58 +265,252 @@ void settle_defaults(Lexer_spec& spec, const std::size_t first, const std::vecto
 }
 
 /**
- * @brief Returns the text without the spaces and tabs at either end.
- * @param text The text.
- * @return The view of what lies between them.
+ * @brief Returns whether a byte may stand in a configuration's name as re2c 3.1 reads one: a letter, a digit, `_`, `:`
+ *        or `-`; the name runs as far as such bytes do, and only then is it looked up.
+ * @param byte The byte.
+ * @return True when it may.
  */
-[[nodiscard]] std::string_view without_spaces_around(std::string_view text) noexcept
+[[nodiscard]] constexpr bool is_configuration_name_byte(const char byte) noexcept
 {
-    while (!text.empty() && is_space_or_tab(text.front()))
-    {
-        text.remove_prefix(1);
-    }
-
-    while (!text.empty() && is_space_or_tab(text.back()))
-    {
-        text.remove_suffix(1);
-    }
-
-    return text;
+    return is_name_byte(byte) || byte == ':' || byte == '-';
 }
 
 /**
- * @brief Returns the value of a `re2c:eof` configuration as re2c 3.1 reads it: a number, `0` or a decimal opening with
- *        a digit other than zero, a minus before it or none, within the range of an `int`.
- * @param value The value as written, the spaces and tabs around it taken off.
- * @param line The line a refusal of the value points at.
- * @return The number.
- * @throws Spec_error If the value is no number, `007`, `-0`, `- 2` and `abc` among them, or it overflows, in re2c's
- *         words.
+ * @brief Returns whether a byte may stand in a bare configuration value as re2c 3.1 reads one: any but a space, a
+ *        tab, a newline, a NUL and `;`, a carriage return included.
+ * @param byte The byte.
+ * @return True when it may.
  */
-[[nodiscard]] int eof_value(const std::string_view value, const std::size_t line)
+[[nodiscard]] constexpr bool is_bare_value_byte(const char byte) noexcept
 {
-    const auto digits{value.starts_with('-') ? value.substr(1) : value};
+    return !is_space_or_tab(byte) && byte != '\n' && byte != '\0' && byte != ';';
+}
 
-    const auto leading_zero{digits.starts_with('0') && value != "0"};
-
-    int number{};
-
-    const auto [end, error]{std::from_chars(value.data(), value.data() + value.size(), number)};
-
-    if (error == std::errc::result_out_of_range)
+/**
+ * @brief Returns the length of the number re2c 3.1 reads at the start of a text: `0`, or a decimal opening with a digit
+ *        other than zero, a minus before it or none; what follows it is the configuration's to answer for.
+ * @param text The text.
+ * @return The length, zero when no number stands there, `-0` and `abc` among them.
+ */
+[[nodiscard]] std::size_t number_length(const std::string_view text) noexcept
+{
+    if (text.starts_with('0'))
     {
-        throw Spec_error{"configuration value overflow", line};
+        return 1;
     }
 
-    if (error != std::errc{} || end != value.data() + value.size() || leading_zero)
+    const auto sign{text.starts_with('-') ? 1UZ : 0UZ};
+
+    const auto digits{text.substr(sign)};
+
+    if (digits.empty() || digits.front() < '1' || digits.front() > '9')
     {
-        throw Spec_error{"bad configuration value (expected number)", line};
+        return 0;
     }
 
-    return number;
+    const auto past{digits.find_first_not_of("0123456789")};
+
+    const auto length{past == std::string_view::npos ? digits.size() : past};
+
+    return sign + length;
+}
+
+/**
+ * @brief Refuses a scanner's second entry rule `<>`, the ones its `!use:` directives and its use block's opener bring
+ *        in counted where they stand, as re2c 3.1 refuses it.
+ * @param actions The scanner's actions in the order it reads them, its entry rules among them and no setup rule's.
+ * @throws Spec_error If two of them are entry rules, at the second's line.
+ */
+void refuse_doubled_entries(const std::vector<Action>& actions)
+{
+    std::vector<std::size_t> lines{};
+
+    for (const auto& [code, line, what, of_rule, conditions] : actions)
+    {
+        if (!of_rule)
+        {
+            lines.push_back(line);
+        }
+    }
+
+    if (lines.size() < 2)
+    {
+        return;
+    }
+
+    const auto message{std::format("the entry rule <> is already defined at line {}, which re2c refuses", lines[0])};
+
+    throw Spec_error{message, lines[1]};
+}
+
+/**
+ * @brief Refuses a block's second setup rule of its own for a condition it already gave one, `*` counted as a
+ *        condition, as re2c 3.1 refuses it.
+ * @param own The block's own setup rules, in the order the block holds them.
+ * @throws Spec_error If two of them name one condition, at the second's line.
+ */
+void refuse_doubled_setups(const std::vector<Action>& own)
+{
+    for (auto second{own.begin()}; second != own.end(); ++second)
+    {
+        const auto in_second{
+                [second](const std::string& name) { return std::ranges::contains(second->conditions, name); }};
+
+        const auto shares{
+                [&in_second](const Action& setup) { return std::ranges::any_of(setup.conditions, in_second); }};
+
+        const auto first{std::ranges::find_if(own.begin(), second, shares)};
+
+        if (first != second)
+        {
+            const auto message{std::format(
+                    "the setup rule for this condition is already defined at line {}, which re2c refuses",
+                    first->line)};
+
+            throw Spec_error{message, second->line};
+        }
+    }
+}
+
+/**
+ * @brief Returns the setup rules re2c 3.1 writes: for each condition, `*` counted as one, the first setup rule naming
+ *        it, the block's own before the ones its `!use:` directives brought in, and `<!*>` for the conditions the rules
+ *        name that no setup rule names.
+ * @param own The block's own setup rules, in the order the block holds them.
+ * @param used The setup rules the directives brought in, in the order re2c chooses among them.
+ * @param named The conditions the block's rules name.
+ * @return The setup rules chosen, each naming only the conditions it is chosen for, `<!*>` the ones it sets up, in that
+ *         order.
+ */
+[[nodiscard]] std::vector<Action> settled_setups(
+        const std::vector<Action>& own, const std::vector<Action>& used, const std::vector<std::string>& named)
+{
+    auto setups{own};
+
+    setups.insert(setups.end(), used.begin(), used.end());
+
+    std::vector<std::string> taken{};
+
+    const auto is_taken{[&taken](const std::string& name) { return std::ranges::contains(taken, name); }};
+
+    for (auto& [code, line, what, of_rule, conditions] : setups)
+    {
+        std::erase_if(conditions, is_taken);
+
+        taken.insert(taken.end(), conditions.begin(), conditions.end());
+    }
+
+    const auto names_every{
+            [](const Action& setup) { return std::ranges::contains(setup.conditions, every_condition); }};
+
+    const auto every{std::ranges::find_if(setups, names_every)};
+
+    if (every != setups.end())
+    {
+        auto& conditions{every->conditions};
+
+        std::erase(conditions, every_condition);
+
+        std::ranges::copy_if(named, std::back_inserter(conditions), std::not_fn(is_taken));
+    }
+
+    const auto chosen_for_none{[](const Action& setup) { return setup.conditions.empty(); }};
+
+    std::erase_if(setups, chosen_for_none);
+
+    return setups;
+}
+
+/**
+ * @brief Refuses the code of the entry rule `<>` or of a setup rule re2c 3.1 writes when it returns, since it returns
+ *        before any rule's own action, which no token set is.
+ * @param code_of The entry rule, which names no condition, or the setup rule.
+ * @param returning The forms besides `return` an action returns a token through.
+ * @throws Spec_error If the code returns, at the rule's line.
+ */
+void refuse_returning(const Action& code_of, const Returning_t& returning)
+{
+    const auto& [code, line, what, of_rule, conditions]{code_of};
+
+    if (!returned(code, returning))
+    {
+        return;
+    }
+
+    const std::string_view refusal{
+            conditions.empty() ?
+                    "the entry rule <> returns, so the scanner returns in its first condition before any rule is "
+                    "tried" :
+                    "a setup rule returns, so every rule of its conditions returns it before its own action"};
+
+    throw Spec_error{std::string{refusal}, line};
+}
+
+/**
+ * @brief Returns whether a rule's action stands in a condition: the rule names the condition or `*`.
+ * @param action The action.
+ * @param condition The condition.
+ * @return True when it does.
+ */
+[[nodiscard]] bool stands_in(const Action& action, const std::string& condition)
+{
+    return std::ranges::contains(action.conditions, condition) ||
+           std::ranges::contains(action.conditions, every_condition);
+}
+
+/**
+ * @brief Returns whether re2c writes a setup rule's code before an action: the action is a rule's and stands in a
+ *        condition the setup rule is chosen for, where a rule naming `*` stands in every condition a rule of the block
+ *        names and in no other.
+ * @param setup The setup rule, as settled_setups() chooses it.
+ * @param action The action, a rule's or another's, which none heads.
+ * @param named The conditions the block's rules name.
+ * @return True when it does.
+ */
+[[nodiscard]] bool writes_before(const Action& setup, const Action& action, const std::vector<std::string>& named)
+{
+    const auto sets_up{[&setup, &action](const std::string& condition) {
+        return std::ranges::contains(setup.conditions, condition) && stands_in(action, condition);
+    }};
+
+    return action.of_rule && std::ranges::any_of(named, sets_up);
+}
+
+/**
+ * @brief Returns the setup rules whose code re2c 3.1 writes before a rule's action, as writes_before() says of each.
+ * @param action The action, a rule's or another's, which none heads.
+ * @param setups The setup rules, as settled_setups() chooses them.
+ * @param named The conditions the block's rules name.
+ * @return The setup rules, in the order settled_setups() gives them.
+ */
+[[nodiscard]] std::vector<Action> heads_of(
+        const Action& action, const std::vector<Action>& setups, const std::vector<std::string>& named)
+{
+    std::vector<Action> found{};
+
+    for (const auto& setup : setups)
+    {
+        if (writes_before(setup, action, named))
+        {
+            found.push_back(setup);
+        }
+    }
+
+    return found;
 }
 
 } // namespace
+
+void refuse_eof_past_code_unit(const std::vector<std::string>& options, const std::size_t line)
+{
+    const auto eof{last_eof(options)};
+
+    // The code unit is a byte under every encoding the reading follows.
+    if (eof > std::numeric_limits<unsigned char>::max())
+    {
+        throw Spec_error{"EOF exceeds maximum code unit value for given encoding", line};
+    }
+}
 
 void Rule_kinds::note(const std::vector<std::string>& named, const std::string& pattern, const std::size_t line)
 {
@@ -324,6 +523,11 @@ void Rule_kinds::note(const std::vector<std::string>& named, const std::string& 
         for (const auto& name : named | std::views::filter(own_condition))
         {
             add_unique(named_, name);
+
+            if (pattern != default_rule && pattern != end_rule)
+            {
+                add_unique(matched_, name);
+            }
         }
     }
     else if (pattern == end_rule && !plain_end_)
@@ -353,6 +557,11 @@ void Rule_kinds::note(const std::vector<std::string>& named, const std::string& 
     }
 }
 
+void Rule_kinds::note_setup() noexcept
+{
+    conditioned_ = true;
+}
+
 void Rule_kinds::merge(const Rule_kinds& used)
 {
     // The used block's rules are of the kinds they are wherever they stand, the first of a kind the using block's own
@@ -362,6 +571,11 @@ void Rule_kinds::merge(const Rule_kinds& used)
     for (const auto& name : used.named_)
     {
         add_unique(named_, name);
+    }
+
+    for (const auto& name : used.matched_)
+    {
+        add_unique(matched_, name);
     }
 
     for (const auto& name : used.ruled_)
@@ -401,27 +615,48 @@ void Rule_kinds::refuse_mixed() const
     }
 }
 
+void Rule_kinds::refuse_setups(const std::vector<Action>& own) const
+{
+    for (const auto& [code, line, what, of_rule, conditions] : own)
+    {
+        for (const auto& name : conditions)
+        {
+            if (name != every_condition && !std::ranges::contains(matched_, name))
+            {
+                throw Spec_error{std::format("setup for non existing condition '{}' found", name), line};
+            }
+        }
+    }
+
+    const auto names_every{
+            [](const Action& setup) { return std::ranges::contains(setup.conditions, every_condition); }};
+
+    const auto every{std::ranges::find_if(own, names_every)};
+
+    if (every == own.end())
+    {
+        return;
+    }
+
+    const auto set_up{[&own](const std::string& name) {
+        const auto names{[&name](const Action& setup) { return std::ranges::contains(setup.conditions, name); }};
+
+        return std::ranges::any_of(own, names);
+    }};
+
+    if (std::ranges::all_of(named_, set_up))
+    {
+        throw Spec_error{
+                "setup for all conditions '<!*>' is illegal if setup for each condition is defined explicitly",
+                every->line};
+    }
+}
+
 void Rule_kinds::refuse_end_rules(const std::vector<std::string>& options, const std::size_t line) const
 {
-    const auto sets_eof{[](const std::string& option) { return option.starts_with(eof_key); }};
+    refuse_eof_past_code_unit(options, line);
 
-    // Each setting was read as a number where it was written, as re2c 3.1 reads it; the last stands, and unset the
-    // value is its default -1.
-    int eof{-1};
-
-    for (const auto& option : options | std::views::filter(sets_eof))
-    {
-        const auto value{std::string_view{option}.substr(eof_key.size())};
-
-        eof = eof_value(value, line);
-    }
-
-    // The code unit is a byte under every encoding the reading follows, so re2c refuses a value past 255, in a block
-    // with rules or without.
-    if (eof > std::numeric_limits<unsigned char>::max())
-    {
-        throw Spec_error{"EOF exceeds maximum code unit value for given encoding", line};
-    }
+    const auto eof{last_eof(options)};
 
     if (ruled_.empty() && ends_.empty())
     {
@@ -505,7 +740,6 @@ Block_reader::Block_reader(
     , configured_{configured}
     , pass_{pass}
     , macros_{macros}
-    , encoding_line_{line()}
 {}
 
 void Block_reader::judge_later() noexcept
@@ -513,45 +747,20 @@ void Block_reader::judge_later() noexcept
     judged_later_ = true;
 }
 
-void Block_reader::use(
-        const std::size_t begin, Lexer_spec& spec, const Library_t& library, const Returning_t& returning)
-{
-    Block_reader used{text_, begin, reading_, configured_, pass_, macros_};
-
-    used.judge_later();
-
-    const auto before{spec.rules.size()};
-
-    std::ignore = used.read(spec, library, returning);
-
-    // The used block's actions are this block's to refuse, under the names this block's configurations leave.
-    actions_.insert(actions_.end(), used.actions_.begin(), used.actions_.end());
-
-    const auto brought{default_rules_from(spec, before)};
-
-    used_defaults_.insert(used_defaults_.end(), brought.begin(), brought.end());
-
-    kinds_.merge(used.kinds_);
-
-    if (!deferred_)
-    {
-        deferred_ = used.deferred_;
-    }
-
-    configured_ = used.configured();
-
-    const auto& used_sites{used.sites()};
-
-    sites_.insert(sites_.end(), used_sites.begin(), used_sites.end());
-}
-
-std::size_t Block_reader::read(Lexer_spec& spec, const Library_t& library, const Returning_t& returning)
+std::size_t Block_reader::read(
+        Lexer_spec& spec, const Library_t& library, const Returning_t& returning,
+        const std::optional<Used_site>& opened)
 {
     returning_ = returning;
 
     // The rules already there are the using block's when this one is read through a `!use:` directive; the block's own
-    // begin here, and its default rules are settled among these alone.
+    // begin here, a use block's opener's among them, and its default rules are settled among these alone.
     const auto first{spec.rules.size()};
+
+    if (opened)
+    {
+        use(*opened, spec, library, std::nullopt);
+    }
 
     for (skip_blanks(); !at(comment_closer); skip_blanks())
     {
@@ -582,11 +791,11 @@ std::size_t Block_reader::read(Lexer_spec& spec, const Library_t& library, const
         item(spec);
     }
 
-    settle_defaults(spec, first, used_defaults_);
+    used_defaults_ = settle_defaults(spec, first, used_defaults_);
 
     // An imported default rule the block's own default overrides is gone, and re2c emits no code for its action.
     const auto dropped{[&spec](const Action& entry) {
-        const auto& [code, line, what, of_rule]{entry};
+        const auto& [code, line, what, of_rule, conditions]{entry};
 
         const auto owns{
                 [&line, &code](const Lexer_spec::Rule& rule) { return rule.line == line && rule.action == code; }};
@@ -611,14 +820,14 @@ const Rule_kinds& Block_reader::kinds() const noexcept
     return kinds_;
 }
 
+const std::vector<Action>& Block_reader::setups() const noexcept
+{
+    return setups_;
+}
+
 Re2c_flags Block_reader::configured() const noexcept
 {
     return configured_;
-}
-
-std::size_t Block_reader::encoding_line() const noexcept
-{
-    return encoding_line_;
 }
 
 const std::vector<Definition_site>& Block_reader::sites() const noexcept
@@ -631,44 +840,276 @@ const std::optional<Spec_error>& Block_reader::deferred() const noexcept
     return deferred_;
 }
 
+const std::optional<Spec_error>& Block_reader::unbound() const noexcept
+{
+    return unbound_;
+}
+
+void Block_reader::use(
+        const Used_site& site, Lexer_spec& spec, const Library_t& library, const std::optional<std::size_t> directive)
+{
+    // The used block reads from the encoding in force where it stands.
+    auto from{configured_};
+
+    from.encoding = site.encoding;
+
+    const auto own_encoding{configured_.encoding};
+
+    const auto own_lines{std::exchange(pass_.encoding, site.lines)};
+
+    Block_reader used{text_, site.begin, reading_, from, pass_, macros_};
+
+    used.judge_later();
+
+    used.used_at_ = used_at_ ? used_at_ : directive;
+
+    const auto before{spec.rules.size()};
+
+    std::ignore = used.read(spec, library, returning_, std::nullopt);
+
+    configured_ = used.configured();
+
+    // A use block reads from where its used block stands, and a directive takes the used block's encoding where an
+    // assignment of either part stands there or in it, keeping its own otherwise.
+    if (directive && !pass_.encoding.set)
+    {
+        configured_.encoding = own_encoding;
+
+        pass_.encoding = own_lines;
+    }
+
+    // The used block's actions are this block's to refuse, under the names this block's configurations leave.
+    actions_.insert(actions_.end(), used.actions_.begin(), used.actions_.end());
+
+    // A use block's opener reads the used block as the use block's own text, so its own setup rules and default rules
+    // are the block's own, and only what its directives brought in is used.
+    auto& kept{directive ? used_setups_ : setups_};
+
+    kept.insert(kept.end(), used.setups_.begin(), used.setups_.end());
+
+    used_setups_.insert(used_setups_.end(), used.used_setups_.begin(), used.used_setups_.end());
+
+    const auto brought{directive ? default_rules_from(spec, before) : used.used_defaults_};
+
+    used_defaults_.insert(used_defaults_.end(), brought.begin(), brought.end());
+
+    kinds_.merge(used.kinds_);
+
+    if (!deferred_)
+    {
+        deferred_ = used.deferred_;
+    }
+
+    if (!unbound_)
+    {
+        unbound_ = used.unbound_;
+    }
+
+    const auto& used_sites{used.sites()};
+
+    sites_.insert(sites_.end(), used_sites.begin(), used_sites.end());
+}
+
 void Block_reader::configuration(Lexer_spec& spec)
 {
-    const auto end{configuration_end(text_, at_, end_)};
+    at_ += configuration_prefix.size();
 
-    if (end >= end_)
+    std::string name{};
+
+    while (peek() && is_configuration_name_byte(*peek()))
     {
-        fail("a configuration is never closed with ';'");
+        name.push_back(next("a configuration name"));
     }
 
-    const auto value_at{at_ + configuration_prefix.size()};
+    // A name re2c knows with an `@` in it, `define:YYFILL@len`, is read whole, the longest such name that stands here.
+    const auto rest{text_.substr(at_, end_ - at_)};
 
-    std::string option{text_.substr(value_at, end - value_at)};
+    const auto in_suffix{[](const char byte) { return byte == '@' || is_configuration_name_byte(byte); }};
 
-    // Blanks around the '=' say nothing; one spelling per configuration keeps the options comparable.
-    std::erase_if(option, is_blank);
+    const auto suffix_end{std::ranges::find_if_not(rest, in_suffix)};
 
-    // re2c reads the value of `re2c:eof` as a number where it is written, so a blank within it is refused there, and
-    // the option keeps the number it reads.
-    if (option.starts_with(eof_key))
+    std::string suffix{rest.begin(), suffix_end};
+
+    while (!suffix.empty() && !syntax_of(name + suffix))
     {
-        const auto written{std::string_view{text_}.substr(value_at, end - value_at)};
-
-        const auto after_equals{written.substr(written.find('=') + 1)};
-
-        const auto value{without_spaces_around(after_equals)};
-
-        option = std::format("{}{}", eof_key, eof_value(value, line()));
+        suffix.pop_back();
     }
 
-    configure(option, line(), configured_, encoding_line_, pass_.api_custom, pass_.pointers);
+    name += suffix;
+
+    at_ += suffix.size();
+
+    const auto syntax{syntax_of(name)};
+
+    if (!syntax)
+    {
+        fail(std::format("unrecognized configuration '{}'", name));
+    }
+
+    // Around the `=` and the value re2c lets a space or a tab stand and nothing else, a newline and a carriage return
+    // refused in its words.
+    const auto skip_spaces_and_tabs{[this] {
+        while (peek() && is_space_or_tab(*peek()))
+        {
+            ++at_;
+        }
+    }};
+
+    skip_spaces_and_tabs();
+
+    if (!accept('='))
+    {
+        fail("missing '=' in configuration");
+    }
+
+    skip_spaces_and_tabs();
+
+    const auto value{configuration_value(*syntax)};
+
+    skip_spaces_and_tabs();
+
+    if (!accept(';'))
+    {
+        fail("missing ending ';' in configuration");
+    }
+
+    auto option{std::format("{}={}", name, value)};
+
+    configure(option, line(), configured_, pass_.encoding, pass_.api_custom, pass_.pointers);
 
     spec.options.push_back(std::move(option));
+}
 
-    at_ = end + 1;
+std::string Block_reader::configuration_value(const Configuration_syntax& syntax)
+{
+    const auto& [value, choices]{syntax};
+
+    if (value == Configuration_value::choice)
+    {
+        return choice_value(choices);
+    }
+
+    const auto rest{text_.substr(at_, end_ - at_)};
+
+    const auto number_follows{number_length(rest) > 0};
+
+    const auto reads_string{
+            value == Configuration_value::string ||
+            (value == Configuration_value::number_or_string && !number_follows)};
+
+    if (reads_string)
+    {
+        return string_value();
+    }
+
+    const auto number{number_value()};
+
+    if (value == Configuration_value::nonnegative_number && number < 0)
+    {
+        fail("expected nonnegative value in configuration");
+    }
+
+    return std::format("{}", number);
+}
+
+std::string Block_reader::choice_value(const std::span<const std::string_view> choices)
+{
+    const auto at_word{[this](const std::string_view word) { return at(word); }};
+
+    const auto chosen{std::ranges::find_if(choices, at_word)};
+
+    if (chosen == choices.end())
+    {
+        const auto quoted{[](const std::string_view word) { return std::format("'{}'", word); }};
+
+        auto words{choices | std::views::transform(quoted) | std::views::join_with(std::string_view{", "})};
+
+        std::string expected{};
+
+        std::ranges::copy(words, std::back_inserter(expected));
+
+        fail(std::format("bad configuration value (expected: {})", expected));
+    }
+
+    at_ += chosen->size();
+
+    return std::string{*chosen};
+}
+
+std::string Block_reader::string_value()
+{
+    const auto begin{at_};
+
+    const auto opening{peek()};
+
+    if (opening != '"' && opening != '\'')
+    {
+        while (peek() && is_bare_value_byte(*peek()))
+        {
+            ++at_;
+        }
+
+        return std::string{text_.substr(begin, at_ - begin)};
+    }
+
+    ++at_;
+
+    while (peek() != opening)
+    {
+        if (peek() == '\n')
+        {
+            fail("newline in character string");
+        }
+
+        const auto byte{next("the quote closing the configuration's value")};
+
+        if (byte == '\\' && peek() == '\n')
+        {
+            fail("newline in character string");
+        }
+
+        if (byte == '\\')
+        {
+            std::ignore = next("an escaped character");
+        }
+    }
+
+    ++at_;
+
+    return std::string{text_.substr(begin, at_ - begin)};
+}
+
+int Block_reader::number_value()
+{
+    const auto rest{text_.substr(at_, end_ - at_)};
+
+    const auto length{number_length(rest)};
+
+    if (length == 0)
+    {
+        fail("bad configuration value (expected number)");
+    }
+
+    const auto written{rest.substr(0, length)};
+
+    int number{};
+
+    const auto read{std::from_chars(written.data(), written.data() + written.size(), number)};
+
+    if (read.ec == std::errc::result_out_of_range)
+    {
+        fail("configuration value overflow");
+    }
+
+    at_ += length;
+
+    return number;
 }
 
 void Block_reader::use_directive(Lexer_spec& spec, const Library_t& library)
 {
+    const auto directive_line{line()};
+
     at_ += use_prefix.size();
 
     std::string name{};
@@ -689,9 +1130,12 @@ void Block_reader::use_directive(Lexer_spec& spec, const Library_t& library)
         fail(std::format("the used block '{}' is not above this one", name));
     }
 
-    const auto& [used_name, begin]{*found};
+    const auto& [used_name, site]{*found};
 
-    use(begin, spec, library, returning_);
+    use(site, spec, library, directive_line);
+
+    // re2c holds `re2c:eof` to the code unit at the directive, once the used block's configurations stand.
+    refuse_eof_past_code_unit(spec.options, directive_line);
 }
 
 void Block_reader::item(Lexer_spec& spec)
@@ -700,56 +1144,65 @@ void Block_reader::item(Lexer_spec& spec)
 
     const auto listed{peek() == '<'};
 
-    std::optional<std::vector<std::string>> named{std::vector<std::string>{}};
+    std::vector<std::string> named{};
+
+    auto setup{false};
 
     if (listed)
     {
         ++at_;
 
+        setup = opens_setup();
+
         named = conditions();
     }
 
-    if (named && named->empty() && take_flex_definition(spec))
+    if (!setup && named.empty() && take_flex_definition(spec))
     {
         return;
     }
 
-    auto [pattern, expression, points]{regex_text(spec.definitions, false)};
+    auto [pattern, expression, points, names, braced]{regex_text(spec.definitions, false)};
 
     if (take_definition(pattern, spec))
     {
         return;
     }
 
+    hold_unbound(names, braced, rule_line);
+
     // The entry rule `<>`, an empty condition list and no regex, whose code re2c runs in the condition it numbers zero
     // before any rule is tried, and a `<!c>` setup rule, whose code it runs before every action of its conditions,
     // match nothing and are no tokens.
-    const auto entry{listed && named && named->empty() && pattern.empty()};
+    const auto entry{listed && !setup && named.empty() && pattern.empty()};
 
-    if (named && !entry && pattern.empty())
+    if (!setup && !entry && pattern.empty())
     {
         fail("a rule has no regex");
     }
 
     auto code{action()};
 
-    if (entry || !named)
+    if (entry || setup)
     {
-        setup_action(std::move(code), rule_line, entry);
+        setup_action(std::move(code), rule_line, entry, std::move(named));
 
         return;
     }
 
-    rule(spec, *std::move(named), std::move(pattern), std::move(expression), std::move(code), rule_line);
+    rule(spec, std::move(named), std::move(pattern), std::move(expression), std::move(code), rule_line);
 }
 
-std::optional<std::vector<std::string>> Block_reader::conditions()
+bool Block_reader::opens_setup() const noexcept
 {
     // A setup rule's `!` may stand after blanks, `< ! C >`, as re2c reads it.
     const auto mark{text_.find_first_not_of(" \t", at_)};
 
-    const auto setup{mark != std::string_view::npos && text_[mark] == '!'};
+    return mark != std::string_view::npos && text_[mark] == '!';
+}
 
+std::vector<std::string> Block_reader::conditions()
+{
     std::vector<std::string> names{};
 
     std::string name{};
@@ -779,7 +1232,7 @@ std::optional<std::vector<std::string>> Block_reader::conditions()
         }
     }
 
-    return setup ? std::nullopt : std::optional{std::move(names)};
+    return names;
 }
 
 bool Block_reader::take_flex_definition(Lexer_spec& spec)
@@ -821,15 +1274,13 @@ bool Block_reader::take_flex_definition(Lexer_spec& spec)
 
     at_ = name_end;
 
-    auto [body, expression, points]{regex_text(spec.definitions, true)};
+    auto [body, expression, points, names, braced]{regex_text(spec.definitions, true)};
 
     if (at_ >= line_end && !body.empty())
     {
-        spec.definitions.insert_or_assign(name, expression);
+        hold_unbound(names, braced, line());
 
-        note_class(pass_.classes, name, std::move(points));
-
-        sites_.push_back({.name = name, .begin = name_end, .line_bound = true});
+        define(spec, {.name = name, .begin = name_end, .line_bound = true}, std::move(expression), std::move(points));
 
         // The evidence of the flex syntax is no configuration: it governs the reading from here on and the next pass
         // and block alike.
@@ -871,6 +1322,59 @@ Regex_text Block_reader::regex_text(const regex::Definitions_t& definitions, con
     return read;
 }
 
+void Block_reader::hold_unbound(const std::vector<std::string>& names, const bool braced, const std::size_t line)
+{
+    if (unbound_)
+    {
+        return;
+    }
+
+    if (braced)
+    {
+        unbound_ = Spec_error{
+                "curly braces for names only allowed with -F switch, as re2c answers a name in braces without its flex "
+                "syntax",
+                line};
+
+        return;
+    }
+
+    const auto is_unbound{[this](const std::string& name) { return !pass_.bound.contains(name); }};
+
+    const auto unbound{std::ranges::find_if(names, is_unbound)};
+
+    if (unbound == names.end())
+    {
+        return;
+    }
+
+    const auto message{std::format("'{}' is a symbol no definition above it binds, which re2c refuses", *unbound)};
+
+    unbound_ = Spec_error{message, line};
+}
+
+void Block_reader::define(Lexer_spec& spec, Definition_site site, std::string expression, std::optional<Class> points)
+{
+    // A name bound by no definition yet, or by this one seen again through a second use of its block, binds here.
+    const auto bound{pass_.bound.contains(site.name) ? pass_.bound.at(site.name) : site.begin};
+
+    if (bound != site.begin)
+    {
+        const auto message{std::format(
+                "the name '{}' is already defined at line {}, which re2c refuses", site.name, line_of(bound))};
+
+        throw Spec_error{message, used_at_.value_or(line())};
+    }
+
+    pass_.bound.insert_or_assign(site.name, site.begin);
+
+    spec.definitions.insert_or_assign(site.name, std::move(expression));
+
+    note_class(pass_.classes, site.name, std::move(points));
+
+    sites_.push_back(std::move(site));
+}
+
 bool Block_reader::take_definition(const std::string& name, Lexer_spec& spec)
 {
     if (peek() != '=' || at(transition_opener))
@@ -880,9 +1384,11 @@ bool Block_reader::take_definition(const std::string& name, Lexer_spec& spec)
 
     ++at_;
 
+    const auto body_line{line()};
+
     const auto body_begin{at_};
 
-    auto [body, body_expression, body_points]{regex_text(spec.definitions, false)};
+    auto [body, body_expression, body_points, body_names, body_braced]{regex_text(spec.definitions, false)};
 
     if (body.empty())
     {
@@ -896,11 +1402,10 @@ bool Block_reader::take_definition(const std::string& name, Lexer_spec& spec)
 
     ++at_;
 
-    spec.definitions.insert_or_assign(name, body_expression);
+    hold_unbound(body_names, body_braced, body_line);
 
-    note_class(pass_.classes, name, std::move(body_points));
-
-    sites_.push_back({.name = name, .begin = body_begin, .line_bound = false});
+    define(spec, {.name = name, .begin = body_begin, .line_bound = false}, std::move(body_expression),
+           std::move(body_points));
 
     return true;
 }
@@ -979,25 +1484,21 @@ std::string Block_reader::action()
     return code;
 }
 
-void Block_reader::setup_action(std::string code, const std::size_t line, const bool entry)
+void Block_reader::setup_action(
+        std::string code, const std::size_t line, const bool entry, std::vector<std::string> conditions)
 {
-    // One whose code returns would return in its condition before any rule's own action, which no token set is.
-    if (returned(code, returning_))
-    {
-        const std::string_view refusal{
-                entry ? "the entry rule <> returns, so the scanner returns in its first condition before any rule is "
-                        "tried" :
-                        "a setup rule returns, so every rule of its conditions returns it before its own action"};
+    kinds_.note_setup();
 
-        fail(std::string{refusal});
-    }
+    // The check waits for the block's last configuration, which names the pointers, and for the choice among the setup
+    // rules.
+    auto& kept{entry ? actions_ : setups_};
 
-    // The check waits for the block's last configuration, which names the pointers.
-    actions_.push_back(
+    kept.push_back(
             {.code = std::move(code),
              .line = line,
              .what = entry ? "the entry rule <> moves " : "a setup rule moves ",
-             .of_rule = false});
+             .of_rule = false,
+             .conditions = std::move(conditions)});
 }
 
 void Block_reader::rule(
@@ -1029,7 +1530,7 @@ void Block_reader::rule(
         expression = any_byte;
     }
 
-    actions_.push_back({.code = code, .line = line, .what = "the action ", .of_rule = true});
+    actions_.push_back({.code = code, .line = line, .what = "the action ", .of_rule = true, .conditions = named});
 
     auto token{returned(code, returning_)};
 
@@ -1045,9 +1546,18 @@ void Block_reader::rule(
 
 void Block_reader::refuse_actions()
 {
+    refuse_doubled_entries(actions_);
+
+    refuse_doubled_setups(setups_);
+
+    // The conditions the rules name, which a `*` stands for.
+    const auto& named{kinds_.named()};
+
+    const auto setups{settled_setups(setups_, used_setups_, named)};
+
     // The API is refused where it is read under, by a block with rules or actions of its own: a block that only
     // configures leaves the setting to the blocks after it, which may set it back before any rule.
-    if (pass_.api_custom && !actions_.empty())
+    if (pass_.api_custom && (!actions_.empty() || !setups.empty()))
     {
         throw Spec_error{
                 "the block sets api, so the scanner advances by calling the API's own operations rather than by "
@@ -1057,9 +1567,31 @@ void Block_reader::refuse_actions()
 
     const auto restarts{restart_labels(text_, opener_, returning_)};
 
+    // A setup rule's code is judged where re2c writes it, in a condition the rules name, and nowhere else.
+    for (const auto& setup : setups)
+    {
+        const auto is_named{[&named](const std::string& condition) { return std::ranges::contains(named, condition); }};
+
+        if (std::ranges::none_of(setup.conditions, is_named))
+        {
+            continue;
+        }
+
+        refuse_returning(setup, returning_);
+
+        refuse_action(setup, pass_.pointers, macros_, returning_, restarts, {});
+    }
+
     for (const auto& action : actions_)
     {
-        refuse_action(action, pass_.pointers, macros_, returning_, restarts);
+        if (!action.of_rule)
+        {
+            refuse_returning(action, returning_);
+        }
+
+        const auto heads{heads_of(action, setups, named)};
+
+        refuse_action(action, pass_.pointers, macros_, returning_, restarts, heads);
     }
 
     actions_.clear();

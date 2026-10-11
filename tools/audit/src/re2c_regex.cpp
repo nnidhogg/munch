@@ -236,7 +236,11 @@ Regex_text Regex_reader::regex_text(const regex::Definitions_t& definitions)
         points = std::move(levels_.front().branches);
     }
 
-    return {.pattern = std::move(pattern_), .expression = std::move(expression_), .points = std::move(points)};
+    return {.pattern = std::move(pattern_),
+            .expression = std::move(expression_),
+            .points = std::move(points),
+            .names = std::move(names_),
+            .braced = braced_};
 }
 
 bool Regex_reader::at_regex_end() const noexcept
@@ -287,6 +291,11 @@ bool Regex_reader::take_reference()
     pattern_ += reference;
 
     expression_ += reference;
+
+    names_.emplace_back(name);
+
+    // re2c's lexer takes a name in braces only under its flex syntax and refuses one otherwise.
+    braced_ = braced_ || !flags_.flex_syntax;
 
     auto points{defined(name)};
 
@@ -736,6 +745,8 @@ bool Regex_reader::take_name()
         expression_ += reference(name);
 
         place(defined(name));
+
+        names_.push_back(std::move(name));
     }
 
     return true;
