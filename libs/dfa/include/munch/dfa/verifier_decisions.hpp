@@ -44,7 +44,7 @@ struct Marked_string
 struct Miscovering
 {
     /**
-     * @brief The accepted marked string, the shortest one.
+     * @brief The accepted marked string, the shortest one when miscovering() decides on a verifier.
      */
     Marked_string segmentation{};
 

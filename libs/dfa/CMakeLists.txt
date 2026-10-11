@@ -14,6 +14,7 @@ add_library(${PROJECT_NAME}
         src/ripple_radius.cpp
         src/simulator.cpp
         src/split_window.cpp
+        src/token_automaton.cpp
         src/trie_chain.cpp
         src/unroll_start.cpp
         src/verifier.cpp
@@ -68,6 +69,7 @@ if (MUNCH_BUILD_TESTS)
             tests/minimize_test.cpp
             tests/property_test.cpp
             tests/ripple_radius_test.cpp
+            tests/token_automaton_test.cpp
             tests/trie_chain_test.cpp
             tests/verifier_test.cpp
     )

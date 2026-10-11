@@ -677,6 +677,39 @@ dfa::boundary_gap(tower);                           // 3, the longest token aba
 dfa::divergence(tower, dfa::merge_tower(first));    // aba, one token here and ab|a under the first merge alone
 ```
 
+`dfa::token_automaton(merges)` of `munch/dfa/token_automaton.hpp` builds the token automaton of canonical byte-pair
+encoding over a merge table, and `dfa::miscovering(automaton, window, origin)` decides on it the same window certificate
+under the same encoder as `miscovering()` on `merge_tower(merges)`, without building the tower. It rests on the
+canonical adjacency theorem, Theorem 2 of the report *The Left Ripple of Byte-Pair Encoding*: a list of tokens is the
+encoder's segmentation of its spelling exactly when every token is the segmentation of its own spelling and so is every
+adjacent pair. A run of consecutive tokens of a segmentation is then the segmentation of its own spelling, so a
+miscovering, when there is one, is spelled by the tokens over one occurrence of the window with nothing on either side,
+and it is at most 2L + |window| - 2 bytes long, L the longest token. The decision searches those runs: a token holding
+the whole window anywhere but at its start when the origin is zero, or a first token whose tail spells the start of the
+window, then tokens inside the window, then a last token that contains the window's final byte and begins anywhere but
+at the origin. Which token may follow which is read off the token automaton of Berglund, Martens and van der Merwe
+(Theoretical Computer Science 2026, by Theorem 1, Corollary 2 and Algorithm 2 of its preprint arXiv:2405.07671v2), in
+which a token enters the same state wherever it is read, so a node of the search is that state with the number of the
+window's bytes spelled so far, each node is expanded once, and the search stops at the first miscovering. The automaton
+has one base state plus one per merge whose product can be read, and on a large table building it costs far more than a
+decision on it, so a caller deciding many windows builds it once; the search then reads every token against the window
+and explores at most |window| - 1 nodes per state. `Token_automaton::state_count()` counts the states, and
+`allowed_tokens(state)` lists the tokens a state may read, ascending, those `is_allowed(state, token)` admits. The
+miscovering returned is the encoder's segmentation of the first string the search finds, not necessarily the shortest,
+and a table `merge_tower()` refuses is refused the same way:
+
+```cpp
+#include "munch/dfa/token_automaton.hpp"
+
+const std::vector<dfa::Merge> merges{{.left = "a", .right = "b"}, {.left = "ab", .right = "a"}};
+
+const auto automaton{dfa::token_automaton(merges)};     // built once for every window decided on it
+
+dfa::miscovering(automaton, "ab", 0);                   // std::nullopt, as miscovering() on the tower answers
+dfa::miscovering(automaton, "ab", 1);                   // the marked ab itself, its token beginning at offset 0
+dfa::miscovering(dfa::token_automaton({}), "ab", 0);    // a|b, the empty table cutting between every two bytes
+```
+
 `dfa::trie_chain(initial, continuation)` takes a two-mode vocabulary, the initial tokens and the continuation tokens,
 and builds the verifier of WordPiece segmentation over it, the scanner that takes the longest initial token at the start
 of the input and then, at each boundary, the longest continuation token, failing where no token of the mode matches; the
