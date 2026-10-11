@@ -292,6 +292,36 @@ chunk between the anchors of an inventory of certified pairs scans alone, with t
 the failing chunks; `verifier::merge_tower()`, the verifier of canonical byte-pair encoding over a merge table; and
 `verifier::trie_chain()`, the verifier of two-mode WordPiece segmentation over its initial and continuation tokens.
 
+Two more decisions over the verifier joined that surface in 3.0.0, and a decision and a construction over a merge table:
+`fanout()`, the rank of a pair, how many configurations of the verifier's minimal automaton the cut at its origin can
+carry, with each configuration; `smallest_fanout()`, the degree, the fewest configurations a cut that recurs can carry,
+with the window that attains it and a stem, a loop and a suffix that pump it; `verifier::ripple_radius()`, how far a
+byte prepended to an input can change the tokens canonical byte-pair encoding gives it, finite with the mirrored
+constant and, for each that is positive, an input attaining it, or infinite with the first effective self-pair; and
+`verifier::token_automaton()`, the token automaton of canonical byte-pair encoding over a merge table, built once, on
+which an overload of `miscovering()` decides a window certificate without building the merge tower. So did the
+`--repairs` option of `munch-audit`, which, where a condition certifies no byte, tries every byte as a visible token of
+its own and, unless it already certifies once the discarded tokens are deleted, as a discarded one, and reports each
+that certifies once added. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of Lean's
+lexical structure with its nested comments and interpolated strings as modes, audited in [docs/audit.md](docs/audit.md)
+and benchmarked on Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
+
+3.0.0 is a major version for two moves, which change include paths and namespaces and nothing else. The verifier, its
+decisions and its constructions are a library of their own, `munch_verifier`, built on `munch_dfa`, with their headers
+under `munch/verifier/` and their names in namespace `munch::verifier`: `verifier.hpp`, `verifier_decisions.hpp`,
+`merge_tower.hpp`, `trie_chain.hpp`, `ripple_radius.hpp` and `token_automaton.hpp`. So `munch/dfa/verifier.hpp` becomes
+`munch/verifier/verifier.hpp`, `dfa::Verifier` becomes `verifier::Verifier`, `dfa::merge_tower()` becomes
+`verifier::merge_tower()`, and so on for every name those headers declare, while `libs/dfa` keeps the lexing automata.
+The pattern parser is a library of its own too, `munch_pattern`, built on `munch_regex`, with `parse.hpp` under
+`munch/pattern/` and `parse()`, `Parse_options`, `Syntax_error` and `Definitions_t` in namespace `munch::pattern`, so
+`munch/regex/parse.hpp` becomes `munch/pattern/parse.hpp` and `regex::parse()` becomes `pattern::parse()`, which leaves
+the regex library the combinators, the lowering to NFAs and the UTF-8 encoder the scanner needs. A user changes the
+includes and the qualifications and nothing else. `munch::munch` links both libraries, so a consumer of the umbrella
+target changes no link line, and one that links the libraries one by one adds `munch::munch_verifier` or
+`munch::munch_pattern`. The release the finitely-verifiable-segmentation report cites, v2.3.0, has the verifier and its
+constructions under `munch/dfa/` in namespace `munch::dfa`, as that report names them, and 3.0.0 moved them to
+`munch/verifier/`.
+
 The supported platform is 64-bit Linux with GCC 13 or Clang 19 and newer, which is exactly what CI builds and tests on
 x86-64 and ARM64, so both signednesses of plain `char` are exercised, and sanitizes and fuzzes on x86-64. Other
 platforms, 32-bit ones included, may work but carry no promise; macOS specifically is known not to build, because
@@ -303,9 +333,12 @@ stability is promised between any two versions.
 The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for inspection, debugging, property testing,
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
 not for stability. The regex node types are likewise inspectable, but constructing them directly rather than through the
-combinators is outside the stable surface. The benchmark tools and the prose in `docs/` carry no compatibility promise,
-and performance numbers are measurements, not contracts. Additions like the Unicode XID identifier classes arrive as new
-combinators without changing what exists (see [docs/limits.md](docs/limits.md)).
+combinators is outside the stable surface. The result types of the decisions `core::Lexer` forwards, declared in
+`munch/dfa/boundary_search.hpp` and `munch/dfa/split_window.hpp`, are on the stable surface, as is `dfa::Dfa` as the
+argument of `verifier::armed_run()`, and the rest of `munch::dfa` is not. The benchmark tools, the grammars bundled
+under `tools/audit/grammars/`, which are examples for the audit tool, and the prose in `docs/` carry no compatibility
+promise, and performance numbers are measurements, not contracts. Additions like the Unicode XID identifier classes
+arrive as new combinators without changing what exists (see [docs/limits.md](docs/limits.md)).
 
 ## **License**
 
