@@ -48,6 +48,28 @@ target_link_libraries(${PROJECT_NAME}_modes
         munch_regex
 )
 
+# The bundled Lean 4 grammar over a corpus of Lean source, read from its ANTLR file as the audit reads it. Its own
+# target since it takes the corpus as an argument, a pinned snapshot that is not redistributed.
+add_executable(${PROJECT_NAME}_lean4
+        src/lean4.cpp
+        src/harness.cpp
+)
+
+add_dependencies(${PROJECT_NAME}_lean4 munch_provenance)
+
+target_include_directories(${PROJECT_NAME}_lean4
+        PRIVATE
+        include
+        ${MUNCH_PROVENANCE_DIR}
+)
+
+target_link_libraries(${PROJECT_NAME}_lean4
+        PRIVATE
+        munch_audit
+        munch_core
+        munch_regex
+)
+
 if (MUNCH_BENCHMARK_COMPARE)
     add_executable(${PROJECT_NAME}_compare
             src/compare.cpp

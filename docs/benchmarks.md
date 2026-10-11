@@ -123,6 +123,46 @@ toward fewer chunks, never toward an unsafe cut. And the window guarantee is con
 input, so byte planning remains the default everywhere and this section prices the explicit opt-in; see the planner
 documentation for the exact contract.
 
+## **Lean 4 on Mathlib**
+
+`munch_benchmark_lean4` scans real Lean source with the bundled Lean 4 grammar, `tools/audit/grammars/lean4.g4`, read
+from its ANTLR file as `munch-audit` reads it, every mode compiled and every `pushMode` and `popMode` made the action of
+its token, so the row times the scan whose cuts [A Modal Grammar: Lean 4](audit.md#a-modal-grammar-lean-4) audits. The
+corpus is Mathlib's `Mathlib/Lean` and `Mathlib/Logic` directories at leanprover-community/mathlib4 commit
+`2da3ab0a20dc0c66f56a557e37df39f7d36cb953`, 81 `.lean` files concatenated in sorted path order into one file of 652,998
+bytes, whose SHA-256 is `2f05b11dba835ad0d3f8db31869b034e9a0f75a2c33796289643da97c71ec708`. It is not redistributed
+here, and is fetched, joined and checked with
+
+```
+git clone --depth 1 --filter=blob:none --sparse https://github.com/leanprover-community/mathlib4 /tmp/mathlib-corpus
+git -C /tmp/mathlib-corpus sparse-checkout set Mathlib/Lean Mathlib/Logic
+git -C /tmp/mathlib-corpus checkout 2da3ab0a20dc0c66f56a557e37df39f7d36cb953
+(cd /tmp/mathlib-corpus && find Mathlib/Lean Mathlib/Logic -name '*.lean' | LC_ALL=C sort | xargs cat) \
+    > /tmp/mathlib.lean
+sha256sum /tmp/mathlib.lean
+```
+
+A depth-one clone fetches the branch tip, so if the tip has moved past the pinned commit, deepen the fetch with `git -C
+/tmp/mathlib-corpus fetch --depth 100 origin` before the checkout, or drop `--depth` entirely. Before any clock starts,
+the benchmark scans the file once and requires that the scan consume it whole and end with the mode stack empty, naming
+the offset and the mode where a scan stops short, and every timed pass must consume it whole and reproduce the first
+pass's token count.
+
+```
+$ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+$ cmake --build build -j 8 --target munch_benchmark_lean4
+$ ./build/tools/benchmark/munch_benchmark_lean4 tools/audit/grammars/lean4.g4 /tmp/mathlib.lean 15
+Lean 4 grammar over a corpus
+...
+lean4, 652998 bytes in 5 modes, 15 passes
+lexer_all/lean4  0.6 MiB, 202003 tokens, 15 passes: best 380.3, median 376.8, worst 355.5 MiB/s
+```
+
+This run was made on the development machine under WSL2 with GCC 13, a different setup from the bare-metal archive the
+first transcript quotes, so its figures compare within it and never with that archive. The 202,003 tokens count the
+discarded ones too, whitespace and comment text, about 3.2 bytes per token. The row times the serial modal scan and
+plans no chunks, since a cut needs the mode known and the default mode certifies one window alone.
+
 ## **Comparison with Other Engines**
 
 `munch_benchmark_modes` measures the modal driver across the axes that separate its paths: an action that never fires

@@ -360,6 +360,145 @@ them with the three `--require-certified-modulo` options of [Asserting a Certifi
 CI](#asserting-a-certificate-in-ci), which exit 0 on this file, while `--require-certified '\n'` exits 3 until the
 newline is split out as above.
 
+## A Modal Grammar: Lean 4
+
+`tools/audit/grammars/lean4.g4` is a grammar with modes, written for this repository after Lean's own scanner. It holds
+the core lexical structure of Lean 4, checked against `Lean.Parser.Basic`, `Lean.Parser.StrInterpolation` and the
+identifier predicates of `Init.Meta.Defs` at lean4 commit `5045d0056413266e57c625dcd7c365b10e377c52`, the v4.34.1
+release, and against the reference manual's chapter on source files. An identifier is a run of parts joined by dots,
+each part as Lean's `isIdFirst` and `isIdRest` define it, and those are Lean's own ranges rather than XID: an ASCII
+letter, an underscore or a letter-like character first, the letter-like ones being the Greek letters but λ, Π and Σ,
+Coptic, polytonic Greek, the letter-like symbols block, the mathematical script, double-struck and Fraktur letters, the
+Latin-1 letters but × and ÷, and Latin Extended-A, then digits, `'`, `!`, `?` and the subscripts as well. A part may
+instead be quoted in guillemets, `«my name»`, and hold anything but `»`, a newline included. Numerals take the forms
+`numberFnAux` reads, decimal with `_` between digits and an optional fraction and exponent, and binary, octal and
+hexadecimal; character and string literals take Lean's escapes, with a string's gap across a line break among them. A
+character literal may also hold a carriage return and line feed, which Lean reads as the one newline it turns them into
+before it scans.
+
+Five modes carry the nesting. A block comment's `/-` pushes `BLOCK_COMMENT`, where every `/-` pushes it again and every
+`-/` pops, so a comment nests as `finishCommentBlock` counts it; `/--` and `/-!` push `DOC_COMMENT`, which has the same
+three rules kept visible, since Lean reads a doc comment as a token and a block comment as whitespace. A string's quote
+pushes `STRING`. `s!"`, `m!"` and `f!"` push `INTERPOLATED`, whose `{` pushes the default mode, and there every `{`
+pushes the default mode again and every `}` pops, so the brace that ends an interpolation is the one that returns to the
+string, however many braces the term inside it holds.
+
+Lean's lexer is extensible, and that bounds what any fixed grammar of it can say. A `notation`, `infix` or `syntax`
+declaration adds tokens to the token table from its point on and in every file that imports it, and Mathlib adds
+hundreds. The grammar therefore covers the core and its common notation only. `SYMBOL` holds the core's multi-character
+ASCII tokens, those of `Init.Notation` and the parsers, and every other character is a token of its own, `OTHER`, so
+`#eval` reads as `#` and `eval` where Lean reads one token, and a notation of several characters reads as several. Where
+Lean's parser rather than its scanner decides, the grammar reads as the scanner would. `throwError "x {e}"` interpolates
+in Lean without a prefix and reads here as a plain string, and `h.1.2` reads `1.2` as one numeral where Lean's
+projection parser reads two indices. Raw string literals, `r#"..."#`, are left out, and so is a numeral whose dot
+neither a digit nor a second dot follows, which Lean reads as one scientific literal in `2.` and `2.e5` and the grammar
+reads as `2` and then `.`, since a rule taking the bare dot would break `1..2`. Exactness would need the token table
+Lean itself computes. What the audit decides is a property of this token set, which is exact on the forms above and
+approximate on the rest.
+
+The default mode, audited with
+
+```
+munch-audit --condition INITIAL tools/audit/grammars/lean4.g4
+```
+
+prints
+
+```
+== tools/audit/grammars/lean4.g4
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 9, condition INITIAL: 15 rules
+verdict                     no byte certifies; windows do: 1 up to width 3, 1 once classes expand
+certified bytes             none
+certified modulo discarded  none
+discarded tokens            3: '/-', '--' ~[\n]*, (' ' | '\r'? '\n')+
+certified windows (<= 3)    1 at width 3 over 85 byte classes, 1 once classes expand
+                            "\xC2\xBB\n" at 2
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         unbounded
+rescue-free                 no: the scan rolls back and continues on "\n\r"
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 179 candidate bytes mid-token, e.g. '!' after "A"
+  NAME_LITERAL               consumes 179 candidate bytes mid-token, e.g. 'A' after "`"
+  NUMBER                     consumes 30 candidate bytes mid-token, e.g. '.' after "0"
+  CHARACTER                  consumes 179 candidate bytes mid-token, e.g. 0x00 after "'"
+  INTERPOLATED_OPEN          consumes 2 candidate bytes mid-token, e.g. '!' after "f"
+  DOC_COMMENT_OPEN           consumes 1 candidate byte mid-token, e.g. '-' after "/"
+  MODULE_DOC_OPEN            consumes 2 candidate bytes mid-token, e.g. '-' after "/"
+  '/-'                       consumes 1 candidate byte mid-token, e.g. '-' after "/"
+  '--' ~[\n]*                consumes 178 candidate bytes mid-token, e.g. '-' after "-"
+  (' ' | '\r'? '\n')+        consumes 3 candidate bytes mid-token, e.g. '\n' after "\n"
+  SYMBOL                     consumes 15 candidate bytes mid-token, e.g. '$' after "<"
+
+what it would cost to certify '\n'
+  1. IDENTIFIER               no longer admits '\n'
+                              still does not certify
+  2. NAME_LITERAL             no longer admits '\n'
+                              still does not certify
+  3. CHARACTER                no longer admits '\n'
+                              still does not certify
+  4. (' ' | '\r'? '\n')+      no longer admits '\n'
+                              certifies exactly
+
+what the shapes of the tokens consuming '\n' offer, each edit on its own
+  NAME_LITERAL               delimited: scan the body in a start condition of its own, the opener staying here
+                             still does not certify
+  CHARACTER                  delimited: scan the body in a start condition of its own, the opener staying here
+                             still does not certify
+  every shape's edit together certifies exactly
+
+```
+
+No byte certifies, and the newline does not certify even once the discarded tokens are deleted. Three of the visible
+tokens may hold a raw newline as Lean reads them, a guillemet-quoted part in an identifier or in a name literal, and a
+character literal, since `charLitFnAux` takes any character between the quotes. The `what it would cost to certify '\n'`
+section names exactly these, and once `IDENTIFIER`, `NAME_LITERAL` and `CHARACTER` no longer admit the newline and the
+whitespace run is split at it, the newline certifies exactly. No file of the Mathlib set [Lean 4 on
+Mathlib](benchmarks.md#lean-4-on-mathlib) scans holds a newline in either place, so a scanner written for that code
+could make the three edits and lose nothing it meets there; the grammar keeps Lean's reading. One window certifies,
+`"\xC2\xBB\n" at 2`, a closing guillemet before a newline. The `»` ends a quoted part, a line comment's text or a token
+of its own, and in each case the newline begins the next token. The `lag` is `unbounded` because an opening guillemet
+with no closing one is read as far as the input goes before the scan rolls back to `OTHER`, and the scan rolls back on
+`"\n\r"` too, a newline followed by a carriage return that no newline follows.
+
+The verdict of every mode, the lines that
+
+```
+munch-audit tools/audit/grammars/lean4.g4 | grep -e '^-- ' -e '^verdict'
+```
+
+keeps of the full report, reads
+
+```
+-- scanner at line 9, condition INITIAL: 15 rules
+verdict                     no byte certifies; windows do: 1 up to width 3, 1 once classes expand
+-- scanner at line 9, condition STRING: 2 rules
+verdict                     no byte certifies; windows do: 284 up to width 3, 64589 once classes expand
+-- scanner at line 9, condition INTERPOLATED: 3 rules
+verdict                     no byte certifies; windows do: 642 up to width 3, 128796 once classes expand
+-- scanner at line 9, condition BLOCK_COMMENT: 3 rules
+verdict                     no byte certifies exactly; 177 certify once the discarded tokens are deleted, priced below
+-- scanner at line 9, condition DOC_COMMENT: 3 rules
+verdict                     no byte certifies; windows do: 200 up to width 3, 135776 once classes expand
+```
+
+Inside a block comment, 177 bytes certify once the discarded tokens are deleted: every byte but `-` and `/`, the UTF-8
+continuation bytes and the bytes no UTF-8 encoding uses. Every token there is discarded, so a cut before any of them
+splits at most a comment's text, which no parser sees. A doc comment keeps the same tokens visible, so no byte certifies
+there, and its windows place a boundary at a `-` or a `/`, where the text before it ends, `"!-" at 1`. A string and an
+interpolated string's text certify windows alone as well, the report's examples a quote, or in interpolated text a
+brace, after a byte that shows it is not escaped, `"!\"" at 1`.
+
+For a parallel lexer of Lean this means that a cut needs the mode known, which is the caveat above every report, and
+that in the default mode the one window above is the only certificate. A scan that knows it is inside a block comment
+can cut at almost any byte there, and the edits priced above would make every newline outside comments and strings a
+cut. `munch_benchmark_lean4` runs the grammar's modes over a pinned Mathlib file set, and [Lean 4 on
+Mathlib](benchmarks.md#lean-4-on-mathlib) gives its figures.
+
 ## What Is Read, and What Is Refused
 
 The readers take the file as the generator would and refuse what the byte-level token language cannot express, with the
