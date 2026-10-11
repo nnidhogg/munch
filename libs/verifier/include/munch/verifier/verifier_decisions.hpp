@@ -13,8 +13,8 @@
 
 /**
  * @file
- * @brief The eight decisions over a verifier: miscovering(), boundary_gap(), realizable(), divergence(), dependence(),
- *        chunk_dependence(), fanout() and smallest_fanout().
+ * @brief The nine decisions over a verifier: miscovering(), boundary_gap(), realizable(), divergence(), dependence(),
+ *        chunk_dependence(), right_context(), fanout() and smallest_fanout().
  *
  * Each is a search on a product with the verifier or on its minimal automaton, fanout() two subset runs on the latter,
  * and each witness is replayable through Verifier::step().
@@ -55,8 +55,7 @@ struct Miscovering
 };
 
 /**
- * @brief Three marked strings such that stem, then loop repeated any number of times, then suffix is accepted, the loop
- *        carrying no boundary.
+ * @brief Three marked strings such that stem, then loop repeated any number of times, then suffix is accepted.
  */
 struct Lasso
 {
@@ -66,7 +65,7 @@ struct Lasso
     Marked_string stem{};
 
     /**
-     * @brief The markless cycle, nonempty.
+     * @brief The cycle, nonempty.
      */
     Marked_string loop{};
 
@@ -78,7 +77,7 @@ struct Lasso
 
 /**
  * @brief The supremum of the distance between consecutive boundaries over the accepted marked strings, or the lasso
- *        whose pumping makes it unbounded.
+ *        whose pumping makes it unbounded, its loop carrying no boundary.
  */
 using Boundary_gap = std::variant<std::size_t, Lasso>;
 
@@ -215,6 +214,128 @@ struct Chunk_dependence
      */
     std::vector<Chunk> failing{};
 };
+
+/**
+ * @brief An accepted marked string with an occurrence of a certified window and a right context too short at its cut,
+ *        that occurrence, the cut and the context: the string's first bytes up to the cut plus the context, read as a
+ *        whole input, are not accepted under the string's marks below the cut, with a boundary at the cut when the
+ *        context is positive.
+ */
+struct Truncation
+{
+    /**
+     * @brief The accepted marked string, longer than the cut plus the context.
+     */
+    Marked_string segmentation{};
+
+    /**
+     * @brief The index of the window's first byte at the occurrence.
+     */
+    std::size_t occurrence{};
+
+    /**
+     * @brief The cut, the occurrence plus the origin, a boundary of the segmentation after position zero.
+     */
+    std::size_t cut{};
+
+    /**
+     * @brief The right context that fails, the number of bytes read past the cut.
+     */
+    std::size_t context{};
+};
+
+/**
+ * @brief A finite right context, the least from which every right context suffices, the least that suffices alone, and
+ *        a truncation at every right context that fails.
+ */
+struct Finite_context
+{
+    /**
+     * @brief The right context, one more than the largest that fails, zero when none does.
+     */
+    std::size_t context{};
+
+    /**
+     * @brief The least right context that fails at no occurrence, at most the right context.
+     */
+    std::size_t least{};
+
+    /**
+     * @brief A truncation at every right context that fails, ascending by context, the shortest one at its context.
+     */
+    std::vector<Truncation> failing{};
+};
+
+/**
+ * @brief The witness of an unbounded right context: a lasso whose stem, then loop repeated n times, then suffix is
+ *        accepted, its cut failing with the context plus n times the loop's length.
+ */
+struct Truncation_lasso
+{
+    /**
+     * @brief The lasso, its stem from the start through the cut to the loop and its loop a cycle read a whole number of
+     *        times.
+     */
+    Lasso lasso{};
+
+    /**
+     * @brief The index of the window's first byte at the occurrence, within the stem.
+     */
+    std::size_t occurrence{};
+
+    /**
+     * @brief The cut, the occurrence plus the origin, within the stem.
+     */
+    std::size_t cut{};
+
+    /**
+     * @brief The right context that fails with the loop read no times.
+     */
+    std::size_t context{};
+};
+
+/**
+ * @brief An unbounded right context: the right contexts that fail, those below the threshold each with a truncation
+ *        and those from it on the residues modulo the period that fail, each with a truncation lasso, and the least
+ *        right context that suffices alone.
+ */
+struct Unbounded_context
+{
+    /**
+     * @brief The threshold, the least from which the failing right contexts repeat with the period.
+     */
+    std::size_t threshold{};
+
+    /**
+     * @brief The period, the least with which the failing right contexts repeat from some point on.
+     */
+    std::size_t period{};
+
+    /**
+     * @brief The least right context that fails at no occurrence, none when every one fails at some occurrence.
+     */
+    std::optional<std::size_t> least{};
+
+    /**
+     * @brief A truncation at every right context below the threshold that fails, ascending by context, the shortest one
+     *        at its context.
+     */
+    std::vector<Truncation> failing{};
+
+    /**
+     * @brief A truncation lasso for every residue modulo the period at which every right context from the threshold
+     *        fails, ascending by context, its context at least the threshold and in the residue, and its loop's length
+     *        a multiple of the period, so that every context it pumps lies in the residue.
+     */
+    std::vector<Truncation_lasso> residues{};
+};
+
+/**
+ * @brief The right context of a certified pair with the right contexts that fail: finite with a truncation at each, or
+ *        unbounded with the period from which they repeat, a truncation at each below its threshold and a truncation
+ *        lasso per residue that fails from it.
+ */
+using Right_context = std::variant<Finite_context, Unbounded_context>;
 
 /**
  * @brief The fan-out of a pair: its rank, the number of configurations its cut can carry, and those configurations.
@@ -371,6 +492,78 @@ struct Smallest_fanout
  */
 [[nodiscard]] std::optional<Chunk_dependence> chunk_dependence(
         const Verifier& verifier, std::span<const Certified_pair> inventory);
+
+/**
+ * @brief Decides the right context of a certified pair (window, origin) and every right context that fails: the right
+ *        context is the least R such that at every occurrence of the window in every accepted marked string whose cut
+ *        at the origin lies after position zero, and for every R' of at least R, the string's first bytes up to the
+ *        cut plus R', read as a whole input, are segmented below the cut as the string is, with a boundary at the cut
+ *        when R' is positive, and R' fails when at some such occurrence they are not.
+ *
+ * A worker scanning a chunk that ends at a certified cut reads R' bytes past it, the input ending there or at the
+ * string's end, and keeps the tokens before the cut; it reproduces the string's segmentation of the chunk when its
+ * input is accepted under the string's marks below the cut, a boundary at the cut when R' is positive, and none after
+ * its last byte, which for a functional verifier is the input's one segmentation. That is the prefix side of a cut, and
+ * dependence() is the case R' = 0 together with the suffix side. The cut at position zero has no byte below it and is
+ * left out. A context that suffices need not make a larger one suffice, as under maximal munch over aa and b, where the
+ * pair (ba, 1) needs none and every odd context cuts a run of a's at odd length, so the right context is one more than
+ * the largest that fails at some occurrence, and unbounded when no largest exists; an inventory's is the largest of its
+ * pairs', since its failing contexts are the union of theirs. The failing contexts are therefore returned whole, with
+ * the least context that suffices alone, which can lie below the right context.
+ *
+ * A breadth-first search explores a product of the verifier in two phases. Before the cut it carries the verifier's
+ * state and how much of the window's first origin bytes the text's end matches, and the cut is placed on a marked byte
+ * where they have just been read, as dependence() places it. After the cut it carries the continuing state, the set of
+ * states a worker's copy can be in under any marks of the bytes read since the cut, how much of the window's remaining
+ * bytes have followed, and whether the worker's input ending at the last byte read is refused: at the cut when the cut
+ * byte without its mark reaches no acceptance, and after it when no state of the set before the byte reaches acceptance
+ * on the byte without its mark. A context R' fails at an occurrence exactly when the key R' bytes past its cut carries
+ * the refusal and a step continues from it to a key with the window's remaining bytes read and the continuing state
+ * accepting, so the failing contexts are the lengths past the cut of the product's paths from a key the cut places to a
+ * key where a failing context ends. Their supremum is finite exactly when no cycle lies on such a path, since a cycle
+ * pumps the length and a path longer than the number of keys repeats one; the decision is exact, and finite with the
+ * keys, at most 1 + n (origin + 1) before the cut and n (2 + t 2^n) after it, for n = |Q| - 1, Q the verifier's states,
+ * and t = |window| - origin. No step enters the start, so every key but the first holds one of n states. After the cut
+ * the continuing state lies in the worker's set, so the cut places at most 2 n keys, the set holding that state alone,
+ * and each of the t later counts of the window's bytes read past it holds at most n 2^(n - 1) pairs of a state and a
+ * set, each with or without the refusal.
+ *
+ * Every key on such a path is relevant, a key after the cut from which a key where a failing context ends is reachable,
+ * and every relevant key lies on one, being reached through a key the cut places. Layer L holds the relevant keys a
+ * path of L steps from a key the cut places ends at, so layer zero holds the relevant keys the cut places, layer L + 1
+ * the relevant keys a step leads to from layer L, and L fails exactly when layer L holds a key where a failing context
+ * ends. Each layer is a function of the one before, so once layer b repeats an earlier layer a, layer L + b - a is
+ * layer L for every L from a on, and the failing contexts repeat with period b - a from a. Two periods from a common
+ * point give their greatest common divisor as one, so the least period p with which the failing contexts repeat from
+ * some point on divides b - a, and it is the least divisor of b - a with which the failures of the layers from a to b
+ * repeat; the threshold is the least point from which they repeat with period p, at most a. Below the threshold each
+ * failing context has its shortest truncation, found by a breadth-first search over the keys paired with the steps
+ * taken since the cut. From the threshold on, the failing contexts are those in the residues modulo p at which they
+ * fail, and in each such residue the least context L that is at least both the threshold and the number N of relevant
+ * keys has a shortest truncation whose path past the cut visits L + 1 > N keys and so repeats one: its first repeat
+ * closes a cycle of c steps, and the lasso's stem is the truncation's string up to the repeat, its loop the cycle read
+ * p / gcd(c, p) times, a multiple of p, and its suffix the rest of the string, so that every context the lasso pumps
+ * lies in the residue. Without a cycle among the relevant keys every such path is shorter than N, so layer N is empty
+ * and repeats at once, the period is one and no residue fails: the right context is the threshold, one more than the
+ * largest failing context and zero when none fails. With one the failing contexts are unbounded, a residue failing from
+ * the threshold on. The least context that suffices alone is the least that fails nowhere, found below the threshold
+ * plus p. The layers are sets of relevant keys, so at most 2^N of them are explored, and N + 1 without a cycle; the
+ * period divides the least common multiple, over the strongly connected components of the relevant keys, of the
+ * greatest common divisor of each one's cycle lengths, which is at most its size, and the components are disjoint, so
+ * the period is at most Landau's function of N, the largest least common multiple of numbers summing to N, and the
+ * answer is superpolynomial in N in the worst case, while each truncation searches at most (L + 2) times the keys for
+ * its context L.
+ * @param verifier The verifier, functional.
+ * @param window The window, nonempty.
+ * @param origin The certified origin, a byte index of the window.
+ * @return The finite right context with the least context that suffices alone and a truncation at every context that
+ *         fails, or, when it is unbounded, the threshold, the period and the least context that suffices alone, with a
+ *         truncation at every context below the threshold that fails and a truncation lasso per residue that fails
+ *         from it.
+ * @throws std::invalid_argument If the window is empty or the origin lies outside it, or the verifier does not certify
+ *         the pair, so that no cut is certified.
+ */
+[[nodiscard]] Right_context right_context(const Verifier& verifier, std::string_view window, std::size_t origin);
 
 /**
  * @brief Decides the fan-out of the pair (window, origin): its rank, the number of configurations the cut at the origin

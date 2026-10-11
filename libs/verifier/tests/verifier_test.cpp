@@ -4,11 +4,14 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstddef>
 #include <format>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <optional>
+#include <random>
 #include <ranges>
 #include <set>
 #include <span>
@@ -266,6 +269,95 @@ struct Chunk_check
      * @brief The lines checked so far, by kind.
      */
     Chunk_counts counts{};
+};
+
+/**
+ * @brief What the right-context fixture holds, counted as it is checked.
+ */
+struct Context_counts
+{
+    /**
+     * @brief The universe lines.
+     */
+    std::size_t universes{0};
+
+    /**
+     * @brief The accepting lines, one per table universe.
+     */
+    std::size_t tables{0};
+
+    /**
+     * @brief The context lines.
+     */
+    std::size_t pairs{0};
+
+    /**
+     * @brief The context lines whose pair is not certified.
+     */
+    std::size_t uncertified{0};
+
+    /**
+     * @brief The context lines whose right context is finite.
+     */
+    std::size_t finite{0};
+
+    /**
+     * @brief The finite right contexts that are zero.
+     */
+    std::size_t zero{0};
+
+    /**
+     * @brief The context lines whose right context is unbounded.
+     */
+    std::size_t unbounded{0};
+
+    /**
+     * @brief The largest finite right context.
+     */
+    std::size_t largest{0};
+
+    /**
+     * @brief The failing contexts listed with a truncation, every one of a finite right context and those below the
+     *        threshold of an unbounded one.
+     */
+    std::size_t failing{0};
+
+    /**
+     * @brief The failing residues of the unbounded right contexts.
+     */
+    std::size_t residues{0};
+
+    /**
+     * @brief The largest period of an unbounded right context.
+     */
+    std::size_t period{0};
+};
+
+/**
+ * @brief The right-context fixture under check: the current universe's verifier, the transitions of a table universe
+ *        read so far, the current universe's line, and the counts so far.
+ */
+struct Context_check
+{
+    /**
+     * @brief The verifier the lines are checked on, none while a table universe's lines are still being read.
+     */
+    std::optional<Verifier> current{};
+
+    /**
+     * @brief The transitions of the table universe read so far.
+     */
+    Verifier::Transitions_t transitions{};
+
+    /**
+     * @brief The current universe's line, for the failure messages.
+     */
+    std::string universe{};
+
+    /**
+     * @brief The lines checked so far, by kind.
+     */
+    Context_counts counts{};
 };
 
 /**
@@ -1429,7 +1521,7 @@ void expect_cut(Cut_check& check, std::istringstream& fields, const std::string&
 /**
  * @brief Starts a universe line's universe: the armed run of a literal token set or of a regular universe by index, or
  *        nothing yet for a table, whose steps and accepting line follow.
- * @tparam Check The fixture under check's type, the cut or the chunk fixture's.
+ * @tparam Check The fixture under check's type, the cut, the chunk or the right-context fixture's.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
@@ -1495,7 +1587,7 @@ void read_step(Check& check, std::istringstream& fields, const std::string& cont
 
 /**
  * @brief Builds the table universe's verifier from its transitions and an accepting line, the start being state zero.
- * @tparam Check The fixture under check's type, the cut or the chunk fixture's.
+ * @tparam Check The fixture under check's type, the cut, the chunk or the right-context fixture's.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
@@ -1863,6 +1955,842 @@ void expect_chunk_fixture_line(Chunk_check& check, const std::string& line)
     {
         ADD_FAILURE() << "unknown chunk fixture line: " << line;
     }
+}
+
+/**
+ * @brief Returns the bytes a lowercase hex field spells, two digits per byte.
+ * @param field The hex digits.
+ * @return The bytes.
+ */
+std::string bytes_of(const std::string_view field)
+{
+    std::string bytes{};
+
+    for (std::size_t at{0}; at + 1 < field.size(); at += 2)
+    {
+        unsigned value{};
+
+        std::ignore = std::from_chars(field.data() + at, field.data() + at + 2, value, 16);
+
+        bytes += static_cast<char>(value);
+    }
+
+    return bytes;
+}
+
+/**
+ * @brief Returns the markings of an input that the verifier accepts, found by walking its steps over every byte of the
+ *        input under both marks, which is accepted_markings() without enumerating the markings no step reads.
+ * @param verifier The verifier.
+ * @param input The input.
+ * @return The accepted markings.
+ */
+std::set<Marking_t> walked_markings(const Verifier& verifier, const std::string_view input)
+{
+    std::vector<std::pair<Verifier::State_t, Marking_t>> walks{{verifier.start(), {}}};
+
+    for (const auto byte : input)
+    {
+        std::vector<std::pair<Verifier::State_t, Marking_t>> next{};
+
+        for (const auto& [state, marking] : walks)
+        {
+            for (const auto boundary_after : {false, true})
+            {
+                const auto to{verifier.step(
+                        state, {.byte = static_cast<unsigned char>(byte), .boundary_after = boundary_after})};
+
+                if (!to)
+                {
+                    continue;
+                }
+
+                auto extended{marking};
+
+                extended.push_back(boundary_after);
+
+                next.emplace_back(*to, std::move(extended));
+            }
+        }
+
+        walks = std::move(next);
+    }
+
+    std::set<Marking_t> accepted{};
+
+    for (const auto& [state, marking] : walks)
+    {
+        if (verifier.accepts(state))
+        {
+            accepted.insert(marking);
+        }
+    }
+
+    return accepted;
+}
+
+/**
+ * @brief Returns whether a right context fails at a cut of a marked string, by the definition: no marking of the
+ *        string's first bytes up to the cut plus the context that the verifier accepts agrees with the string's marks
+ *        below the cut, marks the cut when the context is positive, and leaves the last byte unmarked.
+ * @param worker The markings the verifier accepts of the string's first bytes up to the cut plus the context.
+ * @param marking The string's marking.
+ * @param cut The cut, after position zero.
+ * @param length The right context, the cut plus it short of the string's length.
+ * @return True when no accepted marking of the worker's input agrees.
+ */
+bool context_fails(
+        const std::set<Marking_t>& worker, const Marking_t& marking, const std::size_t cut, const std::size_t length)
+{
+    const auto agrees{[&](const Marking_t& candidate) {
+        const auto below{
+                std::ranges::equal(candidate | std::views::take(cut - 1), marking | std::views::take(cut - 1))};
+
+        return below && candidate[cut - 1] == (length > 0) && !candidate.back();
+    }};
+
+    return std::ranges::none_of(worker, agrees);
+}
+
+/**
+ * @brief Checks a truncation: its marked string is the verifier's one accepted marking of its bytes, the window occurs
+ *        at the occurrence, the cut is the occurrence plus the origin, after position zero and a boundary of the
+ *        marking, the string reaches past the cut plus the context, and the context fails there by the definition.
+ * @param verifier The verifier.
+ * @param found The truncation.
+ * @param window The window.
+ * @param origin The origin.
+ * @param context The fixture line checked.
+ */
+void expect_truncation(
+        const Verifier& verifier, const Truncation& found, const std::string_view window, const std::size_t origin,
+        const std::string& context)
+{
+    const auto& [segmentation, occurrence, cut, length]{found};
+
+    const auto& [bytes, boundaries]{segmentation};
+
+    EXPECT_EQ(walked_markings(verifier, bytes), std::set<Marking_t>{boundaries}) << context << " on " << bytes;
+    ASSERT_LE(occurrence + window.size(), bytes.size()) << context << " on " << bytes;
+    EXPECT_EQ(std::string_view{bytes}.substr(occurrence, window.size()), window) << context << " on " << bytes;
+    EXPECT_EQ(cut, occurrence + origin) << context << " on " << bytes;
+    ASSERT_GT(cut, 0U) << context << " on " << bytes;
+    EXPECT_TRUE(boundaries[cut - 1]) << context << " on " << bytes;
+    ASSERT_LT(cut + length, bytes.size()) << context << " on " << bytes;
+
+    const auto worker{walked_markings(verifier, std::string_view{bytes}.substr(0, cut + length))};
+
+    EXPECT_TRUE(context_fails(worker, boundaries, cut, length)) << context << " on " << bytes;
+}
+
+/**
+ * @brief Checks a truncation lasso: the loop nonempty, and stem, loop repeated zero, one and two times, and suffix a
+ *        truncation at the occurrence and the cut, its context the lasso's plus the loop's length per repetition.
+ * @param verifier The verifier.
+ * @param found The lasso.
+ * @param window The window.
+ * @param origin The origin.
+ * @param context The fixture line checked.
+ */
+void expect_truncation_lasso(
+        const Verifier& verifier, const Truncation_lasso& found, const std::string_view window,
+        const std::size_t origin, const std::string& context)
+{
+    const auto& [lasso, occurrence, cut, length]{found};
+
+    const auto& [stem, loop, suffix]{lasso};
+
+    EXPECT_FALSE(loop.bytes.empty()) << context;
+
+    std::vector parts{stem};
+
+    for (std::size_t repeats{0}; repeats < 3; ++repeats)
+    {
+        auto pumped{parts};
+
+        pumped.push_back(suffix);
+
+        const Truncation truncation{
+                .segmentation = concatenated(pumped),
+                .occurrence = occurrence,
+                .cut = cut,
+                .context = length + repeats * loop.bytes.size()};
+
+        expect_truncation(verifier, truncation, window, origin, std::format("{} pumped {} times", context, repeats));
+
+        parts.push_back(loop);
+    }
+}
+
+/**
+ * @brief Returns the marked strings of a lasso given as texts, cut from the verifier's one marking of stem, loop and
+ *        suffix read once each.
+ * @param verifier The verifier.
+ * @param stem The stem's text.
+ * @param loop The loop's text.
+ * @param suffix The suffix's text.
+ * @return The lasso, or none when the text has no one marking.
+ */
+std::optional<Lasso> marked_lasso(
+        const Verifier& verifier, const std::string& stem, const std::string& loop, const std::string& suffix)
+{
+    const auto markings{walked_markings(verifier, stem + loop + suffix)};
+
+    if (markings.size() != 1)
+    {
+        return std::nullopt;
+    }
+
+    const auto& marking{*markings.cbegin()};
+
+    const auto part{[&marking](const std::string& bytes, const std::size_t from) {
+        const auto first{marking.cbegin() + static_cast<std::ptrdiff_t>(from)};
+
+        const auto last{first + static_cast<std::ptrdiff_t>(bytes.size())};
+
+        return Marked_string{.bytes = bytes, .boundaries = {first, last}};
+    }};
+
+    auto stem_marked{part(stem, 0)};
+
+    auto loop_marked{part(loop, stem.size())};
+
+    auto suffix_marked{part(suffix, stem.size() + loop.size())};
+
+    return Lasso{.stem = std::move(stem_marked), .loop = std::move(loop_marked), .suffix = std::move(suffix_marked)};
+}
+
+/**
+ * @brief Returns the least right context that fails nowhere, given a truncation at every failing context below a
+ *        threshold and a truncation lasso per residue modulo a period at which every context from the threshold fails,
+ *        looked for below the threshold plus the period.
+ * @param failing The truncations below the threshold.
+ * @param threshold The threshold.
+ * @param period The period, at least one.
+ * @param residues The truncation lassos, one per failing residue.
+ * @return The least context, or std::nullopt when every context fails.
+ */
+std::optional<std::size_t> least_of(
+        const std::vector<Truncation>& failing, const std::size_t threshold, const std::size_t period,
+        const std::vector<Truncation_lasso>& residues)
+{
+    const auto fails{[&](const std::size_t context) {
+        const auto at_context{[context](const Truncation& truncation) { return truncation.context == context; }};
+
+        const auto in_residue{[context, period](const Truncation_lasso& lasso) {
+            return lasso.context % period == context % period;
+        }};
+
+        if (context < threshold)
+        {
+            return std::ranges::any_of(failing, at_context);
+        }
+
+        return std::ranges::any_of(residues, in_residue);
+    }};
+
+    for (std::size_t context{0}; context < threshold + period; ++context)
+    {
+        if (!fails(context))
+        {
+            return context;
+        }
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief Checks the failing contexts of a context line below its threshold: the decision's the reference's, ascending,
+ *        each truncation at its context and as long as the reference's, and the decision's truncations and the
+ *        reference's, under the verifier's one marking of their texts, all checked.
+ * @param verifier The verifier.
+ * @param found The decision's truncations.
+ * @param fields The line at its count of failing contexts.
+ * @param window The window.
+ * @param origin The origin.
+ * @param context The line.
+ */
+void expect_failing(
+        const Verifier& verifier, const std::vector<Truncation>& found, std::istringstream& fields,
+        const std::string_view window, const std::size_t origin, const std::string& context)
+{
+    std::size_t count{};
+
+    fields >> count;
+
+    ASSERT_EQ(found.size(), count) << context;
+
+    for (const auto& truncation : found)
+    {
+        std::size_t length{};
+        std::string text{};
+        std::size_t cut{};
+
+        fields >> length >> text >> cut;
+
+        const auto bytes{bytes_of(text)};
+
+        const auto markings{walked_markings(verifier, bytes)};
+
+        ASSERT_EQ(markings.size(), 1U) << context;
+
+        const Truncation reference{
+                .segmentation = {.bytes = bytes, .boundaries = *markings.cbegin()},
+                .occurrence = cut - origin,
+                .cut = cut,
+                .context = length};
+
+        EXPECT_EQ(truncation.context, length) << context;
+        EXPECT_EQ(truncation.segmentation.bytes.size(), bytes.size()) << context;
+
+        expect_truncation(verifier, truncation, window, origin, context);
+
+        expect_truncation(verifier, reference, window, origin, context);
+    }
+}
+
+/**
+ * @brief Checks a truncation lasso of a failing residue: replayed, its loop's length a multiple of the period and its
+ *        context at least the threshold.
+ * @param verifier The verifier.
+ * @param found The lasso.
+ * @param window The window.
+ * @param origin The origin.
+ * @param threshold The threshold.
+ * @param period The period.
+ * @param context The fixture line checked.
+ */
+void expect_residue_lasso(
+        const Verifier& verifier, const Truncation_lasso& found, const std::string_view window,
+        const std::size_t origin, const std::size_t threshold, const std::size_t period, const std::string& context)
+{
+    expect_truncation_lasso(verifier, found, window, origin, context);
+
+    EXPECT_EQ(found.lasso.loop.bytes.size() % period, 0U) << context;
+    EXPECT_GE(found.context, threshold) << context;
+}
+
+/**
+ * @brief Checks that the period and the threshold of an unbounded right context are the least: no smaller divisor of
+ *        the period maps the failing residues onto themselves, and the context below the threshold fails exactly when
+ *        the one a period above it does not.
+ * @param found The unbounded right context.
+ * @param context The fixture line or the pair checked.
+ */
+void expect_least_period_and_threshold(const Unbounded_context& found, const std::string& context)
+{
+    const auto& [threshold, period, least, failing, residues]{found};
+
+    std::set<std::size_t> failing_residues{};
+
+    for (const auto& lasso : residues)
+    {
+        failing_residues.insert(lasso.context % period);
+    }
+
+    for (std::size_t shorter{1}; shorter < period; ++shorter)
+    {
+        const auto shifted{[&failing_residues, shorter, period](const std::size_t residue) {
+            return failing_residues.contains((residue + shorter) % period);
+        }};
+
+        EXPECT_FALSE(period % shorter == 0 && std::ranges::all_of(failing_residues, shifted))
+                << context << " repeats with " << shorter;
+    }
+
+    if (threshold == 0)
+    {
+        return;
+    }
+
+    const auto below_fails{!failing.empty() && failing.back().context == threshold - 1};
+
+    const auto above_fails{failing_residues.contains((threshold - 1) % period)};
+
+    EXPECT_NE(below_fails, above_fails) << context;
+}
+
+/**
+ * @brief Checks the failing residues of an unbounded context line: the decision's the reference's, one lasso each, and
+ *        the decision's lassos and the reference's, under the verifier's one marking of stem, loop and suffix, all
+ *        checked.
+ * @param verifier The verifier.
+ * @param found The decision's unbounded right context.
+ * @param fields The line at its count of failing residues.
+ * @param window The window.
+ * @param origin The origin.
+ * @param context The line.
+ */
+void expect_residues(
+        const Verifier& verifier, const Unbounded_context& found, std::istringstream& fields,
+        const std::string_view window, const std::size_t origin, const std::string& context)
+{
+    const auto& [threshold, period, least, failing, residues]{found};
+
+    std::size_t count{};
+
+    fields >> count;
+
+    ASSERT_EQ(residues.size(), count) << context;
+
+    std::set<std::size_t> found_residues{};
+
+    std::set<std::size_t> reference_residues{};
+
+    for (const auto& lasso : residues)
+    {
+        std::string stem{};
+        std::string loop{};
+        std::string suffix{};
+        std::size_t cut{};
+        std::size_t length{};
+
+        fields >> stem >> loop >> suffix >> cut >> length;
+
+        expect_residue_lasso(verifier, lasso, window, origin, threshold, period, context);
+
+        found_residues.insert(lasso.context % period);
+
+        const auto parts{marked_lasso(verifier, bytes_of(stem), bytes_of(loop), bytes_of(suffix))};
+
+        ASSERT_TRUE(parts) << context;
+
+        const Truncation_lasso reference{.lasso = *parts, .occurrence = cut - origin, .cut = cut, .context = length};
+
+        expect_residue_lasso(verifier, reference, window, origin, threshold, period, context);
+
+        reference_residues.insert(length % period);
+    }
+
+    EXPECT_EQ(found_residues.size(), count) << context;
+    EXPECT_EQ(found_residues, reference_residues) << context;
+}
+
+/**
+ * @brief Checks a finite context line: the decision's right context the reference's and one more than its largest
+ *        failing context, its failing contexts the reference's, each with its truncation, and the least context that
+ *        suffices alone the least they leave out.
+ * @param check The fixture under check.
+ * @param found The decision's finite right context.
+ * @param fields The line after its verdict.
+ * @param window The window.
+ * @param origin The origin.
+ * @param context The line.
+ */
+void expect_finite_line(
+        Context_check& check, const Finite_context& found, std::istringstream& fields, const std::string_view window,
+        const std::size_t origin, const std::string& context)
+{
+    std::size_t expected{};
+
+    fields >> expected;
+
+    const auto& verifier{*check.current};
+
+    ++check.counts.finite;
+
+    check.counts.largest = std::max(check.counts.largest, expected);
+
+    check.counts.failing += found.failing.size();
+
+    EXPECT_EQ(found.context, expected) << context;
+    EXPECT_EQ(found.failing.empty() ? 0 : found.failing.back().context + 1, expected) << context;
+    EXPECT_EQ(std::optional{found.least}, least_of(found.failing, found.context, 1, {})) << context;
+
+    if (expected == 0)
+    {
+        ++check.counts.zero;
+    }
+
+    expect_failing(verifier, found.failing, fields, window, origin, context);
+}
+
+/**
+ * @brief Checks an unbounded context line: the decision's threshold and period the reference's, its failing contexts
+ *        below the threshold and its failing residues the reference's, each with its witness, and the least context
+ *        that suffices alone the least they leave out.
+ * @param check The fixture under check.
+ * @param found The decision's unbounded right context.
+ * @param fields The line after its verdict.
+ * @param window The window.
+ * @param origin The origin.
+ * @param context The line.
+ */
+void expect_unbounded_line(
+        Context_check& check, const Unbounded_context& found, std::istringstream& fields, const std::string_view window,
+        const std::size_t origin, const std::string& context)
+{
+    std::size_t threshold{};
+    std::size_t period{};
+
+    fields >> threshold >> period;
+
+    const auto& verifier{*check.current};
+
+    ++check.counts.unbounded;
+
+    check.counts.failing += found.failing.size();
+
+    check.counts.residues += found.residues.size();
+
+    check.counts.period = std::max(check.counts.period, period);
+
+    EXPECT_EQ(found.threshold, threshold) << context;
+    EXPECT_EQ(found.period, period) << context;
+    EXPECT_EQ(found.least, least_of(found.failing, found.threshold, found.period, found.residues)) << context;
+
+    expect_least_period_and_threshold(found, context);
+
+    expect_failing(verifier, found.failing, fields, window, origin, context);
+
+    expect_residues(verifier, found, fields, window, origin, context);
+}
+
+/**
+ * @brief Checks a context line: an uncertified pair refused, and a certified one answered finite or unbounded as the
+ *        reference is, with its witness.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_context(Context_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string window_field{};
+    std::size_t origin{};
+    std::string verdict{};
+
+    fields >> window_field >> origin >> verdict;
+
+    ASSERT_TRUE(check.current) << context;
+
+    const auto& verifier{*check.current};
+
+    const auto window{bytes_of(window_field)};
+
+    ++check.counts.pairs;
+
+    if (verdict == "uncertified")
+    {
+        ++check.counts.uncertified;
+
+        EXPECT_THROW(std::ignore = right_context(verifier, window, origin), std::invalid_argument) << context;
+
+        return;
+    }
+
+    const auto found{right_context(verifier, window, origin)};
+
+    if (verdict == "finite")
+    {
+        ASSERT_TRUE(std::holds_alternative<Finite_context>(found)) << context;
+
+        expect_finite_line(check, std::get<Finite_context>(found), fields, window, origin, context);
+
+        return;
+    }
+
+    ASSERT_TRUE(std::holds_alternative<Unbounded_context>(found)) << context;
+
+    expect_unbounded_line(check, std::get<Unbounded_context>(found), fields, window, origin, context);
+}
+
+/**
+ * @brief Reads a step line of the right-context fixture into the table universe's transitions, its byte in hex.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void read_hex_step(Context_check& check, std::istringstream& fields, const std::string& context)
+{
+    Verifier::State_t from{};
+    std::string byte{};
+    int mark{};
+    Verifier::State_t to{};
+
+    fields >> from >> byte >> mark >> to;
+
+    const Marked symbol{.byte = static_cast<unsigned char>(bytes_of(byte).at(0)), .boundary_after = mark == 1};
+
+    const auto [entry, inserted]{check.transitions.try_emplace({from, symbol}, to)};
+
+    EXPECT_TRUE(inserted) << context;
+}
+
+/**
+ * @brief Checks one right-context fixture line against the decision, a comment or blank line checking nothing.
+ * @param check The fixture under check.
+ * @param line The line.
+ */
+void expect_context_fixture_line(Context_check& check, const std::string& line)
+{
+    std::istringstream fields{line};
+
+    std::string kind{};
+
+    if (!(fields >> kind) || kind.starts_with('#'))
+    {
+        return;
+    }
+
+    const auto context{std::format("{} | {}", check.universe, line)};
+
+    if (kind == "universe")
+    {
+        start_verifier_universe(check, fields, line);
+    }
+    else if (kind == "step")
+    {
+        read_hex_step(check, fields, context);
+    }
+    else if (kind == "accepting")
+    {
+        build_table(check, fields, context);
+    }
+    else if (kind == "context")
+    {
+        expect_context(check, fields, context);
+    }
+    else
+    {
+        ADD_FAILURE() << "unknown right-context fixture line: " << line;
+    }
+}
+
+/**
+ * @brief Draws a number below a bound from a sequence.
+ * @param sequence The sequence, advanced by the draw.
+ * @param below The bound.
+ * @return The number.
+ */
+std::size_t draw(std::mt19937& sequence, const std::size_t below)
+{
+    std::uniform_int_distribution<std::size_t> distribution{0, below - 1};
+
+    return distribution(sequence);
+}
+
+/**
+ * @brief Draws a random token DFA over {a, b}: two to four states, the initial one among them, each byte leading from
+ *        each to a random one of them or nowhere, one of them but the initial accepting and each other but the initial
+ *        accepting with probability one third.
+ * @param sequence The sequence the DFA is drawn from.
+ * @return The DFA.
+ */
+Dfa random_token_dfa(std::mt19937& sequence)
+{
+    Builder builder{};
+
+    std::vector<Dfa::State_t> states{builder.init_state()};
+
+    for (std::size_t added{draw(sequence, 3) + 1}; added > 0; --added)
+    {
+        states.push_back(builder.next_state());
+    }
+
+    for (const auto from : states)
+    {
+        for (const auto byte : std::string_view{"ab"})
+        {
+            // One target beyond the states is no transition at all.
+            const auto target{draw(sequence, states.size() + 1)};
+
+            if (target < states.size())
+            {
+                builder.add_transition(from, Label{byte}, states[target]);
+            }
+        }
+    }
+
+    const auto accepting{states[draw(sequence, states.size() - 1) + 1]};
+
+    builder.add_accept_state(accepting, Token{0});
+
+    for (std::size_t index{1}; index < states.size(); ++index)
+    {
+        if (draw(sequence, 3) == 0)
+        {
+            builder.add_accept_state(states[index], Token{0});
+        }
+    }
+
+    return std::move(builder).build();
+}
+
+/**
+ * @brief Draws a random sequential verifier over {a, b}: two to four drawn states, each byte read from each under one
+ *        mark drawn at random into a random one of them, or not read at all, and each accepting with probability one
+ *        half, so that the marks are a function of the bytes and the verifier is functional. Each drawn state is split
+ *        by the mark of the byte entering it and accepts only when that byte carries no boundary, so the final byte of
+ *        an accepted string is unmarked. The start reads as the first drawn state does and accepts the empty input with
+ *        probability one half.
+ * @param sequence The sequence the verifier is drawn from.
+ * @return The trim verifier of the table.
+ */
+Verifier random_sequential_verifier(std::mt19937& sequence)
+{
+    const auto states{draw(sequence, 3) + 2};
+
+    // The start is state zero and a drawn state's copies follow it, the one entered without a mark first.
+    const auto entered{[](const Verifier::State_t state, const bool boundary_after) {
+        return 2 * state + (boundary_after ? 2 : 1);
+    }};
+
+    Verifier::Transitions_t transitions{};
+
+    Verifier::Accept_states_t accepting{};
+
+    for (Verifier::State_t from{0}; from < states; ++from)
+    {
+        std::vector sources{entered(from, false), entered(from, true)};
+
+        if (from == 0)
+        {
+            sources.push_back(0);
+        }
+
+        for (const auto byte : std::string_view{"ab"})
+        {
+            // One target beyond the states is no transition at all.
+            const auto target{draw(sequence, states + 1)};
+
+            const auto boundary_after{draw(sequence, 2) == 1};
+
+            if (target == states)
+            {
+                continue;
+            }
+
+            const Marked symbol{.byte = static_cast<unsigned char>(byte), .boundary_after = boundary_after};
+
+            const auto to{entered(target, boundary_after)};
+
+            for (const auto source : sources)
+            {
+                transitions.try_emplace({source, symbol}, to);
+            }
+        }
+
+        if (draw(sequence, 2) == 1)
+        {
+            accepting.insert(entered(from, false));
+        }
+    }
+
+    if (draw(sequence, 2) == 1)
+    {
+        accepting.insert(0);
+    }
+
+    return Verifier{0, std::move(transitions), std::move(accepting)};
+}
+
+/**
+ * @brief Returns the accepted markings of every input over {a, b} up to a length that the verifier accepts, found by
+ *        walking its steps from the start.
+ * @param verifier The verifier.
+ * @param longest The length.
+ * @return Per accepted input, its accepted markings.
+ */
+std::map<std::string, std::set<Marking_t>> accepted_up_to(const Verifier& verifier, const std::size_t longest)
+{
+    std::map<std::string, std::set<Marking_t>> accepted{};
+
+    std::vector<std::tuple<Verifier::State_t, std::string, Marking_t>> pending{{verifier.start(), "", {}}};
+
+    while (!pending.empty())
+    {
+        const auto [state, bytes, marking]{pending.back()};
+
+        pending.pop_back();
+
+        if (verifier.accepts(state))
+        {
+            accepted[bytes].insert(marking);
+        }
+
+        if (bytes.size() == longest)
+        {
+            continue;
+        }
+
+        for (const auto byte : std::string_view{"ab"})
+        {
+            for (const auto boundary_after : {false, true})
+            {
+                const auto to{verifier.step(
+                        state, {.byte = static_cast<unsigned char>(byte), .boundary_after = boundary_after})};
+
+                if (!to)
+                {
+                    continue;
+                }
+
+                auto next_marking{marking};
+
+                next_marking.push_back(boundary_after);
+
+                pending.emplace_back(*to, bytes + byte, std::move(next_marking));
+            }
+        }
+    }
+
+    return accepted;
+}
+
+/**
+ * @brief Returns the right contexts that fail at a cut of a pair, by the definition, over the accepted marked strings
+ *        given: at every occurrence of the window whose cut lies after position zero and every context the string
+ *        reaches past, each with the length of the shortest string it fails on.
+ * @param accepted Per accepted input, its accepted markings, every input up to a length.
+ * @param window The window.
+ * @param origin The origin.
+ * @return Per failing context, the length of the shortest accepted string it fails on.
+ */
+std::map<std::size_t, std::size_t> failing_by_definition(
+        const std::map<std::string, std::set<Marking_t>>& accepted, const std::string_view window,
+        const std::size_t origin)
+{
+    std::map<std::size_t, std::size_t> failing{};
+
+    const std::set<Marking_t> refused{};
+
+    for (const auto& [bytes, markings] : accepted)
+    {
+        const std::string_view text{bytes};
+
+        for (auto at{text.find(window)}; at != std::string_view::npos; at = text.find(window, at + 1))
+        {
+            const auto cut{at + origin};
+
+            if (cut == 0)
+            {
+                continue;
+            }
+
+            for (std::size_t length{0}; cut + length < text.size(); ++length)
+            {
+                const auto worker_input{std::string{text.substr(0, cut + length)}};
+
+                const auto found{accepted.find(worker_input)};
+
+                const auto& worker{found == accepted.cend() ? refused : found->second};
+
+                const auto fails{[&](const Marking_t& marking) { return context_fails(worker, marking, cut, length); }};
+
+                if (!std::ranges::any_of(markings, fails))
+                {
+                    continue;
+                }
+
+                const auto [entry, inserted]{failing.try_emplace(length, text.size())};
+
+                entry->second = std::min(entry->second, text.size());
+            }
+        }
+    }
+
+    return failing;
 }
 
 /**
@@ -2604,6 +3532,242 @@ TEST(Verifier_test, The_anchor_at_position_zero_fails_when_the_start_does_not_ac
     EXPECT_EQ(found->failing, (std::vector<Chunk>{{.begin = 0, .end = 0}}));
 
     expect_chunk_dependence(verifier, *found, at_zero, "a 0");
+}
+
+TEST(Verifier_test, Right_context_gives_the_reference_answers_on_every_universe_of_the_context_fixture)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/context_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    Context_check check{};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        expect_context_fixture_line(check, line);
+    }
+
+    EXPECT_EQ(check.counts.universes, 491U);
+    EXPECT_EQ(check.counts.tables, 17U);
+    EXPECT_EQ(check.counts.pairs, 38592U);
+    EXPECT_EQ(check.counts.uncertified, 27773U);
+    EXPECT_EQ(check.counts.finite, 8569U);
+    EXPECT_EQ(check.counts.zero, 7959U);
+    EXPECT_EQ(check.counts.unbounded, 2250U);
+    EXPECT_EQ(check.counts.largest, 4U);
+    EXPECT_EQ(check.counts.failing, 2939U);
+    EXPECT_EQ(check.counts.residues, 2670U);
+    EXPECT_EQ(check.counts.period, 3U);
+}
+
+TEST(Verifier_test, Right_context_refuses_a_malformed_window_and_an_uncertified_pair)
+{
+    const auto verifier{armed_run(literal_dfa({"ab", "a", "b"}))};
+
+    EXPECT_THROW(std::ignore = right_context(verifier, "", 0), std::invalid_argument);
+    EXPECT_THROW(std::ignore = right_context(verifier, "ab", 2), std::invalid_argument);
+    EXPECT_THROW(std::ignore = right_context(verifier, "ab", 1), std::invalid_argument);
+
+    const auto found{right_context(verifier, "ab", 0)};
+
+    ASSERT_TRUE(std::holds_alternative<Finite_context>(found));
+
+    const auto& [context, least, failing]{std::get<Finite_context>(found)};
+
+    EXPECT_EQ(context, 0U);
+    EXPECT_EQ(least, 0U);
+    EXPECT_TRUE(failing.empty());
+}
+
+TEST(Verifier_test, Right_context_agrees_with_the_definition_over_random_token_sets_and_sequential_verifiers)
+{
+    // Verifiers drawn at random over {a, b}: the maximal-munch scans of token DFAs of two to four states, and
+    // sequential verifiers of two to four drawn states, each byte read under one mark the state and the byte decide,
+    // none accepting after a marked byte. For every certified pair of every window of length one to three, the failing
+    // contexts are held to the definition over every accepted marked string up to length seven: below the threshold the
+    // contexts that fail there are exactly those whose shortest truncation is that short, the shortest string each
+    // fails on as long, and from it every context that fails there lies in a failing residue; the period and the
+    // threshold are the least, the least context that suffices alone is the least the decision leaves out, and every
+    // witness replays.
+    std::mt19937 sequence{0x5EEDU};
+
+    constexpr std::size_t drawn_per_kind{1000};
+
+    constexpr std::size_t longest{7};
+
+    std::size_t finite{0};
+
+    std::size_t positive{0};
+
+    std::size_t gapped{0};
+
+    std::size_t unbounded{0};
+
+    std::size_t exceptional{0};
+
+    std::size_t periodic{0};
+
+    const auto check_pairs{[&](const Verifier& verifier, const std::string& label) {
+        // The final byte of an accepted string carries no boundary.
+        for (const auto& [key, to] : verifier.transitions())
+        {
+            const auto& [from, symbol]{key};
+
+            EXPECT_FALSE(symbol.boundary_after && verifier.accepts(to)) << label;
+        }
+
+        const auto accepted{accepted_up_to(verifier, longest)};
+
+        for (const auto& window : strings_up_to("ab", 3) | std::views::drop(1))
+        {
+            for (std::size_t origin{0}; origin < window.size(); ++origin)
+            {
+                if (miscovering(verifier, window, origin))
+                {
+                    continue;
+                }
+
+                const auto name{std::format("{} {} {}", label, window, origin)};
+
+                const auto found{right_context(verifier, window, origin)};
+
+                auto brute{failing_by_definition(accepted, window, origin)};
+
+                const auto short_enough{[&](const std::vector<Truncation>& failing) {
+                    std::map<std::size_t, std::size_t> lengths{};
+
+                    for (const auto& truncation : failing)
+                    {
+                        expect_truncation(verifier, truncation, window, origin, name);
+
+                        const auto length{truncation.segmentation.bytes.size()};
+
+                        if (length <= longest)
+                        {
+                            lengths.emplace(truncation.context, length);
+                        }
+                    }
+
+                    return lengths;
+                }};
+
+                if (const auto* periodic_context{std::get_if<Unbounded_context>(&found)})
+                {
+                    const auto& [threshold, period, least, failing, residues]{*periodic_context};
+
+                    ++unbounded;
+
+                    exceptional += failing.empty() ? 0 : 1;
+
+                    periodic += period > 1 ? 1 : 0;
+
+                    for (const auto& lasso : residues)
+                    {
+                        expect_residue_lasso(verifier, lasso, window, origin, threshold, period, name);
+                    }
+
+                    EXPECT_EQ(least, least_of(failing, threshold, period, residues)) << name;
+
+                    expect_least_period_and_threshold(*periodic_context, name);
+
+                    // From the threshold every context that fails lies in a failing residue.
+                    for (auto entry{brute.lower_bound(threshold)}; entry != brute.end(); entry = brute.erase(entry))
+                    {
+                        const auto in_residue{[&entry, period](const Truncation_lasso& lasso) {
+                            return lasso.context % period == entry->first % period;
+                        }};
+
+                        EXPECT_TRUE(std::ranges::any_of(residues, in_residue)) << name << " at " << entry->first;
+                    }
+
+                    EXPECT_EQ(brute, short_enough(failing)) << name;
+
+                    continue;
+                }
+
+                const auto& [context, least, failing]{std::get<Finite_context>(found)};
+
+                ++finite;
+
+                positive += failing.empty() ? 0 : 1;
+
+                gapped += least < context ? 1 : 0;
+
+                EXPECT_EQ(std::optional{least}, least_of(failing, context, 1, {})) << name;
+                EXPECT_EQ(brute, short_enough(failing)) << name;
+            }
+        }
+    }};
+
+    for (std::size_t drawn{0}; drawn < drawn_per_kind; ++drawn)
+    {
+        check_pairs(armed_run(random_token_dfa(sequence)), std::format("token set {}", drawn));
+
+        check_pairs(random_sequential_verifier(sequence), std::format("sequential {}", drawn));
+    }
+
+    EXPECT_GT(finite, 0U);
+    EXPECT_GT(positive, 0U);
+    EXPECT_GT(gapped, 0U);
+    EXPECT_GT(unbounded, 0U);
+    EXPECT_GT(exceptional, 0U);
+    EXPECT_GT(periodic, 0U);
+}
+
+TEST(Verifier_test, Maximal_munch_over_aa_and_b_needs_no_context_at_ba_while_one_and_every_context_from_three_fail)
+{
+    const auto verifier{armed_run(literal_dfa({"aa", "b"}))};
+
+    // The cut before the a's after a b is independent, so a worker reading up to it alone segments the bytes below it,
+    // while one ending inside a token aa fails: one byte past the cut, and every context from three, which ends inside
+    // the first run of a's at odd length or inside a later one.
+    EXPECT_FALSE(dependence(verifier, "ba", 1));
+
+    const auto found{right_context(verifier, "ba", 1)};
+
+    ASSERT_TRUE(std::holds_alternative<Unbounded_context>(found));
+
+    const auto& [threshold, period, least, failing, residues]{std::get<Unbounded_context>(found)};
+
+    EXPECT_EQ(threshold, 3U);
+    EXPECT_EQ(period, 1U);
+    EXPECT_EQ(least, 0U);
+    ASSERT_EQ(failing.size(), 1U);
+    EXPECT_EQ(failing.front().context, 1U);
+    EXPECT_EQ(residues.size(), 1U);
+
+    expect_truncation(verifier, failing.front(), "ba", 1, "ba 1");
+
+    for (const auto& lasso : residues)
+    {
+        expect_residue_lasso(verifier, lasso, "ba", 1, threshold, period, "ba 1");
+    }
+}
+
+TEST(Verifier_test, A_threshold_splice_needs_one_byte_of_context_past_a_cut_at_length_two)
+{
+    const auto verifier{splice_single_below_three_then_merged()};
+
+    // The cut before the last a of aba, segmented ab|a, leaves the prefix ab, which is shorter than three bytes and
+    // segmented a|b alone; one byte more reads the whole string.
+    const auto found{right_context(verifier, "a", 0)};
+
+    ASSERT_TRUE(std::holds_alternative<Finite_context>(found));
+
+    const auto& [context, least, failing]{std::get<Finite_context>(found)};
+
+    EXPECT_EQ(context, 1U);
+    EXPECT_EQ(least, 1U);
+    ASSERT_EQ(failing.size(), 1U);
+
+    const auto& truncation{failing.front()};
+
+    EXPECT_EQ(truncation.segmentation.bytes, "aba");
+    EXPECT_EQ(truncation.segmentation.boundaries, marking_of("aba", {1}));
+    EXPECT_EQ(truncation.cut, 2U);
+    EXPECT_EQ(truncation.context, 0U);
+
+    expect_truncation(verifier, truncation, "a", 0, "a 0");
 }
 
 TEST(Verifier_test, Fanout_and_smallest_fanout_give_the_reference_answers_on_every_universe_of_the_fanout_fixture)

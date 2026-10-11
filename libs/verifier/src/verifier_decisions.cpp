@@ -8,6 +8,7 @@
 #include <functional>
 #include <iterator>
 #include <map>
+#include <numeric>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -15,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -284,6 +286,139 @@ struct Chunk_key
      * @brief Whether a chunk was refused.
      */
     bool refused{};
+};
+
+/**
+ * @brief A key of the right-context product: whether the cut has been placed, the verifier's state, the continuing
+ *        copy's after the cut, the states a worker's copy can be in under any marks of the bytes read since the cut,
+ *        how much of the window the text's end matches, of its first origin bytes before the cut and of its remaining
+ *        bytes after it, and whether the worker's input ending at the last byte read fails.
+ *
+ * After the cut the matched count is the number of bytes read since the cut, up to the remaining bytes' length, so the
+ * keys the cut places are the only keys after it with none matched.
+ */
+struct Context_key
+{
+    /**
+     * @brief Ordered member by member, so keys index the search's map.
+     */
+    auto operator<=>(const Context_key&) const = default;
+
+    /**
+     * @brief Whether the cut has been placed.
+     */
+    bool cut{};
+
+    /**
+     * @brief The verifier's state, the continuing copy's after the cut.
+     */
+    State_t state{};
+
+    /**
+     * @brief The states the worker's copy can be in after the cut, sorted and without repeats, none before it.
+     */
+    std::vector<State_t> worker{};
+
+    /**
+     * @brief How much of the window the text's end matches: of its first origin bytes before the cut, of its remaining
+     *        bytes after it.
+     */
+    std::size_t matched{};
+
+    /**
+     * @brief Whether the worker's input ending at the last byte read is not accepted, false before the cut.
+     */
+    bool fails{};
+};
+
+/**
+ * @brief The right-context product explored from its start: its keys numbered in the order they were first reached, the
+ *        start zero, and per key the steps from it and the steps into it.
+ */
+struct Context_graph
+{
+    /**
+     * @brief The keys, by number.
+     */
+    std::vector<Context_key> keys{};
+
+    /**
+     * @brief Per key, its steps as the symbol read and the key entered, in the order they were taken.
+     */
+    std::vector<std::vector<std::pair<Marked, std::size_t>>> successors{};
+
+    /**
+     * @brief Per key, the steps into it as the key left and the symbol read.
+     */
+    std::vector<std::vector<std::pair<std::size_t, Marked>>> predecessors{};
+};
+
+/**
+ * @brief What the keys of the right-context product reach, one bit per key: whether it confirms the occurrence with the
+ *        continuing copy accepting, whether a failing context ends at it, and whether it lies after the cut with such a
+ *        key reachable from it.
+ */
+struct Context_reach
+{
+    /**
+     * @brief Whether the key lies after the cut with the window's remaining bytes all read and the continuing copy
+     *        accepting.
+     */
+    std::vector<bool> confirmed{};
+
+    /**
+     * @brief Whether a failing context ends at the key: it lies after the cut, carries the failure, and a step leads
+     *        from it to a key from which a confirming key is reachable.
+     */
+    std::vector<bool> failing{};
+
+    /**
+     * @brief Whether the key lies after the cut and a key where a failing context ends is reachable from it, the key
+     *        itself included.
+     */
+    std::vector<bool> relevant{};
+};
+
+/**
+ * @brief Which contexts fail, per number of steps past the cut up to the first layer of the right-context product's
+ *        relevant keys that repeats an earlier one, and the context whose layer it repeats.
+ *
+ * Each layer is a function of the one before, so from the repeated context on the failures repeat with the number of
+ * contexts held less it.
+ */
+struct Context_failures
+{
+    /**
+     * @brief Per context below the first repeated layer, whether it fails at some occurrence.
+     */
+    std::vector<bool> fails{};
+
+    /**
+     * @brief The context whose layer the first repeated layer repeats.
+     */
+    std::size_t repeated{};
+};
+
+/**
+ * @brief A key of the truncation search: a key of the right-context product and the steps taken since the cut, up to
+ *        the context the search is for, and one more once a step has left a key where that context fails.
+ */
+struct Truncation_key
+{
+    /**
+     * @brief Ordered member by member, so keys index the search's map.
+     */
+    auto operator<=>(const Truncation_key&) const = default;
+
+    /**
+     * @brief The number of the product's key.
+     */
+    std::size_t key{};
+
+    /**
+     * @brief The steps taken since the cut, zero before it, at most one more than the context.
+     */
+    std::size_t read{};
 };
 
 /**
@@ -1129,6 +1264,544 @@ template <typename Ends>
 }
 
 /**
+ * @brief Explores the right-context product of a pair from its start, numbering every key reachable.
+ *
+ * Before the cut a step reads a marked symbol into the verifier and the matcher of the window's first origin bytes, and
+ * a marked byte that completes them places the cut as well, the worker's copy beginning at the state the marked byte
+ * reaches and the worker's input ending at the cut failing when the byte without its mark reaches no acceptance. After
+ * the cut a step reads a marked symbol into the continuing copy while the window's remaining bytes follow at once, the
+ * worker's copy reads its byte under both marks, and the input ending at it fails when no state the copy could be in
+ * before the byte reaches acceptance on the byte without its mark.
+ * @param verifier The verifier.
+ * @param window The window, nonempty.
+ * @param origin The origin, a byte index of the window.
+ * @return The product's keys and steps.
+ */
+[[nodiscard]] Context_graph context_graph_of(
+        const Verifier& verifier, const std::string_view window, const std::size_t origin)
+{
+    const auto head{window.substr(0, origin)};
+
+    const auto tail{window.substr(origin)};
+
+    const auto borders{borders_of(head)};
+
+    const auto alphabet{alphabet_of(verifier)};
+
+    // Before the cut the matcher runs over the window's first origin bytes, which are none when the origin is zero.
+    const auto head_matched{[&head, &borders](const std::size_t matched, const unsigned char byte) {
+        return head.empty() ? 0 : matched_after(head, borders, matched, byte);
+    }};
+
+    const auto ends_failing{[&verifier](const std::vector<State_t>& states, const unsigned char byte) {
+        const auto accepted_unmarked{[&](const State_t state) {
+            const auto to{verifier.step(state, {.byte = byte, .boundary_after = false})};
+
+            return to && verifier.accepts(*to);
+        }};
+
+        return std::ranges::none_of(states, accepted_unmarked);
+    }};
+
+    Context_graph graph{};
+
+    std::map<Context_key, std::size_t> numbers{};
+
+    const auto number_of{[&graph, &numbers](Context_key key) {
+        const auto [entry, inserted]{numbers.try_emplace(key, graph.keys.size())};
+
+        if (inserted)
+        {
+            graph.keys.push_back(std::move(key));
+
+            graph.successors.emplace_back();
+
+            graph.predecessors.emplace_back();
+        }
+
+        return entry->second;
+    }};
+
+    std::ignore =
+            number_of(Context_key{.cut = false, .state = verifier.start(), .worker = {}, .matched = 0, .fails = false});
+
+    for (std::size_t next{0}; next < graph.keys.size(); ++next)
+    {
+        const auto key{graph.keys[next]};
+
+        const auto link{[&](const Marked symbol, Context_key child) {
+            const auto to{number_of(std::move(child))};
+
+            graph.successors[next].emplace_back(symbol, to);
+
+            graph.predecessors[to].emplace_back(next, symbol);
+        }};
+
+        const auto before{[&](const Marked symbol, const State_t to) {
+            const auto matched{head_matched(key.matched, symbol.byte)};
+
+            link(symbol, Context_key{.cut = false, .state = to, .worker = {}, .matched = matched, .fails = false});
+
+            if (!symbol.boundary_after || matched != origin)
+            {
+                return;
+            }
+
+            const auto fails{ends_failing({key.state}, symbol.byte)};
+
+            link(symbol, Context_key{.cut = true, .state = to, .worker = {to}, .matched = 0, .fails = fails});
+        }};
+
+        const auto after{[&](const Marked symbol, const State_t to) {
+            // The window's remaining bytes follow the cut at once.
+            if (key.matched < tail.size() && symbol.byte != static_cast<unsigned char>(tail[key.matched]))
+            {
+                return;
+            }
+
+            const auto matched{std::min(key.matched + 1, tail.size())};
+
+            auto worker{subset_after(verifier, key.worker, symbol.byte)};
+
+            const auto fails{ends_failing(key.worker, symbol.byte)};
+
+            link(symbol, Context_key{
+                                 .cut = true,
+                                 .state = to,
+                                 .worker = std::move(worker),
+                                 .matched = matched,
+                                 .fails = fails});
+        }};
+
+        if (key.cut)
+        {
+            expand_steps(verifier, alphabet, key.state, after);
+
+            continue;
+        }
+
+        expand_steps(verifier, alphabet, key.state, before);
+    }
+
+    return graph;
+}
+
+/**
+ * @brief Returns the keys of the right-context product from which a target is reachable, the targets included.
+ * @param graph The product.
+ * @param targets Per key, whether it is a target.
+ * @return Per key, whether a target is reachable from it.
+ */
+[[nodiscard]] std::vector<bool> reaching(const Context_graph& graph, std::vector<bool> targets)
+{
+    std::vector<std::size_t> frontier{};
+
+    for (std::size_t key{0}; key < targets.size(); ++key)
+    {
+        if (targets[key])
+        {
+            frontier.push_back(key);
+        }
+    }
+
+    for (std::size_t next{0}; next < frontier.size(); ++next)
+    {
+        for (const auto from : graph.predecessors[frontier[next]] | std::views::keys)
+        {
+            if (targets[from])
+            {
+                continue;
+            }
+
+            targets[from] = true;
+
+            frontier.push_back(from);
+        }
+    }
+
+    return targets;
+}
+
+/**
+ * @brief Returns what the keys of the right-context product reach: the confirming keys, the keys where a failing
+ *        context ends and the keys after the cut that lead to one.
+ * @param verifier The verifier.
+ * @param graph The product.
+ * @param remaining The number of the window's bytes from the origin.
+ * @return The three bits per key.
+ */
+[[nodiscard]] Context_reach context_reach_of(
+        const Verifier& verifier, const Context_graph& graph, const std::size_t remaining)
+{
+    const auto count{graph.keys.size()};
+
+    std::vector<bool> confirmed(count, false);
+
+    for (std::size_t key{0}; key < count; ++key)
+    {
+        const auto& [cut, state, worker, matched, fails]{graph.keys[key]};
+
+        confirmed[key] = cut && matched == remaining && verifier.accepts(state);
+    }
+
+    const auto completes{reaching(graph, confirmed)};
+
+    const auto leads_to_completion{[&completes](const std::pair<Marked, std::size_t>& step) {
+        const auto& [symbol, to]{step};
+
+        return completes[to];
+    }};
+
+    std::vector<bool> failing(count, false);
+
+    for (std::size_t key{0}; key < count; ++key)
+    {
+        const auto& [cut, state, worker, matched, fails]{graph.keys[key]};
+
+        failing[key] = cut && fails && std::ranges::any_of(graph.successors[key], leads_to_completion);
+    }
+
+    auto relevant{reaching(graph, failing)};
+
+    for (std::size_t key{0}; key < count; ++key)
+    {
+        relevant[key] = relevant[key] && graph.keys[key].cut;
+    }
+
+    return {.confirmed = std::move(confirmed), .failing = std::move(failing), .relevant = std::move(relevant)};
+}
+
+/**
+ * @brief Returns which contexts fail, layer by layer over the relevant keys of the right-context product: layer zero
+ *        the relevant keys the cut places and each next layer the relevant keys a step leads to from the one before,
+ *        a context failing when its layer holds a key where a failing context ends, up to the first layer that repeats
+ *        an earlier one.
+ * @param graph The product.
+ * @param reach What the product's keys reach.
+ * @return Per context up to the first repeated layer, whether it fails, and the context whose layer repeats.
+ */
+[[nodiscard]] Context_failures context_failures_of(const Context_graph& graph, const Context_reach& reach)
+{
+    const auto count{graph.keys.size()};
+
+    std::vector<bool> layer(count, false);
+
+    for (std::size_t key{0}; key < count; ++key)
+    {
+        layer[key] = reach.relevant[key] && graph.keys[key].matched == 0;
+    }
+
+    Context_failures failures{};
+
+    std::map<std::vector<bool>, std::size_t> numbers{};
+
+    for (;;)
+    {
+        const auto [entry, fresh]{numbers.try_emplace(layer, failures.fails.size())};
+
+        if (!fresh)
+        {
+            failures.repeated = entry->second;
+
+            return failures;
+        }
+
+        std::vector<bool> next(count, false);
+
+        auto fails{false};
+
+        for (std::size_t key{0}; key < count; ++key)
+        {
+            if (!layer[key])
+            {
+                continue;
+            }
+
+            fails = fails || reach.failing[key];
+
+            for (const auto to : graph.successors[key] | std::views::values)
+            {
+                next[to] = next[to] || reach.relevant[to];
+            }
+        }
+
+        failures.fails.push_back(fails);
+
+        layer = std::move(next);
+    }
+}
+
+/**
+ * @brief Returns whether a context fails, past the layers explored by the cycle with which they repeat.
+ * @param failures Which contexts fail, up to the first repeated layer.
+ * @param context The context.
+ * @return True when the context fails at some occurrence.
+ */
+[[nodiscard]] bool fails_at(const Context_failures& failures, const std::size_t context)
+{
+    const auto& [fails, repeated]{failures};
+
+    if (context < fails.size())
+    {
+        return fails[context];
+    }
+
+    const auto cycle{fails.size() - repeated};
+
+    return fails[repeated + (context - repeated) % cycle];
+}
+
+/**
+ * @brief Returns the least period with which the failing contexts repeat from some point on, the least divisor of the
+ *        layers' cycle with which they repeat over one cycle from the repeated layer.
+ * @param failures Which contexts fail, up to the first repeated layer.
+ * @return The period, at least one.
+ */
+[[nodiscard]] std::size_t least_period(const Context_failures& failures)
+{
+    const auto& [fails, repeated]{failures};
+
+    const auto cycle{fails.size() - repeated};
+
+    const auto repeats_with{[&failures, &fails, repeated, cycle](const std::size_t period) {
+        const auto same_after{[&failures, period](const std::size_t context) {
+            return fails_at(failures, context) == fails_at(failures, context + period);
+        }};
+
+        const auto contexts{std::views::iota(repeated, fails.size())};
+
+        return cycle % period == 0 && std::ranges::all_of(contexts, same_after);
+    }};
+
+    const auto periods{std::views::iota(std::size_t{1}, cycle + 1)};
+
+    return *std::ranges::find_if(periods, repeats_with);
+}
+
+/**
+ * @brief Returns the threshold, the least context from which the failing contexts repeat with the period.
+ * @param failures Which contexts fail, up to the first repeated layer.
+ * @param period The least period.
+ * @return The threshold, at most the repeated layer's context.
+ */
+[[nodiscard]] std::size_t threshold_of(const Context_failures& failures, const std::size_t period)
+{
+    auto threshold{failures.repeated};
+
+    while (threshold > 0 && fails_at(failures, threshold - 1) == fails_at(failures, threshold - 1 + period))
+    {
+        --threshold;
+    }
+
+    return threshold;
+}
+
+/**
+ * @brief Returns the shortest accepted marked string with an occurrence whose cut fails at a context, found breadth
+ *        first over the right-context product's keys paired with the steps taken since the cut.
+ *
+ * At the context only a key where it fails steps on, and the search ends at a confirming key past it.
+ * @param graph The product.
+ * @param reach What the product's keys reach.
+ * @param context The context, one that fails.
+ * @return The symbols and the keys of the path.
+ */
+[[nodiscard]] Path<Truncation_key> shortest_truncation(
+        const Context_graph& graph, const Context_reach& reach, const std::size_t context)
+{
+    const auto expand{[&graph, &reach, context]<typename Emit>(const Truncation_key& from, const Emit& emit) {
+        const auto& [key, read]{from};
+
+        const auto after_cut{graph.keys[key].cut};
+
+        if (after_cut && read == context && !reach.failing[key])
+        {
+            return;
+        }
+
+        const auto read_after{after_cut ? std::min(read + 1, context + 1) : 0};
+
+        for (const auto& [symbol, to] : graph.successors[key])
+        {
+            emit(symbol, Truncation_key{.key = to, .read = read_after});
+        }
+    }};
+
+    const auto completed{
+            [&reach, context](const Truncation_key& at) { return at.read == context + 1 && reach.confirmed[at.key]; }};
+
+    return *shortest_path(Truncation_key{.key = 0, .read = 0}, completed, expand);
+}
+
+/**
+ * @brief Returns the number of symbols a path over the right-context product reads before the cut.
+ * @param graph The product.
+ * @param keys The path's keys, the start first, at least one key after the cut.
+ * @return The cut.
+ */
+[[nodiscard]] std::size_t cut_on(const Context_graph& graph, const std::vector<Truncation_key>& keys)
+{
+    const auto after_cut{[&graph](const std::size_t key) { return graph.keys[key].cut; }};
+
+    const auto found{std::ranges::find_if(keys, after_cut, &Truncation_key::key)};
+
+    const auto index{std::ranges::distance(keys.cbegin(), found)};
+
+    return static_cast<std::size_t>(index);
+}
+
+/**
+ * @brief Returns the shortest truncation at every context below the threshold that fails, ascending by context.
+ * @param graph The product.
+ * @param reach What the product's keys reach.
+ * @param failures Which contexts fail, up to the first repeated layer.
+ * @param threshold The threshold.
+ * @param origin The origin.
+ * @return The truncations.
+ */
+[[nodiscard]] std::vector<Truncation> truncations_below(
+        const Context_graph& graph, const Context_reach& reach, const Context_failures& failures,
+        const std::size_t threshold, const std::size_t origin)
+{
+    std::vector<Truncation> truncations{};
+
+    for (std::size_t context{0}; context < threshold; ++context)
+    {
+        if (!fails_at(failures, context))
+        {
+            continue;
+        }
+
+        const auto [symbols, keys]{shortest_truncation(graph, reach, context)};
+
+        const auto cut{cut_on(graph, keys)};
+
+        truncations.push_back(Truncation{
+                .segmentation = marked_string_of(symbols),
+                .occurrence = cut - origin,
+                .cut = cut,
+                .context = context});
+    }
+
+    return truncations;
+}
+
+/**
+ * @brief Returns the truncation lasso of a failing residue: the shortest truncation at a context of the residue that
+ *        reads more keys past the cut than are relevant, cut at its path's first repeated key into a stem up to the
+ *        repeat, the cycle it closes read until its length is a multiple of the period, and the rest as the suffix.
+ * @param graph The product.
+ * @param reach What the product's keys reach.
+ * @param context The context, one that fails, at least the number of relevant keys.
+ * @param period The least period.
+ * @param origin The origin.
+ * @return The lasso.
+ */
+[[nodiscard]] Truncation_lasso truncation_lasso_of(
+        const Context_graph& graph, const Context_reach& reach, const std::size_t context, const std::size_t period,
+        const std::size_t origin)
+{
+    const auto [symbols, keys]{shortest_truncation(graph, reach, context)};
+
+    const auto cut{cut_on(graph, keys)};
+
+    // The path past the cut visits more keys than are relevant, all of them relevant, so one repeats.
+    std::unordered_map<std::size_t, std::size_t> visited{};
+
+    auto repeat{cut};
+
+    for (;; ++repeat)
+    {
+        const auto [entry, fresh]{visited.try_emplace(keys[repeat].key, repeat)};
+
+        if (!fresh)
+        {
+            break;
+        }
+    }
+
+    const auto begin{symbols.cbegin()};
+
+    const auto cycle_start{static_cast<std::ptrdiff_t>(visited.at(keys[repeat].key))};
+
+    const auto cycle_end{static_cast<std::ptrdiff_t>(repeat)};
+
+    const std::vector<Marked> cycle{begin + cycle_start, begin + cycle_end};
+
+    std::vector<Marked> loop{};
+
+    for (auto copies{period / std::gcd(cycle.size(), period)}; copies > 0; --copies)
+    {
+        loop.insert(loop.end(), cycle.cbegin(), cycle.cend());
+    }
+
+    const std::vector<Marked> stem{begin, begin + cycle_end};
+
+    const std::vector<Marked> suffix{begin + cycle_end, symbols.cend()};
+
+    Lasso lasso{.stem = marked_string_of(stem), .loop = marked_string_of(loop), .suffix = marked_string_of(suffix)};
+
+    return {.lasso = std::move(lasso), .occurrence = cut - origin, .cut = cut, .context = context};
+}
+
+/**
+ * @brief Returns a truncation lasso for every residue modulo the period at which the contexts from the threshold fail,
+ *        at the least context of the residue that is at least the threshold and the number of relevant keys.
+ * @param graph The product.
+ * @param reach What the product's keys reach.
+ * @param failures Which contexts fail, up to the first repeated layer.
+ * @param threshold The threshold.
+ * @param period The least period.
+ * @param origin The origin.
+ * @return The lassos, ascending by context, none when the failing contexts are finite.
+ */
+[[nodiscard]] std::vector<Truncation_lasso> residue_lassos(
+        const Context_graph& graph, const Context_reach& reach, const Context_failures& failures,
+        const std::size_t threshold, const std::size_t period, const std::size_t origin)
+{
+    const auto relevant_keys{static_cast<std::size_t>(std::ranges::count(reach.relevant, true))};
+
+    const auto first{std::max(threshold, relevant_keys)};
+
+    std::vector<Truncation_lasso> lassos{};
+
+    for (auto context{first}; context < first + period; ++context)
+    {
+        if (!fails_at(failures, context))
+        {
+            continue;
+        }
+
+        lassos.push_back(truncation_lasso_of(graph, reach, context, period, origin));
+    }
+
+    return lassos;
+}
+
+/**
+ * @brief Returns the least context that fails at no occurrence, looked for below an end the failing contexts repeat
+ *        within, the threshold plus the period.
+ * @param failures Which contexts fail, up to the first repeated layer.
+ * @param end The threshold plus the period.
+ * @return The least context, or std::nullopt when every context fails.
+ */
+[[nodiscard]] std::optional<std::size_t> least_sufficing(const Context_failures& failures, const std::size_t end)
+{
+    const auto suffices{[&failures](const std::size_t context) { return !fails_at(failures, context); }};
+
+    const auto contexts{std::views::iota(std::size_t{0}, end)};
+
+    const auto found{std::ranges::find_if(contexts, suffices)};
+
+    if (found == contexts.end())
+    {
+        return std::nullopt;
+    }
+
+    return *found;
+}
+
+/**
  * @brief Returns the classes of a verifier's states under Moore refinement: the states are told apart by acceptance and
  *        then by the class each marked symbol leads to or its refusal, until no class splits.
  * @param verifier The verifier, trim.
@@ -1958,6 +2631,50 @@ std::optional<Chunk_dependence> chunk_dependence(
             .segmentation = std::move(segmentation),
             .anchors = std::move(anchors),
             .failing = std::move(failing)};
+}
+
+Right_context right_context(const Verifier& verifier, const std::string_view window, const std::size_t origin)
+{
+    if (window.empty() || origin >= window.size())
+    {
+        throw std::invalid_argument{"right_context: the window is empty or its origin lies outside it"};
+    }
+
+    if (const auto refutation{miscovering(verifier, window, origin)})
+    {
+        throw std::invalid_argument{std::format(
+                "right_context: the verifier does not certify ({}, {}), the text {} covers an occurrence from "
+                "elsewhere, so no cut is certified",
+                window, origin, refutation->segmentation.bytes)};
+    }
+
+    const auto graph{context_graph_of(verifier, window, origin)};
+
+    const auto reach{context_reach_of(verifier, graph, window.size() - origin)};
+
+    const auto failures{context_failures_of(graph, reach)};
+
+    const auto period{least_period(failures)};
+
+    const auto threshold{threshold_of(failures, period)};
+
+    auto failing{truncations_below(graph, reach, failures, threshold, origin)};
+
+    auto residues{residue_lassos(graph, reach, failures, threshold, period, origin)};
+
+    const auto least{least_sufficing(failures, threshold + period)};
+
+    if (residues.empty())
+    {
+        return Finite_context{.context = threshold, .least = *least, .failing = std::move(failing)};
+    }
+
+    return Unbounded_context{
+            .threshold = threshold,
+            .period = period,
+            .least = least,
+            .failing = std::move(failing),
+            .residues = std::move(residues)};
 }
 
 Fanout fanout(const Verifier& verifier, const std::string_view window, const std::size_t origin)

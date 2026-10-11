@@ -555,7 +555,7 @@ marking per input the policy segments. `verifier::armed_run(dfa)` builds the ver
 token set's DFA, `verifier::merge_tower(merges)` of `munch/verifier/merge_tower.hpp` the verifier of canonical byte-pair
 encoding over a merge table, `verifier::trie_chain(initial, continuation)` of `munch/verifier/trie_chain.hpp` the
 verifier of WordPiece segmentation over a two-mode vocabulary, and the constructor builds one from any transition table,
-trimming it to the states reachable from the start that can reach acceptance. The eight decisions of
+trimming it to the states reachable from the start that can reach acceptance. The nine decisions of
 `munch/verifier/verifier_decisions.hpp` then run on the product of the verifier with a search or on its minimal
 automaton, each with a witness replayable through `Verifier::step()` but `fanout()`, which returns states.
 `miscovering(verifier, window, origin)` decides the window certificate `(window, origin)`, that the token containing an
@@ -603,6 +603,32 @@ the current chunk, fed with a lag of the longest window's length so that every o
 completed when its byte reaches the copy. On an armed run every inventory is chunk-independent, since every certified
 cut is independent.
 
+`right_context(verifier, window, origin)` asks how far past a certified cut a worker must read, and refuses a pair the
+verifier does not certify. A worker scanning the chunk that ends at the cut reads a right context of bytes past it, its
+input ending there or at the string's end, and keeps the tokens before the cut; it reproduces the whole string's
+segmentation of the chunk when its input is accepted under the whole string's marks below the cut, with a boundary at
+the cut when it reads past it, and none after its last byte, and a right context fails when at some occurrence of the
+window whose cut lies after position zero it does not. The decision returns the right context, the least from which
+every larger one suffices, with every context that fails and the least that suffices alone, and an inventory's right
+context is the largest of its pairs'. This is the prefix side of `dependence()` with the input read further,
+`dependence()` asking it with no byte past the cut, together with the suffix side. A context that suffices need not make
+a larger one suffice: under maximal munch over aa and b the cut of (ba, 1) is independent, so a worker reading up to it
+alone segments the bytes below it, while one whose input ends inside a token aa fails, as it does one byte past the cut
+and at every context from three, and the right context is unbounded. Over the threshold splice of a and b below length
+three and ab, a and b from it, the pair (a, 0) needs one byte: aba is segmented ab|a, while its prefix ab, shorter than
+three bytes, is segmented a|b alone. A finite right context comes as a `Finite_context`, the right context and the least
+context that suffices alone with a truncation at every context that fails, the shortest marked string with its
+occurrence, its cut and the context. An unbounded one comes as an `Unbounded_context`, since the failing contexts repeat
+with a period from a threshold on: the threshold, the least period, the least context that suffices alone when one does,
+a truncation at every context below the threshold that fails, and for every residue modulo the period that fails from
+the threshold a truncation lasso, a stem, a loop and a suffix whose cut fails at a context that grows by a multiple of
+the period with every repetition of the loop. It searches a product that carries the verifier's state and the window's
+progress before the cut and, after it, the continuing state, the window's remaining bytes and the set of states a
+worker's copy can be in under any marks, and the failing contexts are the lengths of its paths from the cut to a
+failure, bounded exactly when no cycle lies on one and read off layer by layer until a layer repeats. The set makes the
+product exponential in the verifier's states in the worst case, and the period can be superpolynomial in the product's
+size.
+
 `fanout(verifier, window, origin)` asks what a worker beginning at the cut of any pair, certified or not, must know: the
 configurations the cut at the origin can carry over every occurrence of the window in every accepted marked string whose
 cut lies after position zero, a configuration being the state of the verifier's minimal automaton reached on the
@@ -642,6 +668,7 @@ verifier::dependence(verifier, "ab", 0);                     // std::nullopt: ev
 const std::vector<verifier::Certified_pair> pairs{{.window = "ab", .origin = 0}, {.window = "a", .origin = 0}};
 
 verifier::chunk_dependence(verifier, pairs);    // std::nullopt: cut at every anchor, every chunk scans alone
+verifier::right_context(verifier, "ab", 0);     // finite, 0: a worker reads past the cut as far as it likes
 verifier::fanout(verifier, "ab", 0);            // rank 2: a lone a before the cut leaves ab armed, a b does not
 verifier::smallest_fanout(verifier);            // degree 1, the window aa at origin 1
 ```
