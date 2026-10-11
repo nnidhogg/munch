@@ -185,9 +185,15 @@ Ripple ripple_of(const std::vector<Merge>& merges, const std::string_view prepen
 {
     const auto shift{static_cast<std::ptrdiff_t>(prepended.size())};
 
-    const auto base{covering_spans(reference_tokens(merges, input), 0)};
+    const auto base_tokens{reference_tokens(merges, input)};
 
-    const auto whole{covering_spans(reference_tokens(merges, std::string{prepended} + std::string{input}), -shift)};
+    const auto base{covering_spans(base_tokens, 0)};
+
+    const auto whole_text{std::string{prepended} + std::string{input}};
+
+    const auto whole_tokens{reference_tokens(merges, whole_text)};
+
+    const auto whole{covering_spans(whole_tokens, -shift)};
 
     Ripple ripple{};
 
@@ -241,8 +247,8 @@ void expect_attained(const std::vector<Merge>& merges, const Finite_ripple& fini
 
 /**
  * @brief Checks that a merge is an effective self-pair whose ripple the reference encoder makes unbounded: its parts
- *        equal, the merges before it encoding the two copies as two tokens, and prepending the part to an even power
- *        of it changing the covering token of every byte.
+ *        equal, the merges before it encoding the two copies as two tokens, and prepending the part to an even power of
+ *        it changing the covering token of every byte.
  * @param merges The merge table in rank order.
  * @param rank The merge's rank.
  * @param context The fixture line or test checked.
@@ -257,7 +263,9 @@ void expect_effective_self_pair(const std::vector<Merge>& merges, const std::siz
 
     const std::vector<Merge> before{merges.begin(), merges.begin() + static_cast<std::ptrdiff_t>(rank)};
 
-    EXPECT_EQ(reference_tokens(before, left + right), (std::vector{left, right})) << context;
+    const auto encoding{reference_tokens(before, left + right)};
+
+    EXPECT_EQ(encoding, (std::vector{left, right})) << context;
 
     std::string input{};
 
@@ -265,7 +273,9 @@ void expect_effective_self_pair(const std::vector<Merge>& merges, const std::siz
     {
         input += left + left;
 
-        EXPECT_EQ(ripple_of(merges, left, input).origin, input.size()) << context << " on " << input;
+        const auto [origin, mirrored]{ripple_of(merges, left, input)};
+
+        EXPECT_EQ(origin, input.size()) << context << " on " << input;
     }
 }
 
@@ -339,7 +349,9 @@ void expect_refusal(Fixture_check& check, std::istringstream& fields, const std:
 
     ++check.counts.refusals;
 
-    EXPECT_TRUE(refusal.contains(std::format(" at rank {} {} ", rank, reason))) << context << ": " << refusal;
+    const auto expected{std::format(" at rank {} {} ", rank, reason)};
+
+    EXPECT_TRUE(refusal.contains(expected)) << context << ": " << refusal;
 }
 
 /**
@@ -413,18 +425,27 @@ void expect_infinite(Fixture_check& check, std::istringstream& fields, const std
     ++check.counts.infinite;
 
     ASSERT_TRUE(std::holds_alternative<Effective_self_pair>(found)) << context;
-    EXPECT_EQ(std::get<Effective_self_pair>(found).rank, rank) << context;
+    const auto [found_rank]{std::get<Effective_self_pair>(found)};
+
+    EXPECT_EQ(found_rank, rank) << context;
 
     expect_effective_self_pair(check.merges, rank, context);
 
+    const auto ending{text_of(exit) + text_of(tail)};
+
     std::string pumped{text_of(stem)};
-    std::size_t previous{ripple_of(check.merges, byte, pumped + text_of(exit) + text_of(tail)).origin};
+
+    const auto [first_origin, first_mirrored]{ripple_of(check.merges, byte, pumped + ending)};
+
+    std::size_t previous{first_origin};
 
     for (std::size_t repetitions{1}; repetitions <= 3; ++repetitions)
     {
         pumped += text_of(loop);
 
-        const auto ripple{ripple_of(check.merges, byte, pumped + text_of(exit) + text_of(tail)).origin};
+        const auto input{pumped + ending};
+
+        const auto [ripple, mirrored]{ripple_of(check.merges, byte, input)};
 
         EXPECT_EQ(ripple, previous + text_of(loop).size()) << context << " pumped " << repetitions << " times";
 
@@ -481,7 +502,9 @@ TEST(Ripple_radius_test, One_merge_over_a_is_infinite_at_its_own_rank)
     const auto found{ripple_radius(merges)};
 
     ASSERT_TRUE(std::holds_alternative<Effective_self_pair>(found));
-    EXPECT_EQ(std::get<Effective_self_pair>(found).rank, 0U);
+    const auto [rank]{std::get<Effective_self_pair>(found)};
+
+    EXPECT_EQ(rank, 0U);
 
     expect_effective_self_pair(merges, 0, "one merge over a");
 }
@@ -493,7 +516,9 @@ TEST(Ripple_radius_test, A_proper_ordered_table_moves_every_covering_token_of_b_
     const auto found{ripple_radius(merges)};
 
     ASSERT_TRUE(std::holds_alternative<Effective_self_pair>(found));
-    EXPECT_EQ(std::get<Effective_self_pair>(found).rank, 1U);
+    const auto [rank]{std::get<Effective_self_pair>(found)};
+
+    EXPECT_EQ(rank, 1U);
 
     std::string input{"b"};
 
@@ -501,7 +526,9 @@ TEST(Ripple_radius_test, A_proper_ordered_table_moves_every_covering_token_of_b_
     {
         input += "ab";
 
-        EXPECT_EQ(ripple_of(merges, "a", input).origin, input.size()) << input;
+        const auto [origin, mirrored]{ripple_of(merges, "a", input)};
+
+        EXPECT_EQ(origin, input.size()) << input;
     }
 }
 
@@ -540,8 +567,11 @@ TEST(Ripple_radius_test, The_mirrored_constant_lies_below_the_radius_when_the_la
 
     EXPECT_EQ(finite.radius, 2U);
     EXPECT_EQ(finite.mirrored, 1U);
-    EXPECT_EQ(ripple_of(merges, "a", "bc").origin, 2U);
-    EXPECT_EQ(ripple_of(merges, "a", "bc").mirrored, 1U);
+
+    const auto [origin, mirror]{ripple_of(merges, "a", "bc")};
+
+    EXPECT_EQ(origin, 2U);
+    EXPECT_EQ(mirror, 1U);
 
     expect_attained(merges, finite, "bc, a+bc");
 }
@@ -577,7 +607,9 @@ TEST(Ripple_radius_test, The_Fibonacci_tables_reach_the_largest_finite_radius_of
 
         while (fibonacci.size() < count + 3)
         {
-            fibonacci.push_back(fibonacci.back() + fibonacci[fibonacci.size() - 2]);
+            const auto next{fibonacci.back() + fibonacci[fibonacci.size() - 2]};
+
+            fibonacci.push_back(next);
         }
 
         const auto found{ripple_radius(merges)};
@@ -625,14 +657,14 @@ TEST(Ripple_radius_test, Refuses_a_table_outside_the_ordering_condition_at_the_m
 
 TEST(Ripple_radius_test, A_refusal_quotes_a_spelling_holding_a_NUL_and_still_names_the_rank)
 {
-    const std::string nul(1, '\0');
+    const std::string nul{'\0'};
 
     const auto refusal{
-            refusal_of({{.left = nul, .right = "a"}, {.left = "\"", .right = "\\"}, {.left = nul, .right = "a"}})};
+            refusal_of({{.left = nul, .right = "a"}, {.left = R"(")", .right = R"(\)"}, {.left = nul, .right = "a"}})};
 
     EXPECT_TRUE(refusal.contains(R"(("\x00", "a") at rank 2 recreates the token "\x00a")")) << refusal;
 
-    const auto missing{refusal_of({{.left = "\xFF", .right = "\"\\"}})};
+    const auto missing{refusal_of({{.left = "\xFF", .right = R"("\)"}})};
 
     EXPECT_TRUE(missing.contains(R"(("\xFF", "\"\\") at rank 0 names "\"\\")")) << missing;
 }

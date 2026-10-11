@@ -43,11 +43,10 @@ struct Members_action
  *        runtime's own methods or run when the lexer is built.
  *
  * ANTLR writes the members into the lexer class it generates for the target language, and the reading reads the
- * declarations of three targets, Java, C++ and C#, which all write a method as a name, a parameter list and a body,
- * and the C++ target's out-of-line definitions, which write one under the lexer class's name.
- * Another target writes one its own way, JavaScript assigning a function to an instance member among them, which is no
- * declaration this reading would find at all, so a grammar naming one is refused by name rather than read as though its
- * members declared nothing.
+ * declarations of three targets, Java, C++ and C#, which all write a method as a name, a parameter list and a body, and
+ * the C++ target's out-of-line definitions, which write one under the lexer class's name. Another target writes one its
+ * own way, JavaScript assigning a function to an instance member among them, which is no declaration this reading would
+ * find at all, so a grammar naming one is refused by name rather than read as though its members declared nothing.
  * @param spec The scanner read, whose options name the target language and the superclass and whose line is the
  *        declaration's.
  * @param lexer_class The class ANTLR generates the lexer as, which an out-of-line definition qualifies a member by.
@@ -56,8 +55,8 @@ struct Members_action
  * @param actions_code The code of every named action the lexer's header holds, `header` among them, whose macros the
  *        members may use.
  * @throws Spec_error If the grammar sets superClass, its target is none of Java, C++ and C# while it has members, or
- *         the members define or declare a method, an initializer block, an initializer that is more than a value or
- *         an accessor with a body.
+ *         the members define or declare a method, an initializer block, an initializer that is more than a value or an
+ *         accessor with a body.
  */
 void refuse_lexer_class(
         const Lexer_spec& spec, std::string_view lexer_class, const std::vector<Members_action>& members,

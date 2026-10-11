@@ -176,19 +176,14 @@ private:
     [[nodiscard]] Miscovering miscovering_of(Node node, Token_t covering) const;
 
     /**
-     * @brief The token automaton searched.
+     * @brief The certified origin.
      */
-    const Token_automaton& automaton_;
+    std::size_t origin_{};
 
     /**
      * @brief The window, nonempty.
      */
     std::string_view window_{};
-
-    /**
-     * @brief The certified origin.
-     */
-    std::size_t origin_{};
 
     /**
      * @brief How the search first reached each node.
@@ -199,10 +194,15 @@ private:
      * @brief The nodes reached and not yet expanded.
      */
     std::vector<Node> frontier_{};
+
+    /**
+     * @brief The token automaton searched.
+     */
+    const Token_automaton& automaton_;
 };
 
 Search::Search(const Token_automaton& automaton, const std::string_view window, const std::size_t origin)
-    : automaton_{automaton}, window_{window}, origin_{origin}
+    : origin_{origin}, window_{window}, automaton_{automaton}
 {}
 
 std::optional<Miscovering> Search::run() &&
@@ -291,15 +291,18 @@ std::optional<Miscovering> Search::chained_miscovering()
 
         for (std::size_t length{1}; length < probed; ++length)
         {
-            const auto inner{automaton_.token_of(rest.substr(0, length))};
+            const auto piece{rest.substr(0, length)};
+
+            const auto inner{automaton_.token_of(piece)};
 
             if (!inner || !is_readable(*inner))
             {
                 continue;
             }
 
-            reach({.state = *automaton_.tokens()[*inner].target, .spelled = spelled + length},
-                  {.previous = node, .token = *inner});
+            const auto entered{*automaton_.tokens()[*inner].target};
+
+            reach({.state = entered, .spelled = spelled + length}, {.previous = node, .token = *inner});
         }
     }
 
@@ -374,7 +377,9 @@ Miscovering Search::miscovering_of(const Node node, const Token_t covering) cons
 
     boundaries.back() = false;
 
-    const auto occurrence{automaton_.tokens()[run.front()].spelling.size() - seed.spelled};
+    const auto& first_spelling{automaton_.tokens()[run.front()].spelling};
+
+    const auto occurrence{first_spelling.size() - seed.spelled};
 
     return {.segmentation = std::move(segmentation), .occurrence = occurrence};
 }
@@ -460,7 +465,9 @@ Token_automaton token_automaton(const std::span<const Merge> merges)
 
     for (Token_t byte{0}; byte < byte_count; ++byte)
     {
-        tokens.push_back({.spelling = std::string{static_cast<char>(byte)}, .target = Token_automaton::base_state});
+        const std::string spelling{static_cast<char>(byte)};
+
+        tokens.push_back({.spelling = spelling, .target = Token_automaton::base_state});
         index.emplace(tokens.back().spelling, byte);
     }
 

@@ -134,12 +134,14 @@ Grammar_reader::Item_context Grammar_reader::grammar_declaration(Lexer_spec& spe
     spec.line = line_of(declared);
 
     // A combined grammar's lexer is generated as a class of the grammar's name and `Lexer`.
+    const auto lexer_class{lexer_only ? std::string{name} : std::format("{}Lexer", name)};
+
     return {.lexer_only = lexer_only,
             .case_insensitive = false,
             .mode = {},
             .members = {},
             .actions_code = {},
-            .lexer_class = lexer_only ? std::string{name} : std::format("{}Lexer", name)};
+            .lexer_class = lexer_class};
 }
 
 void Grammar_reader::item(Lexer_spec& spec, Item_context& context)

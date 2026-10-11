@@ -184,12 +184,19 @@ std::vector<std::string> reference_tokens(const Ranks_t& ranks, const std::strin
         {
             const auto found{ranks.find({sequence[index], sequence[index + 1]})};
 
-            if (found == ranks.cend() || (lowest && found->second >= *lowest))
+            if (found == ranks.cend())
             {
                 continue;
             }
 
-            lowest = found->second;
+            const auto& [parts, rank]{*found};
+
+            if (lowest && rank >= *lowest)
+            {
+                continue;
+            }
+
+            lowest = rank;
             at = index;
         }
 
@@ -199,7 +206,9 @@ std::vector<std::string> reference_tokens(const Ranks_t& ranks, const std::strin
         }
 
         sequence[at] += sequence[at + 1];
-        sequence.erase(sequence.begin() + static_cast<std::ptrdiff_t>(at) + 1);
+        const auto next{sequence.begin() + static_cast<std::ptrdiff_t>(at) + 1};
+
+        sequence.erase(next);
     }
 }
 
@@ -278,7 +287,9 @@ bool has_miscovered_occurrence(const Marked_string& marked, const std::string_vi
 {
     for (auto at{marked.bytes.find(window)}; at != std::string::npos; at = marked.bytes.find(window, at + 1))
     {
-        if (covering_boundary(marked, at + window.size() - 1) != at + origin)
+        const auto last{at + window.size() - 1};
+
+        if (covering_boundary(marked, last) != at + origin)
         {
             return true;
         }
@@ -332,7 +343,7 @@ std::string refusal_of(
 /**
  * @brief Starts a universe line's universe: reads its name, whether its pairs are also decided on the merge tower, and
  *        its merges, each a left and a right part in hex joined by a comma, and builds the token automaton and the
- * tower when asked.
+ *        tower when asked.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  */
@@ -355,10 +366,15 @@ void start_universe(Fixture_check& check, std::istringstream& fields)
 
         ASSERT_NE(comma, std::string::npos) << check.context;
 
-        const auto left{bytes_of(std::string_view{merge}.substr(0, comma))};
-        const auto right{bytes_of(std::string_view{merge}.substr(comma + 1))};
+        const std::string_view field{merge};
 
-        longest = std::max(longest, left.size() + right.size());
+        const auto left{bytes_of(field.substr(0, comma))};
+
+        const auto right{bytes_of(field.substr(comma + 1))};
+
+        const auto length{left.size() + right.size()};
+
+        longest = std::max(longest, length);
 
         merges.push_back({.left = left, .right = right});
     }
@@ -433,11 +449,18 @@ void expect_certification(Fixture_check& check, std::istringstream& fields, cons
 
     const auto& [bytes, boundaries]{segmentation};
 
+    const auto bound{2 * universe.longest + window.size() - 2};
+
     EXPECT_EQ(boundaries, reference_marking(universe.ranks, bytes)) << context;
-    EXPECT_LE(bytes.size(), 2 * universe.longest + window.size() - 2) << context;
+    EXPECT_LE(bytes.size(), bound) << context;
     ASSERT_LE(occurrence + window.size(), bytes.size()) << context;
-    EXPECT_EQ(std::string_view{bytes}.substr(occurrence, window.size()), window) << context;
-    EXPECT_NE(covering_boundary(segmentation, occurrence + window.size() - 1), occurrence + origin) << context;
+
+    const auto spelled{std::string_view{bytes}.substr(occurrence, window.size())};
+
+    const auto last{occurrence + window.size() - 1};
+
+    EXPECT_EQ(spelled, window) << context;
+    EXPECT_NE(covering_boundary(segmentation, last), occurrence + origin) << context;
 
     if (universe.tower)
     {
@@ -470,7 +493,9 @@ void expect_fixture_line(Fixture_check& check, const std::string& line)
     }
     else if (kind == "certify")
     {
-        expect_certification(check, fields, std::format("{} | {}", check.context, line));
+        const auto context{std::format("{} | {}", check.context, line)};
+
+        expect_certification(check, fields, context);
     }
     else
     {
@@ -494,8 +519,10 @@ TEST(Token_automaton_test, Every_ab_lies_in_a_token_beginning_at_its_a_and_the_t
 
     const auto& [segmentation, occurrence]{*found};
 
-    EXPECT_EQ(segmentation.bytes, "ab");
-    EXPECT_EQ(segmentation.boundaries, Marking_t({false, false}));
+    const auto& [bytes, boundaries]{segmentation};
+
+    EXPECT_EQ(bytes, "ab");
+    EXPECT_EQ(boundaries, Marking_t({false, false}));
     EXPECT_EQ(occurrence, 0U);
 }
 
@@ -514,8 +541,10 @@ TEST(Token_automaton_test, The_empty_table_cuts_every_pair_of_bytes_between_them
 
     const auto& [segmentation, occurrence]{*found};
 
-    EXPECT_EQ(segmentation.bytes, "ab");
-    EXPECT_EQ(segmentation.boundaries, Marking_t({true, false}));
+    const auto& [bytes, boundaries]{segmentation};
+
+    EXPECT_EQ(bytes, "ab");
+    EXPECT_EQ(boundaries, Marking_t({true, false}));
     EXPECT_EQ(occurrence, 0U);
 }
 
@@ -556,14 +585,14 @@ TEST(Token_automaton_test, Refuses_a_table_whose_later_merge_recreates_a_token_a
 
 TEST(Token_automaton_test, A_refusal_quotes_a_spelling_holding_a_NUL_and_still_names_the_rank)
 {
-    const std::string nul(1, '\0');
+    const std::string nul{'\0'};
 
     const auto refusal{
-            refusal_of({{.left = nul, .right = "a"}, {.left = "\"", .right = "\\"}, {.left = nul, .right = "a"}})};
+            refusal_of({{.left = nul, .right = "a"}, {.left = R"(")", .right = R"(\)"}, {.left = nul, .right = "a"}})};
 
     EXPECT_TRUE(refusal.contains(R"(("\x00", "a") at rank 2 recreates the token "\x00a")")) << refusal;
 
-    const auto missing{refusal_of({{.left = "\xFF", .right = "\"\\"}})};
+    const auto missing{refusal_of({{.left = "\xFF", .right = R"("\)"}})};
 
     EXPECT_TRUE(missing.contains(R"(("\xFF", "\"\\") at rank 0 names "\"\\")")) << missing;
 }

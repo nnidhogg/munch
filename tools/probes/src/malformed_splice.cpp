@@ -201,8 +201,8 @@ std::string generated_c(const std::size_t bytes)
 
 /**
  * @brief Returns the campaign's line for a spliced stream: the files and bytes, the serial consumption as a share of
- * the bytes, the plan, and the spliced token count with its ratio to the serial one, which a serial scan committing no
- * token leaves undefined.
+ *        the bytes, the plan, and the spliced token count with its ratio to the serial one, which a serial scan
+ *        committing no token leaves undefined.
  * @param files The files concatenated.
  * @param bytes The stream's bytes, at least one.
  * @param spliced The stream's splice.
@@ -286,7 +286,9 @@ int self_test(const munch::core::Lexer& lexer)
     assertions.expect(spliced_tokens == 62'309, "the pinned spliced token count moved");
 
     // A stream whose first byte no token takes commits no serial token, so the campaign's ratio is undefined.
-    const auto unconsumable{summary_line(1, 2, splice(lexer, "\x01\n"))};
+    const auto unconsumed_splice{splice(lexer, "\x01\n")};
+
+    const auto unconsumable{summary_line(1, 2, unconsumed_splice)};
 
     assertions.expect(unconsumable.ends_with("ratio undefined\n"), "a serial scan of no token gave a ratio");
 
@@ -326,7 +328,11 @@ bool campaign(const munch::core::Lexer& lexer, const std::filesystem::path& root
         stream += '\n';
     }
 
-    std::cout << summary_line(files.size(), stream.size(), splice(lexer, stream));
+    const auto spliced{splice(lexer, stream)};
+
+    const auto line{summary_line(files.size(), stream.size(), spliced)};
+
+    std::cout << line;
 
     return true;
 }
@@ -356,7 +362,9 @@ int main(const int argc, char** argv)
 
         try
         {
-            return campaign(lexer, argv[1], extension) ? EXIT_SUCCESS : EXIT_FAILURE;
+            const auto spliced{campaign(lexer, argv[1], extension)};
+
+            return spliced ? EXIT_SUCCESS : EXIT_FAILURE;
         }
         catch (const std::filesystem::filesystem_error& error)
         {

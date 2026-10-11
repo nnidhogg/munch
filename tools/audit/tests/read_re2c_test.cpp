@@ -1418,12 +1418,12 @@ TEST(Read_re2c_test, A_configuration_is_a_name_re2c_knows_an_equals_sign_and_a_v
     // A bare string runs to the first blank, newline, NUL or `;`, a carriage return being part of it, and a quoted one
     // to its closing quote on the same line, a `;` inside included.
     EXPECT_EQ(configured("re2c:define:YYCTYPE = unsigned char;"), "line 2: missing ending ';' in configuration");
-    EXPECT_TRUE(configured("re2c:define:YYCTYPE = \"unsigned char\";").empty());
+    EXPECT_TRUE(configured(R"(re2c:define:YYCTYPE = "unsigned char";)").empty());
     EXPECT_TRUE(configured("re2c:define:YYCTYPE = char\r;").empty());
     EXPECT_TRUE(configured("re2c:define:YYCTYPE = ;").empty());
     EXPECT_EQ(configured("re2c:define:YYCTYPE = \"unsigned\nchar\";"), "line 2: newline in character string");
     EXPECT_EQ(configured("re2c:define:YYCTYPE = \"unsigned\\\nchar\";"), "line 2: newline in character string");
-    EXPECT_EQ(configured("re2c:define:YYCTYPE = \"ab\"c;"), "line 2: missing ending ';' in configuration");
+    EXPECT_EQ(configured(R"(re2c:define:YYCTYPE = "ab"c;)"), "line 2: missing ending ';' in configuration");
 
     // A number is `0` or a decimal opening with a digit other than zero, and what follows it is the `;`'s to answer
     // for; a choice is one of its words, and the start label a number where one follows the `=` and a string where none
@@ -1443,7 +1443,7 @@ TEST(Read_re2c_test, A_configuration_is_a_name_re2c_knows_an_equals_sign_and_a_v
                       "\"a\" { return 1; }\n*/\n")};
 
     ASSERT_EQ(read.size(), 1U);
-    EXPECT_EQ(read.front().options, (std::vector<std::string>{"define:YYCTYPE=\"unsigned char\"", "yyfill:enable=0"}));
+    EXPECT_EQ(read.front().options, (std::vector<std::string>{R"(define:YYCTYPE="unsigned char")", "yyfill:enable=0"}));
 }
 
 TEST(Read_re2c_test, An_unnamed_use_block_takes_the_most_recent_rules_block_with_its_configurations)
@@ -2067,11 +2067,11 @@ TEST(Read_re2c_test, A_type_the_reading_cannot_tell_from_a_reference_binds_one_i
 
 TEST(Read_re2c_test, An_array_or_an_owner_a_scan_pointer_is_spelled_through_is_reached_only_as_the_spelling_goes_on)
 {
-    // The array a pointer is configured in reaches it however it is named: re2c 3.1 with `re2c:define:YYCURSOR =
-    // "cursors[1]";` and `++*(cursors + 1);`, `++1[cursors];`, `for (auto& c : cursors) ++c;` or `auto& [x, y] =
-    // cursors; ++y;` each moves the cursor past the b of "ab", and so does `++*cursors;` under `cursors[0]`. A run a
-    // spelling opens with is reached only through the word that continues it there, and any other slot is another
-    // pointer.
+    // The array a pointer is configured in reaches it however it is named: re2c 3.1 with
+    // `re2c:define:YYCURSOR = "cursors[1]";` and `++*(cursors + 1);`, `++1[cursors];`, `for (auto& c : cursors) ++c;`
+    // or `auto& [x, y] = cursors; ++y;` each moves the cursor past the b of "ab", and so does `++*cursors;` under
+    // `cursors[0]`. A run a spelling opens with is reached only through the word that continues it there, and any other
+    // slot is another pointer.
     const auto acted{[](const std::string_view configured, const std::string_view action) {
         return std::format(
                 "/*!re2c\nre2c:define:YYCTYPE = char;\nre2c:define:YYCURSOR = \"{}\";\n\"a\" {{ {} }}\n\"b\" {{ return "
@@ -2164,8 +2164,8 @@ TEST(Read_re2c_test, An_action_returning_nowhere_leaves_by_a_jump)
     EXPECT_TRUE(refusal_of(acting("", "++count;")).contains("ends without returning or leaving"));
     EXPECT_TRUE(refusal_of(acting("", "++count; break;")).contains("leaves by `break` the loop"));
 
-    // A block ending the action ends it as its own last statement does, re2c 3.1 rescanning after `++count; {
-    // continue; }` as after `++count; continue;`.
+    // A block ending the action ends it as its own last statement does, re2c 3.1 rescanning after `++count; { continue;
+    // }` as after `++count; continue;`.
     EXPECT_EQ(refusal_of(acting("", "++count; { continue; }")), "");
     EXPECT_EQ(refusal_of(acting("", "++count; { { continue; } }")), "");
     EXPECT_TRUE(refusal_of(acting("", "++count; { }")).contains("ends without returning or leaving"));
@@ -2455,7 +2455,7 @@ TEST(Read_re2c_test, A_setup_rule_s_code_heads_each_action_of_its_conditions_as_
 
     // A setup rule heads no rule of another condition and no shortcut rule, and code leaving by a jump before an action
     // leaving by one leaves the match discarded on every path, which the action alone says.
-    const auto source{
+    constexpr std::string_view source{
             "/*!re2c\n<!A> { if (n) continue; }\n<A> \"a\" { continue; }\n<A> \"c\" :=> B\n<B> \"b\" { return 8; }\n"
             "*/\n"};
 

@@ -1921,7 +1921,10 @@ void expect_smallest_fanout_replays(const Verifier& verifier, const Smallest_fan
     EXPECT_EQ(loop.bytes, word) << context;
     EXPECT_EQ(window.size(), 2 * origin) << context;
     EXPECT_EQ(window.substr(origin), word) << context;
-    EXPECT_EQ(fanout(verifier, window, origin).rank, degree) << context;
+
+    const auto [rank, configurations]{fanout(verifier, window, origin)};
+
+    EXPECT_EQ(rank, degree) << context;
 
     for (const auto& pumped :
          {std::vector{stem, suffix}, std::vector{stem, loop, suffix}, std::vector{stem, loop, loop, suffix}})
@@ -2639,8 +2642,13 @@ TEST(Verifier_test, Fanout_refuses_a_malformed_window_and_smallest_fanout_a_fini
     // The domain is the empty input and aa segmented a|a, so the cut after the first a carries one configuration.
     const Verifier a_then_a{0, {{{0, a_closing}, 1}, {{1, a}, 2}}, {0, 2}};
 
-    EXPECT_EQ(fanout(empty_domain, "a", 0).rank, 0U);
-    EXPECT_EQ(fanout(a_then_a, "a", 0).rank, 1U);
+    const auto [empty_rank, empty_configurations]{fanout(empty_domain, "a", 0)};
+
+    EXPECT_EQ(empty_rank, 0U);
+
+    const auto [a_rank, a_configurations]{fanout(a_then_a, "a", 0)};
+
+    EXPECT_EQ(a_rank, 1U);
     EXPECT_THROW(std::ignore = smallest_fanout(empty_domain), std::invalid_argument);
     EXPECT_THROW(std::ignore = smallest_fanout(a_then_a), std::invalid_argument);
 }
@@ -2654,7 +2662,10 @@ TEST(Verifier_test, Maximal_munch_over_aa_and_a_certifies_no_window_and_cuts_bef
         for (std::size_t origin{0}; origin < window.size(); ++origin)
         {
             EXPECT_TRUE(miscovering(verifier, window, origin)) << window << " " << origin;
-            EXPECT_EQ(fanout(verifier, window, origin).rank, 2U) << window << " " << origin;
+
+            const auto [rank, configurations]{fanout(verifier, window, origin)};
+
+            EXPECT_EQ(rank, 2U) << window << " " << origin;
         }
     }
 
@@ -2676,8 +2687,13 @@ TEST(Verifier_test, At_origin_zero_only_entered_states_count_so_a_has_fan_out_on
 
     // The domain is a followed by any number of ab: the start reads a as a lone token or as one that ab follows, while
     // an a after position zero always follows a boundary.
-    EXPECT_EQ(fanout(verifier, "a", 0).rank, 1U);
-    EXPECT_EQ(fanout(verifier, "ab", 0).rank, 1U);
+    const auto [a_rank, a_configurations]{fanout(verifier, "a", 0)};
+
+    EXPECT_EQ(a_rank, 1U);
+
+    const auto [ab_rank, ab_configurations]{fanout(verifier, "ab", 0)};
+
+    EXPECT_EQ(ab_rank, 1U);
 
     // The configurations at origin zero are those at origin one of the window with any byte before it.
     for (const auto& window : strings_up_to("ab", 3) | std::views::drop(1))
@@ -2686,13 +2702,17 @@ TEST(Verifier_test, At_origin_zero_only_entered_states_count_so_a_has_fan_out_on
 
         for (const auto byte : std::string_view{"ab"})
         {
-            const auto [rank, configurations]{fanout(verifier, byte + window, 1)};
+            const auto preceded{byte + window};
+
+            const auto [rank, configurations]{fanout(verifier, preceded, 1)};
 
             after_a_byte.insert(configurations.cbegin(), configurations.cend());
         }
 
         const auto [rank, configurations]{fanout(verifier, window, 0)};
 
-        EXPECT_EQ(std::set(configurations.cbegin(), configurations.cend()), after_a_byte) << window;
+        const std::set<Verifier::State_t> at_origin_zero{configurations.cbegin(), configurations.cend()};
+
+        EXPECT_EQ(at_origin_zero, after_a_byte) << window;
     }
 }

@@ -65,6 +65,16 @@ public:
 
 private:
     /**
+     * @brief Refuses a method defined out of line at a name qualified by the lexer class's, `A::nextToken() { ... }`,
+     *        which stands in place of the runtime's own as one defined in the class does, where the statement's head
+     *        before the name declares the return type alone, an attribute-specifier sequence opening it aside, so a
+     *        qualified call, `if (A::check(1)) {`, defines none.
+     * @param index The token's index.
+     * @throws Spec_error If a parameter list and a body follow the name.
+     */
+    void refuse_definition(std::size_t index) const;
+
+    /**
      * @brief Returns the text of a token, empty past the last one.
      * @param index The token's index.
      * @return The text.
@@ -174,16 +184,6 @@ private:
      * @return True when it is.
      */
     [[nodiscard]] bool is_plain_after_equals(std::size_t piece) const;
-
-    /**
-     * @brief Refuses a method defined out of line at a name qualified by the lexer class's, `A::nextToken() { ... }`,
-     *        which stands in place of the runtime's own as one defined in the class does, where the statement's head
-     *        before the name declares the return type alone, an attribute-specifier sequence opening it aside, so a
-     *        qualified call, `if (A::check(1)) {`, defines none.
-     * @param index The token's index.
-     * @throws Spec_error If a parameter list and a body follow the name.
-     */
-    void refuse_definition(std::size_t index) const;
 
     /**
      * @brief Refuses a method the members define or declare at a name at the class's own level.
@@ -301,6 +301,39 @@ void Members_reader::refuse() const
 
         refuse_method(index);
     }
+}
+
+void Members_reader::refuse_definition(const std::size_t index) const
+{
+    // The tokenizer reads `::` as two colons.
+    const auto qualified{
+            index >= 3 && text(index - 1) == ":" && text(index - 2) == ":" && text(index - 3) == *qualifier_};
+
+    if (!qualified || text(index + 1) != "(")
+    {
+        return;
+    }
+
+    auto head{statement_start(index)};
+
+    // An attribute-specifier sequence opening the head, `[[deprecated("x")]]`, is no part of the return type.
+    while (text(head) == "[" && text(head + 1) == "[")
+    {
+        head = group_close(tokens_, head, "[", "]") + 1;
+    }
+
+    const auto opens_expression{[this](const std::size_t piece) { return text(piece) == "(" || text(piece) == "="; }};
+
+    const auto from{std::min(head, index)};
+
+    const auto before{std::views::iota(from, index)};
+
+    if (std::ranges::any_of(before, opens_expression))
+    {
+        return;
+    }
+
+    refuse_body(index, index + 1);
 }
 
 std::string_view Members_reader::text(const std::size_t index) const
@@ -544,35 +577,6 @@ bool Members_reader::is_plain_after_equals(const std::size_t piece) const
     const auto signed_number{sign_stands && opens_number(piece)};
 
     return grouping || signed_number || is_value(word);
-}
-
-void Members_reader::refuse_definition(const std::size_t index) const
-{
-    // The tokenizer reads `::` as two colons.
-    const auto qualified{
-            index >= 3 && text(index - 1) == ":" && text(index - 2) == ":" && text(index - 3) == *qualifier_};
-
-    if (!qualified || text(index + 1) != "(")
-    {
-        return;
-    }
-
-    auto head{statement_start(index)};
-
-    // An attribute-specifier sequence opening the head, `[[deprecated("x")]]`, is no part of the return type.
-    while (text(head) == "[" && text(head + 1) == "[")
-    {
-        head = group_close(tokens_, head, "[", "]") + 1;
-    }
-
-    const auto opens_expression{[this](const std::size_t piece) { return text(piece) == "(" || text(piece) == "="; }};
-
-    if (std::ranges::any_of(std::views::iota(std::min(head, index), index), opens_expression))
-    {
-        return;
-    }
-
-    refuse_body(index, index + 1);
 }
 
 void Members_reader::refuse_method(const std::size_t index) const

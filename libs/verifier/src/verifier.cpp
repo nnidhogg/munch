@@ -256,14 +256,14 @@ private:
     std::vector<Configuration> sources_{};
 
     /**
-     * @brief The transitions found so far.
-     */
-    Verifier::Transitions_t transitions_{};
-
-    /**
      * @brief The bytes the DFA's transitions carry, which every state is read over.
      */
     std::vector<unsigned char> alphabet_{};
+
+    /**
+     * @brief The transitions found so far.
+     */
+    Verifier::Transitions_t transitions_{};
 
     /**
      * @brief The accepting states found so far.

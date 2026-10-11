@@ -561,8 +561,9 @@ std::string verdict_text(const bool proved, const std::string& witness)
  */
 void witness_rendering(Assertions& assertions)
 {
-    assertions.expect(
-            printable("a\x01\n\t\x7f\xff") == R"(a\x01\n\t\x7f\xff)", "a witness renders a byte it cannot name");
+    const auto rendered{printable("a\x01\n\t\x7f\xff")};
+
+    assertions.expect(rendered == R"(a\x01\n\t\x7f\xff)", "a witness renders a byte it cannot name");
 }
 
 /**

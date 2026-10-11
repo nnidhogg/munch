@@ -182,8 +182,8 @@ constexpr std::array<std::string_view, 58> string_configurations{
         "label:yyNext"};
 
 /**
- * @brief The names of the start label's configuration, whose value re2c 3.1 reads as a number where one follows the
- *        `=` and as a string where none does.
+ * @brief The names of the start label's configuration, whose value re2c 3.1 reads as a number where one follows the `=`
+ *        and as a string where none does.
  */
 constexpr std::array<std::string_view, 2> label_configurations{"label:start", "startlabel"};
 

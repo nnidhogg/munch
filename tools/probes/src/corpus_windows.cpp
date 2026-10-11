@@ -411,7 +411,7 @@ Deviation_summary summarize(const std::vector<std::size_t>& deviations)
 
 /**
  * @brief Returns a plan's balance as a CSV row gives it, to five places, or `undefined` for an empty input, which has
- * no ideal chunk to measure the largest against.
+ *        no ideal chunk to measure the largest against.
  * @param bytes The input's size.
  * @param balance The plan's balance.
  * @return The column's text.
@@ -926,9 +926,11 @@ void stream_row_refuses_mixed(Assertions& assertions)
  */
 void empty_file_row(Assertions& assertions, const munch::core::Lexer& c_lexer)
 {
-    const auto empty_plan{plan(c_lexer, "", self_test_chunks)};
+    const auto [achieved, balance, deviations, bounds]{plan(c_lexer, "", self_test_chunks)};
 
-    assertions.expect(balance_text(0, empty_plan.balance) == "undefined", "an empty file's row gave a balance");
+    const auto balance_column{balance_text(0, balance)};
+
+    assertions.expect(balance_column == "undefined", "an empty file's row gave a balance");
 }
 
 /**

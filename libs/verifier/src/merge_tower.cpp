@@ -171,7 +171,9 @@ struct Table
 
     for (Token_t byte{0}; byte < byte_count; ++byte)
     {
-        tokens.emplace(std::string{static_cast<char>(byte)}, byte);
+        const std::string spelling{static_cast<char>(byte)};
+
+        tokens.emplace(spelling, byte);
     }
 
     Table table{};
@@ -340,7 +342,9 @@ Exploration::Exploration(const std::span<const Merge> merges) : table_{table_of(
 
 Verifier Exploration::run() &&
 {
-    const auto start{intern({.tail = Tail::empty, .stages = std::vector<Stage>(table_.lefts.size())})};
+    const auto stage_count{table_.lefts.size()};
+
+    const auto start{intern({.tail = Tail::empty, .stages = std::vector<Stage>(stage_count)})};
 
     for (auto state{start}; state < sources_.size(); ++state)
     {

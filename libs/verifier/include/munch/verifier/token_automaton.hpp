@@ -154,8 +154,8 @@ private:
 
 /**
  * @brief Builds the token automaton of a merge table by Algorithm 2 of Berglund, Martens and van der Merwe: from the
- *        base state, each merge in rank order copies the target of its left part to a fresh state that may not read
- *        its right part, redirects the left part to the copy, and gives the product the right part's target.
+ *        base state, each merge in rank order copies the target of its left part to a fresh state that may not read its
+ *        right part, redirects the left part to the copy, and gives the product the right part's target.
  *
  * A merge whose right part cannot be read in its left part's target makes a product no transition reads, and no state.
  * The automaton has one base state plus one per merge whose product can be read, each merge costing one adjacency test,

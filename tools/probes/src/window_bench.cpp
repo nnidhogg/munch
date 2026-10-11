@@ -1359,8 +1359,8 @@ bool byte_versus_window(const Bench_options& options, Observations& observations
  *        the no-byte measurement and the byte-versus-window measurement, in turn.
  * @param argc The argument count.
  * @param argv The size in MiB, the passes, the CSV path or `-`, and the occurrence files, all optional.
- * @return EXIT_SUCCESS when every premise and stream equality holds, every occurrence file was read and every CSV
- *         write succeeded, EXIT_FAILURE otherwise.
+ * @return EXIT_SUCCESS when every premise and stream equality holds, every occurrence file was read and every CSV write
+ *         succeeded, EXIT_FAILURE otherwise.
  */
 int main(const int argc, char** argv)
 {

@@ -291,7 +291,9 @@ struct Best
 
     for (Token_t byte{0}; byte < byte_count; ++byte)
     {
-        tokens.emplace(std::string{static_cast<char>(byte)}, byte);
+        const std::string spelling{static_cast<char>(byte)};
+
+        tokens.emplace(spelling, byte);
     }
 
     Table table{};
@@ -346,7 +348,9 @@ struct Best
 
     for (Token_t byte{0}; byte < byte_count; ++byte)
     {
-        spellings.push_back(std::string{static_cast<char>(byte)});
+        const std::string spelling{static_cast<char>(byte)};
+
+        spellings.push_back(spelling);
     }
 
     for (const auto& [left, right] : merges)
@@ -442,7 +446,9 @@ struct Best
             continue;
         }
 
-        const auto parts{bytes_of(spellings[left] + spellings[right])};
+        const auto spelling{spellings[left] + spellings[right]};
+
+        const auto parts{bytes_of(spelling)};
 
         const auto encoding{encoded(table, stages.useful, parts)};
 

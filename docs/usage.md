@@ -721,12 +721,13 @@ the unresolved tail, with the depth inside the tail at which the unarmed run beg
 stored, since every boundary inside the tail is forced by longest match, the scanner's own reading of the tail, which is
 done once per trie node at construction as the node's chain. A step is refused when an armed run reaches a token or the
 unarmed run drops, and a boundary requires the unarmed run to be at a token. With N the nodes of both tries, P the nodes
-other than the root with a child and c the longest chain, at most the longest token, the states are at most 1 + (N - 1)
-+ P * c. A token may be in both sets and a set may be empty; an empty token is refused with `std::invalid_argument`
-naming its set and position. The four decisions then run on the chain as on any verifier, `miscovering()` deciding a
-window certificate under the vocabulary, `boundary_gap()` returning the length of the longest token the scanner emits,
-`realizable()` the mask of every state, and `divergence()` over two chains deciding whether two vocabularies segment
-every byte string alike, with the shortest string they segment apart or only one of them scans whole:
+other than the root with a child and c the longest chain, at most the longest token, the states are at most
+1 + (N - 1) + P * c. A token may be in both sets and a set may be empty; an empty token is refused with
+`std::invalid_argument` naming its set and position. The four decisions then run on the chain as on any verifier,
+`miscovering()` deciding a window certificate under the vocabulary, `boundary_gap()` returning the length of the longest
+token the scanner emits, `realizable()` the mask of every state, and `divergence()` over two chains deciding whether two
+vocabularies segment every byte string alike, with the shortest string they segment apart or only one of them scans
+whole:
 
 ```cpp
 #include "munch/verifier/trie_chain.hpp"

@@ -72,7 +72,9 @@ munch::core::Mode_action mode_action(const std::string_view action, const std::v
 
         const auto found{std::ranges::find(modes, mode)};
 
-        return static_cast<std::size_t>(std::ranges::distance(modes.begin(), found));
+        const auto index{std::ranges::distance(modes.begin(), found)};
+
+        return static_cast<std::size_t>(index);
     }};
 
     if (action.contains("popMode"))

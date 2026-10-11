@@ -104,7 +104,9 @@ munch::core::Mode_action mode_action(const std::string_view action, const std::v
 
         const auto found{std::ranges::find(modes, mode)};
 
-        return static_cast<std::size_t>(std::ranges::distance(modes.begin(), found));
+        const auto index{std::ranges::distance(modes.begin(), found)};
+
+        return static_cast<std::size_t>(index);
     }};
 
     if (action.contains("popMode"))
@@ -279,7 +281,7 @@ def msg := s!"sum {f {a := 1}} and {"in"}" ++ "tab\t" ++ toString 'c' ++ toStrin
             {"IDENTIFIER", "def"},
             {"IDENTIFIER", "msg"},
             {"SYMBOL", ":="},
-            {"INTERPOLATED_OPEN", "s!\""},
+            {"INTERPOLATED_OPEN", R"(s!")"},
             {"INTERPOLATED_TEXT", "sum "},
             {"INTERPOLATED_BRACE", "{"},
             {"IDENTIFIER", "f"},
@@ -291,15 +293,15 @@ def msg := s!"sum {f {a := 1}} and {"in"}" ++ "tab\t" ++ toString 'c' ++ toStrin
             {"RIGHT_BRACE", "}"},
             {"INTERPOLATED_TEXT", " and "},
             {"INTERPOLATED_BRACE", "{"},
-            {"STRING_OPEN", "\""},
+            {"STRING_OPEN", R"(")"},
             {"STRING_TEXT", "in"},
-            {"STRING_CLOSE", "\""},
+            {"STRING_CLOSE", R"(")"},
             {"RIGHT_BRACE", "}"},
-            {"INTERPOLATED_CLOSE", "\""},
+            {"INTERPOLATED_CLOSE", R"(")"},
             {"SYMBOL", "++"},
-            {"STRING_OPEN", "\""},
+            {"STRING_OPEN", R"(")"},
             {"STRING_TEXT", R"(tab\t)"},
-            {"STRING_CLOSE", "\""},
+            {"STRING_CLOSE", R"(")"},
             {"SYMBOL", "++"},
             {"IDENTIFIER", "toString"},
             {"CHARACTER", "'c'"},

@@ -425,8 +425,8 @@ constexpr std::array<std::string_view, 15> type_words{"int",    "char",   "long"
  *        `static_cast<R>(cursors[0])` under `using R = const char*&;`, or a C cast, `(const char*&)cursors[0]` or
  *        `(R)cursors[0]`, the second `&` of an rvalue reference ending one as well, a C cast to a type not ending in
  *        `&` taking the pointer only where it stands alone, since `(R)cursors[0][-1]` casts a byte. A parenthesised
- * group before an operand is a cast's in any statement the compiler takes unless a value stands before it, `if (n)
- * cursors[0]` holding a condition.
+ *        group before an operand is a cast's in any statement the compiler takes unless a value stands before it,
+ *        `if (n) cursors[0]` holding a condition.
  * @param words The action's words.
  * @param first The index of the name's first word.
  * @param last The index of its last word.
@@ -462,8 +462,9 @@ constexpr std::array<std::string_view, 15> type_words{"int",    "char",   "long"
         }
     }
 
-    return open > 0 && std::ranges::contains(named_casts, text_at(words, open - 1)) &&
-           may_be_reference(words, open + 1, first - 2);
+    const auto named_cast{open > 0 && std::ranges::contains(named_casts, text_at(words, open - 1))};
+
+    return named_cast && may_be_reference(words, open + 1, first - 2);
 }
 
 /**
@@ -1013,8 +1014,8 @@ private:
     void evaluate_indices(std::vector<Word>& out, bool configured);
 
     /**
-     * @brief Returns the array whose run ends at a word followed by an index's `[`, when one of the arrays does, or,
-     *        in a configured spelling, where every bracket indexes an array, whatever run it is.
+     * @brief Returns the array whose run ends at a word followed by an index's `[`, when one of the arrays does, or, in
+     *        a configured spelling, where every bracket indexes an array, whatever run it is.
      * @param out The spelling.
      * @param at The index of the run's last word.
      * @param configured Whether it is a configured spelling.
@@ -1081,8 +1082,8 @@ private:
     const Choice_t& choice_;
 
     /**
-     * @brief The runs the configured spellings open with, each with the word continuing it, the arrays they index
-     *        among them, as the run before a bracket.
+     * @brief The runs the configured spellings open with, each with the word continuing it, the arrays they index among
+     *        them, as the run before a bracket.
      */
     std::vector<Step> steps_;
 
@@ -1546,6 +1547,46 @@ bool Pointer_reader::is_joined(const std::vector<Word>& plainly, const std::size
 }
 
 /**
+ * @brief Refuses a scan pointer whose configured spelling indexes an array by an expression the reading does not
+ *        evaluate, `cursors[(0U - 1) % 2]` or `cursors[i]`, under some way of defining the macros it names, since which
+ *        slot the scanner steps is then out of sight; a spelling naming more macros than the reading follows together
+ *        is moved_cursor()'s to refuse.
+ * @param pointers The names the block's configurations give the scan pointers.
+ * @param macros The macros the file defines.
+ * @throws Spec_error If one does, at the line of the configuration naming it.
+ */
+void refuse_configured_index(const Pointers_t& pointers, const Macros_t& macros)
+{
+    const std::vector<C_token> no_action{};
+
+    for (const auto& [canonical, name, line] : pointers)
+    {
+        const std::vector<std::vector<C_token>> spelled{c_tokens(name)};
+
+        const auto values{macro_values(macros, spelled, no_action)};
+
+        const auto choices{macro_choices(values)};
+
+        for (const auto& choice : choices.value_or(std::vector<Choice_t>{}))
+        {
+            Pointer_reader reader{{}, no_action, spelled, macros, choice};
+
+            std::ignore = reader.refusal();
+
+            if (reader.unread())
+            {
+                const auto message{std::format(
+                        "the configuration names {} `{}`, which indexes {} by an expression the reading does not "
+                        "evaluate, so which slot the scanner steps is out of sight",
+                        canonical, name, *reader.unread())};
+
+                throw Spec_error{message, line};
+            }
+        }
+    }
+}
+
+/**
  * @brief Returns why an action leaves a scan pointer elsewhere than where the match ended, when it does: re2c's
  *        `YYCURSOR`, `YYMARKER` or `YYCTXMARKER` under whatever names the block's configurations give them, moved by an
  *        assignment or a step, `YYCURSOR = p`, `++YYCURSOR`, `in->cur += 2`; or a pointer whose configured spelling the
@@ -1601,44 +1642,6 @@ bool Pointer_reader::is_joined(const std::vector<Word>& plainly, const std::size
     }
 
     return std::nullopt;
-}
-
-/**
- * @brief Refuses a scan pointer whose configured spelling indexes an array by an expression the reading does not
- *        evaluate, `cursors[(0U - 1) % 2]` or `cursors[i]`, under some way of defining the macros it names, since which
- *        slot the scanner steps is then out of sight; a spelling naming more macros than the reading follows together
- *        is moved_cursor()'s to refuse.
- * @param pointers The names the block's configurations give the scan pointers.
- * @param macros The macros the file defines.
- * @throws Spec_error If one does, at the line of the configuration naming it.
- */
-void refuse_configured_index(const Pointers_t& pointers, const Macros_t& macros)
-{
-    const std::vector<C_token> no_action{};
-
-    for (const auto& [canonical, name, line] : pointers)
-    {
-        const std::vector<std::vector<C_token>> spelled{c_tokens(name)};
-
-        const auto choices{macro_choices(macro_values(macros, spelled, no_action))};
-
-        for (const auto& choice : choices.value_or(std::vector<Choice_t>{}))
-        {
-            Pointer_reader reader{{}, no_action, spelled, macros, choice};
-
-            std::ignore = reader.refusal();
-
-            if (reader.unread())
-            {
-                throw Spec_error{
-                        std::format(
-                                "the configuration names {} `{}`, which indexes {} by an expression the reading does "
-                                "not evaluate, so which slot the scanner steps is out of sight",
-                                canonical, name, *reader.unread()),
-                        line};
-            }
-        }
-    }
 }
 
 /**
@@ -1738,17 +1741,19 @@ void refuse_action(
         refuse_use(*use);
     }
 
-    for (const auto& head : shortcut ? std::span<const Action>{} : std::span{heads})
+    const auto setup_rules{shortcut ? std::span<const Action>{} : std::span{heads}};
+
+    for (const auto& head : setup_rules)
     {
         const auto headed{std::format("{}\n{}", head.code, judged)};
 
         if (const auto use{returns_undecided(headed, returning, false, restarts, true)})
         {
-            throw Spec_error{
-                    std::format(
-                            "the action, after the code of the setup rule at line {} that re2c writes before it, {}",
-                            head.line, *use),
-                    line};
+            const auto message{std::format(
+                    "the action, after the code of the setup rule at line {} that re2c writes before it, {}", head.line,
+                    *use)};
+
+            throw Spec_error{message, line};
         }
     }
 

@@ -439,11 +439,15 @@ std::vector<Link> Exploration::chain_of(const Mode mode, const std::string_view 
 
     const auto& trie{trie_of(Mode::continuation)};
 
-    for (auto step{longest(first, tail)}; step != 0; step = longest(trie, tail.substr(chain.back().boundary)))
+    for (auto step{longest(first, tail)}; step != 0;)
     {
         const auto boundary{chain.back().boundary + step};
 
-        chain.push_back({.boundary = boundary, .mode = Mode::continuation, .node = walk(trie, tail.substr(boundary))});
+        const auto rest{tail.substr(boundary)};
+
+        chain.push_back({.boundary = boundary, .mode = Mode::continuation, .node = walk(trie, rest)});
+
+        step = longest(trie, rest);
     }
 
     return chain;
@@ -480,7 +484,9 @@ Verifier::State_t Exploration::intern(const State& state)
         return number;
     }
 
-    if (node_of(runs_of(state).unarmed).accepting)
+    const auto [armed, unarmed]{runs_of(state)};
+
+    if (node_of(unarmed).accepting)
     {
         accept_states_.insert(number);
     }
@@ -503,11 +509,11 @@ Runs Exploration::runs_of(const State& state) const
 
     Runs runs{.armed = {}, .unarmed = {.mode = reached->mode, .node = *reached->node}};
 
-    for (const auto& link : std::ranges::subrange(chain.cbegin(), reached))
+    for (const auto& [boundary, mode, node] : std::ranges::subrange(chain.cbegin(), reached))
     {
-        if (link.node && !trie_of(link.mode)[*link.node].children.empty())
+        if (node && !trie_of(mode)[*node].children.empty())
         {
-            runs.armed.push_back({.mode = link.mode, .node = *link.node});
+            runs.armed.push_back({.mode = mode, .node = *node});
         }
     }
 
@@ -523,7 +529,9 @@ void Exploration::expand(const Verifier::State_t from)
 {
     const auto runs{runs_of(sources_[from])};
 
-    for (const auto byte : std::views::keys(node_of(runs.unarmed).children))
+    const auto& children{node_of(runs.unarmed).children};
+
+    for (const auto byte : std::views::keys(children))
     {
         const auto unmarked{read(runs, byte)};
 
@@ -592,7 +600,11 @@ State Exploration::state_of(const Runs& runs) const
 
     const auto& oldest{runs.armed.front()};
 
-    const auto began{node_of(oldest).spelling.size() - node_of(runs.unarmed).spelling.size()};
+    const auto& oldest_spelling{node_of(oldest).spelling};
+
+    const auto& unarmed_spelling{node_of(runs.unarmed).spelling};
+
+    const auto began{oldest_spelling.size() - unarmed_spelling.size()};
 
     return {.tail = oldest, .began = began};
 }

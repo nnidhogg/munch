@@ -455,8 +455,8 @@ private:
      * @brief Reads a string value at the cursor as re2c 3.1 reads one: quoted, through the quote closing it, or bare,
      *        through the bytes Configuration_value::string admits, or nothing.
      * @return The value as written, its quotes included.
-     * @throws Spec_error If a quoted value meets a newline before its closing quote, escaped or not, in re2c's
-     *         words, or the text ends before it.
+     * @throws Spec_error If a quoted value meets a newline before its closing quote, escaped or not, in re2c's words,
+     *         or the text ends before it.
      */
     [[nodiscard]] std::string string_value();
 

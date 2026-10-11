@@ -540,7 +540,11 @@ void Callback_reader::check_lexer_use(const std::string_view body, const std::st
 
             const auto block{cursor.slice(open, cursor.offset())};
 
-            scoped_at(block).check_lexer_use(cursor.group_text(open), parameter);
+            const auto inside{cursor.group_text(open)};
+
+            const auto inner{scoped_at(block)};
+
+            inner.check_lexer_use(inside, parameter);
 
             dots = 0;
 

@@ -276,17 +276,6 @@ void refuse_doubled_defaults(const Lexer_spec& spec, const std::vector<std::size
 }
 
 /**
- * @brief Returns whether a byte may stand in a bare configuration value as re2c 3.1 reads one: any but a space, a
- *        tab, a newline, a NUL and `;`, a carriage return included.
- * @param byte The byte.
- * @return True when it may.
- */
-[[nodiscard]] constexpr bool is_bare_value_byte(const char byte) noexcept
-{
-    return !is_space_or_tab(byte) && byte != '\n' && byte != '\0' && byte != ';';
-}
-
-/**
  * @brief Returns the length of the number re2c 3.1 reads at the start of a text: `0`, or a decimal opening with a digit
  *        other than zero, a minus before it or none; what follows it is the configuration's to answer for.
  * @param text The text.
@@ -313,6 +302,17 @@ void refuse_doubled_defaults(const Lexer_spec& spec, const std::vector<std::size
     const auto length{past == std::string_view::npos ? digits.size() : past};
 
     return sign + length;
+}
+
+/**
+ * @brief Returns whether a byte may stand in a bare configuration value as re2c 3.1 reads one: any but a space, a tab,
+ *        a newline, a NUL and `;`, a carriage return included.
+ * @param byte The byte.
+ * @return True when it may.
+ */
+[[nodiscard]] constexpr bool is_bare_value_byte(const char byte) noexcept
+{
+    return !is_space_or_tab(byte) && byte != '\n' && byte != '\0' && byte != ';';
 }
 
 /**
@@ -1094,9 +1094,9 @@ int Block_reader::number_value()
 
     int number{};
 
-    const auto read{std::from_chars(written.data(), written.data() + written.size(), number)};
+    const auto [past, error]{std::from_chars(written.data(), written.data() + written.size(), number)};
 
-    if (read.ec == std::errc::result_out_of_range)
+    if (error == std::errc::result_out_of_range)
     {
         fail("configuration value overflow");
     }

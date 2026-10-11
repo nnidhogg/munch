@@ -1227,12 +1227,12 @@ TEST(Read_logos_test, A_body_s_use_and_mod_items_bind_std_throughout_their_block
     // callback names its own variant. A binding in an inner block binds nothing outside it, and `std::println!("x")`
     // after `{ use crate::fake as std; }` is the standard one, the scanner printing x and emitting X.
     const auto refused{[](const std::string_view body) {
-        return callback_refused_at(
-                R"rs(#[token("#", cb)])rs",
-                std::format(
-                        "mod fake {{ macro_rules! println {{ () => {{ return crate::T::Other; }}; }} pub(crate) use "
-                        "println; }}\nfn cb(_lex: &mut Lexer<T>) -> T {{ {} }}\n",
-                        body));
+        const auto file{std::format(
+                "mod fake {{ macro_rules! println {{ () => {{ return crate::T::Other; }}; }} pub(crate) use println; "
+                "}}\nfn cb(_lex: &mut Lexer<T>) -> T {{ {} }}\n",
+                body)};
+
+        return callback_refused_at(R"rs(#[token("#", cb)])rs", file);
     }};
 
     EXPECT_EQ(refused("std::println!(); use crate::fake as std; T::V"), callback_line);
@@ -1245,8 +1245,8 @@ TEST(Read_logos_test, A_body_s_use_and_mod_items_bind_std_throughout_their_block
             refused("mod std { macro_rules! println { () => { return crate::T::Other; }; } pub(crate) use println; } "
                     "std::println!(); T::V"),
             callback_line);
-    EXPECT_EQ(refused("{ use crate::fake as std; } std::println!(\"x\"); T::V"), std::nullopt);
-    EXPECT_EQ(refused("{ mod std {} } std::println!(\"x\"); T::V"), std::nullopt);
+    EXPECT_EQ(refused(R"({ use crate::fake as std; } std::println!("x"); T::V)"), std::nullopt);
+    EXPECT_EQ(refused(R"({ mod std {} } std::println!("x"); T::V)"), std::nullopt);
 
     // A closure in the attribute binds its names nowhere the walk reaches, a skip's as a variant's, so one binding a
     // name is refused whatever it returns.

@@ -117,7 +117,9 @@ struct Own_token
 {
     auto edited{set};
 
-    edited.rules.push_back(byte_rule(byte, own_token(set), discarded));
+    const auto own{own_token(set)};
+
+    edited.rules.push_back(byte_rule(byte, own, discarded));
 
     const auto lexer{compile(edited)};
 
@@ -219,7 +221,9 @@ struct Own_token
 
     std::string text{};
 
-    std::ranges::copy(bytes | std::views::transform(shown_byte) | std::views::join_with(' '), std::back_inserter(text));
+    auto joined{bytes | std::views::transform(shown_byte) | std::views::join_with(' ')};
+
+    std::ranges::copy(joined, std::back_inserter(text));
 
     return text;
 }
@@ -274,9 +278,9 @@ std::string repair_json(const Repairs& repairs)
 
         std::string values{};
 
-        std::ranges::copy(
-                gained | std::views::transform(value) | std::views::join_with(std::string_view{", "}),
-                std::back_inserter(values));
+        auto joined{gained | std::views::transform(value) | std::views::join_with(std::string_view{", "})};
+
+        std::ranges::copy(joined, std::back_inserter(values));
 
         return std::format(R"({{"byte": {}, "gained": [{}]}})", byte, values);
     }};
@@ -284,14 +288,18 @@ std::string repair_json(const Repairs& repairs)
     const auto entries{[&repair_entry](const std::vector<Repair>& repaired) {
         std::string listed{};
 
-        std::ranges::copy(
-                repaired | std::views::transform(repair_entry) | std::views::join_with(std::string_view{", "}),
-                std::back_inserter(listed));
+        auto joined{repaired | std::views::transform(repair_entry) | std::views::join_with(std::string_view{", "})};
+
+        std::ranges::copy(joined, std::back_inserter(listed));
 
         return std::format("[{}]", listed);
     }};
 
-    return std::format(R"({{"visible": {}, "discarded": {}}})", entries(visible), entries(discarded));
+    const auto visible_entries{entries(visible)};
+
+    const auto discarded_entries{entries(discarded)};
+
+    return std::format(R"({{"visible": {}, "discarded": {}}})", visible_entries, discarded_entries);
 }
 
 std::string repair_section(const Repairs& repairs)
