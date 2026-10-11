@@ -40,6 +40,7 @@ add_library(${PROJECT_NAME}
         src/read_flex.cpp
         src/read_logos.cpp
         src/read_re2c.cpp
+        src/repair.cpp
         src/report.cpp
         src/report_render.cpp
         src/rust_cursor.cpp
@@ -94,6 +95,7 @@ if (MUNCH_BUILD_TESTS)
             tests/read_flex_test.cpp
             tests/read_logos_test.cpp
             tests/read_re2c_test.cpp
+            tests/repair_test.cpp
             tests/report_test.cpp
             tests/supply_test.cpp
             tests/twins_test.cpp

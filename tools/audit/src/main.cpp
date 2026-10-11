@@ -27,6 +27,7 @@
 #include "munch/tools/audit/read_flex.hpp"
 #include "munch/tools/audit/read_logos.hpp"
 #include "munch/tools/audit/read_re2c.hpp"
+#include "munch/tools/audit/repair.hpp"
 #include "munch/tools/audit/report.hpp"
 #include "munch/tools/audit/supply.hpp"
 
@@ -93,6 +94,12 @@ struct Condition_outcome
      * @brief The report, when the token set was built.
      */
     std::optional<Report> report{};
+
+    /**
+     * @brief What a token of one byte's own would certify, when the command line asked and the report certifies no
+     *        byte.
+     */
+    std::optional<Repairs> repairs{};
 
     /**
      * @brief The report's certified-anchor supply on the input, when one was given and the report built.
@@ -294,6 +301,14 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
             }
         }
 
+        std::optional<Repairs> repaired{};
+
+        // Asked for wherever no byte certifies, a certified window or none.
+        if (options.repairs && report.exact.empty())
+        {
+            repaired = repairs(set, report);
+        }
+
         std::optional<Supply> measured{};
 
         if (input)
@@ -307,6 +322,7 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
                 .condition = condition,
                 .refused = {},
                 .report = std::move(report),
+                .repairs = std::move(repaired),
                 .supply = std::move(measured),
                 .rules = rules};
     }
@@ -316,6 +332,7 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
                 .condition = condition,
                 .refused = error.what(),
                 .report = std::nullopt,
+                .repairs = std::nullopt,
                 .supply = std::nullopt,
                 .rules = rules};
     }
@@ -331,7 +348,7 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
 void write_text(
         std::ostream& out, const Lexer_spec& spec, const Condition_outcome& outcome, const std::string_view input)
 {
-    const auto& [condition, refused, report, supply, rules]{outcome};
+    const auto& [condition, refused, report, repairs, supply, rules]{outcome};
 
     out << std::format("-- scanner at line {}, condition {}: {} rule{}\n", spec.line, condition, rules, plural(rules));
 
@@ -346,6 +363,11 @@ void write_text(
     }
 
     out << render(*report, rule_namer(spec));
+
+    if (repairs)
+    {
+        out << repair_section(*repairs);
+    }
 
     if (supply)
     {
@@ -366,7 +388,7 @@ void write_text(
 void write_json(
         std::ostream& out, const Lexer_spec& spec, const Condition_outcome& outcome, const std::string_view input)
 {
-    const auto& [condition, refused, report, supply, rules]{outcome};
+    const auto& [condition, refused, report, repairs, supply, rules]{outcome};
 
     out << std::format(R"({}{{"name": {}, "rules": {}, )", report_indent, json_string(condition), rules);
 
@@ -386,6 +408,11 @@ void write_json(
     }
 
     out << R"("refused": null, "report": )" << document;
+
+    if (repairs)
+    {
+        out << R"(, "repairs": )" << repair_json(*repairs);
+    }
 
     if (supply)
     {

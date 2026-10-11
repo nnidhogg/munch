@@ -340,3 +340,92 @@ TEST(Price_test, A_byte_in_hex_takes_hex_digits_alone)
 
     EXPECT_EQ(required_status, 2);
 }
+
+TEST(Repairs_test, Each_control_byte_json_keeps_out_of_strings_certifies_once_given_a_token_of_its_own)
+{
+    const auto path{grammar("json.l")};
+
+    const auto [status, out, err]{run({path, "--repairs"})};
+
+    const auto [plain_status, plain_out, plain_err]{run({path})};
+
+    // The 29 control bytes but the tab, the newline and the carriage return, which no token of RFC 8259 admits.
+    std::string visible{};
+
+    std::string discarded{};
+
+    for (unsigned value{0}; value < 0x20; ++value)
+    {
+        if (value == '\t' || value == '\n' || value == '\r')
+        {
+            continue;
+        }
+
+        const auto visible_label{std::format("visible 0x{:02X}", value)};
+
+        const auto discarded_label{std::format("discarded 0x{:02X}", value)};
+
+        visible += std::format("  {:<26} certifies exactly\n", visible_label);
+
+        discarded += std::format("  {:<26} certifies once discarded tokens are deleted\n", discarded_label);
+    }
+
+    const auto section{std::format(
+            "\nwhat a token of one byte's own would certify, added at the lowest priority\n{}{}", visible, discarded)};
+
+    // The section stands after the report and before the blank line that closes the condition.
+    const auto report_end{plain_out.rfind("\n\n")};
+
+    const auto report{plain_out.substr(0, report_end + 1)};
+
+    const auto expected{std::format("{}{}\n", report, section)};
+
+    EXPECT_EQ(status, 0);
+    EXPECT_EQ(out, expected);
+}
+
+TEST(Repairs_test, A_grammar_whose_comment_admits_every_byte_is_told_no_byte_does)
+{
+    const auto [status, out, err]{run({grammar("c-like-block-comments.l"), "--repairs"})};
+
+    EXPECT_EQ(status, 0);
+    EXPECT_TRUE(
+            out.contains("\nwhat a token of one byte's own would certify, added at the lowest priority\n"
+                         "  no byte                    certifies once given a token of its own, visible or "
+                         "discarded\n"))
+            << out;
+}
+
+TEST(Repairs_test, A_grammar_that_certifies_a_byte_is_left_as_it_is)
+{
+    const auto path{grammar("c-like-split-friendly.l")};
+
+    const auto [text_status, text_out, text_err]{run({path, "--repairs"})};
+
+    const auto [plain_status, plain_out, plain_err]{run({path})};
+
+    EXPECT_EQ(text_out, plain_out);
+
+    const auto [json_status, json_out, json_err]{run({path, "--json", "--repairs"})};
+
+    const auto [document_status, document_out, document_err]{run({path, "--json"})};
+
+    EXPECT_EQ(json_out, document_out);
+}
+
+TEST(Repairs_test, The_json_document_holds_the_repairs_beside_the_report)
+{
+    const auto path{grammar("json.l")};
+
+    const auto [status, out, err]{run({path, "--json", "--repairs"})};
+
+    EXPECT_EQ(status, 0);
+    EXPECT_TRUE(out.contains(R"(, "repairs": {"visible": [{"byte": 0, "gained": []}, {"byte": 1, "gained": []}, )"))
+            << out;
+    EXPECT_TRUE(out.contains(R"({"byte": 31, "gained": []}], "discarded": [{"byte": 0, "gained": []}, )")) << out;
+
+    const auto [comments_status, comments_out, comments_err]{
+            run({grammar("c-like-block-comments.l"), "--json", "--repairs"})};
+
+    EXPECT_TRUE(comments_out.contains(R"(, "repairs": {"visible": [], "discarded": []})")) << comments_out;
+}
