@@ -76,9 +76,15 @@ private:
         std::vector<Members_action> members{};
 
         /**
-         * @brief The code of every named action, whose macros the members may use.
+         * @brief The code of every named action the lexer's header holds, whose macros the members may use.
          */
         std::string actions_code{};
+
+        /**
+         * @brief The class ANTLR generates the lexer as: the grammar's name for a lexer grammar, the name and `Lexer`
+         *        for a combined one.
+         */
+        std::string lexer_class{};
     };
 
     /**
@@ -100,10 +106,11 @@ private:
     /**
      * @brief Reads the grammar's declaration, `lexer grammar NAME;` or `grammar NAME;`, the scanner's line its line.
      * @param spec The specification, whose line is set.
-     * @return Whether the grammar is a lexer grammar.
+     * @return What the declaration leaves in force for the items after it: whether the grammar is a lexer grammar and
+     *         the lexer's class.
      * @throws Spec_error If there is no declaration, the grammar is a parser grammar or has no name.
      */
-    [[nodiscard]] bool grammar_declaration(Lexer_spec& spec);
+    [[nodiscard]] Item_context grammar_declaration(Lexer_spec& spec);
 
     /**
      * @brief Reads one item at the top level: a named action, an options, tokens or channels block, an import, a `mode`
@@ -128,8 +135,10 @@ private:
      * a `parser::members` action leaves the lexer alone, so a combined grammar's unscoped members override the lexer's
      * own nextToken as a `lexer::members` action does. The actions written into the lexer class: `members` under every
      * target, and the C++ target's `declarations`, which its template writes inside the class in the header; its
-     * `definitions` go to the source file at namespace scope, where a function is no method of the lexer's. Every
-     * action's code, `header` among them, may define a macro the members' initializers use.
+     * `definitions` go to the source file at namespace scope, after the lexer's constructor and accessors, where a
+     * function is no method of the lexer's and a definition under the lexer class's name is one, so they are kept as
+     * well. Every action the lexer's header holds, `header` among them, may define a macro the members' initializers
+     * use, and the definitions, which follow the header's include, and the parser's own actions define none.
      * @param context What the items read so far leave in force, whose actions gain this one.
      * @throws Spec_error If the action's block never closes.
      */

@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <format>
 #include <optional>
+#include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,12 +48,17 @@ public:
      * @param line The line the code begins on, which a refusal names.
      * @param csharp Whether the target is C#, whose property accessors run when the property is used.
      * @param macros The macros the grammar's actions define, which a name in an initializer may stand for.
+     * @param qualifier The lexer class's name, which an out-of-line definition qualifies a member by, for code standing
+     *        outside the class; none for code inside it.
      */
-    Members_reader(std::string_view code, std::size_t line, bool csharp, const Macros_t& macros);
+    Members_reader(
+            std::string_view code, std::size_t line, bool csharp, const Macros_t& macros,
+            std::optional<std::string_view> qualifier);
 
     /**
      * @brief Reads the code at the class's own level, member by member, refusing an initializer block, an initializer
-     *        that is more than a value, an accessor with a body and a method.
+     *        that is more than a value, an accessor with a body and a method; or, for code outside the class, refusing
+     *        a method defined under the class's name.
      * @throws Spec_error At the first of them.
      */
     void refuse() const;
@@ -81,11 +88,12 @@ private:
      * the declaration before it is no type's, `class Inner {`, and no method's, whose parameter list stands before its
      * body, is such an initializer, and it is read by the rule an `=` initializer is read by. An array's brackets may
      * stand between the name and the brace, `int initial[1]{...}`. A parenthesis inside an array's bound, `int a[(1)]`,
-     * opens no parameter list. A type is defined where its keyword's name is followed by the body or a base clause,
-     * `struct Inner {` and `class D : B {`; `struct Initializer startup{this};` names a type and declares a field,
-     * whose initializer is read as any other's. A C# property's accessors, `{ get; set; }`, run when the property is
-     * used and not when the lexer is built, and initialize nothing; under the C++ target `get` is a name like any
-     * other, a type's among them, and no accessor.
+     * or an alignment's, `alignas(8) int a{...}`, opens no parameter list. A type is defined where its keyword's name
+     * is followed by the body or a base clause, `struct Inner {` and `class D : B {`, an attribute-specifier sequence
+     * allowed before the name, `struct [[nodiscard]] Inner {` and `struct alignas(8) Inner {`; `struct Initializer
+     * startup{this};` names a type and declares a field, whose initializer is read as any other's. A C# property's
+     * accessors, `{ get; set; }`, run when the property is used and not when the lexer is built, and initialize
+     * nothing; under the C++ target `get` is a name like any other, a type's among them, and no accessor.
      * @param index The brace's index.
      * @return The index of the closing brace, or std::nullopt where the brace opens no initializer.
      * @throws Spec_error If the initializer is more than a value, or an accessor has a body.
@@ -168,17 +176,54 @@ private:
     [[nodiscard]] bool is_plain_after_equals(std::size_t piece) const;
 
     /**
-     * @brief Refuses a method the members define at a name at the class's own level.
+     * @brief Refuses a method defined out of line at a name qualified by the lexer class's, `A::nextToken() { ... }`,
+     *        which stands in place of the runtime's own as one defined in the class does, where the statement's head
+     *        before the name declares the return type alone, an attribute-specifier sequence opening it aside, so a
+     *        qualified call, `if (A::check(1)) {`, defines none.
+     * @param index The token's index.
+     * @throws Spec_error If a parameter list and a body follow the name.
+     */
+    void refuse_definition(std::size_t index) const;
+
+    /**
+     * @brief Refuses a method the members define or declare at a name at the class's own level.
      *
      * The generated lexer calls its own methods, and which of them decide the tokens is the runtime's to know and not
      * this reading's: `emit` reaches the token's end through `getCharIndex`, and a list of the methods that matter
      * would be a guess at the runtime's virtual calls. A method the members define may therefore stand in place of one
      * the runtime calls at every token, and any one of them is refused. `sizeof(int)` inside an array's bound, `int
-     * data[sizeof(int)]{0};`, is a call inside brackets and no method's parameter list.
+     * data[sizeof(int)]{0};`, is a call inside brackets and no method's parameter list, and `alignas(8)` is no method,
+     * while an attribute before the method, C#'s `[Attr]` or C++'s `[[nodiscard]]`, closes its brackets before the name
+     * and declares nothing.
      * @param index The token's index.
      * @throws Spec_error If a parameter list and a body follow the name.
      */
     void refuse_method(std::size_t index) const;
+
+    /**
+     * @brief Refuses a method whose name stands at a token where a parameter list and a body follow it, a `throws`
+     *        clause or a qualifier allowed between, or where a parameter list and a `;` follow it and it is declared,
+     *        refuse_declaration().
+     * @param index The name's index.
+     * @param open The index of the parenthesis opening the parameter list.
+     * @throws Spec_error If they follow.
+     */
+    void refuse_body(std::size_t index, std::size_t open) const;
+
+    /**
+     * @brief Refuses a method declared without a body, `std::unique_ptr<antlr4::Token> nextToken() override;`, which is
+     *        then defined elsewhere, in the C++ target's `definitions` under any spelling or in another file, and
+     *        stands in place of the runtime's as one defined in the class does: the name stands as a declarator does,
+     *        after a word, a template's `>`, a `*`, a `&`, a `~` or a `decltype(...)` of its type, the `>` of a C#
+     *        `=>` aside. A name a group follows after its parameters, `static int (*step)(int);`, a name inside
+     *        template arguments, `std::function<unsigned int(int)>`, and a `typedef`'s or a C# `delegate`'s name
+     *        declare no method.
+     * @param index The name's index, a parenthesis wrapping it, `(nextToken)()`, standing in its declarator's place.
+     * @param open The index of the parenthesis opening the parameter list.
+     * @param close The index of the parenthesis closing it.
+     * @throws Spec_error If it declares one.
+     */
+    void refuse_declaration(std::size_t index, std::size_t open, std::size_t close) const;
 
     /**
      * @brief The code's tokens.
@@ -199,15 +244,31 @@ private:
      * @brief The macros the grammar's actions define.
      */
     const Macros_t& macros_;
+
+    /**
+     * @brief The lexer class's name, for code standing outside the class.
+     */
+    std::optional<std::string_view> qualifier_;
 };
 
 Members_reader::Members_reader(
-        const std::string_view code, const std::size_t line, const bool csharp, const Macros_t& macros)
-    : tokens_{java_tokens(code)}, line_{line}, csharp_{csharp}, macros_{macros}
+        const std::string_view code, const std::size_t line, const bool csharp, const Macros_t& macros,
+        const std::optional<std::string_view> qualifier)
+    : tokens_{java_tokens(code)}, line_{line}, csharp_{csharp}, macros_{macros}, qualifier_{qualifier}
 {}
 
 void Members_reader::refuse() const
 {
+    if (qualifier_)
+    {
+        for (std::size_t index{0}; index < tokens_.size(); ++index)
+        {
+            refuse_definition(index);
+        }
+
+        return;
+    }
+
     auto depth{0};
 
     for (std::size_t index{0}; index < tokens_.size(); ++index)
@@ -284,12 +345,46 @@ std::optional<std::size_t> Members_reader::brace_initializer_end(const std::size
 
     static constexpr std::array<std::string_view, 6> types{"class", "struct", "union", "enum", "interface", "record"};
 
+    // A type's head ends in its body or its base clause, C++'s `final` allowed before either.
+    const auto opens_body{[this](const std::size_t piece) {
+        const auto head_end{text(piece) == "final" ? piece + 1 : piece};
+
+        return text(head_end) == "{" || text(head_end) == ":";
+    }};
+
+    // C++ writes an attribute-specifier sequence, `[[nodiscard]]` or `alignas(8)`, between the keyword and the name.
+    const auto past_attributes{[this](std::size_t piece) {
+        for (;;)
+        {
+            if (text(piece) == "[" && text(piece + 1) == "[")
+            {
+                piece = group_close(tokens_, piece, "[", "]") + 1;
+            }
+            else if (text(piece) == "alignas" && text(piece + 1) == "(")
+            {
+                piece = group_close(tokens_, piece + 1, "(", ")") + 1;
+            }
+            else
+            {
+                return piece;
+            }
+        }
+    }};
+
     for (auto piece{start}, brackets{0UZ}; piece < index; ++piece)
     {
         const auto keyword{std::ranges::contains(types, text(piece))};
 
-        declares_type = declares_type ||
-                        (keyword && starts_name(text(piece + 1)) && (text(piece + 2) == "{" || text(piece + 2) == ":"));
+        const auto name{past_attributes(piece + 1)};
+
+        declares_type = declares_type || (keyword && starts_name(text(name)) && opens_body(name + 1));
+
+        if (text(piece) == "alignas" && text(piece + 1) == "(")
+        {
+            piece = group_close(tokens_, piece + 1, "(", ")");
+
+            continue;
+        }
 
         if (text(piece) == "[")
         {
@@ -451,9 +546,45 @@ bool Members_reader::is_plain_after_equals(const std::size_t piece) const
     return grouping || signed_number || is_value(word);
 }
 
+void Members_reader::refuse_definition(const std::size_t index) const
+{
+    // The tokenizer reads `::` as two colons.
+    const auto qualified{
+            index >= 3 && text(index - 1) == ":" && text(index - 2) == ":" && text(index - 3) == *qualifier_};
+
+    if (!qualified || text(index + 1) != "(")
+    {
+        return;
+    }
+
+    auto head{statement_start(index)};
+
+    // An attribute-specifier sequence opening the head, `[[deprecated("x")]]`, is no part of the return type.
+    while (text(head) == "[" && text(head + 1) == "[")
+    {
+        head = group_close(tokens_, head, "[", "]") + 1;
+    }
+
+    const auto opens_expression{[this](const std::size_t piece) { return text(piece) == "(" || text(piece) == "="; }};
+
+    if (std::ranges::any_of(std::views::iota(std::min(head, index), index), opens_expression))
+    {
+        return;
+    }
+
+    refuse_body(index, index + 1);
+}
+
 void Members_reader::refuse_method(const std::size_t index) const
 {
-    if (!starts_name(text(index)) || text(index + 1) != "(")
+    // A name in parentheses, `(nextToken)()`, is the declarator it wraps.
+    const auto wrapped{index > 0 && text(index - 1) == "(" && text(index + 1) == ")"};
+
+    const auto open{wrapped ? index + 2 : index + 1};
+
+    static constexpr std::array<std::string_view, 3> no_methods{"alignas", "decltype", "__attribute__"};
+
+    if (!starts_name(text(index)) || text(open) != "(" || std::ranges::contains(no_methods, text(index)))
     {
         return;
     }
@@ -462,18 +593,21 @@ void Members_reader::refuse_method(const std::size_t index) const
 
     const auto start{statement_start(index)};
 
-    for (auto back{index}, opened{0UZ}; back > start; --back)
+    // Going back, a `]` closes a group the name stands after and a `[` no `]` closed opens one the name stands in.
+    for (auto back{index}, closed{0UZ}; back > start; --back)
     {
-        if (text(back - 1) == "[")
+        if (text(back - 1) == "]")
         {
-            ++opened;
+            ++closed;
         }
-        else if (text(back - 1) == "]" && opened > 0)
+        else if (text(back - 1) == "[" && closed > 0)
         {
-            --opened;
+            --closed;
         }
-
-        bracketed = bracketed || (text(back - 1) == "[" && opened == 1);
+        else if (text(back - 1) == "[")
+        {
+            bracketed = true;
+        }
     }
 
     if (bracketed || (index > 0 && (text(index - 1) == "." || text(index - 1) == "::" || text(index - 1) == "new")))
@@ -481,20 +615,30 @@ void Members_reader::refuse_method(const std::size_t index) const
         return;
     }
 
+    refuse_body(index, open);
+}
+
+void Members_reader::refuse_body(const std::size_t index, const std::size_t open) const
+{
     const auto ends_head{[this](const std::size_t piece) {
         return text(piece) == "{" || text(piece) == ";" || (text(piece) == "=" && text(piece + 1) == ">");
     }};
 
-    auto scan{group_close(tokens_, index + 1, "(", ")")};
+    const auto close{group_close(tokens_, open, "(", ")")};
 
-    ++scan;
+    auto scan{close + 1};
 
     while (scan < tokens_.size() && !ends_head(scan))
     {
         ++scan;
     }
 
-    if (scan < tokens_.size() && text(scan) != ";")
+    if (scan >= tokens_.size())
+    {
+        return;
+    }
+
+    if (text(scan) != ";")
     {
         const auto message{std::format(
                 "the lexer's members define {}(), and the generated lexer calls its own methods to decide the tokens "
@@ -504,12 +648,65 @@ void Members_reader::refuse_method(const std::size_t index) const
 
         throw Spec_error{message, line_};
     }
+
+    refuse_declaration(index, open, close);
+}
+
+void Members_reader::refuse_declaration(const std::size_t index, const std::size_t open, const std::size_t close) const
+{
+    const auto head{open == index + 1 ? index : index - 1};
+
+    const auto before{head > 0 ? text(head - 1) : std::string_view{}};
+
+    auto group{head > 0 ? head - 1 : 0};
+
+    for (auto depth{0}; before == ")" && group > 0; --group)
+    {
+        depth += depth_step(text(group), ")", "(");
+
+        if (depth == 0)
+        {
+            break;
+        }
+    }
+
+    const auto decltype_type{before == ")" && group > 0 && text(group - 1) == "decltype"};
+
+    const auto arrow{before == ">" && head > 1 && text(head - 2) == "="};
+
+    const auto typed{starts_name(before) || before == ">" || before == "*" || before == "&" || before == "~"};
+
+    const auto declarator{(typed && !arrow) || decltype_type};
+
+    const auto start{statement_start(index)};
+
+    const auto heading{std::span{tokens_}.subspan(start, head - start)};
+
+    const auto opened_angles{std::ranges::count(heading, "<", &C_token::text)};
+
+    const auto closed_angles{std::ranges::count(heading, ">", &C_token::text)};
+
+    const auto declares_type{text(start) == "typedef" || std::ranges::contains(heading, "delegate", &C_token::text)};
+
+    if (!declarator || text(close + 1) == "(" || opened_angles > closed_angles || declares_type)
+    {
+        return;
+    }
+
+    const auto message{std::format(
+            "the lexer's members declare {}(), which is defined where this reading does not read it, out of line or in "
+            "another file, and the generated lexer calls its own methods to decide the tokens without this reading "
+            "knowing which, so the tokens the rules describe may not be the tokens the scanner emits",
+            text(index))};
+
+    throw Spec_error{message, line_};
 }
 
 } // namespace
 
 void refuse_lexer_class(
-        const Lexer_spec& spec, const std::vector<Members_action>& members, const std::string_view actions_code)
+        const Lexer_spec& spec, const std::string_view lexer_class, const std::vector<Members_action>& members,
+        const std::string_view actions_code)
 {
     static constexpr std::string_view superclass_option{"superClass="};
 
@@ -539,23 +736,33 @@ void refuse_lexer_class(
             language == spec.options.end() ? std::string_view{"Java"} :
                                              std::string_view{*language}.substr(language_option.size())};
 
-    if (!members.empty() && !std::ranges::contains(known, target))
+    const auto in_class{std::ranges::find(members, false, &Members_action::out_of_line)};
+
+    if (in_class != members.end() && !std::ranges::contains(known, target))
     {
         const auto message{std::format(
                 "the grammar's target language is {}, whose members declare a method otherwise than this reading reads "
                 "one, so whether one of them decides the tokens is out of the audit's sight",
                 target)};
 
-        throw Spec_error{message, members.front().line};
+        throw Spec_error{message, in_class->line};
     }
 
     Macros_t macros{};
 
     take_macros(actions_code, macros);
 
-    for (const auto& [code, line] : members)
+    for (const auto& [code, line, out_of_line] : members)
     {
-        const Members_reader reader{code, line, target == "CSharp", macros};
+        // The C++ target alone writes the definitions, outside the class, where a member is named by its class.
+        if (out_of_line && target != "Cpp")
+        {
+            continue;
+        }
+
+        const auto qualifier{out_of_line ? std::optional{lexer_class} : std::nullopt};
+
+        const Members_reader reader{code, line, target == "CSharp", macros, qualifier};
 
         reader.refuse();
     }

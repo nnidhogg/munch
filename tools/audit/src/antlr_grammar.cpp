@@ -77,26 +77,21 @@ Lexer_spec Grammar_reader::read()
     Lexer_spec spec{};
 
     // Only a lexer grammar may declare modes, so where the rules come from decides whether a `mode` line is ANTLR.
-    Item_context context{
-            .lexer_only = grammar_declaration(spec),
-            .case_insensitive = false,
-            .mode = {},
-            .members = {},
-            .actions_code = {}};
+    auto context{grammar_declaration(spec)};
 
     for (skip_blanks(); peek(); skip_blanks())
     {
         item(spec, context);
     }
 
-    refuse_lexer_class(spec, context.members, context.actions_code);
+    refuse_lexer_class(spec, context.lexer_class, context.members, context.actions_code);
 
     finish_grammar(tables_, context.case_insensitive, spec);
 
     return spec;
 }
 
-bool Grammar_reader::grammar_declaration(Lexer_spec& spec)
+Grammar_reader::Item_context Grammar_reader::grammar_declaration(Lexer_spec& spec)
 {
     skip_blanks();
 
@@ -125,7 +120,9 @@ bool Grammar_reader::grammar_declaration(Lexer_spec& spec)
 
     skip_blanks();
 
-    if (identifier().empty())
+    const auto name{identifier()};
+
+    if (name.empty())
     {
         fail("the grammar has no name");
     }
@@ -136,7 +133,13 @@ bool Grammar_reader::grammar_declaration(Lexer_spec& spec)
 
     spec.line = line_of(declared);
 
-    return lexer_only;
+    // A combined grammar's lexer is generated as a class of the grammar's name and `Lexer`.
+    return {.lexer_only = lexer_only,
+            .case_insensitive = false,
+            .mode = {},
+            .members = {},
+            .actions_code = {},
+            .lexer_class = lexer_only ? std::string{name} : std::format("{}Lexer", name)};
 }
 
 void Grammar_reader::item(Lexer_spec& spec, Item_context& context)
@@ -244,16 +247,24 @@ void Grammar_reader::named_action(Item_context& context)
 
     const auto action{text_.substr(opened, at_ - opened)};
 
-    context.actions_code += action;
+    static constexpr std::array<std::string_view, 2> definitions{"definitions", "lexer::definitions"};
 
-    context.actions_code += '\n';
+    const auto out_of_line{std::ranges::contains(definitions, named)};
+
+    // The lexer's header holds every action but the definitions, which follow it in the source file, and the parser's.
+    if (!out_of_line && !named.starts_with("parser::"))
+    {
+        context.actions_code += action;
+
+        context.actions_code += '\n';
+    }
 
     static constexpr std::array<std::string_view, 4> insertions{
             "members", "lexer::members", "declarations", "lexer::declarations"};
 
-    if (std::ranges::contains(insertions, named))
+    if (std::ranges::contains(insertions, named) || out_of_line)
     {
-        context.members.push_back({.code = action, .line = line_of(opened)});
+        context.members.push_back({.code = action, .line = line_of(opened), .out_of_line = out_of_line});
     }
 }
 

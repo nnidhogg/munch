@@ -2043,6 +2043,102 @@ TEST(Read_antlr_test, A_members_action_that_defines_a_method_or_runs_code_is_ref
             line_of("lexer grammar A;\r@members { // c\rpublic Token nextToken() { return null; } }\rX : 'a' ;\r"), 1);
 }
 
+TEST(Read_antlr_test, An_out_of_line_definition_and_an_attributed_method_are_read_as_members)
+{
+    // The C++ target writes `definitions` into the source file after the lexer's constructor and accessors, where antlr
+    // 4.13.2 puts `std::unique_ptr<antlr4::Token> A::nextToken() { ... }` as written: a definition qualified by the
+    // lexer's class, `A` for a lexer grammar and `GLexer` for a combined `G`, defines the member `declarations`
+    // declares and is refused as a method in the class is, at the action's line, while a function of its own, a call
+    // qualified by the class and another class's member define nothing of the lexer's. The Java target writes
+    // `definitions` nowhere.
+    const auto defined{[](const std::string_view head, const std::string_view language, const std::string_view code) {
+        const auto parser_rule{head.starts_with("grammar") ? "r : X ;\n" : ""};
+
+        return line_of(std::format(
+                "{};\noptions {{ language = {}; }}\n@lexer::definitions {{\n{}\n}}\n{}X : 'a' ;\n", head, language,
+                code, parser_rule));
+    }};
+
+    const std::string_view next_token{
+            "std::unique_ptr<antlr4::Token> A::nextToken() { return antlr4::Lexer::nextToken(); }"};
+
+    EXPECT_EQ(defined("lexer grammar A", "Cpp", next_token), 3);
+    EXPECT_EQ(defined("grammar G", "Cpp", "antlr4::Token* GLexer::emit() { return nullptr; }"), 3);
+    EXPECT_EQ(defined("lexer grammar A", "Cpp", "namespace { int f() { return 1; } }\nvoid A::reset() { }"), 3);
+    EXPECT_EQ(
+            defined("lexer grammar A", "Cpp", "int helper() { if (A::check(1)) { return 1; } return 0; }"),
+            std::nullopt);
+    EXPECT_EQ(defined("lexer grammar A", "Cpp", "void Helper::run() { }"), std::nullopt);
+
+    // An attribute-specifier sequence before the definition is no part of its head, its parentheses included, so the
+    // attributed override, which antlr 4.13.2 writes into A.cpp as written, is refused as the bare one is.
+    EXPECT_EQ(
+            defined("lexer grammar A", "Cpp",
+                    "[[deprecated(\"x\")]] std::unique_ptr<antlr4::Token> A::nextToken() { return Lexer::nextToken(); "
+                    "}"),
+            3);
+    EXPECT_EQ(
+            defined("lexer grammar A", "Cpp",
+                    "[[nodiscard]] [[deprecated(\"x\")]] std::unique_ptr<antlr4::Token> A::nextToken() { return "
+                    "nullptr; }"),
+            3);
+    EXPECT_EQ(
+            defined("lexer grammar A", "Cpp",
+                    "int helper() { [[maybe_unused]] int n{0}; if (A::check(1)) { n = 1; } return n; }"),
+            std::nullopt);
+    EXPECT_EQ(defined("grammar G", "Cpp", next_token), std::nullopt);
+    EXPECT_EQ(defined("lexer grammar A", "Java", next_token), std::nullopt);
+
+    // An attribute before a method is no declarator, C#'s `[Attr]` and C++'s `[[nodiscard]]` alike, so the attributed
+    // override is refused as the bare one is, while a name inside an array's bound still declares nothing.
+    EXPECT_EQ(
+            line_of("lexer grammar A;\noptions { language = CSharp; }\n@members {\n"
+                    "[Attr] public override IToken NextToken() { return null; }\n}\nX : 'a' ;\n"),
+            3);
+    EXPECT_EQ(
+            line_of("lexer grammar A;\noptions { language = CSharp; }\n@members {\n"
+                    "[Attr(1), Other] public override IToken NextToken() => null;\n}\nX : 'a' ;\n"),
+            3);
+    EXPECT_EQ(
+            line_of("lexer grammar A;\noptions { language = Cpp; }\n@lexer::declarations {\n"
+                    "[[nodiscard]] std::unique_ptr<antlr4::Token> nextToken() override { return nullptr; }\n}\n"
+                    "X : 'a' ;\n"),
+            3);
+    EXPECT_EQ(
+            line_of("lexer grammar A;\noptions { language = Cpp; }\n@lexer::declarations {\n"
+                    "int data[2][sizeof(int)]{0};\n}\nX : 'a' ;\n"),
+            std::nullopt);
+}
+
+TEST(Read_antlr_test, A_final_class_and_a_macro_the_header_never_sees_initialize_nothing)
+{
+    // `struct Inner final { ... };` defines a type, `final` standing in its head as C++ has it, with a base clause
+    // after it or not, and the fields inside it belong to that type.
+    EXPECT_EQ(
+            line_of("lexer grammar A;\noptions { language = Cpp; }\n@members {\n"
+                    "struct Inner final { int x = f(); };\n}\nX : 'a' ;\n"),
+            std::nullopt);
+    EXPECT_EQ(
+            line_of("lexer grammar A;\noptions { language = Cpp; }\n@members {\n"
+                    "struct Inner final : Base { int x = f(); };\n}\nX : 'a' ;\n"),
+            std::nullopt);
+
+    // antlr 4.13.2 writes `definitions` into the source file after the header's include and `parser::header` into the
+    // parser's files, so a macro either defines is not defined where the lexer's header initializes a field, and
+    // `START` there is the name it spells; one the lexer's header defines stands for its replacement.
+    const auto initialized{[](const std::string_view action) {
+        return line_of(std::format(
+                "grammar G;\noptions {{ language = Cpp; }}\n{} {{\n#define START (setMode(1), 0)\n}}\n"
+                "@lexer::declarations {{\nint startup{{START}};\n}}\nr : X ;\nX : 'a' ;\n",
+                action));
+    }};
+
+    EXPECT_EQ(initialized("@lexer::definitions"), std::nullopt);
+    EXPECT_EQ(initialized("@parser::header"), std::nullopt);
+    EXPECT_EQ(initialized("@lexer::header"), 6);
+    EXPECT_EQ(initialized("@header"), 6);
+}
+
 TEST(Read_antlr_test, An_empty_match_beside_a_non_greedy_loop_is_read_as_ANTLR_reads_it)
 {
     // An alternative that can match the empty string reaches the rule's end at the loop's decision wherever it stands:
@@ -2084,4 +2180,76 @@ TEST(Read_antlr_test, A_grammar_of_fragments_alone_declares_no_scanner)
 {
     // A grammar of fragments alone declares no scanner, as a parser grammar does not.
     EXPECT_TRUE(read_antlr("lexer grammar A;\nfragment X : 'x' ;\n").empty());
+}
+
+TEST(Read_antlr_test, An_attribute_specifier_in_a_class_head_leaves_the_type_a_type_whose_members_are_its_own)
+{
+    // C++ writes an attribute-specifier sequence between the class key and the name, `struct alignas(8) Inner { ...
+    // };` and `struct [[nodiscard]] Inner { ... };`, which antlr 4.13.2 copies into the lexer's class as written and
+    // g++ 13 compiles as a type of the class's, its fields its own; `alignas(8)` is no method, and a field it aligns is
+    // initialized as any other.
+    const auto declared{[](const std::string_view code) {
+        return line_of(std::format(
+                "lexer grammar A;\noptions {{ language = Cpp; }}\n@lexer::declarations {{\n{}\n}}\nX : 'a' ;\n", code));
+    }};
+
+    EXPECT_EQ(declared("struct alignas(8) Inner { int x = f(); };"), std::nullopt);
+    EXPECT_EQ(declared("struct [[nodiscard]] Inner { int x = f(); };"), std::nullopt);
+    EXPECT_EQ(declared("struct [[nodiscard]] alignas(8) Inner final : Base { int x = f(); };"), std::nullopt);
+    EXPECT_EQ(declared("alignas(8) int startup{(setMode(1), 0)};"), 3);
+}
+
+TEST(Read_antlr_test, A_method_the_class_declares_is_refused_wherever_its_definition_stands)
+{
+    // A member the C++ target's `declarations` declares is defined elsewhere, and antlr 4.13.2 writes `definitions`
+    // into A.cpp as they stand, where `using Self = A;` with `Self::nextToken()`, `#define NT A::nextToken` with
+    // `NT()`, a `decltype(...)` return type and the declarator `(A::nextToken)()` each define the override, which g++
+    // 13 compiles over a stub of the runtime's Lexer and calls in place of the runtime's; another file may define it as
+    // well. The declaration is refused at its action's line, while a function type, a pointer to a function, a
+    // `static_assert` and a `decltype` declare no method.
+    const auto declared{[](const std::string_view definitions) {
+        return line_of(std::format(
+                "lexer grammar A;\noptions {{ language = Cpp; }}\n@lexer::declarations "
+                "{{\nstd::unique_ptr<antlr4::Token> "
+                "nextToken() override;\n}}\n@lexer::definitions {{\n{}\n}}\nX : 'a' ;\n",
+                definitions));
+    }};
+
+    EXPECT_EQ(declared("using Self = A;\nstd::unique_ptr<antlr4::Token> Self::nextToken() { return nullptr; }"), 3);
+    EXPECT_EQ(declared("#define NT A::nextToken\nstd::unique_ptr<antlr4::Token> NT() { return nullptr; }"), 3);
+    EXPECT_EQ(declared("decltype(std::declval<antlr4::Lexer&>().nextToken()) A::nextToken() { return nullptr; }"), 3);
+    EXPECT_EQ(declared("std::unique_ptr<antlr4::Token> (A::nextToken)() { return nullptr; }"), 3);
+    EXPECT_EQ(declared(""), 3);
+    EXPECT_TRUE(refusal_of("lexer grammar A;\noptions { language = Cpp; }\n@lexer::declarations {\nvoid reset() "
+                           "override;\n}\nX : 'a' ;\n")
+                        .contains("line 3: the lexer's members declare reset(), which is defined where this reading "
+                                  "does not read it"));
+    EXPECT_EQ(
+            line_of("lexer grammar A;\noptions { language = Cpp; }\n@lexer::declarations {\nstd::function<void(int)> "
+                    "callback;\nint (*step)(int);\nstatic_assert(sizeof(int) == 4);\ndecltype(1) count;\n}\n"
+                    "X : 'a' ;\n"),
+            std::nullopt);
+
+    // A `decltype(...)` return type and a declarator in parentheses declare the override as well, which g++ 13 compiles
+    // as one, with a body or without; a function type inside template arguments, a pointer to a function after a
+    // specifier, a `typedef`, a `decltype` after one, an attribute, a C# `delegate` and a C# `=>` body declare none.
+    const auto in_class{[](const std::string_view language, const std::string_view code) {
+        return line_of(std::format(
+                "lexer grammar A;\noptions {{ language = {}; }}\n@members {{\n{}\n}}\nX : 'a' ;\n", language, code));
+    }};
+
+    EXPECT_EQ(in_class("Cpp", "decltype(std::declval<antlr4::Lexer&>().nextToken()) nextToken() override;"), 3);
+    EXPECT_EQ(in_class("Cpp", "std::unique_ptr<antlr4::Token> (nextToken)() override;"), 3);
+    EXPECT_EQ(in_class("Cpp", "std::unique_ptr<antlr4::Token> (nextToken)() override { return nullptr; }"), 3);
+
+    for (const std::string_view code :
+         {"std::function<unsigned int(int)> f;", "std::function<const Token(int)> f;", "static int (*fp)(int);",
+          "typedef int (*F)(int);", "typedef void Handler(int);", "static decltype(1) count;",
+          "int x __attribute__((unused));"})
+    {
+        EXPECT_EQ(in_class("Cpp", code), std::nullopt) << code;
+    }
+
+    EXPECT_EQ(in_class("CSharp", "public delegate void Handler(int x);"), std::nullopt);
+    EXPECT_EQ(in_class("CSharp", "private int N => Compute(1);"), std::nullopt);
 }
