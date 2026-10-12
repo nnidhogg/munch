@@ -303,10 +303,12 @@ recurs can carry, with the window that attains it and a stem, a loop and a suffi
 gives it, finite with the mirrored constant and, for each that is positive, an input attaining it, or infinite with the
 first effective self-pair; and `verifier::token_automaton()`, the token automaton of canonical byte-pair encoding over a
 merge table, built once, on which an overload of `miscovering()` decides a window certificate without building the merge
-tower. So did the `--repairs` option of `munch-audit`, which, where a condition certifies no byte, tries every byte as a
-visible token of its own and, unless it already certifies once the discarded tokens are deleted, as a discarded one, and
-reports each that certifies once added. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core
-of Lean's lexical structure with its nested comments and interpolated strings as modes, audited in
+tower. An overload of each of `merge_tower()` and `token_automaton()` over an alphabet of characters, read as their
+UTF-8 bytes, joined it too, so that a character-level merge table such as SentencePiece's has the tower and the
+automaton. So did the `--repairs` option of `munch-audit`, which, where a condition certifies no byte, tries every byte
+as a visible token of its own and, unless it already certifies once the discarded tokens are deleted, as a discarded
+one, and reports each that certifies once added. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`,
+the core of Lean's lexical structure with its nested comments and interpolated strings as modes, audited in
 [docs/audit.md](docs/audit.md) and benchmarked on Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
 
 3.0.0 is a major version for two moves, which change include paths and namespaces and nothing else. The verifier, its

@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -20,14 +21,15 @@ namespace munch::verifier
 namespace
 {
 /**
- * @brief A token of the table's vocabulary: a byte by its value, or a product by its merge's rank past the bytes.
+ * @brief A token of the table's vocabulary: a symbol of the alphabet by its place in it, so a byte by its value, or a
+ *        product by its merge's rank past the symbols.
  */
 using Token_t = std::size_t;
 
 /**
- * @brief The number of bytes, which the vocabulary carries before the products.
+ * @brief The number of bytes, the symbols of the byte alphabet.
  */
-constexpr Token_t byte_count{256};
+constexpr std::size_t byte_count{256};
 
 /**
  * @brief What the top stage has emitted: nothing, a token with a boundary claimed after it, or a token claimed to be
@@ -73,7 +75,8 @@ struct Stage
 };
 
 /**
- * @brief A configuration of the tower: what the top stage has emitted, and each stage's held symbol with its claim.
+ * @brief A configuration of the tower: what the top stage has emitted, each stage's held symbol with its claim, and the
+ *        bytes of the symbol under way.
  */
 struct Configuration
 {
@@ -91,14 +94,29 @@ struct Configuration
      * @brief The stages, one per merge in rank order.
      */
     std::vector<Stage> stages{};
+
+    /**
+     * @brief The bytes read of the symbol under way, a proper prefix of its spelling, empty between symbols.
+     */
+    std::string pending{};
 };
 
 /**
- * @brief The merge table resolved to tokens: each merge's parts by rank, the product of rank r being the token
- *        byte_count + r.
+ * @brief The merge table resolved to tokens over an alphabet: the token of each symbol, the proper prefixes of the
+ *        symbols' spellings, and each merge's parts by rank, the product of rank r being the token r past the symbols.
  */
 struct Table
 {
+    /**
+     * @brief The token of each symbol of the alphabet, by its spelling.
+     */
+    std::unordered_map<std::string, Token_t> symbols{};
+
+    /**
+     * @brief The proper prefixes of the symbols' spellings, which a step holds until the symbol is complete.
+     */
+    std::unordered_set<std::string> openings{};
+
     /**
      * @brief The left part of each merge, by rank.
      */
@@ -111,13 +129,14 @@ struct Table
 };
 
 /**
- * @brief Returns the token of a merge's product.
+ * @brief Returns the token of a merge's product, past the symbols of the alphabet.
+ * @param table The resolved merge table.
  * @param rank The merge's rank.
  * @return The product's token.
  */
-[[nodiscard]] constexpr Token_t product_of(const std::size_t rank) noexcept
+[[nodiscard]] Token_t product_of(const Table& table, const std::size_t rank) noexcept
 {
-    return byte_count + rank;
+    return table.symbols.size() + rank;
 }
 
 /**
@@ -159,24 +178,36 @@ struct Table
 }
 
 /**
- * @brief Resolves a merge table to tokens, each part looked up among the bytes and the earlier products.
+ * @brief Resolves a merge table to tokens over an alphabet, each part looked up among the symbols and the earlier
+ *        products.
  * @param merges The merge table in rank order.
+ * @param symbols The alphabet's symbols, each spelled by its bytes, numbered in order.
  * @return The resolved table.
- * @throws std::invalid_argument If a merge names a part the vocabulary so far does not carry, or a product it already
- *         carries.
+ * @throws std::invalid_argument If the alphabet holds a symbol twice, or a merge names a part the vocabulary so far
+ *         does not carry, or a product it already carries.
  */
-[[nodiscard]] Table table_of(const std::span<const Merge> merges)
+[[nodiscard]] Table table_of(const std::span<const Merge> merges, const std::span<const std::string> symbols)
 {
-    std::unordered_map<std::string, Token_t> tokens{};
+    Table table{};
 
-    for (Token_t byte{0}; byte < byte_count; ++byte)
+    for (Token_t symbol{0}; symbol < symbols.size(); ++symbol)
     {
-        const std::string spelling{static_cast<char>(byte)};
+        const auto& spelling{symbols[symbol]};
 
-        tokens.emplace(spelling, byte);
+        const auto [entry, inserted]{table.symbols.try_emplace(spelling, symbol)};
+
+        if (!inserted)
+        {
+            throw std::invalid_argument{std::format("merge_tower: the alphabet carries {} twice", quoted(spelling))};
+        }
+
+        for (std::size_t length{1}; length < spelling.size(); ++length)
+        {
+            table.openings.insert(spelling.substr(0, length));
+        }
     }
 
-    Table table{};
+    auto tokens{table.symbols};
 
     for (std::size_t rank{0}; rank < merges.size(); ++rank)
     {
@@ -203,7 +234,7 @@ struct Table
 
         const auto spelling{left + right};
 
-        const auto [product, inserted]{tokens.try_emplace(spelling, product_of(rank))};
+        const auto [product, inserted]{tokens.try_emplace(spelling, product_of(table, rank))};
 
         if (!inserted)
         {
@@ -218,6 +249,56 @@ struct Table
 }
 
 /**
+ * @brief Returns the byte alphabet: every byte, each a symbol spelled by itself, in order of value.
+ * @return The spellings of the 256 bytes.
+ */
+[[nodiscard]] std::vector<std::string> byte_alphabet()
+{
+    std::vector<std::string> symbols{};
+
+    for (std::size_t byte{0}; byte < byte_count; ++byte)
+    {
+        const std::string spelling{static_cast<char>(byte)};
+
+        symbols.push_back(spelling);
+    }
+
+    return symbols;
+}
+
+/**
+ * @brief Returns the characters of an alphabet given as UTF-8 text, each spelled by its bytes: the text split before
+ *        every byte that is not a continuation byte.
+ * @param alphabet The alphabet, UTF-8.
+ * @return The characters, in order.
+ */
+[[nodiscard]] std::vector<std::string> characters_of(const std::string_view alphabet)
+{
+    constexpr unsigned char continuation_mask{0xC0};
+    constexpr unsigned char continuation_bits{0x80};
+
+    std::vector<std::string> characters{};
+
+    for (const auto byte : alphabet)
+    {
+        const auto value{static_cast<unsigned char>(byte)};
+
+        const auto continues{(value & continuation_mask) == continuation_bits};
+
+        if (continues && !characters.empty())
+        {
+            characters.back() += byte;
+
+            continue;
+        }
+
+        characters.push_back(std::string{byte});
+    }
+
+    return characters;
+}
+
+/**
  * @brief The tower under exploration: the merge table resolved to tokens, the configuration each state reads as, the
  *        transitions and accepting states found so far, and the interned configurations with their states.
  */
@@ -225,12 +306,13 @@ class Exploration
 {
 public:
     /**
-     * @brief Resolves the merge table to tokens, nothing explored yet.
+     * @brief Resolves the merge table to tokens over an alphabet, nothing explored yet.
      * @param merges The merge table in rank order.
-     * @throws std::invalid_argument If a merge names a part the vocabulary so far does not carry, or a product it
-     *         already carries.
+     * @param symbols The alphabet's symbols, each spelled by its bytes, numbered in order.
+     * @throws std::invalid_argument If the alphabet holds a symbol twice, or a merge names a part the vocabulary so far
+     *         does not carry, or a product it already carries.
      */
-    explicit Exploration(std::span<const Merge> merges);
+    Exploration(std::span<const Merge> merges, std::span<const std::string> symbols);
 
     /**
      * @brief Explores every state reachable from the configuration of empty stages and returns the verifier they make.
@@ -247,8 +329,8 @@ private:
     [[nodiscard]] Verifier::State_t intern(Configuration configuration);
 
     /**
-     * @brief Returns whether a configuration accepts: passing every held symbol upward, from the lowest stage, is not
-     *        refused, and the top stage's last token carries no claimed boundary.
+     * @brief Returns whether a configuration accepts: no symbol is under way, passing every held symbol upward, from
+     *        the lowest stage, is not refused, and the top stage's last token carries no claimed boundary.
      * @param configuration The configuration, flushed in a copy.
      * @return True when the input may end in the configuration.
      */
@@ -285,8 +367,9 @@ private:
     void expand(Verifier::State_t state);
 
     /**
-     * @brief Reads one marked symbol into a configuration: the byte with its boundary bit is delivered to the lowest
-     *        stage and the result normalized.
+     * @brief Reads one marked symbol into a configuration: the byte is added to the bytes of the symbol under way, and
+     *        once they spell a symbol it is delivered to the lowest stage with the byte's boundary bit and the result
+     *        normalized, while bytes that only begin one wait unmarked.
      * @param from The configuration read from.
      * @param symbol The marked symbol.
      * @return The configuration after the symbol, or std::nullopt when the step is refused.
@@ -337,7 +420,8 @@ private:
     std::map<Configuration, Verifier::State_t> interned_{};
 };
 
-Exploration::Exploration(const std::span<const Merge> merges) : table_{table_of(merges)}
+Exploration::Exploration(const std::span<const Merge> merges, const std::span<const std::string> symbols)
+    : table_{table_of(merges, symbols)}
 {}
 
 Verifier Exploration::run() &&
@@ -377,6 +461,11 @@ Verifier::State_t Exploration::intern(Configuration configuration)
 
 bool Exploration::is_accepting(Configuration configuration) const
 {
+    if (!configuration.pending.empty())
+    {
+        return false;
+    }
+
     for (std::size_t level{0}; level < configuration.stages.size(); ++level)
     {
         if (!configuration.stages[level].held)
@@ -416,7 +505,7 @@ bool Exploration::deliver(Configuration& configuration, std::size_t level, Token
             }
 
             held.reset();
-            token = product_of(level);
+            token = product_of(table_, level);
             ++level;
 
             continue;
@@ -487,7 +576,28 @@ std::optional<Configuration> Exploration::successor(const Configuration& from, c
 
     auto next{from};
 
-    const auto delivered{deliver(next, 0, symbol.byte, symbol.boundary_after)};
+    next.pending += static_cast<char>(symbol.byte);
+
+    const auto completed{table_.symbols.find(next.pending)};
+
+    if (completed == table_.symbols.cend())
+    {
+        // Bytes that begin a symbol wait for the rest of it, and no boundary falls inside a symbol.
+        const auto begun{table_.openings.contains(next.pending)};
+
+        if (!begun || symbol.boundary_after)
+        {
+            return std::nullopt;
+        }
+
+        return next;
+    }
+
+    const auto& [spelling, token]{*completed};
+
+    next.pending.clear();
+
+    const auto delivered{deliver(next, 0, token, symbol.boundary_after)};
 
     if (!delivered)
     {
@@ -551,13 +661,13 @@ bool Exploration::normalize(Configuration& configuration) const
 
 std::vector<Token_t> Exploration::arrivals(const std::size_t low, const std::size_t level) const
 {
-    std::vector<Token_t> possible{table_.lefts[low], product_of(low)};
+    std::vector<Token_t> possible{table_.lefts[low], product_of(table_, low)};
 
     for (auto between{low + 1}; between < level; ++between)
     {
         if (std::ranges::contains(possible, table_.lefts[between]))
         {
-            possible.push_back(product_of(between));
+            possible.push_back(product_of(table_, between));
         }
     }
 
@@ -568,7 +678,18 @@ std::vector<Token_t> Exploration::arrivals(const std::size_t low, const std::siz
 
 Verifier merge_tower(const std::span<const Merge> merges)
 {
-    Exploration exploration{merges};
+    const auto symbols{byte_alphabet()};
+
+    Exploration exploration{merges, symbols};
+
+    return std::move(exploration).run();
+}
+
+Verifier merge_tower(const std::span<const Merge> merges, const std::string_view alphabet)
+{
+    const auto symbols{characters_of(alphabet)};
+
+    Exploration exploration{merges, symbols};
 
     return std::move(exploration).run();
 }

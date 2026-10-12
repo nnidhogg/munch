@@ -705,6 +705,31 @@ verifier::boundary_gap(tower);                              // 3, the longest to
 verifier::divergence(tower, verifier::merge_tower(first));  // aba, one token here and ab|a under the first merge alone
 ```
 
+`verifier::merge_tower(merges, alphabet)` builds the same tower over an alphabet of characters in place of the bytes,
+for a character-level table such as SentencePiece's, whose merges join Unicode characters. The alphabet is UTF-8 text
+whose characters are the tokens before any merge, each part of a merge is one of them or the product of an earlier
+merge, and every spelling is UTF-8. The verifier reads marked bytes, as the byte tower does, and a state also holds the
+bytes of the character under way, the character reaching the lowest stage with the boundary bit of its last byte, and a
+step is refused when it claims a boundary inside a character or reads a byte that continues no character of the
+alphabet, so the verifier accepts exactly the strings over the alphabet, each under the encoder's segmentation of its
+characters. No character's encoding is a prefix of another's and each begins with a byte that no other place of an
+encoding holds, so a window of characters occurs only at character boundaries, and every decision on the tower is exact
+over those strings, with positions and lengths in bytes as everywhere else. Over the characters U+0000 to U+007F the
+tower is the byte tower of the same table restricted to those bytes. A character the alphabet holds twice is refused
+with `std::invalid_argument` naming it, as is a merge that names a character outside the alphabet:
+
+```cpp
+const std::vector<verifier::Merge> merges{
+        {.left = "▁", .right = "t"}, {.left = "h", .right = "e"}, {.left = "▁t", .right = "he"}};
+
+const auto tower{verifier::merge_tower(merges, "▁theé")};  // the characters ▁, t, h, e and é, ▁ three bytes long
+
+verifier::miscovering(tower, "▁t", 0);  // std::nullopt: every ▁t lies in a token beginning at its ▁
+verifier::miscovering(tower, "he", 0);  // the marked ▁the, one token, its he four bytes in
+verifier::miscovering(tower, "é", 1);   // the marked é, whose token never begins inside the character
+verifier::boundary_gap(tower);          // 6, the bytes of the longest token ▁the
+```
+
 `verifier::token_automaton(merges)` of `munch/verifier/token_automaton.hpp` builds the token automaton of canonical
 byte-pair encoding over a merge table, and `verifier::miscovering(automaton, window, origin)` decides on it the same
 window certificate under the same encoder as `miscovering()` on `merge_tower(merges)`, without building the tower. It
@@ -736,6 +761,28 @@ const auto automaton{verifier::token_automaton(merges)};        // built once fo
 verifier::miscovering(automaton, "ab", 0);                      // std::nullopt, as miscovering() on the tower answers
 verifier::miscovering(automaton, "ab", 1);                      // the marked ab itself, its token beginning at offset 0
 verifier::miscovering(verifier::token_automaton({}), "ab", 0);  // a|b, the empty table cutting between every two bytes
+```
+
+`verifier::token_automaton(merges, alphabet)` builds the token automaton over an alphabet of characters, as
+`merge_tower(merges, alphabet)` builds the tower. The alphabet is UTF-8 text whose characters are the tokens before any
+merge, numbered in its order with the products after them at their ranks, and every spelling is UTF-8. `miscovering()`
+decides on it by the same search, which compares spellings as bytes, a token's spelling neither beginning nor ending
+inside a character, and its verdict is `miscovering()`'s on `merge_tower(merges, alphabet)`; over the characters U+0000
+to U+007F it decides an ASCII window as on `token_automaton(merges)`, to the byte. The automaton has one base state plus
+one per merge whose product can be read, however many characters the alphabet holds, so it is the route for a whole
+character-level table, whose alphabet is every character of its vocabulary. A tokenizer's normalizer, such as
+SentencePiece's replacement of the space by U+2581, and its byte fallback for characters outside the vocabulary are not
+part of the table, and its loader applies them:
+
+```cpp
+const std::vector<verifier::Merge> merges{
+        {.left = "▁", .right = "t"}, {.left = "h", .right = "e"}, {.left = "▁t", .right = "he"}};
+
+const auto automaton{verifier::token_automaton(merges, "▁theé")};  // the five characters are the tokens 0 to 4
+
+verifier::miscovering(automaton, "▁t", 0);  // std::nullopt, as on the tower
+verifier::miscovering(automaton, "he", 0);  // the marked ▁the, one token, its he four bytes in
+automaton.token_of("▁the");                 // 7, the third product past the five characters
 ```
 
 `verifier::trie_chain(initial, continuation)` takes a two-mode vocabulary, the initial tokens and the continuation

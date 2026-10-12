@@ -3,6 +3,7 @@
 
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "munch/verifier/verifier.hpp"
 
@@ -14,12 +15,12 @@ namespace munch::verifier
 struct Merge
 {
     /**
-     * @brief The left part, a byte or the product of an earlier merge.
+     * @brief The left part, a symbol of the alphabet, a byte or a character, or the product of an earlier merge.
      */
     std::string left{};
 
     /**
-     * @brief The right part, a byte or the product of an earlier merge.
+     * @brief The right part, a symbol of the alphabet, a byte or a character, or the product of an earlier merge.
      */
     std::string right{};
 };
@@ -54,6 +55,31 @@ struct Merge
  *         each spelling quoted, a byte outside printable ASCII written `\xHH` and the quote and the backslash escaped.
  */
 [[nodiscard]] Verifier merge_tower(std::span<const Merge> merges);
+
+/**
+ * @brief Builds the merge tower of a merge table over an alphabet of characters: the verifier of canonical byte-pair
+ *        encoding over the table, reading each character as its UTF-8 bytes.
+ *
+ * The tokens before any merge are the alphabet's characters in place of the bytes, as in a character-level table such
+ * as SentencePiece's, and each part of a merge is one of them or the product of an earlier merge, spelled in UTF-8. The
+ * stages are the byte tower's over those tokens, and a configuration also holds the bytes of the character under way: a
+ * step adds its byte to them and, once they spell a character of the alphabet, delivers the character to the lowest
+ * stage with the byte's boundary bit; while they only begin one it waits, and a boundary claimed there is refused, as
+ * is a byte with which they begin none. A configuration with a character under way does not accept. The verifier's
+ * domain is the strings over the alphabet, each under the encoder's segmentation of its characters, so the decisions on
+ * it are exact over those strings, every position a byte, since no character's encoding is a prefix of another's, and
+ * each begins with a byte that is not a continuation byte, so a window of characters occurs only at character
+ * boundaries. Over the characters U+0000 to U+007F the tower is the byte tower of the same table restricted to those
+ * bytes.
+ * @param merges The merge table in rank order, each part a character or the product of an earlier merge.
+ * @param alphabet The alphabet, UTF-8 text whose characters are the tokens before any merge, each once.
+ * @return The merge-tower verifier.
+ * @throws std::invalid_argument If the alphabet holds a character twice, or a merge names a part that neither the
+ *         alphabet nor an earlier merge carries, or a product that the alphabet or an earlier merge already carries;
+ *         the message names the character, or the merge and its rank, each spelling quoted, a byte outside printable
+ *         ASCII written `\xHH` and the quote and the backslash escaped.
+ */
+[[nodiscard]] Verifier merge_tower(std::span<const Merge> merges, std::string_view alphabet);
 
 } // namespace munch::verifier
 

@@ -9,6 +9,7 @@
 #include <fstream>
 #include <map>
 #include <optional>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -160,21 +161,63 @@ Ranks_t ranks_of(const std::vector<Merge>& merges)
 }
 
 /**
- * @brief Returns the token sequence canonical byte-pair encoding produces for a text: at every step the lowest-rank
- *        merge present anywhere is applied at its leftmost occurrence.
- * @param ranks The rank of each merge by its two parts.
+ * @brief Returns the bytes of a text, each a symbol spelled by itself.
  * @param text The text.
- * @return The tokens.
+ * @return The bytes, in order.
  */
-std::vector<std::string> reference_tokens(const Ranks_t& ranks, const std::string_view text)
+std::vector<std::string> byte_symbols(const std::string_view text)
 {
-    std::vector<std::string> sequence{};
+    std::vector<std::string> bytes{};
 
     for (const auto byte : text)
     {
-        sequence.push_back(std::string{byte});
+        bytes.push_back(std::string{byte});
     }
 
+    return bytes;
+}
+
+/**
+ * @brief Returns the characters of a UTF-8 text, each spelled by its bytes: the text split before every byte that is
+ *        not a continuation byte.
+ * @param text The text.
+ * @return The characters, in order.
+ */
+std::vector<std::string> characters_of(const std::string_view text)
+{
+    std::vector<std::string> characters{};
+
+    for (const auto byte : text)
+    {
+        constexpr unsigned char continuation_mask{0xC0};
+        constexpr unsigned char continuation_bits{0x80};
+
+        const auto value{static_cast<unsigned char>(byte)};
+
+        const auto continues{(value & continuation_mask) == continuation_bits};
+
+        if (continues && !characters.empty())
+        {
+            characters.back() += byte;
+
+            continue;
+        }
+
+        characters.push_back(std::string{byte});
+    }
+
+    return characters;
+}
+
+/**
+ * @brief Returns the token sequence canonical byte-pair encoding produces for a text given as its symbols: at every
+ *        step the lowest-rank merge present anywhere is applied at its leftmost occurrence.
+ * @param ranks The rank of each merge by its two parts.
+ * @param sequence The text's symbols, its bytes or its characters.
+ * @return The tokens.
+ */
+std::vector<std::string> reference_tokens(const Ranks_t& ranks, std::vector<std::string> sequence)
+{
     for (;;)
     {
         std::optional<std::size_t> lowest{};
@@ -213,29 +256,54 @@ std::vector<std::string> reference_tokens(const Ranks_t& ranks, const std::strin
 }
 
 /**
- * @brief Returns the boundary marking of the reference encoder's segmentation of a text, a boundary after every token
- *        but the last.
+ * @brief Returns the boundary marking of a segmentation, a boundary after the last byte of every token but the last.
+ * @param tokens The tokens.
+ * @return The marking, one bit per byte.
+ */
+Marking_t token_marking(const std::vector<std::string>& tokens)
+{
+    Marking_t marking{};
+
+    for (const auto& token : tokens)
+    {
+        marking.resize(marking.size() + token.size(), false);
+        marking.back() = true;
+    }
+
+    if (!marking.empty())
+    {
+        marking.back() = false;
+    }
+
+    return marking;
+}
+
+/**
+ * @brief Returns the boundary marking of the reference encoder's segmentation of a text over the bytes, a boundary
+ *        after every token but the last.
  * @param ranks The rank of each merge by its two parts.
  * @param text The text.
  * @return The marking.
  */
 Marking_t reference_marking(const Ranks_t& ranks, const std::string_view text)
 {
-    Marking_t marking(text.size(), false);
+    const auto tokens{reference_tokens(ranks, byte_symbols(text))};
 
-    std::size_t end{0};
+    return token_marking(tokens);
+}
 
-    for (const auto& token : reference_tokens(ranks, text))
-    {
-        end += token.size();
+/**
+ * @brief Returns the boundary marking of the reference encoder's segmentation of a UTF-8 text over its characters, a
+ *        boundary after the last byte of every token but the last.
+ * @param ranks The rank of each merge by its two parts, spelled in UTF-8.
+ * @param text The text.
+ * @return The marking, one bit per byte.
+ */
+Marking_t character_marking(const Ranks_t& ranks, const std::string_view text)
+{
+    const auto tokens{reference_tokens(ranks, characters_of(text))};
 
-        if (end < text.size())
-        {
-            marking[end - 1] = true;
-        }
-    }
-
-    return marking;
+    return token_marking(tokens);
 }
 
 /**
@@ -503,6 +571,169 @@ void expect_fixture_line(Fixture_check& check, const std::string& line)
     }
 }
 
+/**
+ * @brief The alphabet of the SentencePiece-style character table: U+2581 for the space, as SentencePiece writes it, and
+ *        characters of one to four UTF-8 bytes.
+ */
+constexpr std::string_view sentencepiece_alphabet{"▁thecaéß中文😀"};
+
+/**
+ * @brief Returns the merges of the SentencePiece-style character table, in rank order: words begun by U+2581, and
+ *        merges joining characters of every UTF-8 length.
+ * @return The merge table.
+ */
+std::vector<Merge> sentencepiece_merges()
+{
+    return {{.left = "▁", .right = "t"},    {.left = "h", .right = "e"},   {.left = "▁t", .right = "he"},
+            {.left = "c", .right = "a"},    {.left = "é", .right = "t"},   {.left = "中", .right = "文"},
+            {.left = "▁", .right = "中文"}, {.left = "😀", .right = "😀"}, {.left = "ß", .right = "e"},
+            {.left = "ca", .right = "ét"}};
+}
+
+/**
+ * @brief Returns the ASCII alphabet, the characters U+0000 to U+007F in order, as UTF-8 text.
+ * @return The alphabet.
+ */
+std::string ascii_alphabet()
+{
+    constexpr std::size_t ascii_count{0x80};
+
+    std::string alphabet{};
+
+    for (std::size_t byte{0}; byte < ascii_count; ++byte)
+    {
+        alphabet += static_cast<char>(byte);
+    }
+
+    return alphabet;
+}
+
+/**
+ * @brief Returns whether every byte of a text lies below 0x80, so that the text is ASCII.
+ * @param text The text.
+ * @return True when the text is ASCII.
+ */
+bool is_ascii(const std::string_view text)
+{
+    const auto below{[](const char byte) { return static_cast<unsigned char>(byte) < 0x80U; }};
+
+    return std::ranges::all_of(text, below);
+}
+
+/**
+ * @brief Returns the CJK ideograph an offset past U+4E00, spelled in UTF-8 as its three bytes.
+ * @param offset The offset, below 0x1000.
+ * @return The character.
+ */
+std::string ideograph(const std::size_t offset)
+{
+    const auto code_point{0x4E00U + offset};
+
+    const auto first{static_cast<char>(0xE0U | (code_point >> 12U))};
+    const auto second{static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU))};
+    const auto third{static_cast<char>(0x80U | (code_point & 0x3FU))};
+
+    return {first, second, third};
+}
+
+/**
+ * @brief Returns every string of up to a number of characters drawn from a list, shortest first and in list order
+ *        within a length.
+ * @param characters The characters.
+ * @param longest The most characters a string holds.
+ * @return The strings, the empty one first.
+ */
+std::vector<std::string> strings_over(const std::vector<std::string>& characters, const std::size_t longest)
+{
+    std::vector<std::string> strings{""};
+
+    for (std::size_t begin{0}, length{0}; length < longest; ++length)
+    {
+        const auto end{strings.size()};
+
+        for (auto index{begin}; index < end; ++index)
+        {
+            for (const auto& character : characters)
+            {
+                strings.push_back(strings[index] + character);
+            }
+        }
+
+        begin = end;
+    }
+
+    return strings;
+}
+
+/**
+ * @brief Returns the merges of a universe line after its name and its decided field, each a left and a right part in
+ *        hex joined by a comma.
+ * @param fields The line after its first three words.
+ * @return The merge table in rank order.
+ */
+std::vector<Merge> merges_of(std::istringstream& fields)
+{
+    std::vector<Merge> merges{};
+
+    for (std::string merge{}; fields >> merge;)
+    {
+        const std::string_view field{merge};
+
+        const auto comma{field.find(',')};
+
+        const auto left{bytes_of(field.substr(0, comma))};
+
+        const auto right{bytes_of(field.substr(comma + 1))};
+
+        merges.push_back({.left = left, .right = right});
+    }
+
+    return merges;
+}
+
+/**
+ * @brief Checks that two decisions of one window certificate are the same, to the byte: both certify, or both return
+ *        one segmentation with one occurrence.
+ * @param found The decision on one automaton.
+ * @param expected The decision on the other.
+ * @param context The fixture line or test checked.
+ */
+void expect_same(
+        const std::optional<Miscovering>& found, const std::optional<Miscovering>& expected, const std::string& context)
+{
+    ASSERT_EQ(found.has_value(), expected.has_value()) << context;
+
+    if (!found)
+    {
+        return;
+    }
+
+    EXPECT_EQ(found->segmentation.bytes, expected->segmentation.bytes) << context;
+    EXPECT_EQ(found->segmentation.boundaries, expected->segmentation.boundaries) << context;
+    EXPECT_EQ(found->occurrence, expected->occurrence) << context;
+}
+
+/**
+ * @brief Returns the message token_automaton() over an alphabet of characters refuses a table with, or the empty text
+ *        when it takes the table.
+ * @param merges The merge table in rank order.
+ * @param alphabet The alphabet, UTF-8.
+ * @return The refusal.
+ */
+std::string refusal_over(const std::vector<Merge>& merges, const std::string_view alphabet)
+{
+    try
+    {
+        std::ignore = token_automaton(merges, alphabet);
+    }
+    catch (const std::invalid_argument& refusal)
+    {
+        return refusal.what();
+    }
+
+    return {};
+}
+
 } // namespace
 
 TEST(Token_automaton_test, Every_ab_lies_in_a_token_beginning_at_its_a_and_the_token_ab_miscovers_origin_one)
@@ -618,6 +849,89 @@ TEST(Token_automaton_test,
     EXPECT_EQ(check.counts.tower_certifications, 3720U);
 }
 
+TEST(Token_automaton_test,
+     Over_the_characters_of_ascii_every_ascii_window_of_the_fixture_is_decided_as_on_the_byte_automaton)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/token_automaton_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    const auto alphabet{ascii_alphabet()};
+
+    std::optional<Token_automaton> bytes{};
+    std::optional<Token_automaton> characters{};
+
+    std::size_t tables{0};
+    std::size_t decisions{0};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        std::istringstream fields{line};
+
+        std::string kind{};
+        std::string first{};
+        std::string second{};
+
+        if (!(fields >> kind) || kind.starts_with('#'))
+        {
+            continue;
+        }
+
+        fields >> first >> second;
+
+        if (kind == "universe")
+        {
+            const auto merges{merges_of(fields)};
+
+            const auto spells_ascii{[](const Merge& merge) { return is_ascii(merge.left) && is_ascii(merge.right); }};
+
+            const auto ascii{std::ranges::all_of(merges, spells_ascii)};
+
+            bytes = ascii ? std::optional{token_automaton(merges)} : std::nullopt;
+            characters = ascii ? std::optional{token_automaton(merges, alphabet)} : std::nullopt;
+            tables += ascii ? 1 : 0;
+
+            continue;
+        }
+
+        const auto window{bytes_of(first)};
+
+        if (!characters || !is_ascii(window))
+        {
+            continue;
+        }
+
+        std::size_t origin{};
+
+        std::istringstream{second} >> origin;
+
+        ++decisions;
+
+        expect_same(miscovering(*characters, window, origin), miscovering(*bytes, window, origin), line);
+    }
+
+    EXPECT_EQ(tables, 408U);
+    EXPECT_EQ(decisions, 31360U);
+}
+
+TEST(Token_automaton_test,
+     The_characters_of_the_alphabet_are_the_first_tokens_in_its_order_and_the_products_follow_them)
+{
+    const auto automaton{token_automaton(sentencepiece_merges(), sentencepiece_alphabet)};
+
+    const auto& tokens{automaton.tokens()};
+
+    ASSERT_EQ(tokens.size(), 21U);
+    EXPECT_EQ(tokens[0].spelling, "▁");
+    EXPECT_EQ(tokens[6].spelling, "é");
+    EXPECT_EQ(tokens[10].spelling, "😀");
+    EXPECT_EQ(automaton.token_of("▁t"), 11U);
+    EXPECT_EQ(automaton.token_of("caét"), 20U);
+    EXPECT_EQ(tokens[20].left, automaton.token_of("ca"));
+    EXPECT_FALSE(automaton.token_of("x"));
+    EXPECT_FALSE(automaton.token_of("\xE2\x96"));
+}
+
 TEST(Token_automaton_test, Has_the_base_state_and_one_state_per_merge_whose_product_a_transition_reads)
 {
     const std::vector<Merge> merges{{.left = "a", .right = "b"}, {.left = "ab", .right = "a"}};
@@ -637,33 +951,149 @@ TEST(Token_automaton_test, The_tokens_a_state_allows_are_every_token_is_allowed_
 {
     const std::vector<Merge> merges{{.left = "a", .right = "b"}, {.left = "ab", .right = "a"}};
 
-    const auto automaton{token_automaton(merges)};
+    const auto bytes{token_automaton(merges)};
 
-    const auto after_a{automaton.allowed_tokens(1)};
+    const auto after_a{bytes.allowed_tokens(1)};
 
     EXPECT_EQ(after_a.size(), 257U);
-    EXPECT_FALSE(std::ranges::contains(after_a, *automaton.token_of("b")));
+    EXPECT_FALSE(std::ranges::contains(after_a, *bytes.token_of("b")));
     EXPECT_EQ(token_automaton({}).allowed_tokens(0).size(), 256U);
 
-    const auto& tokens{automaton.tokens()};
+    const auto characters{token_automaton(sentencepiece_merges(), sentencepiece_alphabet)};
 
-    for (Token_automaton::State_t state{0}; state < automaton.state_count(); ++state)
+    for (const auto& automaton : {bytes, characters})
     {
-        std::vector<Token_automaton::Token_t> admitted{};
+        const auto& tokens{automaton.tokens()};
 
-        for (Token_automaton::Token_t token{0}; token < tokens.size(); ++token)
+        for (Token_automaton::State_t state{0}; state < automaton.state_count(); ++state)
         {
-            if (automaton.is_allowed(state, token))
+            std::vector<Token_automaton::Token_t> admitted{};
+
+            for (Token_automaton::Token_t token{0}; token < tokens.size(); ++token)
             {
-                admitted.push_back(token);
+                if (automaton.is_allowed(state, token))
+                {
+                    admitted.push_back(token);
+                }
             }
+
+            EXPECT_EQ(automaton.allowed_tokens(state), admitted) << "state " << state;
         }
 
-        EXPECT_EQ(automaton.allowed_tokens(state), admitted) << "state " << state;
+        for (const auto& [spelling, left, target] : tokens)
+        {
+            EXPECT_LT(target.value_or(0), automaton.state_count()) << spelling;
+        }
+    }
+}
+
+TEST(Token_automaton_test,
+     On_a_sentencepiece_style_table_every_window_of_up_to_three_characters_is_decided_as_on_the_tower)
+{
+    const auto merges{sentencepiece_merges()};
+
+    const auto ranks{ranks_of(merges)};
+
+    const auto automaton{token_automaton(merges, sentencepiece_alphabet)};
+
+    const auto tower{merge_tower(merges, sentencepiece_alphabet)};
+
+    const auto longest{std::string_view{"▁中文"}.size()};
+
+    std::size_t certified{0};
+    std::size_t refused{0};
+
+    for (const auto& window : strings_over(characters_of(sentencepiece_alphabet), 3) | std::views::drop(1))
+    {
+        for (std::size_t origin{0}; origin < window.size(); ++origin)
+        {
+            const auto context{std::format("{} at {}", window, origin)};
+
+            const auto found{miscovering(automaton, window, origin)};
+
+            const auto on_tower{miscovering(tower, window, origin)};
+
+            EXPECT_EQ(found.has_value(), on_tower.has_value()) << context;
+
+            if (!found)
+            {
+                ++certified;
+
+                continue;
+            }
+
+            ++refused;
+
+            const auto& [segmentation, occurrence]{*found};
+
+            const auto& [bytes, boundaries]{segmentation};
+
+            EXPECT_EQ(boundaries, character_marking(ranks, bytes)) << context;
+            EXPECT_LE(bytes.size(), 2 * longest + window.size() - 2) << context;
+            EXPECT_EQ(std::string_view{bytes}.substr(occurrence, window.size()), window) << context;
+            EXPECT_NE(covering_boundary(segmentation, occurrence + window.size() - 1), occurrence + origin) << context;
+            EXPECT_TRUE(is_accepted(tower, segmentation)) << context;
+        }
     }
 
-    for (const auto& [spelling, left, target] : tokens)
+    EXPECT_EQ(certified, 1432U);
+    EXPECT_EQ(refused, 7060U);
+}
+
+TEST(Token_automaton_test, An_alphabet_of_more_characters_than_a_byte_holds_is_decided_as_on_its_tower)
+{
+    constexpr std::size_t character_count{300};
+    constexpr std::size_t stride{30};
+
+    std::string alphabet{};
+
+    for (std::size_t offset{0}; offset < character_count; ++offset)
     {
-        EXPECT_LT(target.value_or(0), automaton.state_count()) << spelling;
+        alphabet += ideograph(offset);
     }
+
+    std::vector<Merge> merges{};
+
+    for (std::size_t offset{0}; offset < character_count; offset += stride)
+    {
+        merges.push_back({.left = ideograph(offset), .right = ideograph(offset + 1)});
+    }
+
+    merges.push_back({.left = ideograph(0) + ideograph(1), .right = ideograph(character_count - 1)});
+
+    const auto automaton{token_automaton(merges, alphabet)};
+
+    const auto tower{merge_tower(merges, alphabet)};
+
+    const std::vector characters{ideograph(0),   ideograph(1),   ideograph(2),
+                                 ideograph(150), ideograph(151), ideograph(character_count - 1)};
+
+    for (const auto& window : strings_over(characters, 2) | std::views::drop(1))
+    {
+        for (std::size_t origin{0}; origin < window.size(); ++origin)
+        {
+            const auto found{miscovering(automaton, window, origin)};
+
+            const auto on_tower{miscovering(tower, window, origin)};
+
+            EXPECT_EQ(found.has_value(), on_tower.has_value()) << window << " at " << origin;
+        }
+    }
+
+    EXPECT_EQ(automaton.tokens().size(), character_count + merges.size());
+    EXPECT_FALSE(miscovering(automaton, ideograph(150), 0));
+    EXPECT_TRUE(miscovering(automaton, ideograph(1), 0));
+    EXPECT_TRUE(miscovering(automaton, ideograph(character_count - 1), 0));
+}
+
+TEST(Token_automaton_test, Refuses_an_alphabet_holding_a_character_twice_and_a_merge_naming_a_character_outside_it)
+{
+    const auto twice{refusal_over({}, "éb\xC3\xA9")};
+
+    EXPECT_TRUE(twice.contains(R"(the alphabet carries "\xC3\xA9" twice)")) << twice;
+
+    const auto outside{refusal_over({{.left = "é", .right = "t"}, {.left = "ét", .right = "ü"}}, "ét")};
+
+    EXPECT_TRUE(outside.contains(R"(("\xC3\xA9t", "\xC3\xBC") at rank 1 names "\xC3\xBC")")) << outside;
+    EXPECT_TRUE(refusal_over({{.left = "é", .right = "t"}}, "ét").empty());
 }

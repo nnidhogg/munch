@@ -32,7 +32,8 @@ class Token_automaton
 {
 public:
     /**
-     * @brief A token of the table's vocabulary: a byte by its value, or a product by its merge's rank past the bytes.
+     * @brief A token of the table's vocabulary: a symbol of the alphabet by its place in it, so a byte by its value, or
+     *        a product by its merge's rank past the symbols.
      */
     using Token_t = std::size_t;
 
@@ -52,7 +53,7 @@ public:
         std::string spelling{};
 
         /**
-         * @brief The left part of the token's merge, std::nullopt for a byte.
+         * @brief The left part of the token's merge, std::nullopt for a symbol.
          */
         std::optional<Token_t> left{};
 
@@ -63,7 +64,7 @@ public:
     };
 
     /**
-     * @brief Returns the tokens, the bytes first and then each merge's product at its rank past them.
+     * @brief Returns the tokens, the alphabet's symbols first and then each merge's product at its rank past them.
      * @return The tokens by number.
      */
     [[nodiscard]] const std::vector<Token>& tokens() const noexcept;
@@ -71,7 +72,7 @@ public:
     /**
      * @brief Returns the token a spelling names.
      * @param spelling The spelling.
-     * @return The token, or std::nullopt when no byte or product is spelled so.
+     * @return The token, or std::nullopt when no symbol or product is spelled so.
      */
     [[nodiscard]] std::optional<Token_t> token_of(std::string_view spelling) const;
 
@@ -99,8 +100,9 @@ public:
     [[nodiscard]] std::vector<Token_t> allowed_tokens(State_t state) const;
 
 private:
-    // token_automaton() builds the automaton merge by merge, reading is_allowed() on the states built so far.
+    // token_automaton() builds the automaton over the bytes or over an alphabet of characters through the constructor.
     friend Token_automaton token_automaton(std::span<const Merge> merges);
+    friend Token_automaton token_automaton(std::span<const Merge> merges, std::string_view alphabet);
 
     /**
      * @brief A state of the automaton other than the base state: the state it was copied from, the token numbered after
@@ -127,17 +129,24 @@ private:
     };
 
     /**
-     * @brief The base state, the automaton of every byte string read byte by byte, in which every token may be read.
+     * @brief The base state, the automaton of every string over the alphabet read symbol by symbol, in which every
+     *        token may be read.
      */
     static constexpr State_t base_state{0};
 
     /**
-     * @brief Constructs the automaton of no tokens with the base state alone, for token_automaton() to fill.
+     * @brief Builds the automaton of a merge table over an alphabet: each symbol a token the base state reads, and then
+     *        each merge in rank order, reading is_allowed() on the states built so far.
+     * @param merges The merge table in rank order, each part a symbol or the product of an earlier merge.
+     * @param symbols The alphabet's symbols, each spelled by its bytes, numbered in order.
+     * @throws std::invalid_argument If the alphabet holds a symbol twice, or a merge names a part that neither the
+     *         alphabet nor an earlier merge carries, or a product that the alphabet or an earlier merge already
+     *         carries.
      */
-    Token_automaton();
+    Token_automaton(std::span<const Merge> merges, std::span<const std::string> symbols);
 
     /**
-     * @brief The tokens, the bytes first and then each merge's product at its rank past them.
+     * @brief The tokens, the alphabet's symbols first and then each merge's product at its rank past them.
      */
     std::vector<Token> tokens_{};
 
@@ -172,17 +181,39 @@ private:
 [[nodiscard]] Token_automaton token_automaton(std::span<const Merge> merges);
 
 /**
+ * @brief Builds the token automaton of a merge table over an alphabet of characters, each spelled by its UTF-8 bytes,
+ *        by the same Algorithm 2 from a base state that reads every character of the alphabet.
+ *
+ * The tokens before any merge are the alphabet's characters in place of the bytes, numbered in its order, as in a
+ * character-level table such as SentencePiece's, and each part of a merge is one of them or the product of an earlier
+ * merge, spelled in UTF-8; the products follow at their ranks past the characters. miscovering() then decides a window
+ * certificate over the strings of the alphabet by the same search, comparing spellings as bytes. No character's
+ * encoding is a prefix of another's, and each begins with a byte that is not a continuation byte, so the search finds a
+ * window of characters only at character boundaries, a token's spelling neither beginning nor ending inside a
+ * character. The verdict is miscovering()'s on merge_tower(merges, alphabet). Over the characters U+0000 to U+007F a
+ * window of them is decided as on the byte automaton of the same table, to the byte.
+ * @param merges The merge table in rank order, each part a character or the product of an earlier merge.
+ * @param alphabet The alphabet, UTF-8 text whose characters are the tokens before any merge, each once.
+ * @return The token automaton.
+ * @throws std::invalid_argument If the alphabet holds a character twice, or a merge names a part that neither the
+ *         alphabet nor an earlier merge carries, or a product that the alphabet or an earlier merge already carries;
+ *         the message names the character, or the merge and its rank, each spelling quoted, a byte outside printable
+ *         ASCII written `\xHH` and the quote and the backslash escaped.
+ */
+[[nodiscard]] Token_automaton token_automaton(std::span<const Merge> merges, std::string_view alphabet);
+
+/**
  * @brief Decides the window certificate (window, origin) under canonical byte-pair encoding on the token automaton of a
  *        merge table: the token containing an occurrence's final byte begins at the occurrence's byte origin, at every
- *        occurrence in every byte string under the encoder's segmentation of it.
+ *        occurrence in every string over the automaton's alphabet under the encoder's segmentation of it.
  *
- * The verdict is miscovering()'s on merge_tower(merges), decided without building the tower. It rests on the canonical
- * adjacency theorem, Theorem 2 of the report The Left Ripple of Byte-Pair Encoding: a list of tokens is the encoder's
- * segmentation of its spelling exactly when every token is the segmentation of its own spelling and so is every
- * adjacent pair. A run of consecutive tokens of a segmentation is then the segmentation of its own spelling, so a
- * miscovering, when there is one, is spelled by the tokens over one occurrence of the window, from the token containing
- * its first byte to the token containing its last, and is at most 2L + |window| - 2 bytes long, L the longest token.
- * Adjacency is read off the automaton, the state a token entered deciding which tokens may follow it.
+ * The verdict is miscovering()'s on the merge tower of the same table and alphabet, decided without building the tower.
+ * It rests on the canonical adjacency theorem, Theorem 2 of the report The Left Ripple of Byte-Pair Encoding: a list of
+ * tokens is the encoder's segmentation of its spelling exactly when every token is the segmentation of its own spelling
+ * and so is every adjacent pair. A run of consecutive tokens of a segmentation is then the segmentation of its own
+ * spelling, so a miscovering, when there is one, is spelled by the tokens over one occurrence of the window, from the
+ * token containing its first byte to the token containing its last, and is at most 2L + |window| - 2 bytes long, L the
+ * longest token. Adjacency is read off the automaton, the state a token entered deciding which tokens may follow it.
  *
  * The search runs over nodes (state, k), the state the last token entered and the number of the window's bytes spelled
  * so far. A token holding the whole window is a miscovering by itself, unless it holds it at its start and the origin

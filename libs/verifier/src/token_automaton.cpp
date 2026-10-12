@@ -33,9 +33,9 @@ using Token_t = Token_automaton::Token_t;
 using State_t = Token_automaton::State_t;
 
 /**
- * @brief The number of bytes, which the vocabulary carries before the products.
+ * @brief The number of bytes, the symbols of the byte alphabet.
  */
-constexpr Token_t byte_count{256};
+constexpr std::size_t byte_count{256};
 
 /**
  * @brief A node of the search: the state the last token entered and the number of the window's bytes spelled so far.
@@ -111,6 +111,56 @@ struct Link
     out += '"';
 
     return out;
+}
+
+/**
+ * @brief Returns the byte alphabet: every byte, each a symbol spelled by itself, in order of value.
+ * @return The spellings of the 256 bytes.
+ */
+[[nodiscard]] std::vector<std::string> byte_alphabet()
+{
+    std::vector<std::string> symbols{};
+
+    for (std::size_t byte{0}; byte < byte_count; ++byte)
+    {
+        const std::string spelling{static_cast<char>(byte)};
+
+        symbols.push_back(spelling);
+    }
+
+    return symbols;
+}
+
+/**
+ * @brief Returns the characters of an alphabet given as UTF-8 text, each spelled by its bytes: the text split before
+ *        every byte that is not a continuation byte.
+ * @param alphabet The alphabet, UTF-8.
+ * @return The characters, in order.
+ */
+[[nodiscard]] std::vector<std::string> characters_of(const std::string_view alphabet)
+{
+    constexpr unsigned char continuation_mask{0xC0};
+    constexpr unsigned char continuation_bits{0x80};
+
+    std::vector<std::string> characters{};
+
+    for (const auto byte : alphabet)
+    {
+        const auto value{static_cast<unsigned char>(byte)};
+
+        const auto continues{(value & continuation_mask) == continuation_bits};
+
+        if (continues && !characters.empty())
+        {
+            characters.back() += byte;
+
+            continue;
+        }
+
+        characters.push_back(std::string{byte});
+    }
+
+    return characters;
 }
 
 /**
@@ -265,7 +315,7 @@ std::optional<Miscovering> Search::chained_miscovering()
 
     const auto lengths{automaton_.tokens() | std::views::transform(spelling_length)};
 
-    const auto longest{std::ranges::max(lengths)};
+    const auto longest{std::ranges::fold_left(lengths, std::size_t{0}, std::ranges::max)};
 
     while (!frontier_.empty())
     {
@@ -386,8 +436,83 @@ Miscovering Search::miscovering_of(const Node node, const Token_t covering) cons
 
 } // namespace
 
-Token_automaton::Token_automaton() : states_{State{}}
-{}
+Token_automaton::Token_automaton(const std::span<const Merge> merges, const std::span<const std::string> symbols)
+    : states_{State{}}
+{
+    for (Token_t symbol{0}; symbol < symbols.size(); ++symbol)
+    {
+        const auto& spelling{symbols[symbol]};
+
+        const auto [entry, inserted]{index_.try_emplace(spelling, symbol)};
+
+        if (!inserted)
+        {
+            throw std::invalid_argument{
+                    std::format("token_automaton: the alphabet carries {} twice", quoted(spelling))};
+        }
+
+        tokens_.push_back({.spelling = spelling, .target = base_state});
+    }
+
+    for (std::size_t rank{0}; rank < merges.size(); ++rank)
+    {
+        const auto& [left, right]{merges[rank]};
+
+        const auto left_found{index_.find(left)};
+        const auto right_found{index_.find(right)};
+
+        if (left_found == index_.cend() || right_found == index_.cend())
+        {
+            const auto& missing{left_found == index_.cend() ? left : right};
+
+            throw std::invalid_argument{std::format(
+                    "token_automaton: the merge ({}, {}) at rank {} names {}, which neither the alphabet nor an "
+                    "earlier merge carries",
+                    quoted(left), quoted(right), rank, quoted(missing))};
+        }
+
+        const auto& [left_spelling, left_token]{*left_found};
+        const auto& [right_spelling, right_token]{*right_found};
+
+        const auto spelling{left + right};
+
+        const auto product{tokens_.size()};
+
+        const auto [entry, inserted]{index_.try_emplace(spelling, product)};
+
+        if (!inserted)
+        {
+            throw std::invalid_argument{std::format(
+                    "token_automaton: the merge ({}, {}) at rank {} recreates the token {}, which the alphabet or an "
+                    "earlier merge already carries",
+                    quoted(left), quoted(right), rank, quoted(spelling))};
+        }
+
+        const auto copied{tokens_[left_token].target};
+
+        const auto readable{copied && is_allowed(*copied, right_token)};
+
+        if (!readable)
+        {
+            tokens_.push_back({.spelling = spelling, .left = left_token});
+
+            continue;
+        }
+
+        std::vector removed{right_token};
+
+        if (left_token == right_token)
+        {
+            removed.push_back(product);
+        }
+
+        tokens_.push_back({.spelling = spelling, .left = left_token, .target = tokens_[right_token].target});
+
+        tokens_[left_token].target = states_.size();
+
+        states_.push_back({.parent = *copied, .birth = product + 1, .removed = std::move(removed)});
+    }
+}
 
 const std::vector<Token_automaton::Token>& Token_automaton::tokens() const noexcept
 {
@@ -459,78 +584,16 @@ std::vector<Token_automaton::Token_t> Token_automaton::allowed_tokens(const Stat
 
 Token_automaton token_automaton(const std::span<const Merge> merges)
 {
-    Token_automaton automaton{};
+    const auto symbols{byte_alphabet()};
 
-    auto& [tokens, states, index]{automaton};
+    return Token_automaton{merges, symbols};
+}
 
-    for (Token_t byte{0}; byte < byte_count; ++byte)
-    {
-        const std::string spelling{static_cast<char>(byte)};
+Token_automaton token_automaton(const std::span<const Merge> merges, const std::string_view alphabet)
+{
+    const auto symbols{characters_of(alphabet)};
 
-        tokens.push_back({.spelling = spelling, .target = Token_automaton::base_state});
-        index.emplace(tokens.back().spelling, byte);
-    }
-
-    for (std::size_t rank{0}; rank < merges.size(); ++rank)
-    {
-        const auto& [left, right]{merges[rank]};
-
-        const auto left_found{index.find(left)};
-        const auto right_found{index.find(right)};
-
-        if (left_found == index.cend() || right_found == index.cend())
-        {
-            const auto& missing{left_found == index.cend() ? left : right};
-
-            throw std::invalid_argument{std::format(
-                    "token_automaton: the merge ({}, {}) at rank {} names {}, which neither the alphabet nor an "
-                    "earlier merge carries",
-                    quoted(left), quoted(right), rank, quoted(missing))};
-        }
-
-        const auto& [left_spelling, left_token]{*left_found};
-        const auto& [right_spelling, right_token]{*right_found};
-
-        const auto spelling{left + right};
-
-        const auto product{tokens.size()};
-
-        const auto [entry, inserted]{index.try_emplace(spelling, product)};
-
-        if (!inserted)
-        {
-            throw std::invalid_argument{std::format(
-                    "token_automaton: the merge ({}, {}) at rank {} recreates the token {}, which the alphabet or an "
-                    "earlier merge already carries",
-                    quoted(left), quoted(right), rank, quoted(spelling))};
-        }
-
-        const auto copied{tokens[left_token].target};
-
-        const auto readable{copied && automaton.is_allowed(*copied, right_token)};
-
-        if (!readable)
-        {
-            tokens.push_back({.spelling = spelling, .left = left_token});
-
-            continue;
-        }
-
-        std::vector removed{right_token};
-
-        if (left_token == right_token)
-        {
-            removed.push_back(product);
-        }
-
-        tokens.push_back({.spelling = spelling, .left = left_token, .target = tokens[right_token].target});
-
-        tokens[left_token].target = states.size();
-
-        states.push_back({.parent = *copied, .birth = product + 1, .removed = std::move(removed)});
-    }
-
-    return automaton;
+    return Token_automaton{merges, symbols};
 }
 
 std::optional<Miscovering> miscovering(
