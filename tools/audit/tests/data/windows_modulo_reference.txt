@@ -1,0 +1,1721 @@
+# written by munch-audit from the repository's root over every bundled grammar in name order with --windows-modulo; regenerate with it, never by hand
+== tools/audit/grammars/c-like-block-comments.g4
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 3, condition INITIAL: 8 rules
+verdict                     no byte certifies, and no window up to width 3 in the model; what certifying a byte would cost is priced below
+certified bytes             none
+certified modulo discarded  none
+discarded tokens            3: '//' ~[\n]*, '/*' .*? '*/', [ \t\n]+
+certified windows (<= 3)    none
+mandatory core              none
+anchor-free span, bytes     unbounded
+lag                         unbounded
+rescue-free                 no: the scan rolls back and continues on "/*"
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+  '//' ~[\n]*                consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  '/*' .*? '*/'              consumes 91 candidate bytes mid-token, e.g. '*' after "/"
+  [ \t\n]+                   consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  1. '/*' .*? '*/'            no longer admits '\n'
+                              certifies once discarded tokens are deleted
+  2. [ \t\n]+                 the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what the shapes of the tokens consuming '\n' offer, each edit on its own
+  '/*' .*? '*/'              delimited: scan the body in a start condition of its own, the opener staying here
+                             certifies once discarded tokens are deleted
+  every shape's edit together certifies exactly
+
+what deleting the discarded tokens adds to the windows
+  windows modulo discarded   none
+
+== tools/audit/grammars/c-like-block-comments.l
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 9, condition INITIAL: 8 rules
+options                     noyywrap, nodefault
+verdict                     no byte certifies, and no window up to width 3 in the model; what certifying a byte would cost is priced below
+certified bytes             none
+certified modulo discarded  none
+discarded tokens            3: "//"[^\n]*, "/*"([^*]|\*+[^*/])*\*+"/", [ \t\n]+
+certified windows (<= 3)    none
+mandatory core              "*/"
+anchor-free span, bytes     unbounded
+lag                         unbounded
+rescue-free                 no: the scan rolls back and continues on "/*"
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+  "//"[^\n]*                 consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  "/*"([^*]|\*+[^*/])*\*+"/" consumes 91 candidate bytes mid-token, e.g. '*' after "/"
+  [ \t\n]+                   consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  1. "/*"([^*]|\*+[^*/])*\*+"/" no longer admits '\n'
+                              certifies once discarded tokens are deleted
+  2. [ \t\n]+                 the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what the shapes of the tokens consuming '\n' offer, each edit on its own
+  "/*"([^*]|\*+[^*/])*\*+"/" delimited: scan the body in a start condition of its own, the opener staying here
+                             certifies once discarded tokens are deleted
+  every shape's edit together certifies exactly
+
+what deleting the discarded tokens adds to the windows
+  windows modulo discarded   none
+
+== tools/audit/grammars/c-like-block-comments.re
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 11, condition INITIAL: 8 rules
+options                     define:YYCTYPE=char, yyfill:enable=0, eof=0
+verdict                     no byte certifies, and no window up to width 3 in the model; what certifying a byte would cost is priced below
+certified bytes             none
+certified modulo discarded  none
+discarded tokens            3: "//" [^\n]*, "/*" ([^*] | "*"+ [^*\/])* "*"+ "/", [ \t\n]+
+certified windows (<= 3)    none
+mandatory core              "*/"
+anchor-free span, bytes     unbounded
+lag                         unbounded
+rescue-free                 no: the scan rolls back and continues on "/*"
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+  "//" [^\n]*                consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  "/*" ([^*] | "*"+ [^*\/])* "*"+ "/" consumes 91 candidate bytes mid-token, e.g. '*' after "/"
+  [ \t\n]+                   consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  1. "/*" ([^*] | "*"+ [^*\/])* "*"+ "/" no longer admits '\n'
+                              certifies once discarded tokens are deleted
+  2. [ \t\n]+                 the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what the shapes of the tokens consuming '\n' offer, each edit on its own
+  "/*" ([^*] | "*"+ [^*\/])* "*"+ "/" delimited: scan the body in a start condition of its own, the opener staying here
+                             certifies once discarded tokens are deleted
+  every shape's edit together certifies exactly
+
+what deleting the discarded tokens adds to the windows
+  windows modulo discarded   none
+
+== tools/audit/grammars/c-like-block-comments.rs
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 8, condition INITIAL: 8 rules
+options                     unicode-classes=16.0.0
+verdict                     no byte certifies, and no window up to width 3 in the model; what certifying a byte would cost is priced below
+certified bytes             none
+certified modulo discarded  none
+discarded tokens            3: r"//[^\n]*", r"/\*[^*]*\*+([^*/][^*]*\*+)*/", r"[ \t\n]+"
+certified windows (<= 3)    none
+mandatory core              none
+anchor-free span, bytes     unbounded
+lag                         unbounded
+rescue-free                 no: the scan rolls back and continues on "/*"
+
+why candidate bytes do not certify
+  r"//[^\n]*"                consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  r"/\*[^*]*\*+([^*/][^*]*\*+)*/" consumes 91 candidate bytes mid-token, e.g. '*' after "/"
+  r"[ \t\n]+"                consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
+  Identifier                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  Number                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  String                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+
+what it would cost to certify '\n'
+  1. r"/\*[^*]*\*+([^*/][^*]*\*+)*/" no longer admits '\n'
+                              certifies once discarded tokens are deleted
+  2. r"[ \t\n]+"              the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what the shapes of the tokens consuming '\n' offer, each edit on its own
+  r"/\*[^*]*\*+([^*/][^*]*\*+)*/" delimited: scan the body in a start condition of its own, the opener staying here
+                             certifies once discarded tokens are deleted
+  every shape's edit together certifies exactly
+
+what deleting the discarded tokens adds to the windows
+  windows modulo discarded   none
+
+== tools/audit/grammars/c-like-conventional.g4
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 5, condition INITIAL: 7 rules
+verdict                     no byte certifies exactly; 1 certifies once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  '\n'
+discarded tokens            2: '//' ~[\n]*, [ \t\n]+
+certified windows (<= 3)    16 at width 2, 218 at width 3 over 20 byte classes, 51895 once classes expand
+                            "#\n" at 1
+                            "\n!" at 1
+                            "\n\"" at 1
+                            "\n(" at 1
+                            "\n/" at 1
+                            "\n0" at 1
+                            ... 228 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         3
+rescue-free                 yes
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+  '//' ~[\n]*                consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  [ \t\n]+                   consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n]+                 the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+== tools/audit/grammars/c-like-conventional.l
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 10, condition INITIAL: 7 rules
+options                     noyywrap, nodefault
+verdict                     no byte certifies exactly; 1 certifies once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  '\n'
+discarded tokens            2: "//"[^\n]*, [ \t\n]+
+certified windows (<= 3)    13 at width 2, 160 at width 3 over 9 byte classes, 92292 once classes expand
+                            "#\n" at 1
+                            "\n!" at 1
+                            "\n\"" at 1
+                            "\n(" at 1
+                            "\n/" at 1
+                            "\n0" at 1
+                            ... 167 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         0
+rescue-free                 yes
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+  "//"[^\n]*                 consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  [ \t\n]+                   consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n]+                 the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+== tools/audit/grammars/c-like-conventional.re
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 12, condition INITIAL: 8 rules
+options                     define:YYCTYPE=char, yyfill:enable=0, eof=0
+verdict                     no byte certifies exactly; 1 certifies once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  '\n'
+discarded tokens            2: "//" [^\n]*, [ \t\n]+
+certified windows (<= 3)    27 at width 2, 552 at width 3 over 16 byte classes, 92292 once classes expand
+                            "#\n" at 1
+                            "\n!" at 1
+                            "\n\"" at 1
+                            "\n(" at 1
+                            "\n/" at 1
+                            "\n0" at 1
+                            ... 573 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         0
+rescue-free                 yes
+
+why candidate bytes do not certify
+  KEYWORD                    consumes 12 candidate bytes mid-token, e.g. 'F' after "I"
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+  "//" [^\n]*                consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  [ \t\n]+                   consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n]+                 the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+== tools/audit/grammars/c-like-conventional.rs
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 8, condition INITIAL: 7 rules
+options                     unicode-classes=16.0.0
+verdict                     no byte certifies exactly; 1 certifies once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  '\n'
+discarded tokens            2: r"//[^\n]*", r"[ \t\n]+"
+certified windows (<= 3)    16 at width 2, 218 at width 3 over 20 byte classes, 51895 once classes expand
+                            "#\n" at 1
+                            "\n!" at 1
+                            "\n\"" at 1
+                            "\n(" at 1
+                            "\n/" at 1
+                            "\n0" at 1
+                            ... 228 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         3
+rescue-free                 yes
+
+why candidate bytes do not certify
+  r"//[^\n]*"                consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  r"[ \t\n]+"                consumes 3 candidate bytes mid-token, e.g. '\t' after "\t"
+  Identifier                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  Number                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  String                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. r"[ \t\n]+"              the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+== tools/audit/grammars/c-like-split-friendly.g4
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 3, condition INITIAL: 8 rules
+verdict                     1 byte certifies exactly: a cut is safe at any occurrence
+certified bytes             '\n'
+certified modulo discarded  '\n'
+discarded tokens            3: '//' ~[\n]*, '\n', [ \t]+
+certified windows (<= 3)    19 at width 2, 254 at width 3 over 20 byte classes, 52860 once classes expand
+                            "#\n" at 1
+                            "\t\n" at 1
+                            "\n\t" at 1
+                            "\n\n" at 1
+                            "\n!" at 1
+                            "\n\"" at 1
+                            ... 267 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         3
+rescue-free                 yes
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+  '//' ~[\n]*                consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  [ \t]+                     consumes 2 candidate bytes mid-token, e.g. '\t' after "\t"
+
+== tools/audit/grammars/c-like-split-friendly.l
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 9, condition INITIAL: 8 rules
+options                     noyywrap, nodefault
+verdict                     1 byte certifies exactly: a cut is safe at any occurrence
+certified bytes             '\n'
+certified modulo discarded  '\n'
+discarded tokens            3: "//"[^\n]*, \n, [ \t]+
+certified windows (<= 3)    16 at width 2, 187 at width 3 over 9 byte classes, 93577 once classes expand
+                            "#\n" at 1
+                            "\t\n" at 1
+                            "\n\t" at 1
+                            "\n\n" at 1
+                            "\n!" at 1
+                            "\n\"" at 1
+                            ... 197 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         0
+rescue-free                 yes
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+  "//"[^\n]*                 consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  [ \t]+                     consumes 2 candidate bytes mid-token, e.g. '\t' after "\t"
+
+== tools/audit/grammars/c-like-split-friendly.re
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 10, condition INITIAL: 8 rules
+options                     define:YYCTYPE=char, yyfill:enable=0, eof=0
+verdict                     1 byte certifies exactly: a cut is safe at any occurrence
+certified bytes             '\n'
+certified modulo discarded  '\n'
+discarded tokens            3: "//" [^\n]*, "\n", [ \t]+
+certified windows (<= 3)    16 at width 2, 187 at width 3 over 9 byte classes, 93577 once classes expand
+                            "#\n" at 1
+                            "\t\n" at 1
+                            "\n\t" at 1
+                            "\n\n" at 1
+                            "\n!" at 1
+                            "\n\"" at 1
+                            ... 197 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         0
+rescue-free                 yes
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  NUMBER                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  STRING                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+  "//" [^\n]*                consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  [ \t]+                     consumes 2 candidate bytes mid-token, e.g. '\t' after "\t"
+
+== tools/audit/grammars/c-like-split-friendly.rs
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 6, condition INITIAL: 8 rules
+options                     unicode-classes=16.0.0
+verdict                     1 byte certifies exactly: a cut is safe at any occurrence
+certified bytes             '\n'
+certified modulo discarded  '\n'
+discarded tokens            3: r"//[^\n]*", "\n", r"[ \t]+"
+certified windows (<= 3)    19 at width 2, 254 at width 3 over 20 byte classes, 52860 once classes expand
+                            "#\n" at 1
+                            "\t\n" at 1
+                            "\n\t" at 1
+                            "\n\n" at 1
+                            "\n!" at 1
+                            "\n\"" at 1
+                            ... 267 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         3
+rescue-free                 yes
+
+why candidate bytes do not certify
+  r"//[^\n]*"                consumes 90 candidate bytes mid-token, e.g. '/' after "/"
+  r"[ \t]+"                  consumes 2 candidate bytes mid-token, e.g. '\t' after "\t"
+  Identifier                 consumes 63 candidate bytes mid-token, e.g. '0' after "A"
+  Number                     consumes 10 candidate bytes mid-token, e.g. '0' after "0"
+  String                     consumes 90 candidate bytes mid-token, e.g. '\t' after "\""
+
+== tools/audit/grammars/json.g4
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 4, condition INITIAL: 5 rules
+verdict                     no byte certifies exactly; 3 certify once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  '\t' '\n' '\r'
+discarded tokens            1: [ \t\n\r]+
+certified windows (<= 3)    14 at width 2, 508 at width 3 over 35 byte classes, 10259 once classes expand
+                            " \"!" at 1
+                            " \"+" at 1
+                            " \"." at 1
+                            " \"/" at 1
+                            " \"A" at 1
+                            " \"E" at 1
+                            ... 516 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         2
+rescue-free                 yes
+
+why candidate bytes do not certify
+  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  STRING                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
+  [ \t\n\r]+                 consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\t'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\t', and '\t' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\r'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\r', and '\r' becomes a token of its own, discarded
+                              certifies exactly
+
+== tools/audit/grammars/json.l
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 11, condition INITIAL: 5 rules
+options                     noyywrap, nodefault
+verdict                     no byte certifies exactly; 3 certify once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  '\t' '\n' '\r'
+discarded tokens            1: [ \t\n\r]+
+certified windows (<= 3)    14 at width 2, 422 at width 3 over 25 byte classes, 13630 once classes expand
+                            " \"!" at 1
+                            " \"+" at 1
+                            " \"." at 1
+                            " \"/" at 1
+                            " \"A" at 1
+                            " \"E" at 1
+                            ... 430 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         2
+rescue-free                 yes
+
+why candidate bytes do not certify
+  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  STRING                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
+  [ \t\n\r]+                 consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\t'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\t', and '\t' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\r'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\r', and '\r' becomes a token of its own, discarded
+                              certifies exactly
+
+== tools/audit/grammars/json.re
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 9, condition INITIAL: 5 rules
+options                     define:YYCTYPE=char, yyfill:enable=0, eof=0
+verdict                     no byte certifies exactly; 3 certify once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  '\t' '\n' '\r'
+discarded tokens            1: [ \t\n\r]+
+certified windows (<= 3)    14 at width 2, 422 at width 3 over 25 byte classes, 13630 once classes expand
+                            " \"!" at 1
+                            " \"+" at 1
+                            " \"." at 1
+                            " \"/" at 1
+                            " \"A" at 1
+                            " \"E" at 1
+                            ... 430 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         2
+rescue-free                 yes
+
+why candidate bytes do not certify
+  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  STRING                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
+  [ \t\n\r]+                 consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\t'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\t', and '\t' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\r'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. [ \t\n\r]+               the run no longer admits '\r', and '\r' becomes a token of its own, discarded
+                              certifies exactly
+
+== tools/audit/grammars/json.rs
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 7, condition INITIAL: 5 rules
+options                     unicode-classes=16.0.0
+verdict                     no byte certifies exactly; 3 certify once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  '\t' '\n' '\r'
+discarded tokens            1: r"[ \t\n\r]+"
+certified windows (<= 3)    14 at width 2, 508 at width 3 over 35 byte classes, 10259 once classes expand
+                            " \"!" at 1
+                            " \"+" at 1
+                            " \"." at 1
+                            " \"/" at 1
+                            " \"A" at 1
+                            " \"E" at 1
+                            ... 516 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         2
+rescue-free                 yes
+
+why candidate bytes do not certify
+  r"[ \t\n\r]+"              consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
+  Number                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  String                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. r"[ \t\n\r]+"            the run no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\t'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. r"[ \t\n\r]+"            the run no longer admits '\t', and '\t' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\r'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. r"[ \t\n\r]+"            the run no longer admits '\r', and '\r' becomes a token of its own, discarded
+                              certifies exactly
+
+== tools/audit/grammars/lean4.g4
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 9, condition INITIAL: 15 rules
+verdict                     no byte certifies; windows do: 1 up to width 3, 1 once classes expand
+certified bytes             none
+certified modulo discarded  none
+discarded tokens            3: '/-', '--' ~[\n]*, (' ' | '\r'? '\n')+
+certified windows (<= 3)    1 at width 3 over 85 byte classes, 1 once classes expand
+                            "\xC2\xBB\n" at 2
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         unbounded
+rescue-free                 no: the scan rolls back and continues on "\n\r"
+
+why candidate bytes do not certify
+  IDENTIFIER                 consumes 179 candidate bytes mid-token, e.g. '!' after "A"
+  NAME_LITERAL               consumes 179 candidate bytes mid-token, e.g. 'A' after "`"
+  NUMBER                     consumes 30 candidate bytes mid-token, e.g. '.' after "0"
+  CHARACTER                  consumes 179 candidate bytes mid-token, e.g. 0x00 after "'"
+  INTERPOLATED_OPEN          consumes 2 candidate bytes mid-token, e.g. '!' after "f"
+  DOC_COMMENT_OPEN           consumes 1 candidate byte mid-token, e.g. '-' after "/"
+  MODULE_DOC_OPEN            consumes 2 candidate bytes mid-token, e.g. '-' after "/"
+  '/-'                       consumes 1 candidate byte mid-token, e.g. '-' after "/"
+  '--' ~[\n]*                consumes 178 candidate bytes mid-token, e.g. '-' after "-"
+  (' ' | '\r'? '\n')+        consumes 3 candidate bytes mid-token, e.g. '\n' after "\n"
+  SYMBOL                     consumes 15 candidate bytes mid-token, e.g. '$' after "<"
+
+what it would cost to certify '\n'
+  1. IDENTIFIER               no longer admits '\n'
+                              still does not certify
+  2. NAME_LITERAL             no longer admits '\n'
+                              still does not certify
+  3. CHARACTER                no longer admits '\n'
+                              still does not certify
+  4. (' ' | '\r'? '\n')+      no longer admits '\n'
+                              certifies exactly
+
+what the shapes of the tokens consuming '\n' offer, each edit on its own
+  NAME_LITERAL               delimited: scan the body in a start condition of its own, the opener staying here
+                             still does not certify
+  CHARACTER                  delimited: scan the body in a start condition of its own, the opener staying here
+                             still does not certify
+  every shape's edit together certifies exactly
+
+what deleting the discarded tokens adds to the windows
+  windows modulo discarded   none
+
+-- scanner at line 9, condition STRING: 2 rules
+verdict                     no byte certifies; windows do: 284 up to width 3, 64589 once classes expand
+certified bytes             none
+certified modulo discarded  none
+certified windows (<= 3)    11 at width 2, 273 at width 3 over 20 byte classes, 64589 once classes expand
+                            "!\"" at 1
+                            "\"\"" at 1
+                            "'\"" at 1
+                            "0\"" at 1
+                            "u\"" at 1
+                            "x\"" at 1
+                            ... 278 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         5
+rescue-free                 yes
+
+why candidate bytes do not certify
+  STRING_TEXT                consumes 179 candidate bytes mid-token, e.g. 0x00 after "\x00"
+
+what it would cost to certify '\n'
+  1. STRING_TEXT              no longer admits '\n', and '\n' becomes a token of its own
+                              certifies exactly
+
+what deleting the discarded tokens adds to the windows
+  windows modulo discarded   none, since no token is discarded
+
+-- scanner at line 9, condition INTERPOLATED: 3 rules
+verdict                     no byte certifies; windows do: 642 up to width 3, 128796 once classes expand
+certified bytes             none
+certified modulo discarded  none
+certified windows (<= 3)    24 at width 2, 618 at width 3 over 21 byte classes, 128796 once classes expand
+                            "!\"" at 1
+                            "!{" at 1
+                            "\"\"" at 1
+                            "\"{" at 1
+                            "'\"" at 1
+                            "'{" at 1
+                            ... 636 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         5
+rescue-free                 yes
+
+why candidate bytes do not certify
+  INTERPOLATED_TEXT          consumes 179 candidate bytes mid-token, e.g. 0x00 after "\x00"
+
+what it would cost to certify '\n'
+  1. INTERPOLATED_TEXT        no longer admits '\n', and '\n' becomes a token of its own
+                              certifies exactly
+
+what deleting the discarded tokens adds to the windows
+  windows modulo discarded   none, since no token is discarded
+
+-- scanner at line 9, condition BLOCK_COMMENT: 3 rules
+verdict                     no byte certifies exactly; 177 certify once the discarded tokens are deleted, priced below
+certified bytes             none
+certified modulo discarded  0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 '\t' '\n' 0x0B 0x0C '\r' 0x0E 0x0F 0x10 0x11 0x12 0x13 0x14 0x15 0x16 0x17 0x18 0x19 0x1A 0x1B 0x1C 0x1D 0x1E 0x1F ' ' '!' '"' '#' '$' '%' '&' '\'' '(' ')' '*' '+' ',' '.' '0' '1' '2' '3' '4' '5' '6' '7' '8' '9' ':' ';' '<' '=' '>' '?' '@' 'A' 'B' 'C' 'D' 'E' 'F' 'G' 'H' 'I' 'J' 'K' 'L' 'M' 'N' 'O' 'P' 'Q' 'R' 'S' 'T' 'U' 'V' 'W' 'X' 'Y' 'Z' '[' '\\' ']' '^' '_' '`' 'a' 'b' 'c' 'd' 'e' 'f' 'g' 'h' 'i' 'j' 'k' 'l' 'm' 'n' 'o' 'p' 'q' 'r' 's' 't' 'u' 'v' 'w' 'x' 'y' 'z' '{' '|' '}' '~' 0x7F 0xC2 0xC3 0xC4 0xC5 0xC6 0xC7 0xC8 0xC9 0xCA 0xCB 0xCC 0xCD 0xCE 0xCF 0xD0 0xD1 0xD2 0xD3 0xD4 0xD5 0xD6 0xD7 0xD8 0xD9 0xDA 0xDB 0xDC 0xDD 0xDE 0xDF 0xE0 0xE1 0xE2 0xE3 0xE4 0xE5 0xE6 0xE7 0xE8 0xE9 0xEA 0xEB 0xEC 0xED 0xEE 0xEF 0xF0 0xF1 0xF2 0xF3 0xF4
+discarded tokens            3: '/-', '-/', (~[/\-]+ | [/\-])
+certified windows (<= 3)    26 at width 2, 174 at width 3 over 14 byte classes, 135776 once classes expand
+                            "!-" at 1
+                            "!/" at 1
+                            "-!" at 1
+                            "--" at 1
+                            "/!" at 1
+                            "//" at 1
+                            ... 194 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   not decided: more than 131072 windows once classes expand
+lag                         3
+rescue-free                 yes
+
+why candidate bytes do not certify
+  '/-'                       consumes 1 candidate byte mid-token, e.g. '-' after "/"
+  '-/'                       consumes 1 candidate byte mid-token, e.g. '/' after "-"
+  (~[/\-]+ | [/\-])          consumes 177 candidate bytes mid-token, e.g. 0x00 after "\x00"
+
+what it would cost to certify '\n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '\n', and '\n' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x00
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x00, and 0x00 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x01
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x01, and 0x01 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x02
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x02, and 0x02 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x03
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x03, and 0x03 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x04
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x04, and 0x04 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x05
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x05, and 0x05 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x06
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x06, and 0x06 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x07
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x07, and 0x07 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x08
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x08, and 0x08 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\t'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '\t', and '\t' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x0B
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x0B, and 0x0B becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x0C
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x0C, and 0x0C becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\r'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '\r', and '\r' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x0E
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x0E, and 0x0E becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x0F
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x0F, and 0x0F becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x10
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x10, and 0x10 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x11
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x11, and 0x11 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x12
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x12, and 0x12 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x13
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x13, and 0x13 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x14
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x14, and 0x14 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x15
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x15, and 0x15 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x16
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x16, and 0x16 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x17
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x17, and 0x17 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x18
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x18, and 0x18 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x19
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x19, and 0x19 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x1A
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x1A, and 0x1A becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x1B
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x1B, and 0x1B becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x1C
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x1C, and 0x1C becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x1D
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x1D, and 0x1D becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x1E
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x1E, and 0x1E becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x1F
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x1F, and 0x1F becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify ' '
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits ' ', and ' ' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '!'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '!', and '!' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '"'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '"', and '"' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '#'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '#', and '#' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '$'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '$', and '$' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '%'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '%', and '%' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '&'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '&', and '&' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\''
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '\'', and '\'' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '('
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '(', and '(' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify ')'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits ')', and ')' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '*'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '*', and '*' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '+'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '+', and '+' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify ','
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits ',', and ',' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '.'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '.', and '.' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '0'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '0', and '0' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '1'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '1', and '1' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '2'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '2', and '2' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '3'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '3', and '3' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '4'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '4', and '4' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '5'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '5', and '5' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '6'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '6', and '6' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '7'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '7', and '7' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '8'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '8', and '8' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '9'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '9', and '9' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify ':'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits ':', and ':' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify ';'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits ';', and ';' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '<'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '<', and '<' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '='
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '=', and '=' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '>'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '>', and '>' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '?'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '?', and '?' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '@'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '@', and '@' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'A'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'A', and 'A' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'B'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'B', and 'B' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'C'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'C', and 'C' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'D'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'D', and 'D' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'E'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'E', and 'E' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'F'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'F', and 'F' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'G'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'G', and 'G' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'H'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'H', and 'H' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'I'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'I', and 'I' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'J'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'J', and 'J' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'K'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'K', and 'K' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'L'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'L', and 'L' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'M'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'M', and 'M' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'N'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'N', and 'N' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'O'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'O', and 'O' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'P'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'P', and 'P' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'Q'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'Q', and 'Q' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'R'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'R', and 'R' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'S'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'S', and 'S' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'T'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'T', and 'T' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'U'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'U', and 'U' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'V'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'V', and 'V' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'W'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'W', and 'W' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'X'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'X', and 'X' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'Y'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'Y', and 'Y' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'Z'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'Z', and 'Z' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '['
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '[', and '[' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '\\'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '\\', and '\\' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify ']'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits ']', and ']' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '^'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '^', and '^' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '_'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '_', and '_' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '`'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '`', and '`' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'a'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'a', and 'a' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'b'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'b', and 'b' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'c'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'c', and 'c' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'd'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'd', and 'd' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'e'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'e', and 'e' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'f'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'f', and 'f' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'g'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'g', and 'g' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'h'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'h', and 'h' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'i'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'i', and 'i' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'j'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'j', and 'j' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'k'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'k', and 'k' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'l'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'l', and 'l' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'm'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'm', and 'm' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'n'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'n', and 'n' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'o'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'o', and 'o' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'p'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'p', and 'p' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'q'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'q', and 'q' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'r'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'r', and 'r' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 's'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 's', and 's' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 't'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 't', and 't' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'u'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'u', and 'u' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'v'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'v', and 'v' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'w'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'w', and 'w' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'x'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'x', and 'x' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'y'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'y', and 'y' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 'z'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 'z', and 'z' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '{'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '{', and '{' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '|'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '|', and '|' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '}'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '}', and '}' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify '~'
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits '~', and '~' becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0x7F
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0x7F, and 0x7F becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xC2
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xC2, and 0xC2 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xC3
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xC3, and 0xC3 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xC4
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xC4, and 0xC4 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xC5
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xC5, and 0xC5 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xC6
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xC6, and 0xC6 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xC7
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xC7, and 0xC7 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xC8
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xC8, and 0xC8 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xC9
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xC9, and 0xC9 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xCA
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xCA, and 0xCA becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xCB
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xCB, and 0xCB becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xCC
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xCC, and 0xCC becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xCD
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xCD, and 0xCD becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xCE
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xCE, and 0xCE becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xCF
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xCF, and 0xCF becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD0
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD0, and 0xD0 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD1
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD1, and 0xD1 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD2
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD2, and 0xD2 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD3
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD3, and 0xD3 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD4
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD4, and 0xD4 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD5
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD5, and 0xD5 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD6
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD6, and 0xD6 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD7
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD7, and 0xD7 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD8
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD8, and 0xD8 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xD9
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xD9, and 0xD9 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xDA
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xDA, and 0xDA becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xDB
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xDB, and 0xDB becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xDC
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xDC, and 0xDC becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xDD
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xDD, and 0xDD becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xDE
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xDE, and 0xDE becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xDF
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xDF, and 0xDF becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE0
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE0, and 0xE0 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE1
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE1, and 0xE1 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE2
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE2, and 0xE2 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE3
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE3, and 0xE3 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE4
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE4, and 0xE4 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE5
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE5, and 0xE5 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE6
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE6, and 0xE6 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE7
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE7, and 0xE7 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE8
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE8, and 0xE8 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xE9
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xE9, and 0xE9 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xEA
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xEA, and 0xEA becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xEB
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xEB, and 0xEB becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xEC
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xEC, and 0xEC becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xED
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xED, and 0xED becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xEE
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xEE, and 0xEE becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xEF
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xEF, and 0xEF becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xF0
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xF0, and 0xF0 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xF1
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xF1, and 0xF1 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xF2
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xF2, and 0xF2 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xF3
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xF3, and 0xF3 becomes a token of its own, discarded
+                              certifies exactly
+
+what it would cost to certify 0xF4
+  certifies already once discarded tokens are deleted; the steps below make it exact
+  1. (~[/\-]+ | [/\-])        no longer admits 0xF4, and 0xF4 becomes a token of its own, discarded
+                              certifies exactly
+
+-- scanner at line 9, condition DOC_COMMENT: 3 rules
+verdict                     no byte certifies; windows do: 200 up to width 3, 135776 once classes expand
+certified bytes             none
+certified modulo discarded  none
+certified windows (<= 3)    26 at width 2, 174 at width 3 over 14 byte classes, 135776 once classes expand
+                            "!-" at 1
+                            "!/" at 1
+                            "-!" at 1
+                            "--" at 1
+                            "/!" at 1
+                            "//" at 1
+                            ... 194 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   not decided: more than 131072 windows once classes expand
+lag                         3
+rescue-free                 yes
+
+why candidate bytes do not certify
+  DOC_COMMENT_NEST           consumes 1 candidate byte mid-token, e.g. '-' after "/"
+  DOC_COMMENT_CLOSE          consumes 1 candidate byte mid-token, e.g. '/' after "-"
+  DOC_COMMENT_TEXT           consumes 177 candidate bytes mid-token, e.g. 0x00 after "\x00"
+
+what it would cost to certify '\n'
+  1. DOC_COMMENT_TEXT         no longer admits '\n', and '\n' becomes a token of its own
+                              certifies exactly
+
+what deleting the discarded tokens adds to the windows
+  windows modulo discarded   none, since no token is discarded
+
+== tools/audit/grammars/log-lines.g4
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 2, condition INITIAL: 2 rules
+verdict                     1 byte certifies exactly: a cut is safe at any occurrence
+certified bytes             '\n'
+certified modulo discarded  '\n'
+certified windows (<= 3)    13 at width 2, 77 at width 3 over 13 byte classes, 68274 once classes expand
+                            "!\n" at 1
+                            "\n!" at 1
+                            "\n\n" at 1
+                            "\n\xC2" at 1
+                            "\n\xE0" at 1
+                            "\n\xE1" at 1
+                            ... 84 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         3
+rescue-free                 yes
+
+why candidate bytes do not certify
+  LINE                       consumes 178 candidate bytes mid-token, e.g. 0x00 after "\x00"
+
+== tools/audit/grammars/log-lines.l
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 5, condition INITIAL: 2 rules
+options                     noyywrap, nodefault
+verdict                     1 byte certifies exactly: a cut is safe at any occurrence
+certified bytes             '\n'
+certified modulo discarded  '\n'
+certified windows (<= 3)    3 at width 2, 6 at width 3 over 2 byte classes, 131327 once classes expand
+                            "!\n" at 1
+                            "\n!" at 1
+                            "\n\n" at 1
+                            "!!\n" at 2
+                            "!\n!" at 2
+                            "!\n\n" at 2
+                            ... 3 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   not decided: more than 131072 windows once classes expand
+lag                         0
+rescue-free                 yes
+
+why candidate bytes do not certify
+  LINE                       consumes 255 candidate bytes mid-token, e.g. 0x00 after "\x00"
+
+== tools/audit/grammars/log-lines.re
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 8, condition INITIAL: 2 rules
+options                     define:YYCTYPE=char, yyfill:enable=0, eof=0
+verdict                     1 byte certifies exactly: a cut is safe at any occurrence
+certified bytes             '\n'
+certified modulo discarded  '\n'
+certified windows (<= 3)    3 at width 2, 6 at width 3 over 2 byte classes, 131327 once classes expand
+                            "!\n" at 1
+                            "\n!" at 1
+                            "\n\n" at 1
+                            "!!\n" at 2
+                            "!\n!" at 2
+                            "!\n\n" at 2
+                            ... 3 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   not decided: more than 131072 windows once classes expand
+lag                         0
+rescue-free                 yes
+
+why candidate bytes do not certify
+  LINE                       consumes 255 candidate bytes mid-token, e.g. 0x00 after "\x00"
+
+== tools/audit/grammars/log-lines.rs
+a certificate holds while the scanner is in its start condition, so a cut needs the condition known
+
+-- scanner at line 6, condition INITIAL: 2 rules
+options                     unicode-classes=16.0.0
+verdict                     1 byte certifies exactly: a cut is safe at any occurrence
+certified bytes             '\n'
+certified modulo discarded  '\n'
+certified windows (<= 3)    13 at width 2, 77 at width 3 over 13 byte classes, 68274 once classes expand
+                            "!\n" at 1
+                            "\n!" at 1
+                            "\n\n" at 1
+                            "\n\xC2" at 1
+                            "\n\xE0" at 1
+                            "\n\xE1" at 1
+                            ... 84 more
+mandatory core              none
+anchor-free span, bytes     unbounded
+anchor-free span, windows   unbounded
+lag                         3
+rescue-free                 yes
+
+why candidate bytes do not certify
+  Line                       consumes 178 candidate bytes mid-token, e.g. 0x00 after "\x00"
+

@@ -34,6 +34,7 @@ that, so that a string literal or a comment quoting an opener or a derive says n
 | `--condition NAME` | Audit this start condition only. Repeatable. Without it every condition with rules is audited, INITIAL first. |
 | `--windows N` | The longest window tried, 3 unless given; 4 is the planners' own limit. The enumeration tries every string of byte-class representatives up to this width, so it is the one cost that grows with the grammar. |
 | `--window-pattern PATTERN` | Decide whether every window the pattern stands for certifies at one origin. The pattern is its positions separated by spaces, each a byte written as for `--price`, which stands for its class, or `*` for every byte; the byte `*` itself is written `0x2A` and a space `0x20`. Repeatable. |
+| `--windows-modulo` | Where a condition certifies no byte once the discarded tokens are deleted, report the windows up to the `--windows` width that certify a cut that way and not exactly. |
 | `--price BYTE` | Price this byte as well as the newline and the near misses. A character, `\n`, `\t`, `\r`, `\0` or `0xHH`. Repeatable. |
 | `--input FILE` | Measure the certified-anchor supply on this file: how many of its positions the certificates cut at, per kibibyte, and the gaps between them. One file, measured under every report. |
 | `--repairs` | Where a condition certifies no byte, a window certifying or not, try every byte as a visible token of its own and, unless it already certifies once the discarded tokens are deleted, as a discarded one, and report each that certifies once added. |
@@ -240,6 +241,41 @@ Row by row:
   and the 16 windows of width 2 the report counts there are exactly the members of the two that certify. A pattern costs
   one window's walk times the classes each position admits, so its wildcards add to the cost where they multiply its
   members.
+- **what deleting the discarded tokens adds to the windows**: with `--windows-modulo`, for a condition that certifies no
+  byte once the discarded tokens are deleted, the section that does for the certified windows what the certified modulo
+  discarded row does for the certified bytes. A window certifies a cut at offset `o` once the discarded tokens are
+  deleted when, in every input the condition tokenizes completely that holds the window at some offset `t`, cutting at
+  `t + o` leaves two chunks it tokenizes completely whose token streams, the discarded tokens deleted, concatenate to
+  the whole input's. The offset is a cut and not an origin, since where it falls inside a token the token covering the
+  window's last byte may begin anywhere. The decision is `is_split_window()`'s cloud of hypotheses with one more field,
+  how each crossed the gap before byte `o`: at a boundary, where it began a token there or followed a token that ended
+  there; harmlessly, where it read the byte from a state that passes the test `is_split_point_ignoring()` asks of every
+  state consuming a byte, that the state accepts a discarded token, that no kept token is reachable after the byte, and
+  that no continuation tells the state after the byte from the initial state's after it once every discarded token is
+  one colour; or harmfully. A direct step keeps the field and a fresh hypothesis enters once with the field of each
+  accepting hypothesis it follows, and the window certifies at `o` when the cloud past its last byte is nonempty and
+  each hypothesis began its token at `o` or crossed the gap harmlessly. Lemma 2 of
+  [docs/split_windows.md](split_windows.md), carried with the field, places the true history in the cloud with its true
+  crossing, so at every occurrence the cut is a token boundary, where it is exact as at a certified window's origin, or
+  falls inside a token at a state that passes the test, where the one-cut step of Theorem 3 of
+  [docs/split_points.md](split_points.md) applies with the test in place of its condition: the left chunk ends on the
+  discarded token that state accepts, and the right chunk restarts in a state no continuation tells from the interrupted
+  scan's, so it ends its first token where the whole input's ends and agrees with it from there. The row claims that one
+  cut and no more. The byte certificate cuts at every occurrence at once because each occurrence in each chunk is
+  certified again, while a window speaks only of its occurrences in the whole input, so no planner cuts at these windows
+  and none is given a fan-out. With no token discarded the decision is `is_split_window()` at `o`, and for one byte it
+  is `is_split_point_ignoring()`. A hypothesis that crossed at a boundary and began its covering token past `o` does not
+  count toward the cut, since a boundary at a fixed gap is the exact question `boundary_profile()` already decides. The
+  windows are enumerated over the byte classes up to `--windows` as the certified windows row's are, those
+  `is_split_window()` certifies left out, and are counted and shown the same way, each with its least cut; where the
+  condition discards no token, one row says so. Of the bundled grammars' conditions that certify no byte once the
+  discarded tokens are deleted, Lean's string, interpolation and doc comment modes discard no token, and the four
+  block-comment grammars and Lean's default mode, which do, show no window up to the default width; a block comment's
+  interior accepts nothing, so no cut inside it passes the test. Lean's default mode gains three at width 4,
+  `"\xC2\xBB\n\n"`, `"\xC2\xBB\n "` and `"\xC2\xBB \n"`, each cut at 3, a guillemet's close followed by whitespace with
+  the cut inside the whitespace run, beside the 221 exact windows of that width. The search runs depth first, each
+  window extending its prefix's walks, one per cut, by one step, so its cost grows with the width as the certified
+  windows row's does.
 - **what a token of one byte's own would certify**: with `--repairs`, for a condition that certifies no byte, a window
   certifying or not, the section that names the bytes under which safe cut points would exist once the grammar gave them
   a token of their own. Every byte is tried as a visible token, a delimiter the parser sees as JSON text sequences add
@@ -947,7 +983,10 @@ sequence escaped as the code point of its value, so the document is JSON whateve
 `--window-pattern` each condition carries a `window_patterns` array beside its `report`, absent otherwise: one object
 per pattern, its `pattern` as an array of byte values and the string `*`, the `origin` certified or null, the in-window
 `origins` the walk's union carries, ascending, and `before`, whether a token covering the last byte began before the
-window. With `--repairs` a condition that certifies no byte carries a `repairs` object beside its `report`, absent
+window. With `--windows-modulo` a condition that certifies no byte once the discarded tokens are deleted carries a
+`windows_modulo` object beside its `report`, absent otherwise and null where the condition discards no token: `windows`,
+each its `window` as a byte string and its `cut`, and `window_count`, written as the report's own members of those names
+are. With `--repairs` a condition that certifies no byte carries a `repairs` object beside its `report`, absent
 otherwise: `visible` and `discarded`, each an array of the bytes that certify once added, as their `byte` value and the
 values of the other bytes `gained` with it. With `--input` each condition carries a `supply` object beside its `report`,
 absent otherwise: the `input` named, its `bytes` and the bytes the serial scan `tokenized`, the same number when the

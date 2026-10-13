@@ -536,3 +536,137 @@ TEST(Window_pattern_test, Every_bundled_grammar_prints_the_report_and_the_verdic
     EXPECT_EQ(status, 0);
     EXPECT_EQ(out, held);
 }
+
+TEST(Windows_modulo_test,
+     The_section_follows_the_report_with_each_window_that_certifies_a_cut_once_discarded_tokens_are_deleted)
+{
+    // A bracket holds no two newlines in a row, so a second newline lies inside the discarded run whichever token came
+    // before, while a newline alone may lie inside a bracket and certifies in neither sense.
+    const auto directory{scratch()};
+
+    const auto path{(directory / "brackets.l").string()};
+
+    std::ofstream{path, std::ios::binary} << "%%\n\\n+ ;\n\"<\"(\\n?[^>\\n])*\\n?\">\" { return 1; }\n"
+                                             "[a-z]+ { return 2; }\n";
+
+    const auto [status, out, err]{run({path, "--windows-modulo"})};
+
+    const auto [plain_status, plain_out, plain_err]{run({path})};
+
+    const std::string section{
+            "\nwhat deleting the discarded tokens adds to the windows\n"
+            "  windows modulo discarded   1 at width 2, 5 at width 3 over 5 byte classes, 257 once classes expand, the "
+            "exact ones left out\n"
+            "                             \"\\n\\n\" cut at 1\n"
+            "                             \"!\\n\\n\" cut at 2\n"
+            "                             \"\\n\\n\\n\" cut at 2\n"
+            "                             \"<\\n\\n\" cut at 2\n"
+            "                             \">\\n\\n\" cut at 2\n"
+            "                             \"a\\n\\n\" cut at 2\n"};
+
+    // The section stands after the report and before the blank line that closes the condition.
+    const auto report_end{plain_out.rfind("\n\n")};
+
+    const auto report{plain_out.substr(0, report_end + 1)};
+
+    const auto expected{std::format("{}{}\n", report, section)};
+
+    EXPECT_EQ(status, 0);
+    EXPECT_EQ(out, expected);
+
+    const auto [json_status, json_out, json_err]{run({path, "--json", "--windows-modulo"})};
+
+    const std::string member{R"(, "windows_modulo": {"windows": [{"window": "\u000a\u000a", "cut": 1}, )"
+                             R"({"window": "!\u000a\u000a", "cut": 2}, {"window": "\u000a\u000a\u000a", "cut": 2}, )"
+                             R"({"window": "<\u000a\u000a", "cut": 2}, {"window": ">\u000a\u000a", "cut": 2}, )"
+                             R"({"window": "a\u000a\u000a", "cut": 2}], "window_count": 257}})"};
+
+    EXPECT_EQ(json_status, 0);
+    EXPECT_TRUE(json_out.contains(member)) << json_out;
+
+    std::filesystem::remove_all(directory);
+}
+
+TEST(Windows_modulo_test, A_condition_that_discards_no_token_is_told_so_and_its_json_member_is_null)
+{
+    const auto directory{scratch()};
+
+    const auto path{(directory / "kept.l").string()};
+
+    std::ofstream{path, std::ios::binary} << "%option nodefault\n%%\n\"<\"[^>]*\">\" { return 1; }\n";
+
+    const auto [status, out, err]{run({path, "--windows-modulo"})};
+
+    EXPECT_EQ(status, 0);
+    EXPECT_TRUE(
+            out.contains("\nwhat deleting the discarded tokens adds to the windows\n"
+                         "  windows modulo discarded   none, since no token is discarded\n"))
+            << out;
+
+    const auto [json_status, json_out, json_err]{run({path, "--json", "--windows-modulo"})};
+
+    EXPECT_EQ(json_status, 0);
+    EXPECT_TRUE(json_out.contains(R"(, "windows_modulo": null})")) << json_out;
+
+    std::filesystem::remove_all(directory);
+}
+
+TEST(Windows_modulo_test, A_grammar_that_certifies_a_byte_once_discarded_tokens_are_deleted_is_left_as_it_is)
+{
+    const auto path{grammar("c-like-conventional.l")};
+
+    const auto [text_status, text_out, text_err]{run({path, "--windows-modulo"})};
+
+    const auto [plain_status, plain_out, plain_err]{run({path})};
+
+    EXPECT_EQ(text_out, plain_out);
+
+    const auto [json_status, json_out, json_err]{run({path, "--json", "--windows-modulo"})};
+
+    const auto [document_status, document_out, document_err]{run({path, "--json"})};
+
+    EXPECT_EQ(json_out, document_out);
+}
+
+TEST(Windows_modulo_test, Every_bundled_grammar_prints_the_report_and_the_windows_the_fixture_holds)
+{
+    const std::filesystem::path root{SOURCE_DIR};
+
+    std::vector<std::string> arguments{"--windows-modulo"};
+
+    std::vector<std::string> grammars{};
+
+    for (const auto& entry : std::filesystem::directory_iterator{root / "tools/audit/grammars"})
+    {
+        const auto name{entry.path().filename().string()};
+
+        if (name == "README.md")
+        {
+            continue;
+        }
+
+        grammars.push_back(std::format("tools/audit/grammars/{}", name));
+    }
+
+    std::ranges::sort(grammars);
+
+    arguments.insert(arguments.end(), grammars.begin(), grammars.end());
+
+    // Run from the repository's root, so the paths the report heads each file with are the fixture's.
+    const auto here{std::filesystem::current_path()};
+
+    std::filesystem::current_path(root);
+
+    const auto [status, out, err]{run(arguments)};
+
+    std::filesystem::current_path(here);
+
+    // The fixture's first line says how it was written; the rest is the command's output as it printed it.
+    const auto fixture{contents(root / "tools/audit/tests/data/windows_modulo_reference.txt")};
+
+    const auto held{fixture.substr(fixture.find('\n') + 1)};
+
+    EXPECT_EQ(grammars.size(), 21);
+    EXPECT_EQ(status, 0);
+    EXPECT_EQ(out, held);
+}

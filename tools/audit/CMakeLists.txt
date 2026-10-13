@@ -49,6 +49,7 @@ add_library(${PROJECT_NAME}
         src/scalar_set.cpp
         src/supply.cpp
         src/token_set.cpp
+        src/window_modulo.cpp
         src/window_pattern.cpp
         src/word_kinds.cpp
 )

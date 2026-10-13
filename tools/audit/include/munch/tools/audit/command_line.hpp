@@ -102,6 +102,12 @@ struct Options
     std::vector<Window_pattern_t> window_patterns{};
 
     /**
+     * @brief Whether a condition that certifies no byte once the discarded tokens are deleted is told which windows
+     *        certify a cut that way.
+     */
+    bool windows_modulo{false};
+
+    /**
      * @brief Whether a condition that certifies no byte is told what a token of one byte's own would certify.
      */
     bool repairs{false};

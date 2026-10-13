@@ -187,6 +187,8 @@ would cost.
                         decide whether every window the pattern stands for certifies at one origin: its positions
                         separated by spaces, each a byte written as a character, \n \t \r \0, or 0xHH, which stands for
                         its class, or * for every byte; may repeat
+  --windows-modulo      where no byte certifies once discarded tokens are deleted, report the windows that certify a
+                        cut that way and not exactly
   --price BYTE          price this byte as well, written as a character, \n \t \r \0, or 0xHH; may repeat
   --input FILE          measure the certified-anchor supply on this file: how many positions its certificates cut
                         at, per kibibyte, and the gaps between them
@@ -279,6 +281,10 @@ Options parse_options(const std::span<const std::string_view> arguments)
             const auto text{value()};
 
             options.window_patterns.push_back(parse_window_pattern(text));
+        }
+        else if (argument == "--windows-modulo")
+        {
+            options.windows_modulo = true;
         }
         else if (argument == "--price")
         {
