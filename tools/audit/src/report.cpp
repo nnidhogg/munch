@@ -211,17 +211,37 @@ namespace
 }
 
 /**
- * @brief Returns a shortest input reaching every reachable state, found breadth first from the initial state.
+ * @brief Returns the least in byte order of the shortest nonempty inputs reaching every reachable state, found breadth
+ *        first from an unconsumed start that steps as the initial state does, bytes in ascending order, so that the
+ *        choice does not depend on how the states are numbered.
+ *
+ * The initial state is found like any other, after the shortest nonempty input that returns to it, since the start
+ * before any input is not one of the states the walk marks. It is found exactly where a reachable state steps back into
+ * the initial state, which is what Simulator::init_reentrant() says of the tables.
  * @param simulator The tables.
- * @return The input per state, absent for a state no input reaches.
+ * @return The input per state, absent for a state no nonempty input reaches.
  */
 [[nodiscard]] std::vector<std::optional<std::string>> shortest_inputs(const dfa::Simulator& simulator)
 {
     std::vector<std::optional<std::string>> input(simulator.state_count());
 
-    input[simulator.init_state()] = std::string{};
+    std::deque<std::size_t> pending{};
 
-    std::deque pending{simulator.init_state()};
+    const auto visit{[&](const std::size_t from, const std::string& reached) {
+        for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
+        {
+            const auto to{simulator.step(from, static_cast<unsigned char>(value))};
+
+            if (to && !input[*to])
+            {
+                input[*to] = reached + static_cast<char>(value);
+
+                pending.push_back(*to);
+            }
+        }
+    }};
+
+    visit(simulator.init_state(), std::string{});
 
     while (!pending.empty())
     {
@@ -229,17 +249,7 @@ namespace
 
         pending.pop_front();
 
-        for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
-        {
-            const auto to{simulator.step(from, static_cast<unsigned char>(value))};
-
-            if (to && !input[*to])
-            {
-                input[*to] = *input[from] + static_cast<char>(value);
-
-                pending.push_back(*to);
-            }
-        }
+        visit(from, *input[from]);
     }
 
     return input;
@@ -304,49 +314,6 @@ namespace
     }
 
     return ahead;
-}
-
-/**
- * @brief Returns a shortest nonempty input after which the scan stands in the initial state again.
- *
- * A shortest such input is a shortest input reaching a state that steps into the initial state, one byte longer, so the
- * inputs already found decide it without a walk of its own. It exists exactly where a reachable state steps back into
- * the initial state, which is what Simulator::init_reentrant() says of the tables.
- * @param simulator The tables.
- * @param inputs A shortest input per state, empty for the initial state.
- * @return The input, std::nullopt when no input returns to the initial state.
- */
-[[nodiscard]] std::optional<std::string> shortest_re_entry(
-        const dfa::Simulator& simulator, const std::vector<std::optional<std::string>>& inputs)
-{
-    std::optional<std::string> shortest{};
-
-    for (std::size_t state{0}; state < simulator.state_count(); ++state)
-    {
-        if (!inputs[state])
-        {
-            continue;
-        }
-
-        for (std::size_t value{0}; value < dfa::Simulator::symbol_count; ++value)
-        {
-            const auto to{simulator.step(state, static_cast<unsigned char>(value))};
-
-            if (to != simulator.init_state())
-            {
-                continue;
-            }
-
-            auto returning{*inputs[state] + static_cast<char>(value)};
-
-            if (!shortest || returning.size() < shortest->size())
-            {
-                shortest = std::move(returning);
-            }
-        }
-    }
-
-    return shortest;
 }
 
 /**
@@ -498,11 +465,6 @@ std::vector<Blame> blame(const core::Lexer& lexer)
 
     const auto ahead{tokens_ahead(simulator)};
 
-    // The initial state is exempt on the entry before any input alone, where a byte may begin a token. Where a nonempty
-    // input returns to it, the scan stands in it mid-token, so it blames like any other state, after that input rather
-    // than after none.
-    const auto re_entry{shortest_re_entry(simulator, inputs)};
-
     std::vector<Blame> entries{};
 
     const auto keep_shortest{[&](std::map<std::size_t, std::string>& shortest_by_token, const std::size_t to,
@@ -513,7 +475,7 @@ std::vector<Blame> blame(const core::Lexer& lexer)
 
             auto& [kept_token, kept]{*found};
 
-            if (!inserted && reached.size() < kept.size())
+            if (!inserted && (reached.size() < kept.size() || (reached.size() == kept.size() && reached < kept)))
             {
                 kept = reached;
             }
@@ -536,7 +498,9 @@ std::vector<Blame> blame(const core::Lexer& lexer)
 
         for (std::size_t state{0}; state < simulator.state_count(); ++state)
         {
-            const auto& reached{state == simulator.init_state() ? re_entry : inputs[state]};
+            // The initial state blames after the shortest nonempty input that returns to it, where the scan stands in
+            // it mid-token; before any input a byte may begin a token there.
+            const auto& reached{inputs[state]};
 
             if (!reached || !simulator.is_live(state))
             {

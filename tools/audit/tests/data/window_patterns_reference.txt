@@ -512,7 +512,7 @@ lag                         2
 rescue-free                 yes
 
 why candidate bytes do not certify
-  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "-"
   STRING                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
   [ \t\n\r]+                 consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
 
@@ -563,7 +563,7 @@ lag                         2
 rescue-free                 yes
 
 why candidate bytes do not certify
-  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "-"
   STRING                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
   [ \t\n\r]+                 consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
 
@@ -614,7 +614,7 @@ lag                         2
 rescue-free                 yes
 
 why candidate bytes do not certify
-  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "-"
   STRING                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
   [ \t\n\r]+                 consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
 
@@ -666,7 +666,7 @@ rescue-free                 yes
 
 why candidate bytes do not certify
   r"[ \t\n\r]+"              consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
-  Number                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  Number                     consumes 11 candidate bytes mid-token, e.g. '0' after "-"
   String                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
 
 what it would cost to certify '\n'

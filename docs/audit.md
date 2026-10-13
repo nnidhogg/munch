@@ -432,7 +432,7 @@ rescue-free                 yes
 
 why candidate bytes do not certify
   STRING                     consumes 22 candidate bytes mid-token, e.g. ' ' after "\""
-  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "1"
+  NUMBER                     consumes 11 candidate bytes mid-token, e.g. '0' after "-"
   [ \t\n\r]+                 consumes 4 candidate bytes mid-token, e.g. '\t' after "\t"
 
 what it would cost to certify '\n'
@@ -464,8 +464,8 @@ newline. Once the discarded tokens are deleted, `'\t' '\n' '\r'` certify. `SAFEC
 string holds none of the three raw, its escapes writing them as `\t`, `\n` and `\r`, and no other token admits them;
 every occurrence lies in a whitespace run, and a cut before one splits at most that run, which the parser never sees.
 The space does not certify even so, since a string holds it, and a string holds every candidate byte but those three:
-`STRING consumes 22 candidate bytes mid-token, e.g. ' ' after "\""`. A number holds the digits after its first and the
-minus sign of an exponent, `NUMBER consumes 11 candidate bytes mid-token, e.g. '0' after "1"`.
+`STRING consumes 22 candidate bytes mid-token, e.g. ' ' after "\""`. A number holds every digit after its sign or its
+first digit, and the minus sign of an exponent, `NUMBER consumes 11 candidate bytes mid-token, e.g. '0' after "-"`.
 
 The three `what it would cost` sections give the one edit that makes each of the three exact: the run no longer admits
 the byte, and the byte becomes a discarded token of its own. For the newline that is

@@ -73,7 +73,7 @@ struct Blame
     std::size_t token{};
 
     /**
-     * @brief A shortest input after which that path consumes the byte.
+     * @brief The least in byte order of the shortest inputs after which that path consumes the byte.
      */
     std::string after{};
 };
