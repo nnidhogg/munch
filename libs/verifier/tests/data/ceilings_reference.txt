@@ -1,0 +1,4443 @@
+# written by ceilings_fixture.py of munch-research, explorations/density; regenerate with it, never by hand
+universe a,a
+ceilings 0 - - 1 0
+universe a,b
+ceilings 0 1 25 1 0
+universe b,a
+ceilings 0 1 25 1 0
+universe b,b
+ceilings 0 - - 1 0
+universe a,a a,b
+ceilings 1 - - 1 0
+universe a,a a,aa
+ceilings 1 - - 1 0
+universe a,a b,a
+ceilings 1 - - 2 1
+universe a,a b,b
+ceilings 1 - - 1 0
+universe a,a b,aa
+ceilings 1 - - 2 1
+universe a,a aa,a
+ceilings 2 - - 3 1
+universe a,a aa,b
+ceilings 2 - - 2 0
+universe a,a aa,aa
+ceilings 2 - - 3 1
+universe a,b a,a
+ceilings 1 - - 2 1
+universe a,b a,ab
+ceilings 1 3 64 2 1
+universe a,b b,a
+ceilings 1 2 49 2 1
+universe a,b b,b
+ceilings 1 - - 1 0
+universe a,b b,ab
+ceilings 1 3 64 2 1
+universe a,b ab,a
+ceilings 2 2 64 3 1
+universe a,b ab,b
+ceilings 2 2 64 2 0
+universe a,b ab,ab
+ceilings 2 - - 3 1
+universe b,a a,a
+ceilings 1 - - 1 0
+universe b,a a,b
+ceilings 1 2 49 2 1
+universe b,a a,ba
+ceilings 1 3 64 2 1
+universe b,a b,b
+ceilings 1 - - 2 1
+universe b,a b,ba
+ceilings 1 3 64 2 1
+universe b,a ba,a
+ceilings 2 2 64 2 0
+universe b,a ba,b
+ceilings 2 2 64 3 1
+universe b,a ba,ba
+ceilings 2 - - 3 1
+universe b,b a,a
+ceilings 1 - - 1 0
+universe b,b a,b
+ceilings 1 - - 2 1
+universe b,b a,bb
+ceilings 1 - - 2 1
+universe b,b b,a
+ceilings 1 - - 1 0
+universe b,b b,bb
+ceilings 1 - - 1 0
+universe b,b bb,a
+ceilings 2 - - 2 0
+universe b,b bb,b
+ceilings 2 - - 3 1
+universe b,b bb,bb
+ceilings 2 - - 3 1
+universe a,a a,b a,aa
+ceilings 2 - - 1 0
+universe a,a a,b a,ab
+ceilings 2 - - 1 0
+universe a,a a,b b,a
+ceilings 2 - - 2 1
+universe a,a a,b b,b
+ceilings 2 - - 1 0
+universe a,a a,b b,aa
+ceilings 2 - - 2 1
+universe a,a a,b b,ab
+ceilings 2 - - 2 1
+universe a,a a,b aa,a
+ceilings 3 - - 3 1
+universe a,a a,b aa,b
+ceilings 3 - - 2 0
+universe a,a a,b aa,aa
+ceilings 3 - - 3 1
+universe a,a a,b aa,ab
+ceilings 3 - - 3 1
+universe a,a a,b ab,a
+ceilings 3 - - 3 1
+universe a,a a,b ab,b
+ceilings 3 - - 2 0
+universe a,a a,b ab,aa
+ceilings 3 - - 3 1
+universe a,a a,b ab,ab
+ceilings 3 - - 3 1
+universe a,a a,aa a,b
+ceilings 2 - - 1 0
+universe a,a a,aa a,aaa
+ceilings 2 - - 1 0
+universe a,a a,aa b,a
+ceilings 2 - - 2 1
+universe a,a a,aa b,b
+ceilings 2 - - 1 0
+universe a,a a,aa b,aa
+ceilings 2 - - 2 1
+universe a,a a,aa b,aaa
+ceilings 2 - - 1 0
+universe a,a a,aa aa,b
+ceilings 3 - - 2 0
+universe a,a a,aa aa,aa
+ceilings 3 - - 3 1
+universe a,a a,aa aa,aaa
+ceilings 3 - - 1 0
+universe a,a a,aa aaa,a
+ceilings 4 - - 1 0
+universe a,a a,aa aaa,b
+ceilings 4 - - 1 0
+universe a,a a,aa aaa,aa
+ceilings 4 - - 1 0
+universe a,a a,aa aaa,aaa
+ceilings 4 - - 1 0
+universe a,a b,a a,b
+ceilings 2 - - 3 2
+universe a,a b,a a,aa
+ceilings 2 - - 2 1
+universe a,a b,a a,ba
+ceilings 2 - - 3 2
+universe a,a b,a b,b
+ceilings 2 - - 3 2
+universe a,a b,a b,aa
+ceilings 2 - - 2 0
+universe a,a b,a b,ba
+ceilings 2 - - 3 2
+universe a,a b,a aa,a
+ceilings 3 - - 3 1
+universe a,a b,a aa,b
+ceilings 3 - - 4 2
+universe a,a b,a aa,aa
+ceilings 3 - - 3 1
+universe a,a b,a aa,ba
+ceilings 3 - - 4 2
+universe a,a b,a ba,a
+ceilings 3 - - 2 1
+universe a,a b,a ba,b
+ceilings 3 - - 4 2
+universe a,a b,a ba,aa
+ceilings 3 - - 2 1
+universe a,a b,a ba,ba
+ceilings 3 - - 4 2
+universe a,a b,b a,b
+ceilings 2 - - 2 1
+universe a,a b,b a,aa
+ceilings 2 - - 1 0
+universe a,a b,b a,bb
+ceilings 2 - - 2 1
+universe a,a b,b b,a
+ceilings 2 - - 2 1
+universe a,a b,b b,aa
+ceilings 2 - - 2 1
+universe a,a b,b b,bb
+ceilings 2 - - 1 0
+universe a,a b,b aa,a
+ceilings 3 - - 3 1
+universe a,a b,b aa,b
+ceilings 3 - - 3 1
+universe a,a b,b aa,aa
+ceilings 3 - - 3 1
+universe a,a b,b aa,bb
+ceilings 3 - - 3 1
+universe a,a b,b bb,a
+ceilings 3 - - 3 1
+universe a,a b,b bb,b
+ceilings 3 - - 3 1
+universe a,a b,b bb,aa
+ceilings 3 - - 3 1
+universe a,a b,b bb,bb
+ceilings 3 - - 3 1
+universe a,a b,aa a,b
+ceilings 2 - - 3 2
+universe a,a b,aa a,aa
+ceilings 2 - - 2 1
+universe a,a b,aa a,baa
+ceilings 2 - - 3 2
+universe a,a b,aa b,a
+ceilings 2 - - 2 0
+universe a,a b,aa b,b
+ceilings 2 - - 3 2
+universe a,a b,aa b,baa
+ceilings 2 - - 3 2
+universe a,a b,aa aa,a
+ceilings 3 - - 3 1
+universe a,a b,aa aa,b
+ceilings 3 - - 4 2
+universe a,a b,aa aa,aa
+ceilings 3 - - 3 1
+universe a,a b,aa aa,baa
+ceilings 3 - - 4 2
+universe a,a b,aa baa,a
+ceilings 4 - - 4 1
+universe a,a b,aa baa,b
+ceilings 4 - - 5 2
+universe a,a b,aa baa,aa
+ceilings 4 - - 4 1
+universe a,a b,aa baa,baa
+ceilings 4 - - 5 2
+universe a,a aa,a a,b
+ceilings 3 - - 3 1
+universe a,a aa,a a,aaa
+ceilings 3 - - 3 1
+universe a,a aa,a b,a
+ceilings 3 - - 3 1
+universe a,a aa,a b,b
+ceilings 3 - - 3 1
+universe a,a aa,a b,aa
+ceilings 3 - - 4 3
+universe a,a aa,a b,aaa
+ceilings 3 - - 4 3
+universe a,a aa,a aa,b
+ceilings 4 - - 3 1
+universe a,a aa,a aa,aa
+ceilings 4 - - 5 3
+universe a,a aa,a aa,aaa
+ceilings 4 - - 5 3
+universe a,a aa,a aaa,a
+ceilings 5 - - 3 1
+universe a,a aa,a aaa,b
+ceilings 5 - - 3 1
+universe a,a aa,a aaa,aa
+ceilings 5 - - 3 1
+universe a,a aa,a aaa,aaa
+ceilings 5 - - 3 1
+universe a,a aa,b a,b
+ceilings 3 - - 2 0
+universe a,a aa,b a,aa
+ceilings 3 - - 2 0
+universe a,a aa,b a,aab
+ceilings 3 - - 2 0
+universe a,a aa,b b,a
+ceilings 3 - - 2 1
+universe a,a aa,b b,b
+ceilings 3 - - 2 0
+universe a,a aa,b b,aa
+ceilings 3 - - 3 2
+universe a,a aa,b b,aab
+ceilings 3 - - 3 2
+universe a,a aa,b aa,a
+ceilings 4 - - 3 1
+universe a,a aa,b aa,aa
+ceilings 4 - - 4 2
+universe a,a aa,b aa,aab
+ceilings 4 - - 4 2
+universe a,a aa,b aab,a
+ceilings 5 - - 4 1
+universe a,a aa,b aab,b
+ceilings 5 - - 3 0
+universe a,a aa,b aab,aa
+ceilings 5 - - 5 2
+universe a,a aa,b aab,aab
+ceilings 5 - - 5 2
+universe a,a aa,aa a,b
+ceilings 3 - - 3 1
+universe a,a aa,aa a,aa
+ceilings 3 - - 3 1
+universe a,a aa,aa a,aaaa
+ceilings 3 - - 3 1
+universe a,a aa,aa b,a
+ceilings 3 - - 3 1
+universe a,a aa,aa b,b
+ceilings 3 - - 3 1
+universe a,a aa,aa b,aa
+ceilings 3 - - 4 3
+universe a,a aa,aa b,aaaa
+ceilings 3 - - 4 3
+universe a,a aa,aa aa,a
+ceilings 4 - - 3 0
+universe a,a aa,aa aa,b
+ceilings 4 - - 3 1
+universe a,a aa,aa aa,aaaa
+ceilings 4 - - 3 1
+universe a,a aa,aa aaaa,a
+ceilings 6 - - 5 1
+universe a,a aa,aa aaaa,b
+ceilings 6 - - 4 1
+universe a,a aa,aa aaaa,aa
+ceilings 6 - - 7 3
+universe a,a aa,aa aaaa,aaaa
+ceilings 6 - - 7 3
+universe a,b a,a a,ab
+ceilings 2 - - 2 0
+universe a,b a,a a,aa
+ceilings 2 - - 2 1
+universe a,b a,a b,a
+ceilings 2 - - 3 2
+universe a,b a,a b,b
+ceilings 2 - - 2 1
+universe a,b a,a b,ab
+ceilings 2 - - 2 1
+universe a,b a,a b,aa
+ceilings 2 - - 3 2
+universe a,b a,a ab,a
+ceilings 3 - - 4 2
+universe a,b a,a ab,b
+ceilings 3 - - 2 1
+universe a,b a,a ab,ab
+ceilings 3 - - 3 1
+universe a,b a,a ab,aa
+ceilings 3 - - 4 2
+universe a,b a,a aa,a
+ceilings 3 - - 4 2
+universe a,b a,a aa,b
+ceilings 3 - - 2 1
+universe a,b a,a aa,ab
+ceilings 3 - - 3 1
+universe a,b a,a aa,aa
+ceilings 3 - - 4 2
+universe a,b a,ab a,a
+ceilings 2 - - 3 2
+universe a,b a,ab a,aab
+ceilings 2 6 144 3 2
+universe a,b a,ab b,a
+ceilings 2 4 100 3 2
+universe a,b a,ab b,b
+ceilings 2 - - 2 1
+universe a,b a,ab b,ab
+ceilings 2 5 121 2 1
+universe a,b a,ab b,aab
+ceilings 2 6 144 3 2
+universe a,b a,ab ab,a
+ceilings 3 4 121 4 2
+universe a,b a,ab ab,b
+ceilings 3 4 121 2 1
+universe a,b a,ab ab,ab
+ceilings 3 - - 3 1
+universe a,b a,ab ab,aab
+ceilings 3 6 169 4 2
+universe a,b a,ab aab,a
+ceilings 4 4 144 5 2
+universe a,b a,ab aab,b
+ceilings 4 4 144 3 1
+universe a,b a,ab aab,ab
+ceilings 4 5 169 4 1
+universe a,b a,ab aab,aab
+ceilings 4 - - 5 2
+universe a,b b,a a,a
+ceilings 2 - - 2 1
+universe a,b b,a a,ab
+ceilings 2 4 100 2 1
+universe a,b b,a a,ba
+ceilings 2 2 100 2 1
+universe a,b b,a b,b
+ceilings 2 - - 3 2
+universe a,b b,a b,ab
+ceilings 2 4 100 2 0
+universe a,b b,a b,ba
+ceilings 2 4 100 3 2
+universe a,b b,a ab,a
+ceilings 3 3 100 3 1
+universe a,b b,a ab,b
+ceilings 3 3 100 4 2
+universe a,b b,a ab,ab
+ceilings 3 - - 3 1
+universe a,b b,a ab,ba
+ceilings 3 4 121 4 2
+universe a,b b,a ba,a
+ceilings 3 3 100 3 1
+universe a,b b,a ba,b
+ceilings 3 2 100 2 1
+universe a,b b,a ba,ab
+ceilings 3 4 121 3 1
+universe a,b b,a ba,ba
+ceilings 3 2 121 2 1
+universe a,b b,b a,a
+ceilings 2 - - 2 1
+universe a,b b,b a,ab
+ceilings 2 - - 2 1
+universe a,b b,b a,bb
+ceilings 2 - - 1 0
+universe a,b b,b b,a
+ceilings 2 - - 2 1
+universe a,b b,b b,ab
+ceilings 2 - - 2 1
+universe a,b b,b b,bb
+ceilings 2 - - 1 0
+universe a,b b,b ab,a
+ceilings 3 - - 3 1
+universe a,b b,b ab,b
+ceilings 3 - - 3 1
+universe a,b b,b ab,ab
+ceilings 3 - - 3 1
+universe a,b b,b ab,bb
+ceilings 3 - - 3 1
+universe a,b b,b bb,a
+ceilings 3 - - 3 1
+universe a,b b,b bb,b
+ceilings 3 - - 3 1
+universe a,b b,b bb,ab
+ceilings 3 - - 3 1
+universe a,b b,b bb,bb
+ceilings 3 - - 3 1
+universe a,b b,ab a,a
+ceilings 2 - - 2 1
+universe a,b b,ab a,ab
+ceilings 2 5 121 2 1
+universe a,b b,ab a,bab
+ceilings 2 3 144 2 1
+universe a,b b,ab b,a
+ceilings 2 4 100 2 0
+universe a,b b,ab b,b
+ceilings 2 - - 3 2
+universe a,b b,ab b,bab
+ceilings 2 6 144 3 2
+universe a,b b,ab ab,a
+ceilings 3 4 121 3 1
+universe a,b b,ab ab,b
+ceilings 3 4 121 4 2
+universe a,b b,ab ab,ab
+ceilings 3 - - 3 1
+universe a,b b,ab ab,bab
+ceilings 3 6 169 4 2
+universe a,b b,ab bab,a
+ceilings 4 4 144 4 1
+universe a,b b,ab bab,b
+ceilings 4 4 144 5 2
+universe a,b b,ab bab,ab
+ceilings 4 5 169 4 1
+universe a,b b,ab bab,bab
+ceilings 4 - - 5 2
+universe a,b ab,a a,a
+ceilings 3 - - 3 1
+universe a,b ab,a a,ab
+ceilings 3 4 121 4 3
+universe a,b ab,a a,aba
+ceilings 3 5 144 4 3
+universe a,b ab,a b,a
+ceilings 3 3 100 3 1
+universe a,b ab,a b,b
+ceilings 3 - - 3 1
+universe a,b ab,a b,ab
+ceilings 3 4 121 4 3
+universe a,b ab,a b,aba
+ceilings 3 5 144 4 3
+universe a,b ab,a ab,b
+ceilings 4 3 121 3 1
+universe a,b ab,a ab,ab
+ceilings 4 - - 5 3
+universe a,b ab,a ab,aba
+ceilings 4 5 169 5 3
+universe a,b ab,a aba,a
+ceilings 5 3 144 4 1
+universe a,b ab,a aba,b
+ceilings 5 2 144 3 1
+universe a,b ab,a aba,ab
+ceilings 5 4 169 6 3
+universe a,b ab,a aba,aba
+ceilings 5 - - 6 3
+universe a,b ab,b a,a
+ceilings 3 - - 2 1
+universe a,b ab,b a,ab
+ceilings 3 4 121 3 2
+universe a,b ab,b a,abb
+ceilings 3 5 144 3 2
+universe a,b ab,b b,a
+ceilings 3 3 100 2 1
+universe a,b ab,b b,b
+ceilings 3 - - 2 0
+universe a,b ab,b b,ab
+ceilings 3 4 121 3 2
+universe a,b ab,b b,abb
+ceilings 3 5 144 3 2
+universe a,b ab,b ab,a
+ceilings 4 3 121 3 1
+universe a,b ab,b ab,ab
+ceilings 4 - - 4 2
+universe a,b ab,b ab,abb
+ceilings 4 5 169 4 2
+universe a,b ab,b abb,a
+ceilings 5 3 144 4 1
+universe a,b ab,b abb,b
+ceilings 5 3 144 3 0
+universe a,b ab,b abb,ab
+ceilings 5 4 169 5 2
+universe a,b ab,b abb,abb
+ceilings 5 - - 5 2
+universe a,b ab,ab a,a
+ceilings 3 - - 3 1
+universe a,b ab,ab a,ab
+ceilings 3 - - 4 3
+universe a,b ab,ab a,abab
+ceilings 3 - - 4 3
+universe a,b ab,ab b,a
+ceilings 3 - - 3 1
+universe a,b ab,ab b,b
+ceilings 3 - - 3 1
+universe a,b ab,ab b,ab
+ceilings 3 - - 4 3
+universe a,b ab,ab b,abab
+ceilings 3 - - 4 3
+universe a,b ab,ab ab,a
+ceilings 4 - - 3 0
+universe a,b ab,ab ab,b
+ceilings 4 - - 3 1
+universe a,b ab,ab ab,abab
+ceilings 4 - - 3 1
+universe a,b ab,ab abab,a
+ceilings 6 - - 5 1
+universe a,b ab,ab abab,b
+ceilings 6 - - 4 1
+universe a,b ab,ab abab,ab
+ceilings 6 - - 7 3
+universe a,b ab,ab abab,abab
+ceilings 6 - - 7 3
+universe b,a a,a a,b
+ceilings 2 - - 2 1
+universe b,a a,a a,ba
+ceilings 2 - - 2 1
+universe b,a a,a a,aa
+ceilings 2 - - 1 0
+universe b,a a,a b,b
+ceilings 2 - - 2 1
+universe b,a a,a b,ba
+ceilings 2 - - 2 1
+universe b,a a,a b,aa
+ceilings 2 - - 1 0
+universe b,a a,a ba,a
+ceilings 3 - - 3 1
+universe b,a a,a ba,b
+ceilings 3 - - 3 1
+universe b,a a,a ba,ba
+ceilings 3 - - 3 1
+universe b,a a,a ba,aa
+ceilings 3 - - 3 1
+universe b,a a,a aa,a
+ceilings 3 - - 3 1
+universe b,a a,a aa,b
+ceilings 3 - - 3 1
+universe b,a a,a aa,ba
+ceilings 3 - - 3 1
+universe b,a a,a aa,aa
+ceilings 3 - - 3 1
+universe b,a a,b a,a
+ceilings 2 - - 3 2
+universe b,a a,b a,ba
+ceilings 2 4 100 2 0
+universe b,a a,b a,ab
+ceilings 2 4 100 3 2
+universe b,a a,b b,b
+ceilings 2 - - 2 1
+universe b,a a,b b,ba
+ceilings 2 4 100 2 1
+universe b,a a,b b,ab
+ceilings 2 2 100 2 1
+universe b,a a,b ba,a
+ceilings 3 3 100 4 2
+universe b,a a,b ba,b
+ceilings 3 3 100 3 1
+universe b,a a,b ba,ba
+ceilings 3 - - 3 1
+universe b,a a,b ba,ab
+ceilings 3 4 121 4 2
+universe b,a a,b ab,a
+ceilings 3 2 100 2 1
+universe b,a a,b ab,b
+ceilings 3 3 100 3 1
+universe b,a a,b ab,ba
+ceilings 3 4 121 3 1
+universe b,a a,b ab,ab
+ceilings 3 2 121 2 1
+universe b,a a,ba a,a
+ceilings 2 - - 3 2
+universe b,a a,ba a,b
+ceilings 2 4 100 2 0
+universe b,a a,ba a,aba
+ceilings 2 6 144 3 2
+universe b,a a,ba b,b
+ceilings 2 - - 2 1
+universe b,a a,ba b,ba
+ceilings 2 5 121 2 1
+universe b,a a,ba b,aba
+ceilings 2 3 144 2 1
+universe b,a a,ba ba,a
+ceilings 3 4 121 4 2
+universe b,a a,ba ba,b
+ceilings 3 4 121 3 1
+universe b,a a,ba ba,ba
+ceilings 3 - - 3 1
+universe b,a a,ba ba,aba
+ceilings 3 6 169 4 2
+universe b,a a,ba aba,a
+ceilings 4 4 144 5 2
+universe b,a a,ba aba,b
+ceilings 4 4 144 4 1
+universe b,a a,ba aba,ba
+ceilings 4 5 169 4 1
+universe b,a a,ba aba,aba
+ceilings 4 - - 5 2
+universe b,a b,b a,a
+ceilings 2 - - 2 1
+universe b,a b,b a,b
+ceilings 2 - - 3 2
+universe b,a b,b a,ba
+ceilings 2 - - 2 1
+universe b,a b,b a,bb
+ceilings 2 - - 3 2
+universe b,a b,b b,ba
+ceilings 2 - - 2 0
+universe b,a b,b b,bb
+ceilings 2 - - 2 1
+universe b,a b,b ba,a
+ceilings 3 - - 2 1
+universe b,a b,b ba,b
+ceilings 3 - - 4 2
+universe b,a b,b ba,ba
+ceilings 3 - - 3 1
+universe b,a b,b ba,bb
+ceilings 3 - - 4 2
+universe b,a b,b bb,a
+ceilings 3 - - 2 1
+universe b,a b,b bb,b
+ceilings 3 - - 4 2
+universe b,a b,b bb,ba
+ceilings 3 - - 3 1
+universe b,a b,b bb,bb
+ceilings 3 - - 4 2
+universe b,a b,ba a,a
+ceilings 2 - - 2 1
+universe b,a b,ba a,b
+ceilings 2 4 100 3 2
+universe b,a b,ba a,ba
+ceilings 2 5 121 2 1
+universe b,a b,ba a,bba
+ceilings 2 6 144 3 2
+universe b,a b,ba b,b
+ceilings 2 - - 3 2
+universe b,a b,ba b,bba
+ceilings 2 6 144 3 2
+universe b,a b,ba ba,a
+ceilings 3 4 121 2 1
+universe b,a b,ba ba,b
+ceilings 3 4 121 4 2
+universe b,a b,ba ba,ba
+ceilings 3 - - 3 1
+universe b,a b,ba ba,bba
+ceilings 3 6 169 4 2
+universe b,a b,ba bba,a
+ceilings 4 4 144 3 1
+universe b,a b,ba bba,b
+ceilings 4 4 144 5 2
+universe b,a b,ba bba,ba
+ceilings 4 5 169 4 1
+universe b,a b,ba bba,bba
+ceilings 4 - - 5 2
+universe b,a ba,a a,a
+ceilings 3 - - 2 0
+universe b,a ba,a a,b
+ceilings 3 3 100 2 1
+universe b,a ba,a a,ba
+ceilings 3 4 121 3 2
+universe b,a ba,a a,baa
+ceilings 3 5 144 3 2
+universe b,a ba,a b,b
+ceilings 3 - - 2 1
+universe b,a ba,a b,ba
+ceilings 3 4 121 3 2
+universe b,a ba,a b,baa
+ceilings 3 5 144 3 2
+universe b,a ba,a ba,b
+ceilings 4 3 121 3 1
+universe b,a ba,a ba,ba
+ceilings 4 - - 4 2
+universe b,a ba,a ba,baa
+ceilings 4 5 169 4 2
+universe b,a ba,a baa,a
+ceilings 5 3 144 3 0
+universe b,a ba,a baa,b
+ceilings 5 3 144 4 1
+universe b,a ba,a baa,ba
+ceilings 5 4 169 5 2
+universe b,a ba,a baa,baa
+ceilings 5 - - 5 2
+universe b,a ba,b a,a
+ceilings 3 - - 3 1
+universe b,a ba,b a,b
+ceilings 3 3 100 3 1
+universe b,a ba,b a,ba
+ceilings 3 4 121 4 3
+universe b,a ba,b a,bab
+ceilings 3 5 144 4 3
+universe b,a ba,b b,b
+ceilings 3 - - 3 1
+universe b,a ba,b b,ba
+ceilings 3 4 121 4 3
+universe b,a ba,b b,bab
+ceilings 3 5 144 4 3
+universe b,a ba,b ba,a
+ceilings 4 3 121 3 1
+universe b,a ba,b ba,ba
+ceilings 4 - - 5 3
+universe b,a ba,b ba,bab
+ceilings 4 5 169 5 3
+universe b,a ba,b bab,a
+ceilings 5 2 144 3 1
+universe b,a ba,b bab,b
+ceilings 5 3 144 4 1
+universe b,a ba,b bab,ba
+ceilings 5 4 169 6 3
+universe b,a ba,b bab,bab
+ceilings 5 - - 6 3
+universe b,a ba,ba a,a
+ceilings 3 - - 3 1
+universe b,a ba,ba a,b
+ceilings 3 - - 3 1
+universe b,a ba,ba a,ba
+ceilings 3 - - 4 3
+universe b,a ba,ba a,baba
+ceilings 3 - - 4 3
+universe b,a ba,ba b,b
+ceilings 3 - - 3 1
+universe b,a ba,ba b,ba
+ceilings 3 - - 4 3
+universe b,a ba,ba b,baba
+ceilings 3 - - 4 3
+universe b,a ba,ba ba,a
+ceilings 4 - - 3 1
+universe b,a ba,ba ba,b
+ceilings 4 - - 3 0
+universe b,a ba,ba ba,baba
+ceilings 4 - - 3 1
+universe b,a ba,ba baba,a
+ceilings 6 - - 4 1
+universe b,a ba,ba baba,b
+ceilings 6 - - 5 1
+universe b,a ba,ba baba,ba
+ceilings 6 - - 7 3
+universe b,a ba,ba baba,baba
+ceilings 6 - - 7 3
+universe b,b a,a a,b
+ceilings 2 - - 2 1
+universe b,b a,a a,bb
+ceilings 2 - - 2 1
+universe b,b a,a a,aa
+ceilings 2 - - 1 0
+universe b,b a,a b,a
+ceilings 2 - - 2 1
+universe b,b a,a b,bb
+ceilings 2 - - 1 0
+universe b,b a,a b,aa
+ceilings 2 - - 2 1
+universe b,b a,a bb,a
+ceilings 3 - - 3 1
+universe b,b a,a bb,b
+ceilings 3 - - 3 1
+universe b,b a,a bb,bb
+ceilings 3 - - 3 1
+universe b,b a,a bb,aa
+ceilings 3 - - 3 1
+universe b,b a,a aa,a
+ceilings 3 - - 3 1
+universe b,b a,a aa,b
+ceilings 3 - - 3 1
+universe b,b a,a aa,bb
+ceilings 3 - - 3 1
+universe b,b a,a aa,aa
+ceilings 3 - - 3 1
+universe b,b a,b a,a
+ceilings 2 - - 3 2
+universe b,b a,b a,bb
+ceilings 2 - - 2 0
+universe b,b a,b a,ab
+ceilings 2 - - 3 2
+universe b,b a,b b,a
+ceilings 2 - - 3 2
+universe b,b a,b b,bb
+ceilings 2 - - 2 1
+universe b,b a,b b,ab
+ceilings 2 - - 3 2
+universe b,b a,b bb,a
+ceilings 3 - - 4 2
+universe b,b a,b bb,b
+ceilings 3 - - 3 1
+universe b,b a,b bb,bb
+ceilings 3 - - 3 1
+universe b,b a,b bb,ab
+ceilings 3 - - 4 2
+universe b,b a,b ab,a
+ceilings 3 - - 4 2
+universe b,b a,b ab,b
+ceilings 3 - - 2 1
+universe b,b a,b ab,bb
+ceilings 3 - - 2 1
+universe b,b a,b ab,ab
+ceilings 3 - - 4 2
+universe b,b a,bb a,a
+ceilings 2 - - 3 2
+universe b,b a,bb a,b
+ceilings 2 - - 2 0
+universe b,b a,bb a,abb
+ceilings 2 - - 3 2
+universe b,b a,bb b,a
+ceilings 2 - - 3 2
+universe b,b a,bb b,bb
+ceilings 2 - - 2 1
+universe b,b a,bb b,abb
+ceilings 2 - - 3 2
+universe b,b a,bb bb,a
+ceilings 3 - - 4 2
+universe b,b a,bb bb,b
+ceilings 3 - - 3 1
+universe b,b a,bb bb,bb
+ceilings 3 - - 3 1
+universe b,b a,bb bb,abb
+ceilings 3 - - 4 2
+universe b,b a,bb abb,a
+ceilings 4 - - 5 2
+universe b,b a,bb abb,b
+ceilings 4 - - 4 1
+universe b,b a,bb abb,bb
+ceilings 4 - - 4 1
+universe b,b a,bb abb,abb
+ceilings 4 - - 5 2
+universe b,b b,a a,a
+ceilings 2 - - 1 0
+universe b,b b,a a,b
+ceilings 2 - - 2 1
+universe b,b b,a a,bb
+ceilings 2 - - 2 1
+universe b,b b,a a,ba
+ceilings 2 - - 2 1
+universe b,b b,a b,bb
+ceilings 2 - - 1 0
+universe b,b b,a b,ba
+ceilings 2 - - 1 0
+universe b,b b,a bb,a
+ceilings 3 - - 2 0
+universe b,b b,a bb,b
+ceilings 3 - - 3 1
+universe b,b b,a bb,bb
+ceilings 3 - - 3 1
+universe b,b b,a bb,ba
+ceilings 3 - - 3 1
+universe b,b b,a ba,a
+ceilings 3 - - 2 0
+universe b,b b,a ba,b
+ceilings 3 - - 3 1
+universe b,b b,a ba,bb
+ceilings 3 - - 3 1
+universe b,b b,a ba,ba
+ceilings 3 - - 3 1
+universe b,b b,bb a,a
+ceilings 2 - - 1 0
+universe b,b b,bb a,b
+ceilings 2 - - 2 1
+universe b,b b,bb a,bb
+ceilings 2 - - 2 1
+universe b,b b,bb a,bbb
+ceilings 2 - - 1 0
+universe b,b b,bb b,a
+ceilings 2 - - 1 0
+universe b,b b,bb b,bbb
+ceilings 2 - - 1 0
+universe b,b b,bb bb,a
+ceilings 3 - - 2 0
+universe b,b b,bb bb,bb
+ceilings 3 - - 3 1
+universe b,b b,bb bb,bbb
+ceilings 3 - - 1 0
+universe b,b b,bb bbb,a
+ceilings 4 - - 1 0
+universe b,b b,bb bbb,b
+ceilings 4 - - 1 0
+universe b,b b,bb bbb,bb
+ceilings 4 - - 1 0
+universe b,b b,bb bbb,bbb
+ceilings 4 - - 1 0
+universe b,b bb,a a,a
+ceilings 3 - - 2 0
+universe b,b bb,a a,b
+ceilings 3 - - 2 1
+universe b,b bb,a a,bb
+ceilings 3 - - 3 2
+universe b,b bb,a a,bba
+ceilings 3 - - 3 2
+universe b,b bb,a b,a
+ceilings 3 - - 2 0
+universe b,b bb,a b,bb
+ceilings 3 - - 2 0
+universe b,b bb,a b,bba
+ceilings 3 - - 2 0
+universe b,b bb,a bb,b
+ceilings 4 - - 3 1
+universe b,b bb,a bb,bb
+ceilings 4 - - 4 2
+universe b,b bb,a bb,bba
+ceilings 4 - - 4 2
+universe b,b bb,a bba,a
+ceilings 5 - - 3 0
+universe b,b bb,a bba,b
+ceilings 5 - - 4 1
+universe b,b bb,a bba,bb
+ceilings 5 - - 5 2
+universe b,b bb,a bba,bba
+ceilings 5 - - 5 2
+universe b,b bb,b a,a
+ceilings 3 - - 3 1
+universe b,b bb,b a,b
+ceilings 3 - - 3 1
+universe b,b bb,b a,bb
+ceilings 3 - - 4 3
+universe b,b bb,b a,bbb
+ceilings 3 - - 4 3
+universe b,b bb,b b,a
+ceilings 3 - - 3 1
+universe b,b bb,b b,bbb
+ceilings 3 - - 3 1
+universe b,b bb,b bb,a
+ceilings 4 - - 3 1
+universe b,b bb,b bb,bb
+ceilings 4 - - 5 3
+universe b,b bb,b bb,bbb
+ceilings 4 - - 5 3
+universe b,b bb,b bbb,a
+ceilings 5 - - 3 1
+universe b,b bb,b bbb,b
+ceilings 5 - - 3 1
+universe b,b bb,b bbb,bb
+ceilings 5 - - 3 1
+universe b,b bb,b bbb,bbb
+ceilings 5 - - 3 1
+universe b,b bb,bb a,a
+ceilings 3 - - 3 1
+universe b,b bb,bb a,b
+ceilings 3 - - 3 1
+universe b,b bb,bb a,bb
+ceilings 3 - - 4 3
+universe b,b bb,bb a,bbbb
+ceilings 3 - - 4 3
+universe b,b bb,bb b,a
+ceilings 3 - - 3 1
+universe b,b bb,bb b,bb
+ceilings 3 - - 3 1
+universe b,b bb,bb b,bbbb
+ceilings 3 - - 3 1
+universe b,b bb,bb bb,a
+ceilings 4 - - 3 1
+universe b,b bb,bb bb,b
+ceilings 4 - - 3 0
+universe b,b bb,bb bb,bbbb
+ceilings 4 - - 3 1
+universe b,b bb,bb bbbb,a
+ceilings 6 - - 4 1
+universe b,b bb,bb bbbb,b
+ceilings 6 - - 5 1
+universe b,b bb,bb bbbb,bb
+ceilings 6 - - 7 3
+universe b,b bb,bb bbbb,bbbb
+ceilings 6 - - 7 3
+universe b,a ba,a ba,baa baa,ba
+ceilings 7 7 324 7 4
+universe a,a a,b b,ab bab,aa
+ceilings 5 - - 4 1
+universe a,a b,a aa,ba aaba,aaba
+ceilings 7 - - 4 2
+universe a,a a,b a,ab a,aab
+ceilings 3 - - 1 0
+universe a,a b,a b,aa aa,baa
+ceilings 4 - - 4 2
+universe b,b bb,a bba,bba bba,b
+ceilings 8 - - 5 2
+universe b,b b,bb b,a bb,a
+ceilings 4 - - 2 0
+universe a,a b,b aa,bb aa,aabb
+ceilings 5 - - 5 3
+universe a,b b,b bb,ab ab,bbab
+ceilings 5 - - 5 3
+universe b,a ba,a a,a a,baa
+ceilings 4 - - 3 2
+universe a,a b,a aa,ba aaba,a
+ceilings 7 - - 4 2
+universe a,b a,ab b,a a,a
+ceilings 3 - - 3 2
+universe a,b b,ab b,b a,ab
+ceilings 3 - - 3 2
+universe b,b bb,a bb,bba bb,bbbba
+ceilings 6 - - 6 4
+universe b,b bb,a bba,bb a,bb
+ceilings 6 - - 5 2
+universe a,b b,ab ab,a b,aba
+ceilings 4 4 225 3 1
+universe a,a b,aa a,b a,aa
+ceilings 3 - - 3 2
+universe b,b bb,a a,bb b,abb
+ceilings 4 - - 4 3
+universe b,a a,a aa,b aab,aab
+ceilings 6 - - 3 1
+universe b,a ba,ba b,b baba,b
+ceilings 7 - - 6 2
+universe a,a aa,b a,aab b,a
+ceilings 4 - - 2 1
+universe b,b b,bb bbb,b a,bb
+ceilings 5 - - 2 1
+universe a,a aa,b aab,b aabb,aabb
+ceilings 9 - - 7 3
+universe a,a b,aa aa,a b,aaa
+ceilings 4 - - 3 1
+universe b,a a,ba b,ba a,bba
+ceilings 3 8 225 3 2
+universe a,b ab,b abb,a abb,b
+ceilings 8 4 256 4 1
+universe b,b bb,bb bbbb,a bbbb,bb
+ceilings 10 - - 7 3
+universe b,b bb,b bb,bbb bbbbb,bbbbb
+ceilings 9 - - 5 3
+universe b,b a,a a,b aa,bb
+ceilings 4 - - 3 1
+universe a,a b,b b,aa baa,baa
+ceilings 5 - - 5 2
+universe a,b ab,ab ab,a abab,b
+ceilings 8 - - 4 0
+universe a,a b,aa aa,baa aabaa,aa
+ceilings 8 - - 9 4
+universe b,a b,ba bba,b bbab,bba
+ceilings 8 7 361 9 5
+universe b,b a,a b,aa aa,aa
+ceilings 4 - - 3 1
+universe b,b bb,a a,bba abba,abba
+ceilings 7 - - 7 3
+universe b,a a,b ab,ab ab,a
+ceilings 5 2 196 2 1
+universe a,a b,b bb,b bbb,aa
+ceilings 6 - - 4 1
+universe a,b ab,ab ab,b abab,b
+ceilings 8 - - 4 1
+universe a,a a,aa aaa,b aaa,aa
+ceilings 7 - - 1 0
+universe a,a a,b b,aa b,b
+ceilings 3 - - 3 2
+universe a,b ab,ab ab,b abab,a
+ceilings 8 - - 5 1
+universe a,a aa,b aab,b a,aa
+ceilings 6 - - 3 0
+universe b,a ba,a ba,ba baa,baa
+ceilings 7 - - 5 2
+universe b,a a,b a,ab a,a
+ceilings 3 - - 4 3
+universe a,b a,a b,b b,aa
+ceilings 3 - - 3 2
+universe b,a ba,a baa,ba baa,a
+ceilings 8 5 289 5 2
+universe b,b a,a aa,bb aabb,bb
+ceilings 7 - - 5 1
+universe a,a b,b bb,bb bbbb,a
+ceilings 7 - - 5 1
+universe b,b a,bb abb,a bb,b
+ceilings 6 - - 5 2
+universe a,a b,a a,ba aa,ba
+ceilings 4 - - 4 2
+universe b,a ba,a b,ba a,baa
+ceilings 4 7 225 3 2
+universe b,b b,a ba,a b,bb
+ceilings 4 - - 2 0
+universe a,b ab,a ab,ab abab,abab
+ceilings 8 - - 9 5
+universe a,a b,aa a,baa baa,baa
+ceilings 5 - - 5 2
+universe a,b b,ab a,a bab,b
+ceilings 5 - - 5 2
+universe b,a a,a aa,ba aa,a
+ceilings 5 - - 3 1
+universe a,b b,a b,ab bab,b
+ceilings 5 5 196 4 1
+universe a,a b,b b,a bb,aa
+ceilings 4 - - 3 1
+universe b,a b,b b,ba bb,ba
+ceilings 4 - - 3 1
+universe b,a ba,ba a,a a,ba
+ceilings 4 - - 4 3
+universe b,b b,bb a,bbb a,abbb
+ceilings 3 - - 1 0
+universe a,a b,a a,ba aba,a
+ceilings 5 - - 3 2
+universe b,b a,b bb,a bba,b
+ceilings 6 - - 4 2
+universe a,b a,ab aab,ab aab,a
+ceilings 7 6 289 5 2
+universe b,a a,ba b,ba aba,aba
+ceilings 5 - - 5 2
+universe b,a ba,a baa,baa baa,baabaa
+ceilings 8 - - 5 2
+universe a,b a,ab a,a b,aa
+ceilings 3 - - 4 3
+universe b,b a,b ab,b bb,a
+ceilings 5 - - 4 2
+universe b,b a,b ab,a bb,ab
+ceilings 5 - - 6 4
+universe a,b b,a a,ba aba,aba
+ceilings 5 2 256 2 1
+universe a,a b,aa b,b bb,b
+ceilings 4 - - 5 3
+universe b,a b,ba ba,b a,a
+ceilings 4 - - 4 2
+universe a,a b,aa aa,baa a,baa
+ceilings 4 - - 4 2
+universe b,b bb,b bbb,bb bbb,bbbbb
+ceilings 8 - - 3 1
+universe b,b b,a a,bb ba,ba
+ceilings 4 - - 3 1
+universe a,a b,aa baa,aa a,b
+ceilings 5 - - 4 2
+universe b,a a,b a,ba aba,ab
+ceilings 5 6 225 5 2
+universe a,b a,a aa,b b,aab
+ceilings 4 - - 2 1
+universe a,b b,ab b,b bab,bab
+ceilings 5 - - 5 2
+universe a,a aa,aa aa,b a,b
+ceilings 5 - - 3 1
+universe a,b ab,b a,abb a,a
+ceilings 4 - - 4 3
+universe b,b a,a a,aa aa,bb
+ceilings 4 - - 3 1
+universe a,b ab,a ab,aba ab,ab
+ceilings 6 - - 7 5
+universe a,a a,aa b,b aaa,aaa
+ceilings 5 - - 1 0
+universe a,b a,a b,a ab,b
+ceilings 4 - - 5 3
+universe a,b b,b bb,ab ab,a
+ceilings 5 - - 3 1
+universe b,a ba,b ba,bab a,b
+ceilings 5 6 225 5 3
+universe b,b a,a bb,bb bbbb,bb
+ceilings 7 - - 7 3
+universe b,b bb,b bbb,bbb a,b
+ceilings 6 - - 3 1
+universe a,a a,b aa,ab aa,a
+ceilings 5 - - 3 1
+universe a,b b,ab b,b ab,bab
+ceilings 4 - - 4 2
+universe a,a aa,b a,aab aa,a
+ceilings 5 - - 3 1
+universe a,a b,b a,bb a,b
+ceilings 3 - - 2 0
+universe a,b a,a aa,ab aa,aaab
+ceilings 5 - - 5 3
+universe a,a a,b ab,aa a,aa
+ceilings 4 - - 3 1
+universe a,a aa,aa b,b aa,b
+ceilings 5 - - 3 1
+universe a,b b,a ab,ab abab,ba
+ceilings 7 - - 6 2
+universe b,a ba,a baa,a a,a
+ceilings 6 - - 3 0
+universe a,b a,ab ab,ab abab,ab
+ceilings 7 - - 7 3
+universe b,b a,bb bb,a bba,bb
+ceilings 6 - - 4 2
+universe a,a a,b aa,a b,a
+ceilings 4 - - 3 1
+universe a,b b,a ab,ab abab,abab
+ceilings 7 - - 7 3
+universe b,b bb,a b,a ba,a
+ceilings 5 - - 2 0
+universe b,b bb,bb bb,b bbb,bb
+ceilings 7 - - 3 0
+universe b,a a,a ba,ba a,b
+ceilings 4 - - 3 1
+universe a,b a,ab b,b aab,b
+ceilings 5 - - 4 1
+universe a,b b,ab a,ab bab,bab
+ceilings 5 - - 5 2
+universe b,b b,a ba,ba baba,b
+ceilings 7 - - 5 1
+universe a,b ab,a b,aba baba,ab
+ceilings 7 7 324 7 3
+universe b,a b,b ba,ba b,bb
+ceilings 4 - - 3 1
+universe b,a ba,ba baba,ba bababa,bababa
+ceilings 12 - - 7 3
+universe a,a aa,aa aaaa,aaaa b,aaaa
+ceilings 7 - - 8 7
+universe b,b bb,a bba,bba a,a
+ceilings 6 - - 5 2
+universe b,a a,ba b,ba bba,a
+ceilings 5 6 225 5 2
+universe a,a a,b a,aa aaa,ab
+ceilings 5 - - 1 0
+universe a,a aa,a b,a b,b
+ceilings 4 - - 3 2
+universe a,b b,a ab,ba ab,b
+ceilings 5 5 196 4 1
+universe a,a a,b ab,b abb,a
+ceilings 6 - - 4 1
+universe b,b bb,b bbb,bb b,bbb
+ceilings 6 - - 3 1
+universe a,b b,b a,bb b,bb
+ceilings 3 - - 1 0
+universe b,a ba,ba b,b a,ba
+ceilings 4 - - 4 3
+universe b,b bb,a a,a bb,b
+ceilings 5 - - 3 1
+universe b,b a,a a,b b,a
+ceilings 3 - - 3 2
+universe a,b a,a ab,ab abab,a
+ceilings 7 - - 6 2
+universe b,a a,b b,ba ba,bba
+ceilings 4 7 225 4 2
+universe b,b bb,b bb,a bbb,bb
+ceilings 7 - - 3 1
+universe b,a ba,a baa,b baa,ba
+ceilings 8 5 289 5 2
+universe b,b a,a bb,a aa,bba
+ceilings 5 - - 5 3
+universe b,b a,a a,b b,bb
+ceilings 3 - - 2 1
+universe b,b bb,bb bbbb,a bb,a
+ceilings 8 - - 4 1
+universe b,a a,a aa,ba aaba,ba
+ceilings 7 - - 5 1
+universe b,a ba,a b,b b,baa
+ceilings 4 - - 3 2
+universe a,a a,aa aaa,aaa aaaaaa,b
+ceilings 10 - - 1 0
+universe b,b bb,bb bb,b bb,a
+ceilings 6 - - 3 0
+universe a,a aa,b aab,aab b,aab
+ceilings 6 - - 6 5
+universe a,a aa,a b,b b,aaa
+ceilings 4 - - 4 3
+universe b,a ba,ba a,b a,a
+ceilings 4 - - 3 2
+universe a,b a,ab a,aab aab,b
+ceilings 5 7 256 3 2
+universe a,b b,ab b,bab bbab,b
+ceilings 6 7 289 7 3
+universe b,b a,a aa,aa bb,a
+ceilings 5 - - 3 1
+universe a,a a,aa a,b aaa,aaa
+ceilings 5 - - 1 0
+universe a,a aa,b b,a aa,ba
+ceilings 5 - - 2 1
+universe b,b a,bb abb,a abb,abba
+ceilings 7 - - 8 5
+universe b,a ba,a b,ba b,b
+ceilings 4 - - 4 3
+universe a,a b,aa aa,a aa,aaa
+ceilings 5 - - 5 3
+universe b,a ba,a b,ba a,ba
+ceilings 4 6 196 3 2
+universe a,b b,a b,ba ba,bba
+ceilings 4 4 225 3 2
+universe a,a aa,a b,b a,aaa
+ceilings 4 - - 3 1
+universe a,a b,aa baa,baa b,baabaa
+ceilings 5 - - 6 5
+universe a,b ab,a a,aba aba,aaba
+ceilings 6 9 361 7 4
+universe a,a a,b b,b aa,bb
+ceilings 4 - - 3 1
+universe a,b a,ab a,aab ab,ab
+ceilings 4 - - 3 2
+universe a,a b,b aa,aa bb,b
+ceilings 5 - - 3 1
+universe b,b bb,bb a,a aa,a
+ceilings 5 - - 3 1
+universe a,a aa,b aab,aab a,aa
+ceilings 6 - - 5 2
+universe b,b a,a bb,a a,b
+ceilings 4 - - 3 1
+universe b,a a,ba ba,b bab,ba
+ceilings 6 6 256 6 3
+universe b,b a,bb b,a ba,a
+ceilings 4 - - 4 2
+universe a,a a,aa aaa,b aaab,b
+ceilings 8 - - 1 0
+universe b,b a,bb bb,abb abb,a
+ceilings 6 - - 5 2
+universe b,b bb,b a,b bb,ab
+ceilings 5 - - 4 2
+universe b,a b,b b,ba a,a
+ceilings 3 - - 2 0
+universe a,b b,b b,ab bab,ab
+ceilings 5 - - 4 1
+universe a,a a,b ab,a ab,ab
+ceilings 5 - - 5 3
+universe b,a b,b bb,b bb,a
+ceilings 5 - - 4 2
+universe b,a ba,a baa,ba baaba,baaba
+ceilings 10 - - 10 5
+universe b,b bb,a bba,b bb,bbab
+ceilings 7 - - 6 4
+universe a,a a,b ab,aa b,b
+ceilings 4 - - 3 1
+universe a,b ab,b abb,b abbb,b
+ceilings 9 4 289 4 0
+universe b,b b,a b,bb bb,bb
+ceilings 4 - - 3 1
+universe b,a ba,ba ba,b bab,b
+ceilings 7 - - 4 1
+universe a,a b,a ba,ba baba,baba
+ceilings 7 - - 8 4
+universe b,a a,ba a,a a,aba
+ceilings 3 - - 3 1
+universe b,b b,bb bb,bbb bb,bbbbb
+ceilings 5 - - 1 0
+universe a,b a,a aa,a aa,ab
+ceilings 5 - - 4 2
+universe b,a a,b ab,ab a,a
+ceilings 4 - - 3 2
+universe b,b bb,b bb,bbb a,bb
+ceilings 5 - - 6 5
+universe a,a aa,b aab,a aaba,aa
+ceilings 9 - - 4 1
+universe b,b bb,a bba,a a,a
+ceilings 6 - - 3 0
+universe b,b b,bb a,b ab,b
+ceilings 4 - - 2 1
+universe a,a aa,b aa,aab a,b
+ceilings 5 - - 4 2
+universe a,b b,ab ab,bab a,abbab
+ceilings 4 11 361 5 4
+universe a,a a,aa a,aaa aa,aaa
+ceilings 4 - - 1 0
+universe b,a b,b ba,a ba,bb
+ceilings 5 - - 4 2
+universe a,b a,a b,aa b,b
+ceilings 3 - - 4 3
+universe a,b ab,ab a,abab abab,a
+ceilings 7 - - 8 4
+universe b,a ba,b bab,b b,babb
+ceilings 6 7 289 5 4
+universe a,b b,b ab,a bb,aba
+ceilings 5 - - 5 3
+universe a,b b,ab ab,b b,abb
+ceilings 4 4 225 4 2
+universe a,a b,aa b,b a,b
+ceilings 3 - - 4 3
+universe b,b b,a b,bb a,ba
+ceilings 3 - - 2 1
+universe b,a a,a b,aa a,baa
+ceilings 3 - - 1 0
+universe b,a a,ba a,a aba,b
+ceilings 5 - - 4 2
+universe b,a a,ba ba,ba a,a
+ceilings 4 - - 3 2
+universe a,a aa,b aa,aa aa,aab
+ceilings 6 - - 4 1
+universe a,b ab,a b,aba aba,ab
+ceilings 6 7 289 6 3
+universe a,b ab,b b,a abb,ba
+ceilings 6 5 225 5 2
+universe a,a aa,b a,b aa,aab
+ceilings 5 - - 4 2
+universe a,b a,ab b,a ab,ba
+ceilings 4 6 196 5 3
+universe a,a b,b aa,bb bb,bb
+ceilings 5 - - 3 1
+universe a,a aa,b aa,aa aaaa,aab
+ceilings 8 - - 6 2
+universe a,a aa,b aa,aa a,aaaa
+ceilings 5 - - 4 2
+universe b,a ba,ba baba,baba babababa,ba
+ceilings 14 - - 11 3
+universe b,b bb,a bb,b bba,bbb
+ceilings 7 - - 6 3
+universe a,a aa,aa aa,b aaaa,aa
+ceilings 8 - - 7 3
+universe b,a a,ba ba,aba aba,baaba
+ceilings 6 11 441 7 4
+universe b,b b,bb bb,bbb bbbbb,b
+ceilings 8 - - 1 0
+universe b,a ba,b a,b a,ba
+ceilings 4 5 169 4 3
+universe b,b bb,b bbb,bbb bb,bb
+ceilings 7 - - 5 3
+universe b,b a,bb bb,abb b,bbabb
+ceilings 4 - - 4 2
+universe b,b a,bb abb,bb bb,a
+ceilings 6 - - 4 2
+universe a,b ab,a ab,aba ababa,ababa
+ceilings 9 - - 10 5
+universe b,b a,bb abb,bb abb,a
+ceilings 7 - - 5 2
+universe a,b ab,b b,a b,ba
+ceilings 4 5 169 3 2
+universe a,a b,b bb,bb bb,bbbb
+ceilings 5 - - 3 1
+universe b,b a,b b,bb ab,ab
+ceilings 4 - - 4 2
+universe b,a a,b ba,a b,ab
+ceilings 4 3 169 4 2
+universe b,a ba,ba baba,baba b,babababa
+ceilings 7 - - 8 7
+universe b,a ba,a b,baa bbaa,a
+ceilings 7 6 289 4 2
+universe b,b a,bb a,a abb,bb
+ceilings 5 - - 4 2
+universe b,b bb,b bbb,bb bbbbb,b
+ceilings 10 - - 3 1
+universe a,a aa,aa a,aaaa b,a
+ceilings 4 - - 3 1
+universe b,a a,a b,aa baa,ba
+ceilings 5 - - 1 0
+universe b,b bb,b bb,bbb bbb,bbb
+ceilings 7 - - 5 3
+universe b,a ba,b a,b ab,ba
+ceilings 5 5 196 5 3
+universe b,a a,a aa,b ba,aab
+ceilings 5 - - 5 3
+universe b,b a,a aa,b aa,aab
+ceilings 5 - - 5 3
+universe b,b a,a bb,b b,aa
+ceilings 4 - - 3 1
+universe a,b a,ab b,aab baab,a
+ceilings 6 7 289 6 2
+universe a,b a,ab b,ab ab,b
+ceilings 4 6 196 4 2
+universe b,b a,b bb,b bb,bbb
+ceilings 5 - - 5 3
+universe b,b bb,b bb,a a,b
+ceilings 5 - - 3 1
+universe b,b bb,a bba,bba bb,b
+ceilings 7 - - 5 2
+universe b,a ba,ba b,ba baba,ba
+ceilings 7 - - 7 3
+universe b,a ba,a ba,b a,bab
+ceilings 5 6 225 4 3
+universe a,b ab,ab a,ab aab,a
+ceilings 6 - - 7 4
+universe b,b bb,b bbb,b bbbb,b
+ceilings 9 - - 3 1
+universe b,a a,b a,ba aba,b
+ceilings 5 5 196 4 1
+universe a,a aa,aa aaaa,aa aaaaaa,aa
+ceilings 12 - - 7 3
+universe b,b b,a bb,a bba,b
+ceilings 6 - - 4 1
+universe b,b bb,a b,a bb,bba
+ceilings 5 - - 4 2
+universe a,b a,ab a,aab aaab,ab
+ceilings 6 8 324 5 2
+universe b,b a,b a,bb b,bb
+ceilings 3 - - 2 0
+universe a,b b,ab ab,a ab,aba
+ceilings 5 7 256 5 3
+universe a,a aa,b b,aab aab,aa
+ceilings 6 - - 5 2
+universe a,a aa,a a,aaa aaaa,aaa
+ceilings 7 - - 3 1
+universe b,a b,b ba,bb babb,babb
+ceilings 7 - - 8 4
+universe a,b b,ab bab,a bab,bab
+ceilings 7 - - 7 4
+universe b,a ba,a a,a ba,baa
+ceilings 5 - - 4 2
+universe a,a aa,a aaa,a a,aaaa
+ceilings 6 - - 3 1
+universe a,a b,b b,aa bb,b
+ceilings 4 - - 4 2
+universe b,a a,b ba,ba ab,ab
+ceilings 5 - - 3 1
+universe b,a a,b ba,ba a,ab
+ceilings 4 - - 3 2
+universe a,b a,a a,ab ab,b
+ceilings 4 - - 2 0
+universe b,a b,b b,bb a,bbb
+ceilings 3 - - 2 1
+universe a,a b,aa aa,aa aa,a
+ceilings 5 - - 3 1
+universe b,b b,bb a,b a,ab
+ceilings 3 - - 3 2
+universe a,a aa,b aab,b aab,aabb
+ceilings 8 - - 6 3
+universe a,a a,b b,aa baa,aa
+ceilings 5 - - 4 1
+universe a,b ab,b b,ab abb,ab
+ceilings 6 6 256 5 2
+universe b,b a,b b,a ba,a
+ceilings 4 - - 4 2
+universe a,b b,b b,ab bb,bb
+ceilings 4 - - 3 1
+universe a,a b,aa b,baa a,aa
+ceilings 3 - - 3 2
+universe a,b ab,ab b,a ba,b
+ceilings 5 - - 3 1
+universe b,b bb,a a,b ab,a
+ceilings 5 - - 4 2
+universe b,a ba,ba b,b baba,baba
+ceilings 7 - - 7 3
+universe b,b b,a a,b bb,ab
+ceilings 4 - - 4 2
+universe b,b bb,a a,bb bba,b
+ceilings 6 - - 4 2
+universe a,a b,aa aa,aa aaaa,aaaa
+ceilings 7 - - 7 3
+universe a,b a,a ab,aa abaa,aa
+ceilings 7 - - 6 2
+universe b,a a,ba aba,b abab,aba
+ceilings 8 4 361 4 1
+universe a,a aa,aa a,aaaa aa,a
+ceilings 5 - - 3 0
+universe a,a aa,b aa,a aab,aab
+ceilings 7 - - 5 2
+universe b,a ba,ba baba,baba babababa,baba
+ceilings 14 - - 15 7
+universe b,a b,ba ba,b a,bab
+ceilings 4 7 225 5 4
+universe a,a b,aa baa,b b,a
+ceilings 5 - - 5 2
+universe b,b bb,a a,a bba,b
+ceilings 6 - - 4 1
+universe a,a a,aa aaa,b aa,aaab
+ceilings 6 - - 1 0
+universe a,b b,ab bab,bab ab,babbab
+ceilings 6 - - 7 5
+universe b,a b,ba a,a a,b
+ceilings 3 - - 3 2
+universe b,b a,bb bb,abb bbabb,a
+ceilings 8 - - 7 2
+universe a,a aa,aa b,a a,aa
+ceilings 4 - - 3 1
+universe a,b b,b ab,bb ab,ab
+ceilings 5 - - 5 3
+universe a,a a,b aa,a ab,aa
+ceilings 5 - - 5 3
+universe b,b bb,a bba,bba bba,bbabba
+ceilings 8 - - 5 2
+universe b,b b,a ba,b bb,ba
+ceilings 5 - - 5 3
+universe a,a a,b a,aa ab,a
+ceilings 4 - - 3 1
+universe a,b a,a aa,a b,a
+ceilings 4 - - 4 2
+universe b,a ba,ba a,baba ababa,baba
+ceilings 8 - - 8 3
+universe b,b b,bb bbb,a bbb,bb
+ceilings 7 - - 1 0
+universe b,b bb,bb a,bb bbbb,b
+ceilings 7 - - 5 3
+universe b,a ba,ba b,baba b,b
+ceilings 4 - - 5 4
+universe b,b a,bb bb,abb b,abb
+ceilings 4 - - 4 2
+universe b,b bb,a b,bba bba,a
+ceilings 6 - - 3 0
+universe a,a b,a ba,b bab,a
+ceilings 6 - - 4 2
+universe b,a a,a a,ba a,aba
+ceilings 3 - - 2 1
+universe a,b a,ab b,ab b,b
+ceilings 3 - - 3 2
+universe a,b b,b ab,bb a,ab
+ceilings 4 - - 4 3
+universe a,a aa,a b,aaa b,baaa
+ceilings 4 - - 5 4
+universe a,a b,a aa,ba aaba,aa
+ceilings 7 - - 4 2
+universe a,b b,b a,bb b,abb
+ceilings 3 - - 1 0
+universe b,b bb,b bbb,bbb bbb,a
+ceilings 8 - - 3 1
+universe a,a a,b ab,ab abab,ab
+ceilings 7 - - 7 3
+universe a,b ab,b b,a ab,ba
+ceilings 5 3 196 2 1
+universe b,b b,a a,b a,ab
+ceilings 3 - - 3 2
+universe a,b a,a ab,a aba,aba
+ceilings 6 - - 7 4
+universe a,a aa,a a,aaa aaaa,a
+ceilings 7 - - 3 1
+universe a,a b,b a,bb abb,a
+ceilings 5 - - 5 2
+universe b,b b,a ba,ba bb,bb
+ceilings 5 - - 3 1
+universe a,b a,a ab,aa a,ab
+ceilings 4 - - 5 4
+universe b,a a,ba a,b aba,ba
+ceilings 5 6 225 4 1
+universe a,b b,b bb,ab ab,b
+ceilings 5 - - 3 1
+universe a,b b,ab ab,a a,aba
+ceilings 4 7 225 4 3
+universe a,a a,aa aa,aaa aaaaa,aa
+ceilings 8 - - 1 0
+universe b,b bb,bb b,bbbb bbbb,bb
+ceilings 7 - - 7 3
+universe a,b b,a ab,ba ba,a
+ceilings 5 5 196 4 2
+universe b,b a,a b,bb aa,b
+ceilings 4 - - 3 1
+universe a,b ab,a ab,b b,ab
+ceilings 5 5 196 4 3
+universe a,b b,ab a,bab bab,a
+ceilings 5 4 256 4 1
+universe a,a b,aa b,baa bbaa,baa
+ceilings 6 - - 6 2
+universe a,a b,aa a,aa baa,aa
+ceilings 5 - - 4 1
+universe a,b b,a ab,b b,b
+ceilings 4 - - 4 2
+universe b,a ba,a a,baa a,a
+ceilings 4 - - 4 3
+universe b,b b,bb bb,bbb a,bbbbb
+ceilings 4 - - 1 0
+universe b,b a,b bb,b a,a
+ceilings 4 - - 3 2
+universe a,a aa,b a,aa a,aab
+ceilings 4 - - 2 0
+universe b,a ba,b a,a b,bab
+ceilings 4 - - 4 3
+universe a,a a,b aa,b b,aab
+ceilings 4 - - 3 2
+universe b,b bb,a bb,bb b,a
+ceilings 5 - - 4 2
+universe b,b bb,bb a,a a,aa
+ceilings 4 - - 3 1
+universe b,b b,a ba,a a,a
+ceilings 4 - - 2 0
+universe b,b bb,b a,bbb bb,bb
+ceilings 5 - - 5 3
+universe a,a b,a b,ba a,bba
+ceilings 3 - - 4 3
+universe a,b ab,a b,aba a,aba
+ceilings 4 8 256 4 3
+universe b,a b,b b,ba bb,b
+ceilings 4 - - 3 1
+universe a,a b,a ba,b a,ba
+ceilings 4 - - 5 4
+universe b,b bb,bb a,a bb,a
+ceilings 5 - - 3 1
+universe a,a b,aa aa,a a,baa
+ceilings 4 - - 3 2
+universe b,a b,b a,ba ba,bb
+ceilings 4 - - 4 2
+universe a,a aa,a aaa,b aa,b
+ceilings 7 - - 3 1
+universe b,b bb,b bbb,bbb b,a
+ceilings 6 - - 3 1
+universe b,a a,b ba,b b,ba
+ceilings 4 5 169 4 3
+universe a,a b,b aa,aa bb,aaaa
+ceilings 5 - - 5 3
+universe b,a b,b ba,b ba,ba
+ceilings 5 - - 6 4
+universe a,a aa,b a,aa aab,a
+ceilings 6 - - 4 1
+universe b,a b,ba ba,ba a,ba
+ceilings 4 - - 4 3
+universe a,a b,b b,aa baa,a
+ceilings 5 - - 4 1
+universe b,a b,b a,a aa,a
+ceilings 4 - - 3 1
+universe b,b bb,bb bbbb,bbbb bbbb,b
+ceilings 10 - - 7 3
+universe a,a b,b b,aa a,baa
+ceilings 3 - - 3 2
+universe b,a ba,ba baba,baba ba,b
+ceilings 8 - - 7 3
+universe a,a a,aa b,a a,aaa
+ceilings 3 - - 2 1
+universe a,a b,b b,a ba,b
+ceilings 4 - - 4 2
+universe a,b b,b bb,bb a,bbbb
+ceilings 4 - - 3 1
+universe a,b a,a ab,a aba,ab
+ceilings 6 - - 7 4
+universe a,a aa,aa b,aa aaaa,aaaa
+ceilings 7 - - 7 3
+universe b,a ba,ba ba,baba baba,bababa
+ceilings 8 - - 3 1
+universe a,b ab,ab a,a a,abab
+ceilings 4 - - 4 3
+universe b,a a,b ba,b ab,bab
+ceilings 5 6 225 5 3
+universe b,a a,b ab,ab b,ab
+ceilings 4 2 196 2 1
+universe b,b bb,a a,b bba,ab
+ceilings 6 - - 5 2
+universe a,b ab,a b,ab ab,ab
+ceilings 5 - - 5 3
+universe a,a aa,aa aa,aaaa b,a
+ceilings 5 - - 3 1
+universe a,a a,b aa,aa aaaa,ab
+ceilings 7 - - 5 1
+universe b,b a,bb bb,a abb,bb
+ceilings 6 - - 7 4
+universe b,b bb,a a,a aa,bb
+ceilings 5 - - 4 2
+universe a,b b,ab bab,ab babab,b
+ceilings 9 6 361 7 2
+universe a,b b,a a,ba b,aba
+ceilings 3 2 196 2 1
+universe a,b ab,b b,a ba,ab
+ceilings 5 5 196 4 2
+universe a,b b,a ba,ab b,ab
+ceilings 4 6 196 3 1
+universe b,b b,bb bbb,bbb a,bbbbbb
+ceilings 5 - - 1 0
+universe a,a b,b bb,a aa,b
+ceilings 5 - - 3 1
+universe a,b b,ab ab,ab a,a
+ceilings 4 - - 3 1
+universe b,b a,a bb,aa bbaa,bb
+ceilings 7 - - 7 3
+universe a,b ab,b ab,a b,abb
+ceilings 5 6 225 3 2
+universe a,a b,a ba,a a,baa
+ceilings 4 - - 2 1
+universe b,b bb,b a,b ab,bb
+ceilings 5 - - 3 1
+universe a,a aa,aa b,aaaa baaaa,a
+ceilings 8 - - 6 3
+universe a,a a,aa aaa,a aaa,aaaa
+ceilings 7 - - 1 0
+universe a,b ab,ab a,a abab,b
+ceilings 7 - - 4 1
+universe a,b ab,a aba,ab b,ab
+ceilings 6 6 256 6 3
+universe b,b b,bb b,a bb,ba
+ceilings 4 - - 3 1
+universe a,b ab,b a,abb aabb,aabb
+ceilings 7 - - 7 3
+universe b,b b,bb bb,bbb a,bb
+ceilings 4 - - 2 1
+universe b,b bb,bb bbbb,b bbbb,bb
+ceilings 10 - - 7 3
+universe b,b bb,a bba,bba bbabba,a
+ceilings 11 - - 6 2
+universe a,a aa,aa b,a aaaa,a
+ceilings 7 - - 5 1
+universe a,b b,ab ab,bab abbab,ab
+ceilings 8 8 400 9 4
+universe b,a ba,b a,b b,b
+ceilings 4 - - 3 1
+universe a,b ab,b ab,ab abb,b
+ceilings 7 - - 4 2
+universe b,a a,ba ba,a a,baa
+ceilings 4 4 225 4 2
+universe a,b b,b ab,bb abbb,bb
+ceilings 7 - - 5 1
+universe b,b a,a a,bb b,a
+ceilings 3 - - 3 2
+universe b,b bb,a a,b b,a
+ceilings 4 - - 3 2
+universe a,b a,a ab,a ab,aa
+ceilings 5 - - 4 1
+universe b,a ba,a a,baa ba,abaa
+ceilings 5 5 324 3 2
+universe a,b b,b b,a a,ab
+ceilings 3 - - 2 1
+universe a,a a,aa a,aaa aaa,aaa
+ceilings 5 - - 1 0
+universe b,b b,bb bbb,bb bbb,bbbbb
+ceilings 7 - - 1 0
+universe a,b b,b b,ab a,bb
+ceilings 3 - - 2 1
+universe a,a aa,b a,aab b,b
+ceilings 4 - - 2 0
+universe b,a b,ba ba,b ba,bab
+ceilings 5 7 256 6 4
+universe b,a a,ba a,a ba,aa
+ceilings 4 - - 5 3
+universe a,b b,ab b,a bab,ba
+ceilings 5 6 225 5 2
+universe b,b a,b b,a bb,ba
+ceilings 4 - - 5 3
+universe a,a a,b b,ab bab,ab
+ceilings 5 - - 4 1
+universe a,a b,a b,aa a,aa
+ceilings 3 - - 2 0
+universe b,a a,b ab,b ab,ba
+ceilings 5 5 196 3 1
+universe b,a a,ba aba,ba b,b
+ceilings 5 - - 4 1
+universe b,b a,b ab,bb abbb,ab
+ceilings 7 - - 2 1
+universe b,a b,b ba,ba b,baba
+ceilings 4 - - 4 3
+universe b,a ba,a b,baa a,bbaa
+ceilings 4 9 289 4 3
+universe a,a a,aa aa,aaa b,aa
+ceilings 4 - - 2 1
+universe b,b b,a a,bb a,b
+ceilings 3 - - 2 1
+universe a,a aa,b aab,aab b,b
+ceilings 6 - - 5 2
+universe a,a b,aa b,b a,bb
+ceilings 3 - - 4 3
+universe b,a ba,b a,ba ba,a
+ceilings 5 5 196 6 4
+universe b,a a,a ba,ba aa,ba
+ceilings 5 - - 5 3
+universe b,a ba,ba a,a a,aa
+ceilings 4 - - 3 1
+universe b,a ba,b ba,ba baba,bab
+ceilings 8 - - 7 3
+universe b,a ba,ba a,b ba,baba
+ceilings 5 - - 3 1
+universe b,a a,a aa,ba b,aaba
+ceilings 4 - - 3 1
+universe b,a b,b bb,b ba,b
+ceilings 5 - - 4 2
+universe b,b b,bb bbb,a a,a
+ceilings 5 - - 1 0
+universe a,b a,ab a,aab aaab,aab
+ceilings 6 9 361 6 2
+universe b,b a,b bb,ab a,bb
+ceilings 4 - - 5 4
+universe a,b ab,a aba,aba b,ab
+ceilings 6 - - 6 3
+universe a,a a,b aa,ab ab,aaab
+ceilings 5 - - 5 3
+universe a,a aa,aa aa,aaaa b,aaaa
+ceilings 5 - - 4 3
+universe a,a aa,aa b,a a,aaaa
+ceilings 4 - - 3 1
+universe a,a b,a a,aa aa,aa
+ceilings 4 - - 3 1
+universe a,a aa,aa a,b aa,a
+ceilings 5 - - 3 1
+universe a,a aa,a b,a ba,a
+ceilings 5 - - 3 1
+universe a,a aa,aa b,aa baa,a
+ceilings 6 - - 4 3
+universe a,b ab,b ab,ab abb,abab
+ceilings 7 - - 7 4
+universe b,b b,a bb,b a,a
+ceilings 4 - - 3 1
+universe b,b bb,a bba,b b,bbab
+ceilings 6 - - 4 1
+universe a,b a,ab ab,aab aab,b
+ceilings 6 7 289 4 2
+universe a,b ab,ab abab,b ababb,ab
+ceilings 11 - - 8 3
+universe a,a aa,aa aaaa,aa aaaaaa,aaaa
+ceilings 12 - - 7 3
+universe b,a ba,a b,baa ba,ba
+ceilings 5 - - 4 2
+universe a,a a,b b,a ab,a
+ceilings 4 - - 3 1
+universe a,a b,a b,ba a,aa
+ceilings 3 - - 3 2
+universe b,a b,ba bba,ba b,b
+ceilings 5 - - 4 2
+universe a,b ab,b a,ab ab,aab
+ceilings 5 7 256 5 3
+universe b,b bb,a b,a a,bb
+ceilings 4 - - 3 2
+universe a,a b,aa baa,baa baabaa,b
+ceilings 10 - - 8 2
+universe a,b ab,a aba,b b,aba
+ceilings 6 5 256 4 3
+universe a,b b,a ab,a ab,ba
+ceilings 5 5 196 4 2
+universe b,b bb,a bb,bb bbbb,a
+ceilings 8 - - 4 2
+universe a,a aa,a aaa,aa b,aaa
+ceilings 6 - - 4 3
+universe b,b a,b b,ab b,bab
+ceilings 3 - - 3 2
+universe b,a b,b ba,b bab,bb
+ceilings 6 - - 4 2
+universe b,a b,ba a,ba a,bba
+ceilings 3 8 225 3 2
+universe b,b a,bb bb,bb bbbb,b
+ceilings 7 - - 5 1
+universe b,b bb,a bb,bba a,b
+ceilings 5 - - 4 2
+universe a,a aa,b a,b ab,ab
+ceilings 5 - - 3 1
+universe a,b b,b ab,ab abab,a
+ceilings 7 - - 5 1
+universe b,a b,ba b,b ba,ba
+ceilings 4 - - 3 2
+universe b,b a,bb b,a abb,b
+ceilings 5 - - 6 3
+universe a,b b,ab a,a aa,a
+ceilings 4 - - 4 2
+universe a,b ab,b a,abb b,b
+ceilings 4 - - 3 2
+universe a,a b,a aa,ba ba,b
+ceilings 5 - - 4 2
+universe b,a b,ba bba,b a,bba
+ceilings 5 7 256 6 5
+universe b,a ba,ba b,ba bba,ba
+ceilings 6 - - 4 3
+universe b,a b,b bb,b bbb,b
+ceilings 6 - - 4 2
+universe b,a b,b bb,ba bbba,a
+ceilings 7 - - 4 1
+universe b,a b,ba a,b ba,ba
+ceilings 4 - - 3 2
+universe b,b a,b b,ab bb,ab
+ceilings 4 - - 4 2
+universe a,a b,b a,aa b,bb
+ceilings 3 - - 1 0
+universe a,b a,ab ab,ab aab,abab
+ceilings 6 - - 6 3
+universe a,b ab,ab a,ab aab,b
+ceilings 6 - - 4 3
+universe a,b ab,a a,aba aaba,b
+ceilings 7 5 289 4 3
+universe b,a ba,a baa,baa ba,ba
+ceilings 7 - - 5 2
+universe b,b b,a ba,b bb,a
+ceilings 5 - - 3 1
+universe b,b b,bb bb,bb bb,a
+ceilings 5 - - 3 1
+universe a,b a,a ab,ab aa,abab
+ceilings 5 - - 5 3
+universe b,b bb,bb bb,b a,a
+ceilings 5 - - 3 0
+universe b,b bb,b b,bbb bb,bbb
+ceilings 5 - - 5 3
+universe a,a aa,aa aaaa,a aa,aaaaa
+ceilings 8 - - 5 1
+universe a,b ab,a b,b ab,bb
+ceilings 5 - - 3 1
+universe a,a a,b b,a aa,ba
+ceilings 4 - - 4 2
+universe b,b bb,a bba,b bbab,bbab
+ceilings 9 - - 4 1
+universe a,b ab,ab b,abab babab,a
+ceilings 8 - - 6 3
+universe a,b ab,ab b,a abab,abab
+ceilings 7 - - 7 3
+universe a,a b,aa a,b a,baa
+ceilings 3 - - 3 1
+universe a,a b,b aa,b aa,a
+ceilings 5 - - 3 1
+universe b,b a,bb abb,a bb,a
+ceilings 6 - - 5 2
+universe a,a aa,aa a,aaaa aaaaa,aaaaa
+ceilings 8 - - 3 1
+universe b,a b,b a,b ab,ba
+ceilings 4 - - 3 2
+universe b,a ba,b bab,a a,baba
+ceilings 6 2 289 3 1
+universe b,a ba,a b,b ba,ba
+ceilings 5 - - 4 2
+universe a,a aa,aa aaaa,a b,aa
+ceilings 7 - - 5 3
+universe a,b ab,ab abab,ab ab,ababab
+ceilings 8 - - 7 3
+universe a,b ab,b b,a b,ab
+ceilings 4 5 169 3 2
+universe a,a a,b aa,ab ab,b
+ceilings 5 - - 3 1
+universe a,a b,b a,bb abb,abb
+ceilings 5 - - 5 2
+universe b,b a,a aa,b aa,aa
+ceilings 5 - - 5 3
+universe a,b ab,b a,abb b,a
+ceilings 4 6 196 4 3
+universe a,a aa,b b,b b,a
+ceilings 4 - - 2 1
+universe b,b bb,a bba,b bbab,a
+ceilings 9 - - 4 1
+universe b,b bb,bb bbbb,bbbb b,bbbb
+ceilings 7 - - 7 3
+universe a,a aa,a aa,aaa b,aaa
+ceilings 5 - - 5 3
+universe b,a ba,a ba,baa ba,ba
+ceilings 6 - - 6 4
+universe b,b bb,b bbb,a a,bbba
+ceilings 6 - - 4 3
+universe a,b ab,ab abab,ab b,ababab
+ceilings 7 - - 8 7
+universe a,a a,b aa,ab aa,aa
+ceilings 5 - - 5 3
+universe b,b b,bb a,a bbb,aa
+ceilings 5 - - 1 0
+universe a,b b,a ba,ba b,ba
+ceilings 4 4 196 3 2
+universe b,b a,a bb,bb aa,a
+ceilings 5 - - 3 1
+universe b,b b,a ba,ba b,baba
+ceilings 4 - - 3 1
+universe a,a aa,aa aa,a b,aaaa
+ceilings 5 - - 4 3
+universe a,a aa,a aa,aa aa,b
+ceilings 6 - - 5 3
+universe b,a ba,b a,a bab,ba
+ceilings 6 - - 6 3
+universe a,b b,ab bab,bab b,b
+ceilings 5 - - 5 2
+universe b,a a,ba a,aba b,b
+ceilings 3 - - 3 2
+universe a,b ab,a ab,aba ab,b
+ceilings 6 6 256 5 3
+universe b,a ba,a baa,b baa,baab
+ceilings 8 7 361 7 4
+universe a,b a,a aa,aa a,aa
+ceilings 4 - - 4 2
+universe a,a b,b bb,bb aa,bb
+ceilings 5 - - 5 3
+universe b,b a,a bb,bb bb,a
+ceilings 5 - - 3 1
+universe a,b ab,b ab,ab a,ab
+ceilings 5 - - 5 4
+universe b,b bb,b b,a bbb,bb
+ceilings 6 - - 3 1
+universe a,a a,aa b,aaa b,baaa
+ceilings 3 - - 1 0
+universe b,b bb,bb bb,bbbb a,bbbbbb
+ceilings 5 - - 3 1
+universe a,b b,ab bab,bab b,a
+ceilings 5 - - 5 2
+universe b,a a,a aa,aa b,ba
+ceilings 4 - - 3 1
+universe a,a aa,a aa,b aaa,a
+ceilings 7 - - 3 1
+universe b,a a,a a,aa ba,a
+ceilings 4 - - 3 1
+universe b,a ba,a b,b a,bb
+ceilings 4 - - 3 2
+universe a,b ab,b ab,ab abb,a
+ceilings 7 - - 4 2
+universe a,a a,aa b,b bb,a
+ceilings 4 - - 3 1
+universe a,b a,a b,b bb,aa
+ceilings 4 - - 4 2
+universe a,b a,ab ab,b b,ab
+ceilings 4 6 196 3 2
+universe a,b a,a aa,ab ab,aa
+ceilings 5 - - 5 3
+universe b,a b,ba b,bba a,b
+ceilings 3 7 196 4 3
+universe a,b b,ab ab,bab bab,ab
+ceilings 6 8 324 7 4
+universe a,b b,a a,ba ab,b
+ceilings 4 3 169 4 2
+universe b,b a,a bb,aa b,a
+ceilings 4 - - 3 1
+universe a,a aa,a aaa,aa aaaaa,b
+ceilings 10 - - 3 1
+universe a,a a,aa aaa,a a,b
+ceilings 5 - - 1 0
+universe a,b a,ab aab,aab aab,aabaab
+ceilings 7 - - 5 2
+universe b,a b,b ba,ba a,baba
+ceilings 4 - - 4 3
+universe a,b a,ab a,a aab,a
+ceilings 5 - - 6 3
+universe a,b b,a ba,b ab,b
+ceilings 5 3 169 4 2
+universe a,b b,a a,a ba,ba
+ceilings 4 - - 2 1
+universe a,a a,aa aa,b aab,aaa
+ceilings 6 - - 2 0
+universe a,b b,b bb,b ab,bb
+ceilings 5 - - 5 3
+universe b,a b,b ba,b bab,b
+ceilings 6 - - 4 2
+universe a,b ab,ab abab,abab b,ab
+ceilings 7 - - 7 3
+universe b,b a,a a,bb a,abb
+ceilings 3 - - 2 1
+universe a,b b,b b,ab a,ab
+ceilings 3 - - 2 1
+universe b,b bb,b a,bbb bb,abbb
+ceilings 5 - - 6 4
+universe a,a a,aa b,b b,aaa
+ceilings 3 - - 1 0
+universe a,a a,aa a,aaa aaaa,a
+ceilings 6 - - 1 0
+universe a,b ab,a aba,ab b,b
+ceilings 6 - - 6 3
+universe a,b b,b a,bb ab,ab
+ceilings 4 - - 3 1
+universe a,a b,b bb,a a,b
+ceilings 4 - - 3 1
+universe b,a ba,b bab,b babb,ba
+ceilings 9 5 324 7 3
+universe a,a b,b aa,aa aa,bb
+ceilings 5 - - 3 1
+universe a,b ab,b a,abb aabb,a
+ceilings 7 6 289 7 3
+universe a,b ab,b abb,b abbb,ab
+ceilings 9 5 324 6 2
+universe b,b a,b bb,b bbb,a
+ceilings 6 - - 5 2
+universe a,b ab,ab abab,a b,ababa
+ceilings 7 - - 6 5
+universe b,a a,a aa,aa a,aa
+ceilings 4 - - 3 1
+universe a,a b,a aa,b aab,aa
+ceilings 6 - - 7 4
+universe a,b a,a b,b b,ab
+ceilings 3 - - 2 1
+universe a,b b,b ab,ab abab,b
+ceilings 7 - - 5 1
+universe b,a ba,b bab,ba a,ba
+ceilings 6 6 256 6 3
+universe b,b bb,a bba,a bba,bb
+ceilings 8 - - 5 2
+universe a,b ab,ab b,b bb,bb
+ceilings 5 - - 3 1
+universe b,a a,ba aba,aba b,ba
+ceilings 5 - - 5 2
+universe b,b a,a b,aa a,b
+ceilings 3 - - 3 2
+universe b,a a,a b,ba bba,b
+ceilings 5 - - 5 2
+universe a,a aa,a aaa,aaa aaaaaa,aa
+ceilings 11 - - 3 1
+universe b,a a,ba b,b b,ba
+ceilings 3 - - 2 1
+universe b,b a,bb a,a b,a
+ceilings 3 - - 4 3
+universe a,a b,a aa,aa aaaa,b
+ceilings 7 - - 6 2
+universe a,b b,ab bab,b babb,ab
+ceilings 8 4 324 5 2
+universe a,a aa,a aa,aaa b,aaaaa
+ceilings 5 - - 6 5
+universe b,a a,b ba,ba ba,baba
+ceilings 5 - - 3 1
+universe a,a a,b ab,a aa,aa
+ceilings 5 - - 3 1
+universe a,b b,ab bab,bab a,a
+ceilings 5 - - 5 2
+universe a,a aa,a aa,aaa aa,aaaaa
+ceilings 6 - - 7 5
+universe a,a b,b b,bb bbb,aa
+ceilings 5 - - 1 0
+universe a,b b,b bb,b a,bb
+ceilings 4 - - 3 1
+universe b,a ba,a ba,b a,b
+ceilings 5 4 169 3 1
+universe b,a ba,b a,bab b,ba
+ceilings 4 7 225 4 3
+universe b,b bb,a a,bba b,bb
+ceilings 4 - - 3 2
+universe b,a a,ba ba,aba b,aba
+ceilings 4 6 289 4 2
+universe b,a a,a b,b ba,ba
+ceilings 4 - - 3 1
+universe b,b a,bb bb,a a,a
+ceilings 4 - - 4 2
+universe b,a ba,ba baba,a babaa,a
+ceilings 11 - - 5 1
+universe b,a a,ba aba,b abab,b
+ceilings 8 5 289 5 1
+universe a,a aa,b b,aa aa,aa
+ceilings 5 - - 4 2
+universe b,b bb,b bbb,bb bb,a
+ceilings 7 - - 3 1
+universe a,a a,b b,aa b,baa
+ceilings 3 - - 3 2
+universe b,b b,a b,bb a,a
+ceilings 3 - - 1 0
+universe a,a b,aa b,a ba,b
+ceilings 4 - - 3 1
+universe a,b b,b b,a ba,bb
+ceilings 4 - - 2 1
+universe b,a b,ba bba,bba ba,ba
+ceilings 6 - - 5 2
+universe b,b bb,b a,bb b,bbb
+ceilings 4 - - 4 3
+universe a,b b,a b,b a,a
+ceilings 3 - - 3 2
+universe a,a b,b b,a a,bb
+ceilings 3 - - 2 1
+universe b,a ba,ba baba,b baba,babab
+ceilings 10 - - 9 5
+universe b,b bb,a a,bba bba,bba
+ceilings 6 - - 5 2
+universe a,a b,b a,b aa,b
+ceilings 4 - - 3 1
+universe b,a a,a aa,ba b,aa
+ceilings 4 - - 3 1
+universe b,b bb,a bb,b bbb,a
+ceilings 7 - - 3 1
+universe a,a aa,aa b,a b,b
+ceilings 4 - - 3 2
+universe b,b b,bb bbb,bbb bb,bbb
+ceilings 6 - - 1 0
+universe b,b bb,a bba,b b,bba
+ceilings 6 - - 4 1
+universe a,a a,b aa,b aab,b
+ceilings 6 - - 3 0
+universe a,b a,ab aab,aab aabaab,ab
+ceilings 10 - - 7 2
+universe b,a ba,a baa,b a,baa
+ceilings 6 6 256 5 4
+universe a,a b,aa b,b bb,aa
+ceilings 4 - - 3 2
+universe b,b b,a bb,a ba,ba
+ceilings 5 - - 3 1
+universe b,b a,bb abb,abb bb,bb
+ceilings 6 - - 5 2
+universe b,b b,a bb,b a,b
+ceilings 4 - - 3 1
+universe a,b b,b ab,ab ab,a
+ceilings 5 - - 3 0
+universe b,b b,a bb,a ba,a
+ceilings 5 - - 2 0
+universe b,a ba,ba b,baba ba,baba
+ceilings 5 - - 4 3
+universe b,a a,b ab,b b,b
+ceilings 4 - - 3 1
+universe b,b b,bb b,a bbb,bbb
+ceilings 5 - - 1 0
+universe b,a a,b ba,ab b,ba
+ceilings 4 6 196 5 4
+universe a,a b,b a,aa bb,aa
+ceilings 4 - - 3 1
+universe a,b ab,ab abab,a b,abab
+ceilings 7 - - 6 5
+universe b,b bb,a bba,bba b,a
+ceilings 6 - - 5 2
+universe b,b bb,bb bbbb,b bbbbb,bbbbb
+ceilings 11 - - 5 1
+universe b,a ba,b a,ba bab,a
+ceilings 6 4 225 4 3
+universe a,a b,b aa,a a,aaa
+ceilings 4 - - 3 1
+universe b,a a,ba b,ba aba,b
+ceilings 5 6 225 5 2
+universe a,a aa,aa a,aaaa a,aa
+ceilings 4 - - 3 1
+universe b,b a,a bb,aa bb,a
+ceilings 5 - - 3 0
+universe a,b ab,ab ab,a ab,aba
+ceilings 6 - - 3 0
+universe b,a a,a aa,a aa,aaa
+ceilings 5 - - 5 3
+universe b,b b,a a,b a,a
+ceilings 3 - - 3 2
+universe b,b a,bb bb,abb bbabb,b
+ceilings 8 - - 6 2
+universe a,b a,a aa,a aaa,aaa
+ceilings 6 - - 4 2
+universe b,b bb,bb bb,bbbb b,a
+ceilings 5 - - 3 1
+universe a,b a,a b,ab b,bab
+ceilings 3 - - 3 2
+universe b,b a,a aa,b b,aab
+ceilings 4 - - 4 3
+universe a,a b,aa aa,baa b,b
+ceilings 4 - - 4 2
+universe a,a aa,b b,aab b,aa
+ceilings 4 - - 3 1
+universe a,b b,ab a,a b,bab
+ceilings 3 - - 3 2
+universe a,b ab,a ab,b a,ab
+ceilings 5 5 196 4 3
+universe a,b ab,ab b,a ba,a
+ceilings 5 - - 3 1
+universe b,a ba,ba baba,a a,b
+ceilings 7 - - 4 1
+universe a,a aa,b aa,aa aab,aaaa
+ceilings 7 - - 7 4
+universe a,a b,a b,aa b,baa
+ceilings 3 - - 3 2
+universe b,a b,b bb,ba a,b
+ceilings 4 - - 3 2
+universe b,a ba,a ba,ba a,baa
+ceilings 5 - - 4 2
+universe a,b b,ab a,ab aab,ab
+ceilings 5 7 256 4 1
+universe b,a a,ba aba,a a,abaa
+ceilings 5 8 289 6 5
+universe b,a ba,a ba,b bab,ba
+ceilings 7 5 256 6 3
+universe a,a aa,aa aaaa,aaaa a,b
+ceilings 7 - - 7 3
+universe a,a aa,a aaa,a aa,aaa
+ceilings 7 - - 5 3
+universe a,a a,b ab,a aa,aba
+ceilings 5 - - 5 3
+universe a,a b,aa baa,b baa,baa
+ceilings 7 - - 8 5
+universe a,a b,aa baa,a baaa,a
+ceilings 8 - - 4 1
+universe b,b bb,bb a,a b,aa
+ceilings 4 - - 3 1
+universe b,b a,b ab,b a,abb
+ceilings 4 - - 2 1
+universe b,a ba,a ba,ba baa,b
+ceilings 7 - - 4 2
+universe b,b a,bb a,b b,abb
+ceilings 3 - - 3 2
+universe b,a b,b ba,bb b,ba
+ceilings 4 - - 5 4
+universe b,b bb,bb a,b ab,bbbb
+ceilings 5 - - 3 1
+universe a,a aa,b aa,aa aaaa,b
+ceilings 8 - - 4 2
+universe a,a b,a b,ba aa,b
+ceilings 4 - - 5 3
+universe a,b ab,ab a,a b,a
+ceilings 4 - - 3 2
+universe b,b a,a bb,aa a,b
+ceilings 4 - - 3 1
+universe b,b bb,bb a,b bb,ab
+ceilings 5 - - 4 2
+universe a,a b,b bb,a bb,bb
+ceilings 5 - - 5 3
+universe b,b bb,b bbb,bbb b,bbbbbb
+ceilings 6 - - 3 1
+universe b,b a,a bb,a a,aa
+ceilings 4 - - 3 1
+universe a,a b,a b,ba ba,aa
+ceilings 4 - - 3 2
+universe a,a b,a ba,b ba,a
+ceilings 5 - - 4 2
+universe a,b ab,b ab,ab abab,abab
+ceilings 8 - - 8 4
+universe a,b b,a a,a b,b
+ceilings 3 - - 3 2
+universe b,a ba,ba a,baba ba,b
+ceilings 5 - - 4 3
+universe b,a ba,a baa,b ba,ba
+ceilings 7 - - 4 2
+universe b,a ba,b bab,ba a,bab
+ceilings 6 7 289 7 6
+universe a,a b,aa baa,b baa,baab
+ceilings 7 - - 8 5
+universe b,b bb,b b,a bbb,b
+ceilings 6 - - 3 1
+universe b,a b,ba a,bba ba,b
+ceilings 4 7 225 4 2
+universe b,a a,b a,a ba,aa
+ceilings 4 - - 5 3
+universe b,a b,ba bba,bba bba,bbabba
+ceilings 7 - - 5 2
+universe b,a ba,ba a,b ba,ab
+ceilings 5 - - 4 2
+universe b,a ba,b ba,ba ba,a
+ceilings 6 - - 5 3
+universe a,b b,b ab,ab abab,bb
+ceilings 7 - - 5 1
+universe a,a b,aa a,b aa,ab
+ceilings 4 - - 5 3
+universe b,a b,b a,a b,ba
+ceilings 3 - - 2 0
+universe b,b bb,bb a,bb abb,a
+ceilings 6 - - 7 4
+universe a,b a,a b,aa baa,aa
+ceilings 5 - - 5 2
+universe b,b bb,bb bbbb,bbbb bb,bbbbbbbb
+ceilings 8 - - 7 3
+universe a,a b,a b,aa baa,baa
+ceilings 5 - - 5 2
+universe a,a aa,b aa,aab a,aaaab
+ceilings 5 - - 4 2
+universe a,b ab,b abb,ab b,a
+ceilings 6 5 225 5 2
+universe a,b a,a a,aa a,aaa
+ceilings 3 - - 2 1
+universe b,a b,b bb,a a,ba
+ceilings 4 - - 2 1
+universe a,a b,b bb,a b,a
+ceilings 4 - - 3 1
+universe b,b bb,b b,a bb,bb
+ceilings 5 - - 5 3
+universe a,b ab,b b,b b,bb
+ceilings 4 - - 2 0
+universe a,a b,a ba,aa aa,b
+ceilings 5 - - 4 2
+universe b,b a,b bb,b ab,bbb
+ceilings 5 - - 3 1
+universe a,b ab,ab b,b abab,a
+ceilings 7 - - 5 1
+universe a,b b,a a,ab a,aab
+ceilings 3 7 196 3 2
+universe b,b b,a bb,b b,ba
+ceilings 4 - - 3 1
+universe a,b a,ab b,a ba,ba
+ceilings 4 4 196 3 2
+universe a,a a,b a,aa aaa,aa
+ceilings 5 - - 1 0
+universe a,a aa,b b,aa aab,aa
+ceilings 6 - - 5 2
+universe a,a aa,b aab,aa aa,aabaa
+ceilings 7 - - 7 5
+universe b,b a,bb abb,b abb,bb
+ceilings 7 - - 4 1
+universe a,b ab,ab abab,b a,ababb
+ceilings 7 - - 5 4
+universe a,b a,a b,ab b,a
+ceilings 3 - - 3 2
+universe b,b a,b a,a b,a
+ceilings 3 - - 4 3
+universe b,b a,a aa,b aa,a
+ceilings 5 - - 3 1
+universe a,b b,a a,ab aab,ab
+ceilings 5 6 225 4 1
+universe a,a aa,b aab,aa a,aabaa
+ceilings 6 - - 5 2
+universe a,b ab,ab a,ab aab,abab
+ceilings 6 - - 4 3
+universe b,a a,a b,aa ba,b
+ceilings 4 - - 3 1
+universe a,a aa,aa aaaa,aa b,aaaaaa
+ceilings 7 - - 8 7
+universe b,a ba,b a,ba a,b
+ceilings 4 5 169 4 3
+universe a,a a,b b,b bb,b
+ceilings 4 - - 3 1
+universe b,b a,a bb,a aa,aa
+ceilings 5 - - 3 1
+universe a,a aa,aa aaaa,a b,b
+ceilings 7 - - 5 1
+universe b,b a,a b,aa bb,aa
+ceilings 4 - - 3 1
+universe a,a b,a aa,a aa,b
+ceilings 5 - - 4 2
+universe a,a aa,b aa,aa a,aa
+ceilings 5 - - 4 2
+universe b,a ba,b bab,a a,b
+ceilings 6 3 196 3 1
+universe a,b ab,b ab,ab b,b
+ceilings 5 - - 4 2
+universe b,a a,ba ba,a aba,b
+ceilings 6 5 225 4 2
+universe b,a a,b ab,ba a,a
+ceilings 4 - - 3 2
+universe a,a aa,aa b,aa b,a
+ceilings 4 - - 4 3
+universe a,b a,ab ab,a aab,aab
+ceilings 6 - - 5 2
+universe b,a b,b bb,bb bb,a
+ceilings 5 - - 4 2
+universe b,a a,ba a,a b,b
+ceilings 3 - - 3 2
+universe a,b b,a ab,ab ba,abab
+ceilings 5 - - 5 3
+universe b,a ba,a a,ba a,b
+ceilings 4 5 169 3 2
+universe a,b a,ab b,aab b,b
+ceilings 3 - - 4 3
+universe b,a b,b a,a aa,aa
+ceilings 4 - - 3 1
+universe b,b a,b bb,a a,ab
+ceilings 4 - - 4 2
+universe a,b b,a b,ba ab,bba
+ceilings 4 7 225 5 3
+universe a,b a,a aa,aa aaaa,b
+ceilings 7 - - 4 2
+universe b,b a,bb b,abb babb,b
+ceilings 6 - - 7 3
+universe b,b b,bb a,bbb a,b
+ceilings 3 - - 2 1
+universe b,a b,b ba,a baa,ba
+ceilings 6 - - 5 2
+universe a,b ab,ab a,abab ab,b
+ceilings 5 - - 4 3
+universe b,b a,bb bb,a abb,bba
+ceilings 6 - - 7 4
+universe a,b b,a b,ba bba,b
+ceilings 5 4 196 3 2
+universe a,a aa,b b,a ba,ba
+ceilings 5 - - 4 2
+universe b,a a,ba ba,a baa,b
+ceilings 6 5 225 4 2
+universe a,a b,b aa,bb bb,a
+ceilings 5 - - 3 1
+universe b,a b,ba b,b bba,b
+ceilings 5 - - 6 3
+universe a,a aa,aa aaaa,b a,aaaa
+ceilings 7 - - 4 1
+universe a,b a,ab ab,ab b,b
+ceilings 4 - - 3 1
+universe a,b b,a a,ab aab,a
+ceilings 5 5 196 5 2
+universe a,a a,aa a,aaa aa,aaaa
+ceilings 4 - - 1 0
+universe b,a b,b a,ba a,a
+ceilings 3 - - 3 2
+universe a,a a,b ab,b b,abb
+ceilings 4 - - 3 2
+universe b,b a,b ab,a b,a
+ceilings 4 - - 4 2
+universe b,a b,ba bba,bba ba,b
+ceilings 6 - - 5 2
+universe b,a a,a ba,aa a,aa
+ceilings 4 - - 3 1
+universe a,b ab,ab a,a ab,b
+ceilings 5 - - 3 1
+universe a,a aa,aa aa,b b,aa
+ceilings 5 - - 4 3
+universe b,a ba,ba a,baba ababa,ba
+ceilings 8 - - 8 3
+universe a,a aa,a a,b aaa,aa
+ceilings 6 - - 3 1
+universe b,b a,bb a,b bb,b
+ceilings 4 - - 3 1
+universe b,a ba,b bab,a bab,ba
+ceilings 8 4 289 6 3
+universe a,b ab,a ab,b ab,ab
+ceilings 6 - - 5 3
+universe a,a aa,aa aaaa,aaaa b,b
+ceilings 7 - - 7 3
+universe a,a aa,aa aa,a aaa,b
+ceilings 7 - - 3 0
+universe a,a a,aa a,b aa,b
+ceilings 4 - - 2 0
+universe b,a a,b ab,ba ab,b
+ceilings 5 5 196 3 1
+universe a,b b,b bb,ab b,bbab
+ceilings 4 - - 3 1
+universe a,a b,b aa,bb a,aa
+ceilings 4 - - 3 1
+universe a,a a,aa a,b aa,aaa
+ceilings 4 - - 1 0
+universe b,a a,b ba,ba b,ba
+ceilings 4 - - 4 3
+universe a,b ab,a aba,ab abaab,b
+ceilings 10 5 361 6 3
+universe a,b a,a aa,a aa,aa
+ceilings 5 - - 6 4
+universe b,b a,b bb,b a,bbb
+ceilings 4 - - 4 3
+universe a,a b,a ba,aa ba,ba
+ceilings 5 - - 4 2
+universe b,a ba,b a,bab bab,a
+ceilings 6 5 256 4 3
+universe b,a b,b ba,b bb,b
+ceilings 5 - - 4 2
+universe a,b b,ab a,a b,aa
+ceilings 3 - - 3 2
+universe b,a a,a aa,b aa,a
+ceilings 5 - - 3 1
+universe a,a aa,a a,b b,ab
+ceilings 4 - - 3 1
+universe a,a b,aa b,a baa,baa
+ceilings 5 - - 5 2
+universe a,b ab,b a,ab b,abb
+ceilings 4 7 225 3 2
+universe a,b b,ab bab,b a,bab
+ceilings 5 4 256 5 2
+universe b,a b,b b,ba ba,ba
+ceilings 4 - - 3 1
+universe b,a b,b ba,a a,b
+ceilings 4 - - 3 2
+universe b,a ba,a baa,ba baaba,ba
+ceilings 10 6 400 7 2
+universe b,b b,bb a,a aa,a
+ceilings 4 - - 3 1
+universe a,a a,b b,aa aa,a
+ceilings 4 - - 3 1
+universe a,b b,ab ab,a aba,a
+ceilings 6 5 225 4 1
+universe b,b b,a ba,a a,bb
+ceilings 4 - - 2 1
+universe a,a a,b ab,ab aa,aa
+ceilings 5 - - 3 1
+universe a,b ab,ab abab,abab ab,abababab
+ceilings 8 - - 7 3
+universe b,b a,bb bb,bb abb,abb
+ceilings 6 - - 5 2
+universe a,b ab,a aba,a b,b
+ceilings 6 - - 4 1
+universe a,b b,ab b,bab b,a
+ceilings 3 7 196 3 2
+universe b,b bb,b bbb,a bb,a
+ceilings 7 - - 3 1
+universe a,b a,a ab,ab a,abab
+ceilings 4 - - 4 3
+universe a,a aa,aa aaaa,aaaa aaaaaaaa,aa
+ceilings 14 - - 11 3
+universe a,a a,b ab,ab a,ab
+ceilings 4 - - 3 1
+universe b,a a,b a,ab b,aab
+ceilings 3 4 196 3 2
+universe b,b bb,a bba,bb bb,bbabb
+ceilings 7 - - 7 5
+universe a,a aa,a aa,b aa,aaa
+ceilings 6 - - 5 3
+universe a,b b,ab bab,b b,b
+ceilings 5 - - 5 2
+universe a,b b,ab bab,ab b,bab
+ceilings 5 8 289 5 4
+universe a,a aa,aa a,b aaaa,ab
+ceilings 7 - - 5 1
+universe b,b bb,a b,a a,bba
+ceilings 4 - - 3 2
+universe b,b bb,a a,bb bba,bb
+ceilings 6 - - 5 2
+universe b,a ba,ba a,a baba,aa
+ceilings 7 - - 5 1
+universe b,a ba,ba b,b bb,b
+ceilings 5 - - 4 2
+universe b,b a,b ab,ab abab,a
+ceilings 7 - - 6 2
+universe b,b bb,b bb,bb bb,bbb
+ceilings 6 - - 5 1
+universe a,a a,aa b,aa aaa,a
+ceilings 5 - - 2 1
+universe a,a aa,b aa,aab a,aab
+ceilings 5 - - 4 2
+universe b,a a,b a,a ab,a
+ceilings 4 - - 3 2
+universe a,b ab,b ab,a a,a
+ceilings 5 - - 3 1
+universe a,b a,ab aab,a b,aab
+ceilings 5 7 256 6 5
+universe a,b b,b ab,a a,bb
+ceilings 4 - - 3 1
+universe b,b b,a a,bb abb,ba
+ceilings 5 - - 4 1
+universe a,b b,a b,ab ba,a
+ceilings 4 5 169 3 1
+universe a,a a,b aa,b aa,ab
+ceilings 5 - - 3 1
+universe a,a b,b bb,aa a,b
+ceilings 4 - - 3 1
+universe a,a aa,aa aa,a aa,aaa
+ceilings 6 - - 3 0
+universe b,b a,bb abb,b abb,abb
+ceilings 7 - - 7 4
+universe a,b a,a b,b ab,aa
+ceilings 4 - - 4 2
+universe b,b b,bb bb,a a,a
+ceilings 4 - - 2 0
+universe b,b b,a ba,ba bb,b
+ceilings 5 - - 3 1
+universe a,a b,a b,b a,b
+ceilings 3 - - 4 3
+universe b,a b,b bb,a bba,b
+ceilings 6 - - 2 1
+universe a,a b,b aa,a bb,aa
+ceilings 5 - - 5 3
+universe b,a ba,b bab,bab a,babbab
+ceilings 6 - - 7 6
+universe a,a b,a ba,a aa,a
+ceilings 5 - - 3 1
+universe b,b bb,b bbb,bb bbb,bbb
+ceilings 8 - - 3 1
+universe b,a ba,a b,ba ba,b
+ceilings 5 5 196 5 3
+universe a,a b,aa baa,baa a,baa
+ceilings 5 - - 6 5
+universe a,a b,aa a,b aa,aa
+ceilings 4 - - 3 2
+universe b,b b,bb bb,bbb a,b
+ceilings 4 - - 2 1
+universe a,b ab,ab ab,abab ab,b
+ceilings 6 - - 3 1
+universe b,a a,b ab,ba ba,a
+ceilings 5 5 196 4 2
+universe a,b b,a ba,ab baab,ab
+ceilings 7 6 289 5 1
+universe b,a a,b ab,ba b,abba
+ceilings 4 4 256 3 1
+universe b,b a,a b,a bb,aa
+ceilings 4 - - 3 1
+universe b,a ba,ba b,baba baba,b
+ceilings 7 - - 8 4
+universe b,b b,bb bbb,b bbb,a
+ceilings 7 - - 1 0
+universe a,a a,aa aa,aaa aaa,aaaaa
+ceilings 6 - - 1 0
+universe a,b a,ab ab,a b,ab
+ceilings 4 6 196 5 4
+universe a,b ab,b abb,abb b,abbabb
+ceilings 6 - - 6 5
+universe a,b b,b bb,bb bbbb,a
+ceilings 7 - - 5 1
+universe a,a b,b a,b bb,aa
+ceilings 4 - - 3 1
+universe b,a a,b ba,b ba,ba
+ceilings 5 - - 5 3
+universe b,b b,a a,a bb,a
+ceilings 4 - - 3 1
+universe a,a aa,b aab,a aaba,b
+ceilings 9 - - 4 1
+universe b,a a,b ab,b a,a
+ceilings 4 - - 3 2
+universe b,b a,b b,a a,bb
+ceilings 3 - - 3 2
+universe a,b ab,b a,ab b,b
+ceilings 4 - - 3 2
+universe a,a aa,aa b,aa aa,aaaa
+ceilings 5 - - 4 3
+universe b,b bb,b a,bbb abbb,bb
+ceilings 7 - - 4 3
+universe b,a b,b bb,b bbb,ba
+ceilings 6 - - 4 2
+universe b,b bb,bb a,bb b,abb
+ceilings 4 - - 5 4
+universe b,a a,ba ba,a ba,aba
+ceilings 5 7 256 4 1
+universe a,b ab,a aba,a ab,ab
+ceilings 7 - - 5 3
+universe a,a aa,aa aaaa,a aa,a
+ceilings 8 - - 5 1
+universe a,a aa,a aaa,b b,aaa
+ceilings 6 - - 4 3
+universe a,a b,b aa,bb aabb,aa
+ceilings 7 - - 7 3
+universe a,b b,ab a,bab a,a
+ceilings 3 - - 2 1
+universe b,a b,ba bba,b bba,a
+ceilings 7 5 256 5 2
+universe b,a ba,ba a,b b,b
+ceilings 4 - - 3 1
+universe a,a a,b a,aa b,a
+ceilings 3 - - 2 1
+universe a,b a,a ab,ab b,aa
+ceilings 4 - - 3 2
+universe a,b b,ab b,b b,bb
+ceilings 3 - - 3 2
+universe a,a b,a a,ba ba,b
+ceilings 4 - - 4 2
+universe b,a b,ba bba,ba b,bba
+ceilings 5 8 289 5 4
+universe b,b bb,bb bb,b bbbb,bbb
+ceilings 8 - - 7 3
+universe a,a a,aa aa,aaa aa,b
+ceilings 5 - - 2 0
+universe a,a b,b bb,aa b,bbaa
+ceilings 4 - - 3 1
+universe a,b a,a ab,b b,abb
+ceilings 4 - - 3 2
+universe a,a a,b b,aa b,ab
+ceilings 3 - - 2 1
+universe b,a ba,ba b,ba a,a
+ceilings 4 - - 4 3
+universe b,b bb,bb a,a bbbb,a
+ceilings 7 - - 5 1
+universe b,a ba,b a,ba bab,bab
+ceilings 6 - - 6 3
+universe a,b a,a aa,aa b,b
+ceilings 4 - - 4 2
+universe b,a ba,ba a,b baba,baba
+ceilings 7 - - 7 3
+universe b,a a,b ba,a ab,a
+ceilings 5 3 169 4 2
+universe b,b a,b b,ab bb,bab
+ceilings 4 - - 5 3
+universe b,a ba,ba ba,b baba,ba
+ceilings 8 - - 6 2
+universe a,a a,aa aaa,b b,b
+ceilings 5 - - 1 0
+universe a,a a,b aa,ab b,b
+ceilings 4 - - 3 1
+universe b,a ba,a a,ba b,aba
+ceilings 4 4 225 3 2
+universe b,a b,b a,b ab,bb
+ceilings 4 - - 3 2
+universe b,a ba,ba ba,a b,baa
+ceilings 5 - - 3 2
+universe b,a b,ba b,bba b,bbba
+ceilings 3 10 289 4 3
+universe a,a aa,a b,a aa,b
+ceilings 5 - - 4 2
+universe a,b b,a ba,b ba,bab
+ceilings 5 2 225 2 1
+universe b,a ba,b a,bab b,bab
+ceilings 4 8 256 4 3
+universe b,a ba,b bab,bab babbab,bab
+ceilings 11 - - 12 6
+universe b,b a,a a,aa b,bb
+ceilings 3 - - 1 0
+universe b,a a,b ab,b ba,ba
+ceilings 5 - - 3 1
+universe b,a a,b ab,ba a,ba
+ceilings 4 6 196 3 1
+universe b,b a,b b,a a,ab
+ceilings 3 - - 3 2
+universe a,b ab,a ab,ab a,aba
+ceilings 5 - - 5 3
+universe a,b b,ab ab,b abb,bab
+ceilings 6 7 289 5 2
+universe b,a b,b bb,a bb,b
+ceilings 5 - - 4 2
+universe a,b a,ab aab,aab ab,b
+ceilings 6 - - 5 2
+universe a,b ab,a a,ab b,b
+ceilings 4 - - 4 3
+universe b,b b,a ba,a ba,b
+ceilings 5 - - 3 1
+universe a,a b,aa aa,b a,b
+ceilings 4 - - 4 2
+universe a,b b,b ab,b abb,ab
+ceilings 6 - - 6 3
+universe a,a aa,a aaa,b a,aaa
+ceilings 6 - - 3 1
+universe b,a b,ba b,bba a,ba
+ceilings 3 8 225 3 2
+universe a,a aa,a b,a aaa,b
+ceilings 6 - - 5 2
+universe a,b ab,ab ab,b ab,abab
+ceilings 6 - - 3 1
+universe a,b ab,ab ab,abab b,ababab
+ceilings 5 - - 3 1
+universe a,b ab,a a,ab aab,aba
+ceilings 6 7 289 6 3
+universe b,b bb,b a,bb bb,bb
+ceilings 5 - - 5 3
+universe a,b ab,b abb,b ab,a
+ceilings 7 4 225 3 1
+universe a,a aa,b aab,aa aabaa,aab
+ceilings 10 - - 10 5
+universe b,a a,b ab,b b,abb
+ceilings 4 3 196 3 1
+universe b,b bb,a b,bb bbb,bbb
+ceilings 6 - - 2 0
+universe b,a ba,ba ba,a a,baba
+ceilings 5 - - 4 3
+universe b,b b,a bb,bb bbbb,b
+ceilings 7 - - 5 1
+universe a,b b,ab bab,ab babab,a
+ceilings 9 6 361 6 1
+universe a,b b,ab b,bab ab,ab
+ceilings 4 - - 3 2
+universe a,a a,b a,aa b,ab
+ceilings 3 - - 2 1
+universe a,b ab,b abb,ab ab,abbab
+ceilings 7 9 400 7 5
+universe b,b a,a a,bb b,aa
+ceilings 3 - - 2 1
+universe b,b b,bb b,bbb a,bb
+ceilings 3 - - 2 1
+universe b,b a,a aa,aa aa,b
+ceilings 5 - - 3 1
+universe b,a a,a a,aa b,b
+ceilings 3 - - 2 1
+universe a,b b,a ba,a b,ba
+ceilings 4 5 169 4 3
+universe b,a b,b a,ba aba,bb
+ceilings 5 - - 5 2
+universe b,a a,a aa,ba ba,ba
+ceilings 5 - - 3 1
+universe a,b ab,a a,a aba,aba
+ceilings 6 - - 6 3
+universe b,b bb,b b,bbb bb,bbbb
+ceilings 5 - - 3 1
+universe b,a ba,b bab,bab a,a
+ceilings 6 - - 6 3
+universe a,a aa,aa aaaa,aaaa aaaa,b
+ceilings 10 - - 7 3
+universe b,b a,b ab,a aba,aba
+ceilings 6 - - 7 4
+universe a,a b,b aa,bb aa,aa
+ceilings 5 - - 5 3
+universe b,b a,a a,aa bb,bb
+ceilings 4 - - 3 1
+universe b,b bb,b a,bbb a,bb
+ceilings 4 - - 4 1
+universe a,b ab,a aba,ab abaab,aba
+ceilings 10 7 441 11 6
+universe b,a a,b a,ab a,aab
+ceilings 3 7 196 4 3
+universe b,b b,bb bb,bb bb,bbbb
+ceilings 5 - - 3 1
+universe b,a b,ba a,ba a,aba
+ceilings 3 8 225 3 2
+universe a,b b,a ab,ab a,ab
+ceilings 4 - - 4 3
+universe a,a aa,a a,aaa aaaa,aaaa
+ceilings 7 - - 3 1
+universe b,a a,a aa,aa aa,ba
+ceilings 5 - - 3 1
+universe a,b b,b a,ab aab,b
+ceilings 5 - - 4 1
+universe b,b a,a b,a ba,a
+ceilings 4 - - 2 1
+universe b,a b,ba a,a ba,ba
+ceilings 4 - - 3 1
+universe b,a b,ba bba,b bbab,ba
+ceilings 8 4 324 5 2
+universe b,b a,bb bb,bb b,bbbb
+ceilings 4 - - 3 1
+universe a,a a,b b,b bb,bb
+ceilings 4 - - 3 1
+universe a,b ab,a a,aba a,aaba
+ceilings 4 9 289 5 4
+universe a,a b,aa a,aa baa,b
+ceilings 5 - - 5 2
+universe b,b b,a a,bb a,abb
+ceilings 3 - - 3 2
+universe b,a ba,b ba,ba bab,baba
+ceilings 7 - - 8 5
+universe a,a a,aa b,a ba,b
+ceilings 4 - - 4 2
+universe b,b bb,b bbb,a bbba,bbba
+ceilings 9 - - 7 3
+universe b,a ba,a ba,baa a,babaa
+ceilings 5 10 361 5 4
+universe b,a ba,ba ba,baba bababa,baba
+ceilings 10 - - 3 1
+universe a,a a,b aa,a aaa,a
+ceilings 6 - - 3 1
+universe b,b bb,b a,a aa,bb
+ceilings 5 - - 5 3
+universe b,a a,ba ba,aba aba,aba
+ceilings 6 - - 5 2
+universe a,b a,ab a,aab b,ab
+ceilings 3 8 225 3 2
+universe a,a aa,a b,aa b,b
+ceilings 4 - - 5 4
+universe a,b ab,ab ab,abab a,abab
+ceilings 5 - - 4 3
+universe b,b a,bb b,bb bbb,bbb
+ceilings 5 - - 2 1
+universe a,b ab,ab ab,a ab,abab
+ceilings 6 - - 3 0
+universe a,b ab,a aba,ab abaab,a
+ceilings 10 4 361 6 3
+universe a,a aa,b aab,aab aabaab,b
+ceilings 11 - - 6 2
+universe b,b bb,b a,bb bbb,abb
+ceilings 6 - - 7 4
+universe b,a ba,ba baba,b babab,a
+ceilings 11 - - 5 1
+universe a,b ab,a aba,a a,abaa
+ceilings 6 7 289 5 4
+universe b,a ba,b b,b bb,b
+ceilings 5 - - 4 2
+universe b,a b,b b,ba bba,bba
+ceilings 5 - - 5 2
+universe b,a b,b a,b ba,ab
+ceilings 4 - - 5 3
+universe b,a a,a aa,b aab,b
+ceilings 6 - - 4 1
+universe b,b b,bb a,bb bbb,b
+ceilings 5 - - 2 1
+universe a,a aa,b aa,a b,aaa
+ceilings 5 - - 4 3
+universe a,a aa,b aa,aab b,aa
+ceilings 5 - - 5 4
+universe a,a aa,aa b,a a,ba
+ceilings 4 - - 3 2
+universe b,a ba,b b,bab ba,bbab
+ceilings 5 5 324 4 3
+universe a,b b,b bb,a b,ab
+ceilings 4 - - 3 1
+universe b,b a,bb abb,a abb,abb
+ceilings 7 - - 8 5
+universe a,b a,ab aab,aab aabaab,a
+ceilings 10 - - 8 2
+universe a,b ab,b ab,a abb,b
+ceilings 7 4 225 3 1
+universe a,a b,b bb,aa bb,b
+ceilings 5 - - 3 1
+universe a,a b,aa aa,a a,aaa
+ceilings 4 - - 3 1
+universe a,b a,ab a,a ab,a
+ceilings 4 - - 5 3
+universe b,a ba,b bab,bab ba,a
+ceilings 7 - - 6 3
+universe b,a a,b a,a ba,b
+ceilings 4 - - 3 2
+universe b,b b,bb a,bbb abbb,abbb
+ceilings 6 - - 1 0
+universe a,b ab,b abb,ab abbab,abbab
+ceilings 10 - - 10 5
+universe a,a b,a ba,aa baaa,b
+ceilings 7 - - 2 1
+universe b,b a,bb b,abb bb,abb
+ceilings 4 - - 4 2
+universe a,a a,b b,ab b,aa
+ceilings 3 - - 2 1
+universe a,a b,a ba,b ba,ba
+ceilings 5 - - 6 4
+universe b,a a,b ab,ab abab,a
+ceilings 7 2 256 2 1
+universe a,b b,ab ab,b ab,bab
+ceilings 5 7 256 4 1
+universe b,b b,bb b,a b,bbb
+ceilings 3 - - 1 0
+universe b,b bb,b bb,bb bb,bbbb
+ceilings 6 - - 5 3
+universe b,b a,bb bb,b abb,bbb
+ceilings 6 - - 6 3
+universe b,a ba,ba a,baba a,ba
+ceilings 4 - - 4 1
+universe a,a aa,b aab,aab aabaab,aa
+ceilings 11 - - 8 2
+universe a,b a,ab b,aab aab,baab
+ceilings 5 10 361 6 3
+universe a,b a,a b,b bb,a
+ceilings 4 - - 4 2
+universe b,b bb,a b,bb bbb,b
+ceilings 6 - - 2 0
+universe b,a ba,a baa,b a,b
+ceilings 6 4 196 4 1
+universe a,b ab,ab b,a abab,ba
+ceilings 7 - - 6 2
+universe a,a a,b b,b ab,a
+ceilings 4 - - 3 1
+universe a,b ab,a aba,a ab,abaa
+ceilings 7 7 324 6 4
+universe b,a ba,a b,ba baa,baa
+ceilings 6 - - 5 2
+universe a,b ab,a ab,b a,abb
+ceilings 5 6 225 3 2
+universe a,b ab,b a,abb ab,a
+ceilings 5 6 225 5 3
+universe a,b a,ab b,a aab,aab
+ceilings 5 - - 5 2
+universe a,a aa,a aa,b a,aaa
+ceilings 5 - - 3 1
+universe b,a ba,ba ba,baba b,b
+ceilings 5 - - 3 1
+universe b,a ba,b a,b a,a
+ceilings 4 - - 3 2
+universe b,b bb,bb a,b ab,a
+ceilings 5 - - 4 2
+universe a,a aa,b b,a aa,aa
+ceilings 5 - - 4 2
+universe b,b b,a ba,ba bb,a
+ceilings 5 - - 3 1
+universe a,b b,ab bab,a baba,a
+ceilings 8 5 289 5 1
+universe b,a a,ba b,b ba,b
+ceilings 4 - - 4 2
+universe b,a ba,b a,b a,ab
+ceilings 4 5 169 3 2
+universe b,b b,a bb,b bbb,a
+ceilings 6 - - 3 1
+universe b,a a,b ba,ba baba,ab
+ceilings 7 - - 6 2
+universe b,b a,a bb,aa aa,bbaa
+ceilings 5 - - 5 3
+universe a,b b,ab b,a ba,bab
+ceilings 4 4 225 2 0
+universe b,b bb,a bb,b b,bbb
+ceilings 5 - - 3 1
+universe b,b bb,b bbb,b bbb,bbbb
+ceilings 8 - - 3 1
+universe b,b a,a bb,a b,aa
+ceilings 4 - - 3 1
+universe a,b b,b b,a bb,ab
+ceilings 4 - - 3 1
+universe a,a b,a ba,aa aa,a
+ceilings 5 - - 3 1
+universe a,b ab,a b,a aba,a
+ceilings 6 4 196 4 1
+universe a,b ab,ab a,ab b,a
+ceilings 4 - - 5 4
+universe a,b ab,b abb,b abb,ab
+ceilings 8 5 289 5 2
+universe b,a b,b ba,a b,bb
+ceilings 4 - - 2 1
+universe b,b a,b a,a ab,ab
+ceilings 4 - - 4 2
+universe b,b a,b b,ab a,ab
+ceilings 3 - - 3 2
+universe b,a a,b ba,ab ba,ba
+ceilings 5 - - 6 4
+universe a,b b,a ba,a a,ab
+ceilings 4 5 169 3 1
+universe a,b b,b ab,b b,bb
+ceilings 4 - - 3 1
+universe a,b ab,a b,b a,ab
+ceilings 4 - - 4 3
+universe b,a a,b a,ab ab,b
+ceilings 4 5 169 3 2
+universe a,b b,ab b,a ba,ba
+ceilings 4 4 196 2 0
+universe a,a aa,b aab,aab a,b
+ceilings 6 - - 5 2
+universe a,b b,ab b,bab ab,bab
+ceilings 4 9 289 4 2
+universe b,a ba,a baa,ba b,baaba
+ceilings 6 9 361 6 5
+universe b,b a,b bb,bb ab,b
+ceilings 5 - - 3 1
+universe b,a b,b a,b bb,bb
+ceilings 4 - - 4 2
+universe b,a a,ba b,aba baba,baba
+ceilings 6 3 400 2 1
+universe a,b a,ab aab,a aaba,aab
+ceilings 8 7 361 9 5
+universe a,b b,b b,ab bb,ab
+ceilings 4 - - 3 1
+universe a,a a,aa aaa,aaa aa,aaaaaa
+ceilings 6 - - 1 0
+universe a,a a,aa b,aa aaa,aa
+ceilings 5 - - 2 1
+universe a,a aa,b a,aa aa,aa
+ceilings 5 - - 4 2
+universe b,b a,b bb,b ab,a
+ceilings 5 - - 4 2
+universe b,b bb,b bbb,b bb,a
+ceilings 7 - - 3 1
+universe b,a a,b a,a aa,b
+ceilings 4 - - 3 2
+universe a,a aa,b b,aab aa,a
+ceilings 5 - - 3 2
+universe a,a b,a ba,b a,b
+ceilings 4 - - 4 2
+universe a,b a,ab b,a aab,ab
+ceilings 5 6 225 4 2
+universe a,a a,aa aaa,b aaa,aaab
+ceilings 7 - - 1 0
+universe b,a ba,b bab,b bab,babb
+ceilings 8 7 361 7 4
+universe a,a b,aa baa,aa baaaa,a
+ceilings 9 - - 6 1
+universe b,a ba,b bab,ba b,babba
+ceilings 6 9 361 7 6
+universe a,a aa,b b,aab baab,b
+ceilings 7 - - 7 3
+universe b,b bb,b b,bbb b,a
+ceilings 4 - - 3 1
+universe a,a aa,b a,aa aaa,b
+ceilings 6 - - 2 0
+universe b,a b,b ba,bb bb,b
+ceilings 5 - - 4 2
+universe a,a a,aa aa,aa aa,aaaa
+ceilings 5 - - 3 1
+universe b,b bb,bb bbbb,a bb,bbbba
+ceilings 8 - - 4 1
+universe a,b b,b b,ab b,a
+ceilings 3 - - 2 0
+universe b,b bb,a bba,bb bba,b
+ceilings 8 - - 5 2
+universe a,b ab,b a,a abb,abb
+ceilings 6 - - 5 2
+universe a,a aa,b aab,b aabb,a
+ceilings 9 - - 5 1
+universe b,a a,a b,b aa,bb
+ceilings 4 - - 4 2
+universe b,a a,a ba,b ba,aa
+ceilings 5 - - 3 1
+universe b,a b,ba a,ba ba,ba
+ceilings 4 - - 3 1
+universe b,b b,a ba,b bab,a
+ceilings 6 - - 3 1
+universe b,a a,ba ba,ba baba,baba
+ceilings 7 - - 7 3
+universe a,b ab,a a,aba aaba,ab
+ceilings 7 7 324 7 3
+universe a,a b,a ba,aa ba,b
+ceilings 5 - - 4 2
+universe b,b bb,bb b,bb bbbb,a
+ceilings 7 - - 4 1
+universe b,b a,a aa,aa bb,aa
+ceilings 5 - - 5 3
+universe b,a a,ba b,aba aba,a
+ceilings 5 4 256 5 2
+universe b,b a,a b,aa aa,bb
+ceilings 4 - - 3 1
+universe a,a a,aa aa,aaa b,aaa
+ceilings 4 - - 1 0
+universe b,b bb,bb a,bb a,bbbb
+ceilings 4 - - 4 1
+universe b,b bb,b bbb,bbb bbbbbb,bb
+ceilings 11 - - 3 1
+universe a,b a,a aa,b ab,ab
+ceilings 5 - - 3 1
+universe b,a a,b a,ba ab,b
+ceilings 4 5 169 3 1
+universe b,a a,ba b,ba ba,ba
+ceilings 4 - - 3 1
+universe b,a b,ba b,b bb,ba
+ceilings 4 - - 3 2
+universe b,a a,b b,ba a,bba
+ceilings 3 4 196 2 1
+universe b,b a,a aa,a bb,b
+ceilings 5 - - 3 1
+universe b,a b,b bb,ba b,bb
+ceilings 4 - - 3 1
+universe a,b ab,ab a,a ab,abab
+ceilings 5 - - 3 1
+universe b,b bb,a bb,bb a,a
+ceilings 5 - - 4 2
+universe b,b bb,bb b,bbbb bbbbb,bbbb
+ceilings 8 - - 3 1
+universe b,b a,bb b,abb bb,bb
+ceilings 4 - - 3 2
+universe a,a a,b b,ab aa,aa
+ceilings 4 - - 3 1
+universe b,a b,b b,ba ba,bb
+ceilings 4 - - 4 2
+universe a,b a,a ab,b aa,abb
+ceilings 5 - - 4 2
+universe b,b bb,a bba,a b,bb
+ceilings 6 - - 3 0
+universe a,a aa,b aa,a a,aab
+ceilings 5 - - 3 1
+universe b,a b,ba bba,ba bba,bbaba
+ceilings 7 10 441 7 4
+universe a,a aa,b aa,aa aaaa,aaaa
+ceilings 8 - - 8 4
+universe a,a b,a a,ba aba,ba
+ceilings 5 - - 5 2
+universe b,a ba,ba a,a a,b
+ceilings 4 - - 3 1
+universe a,a a,b b,b aa,ab
+ceilings 4 - - 3 1
+universe a,a a,b b,aa ab,b
+ceilings 4 - - 4 2
+universe a,a aa,b aab,aab aa,aab
+ceilings 7 - - 7 5
+universe b,a b,ba ba,bba bba,babba
+ceilings 6 11 441 7 4
+universe a,b ab,a b,aba ab,b
+ceilings 5 6 225 6 4
+universe a,b ab,b a,ab b,aab
+ceilings 4 7 225 4 3
+universe a,b a,ab aab,b aab,a
+ceilings 7 5 256 5 2
+universe a,b b,b bb,bb ab,bb
+ceilings 5 - - 5 3
+universe b,a a,ba aba,b ba,a
+ceilings 6 5 225 4 2
+universe b,b a,b ab,a ab,bb
+ceilings 5 - - 4 2
+universe a,a b,a aa,aa ba,aa
+ceilings 5 - - 3 1
+universe b,a ba,b a,a b,b
+ceilings 4 - - 3 1
+universe a,b b,b a,a ab,aa
+ceilings 4 - - 4 2
+universe b,b b,bb bbb,b bbb,bbb
+ceilings 7 - - 1 0
+universe a,b a,ab ab,aab abaab,b
+ceilings 8 7 361 5 2
+universe b,a a,a ba,a b,ba
+ceilings 4 - - 4 3
+universe a,a aa,aa aa,b aa,aaaa
+ceilings 6 - - 3 1
+universe a,a aa,a b,aa a,b
+ceilings 4 - - 5 4
+universe b,a a,b ab,ba ba,ba
+ceilings 5 - - 3 1
+universe b,a a,a ba,ba aa,b
+ceilings 5 - - 3 1
+universe a,a aa,aa aa,aaaa aaaa,b
+ceilings 8 - - 4 1
+universe b,a a,a aa,b b,b
+ceilings 4 - - 3 1
+universe a,b ab,a b,a ab,b
+ceilings 5 4 169 4 2
+universe b,a a,ba ba,b ba,ba
+ceilings 5 - - 5 3
+universe b,b a,b bb,a bba,a
+ceilings 6 - - 5 2
+universe b,a b,b a,bb ba,a
+ceilings 4 - - 5 3
+universe b,a a,b a,ab aab,b
+ceilings 5 5 196 4 2
+universe b,a b,ba ba,ba a,bba
+ceilings 4 - - 3 2
+universe b,a b,ba b,b a,a
+ceilings 3 - - 3 2
+universe b,b bb,b bbb,bbb bbbbbb,a
+ceilings 11 - - 3 1
+universe a,b b,ab bab,b a,a
+ceilings 5 - - 5 2
+universe a,a a,aa aaa,aa a,aaaaa
+ceilings 5 - - 1 0
+universe a,a aa,b b,aab a,b
+ceilings 4 - - 4 3
+universe b,b a,a a,aa a,b
+ceilings 3 - - 2 1
+universe a,b b,ab ab,ab a,abab
+ceilings 4 - - 4 3
+universe a,b b,ab b,bab a,bab
+ceilings 3 6 256 3 2
+universe b,b bb,a bba,b bba,a
+ceilings 8 - - 4 1
+universe a,b ab,a ab,aba ababa,b
+ceilings 9 5 361 5 3
+universe b,b a,b b,bb bbb,bbb
+ceilings 5 - - 2 1
+universe a,b ab,b abb,abb abb,abbabb
+ceilings 8 - - 5 2
+universe a,b ab,a b,aba ab,baba
+ceilings 5 9 324 6 4
+universe b,b bb,a bba,a bba,bba
+ceilings 8 - - 6 3
+universe a,b a,ab ab,a b,b
+ceilings 4 - - 4 2
+universe a,b ab,a b,b aba,aba
+ceilings 6 - - 6 3
+universe a,a b,aa a,b b,ab
+ceilings 3 - - 4 3
+universe b,a a,a aa,b b,aa
+ceilings 4 - - 3 1
+universe b,a a,b ba,ab ab,ab
+ceilings 5 4 225 4 2
+universe b,b b,bb bb,a a,bba
+ceilings 4 - - 3 2
+universe b,a a,b ba,a ba,b
+ceilings 5 4 169 4 2
+universe b,a b,ba ba,bba b,b
+ceilings 4 - - 4 2
+universe a,a a,aa aaa,a aaaa,a
+ceilings 8 - - 1 0
+universe a,a aa,a a,b aa,aaa
+ceilings 5 - - 5 3
+universe a,b b,b bb,a bba,ab
+ceilings 6 - - 4 1
+universe b,a ba,a a,b baa,b
+ceilings 6 4 196 4 1
+universe a,a a,aa aaa,aaa aaa,aaaaaa
+ceilings 7 - - 1 0
+universe b,b bb,a a,a b,a
+ceilings 4 - - 2 1
+universe a,b b,a b,ba ab,a
+ceilings 4 5 169 3 2
+universe b,a a,a aa,ba a,aaba
+ceilings 4 - - 3 1
+universe b,a b,ba bba,bba a,bbabba
+ceilings 5 - - 6 5
+universe a,a a,b a,aa ab,aa
+ceilings 4 - - 3 1
+universe b,a ba,a baa,ba b,baa
+ceilings 6 7 289 6 5
+universe b,a b,b bb,ba b,bbba
+ceilings 4 - - 3 1
+universe a,b ab,a a,a b,aba
+ceilings 4 - - 4 3
+universe b,b bb,a bb,bba bba,b
+ceilings 7 - - 4 2
+universe b,b bb,a bb,bb bbbb,bba
+ceilings 8 - - 6 2
+universe b,a a,b b,ab ba,ba
+ceilings 4 - - 3 1
+universe a,a b,b aa,a aaa,b
+ceilings 6 - - 4 1
+universe b,a b,b a,ba bb,b
+ceilings 4 - - 4 2
+universe a,a a,aa aa,aaa aaa,a
+ceilings 6 - - 1 0
+universe a,b b,b a,a a,aa
+ceilings 3 - - 2 1
+universe a,b ab,b ab,ab a,abab
+ceilings 5 - - 5 4
+universe a,b b,b a,ab a,aab
+ceilings 3 - - 3 2
+universe b,a a,b a,a ba,ab
+ceilings 4 - - 4 2
+universe a,a aa,a aa,aa aaaa,b
+ceilings 8 - - 5 3
+universe a,b b,ab bab,bab a,ab
+ceilings 5 - - 5 2
+universe b,b b,a b,bb bb,ba
+ceilings 4 - - 3 1
+universe a,b b,b b,ab ab,bab
+ceilings 4 - - 4 2
+universe a,b a,a b,ab ab,aa
+ceilings 4 - - 4 2
+universe a,a a,aa aa,b aaa,aab
+ceilings 6 - - 2 0
+universe b,a ba,a baa,ba ba,baa
+ceilings 7 7 324 7 5
+universe a,b ab,ab b,ab b,b
+ceilings 4 - - 5 4
+universe b,b bb,bb bb,b b,a
+ceilings 5 - - 3 0
+universe b,a a,ba a,aba aaba,b
+ceilings 6 7 289 5 2
+universe a,b ab,a ab,ab ab,b
+ceilings 6 - - 5 3
+universe b,a ba,ba baba,baba b,ba
+ceilings 7 - - 7 3
+universe b,b a,a bb,a b,a
+ceilings 4 - - 3 1
+universe a,a a,b ab,ab abab,a
+ceilings 7 - - 5 1
+universe a,b b,b bb,a bb,bba
+ceilings 5 - - 5 3
+universe b,a a,b ba,ab ab,a
+ceilings 5 4 196 4 2
+universe a,b a,ab b,ab a,a
+ceilings 3 - - 3 2
+universe a,b a,a a,ab aab,ab
+ceilings 5 - - 4 1
+universe b,b b,bb bb,bbb bbbbb,a
+ceilings 8 - - 1 0
+universe b,b a,bb abb,a b,bb
+ceilings 5 - - 5 2
+universe a,b b,a ab,ba b,ba
+ceilings 4 6 196 4 2
+universe b,a ba,a a,baa a,abaa
+ceilings 4 9 289 4 3
+universe a,a aa,a aaa,aa aaa,aaa
+ceilings 8 - - 3 1
+universe b,b bb,bb bb,a bb,bba
+ceilings 6 - - 3 1
+universe b,a ba,ba baba,ba b,b
+ceilings 7 - - 7 3
+universe a,b a,a aa,ab aaab,b
+ceilings 7 - - 4 1
+universe b,b b,a bb,bb bb,bbbb
+ceilings 5 - - 3 1
+universe b,a a,a a,ba aba,b
+ceilings 5 - - 4 1
+universe b,b b,a a,b b,ba
+ceilings 3 - - 2 1
+universe b,a a,b ba,a a,ab
+ceilings 4 5 169 4 2
+universe b,b a,a a,b bb,aa
+ceilings 4 - - 3 1
+universe b,a ba,a baa,baa b,ba
+ceilings 6 - - 5 2
+universe b,a ba,ba baba,b baba,a
+ceilings 10 - - 5 1
+universe a,b ab,b b,ab abb,b
+ceilings 6 5 225 6 3
+universe a,b a,a a,ab a,aa
+ceilings 3 - - 2 0
+universe b,a ba,b bab,ba babba,ba
+ceilings 10 6 400 8 3
+universe a,b ab,b abb,a a,abba
+ceilings 6 7 289 5 4
+universe a,a b,b b,a b,ba
+ceilings 3 - - 2 1
+universe b,a a,a ba,aa aa,ba
+ceilings 5 - - 5 3
+universe a,a aa,aa b,aaaa a,aaaa
+ceilings 4 - - 4 3
+universe a,b ab,b b,b bb,a
+ceilings 5 - - 3 1
+universe b,b b,bb bb,a b,bbb
+ceilings 4 - - 2 0
+universe b,b a,b b,ab ab,a
+ceilings 4 - - 4 2
+universe b,a a,a aa,a aa,b
+ceilings 5 - - 3 1
+universe b,b bb,bb bb,bbbb bbbbbb,bbbbbb
+ceilings 10 - - 3 1
+universe b,a ba,ba ba,baba a,a
+ceilings 5 - - 3 1
+universe b,a ba,b a,a b,aa
+ceilings 4 - - 3 1
+universe a,b b,a ab,b ba,b
+ceilings 5 3 169 4 2
+universe a,b ab,b a,abb aabb,ab
+ceilings 7 7 324 6 2
+universe a,b b,b bb,ab a,bbab
+ceilings 4 - - 3 1
+universe b,a ba,b a,ba b,b
+ceilings 4 - - 4 3
+universe b,b b,a bb,bb b,bbbb
+ceilings 4 - - 3 1
+universe b,b b,a bb,bb bbbb,ba
+ceilings 7 - - 5 1
+universe b,a b,ba bba,b bbab,b
+ceilings 8 5 289 6 2
+universe a,a a,b aa,a aa,ab
+ceilings 5 - - 3 1
+universe a,b a,a ab,b abb,aa
+ceilings 6 - - 5 2
+universe a,b ab,ab a,abab a,a
+ceilings 4 - - 5 4
+universe b,b b,a ba,a ba,bb
+ceilings 5 - - 3 1
+universe a,a aa,a b,aa b,aaa
+ceilings 4 - - 4 1
+universe a,b b,ab ab,ab abab,abab
+ceilings 7 - - 7 3
+universe b,a ba,ba ba,baba b,bababa
+ceilings 5 - - 3 1
+universe a,a b,b a,bb b,abb
+ceilings 3 - - 3 2
+universe b,b bb,b a,bb abb,abb
+ceilings 6 - - 7 4
+universe a,a b,a ba,b aa,b
+ceilings 5 - - 4 2
+universe b,b bb,bb bbbb,b bbbbb,a
+ceilings 11 - - 5 1
+universe a,b b,a ab,b abb,a
+ceilings 6 3 196 4 2
+universe a,a b,a a,b b,ba
+ceilings 3 - - 3 2
+universe b,a a,b ab,a b,ab
+ceilings 4 2 169 2 1
+universe a,b b,b a,ab a,a
+ceilings 3 - - 3 2
+universe b,b a,a bb,bb bb,b
+ceilings 5 - - 3 0
+universe b,a ba,ba baba,b ba,a
+ceilings 8 - - 5 1
+universe b,b bb,a a,a a,bba
+ceilings 4 - - 3 2
+universe b,a a,ba aba,aba a,b
+ceilings 5 - - 5 2
+universe b,b b,a a,ba b,ba
+ceilings 3 - - 2 1
+universe a,b ab,a aba,aba abaaba,abaaba
+ceilings 11 - - 12 6
+universe a,b b,ab a,bab abab,ab
+ceilings 6 3 324 2 1
+universe b,b bb,a bba,bb bbabb,bba
+ceilings 10 - - 10 5
+universe b,a ba,b bab,ba ba,ba
+ceilings 7 - - 6 3
+universe b,a a,b ab,b ab,abb
+ceilings 5 3 225 3 1
+universe b,a ba,b a,a aa,b
+ceilings 5 - - 3 1
+universe b,a a,b ab,a aba,a
+ceilings 6 2 196 2 1
+universe a,a aa,a b,aaa b,aa
+ceilings 4 - - 4 1
+universe b,b a,b a,bb bb,bb
+ceilings 4 - - 3 1
+universe b,a b,ba bba,b bbab,a
+ceilings 8 4 289 5 2
+universe a,a b,aa a,b baa,baa
+ceilings 5 - - 5 2
+universe a,b a,a a,ab a,aab
+ceilings 3 - - 2 0
+universe a,a b,b a,bb bb,b
+ceilings 4 - - 3 1
+universe a,a a,b aa,aa aaaa,b
+ceilings 7 - - 4 1
+universe a,b ab,a aba,ab b,aba
+ceilings 6 7 289 7 6
+universe b,a ba,a ba,baa b,baa
+ceilings 5 8 289 4 2
+universe b,a a,ba aba,b abab,ba
+ceilings 8 6 324 5 1
+universe a,b b,ab b,a ab,bab
+ceilings 4 7 225 4 2
+universe b,b a,bb bb,bb a,abb
+ceilings 4 - - 3 2
+universe b,a a,ba b,aba a,a
+ceilings 3 - - 3 2
+universe b,a a,ba ba,ba aba,baba
+ceilings 6 - - 6 3
+universe a,a a,b a,ab aa,a
+ceilings 4 - - 3 1
+universe a,b ab,ab b,b abab,b
+ceilings 7 - - 5 1
+universe a,b b,ab ab,bab abbab,abbab
+ceilings 8 - - 9 4
+universe a,b b,ab b,b bab,bb
+ceilings 5 - - 6 3
+universe a,a aa,b aab,aa b,aab
+ceilings 6 - - 6 5
+universe a,b b,ab ab,bab a,ab
+ceilings 4 8 256 5 4
+universe b,b b,bb bbb,a a,bbba
+ceilings 5 - - 1 0
+universe a,a aa,b aab,a b,aab
+ceilings 6 - - 5 4
+universe b,a ba,ba b,b bb,baba
+ceilings 5 - - 5 3
+universe a,b ab,ab ab,b b,b
+ceilings 5 - - 3 1
+universe a,a b,b b,a aa,a
+ceilings 4 - - 3 1
+universe b,a a,ba aba,b b,aba
+ceilings 5 4 256 4 1
+universe b,a ba,a a,ba a,a
+ceilings 4 - - 4 3
+universe b,b a,a b,aa baa,bb
+ceilings 5 - - 4 1
+universe b,a b,ba b,b bba,bba
+ceilings 5 - - 5 2
+universe a,a aa,b b,aab baab,baab
+ceilings 7 - - 7 3
+universe b,a a,ba ba,aba ba,b
+ceilings 5 7 256 4 2
+universe a,b a,a a,aa aaa,aaa
+ceilings 5 - - 2 1
+universe a,a aa,a aa,aaa a,b
+ceilings 5 - - 5 3
+universe a,a b,aa baa,baa a,aa
+ceilings 5 - - 5 2
+universe b,b b,bb a,b a,a
+ceilings 3 - - 3 2
+universe a,b ab,b ab,abb ababb,abb
+ceilings 9 8 441 7 2
+universe b,a b,ba a,a bba,bba
+ceilings 5 - - 5 2
+universe a,b a,a aa,a ab,ab
+ceilings 5 - - 4 2
+universe a,b a,ab aab,aab ab,a
+ceilings 6 - - 5 2
+universe b,a a,ba aba,ba ba,a
+ceilings 6 6 256 4 2
+universe b,a a,b b,ba ba,a
+ceilings 4 5 169 4 2
+universe a,b ab,ab ab,abab ababab,abab
+ceilings 10 - - 3 1
+universe a,b a,a ab,aa ab,a
+ceilings 5 - - 4 1
+universe a,a b,aa baa,baa b,b
+ceilings 5 - - 5 2
+universe a,a b,b bb,aa b,a
+ceilings 4 - - 3 1
+universe b,a a,b a,ab b,b
+ceilings 3 - - 3 2
+universe a,b ab,ab a,a a,aa
+ceilings 4 - - 3 1
+universe a,b ab,b a,a abb,aa
+ceilings 6 - - 5 2
+universe b,a a,ba ba,aba baaba,b
+ceilings 8 7 361 6 2
+universe b,a ba,a baa,a baa,baa
+ceilings 8 - - 6 3
+universe a,b b,a a,ab b,ab
+ceilings 3 6 169 2 1
+universe b,b a,bb b,a a,b
+ceilings 3 - - 4 3
+universe b,a b,b bb,ba a,a
+ceilings 4 - - 3 1
+universe a,b ab,ab abab,a a,abab
+ceilings 7 - - 6 5
+universe b,a b,b bb,a bba,bba
+ceilings 6 - - 2 1
+universe b,a b,ba bba,bba bbabba,a
+ceilings 10 - - 6 2
+universe a,a b,b bb,bb a,bbbb
+ceilings 4 - - 4 3
+universe a,b ab,b ab,abb a,ababb
+ceilings 5 10 361 5 4
+universe b,a b,ba a,bba bba,a
+ceilings 5 7 256 6 3
+universe a,b a,ab b,a ba,b
+ceilings 4 4 169 3 2
+universe b,b bb,a b,bba bbba,bb
+ceilings 7 - - 2 0
+universe b,a b,ba bba,ba b,bbaba
+ceilings 5 10 361 5 4
+universe b,b a,bb abb,b a,a
+ceilings 5 - - 4 2
+universe b,b b,bb b,bbb b,a
+ceilings 3 - - 1 0
+universe b,a a,a b,ba a,ba
+ceilings 3 - - 2 1
+universe b,b b,a bb,a bba,bb
+ceilings 6 - - 5 2
+universe b,b bb,a bba,a bbaa,a
+ceilings 9 - - 4 0
+universe a,b b,b a,a aa,aa
+ceilings 4 - - 4 2
+universe b,b bb,b bb,a bbb,a
+ceilings 7 - - 3 1
+universe b,a ba,a ba,ba baa,ba
+ceilings 7 - - 7 4
+universe b,a a,a aa,a ba,aaa
+ceilings 5 - - 5 3
+universe a,a a,aa aaa,a aaaa,aa
+ceilings 8 - - 1 0
+universe b,a a,a ba,a baa,baa
+ceilings 6 - - 6 3
+universe a,b b,ab ab,bab ab,abbab
+ceilings 5 11 400 6 4
+universe b,b b,a a,a ba,aa
+ceilings 4 - - 3 1
+universe a,a aa,aa aaaa,b a,b
+ceilings 7 - - 4 1
+universe b,a a,b a,ba aba,ba
+ceilings 5 6 225 4 1
+universe a,b a,ab b,b a,bb
+ceilings 3 - - 2 1
+universe a,a aa,aa aaaa,aaaa a,aaaa
+ceilings 7 - - 7 3
+universe b,b a,a bb,b bbb,aa
+ceilings 6 - - 4 1
+universe b,b b,bb b,a bb,bbb
+ceilings 4 - - 1 0
+universe b,b bb,a b,bba a,a
+ceilings 4 - - 2 0
+universe b,b a,a a,aa bb,b
+ceilings 4 - - 3 1
+universe b,a ba,b a,a bab,aa
+ceilings 6 - - 3 1
+universe b,b bb,b b,a a,bbb
+ceilings 4 - - 4 3
+universe a,b ab,b abb,abb abbabb,b
+ceilings 11 - - 6 2
+universe a,b b,a ba,ba baba,ba
+ceilings 7 2 289 2 1
+universe a,b b,b a,a a,ab
+ceilings 3 - - 2 0
+universe b,b a,a a,bb a,b
+ceilings 3 - - 2 0
+universe b,b a,b ab,a b,aba
+ceilings 4 - - 5 4
+universe b,b bb,b bbb,b a,bbbb
+ceilings 6 - - 3 1
+universe b,a ba,a a,ba ba,ba
+ceilings 5 - - 4 2
+universe b,a a,ba ba,aba baaba,a
+ceilings 8 7 361 7 2
+universe a,a a,b ab,a b,aba
+ceilings 4 - - 4 3
+universe b,b bb,a bba,b b,bb
+ceilings 6 - - 4 1
+universe a,b b,ab a,a aa,ab
+ceilings 4 - - 3 1
+universe b,a a,b a,ab ab,ba
+ceilings 4 6 196 3 2
+universe a,a aa,aa aa,a aaaa,aaaa
+ceilings 8 - - 7 3
+universe a,a b,a a,aa a,ba
+ceilings 3 - - 3 2
+universe b,b a,b ab,a bb,b
+ceilings 5 - - 4 2
+universe a,b a,ab a,a b,ab
+ceilings 3 - - 3 2
+universe b,a ba,b ba,a ba,baa
+ceilings 6 6 256 4 2
+universe b,b bb,bb bb,bbbb a,bbbb
+ceilings 5 - - 4 3
+universe b,b b,bb bbb,bb a,bbb
+ceilings 5 - - 1 0
+universe b,a a,a a,b ba,a
+ceilings 4 - - 4 2
+universe b,a ba,a a,ba aba,b
+ceilings 6 5 225 4 2
+universe a,a b,b b,aa b,bb
+ceilings 3 - - 2 1
+universe b,a ba,a b,baa bbaa,b
+ceilings 7 6 289 7 3
+universe b,b a,a aa,b aab,aa
+ceilings 6 - - 6 3
+universe a,a aa,aa aaaa,aa aaaaaa,b
+ceilings 12 - - 7 3
+universe b,b a,a aa,b a,aab
+ceilings 4 - - 3 1
+universe b,b bb,a b,bb bb,bba
+ceilings 5 - - 4 2
+universe a,b ab,ab a,ab b,abab
+ceilings 4 - - 4 3
+universe a,b ab,b a,ab abb,aab
+ceilings 6 7 289 6 3
+universe a,b a,ab ab,a aab,b
+ceilings 6 5 225 4 2
+universe b,b a,a aa,aa a,b
+ceilings 4 - - 3 1
+universe b,b b,a ba,ba baba,bb
+ceilings 7 - - 5 1
+universe a,a a,b ab,ab ab,abab
+ceilings 5 - - 3 1
+universe a,a a,b aa,aa b,aaaa
+ceilings 4 - - 4 3
+universe b,a b,b a,a ba,bb
+ceilings 4 - - 4 2
+universe b,b a,bb b,a b,bb
+ceilings 3 - - 3 2
+universe b,b a,a aa,b aab,b
+ceilings 6 - - 3 1
+universe b,a b,b b,ba a,bba
+ceilings 3 - - 3 2
+universe a,a aa,a aaa,b aaa,a
+ceilings 8 - - 3 1
+universe a,a aa,b b,a a,aab
+ceilings 4 - - 2 1
+universe a,a aa,b aab,aab aab,aa
+ceilings 8 - - 5 1
+universe b,a b,ba bba,a ba,b
+ceilings 6 5 225 4 2
+universe b,a ba,ba b,baba b,bbaba
+ceilings 4 - - 5 4
+universe b,a b,ba b,b bba,a
+ceilings 5 - - 3 2
+universe a,b ab,ab a,abab b,b
+ceilings 4 - - 4 3
+universe b,a a,b a,ab ba,ab
+ceilings 4 6 196 4 2
+universe a,b b,b ab,b ab,ab
+ceilings 5 - - 5 3
+universe a,a aa,a aaa,a a,b
+ceilings 6 - - 3 1
+universe b,b bb,a bba,a a,bbaa
+ceilings 6 - - 4 3
+universe a,a b,b aa,b a,b
+ceilings 4 - - 3 1
+universe b,b b,a a,bb abb,bb
+ceilings 5 - - 4 1
+universe b,b b,a a,b b,ab
+ceilings 3 - - 2 1
+universe a,b b,a b,ba ba,b
+ceilings 4 4 169 3 2
+universe a,a a,b ab,b ab,aa
+ceilings 5 - - 3 1
+universe b,b bb,a b,bba b,a
+ceilings 4 - - 2 0
+universe b,b bb,bb bb,bbbb bb,bbbbbb
+ceilings 6 - - 3 1
+universe a,a b,a ba,b b,b
+ceilings 4 - - 4 2
+universe b,b a,b a,ab aab,b
+ceilings 5 - - 3 2
+universe a,b ab,ab a,ab a,a
+ceilings 4 - - 5 4
+universe b,b a,bb abb,a a,a
+ceilings 5 - - 5 2
+universe a,a aa,b a,aa aab,aaa
+ceilings 6 - - 2 0
+universe a,b ab,ab a,a b,aa
+ceilings 4 - - 3 2
+universe b,a b,ba a,ba ba,b
+ceilings 4 6 196 4 2
+universe b,b bb,b bb,bbb bbbbb,a
+ceilings 9 - - 5 3
+universe b,b a,a a,bb bb,a
+ceilings 4 - - 4 2
+universe a,b ab,b abb,abb a,abb
+ceilings 6 - - 6 5
+universe b,a b,b bb,ba bbba,b
+ceilings 7 - - 6 2
+universe b,b bb,b a,bb abb,a
+ceilings 6 - - 7 4
+universe b,b b,a a,ba aba,b
+ceilings 5 - - 4 1
+universe b,a a,a aa,a b,aa
+ceilings 4 - - 3 1
+universe a,a b,b aa,b b,aab
+ceilings 4 - - 4 3
+universe b,b a,bb bb,abb bb,b
+ceilings 5 - - 4 2
+universe a,b ab,ab abab,ab ababab,abab
+ceilings 12 - - 7 3
+universe a,b ab,b abb,ab abbab,b
+ceilings 10 4 361 5 2
+universe a,b a,a aa,ab a,aaab
+ceilings 4 - - 3 1
+universe b,b bb,bb a,bb a,b
+ceilings 4 - - 4 3
+universe a,a b,a ba,ba aa,aa
+ceilings 5 - - 4 2
+universe b,a ba,a ba,ba baba,b
+ceilings 8 - - 5 2
+universe a,a b,b a,bb b,aa
+ceilings 3 - - 2 1
+universe a,a aa,aa aaaa,aa a,aaaaaa
+ceilings 7 - - 7 3
+universe a,b a,ab b,b bb,a
+ceilings 4 - - 4 2
+universe b,b a,a aa,bb bb,a
+ceilings 5 - - 3 1
+universe a,b b,ab b,bab a,ab
+ceilings 3 8 225 3 2
+universe a,b b,ab b,bab a,bbab
+ceilings 3 6 289 3 2
+universe b,b bb,a bba,bba bb,bb
+ceilings 7 - - 5 2
+universe a,a a,b b,b b,a
+ceilings 3 - - 2 1
+universe a,b ab,b ab,a abb,abb
+ceilings 7 - - 5 2
+universe a,a aa,a aa,aa aaa,b
+ceilings 7 - - 5 3
+universe b,a ba,b bab,a ba,baba
+ceilings 7 2 324 3 1
+universe b,a a,ba ba,aba baaba,aba
+ceilings 8 9 441 7 2
+universe a,a aa,aa aa,b aaaa,aaaa
+ceilings 8 - - 7 3
+universe a,b a,a aa,aa b,aa
+ceilings 4 - - 5 4
+universe b,b a,bb b,a ba,abb
+ceilings 4 - - 4 2
+universe a,b b,a ba,ba ab,baba
+ceilings 5 2 289 2 1
+universe a,b ab,a a,aba aaba,aba
+ceilings 7 8 361 7 3
+universe a,a a,b aa,a aa,aa
+ceilings 5 - - 5 3
+universe a,b a,ab aab,aab ab,aabaab
+ceilings 6 - - 7 5
+universe b,a b,ba a,b a,a
+ceilings 3 - - 4 3
+universe a,a b,a ba,ba baba,b
+ceilings 7 - - 6 2
+universe a,b b,ab bab,a ab,ab
+ceilings 6 - - 4 1
+universe b,b a,b ab,a bb,a
+ceilings 5 - - 4 2
+universe a,a b,a aa,aa a,b
+ceilings 4 - - 3 2
+universe b,a ba,ba b,baba b,ba
+ceilings 4 - - 4 1
+universe b,b a,a b,a a,bb
+ceilings 3 - - 2 1
+universe a,a b,a
+ceilings 1 - - 2 1
+universe b,a c,ba c,c b,c
+ceilings 3 - - 4 3
+universe b,b b,bb c,b bbb,c
+ceilings 5 - - 2 1
+universe a,c c,ac
+ceilings 1 3 64 2 1
+universe c,c b,cc b,bcc
+ceilings 2 - - 3 2
+universe b,a ba,c a,b bac,c
+ceilings 6 4 225 3 1
+universe b,c a,a c,b
+ceilings 2 - - 2 1
+universe c,b b,a
+ceilings 1 2 64 1 0
+universe c,a ca,b
+ceilings 2 2 81 2 0
+universe b,c bc,b
+ceilings 2 2 64 3 1
+universe c,b cb,cb cb,a cbcb,a b,a ba,c
+ceilings 11 - - 4 1
+universe a,b ab,c
+ceilings 2 2 81 2 0
+universe c,a a,a a,aa aaa,ca aaaca,a
+ceilings 10 - - 1 0
+universe c,a a,a aa,b
+ceilings 3 - - 2 0
+universe a,b ab,c c,abc b,b cabc,a cabc,c
+ceilings 12 - - 7 3
+universe a,c b,b b,bb
+ceilings 2 - - 1 0
+universe c,c b,b
+ceilings 1 - - 1 0
+universe c,c c,b b,a
+ceilings 2 - - 1 0
+universe b,c a,a a,aa aaa,c
+ceilings 5 - - 1 0
+universe c,b b,b bb,cb bbcb,cb a,a
+ceilings 8 - - 5 1
+universe c,c a,cc c,acc b,a
+ceilings 3 - - 3 2
+universe b,a c,c c,a ca,ba caba,b cc,cc
+ceilings 10 - - 5 1
+universe a,b b,b bb,a ab,bb b,ab
+ceilings 6 - - 6 5
+universe b,a a,a ba,b
+ceilings 3 - - 3 1
+universe c,a a,a c,b c,aa
+ceilings 3 - - 1 0
+universe b,a c,ba a,b a,c ac,ac
+ceilings 5 - - 5 3
+universe c,a b,c a,a c,ca cca,bc
+ceilings 6 - - 5 2
+universe a,c b,a c,ba ac,b acb,c
+ceilings 7 6 324 6 3
+universe a,c b,b a,ac a,bb ac,bb
+ceilings 5 - - 3 1
+universe c,a c,ca cca,ca c,b ca,c cb,cac
+ceilings 9 10 576 6 4
+universe b,c bc,a c,c b,bca bbca,cc
+ceilings 8 - - 5 2
+universe c,b a,b ab,c b,cb b,abc babc,b
+ceilings 9 8 529 4 3
+universe b,c bc,c a,b
+ceilings 3 3 121 2 1
+universe a,a a,aa b,aa
+ceilings 2 - - 2 1
+universe b,b bb,bb b,a c,ba
+ceilings 4 - - 3 1
+universe a,b a,a b,b b,bb
+ceilings 3 - - 2 1
+universe b,a b,b c,ba a,b bb,b
+ceilings 5 - - 4 2
+universe c,b c,cb a,ccb c,a ca,cb ca,ca
+ceilings 7 - - 6 4
+universe b,c bc,c b,b bcc,bc bcc,b bcc,bb
+ceilings 12 - - 5 2
+universe b,b b,bb
+ceilings 1 - - 1 0
+universe b,a a,c
+ceilings 1 2 64 1 0
+universe a,b c,ab cab,b b,ab
+ceilings 5 6 256 3 1
+universe b,a a,b ba,b c,ba c,bab
+ceilings 5 8 324 4 1
+universe a,b c,ab a,cab acab,b c,cab ab,acab
+ceilings 9 14 784 6 4
+universe a,a b,b aa,a c,b b,cb
+ceilings 5 - - 3 2
+universe c,b cb,cb a,cbcb b,a b,c
+ceilings 5 - - 5 4
+universe c,a ca,ca
+ceilings 2 - - 3 1
+universe c,a b,a a,ba
+ceilings 2 4 121 2 1
+universe b,b a,b c,b b,bb c,c
+ceilings 4 - - 3 2
+universe b,b b,a b,ba a,b ba,b
+ceilings 5 - - 3 1
+universe b,a b,b bb,c a,b c,c
+ceilings 5 - - 3 2
+universe a,b c,b c,cb c,c ccb,cc ab,ccb
+ceilings 8 - - 8 6
+universe b,c c,a
+ceilings 1 2 64 1 0
+universe a,b ab,a a,c
+ceilings 3 3 121 3 1
+universe c,a b,a ba,ba ca,baba b,baba
+ceilings 6 - - 5 3
+universe c,b cb,b cbb,b
+ceilings 5 3 144 3 0
+universe b,a a,a c,c c,a
+ceilings 3 - - 2 1
+universe c,a ca,c b,a ba,a
+ceilings 5 4 196 3 1
+universe a,a a,b
+ceilings 1 - - 1 0
+universe a,c b,ac a,ac
+ceilings 2 5 144 2 1
+universe a,b ab,c a,a b,c b,ab
+ceilings 5 - - 3 2
+universe b,b b,bb c,a b,c bc,bc
+ceilings 5 - - 4 2
+universe a,b c,c cc,a a,cc cca,ab
+ceilings 7 - - 4 3
+universe b,a a,c b,ba
+ceilings 2 4 121 2 1
+universe b,c bc,bc bcbc,a b,bc c,a a,bc
+ceilings 9 - - 4 3
+universe a,c c,c a,b b,a ac,ac
+ceilings 5 - - 3 1
+universe c,c cc,c c,b ccc,cb ccccb,c
+ceilings 11 - - 3 1
+universe a,a b,b aa,c a,b aac,c
+ceilings 7 - - 3 1
+universe c,b b,b a,a cb,bb
+ceilings 4 - - 3 1
+universe a,c ac,a a,a c,a c,aa
+ceilings 5 - - 3 1
+universe c,a ca,ca ca,caca caca,a ca,c
+ceilings 10 - - 4 0
+universe a,b b,ab
+ceilings 1 3 64 2 1
+universe c,b c,cb cb,cb b,c
+ceilings 4 - - 3 2
+universe a,b c,c ab,b
+ceilings 3 - - 2 0
+universe b,c b,bc bc,a
+ceilings 3 4 144 2 1
+universe b,c bc,bc a,b
+ceilings 3 - - 3 1
+universe a,a aa,aa
+ceilings 2 - - 3 1
+universe a,b b,ab a,ab aab,aab
+ceilings 5 - - 5 2
+universe b,b a,c bb,c ac,a aca,bbc
+ceilings 8 - - 5 2
+universe c,b a,a cb,c
+ceilings 3 - - 3 1
+universe a,c a,b c,a a,ac
+ceilings 3 5 169 2 1
+universe b,a c,b ba,cb b,c bc,ba
+ceilings 6 7 324 6 4
+universe a,a b,b b,bb
+ceilings 2 - - 1 0
+universe b,b a,a
+ceilings 1 - - 1 0
+universe b,a b,ba ba,a bba,bba
+ceilings 6 - - 5 2
+universe a,b b,ab a,c c,c cc,b ccb,b
+ceilings 8 - - 5 2
+universe b,b bb,bb c,bb
+ceilings 3 - - 4 3
+universe a,a c,aa
+ceilings 1 - - 2 1
+universe a,b b,b bb,b ab,a c,a aba,bb
+ceilings 9 - - 3 1
+universe c,a ca,a
+ceilings 2 2 64 2 0
+universe b,c a,c
+ceilings 1 2 64 1 0
+universe c,b c,c a,b cc,a cb,b b,ab
+ceilings 7 - - 3 1
+universe c,b b,a cb,ba a,cb
+ceilings 4 6 225 4 3
+universe c,b c,cb ccb,a cb,ccba ccba,b
+ceilings 10 9 576 5 3
+universe b,a c,c a,ba ba,cc ba,aba
+ceilings 6 - - 4 2
+universe a,c a,a ac,c acc,c
+ceilings 6 - - 3 1
+universe b,b a,b c,a b,ca bca,b a,bb
+ceilings 7 - - 4 3
+universe a,c c,c a,cc a,a a,b
+ceilings 4 - - 2 1
+universe b,c bc,a b,bc c,bca b,b
+ceilings 5 - - 4 3
+universe b,c bc,c
+ceilings 2 2 64 2 0
+universe c,b a,b ab,a
+ceilings 3 3 121 3 1
+universe b,a b,b c,a ba,b ba,a
+ceilings 6 - - 4 2
+universe b,b b,a b,ba b,bba ba,a a,bbba
+ceilings 6 - - 2 0
+universe b,c a,bc b,bc bc,bbc bbc,abc b,bbc
+ceilings 8 14 729 6 5
+universe b,a b,ba ba,ba bba,bba ba,c baba,a
+ceilings 12 - - 5 2
+universe a,b a,c
+ceilings 1 2 64 1 0
+universe c,a c,b
+ceilings 1 2 64 1 0
+universe a,c a,ac
+ceilings 1 3 64 2 1
+universe b,a b,b
+ceilings 1 - - 2 1
+universe b,c b,a b,b bc,bb ba,c
+ceilings 6 - - 4 2
+universe c,c a,b c,b cb,c cb,cc cc,a
+ceilings 8 - - 3 1
+universe c,c a,c b,ac ac,ac
+ceilings 4 - - 4 2
+universe a,c a,ac b,aac c,aac
+ceilings 3 9 289 3 2
+universe a,b a,ab c,a a,c ac,ca
+ceilings 5 7 289 5 3
+universe b,c a,c c,a a,b
+ceilings 3 4 144 2 1
+universe b,c c,b a,a
+ceilings 2 - - 2 1
+universe b,a a,c ba,ba
+ceilings 3 - - 3 1
+universe a,a a,aa aa,c c,c
+ceilings 4 - - 2 0
+universe a,a c,c aa,b a,c b,aab aa,c
+ceilings 7 - - 3 2
+universe b,b c,c
+ceilings 1 - - 1 0
+universe c,b c,a ca,c ca,ca
+ceilings 5 - - 5 3
+universe a,c a,b
+ceilings 1 2 64 1 0
+universe b,b c,c a,a b,c b,cc bcc,bb
+ceilings 7 - - 4 1
+universe c,c b,c cc,cc cc,a cca,b
+ceilings 8 - - 5 2
+universe a,a a,b aa,a aaa,ab b,b bb,ab
+ceilings 9 - - 3 1
+universe c,b a,a
+ceilings 1 - - 1 0
+universe c,c c,a
+ceilings 1 - - 1 0
+universe b,c c,b b,a b,b bb,c
+ceilings 5 - - 2 1
+universe c,c cc,c c,b cb,cc cb,c c,cb
+ceilings 8 - - 5 3
+universe b,a ba,a b,c baa,bc c,c
+ceilings 7 - - 4 1
+universe c,b cb,c a,b
+ceilings 3 3 121 3 1
+universe c,a b,b a,ca a,c bb,aca
+ceilings 5 - - 4 2
+universe a,c c,ac cac,ac ac,c acc,cac acc,ac
+ceilings 12 9 729 7 4
+universe a,b ab,b
+ceilings 2 2 64 2 0
+universe a,c c,a ca,ac
+ceilings 3 4 121 3 1
+universe b,c bc,bc bc,a a,bcbc
+ceilings 5 - - 4 3
+universe a,b ab,a c,ab b,ab
+ceilings 4 6 225 4 3
+universe a,c a,ac aac,ac a,b b,b a,aac
+ceilings 7 - - 5 4
+universe a,a b,a aa,b aa,c aac,c
+ceilings 8 - - 4 2
+universe b,c c,c
+ceilings 1 - - 1 0
+universe c,c cc,cc cccc,b cccc,a c,a b,a
+ceilings 12 - - 4 1
+universe c,c cc,a b,cc bcc,a b,bcca c,a
+ceilings 8 - - 3 2
+universe a,c b,c c,c cc,a cc,cca c,cccca
+ceilings 7 - - 5 3
+universe a,c a,b b,b bb,ab ab,c a,a
+ceilings 7 - - 3 1
+universe c,c b,c a,b bc,c c,cc
+ceilings 5 - - 3 2
+universe c,a c,c ca,cc cc,a cacc,cc c,cca
+ceilings 10 - - 6 2
+universe b,b bb,bb bb,b bbbb,b bb,bbbb bb,c
+ceilings 12 - - 5 1
+universe b,c c,c b,a
+ceilings 2 - - 1 0
+universe a,c ac,ac
+ceilings 2 - - 3 1
+universe c,b cb,b
+ceilings 2 2 64 2 0
+universe a,c a,a b,c ac,a b,ac bc,aca
+ceilings 7 - - 6 4
+universe b,c c,a c,ca cca,a ca,ca ccaa,a
+ceilings 11 - - 4 1
+universe b,a a,a
+ceilings 1 - - 1 0
+universe c,b cb,c c,cbc
+ceilings 3 5 144 4 3
+universe b,c a,bc abc,bc a,a
+ceilings 5 - - 4 2
+universe b,a b,ba
+ceilings 1 3 64 2 1
+universe a,a aa,c c,c
+ceilings 3 - - 2 0
+universe b,c a,b
+ceilings 1 2 64 2 1
+universe b,b a,c bb,a a,ac ac,b bb,acb
+ceilings 8 - - 5 3
+universe c,a ca,a b,caa a,a bcaa,a
+ceilings 8 - - 5 2
+universe b,c bc,c bc,bcc bcc,a bc,b
+ceilings 9 7 441 4 2
+universe b,a a,b c,a ab,ca ca,ba
+ceilings 6 7 324 5 3
+universe c,c b,cc a,b cc,bcc a,ab
+ceilings 5 - - 4 3
+universe b,b b,c a,c bb,ac a,bb
+ceilings 5 - - 4 3
+universe a,c c,a a,ca ca,a
+ceilings 4 3 169 3 1
+universe a,b a,a a,ab
+ceilings 2 - - 2 0
+universe c,c b,a c,a c,b ba,cb
+ceilings 5 - - 4 2
+universe b,b a,c bb,c bb,a ac,ac bb,bb
+ceilings 9 - - 5 3
+universe c,c c,b
+ceilings 1 - - 1 0
+universe c,c a,b a,ab cc,aab a,c
+ceilings 5 - - 4 2
+universe c,c b,a cc,ba c,cc ccba,cc
+ceilings 8 - - 7 3
+universe c,a c,ca
+ceilings 1 3 64 2 1
+universe b,a a,b ab,c abc,ba
+ceilings 6 5 256 4 1
+universe b,b bb,a c,a
+ceilings 3 - - 2 0
+universe c,b b,b c,c bb,bb
+ceilings 4 - - 3 1
+universe c,b a,a c,a
+ceilings 2 - - 2 1
+universe b,c b,bc b,bbc b,bbbc a,bc
+ceilings 4 12 441 4 3
+universe c,c cc,cc
+ceilings 2 - - 3 1
+universe a,c b,ac a,a ac,aa
+ceilings 4 - - 4 2
+universe b,c c,a a,bc c,ca
+ceilings 3 6 196 2 1
+universe b,c a,bc b,b bb,bc
+ceilings 4 - - 3 1
+universe a,a aa,c c,a aa,aac
+ceilings 5 - - 4 2
+universe a,b b,c b,b a,c
+ceilings 3 - - 2 1
+universe c,a ca,b b,c
+ceilings 3 3 121 2 1
+universe b,b a,c bb,c c,bb cbb,a a,bbc
+ceilings 8 - - 4 2
+universe b,c bc,c bc,a bca,c
+ceilings 7 4 256 3 0
+universe b,a b,ba b,bba ba,ba baba,c
+ceilings 8 - - 4 2
+universe c,b cb,cb c,cbcb
+ceilings 3 - - 4 3
+universe c,a ca,a ca,caa b,b
+ceilings 5 - - 4 2
+universe b,b bb,bb c,c b,bb bbb,bb
+ceilings 7 - - 3 1
+universe a,c b,ac
+ceilings 1 3 81 2 1
+universe c,c a,cc
+ceilings 1 - - 2 1
+universe a,b ab,c b,abc a,c
+ceilings 4 6 225 3 2
+universe b,b c,a bb,c bbc,a ca,c
+ceilings 8 - - 3 1
+universe a,a aa,a b,c bc,a aaa,aaa aaa,aa
+ceilings 11 - - 3 1
+universe a,a b,c c,aa bc,aa aa,bcaa c,c
+ceilings 7 - - 5 3
+universe b,c bc,c bcc,a b,a ba,bcc ba,ba
+ceilings 10 - - 7 5
+universe a,a a,c ac,a b,a
+ceilings 4 - - 3 1
+universe b,c bc,a b,bca bbca,b bbcab,a
+ceilings 12 7 576 7 3
+universe a,c a,b ac,ab c,c cc,a
+ceilings 6 - - 3 1
+universe b,a b,c b,b
+ceilings 2 - - 2 1
+universe c,c c,a ca,b
+ceilings 3 - - 2 0
+universe b,c a,a bc,bc bcbc,bc b,bcbc aa,b
+ceilings 10 - - 10 8
+universe c,b a,c b,b a,b b,cb ab,cb
+ceilings 6 - - 3 1
+universe a,c b,c c,b a,cb a,b
+ceilings 4 4 225 2 1
+universe b,b a,c a,ac
+ceilings 2 - - 2 1
+universe a,b b,ab c,b ab,a bab,b
+ceilings 7 6 324 5 2
+universe c,c a,b
+ceilings 1 - - 1 0
+universe a,b ab,ab a,ab
+ceilings 3 - - 4 3
+universe b,a c,a b,b bb,ca c,b ba,b
+ceilings 7 - - 4 2
+universe a,a c,c b,cc
+ceilings 2 - - 2 1
+universe a,b ab,c abc,ab abcab,a abcab,b
+ceilings 15 6 676 6 2
+universe b,b b,a
+ceilings 1 - - 1 0
+universe b,b bb,a
+ceilings 2 - - 2 0
+universe c,b b,b c,a b,c a,ca
+ceilings 4 - - 2 1
+universe c,b cb,a cba,a
+ceilings 5 3 169 3 0
+universe b,b bb,bb b,c
+ceilings 3 - - 3 1
+universe b,a b,ba bba,c bba,bba
+ceilings 7 - - 6 3
+universe c,c c,cc b,ccc a,c ac,bccc b,bccc
+ceilings 6 - - 2 1
+universe c,a c,c
+ceilings 1 - - 2 1
+universe a,a b,c aa,a aa,bc
+ceilings 5 - - 3 1
+universe c,b a,c b,b
+ceilings 2 - - 2 1
+universe c,c a,b c,b
+ceilings 2 - - 1 0
+universe b,a ba,c ba,a
+ceilings 4 3 144 2 0
+universe c,a b,a ba,ca ca,ba baca,b c,b
+ceilings 10 8 529 5 3
+universe a,a c,a ca,ca caca,b a,cacab c,cacab
+ceilings 9 - - 5 4
+universe b,b c,a bb,c a,c
+ceilings 4 - - 3 1
+universe b,a c,c ba,b bab,ba b,ba
+ceilings 7 - - 6 3
+universe a,c c,c b,c cc,cc bc,b
+ceilings 6 - - 4 2
+universe a,c a,b c,ac
+ceilings 2 4 121 2 1
+universe c,a a,b ab,c a,ab aab,abc
+ceilings 7 8 400 6 3
+universe b,a ba,ba
+ceilings 2 - - 3 1
+universe a,b a,a a,c ac,c aa,b acc,aab
+ceilings 9 - - 2 1
+universe b,c a,a aa,a b,b c,aaa
+ceilings 5 - - 4 3
+universe b,a a,c c,ac
+ceilings 2 4 121 2 1
+universe a,c a,ac aac,aac a,aac aac,c ac,c
+ceilings 10 - - 6 5
+universe c,b a,a b,b
+ceilings 2 - - 1 0
+universe c,c a,b b,b cc,a cca,c bb,bb
+ceilings 9 - - 4 1
+universe a,a b,b
+ceilings 1 - - 1 0
+universe a,a a,c ac,ac c,ac
+ceilings 4 - - 4 3
+universe b,c bc,c b,bcc bc,bcc
+ceilings 5 8 289 4 2
+universe a,b ab,c ab,abc
+ceilings 4 5 196 4 2
+universe b,b bb,c
+ceilings 2 - - 2 0
+universe b,b bb,bb
+ceilings 2 - - 3 1
+universe c,b cb,c c,c
+ceilings 3 - - 3 1
+universe b,a ba,ba c,baba b,b bb,ba bbba,b
+ceilings 10 - - 6 3
+universe a,a a,c ac,aa b,a
+ceilings 4 - - 3 1
+universe c,b a,a cb,c cbc,a a,cb
+ceilings 7 - - 4 3
+universe b,b a,a b,aa b,bb bb,bb
+ceilings 5 - - 3 1
+universe c,b cb,c
+ceilings 2 2 64 3 1
+universe a,a b,aa baa,b c,a
+ceilings 5 - - 5 2
+universe c,c a,cc cc,acc cc,c b,acc bacc,cc
+ceilings 10 - - 8 4
+universe a,b c,a
+ceilings 1 2 64 2 1
+universe c,b b,b b,a c,cb ba,cb
+ceilings 5 - - 3 1
+universe c,a ca,ca c,c a,caca
+ceilings 4 - - 4 3
+universe c,c c,b cb,a cb,c cbc,b a,b
+ceilings 9 - - 3 1
+universe c,c cc,a
+ceilings 2 - - 2 0
+universe c,a c,b c,c a,a
+ceilings 3 - - 2 1
+universe b,c a,bc c,a
+ceilings 2 4 121 3 2
+universe c,c b,b bb,cc c,cc c,ccc
+ceilings 5 - - 3 1
+universe c,c a,cc c,b acc,cc
+ceilings 5 - - 4 1
+universe a,c c,c cc,c a,cc
+ceilings 4 - - 3 1
+universe a,b c,b a,a cb,c
+ceilings 4 - - 3 1
+universe b,a b,ba a,ba b,bba b,c
+ceilings 4 9 324 3 2
+universe c,b c,cb b,b a,a
+ceilings 3 - - 2 1
+universe c,c c,b cb,cc c,cbcc cb,c cc,cb
+ceilings 8 - - 5 3
+universe a,b ab,b c,abb a,ab abb,b b,aab
+ceilings 8 11 576 4 3
+universe c,c cc,b cc,cc b,a
+ceilings 5 - - 4 2
+universe b,c c,b a,cb
+ceilings 2 4 121 3 2
+universe b,a ba,b c,c
+ceilings 3 - - 3 1
+universe c,a c,b ca,cb c,ca cca,a cca,ca
+ceilings 10 9 576 6 3
+universe a,b a,c ac,ac ab,ac c,abac
+ceilings 6 - - 6 5
+universe c,c a,cc cc,a cc,cca c,acc
+ceilings 6 - - 6 4
+universe a,c c,c b,ac cc,b b,ccb
+ceilings 5 - - 5 4
+universe c,a a,ca aca,ca acaca,b
+ceilings 9 6 400 5 1
+universe c,a b,ca
+ceilings 1 3 81 2 1
+universe b,b b,a c,a a,b
+ceilings 3 - - 2 1
+universe a,c c,b cb,ac ac,a
+ceilings 5 5 225 3 1
+universe b,b a,a a,c a,ac a,b
+ceilings 4 - - 2 1
+universe b,a b,ba b,c bc,ba bba,c ba,a
+ceilings 9 8 484 3 1
+universe c,b b,cb b,bcb c,bcb
+ceilings 3 6 256 3 2
+universe c,b cb,c cb,a b,c cba,cb c,cba
+ceilings 9 9 529 7 6
+universe a,c c,a
+ceilings 1 2 49 2 1

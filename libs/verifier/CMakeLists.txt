@@ -5,6 +5,7 @@ project(munch_verifier)
 add_library(${PROJECT_NAME}
         src/merge_tower.cpp
         src/ripple_radius.cpp
+        src/rule_ceilings.cpp
         src/token_automaton.cpp
         src/trie_chain.cpp
         src/verifier.cpp
@@ -44,6 +45,7 @@ if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/merge_tower_test.cpp
             tests/ripple_radius_test.cpp
+            tests/rule_ceilings_test.cpp
             tests/token_automaton_test.cpp
             tests/trie_chain_test.cpp
             tests/verifier_test.cpp

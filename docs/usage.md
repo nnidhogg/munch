@@ -884,6 +884,38 @@ finite.mirrored;                                     // 1, the changed token bc 
 verifier::ripple_radius(doubled);                    // the effective self-pair at rank 1: (a,b) leaves abab as ab|ab
 ```
 
+`verifier::rule_ceilings(merges)` of `munch/verifier/rule_ceilings.hpp` reads the ceilings on a table's radii off its
+merges, with no pair graph, and computes its two right radii from the merges. The right span ripple of an input and an
+appended byte is the furthest from the input's end that a token of its encoding changes once the byte is appended, and
+the right start ripple the furthest that a byte's covering token changes its start; their suprema are the right span
+radius and the right start radius Q_s, finite for every table. With the origin radius R, every window of width
+R + Q_s + 1 pins its byte R at the start that byte has in the window's own encoding, the pinned-byte theorem of the
+report *The Left Ripple of Byte-Pair Encoding*, so a planner cutting at those windows needs R and Q_s, or ceilings on
+them, a wider window pinning its byte by the same theorem. The ceilings are the report's Proposition 'Bounds in the
+rules': Q_s is at most max(0, S - 1) for S the lengths of the merges' left parts summed, which the chain of merges
+(c, d), (b, c), (a, b) attains; a finite R is at most the lengths of the useful merges' right parts summed, under the
+ordering condition, which every table munch takes satisfies; and without that condition at most n_0^2, n_0 one more than
+the bytes the table names plus the lengths of the products summed. Both radius ceilings are `std::nullopt` exactly when
+an effective self-pair makes R infinite, as `ripple_radius()` decides it. The radii are the report's Theorem 'Chain
+search', exact under the ordering condition: a state is a string and a byte whose encodings with and without the byte
+differ in their first token, it is built from a chain of useful merges, each prepending its left part, and the search
+extends every state by every merge passing one look-up and one encoding of two tokens, visiting each state once. It
+enumerates every state, which is exponential in the span radius in the worst case. Each radius comes with an
+`Appended_input` attaining it, and the function refuses what `merge_tower()` refuses:
+
+```cpp
+#include "munch/verifier/rule_ceilings.hpp"
+
+const std::vector<verifier::Merge> merges{{.left = "a", .right = "b"}, {.left = "a", .right = "ab"}};
+
+const auto ceilings{verifier::rule_ceilings(merges)};
+
+ceilings.start_ceiling;   // 1, the left parts a and a summed less one
+ceilings.radius_ceiling;  // 3, the right parts b and ab summed, at least the radius 2 ripple_radius() returns
+ceilings.span_radius;     // 2: appending b to aa makes the tokens a|a the one token aab
+ceilings.start_radius;    // 1, the second a's token beginning at 0 once b is appended
+```
+
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
 nothing. Since the tokens responsible are usually the ones a parser throws away, `set_ignored_tokens()` lets a builder
