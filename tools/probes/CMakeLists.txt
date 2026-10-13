@@ -414,3 +414,27 @@ target_link_libraries(munch_planner_bench
 if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_planner_bench COMMAND munch_planner_bench 16384 1)
 endif ()
+
+# Whether the certified windows of byte-pair tables are dense, by verifier::window_density(), beside the pinned-byte
+# guarantee of a finite origin radius, on the small tables of the density results and GPT-2's prefixes. The second test
+# compares the file the first writes with the committed one byte for byte.
+add_executable(munch_merge_density src/merge_density.cpp)
+
+target_compile_definitions(munch_merge_density PRIVATE SOURCE_DIR="${MUNCH_SOURCE_DIR}")
+
+target_link_libraries(munch_merge_density
+        PRIVATE
+        munch_verifier
+)
+
+if (MUNCH_BUILD_TESTS)
+    add_test(NAME munch_merge_density COMMAND munch_merge_density ${CMAKE_CURRENT_BINARY_DIR})
+
+    set_tests_properties(munch_merge_density PROPERTIES FIXTURES_SETUP merge_density_output)
+
+    add_test(NAME munch_merge_density_output
+            COMMAND ${CMAKE_COMMAND} -E compare_files
+            ${CMAKE_CURRENT_BINARY_DIR}/merge_density.txt ${CMAKE_CURRENT_SOURCE_DIR}/data/merge_density.txt)
+
+    set_tests_properties(munch_merge_density_output PROPERTIES FIXTURES_REQUIRED merge_density_output)
+endif ()

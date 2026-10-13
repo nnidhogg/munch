@@ -11,6 +11,7 @@ add_library(${PROJECT_NAME}
         src/trie_chain.cpp
         src/verifier.cpp
         src/verifier_decisions.cpp
+        src/window_density.cpp
 )
 
 add_library(munch::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -51,6 +52,7 @@ if (MUNCH_BUILD_TESTS)
             tests/token_automaton_test.cpp
             tests/trie_chain_test.cpp
             tests/verifier_test.cpp
+            tests/window_density_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests

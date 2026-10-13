@@ -306,18 +306,24 @@ constant and, for each that is positive, an input attaining it, or infinite with
 `verifier::token_automaton()`, the token automaton of canonical byte-pair encoding over a merge table, built once, on
 which an overload of `miscovering()` decides a window certificate without building the merge tower. An overload of each
 of `merge_tower()` and `token_automaton()` over an alphabet of characters, read as their UTF-8 bytes, joined it too, so
-that a character-level merge table such as SentencePiece's has the tower and the automaton. So did the `--repairs`
-option of `munch-audit`, which, where a condition certifies no byte, tries every byte as a visible token of its own and,
-unless it already certifies once the discarded tokens are deleted, as a discarded one, and reports each that certifies
-once added; the `--window-pattern` option of `munch-audit`, which decides whether every window a pattern of bytes and
-wildcards stands for certifies at one origin; the `--windows-modulo` option of `munch-audit`, which, where a condition
-certifies no byte once the discarded tokens are deleted, reports the windows that certify a cut that way and not
-exactly; and the `--obstruction` option of `munch-audit`, an experimental diagnostic which, where a condition certifies
-no byte, names the degree and group of the verifier's relation monoid and the phase the group counts, the parity of a
-run of a's under maximal munch over aa and a, the lack of a relation of rank one being the obstruction proved for prefix
-codes and conjectured beyond them. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of
-Lean's lexical structure with its nested comments and interpolated strings as modes, audited in
-[docs/audit.md](docs/audit.md) and benchmarked on Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
+that a character-level merge table such as SentencePiece's has the tower and the automaton. Three functions over a merge
+table joined it beside them: `verifier::rule_ceilings()`, the ceilings on the table's radii read off its merges and its
+two right radii found exactly by chains of rules; `verifier::chunk_plan()`, which plans an input's chunks for workers
+that each scan or encode their chunk alone, each cut with the evidence that licenses it, a supplied boundary, a
+certified window or the uniform window of the pinned-byte theorem; and `verifier::window_density()`, whether the table's
+last-byte windows are dense, with the density bound or a loop whose powers avoid every certified window. So did the
+`--repairs` option of `munch-audit`, which, where a condition certifies no byte, tries every byte as a visible token of
+its own and, unless it already certifies once the discarded tokens are deleted, as a discarded one, and reports each
+that certifies once added; the `--window-pattern` option of `munch-audit`, which decides whether every window a pattern
+of bytes and wildcards stands for certifies at one origin; the `--windows-modulo` option of `munch-audit`, which, where
+a condition certifies no byte once the discarded tokens are deleted, reports the windows that certify a cut that way and
+not exactly; and the `--obstruction` option of `munch-audit`, an experimental diagnostic which, where a condition
+certifies no byte, names the degree and group of the verifier's relation monoid and the phase the group counts, the
+parity of a run of a's under maximal munch over aa and a, the lack of a relation of rank one being the obstruction
+proved for prefix codes and conjectured beyond them. 3.0.0 also bundles a Lean 4 grammar,
+`tools/audit/grammars/lean4.g4`, the core of Lean's lexical structure with its nested comments and interpolated strings
+as modes, audited in [docs/audit.md](docs/audit.md) and benchmarked on Mathlib in
+[docs/benchmarks.md](docs/benchmarks.md).
 
 3.0.0 is a major version for two moves, which change include paths and namespaces, and for one change outside them, the
 type of the inventory `anchor_free_span()` takes, and nothing else. Two of the verifier's names take the dfa library's

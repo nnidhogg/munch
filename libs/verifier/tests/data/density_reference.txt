@@ -1,0 +1,4613 @@
+# written by density_fixture.py of munch-research, explorations/density; regenerate with it, never by hand
+universe a,a
+infinite 0
+universe a,b
+dense 1 0 2
+universe b,a
+dense 1 0 2
+universe b,b
+infinite 0
+universe a,a a,b
+infinite 0
+universe a,a a,aa
+infinite 0
+universe a,a b,a
+infinite 0
+universe a,a b,b
+infinite 0
+universe a,a b,aa
+infinite 0
+universe a,a aa,a
+infinite 0
+universe a,a aa,b
+infinite 0
+universe a,a aa,aa
+infinite 0
+universe a,b a,a
+infinite 1
+universe a,b a,ab
+sparse 2 1 a
+double a b
+universe a,b b,a
+dense 2 1 3
+universe a,b b,b
+infinite 1
+universe a,b b,ab
+dense 3 1 4
+universe a,b ab,a
+dense 2 1 3
+universe a,b ab,b
+dense 2 0 3
+universe a,b ab,ab
+infinite 1
+universe b,a a,a
+infinite 1
+universe b,a a,b
+dense 2 1 3
+universe b,a a,ba
+dense 3 1 4
+universe b,a b,b
+infinite 1
+universe b,a b,ba
+sparse 2 1 b
+double b a
+universe b,a ba,a
+dense 2 0 3
+universe b,a ba,b
+dense 2 1 3
+universe b,a ba,ba
+infinite 1
+universe b,b a,a
+infinite 0
+universe b,b a,b
+infinite 0
+universe b,b a,bb
+infinite 0
+universe b,b b,a
+infinite 0
+universe b,b b,bb
+infinite 0
+universe b,b bb,a
+infinite 0
+universe b,b bb,b
+infinite 0
+universe b,b bb,bb
+infinite 0
+universe a,a a,b a,aa
+infinite 0
+universe a,a a,b a,ab
+infinite 0
+universe a,a a,b b,a
+infinite 0
+universe a,a a,b b,b
+infinite 0
+universe a,a a,b b,aa
+infinite 0
+universe a,a a,b b,ab
+infinite 0
+universe a,a a,b aa,a
+infinite 0
+universe a,a a,b aa,b
+infinite 0
+universe a,a a,b aa,aa
+infinite 0
+universe a,a a,b aa,ab
+infinite 0
+universe a,a a,b ab,a
+infinite 0
+universe a,a a,b ab,b
+infinite 0
+universe a,a a,b ab,aa
+infinite 0
+universe a,a a,b ab,ab
+infinite 0
+universe a,a a,aa a,b
+infinite 0
+universe a,a a,aa a,aaa
+infinite 0
+universe a,a a,aa b,a
+infinite 0
+universe a,a a,aa b,b
+infinite 0
+universe a,a a,aa b,aa
+infinite 0
+universe a,a a,aa b,aaa
+infinite 0
+universe a,a a,aa aa,b
+infinite 0
+universe a,a a,aa aa,aa
+infinite 0
+universe a,a a,aa aa,aaa
+infinite 0
+universe a,a a,aa aaa,a
+infinite 0
+universe a,a a,aa aaa,b
+infinite 0
+universe a,a a,aa aaa,aa
+infinite 0
+universe a,a a,aa aaa,aaa
+infinite 0
+universe a,a b,a a,b
+infinite 0
+universe a,a b,a a,aa
+infinite 0
+universe a,a b,a a,ba
+infinite 0
+universe a,a b,a b,b
+infinite 0
+universe a,a b,a b,aa
+infinite 0
+universe a,a b,a b,ba
+infinite 0
+universe a,a b,a aa,a
+infinite 0
+universe a,a b,a aa,b
+infinite 0
+universe a,a b,a aa,aa
+infinite 0
+universe a,a b,a aa,ba
+infinite 0
+universe a,a b,a ba,a
+infinite 0
+universe a,a b,a ba,b
+infinite 0
+universe a,a b,a ba,aa
+infinite 0
+universe a,a b,a ba,ba
+infinite 0
+universe a,a b,b a,b
+infinite 0
+universe a,a b,b a,aa
+infinite 0
+universe a,a b,b a,bb
+infinite 0
+universe a,a b,b b,a
+infinite 0
+universe a,a b,b b,aa
+infinite 0
+universe a,a b,b b,bb
+infinite 0
+universe a,a b,b aa,a
+infinite 0
+universe a,a b,b aa,b
+infinite 0
+universe a,a b,b aa,aa
+infinite 0
+universe a,a b,b aa,bb
+infinite 0
+universe a,a b,b bb,a
+infinite 0
+universe a,a b,b bb,b
+infinite 0
+universe a,a b,b bb,aa
+infinite 0
+universe a,a b,b bb,bb
+infinite 0
+universe a,a b,aa a,b
+infinite 0
+universe a,a b,aa a,aa
+infinite 0
+universe a,a b,aa a,baa
+infinite 0
+universe a,a b,aa b,a
+infinite 0
+universe a,a b,aa b,b
+infinite 0
+universe a,a b,aa b,baa
+infinite 0
+universe a,a b,aa aa,a
+infinite 0
+universe a,a b,aa aa,b
+infinite 0
+universe a,a b,aa aa,aa
+infinite 0
+universe a,a b,aa aa,baa
+infinite 0
+universe a,a b,aa baa,a
+infinite 0
+universe a,a b,aa baa,b
+infinite 0
+universe a,a b,aa baa,aa
+infinite 0
+universe a,a b,aa baa,baa
+infinite 0
+universe a,a aa,a a,b
+infinite 0
+universe a,a aa,a a,aaa
+infinite 0
+universe a,a aa,a b,a
+infinite 0
+universe a,a aa,a b,b
+infinite 0
+universe a,a aa,a b,aa
+infinite 0
+universe a,a aa,a b,aaa
+infinite 0
+universe a,a aa,a aa,b
+infinite 0
+universe a,a aa,a aa,aa
+infinite 0
+universe a,a aa,a aa,aaa
+infinite 0
+universe a,a aa,a aaa,a
+infinite 0
+universe a,a aa,a aaa,b
+infinite 0
+universe a,a aa,a aaa,aa
+infinite 0
+universe a,a aa,a aaa,aaa
+infinite 0
+universe a,a aa,b a,b
+infinite 0
+universe a,a aa,b a,aa
+infinite 0
+universe a,a aa,b a,aab
+infinite 0
+universe a,a aa,b b,a
+infinite 0
+universe a,a aa,b b,b
+infinite 0
+universe a,a aa,b b,aa
+infinite 0
+universe a,a aa,b b,aab
+infinite 0
+universe a,a aa,b aa,a
+infinite 0
+universe a,a aa,b aa,aa
+infinite 0
+universe a,a aa,b aa,aab
+infinite 0
+universe a,a aa,b aab,a
+infinite 0
+universe a,a aa,b aab,b
+infinite 0
+universe a,a aa,b aab,aa
+infinite 0
+universe a,a aa,b aab,aab
+infinite 0
+universe a,a aa,aa a,b
+infinite 0
+universe a,a aa,aa a,aa
+infinite 0
+universe a,a aa,aa a,aaaa
+infinite 0
+universe a,a aa,aa b,a
+infinite 0
+universe a,a aa,aa b,b
+infinite 0
+universe a,a aa,aa b,aa
+infinite 0
+universe a,a aa,aa b,aaaa
+infinite 0
+universe a,a aa,aa aa,a
+infinite 0
+universe a,a aa,aa aa,b
+infinite 0
+universe a,a aa,aa aa,aaaa
+infinite 0
+universe a,a aa,aa aaaa,a
+infinite 0
+universe a,a aa,aa aaaa,b
+infinite 0
+universe a,a aa,aa aaaa,aa
+infinite 0
+universe a,a aa,aa aaaa,aaaa
+infinite 0
+universe a,b a,a a,ab
+infinite 1
+universe a,b a,a a,aa
+infinite 1
+universe a,b a,a b,a
+infinite 1
+universe a,b a,a b,b
+infinite 1
+universe a,b a,a b,ab
+infinite 1
+universe a,b a,a b,aa
+infinite 1
+universe a,b a,a ab,a
+infinite 1
+universe a,b a,a ab,b
+infinite 1
+universe a,b a,a ab,ab
+infinite 1
+universe a,b a,a ab,aa
+infinite 1
+universe a,b a,a aa,a
+infinite 1
+universe a,b a,a aa,b
+infinite 1
+universe a,b a,a aa,ab
+infinite 1
+universe a,b a,a aa,aa
+infinite 1
+universe a,b a,ab a,a
+infinite 2
+universe a,b a,ab a,aab
+sparse 3 2 a
+double a b
+universe a,b a,ab b,a
+sparse 2 2 a
+double a b
+universe a,b a,ab b,b
+infinite 2
+universe a,b a,ab b,ab
+sparse 3 1 a
+double a b
+universe a,b a,ab b,aab
+sparse 4 2 a
+double a b
+universe a,b a,ab ab,a
+sparse 3 2 a
+double a b
+universe a,b a,ab ab,b
+sparse 3 1 a
+double a b
+universe a,b a,ab ab,ab
+infinite 2
+universe a,b a,ab ab,aab
+sparse 5 2 a
+double a b
+universe a,b a,ab aab,a
+sparse 3 2 a
+double a b
+universe a,b a,ab aab,b
+sparse 3 1 a
+double a b
+universe a,b a,ab aab,ab
+sparse 4 1 a
+double a b
+universe a,b a,ab aab,aab
+infinite 2
+universe a,b b,a a,a
+infinite 2
+universe a,b b,a a,ab
+sparse 4 1 a
+double a b
+universe a,b b,a a,ba
+dense 2 1 3
+universe a,b b,a b,b
+infinite 2
+universe a,b b,a b,ab
+dense 3 0 4
+universe a,b b,a b,ba
+sparse 3 2 b
+double b a
+universe a,b b,a ab,a
+dense 2 1 3
+universe a,b b,a ab,b
+dense 2 2 4
+universe a,b b,a ab,ab
+infinite 2
+universe a,b b,a ab,ba
+dense 3 2 4
+universe a,b b,a ba,a
+dense 3 1 4
+universe a,b b,a ba,b
+dense 2 1 3
+universe a,b b,a ba,ab
+dense 4 1 5
+universe a,b b,a ba,ba
+dense 2 1 3
+universe a,b b,b a,a
+infinite 1
+universe a,b b,b a,ab
+infinite 1
+universe a,b b,b a,bb
+infinite 1
+universe a,b b,b b,a
+infinite 1
+universe a,b b,b b,ab
+infinite 1
+universe a,b b,b b,bb
+infinite 1
+universe a,b b,b ab,a
+infinite 1
+universe a,b b,b ab,b
+infinite 1
+universe a,b b,b ab,ab
+infinite 1
+universe a,b b,b ab,bb
+infinite 1
+universe a,b b,b bb,a
+infinite 1
+universe a,b b,b bb,b
+infinite 1
+universe a,b b,b bb,ab
+infinite 1
+universe a,b b,b bb,bb
+infinite 1
+universe a,b b,ab a,a
+infinite 2
+universe a,b b,ab a,ab
+sparse 3 1 a
+double a b
+universe a,b b,ab a,bab
+dense 3 1 4
+universe a,b b,ab b,a
+dense 3 0 4
+universe a,b b,ab b,b
+infinite 2
+universe a,b b,ab b,bab
+sparse 4 2 b
+universe a,b b,ab ab,a
+dense 4 1 5
+universe a,b b,ab ab,b
+dense 4 2 6
+universe a,b b,ab ab,ab
+infinite 2
+universe a,b b,ab ab,bab
+dense 6 2 7
+universe a,b b,ab bab,a
+dense 4 1 5
+universe a,b b,ab bab,b
+dense 4 2 6
+universe a,b b,ab bab,ab
+dense 5 1 6
+universe a,b b,ab bab,bab
+infinite 2
+universe a,b ab,a a,a
+infinite 2
+universe a,b ab,a a,ab
+sparse 4 3 a
+double a b
+universe a,b ab,a a,aba
+sparse 5 3 a
+universe a,b ab,a b,a
+dense 2 1 3
+universe a,b ab,a b,b
+infinite 2
+universe a,b ab,a b,ab
+dense 3 3 5
+universe a,b ab,a b,aba
+dense 4 3 5
+universe a,b ab,a ab,b
+dense 2 1 3
+universe a,b ab,a ab,ab
+infinite 2
+universe a,b ab,a ab,aba
+sparse 4 3 ab
+double ab a
+universe a,b ab,a aba,a
+dense 3 1 4
+universe a,b ab,a aba,b
+dense 2 1 3
+universe a,b ab,a aba,ab
+sparse 4 3 aba
+double aba b
+universe a,b ab,a aba,aba
+infinite 2
+universe a,b ab,b a,a
+infinite 2
+universe a,b ab,b a,ab
+sparse 2 2 a
+double a b
+universe a,b ab,b a,abb
+sparse 3 2 a
+universe a,b ab,b b,a
+dense 3 1 4
+universe a,b ab,b b,b
+infinite 2
+universe a,b ab,b b,ab
+dense 4 2 5
+universe a,b ab,b b,abb
+dense 5 2 6
+universe a,b ab,b ab,a
+dense 2 1 3
+universe a,b ab,b ab,ab
+infinite 2
+universe a,b ab,b ab,abb
+sparse 4 2 ab
+double ab b
+universe a,b ab,b abb,a
+dense 3 1 4
+universe a,b ab,b abb,b
+dense 3 0 4
+universe a,b ab,b abb,ab
+dense 4 2 5
+universe a,b ab,b abb,abb
+infinite 2
+universe a,b ab,ab a,a
+infinite 1
+universe a,b ab,ab a,ab
+infinite 1
+universe a,b ab,ab a,abab
+infinite 1
+universe a,b ab,ab b,a
+infinite 1
+universe a,b ab,ab b,b
+infinite 1
+universe a,b ab,ab b,ab
+infinite 1
+universe a,b ab,ab b,abab
+infinite 1
+universe a,b ab,ab ab,a
+infinite 1
+universe a,b ab,ab ab,b
+infinite 1
+universe a,b ab,ab ab,abab
+infinite 1
+universe a,b ab,ab abab,a
+infinite 1
+universe a,b ab,ab abab,b
+infinite 1
+universe a,b ab,ab abab,ab
+infinite 1
+universe a,b ab,ab abab,abab
+infinite 1
+universe b,a a,a a,b
+infinite 1
+universe b,a a,a a,ba
+infinite 1
+universe b,a a,a a,aa
+infinite 1
+universe b,a a,a b,b
+infinite 1
+universe b,a a,a b,ba
+infinite 1
+universe b,a a,a b,aa
+infinite 1
+universe b,a a,a ba,a
+infinite 1
+universe b,a a,a ba,b
+infinite 1
+universe b,a a,a ba,ba
+infinite 1
+universe b,a a,a ba,aa
+infinite 1
+universe b,a a,a aa,a
+infinite 1
+universe b,a a,a aa,b
+infinite 1
+universe b,a a,a aa,ba
+infinite 1
+universe b,a a,a aa,aa
+infinite 1
+universe b,a a,b a,a
+infinite 2
+universe b,a a,b a,ba
+dense 3 0 4
+universe b,a a,b a,ab
+sparse 3 2 a
+double a b
+universe b,a a,b b,b
+infinite 2
+universe b,a a,b b,ba
+sparse 4 1 b
+double b a
+universe b,a a,b b,ab
+dense 2 1 3
+universe b,a a,b ba,a
+dense 2 2 4
+universe b,a a,b ba,b
+dense 2 1 3
+universe b,a a,b ba,ba
+infinite 2
+universe b,a a,b ba,ab
+dense 3 2 4
+universe b,a a,b ab,a
+dense 2 1 3
+universe b,a a,b ab,b
+dense 3 1 4
+universe b,a a,b ab,ba
+dense 4 1 5
+universe b,a a,b ab,ab
+dense 2 1 3
+universe b,a a,ba a,a
+infinite 2
+universe b,a a,ba a,b
+dense 3 0 4
+universe b,a a,ba a,aba
+sparse 4 2 a
+universe b,a a,ba b,b
+infinite 2
+universe b,a a,ba b,ba
+sparse 3 1 b
+double b a
+universe b,a a,ba b,aba
+dense 3 1 4
+universe b,a a,ba ba,a
+dense 4 2 6
+universe b,a a,ba ba,b
+dense 4 1 5
+universe b,a a,ba ba,ba
+infinite 2
+universe b,a a,ba ba,aba
+dense 6 2 7
+universe b,a a,ba aba,a
+dense 4 2 6
+universe b,a a,ba aba,b
+dense 4 1 5
+universe b,a a,ba aba,ba
+dense 5 1 6
+universe b,a a,ba aba,aba
+infinite 2
+universe b,a b,b a,a
+infinite 1
+universe b,a b,b a,b
+infinite 1
+universe b,a b,b a,ba
+infinite 1
+universe b,a b,b a,bb
+infinite 1
+universe b,a b,b b,ba
+infinite 1
+universe b,a b,b b,bb
+infinite 1
+universe b,a b,b ba,a
+infinite 1
+universe b,a b,b ba,b
+infinite 1
+universe b,a b,b ba,ba
+infinite 1
+universe b,a b,b ba,bb
+infinite 1
+universe b,a b,b bb,a
+infinite 1
+universe b,a b,b bb,b
+infinite 1
+universe b,a b,b bb,ba
+infinite 1
+universe b,a b,b bb,bb
+infinite 1
+universe b,a b,ba a,a
+infinite 2
+universe b,a b,ba a,b
+sparse 2 2 b
+double b a
+universe b,a b,ba a,ba
+sparse 3 1 b
+double b a
+universe b,a b,ba a,bba
+sparse 4 2 b
+double b a
+universe b,a b,ba b,b
+infinite 2
+universe b,a b,ba b,bba
+sparse 3 2 b
+double b a
+universe b,a b,ba ba,a
+sparse 3 1 b
+double b a
+universe b,a b,ba ba,b
+sparse 3 2 b
+double b a
+universe b,a b,ba ba,ba
+infinite 2
+universe b,a b,ba ba,bba
+sparse 5 2 b
+double b a
+universe b,a b,ba bba,a
+sparse 3 1 b
+double b a
+universe b,a b,ba bba,b
+sparse 3 2 b
+double b a
+universe b,a b,ba bba,ba
+sparse 4 1 b
+double b a
+universe b,a b,ba bba,bba
+infinite 2
+universe b,a ba,a a,a
+infinite 2
+universe b,a ba,a a,b
+dense 3 1 4
+universe b,a ba,a a,ba
+dense 4 2 5
+universe b,a ba,a a,baa
+dense 5 2 6
+universe b,a ba,a b,b
+infinite 2
+universe b,a ba,a b,ba
+sparse 2 2 b
+double b a
+universe b,a ba,a b,baa
+sparse 3 2 b
+universe b,a ba,a ba,b
+dense 2 1 3
+universe b,a ba,a ba,ba
+infinite 2
+universe b,a ba,a ba,baa
+sparse 4 2 ab
+double ba a
+universe b,a ba,a baa,a
+dense 3 0 4
+universe b,a ba,a baa,b
+dense 3 1 4
+universe b,a ba,a baa,ba
+dense 4 2 5
+universe b,a ba,a baa,baa
+infinite 2
+universe b,a ba,b a,a
+infinite 2
+universe b,a ba,b a,b
+dense 2 1 3
+universe b,a ba,b a,ba
+dense 3 3 5
+universe b,a ba,b a,bab
+dense 4 3 5
+universe b,a ba,b b,b
+infinite 2
+universe b,a ba,b b,ba
+sparse 4 3 b
+double b a
+universe b,a ba,b b,bab
+sparse 5 3 b
+universe b,a ba,b ba,a
+dense 2 1 3
+universe b,a ba,b ba,ba
+infinite 2
+universe b,a ba,b ba,bab
+sparse 4 3 ab
+double ba b
+universe b,a ba,b bab,a
+dense 2 1 3
+universe b,a ba,b bab,b
+dense 3 1 4
+universe b,a ba,b bab,ba
+sparse 4 3 bba
+double bab a
+universe b,a ba,b bab,bab
+infinite 2
+universe b,a ba,ba a,a
+infinite 1
+universe b,a ba,ba a,b
+infinite 1
+universe b,a ba,ba a,ba
+infinite 1
+universe b,a ba,ba a,baba
+infinite 1
+universe b,a ba,ba b,b
+infinite 1
+universe b,a ba,ba b,ba
+infinite 1
+universe b,a ba,ba b,baba
+infinite 1
+universe b,a ba,ba ba,a
+infinite 1
+universe b,a ba,ba ba,b
+infinite 1
+universe b,a ba,ba ba,baba
+infinite 1
+universe b,a ba,ba baba,a
+infinite 1
+universe b,a ba,ba baba,b
+infinite 1
+universe b,a ba,ba baba,ba
+infinite 1
+universe b,a ba,ba baba,baba
+infinite 1
+universe b,b a,a a,b
+infinite 0
+universe b,b a,a a,bb
+infinite 0
+universe b,b a,a a,aa
+infinite 0
+universe b,b a,a b,a
+infinite 0
+universe b,b a,a b,bb
+infinite 0
+universe b,b a,a b,aa
+infinite 0
+universe b,b a,a bb,a
+infinite 0
+universe b,b a,a bb,b
+infinite 0
+universe b,b a,a bb,bb
+infinite 0
+universe b,b a,a bb,aa
+infinite 0
+universe b,b a,a aa,a
+infinite 0
+universe b,b a,a aa,b
+infinite 0
+universe b,b a,a aa,bb
+infinite 0
+universe b,b a,a aa,aa
+infinite 0
+universe b,b a,b a,a
+infinite 0
+universe b,b a,b a,bb
+infinite 0
+universe b,b a,b a,ab
+infinite 0
+universe b,b a,b b,a
+infinite 0
+universe b,b a,b b,bb
+infinite 0
+universe b,b a,b b,ab
+infinite 0
+universe b,b a,b bb,a
+infinite 0
+universe b,b a,b bb,b
+infinite 0
+universe b,b a,b bb,bb
+infinite 0
+universe b,b a,b bb,ab
+infinite 0
+universe b,b a,b ab,a
+infinite 0
+universe b,b a,b ab,b
+infinite 0
+universe b,b a,b ab,bb
+infinite 0
+universe b,b a,b ab,ab
+infinite 0
+universe b,b a,bb a,a
+infinite 0
+universe b,b a,bb a,b
+infinite 0
+universe b,b a,bb a,abb
+infinite 0
+universe b,b a,bb b,a
+infinite 0
+universe b,b a,bb b,bb
+infinite 0
+universe b,b a,bb b,abb
+infinite 0
+universe b,b a,bb bb,a
+infinite 0
+universe b,b a,bb bb,b
+infinite 0
+universe b,b a,bb bb,bb
+infinite 0
+universe b,b a,bb bb,abb
+infinite 0
+universe b,b a,bb abb,a
+infinite 0
+universe b,b a,bb abb,b
+infinite 0
+universe b,b a,bb abb,bb
+infinite 0
+universe b,b a,bb abb,abb
+infinite 0
+universe b,b b,a a,a
+infinite 0
+universe b,b b,a a,b
+infinite 0
+universe b,b b,a a,bb
+infinite 0
+universe b,b b,a a,ba
+infinite 0
+universe b,b b,a b,bb
+infinite 0
+universe b,b b,a b,ba
+infinite 0
+universe b,b b,a bb,a
+infinite 0
+universe b,b b,a bb,b
+infinite 0
+universe b,b b,a bb,bb
+infinite 0
+universe b,b b,a bb,ba
+infinite 0
+universe b,b b,a ba,a
+infinite 0
+universe b,b b,a ba,b
+infinite 0
+universe b,b b,a ba,bb
+infinite 0
+universe b,b b,a ba,ba
+infinite 0
+universe b,b b,bb a,a
+infinite 0
+universe b,b b,bb a,b
+infinite 0
+universe b,b b,bb a,bb
+infinite 0
+universe b,b b,bb a,bbb
+infinite 0
+universe b,b b,bb b,a
+infinite 0
+universe b,b b,bb b,bbb
+infinite 0
+universe b,b b,bb bb,a
+infinite 0
+universe b,b b,bb bb,bb
+infinite 0
+universe b,b b,bb bb,bbb
+infinite 0
+universe b,b b,bb bbb,a
+infinite 0
+universe b,b b,bb bbb,b
+infinite 0
+universe b,b b,bb bbb,bb
+infinite 0
+universe b,b b,bb bbb,bbb
+infinite 0
+universe b,b bb,a a,a
+infinite 0
+universe b,b bb,a a,b
+infinite 0
+universe b,b bb,a a,bb
+infinite 0
+universe b,b bb,a a,bba
+infinite 0
+universe b,b bb,a b,a
+infinite 0
+universe b,b bb,a b,bb
+infinite 0
+universe b,b bb,a b,bba
+infinite 0
+universe b,b bb,a bb,b
+infinite 0
+universe b,b bb,a bb,bb
+infinite 0
+universe b,b bb,a bb,bba
+infinite 0
+universe b,b bb,a bba,a
+infinite 0
+universe b,b bb,a bba,b
+infinite 0
+universe b,b bb,a bba,bb
+infinite 0
+universe b,b bb,a bba,bba
+infinite 0
+universe b,b bb,b a,a
+infinite 0
+universe b,b bb,b a,b
+infinite 0
+universe b,b bb,b a,bb
+infinite 0
+universe b,b bb,b a,bbb
+infinite 0
+universe b,b bb,b b,a
+infinite 0
+universe b,b bb,b b,bbb
+infinite 0
+universe b,b bb,b bb,a
+infinite 0
+universe b,b bb,b bb,bb
+infinite 0
+universe b,b bb,b bb,bbb
+infinite 0
+universe b,b bb,b bbb,a
+infinite 0
+universe b,b bb,b bbb,b
+infinite 0
+universe b,b bb,b bbb,bb
+infinite 0
+universe b,b bb,b bbb,bbb
+infinite 0
+universe b,b bb,bb a,a
+infinite 0
+universe b,b bb,bb a,b
+infinite 0
+universe b,b bb,bb a,bb
+infinite 0
+universe b,b bb,bb a,bbbb
+infinite 0
+universe b,b bb,bb b,a
+infinite 0
+universe b,b bb,bb b,bb
+infinite 0
+universe b,b bb,bb b,bbbb
+infinite 0
+universe b,b bb,bb bb,a
+infinite 0
+universe b,b bb,bb bb,b
+infinite 0
+universe b,b bb,bb bb,bbbb
+infinite 0
+universe b,b bb,bb bbbb,a
+infinite 0
+universe b,b bb,bb bbbb,b
+infinite 0
+universe b,b bb,bb bbbb,bb
+infinite 0
+universe b,b bb,bb bbbb,bbbb
+infinite 0
+universe b,a ba,a ba,baa baa,ba
+sparse 6 4 ab
+double ba a
+universe a,a a,b b,ab bab,aa
+infinite 0
+universe a,a b,a aa,ba aaba,aaba
+infinite 0
+universe a,a a,b a,ab a,aab
+infinite 0
+universe a,a b,a b,aa aa,baa
+infinite 0
+universe b,b bb,a bba,bba bba,b
+infinite 0
+universe b,b b,bb b,a bb,a
+infinite 0
+universe a,a b,b aa,bb aa,aabb
+infinite 0
+universe a,b b,b bb,ab ab,bbab
+infinite 1
+universe b,a ba,a a,a a,baa
+infinite 2
+universe a,a b,a aa,ba aaba,a
+infinite 0
+universe a,b a,ab b,a a,a
+infinite 3
+universe a,b b,ab b,b a,ab
+infinite 2
+universe b,b bb,a bb,bba bb,bbbba
+infinite 0
+universe b,b bb,a bba,bb a,bb
+infinite 0
+universe a,b b,ab ab,a b,aba
+dense 4 1 5
+universe a,a b,aa a,b a,aa
+infinite 0
+universe b,b bb,a a,bb b,abb
+infinite 0
+universe b,a a,a aa,b aab,aab
+infinite 1
+universe b,a ba,ba b,b baba,b
+infinite 1
+universe a,a aa,b a,aab b,a
+infinite 0
+universe b,b b,bb bbb,b a,bb
+infinite 0
+universe a,a aa,b aab,b aabb,aabb
+infinite 0
+universe a,a b,aa aa,a b,aaa
+infinite 0
+universe b,a a,ba b,ba a,bba
+sparse 4 2 b
+double b a
+universe a,b ab,b abb,a abb,b
+dense 3 1 4
+universe b,b bb,bb bbbb,a bbbb,bb
+infinite 0
+universe b,b bb,b bb,bbb bbbbb,bbbbb
+infinite 0
+universe b,b a,a a,b aa,bb
+infinite 0
+universe a,a b,b b,aa baa,baa
+infinite 0
+universe a,b ab,ab ab,a abab,b
+infinite 1
+universe a,a b,aa aa,baa aabaa,aa
+infinite 0
+universe b,a b,ba bba,b bbab,bba
+sparse 6 5 bbab
+double b a
+universe b,b a,a b,aa aa,aa
+infinite 0
+universe b,b bb,a a,bba abba,abba
+infinite 0
+universe b,a a,b ab,ab ab,a
+dense 2 1 3
+universe a,a b,b bb,b bbb,aa
+infinite 0
+universe a,b ab,ab ab,b abab,b
+infinite 1
+universe a,a a,aa aaa,b aaa,aa
+infinite 0
+universe a,a a,b b,aa b,b
+infinite 0
+universe a,b ab,ab ab,b abab,a
+infinite 1
+universe a,a aa,b aab,b a,aa
+infinite 0
+universe b,a ba,a ba,ba baa,baa
+infinite 2
+universe b,a a,b a,ab a,a
+infinite 3
+universe a,b a,a b,b b,aa
+infinite 1
+universe b,a ba,a baa,ba baa,a
+dense 4 2 5
+universe b,b a,a aa,bb aabb,bb
+infinite 0
+universe a,a b,b bb,bb bbbb,a
+infinite 0
+universe b,b a,bb abb,a bb,b
+infinite 0
+universe a,a b,a a,ba aa,ba
+infinite 0
+universe b,a ba,a b,ba a,baa
+sparse 5 2 b
+double b a
+universe b,b b,a ba,a b,bb
+infinite 0
+universe a,b ab,a ab,ab abab,abab
+infinite 2
+universe a,a b,aa a,baa baa,baa
+infinite 0
+universe a,b b,ab a,a bab,b
+infinite 2
+universe b,a a,a aa,ba aa,a
+infinite 1
+universe a,b b,a b,ab bab,b
+dense 4 1 5
+universe a,a b,b b,a bb,aa
+infinite 0
+universe b,a b,b b,ba bb,ba
+infinite 1
+universe b,a ba,ba a,a a,ba
+infinite 1
+universe b,b b,bb a,bbb a,abbb
+infinite 0
+universe a,a b,a a,ba aba,a
+infinite 0
+universe b,b a,b bb,a bba,b
+infinite 0
+universe a,b a,ab aab,ab aab,a
+sparse 4 2 a
+double a b
+universe b,a a,ba b,ba aba,aba
+infinite 3
+universe b,a ba,a baa,baa baa,baabaa
+infinite 2
+universe a,b a,ab a,a b,aa
+infinite 2
+universe b,b a,b ab,b bb,a
+infinite 0
+universe b,b a,b ab,a bb,ab
+infinite 0
+universe a,b b,a a,ba aba,aba
+dense 2 1 3
+universe a,a b,aa b,b bb,b
+infinite 0
+universe b,a b,ba ba,b a,a
+infinite 3
+universe a,a b,aa aa,baa a,baa
+infinite 0
+universe b,b bb,b bbb,bb bbb,bbbbb
+infinite 0
+universe b,b b,a a,bb ba,ba
+infinite 0
+universe a,a b,aa baa,aa a,b
+infinite 0
+universe b,a a,b a,ba aba,ab
+dense 5 2 6
+universe a,b a,a aa,b b,aab
+infinite 1
+universe a,b b,ab b,b bab,bab
+infinite 2
+universe a,a aa,aa aa,b a,b
+infinite 0
+universe a,b ab,b a,abb a,a
+infinite 3
+universe b,b a,a a,aa aa,bb
+infinite 0
+universe a,b ab,a ab,aba ab,ab
+infinite 3
+universe a,a a,aa b,b aaa,aaa
+infinite 0
+universe a,b a,a b,a ab,b
+infinite 1
+universe a,b b,b bb,ab ab,a
+infinite 1
+universe b,a ba,b ba,bab a,b
+sparse 4 3 ab
+double ba b
+universe b,b a,a bb,bb bbbb,bb
+infinite 0
+universe b,b bb,b bbb,bbb a,b
+infinite 0
+universe a,a a,b aa,ab aa,a
+infinite 0
+universe a,b b,ab b,b ab,bab
+infinite 2
+universe a,a aa,b a,aab aa,a
+infinite 0
+universe a,a b,b a,bb a,b
+infinite 0
+universe a,b a,a aa,ab aa,aaab
+infinite 1
+universe a,a a,b ab,aa a,aa
+infinite 0
+universe a,a aa,aa b,b aa,b
+infinite 0
+universe a,b b,a ab,ab abab,ba
+infinite 2
+universe b,a ba,a baa,a a,a
+infinite 3
+universe a,b a,ab ab,ab abab,ab
+infinite 2
+universe b,b a,bb bb,a bba,bb
+infinite 0
+universe a,a a,b aa,a b,a
+infinite 0
+universe a,b b,a ab,ab abab,abab
+infinite 2
+universe b,b bb,a b,a ba,a
+infinite 0
+universe b,b bb,bb bb,b bbb,bb
+infinite 0
+universe b,a a,a ba,ba a,b
+infinite 1
+universe a,b a,ab b,b aab,b
+infinite 2
+universe a,b b,ab a,ab bab,bab
+infinite 3
+universe b,b b,a ba,ba baba,b
+infinite 0
+universe a,b ab,a b,aba baba,ab
+dense 6 3 8
+universe b,a b,b ba,ba b,bb
+infinite 1
+universe b,a ba,ba baba,ba bababa,bababa
+infinite 1
+universe a,a aa,aa aaaa,aaaa b,aaaa
+infinite 0
+universe b,b bb,a bba,bba a,a
+infinite 0
+universe b,a a,ba b,ba bba,a
+sparse 3 2 b
+double b a
+universe a,a a,b a,aa aaa,ab
+infinite 0
+universe a,a aa,a b,a b,b
+infinite 0
+universe a,b b,a ab,ba ab,b
+dense 3 1 4
+universe a,a a,b ab,b abb,a
+infinite 0
+universe b,b bb,b bbb,bb b,bbb
+infinite 0
+universe a,b b,b a,bb b,bb
+infinite 1
+universe b,a ba,ba b,b a,ba
+infinite 1
+universe b,b bb,a a,a bb,b
+infinite 0
+universe b,b a,a a,b b,a
+infinite 0
+universe a,b a,a ab,ab abab,a
+infinite 1
+universe b,a a,b b,ba ba,bba
+sparse 7 2 b
+double b a
+universe b,b bb,b bb,a bbb,bb
+infinite 0
+universe b,a ba,a baa,b baa,ba
+dense 4 2 5
+universe b,b a,a bb,a aa,bba
+infinite 0
+universe b,b a,a a,b b,bb
+infinite 0
+universe b,b bb,bb bbbb,a bb,a
+infinite 0
+universe b,a a,a aa,ba aaba,ba
+infinite 1
+universe b,a ba,a b,b b,baa
+infinite 2
+universe a,a a,aa aaa,aaa aaaaaa,b
+infinite 0
+universe b,b bb,bb bb,b bb,a
+infinite 0
+universe a,a aa,b aab,aab b,aab
+infinite 0
+universe a,a aa,a b,b b,aaa
+infinite 0
+universe b,a ba,ba a,b a,a
+infinite 1
+universe a,b a,ab a,aab aab,b
+sparse 4 2 a
+double a b
+universe a,b b,ab b,bab bbab,b
+sparse 5 3 b
+universe b,b a,a aa,aa bb,a
+infinite 0
+universe a,a a,aa a,b aaa,aaa
+infinite 0
+universe a,a aa,b b,a aa,ba
+infinite 0
+universe b,b a,bb abb,a abb,abba
+infinite 0
+universe b,a ba,a b,ba b,b
+infinite 3
+universe a,a b,aa aa,a aa,aaa
+infinite 0
+universe b,a ba,a b,ba a,ba
+sparse 4 2 b
+double b a
+universe a,b b,a b,ba ba,bba
+sparse 3 2 b
+double b a
+universe a,a aa,a b,b a,aaa
+infinite 0
+universe a,a b,aa baa,baa b,baabaa
+infinite 0
+universe a,b ab,a a,aba aba,aaba
+sparse 9 4 a
+universe a,a a,b b,b aa,bb
+infinite 0
+universe a,b a,ab a,aab ab,ab
+infinite 3
+universe a,a b,b aa,aa bb,b
+infinite 0
+universe b,b bb,bb a,a aa,a
+infinite 0
+universe a,a aa,b aab,aab a,aa
+infinite 0
+universe b,b a,a bb,a a,b
+infinite 0
+universe b,a a,ba ba,b bab,ba
+sparse 6 3 bab
+double bab a
+universe b,b a,bb b,a ba,a
+infinite 0
+universe a,a a,aa aaa,b aaab,b
+infinite 0
+universe b,b a,bb bb,abb abb,a
+infinite 0
+universe b,b bb,b a,b bb,ab
+infinite 0
+universe b,a b,b b,ba a,a
+infinite 1
+universe a,b b,b b,ab bab,ab
+infinite 1
+universe a,a a,b ab,a ab,ab
+infinite 0
+universe b,a b,b bb,b bb,a
+infinite 1
+universe b,a ba,a baa,ba baaba,baaba
+infinite 3
+universe b,b bb,a bba,b bb,bbab
+infinite 0
+universe a,a a,b ab,aa b,b
+infinite 0
+universe a,b ab,b abb,b abbb,b
+dense 4 0 5
+universe b,b b,a b,bb bb,bb
+infinite 0
+universe b,a ba,ba ba,b bab,b
+infinite 1
+universe a,a b,a ba,ba baba,baba
+infinite 0
+universe b,a a,ba a,a a,aba
+infinite 2
+universe b,b b,bb bb,bbb bb,bbbbb
+infinite 0
+universe a,b a,a aa,a aa,ab
+infinite 1
+universe b,a a,b ab,ab a,a
+infinite 3
+universe b,b bb,b bb,bbb a,bb
+infinite 0
+universe a,a aa,b aab,a aaba,aa
+infinite 0
+universe b,b bb,a bba,a a,a
+infinite 0
+universe b,b b,bb a,b ab,b
+infinite 0
+universe a,a aa,b aa,aab a,b
+infinite 0
+universe a,b b,ab ab,bab a,abbab
+sparse 6 4 a
+universe a,a a,aa a,aaa aa,aaa
+infinite 0
+universe b,a b,b ba,a ba,bb
+infinite 1
+universe a,b a,a b,aa b,b
+infinite 1
+universe a,b ab,ab a,abab abab,a
+infinite 1
+universe b,a ba,b bab,b b,babb
+sparse 7 4 b
+universe a,b b,b ab,a bb,aba
+infinite 1
+universe a,b b,ab ab,b b,abb
+dense 4 2 6
+universe a,a b,aa b,b a,b
+infinite 0
+universe b,b b,a b,bb a,ba
+infinite 0
+universe b,a a,a b,aa a,baa
+infinite 1
+universe b,a a,ba a,a aba,b
+infinite 2
+universe b,a a,ba ba,ba a,a
+infinite 2
+universe a,a aa,b aa,aa aa,aab
+infinite 0
+universe a,b ab,a b,aba aba,ab
+sparse 6 3 aab
+double aba b
+universe a,b ab,b b,a abb,ba
+dense 4 2 5
+universe a,a aa,b a,b aa,aab
+infinite 0
+universe a,b a,ab b,a ab,ba
+sparse 4 3 a
+double a b
+universe a,a b,b aa,bb bb,bb
+infinite 0
+universe a,a aa,b aa,aa aaaa,aab
+infinite 0
+universe a,a aa,b aa,aa a,aaaa
+infinite 0
+universe b,a ba,ba baba,baba babababa,ba
+infinite 1
+universe b,b bb,a bb,b bba,bbb
+infinite 0
+universe a,a aa,aa aa,b aaaa,aa
+infinite 0
+universe b,a a,ba ba,aba aba,baaba
+dense 11 4 12
+universe b,b b,bb bb,bbb bbbbb,b
+infinite 0
+universe b,a ba,b a,b a,ba
+dense 3 3 5
+universe b,b bb,b bbb,bbb bb,bb
+infinite 0
+universe b,b a,bb bb,abb b,bbabb
+infinite 0
+universe b,b a,bb abb,bb bb,a
+infinite 0
+universe a,b ab,a ab,aba ababa,ababa
+infinite 3
+universe b,b a,bb abb,bb abb,a
+infinite 0
+universe a,b ab,b b,a b,ba
+sparse 4 2 b
+double b a
+universe a,a b,b bb,bb bb,bbbb
+infinite 0
+universe b,b a,b b,bb ab,ab
+infinite 0
+universe b,a a,b ba,a b,ab
+dense 2 2 4
+universe b,a ba,ba baba,baba b,babababa
+infinite 1
+universe b,a ba,a b,baa bbaa,a
+sparse 4 2 b
+universe b,b a,bb a,a abb,bb
+infinite 0
+universe b,b bb,b bbb,bb bbbbb,b
+infinite 0
+universe a,a aa,aa a,aaaa b,a
+infinite 0
+universe b,a a,a b,aa baa,ba
+infinite 1
+universe b,b bb,b bb,bbb bbb,bbb
+infinite 0
+universe b,a ba,b a,b ab,ba
+dense 4 3 6
+universe b,a a,a aa,b ba,aab
+infinite 1
+universe b,b a,a aa,b aa,aab
+infinite 0
+universe b,b a,a bb,b b,aa
+infinite 0
+universe a,b a,ab b,aab baab,a
+sparse 5 2 a
+double a b
+universe a,b a,ab b,ab ab,b
+sparse 4 2 a
+double a b
+universe b,b a,b bb,b bb,bbb
+infinite 0
+universe b,b bb,b bb,a a,b
+infinite 0
+universe b,b bb,a bba,bba bb,b
+infinite 0
+universe b,a ba,ba b,ba baba,ba
+infinite 1
+universe b,a ba,a ba,b a,bab
+dense 5 3 6
+universe a,b ab,ab a,ab aab,a
+infinite 1
+universe b,b bb,b bbb,b bbbb,b
+infinite 0
+universe b,a a,b a,ba aba,b
+dense 4 1 5
+universe a,a aa,aa aaaa,aa aaaaaa,aa
+infinite 0
+universe b,b b,a bb,a bba,b
+infinite 0
+universe b,b bb,a b,a bb,bba
+infinite 0
+universe a,b a,ab a,aab aaab,ab
+sparse 5 2 a
+double a b
+universe b,b a,b a,bb b,bb
+infinite 0
+universe a,b b,ab ab,a ab,aba
+sparse 6 3 ab
+double ab a
+universe a,a aa,b b,aab aab,aa
+infinite 0
+universe a,a aa,a a,aaa aaaa,aaa
+infinite 0
+universe b,a b,b ba,bb babb,babb
+infinite 1
+universe a,b b,ab bab,a bab,bab
+infinite 3
+universe b,a ba,a a,a ba,baa
+infinite 2
+universe a,a aa,a aaa,a a,aaaa
+infinite 0
+universe a,a b,b b,aa bb,b
+infinite 0
+universe b,a a,b ba,ba ab,ab
+infinite 2
+universe b,a a,b ba,ba a,ab
+infinite 2
+universe a,b a,a a,ab ab,b
+infinite 1
+universe b,a b,b b,bb a,bbb
+infinite 1
+universe a,a b,aa aa,aa aa,a
+infinite 0
+universe b,b b,bb a,b a,ab
+infinite 0
+universe a,a aa,b aab,b aab,aabb
+infinite 0
+universe a,a a,b b,aa baa,aa
+infinite 0
+universe a,b ab,b b,ab abb,ab
+dense 4 2 5
+universe b,b a,b b,a ba,a
+infinite 0
+universe a,b b,b b,ab bb,bb
+infinite 1
+universe a,a b,aa b,baa a,aa
+infinite 0
+universe a,b ab,ab b,a ba,b
+infinite 1
+universe b,b bb,a a,b ab,a
+infinite 0
+universe b,a ba,ba b,b baba,baba
+infinite 1
+universe b,b b,a a,b bb,ab
+infinite 0
+universe b,b bb,a a,bb bba,b
+infinite 0
+universe a,a b,aa aa,aa aaaa,aaaa
+infinite 0
+universe a,b a,a ab,aa abaa,aa
+infinite 1
+universe b,a a,ba aba,b abab,aba
+dense 4 1 5
+universe a,a aa,aa a,aaaa aa,a
+infinite 0
+universe a,a aa,b aa,a aab,aab
+infinite 0
+universe b,a ba,ba baba,baba babababa,baba
+infinite 1
+universe b,a b,ba ba,b a,bab
+sparse 4 4 b
+double b a
+universe a,a b,aa baa,b b,a
+infinite 0
+universe b,b bb,a a,a bba,b
+infinite 0
+universe a,a a,aa aaa,b aa,aaab
+infinite 0
+universe a,b b,ab bab,bab ab,babbab
+infinite 2
+universe b,a b,ba a,a a,b
+infinite 2
+universe b,b a,bb bb,abb bbabb,a
+infinite 0
+universe a,a aa,aa b,a a,aa
+infinite 0
+universe a,b b,b ab,bb ab,ab
+infinite 1
+universe a,a a,b aa,a ab,aa
+infinite 0
+universe b,b bb,a bba,bba bba,bbabba
+infinite 0
+universe b,b b,a ba,b bb,ba
+infinite 0
+universe a,a a,b a,aa ab,a
+infinite 0
+universe a,b a,a aa,a b,a
+infinite 1
+universe b,a ba,ba a,baba ababa,baba
+infinite 1
+universe b,b b,bb bbb,a bbb,bb
+infinite 0
+universe b,b bb,bb a,bb bbbb,b
+infinite 0
+universe b,a ba,ba b,baba b,b
+infinite 1
+universe b,b a,bb bb,abb b,abb
+infinite 0
+universe b,b bb,a b,bba bba,a
+infinite 0
+universe a,a b,a ba,b bab,a
+infinite 0
+universe b,a a,a a,ba a,aba
+infinite 1
+universe a,b a,ab b,ab b,b
+infinite 3
+universe a,b b,b ab,bb a,ab
+infinite 1
+universe a,a aa,a b,aaa b,baaa
+infinite 0
+universe a,a b,a aa,ba aaba,aa
+infinite 0
+universe a,b b,b a,bb b,abb
+infinite 1
+universe b,b bb,b bbb,bbb bbb,a
+infinite 0
+universe a,a a,b ab,ab abab,ab
+infinite 0
+universe a,b ab,b b,a ab,ba
+dense 3 1 4
+universe b,b b,a a,b a,ab
+infinite 0
+universe a,b a,a ab,a aba,aba
+infinite 1
+universe a,a aa,a a,aaa aaaa,a
+infinite 0
+universe a,a b,b a,bb abb,a
+infinite 0
+universe b,b b,a ba,ba bb,bb
+infinite 0
+universe a,b a,a ab,aa a,ab
+infinite 1
+universe b,a a,ba a,b aba,ba
+dense 5 1 6
+universe a,b b,b bb,ab ab,b
+infinite 1
+universe a,b b,ab ab,a a,aba
+sparse 7 3 a
+universe a,a a,aa aa,aaa aaaaa,aa
+infinite 0
+universe b,b bb,bb b,bbbb bbbb,bb
+infinite 0
+universe a,b b,a ab,ba ba,a
+dense 4 2 5
+universe b,b a,a b,bb aa,b
+infinite 0
+universe a,b ab,a ab,b b,ab
+dense 4 3 6
+universe a,b b,ab a,bab bab,a
+dense 4 1 5
+universe a,a b,aa b,baa bbaa,baa
+infinite 0
+universe a,a b,aa a,aa baa,aa
+infinite 0
+universe a,b b,a ab,b b,b
+infinite 3
+universe b,a ba,a a,baa a,a
+infinite 3
+universe b,b b,bb bb,bbb a,bbbbb
+infinite 0
+universe b,b a,b bb,b a,a
+infinite 0
+universe a,a aa,b a,aa a,aab
+infinite 0
+universe b,a ba,b a,a b,bab
+infinite 2
+universe a,a a,b aa,b b,aab
+infinite 0
+universe b,b bb,a bb,bb b,a
+infinite 0
+universe b,b bb,bb a,a a,aa
+infinite 0
+universe b,b b,a ba,a a,a
+infinite 0
+universe b,b bb,b a,bbb bb,bb
+infinite 0
+universe a,a b,a b,ba a,bba
+infinite 0
+universe a,b ab,a b,aba a,aba
+sparse 5 3 a
+universe b,a b,b b,ba bb,b
+infinite 1
+universe a,a b,a ba,b a,ba
+infinite 0
+universe b,b bb,bb a,a bb,a
+infinite 0
+universe a,a b,aa aa,a a,baa
+infinite 0
+universe b,a b,b a,ba ba,bb
+infinite 1
+universe a,a aa,a aaa,b aa,b
+infinite 0
+universe b,b bb,b bbb,bbb b,a
+infinite 0
+universe b,a a,b ba,b b,ba
+sparse 3 3 b
+double b a
+universe a,a b,b aa,aa bb,aaaa
+infinite 0
+universe b,a b,b ba,b ba,ba
+infinite 1
+universe a,a aa,b a,aa aab,a
+infinite 0
+universe b,a b,ba ba,ba a,ba
+infinite 2
+universe a,a b,b b,aa baa,a
+infinite 0
+universe b,a b,b a,a aa,a
+infinite 1
+universe b,b bb,bb bbbb,bbbb bbbb,b
+infinite 0
+universe a,a b,b b,aa a,baa
+infinite 0
+universe b,a ba,ba baba,baba ba,b
+infinite 1
+universe a,a a,aa b,a a,aaa
+infinite 0
+universe a,a b,b b,a ba,b
+infinite 0
+universe a,b b,b bb,bb a,bbbb
+infinite 1
+universe a,b a,a ab,a aba,ab
+infinite 1
+universe a,a aa,aa b,aa aaaa,aaaa
+infinite 0
+universe b,a ba,ba ba,baba baba,bababa
+infinite 1
+universe a,b ab,ab a,a a,abab
+infinite 1
+universe b,a a,b ba,b ab,bab
+dense 5 3 6
+universe b,a a,b ab,ab b,ab
+dense 2 1 3
+universe b,b bb,a a,b bba,ab
+infinite 0
+universe a,b ab,a b,ab ab,ab
+infinite 3
+universe a,a aa,aa aa,aaaa b,a
+infinite 0
+universe a,a a,b aa,aa aaaa,ab
+infinite 0
+universe b,b a,bb bb,a abb,bb
+infinite 0
+universe b,b bb,a a,a aa,bb
+infinite 0
+universe a,b b,ab bab,ab babab,b
+dense 6 2 8
+universe a,b b,a a,ba b,aba
+dense 2 1 3
+universe a,b ab,b b,a ba,ab
+dense 5 2 6
+universe a,b b,a ba,ab b,ab
+dense 4 1 5
+universe b,b b,bb bbb,bbb a,bbbbbb
+infinite 0
+universe a,a b,b bb,a aa,b
+infinite 0
+universe a,b b,ab ab,ab a,a
+infinite 2
+universe b,b a,a bb,aa bbaa,bb
+infinite 0
+universe a,b ab,b ab,a b,abb
+dense 5 2 6
+universe a,a b,a ba,a a,baa
+infinite 0
+universe b,b bb,b a,b ab,bb
+infinite 0
+universe a,a aa,aa b,aaaa baaaa,a
+infinite 0
+universe a,a a,aa aaa,a aaa,aaaa
+infinite 0
+universe a,b ab,ab a,a abab,b
+infinite 1
+universe a,b ab,a aba,ab b,ab
+sparse 4 3 aba
+double aba b
+universe b,b b,bb b,a bb,ba
+infinite 0
+universe a,b ab,b a,abb aabb,aabb
+infinite 3
+universe b,b b,bb bb,bbb a,bb
+infinite 0
+universe b,b bb,bb bbbb,b bbbb,bb
+infinite 0
+universe b,b bb,a bba,bba bbabba,a
+infinite 0
+universe a,a aa,aa b,a aaaa,a
+infinite 0
+universe a,b b,ab ab,bab abbab,ab
+dense 8 4 11
+universe b,a ba,b a,b b,b
+infinite 3
+universe a,b ab,b ab,ab abb,b
+infinite 2
+universe b,a a,ba ba,a a,baa
+dense 4 2 6
+universe a,b b,b ab,bb abbb,bb
+infinite 1
+universe b,b a,a a,bb b,a
+infinite 0
+universe b,b bb,a a,b b,a
+infinite 0
+universe a,b a,a ab,a ab,aa
+infinite 1
+universe b,a ba,a a,baa ba,abaa
+dense 5 2 6
+universe a,b b,b b,a a,ab
+infinite 1
+universe a,a a,aa a,aaa aaa,aaa
+infinite 0
+universe b,b b,bb bbb,bb bbb,bbbbb
+infinite 0
+universe a,b b,b b,ab a,bb
+infinite 1
+universe a,a aa,b a,aab b,b
+infinite 0
+universe b,a b,ba ba,b ba,bab
+sparse 5 4 ba
+double b a
+universe b,a a,ba a,a ba,aa
+infinite 2
+universe a,b b,ab b,a bab,ba
+dense 5 2 6
+universe b,b a,b b,a bb,ba
+infinite 0
+universe a,a a,b b,ab bab,ab
+infinite 0
+universe a,a b,a b,aa a,aa
+infinite 0
+universe b,a a,b ab,b ab,ba
+dense 4 1 5
+universe b,a a,ba aba,ba b,b
+infinite 3
+universe b,b a,b ab,bb abbb,ab
+infinite 0
+universe b,a b,b ba,ba b,baba
+infinite 1
+universe b,a ba,a b,baa a,bbaa
+sparse 6 3 b
+universe a,a a,aa aa,aaa b,aa
+infinite 0
+universe b,b b,a a,bb a,b
+infinite 0
+universe a,a aa,b aab,aab b,b
+infinite 0
+universe a,a b,aa b,b a,bb
+infinite 0
+universe b,a ba,b a,ba ba,a
+dense 4 4 8
+universe b,a a,a ba,ba aa,ba
+infinite 1
+universe b,a ba,ba a,a a,aa
+infinite 1
+universe b,a ba,b ba,ba baba,bab
+infinite 2
+universe b,a ba,ba a,b ba,baba
+infinite 1
+universe b,a a,a aa,ba b,aaba
+infinite 1
+universe b,a b,b bb,b ba,b
+infinite 1
+universe b,b b,bb bbb,a a,a
+infinite 0
+universe a,b a,ab a,aab aaab,aab
+sparse 6 2 a
+double a b
+universe b,b a,b bb,ab a,bb
+infinite 0
+universe a,b ab,a aba,aba b,ab
+infinite 2
+universe a,a a,b aa,ab ab,aaab
+infinite 0
+universe a,a aa,aa aa,aaaa b,aaaa
+infinite 0
+universe a,a aa,aa b,a a,aaaa
+infinite 0
+universe a,a b,a a,aa aa,aa
+infinite 0
+universe a,a aa,aa a,b aa,a
+infinite 0
+universe a,a aa,a b,a ba,a
+infinite 0
+universe a,a aa,aa b,aa baa,a
+infinite 0
+universe a,b ab,b ab,ab abb,abab
+infinite 2
+universe b,b b,a bb,b a,a
+infinite 0
+universe b,b bb,a bba,b b,bbab
+infinite 0
+universe a,b a,ab ab,aab aab,b
+sparse 6 2 a
+double a b
+universe a,b ab,ab abab,b ababb,ab
+infinite 1
+universe a,a aa,aa aaaa,aa aaaaaa,aaaa
+infinite 0
+universe b,a ba,a b,baa ba,ba
+infinite 3
+universe a,a a,b b,a ab,a
+infinite 0
+universe a,a b,a b,ba a,aa
+infinite 0
+universe b,a b,ba bba,ba b,b
+infinite 3
+universe a,b ab,b a,ab ab,aab
+sparse 5 3 a
+double a b
+universe b,b bb,a b,a a,bb
+infinite 0
+universe a,a b,aa baa,baa baabaa,b
+infinite 0
+universe a,b ab,a aba,b b,aba
+dense 4 3 5
+universe a,b b,a ab,a ab,ba
+dense 3 2 4
+universe b,b bb,a bb,bb bbbb,a
+infinite 0
+universe a,a aa,a aaa,aa b,aaa
+infinite 0
+universe b,b a,b b,ab b,bab
+infinite 0
+universe b,a b,b ba,b bab,bb
+infinite 1
+universe b,a b,ba a,ba a,bba
+sparse 4 2 b
+double b a
+universe b,b a,bb bb,bb bbbb,b
+infinite 0
+universe b,b bb,a bb,bba a,b
+infinite 0
+universe a,a aa,b a,b ab,ab
+infinite 0
+universe a,b b,b ab,ab abab,a
+infinite 1
+universe b,a b,ba b,b ba,ba
+infinite 2
+universe b,b a,bb b,a abb,b
+infinite 0
+universe a,b b,ab a,a aa,a
+infinite 2
+universe a,b ab,b a,abb b,b
+infinite 3
+universe a,a b,a aa,ba ba,b
+infinite 0
+universe b,a b,ba bba,b a,bba
+sparse 4 5 b
+double b a
+universe b,a ba,ba b,ba bba,ba
+infinite 1
+universe b,a b,b bb,b bbb,b
+infinite 1
+universe b,a b,b bb,ba bbba,a
+infinite 1
+universe b,a b,ba a,b ba,ba
+infinite 3
+universe b,b a,b b,ab bb,ab
+infinite 0
+universe a,a b,b a,aa b,bb
+infinite 0
+universe a,b a,ab ab,ab aab,abab
+infinite 2
+universe a,b ab,ab a,ab aab,b
+infinite 1
+universe a,b ab,a a,aba aaba,b
+sparse 5 3 a
+universe b,a ba,a baa,baa ba,ba
+infinite 2
+universe b,b b,a ba,b bb,a
+infinite 0
+universe b,b b,bb bb,bb bb,a
+infinite 0
+universe a,b a,a ab,ab aa,abab
+infinite 1
+universe b,b bb,bb bb,b a,a
+infinite 0
+universe b,b bb,b b,bbb bb,bbb
+infinite 0
+universe a,a aa,aa aaaa,a aa,aaaaa
+infinite 0
+universe a,b ab,a b,b ab,bb
+infinite 2
+universe a,a a,b b,a aa,ba
+infinite 0
+universe b,b bb,a bba,b bbab,bbab
+infinite 0
+universe a,b ab,ab b,abab babab,a
+infinite 1
+universe a,b ab,ab b,a abab,abab
+infinite 1
+universe a,a b,aa a,b a,baa
+infinite 0
+universe a,a b,b aa,b aa,a
+infinite 0
+universe b,b a,bb abb,a bb,a
+infinite 0
+universe a,a aa,aa a,aaaa aaaaa,aaaaa
+infinite 0
+universe b,a b,b a,b ab,ba
+infinite 1
+universe b,a ba,b bab,a a,baba
+dense 2 1 3
+universe b,a ba,a b,b ba,ba
+infinite 2
+universe a,a aa,aa aaaa,a b,aa
+infinite 0
+universe a,b ab,ab abab,ab ab,ababab
+infinite 1
+universe a,b ab,b b,a b,ab
+dense 4 2 5
+universe a,a a,b aa,ab ab,b
+infinite 0
+universe a,a b,b a,bb abb,abb
+infinite 0
+universe b,b a,a aa,b aa,aa
+infinite 0
+universe a,b ab,b a,abb b,a
+sparse 3 3 a
+universe a,a aa,b b,b b,a
+infinite 0
+universe b,b bb,a bba,b bbab,a
+infinite 0
+universe b,b bb,bb bbbb,bbbb b,bbbb
+infinite 0
+universe a,a aa,a aa,aaa b,aaa
+infinite 0
+universe b,a ba,a ba,baa ba,ba
+infinite 3
+universe b,b bb,b bbb,a a,bbba
+infinite 0
+universe a,b ab,ab abab,ab b,ababab
+infinite 1
+universe a,a a,b aa,ab aa,aa
+infinite 0
+universe b,b b,bb a,a bbb,aa
+infinite 0
+universe a,b b,a ba,ba b,ba
+sparse 3 2 b
+double b a
+universe b,b a,a bb,bb aa,a
+infinite 0
+universe b,b b,a ba,ba b,baba
+infinite 0
+universe a,a aa,aa aa,a b,aaaa
+infinite 0
+universe a,a aa,a aa,aa aa,b
+infinite 0
+universe b,a ba,b a,a bab,ba
+infinite 2
+universe a,b b,ab bab,bab b,b
+infinite 2
+universe b,a a,ba a,aba b,b
+infinite 3
+universe a,b ab,a ab,aba ab,b
+sparse 4 3 ab
+double ab a
+universe b,a ba,a baa,b baa,baab
+sparse 6 4 aab
+double baa b
+universe a,b a,a aa,aa a,aa
+infinite 1
+universe a,a b,b bb,bb aa,bb
+infinite 0
+universe b,b a,a bb,bb bb,a
+infinite 0
+universe a,b ab,b ab,ab a,ab
+infinite 2
+universe b,b bb,b b,a bbb,bb
+infinite 0
+universe a,a a,aa b,aaa b,baaa
+infinite 0
+universe b,b bb,bb bb,bbbb a,bbbbbb
+infinite 0
+universe a,b b,ab bab,bab b,a
+infinite 2
+universe b,a a,a aa,aa b,ba
+infinite 1
+universe a,a aa,a aa,b aaa,a
+infinite 0
+universe b,a a,a a,aa ba,a
+infinite 1
+universe b,a ba,a b,b a,bb
+infinite 2
+universe a,b ab,b ab,ab abb,a
+infinite 2
+universe a,a a,aa b,b bb,a
+infinite 0
+universe a,b a,a b,b bb,aa
+infinite 1
+universe a,b a,ab ab,b b,ab
+sparse 5 2 a
+double a b
+universe a,b a,a aa,ab ab,aa
+infinite 1
+universe b,a b,ba b,bba a,b
+sparse 3 3 b
+double b a
+universe a,b b,ab ab,bab bab,ab
+dense 8 4 11
+universe a,b b,a a,ba ab,b
+dense 2 2 4
+universe b,b a,a bb,aa b,a
+infinite 0
+universe a,a aa,a aaa,aa aaaaa,b
+infinite 0
+universe a,a a,aa aaa,a a,b
+infinite 0
+universe a,b a,ab aab,aab aab,aabaab
+infinite 2
+universe b,a b,b ba,ba a,baba
+infinite 1
+universe a,b a,ab a,a aab,a
+infinite 2
+universe a,b b,a ba,b ab,b
+dense 2 2 4
+universe a,b b,a a,a ba,ba
+infinite 2
+universe a,a a,aa aa,b aab,aaa
+infinite 0
+universe a,b b,b bb,b ab,bb
+infinite 1
+universe b,a b,b ba,b bab,b
+infinite 1
+universe a,b ab,ab abab,abab b,ab
+infinite 1
+universe b,b a,a a,bb a,abb
+infinite 0
+universe a,b b,b b,ab a,ab
+infinite 1
+universe b,b bb,b a,bbb bb,abbb
+infinite 0
+universe a,a a,aa b,b b,aaa
+infinite 0
+universe a,a a,aa a,aaa aaaa,a
+infinite 0
+universe a,b ab,a aba,ab b,b
+infinite 3
+universe a,b b,b a,bb ab,ab
+infinite 1
+universe a,a b,b bb,a a,b
+infinite 0
+universe b,a ba,b bab,b babb,ba
+sparse 5 3 bbba
+universe a,a b,b aa,aa aa,bb
+infinite 0
+universe a,b ab,b a,abb aabb,a
+sparse 4 3 a
+universe a,b ab,b abb,b abbb,ab
+dense 5 2 6
+universe b,b a,b bb,b bbb,a
+infinite 0
+universe a,b ab,ab abab,a b,ababa
+infinite 1
+universe b,a a,a aa,aa a,aa
+infinite 1
+universe a,a b,a aa,b aab,aa
+infinite 0
+universe a,b a,a b,b b,ab
+infinite 1
+universe a,b b,b ab,ab abab,b
+infinite 1
+universe b,a ba,b bab,ba a,ba
+sparse 4 3 abb
+double bab a
+universe b,b bb,a bba,a bba,bb
+infinite 0
+universe a,b ab,ab b,b bb,bb
+infinite 1
+universe b,a a,ba aba,aba b,ba
+infinite 2
+universe b,b a,a b,aa a,b
+infinite 0
+universe b,a a,a b,ba bba,b
+infinite 1
+universe a,a aa,a aaa,aaa aaaaaa,aa
+infinite 0
+universe b,a a,ba b,b b,ba
+infinite 2
+universe b,b a,bb a,a b,a
+infinite 0
+universe a,a b,a aa,aa aaaa,b
+infinite 0
+universe a,b b,ab bab,b babb,ab
+dense 4 2 6
+universe a,a aa,a aa,aaa b,aaaaa
+infinite 0
+universe b,a a,b ba,ba ba,baba
+infinite 2
+universe a,a a,b ab,a aa,aa
+infinite 0
+universe a,b b,ab bab,bab a,a
+infinite 2
+universe a,a aa,a aa,aaa aa,aaaaa
+infinite 0
+universe a,a b,b b,bb bbb,aa
+infinite 0
+universe a,b b,b bb,b a,bb
+infinite 1
+universe b,a ba,a ba,b a,b
+dense 3 1 4
+universe b,a ba,b a,bab b,ba
+sparse 4 3 b
+double b a
+universe b,b bb,a a,bba b,bb
+infinite 0
+universe b,a a,ba ba,aba b,aba
+dense 6 2 7
+universe b,a a,a b,b ba,ba
+infinite 1
+universe b,b a,bb bb,a a,a
+infinite 0
+universe b,a ba,ba baba,a babaa,a
+infinite 1
+universe b,a a,ba aba,b abab,b
+dense 5 1 6
+universe a,a aa,b b,aa aa,aa
+infinite 0
+universe b,b bb,b bbb,bb bb,a
+infinite 0
+universe a,a a,b b,aa b,baa
+infinite 0
+universe b,b b,a b,bb a,a
+infinite 0
+universe a,a b,aa b,a ba,b
+infinite 0
+universe a,b b,b b,a ba,bb
+infinite 1
+universe b,a b,ba bba,bba ba,ba
+infinite 2
+universe b,b bb,b a,bb b,bbb
+infinite 0
+universe a,b b,a b,b a,a
+infinite 2
+universe a,a b,b b,a a,bb
+infinite 0
+universe b,a ba,ba baba,b baba,babab
+infinite 1
+universe b,b bb,a a,bba bba,bba
+infinite 0
+universe a,a b,b a,b aa,b
+infinite 0
+universe b,a a,a aa,ba b,aa
+infinite 1
+universe b,b bb,a bb,b bbb,a
+infinite 0
+universe a,a aa,aa b,a b,b
+infinite 0
+universe b,b b,bb bbb,bbb bb,bbb
+infinite 0
+universe b,b bb,a bba,b b,bba
+infinite 0
+universe a,a a,b aa,b aab,b
+infinite 0
+universe a,b a,ab aab,aab aabaab,ab
+infinite 2
+universe b,a ba,a baa,b a,baa
+dense 5 4 7
+universe a,a b,aa b,b bb,aa
+infinite 0
+universe b,b b,a bb,a ba,ba
+infinite 0
+universe b,b a,bb abb,abb bb,bb
+infinite 0
+universe b,b b,a bb,b a,b
+infinite 0
+universe a,b b,b ab,ab ab,a
+infinite 1
+universe b,b b,a bb,a ba,a
+infinite 0
+universe b,a ba,ba b,baba ba,baba
+infinite 1
+universe b,a a,b ab,b b,b
+infinite 3
+universe b,b b,bb b,a bbb,bbb
+infinite 0
+universe b,a a,b ba,ab b,ba
+sparse 4 4 b
+double b a
+universe a,a b,b a,aa bb,aa
+infinite 0
+universe a,b ab,ab abab,a b,abab
+infinite 1
+universe b,b bb,a bba,bba b,a
+infinite 0
+universe b,b bb,bb bbbb,b bbbbb,bbbbb
+infinite 0
+universe b,a ba,b a,ba bab,a
+dense 3 3 5
+universe a,a b,b aa,a a,aaa
+infinite 0
+universe b,a a,ba b,ba aba,b
+sparse 4 2 b
+double b a
+universe a,a aa,aa a,aaaa a,aa
+infinite 0
+universe b,b a,a bb,aa bb,a
+infinite 0
+universe a,b ab,ab ab,a ab,aba
+infinite 1
+universe b,a a,a aa,a aa,aaa
+infinite 1
+universe b,b b,a a,b a,a
+infinite 0
+universe b,b a,bb bb,abb bbabb,b
+infinite 0
+universe a,b a,a aa,a aaa,aaa
+infinite 1
+universe b,b bb,bb bb,bbbb b,a
+infinite 0
+universe a,b a,a b,ab b,bab
+infinite 1
+universe b,b a,a aa,b b,aab
+infinite 0
+universe a,a b,aa aa,baa b,b
+infinite 0
+universe a,a aa,b b,aab b,aa
+infinite 0
+universe a,b b,ab a,a b,bab
+infinite 2
+universe a,b ab,a ab,b a,ab
+sparse 4 3 a
+double a b
+universe a,b ab,ab b,a ba,a
+infinite 1
+universe b,a ba,ba baba,a a,b
+infinite 1
+universe a,a aa,b aa,aa aab,aaaa
+infinite 0
+universe a,a b,a b,aa b,baa
+infinite 0
+universe b,a b,b bb,ba a,b
+infinite 1
+universe b,a ba,a ba,ba a,baa
+infinite 2
+universe a,b b,ab a,ab aab,ab
+sparse 4 1 a
+double a b
+universe b,a a,ba aba,a a,abaa
+sparse 8 5 a
+universe b,a ba,a ba,b bab,ba
+sparse 4 3 bba
+double bab a
+universe a,a aa,aa aaaa,aaaa a,b
+infinite 0
+universe a,a aa,a aaa,a aa,aaa
+infinite 0
+universe a,a a,b ab,a aa,aba
+infinite 0
+universe a,a b,aa baa,b baa,baa
+infinite 0
+universe a,a b,aa baa,a baaa,a
+infinite 0
+universe b,b bb,bb a,a b,aa
+infinite 0
+universe b,b a,b ab,b a,abb
+infinite 0
+universe b,a ba,a ba,ba baa,b
+infinite 2
+universe b,b a,bb a,b b,abb
+infinite 0
+universe b,a b,b ba,bb b,ba
+infinite 1
+universe b,b bb,bb a,b ab,bbbb
+infinite 0
+universe a,a aa,b aa,aa aaaa,b
+infinite 0
+universe a,a b,a b,ba aa,b
+infinite 0
+universe a,b ab,ab a,a b,a
+infinite 1
+universe b,b a,a bb,aa a,b
+infinite 0
+universe b,b bb,bb a,b bb,ab
+infinite 0
+universe a,a b,b bb,a bb,bb
+infinite 0
+universe b,b bb,b bbb,bbb b,bbbbbb
+infinite 0
+universe b,b a,a bb,a a,aa
+infinite 0
+universe a,a b,a b,ba ba,aa
+infinite 0
+universe a,a b,a ba,b ba,a
+infinite 0
+universe a,b ab,b ab,ab abab,abab
+infinite 2
+universe a,b b,a a,a b,b
+infinite 2
+universe b,a ba,ba a,baba ba,b
+infinite 1
+universe b,a ba,a baa,b ba,ba
+infinite 3
+universe b,a ba,b bab,ba a,bab
+sparse 4 6 abb
+double bab a
+universe a,a b,aa baa,b baa,baab
+infinite 0
+universe b,b bb,b b,a bbb,b
+infinite 0
+universe b,a b,ba a,bba ba,b
+sparse 4 2 b
+double b a
+universe b,a a,b a,a ba,aa
+infinite 2
+universe b,a b,ba bba,bba bba,bbabba
+infinite 2
+universe b,a ba,ba a,b ba,ab
+infinite 1
+universe b,a ba,b ba,ba ba,a
+infinite 2
+universe a,b b,b ab,ab abab,bb
+infinite 1
+universe a,a b,aa a,b aa,ab
+infinite 0
+universe b,a b,b a,a b,ba
+infinite 1
+universe b,b bb,bb a,bb abb,a
+infinite 0
+universe a,b a,a b,aa baa,aa
+infinite 1
+universe b,b bb,bb bbbb,bbbb bb,bbbbbbbb
+infinite 0
+universe a,a b,a b,aa baa,baa
+infinite 0
+universe a,a aa,b aa,aab a,aaaab
+infinite 0
+universe a,b ab,b abb,ab b,a
+dense 4 2 5
+universe a,b a,a a,aa a,aaa
+infinite 1
+universe b,a b,b bb,a a,ba
+infinite 1
+universe a,a b,b bb,a b,a
+infinite 0
+universe b,b bb,b b,a bb,bb
+infinite 0
+universe a,b ab,b b,b b,bb
+infinite 2
+universe a,a b,a ba,aa aa,b
+infinite 0
+universe b,b a,b bb,b ab,bbb
+infinite 0
+universe a,b ab,ab b,b abab,a
+infinite 1
+universe a,b b,a a,ab a,aab
+sparse 5 2 a
+double a b
+universe b,b b,a bb,b b,ba
+infinite 0
+universe a,b a,ab b,a ba,ba
+sparse 2 2 a
+double a b
+universe a,a a,b a,aa aaa,aa
+infinite 0
+universe a,a aa,b b,aa aab,aa
+infinite 0
+universe a,a aa,b aab,aa aa,aabaa
+infinite 0
+universe b,b a,bb abb,b abb,bb
+infinite 0
+universe a,b ab,ab abab,b a,ababb
+infinite 1
+universe a,b a,a b,ab b,a
+infinite 1
+universe b,b a,b a,a b,a
+infinite 0
+universe b,b a,a aa,b aa,a
+infinite 0
+universe a,b b,a a,ab aab,ab
+sparse 6 1 a
+double a b
+universe a,a aa,b aab,aa a,aabaa
+infinite 0
+universe a,b ab,ab a,ab aab,abab
+infinite 1
+universe b,a a,a b,aa ba,b
+infinite 1
+universe a,a aa,aa aaaa,aa b,aaaaaa
+infinite 0
+universe b,a ba,b a,ba a,b
+dense 3 3 5
+universe a,a a,b b,b bb,b
+infinite 0
+universe b,b a,a bb,a aa,aa
+infinite 0
+universe a,a aa,aa aaaa,a b,b
+infinite 0
+universe b,b a,a b,aa bb,aa
+infinite 0
+universe a,a b,a aa,a aa,b
+infinite 0
+universe a,a aa,b aa,aa a,aa
+infinite 0
+universe b,a ba,b bab,a a,b
+dense 2 1 3
+universe a,b ab,b ab,ab b,b
+infinite 2
+universe b,a a,ba ba,a aba,b
+dense 4 2 6
+universe b,a a,b ab,ba a,a
+infinite 3
+universe a,a aa,aa b,aa b,a
+infinite 0
+universe a,b a,ab ab,a aab,aab
+infinite 3
+universe b,a b,b bb,bb bb,a
+infinite 1
+universe b,a a,ba a,a b,b
+infinite 2
+universe a,b b,a ab,ab ba,abab
+infinite 2
+universe b,a ba,a a,ba a,b
+dense 4 2 5
+universe a,b a,ab b,aab b,b
+infinite 3
+universe b,a b,b a,a aa,aa
+infinite 1
+universe b,b a,b bb,a a,ab
+infinite 0
+universe a,b b,a b,ba ab,bba
+sparse 4 3 b
+double b a
+universe a,b a,a aa,aa aaaa,b
+infinite 1
+universe b,b a,bb b,abb babb,b
+infinite 0
+universe b,b b,bb a,bbb a,b
+infinite 0
+universe b,a b,b ba,a baa,ba
+infinite 1
+universe a,b ab,ab a,abab ab,b
+infinite 1
+universe b,b a,bb bb,a abb,bba
+infinite 0
+universe a,b b,a b,ba bba,b
+sparse 3 2 b
+double b a
+universe a,a aa,b b,a ba,ba
+infinite 0
+universe b,a a,ba ba,a baa,b
+dense 5 2 6
+universe a,a b,b aa,bb bb,a
+infinite 0
+universe b,a b,ba b,b bba,b
+infinite 2
+universe a,a aa,aa aaaa,b a,aaaa
+infinite 0
+universe a,b a,ab ab,ab b,b
+infinite 2
+universe a,b b,a a,ab aab,a
+sparse 5 2 a
+double a b
+universe a,a a,aa a,aaa aa,aaaa
+infinite 0
+universe b,a b,b a,ba a,a
+infinite 1
+universe a,a a,b ab,b b,abb
+infinite 0
+universe b,b a,b ab,a b,a
+infinite 0
+universe b,a b,ba bba,bba ba,b
+infinite 2
+universe b,a a,a ba,aa a,aa
+infinite 1
+universe a,b ab,ab a,a ab,b
+infinite 1
+universe a,a aa,aa aa,b b,aa
+infinite 0
+universe b,a ba,ba a,baba ababa,ba
+infinite 1
+universe a,a aa,a a,b aaa,aa
+infinite 0
+universe b,b a,bb a,b bb,b
+infinite 0
+universe b,a ba,b bab,a bab,ba
+sparse 4 3 bba
+double bab a
+universe a,b ab,a ab,b ab,ab
+infinite 3
+universe a,a aa,aa aaaa,aaaa b,b
+infinite 0
+universe a,a aa,aa aa,a aaa,b
+infinite 0
+universe a,a a,aa a,b aa,b
+infinite 0
+universe b,a a,b ab,ba ab,b
+dense 4 1 5
+universe a,b b,b bb,ab b,bbab
+infinite 1
+universe a,a b,b aa,bb a,aa
+infinite 0
+universe a,a a,aa a,b aa,aaa
+infinite 0
+universe b,a a,b ba,ba b,ba
+infinite 2
+universe a,b ab,a aba,ab abaab,b
+sparse 5 3 baa
+double aba b
+universe a,b a,a aa,a aa,aa
+infinite 1
+universe b,b a,b bb,b a,bbb
+infinite 0
+universe a,a b,a ba,aa ba,ba
+infinite 0
+universe b,a ba,b a,bab bab,a
+dense 4 3 5
+universe b,a b,b ba,b bb,b
+infinite 1
+universe a,b b,ab a,a b,aa
+infinite 2
+universe b,a a,a aa,b aa,a
+infinite 1
+universe a,a aa,a a,b b,ab
+infinite 0
+universe a,a b,aa b,a baa,baa
+infinite 0
+universe a,b ab,b a,ab b,abb
+sparse 5 2 a
+double a b
+universe a,b b,ab bab,b a,bab
+dense 4 2 6
+universe b,a b,b b,ba ba,ba
+infinite 1
+universe b,a b,b ba,a a,b
+infinite 1
+universe b,a ba,a baa,ba baaba,ba
+dense 6 2 7
+universe b,b b,bb a,a aa,a
+infinite 0
+universe a,a a,b b,aa aa,a
+infinite 0
+universe a,b b,ab ab,a aba,a
+dense 5 1 6
+universe b,b b,a ba,a a,bb
+infinite 0
+universe a,a a,b ab,ab aa,aa
+infinite 0
+universe a,b ab,ab abab,abab ab,abababab
+infinite 1
+universe b,b a,bb bb,bb abb,abb
+infinite 0
+universe a,b ab,a aba,a b,b
+infinite 3
+universe a,b b,ab b,bab b,a
+sparse 4 2 b
+universe b,b bb,b bbb,a bb,a
+infinite 0
+universe a,b a,a ab,ab a,abab
+infinite 1
+universe a,a aa,aa aaaa,aaaa aaaaaaaa,aa
+infinite 0
+universe a,a a,b ab,ab a,ab
+infinite 0
+universe b,a a,b a,ab b,aab
+sparse 3 2 a
+double a b
+universe b,b bb,a bba,bb bb,bbabb
+infinite 0
+universe a,a aa,a aa,b aa,aaa
+infinite 0
+universe a,b b,ab bab,b b,b
+infinite 3
+universe a,b b,ab bab,ab b,bab
+sparse 5 4 b
+universe a,a aa,aa a,b aaaa,ab
+infinite 0
+universe b,b bb,a b,a a,bba
+infinite 0
+universe b,b bb,a a,bb bba,bb
+infinite 0
+universe b,a ba,ba a,a baba,aa
+infinite 1
+universe b,a ba,ba b,b bb,b
+infinite 1
+universe b,b a,b ab,ab abab,a
+infinite 0
+universe b,b bb,b bb,bb bb,bbb
+infinite 0
+universe a,a a,aa b,aa aaa,a
+infinite 0
+universe a,a aa,b aa,aab a,aab
+infinite 0
+universe b,a a,b a,a ab,a
+infinite 2
+universe a,b ab,b ab,a a,a
+infinite 3
+universe a,b a,ab aab,a b,aab
+sparse 4 5 a
+double a b
+universe a,b b,b ab,a a,bb
+infinite 1
+universe b,b b,a a,bb abb,ba
+infinite 0
+universe a,b b,a b,ab ba,a
+dense 3 1 4
+universe a,a a,b aa,b aa,ab
+infinite 0
+universe a,a b,b bb,aa a,b
+infinite 0
+universe a,a aa,aa aa,a aa,aaa
+infinite 0
+universe b,b a,bb abb,b abb,abb
+infinite 0
+universe a,b a,a b,b ab,aa
+infinite 1
+universe b,b b,bb bb,a a,a
+infinite 0
+universe b,b b,a ba,ba bb,b
+infinite 0
+universe a,a b,a b,b a,b
+infinite 0
+universe b,a b,b bb,a bba,b
+infinite 1
+universe a,a b,b aa,a bb,aa
+infinite 0
+universe b,a ba,b bab,bab a,babbab
+infinite 2
+universe a,a b,a ba,a aa,a
+infinite 0
+universe b,b bb,b bbb,bb bbb,bbb
+infinite 0
+universe b,a ba,a b,ba ba,b
+sparse 3 3 b
+double b a
+universe a,a b,aa baa,baa a,baa
+infinite 0
+universe a,a b,aa a,b aa,aa
+infinite 0
+universe b,b b,bb bb,bbb a,b
+infinite 0
+universe a,b ab,ab ab,abab ab,b
+infinite 1
+universe b,a a,b ab,ba ba,a
+dense 5 2 8
+universe a,b b,a ba,ab baab,ab
+dense 6 1 7
+universe b,a a,b ab,ba b,abba
+dense 4 1 5
+universe b,b a,a b,a bb,aa
+infinite 0
+universe b,a ba,ba b,baba baba,b
+infinite 1
+universe b,b b,bb bbb,b bbb,a
+infinite 0
+universe a,a a,aa aa,aaa aaa,aaaaa
+infinite 0
+universe a,b a,ab ab,a b,ab
+sparse 3 4 a
+double a b
+universe a,b ab,b abb,abb b,abbabb
+infinite 2
+universe a,b b,b bb,bb bbbb,a
+infinite 1
+universe a,a b,b a,b bb,aa
+infinite 0
+universe b,a a,b ba,b ba,ba
+infinite 3
+universe b,b b,a a,a bb,a
+infinite 0
+universe a,a aa,b aab,a aaba,b
+infinite 0
+universe b,a a,b ab,b a,a
+infinite 3
+universe b,b a,b b,a a,bb
+infinite 0
+universe a,b ab,b a,ab b,b
+infinite 3
+universe a,a aa,aa b,aa aa,aaaa
+infinite 0
+universe b,b bb,b a,bbb abbb,bb
+infinite 0
+universe b,a b,b bb,b bbb,ba
+infinite 1
+universe b,b bb,bb a,bb b,abb
+infinite 0
+universe b,a a,ba ba,a ba,aba
+dense 6 1 7
+universe a,b ab,a aba,a ab,ab
+infinite 3
+universe a,a aa,aa aaaa,a aa,a
+infinite 0
+universe a,a aa,a aaa,b b,aaa
+infinite 0
+universe a,a b,b aa,bb aabb,aa
+infinite 0
+universe a,b b,ab a,bab a,a
+infinite 3
+universe b,a b,ba bba,b bba,a
+sparse 3 2 b
+double b a
+universe b,a ba,ba a,b b,b
+infinite 1
+universe a,a a,b a,aa b,a
+infinite 0
+universe a,b a,a ab,ab b,aa
+infinite 1
+universe a,b b,ab b,b b,bb
+infinite 2
+universe a,a b,a a,ba ba,b
+infinite 0
+universe b,a b,ba bba,ba b,bba
+sparse 4 4 abbb
+double b a
+universe b,b bb,bb bb,b bbbb,bbb
+infinite 0
+universe a,a a,aa aa,aaa aa,b
+infinite 0
+universe a,a b,b bb,aa b,bbaa
+infinite 0
+universe a,b a,a ab,b b,abb
+infinite 1
+universe a,a a,b b,aa b,ab
+infinite 0
+universe b,a ba,ba b,ba a,a
+infinite 1
+universe b,b bb,bb a,a bbbb,a
+infinite 0
+universe b,a ba,b a,ba bab,bab
+infinite 3
+universe a,b a,a aa,aa b,b
+infinite 1
+universe b,a ba,ba a,b baba,baba
+infinite 1
+universe b,a a,b ba,a ab,a
+dense 2 2 4
+universe b,b a,b b,ab bb,bab
+infinite 0
+universe b,a ba,ba ba,b baba,ba
+infinite 1
+universe a,a a,aa aaa,b b,b
+infinite 0
+universe a,a a,b aa,ab b,b
+infinite 0
+universe b,a ba,a a,ba b,aba
+dense 4 2 5
+universe b,a b,b a,b ab,bb
+infinite 1
+universe b,a ba,ba ba,a b,baa
+infinite 1
+universe b,a b,ba b,bba b,bbba
+sparse 4 3 b
+double b a
+universe a,a aa,a b,a aa,b
+infinite 0
+universe a,b b,a ba,b ba,bab
+dense 2 1 3
+universe b,a ba,b a,bab b,bab
+sparse 5 3 b
+universe b,a ba,b bab,bab babbab,bab
+infinite 2
+universe b,b a,a a,aa b,bb
+infinite 0
+universe b,a a,b ab,b ba,ba
+infinite 3
+universe b,a a,b ab,ba a,ba
+dense 4 1 5
+universe b,b a,b b,a a,ab
+infinite 0
+universe a,b ab,a ab,ab a,aba
+infinite 2
+universe a,b b,ab ab,b abb,bab
+dense 7 2 8
+universe b,a b,b bb,a bb,b
+infinite 1
+universe a,b a,ab aab,aab ab,b
+infinite 2
+universe a,b ab,a a,ab b,b
+infinite 3
+universe b,b b,a ba,a ba,b
+infinite 0
+universe a,a b,aa aa,b a,b
+infinite 0
+universe a,b b,b ab,b abb,ab
+infinite 1
+universe a,a aa,a aaa,b a,aaa
+infinite 0
+universe b,a b,ba b,bba a,ba
+sparse 3 2 b
+double b a
+universe a,a aa,a b,a aaa,b
+infinite 0
+universe a,b ab,ab ab,b ab,abab
+infinite 1
+universe a,b ab,ab ab,abab b,ababab
+infinite 1
+universe a,b ab,a a,ab aab,aba
+sparse 7 3 a
+double a b
+universe b,b bb,b a,bb bb,bb
+infinite 0
+universe a,b ab,b abb,b ab,a
+dense 3 1 4
+universe a,a aa,b aab,aa aabaa,aab
+infinite 0
+universe b,a a,b ab,b b,abb
+dense 3 1 4
+universe b,b bb,a b,bb bbb,bbb
+infinite 0
+universe b,a ba,ba ba,a a,baba
+infinite 1
+universe b,b b,a bb,bb bbbb,b
+infinite 0
+universe a,b b,ab bab,ab babab,a
+dense 6 1 7
+universe a,b b,ab b,bab ab,ab
+infinite 3
+universe a,a a,b a,aa b,ab
+infinite 0
+universe a,b ab,b abb,ab ab,abbab
+sparse 9 5 ba
+universe b,b a,a a,bb b,aa
+infinite 0
+universe b,b b,bb b,bbb a,bb
+infinite 0
+universe b,b a,a aa,aa aa,b
+infinite 0
+universe b,a a,a a,aa b,b
+infinite 1
+universe a,b b,a ba,a b,ba
+sparse 3 3 b
+double b a
+universe b,a b,b a,ba aba,bb
+infinite 1
+universe b,a a,a aa,ba ba,ba
+infinite 1
+universe a,b ab,a a,a aba,aba
+infinite 2
+universe b,b bb,b b,bbb bb,bbbb
+infinite 0
+universe b,a ba,b bab,bab a,a
+infinite 2
+universe a,a aa,aa aaaa,aaaa aaaa,b
+infinite 0
+universe b,b a,b ab,a aba,aba
+infinite 0
+universe a,a b,b aa,bb aa,aa
+infinite 0
+universe b,b a,a a,aa bb,bb
+infinite 0
+universe b,b bb,b a,bbb a,bb
+infinite 0
+universe a,b ab,a aba,ab abaab,aba
+sparse 7 6 aba
+double aba b
+universe b,a a,b a,ab a,aab
+sparse 4 3 a
+double a b
+universe b,b b,bb bb,bb bb,bbbb
+infinite 0
+universe b,a b,ba a,ba a,aba
+sparse 4 2 a
+double b a
+universe a,b b,a ab,ab a,ab
+infinite 2
+universe a,a aa,a a,aaa aaaa,aaaa
+infinite 0
+universe b,a a,a aa,aa aa,ba
+infinite 1
+universe a,b b,b a,ab aab,b
+infinite 1
+universe b,b a,a b,a ba,a
+infinite 0
+universe b,a b,ba a,a ba,ba
+infinite 2
+universe b,a b,ba bba,b bbab,ba
+sparse 3 2 b
+double b a
+universe b,b a,bb bb,bb b,bbbb
+infinite 0
+universe a,a a,b b,b bb,bb
+infinite 0
+universe a,b ab,a a,aba a,aaba
+sparse 6 4 a
+universe a,a b,aa a,aa baa,b
+infinite 0
+universe b,b b,a a,bb a,abb
+infinite 0
+universe b,a ba,b ba,ba bab,baba
+infinite 2
+universe a,a a,aa b,a ba,b
+infinite 0
+universe b,b bb,b bbb,a bbba,bbba
+infinite 0
+universe b,a ba,a ba,baa a,babaa
+sparse 7 4 ba
+double ba a
+universe b,a ba,ba ba,baba bababa,baba
+infinite 1
+universe a,a a,b aa,a aaa,a
+infinite 0
+universe b,b bb,b a,a aa,bb
+infinite 0
+universe b,a a,ba ba,aba aba,aba
+infinite 3
+universe a,b a,ab a,aab b,ab
+sparse 3 2 a
+double a b
+universe a,a aa,a b,aa b,b
+infinite 0
+universe a,b ab,ab ab,abab a,abab
+infinite 1
+universe b,b a,bb b,bb bbb,bbb
+infinite 0
+universe a,b ab,ab ab,a ab,abab
+infinite 1
+universe a,b ab,a aba,ab abaab,a
+sparse 4 3 aba
+double aba b
+universe a,a aa,b aab,aab aabaab,b
+infinite 0
+universe b,b bb,b a,bb bbb,abb
+infinite 0
+universe b,a ba,ba baba,b babab,a
+infinite 1
+universe a,b ab,a aba,a a,abaa
+sparse 7 4 a
+universe b,a ba,b b,b bb,b
+infinite 2
+universe b,a b,b b,ba bba,bba
+infinite 1
+universe b,a b,b a,b ba,ab
+infinite 1
+universe b,a a,a aa,b aab,b
+infinite 1
+universe b,b b,bb a,bb bbb,b
+infinite 0
+universe a,a aa,b aa,a b,aaa
+infinite 0
+universe a,a aa,b aa,aab b,aa
+infinite 0
+universe a,a aa,aa b,a a,ba
+infinite 0
+universe b,a ba,b b,bab ba,bbab
+sparse 5 3 b
+universe a,b b,b bb,a b,ab
+infinite 1
+universe b,b a,bb abb,a abb,abb
+infinite 0
+universe a,b a,ab aab,aab aabaab,a
+infinite 2
+universe a,b ab,b ab,a abb,b
+dense 3 1 4
+universe a,a b,b bb,aa bb,b
+infinite 0
+universe a,a b,aa aa,a a,aaa
+infinite 0
+universe a,b a,ab a,a ab,a
+infinite 2
+universe b,a ba,b bab,bab ba,a
+infinite 2
+universe b,a a,b a,a ba,b
+infinite 2
+universe b,b b,bb a,bbb abbb,abbb
+infinite 0
+universe a,b ab,b abb,ab abbab,abbab
+infinite 3
+universe a,a b,a ba,aa baaa,b
+infinite 0
+universe b,b a,bb b,abb bb,abb
+infinite 0
+universe a,a a,b b,ab b,aa
+infinite 0
+universe a,a b,a ba,b ba,ba
+infinite 0
+universe b,a a,b ab,ab abab,a
+dense 2 1 3
+universe a,b b,ab ab,b ab,bab
+dense 6 1 7
+universe b,b b,bb b,a b,bbb
+infinite 0
+universe b,b bb,b bb,bb bb,bbbb
+infinite 0
+universe b,b a,bb bb,b abb,bbb
+infinite 0
+universe b,a ba,ba a,baba a,ba
+infinite 1
+universe a,a aa,b aab,aab aabaab,aa
+infinite 0
+universe a,b a,ab b,aab aab,baab
+sparse 8 3 a
+double a b
+universe a,b a,a b,b bb,a
+infinite 1
+universe b,b bb,a b,bb bbb,b
+infinite 0
+universe b,a ba,a baa,b a,b
+dense 3 1 4
+universe a,b ab,ab b,a abab,ba
+infinite 1
+universe a,a a,b b,b ab,a
+infinite 0
+universe a,b ab,a aba,a ab,abaa
+sparse 5 4 ba
+universe b,a ba,a b,ba baa,baa
+infinite 3
+universe a,b ab,a ab,b a,abb
+sparse 5 2 a
+universe a,b ab,b a,abb ab,a
+sparse 3 3 a
+universe a,b a,ab b,a aab,aab
+infinite 3
+universe a,a aa,a aa,b a,aaa
+infinite 0
+universe b,a ba,ba ba,baba b,b
+infinite 1
+universe b,a ba,b a,b a,a
+infinite 3
+universe b,b bb,bb a,b ab,a
+infinite 0
+universe a,a aa,b b,a aa,aa
+infinite 0
+universe b,b b,a ba,ba bb,a
+infinite 0
+universe a,b b,ab bab,a baba,a
+dense 5 1 6
+universe b,a a,ba b,b ba,b
+infinite 2
+universe b,a ba,b a,b a,ab
+sparse 3 2 a
+double a b
+universe b,b b,a bb,b bbb,a
+infinite 0
+universe b,a a,b ba,ba baba,ab
+infinite 2
+universe b,b a,a bb,aa aa,bbaa
+infinite 0
+universe a,b b,ab b,a ba,bab
+dense 3 0 4
+universe b,b bb,a bb,b b,bbb
+infinite 0
+universe b,b bb,b bbb,b bbb,bbbb
+infinite 0
+universe b,b a,a bb,a b,aa
+infinite 0
+universe a,b b,b b,a bb,ab
+infinite 1
+universe a,a b,a ba,aa aa,a
+infinite 0
+universe a,b ab,a b,a aba,a
+dense 3 1 4
+universe a,b ab,ab a,ab b,a
+infinite 1
+universe a,b ab,b abb,b abb,ab
+dense 4 2 5
+universe b,a b,b ba,a b,bb
+infinite 1
+universe b,b a,b a,a ab,ab
+infinite 0
+universe b,b a,b b,ab a,ab
+infinite 0
+universe b,a a,b ba,ab ba,ba
+infinite 3
+universe a,b b,a ba,a a,ab
+sparse 5 1 a
+double a b
+universe a,b b,b ab,b b,bb
+infinite 1
+universe a,b ab,a b,b a,ab
+infinite 2
+universe b,a a,b a,ab ab,b
+sparse 4 2 a
+double a b
+universe a,b b,ab b,a ba,ba
+dense 3 0 4
+universe a,a aa,b aab,aab a,b
+infinite 0
+universe a,b b,ab b,bab ab,bab
+sparse 6 2 b
+universe b,a ba,a baa,ba b,baaba
+sparse 5 5 abba
+universe b,b a,b bb,bb ab,b
+infinite 0
+universe b,a b,b a,b bb,bb
+infinite 1
+universe b,a a,ba b,aba baba,baba
+dense 3 1 4
+universe a,b a,ab aab,a aaba,aab
+sparse 6 5 a
+double a b
+universe a,b b,b b,ab bb,ab
+infinite 1
+universe a,a a,aa aaa,aaa aa,aaaaaa
+infinite 0
+universe a,a a,aa b,aa aaa,aa
+infinite 0
+universe a,a aa,b a,aa aa,aa
+infinite 0
+universe b,b a,b bb,b ab,a
+infinite 0
+universe b,b bb,b bbb,b bb,a
+infinite 0
+universe b,a a,b a,a aa,b
+infinite 2
+universe a,a aa,b b,aab aa,a
+infinite 0
+universe a,a b,a ba,b a,b
+infinite 0
+universe a,b a,ab b,a aab,ab
+sparse 4 2 a
+double a b
+universe a,a a,aa aaa,b aaa,aaab
+infinite 0
+universe b,a ba,b bab,b bab,babb
+sparse 6 4 abb
+double bab b
+universe a,a b,aa baa,aa baaaa,a
+infinite 0
+universe b,a ba,b bab,ba b,babba
+sparse 7 6 bba
+double bab a
+universe a,a aa,b b,aab baab,b
+infinite 0
+universe b,b bb,b b,bbb b,a
+infinite 0
+universe a,a aa,b a,aa aaa,b
+infinite 0
+universe b,a b,b ba,bb bb,b
+infinite 1
+universe a,a a,aa aa,aa aa,aaaa
+infinite 0
+universe b,b bb,bb bbbb,a bb,bbbba
+infinite 0
+universe a,b b,b b,ab b,a
+infinite 1
+universe b,b bb,a bba,bb bba,b
+infinite 0
+universe a,b ab,b a,a abb,abb
+infinite 2
+universe a,a aa,b aab,b aabb,a
+infinite 0
+universe b,a a,a b,b aa,bb
+infinite 1
+universe b,a a,a ba,b ba,aa
+infinite 1
+universe b,a b,ba a,ba ba,ba
+infinite 3
+universe b,b b,a ba,b bab,a
+infinite 0
+universe b,a a,ba ba,ba baba,baba
+infinite 2
+universe a,b ab,a a,aba aaba,ab
+sparse 7 3 a
+universe a,a b,a ba,aa ba,b
+infinite 0
+universe b,b bb,bb b,bb bbbb,a
+infinite 0
+universe b,b a,a aa,aa bb,aa
+infinite 0
+universe b,a a,ba b,aba aba,a
+dense 4 2 6
+universe b,b a,a b,aa aa,bb
+infinite 0
+universe a,a a,aa aa,aaa b,aaa
+infinite 0
+universe b,b bb,bb a,bb a,bbbb
+infinite 0
+universe b,b bb,b bbb,bbb bbbbbb,bb
+infinite 0
+universe a,b a,a aa,b ab,ab
+infinite 1
+universe b,a a,b a,ba ab,b
+dense 3 1 4
+universe b,a a,ba b,ba ba,ba
+infinite 3
+universe b,a b,ba b,b bb,ba
+infinite 2
+universe b,a a,b b,ba a,bba
+sparse 4 1 b
+double b a
+universe b,b a,a aa,a bb,b
+infinite 0
+universe b,a b,b bb,ba b,bb
+infinite 1
+universe a,b ab,ab a,a ab,abab
+infinite 1
+universe b,b bb,a bb,bb a,a
+infinite 0
+universe b,b bb,bb b,bbbb bbbbb,bbbb
+infinite 0
+universe b,b a,bb b,abb bb,bb
+infinite 0
+universe a,a a,b b,ab aa,aa
+infinite 0
+universe b,a b,b b,ba ba,bb
+infinite 1
+universe a,b a,a ab,b aa,abb
+infinite 1
+universe b,b bb,a bba,a b,bb
+infinite 0
+universe a,a aa,b aa,a a,aab
+infinite 0
+universe b,a b,ba bba,ba bba,bbaba
+sparse 7 4 bba
+double b a
+universe a,a aa,b aa,aa aaaa,aaaa
+infinite 0
+universe a,a b,a a,ba aba,ba
+infinite 0
+universe b,a ba,ba a,a a,b
+infinite 1
+universe a,a a,b b,b aa,ab
+infinite 0
+universe a,a a,b b,aa ab,b
+infinite 0
+universe a,a aa,b aab,aab aa,aab
+infinite 0
+universe b,a b,ba ba,bba bba,babba
+sparse 10 4 b
+double b a
+universe a,b ab,a b,aba ab,b
+sparse 4 4 bba
+universe a,b ab,b a,ab b,aab
+sparse 5 3 a
+double a b
+universe a,b a,ab aab,b aab,a
+sparse 3 2 a
+double a b
+universe a,b b,b bb,bb ab,bb
+infinite 1
+universe b,a a,ba aba,b ba,a
+dense 4 2 6
+universe b,b a,b ab,a ab,bb
+infinite 0
+universe a,a b,a aa,aa ba,aa
+infinite 0
+universe b,a ba,b a,a b,b
+infinite 2
+universe a,b b,b a,a ab,aa
+infinite 1
+universe b,b b,bb bbb,b bbb,bbb
+infinite 0
+universe a,b a,ab ab,aab abaab,b
+sparse 6 2 a
+double a b
+universe b,a a,a ba,a b,ba
+infinite 1
+universe a,a aa,aa aa,b aa,aaaa
+infinite 0
+universe a,a aa,a b,aa a,b
+infinite 0
+universe b,a a,b ab,ba ba,ba
+infinite 3
+universe b,a a,a ba,ba aa,b
+infinite 1
+universe a,a aa,aa aa,aaaa aaaa,b
+infinite 0
+universe b,a a,a aa,b b,b
+infinite 1
+universe a,b ab,a b,a ab,b
+dense 2 2 4
+universe b,a a,ba ba,b ba,ba
+infinite 3
+universe b,b a,b bb,a bba,a
+infinite 0
+universe b,a b,b a,bb ba,a
+infinite 1
+universe b,a a,b a,ab aab,b
+sparse 4 2 a
+double a b
+universe b,a b,ba ba,ba a,bba
+infinite 2
+universe b,a b,ba b,b a,a
+infinite 2
+universe b,b bb,b bbb,bbb bbbbbb,a
+infinite 0
+universe a,b b,ab bab,b a,a
+infinite 3
+universe a,a a,aa aaa,aa a,aaaaa
+infinite 0
+universe a,a aa,b b,aab a,b
+infinite 0
+universe b,b a,a a,aa a,b
+infinite 0
+universe a,b b,ab ab,ab a,abab
+infinite 2
+universe a,b b,ab b,bab a,bab
+sparse 4 2 b
+universe b,b bb,a bba,b bba,a
+infinite 0
+universe a,b ab,a ab,aba ababa,b
+sparse 4 3 ab
+double ab a
+universe b,b a,b b,bb bbb,bbb
+infinite 0
+universe a,b ab,b abb,abb abb,abbabb
+infinite 2
+universe a,b ab,a b,aba ab,baba
+sparse 5 4 bab
+universe b,b bb,a bba,a bba,bba
+infinite 0
+universe a,b a,ab ab,a b,b
+infinite 3
+universe a,b ab,a b,b aba,aba
+infinite 2
+universe a,a b,aa a,b b,ab
+infinite 0
+universe b,a a,a aa,b b,aa
+infinite 1
+universe b,a a,b ba,ab ab,ab
+dense 3 2 4
+universe b,b b,bb bb,a a,bba
+infinite 0
+universe b,a a,b ba,a ba,b
+dense 2 2 4
+universe b,a b,ba ba,bba b,b
+infinite 3
+universe a,a a,aa aaa,a aaaa,a
+infinite 0
+universe a,a aa,a a,b aa,aaa
+infinite 0
+universe a,b b,b bb,a bba,ab
+infinite 1
+universe b,a ba,a a,b baa,b
+dense 3 1 4
+universe a,a a,aa aaa,aaa aaa,aaaaaa
+infinite 0
+universe b,b bb,a a,a b,a
+infinite 0
+universe a,b b,a b,ba ab,a
+sparse 3 2 b
+double b a
+universe b,a a,a aa,ba a,aaba
+infinite 1
+universe b,a b,ba bba,bba a,bbabba
+infinite 2
+universe a,a a,b a,aa ab,aa
+infinite 0
+universe b,a ba,a baa,ba b,baa
+sparse 4 5 aabb
+universe b,a b,b bb,ba b,bbba
+infinite 1
+universe a,b ab,a a,a b,aba
+infinite 2
+universe b,b bb,a bb,bba bba,b
+infinite 0
+universe b,b bb,a bb,bb bbbb,bba
+infinite 0
+universe b,a a,b b,ab ba,ba
+infinite 3
+universe a,a b,b aa,a aaa,b
+infinite 0
+universe b,a b,b a,ba bb,b
+infinite 1
+universe a,a a,aa aa,aaa aaa,a
+infinite 0
+universe a,b b,b a,a a,aa
+infinite 1
+universe a,b ab,b ab,ab a,abab
+infinite 2
+universe a,b b,b a,ab a,aab
+infinite 1
+universe b,a a,b a,a ba,ab
+infinite 2
+universe a,a aa,a aa,aa aaaa,b
+infinite 0
+universe a,b b,ab bab,bab a,ab
+infinite 2
+universe b,b b,a b,bb bb,ba
+infinite 0
+universe a,b b,b b,ab ab,bab
+infinite 1
+universe a,b a,a b,ab ab,aa
+infinite 1
+universe a,a a,aa aa,b aaa,aab
+infinite 0
+universe b,a ba,a baa,ba ba,baa
+sparse 7 5 ba
+double ba a
+universe a,b ab,ab b,ab b,b
+infinite 1
+universe b,b bb,bb bb,b b,a
+infinite 0
+universe b,a a,ba a,aba aaba,b
+sparse 5 2 a
+universe a,b ab,a ab,ab ab,b
+infinite 2
+universe b,a ba,ba baba,baba b,ba
+infinite 1
+universe b,b a,a bb,a b,a
+infinite 0
+universe a,a a,b ab,ab abab,a
+infinite 0
+universe a,b b,b bb,a bb,bba
+infinite 1
+universe b,a a,b ba,ab ab,a
+dense 3 2 4
+universe a,b a,ab b,ab a,a
+infinite 3
+universe a,b a,a a,ab aab,ab
+infinite 1
+universe b,b b,bb bb,bbb bbbbb,a
+infinite 0
+universe b,b a,bb abb,a b,bb
+infinite 0
+universe a,b b,a ab,ba b,ba
+sparse 3 2 b
+double b a
+universe b,a ba,a a,baa a,abaa
+sparse 6 3 a
+universe a,a aa,a aaa,aa aaa,aaa
+infinite 0
+universe b,b bb,bb bb,a bb,bba
+infinite 0
+universe b,a ba,ba baba,ba b,b
+infinite 1
+universe a,b a,a aa,ab aaab,b
+infinite 1
+universe b,b b,a bb,bb bb,bbbb
+infinite 0
+universe b,a a,a a,ba aba,b
+infinite 1
+universe b,b b,a a,b b,ba
+infinite 0
+universe b,a a,b ba,a a,ab
+sparse 4 2 a
+double a b
+universe b,b a,a a,b bb,aa
+infinite 0
+universe b,a ba,a baa,baa b,ba
+infinite 2
+universe b,a ba,ba baba,b baba,a
+infinite 1
+universe a,b ab,b b,ab abb,b
+dense 4 3 6
+universe a,b a,a a,ab a,aa
+infinite 1
+universe b,a ba,b bab,ba babba,ba
+sparse 6 3 babba
+double bab a
+universe a,b ab,b abb,a a,abba
+sparse 7 4 a
+universe a,a b,b b,a b,ba
+infinite 0
+universe b,a a,a ba,aa aa,ba
+infinite 1
+universe a,a aa,aa b,aaaa a,aaaa
+infinite 0
+universe a,b ab,b b,b bb,a
+infinite 2
+universe b,b b,bb bb,a b,bbb
+infinite 0
+universe b,b a,b b,ab ab,a
+infinite 0
+universe b,a a,a aa,a aa,b
+infinite 1
+universe b,b bb,bb bb,bbbb bbbbbb,bbbbbb
+infinite 0
+universe b,a ba,ba ba,baba a,a
+infinite 1
+universe b,a ba,b a,a b,aa
+infinite 2
+universe a,b b,a ab,b ba,b
+dense 2 2 4
+universe a,b ab,b a,abb aabb,ab
+sparse 5 2 a
+universe a,b b,b bb,ab a,bbab
+infinite 1
+universe b,a ba,b a,ba b,b
+infinite 3
+universe b,b b,a bb,bb b,bbbb
+infinite 0
+universe b,b b,a bb,bb bbbb,ba
+infinite 0
+universe b,a b,ba bba,b bbab,b
+sparse 4 2 b
+double b a
+universe a,a a,b aa,a aa,ab
+infinite 0
+universe a,b a,a ab,b abb,aa
+infinite 1
+universe a,b ab,ab a,abab a,a
+infinite 1
+universe b,b b,a ba,a ba,bb
+infinite 0
+universe a,a aa,a b,aa b,aaa
+infinite 0
+universe a,b b,ab ab,ab abab,abab
+infinite 2
+universe b,a ba,ba ba,baba b,bababa
+infinite 1
+universe a,a b,b a,bb b,abb
+infinite 0
+universe b,b bb,b a,bb abb,abb
+infinite 0
+universe a,a b,a ba,b aa,b
+infinite 0
+universe b,b bb,bb bbbb,b bbbbb,a
+infinite 0
+universe a,b b,a ab,b abb,a
+dense 2 2 4
+universe a,a b,a a,b b,ba
+infinite 0
+universe b,a a,b ab,a b,ab
+dense 2 1 3
+universe a,b b,b a,ab a,a
+infinite 1
+universe b,b a,a bb,bb bb,b
+infinite 0
+universe b,a ba,ba baba,b ba,a
+infinite 1
+universe b,b bb,a a,a a,bba
+infinite 0
+universe b,a a,ba aba,aba a,b
+infinite 2
+universe b,b b,a a,ba b,ba
+infinite 0
+universe a,b ab,a aba,aba abaaba,abaaba
+infinite 2
+universe a,b b,ab a,bab abab,ab
+dense 3 1 4
+universe b,b bb,a bba,bb bbabb,bba
+infinite 0
+universe b,a ba,b bab,ba ba,ba
+infinite 3
+universe b,a a,b ab,b ab,abb
+dense 3 1 4
+universe b,a ba,b a,a aa,b
+infinite 2
+universe b,a a,b ab,a aba,a
+dense 2 1 3
+universe a,a aa,a b,aaa b,aa
+infinite 0
+universe b,b a,b a,bb bb,bb
+infinite 0
+universe b,a b,ba bba,b bbab,a
+sparse 3 2 b
+double b a
+universe a,a b,aa a,b baa,baa
+infinite 0
+universe a,b a,a a,ab a,aab
+infinite 1
+universe a,a b,b a,bb bb,b
+infinite 0
+universe a,a a,b aa,aa aaaa,b
+infinite 0
+universe a,b ab,a aba,ab b,aba
+sparse 4 6 aba
+double aba b
+universe b,a ba,a ba,baa b,baa
+sparse 4 2 ab
+double ba a
+universe b,a a,ba aba,b abab,ba
+dense 6 1 7
+universe a,b b,ab b,a ab,bab
+dense 6 2 7
+universe b,b a,bb bb,bb a,abb
+infinite 0
+universe b,a a,ba b,aba a,a
+infinite 3
+universe b,a a,ba ba,ba aba,baba
+infinite 2
+universe a,a a,b a,ab aa,a
+infinite 0
+universe a,b ab,ab b,b abab,b
+infinite 1
+universe a,b b,ab ab,bab abbab,abbab
+infinite 3
+universe a,b b,ab b,b bab,bb
+infinite 2
+universe a,a aa,b aab,aa b,aab
+infinite 0
+universe a,b b,ab ab,bab a,ab
+sparse 6 4 a
+double a b
+universe b,b b,bb bbb,a a,bbba
+infinite 0
+universe a,a aa,b aab,a b,aab
+infinite 0
+universe b,a ba,ba b,b bb,baba
+infinite 1
+universe a,b ab,ab ab,b b,b
+infinite 1
+universe a,a b,b b,a aa,a
+infinite 0
+universe b,a a,ba aba,b b,aba
+dense 4 1 5
+universe b,a ba,a a,ba a,a
+infinite 3
+universe b,b a,a b,aa baa,bb
+infinite 0
+universe b,a b,ba b,b bba,bba
+infinite 2
+universe a,a aa,b b,aab baab,baab
+infinite 0
+universe b,a a,ba ba,aba ba,b
+dense 6 2 7
+universe a,b a,a a,aa aaa,aaa
+infinite 1
+universe a,a aa,a aa,aaa a,b
+infinite 0
+universe a,a b,aa baa,baa a,aa
+infinite 0
+universe b,b b,bb a,b a,a
+infinite 0
+universe a,b ab,b ab,abb ababb,abb
+sparse 7 2 ba
+double ab b
+universe b,a b,ba a,a bba,bba
+infinite 2
+universe a,b a,a aa,a ab,ab
+infinite 1
+universe a,b a,ab aab,aab ab,a
+infinite 2
+universe b,a a,ba aba,ba ba,a
+dense 6 2 8
+universe b,a a,b b,ba ba,a
+sparse 5 2 b
+double b a
+universe a,b ab,ab ab,abab ababab,abab
+infinite 1
+universe a,b a,a ab,aa ab,a
+infinite 1
+universe a,a b,aa baa,baa b,b
+infinite 0
+universe a,a b,b bb,aa b,a
+infinite 0
+universe b,a a,b a,ab b,b
+infinite 3
+universe a,b ab,ab a,a a,aa
+infinite 1
+universe a,b ab,b a,a abb,aa
+infinite 2
+universe b,a a,ba ba,aba baaba,b
+dense 7 2 8
+universe b,a ba,a baa,a baa,baa
+infinite 3
+universe a,b b,a a,ab b,ab
+sparse 4 1 a
+double a b
+universe b,b a,bb b,a a,b
+infinite 0
+universe b,a b,b bb,ba a,a
+infinite 1
+universe a,b ab,ab abab,a a,abab
+infinite 1
+universe b,a b,b bb,a bba,bba
+infinite 1
+universe b,a b,ba bba,bba bbabba,a
+infinite 2
+universe a,a b,b bb,bb a,bbbb
+infinite 0
+universe a,b ab,b ab,abb a,ababb
+sparse 5 4 a
+double ab b
+universe b,a b,ba a,bba bba,a
+sparse 5 3 b
+double b a
+universe a,b a,ab b,a ba,b
+sparse 2 2 a
+double a b
+universe b,b bb,a b,bba bbba,bb
+infinite 0
+universe b,a b,ba bba,ba b,bbaba
+sparse 5 4 bbba
+double b a
+universe b,b a,bb abb,b a,a
+infinite 0
+universe b,b b,bb b,bbb b,a
+infinite 0
+universe b,a a,a b,ba a,ba
+infinite 1
+universe b,b b,a bb,a bba,bb
+infinite 0
+universe b,b bb,a bba,a bbaa,a
+infinite 0
+universe a,b b,b a,a aa,aa
+infinite 1
+universe b,b bb,b bb,a bbb,a
+infinite 0
+universe b,a ba,a ba,ba baa,ba
+infinite 2
+universe b,a a,a aa,a ba,aaa
+infinite 1
+universe a,a a,aa aaa,a aaaa,aa
+infinite 0
+universe b,a a,a ba,a baa,baa
+infinite 1
+universe a,b b,ab ab,bab ab,abbab
+sparse 8 4 ab
+universe b,b b,a a,a ba,aa
+infinite 0
+universe a,a aa,aa aaaa,b a,b
+infinite 0
+universe b,a a,b a,ba aba,ba
+dense 5 1 6
+universe a,b a,ab b,b a,bb
+infinite 2
+universe a,a aa,aa aaaa,aaaa a,aaaa
+infinite 0
+universe b,b a,a bb,b bbb,aa
+infinite 0
+universe b,b b,bb b,a bb,bbb
+infinite 0
+universe b,b bb,a b,bba a,a
+infinite 0
+universe b,b a,a a,aa bb,b
+infinite 0
+universe b,a ba,b a,a bab,aa
+infinite 2
+universe b,b bb,b b,a a,bbb
+infinite 0
+universe a,b ab,b abb,abb abbabb,b
+infinite 2
+universe a,b b,a ba,ba baba,ba
+dense 2 1 3
+universe a,b b,b a,a a,ab
+infinite 1
+universe b,b a,a a,bb a,b
+infinite 0
+universe b,b a,b ab,a b,aba
+infinite 0
+universe b,b bb,b bbb,b a,bbbb
+infinite 0
+universe b,a ba,a a,ba ba,ba
+infinite 3
+universe b,a a,ba ba,aba baaba,a
+dense 7 2 9
+universe a,a a,b ab,a b,aba
+infinite 0
+universe b,b bb,a bba,b b,bb
+infinite 0
+universe a,b b,ab a,a aa,ab
+infinite 2
+universe b,a a,b a,ab ab,ba
+sparse 5 2 a
+double a b
+universe a,a aa,aa aa,a aaaa,aaaa
+infinite 0
+universe a,a b,a a,aa a,ba
+infinite 0
+universe b,b a,b ab,a bb,b
+infinite 0
+universe a,b a,ab a,a b,ab
+infinite 2
+universe b,a ba,b ba,a ba,baa
+sparse 4 2 ab
+double ba a
+universe b,b bb,bb bb,bbbb a,bbbb
+infinite 0
+universe b,b b,bb bbb,bb a,bbb
+infinite 0
+universe b,a a,a a,b ba,a
+infinite 1
+universe b,a ba,a a,ba aba,b
+dense 5 2 6
+universe a,a b,b b,aa b,bb
+infinite 0
+universe b,a ba,a b,baa bbaa,b
+sparse 4 3 b
+universe b,b a,a aa,b aab,aa
+infinite 0
+universe a,a aa,aa aaaa,aa aaaaaa,b
+infinite 0
+universe b,b a,a aa,b a,aab
+infinite 0
+universe b,b bb,a b,bb bb,bba
+infinite 0
+universe a,b ab,ab a,ab b,abab
+infinite 1
+universe a,b ab,b a,ab abb,aab
+sparse 5 3 a
+double a b
+universe a,b a,ab ab,a aab,b
+sparse 3 2 a
+double a b
+universe b,b a,a aa,aa a,b
+infinite 0
+universe b,b b,a ba,ba baba,bb
+infinite 0
+universe a,a a,b ab,ab ab,abab
+infinite 0
+universe a,a a,b aa,aa b,aaaa
+infinite 0
+universe b,a b,b a,a ba,bb
+infinite 1
+universe b,b a,bb b,a b,bb
+infinite 0
+universe b,b a,a aa,b aab,b
+infinite 0
+universe b,a b,b b,ba a,bba
+infinite 1
+universe a,a aa,a aaa,b aaa,a
+infinite 0
+universe a,a aa,b b,a a,aab
+infinite 0
+universe a,a aa,b aab,aab aab,aa
+infinite 0
+universe b,a b,ba bba,a ba,b
+sparse 3 2 b
+double b a
+universe b,a ba,ba b,baba b,bbaba
+infinite 1
+universe b,a b,ba b,b bba,a
+infinite 2
+universe a,b ab,ab a,abab b,b
+infinite 1
+universe b,a a,b a,ab ba,ab
+sparse 3 2 a
+double a b
+universe a,b b,b ab,b ab,ab
+infinite 1
+universe a,a aa,a aaa,a a,b
+infinite 0
+universe b,b bb,a bba,a a,bbaa
+infinite 0
+universe a,a b,b aa,b a,b
+infinite 0
+universe b,b b,a a,bb abb,bb
+infinite 0
+universe b,b b,a a,b b,ab
+infinite 0
+universe a,b b,a b,ba ba,b
+sparse 3 2 b
+double b a
+universe a,a a,b ab,b ab,aa
+infinite 0
+universe b,b bb,a b,bba b,a
+infinite 0
+universe b,b bb,bb bb,bbbb bb,bbbbbb
+infinite 0
+universe a,a b,a ba,b b,b
+infinite 0
+universe b,b a,b a,ab aab,b
+infinite 0
+universe a,b ab,ab a,ab a,a
+infinite 1
+universe b,b a,bb abb,a a,a
+infinite 0
+universe a,a aa,b a,aa aab,aaa
+infinite 0
+universe a,b ab,ab a,a b,aa
+infinite 1
+universe b,a b,ba a,ba ba,b
+sparse 4 2 b
+double b a
+universe b,b bb,b bb,bbb bbbbb,a
+infinite 0
+universe b,b a,a a,bb bb,a
+infinite 0
+universe a,b ab,b abb,abb a,abb
+infinite 2
+universe b,a b,b bb,ba bbba,b
+infinite 1
+universe b,b bb,b a,bb abb,a
+infinite 0
+universe b,b b,a a,ba aba,b
+infinite 0
+universe b,a a,a aa,a b,aa
+infinite 1
+universe a,a b,b aa,b b,aab
+infinite 0
+universe b,b a,bb bb,abb bb,b
+infinite 0
+universe a,b ab,ab abab,ab ababab,abab
+infinite 1
+universe a,b ab,b abb,ab abbab,b
+dense 4 2 5
+universe a,b a,a aa,ab a,aaab
+infinite 1
+universe b,b bb,bb a,bb a,b
+infinite 0
+universe a,a b,a ba,ba aa,aa
+infinite 0
+universe b,a ba,a ba,ba baba,b
+infinite 2
+universe a,a b,b a,bb b,aa
+infinite 0
+universe a,a aa,aa aaaa,aa a,aaaaaa
+infinite 0
+universe a,b a,ab b,b bb,a
+infinite 2
+universe b,b a,a aa,bb bb,a
+infinite 0
+universe a,b b,ab b,bab a,ab
+sparse 4 2 a
+double a b
+universe a,b b,ab b,bab a,bbab
+sparse 4 2 b
+universe b,b bb,a bba,bba bb,bb
+infinite 0
+universe a,a a,b b,b b,a
+infinite 0
+universe a,b ab,b ab,a abb,abb
+infinite 3
+universe a,a aa,a aa,aa aaa,b
+infinite 0
+universe b,a ba,b bab,a ba,baba
+dense 2 1 3
+universe b,a a,ba ba,aba baaba,aba
+dense 9 2 10
+universe a,a aa,aa aa,b aaaa,aaaa
+infinite 0
+universe a,b a,a aa,aa b,aa
+infinite 1
+universe b,b a,bb b,a ba,abb
+infinite 0
+universe a,b b,a ba,ba ab,baba
+dense 2 1 3
+universe a,b ab,a a,aba aaba,aba
+sparse 8 3 a
+universe a,a a,b aa,a aa,aa
+infinite 0
+universe a,b a,ab aab,aab ab,aabaab
+infinite 2
+universe b,a b,ba a,b a,a
+infinite 3
+universe a,a b,a ba,ba baba,b
+infinite 0
+universe a,b b,ab bab,a ab,ab
+infinite 3
+universe b,b a,b ab,a bb,a
+infinite 0
+universe a,a b,a aa,aa a,b
+infinite 0
+universe b,a ba,ba b,baba b,ba
+infinite 1
+universe b,b a,a b,a a,bb
+infinite 0
+universe a,a b,a
+infinite 0
+universe b,a c,ba c,c b,c
+infinite 2
+universe b,b b,bb c,b bbb,c
+infinite 0
+universe a,c c,ac
+dense 3 1 4
+universe c,c b,cc b,bcc
+infinite 0
+universe b,a ba,c a,b bac,c
+dense 3 1 4
+universe b,c a,a c,b
+infinite 1
+universe c,b b,a
+dense 2 0 3
+universe c,a ca,b
+dense 2 0 3
+universe b,c bc,b
+dense 2 1 3
+universe c,b cb,cb cb,a cbcb,a b,a ba,c
+infinite 1
+universe a,b ab,c
+dense 2 0 3
+universe c,a a,a a,aa aaa,ca aaaca,a
+infinite 1
+universe c,a a,a aa,b
+infinite 1
+universe a,b ab,c c,abc b,b cabc,a cabc,c
+infinite 3
+universe a,c b,b b,bb
+infinite 1
+universe c,c b,b
+infinite 0
+universe c,c c,b b,a
+infinite 0
+universe b,c a,a a,aa aaa,c
+infinite 1
+universe c,b b,b bb,cb bbcb,cb a,a
+infinite 1
+universe c,c a,cc c,acc b,a
+infinite 0
+universe b,a c,c c,a ca,ba caba,b cc,cc
+infinite 1
+universe a,b b,b bb,a ab,bb b,ab
+infinite 1
+universe b,a a,a ba,b
+infinite 1
+universe c,a a,a c,b c,aa
+infinite 1
+universe b,a c,ba a,b a,c ac,ac
+infinite 4
+universe c,a b,c a,a c,ca cca,bc
+infinite 2
+universe a,c b,a c,ba ac,b acb,c
+dense 3 3 6
+universe a,c b,b a,ac a,bb ac,bb
+infinite 1
+universe c,a c,ca cca,ca c,b ca,c cb,cac
+sparse 5 4 c
+double c a
+universe b,c bc,a c,c b,bca bbca,cc
+infinite 2
+universe c,b a,b ab,c b,cb b,abc babc,b
+dense 4 3 5
+universe b,c bc,c a,b
+dense 2 1 3
+universe a,a a,aa b,aa
+infinite 0
+universe b,b bb,bb b,a c,ba
+infinite 0
+universe a,b a,a b,b b,bb
+infinite 1
+universe b,a b,b c,ba a,b bb,b
+infinite 1
+universe c,b c,cb a,ccb c,a ca,cb ca,ca
+infinite 5
+universe b,c bc,c b,b bcc,bc bcc,b bcc,bb
+infinite 2
+universe b,b b,bb
+infinite 0
+universe b,a a,c
+dense 2 0 3
+universe a,b c,ab cab,b b,ab
+dense 5 1 6
+universe b,a a,b ba,b c,ba c,bab
+dense 3 1 4
+universe a,b c,ab a,cab acab,b c,cab ab,acab
+sparse 6 4 ac
+universe a,a b,b aa,a c,b b,cb
+infinite 0
+universe c,b cb,cb a,cbcb b,a b,c
+infinite 1
+universe c,a ca,ca
+infinite 1
+universe c,a b,a a,ba
+dense 3 1 4
+universe b,b a,b c,b b,bb c,c
+infinite 0
+universe b,b b,a b,ba a,b ba,b
+infinite 0
+universe b,a b,b bb,c a,b c,c
+infinite 1
+universe a,b c,b c,cb c,c ccb,cc ab,ccb
+infinite 3
+universe b,c c,a
+dense 2 0 3
+universe a,b ab,a a,c
+dense 3 1 4
+universe c,a b,a ba,ba ca,baba b,baba
+infinite 2
+universe c,b cb,b cbb,b
+dense 3 0 4
+universe b,a a,a c,c c,a
+infinite 1
+universe c,a ca,c b,a ba,a
+dense 2 1 3
+universe a,a a,b
+infinite 0
+universe a,c b,ac a,ac
+sparse 2 1 a
+double a c
+universe a,b ab,c a,a b,c b,ab
+infinite 2
+universe b,b b,bb c,a b,c bc,bc
+infinite 0
+universe a,b c,c cc,a a,cc cca,ab
+infinite 1
+universe b,a a,c b,ba
+sparse 2 1 b
+double b a
+universe b,c bc,bc bcbc,a b,bc c,a a,bc
+infinite 1
+universe a,c c,c a,b b,a ac,ac
+infinite 1
+universe c,c cc,c c,b ccc,cb ccccb,c
+infinite 0
+universe a,a b,b aa,c a,b aac,c
+infinite 0
+universe c,b b,b a,a cb,bb
+infinite 1
+universe a,c ac,a a,a c,a c,aa
+infinite 2
+universe c,a ca,ca ca,caca caca,a ca,c
+infinite 1
+universe a,b b,ab
+dense 3 1 4
+universe c,b c,cb cb,cb b,c
+infinite 2
+universe a,b c,c ab,b
+infinite 1
+universe b,c b,bc bc,a
+sparse 3 1 b
+double b c
+universe b,c bc,bc a,b
+infinite 1
+universe a,a aa,aa
+infinite 0
+universe a,b b,ab a,ab aab,aab
+infinite 3
+universe b,b a,c bb,c ac,a aca,bbc
+infinite 0
+universe c,b a,a cb,c
+infinite 1
+universe a,c a,b c,a a,ac
+sparse 4 1 a
+double a c
+universe b,a c,b ba,cb b,c bc,ba
+dense 4 4 7
+universe a,a b,b b,bb
+infinite 0
+universe b,b a,a
+infinite 0
+universe b,a b,ba ba,a bba,bba
+infinite 3
+universe a,b b,ab a,c c,c cc,b ccb,b
+infinite 3
+universe b,b bb,bb c,bb
+infinite 0
+universe a,a c,aa
+infinite 0
+universe a,b b,b bb,b ab,a c,a aba,bb
+infinite 1
+universe c,a ca,a
+dense 2 0 3
+universe b,c a,c
+dense 1 0 2
+universe c,b c,c a,b cc,a cb,b b,ab
+infinite 1
+universe c,b b,a cb,ba a,cb
+dense 4 3 6
+universe c,b c,cb ccb,a cb,ccba ccba,b
+sparse 7 3 c
+double c b
+universe b,a c,c a,ba ba,cc ba,aba
+infinite 1
+universe a,c a,a ac,c acc,c
+infinite 1
+universe b,b a,b c,a b,ca bca,b a,bb
+infinite 0
+universe a,c c,c a,cc a,a a,b
+infinite 1
+universe b,c bc,a b,bc c,bca b,b
+infinite 4
+universe b,c bc,c
+dense 2 0 3
+universe c,b a,b ab,a
+dense 2 1 3
+universe b,a b,b c,a ba,b ba,a
+infinite 1
+universe b,b b,a b,ba b,bba ba,a a,bbba
+infinite 0
+universe b,c a,bc b,bc bc,bbc bbc,abc b,bbc
+sparse 8 5 b
+double b c
+universe b,a b,ba ba,ba bba,bba ba,c baba,a
+infinite 2
+universe a,b a,c
+dense 1 0 2
+universe c,a c,b
+dense 1 0 2
+universe a,c a,ac
+sparse 2 1 a
+double a c
+universe b,a b,b
+infinite 1
+universe b,c b,a b,b bc,bb ba,c
+infinite 2
+universe c,c a,b c,b cb,c cb,cc cc,a
+infinite 0
+universe c,c a,c b,ac ac,ac
+infinite 0
+universe a,c a,ac b,aac c,aac
+sparse 4 2 a
+double a c
+universe a,b a,ab c,a a,c ac,ca
+sparse 4 3 a
+double a b
+universe b,c a,c c,a a,b
+dense 3 1 4
+universe b,c c,b a,a
+infinite 2
+universe b,a a,c ba,ba
+infinite 2
+universe a,a a,aa aa,c c,c
+infinite 0
+universe a,a c,c aa,b a,c b,aab aa,c
+infinite 0
+universe b,b c,c
+infinite 0
+universe c,b c,a ca,c ca,ca
+infinite 3
+universe a,c a,b
+dense 1 0 2
+universe b,b c,c a,a b,c b,cc bcc,bb
+infinite 0
+universe c,c b,c cc,cc cc,a cca,b
+infinite 0
+universe a,a a,b aa,a aaa,ab b,b bb,ab
+infinite 0
+universe c,b a,a
+infinite 1
+universe c,c c,a
+infinite 0
+universe b,c c,b b,a b,b bb,c
+infinite 3
+universe c,c cc,c c,b cb,cc cb,c c,cb
+infinite 0
+universe b,a ba,a b,c baa,bc c,c
+infinite 4
+universe c,b cb,c a,b
+dense 2 1 3
+universe c,a b,b a,ca a,c bb,aca
+infinite 1
+universe a,c c,ac cac,ac ac,c acc,cac acc,ac
+dense 9 4 11
+universe a,b ab,b
+dense 2 0 3
+universe a,c c,a ca,ac
+dense 4 1 5
+universe b,c bc,bc bc,a a,bcbc
+infinite 1
+universe a,b ab,a c,ab b,ab
+dense 3 3 5
+universe a,c a,ac aac,ac a,b b,b a,aac
+infinite 4
+universe a,a b,a aa,b aa,c aac,c
+infinite 0
+universe b,c c,c
+infinite 1
+universe c,c cc,cc cccc,b cccc,a c,a b,a
+infinite 0
+universe c,c cc,a b,cc bcc,a b,bcca c,a
+infinite 0
+universe a,c b,c c,c cc,a cc,cca c,cccca
+infinite 2
+universe a,c a,b b,b bb,ab ab,c a,a
+infinite 2
+universe c,c b,c a,b bc,c c,cc
+infinite 0
+universe c,a c,c ca,cc cc,a cacc,cc c,cca
+infinite 1
+universe b,b bb,bb bb,b bbbb,b bb,bbbb bb,c
+infinite 0
+universe b,c c,c b,a
+infinite 1
+universe a,c ac,ac
+infinite 1
+universe c,b cb,b
+dense 2 0 3
+universe a,c a,a b,c ac,a b,ac bc,aca
+infinite 1
+universe b,c c,a c,ca cca,a ca,ca ccaa,a
+infinite 4
+universe b,a a,a
+infinite 1
+universe c,b cb,c c,cbc
+sparse 5 3 c
+universe b,c a,bc abc,bc a,a
+infinite 3
+universe b,a b,ba
+sparse 2 1 b
+double b a
+universe a,a aa,c c,c
+infinite 0
+universe b,c a,b
+dense 1 1 2
+universe b,b a,c bb,a a,ac ac,b bb,acb
+infinite 0
+universe c,a ca,a b,caa a,a bcaa,a
+infinite 3
+universe b,c bc,c bc,bcc bcc,a bc,b
+sparse 5 2 cb
+double bc c
+universe b,a a,b c,a ab,ca ca,ba
+sparse 6 3 abc
+universe c,c b,cc a,b cc,bcc a,ab
+infinite 0
+universe b,b b,c a,c bb,ac a,bb
+infinite 0
+universe a,c c,a a,ca ca,a
+dense 3 1 4
+universe a,b a,a a,ab
+infinite 1
+universe c,c b,a c,a c,b ba,cb
+infinite 0
+universe b,b a,c bb,c bb,a ac,ac bb,bb
+infinite 0
+universe c,c c,b
+infinite 0
+universe c,c a,b a,ab cc,aab a,c
+infinite 0
+universe c,c b,a cc,ba c,cc ccba,cc
+infinite 0
+universe c,a c,ca
+sparse 2 1 c
+double c a
+universe b,a a,b ab,c abc,ba
+dense 5 1 6
+universe b,b bb,a c,a
+infinite 0
+universe c,b b,b c,c bb,bb
+infinite 1
+universe c,b a,a c,a
+infinite 1
+universe b,c b,bc b,bbc b,bbbc a,bc
+sparse 4 3 b
+double b c
+universe c,c cc,cc
+infinite 0
+universe a,c b,ac a,a ac,aa
+infinite 2
+universe b,c c,a a,bc c,ca
+sparse 4 1 c
+double c a
+universe b,c a,bc b,b bb,bc
+infinite 2
+universe a,a aa,c c,a aa,aac
+infinite 0
+universe a,b b,c b,b a,c
+infinite 2
+universe c,a ca,b b,c
+dense 3 1 4
+universe b,b a,c bb,c c,bb cbb,a a,bbc
+infinite 0
+universe b,c bc,c bc,a bca,c
+dense 3 0 4
+universe b,a b,ba b,bba ba,ba baba,c
+infinite 3
+universe c,b cb,cb c,cbcb
+infinite 1
+universe c,a ca,a ca,caa b,b
+infinite 3
+universe b,b bb,bb c,c b,bb bbb,bb
+infinite 0
+universe a,c b,ac
+dense 2 1 3
+universe c,c a,cc
+infinite 0
+universe a,b ab,c b,abc a,c
+dense 4 2 5
+universe b,b c,a bb,c bbc,a ca,c
+infinite 0
+universe a,a aa,a b,c bc,a aaa,aaa aaa,aa
+infinite 0
+universe a,a b,c c,aa bc,aa aa,bcaa c,c
+infinite 0
+universe b,c bc,c bcc,a b,a ba,bcc ba,ba
+infinite 5
+universe a,a a,c ac,a b,a
+infinite 0
+universe b,c bc,a b,bca bbca,b bbcab,a
+sparse 5 3 b
+universe a,c a,b ac,ab c,c cc,a
+infinite 3
+universe b,a b,c b,b
+infinite 2
+universe c,c c,a ca,b
+infinite 0
+universe b,c a,a bc,bc bcbc,bc b,bcbc aa,b
+infinite 1
+universe c,b a,c b,b a,b b,cb ab,cb
+infinite 2
+universe a,c b,c c,b a,cb a,b
+dense 2 1 3
+universe b,b a,c a,ac
+infinite 0
+universe a,b b,ab c,b ab,a bab,b
+dense 4 2 6
+universe c,c a,b
+infinite 0
+universe a,b ab,ab a,ab
+infinite 1
+universe b,a c,a b,b bb,ca c,b ba,b
+infinite 2
+universe a,a c,c b,cc
+infinite 0
+universe a,b ab,c abc,ab abcab,a abcab,b
+dense 5 2 6
+universe b,b b,a
+infinite 0
+universe b,b bb,a
+infinite 0
+universe c,b b,b c,a b,c a,ca
+infinite 1
+universe c,b cb,a cba,a
+dense 3 0 4
+universe b,b bb,bb b,c
+infinite 0
+universe b,a b,ba bba,c bba,bba
+infinite 3
+universe c,c c,cc b,ccc a,c ac,bccc b,bccc
+infinite 0
+universe c,a c,c
+infinite 1
+universe a,a b,c aa,a aa,bc
+infinite 0
+universe c,b a,c b,b
+infinite 2
+universe c,c a,b c,b
+infinite 0
+universe b,a ba,c ba,a
+dense 2 0 3
+universe c,a b,a ba,ca ca,ba baca,b c,b
+dense 5 3 8
+universe a,a c,a ca,ca caca,b a,cacab c,cacab
+infinite 0
+universe b,b c,a bb,c a,c
+infinite 0
+universe b,a c,c ba,b bab,ba b,ba
+infinite 1
+universe a,c c,c b,c cc,cc bc,b
+infinite 1
+universe a,c a,b c,ac
+dense 3 1 4
+universe c,a a,b ab,c a,ab aab,abc
+sparse 6 3 a
+double a b
+universe b,a ba,ba
+infinite 1
+universe a,b a,a a,c ac,c aa,b acc,aab
+infinite 1
+universe b,c a,a aa,a b,b c,aaa
+infinite 1
+universe b,a a,c c,ac
+dense 4 1 5
+universe a,c a,ac aac,aac a,aac aac,c ac,c
+infinite 2
+universe c,b a,a b,b
+infinite 1
+universe c,c a,b b,b cc,a cca,c bb,bb
+infinite 0
+universe a,a b,b
+infinite 0
+universe a,a a,c ac,ac c,ac
+infinite 0
+universe b,c bc,c b,bcc bc,bcc
+sparse 4 2 b
+double bc c
+universe a,b ab,c ab,abc
+sparse 4 2 ab
+double ab c
+universe b,b bb,c
+infinite 0
+universe b,b bb,bb
+infinite 0
+universe c,b cb,c c,c
+infinite 2
+universe b,a ba,ba c,baba b,b bb,ba bbba,b
+infinite 1
+universe a,a a,c ac,aa b,a
+infinite 0
+universe c,b a,a cb,c cbc,a a,cb
+infinite 1
+universe b,b a,a b,aa b,bb bb,bb
+infinite 0
+universe c,b cb,c
+dense 2 1 3
+universe a,a b,aa baa,b c,a
+infinite 0
+universe c,c a,cc cc,acc cc,c b,acc bacc,cc
+infinite 0
+universe a,b c,a
+dense 1 1 2
+universe c,b b,b b,a c,cb ba,cb
+infinite 1
+universe c,a ca,ca c,c a,caca
+infinite 1
+universe c,c c,b cb,a cb,c cbc,b a,b
+infinite 0
+universe c,c cc,a
+infinite 0
+universe c,a c,b c,c a,a
+infinite 2
+universe b,c a,bc c,a
+dense 2 2 4
+universe c,c b,b bb,cc c,cc c,ccc
+infinite 0
+universe c,c a,cc c,b acc,cc
+infinite 0
+universe a,c c,c cc,c a,cc
+infinite 1
+universe a,b c,b a,a cb,c
+infinite 2
+universe b,a b,ba a,ba b,bba b,c
+sparse 3 2 b
+double b a
+universe c,b c,cb b,b a,a
+infinite 2
+universe c,c c,b cb,cc c,cbcc cb,c cc,cb
+infinite 0
+universe a,b ab,b c,abb a,ab abb,b b,aab
+sparse 7 3 a
+double a b
+universe c,c cc,b cc,cc b,a
+infinite 0
+universe b,c c,b a,cb
+dense 2 2 3
+universe b,a ba,b c,c
+infinite 2
+universe c,a c,b ca,cb c,ca cca,a cca,ca
+sparse 4 3 cacac
+double c a
+universe a,b a,c ac,ac ab,ac c,abac
+infinite 2
+universe c,c a,cc cc,a cc,cca c,acc
+infinite 0
+universe a,c c,c b,ac cc,b b,ccb
+infinite 1
+universe c,a a,ca aca,ca acaca,b
+dense 6 1 7
+universe c,a b,ca
+dense 2 1 3
+universe b,b b,a c,a a,b
+infinite 0
+universe a,c c,b cb,ac ac,a
+dense 5 1 6
+universe b,b a,a a,c a,ac a,b
+infinite 0
+universe b,a b,ba b,c bc,ba bba,c ba,a
+sparse 4 1 b
+double b a
+universe c,b b,cb b,bcb c,bcb
+sparse 4 2 b
+universe c,b cb,c cb,a b,c cba,cb c,cba
+sparse 4 6 accb
+universe a,c c,a
+dense 2 1 3

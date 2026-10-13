@@ -963,6 +963,41 @@ plan.chunks[0];  // [0, 4), read to 4, cut by the uniform window from byte 2 to 
 plan.chunks[1];  // [4, 8), the same way at byte 8
 ```
 
+`verifier::window_density(merges)` of `munch/verifier/window_density.hpp` decides whether a table's windows certified at
+their last byte, `miscovering()`'s certificate, are dense, that is whether only finitely many strings contain none of
+them, and when they are, the density bound N, one more than the longest string that contains none; otherwise they are
+sparse. The decision is the report's Proposition 'The last byte'. An infinite origin radius leaves them sparse at every
+width, and the result is the effective self-pair of `ripple_radius()`. With R finite, a certified window wider than
+R + 1 has its suffix of width R + 1 certified, so the question is decided on the windows of width at most R + 1, and the
+strings avoiding those are the paths of a graph on the R-byte strings that avoid them, finitely many exactly when the
+graph has no cycle. Each window is decided by `miscovering()` on the table's token automaton at the start its last byte
+has in its own encoding, the one origin that can hold. On a sparse table a cycle's label comes back as the loop, every
+power of which avoids every certified window, with the first pumping double when one shows it: a token t that the
+encoding of tt keeps as t|t and a byte b with which the encoding of ttb begins with another token. Beside the verdict is
+the pinned-byte guarantee with the right start radius Q_s of `rule_ceilings()`: every window of width R + Q_s + 1 has a
+cut, so the cuts are dense whatever the verdict, with a density bound between R + 1 and R + Q_s + 1 by the report's
+Theorem 'Density'. The graph has up to |B|^R states for B the bytes the table names, so the decision takes a budget of
+avoiding strings, `window_density_budget` by default, and returns `Density_budget` when it runs out; GPT-2's first 41
+merges, of radius 3, need at most a hundred. `munch_merge_density` in tools/probes prints the decision for the report's
+small tables and GPT-2's prefixes:
+
+```cpp
+#include "munch/verifier/window_density.hpp"
+
+// over the merges (a, b) and (a, ab) of the examples above
+const auto sparse{std::get<verifier::Sparse_windows>(verifier::window_density(merges))};
+
+sparse.loop;                   // "a": a run of a's followed by b ends in the token aab, so no factor of it is certified
+sparse.pumping_double->token;  // "a", with the byte "b": aab begins with aab, not with a
+sparse.pinned.width;           // 4, R = 2 and Q_s = 1: every window of four bytes has a cut
+
+const std::vector<verifier::Merge> pair{{.left = "a", .right = "b"}};
+
+const auto dense{std::get<verifier::Dense_windows>(verifier::window_density(pair))};
+
+dense.bound;  // 2: with Q_s = 0 every window of two bytes is certified
+```
+
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
 nothing. Since the tokens responsible are usually the ones a parser throws away, `set_ignored_tokens()` lets a builder

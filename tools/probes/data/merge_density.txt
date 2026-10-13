@@ -1,0 +1,56 @@
+table: (a, b)
+merges: 1
+origin radius: 1
+right start radius: 0
+cuts: dense, every window of width 2 having one, density bound from 2 to 2
+last byte: dense at width at most 2, density bound 2
+
+table: (a, b), (a, ab)
+merges: 2
+origin radius: 2
+right start radius: 1
+cuts: dense, every window of width 4 having one, density bound from 3 to 4
+last byte: not dense at any width, every power of "a" avoiding every certified window
+pumping double: "a" with "b"
+
+table: (a, b), (ab, c), (ab, abc)
+merges: 3
+origin radius: 4
+right start radius: 2
+cuts: dense, every window of width 7 having one, density bound from 5 to 7
+last byte: not dense at any width, every power of "ab" avoiding every certified window
+pumping double: "ab" with "c"
+
+table: (c, d), (b, c), (a, b)
+merges: 3
+origin radius: 1
+right start radius: 2
+cuts: dense, every window of width 4 having one, density bound from 2 to 4
+last byte: dense at width at most 2, density bound 3
+
+table: GPT-2's first 7 merges
+merges: 7
+origin radius: 3
+right start radius: 1
+cuts: dense, every window of width 5 having one, density bound from 4 to 5
+last byte: dense at width at most 4, density bound 4
+
+table: GPT-2's first 20 merges
+merges: 20
+origin radius: 3
+right start radius: 1
+cuts: dense, every window of width 5 having one, density bound from 4 to 5
+last byte: dense at width at most 4, density bound 4
+
+table: GPT-2's first 41 merges
+merges: 41
+origin radius: 3
+right start radius: 2
+cuts: dense, every window of width 6 having one, density bound from 4 to 6
+last byte: dense at width at most 4, density bound 5
+
+table: GPT-2's first 64 merges
+merges: 64
+origin radius: infinite, the effective self-pair at rank 41
+cuts: not dense at any width
+last byte: not dense at any width
