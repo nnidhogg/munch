@@ -359,6 +359,32 @@ Row by row:
   keeping the serial-prefix relation `tokenize_all_parallel()` states for malformed input, which the window rows have
   not got.
 
+How wide a certified window can need to be has an answer, and it is why `--windows` takes a width rather than searching
+to the end. A window is certified exactly when the cloud of hypotheses `is_split_window()` walks ends as one hypothesis,
+one state with one in-window origin, so a certified window is a synchronizing word of the token automaton read with a
+restart wherever a token may end, the origin being what the classical notion lacks. `shortest_split_window()` follows
+the origin that is to survive beside the states of every other hypothesis, at most (n + 2) 2^(n - 1) nodes over n live
+states, and a shortest path visits each node once, so when some window certifies, one shorter than (n + 2) 2^(n - 1)
+bytes does. No polynomial in n bounds it: the long-window family of the library's tests, m cycles of lengths 1 to m
+beside the states that start and time them, has (m^2 + 5m + 12)/2 live states and no certified window shorter than
+lcm(1, ..., m) + m + 2 bytes, since the tokens begun on the m cycles must all end at one byte, after a multiple of every
+cycle's length, and it has one of exactly that length, 2,531 bytes at 69 states. So the Černý-type bounds, cubic in the
+states for complete automata (Volkov, LATA 2008) and carried to strongly connected partial ones (Berlinkov, Ferens,
+Ryzhikov and Szykuła, DMTCS 2026, Theorem 3.16), do not bound the window in general. They do when the words the tokens
+match form a prefix code and nothing re-enters the initial state: the cloud's states are then the image of every state
+under the automaton with each accepting state merged into the initial one, a strongly connected partial automaton, some
+window certifies exactly when it synchronizes, and a shortest window is at least its shortest reset word and at most
+that plus its state count, while existence is decided in time quadratic in the states (their Proposition 3.12). No
+bundled grammar is of that kind, an identifier or a run of blanks extending a token, and none needs the bound: the
+shortest window of each of their 25 conditions has 1 to 4 bytes over 3 to 159 live states, and `--windows 4` finds every
+one, the block-comment grammars' first at width 4. The enumeration costs the byte classes to the power of the width, so
+it answers for the short windows a planner tries, and a grammar whose shortest window is longer is answered by
+`shortest_split_window()`. Byte-pair encoding has a bound of another kind, the pinned-byte theorem of the report *The
+Left Ripple of Byte-Pair Encoding*: under a table of finite origin radius R and right start radius Q_s every window of
+width R + Q_s + 1 has a boundary at one offset at every occurrence, a bound for every window rather than for some, and
+for the weaker guarantee `boundary_profile()` decides rather than the covering origin the certified windows row counts.
+It has no counterpart here, since a run of letters as long as one likes is one token and pins no byte.
+
 ## An External Grammar: JSON.g4
 
 The grammars above are the study's own. `JSON.g4` from the grammars-v4 collection was written for ANTLR's users, taken

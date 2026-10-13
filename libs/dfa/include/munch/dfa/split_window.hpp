@@ -92,11 +92,12 @@ inline constexpr std::size_t shortest_window_budget{1U << 20U};
  * before any origin is chosen the support of all of them: the cloud of is_split_window() with the origins forgotten
  * except the one that is to survive. A window is certified exactly when that origin outlives every other hypothesis,
  * and two hypotheses that share a state never separate again, so a collision ends the path. The nodes are at most
- * (n + 2) 2^(n - 1) for n live states, and a shortest window is shorter than that. The question is PSPACE-complete, so
- * the budget bounds the nodes visited, and running out is reported as such, never as an answer. A node costs about a
- * state count over eight bytes, so the default budget holds a few hundred megabytes at a few thousand states; a caller
- * with less to spare passes less. A window found is as is_split_window() would certify it, conditional on occurrence
- * like every window certificate.
+ * (n + 2) 2^(n - 1) for n live states, and a shortest window is shorter than that; a family of token sets needs windows
+ * longer than any polynomial in the states, and whether the question is hard is open, so the budget bounds the nodes
+ * visited, and running out is reported as such, never as an answer. A node costs about a state count over eight bytes,
+ * so the default budget holds a few hundred megabytes at a few thousand states; a caller with less to spare passes
+ * less. A window found is as is_split_window() would certify it, conditional on occurrence like every window
+ * certificate.
  * @param simulator The compiled token set.
  * @param budget The most search nodes visited before the search gives up; zero visits none.
  * @return A shortest certified window with its origin, Outcome::none when no window of any length is certified, or
