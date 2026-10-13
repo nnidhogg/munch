@@ -2,6 +2,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -428,4 +429,110 @@ TEST(Repairs_test, The_json_document_holds_the_repairs_beside_the_report)
             run({grammar("c-like-block-comments.l"), "--json", "--repairs"})};
 
     EXPECT_TRUE(comments_out.contains(R"(, "repairs": {"visible": [], "discarded": []})")) << comments_out;
+}
+
+TEST(Window_pattern_test, The_section_follows_the_report_with_one_row_per_pattern_in_the_order_asked)
+{
+    const auto path{grammar("c-like-split-friendly.l")};
+
+    const auto [status, out, err]{run({path, "--window-pattern", R"(* \n)", "--window-pattern", R"(\n *)"})};
+
+    const auto [plain_status, plain_out, plain_err]{run({path})};
+
+    const std::string section{
+            "\nwindow patterns asked\n"
+            "  * '\\n'                     certified at 1\n"
+            "  '\\n' *                     certified at 1\n"};
+
+    // The section stands after the report and before the blank line that closes the condition.
+    const auto report_end{plain_out.rfind("\n\n")};
+
+    const auto report{plain_out.substr(0, report_end + 1)};
+
+    const auto expected{std::format("{}{}\n", report, section)};
+
+    EXPECT_EQ(status, 0);
+    EXPECT_EQ(out, expected);
+}
+
+TEST(Window_pattern_test, The_json_document_holds_the_verdicts_beside_the_report)
+{
+    const auto path{grammar("json.g4")};
+
+    const auto [status, out, err]{run({path, "--json", "--window-pattern", R"(* \n)", "--window-pattern", "0xFF *"})};
+
+    EXPECT_EQ(status, 0);
+    EXPECT_TRUE(out.contains(
+            R"(, "window_patterns": [{"pattern": ["*", 10], "origin": null, "origins": [0, 1], "before": true}, )"
+            R"({"pattern": [255, "*"], "origin": null, "origins": [], "before": false}]})"))
+            << out;
+}
+
+TEST(Window_pattern_test,
+     A_pattern_of_one_position_or_of_a_position_spelling_no_byte_exits_two_and_0x2A_spells_the_star)
+{
+    const auto path{grammar("log-lines.l")};
+
+    const auto [one_status, one_out, one_err]{run({path, "--window-pattern", "*"})};
+
+    EXPECT_EQ(one_status, 2);
+    EXPECT_EQ(one_out, "");
+    EXPECT_TRUE(one_err.starts_with("munch-audit: --window-pattern takes 2 positions at least, not '*'\n\nusage:"))
+            << one_err;
+
+    const auto [byte_status, byte_out, byte_err]{run({path, "--window-pattern", "* 0xZZ"})};
+
+    EXPECT_EQ(byte_status, 2);
+    EXPECT_TRUE(byte_err.starts_with("munch-audit: '0xZZ' is not a byte\n\nusage:")) << byte_err;
+
+    const auto [star_status, star_out, star_err]{run({path, "--window-pattern", R"(0x2A \n)"})};
+
+    EXPECT_EQ(star_status, 0);
+    EXPECT_TRUE(star_out.contains("\nwindow patterns asked\n  '*' '\\n'                   certified at 1\n"))
+            << star_out;
+}
+
+TEST(Window_pattern_test, Every_bundled_grammar_prints_the_report_and_the_verdicts_the_fixture_holds)
+{
+    const std::filesystem::path root{SOURCE_DIR};
+
+    std::vector<std::string> arguments{"--window-pattern", R"(\n *)",   "--window-pattern", R"(* \n)",
+                                       "--window-pattern", R"(* \n *)", "--window-pattern", R"(\n * *)",
+                                       "--window-pattern", "* *",       "--window-pattern", "0xFF *"};
+
+    std::vector<std::string> grammars{};
+
+    for (const auto& entry : std::filesystem::directory_iterator{root / "tools/audit/grammars"})
+    {
+        const auto name{entry.path().filename().string()};
+
+        if (name == "README.md")
+        {
+            continue;
+        }
+
+        grammars.push_back(std::format("tools/audit/grammars/{}", name));
+    }
+
+    std::ranges::sort(grammars);
+
+    arguments.insert(arguments.end(), grammars.begin(), grammars.end());
+
+    // Run from the repository's root, so the paths the report heads each file with are the fixture's.
+    const auto here{std::filesystem::current_path()};
+
+    std::filesystem::current_path(root);
+
+    const auto [status, out, err]{run(arguments)};
+
+    std::filesystem::current_path(here);
+
+    // The fixture's first line says how it was written; the rest is the command's output as it printed it.
+    const auto fixture{contents(root / "tools/audit/tests/data/window_patterns_reference.txt")};
+
+    const auto held{fixture.substr(fixture.find('\n') + 1)};
+
+    EXPECT_EQ(grammars.size(), 21);
+    EXPECT_EQ(status, 0);
+    EXPECT_EQ(out, held);
 }

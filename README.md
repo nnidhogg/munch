@@ -309,9 +309,10 @@ of `merge_tower()` and `token_automaton()` over an alphabet of characters, read 
 that a character-level merge table such as SentencePiece's has the tower and the automaton. So did the `--repairs`
 option of `munch-audit`, which, where a condition certifies no byte, tries every byte as a visible token of its own and,
 unless it already certifies once the discarded tokens are deleted, as a discarded one, and reports each that certifies
-once added. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of Lean's lexical structure
-with its nested comments and interpolated strings as modes, audited in [docs/audit.md](docs/audit.md) and benchmarked on
-Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
+once added, and the `--window-pattern` option of `munch-audit`, which decides whether every window a pattern of bytes
+and wildcards stands for certifies at one origin. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`,
+the core of Lean's lexical structure with its nested comments and interpolated strings as modes, audited in
+[docs/audit.md](docs/audit.md) and benchmarked on Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
 
 3.0.0 is a major version for two moves, which change include paths and namespaces, and for one change outside them, the
 type of the inventory `anchor_free_span()` takes, and nothing else. Two of the verifier's names take the dfa library's

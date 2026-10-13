@@ -12,6 +12,7 @@
 #include "munch/tools/audit/file_kind.hpp"
 #include "munch/tools/audit/read_re2c.hpp"
 #include "munch/tools/audit/report.hpp"
+#include "munch/tools/audit/window_pattern.hpp"
 
 /**
  * @brief The command line as munch-audit reads it: what it asked for, Options, with the bytes it requires certified,
@@ -94,6 +95,11 @@ struct Options
      * @brief The longest window tried.
      */
     std::size_t window_limit{default_window_limit};
+
+    /**
+     * @brief The window patterns asked about, in the order given.
+     */
+    std::vector<Window_pattern_t> window_patterns{};
 
     /**
      * @brief Whether a condition that certifies no byte is told what a token of one byte's own would certify.

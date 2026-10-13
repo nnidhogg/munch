@@ -30,6 +30,7 @@
 #include "munch/tools/audit/repair.hpp"
 #include "munch/tools/audit/report.hpp"
 #include "munch/tools/audit/supply.hpp"
+#include "munch/tools/audit/window_pattern.hpp"
 
 namespace munch::tools::audit
 {
@@ -94,6 +95,12 @@ struct Condition_outcome
      * @brief The report, when the token set was built.
      */
     std::optional<Report> report{};
+
+    /**
+     * @brief What each window pattern the command line asked about certifies, in the order asked, none when it asked
+     *        about none or the report did not build.
+     */
+    std::vector<Pattern_verdict> window_patterns{};
 
     /**
      * @brief What a token of one byte's own would certify, when the command line asked and the report certifies no
@@ -271,7 +278,8 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
 }
 
 /**
- * @brief Audits one start condition of a scanner, and measures the report's supply on the input when one was given.
+ * @brief Audits one start condition of a scanner, decides the window patterns the command line asks about, and
+ *        measures the report's supply on the input when one was given.
  * @param spec The scanner.
  * @param condition The condition's name.
  * @param options The command line.
@@ -309,19 +317,28 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
             repaired = repairs(set, report);
         }
 
+        std::vector<Pattern_verdict> decided{};
+
         std::optional<Supply> measured{};
 
-        if (input)
+        // Both are read off the compiled set, which is compiled only where one of them is asked for.
+        if (!options.window_patterns.empty() || input)
         {
             const auto lexer{compile(set)};
 
-            measured = supply(report, lexer, *input);
+            decided = window_patterns(report, lexer, options.window_patterns);
+
+            if (input)
+            {
+                measured = supply(report, lexer, *input);
+            }
         }
 
         return Condition_outcome{
                 .condition = condition,
                 .refused = {},
                 .report = std::move(report),
+                .window_patterns = std::move(decided),
                 .repairs = std::move(repaired),
                 .supply = std::move(measured),
                 .rules = rules};
@@ -332,6 +349,7 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
                 .condition = condition,
                 .refused = error.what(),
                 .report = std::nullopt,
+                .window_patterns = {},
                 .repairs = std::nullopt,
                 .supply = std::nullopt,
                 .rules = rules};
@@ -348,7 +366,7 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
 void write_text(
         std::ostream& out, const Lexer_spec& spec, const Condition_outcome& outcome, const std::string_view input)
 {
-    const auto& [condition, refused, report, repairs, supply, rules]{outcome};
+    const auto& [condition, refused, report, window_patterns, repairs, supply, rules]{outcome};
 
     out << std::format("-- scanner at line {}, condition {}: {} rule{}\n", spec.line, condition, rules, plural(rules));
 
@@ -364,6 +382,11 @@ void write_text(
 
     out << render(*report, rule_namer(spec));
 
+    if (!window_patterns.empty())
+    {
+        out << window_pattern_section(window_patterns);
+    }
+
     if (repairs)
     {
         out << repair_section(*repairs);
@@ -378,8 +401,8 @@ void write_text(
 }
 
 /**
- * @brief Writes one condition's outcome as the JSON object of a scanner's condition list, the supply on the input
- *        beside the report when one was measured.
+ * @brief Writes one condition's outcome as the JSON object of a scanner's condition list, the window patterns beside
+ *        the report when some were asked about, and the supply on the input when one was measured.
  * @param out The stream.
  * @param spec The scanner.
  * @param outcome The outcome.
@@ -388,7 +411,7 @@ void write_text(
 void write_json(
         std::ostream& out, const Lexer_spec& spec, const Condition_outcome& outcome, const std::string_view input)
 {
-    const auto& [condition, refused, report, repairs, supply, rules]{outcome};
+    const auto& [condition, refused, report, window_patterns, repairs, supply, rules]{outcome};
 
     out << std::format(R"({}{{"name": {}, "rules": {}, )", report_indent, json_string(condition), rules);
 
@@ -408,6 +431,11 @@ void write_json(
     }
 
     out << R"("refused": null, "report": )" << document;
+
+    if (!window_patterns.empty())
+    {
+        out << R"(, "window_patterns": )" << window_pattern_json(window_patterns);
+    }
 
     if (repairs)
     {

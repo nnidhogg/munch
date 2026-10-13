@@ -4,6 +4,8 @@
 #include <charconv>
 #include <cstddef>
 #include <format>
+#include <optional>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -36,6 +38,16 @@ constexpr std::string_view hex_prefix{"0x"};
  * @brief The most hex digits a byte written in hex takes.
  */
 constexpr std::size_t most_hex_digits{2};
+
+/**
+ * @brief How a window pattern writes a position that admits every byte; the byte `*` itself is written `0x2A`.
+ */
+constexpr std::string_view wildcard{"*"};
+
+/**
+ * @brief The fewest positions a window pattern takes; one byte is the byte certificate's to decide.
+ */
+constexpr std::size_t shortest_pattern{2};
 
 /**
  * @brief Returns the longest window `--windows` gives.
@@ -114,6 +126,41 @@ constexpr std::size_t most_hex_digits{2};
 }
 
 /**
+ * @brief Returns a window pattern as the command line spells one.
+ * @param text The positions separated by spaces, each a byte as parse_byte() reads one or `*` for every byte.
+ * @return The pattern.
+ * @throws std::invalid_argument If a position spells no byte, or the pattern has fewer than shortest_pattern positions.
+ */
+[[nodiscard]] Window_pattern_t parse_window_pattern(const std::string_view text)
+{
+    Window_pattern_t pattern{};
+
+    for (const auto part : text | std::views::split(' '))
+    {
+        const std::string_view position{part};
+
+        if (position == wildcard)
+        {
+            pattern.emplace_back(std::nullopt);
+
+            continue;
+        }
+
+        pattern.emplace_back(parse_byte(position));
+    }
+
+    if (pattern.size() < shortest_pattern)
+    {
+        const auto message{
+                std::format("--window-pattern takes {} positions at least, not '{}'", shortest_pattern, text)};
+
+        throw std::invalid_argument{message};
+    }
+
+    return pattern;
+}
+
+/**
  * @brief The usage text, printed on a command-line error.
  */
 constexpr std::string_view usage_text{R"(usage: munch-audit [options] FILE...
@@ -136,6 +183,10 @@ would cost.
                         first; may repeat
   --condition NAME      audit this start condition only; may repeat
   --windows N           the longest window tried, 3 unless given; 4 is the planners' own limit
+  --window-pattern PATTERN
+                        decide whether every window the pattern stands for certifies at one origin: its positions
+                        separated by spaces, each a byte written as a character, \n \t \r \0, or 0xHH, which stands for
+                        its class, or * for every byte; may repeat
   --price BYTE          price this byte as well, written as a character, \n \t \r \0, or 0xHH; may repeat
   --input FILE          measure the certified-anchor supply on this file: how many positions its certificates cut
                         at, per kibibyte, and the gaps between them
@@ -222,6 +273,12 @@ Options parse_options(const std::span<const std::string_view> arguments)
             const auto text{value()};
 
             options.window_limit = parse_window_limit(text);
+        }
+        else if (argument == "--window-pattern")
+        {
+            const auto text{value()};
+
+            options.window_patterns.push_back(parse_window_pattern(text));
         }
         else if (argument == "--price")
         {

@@ -33,6 +33,7 @@ that, so that a string literal or a comment quoting an opener or a derive says n
 | `--include DIR` | A directory the scanner's includes are looked for in, as the compiler's `-I` names it: an angle-bracket include is looked for there alone, a quoted one beside the file including it first; one not found is refused when quoted and taken for a system header's, which defines nothing of the scanner's, when in angle brackets. Repeatable. |
 | `--condition NAME` | Audit this start condition only. Repeatable. Without it every condition with rules is audited, INITIAL first. |
 | `--windows N` | The longest window tried, 3 unless given; 4 is the planners' own limit. The enumeration tries every string of byte-class representatives up to this width, so it is the one cost that grows with the grammar. |
+| `--window-pattern PATTERN` | Decide whether every window the pattern stands for certifies at one origin. The pattern is its positions separated by spaces, each a byte written as for `--price`, which stands for its class, or `*` for every byte; the byte `*` itself is written `0x2A` and a space `0x20`. Repeatable. |
 | `--price BYTE` | Price this byte as well as the newline and the near misses. A character, `\n`, `\t`, `\r`, `\0` or `0xHH`. Repeatable. |
 | `--input FILE` | Measure the certified-anchor supply on this file: how many of its positions the certificates cut at, per kibibyte, and the gaps between them. One file, measured under every report. |
 | `--repairs` | Where a condition certifies no byte, a window certifying or not, try every byte as a visible token of its own and, unless it already certifies once the discarded tokens are deleted, as a discarded one, and report each that certifies once added. |
@@ -215,6 +216,30 @@ Row by row:
   certificate reported, then every consuming token takes its own shape's edit together; a terminated token's fixed
   newline, immovable for the narrowing above, is movable here. A token whose fixed spelling holds the byte and has none
   of these shapes stays *fixed*.
+- **window patterns asked**: with `--window-pattern`, the section that answers for a family of windows at once, one row
+  per pattern in the order given. A pattern is a window whose positions each admit one byte's class or, written `*`,
+  every byte, and it stands for its members, the byte strings each of whose bytes its position admits. A row says
+  `certified at` an origin only when the walk below shows that every member is a certified window at that one origin, in
+  the sense of the certified windows row, a member that occurs in no input the condition tokenizes completely being one
+  vacuously, so a family none of whose members occurs is certified vacuously as well; one origin for the whole family is
+  the only form a planner can act on without knowing which member occurred, so a family whose members certify at
+  different origins is refused. The decision is one walk of `is_split_window()`'s cloud of hypotheses, which at each
+  position reads every class the position admits and keeps the union of the clouds they lead to. The step on one byte
+  distributes over a union of clouds, since the direct step and the rename act on each hypothesis alone and the fresh
+  hypothesis a token begins with is the same whichever hypothesis accepted, so the cloud past the last position is the
+  union of the members' own clouds. Where that union is nonempty and every hypothesis in it carries one in-window
+  origin, each member whose own cloud survives is a certified window there by Theorem 1 of
+  [docs/split_windows.md](split_windows.md), and each whose own cloud dies occurs in no completely tokenizable input by
+  its Lemma 2, which places the true history in the cloud at every occurrence, and satisfies the definition vacuously.
+  That is how a wildcard can range over every byte: a member with a byte no token reads at that position occurs nowhere
+  a cut is asked for. A surviving cloud does not show that a member occurs, and the walk does not decide occurrence:
+  over the tokens 0, 00 and 01 the pattern `1 0 0 1` is certified at 2, though no completely tokenizable input holds
+  1001, which `window_occurrence()` settles for one window. A refused row names the origins the union carries,
+  `before the window` where a token covering the last byte began before it, or says that no member occurs in a
+  completely tokenizable input. On the bundled flex split-friendly C-like grammar `* '\n'` and `'\n' *` certify at 1,
+  and the 16 windows of width 2 the report counts there are exactly the members of the two that certify. A pattern costs
+  one window's walk times the classes each position admits, so its wildcards add to the cost where they multiply its
+  members.
 - **what a token of one byte's own would certify**: with `--repairs`, for a condition that certifies no byte, a window
   certifying or not, the section that names the bytes under which safe cut points would exist once the grammar gave them
   a token of their own. Every byte is tried as a visible token, a delimiter the parser sees as JSON text sequences add
@@ -918,10 +943,14 @@ were none), `lag`, `rescue_free` as true, false or null when the search stopped 
 shortest completely tokenizable input on which the scan rolls back or null, `blame` and `prices`, tokens given as their
 id and name. Byte strings are JSON strings holding each byte as the code point of its value, so a reader recovers the
 bytes exactly; names, paths and messages are text, their UTF-8 passed through and a byte that is part of no well-formed
-sequence escaped as the code point of its value, so the document is JSON whatever the file holds. With `--repairs` a
-condition that certifies no byte carries a `repairs` object beside its `report`, absent otherwise: `visible` and
-`discarded`, each an array of the bytes that certify once added, as their `byte` value and the values of the other bytes
-`gained` with it. With `--input` each condition carries a `supply` object beside its `report`, absent otherwise: the
-`input` named, its `bytes` and the bytes the serial scan `tokenized`, the same number when the file tokenizes
-completely, and under `exact`, `modulo` and `windows`, the last null when the report found no window, the `anchors`, the
-`per_kibibyte` figure and `gap_p50`, `gap_p90`, `gap_p99` and `gap_max`, each null where the anchors leave no gap.
+sequence escaped as the code point of its value, so the document is JSON whatever the file holds. With
+`--window-pattern` each condition carries a `window_patterns` array beside its `report`, absent otherwise: one object
+per pattern, its `pattern` as an array of byte values and the string `*`, the `origin` certified or null, the in-window
+`origins` the walk's union carries, ascending, and `before`, whether a token covering the last byte began before the
+window. With `--repairs` a condition that certifies no byte carries a `repairs` object beside its `report`, absent
+otherwise: `visible` and `discarded`, each an array of the bytes that certify once added, as their `byte` value and the
+values of the other bytes `gained` with it. With `--input` each condition carries a `supply` object beside its `report`,
+absent otherwise: the `input` named, its `bytes` and the bytes the serial scan `tokenized`, the same number when the
+file tokenizes completely, and under `exact`, `modulo` and `windows`, the last null when the report found no window, the
+`anchors`, the `per_kibibyte` figure and `gap_p50`, `gap_p90`, `gap_p99` and `gap_max`, each null where the anchors
+leave no gap.
