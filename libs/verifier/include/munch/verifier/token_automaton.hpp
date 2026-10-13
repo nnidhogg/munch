@@ -170,9 +170,9 @@ private:
  * The automaton has one base state plus one per merge whose product can be read, each merge costing one adjacency test,
  * and on a large table the build costs far more than a decision on it, so a caller deciding many windows builds it
  * once. The theorem miscovering() rests on places no condition on the table, but the automaton needs the products
- * distinct from the bytes and from one another, as merge_tower() does, and a table that recreates a token is refused
- * the same way.
- * @param merges The merge table in rank order, each part a byte or the product of an earlier merge.
+ * distinct from the bytes and from one another, as merge_tower() does, so it takes an admissible table, as Merge
+ * states, and refuses any other the same way.
+ * @param merges The admissible merge table in rank order, each part a byte or the product of an earlier merge.
  * @return The token automaton.
  * @throws std::invalid_argument If a merge names a part that neither the alphabet nor an earlier merge carries, or a
  *         product that the alphabet or an earlier merge already carries; the message names the merge and its rank,
@@ -192,7 +192,7 @@ private:
  * window of characters only at character boundaries, a token's spelling neither beginning nor ending inside a
  * character. The verdict is miscovering()'s on merge_tower(merges, alphabet). Over the characters U+0000 to U+007F a
  * window of them is decided as on the byte automaton of the same table, to the byte.
- * @param merges The merge table in rank order, each part a character or the product of an earlier merge.
+ * @param merges The admissible merge table in rank order, each part a character or the product of an earlier merge.
  * @param alphabet The alphabet, UTF-8 text whose characters are the tokens before any merge, each once.
  * @return The token automaton.
  * @throws std::invalid_argument If the alphabet holds a character twice, or a merge names a part that neither the

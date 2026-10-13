@@ -804,6 +804,19 @@ verifier::miscovering(automaton, "he", 0);  // the marked ▁the, one token, its
 automaton.token_of("▁the");                 // 7, the third product past the five characters
 ```
 
+The table a SentencePiece model needs is its self-split table, not the one the Hugging Face converter derives.
+SentencePiece merges any two adjacent symbols whose concatenation is a piece, the highest score first and the leftmost
+on a tie, and on any input it forms a piece only by the pair its own loop joins last on the piece's spelling alone, so
+the self-split table takes that pair for every piece, ranked by score, the highest first and products of equal score the
+shortest first. On input over the model's characters, before its user-defined symbols and byte fallback, the encoder
+over that table is SentencePiece's when no two products share a score, and the constructions take the table when every
+part ranks before its product, as on Mistral 7B v0.1 and Yi 6B. The converter takes every split of every piece into two
+pieces, and a piece can score above a piece it contains, as ▁the scores above ▁th in Mistral 7B v0.1, so its table names
+parts before any merge makes them, here in the merge (▁th, e), and the constructions refuse it there. Where products
+share a score SentencePiece breaks the tie by position, which a rank order emulates only for some ties, so a loader
+finds a rank order of such a group that reproduces the model or refuses the model; for the fifteen pieces of Mistral 7B
+v0.1 made of U+2581 alone, which share one score, an exhaustive search finds such an order.
+
 `verifier::trie_chain(initial, continuation)` takes a two-mode vocabulary, the initial tokens and the continuation
 tokens, and builds the verifier of WordPiece segmentation over it, the scanner that takes the longest initial token at
 the start of the input and then, at each boundary, the longest continuation token, failing where no token of the mode

@@ -86,13 +86,13 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  *
  * The radius is decided two ways: for every table by a product of two runs of the automaton that spells the final
  * tokens, the overlap graph, and under the ordering condition, every merge producing a token ranked before every merge
- * consuming it, by the merges themselves, in time polynomial in their number. A table this function takes satisfies the
- * ordering condition, since a part is a byte or the product of an earlier merge and no product is spelled twice, so the
- * one merge producing a token precedes each merge consuming it. On such a table the two decisions are one: the radius
- * is infinite exactly when an effective self-pair exists, a merge (t,t) under which the merges before it encode tt as
- * two tokens, and when none does the overlap graph's marked part is acyclic and gives both constants. So this is one
- * function: the verdict comes from the merges and the finite values from the graph, which spells its tokens out as the
- * table already does, leaving nothing for the compressed words the polynomial computation is built on to save.
+ * consuming it, by the merges themselves, in time polynomial in their number. This function takes an admissible table,
+ * as Merge states, which satisfies the ordering condition, since the one merge producing a token precedes each merge
+ * consuming it. On such a table the two decisions are one: the radius is infinite exactly when an effective self-pair
+ * exists, a merge (t,t) under which the merges before it encode tt as two tokens, and when none does the overlap
+ * graph's marked part is acyclic and gives both constants. So this is one function: the verdict comes from the merges
+ * and the finite values from the graph, which spells its tokens out as the table already does, leaving nothing for the
+ * compressed words the polynomial computation is built on to save.
  *
  * The merges are taken in rank order. A merge is useful when both parts are canonical, a byte or the product of a
  * useful merge, and the useful merges before it encode the two parts as the two of them; the first useful merge with
@@ -113,7 +113,7 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  * length of the useful merges' right parts. With n useful merges that total is at most F(n + 3) - 2, F the Fibonacci
  * numbers from F(1) = F(2) = 1, since at most one part of a useful merge is the product of the useful merge just before
  * it, and the table whose every merge joins the token before the latest to the latest, from a and b, attains it.
- * @param merges The merge table in rank order, each part a byte or the product of an earlier merge.
+ * @param merges The admissible merge table in rank order, each part a byte or the product of an earlier merge.
  * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair.
  * @throws std::invalid_argument If a merge names a part that neither the alphabet nor an earlier merge carries, or a
  *         product that the alphabet or an earlier merge already carries; the message names the merge and its rank,

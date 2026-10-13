@@ -11,6 +11,14 @@ namespace munch::verifier
 {
 /**
  * @brief One merge of a byte-pair table: the two tokens it joins, in order, whose concatenation is its product.
+ *
+ * A table is its merges in rank order, and merge_tower(), token_automaton() and ripple_radius() take a table that is
+ * admissible: each part of a merge a symbol of the alphabet or the product of an earlier merge, and no product spelled
+ * as a symbol or as the product of an earlier merge. Each product is then made by one merge only, ranked before every
+ * merge that consumes it, and a table that breaks either condition is refused at its first merge that does. The table
+ * that reproduces a SentencePiece model is its self-split table ranked by score, not the table the Hugging Face
+ * converter derives from every split of every piece, as docs/usage.md describes, and it too is refused where it breaks
+ * these conditions.
  */
 struct Merge
 {
@@ -47,8 +55,8 @@ struct Merge
  * verifier accepts one marking per byte string, the encoder's segmentation of it, so its domain is every byte string.
  * The products must be distinct from the bytes and from one another, since the encoder merges a recreated token again
  * where the rank-order passes cannot: under (c,c), (c,cc), (ccc,a), (cc,c) the string ccca is one token for the encoder
- * and ccc|a for the passes. A merge whose product the alphabet or an earlier merge already spells is refused.
- * @param merges The merge table in rank order, each part a byte or the product of an earlier merge.
+ * and ccc|a for the passes. A table that is not admissible, as Merge states, is refused.
+ * @param merges The admissible merge table in rank order, each part a byte or the product of an earlier merge.
  * @return The merge-tower verifier.
  * @throws std::invalid_argument If a merge names a part that neither the alphabet nor an earlier merge carries, or a
  *         product that the alphabet or an earlier merge already carries; the message names the merge and its rank,
@@ -71,7 +79,7 @@ struct Merge
  * each begins with a byte that is not a continuation byte, so a window of characters occurs only at character
  * boundaries. Over the characters U+0000 to U+007F the tower is the byte tower of the same table restricted to those
  * bytes.
- * @param merges The merge table in rank order, each part a character or the product of an earlier merge.
+ * @param merges The admissible merge table in rank order, each part a character or the product of an earlier merge.
  * @param alphabet The alphabet, UTF-8 text whose characters are the tokens before any merge, each once.
  * @return The merge-tower verifier.
  * @throws std::invalid_argument If the alphabet holds a character twice, or a merge names a part that neither the
