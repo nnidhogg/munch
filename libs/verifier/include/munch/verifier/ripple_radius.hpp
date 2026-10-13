@@ -5,6 +5,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <variant>
 
 #include "munch/verifier/merge_tower.hpp"
@@ -17,7 +18,8 @@ namespace munch::verifier
 struct Prepended_input
 {
     /**
-     * @brief The spelling of the prepended symbol, one byte, the table's alphabet being the bytes.
+     * @brief The spelling of the prepended symbol: one byte over the bytes, and a character's UTF-8 bytes over an
+     *        alphabet of characters.
      */
     std::string symbol{};
 
@@ -33,7 +35,7 @@ struct Prepended_input
 struct Finite_ripple
 {
     /**
-     * @brief The origin radius, the furthest a prepended byte moves a covering token.
+     * @brief The origin radius, the furthest a prepended symbol moves a covering token, in bytes.
      */
     std::size_t radius{};
 
@@ -43,7 +45,7 @@ struct Finite_ripple
     std::optional<Prepended_input> radius_witness{};
 
     /**
-     * @brief The mirrored constant, one past the start of the furthest token a prepended byte changes.
+     * @brief The mirrored constant, one past the start of the furthest token a prepended symbol changes, in bytes.
      */
     std::size_t mirrored{};
 
@@ -120,6 +122,40 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  *         each spelling quoted, a byte outside printable ASCII written `\xHH` and the quote and the backslash escaped.
  */
 [[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges);
+
+/**
+ * @brief Decides the origin radius of a merge table over an alphabet of characters, reading each character as its
+ *        UTF-8 bytes: how far a character prepended to an input can change the tokens of the input, counted in bytes.
+ *
+ * The tokens before any merge are the alphabet's characters in place of the bytes, as in a character-level table such
+ * as SentencePiece's, and each part of a merge is one of them or the product of an earlier merge, spelled in UTF-8. The
+ * prepended symbol is a character of the alphabet and the inputs are the strings over the alphabet. The decision is the
+ * byte overload's, the verdict from the merges and the finite values from the overlap graph, which reads the canonical
+ * tokens' spellings byte by byte, the second copy having read the bytes of the prepended character as the first
+ * character of a token. Its distances are bytes, as every position over the character overloads is: the radius is one
+ * past the last byte of the input whose covering token changes, the mirrored constant one past the first byte of the
+ * last changed token, and the prepended input spells its character by its UTF-8 bytes. No token begins or ends inside a
+ * character, so the bytes of a character share their covering token and the radius ends where a character ends. The
+ * bounds the byte overload states on lengths hold with every length in bytes, and its Fibonacci bound counts
+ * characters, not bytes.
+ *
+ * The radius counted in characters, one past the last character of the input whose covering token changes, is finite
+ * exactly when this one is, but it is not this radius divided by a length, since this one weighs each character by its
+ * bytes and the inputs attaining the two can differ. With every character the table names at least p and at most q
+ * bytes long, the character radius r and this radius R satisfy p r <= R <= q r; over characters of one length k, R is k
+ * times r, and a mirrored constant m > 0 counted in characters is k (m - 1) + 1 in bytes. The report The Left Ripple of
+ * Byte-Pair Encoding counts symbols, which are characters here, so a figure it gives for a table of characters longer
+ * than a byte counts characters where this returns bytes. Over the characters U+0000 to U+007F, in order, it returns
+ * what the byte overload returns on the same table, to the byte.
+ * @param merges The admissible merge table in rank order, each part a character or the product of an earlier merge.
+ * @param alphabet The alphabet, UTF-8 text whose characters are the tokens before any merge, each once.
+ * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair.
+ * @throws std::invalid_argument If the alphabet holds a character twice, or a merge names a part that neither the
+ *         alphabet nor an earlier merge carries, or a product that the alphabet or an earlier merge already carries;
+ *         the message names the character, or the merge and its rank, each spelling quoted, a byte outside printable
+ *         ASCII written `\xHH` and the quote and the backslash escaped.
+ */
+[[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges, std::string_view alphabet);
 
 } // namespace munch::verifier
 

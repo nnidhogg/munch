@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <compare>
 #include <cstddef>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <optional>
@@ -22,6 +23,22 @@ using namespace munch::verifier;
 
 namespace
 {
+/**
+ * @brief How a test reads a text: as its bytes, the symbols of the byte alphabet, or as its UTF-8 characters.
+ */
+enum class Reading : std::uint8_t
+{
+    /**
+     * @brief Each byte a symbol.
+     */
+    bytes,
+
+    /**
+     * @brief Each UTF-8 character a symbol.
+     */
+    characters
+};
+
 /**
  * @brief What the reference fixture holds, counted as it is checked.
  */
@@ -46,17 +63,33 @@ struct Fixture_counts
      * @brief The infinite lines.
      */
     std::size_t infinite{0};
+
+    /**
+     * @brief The characters lines.
+     */
+    std::size_t in_characters{0};
 };
 
 /**
- * @brief The reference fixture under check: the current universe's table and line, and the counts so far.
+ * @brief The reference fixture under check: how it reads its texts, the current universe's table, alphabet and line,
+ *        and the counts so far.
  */
 struct Fixture_check
 {
     /**
+     * @brief How the fixture's texts are read, by bytes or by characters.
+     */
+    Reading reading{};
+
+    /**
      * @brief The current universe's merge table in rank order.
      */
     std::vector<Merge> merges{};
+
+    /**
+     * @brief The current universe's alphabet, UTF-8, in a fixture read by characters.
+     */
+    std::string alphabet{};
 
     /**
      * @brief The current universe's line, for the failure messages.
@@ -107,21 +140,74 @@ struct Ripple
 };
 
 /**
- * @brief Returns the token sequence canonical byte-pair encoding produces for a text: at every step the lowest-rank
- *        merge present anywhere is applied at its leftmost occurrence.
- * @param merges The merge table in rank order.
+ * @brief Returns the bytes of a text, each a symbol spelled by itself.
  * @param text The text.
- * @return The tokens.
+ * @return The bytes, in order.
  */
-std::vector<std::string> reference_tokens(const std::vector<Merge>& merges, const std::string_view text)
+std::vector<std::string> bytes_of(const std::string_view text)
 {
-    std::vector<std::string> sequence{};
+    std::vector<std::string> bytes{};
 
     for (const auto byte : text)
     {
-        sequence.push_back(std::string{byte});
+        bytes.push_back(std::string{byte});
     }
 
+    return bytes;
+}
+
+/**
+ * @brief Returns the characters of a UTF-8 text, each spelled by its bytes: the text split before every byte that is
+ *        not a continuation byte.
+ * @param text The text.
+ * @return The characters, in order.
+ */
+std::vector<std::string> characters_of(const std::string_view text)
+{
+    std::vector<std::string> characters{};
+
+    for (const auto byte : text)
+    {
+        constexpr unsigned char continuation_mask{0xC0};
+        constexpr unsigned char continuation_bits{0x80};
+
+        const auto value{static_cast<unsigned char>(byte)};
+
+        const auto continues{(value & continuation_mask) == continuation_bits};
+
+        if (continues && !characters.empty())
+        {
+            characters.back() += byte;
+
+            continue;
+        }
+
+        characters.push_back(std::string{byte});
+    }
+
+    return characters;
+}
+
+/**
+ * @brief Returns the symbols of a text as a reading takes them, its bytes or its characters.
+ * @param reading How the text is read.
+ * @param text The text.
+ * @return The symbols, in order.
+ */
+std::vector<std::string> symbols_of(const Reading reading, const std::string_view text)
+{
+    return reading == Reading::characters ? characters_of(text) : bytes_of(text);
+}
+
+/**
+ * @brief Returns the token sequence canonical byte-pair encoding produces for a text given as its symbols: at every
+ *        step the lowest-rank merge present anywhere is applied at its leftmost occurrence.
+ * @param merges The merge table in rank order.
+ * @param sequence The text's symbols, its bytes or its characters.
+ * @return The tokens.
+ */
+std::vector<std::string> reference_tokens(const std::vector<Merge>& merges, std::vector<std::string> sequence)
+{
     for (auto merged{true}; merged;)
     {
         merged = false;
@@ -174,24 +260,28 @@ std::vector<Span> covering_spans(const std::vector<std::string>& tokens, const s
 }
 
 /**
- * @brief Returns the origin ripple and the mirrored quantity of a string prepended to an input, by the reference
- *        encoder: the input's covering spans against those of the prepended input shifted left by the string's length.
+ * @brief Returns the origin ripple and the mirrored quantity of a string prepended to an input, in bytes, by the
+ *        reference encoder over the symbols a reading takes: the input's covering spans against those of the prepended
+ *        input shifted left by the string's length.
  * @param merges The merge table in rank order.
+ * @param reading How the texts are read, by bytes or by characters.
  * @param prepended The prepended string.
  * @param input The input.
  * @return The two measures.
  */
-Ripple ripple_of(const std::vector<Merge>& merges, const std::string_view prepended, const std::string_view input)
+Ripple ripple_of(
+        const std::vector<Merge>& merges, const Reading reading, const std::string_view prepended,
+        const std::string_view input)
 {
     const auto shift{static_cast<std::ptrdiff_t>(prepended.size())};
 
-    const auto base_tokens{reference_tokens(merges, input)};
+    const auto base_tokens{reference_tokens(merges, symbols_of(reading, input))};
 
     const auto base{covering_spans(base_tokens, 0)};
 
     const auto whole_text{std::string{prepended} + std::string{input}};
 
-    const auto whole_tokens{reference_tokens(merges, whole_text)};
+    const auto whole_tokens{reference_tokens(merges, symbols_of(reading, whole_text))};
 
     const auto whole{covering_spans(whole_tokens, -shift)};
 
@@ -216,10 +306,13 @@ Ripple ripple_of(const std::vector<Merge>& merges, const std::string_view prepen
  * @brief Checks that a prepended input attains a radius and one attains a mirrored constant under the reference
  *        encoder, each witness present exactly when its value is not zero.
  * @param merges The merge table in rank order.
+ * @param reading How the texts are read, by bytes or by characters.
  * @param finite The radius and the mirrored constant with their witnesses.
  * @param context The fixture line or test checked.
  */
-void expect_attained(const std::vector<Merge>& merges, const Finite_ripple& finite, const std::string& context)
+void expect_attained(
+        const std::vector<Merge>& merges, const Reading reading, const Finite_ripple& finite,
+        const std::string& context)
 {
     const auto& [radius, radius_witness, mirrored, mirrored_witness]{finite};
 
@@ -230,7 +323,7 @@ void expect_attained(const std::vector<Merge>& merges, const Finite_ripple& fini
     {
         const auto& [symbol, input]{*radius_witness};
 
-        const auto [radius_reached, radius_mirror]{ripple_of(merges, symbol, input)};
+        const auto [radius_reached, radius_mirror]{ripple_of(merges, reading, symbol, input)};
 
         EXPECT_EQ(radius_reached, radius) << context << " on " << input;
     }
@@ -239,7 +332,7 @@ void expect_attained(const std::vector<Merge>& merges, const Finite_ripple& fini
     {
         const auto& [symbol, input]{*mirrored_witness};
 
-        const auto [mirror_origin, mirror_reached]{ripple_of(merges, symbol, input)};
+        const auto [mirror_origin, mirror_reached]{ripple_of(merges, reading, symbol, input)};
 
         EXPECT_EQ(mirror_reached, mirrored) << context << " on " << input;
     }
@@ -250,10 +343,12 @@ void expect_attained(const std::vector<Merge>& merges, const Finite_ripple& fini
  *        equal, the merges before it encoding the two copies as two tokens, and prepending the part to an even power of
  *        it changing the covering token of every byte.
  * @param merges The merge table in rank order.
+ * @param reading How the texts are read, by bytes or by characters.
  * @param rank The merge's rank.
  * @param context The fixture line or test checked.
  */
-void expect_effective_self_pair(const std::vector<Merge>& merges, const std::size_t rank, const std::string& context)
+void expect_effective_self_pair(
+        const std::vector<Merge>& merges, const Reading reading, const std::size_t rank, const std::string& context)
 {
     ASSERT_LT(rank, merges.size()) << context;
 
@@ -263,7 +358,7 @@ void expect_effective_self_pair(const std::vector<Merge>& merges, const std::siz
 
     const std::vector<Merge> before{merges.begin(), merges.begin() + static_cast<std::ptrdiff_t>(rank)};
 
-    const auto encoding{reference_tokens(before, left + right)};
+    const auto encoding{reference_tokens(before, symbols_of(reading, left + right))};
 
     EXPECT_EQ(encoding, (std::vector{left, right})) << context;
 
@@ -273,7 +368,7 @@ void expect_effective_self_pair(const std::vector<Merge>& merges, const std::siz
     {
         input += left + left;
 
-        const auto [origin, mirrored]{ripple_of(merges, left, input)};
+        const auto [origin, mirrored]{ripple_of(merges, reading, left, input)};
 
         EXPECT_EQ(origin, input.size()) << context << " on " << input;
     }
@@ -299,6 +394,71 @@ std::string refusal_of(const std::vector<Merge>& merges)
 }
 
 /**
+ * @brief Returns the message ripple_radius() over an alphabet of characters refuses a table with, or the empty text
+ *        when it takes the table.
+ * @param merges The merge table in rank order.
+ * @param alphabet The alphabet, UTF-8.
+ * @return The refusal.
+ */
+std::string refusal_over(const std::vector<Merge>& merges, const std::string_view alphabet)
+{
+    try
+    {
+        std::ignore = ripple_radius(merges, alphabet);
+    }
+    catch (const std::invalid_argument& refusal)
+    {
+        return refusal.what();
+    }
+
+    return {};
+}
+
+/**
+ * @brief Returns the decision on the current universe of a fixture: over its alphabet in a fixture read by characters,
+ *        and over the bytes otherwise.
+ * @param check The fixture under check.
+ * @return The decision.
+ */
+Ripple_radius decided(const Fixture_check& check)
+{
+    if (check.reading == Reading::characters)
+    {
+        return ripple_radius(check.merges, check.alphabet);
+    }
+
+    return ripple_radius(check.merges);
+}
+
+/**
+ * @brief Returns a decision written out whole, the verdict with every value and every witness, so that two decisions
+ *        compare to the byte.
+ * @param ripple The decision.
+ * @return The text.
+ */
+std::string written(const Ripple_radius& ripple)
+{
+    if (std::holds_alternative<Effective_self_pair>(ripple))
+    {
+        const auto [rank]{std::get<Effective_self_pair>(ripple)};
+
+        return std::format("infinite {}", rank);
+    }
+
+    const auto& [radius, radius_witness, mirrored, mirrored_witness]{std::get<Finite_ripple>(ripple)};
+
+    const auto witness_text{[](const std::optional<Prepended_input>& witness) {
+        return witness ? std::format("{} {}", witness->symbol, witness->input) : std::string{"none"};
+    }};
+
+    const auto radius_text{witness_text(radius_witness)};
+
+    const auto mirrored_text{witness_text(mirrored_witness)};
+
+    return std::format("finite {} {} {} {}", radius, mirrored, radius_text, mirrored_text);
+}
+
+/**
  * @brief Returns the text of a fixture field, "-" standing for the empty text.
  * @param field The field.
  * @return The text.
@@ -309,13 +469,19 @@ std::string text_of(const std::string& field)
 }
 
 /**
- * @brief Starts a universe line's universe: reads its merges, each a left and a right part joined by a comma.
+ * @brief Starts a universe line's universe: reads its alphabet in a fixture read by characters, and its merges, each a
+ *        left and a right part joined by a comma.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
  */
 void start_universe(Fixture_check& check, std::istringstream& fields, const std::string& context)
 {
+    if (check.reading == Reading::characters)
+    {
+        fields >> check.alphabet;
+    }
+
     std::vector<Merge> merges{};
 
     for (std::string merge{}; fields >> merge;)
@@ -345,7 +511,9 @@ void expect_refusal(Fixture_check& check, std::istringstream& fields, const std:
 
     fields >> rank >> reason;
 
-    const auto refusal{refusal_of(check.merges)};
+    const auto over_characters{check.reading == Reading::characters};
+
+    const auto refusal{over_characters ? refusal_over(check.merges, check.alphabet) : refusal_of(check.merges)};
 
     ++check.counts.refusals;
 
@@ -372,7 +540,7 @@ void expect_finite(Fixture_check& check, std::istringstream& fields, const std::
 
     fields >> radius >> mirrored >> radius_symbol >> radius_input >> mirrored_symbol >> mirrored_input;
 
-    const auto found{ripple_radius(check.merges)};
+    const auto found{decided(check)};
 
     ++check.counts.finite;
 
@@ -383,7 +551,7 @@ void expect_finite(Fixture_check& check, std::istringstream& fields, const std::
     EXPECT_EQ(finite.radius, radius) << context;
     EXPECT_EQ(finite.mirrored, mirrored) << context;
 
-    expect_attained(check.merges, finite, context);
+    expect_attained(check.merges, check.reading, finite, context);
 
     const auto witness_of{[](const std::size_t value, const std::string& symbol, const std::string& input) {
         return value == 0 ? std::nullopt : std::optional{Prepended_input{.symbol = symbol, .input = text_of(input)}};
@@ -399,7 +567,7 @@ void expect_finite(Fixture_check& check, std::istringstream& fields, const std::
             .mirrored = mirrored,
             .mirrored_witness = mirrored_witness};
 
-    expect_attained(check.merges, reference, context);
+    expect_attained(check.merges, check.reading, reference, context);
 }
 
 /**
@@ -412,15 +580,15 @@ void expect_finite(Fixture_check& check, std::istringstream& fields, const std::
 void expect_infinite(Fixture_check& check, std::istringstream& fields, const std::string& context)
 {
     std::size_t rank{};
-    std::string byte{};
+    std::string symbol{};
     std::string stem{};
     std::string loop{};
     std::string exit{};
     std::string tail{};
 
-    fields >> rank >> byte >> stem >> loop >> exit >> tail;
+    fields >> rank >> symbol >> stem >> loop >> exit >> tail;
 
-    const auto found{ripple_radius(check.merges)};
+    const auto found{decided(check)};
 
     ++check.counts.infinite;
 
@@ -429,13 +597,13 @@ void expect_infinite(Fixture_check& check, std::istringstream& fields, const std
 
     EXPECT_EQ(found_rank, rank) << context;
 
-    expect_effective_self_pair(check.merges, rank, context);
+    expect_effective_self_pair(check.merges, check.reading, rank, context);
 
     const auto ending{text_of(exit) + text_of(tail)};
 
     std::string pumped{text_of(stem)};
 
-    const auto [first_origin, first_mirrored]{ripple_of(check.merges, byte, pumped + ending)};
+    const auto [first_origin, first_mirrored]{ripple_of(check.merges, check.reading, symbol, pumped + ending)};
 
     std::size_t previous{first_origin};
 
@@ -445,12 +613,63 @@ void expect_infinite(Fixture_check& check, std::istringstream& fields, const std
 
         const auto input{pumped + ending};
 
-        const auto [ripple, mirrored]{ripple_of(check.merges, byte, input)};
+        const auto [ripple, mirrored]{ripple_of(check.merges, check.reading, symbol, input)};
 
         EXPECT_EQ(ripple, previous + text_of(loop).size()) << context << " pumped " << repetitions << " times";
 
         previous = ripple;
     }
+}
+
+/**
+ * @brief Checks a characters line: the decision's radius in bytes between the radius r counted in characters times
+ *        the shortest and times the longest of the characters the table names, and over characters of one length k the
+ *        radius k r and a mirrored constant m > 0 counted in characters k (m - 1) + 1 in bytes.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_characters(Fixture_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::size_t radius{};
+    std::size_t mirrored{};
+
+    fields >> radius >> mirrored;
+
+    const auto found{decided(check)};
+
+    ++check.counts.in_characters;
+
+    ASSERT_TRUE(std::holds_alternative<Finite_ripple>(found)) << context;
+
+    const auto& finite{std::get<Finite_ripple>(found)};
+
+    std::vector<std::size_t> lengths{};
+
+    for (const auto& [left, right] : check.merges)
+    {
+        const auto characters{characters_of(left + right)};
+
+        for (const auto& character : characters)
+        {
+            lengths.push_back(character.size());
+        }
+    }
+
+    const auto [shortest, longest]{std::ranges::minmax(lengths)};
+
+    EXPECT_LE(shortest * radius, finite.radius) << context;
+    EXPECT_LE(finite.radius, longest * radius) << context;
+
+    if (shortest != longest)
+    {
+        return;
+    }
+
+    const auto shifted{mirrored == 0 ? 0 : shortest * (mirrored - 1) + 1};
+
+    EXPECT_EQ(finite.radius, shortest * radius) << context;
+    EXPECT_EQ(finite.mirrored, shifted) << context;
 }
 
 /**
@@ -487,10 +706,92 @@ void expect_fixture_line(Fixture_check& check, const std::string& line)
     {
         expect_infinite(check, fields, context);
     }
+    else if (kind == "characters")
+    {
+        expect_characters(check, fields, context);
+    }
     else
     {
         ADD_FAILURE() << "unknown fixture line: " << line;
     }
+}
+
+/**
+ * @brief The alphabet of the SentencePiece-style character table: U+2581 for the space, as SentencePiece writes it, and
+ *        characters of one to four UTF-8 bytes.
+ */
+constexpr std::string_view sentencepiece_alphabet{"▁thecaéß中文😀"};
+
+/**
+ * @brief Returns the merges of the SentencePiece-style character table, in rank order: words begun by U+2581, and
+ *        merges joining characters of every UTF-8 length.
+ * @return The merge table.
+ */
+std::vector<Merge> sentencepiece_merges()
+{
+    return {{.left = "▁", .right = "t"},    {.left = "h", .right = "e"},   {.left = "▁t", .right = "he"},
+            {.left = "c", .right = "a"},    {.left = "é", .right = "t"},   {.left = "中", .right = "文"},
+            {.left = "▁", .right = "中文"}, {.left = "😀", .right = "😀"}, {.left = "ß", .right = "e"},
+            {.left = "ca", .right = "ét"}};
+}
+
+/**
+ * @brief Returns the ASCII alphabet, the characters U+0000 to U+007F in order, as UTF-8 text.
+ * @return The alphabet.
+ */
+std::string ascii_alphabet()
+{
+    constexpr std::size_t ascii_count{0x80};
+
+    std::string alphabet{};
+
+    for (std::size_t byte{0}; byte < ascii_count; ++byte)
+    {
+        alphabet += static_cast<char>(byte);
+    }
+
+    return alphabet;
+}
+
+/**
+ * @brief Returns the CJK ideograph an offset past U+4E00, spelled in UTF-8 as its three bytes.
+ * @param offset The offset, below 0x1000.
+ * @return The character.
+ */
+std::string ideograph(const std::size_t offset)
+{
+    const auto code_point{0x4E00U + offset};
+
+    const auto first{static_cast<char>(0xE0U | (code_point >> 12U))};
+    const auto second{static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU))};
+    const auto third{static_cast<char>(0x80U | (code_point & 0x3FU))};
+
+    return {first, second, third};
+}
+
+/**
+ * @brief Returns the Fibonacci table of a number of merges over two symbols: each merge joins the two latest words, the
+ *        first symbol then the second and then each word the one before it followed by itself.
+ * @param first The first symbol.
+ * @param second The second symbol.
+ * @param count The number of merges.
+ * @return The merge table in rank order.
+ */
+std::vector<Merge> fibonacci_merges(const std::string& first, const std::string& second, const std::size_t count)
+{
+    std::vector words{first, second};
+    std::vector<Merge> merges{};
+
+    for (std::size_t rank{0}; rank < count; ++rank)
+    {
+        const auto& left{words[words.size() - 2]};
+        const auto& right{words.back()};
+
+        merges.push_back({.left = left, .right = right});
+        words.push_back(left + right);
+    }
+
+    return merges;
 }
 
 } // namespace
@@ -506,7 +807,7 @@ TEST(Ripple_radius_test, One_merge_over_a_is_infinite_at_its_own_rank)
 
     EXPECT_EQ(rank, 0U);
 
-    expect_effective_self_pair(merges, 0, "one merge over a");
+    expect_effective_self_pair(merges, Reading::bytes, 0, "one merge over a");
 }
 
 TEST(Ripple_radius_test, A_proper_ordered_table_moves_every_covering_token_of_b_followed_by_ab_repeated)
@@ -526,7 +827,7 @@ TEST(Ripple_radius_test, A_proper_ordered_table_moves_every_covering_token_of_b_
     {
         input += "ab";
 
-        const auto [origin, mirrored]{ripple_of(merges, "a", input)};
+        const auto [origin, mirrored]{ripple_of(merges, Reading::bytes, "a", input)};
 
         EXPECT_EQ(origin, input.size()) << input;
     }
@@ -550,9 +851,9 @@ TEST(Ripple_radius_test, A_self_pair_whose_copies_never_meet_at_its_stage_leaves
     // The merges before the self-pair never leave two copies of ba adjacent: baba encodes as b, ab, a.
     const std::vector<Merge> before{merges[0], merges[1]};
 
-    EXPECT_EQ(reference_tokens(before, "baba"), (std::vector<std::string>{"b", "ab", "a"}));
+    EXPECT_EQ(reference_tokens(before, bytes_of("baba")), (std::vector<std::string>{"b", "ab", "a"}));
 
-    expect_attained(merges, finite, "ab, ba, ba+ba");
+    expect_attained(merges, Reading::bytes, finite, "ab, ba, ba+ba");
 }
 
 TEST(Ripple_radius_test, The_mirrored_constant_lies_below_the_radius_when_the_last_changed_token_begins_early)
@@ -568,12 +869,12 @@ TEST(Ripple_radius_test, The_mirrored_constant_lies_below_the_radius_when_the_la
     EXPECT_EQ(finite.radius, 2U);
     EXPECT_EQ(finite.mirrored, 1U);
 
-    const auto [origin, mirror]{ripple_of(merges, "a", "bc")};
+    const auto [origin, mirror]{ripple_of(merges, Reading::bytes, "a", "bc")};
 
     EXPECT_EQ(origin, 2U);
     EXPECT_EQ(mirror, 1U);
 
-    expect_attained(merges, finite, "bc, a+bc");
+    expect_attained(merges, Reading::bytes, finite, "bc, a+bc");
 }
 
 TEST(Ripple_radius_test, The_empty_table_has_radius_zero_and_no_witness)
@@ -592,18 +893,11 @@ TEST(Ripple_radius_test, The_empty_table_has_radius_zero_and_no_witness)
 
 TEST(Ripple_radius_test, The_Fibonacci_tables_reach_the_largest_finite_radius_of_their_merge_count)
 {
-    // Each merge joins the two latest products, a then b and then each word the one before it followed by itself.
-    std::vector<std::string> words{"a", "b"};
-    std::vector<Merge> merges{};
     std::vector<std::size_t> fibonacci{1, 1};
 
     for (std::size_t count{1}; count <= 8; ++count)
     {
-        const auto& left{words[words.size() - 2]};
-        const auto& right{words.back()};
-
-        merges.push_back({.left = left, .right = right});
-        words.push_back(left + right);
+        const auto merges{fibonacci_merges("a", "b", count)};
 
         while (fibonacci.size() < count + 3)
         {
@@ -620,7 +914,9 @@ TEST(Ripple_radius_test, The_Fibonacci_tables_reach_the_largest_finite_radius_of
 
         EXPECT_EQ(finite.radius, fibonacci[count + 2] - 2) << count;
 
-        expect_attained(merges, finite, std::format("the Fibonacci table of {} merges", count));
+        const auto context{std::format("the Fibonacci table of {} merges", count)};
+
+        expect_attained(merges, Reading::bytes, finite, context);
     }
 }
 
@@ -686,4 +982,190 @@ TEST(Ripple_radius_test, The_decision_gives_the_reference_answers_on_every_unive
     EXPECT_EQ(check.counts.refusals, 80U);
     EXPECT_EQ(check.counts.finite, 209U);
     EXPECT_EQ(check.counts.infinite, 521U);
+}
+
+TEST(Ripple_radius_test, Over_characters_the_radius_counts_the_bytes_of_every_character_whose_token_changes)
+{
+    const std::vector<Merge> merges{{.left = "é", .right = "t"}, {.left = "▁", .right = "ét"}};
+
+    const auto found{ripple_radius(merges, "▁ét")};
+
+    ASSERT_TRUE(std::holds_alternative<Finite_ripple>(found));
+
+    const auto& finite{std::get<Finite_ripple>(found)};
+
+    // Prepending the three bytes of ▁ to ét, two characters and three bytes, makes the one token ▁ét.
+    EXPECT_EQ(finite.radius, 3U);
+    EXPECT_EQ(finite.mirrored, 1U);
+
+    ASSERT_TRUE(finite.radius_witness);
+    EXPECT_EQ(finite.radius_witness->symbol, "▁");
+
+    expect_attained(merges, Reading::characters, finite, "é+t, ▁+ét");
+}
+
+TEST(Ripple_radius_test, On_a_sentencepiece_style_table_different_inputs_attain_the_radius_in_bytes_and_in_characters)
+{
+    auto merges{sentencepiece_merges()};
+
+    const auto is_self_pair{[](const Merge& merge) { return merge.left == merge.right; }};
+
+    std::erase_if(merges, is_self_pair);
+
+    const auto found{ripple_radius(merges, sentencepiece_alphabet)};
+
+    ASSERT_TRUE(std::holds_alternative<Finite_ripple>(found));
+
+    const auto& finite{std::get<Finite_ripple>(found)};
+
+    EXPECT_EQ(finite.radius, 6U);
+
+    expect_attained(merges, Reading::characters, finite, "the SentencePiece-style table without its self-pair");
+
+    // ▁ moves the six bytes of 中文, two characters, and the three bytes of the, three characters.
+    const auto [ideographs, ideographs_mirrored]{ripple_of(merges, Reading::characters, "▁", "中文")};
+    const auto [letters, letters_mirrored]{ripple_of(merges, Reading::characters, "▁", "the")};
+
+    EXPECT_EQ(ideographs, 6U);
+    EXPECT_EQ(letters, 3U);
+}
+
+TEST(Ripple_radius_test, The_sentencepiece_style_table_is_infinite_at_its_merge_of_two_copies_of_one_character)
+{
+    const auto merges{sentencepiece_merges()};
+
+    const auto found{ripple_radius(merges, sentencepiece_alphabet)};
+
+    ASSERT_TRUE(std::holds_alternative<Effective_self_pair>(found));
+    const auto [rank]{std::get<Effective_self_pair>(found)};
+
+    EXPECT_EQ(rank, 7U);
+
+    expect_effective_self_pair(merges, Reading::characters, rank, "the SentencePiece-style table");
+}
+
+TEST(Ripple_radius_test, An_alphabet_of_more_characters_than_a_byte_holds_gives_three_times_the_radius_of_two_letters)
+{
+    constexpr std::size_t character_count{300};
+    constexpr std::size_t merge_count{8};
+
+    std::string alphabet{};
+
+    for (std::size_t offset{0}; offset < character_count; ++offset)
+    {
+        alphabet += ideograph(offset);
+    }
+
+    const auto letters{fibonacci_merges("a", "b", merge_count)};
+
+    const auto merges{fibonacci_merges(ideograph(0), ideograph(character_count - 1), merge_count)};
+
+    const auto over_letters{ripple_radius(letters)};
+
+    const auto found{ripple_radius(merges, alphabet)};
+
+    ASSERT_TRUE(std::holds_alternative<Finite_ripple>(over_letters));
+    ASSERT_TRUE(std::holds_alternative<Finite_ripple>(found));
+
+    const auto& letter_ripple{std::get<Finite_ripple>(over_letters)};
+    const auto& finite{std::get<Finite_ripple>(found)};
+
+    // Every character three bytes long, the radius is three times the radius in characters, which the letters give.
+    EXPECT_EQ(finite.radius, 3 * letter_ripple.radius);
+    EXPECT_EQ(finite.mirrored, 3 * (letter_ripple.mirrored - 1) + 1);
+
+    expect_attained(merges, Reading::characters, finite, "the Fibonacci table over two ideographs");
+}
+
+TEST(Ripple_radius_test, The_empty_table_over_the_empty_alphabet_has_radius_zero_and_no_witness)
+{
+    const auto found{ripple_radius({}, "")};
+
+    ASSERT_TRUE(std::holds_alternative<Finite_ripple>(found));
+
+    const auto& [radius, radius_witness, mirrored, mirrored_witness]{std::get<Finite_ripple>(found)};
+
+    EXPECT_EQ(radius, 0U);
+    EXPECT_EQ(mirrored, 0U);
+    EXPECT_FALSE(radius_witness);
+    EXPECT_FALSE(mirrored_witness);
+}
+
+TEST(Ripple_radius_test, Refuses_an_alphabet_holding_a_character_twice_and_a_merge_naming_a_character_outside_it)
+{
+    const auto twice{refusal_over({}, "éb\xC3\xA9")};
+
+    EXPECT_TRUE(twice.contains(R"(the alphabet carries "\xC3\xA9" twice)")) << twice;
+
+    const auto outside{refusal_over({{.left = "é", .right = "t"}, {.left = "ét", .right = "ü"}}, "ét")};
+
+    EXPECT_TRUE(outside.contains(R"(("\xC3\xA9t", "\xC3\xBC") at rank 1 names "\xC3\xBC")")) << outside;
+    EXPECT_TRUE(refusal_over({{.left = "é", .right = "t"}}, "ét").empty());
+}
+
+TEST(Ripple_radius_test, The_decision_over_characters_gives_the_reference_answers_on_every_universe_of_its_fixture)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/ripple_character_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    Fixture_check check{.reading = Reading::characters};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        expect_fixture_line(check, line);
+    }
+
+    EXPECT_EQ(check.counts.universes, 5540U);
+    EXPECT_EQ(check.counts.refusals, 1096U);
+    EXPECT_EQ(check.counts.finite, 927U);
+    EXPECT_EQ(check.counts.infinite, 3517U);
+    EXPECT_EQ(check.counts.in_characters, 927U);
+}
+
+TEST(Ripple_radius_test, Over_the_characters_of_ascii_every_universe_of_the_fixture_is_decided_as_over_the_bytes)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/ripple_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    const auto alphabet{ascii_alphabet()};
+
+    Fixture_check check{};
+
+    std::size_t refused{0};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        std::istringstream fields{line};
+
+        std::string kind{};
+
+        if (!(fields >> kind) || kind != "universe")
+        {
+            continue;
+        }
+
+        start_universe(check, fields, line);
+
+        const auto refusal{refusal_of(check.merges)};
+
+        EXPECT_EQ(refusal_over(check.merges, alphabet), refusal) << line;
+
+        if (!refusal.empty())
+        {
+            ++refused;
+
+            continue;
+        }
+
+        const auto over_bytes{ripple_radius(check.merges)};
+
+        const auto over_characters{ripple_radius(check.merges, alphabet)};
+
+        EXPECT_EQ(written(over_characters), written(over_bytes)) << line;
+    }
+
+    EXPECT_EQ(check.counts.universes, 810U);
+    EXPECT_EQ(refused, 80U);
 }

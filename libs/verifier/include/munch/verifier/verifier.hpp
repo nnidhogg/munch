@@ -20,8 +20,8 @@ namespace munch::verifier
  *
  * Every position, length, origin, cut and context a decision takes or returns counts marked symbols. Over a verifier of
  * bytes, such as armed_run()'s, that is bytes; over a table whose symbols each stand for a class of codepoints, one
- * symbol per codepoint, it is codepoints; and over the character overloads of merge_tower() and token_automaton(),
- * which read each character as its UTF-8 bytes, it is UTF-8 bytes.
+ * symbol per codepoint, it is codepoints; and over the character overloads of merge_tower(), token_automaton() and
+ * ripple_radius(), which read each character as its UTF-8 bytes, it is UTF-8 bytes.
  */
 struct Marked
 {

@@ -554,13 +554,13 @@ a token boundary follows it, and it accepts exactly the marked strings of a poli
 marking per input the policy segments. Every position, length, origin, cut and context the decisions take or return
 counts marked symbols, so it counts bytes over a verifier of bytes such as the armed run, codepoints over a table whose
 symbols each stand for a class of codepoints, one symbol per codepoint, and UTF-8 bytes over the character overloads of
-`merge_tower()` and `token_automaton()`. `verifier::armed_run(dfa)` builds the verifier of maximal-munch scanning over a
-token set's DFA, `verifier::merge_tower(merges)` of `munch/verifier/merge_tower.hpp` the verifier of canonical byte-pair
-encoding over a merge table, `verifier::trie_chain(initial, continuation)` of `munch/verifier/trie_chain.hpp` the
-verifier of WordPiece segmentation over a two-mode vocabulary, and the constructor builds one from any transition table,
-trimming it to the states reachable from the start that can reach acceptance. The ten decisions of
-`munch/verifier/verifier_decisions.hpp` then run on the product of the verifier with a search or on its minimal
-automaton, each with a witness replayable through `Verifier::step()` but `fanout()`, which returns states.
+`merge_tower()`, `token_automaton()` and `ripple_radius()`. `verifier::armed_run(dfa)` builds the verifier of
+maximal-munch scanning over a token set's DFA, `verifier::merge_tower(merges)` of `munch/verifier/merge_tower.hpp` the
+verifier of canonical byte-pair encoding over a merge table, `verifier::trie_chain(initial, continuation)` of
+`munch/verifier/trie_chain.hpp` the verifier of WordPiece segmentation over a two-mode vocabulary, and the constructor
+builds one from any transition table, trimming it to the states reachable from the start that can reach acceptance. The
+ten decisions of `munch/verifier/verifier_decisions.hpp` then run on the product of the verifier with a search or on its
+minimal automaton, each with a witness replayable through `Verifier::step()` but `fanout()`, which returns states.
 `miscovering(verifier, window, origin)` decides the window certificate `(window, origin)`, that the token containing an
 occurrence's final byte begins at the origin at every occurrence in every accepted marked string, and returns the
 shortest accepted marked string that miscovers it; on the armed run this is the exact side of `is_split_window()`, and
@@ -882,6 +882,31 @@ const auto& finite{std::get<verifier::Finite_ripple>(ripple)};
 finite.radius;                                       // 2, both bytes of bc covered anew
 finite.mirrored;                                     // 1, the changed token bc beginning at 0
 verifier::ripple_radius(doubled);                    // the effective self-pair at rank 1: (a,b) leaves abab as ab|ab
+```
+
+`verifier::ripple_radius(merges, alphabet)` decides the radius over an alphabet of characters, as `merge_tower(merges,
+alphabet)` builds the tower. The alphabet is UTF-8 text whose characters are the tokens before any merge, a prepended
+symbol is one of its characters, an input is a string over them, and the decision is the same, with its distances in
+bytes as every position over the character overloads: the radius is one past the last byte of the input whose covering
+token changes, the mirrored constant one past the first byte of the last changed token, and `Prepended_input` spells the
+prepended character by its UTF-8 bytes. The radius counted in characters is finite exactly when this one is, but it is
+not this one divided by a length, since this one weighs each character by its bytes and the inputs attaining the two can
+differ: with every character the table names p to q bytes long, the radius in characters r and the radius in bytes R
+satisfy p r <= R <= q r, and over characters of one length k, R is k times r. The report *The Left Ripple of Byte-Pair
+Encoding* counts symbols, which are characters here, so a figure it gives for a table of characters longer than a byte
+counts characters, not bytes. Over the characters U+0000 to U+007F the decision is `ripple_radius(merges)`'s, to the
+byte, and a character the alphabet holds twice is refused with `std::invalid_argument` naming it, as is a merge that
+names a character outside the alphabet:
+
+```cpp
+const std::vector<verifier::Merge> merges{{.left = "é", .right = "t"}, {.left = "▁", .right = "ét"}};
+
+const auto ripple{verifier::ripple_radius(merges, "▁ét")};  // finite: ▁ prepended to ét makes the one token ▁ét
+const auto& finite{std::get<verifier::Finite_ripple>(ripple)};
+
+finite.radius;                                             // 3, the three bytes of ét, two characters, covered anew
+finite.mirrored;                                           // 1, the changed token ét beginning at 0
+finite.radius_witness->symbol;                             // "▁", the prepended character, three bytes long
 ```
 
 `verifier::rule_ceilings(merges)` of `munch/verifier/rule_ceilings.hpp` reads the ceilings on a table's radii off its

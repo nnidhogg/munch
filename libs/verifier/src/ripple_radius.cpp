@@ -20,21 +20,27 @@ namespace munch::verifier
 namespace
 {
 /**
- * @brief A token of the table's vocabulary: a byte by its value, or a product by its merge's rank past the bytes.
+ * @brief A token of the table's vocabulary: a symbol of the alphabet by its place in it, so a byte by its value, or a
+ *        product by its merge's rank past the symbols.
  */
 using Token_t = std::size_t;
 
 /**
- * @brief The number of bytes, which the vocabulary carries before the products.
+ * @brief The number of bytes, the symbols of the byte alphabet.
  */
-constexpr Token_t byte_count{256};
+constexpr std::size_t byte_count{256};
 
 /**
- * @brief The merge table resolved to tokens: each merge's parts by rank, the product of rank r being the token
- *        byte_count + r.
+ * @brief The merge table resolved to tokens over an alphabet: the token of each symbol, and each merge's parts by rank,
+ *        the product of rank r being the token r past the symbols.
  */
 struct Table
 {
+    /**
+     * @brief The token of each symbol of the alphabet, by its spelling.
+     */
+    std::unordered_map<std::string, Token_t> symbols{};
+
     /**
      * @brief The left part of each merge, by rank.
      */
@@ -69,7 +75,7 @@ struct Stages
 struct Vocabulary
 {
     /**
-     * @brief The spelling of every token, the bytes and every product, by token.
+     * @brief The spelling of every token, the symbols and every product, by token.
      */
     std::vector<std::string> spellings{};
 
@@ -79,14 +85,19 @@ struct Vocabulary
     std::vector<std::size_t> passes{};
 
     /**
+     * @brief The symbols the table names, ascending.
+     */
+    std::vector<Token_t> named{};
+
+    /**
      * @brief The canonical tokens beginning with each byte, by byte, ascending.
      */
     std::vector<std::vector<Token_t>> beginning{};
 
     /**
-     * @brief The bytes the table names, ascending.
+     * @brief The bytes of the symbols the table names, ascending.
      */
-    std::vector<unsigned char> alphabet{};
+    std::vector<unsigned char> bytes{};
 };
 
 /**
@@ -112,7 +123,8 @@ struct Position
 };
 
 /**
- * @brief A node of the overlap graph: the copy reading the input alone and the copy that read the prepended byte first.
+ * @brief A node of the overlap graph: the copy reading the input alone and the copy that read the prepended symbol
+ *        first.
  */
 struct Pair
 {
@@ -127,7 +139,7 @@ struct Pair
     Position base{};
 
     /**
-     * @brief The copy that read the prepended byte as the first byte of its first token.
+     * @brief The copy that read the prepended symbol as the first symbol of its first token.
      */
     Position prepended{};
 };
@@ -231,13 +243,14 @@ struct Best
 };
 
 /**
- * @brief Returns the token of a merge's product.
+ * @brief Returns the token of a merge's product, past the symbols of the alphabet.
+ * @param table The resolved merge table.
  * @param rank The merge's rank.
  * @return The product's token.
  */
-[[nodiscard]] constexpr Token_t product_of(const std::size_t rank) noexcept
+[[nodiscard]] Token_t product_of(const Table& table, const std::size_t rank) noexcept
 {
-    return byte_count + rank;
+    return table.symbols.size() + rank;
 }
 
 /**
@@ -279,24 +292,31 @@ struct Best
 }
 
 /**
- * @brief Resolves a merge table to tokens, each part looked up among the bytes and the earlier products.
+ * @brief Resolves a merge table to tokens over an alphabet, each part looked up among the symbols and the earlier
+ *        products.
  * @param merges The merge table in rank order.
+ * @param symbols The alphabet's symbols, each spelled by its bytes, numbered in order.
  * @return The resolved table.
- * @throws std::invalid_argument If a merge names a part the vocabulary so far does not carry, or a product it already
- *         carries.
+ * @throws std::invalid_argument If the alphabet holds a symbol twice, or a merge names a part the vocabulary so far
+ *         does not carry, or a product it already carries.
  */
-[[nodiscard]] Table table_of(const std::span<const Merge> merges)
+[[nodiscard]] Table table_of(const std::span<const Merge> merges, const std::span<const std::string> symbols)
 {
-    std::unordered_map<std::string, Token_t> tokens{};
+    Table table{};
 
-    for (Token_t byte{0}; byte < byte_count; ++byte)
+    for (Token_t symbol{0}; symbol < symbols.size(); ++symbol)
     {
-        const std::string spelling{static_cast<char>(byte)};
+        const auto& spelling{symbols[symbol]};
 
-        tokens.emplace(spelling, byte);
+        const auto [entry, inserted]{table.symbols.try_emplace(spelling, symbol)};
+
+        if (!inserted)
+        {
+            throw std::invalid_argument{std::format("ripple_radius: the alphabet carries {} twice", quoted(spelling))};
+        }
     }
 
-    Table table{};
+    auto tokens{table.symbols};
 
     for (std::size_t rank{0}; rank < merges.size(); ++rank)
     {
@@ -323,7 +343,7 @@ struct Best
 
         const auto spelling{left + right};
 
-        const auto [product, inserted]{tokens.try_emplace(spelling, product_of(rank))};
+        const auto [product, inserted]{tokens.try_emplace(spelling, product_of(table, rank))};
 
         if (!inserted)
         {
@@ -338,20 +358,65 @@ struct Best
 }
 
 /**
- * @brief Returns the spelling of every token: each byte as itself and each product as its two parts.
- * @param merges The merge table in rank order.
- * @return The spellings, by token.
+ * @brief Returns the byte alphabet: every byte, each a symbol spelled by itself, in order of value.
+ * @return The spellings of the 256 bytes.
  */
-[[nodiscard]] std::vector<std::string> spellings_of(const std::span<const Merge> merges)
+[[nodiscard]] std::vector<std::string> byte_alphabet()
 {
-    std::vector<std::string> spellings{};
+    std::vector<std::string> symbols{};
 
-    for (Token_t byte{0}; byte < byte_count; ++byte)
+    for (std::size_t byte{0}; byte < byte_count; ++byte)
     {
         const std::string spelling{static_cast<char>(byte)};
 
-        spellings.push_back(spelling);
+        symbols.push_back(spelling);
     }
+
+    return symbols;
+}
+
+/**
+ * @brief Returns the characters of an alphabet given as UTF-8 text, each spelled by its bytes: the text split before
+ *        every byte that is not a continuation byte.
+ * @param alphabet The alphabet, UTF-8.
+ * @return The characters, in order.
+ */
+[[nodiscard]] std::vector<std::string> characters_of(const std::string_view alphabet)
+{
+    constexpr unsigned char continuation_mask{0xC0};
+    constexpr unsigned char continuation_bits{0x80};
+
+    std::vector<std::string> characters{};
+
+    for (const auto byte : alphabet)
+    {
+        const auto value{static_cast<unsigned char>(byte)};
+
+        const auto continues{(value & continuation_mask) == continuation_bits};
+
+        if (continues && !characters.empty())
+        {
+            characters.back() += byte;
+
+            continue;
+        }
+
+        characters.push_back(std::string{byte});
+    }
+
+    return characters;
+}
+
+/**
+ * @brief Returns the spelling of every token: each symbol as itself and each product as its two parts.
+ * @param merges The merge table in rank order.
+ * @param symbols The alphabet's symbols, each spelled by its bytes, numbered in order.
+ * @return The spellings, by token.
+ */
+[[nodiscard]] std::vector<std::string> spellings_of(
+        const std::span<const Merge> merges, const std::span<const std::string> symbols)
+{
+    std::vector<std::string> spellings{symbols.begin(), symbols.end()};
 
     for (const auto& [left, right] : merges)
     {
@@ -362,17 +427,33 @@ struct Best
 }
 
 /**
- * @brief Returns the bytes of a text as tokens, one per byte.
- * @param text The text.
- * @return The byte tokens.
+ * @brief Returns the symbols of a text as tokens, the text split wherever the bytes read since the last split spell a
+ *        symbol.
+ * @param table The resolved merge table.
+ * @param text The text, the spelling of tokens.
+ * @return The symbol tokens.
  */
-[[nodiscard]] std::vector<Token_t> bytes_of(const std::string_view text)
+[[nodiscard]] std::vector<Token_t> symbols_of(const Table& table, const std::string_view text)
 {
     std::vector<Token_t> tokens{};
 
+    std::string pending{};
+
     for (const auto byte : text)
     {
-        tokens.push_back(static_cast<unsigned char>(byte));
+        pending += byte;
+
+        const auto found{table.symbols.find(pending)};
+
+        if (found == table.symbols.cend())
+        {
+            continue;
+        }
+
+        const auto& [spelling, symbol]{*found};
+
+        tokens.push_back(symbol);
+        pending.clear();
     }
 
     return tokens;
@@ -385,7 +466,7 @@ struct Best
  * Under the ordering condition this is the encoder's segmentation, the merges that never apply left out.
  * @param table The resolved merge table.
  * @param passes The ranks of the merges to apply, ascending.
- * @param tokens The sequence, the bytes of a text or tokens of its encoding.
+ * @param tokens The sequence, the symbols of a text or tokens of its encoding.
  * @return The encoded sequence.
  */
 [[nodiscard]] std::vector<Token_t> encoded(
@@ -406,7 +487,7 @@ struct Best
 
             if (joins)
             {
-                joined.push_back(product_of(rank));
+                joined.push_back(product_of(table, rank));
                 ++index;
 
                 continue;
@@ -432,7 +513,7 @@ struct Best
 {
     std::vector<bool> canonical(spellings.size(), false);
 
-    std::fill_n(canonical.begin(), byte_count, true);
+    std::fill_n(canonical.begin(), table.symbols.size(), true);
 
     Stages stages{};
 
@@ -448,7 +529,7 @@ struct Best
 
         const auto spelling{spellings[left] + spellings[right]};
 
-        const auto parts{bytes_of(spelling)};
+        const auto parts{symbols_of(table, spelling)};
 
         const auto encoding{encoded(table, stages.useful, parts)};
 
@@ -465,55 +546,77 @@ struct Best
         }
 
         stages.useful.push_back(rank);
-        canonical[product_of(rank)] = true;
+        canonical[product_of(table, rank)] = true;
     }
 
     return stages;
 }
 
 /**
- * @brief Returns the canonical tokens of a table with no effective self-pair: the bytes the table names and the useful
- *        products, grouped by their first byte.
+ * @brief Returns the canonical tokens of a table with no effective self-pair: the symbols the table names and the
+ *        useful products, grouped by their first byte.
+ * @param table The resolved merge table.
  * @param merges The merge table in rank order.
  * @param spellings The spelling of every token, by token.
  * @param useful The ranks of the useful merges, ascending.
  * @return The vocabulary.
  */
 [[nodiscard]] Vocabulary vocabulary_of(
-        const std::span<const Merge> merges, std::vector<std::string> spellings, std::vector<std::size_t> useful)
+        const Table& table, const std::span<const Merge> merges, std::vector<std::string> spellings,
+        std::vector<std::size_t> useful)
 {
-    std::vector<bool> named(byte_count, false);
+    std::vector<bool> named(table.symbols.size(), false);
 
     for (const auto& [left, right] : merges)
     {
         const auto spelling{left + right};
 
-        for (const auto byte : spelling)
+        for (const auto symbol : symbols_of(table, spelling))
         {
-            named[static_cast<unsigned char>(byte)] = true;
+            named[symbol] = true;
         }
     }
 
     Vocabulary vocabulary{
             .spellings = std::move(spellings),
             .passes = std::move(useful),
+            .named = {},
             .beginning = std::vector<std::vector<Token_t>>(byte_count),
-            .alphabet = {}};
+            .bytes = {}};
 
-    for (Token_t byte{0}; byte < byte_count; ++byte)
+    std::vector<bool> spelled(byte_count, false);
+
+    for (Token_t symbol{0}; symbol < named.size(); ++symbol)
     {
-        if (!named[byte])
+        if (!named[symbol])
         {
             continue;
         }
 
-        vocabulary.alphabet.push_back(static_cast<unsigned char>(byte));
-        vocabulary.beginning[byte].push_back(byte);
+        const auto& spelling{vocabulary.spellings[symbol]};
+
+        const auto first{static_cast<unsigned char>(spelling.front())};
+
+        vocabulary.named.push_back(symbol);
+        vocabulary.beginning[first].push_back(symbol);
+
+        for (const auto byte : spelling)
+        {
+            spelled[static_cast<unsigned char>(byte)] = true;
+        }
+    }
+
+    for (std::size_t byte{0}; byte < byte_count; ++byte)
+    {
+        if (spelled[byte])
+        {
+            vocabulary.bytes.push_back(static_cast<unsigned char>(byte));
+        }
     }
 
     for (const auto rank : vocabulary.passes)
     {
-        const auto product{product_of(rank)};
+        const auto product{product_of(table, rank)};
 
         const auto first{static_cast<unsigned char>(vocabulary.spellings[product].front())};
 
@@ -601,7 +704,8 @@ private:
     [[nodiscard]] bool is_at_end(const Position& position) const;
 
     /**
-     * @brief Reads every byte the table names from one node, both copies reading it, interning the pairs reached.
+     * @brief Reads every byte of the symbols the table names from one node, both copies reading it, interning the
+     *        pairs reached.
      * @param node The node read from.
      */
     void expand(std::size_t node);
@@ -657,7 +761,7 @@ private:
             const std::vector<bool>& live, const std::vector<bool>& marked_part, const Longest& longest) const;
 
     /**
-     * @brief Returns the prepended input a marked step attains its value on: the prepended byte of the source the
+     * @brief Returns the prepended input a marked step attains its value on: the prepended symbol of the source the
      *        longest path to the step begins at, and the bytes of that path, the step and a shortest completion.
      * @param longest The longest paths inside the marked part.
      * @param best The step attaining the value.
@@ -714,11 +818,20 @@ Exploration::Exploration(Table table, Vocabulary vocabulary)
 
 Finite_ripple Exploration::run() &&
 {
-    for (const auto byte : vocabulary_.alphabet)
+    for (const auto symbol : vocabulary_.named)
     {
-        for (const auto token : vocabulary_.beginning[byte])
+        const auto& spelling{vocabulary_.spellings[symbol]};
+
+        const auto first{static_cast<unsigned char>(spelling.front())};
+
+        for (const auto token : vocabulary_.beginning[first])
         {
-            std::ignore = intern({.base = {}, .prepended = {.token = token, .read = 1}});
+            if (!vocabulary_.spellings[token].starts_with(spelling))
+            {
+                continue;
+            }
+
+            std::ignore = intern({.base = {}, .prepended = {.token = token, .read = spelling.size()}});
         }
     }
 
@@ -779,7 +892,7 @@ void Exploration::expand(const std::size_t node)
     // The node's pair, read from a copy while interning grows the pairs.
     const auto [base, prepended]{pairs_[node]};
 
-    for (const auto byte : vocabulary_.alphabet)
+    for (const auto byte : vocabulary_.bytes)
     {
         const auto base_readings{readings(base, byte)};
         const auto prepended_readings{readings(prepended, byte)};
@@ -844,7 +957,7 @@ bool Exploration::is_adjacent(const Token_t first, const Token_t second)
 
     const auto spelling{vocabulary_.spellings[first] + vocabulary_.spellings[second]};
 
-    const auto parts{bytes_of(spelling)};
+    const auto parts{symbols_of(table_, spelling)};
 
     const auto encoding{encoded(table_, vocabulary_.passes, parts)};
 
@@ -1023,7 +1136,9 @@ std::optional<Prepended_input> Exploration::witness(const Longest& longest, cons
 
     const auto& first_token{vocabulary_.spellings[*prepended.token]};
 
-    return Prepended_input{.symbol = {first_token.front()}, .input = std::move(bytes)};
+    auto symbol{first_token.substr(0, prepended.read)};
+
+    return Prepended_input{.symbol = std::move(symbol), .input = std::move(bytes)};
 }
 
 std::string Exploration::completion(const std::size_t from) const
@@ -1073,13 +1188,21 @@ std::string Exploration::completion(const std::size_t from) const
     return bytes;
 }
 
-} // namespace
-
-Ripple_radius ripple_radius(const std::span<const Merge> merges)
+/**
+ * @brief Decides the origin radius of a merge table over an alphabet of symbols: the first effective self-pair when
+ *        the merges taken in rank order meet one, and otherwise the radius and the mirrored constant the overlap graph
+ *        gives.
+ * @param merges The merge table in rank order.
+ * @param symbols The alphabet's symbols, each spelled by its bytes, numbered in order.
+ * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair.
+ * @throws std::invalid_argument If the alphabet holds a symbol twice, or a merge names a part the vocabulary so far
+ *         does not carry, or a product it already carries.
+ */
+[[nodiscard]] Ripple_radius radius_over(const std::span<const Merge> merges, const std::span<const std::string> symbols)
 {
-    auto table{table_of(merges)};
+    auto table{table_of(merges, symbols)};
 
-    auto spellings{spellings_of(merges)};
+    auto spellings{spellings_of(merges, symbols)};
 
     auto [useful, self_pair]{stages_of(table, spellings)};
 
@@ -1088,11 +1211,27 @@ Ripple_radius ripple_radius(const std::span<const Merge> merges)
         return Effective_self_pair{.rank = *self_pair};
     }
 
-    auto vocabulary{vocabulary_of(merges, std::move(spellings), std::move(useful))};
+    auto vocabulary{vocabulary_of(table, merges, std::move(spellings), std::move(useful))};
 
     Exploration exploration{std::move(table), std::move(vocabulary)};
 
     return std::move(exploration).run();
+}
+
+} // namespace
+
+Ripple_radius ripple_radius(const std::span<const Merge> merges)
+{
+    const auto symbols{byte_alphabet()};
+
+    return radius_over(merges, symbols);
+}
+
+Ripple_radius ripple_radius(const std::span<const Merge> merges, const std::string_view alphabet)
+{
+    const auto symbols{characters_of(alphabet)};
+
+    return radius_over(merges, symbols);
 }
 
 } // namespace munch::verifier
