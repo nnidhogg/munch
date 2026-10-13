@@ -555,7 +555,7 @@ marking per input the policy segments. `verifier::armed_run(dfa)` builds the ver
 token set's DFA, `verifier::merge_tower(merges)` of `munch/verifier/merge_tower.hpp` the verifier of canonical byte-pair
 encoding over a merge table, `verifier::trie_chain(initial, continuation)` of `munch/verifier/trie_chain.hpp` the
 verifier of WordPiece segmentation over a two-mode vocabulary, and the constructor builds one from any transition table,
-trimming it to the states reachable from the start that can reach acceptance. The nine decisions of
+trimming it to the states reachable from the start that can reach acceptance. The ten decisions of
 `munch/verifier/verifier_decisions.hpp` then run on the product of the verifier with a search or on its minimal
 automaton, each with a witness replayable through `Verifier::step()` but `fanout()`, which returns states.
 `miscovering(verifier, window, origin)` decides the window certificate `(window, origin)`, that the token containing an
@@ -571,6 +571,21 @@ half that has one, the boundaries searched before the domain, with the half it f
 `segmentation_difference()` decided on the verifiers. The verifier is a library-level interface: `core::Lexer` forwards
 none of it, and a caller reaches a token set's DFA through `dfa::Builder` or by deriving from `core::Builder`, whose
 `dfa()` is protected.
+
+`pinned_cut(verifier, window, byte)` asks the window certificate of any byte of the window rather than of its last:
+whether the token covering the byte begins at one offset of the window at every occurrence in every accepted marked
+string. It returns that offset, at which a token boundary then sits at every occurrence, or, as a `Miscovering`, the
+shortest accepted marked string with an occurrence where the token begins elsewhere. The offset is read at the window's
+first occurrence in the shortest accepted marked string that holds one, which is the window itself under its own
+segmentation when the window alone is accepted, and a window that occurs in no accepted marked string is answered
+`Absent_window`, since no token covers its byte. `miscovering()` is the case of the last byte with the offset given, and
+both searches run over its product. A pinned byte places a cut, though not in general the window certificate of the
+window at that offset, and a cut at offset a pins byte a, so the windows that pin some byte and the windows with a
+boundary at one offset at every occurrence are one window language. The byte asked need not be the last: over the merges
+(a, b) and (a, ab) no origin certifies the last byte of a run of a's, which ends in a token a alone and in aab before a
+b, while every window of four bytes pins its byte 2, as the pinned-byte theorem of the report *The Left Ripple of
+Byte-Pair Encoding* says of every window of width R + Q_s + 1 under a table of finite origin radius R and right start
+radius Q_s.
 
 `dependence(verifier, window, origin)` asks a second question of a pair the verifier certifies, and refuses one it does
 not: the certificate makes the cut at the origin a boundary of the whole string's segmentation, and independence says
@@ -685,10 +700,10 @@ claimed inside a product or after a token claimed to be the last, and a held sym
 completes is passed upward at once, which keeps the states few. The products must be distinct from the bytes and from
 one another, since the encoder merges a recreated token again where a stage above cannot: the table (c,c), (c,cc),
 (ccc,a), (cc,c) encodes `ccca` as one token, and `merge_tower()` refuses it with `std::invalid_argument` naming the
-merge. The four decisions then run on the tower as on any verifier, `miscovering()` deciding a window certificate under
-the table, `boundary_gap()` returning the length of the longest token the encoder emits, `realizable()` the mask of
-every state, and `divergence()` over two towers deciding whether two tables segment every byte string alike, with the
-shortest string they segment apart:
+merge. The decisions then run on the tower as on any verifier, `miscovering()` deciding a window certificate under the
+table, `pinned_cut()` the cut a byte of a window pins, `boundary_gap()` returning the length of the longest token the
+encoder emits, `realizable()` the mask of every state, and `divergence()` over two towers deciding whether two tables
+segment every byte string alike, with the shortest string they segment apart:
 
 ```cpp
 #include "munch/verifier/merge_tower.hpp"
@@ -701,6 +716,7 @@ const auto tower{verifier::merge_tower(merges)};            // ab, then ab follo
 
 verifier::miscovering(tower, "ab", 0);                      // std::nullopt: every ab lies in a token beginning at its a
 verifier::miscovering(tower, "ab", 1);                      // the marked ab itself, its token beginning at offset 0
+verifier::pinned_cut(tower, "ab", 1);                       // 0: the token covering the b of every ab begins at its a
 verifier::boundary_gap(tower);                              // 3, the longest token aba
 verifier::divergence(tower, verifier::merge_tower(first));  // aba, one token here and ab|a under the first merge alone
 ```

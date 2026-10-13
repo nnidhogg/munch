@@ -696,14 +696,17 @@ void dedup(std::vector<T>& values)
 }
 
 /**
- * @brief Returns the first occurrence of a window in a marked string whose covering boundary is not the origin.
+ * @brief Returns the first occurrence of a window in a marked string at which the token covering a byte of the window
+ *        does not begin at the origin.
  * @param segmentation The marked string, which holds one.
  * @param window The window.
+ * @param byte The byte, an index of the window.
  * @param origin The origin.
  * @return The index of the occurrence's first byte.
  */
 [[nodiscard]] std::size_t missed_occurrence(
-        const Marked_string& segmentation, const std::string_view window, const std::size_t origin)
+        const Marked_string& segmentation, const std::string_view window, const std::size_t byte,
+        const std::size_t origin)
 {
     const std::string_view bytes{segmentation.bytes};
 
@@ -711,15 +714,81 @@ void dedup(std::vector<T>& values)
 
     for (;;)
     {
-        const auto last{at + window.size() - 1};
-
-        if (covering_boundary(segmentation, last) != at + origin)
+        if (covering_boundary(segmentation, at + byte) != at + origin)
         {
             return at;
         }
 
         at = bytes.find(window, at + 1);
     }
+}
+
+/**
+ * @brief Returns whether the marks of a certification key, read as an occurrence completes, place the token covering a
+ *        byte of the window at the origin: a mark before byte origin and none after it up to the byte.
+ * @param marks The marks, one per byte of the window, whether a boundary sits before it.
+ * @param byte The byte, an index of the window.
+ * @param origin The origin, at most the byte.
+ * @return True when the covering token begins at the origin.
+ */
+[[nodiscard]] bool covers(const std::vector<bool>& marks, const std::size_t byte, const std::size_t origin)
+{
+    const auto between{marks | std::views::take(byte + 1) | std::views::drop(origin + 1)};
+
+    return marks[origin] && std::ranges::none_of(between, std::identity{});
+}
+
+/**
+ * @brief Searches the certification product of a window breadth first for the shortest accepted marked string with an
+ *        occurrence whose marks a predicate refuses, the flag raised at that occurrence staying raised.
+ * @tparam Covered The predicate's type.
+ * @param verifier The verifier.
+ * @param window The window, nonempty.
+ * @param covered Whether the marks of a completed occurrence place its covering token where it should begin.
+ * @return The marked string, or std::nullopt when every occurrence in every accepted marked string is covered.
+ */
+template <typename Covered>
+[[nodiscard]] std::optional<Marked_string> first_miss(
+        const Verifier& verifier, const std::string_view window, const Covered& covered)
+{
+    const auto borders{borders_of(window)};
+
+    std::vector<bool> start_marks(window.size(), false);
+
+    start_marks.back() = true;
+
+    const auto goal{[&verifier](const Certification_key& key) { return key.missed && verifier.accepts(key.state); }};
+
+    const auto alphabet{alphabet_of(verifier)};
+
+    const auto expand{[&]<typename Emit>(const Certification_key& key, const Emit& emit) {
+        const auto advance{[&](const Marked symbol, const State_t to) {
+            const auto matched{matched_after(window, borders, key.matched, symbol.byte)};
+
+            const auto missed{key.missed || (matched == window.size() && !covered(key.marks))};
+
+            Certification_key next{.state = to, .matched = matched, .marks = key.marks, .missed = missed};
+
+            next.marks.erase(next.marks.begin());
+
+            next.marks.push_back(symbol.boundary_after);
+
+            emit(symbol, std::move(next));
+        }};
+
+        expand_steps(verifier, alphabet, key.state, advance);
+    }};
+
+    const Certification_key start{.state = verifier.start(), .matched = 0, .marks = start_marks, .missed = false};
+
+    const auto path{shortest_path(start, goal, expand)};
+
+    if (!path)
+    {
+        return std::nullopt;
+    }
+
+    return marked_string_of(path->symbols);
 }
 
 /**
@@ -2206,53 +2275,65 @@ std::optional<Miscovering> miscovering(
         throw std::invalid_argument{"miscovering: the window is empty or its origin lies outside it"};
     }
 
-    const auto borders{borders_of(window)};
-
-    std::vector<bool> start_marks(window.size(), false);
-
-    start_marks.back() = true;
+    const auto last{window.size() - 1};
 
     // The token holding the occurrence's last byte begins at the origin: a mark before byte origin, none after it.
-    const auto covered_at_origin{[origin](const std::vector<bool>& marks) {
-        return marks[origin] && std::ranges::none_of(marks | std::views::drop(origin + 1), std::identity{});
-    }};
+    const auto covered_at_origin{
+            [last, origin](const std::vector<bool>& marks) { return covers(marks, last, origin); }};
 
-    const auto goal{[&verifier](const Certification_key& key) { return key.missed && verifier.accepts(key.state); }};
+    auto segmentation{first_miss(verifier, window, covered_at_origin)};
 
-    const auto alphabet{alphabet_of(verifier)};
-
-    const auto expand{[&]<typename Emit>(const Certification_key& key, const Emit& emit) {
-        const auto advance{[&](const Marked symbol, const State_t to) {
-            const auto matched{matched_after(window, borders, key.matched, symbol.byte)};
-
-            const auto missed{key.missed || (matched == window.size() && !covered_at_origin(key.marks))};
-
-            Certification_key next{.state = to, .matched = matched, .marks = key.marks, .missed = missed};
-
-            next.marks.erase(next.marks.begin());
-
-            next.marks.push_back(symbol.boundary_after);
-
-            emit(symbol, std::move(next));
-        }};
-
-        expand_steps(verifier, alphabet, key.state, advance);
-    }};
-
-    const Certification_key start{.state = verifier.start(), .matched = 0, .marks = start_marks, .missed = false};
-
-    const auto path{shortest_path(start, goal, expand)};
-
-    if (!path)
+    if (!segmentation)
     {
         return std::nullopt;
     }
 
-    auto segmentation{marked_string_of(path->symbols)};
+    const auto occurrence{missed_occurrence(*segmentation, window, last, origin)};
 
-    const auto occurrence{missed_occurrence(segmentation, window, origin)};
+    return Miscovering{.segmentation = std::move(*segmentation), .occurrence = occurrence};
+}
 
-    return Miscovering{.segmentation = std::move(segmentation), .occurrence = occurrence};
+Pinned_cut pinned_cut(const Verifier& verifier, const std::string_view window, const std::size_t byte)
+{
+    if (window.empty() || byte >= window.size())
+    {
+        throw std::invalid_argument{"pinned_cut: the window is empty or its byte lies outside it"};
+    }
+
+    // The first search refuses every occurrence, so it finds the shortest accepted marked string holding one.
+    const auto anywhere{[](const std::vector<bool>&) { return false; }};
+
+    auto first{first_miss(verifier, window, anywhere)};
+
+    if (!first)
+    {
+        return Absent_window{};
+    }
+
+    const auto at{std::string_view{first->bytes}.find(window)};
+
+    const auto start{covering_boundary(*first, at + byte)};
+
+    if (start < at)
+    {
+        return Miscovering{.segmentation = std::move(*first), .occurrence = at};
+    }
+
+    const auto origin{start - at};
+
+    const auto covered_at_origin{
+            [byte, origin](const std::vector<bool>& marks) { return covers(marks, byte, origin); }};
+
+    auto refutation{first_miss(verifier, window, covered_at_origin)};
+
+    if (!refutation)
+    {
+        return origin;
+    }
+
+    const auto occurrence{missed_occurrence(*refutation, window, byte, origin)};
+
+    return Miscovering{.segmentation = std::move(*refutation), .occurrence = occurrence};
 }
 
 Boundary_gap boundary_gap(const Verifier& verifier)

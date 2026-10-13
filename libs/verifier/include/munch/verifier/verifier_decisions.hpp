@@ -13,8 +13,8 @@
 
 /**
  * @file
- * @brief The nine decisions over a verifier: miscovering(), boundary_gap(), realizable(), divergence(), dependence(),
- *        chunk_dependence(), right_context(), fanout() and smallest_fanout().
+ * @brief The ten decisions over a verifier: miscovering(), pinned_cut(), boundary_gap(), realizable(), divergence(),
+ *        dependence(), chunk_dependence(), right_context(), fanout() and smallest_fanout().
  *
  * Each is a search on a product with the verifier or on its minimal automaton, fanout() two subset runs on the latter,
  * and each witness is replayable through Verifier::step().
@@ -53,6 +53,19 @@ struct Miscovering
      */
     std::size_t occurrence{};
 };
+
+/**
+ * @brief Marks a window that occurs in no accepted marked string in a Pinned_cut, so that no token covers its byte.
+ */
+struct Absent_window
+{
+};
+
+/**
+ * @brief The cut a pinned byte places, the offset in the window at which the token covering the byte begins at every
+ *        occurrence, the accepted marked string with an occurrence where it begins elsewhere, or the window's absence.
+ */
+using Pinned_cut = std::variant<std::size_t, Miscovering, Absent_window>;
 
 /**
  * @brief Three marked strings such that stem, then loop repeated any number of times, then suffix is accepted.
@@ -397,6 +410,39 @@ struct Smallest_fanout
  */
 [[nodiscard]] std::optional<Miscovering> miscovering(
         const Verifier& verifier, std::string_view window, std::size_t origin);
+
+/**
+ * @brief Decides the pinned-byte certificate of a window and a byte of it: the token covering the byte begins at the
+ *        same offset of the window at every occurrence in every accepted marked string, so that a token boundary sits
+ *        at that offset at every occurrence.
+ *
+ * The offset is read at the window's first occurrence in the shortest accepted marked string that holds one, the first
+ * the search reaches; when the certificate holds the covering token begins there at every occurrence, so it is where
+ * the token begins in the window's own segmentation whenever the window alone is accepted. miscovering() is the case of
+ * the window's last byte with the offset given, and a refutation has its shape: a marked string and an occurrence whose
+ * covering token begins elsewhere, the first string itself when the token there begins before the occurrence. A pinned
+ * byte places a cut, a boundary before the token covering it at every occurrence, though not in general the window
+ * certificate of the window at that offset, and a cut at offset a pins byte a at offset a; so the windows that pin some
+ * byte and the windows with a boundary at one offset at every occurrence are one window language, with the same
+ * avoiding strings and the same density at every width. Under canonical byte-pair encoding over a table of finite
+ * origin radius R, with Q_s the right start radius, the supremum of the distance |x| - p from the end of a string x to
+ * a position p whose covering token begins elsewhere once a byte is appended to x, every window of width R + Q_s + 1
+ * pins its byte R: an appended string moves no token start below |x| - Q_s, by induction on its bytes, and a prepended
+ * one changes no covering token at a position of at least R. That is the pinned-byte theorem of the report The Left
+ * Ripple of Byte-Pair Encoding, over the window certificate of the report Finitely Verifiable Segmentation, which this
+ * decides at any byte. Both searches run over miscovering()'s product of the verifier with the window's matching
+ * progress and the marks of the last |window| bytes, at an occurrence reading the token covering the byte from those
+ * marks, the first raising its flag at any occurrence and the second where the token begins elsewhere than the offset,
+ * so each has at most |Q| (|window| + 1) 2^(|window| + 1) keys, the flag counted, Q the verifier's states.
+ * @param verifier The verifier.
+ * @param window The window, nonempty.
+ * @param byte The byte asked, an index of the window.
+ * @return The offset at which the token covering the byte begins at every occurrence, at most the byte, the shortest
+ *         accepted marked string with an occurrence where it begins elsewhere, or Absent_window when the window occurs
+ *         in no accepted marked string, so that no token covers the byte.
+ * @throws std::invalid_argument If the window is empty or the byte lies outside it.
+ */
+[[nodiscard]] Pinned_cut pinned_cut(const Verifier& verifier, std::string_view window, std::size_t byte);
 
 /**
  * @brief Decides whether the distance between consecutive boundaries is bounded over the accepted marked strings.

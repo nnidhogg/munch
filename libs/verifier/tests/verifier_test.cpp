@@ -28,6 +28,7 @@
 
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/dfa.hpp"
+#include "munch/verifier/merge_tower.hpp"
 #include "munch/verifier/trie_chain.hpp"
 #include "munch/verifier/verifier_decisions.hpp"
 
@@ -128,6 +129,84 @@ struct Fixture_check
      * @brief The lines checked so far, by kind.
      */
     Fixture_counts counts{};
+};
+
+/**
+ * @brief What the pinned-byte fixture holds, counted as it is checked.
+ */
+struct Pinned_counts
+{
+    /**
+     * @brief The universe lines.
+     */
+    std::size_t universes{0};
+
+    /**
+     * @brief The accepting lines, one per table universe.
+     */
+    std::size_t tables{0};
+
+    /**
+     * @brief The universe lines of merge towers.
+     */
+    std::size_t towers{0};
+
+    /**
+     * @brief The radius lines, one per tower of finite origin radius.
+     */
+    std::size_t finite{0};
+
+    /**
+     * @brief The windows of width R + Q_s + 1 checked to pin their byte R, at widths of at most six.
+     */
+    std::size_t theorem{0};
+
+    /**
+     * @brief The pinned lines.
+     */
+    std::size_t pinned{0};
+
+    /**
+     * @brief The pinned lines whose byte is pinned.
+     */
+    std::size_t cuts{0};
+
+    /**
+     * @brief The pinned lines whose answer is a refutation.
+     */
+    std::size_t refused{0};
+
+    /**
+     * @brief The pinned lines whose window occurs in no accepted marked string.
+     */
+    std::size_t absent{0};
+};
+
+/**
+ * @brief The pinned-byte fixture under check: the current universe's verifier, the transitions of a table universe
+ *        read so far, the current universe's line, and the counts so far.
+ */
+struct Pinned_check
+{
+    /**
+     * @brief The verifier the lines are checked on, none while a table universe's lines are still being read.
+     */
+    std::optional<Verifier> current{};
+
+    /**
+     * @brief The transitions of the table universe read so far.
+     */
+    Verifier::Transitions_t transitions{};
+
+    /**
+     * @brief The current universe's line, for the failure messages.
+     */
+    std::string universe{};
+
+    /**
+     * @brief The lines checked so far, by kind.
+     */
+    Pinned_counts counts{};
 };
 
 /**
@@ -1100,8 +1179,46 @@ void expect_diverging(
 }
 
 /**
- * @brief Checks a certify line: the certificate's answer, and for a miscovering its witness marked as the maximal-munch
- *        scan marks it and as long as the reference's text, and both texts mis-covered under that scan.
+ * @brief Returns the cut of a pinned_cut() answer, or std::nullopt for a refutation or an absent window.
+ * @param found The answer.
+ * @return The offset at which the token covering the byte begins at every occurrence.
+ */
+std::optional<std::size_t> cut_of(const Pinned_cut& found)
+{
+    const auto* cut{std::get_if<std::size_t>(&found)};
+
+    if (!cut)
+    {
+        return std::nullopt;
+    }
+
+    return *cut;
+}
+
+/**
+ * @brief Returns whether pinned_cut() at a window's last byte certifies an origin: it returns the origin, or it answers
+ *        that the window occurs in no accepted marked string, where every origin is certified.
+ * @param verifier The verifier.
+ * @param window The window, nonempty.
+ * @param origin The origin, a byte index of the window.
+ * @return True when the last byte is pinned at the origin or the window occurs nowhere.
+ */
+bool pins_last_at(const Verifier& verifier, const std::string_view window, const std::size_t origin)
+{
+    const auto found{pinned_cut(verifier, window, window.size() - 1)};
+
+    if (std::holds_alternative<Absent_window>(found))
+    {
+        return true;
+    }
+
+    return cut_of(found) == origin;
+}
+
+/**
+ * @brief Checks a certify line: the certificate's answer, pinned_cut() at the window's last byte agreeing with it, and
+ *        for a miscovering its witness marked as the maximal-munch scan marks it and as long as the reference's text,
+ *        and both texts mis-covered under that scan.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
@@ -1120,6 +1237,8 @@ void expect_certification(Fixture_check& check, std::istringstream& fields, cons
     const auto found{miscovering(universe.verifier, window, origin)};
 
     ++check.counts.certifications;
+
+    EXPECT_EQ(pins_last_at(universe.verifier, window, origin), verdict == "certified") << context;
 
     if (verdict == "certified")
     {
@@ -2794,6 +2913,283 @@ std::map<std::size_t, std::size_t> failing_by_definition(
 }
 
 /**
+ * @brief Returns the offset from an occurrence of a window at which the token covering a byte of it begins in a marked
+ *        string, negative when the token begins before the occurrence.
+ * @param marked The marked string.
+ * @param occurrence The index of the occurrence's first byte.
+ * @param byte The byte, an index of the window.
+ * @return The offset.
+ */
+std::ptrdiff_t covering_offset(const Marked_string& marked, const std::size_t occurrence, const std::size_t byte)
+{
+    const auto start{static_cast<std::ptrdiff_t>(covering_boundary(marked, occurrence + byte))};
+
+    return start - static_cast<std::ptrdiff_t>(occurrence);
+}
+
+/**
+ * @brief Returns the offsets at which the token covering a byte of a window begins, from each occurrence of the window
+ *        in the accepted marked strings given.
+ * @param accepted Per accepted input, its accepted markings, every input up to a length.
+ * @param window The window.
+ * @param byte The byte, an index of the window.
+ * @return The offsets, negative where the token begins before the occurrence.
+ */
+std::set<std::ptrdiff_t> pinned_offsets(
+        const std::map<std::string, std::set<Marking_t>>& accepted, const std::string_view window,
+        const std::size_t byte)
+{
+    std::set<std::ptrdiff_t> offsets{};
+
+    for (const auto& [bytes, markings] : accepted)
+    {
+        const std::string_view text{bytes};
+
+        for (const auto& marking : markings)
+        {
+            const Marked_string marked{.bytes = bytes, .boundaries = marking};
+
+            for (auto at{text.find(window)}; at != std::string_view::npos; at = text.find(window, at + 1))
+            {
+                offsets.insert(covering_offset(marked, at, byte));
+            }
+        }
+    }
+
+    return offsets;
+}
+
+/**
+ * @brief Checks a refutation of a pinned byte: its string accepted under its marks, the window at its occurrence, and,
+ *        when the window alone is accepted, the token covering the byte beginning elsewhere than in the window's own
+ *        segmentation.
+ * @param verifier The verifier.
+ * @param found The refutation.
+ * @param window The window.
+ * @param byte The byte asked.
+ * @param context The fixture line or the pair checked.
+ */
+void expect_mispinned(
+        const Verifier& verifier, const Miscovering& found, const std::string_view window, const std::size_t byte,
+        const std::string& context)
+{
+    const auto& [segmentation, occurrence]{found};
+
+    const auto& [bytes, boundaries]{segmentation};
+
+    EXPECT_TRUE(is_accepted(verifier, segmentation)) << context;
+    ASSERT_LE(occurrence + window.size(), bytes.size()) << context;
+    EXPECT_EQ(std::string_view{bytes}.substr(occurrence, window.size()), window) << context;
+
+    const auto own{walked_markings(verifier, window)};
+
+    if (own.empty())
+    {
+        return;
+    }
+
+    const Marked_string alone{.bytes = std::string{window}, .boundaries = *own.cbegin()};
+
+    EXPECT_NE(covering_offset(segmentation, occurrence, byte), covering_offset(alone, 0, byte)) << context;
+}
+
+/**
+ * @brief Checks a pinned line: a window occurring nowhere answered as absent, a pinned byte at the reference's offset,
+ *        and a
+ *        refutation where the reference has one, the decision's and the reference's, under the verifier's one marking
+ *        of its text, both checked.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_pinned(Pinned_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string window{};
+    std::size_t byte{};
+    std::string verdict{};
+
+    fields >> window >> byte >> verdict;
+
+    ASSERT_TRUE(check.current) << context;
+
+    const auto& verifier{*check.current};
+
+    ++check.counts.pinned;
+
+    const auto found{pinned_cut(verifier, window, byte)};
+
+    if (verdict == "absent")
+    {
+        ++check.counts.absent;
+
+        EXPECT_TRUE(std::holds_alternative<Absent_window>(found)) << context;
+
+        return;
+    }
+
+    if (verdict == "cut")
+    {
+        std::size_t expected{};
+
+        fields >> expected;
+
+        ++check.counts.cuts;
+
+        EXPECT_EQ(cut_of(found), expected) << context;
+
+        return;
+    }
+
+    std::string text{};
+    std::size_t occurrence{};
+
+    fields >> text >> occurrence;
+
+    ++check.counts.refused;
+
+    const auto* refutation{std::get_if<Miscovering>(&found)};
+
+    ASSERT_TRUE(refutation) << context;
+
+    expect_mispinned(verifier, *refutation, window, byte, context);
+
+    const auto markings{walked_markings(verifier, text)};
+
+    ASSERT_EQ(markings.size(), 1U) << context;
+
+    const Miscovering reference{
+            .segmentation = {.bytes = text, .boundaries = *markings.cbegin()},
+            .occurrence = occurrence};
+
+    expect_mispinned(verifier, reference, window, byte, context);
+}
+
+/**
+ * @brief Starts a tower universe line's universe, the merge tower of its merges, each its two parts joined by a comma.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void start_tower_universe(Pinned_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string kind{};
+
+    fields >> kind;
+
+    ++check.counts.universes;
+    ++check.counts.towers;
+    check.universe = context;
+    check.transitions.clear();
+
+    std::vector<Merge> merges{};
+
+    for (std::string merge{}; fields >> merge;)
+    {
+        const auto comma{merge.find(',')};
+
+        merges.push_back(Merge{.left = merge.substr(0, comma), .right = merge.substr(comma + 1)});
+    }
+
+    check.current.emplace(merge_tower(merges));
+}
+
+/**
+ * @brief Checks a radius line, the pinned-byte theorem on the tower: every window of width R + Q_s + 1 over {a, b} pins
+ *        its byte R where the token covering it begins in the window's own segmentation, for a width of at most six.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_pinned_theorem(Pinned_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::size_t radius{};
+    std::size_t start_radius{};
+
+    fields >> radius >> start_radius;
+
+    ASSERT_TRUE(check.current) << context;
+
+    const auto& verifier{*check.current};
+
+    ++check.counts.finite;
+
+    const auto width{radius + start_radius + 1};
+
+    // A tower reads every byte, so a window of seven bytes costs about 65 ms; wider ones are left to the generator.
+    constexpr std::size_t widest{6};
+
+    if (width > widest)
+    {
+        return;
+    }
+
+    const auto of_width{[width](const std::string& window) { return window.size() == width; }};
+
+    for (const auto& window : strings_up_to("ab", width) | std::views::filter(of_width))
+    {
+        const auto own{walked_markings(verifier, window)};
+
+        ASSERT_EQ(own.size(), 1U) << context << " on " << window;
+
+        const Marked_string alone{.bytes = window, .boundaries = *own.cbegin()};
+
+        const auto expected{covering_boundary(alone, radius)};
+
+        ++check.counts.theorem;
+
+        EXPECT_EQ(cut_of(pinned_cut(verifier, window, radius)), expected) << context << " on " << window;
+    }
+}
+
+/**
+ * @brief Checks one pinned-byte fixture line against the decision, a comment or blank line checking nothing.
+ * @param check The fixture under check.
+ * @param line The line.
+ */
+void expect_pinned_fixture_line(Pinned_check& check, const std::string& line)
+{
+    std::istringstream fields{line};
+
+    std::string kind{};
+
+    if (!(fields >> kind) || kind.starts_with('#'))
+    {
+        return;
+    }
+
+    const auto context{std::format("{} | {}", check.universe, line)};
+
+    if (kind == "universe" && line.starts_with("universe tower"))
+    {
+        start_tower_universe(check, fields, line);
+    }
+    else if (kind == "universe")
+    {
+        start_verifier_universe(check, fields, line);
+    }
+    else if (kind == "step")
+    {
+        read_step(check, fields, context);
+    }
+    else if (kind == "accepting")
+    {
+        build_table(check, fields, context);
+    }
+    else if (kind == "radius")
+    {
+        expect_pinned_theorem(check, fields, context);
+    }
+    else if (kind == "pinned")
+    {
+        expect_pinned(check, fields, context);
+    }
+    else
+    {
+        ADD_FAILURE() << "unknown pinned-byte fixture line: " << line;
+    }
+}
+
+/**
  * @brief Checks a fanout line: the decision's rank at every origin of the window the reference's, with as many
  *        configurations, ascending and without repeats.
  * @param check The fixture under check.
@@ -3274,6 +3670,153 @@ TEST(Verifier_test, The_decisions_refuse_a_malformed_window_and_an_empty_domain)
 
     EXPECT_THROW(std::ignore = boundary_gap(empty_domain), std::invalid_argument);
     EXPECT_FALSE(realizable(empty_domain));
+}
+
+TEST(Verifier_test, Pinned_cut_gives_the_reference_answers_on_every_universe_of_the_pinned_byte_fixture)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/pinned_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    Pinned_check check{};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        expect_pinned_fixture_line(check, line);
+    }
+
+    EXPECT_EQ(check.counts.universes, 573U);
+    EXPECT_EQ(check.counts.tables, 15U);
+    EXPECT_EQ(check.counts.towers, 84U);
+    EXPECT_EQ(check.counts.finite, 25U);
+    EXPECT_EQ(check.counts.theorem, 360U);
+    EXPECT_EQ(check.counts.pinned, 19482U);
+    EXPECT_EQ(check.counts.cuts, 6309U);
+    EXPECT_EQ(check.counts.refused, 10252U);
+    EXPECT_EQ(check.counts.absent, 2921U);
+}
+
+TEST(Verifier_test, Pinned_cut_refuses_a_malformed_window_and_answers_a_window_that_occurs_nowhere_as_absent)
+{
+    const auto verifier{armed_run(literal_dfa({"a", "ab"}))};
+
+    EXPECT_THROW(std::ignore = pinned_cut(verifier, "", 0), std::invalid_argument);
+    EXPECT_THROW(std::ignore = pinned_cut(verifier, "ab", 2), std::invalid_argument);
+
+    // No token holds a b that an a does not precede.
+    EXPECT_TRUE(std::holds_alternative<Absent_window>(pinned_cut(verifier, "bb", 0)));
+
+    EXPECT_EQ(cut_of(pinned_cut(verifier, "ab", 1)), 0U);
+}
+
+TEST(Verifier_test, Pinned_cut_agrees_with_the_definition_over_random_token_sets_and_sequential_verifiers)
+{
+    // Verifiers drawn as for right_context(). For every window of length one to three and every byte of it, the answer
+    // is held to the definition over every accepted marked string up to length seven: an absent window occurs in none
+    // of them, a pinned byte's token begins at its offset at every occurrence there, and a refutation, which replays,
+    // is matched by two occurrences there that disagree, or one whose token begins before it, when it is that short. At
+    // the last byte the answer agrees with miscovering() at every origin.
+    std::mt19937 sequence{0x5EEDU};
+
+    constexpr std::size_t drawn_per_kind{1000};
+
+    constexpr std::size_t longest{7};
+
+    std::size_t cuts{0};
+
+    std::size_t refused{0};
+
+    std::size_t absent{0};
+
+    const auto check_pairs{[&](const Verifier& verifier, const std::string& label) {
+        const auto accepted{accepted_up_to(verifier, longest)};
+
+        for (const auto& window : strings_up_to("ab", 3) | std::views::drop(1))
+        {
+            for (std::size_t byte{0}; byte < window.size(); ++byte)
+            {
+                const auto name{std::format("{} {} {}", label, window, byte)};
+
+                const auto found{pinned_cut(verifier, window, byte)};
+
+                const auto offsets{pinned_offsets(accepted, window, byte)};
+
+                if (byte + 1 == window.size())
+                {
+                    for (std::size_t origin{0}; origin < window.size(); ++origin)
+                    {
+                        EXPECT_EQ(pins_last_at(verifier, window, origin), !miscovering(verifier, window, origin))
+                                << name << " at " << origin;
+                    }
+                }
+
+                if (std::holds_alternative<Absent_window>(found))
+                {
+                    ++absent;
+
+                    EXPECT_TRUE(offsets.empty()) << name;
+
+                    continue;
+                }
+
+                if (const auto* cut{std::get_if<std::size_t>(&found)})
+                {
+                    ++cuts;
+
+                    const auto at_cut{[cut](const std::ptrdiff_t offset) { return std::cmp_equal(offset, *cut); }};
+
+                    EXPECT_TRUE(std::ranges::all_of(offsets, at_cut)) << name;
+
+                    continue;
+                }
+
+                const auto& refutation{std::get<Miscovering>(found)};
+
+                ++refused;
+
+                expect_mispinned(verifier, refutation, window, byte, name);
+
+                if (refutation.segmentation.bytes.size() <= longest)
+                {
+                    ASSERT_FALSE(offsets.empty()) << name;
+                    EXPECT_TRUE(offsets.size() > 1 || *offsets.cbegin() < 0) << name;
+                }
+            }
+        }
+    }};
+
+    for (std::size_t drawn{0}; drawn < drawn_per_kind; ++drawn)
+    {
+        check_pairs(armed_run(random_token_dfa(sequence)), std::format("token set {}", drawn));
+
+        check_pairs(random_sequential_verifier(sequence), std::format("sequential {}", drawn));
+    }
+
+    EXPECT_GT(cuts, 0U);
+    EXPECT_GT(refused, 0U);
+    EXPECT_GT(absent, 0U);
+}
+
+TEST(Verifier_test, A_merge_tower_of_finite_radius_pins_a_byte_of_a_window_whose_last_byte_no_origin_certifies)
+{
+    const std::vector<Merge> merges{{.left = "a", .right = "b"}, {.left = "a", .right = "ab"}};
+
+    const auto tower{merge_tower(merges)};
+
+    // The radius is 2 and the right start radius 1, so every window of width four pins its byte 2, while a run of a's
+    // ends in a token a alone and in aab before a b, so no origin certifies its last byte.
+    for (std::size_t origin{0}; origin < 4; ++origin)
+    {
+        EXPECT_TRUE(miscovering(tower, "aaaa", origin)) << origin;
+    }
+
+    EXPECT_EQ(cut_of(pinned_cut(tower, "aaaa", 2)), 2U);
+
+    const auto last{pinned_cut(tower, "aaaa", 3)};
+
+    ASSERT_TRUE(std::holds_alternative<Miscovering>(last));
+
+    expect_mispinned(tower, std::get<Miscovering>(last), "aaaa", 3, "aaaa 3");
 }
 
 TEST(Verifier_test, Dependence_gives_the_reference_answers_on_every_universe_of_the_cut_fixture)

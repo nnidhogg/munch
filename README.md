@@ -292,24 +292,26 @@ chunk between the anchors of an inventory of certified pairs scans alone, with t
 the failing chunks; `verifier::merge_tower()`, the verifier of canonical byte-pair encoding over a merge table; and
 `verifier::trie_chain()`, the verifier of two-mode WordPiece segmentation over its initial and continuation tokens.
 
-Three more decisions over the verifier joined that surface in 3.0.0, and a decision and a construction over a merge
-table: `right_context()`, how far past a certified cut a worker must read for its tokens before the cut to be the whole
-string's, with every context that fails, finite with a marked string at each, or unbounded with the threshold and the
-period from which they repeat, a marked string at each below the threshold and a stem, a loop and a suffix pumping each
-residue that fails; `fanout()`, the rank of a pair, how many configurations of the verifier's minimal automaton the cut
-at its origin can carry, with each configuration; `smallest_fanout()`, the degree, the fewest configurations a cut that
-recurs can carry, with the window that attains it and a stem, a loop and a suffix that pump it;
-`verifier::ripple_radius()`, how far a byte prepended to an input can change the tokens canonical byte-pair encoding
-gives it, finite with the mirrored constant and, for each that is positive, an input attaining it, or infinite with the
-first effective self-pair; and `verifier::token_automaton()`, the token automaton of canonical byte-pair encoding over a
-merge table, built once, on which an overload of `miscovering()` decides a window certificate without building the merge
-tower. An overload of each of `merge_tower()` and `token_automaton()` over an alphabet of characters, read as their
-UTF-8 bytes, joined it too, so that a character-level merge table such as SentencePiece's has the tower and the
-automaton. So did the `--repairs` option of `munch-audit`, which, where a condition certifies no byte, tries every byte
-as a visible token of its own and, unless it already certifies once the discarded tokens are deleted, as a discarded
-one, and reports each that certifies once added. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`,
-the core of Lean's lexical structure with its nested comments and interpolated strings as modes, audited in
-[docs/audit.md](docs/audit.md) and benchmarked on Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
+Four more decisions over the verifier joined that surface in 3.0.0, and a decision and a construction over a merge
+table: `pinned_cut()`, the cut a byte of a window pins, the offset at which the token covering the byte begins at every
+occurrence, a marked string with an occurrence where it begins elsewhere, or the window's absence; `right_context()`,
+how far past a certified cut a worker must read for its tokens before the cut to be the whole string's, with every
+context that fails, finite with a marked string at each, or unbounded with the threshold and the period from which they
+repeat, a marked string at each below the threshold and a stem, a loop and a suffix pumping each residue that fails;
+`fanout()`, the rank of a pair, how many configurations of the verifier's minimal automaton the cut at its origin can
+carry, with each configuration; `smallest_fanout()`, the degree, the fewest configurations a cut that recurs can carry,
+with the window that attains it and a stem, a loop and a suffix that pump it; `verifier::ripple_radius()`, how far a
+byte prepended to an input can change the tokens canonical byte-pair encoding gives it, finite with the mirrored
+constant and, for each that is positive, an input attaining it, or infinite with the first effective self-pair; and
+`verifier::token_automaton()`, the token automaton of canonical byte-pair encoding over a merge table, built once, on
+which an overload of `miscovering()` decides a window certificate without building the merge tower. An overload of each
+of `merge_tower()` and `token_automaton()` over an alphabet of characters, read as their UTF-8 bytes, joined it too, so
+that a character-level merge table such as SentencePiece's has the tower and the automaton. So did the `--repairs`
+option of `munch-audit`, which, where a condition certifies no byte, tries every byte as a visible token of its own and,
+unless it already certifies once the discarded tokens are deleted, as a discarded one, and reports each that certifies
+once added. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of Lean's lexical structure
+with its nested comments and interpolated strings as modes, audited in [docs/audit.md](docs/audit.md) and benchmarked on
+Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
 
 3.0.0 is a major version for two moves, which change include paths and namespaces and nothing else. The verifier, its
 decisions and its constructions are a library of their own, `munch_verifier`, built on `munch_dfa`, with their headers
