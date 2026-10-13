@@ -17,6 +17,11 @@ namespace munch::verifier
  *
  * A marked string is an input with its boundary marking, one symbol per byte. The boundary before the first byte and
  * the one after the last are implicit, so the final symbol of a segmentation carries no boundary.
+ *
+ * Every position, length, origin, cut and context a decision takes or returns counts marked symbols. Over a verifier of
+ * bytes, such as armed_run()'s, that is bytes; over a table whose symbols each stand for a class of codepoints, one
+ * symbol per codepoint, it is codepoints; and over the character overloads of merge_tower() and token_automaton(),
+ * which read each character as its UTF-8 bytes, it is UTF-8 bytes.
  */
 struct Marked
 {

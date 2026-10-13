@@ -551,7 +551,10 @@ The searches above decide questions about one token set's scan. `munch/verifier/
 questions about, so that the same decisions can be made about any segmentation a finite automaton recognizes.
 `verifier::Verifier` is a deterministic, trim automaton over marked symbols, a byte together with the bit saying whether
 a token boundary follows it, and it accepts exactly the marked strings of a policy: an input with its boundaries, one
-marking per input the policy segments. `verifier::armed_run(dfa)` builds the verifier of maximal-munch scanning over a
+marking per input the policy segments. Every position, length, origin, cut and context the decisions take or return
+counts marked symbols, so it counts bytes over a verifier of bytes such as the armed run, codepoints over a table whose
+symbols each stand for a class of codepoints, one symbol per codepoint, and UTF-8 bytes over the character overloads of
+`merge_tower()` and `token_automaton()`. `verifier::armed_run(dfa)` builds the verifier of maximal-munch scanning over a
 token set's DFA, `verifier::merge_tower(merges)` of `munch/verifier/merge_tower.hpp` the verifier of canonical byte-pair
 encoding over a merge table, `verifier::trie_chain(initial, continuation)` of `munch/verifier/trie_chain.hpp` the
 verifier of WordPiece segmentation over a two-mode vocabulary, and the constructor builds one from any transition table,
