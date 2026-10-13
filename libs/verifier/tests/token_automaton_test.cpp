@@ -9,7 +9,9 @@
 #include <fstream>
 #include <map>
 #include <optional>
+#include <random>
 #include <ranges>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -35,6 +37,32 @@ using Marking_t = std::vector<bool>;
  * @brief The rank of each merge by its two parts.
  */
 using Ranks_t = std::map<std::pair<std::string, std::string>, std::size_t>;
+
+/**
+ * @brief The canonical pairs of an adjacency relation, each by its left and its right token.
+ */
+using Pairs_t = std::set<std::pair<std::string, std::string>>;
+
+/**
+ * @brief The score of each piece a key rule may form, the highest merged first.
+ */
+using Scores_t = std::map<std::string, int>;
+
+/**
+ * @brief Which of two adjacent pairs of one score a key rule merges first.
+ */
+enum class Tie
+{
+    /**
+     * @brief The leftmost, as SentencePiece's loop merges.
+     */
+    leftmost,
+
+    /**
+     * @brief The rightmost.
+     */
+    rightmost
+};
 
 /**
  * @brief What the reference fixture holds, counted as it is checked.
@@ -118,6 +146,164 @@ struct Fixture_check
      * @brief The lines checked so far, by kind.
      */
     Fixture_counts counts{};
+};
+
+/**
+ * @brief What the adjacency fixture holds, counted as it is checked.
+ */
+struct Relation_counts
+{
+    /**
+     * @brief The universe lines.
+     */
+    std::size_t universes{0};
+
+    /**
+     * @brief The universes with an admissible table, whose token automaton is decided beside the relation's.
+     */
+    std::size_t tables{0};
+
+    /**
+     * @brief The certify lines.
+     */
+    std::size_t certifications{0};
+
+    /**
+     * @brief The certify lines whose answer is a miscovering.
+     */
+    std::size_t miscoverings{0};
+
+    /**
+     * @brief The diverge lines.
+     */
+    std::size_t divergences{0};
+
+    /**
+     * @brief The diverge lines whose answer is that the two encoders are equal.
+     */
+    std::size_t equal{0};
+};
+
+/**
+ * @brief A universe of the adjacency fixture: its alphabet, its canonical tokens and pairs, its longest token, its
+ *        admissible table where it has one, and the token automata of the relation and of the table.
+ */
+struct Relation_universe
+{
+    /**
+     * @brief The alphabet, UTF-8 text whose characters are the symbols.
+     */
+    std::string alphabet{};
+
+    /**
+     * @brief The canonical tokens in order, the alphabet's symbols first.
+     */
+    std::vector<std::string> tokens{};
+
+    /**
+     * @brief The canonical pairs.
+     */
+    std::vector<Adjacent> pairs{};
+
+    /**
+     * @brief The length in bytes of the longest canonical token.
+     */
+    std::size_t longest{1};
+
+    /**
+     * @brief The universe's admissible merge table in rank order, std::nullopt when it has none.
+     */
+    std::optional<std::vector<Merge>> table{};
+
+    /**
+     * @brief The token automaton of the relation, built at the universe's first certify line.
+     */
+    std::optional<Token_automaton> relation{};
+
+    /**
+     * @brief The token automaton of the table over the alphabet, built with the relation's where there is a table.
+     */
+    std::optional<Token_automaton> compiled{};
+};
+
+/**
+ * @brief The adjacency fixture under check: its universes by name, the current one's name, and the counts so far.
+ */
+struct Relation_check
+{
+    /**
+     * @brief The universes read so far, by name.
+     */
+    std::map<std::string, Relation_universe> universes{};
+
+    /**
+     * @brief The current universe's name.
+     */
+    std::string current{};
+
+    /**
+     * @brief The lines checked so far, by kind.
+     */
+    Relation_counts counts{};
+};
+
+/**
+ * @brief A chain of canonical tokens spelling a prefix of a text: the bytes it spells, its last token, and the
+ *        boundary marking of the bytes so far, a boundary after every token.
+ */
+struct Chain_prefix
+{
+    /**
+     * @brief The number of bytes spelled.
+     */
+    std::size_t end{};
+
+    /**
+     * @brief The last token, empty before the first.
+     */
+    std::string last{};
+
+    /**
+     * @brief The marking of the bytes spelled, a boundary after the last byte of every token.
+     */
+    Marking_t marking{};
+};
+
+/**
+ * @brief A key rule over {a, b} with its canonical tokens and pairs, read off its own runs by their definition, and
+ *        the token automaton of the relation.
+ */
+struct Key_rule
+{
+    /**
+     * @brief The score of each piece the rule may form.
+     */
+    Scores_t scores{};
+
+    /**
+     * @brief The occurrence of a tie merged first.
+     */
+    Tie tie{};
+
+    /**
+     * @brief The canonical tokens, the symbols first and then the pieces that segment as themselves, shortest first.
+     */
+    std::vector<std::string> tokens{};
+
+    /**
+     * @brief The canonical pairs.
+     */
+    std::vector<Adjacent> pairs{};
+
+    /**
+     * @brief The length of the longest canonical token.
+     */
+    std::size_t longest{1};
+
+    /**
+     * @brief The token automaton of the relation.
+     */
+    std::optional<Token_automaton> automaton{};
 };
 
 /**
@@ -734,6 +920,662 @@ std::string refusal_over(const std::vector<Merge>& merges, const std::string_vie
     return {};
 }
 
+/**
+ * @brief Returns the message token_automaton() over an adjacency relation refuses it with, or the empty text when it
+ *        takes the relation.
+ * @param tokens The canonical tokens.
+ * @param pairs The canonical pairs.
+ * @return The refusal.
+ */
+std::string relation_refusal(const std::vector<std::string>& tokens, const std::vector<Adjacent>& pairs)
+{
+    try
+    {
+        std::ignore = token_automaton(tokens, pairs);
+    }
+    catch (const std::invalid_argument& refusal)
+    {
+        return refusal.what();
+    }
+
+    return {};
+}
+
+/**
+ * @brief Returns the pairs of an adjacency relation as a set, each by its two tokens.
+ * @param pairs The pairs.
+ * @return The set.
+ */
+Pairs_t pair_set(const std::vector<Adjacent>& pairs)
+{
+    Pairs_t set{};
+
+    for (const auto& [left, right] : pairs)
+    {
+        set.emplace(left, right);
+    }
+
+    return set;
+}
+
+/**
+ * @brief Returns the boundary marking of every chain of canonical tokens with canonical adjacent pairs that spells a
+ *        text, the encoder's segmentation of it by the canonical adjacency theorem when there is exactly one.
+ * @param tokens The canonical tokens.
+ * @param pairs The canonical pairs.
+ * @param text The text, nonempty.
+ * @return The markings, one bit per byte, in no particular order.
+ */
+std::vector<Marking_t> chain_markings(
+        const std::vector<std::string>& tokens, const Pairs_t& pairs, const std::string_view text)
+{
+    const std::set<std::string_view> canonical{tokens.cbegin(), tokens.cend()};
+
+    std::vector<Chain_prefix> open{{}};
+    std::vector<Marking_t> markings{};
+
+    while (!open.empty())
+    {
+        auto [end, last, marking]{std::move(open.back())};
+
+        open.pop_back();
+
+        if (end == text.size())
+        {
+            marking.back() = false;
+            markings.push_back(std::move(marking));
+
+            continue;
+        }
+
+        for (auto next{end + 1}; next <= text.size(); ++next)
+        {
+            const auto token{text.substr(end, next - end)};
+
+            const auto follows{last.empty() || pairs.contains({last, std::string{token}})};
+
+            if (!canonical.contains(token) || !follows)
+            {
+                continue;
+            }
+
+            auto extended{marking};
+
+            extended.resize(next, false);
+            extended.back() = true;
+
+            open.push_back({.end = next, .last = std::string{token}, .marking = std::move(extended)});
+        }
+    }
+
+    return markings;
+}
+
+/**
+ * @brief Returns the canonical tokens of a token automaton, those a transition reads, in number order.
+ * @param automaton The token automaton.
+ * @return The spellings.
+ */
+std::vector<std::string> canonical_spellings(const Token_automaton& automaton)
+{
+    std::vector<std::string> spellings{};
+
+    for (const auto& [spelling, left, target] : automaton.tokens())
+    {
+        if (target)
+        {
+            spellings.push_back(spelling);
+        }
+    }
+
+    return spellings;
+}
+
+/**
+ * @brief Returns the canonical pairs of a token automaton, each token a transition reads followed by each its state
+ *        may read.
+ * @param automaton The token automaton.
+ * @return The pairs, each by its two tokens.
+ */
+Pairs_t canonical_pairs(const Token_automaton& automaton)
+{
+    const auto& tokens{automaton.tokens()};
+
+    Pairs_t pairs{};
+
+    for (const auto& [spelling, left, target] : tokens)
+    {
+        if (!target)
+        {
+            continue;
+        }
+
+        for (const auto right : automaton.allowed_tokens(*target))
+        {
+            pairs.emplace(spelling, tokens[right].spelling);
+        }
+    }
+
+    return pairs;
+}
+
+/**
+ * @brief Starts a universe line's universe of the adjacency fixture: reads its name, its rule and its alphabet in hex.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ */
+void start_relation_universe(Relation_check& check, std::istringstream& fields)
+{
+    std::string name{};
+    std::string rule{};
+    std::string alphabet{};
+
+    fields >> name >> rule >> alphabet;
+
+    check.current = name;
+    check.universes[name] = {.alphabet = bytes_of(alphabet)};
+
+    ++check.counts.universes;
+}
+
+/**
+ * @brief Reads a tokens line into the current universe, each token in hex, and its longest token.
+ * @param universe The current universe.
+ * @param fields The line after its first word.
+ */
+void read_tokens(Relation_universe& universe, std::istringstream& fields)
+{
+    for (std::string field{}; fields >> field;)
+    {
+        auto token{bytes_of(field)};
+
+        universe.longest = std::max(universe.longest, token.size());
+        universe.tokens.push_back(std::move(token));
+    }
+}
+
+/**
+ * @brief Reads an adjacent line into the current universe: its left token and every right token that follows it.
+ * @param universe The current universe.
+ * @param fields The line after its first word.
+ */
+void read_adjacent(Relation_universe& universe, std::istringstream& fields)
+{
+    std::string left{};
+
+    fields >> left;
+
+    for (std::string right{}; fields >> right;)
+    {
+        universe.pairs.push_back({.left = bytes_of(left), .right = bytes_of(right)});
+    }
+}
+
+/**
+ * @brief Builds the current universe's automata unless built: the relation's, and the table's where there is one,
+ *        checked to hold the universe's canonical tokens in order and its canonical pairs and to diverge from the
+ *        relation's in neither order.
+ * @param check The fixture under check.
+ * @return The current universe.
+ */
+Relation_universe& built_universe(Relation_check& check)
+{
+    auto& universe{check.universes.at(check.current)};
+
+    if (universe.relation)
+    {
+        return universe;
+    }
+
+    universe.relation = token_automaton(universe.tokens, universe.pairs);
+
+    if (!universe.table)
+    {
+        return universe;
+    }
+
+    ++check.counts.tables;
+
+    universe.compiled = token_automaton(*universe.table, universe.alphabet);
+
+    EXPECT_EQ(canonical_spellings(*universe.compiled), universe.tokens) << check.current;
+    EXPECT_EQ(canonical_pairs(*universe.compiled), pair_set(universe.pairs)) << check.current;
+    EXPECT_FALSE(encoder_divergence(*universe.compiled, *universe.relation)) << check.current;
+    EXPECT_FALSE(encoder_divergence(*universe.relation, *universe.compiled)) << check.current;
+
+    return universe;
+}
+
+/**
+ * @brief Checks that a marked string is the one chain of a universe's relation spelling its bytes, so the encoder's
+ *        segmentation of them.
+ * @param universe The universe.
+ * @param marked The marked string.
+ * @param context The fixture line checked.
+ */
+void expect_only_chain(const Relation_universe& universe, const Marked_string& marked, const std::string& context)
+{
+    const auto markings{chain_markings(universe.tokens, pair_set(universe.pairs), marked.bytes)};
+
+    ASSERT_EQ(markings.size(), 1U) << context << " on " << marked.bytes;
+    EXPECT_EQ(markings.front(), marked.boundaries) << context << " on " << marked.bytes;
+}
+
+/**
+ * @brief Checks a miscovering on a universe of the adjacency fixture: its length within the bound, its occurrence
+ *        spelling the window and mis-covered, and its segmentation the relation's one chain spelling its bytes.
+ * @param universe The universe.
+ * @param found The miscovering.
+ * @param window The window.
+ * @param origin The origin.
+ * @param context The fixture line checked.
+ */
+void expect_relation_miscovering(
+        const Relation_universe& universe, const Miscovering& found, const std::string_view window,
+        const std::size_t origin, const std::string& context)
+{
+    const auto& [segmentation, occurrence]{found};
+
+    const auto bound{2 * universe.longest + window.size() - 2};
+
+    const auto last{occurrence + window.size() - 1};
+
+    EXPECT_LE(segmentation.bytes.size(), bound) << context;
+    ASSERT_LE(occurrence + window.size(), segmentation.bytes.size()) << context;
+    EXPECT_EQ(std::string_view{segmentation.bytes}.substr(occurrence, window.size()), window) << context;
+    EXPECT_NE(covering_boundary(segmentation, last), occurrence + origin) << context;
+
+    expect_only_chain(universe, segmentation, context);
+}
+
+/**
+ * @brief Checks a certify line of the adjacency fixture: the certificate's answer on the relation's automaton and on
+ *        the table's where there is one, each miscovering within the bound and the relation's one chain, and the
+ *        reference's text mis-covered under its one chain.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_relation_certification(Relation_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string window_field{};
+    std::size_t origin{};
+    std::string verdict{};
+    std::string text{};
+
+    fields >> window_field >> origin >> verdict >> text;
+
+    const auto window{bytes_of(window_field)};
+
+    const auto& universe{built_universe(check)};
+
+    const auto found{miscovering(*universe.relation, window, origin)};
+
+    const auto on_table{universe.compiled ? miscovering(*universe.compiled, window, origin) : found};
+
+    ++check.counts.certifications;
+
+    EXPECT_EQ(on_table.has_value(), found.has_value()) << context;
+
+    if (verdict == "certified")
+    {
+        EXPECT_FALSE(found) << context;
+
+        return;
+    }
+
+    ++check.counts.miscoverings;
+
+    ASSERT_TRUE(found) << context;
+    ASSERT_TRUE(on_table) << context;
+
+    expect_relation_miscovering(universe, *found, window, origin, context);
+    expect_relation_miscovering(universe, *on_table, window, origin, context);
+
+    const auto bytes{bytes_of(text)};
+
+    const auto markings{chain_markings(universe.tokens, pair_set(universe.pairs), bytes)};
+
+    ASSERT_EQ(markings.size(), 1U) << context;
+
+    const Marked_string marked{.bytes = bytes, .boundaries = markings.front()};
+
+    EXPECT_TRUE(has_miscovered_occurrence(marked, window, origin)) << context;
+}
+
+/**
+ * @brief Checks a diverge line of the adjacency fixture: encoder_divergence() on the two universes' automata, each the
+ *        table's where there is one, gives the reference's answer in both orders, and a witness is at most 2L - 1
+ *        bytes, no shorter than the shortest string separating the two where the reference searched, and the one
+ *        chain of each relation spelling it marks it differently.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_relation_divergence(Relation_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string first_name{};
+    std::string second_name{};
+    std::string answer{};
+    std::string shortest{};
+
+    fields >> first_name >> second_name >> answer >> shortest;
+
+    const auto& first{check.universes.at(first_name)};
+    const auto& second{check.universes.at(second_name)};
+
+    const auto& first_automaton{first.compiled ? *first.compiled : *first.relation};
+    const auto& second_automaton{second.compiled ? *second.compiled : *second.relation};
+
+    const auto found{encoder_divergence(first_automaton, second_automaton)};
+
+    const auto reversed{encoder_divergence(second_automaton, first_automaton)};
+
+    ++check.counts.divergences;
+
+    EXPECT_EQ(found.has_value(), reversed.has_value()) << context;
+
+    if (answer == "equal")
+    {
+        ++check.counts.equal;
+
+        EXPECT_FALSE(found) << context;
+
+        return;
+    }
+
+    ASSERT_TRUE(found) << context;
+
+    const auto longest{std::max(first.longest, second.longest)};
+
+    EXPECT_EQ(*found, bytes_of(answer)) << context;
+    EXPECT_LE(found->size(), 2 * longest - 1) << context;
+
+    if (shortest != "-")
+    {
+        std::size_t length{};
+
+        std::istringstream{shortest} >> length;
+
+        EXPECT_GE(found->size(), length) << context;
+    }
+
+    const auto first_markings{chain_markings(first.tokens, pair_set(first.pairs), *found)};
+    const auto second_markings{chain_markings(second.tokens, pair_set(second.pairs), *found)};
+
+    ASSERT_EQ(first_markings.size(), 1U) << context;
+    ASSERT_EQ(second_markings.size(), 1U) << context;
+    EXPECT_NE(first_markings.front(), second_markings.front()) << context;
+}
+
+/**
+ * @brief Checks one line of the adjacency fixture, a comment or blank line checking nothing.
+ * @param check The fixture under check.
+ * @param line The line.
+ */
+void expect_relation_line(Relation_check& check, const std::string& line)
+{
+    std::istringstream fields{line};
+
+    std::string kind{};
+
+    if (!(fields >> kind) || kind.starts_with('#'))
+    {
+        return;
+    }
+
+    const auto context{std::format("{} | {}", check.current, line.substr(0, 200))};
+
+    if (kind == "universe")
+    {
+        start_relation_universe(check, fields);
+    }
+    else if (kind == "table")
+    {
+        check.universes.at(check.current).table = merges_of(fields);
+    }
+    else if (kind == "tokens")
+    {
+        read_tokens(check.universes.at(check.current), fields);
+    }
+    else if (kind == "adjacent")
+    {
+        read_adjacent(check.universes.at(check.current), fields);
+    }
+    else if (kind == "certify")
+    {
+        expect_relation_certification(check, fields, context);
+    }
+    else if (kind == "diverge")
+    {
+        expect_relation_divergence(check, fields, context);
+    }
+    else
+    {
+        ADD_FAILURE() << "unknown fixture line: " << line;
+    }
+}
+
+/**
+ * @brief Returns the canonical tokens and pairs of a merge table over the bytes by the reference encoder: every byte,
+ *        then each product in rank order that the encoder segments as itself, and every pair of them it segments into
+ *        the two, a pair with a byte no merge spells always among them, since no merge reaches that byte.
+ * @param merges The merge table in rank order.
+ * @return The tokens and the pairs.
+ */
+std::pair<std::vector<std::string>, std::vector<Adjacent>> reference_relation(const std::vector<Merge>& merges)
+{
+    constexpr std::size_t byte_count{256};
+
+    const auto ranks{ranks_of(merges)};
+
+    std::vector<std::string> tokens{};
+
+    for (std::size_t byte{0}; byte < byte_count; ++byte)
+    {
+        tokens.push_back(std::string{static_cast<char>(byte)});
+    }
+
+    std::set<char> spelled{};
+
+    for (const auto& [left, right] : merges)
+    {
+        spelled.insert(left.cbegin(), left.cend());
+        spelled.insert(right.cbegin(), right.cend());
+
+        const auto product{left + right};
+
+        const auto own{reference_tokens(ranks, byte_symbols(product))};
+
+        if (own == std::vector{product})
+        {
+            tokens.push_back(product);
+        }
+    }
+
+    const auto reaches{[&](const std::string& token) { return token.size() > 1 || spelled.contains(token.front()); }};
+
+    std::vector<Adjacent> pairs{};
+
+    for (const auto& left : tokens)
+    {
+        for (const auto& right : tokens)
+        {
+            if (!reaches(left) || !reaches(right))
+            {
+                pairs.push_back({.left = left, .right = right});
+
+                continue;
+            }
+
+            const auto segmented{reference_tokens(ranks, byte_symbols(left + right))};
+
+            if (segmented == std::vector{left, right})
+            {
+                pairs.push_back({.left = left, .right = right});
+            }
+        }
+    }
+
+    return {tokens, pairs};
+}
+
+/**
+ * @brief Returns the tokens a key rule segments a text into: at every step, of the adjacent pairs whose concatenation
+ *        is a scored piece, the one of the highest score is merged, the leftmost or the rightmost of a tie.
+ * @param scores The score of each piece.
+ * @param tie The occurrence of a tie merged first.
+ * @param text The text, each byte a symbol.
+ * @return The tokens.
+ */
+std::vector<std::string> key_rule_tokens(const Scores_t& scores, const Tie tie, const std::string_view text)
+{
+    auto sequence{byte_symbols(text)};
+
+    for (;;)
+    {
+        std::optional<int> best{};
+        std::size_t at{0};
+
+        for (std::size_t index{0}; index + 1 < sequence.size(); ++index)
+        {
+            const auto found{scores.find(sequence[index] + sequence[index + 1])};
+
+            if (found == scores.cend())
+            {
+                continue;
+            }
+
+            const auto& [piece, score]{*found};
+
+            const auto later_tie{best && score == *best && tie == Tie::rightmost};
+
+            if (best && score <= *best && !later_tie)
+            {
+                continue;
+            }
+
+            best = score;
+            at = index;
+        }
+
+        if (!best)
+        {
+            return sequence;
+        }
+
+        sequence[at] += sequence[at + 1];
+        const auto next{sequence.begin() + static_cast<std::ptrdiff_t>(at) + 1};
+
+        sequence.erase(next);
+    }
+}
+
+/**
+ * @brief Returns a key rule over {a, b} with its relation by definition: a token is canonical when the rule segments
+ *        its spelling as itself, and a pair of canonical tokens when the rule segments their concatenation into the
+ *        two.
+ * @param scores The score of each piece.
+ * @param tie The occurrence of a tie merged first.
+ * @return The rule.
+ */
+Key_rule key_rule(const Scores_t& scores, const Tie tie)
+{
+    Key_rule rule{.scores = scores, .tie = tie, .tokens = {"a", "b"}};
+
+    std::vector<std::string> pieces{};
+
+    for (const auto& [piece, score] : scores)
+    {
+        pieces.push_back(piece);
+    }
+
+    const auto shorter{[](const std::string& left, const std::string& right) { return left.size() < right.size(); }};
+
+    std::ranges::stable_sort(pieces, shorter);
+
+    for (const auto& piece : pieces)
+    {
+        if (key_rule_tokens(scores, tie, piece) == std::vector{piece})
+        {
+            rule.tokens.push_back(piece);
+            rule.longest = std::max(rule.longest, piece.size());
+        }
+    }
+
+    for (const auto& left : rule.tokens)
+    {
+        for (const auto& right : rule.tokens)
+        {
+            if (key_rule_tokens(scores, tie, left + right) == std::vector{left, right})
+            {
+                rule.pairs.push_back({.left = left, .right = right});
+            }
+        }
+    }
+
+    rule.automaton = token_automaton(rule.tokens, rule.pairs);
+
+    return rule;
+}
+
+/**
+ * @brief Draws a key rule over {a, b}: two to six distinct pieces of two or three symbols, each scored 0, 1 or 2 so
+ *        that ties are common, and a random tie direction.
+ * @param sequence The random sequence.
+ * @return The rule's scores and its tie direction.
+ */
+std::pair<Scores_t, Tie> random_key_rule(std::mt19937& sequence)
+{
+    auto pool{strings_over({"a", "b"}, 3)};
+
+    pool.erase(pool.begin(), pool.begin() + 3);
+
+    std::uniform_int_distribution<std::size_t> count{2, 6};
+    std::uniform_int_distribution<std::size_t> place{0, pool.size() - 1};
+    std::uniform_int_distribution<int> score{0, 2};
+    std::bernoulli_distribution rightmost{0.5};
+
+    Scores_t scores{};
+
+    const auto wanted{count(sequence)};
+
+    while (scores.size() < wanted)
+    {
+        const auto& piece{pool[place(sequence)]};
+
+        scores.try_emplace(piece, score(sequence));
+    }
+
+    const auto tie{rightmost(sequence) ? Tie::rightmost : Tie::leftmost};
+
+    return {scores, tie};
+}
+
+/**
+ * @brief Returns the length of the shortest string over {a, b} of at most a number of bytes that two key rules segment
+ *        apart, by brute force.
+ * @param first The first rule.
+ * @param second The second rule.
+ * @param longest The most bytes searched.
+ * @return The length, or std::nullopt when the two segment every such string alike.
+ */
+std::optional<std::size_t> shortest_separation(const Key_rule& first, const Key_rule& second, const std::size_t longest)
+{
+    for (const auto& text : strings_over({"a", "b"}, longest) | std::views::drop(1))
+    {
+        const auto by_first{key_rule_tokens(first.scores, first.tie, text)};
+        const auto by_second{key_rule_tokens(second.scores, second.tie, text)};
+
+        if (by_first != by_second)
+        {
+            return text.size();
+        }
+    }
+
+    return std::nullopt;
+}
+
 } // namespace
 
 TEST(Token_automaton_test, Every_ab_lies_in_a_token_beginning_at_its_a_and_the_token_ab_miscovers_origin_one)
@@ -1096,4 +1938,286 @@ TEST(Token_automaton_test, Refuses_an_alphabet_holding_a_character_twice_and_a_m
 
     EXPECT_TRUE(outside.contains(R"(("\xC3\xA9t", "\xC3\xBC") at rank 1 names "\xC3\xBC")")) << outside;
     EXPECT_TRUE(refusal_over({{.left = "é", .right = "t"}}, "ét").empty());
+}
+
+TEST(Token_automaton_test, Refuses_a_relation_holding_a_token_twice_and_a_pair_naming_a_token_it_does_not_hold)
+{
+    const auto twice{relation_refusal({"a", "b", "a"}, {})};
+
+    EXPECT_TRUE(twice.contains(R"(the tokens carry "a" twice)")) << twice;
+
+    const auto missing{relation_refusal({"a", "b"}, {{.left = "a", .right = "b"}, {.left = "b", .right = "\xFF"}})};
+
+    EXPECT_TRUE(missing.contains(R"(the pair ("b", "\xFF") names "\xFF", which the tokens do not carry)")) << missing;
+    EXPECT_TRUE(relation_refusal({"a", "b"}, {{.left = "a", .right = "b"}}).empty());
+}
+
+TEST(Token_automaton_test, The_relation_of_the_ab_ba_tie_group_certifies_from_its_pairs_and_diverges_from_each_table)
+{
+    const std::vector<std::string> tokens{"a", "b", "ab", "ba"};
+
+    const std::vector<Adjacent> pairs{
+            {.left = "a", .right = "a"},   {.left = "a", .right = "ab"},  {.left = "b", .right = "b"},
+            {.left = "b", .right = "ba"},  {.left = "ab", .right = "a"},  {.left = "ab", .right = "b"},
+            {.left = "ab", .right = "ab"}, {.left = "ab", .right = "ba"}, {.left = "ba", .right = "a"},
+            {.left = "ba", .right = "b"},  {.left = "ba", .right = "ab"}, {.left = "ba", .right = "ba"}};
+
+    const auto relation{token_automaton(tokens, pairs)};
+
+    const auto after_a{*relation.tokens()[*relation.token_of("a")].target};
+
+    EXPECT_EQ(relation.state_count(), 5U);
+    EXPECT_EQ(relation.allowed_tokens(0).size(), 4U);
+    EXPECT_EQ(relation.allowed_tokens(after_a), (std::vector<Token_automaton::Token_t>{0, 2}));
+
+    EXPECT_FALSE(miscovering(relation, "aa", 1));
+    EXPECT_FALSE(miscovering(relation, "aab", 1));
+
+    const auto found{miscovering(relation, "ab", 1)};
+
+    ASSERT_TRUE(found);
+
+    const auto& [segmentation, occurrence]{*found};
+
+    EXPECT_EQ(segmentation.bytes, "ab");
+    EXPECT_EQ(segmentation.boundaries, Marking_t({false, false}));
+
+    const std::vector<Merge> ab_first{{.left = "a", .right = "b"}, {.left = "b", .right = "a"}};
+    const std::vector<Merge> ba_first{{.left = "b", .right = "a"}, {.left = "a", .right = "b"}};
+
+    EXPECT_EQ(encoder_divergence(relation, token_automaton(ab_first, "ab")), "bab");
+    EXPECT_EQ(encoder_divergence(relation, token_automaton(ba_first, "ab")), "aba");
+    EXPECT_FALSE(encoder_divergence(relation, relation));
+    EXPECT_EQ(encoder_divergence(relation, token_automaton(ab_first)), std::string{'\0'});
+}
+
+TEST(Token_automaton_test,
+     The_relation_gives_the_reference_answers_on_every_universe_of_the_adjacency_fixture_and_agrees_with_the_tables)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/adjacency_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    Relation_check check{};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        expect_relation_line(check, line);
+    }
+
+    EXPECT_EQ(check.counts.universes, 199U);
+    EXPECT_EQ(check.counts.tables, 51U);
+    EXPECT_EQ(check.counts.certifications, 10598U);
+    EXPECT_EQ(check.counts.miscoverings, 7674U);
+    EXPECT_EQ(check.counts.divergences, 114U);
+    EXPECT_EQ(check.counts.equal, 72U);
+}
+
+TEST(Token_automaton_test, The_relation_of_every_small_table_of_the_fixture_decides_each_of_its_pairs_as_the_table_does)
+{
+    // The relation is read off the reference encoder, |V|^2 encodings, so the two GPT-2 prefixes of 1,000 and 5,000
+    // merges are left out.
+    constexpr std::size_t most_merges{64};
+
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/token_automaton_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    std::optional<Ranks_t> ranks{};
+    std::optional<Token_automaton> table{};
+    std::optional<Token_automaton> relation{};
+
+    std::size_t tables{0};
+    std::size_t decisions{0};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        std::istringstream fields{line};
+
+        std::string kind{};
+        std::string first{};
+        std::string second{};
+
+        if (!(fields >> kind) || kind.starts_with('#'))
+        {
+            continue;
+        }
+
+        fields >> first >> second;
+
+        if (kind == "universe")
+        {
+            const auto merges{merges_of(fields)};
+
+            const auto small{merges.size() <= most_merges};
+
+            ranks = small ? std::optional{ranks_of(merges)} : std::nullopt;
+
+            if (!small)
+            {
+                continue;
+            }
+
+            const auto [tokens, pairs]{reference_relation(merges)};
+
+            table = token_automaton(merges);
+            relation = token_automaton(tokens, pairs);
+
+            ++tables;
+
+            EXPECT_FALSE(encoder_divergence(*table, *relation)) << line.substr(0, 200);
+            EXPECT_FALSE(encoder_divergence(*relation, *table)) << line.substr(0, 200);
+
+            continue;
+        }
+
+        if (!ranks)
+        {
+            continue;
+        }
+
+        const auto window{bytes_of(first)};
+
+        std::size_t origin{};
+
+        std::istringstream{second} >> origin;
+
+        const auto found{miscovering(*relation, window, origin)};
+
+        ++decisions;
+
+        ASSERT_EQ(found.has_value(), miscovering(*table, window, origin).has_value()) << line;
+
+        if (found)
+        {
+            EXPECT_EQ(found->segmentation.boundaries, reference_marking(*ranks, found->segmentation.bytes)) << line;
+        }
+    }
+
+    EXPECT_EQ(tables, 408U);
+    EXPECT_EQ(decisions, 32798U);
+}
+
+TEST(Token_automaton_test, Over_random_key_rules_with_ties_the_relation_decides_windows_and_divergence_as_brute_force)
+{
+    // Score sets over {a, b} with ties, each merged leftmost or rightmost first, checked on every window of up to three
+    // bytes at every origin against every string of at most 2L + |window| - 1 bytes, and against the mirrored tie and
+    // the rule drawn before it on every string of at most 2L + 2 bytes.
+    constexpr std::size_t draws{300};
+
+    std::mt19937 sequence{0x5EEDU};
+
+    std::optional<Key_rule> previous{};
+
+    std::size_t decisions{0};
+    std::size_t refused{0};
+    std::size_t compared{0};
+    std::size_t separated{0};
+
+    const auto windows{strings_over({"a", "b"}, 3)};
+
+    const auto compare{[&](const Key_rule& rule, const Key_rule& other, const std::string& context) {
+        const auto longest{std::max(rule.longest, other.longest)};
+
+        const auto witness{encoder_divergence(*rule.automaton, *other.automaton)};
+
+        const auto separation{shortest_separation(rule, other, 2 * longest + 2)};
+
+        ++compared;
+
+        ASSERT_EQ(witness.has_value(), separation.has_value()) << context;
+
+        if (!witness)
+        {
+            return;
+        }
+
+        ++separated;
+
+        const std::set<std::string> tokens{rule.tokens.cbegin(), rule.tokens.cend()};
+        const std::set<std::string> other_tokens{other.tokens.cbegin(), other.tokens.cend()};
+
+        EXPECT_LE(witness->size(), 2 * longest - 1) << context;
+        EXPECT_NE(key_rule_tokens(rule.scores, rule.tie, *witness), key_rule_tokens(other.scores, other.tie, *witness))
+                << context;
+        EXPECT_GE(witness->size(), *separation) << context;
+
+        if (tokens == other_tokens)
+        {
+            EXPECT_EQ(witness->size(), *separation) << context;
+        }
+    }};
+
+    for (std::size_t drawn{0}; drawn < draws; ++drawn)
+    {
+        const auto [scores, tie]{random_key_rule(sequence)};
+
+        const auto rule{key_rule(scores, tie)};
+
+        const auto mirrored{key_rule(scores, tie == Tie::leftmost ? Tie::rightmost : Tie::leftmost)};
+
+        const auto context{std::format("draw {}", drawn)};
+
+        std::vector<Marked_string> texts{};
+
+        for (const auto& text : strings_over({"a", "b"}, 2 * rule.longest + 2) | std::views::drop(1))
+        {
+            const auto tokens{key_rule_tokens(scores, tie, text)};
+
+            texts.push_back({.bytes = text, .boundaries = token_marking(tokens)});
+        }
+
+        for (const auto& window : windows | std::views::drop(1))
+        {
+            for (std::size_t origin{0}; origin < window.size(); ++origin)
+            {
+                const auto bound{2 * rule.longest + window.size() - 1};
+
+                const auto refutes{[&](const Marked_string& marked) {
+                    return marked.bytes.size() <= bound && has_miscovered_occurrence(marked, window, origin);
+                }};
+
+                const auto by_brute_force{std::ranges::any_of(texts, refutes)};
+
+                const auto found{miscovering(*rule.automaton, window, origin)};
+
+                const auto line{std::format("{}, {} at {}", context, window, origin)};
+
+                ++decisions;
+
+                ASSERT_EQ(found.has_value(), by_brute_force) << line;
+
+                if (!found)
+                {
+                    continue;
+                }
+
+                ++refused;
+
+                const auto& [segmentation, occurrence]{*found};
+
+                const auto& [bytes, boundaries]{segmentation};
+
+                const auto last{occurrence + window.size() - 1};
+
+                EXPECT_EQ(boundaries, token_marking(key_rule_tokens(scores, tie, bytes))) << line;
+                EXPECT_LE(bytes.size(), bound - 1) << line;
+                EXPECT_NE(covering_boundary(segmentation, last), occurrence + origin) << line;
+            }
+        }
+
+        compare(rule, mirrored, context + " against its mirrored tie");
+
+        if (previous)
+        {
+            compare(rule, *previous, context + " against the draw before it");
+        }
+
+        previous = rule;
+    }
+
+    EXPECT_EQ(decisions, 10200U);
+    EXPECT_EQ(refused, 7721U);
+    EXPECT_EQ(compared, 599U);
+    EXPECT_EQ(separated, 477U);
 }

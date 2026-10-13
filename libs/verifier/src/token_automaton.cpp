@@ -4,6 +4,7 @@
 #include <compare>
 #include <cstddef>
 #include <format>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <ranges>
@@ -434,6 +435,91 @@ Miscovering Search::miscovering_of(const Node node, const Token_t covering) cons
     return {.segmentation = std::move(segmentation), .occurrence = occurrence};
 }
 
+/**
+ * @brief Returns whether an automaton holds a spelling as a canonical token, one that a transition reads.
+ * @param automaton The token automaton.
+ * @param spelling The spelling.
+ * @return True when the automaton has a token so spelled with a target.
+ */
+[[nodiscard]] bool is_canonical(const Token_automaton& automaton, const std::string_view spelling)
+{
+    const auto token{automaton.token_of(spelling)};
+
+    return token && automaton.tokens()[*token].target;
+}
+
+/**
+ * @brief Returns the first canonical token of one automaton, in number order, that another does not hold canonical.
+ * @param holding The automaton whose tokens are read.
+ * @param lacking The automaton tested for each of them.
+ * @return The token's spelling, or std::nullopt when the second holds every canonical token of the first.
+ */
+[[nodiscard]] std::optional<std::string> lone_token(const Token_automaton& holding, const Token_automaton& lacking)
+{
+    for (const auto& [spelling, left, target] : holding.tokens())
+    {
+        if (target && !is_canonical(lacking, spelling))
+        {
+            return spelling;
+        }
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief Returns the shortest spelling of a pair of canonical tokens that exactly one of two automata holds canonical,
+ *        the first of that length in the first automaton's token order, when both hold the same canonical tokens.
+ * @param first The first automaton.
+ * @param second The second automaton, holding the first's canonical tokens and no other.
+ * @return The pair's spelling, or std::nullopt when the two hold the same canonical pairs.
+ */
+[[nodiscard]] std::optional<std::string> split_pair(const Token_automaton& first, const Token_automaton& second)
+{
+    const auto& tokens{first.tokens()};
+
+    std::vector<Token_t> canonical{};
+    std::vector<Token_t> image(tokens.size());
+
+    for (Token_t token{0}; token < tokens.size(); ++token)
+    {
+        if (!tokens[token].target)
+        {
+            continue;
+        }
+
+        canonical.push_back(token);
+        image[token] = *second.token_of(tokens[token].spelling);
+    }
+
+    std::optional<std::string> shortest{};
+
+    for (const auto left : canonical)
+    {
+        const auto first_state{*tokens[left].target};
+        const auto second_state{*second.tokens()[image[left]].target};
+
+        for (const auto right : canonical)
+        {
+            const auto in_first{first.is_allowed(first_state, right)};
+            const auto in_second{second.is_allowed(second_state, image[right])};
+
+            const auto length{tokens[left].spelling.size() + tokens[right].spelling.size()};
+
+            const auto shorter{!shortest || length < shortest->size()};
+
+            if (in_first == in_second || !shorter)
+            {
+                continue;
+            }
+
+            shortest = tokens[left].spelling + tokens[right].spelling;
+        }
+    }
+
+    return shortest;
+}
+
 } // namespace
 
 Token_automaton::Token_automaton(const std::span<const Merge> merges, const std::span<const std::string> symbols)
@@ -514,6 +600,59 @@ Token_automaton::Token_automaton(const std::span<const Merge> merges, const std:
     }
 }
 
+Token_automaton::Token_automaton(const std::span<const std::string> tokens, const std::span<const Adjacent> pairs)
+    : states_{State{}}
+{
+    for (Token_t token{0}; token < tokens.size(); ++token)
+    {
+        const auto& spelling{tokens[token]};
+
+        const auto [entry, inserted]{index_.try_emplace(spelling, token)};
+
+        if (!inserted)
+        {
+            throw std::invalid_argument{std::format("token_automaton: the tokens carry {} twice", quoted(spelling))};
+        }
+
+        tokens_.push_back({.spelling = spelling, .target = token + 1});
+    }
+
+    std::vector<std::vector<Token_t>> followers(tokens.size());
+
+    for (const auto& [left, right] : pairs)
+    {
+        const auto left_found{index_.find(left)};
+        const auto right_found{index_.find(right)};
+
+        if (left_found == index_.cend() || right_found == index_.cend())
+        {
+            const auto& missing{left_found == index_.cend() ? left : right};
+
+            throw std::invalid_argument{std::format(
+                    "token_automaton: the pair ({}, {}) names {}, which the tokens do not carry", quoted(left),
+                    quoted(right), quoted(missing))};
+        }
+
+        const auto& [left_spelling, left_token]{*left_found};
+        const auto& [right_spelling, right_token]{*right_found};
+
+        followers[left_token].push_back(right_token);
+    }
+
+    const auto every_token{std::views::iota(Token_t{0}, tokens.size())};
+
+    for (auto& following : followers)
+    {
+        std::ranges::sort(following);
+
+        std::vector<Token_t> removed{};
+
+        std::ranges::set_difference(every_token, following, std::back_inserter(removed));
+
+        states_.push_back({.parent = base_state, .birth = tokens.size(), .removed = std::move(removed)});
+    }
+}
+
 const std::vector<Token_automaton::Token>& Token_automaton::tokens() const noexcept
 {
     return tokens_;
@@ -556,7 +695,7 @@ bool Token_automaton::is_allowed(State_t state, Token_t token) const
             continue;
         }
 
-        if (std::ranges::contains(removed, token))
+        if (std::ranges::binary_search(removed, token))
         {
             return false;
         }
@@ -596,6 +735,11 @@ Token_automaton token_automaton(const std::span<const Merge> merges, const std::
     return Token_automaton{merges, symbols};
 }
 
+Token_automaton token_automaton(const std::span<const std::string> tokens, const std::span<const Adjacent> pairs)
+{
+    return Token_automaton{tokens, pairs};
+}
+
 std::optional<Miscovering> miscovering(
         const Token_automaton& automaton, const std::string_view window, const std::size_t origin)
 {
@@ -607,6 +751,21 @@ std::optional<Miscovering> miscovering(
     Search search{automaton, window, origin};
 
     return std::move(search).run();
+}
+
+std::optional<std::string> encoder_divergence(const Token_automaton& first, const Token_automaton& second)
+{
+    if (auto token{lone_token(first, second)})
+    {
+        return token;
+    }
+
+    if (auto token{lone_token(second, first)})
+    {
+        return token;
+    }
+
+    return split_pair(first, second);
 }
 
 } // namespace munch::verifier

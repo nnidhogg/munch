@@ -817,6 +817,54 @@ share a score SentencePiece breaks the tie by position, which a rank order emula
 finds a rank order of such a group that reproduces the model or refuses the model; for the fifteen pieces of Mistral 7B
 v0.1 made of U+2581 alone, which share one score, an exhaustive search finds such an order.
 
+`verifier::token_automaton(tokens, pairs)` builds the token automaton from an encoder's canonical adjacency relation in
+place of a table: the canonical tokens V, each a string the encoder segments as one token, and the canonical pairs E,
+each two tokens of V as a `verifier::Adjacent` whose concatenation the encoder segments into the two. It has the base
+state and one state per token, the state of a token reading the tokens a pair lets follow it, and `miscovering()`
+decides a window certificate on it by the same search with the same bound, since the canonical adjacency theorem the
+search rests on holds for every projective encoder. A merge process joins one adjacent pair of tokens at a time and
+never splits one, and it is projective when the merges of a run inside any interval of the input, up to the first merge
+across an end of it, begin the run on the interval alone. Every key rule is projective, a rule that joins, among the
+pairs it may join, one of least key under any function of the pair, the leftmost or the rightmost of a tie: canonical
+byte-pair encoding over a table, and SentencePiece's own loop with its position ties, which no rank order reproduces for
+the pieces ab and ba at one score. So is the pass order, which applies one merge left to right until it no longer
+applies before choosing the next. The rule that joins the pair occurring most often is not, since over the pieces aa and
+ab at one score it segments aab as aa|b and aabab as a|ab|ab. The relation must be the encoder's own, which the caller
+vouches for, read off the encoder run on each token and on each pair of tokens, so a model whose ties no table
+reproduces is certified through its own encoder. A token held twice and a pair naming a token the list does not hold are
+refused with `std::invalid_argument`. The state of a token stores the tokens that may not follow it, |V|^2 - |E| in all,
+so the relation of a whole model is too large to build: Mistral 7B v0.1 has 31,741 canonical tokens and 152,174,452
+canonical pairs of the 1,007,491,081 it could have, and Yi 6B 63,436 tokens and 409,579,072 pairs of 4,024,126,096. A
+loader builds the relation of a tie group or of the pieces over a few characters, as the tests do for the whitespace
+pieces of Mistral 7B v0.1 and for the pieces of both models over t, h, e and n.
+
+`verifier::encoder_divergence(first, second)` decides whether the encoders of two token automata segment every string
+alike, comparing their canonical tokens and pairs, and returns `std::nullopt` or a string they segment apart. Two
+projective encoders over one alphabet are equal exactly when their V and their E agree, and a shortest string they
+segment apart is a token of one V that the other lacks or the spelling of a canonical pair of each, split at two
+different places, so it has at most 2L - 1 bytes, L the longest token of either. The decision returns the first token of
+the first automaton the second lacks, else the first of the second the first lacks, else the shortest spelling of a pair
+canonical under exactly one, which is a shortest string the two segment apart, in at most 2 |V|^2 adjacency tests. Two
+encoders that agree on every string of at most 2L - 1 bytes therefore agree on every string: the longest of the fifteen
+whitespace pieces of Mistral 7B v0.1 is a run of 16, so a table reproduces SentencePiece on every run of U+2581 exactly
+when it does on every run of at most 31. It is the acceptance test of a loader that compiles a tie group into a rank
+table, which takes the table exactly when its automaton and the automaton of the model's own relation do not diverge:
+
+```cpp
+const std::vector<std::string> tokens{"a", "b", "ab", "ba"};  // the pieces ab and ba at one score, as SentencePiece
+const std::vector<verifier::Adjacent> pairs{
+        {.left = "a", .right = "a"},   {.left = "a", .right = "ab"},  {.left = "b", .right = "b"},
+        {.left = "b", .right = "ba"},  {.left = "ab", .right = "a"},  {.left = "ab", .right = "b"},
+        {.left = "ab", .right = "ab"}, {.left = "ab", .right = "ba"}, {.left = "ba", .right = "a"},
+        {.left = "ba", .right = "b"},  {.left = "ba", .right = "ab"}, {.left = "ba", .right = "ba"}};
+const std::vector<verifier::Merge> merges{{.left = "a", .right = "b"}, {.left = "b", .right = "a"}};
+
+const auto relation{verifier::token_automaton(tokens, pairs)};  // the base state and one state per token
+
+verifier::miscovering(relation, "aa", 1);                                         // std::nullopt: every aa is a|a
+verifier::encoder_divergence(relation, verifier::token_automaton(merges, "ab"));  // bab, ba|b here, b|ab by the table
+```
+
 `verifier::trie_chain(initial, continuation)` takes a two-mode vocabulary, the initial tokens and the continuation
 tokens, and builds the verifier of WordPiece segmentation over it, the scanner that takes the longest initial token at
 the start of the input and then, at each boundary, the longest continuation token, failing where no token of the mode
