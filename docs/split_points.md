@@ -110,7 +110,8 @@ resumes after an error ([arXiv:2609.10600](https://arxiv.org/abs/2609.10600)); n
 
 ## 2 Prior approaches
 
-Published solutions accept the unknown-state problem and manage it.
+Published solutions mostly accept the unknown-state problem and manage it, and the few that avoid it assume or prove a
+delimiter for one format, as the paragraph on delimiters below records.
 
 **Compile the simulation into the automaton.** Simultaneous finite automata (Sin'ya, Matsuzaki and Sassa, ICPP 2013)
 take a state of the extended automaton to be a mapping from entry state to exit state, so one ordinary pass over a chunk
@@ -212,20 +213,30 @@ conditional on a sufficient overlap condition: equality with sequential tokeniza
 overlap spans more characters than the longest vocabulary token. TokTier (Zhang and Cao, arXiv 2026) reports, and we
 cite the finding as theirs, that LoPT's published experimental configuration "does not satisfy its safety theorem's
 stated precondition" and that their clean-room reproduction "found inputs on which the length threshold stated in its
-paper admits a boundary outside the premise of its theorem".
+paper admits a boundary outside the premise of its theorem". Not all of that work is overlap-based. Gigatoken certifies
+cuts before selected punctuation in SentencePiece input where no vocabulary piece contains the two symbols at the cut in
+that order, arguing in a source comment that a merge's result is always a vocabulary piece, so that no merge can span
+such a boundary (Rød, Gigatoken, 2026); the runtime of SentencePiece Lite states the same principle for its vocabularies
+(SentencePiece Lite Runtime, 2026), and Xu checks a merge table for cuts across which no merge joins (Xu, blog post
+2026). Each is a sufficient condition read off one tokenizer family's vocabulary before any input, the subword
+counterpart of the certified windows of the companion report ([arXiv:2608.09761](https://arxiv.org/abs/2608.09761))
+rather than of a certified byte.
 
 **Assume a delimiter.** Data systems split logs and CSV at newlines because "records do not contain newlines", adjusting
-each cut to the next delimiter. The assumption is per-format and informal, and it is famously unsound for CSV, where RFC
-4180 explicitly permits CRLF inside double-quoted fields (Shafranovich, RFC 4180 2005), which is why speculative CSV
-parsing is a research topic (Ge, Li, Eilebrecht, Chandramouli and Kossmann, SIGMOD 2019); massively parallel delimiter
-parsing (Stehle and Jacobsen, PVLDB 2020) attacks the same context problem on GPUs. Parallel lexical analysis has also
-been built by choosing cut positions directly: Barve and Joshi (International Journal of Computer Applications 2014)
-take newline, whitespace and selected language constructs as pivot elements. Those pivots are chosen for the language by
-hand rather than derived from its token set, which is precisely the step the certificate supplies. Format-specific
-structural scans hand-derive comparable facts per format: Mison (Li, Katsipoulakis, Chandramouli, Goldstein and
-Kossmann, PVLDB 2017) and simdjson (Langdale and Lemire, VLDB Journal 2019) locate JSON's structural characters and mask
-away the occurrences inside strings, while Parabix (Cameron, Herdy and Lin, CASCON 2008) builds XML lexical and
-validation bit streams, a different construction aimed at a different format.
+each cut to the next delimiter. The assumption is per-format and usually informal, and it is famously unsound for CSV,
+where RFC 4180 explicitly permits CRLF inside double-quoted fields (Shafranovich, RFC 4180 2005), which is why
+speculative CSV parsing is a research topic (Ge, Li, Eilebrecht, Chandramouli and Kossmann, SIGMOD 2019). Where it has
+been replaced by a proof, the proof is about one format: Ge et al. show that a quote followed by an ordinary character,
+and an ordinary character followed by a quote, each drive every state of their CSV automaton to a single state, so a
+chunk containing either pattern is unambiguous (Ge et al., SIGMOD 2019, Section 4.4 and Appendix A, Property 2).
+Massively parallel delimiter parsing (Stehle and Jacobsen, PVLDB 2020) attacks the same context problem on GPUs.
+Parallel lexical analysis has also been built by choosing cut positions directly: Barve and Joshi (International Journal
+of Computer Applications 2014) take newline, whitespace and selected language constructs as pivot elements. Those pivots
+are chosen for the language by hand rather than derived from its token set, which is precisely the step the certificate
+supplies. Format-specific structural scans hand-derive comparable facts per format: Mison (Li, Katsipoulakis,
+Chandramouli, Goldstein and Kossmann, PVLDB 2017) and simdjson (Langdale and Lemire, VLDB Journal 2019) locate JSON's
+structural characters and mask away the occurrences inside strings, while Parabix (Cameron, Herdy and Lin, CASCON 2008)
+builds XML lexical and validation bit streams, a different construction aimed at a different format.
 
 Among the preceding methods surveyed here, none derives from a compiled token automaton the complete set of raw-input
 bytes safe to cut immediately before at every occurrence in a completely tokenizable input. Lexer generators come
@@ -1193,30 +1204,30 @@ loop's reset rather than a uniform property of the automaton, from the local par
 languages enjoy (Barenghi et al., Science of Computer Programming 2015) in being a property of the token automaton that
 licenses a scanner to restart at a byte rather than a property of the syntax grammar that permits substrings to be
 parsed independently using bounded surrounding context, from realignment after the fact in merging nothing, and from
-delimiter folklore in deriving the safe set from the compiled token set rather than assuming it per format. The
-derivation also correctly refuses the grammars for which the folklore is unsound. The contribution is therefore narrow
-and specific. Relocating cuts to candidate separators is classical. Barenghi et al. split JSON at whitespace with
-explicit ambiguity resolution, observe newline as a safer but potentially sparse alternative, and constrain Lua before
-using newline as a split character. What appears to remain missing is an automatic grammar-only test deciding when a
-byte permits direct restart from `q0`. Among the surveyed generators, re2c (Trofimovich, Software Impacts 2020)
-validates a user-selected end-of-input sentinel by rejecting rules in which it may occur before the end of a lexeme, a
-check its documentation records as added in release 1.3 in December 2019 (re2c documentation, 2026). That is a
-terminal-in-lexeme test for one declared byte; under the completely-tokenizable-input model used here it is a safe-after
-property, and it is genuine static analysis of the compiled automaton rather than a convention. It is incomparable with
-the certificate rather than weaker. Over a token set whose only token is `ab`, the byte `b` passes the sentinel check
-because it ends the lexeme, yet it lies inside a token and is not certified; over `ba`, the byte `b` certifies, because
-every occurrence begins a token and the initial state is not re-entrant, yet it fails the sentinel check because the
-lexeme continues past it. We are not aware of an implementation that derives the complete set of symbols whose every
-relevant occurrence begins a token, nor of one that checks the initial-state condition that guarantee requires. The
-certificate supplies that test from the compiled automaton, with no hand analysis and no input-dependent
-context-recovery pass, and the study of Section 7 turns the same machinery into a statement about which token sets admit
-such bytes at all. The analysis is not merely sound. Theorem 2 shows the condition is also necessary once the analysis
-is restricted to `A⁺`, which is what the derivation of Section 4.1 does, so on a compiled token set the *condition*
-rejects a byte exactly when a witness input exists that places it inside a token. The shipped predicate is deliberately
-narrower: it also withholds vacuously certified bytes, which the condition admits and for which no witness exists,
-because no input the token set accepts contains them and a caller could never find one to split at. That matters for
-reading Section 7: an empty exact-certificate entry is a fact about the tokenization, not a limit of the analysis, while
-a modulo-column negative remains conservative and therefore inconclusive.
+delimiter practice in deriving the safe set from the compiled token set rather than assuming it, or proving it, per
+format (Ge et al., SIGMOD 2019). The derivation also correctly refuses the grammars for which the folklore is unsound.
+The contribution is therefore narrow and specific. Relocating cuts to candidate separators is classical. Barenghi et al.
+split JSON at whitespace with explicit ambiguity resolution, observe newline as a safer but potentially sparse
+alternative, and constrain Lua before using newline as a split character. What appears to remain missing is an automatic
+grammar-only test deciding when a byte permits direct restart from `q0`. Among the surveyed generators, re2c
+(Trofimovich, Software Impacts 2020) validates a user-selected end-of-input sentinel by rejecting rules in which it may
+occur before the end of a lexeme, a check its documentation records as added in release 1.3 in December 2019 (re2c
+documentation, 2026). That is a terminal-in-lexeme test for one declared byte; under the completely-tokenizable-input
+model used here it is a safe-after property, and it is genuine static analysis of the compiled automaton rather than a
+convention. It is incomparable with the certificate rather than weaker. Over a token set whose only token is `ab`, the
+byte `b` passes the sentinel check because it ends the lexeme, yet it lies inside a token and is not certified; over
+`ba`, the byte `b` certifies, because every occurrence begins a token and the initial state is not re-entrant, yet it
+fails the sentinel check because the lexeme continues past it. We are not aware of an implementation that derives the
+complete set of symbols whose every relevant occurrence begins a token, nor of one that checks the initial-state
+condition that guarantee requires. The certificate supplies that test from the compiled automaton, with no hand analysis
+and no input-dependent context-recovery pass, and the study of Section 7 turns the same machinery into a statement about
+which token sets admit such bytes at all. The analysis is not merely sound. Theorem 2 shows the condition is also
+necessary once the analysis is restricted to `A⁺`, which is what the derivation of Section 4.1 does, so on a compiled
+token set the *condition* rejects a byte exactly when a witness input exists that places it inside a token. The shipped
+predicate is deliberately narrower: it also withholds vacuously certified bytes, which the condition admits and for
+which no witness exists, because no input the token set accepts contains them and a caller could never find one to split
+at. That matters for reading Section 7: an empty exact-certificate entry is a fact about the tokenization, not a limit
+of the analysis, while a modulo-column negative remains conservative and therefore inconclusive.
 
 We are not aware of prior work stating this condition, in particular the re-entrancy requirement, as a static per-symbol
 property of the token DFA, though its components are all classical. We checked that claim against the parallel lexing
@@ -1416,6 +1427,14 @@ what composition costs in full is not measured here; the planner's own forward s
   for Long Context Inference of Large Language Model.* ACL 2026, 33107-33122. Preprint: arXiv:2511.04952.
 - Z. Zhang, Z. Cao. *TokTier: Exact Stateful CPU+GPU Tokenization
   for Agentic LLM Serving.* Preprint, arXiv:2607.29678, 2026.
+- M. Rød. *Gigatoken.* https://github.com/marcelroed/gigatoken, revision 542367a of 21 July 2026, released on PyPI as
+  version 0.9.0. The vocabulary pair rule is the comment in `finalize_speed_paths` of `src/bpe/sentencepiece.rs`.
+- Google. *SentencePiece Lite Runtime.* https://github.com/google/sentencepiece/blob/master/lite/README.md, initial
+  revision a2cb4d8 of 15 September 2026, Section 6.3, "Character Bigram Co-occurrence Principle".
+- C. Xu. *5.5x Faster HuggingFace Tokenizers for a Single Sequence.* https://charlesxu.io/parallel-tokenizer/, dated
+  25 November 2025 and rewritten by 9 October 2026, when it states the merge-table check; code at
+  https://github.com/cxuu/tokenizers, branch `parallel`, commit 9eecc71 of 9 October 2026,
+  `compute_never_merges_across`.
 - Y. Shafranovich. *Common Format and MIME Type for Comma-Separated Values (CSV) Files.* RFC 4180, October 2005.
 - C. Ge, Y. Li, E. Eilebrecht, B. Chandramouli, D. Kossmann. *Speculative
   Distributed CSV Data Parsing for Big Data Analytics.* SIGMOD 2019, 883-899.
