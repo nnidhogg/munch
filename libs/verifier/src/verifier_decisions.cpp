@@ -242,6 +242,96 @@ struct Cut_key
 };
 
 /**
+ * @brief A key of the modulo domain product: whether the cut has been placed, the verifier's state on the string's
+ *        marking, the states the verifier can be in under any marks of the bytes read since the start or since the cut,
+ *        how much of the window the text's end matches, of its first offset bytes before the cut and of its remaining
+ *        bytes after it, and whether the prefix before the cut lies outside the domain.
+ *
+ * No step enters the start, so the set holds the start only at the start and at the cut.
+ */
+struct Reach_key
+{
+    /**
+     * @brief Ordered member by member, so keys index the search's map.
+     */
+    auto operator<=>(const Reach_key&) const = default;
+
+    /**
+     * @brief Whether the cut has been placed.
+     */
+    bool cut{};
+
+    /**
+     * @brief The verifier's state on the string's marking.
+     */
+    State_t state{};
+
+    /**
+     * @brief The states the verifier can be in under any marks of the bytes read since the start or since the cut,
+     *        sorted and without repeats.
+     */
+    std::vector<State_t> reachable{};
+
+    /**
+     * @brief How much of the window the text's end matches: of its first offset bytes before the cut, of its remaining
+     *        bytes after it.
+     */
+    std::size_t matched{};
+
+    /**
+     * @brief Whether the prefix before the cut lies outside the domain.
+     */
+    bool prefix_fails{};
+};
+
+/**
+ * @brief A key of the modulo agreement product: whether the cut has been placed, the state of the copy on the string's
+ *        marking, the state of the copy on the chunks' marking, restarted at the cut, whether the two copies' current
+ *        segments began at the same position, how much of the window the text's end matches, and whether a kept
+ *        segment closed on one copy without the same segment closing on the other.
+ *
+ * No step enters the start, so the chunks' copy is at the start only at the start and at the cut.
+ */
+struct Agreement_key
+{
+    /**
+     * @brief Ordered member by member, so keys index the search's map.
+     */
+    auto operator<=>(const Agreement_key&) const = default;
+
+    /**
+     * @brief Whether the cut has been placed.
+     */
+    bool cut{};
+
+    /**
+     * @brief The state of the copy on the string's marking.
+     */
+    State_t whole{};
+
+    /**
+     * @brief The state of the copy on the chunks' marking, restarted at the cut.
+     */
+    State_t chunk{};
+
+    /**
+     * @brief Whether the two copies' current segments began at the same position.
+     */
+    bool aligned{};
+
+    /**
+     * @brief How much of the window the text's end matches: of its first offset bytes before the cut, of its remaining
+     *        bytes after it.
+     */
+    std::size_t matched{};
+
+    /**
+     * @brief Whether a kept segment closed on one copy without the same segment closing on the other.
+     */
+    bool differs{};
+};
+
+/**
  * @brief A key of the chunk product: the continuing copy's state, the restarted copy's state or none once a step of
  *        the current chunk refused it, the bytes before the held ones an occurrence anchoring the next commit may begin
  *        in, the marked bytes read by the continuing copy and not yet by the restarted one, whether any byte has
@@ -1222,6 +1312,497 @@ template <typename Ends>
     const auto index{std::ranges::distance(keys.cbegin(), found)};
 
     return static_cast<std::size_t>(index);
+}
+
+/**
+ * @brief Returns the number of symbols a path over a modulo product reads before its restarted copy begins, which is
+ *        at the path's start when the cut at position zero was placed, since no step enters the start.
+ * @tparam Key The product's key type.
+ * @tparam Restarts The predicate's type.
+ * @param keys The keys of the path, the start first.
+ * @param restarts Whether a key is the one the cut places.
+ * @return The cut.
+ */
+template <typename Key, typename Restarts>
+[[nodiscard]] std::size_t restart_of(const std::vector<Key>& keys, const Restarts& restarts)
+{
+    const auto found{std::ranges::find_if(keys, restarts)};
+
+    if (found == keys.cend())
+    {
+        return 0;
+    }
+
+    const auto index{std::ranges::distance(keys.cbegin(), found)};
+
+    return static_cast<std::size_t>(index);
+}
+
+/**
+ * @brief Returns the domain half of modulo_dependence(): the shortest accepted marked string with an occurrence of the
+ *        window whose prefix before the cut or suffix from it lies outside the domain.
+ * @param verifier The verifier.
+ * @param window The window, nonempty.
+ * @param offset The offset of the cut, a byte index of the window.
+ * @return The witness without kept tokens, or std::nullopt when both sides lie in the domain at every occurrence.
+ */
+[[nodiscard]] std::optional<Modulo_dependence> domain_refutation(
+        const Verifier& verifier, const std::string_view window, const std::size_t offset)
+{
+    const auto head{window.substr(0, offset)};
+
+    const auto tail{window.substr(offset)};
+
+    const auto borders{borders_of(head)};
+
+    const auto alphabet{alphabet_of(verifier)};
+
+    const std::vector restarted{verifier.start()};
+
+    // Before the cut the matcher runs over the window's first offset bytes, which are none when the offset is zero.
+    const auto head_matched{[&head, &borders](const std::size_t matched, const unsigned char byte) {
+        return head.empty() ? 0 : matched_after(head, borders, matched, byte);
+    }};
+
+    const auto suffix_fails{[&verifier](const Reach_key& key) { return !accepts_any(verifier, key.reachable); }};
+
+    const auto goal{[&](const Reach_key& key) {
+        const auto confirmed{key.cut && key.matched == tail.size() && verifier.accepts(key.state)};
+
+        const auto fails{key.prefix_fails || suffix_fails(key)};
+
+        return confirmed && fails;
+    }};
+
+    const auto expand_after{[&]<typename Emit>(const Reach_key& key, const Emit& emit) {
+        for (const auto byte : alphabet)
+        {
+            // The window's remaining bytes follow the cut at once.
+            if (key.matched < tail.size() && byte != static_cast<unsigned char>(tail[key.matched]))
+            {
+                continue;
+            }
+
+            const auto matched{std::min(key.matched + 1, tail.size())};
+
+            const auto reachable{subset_after(verifier, key.reachable, byte)};
+
+            for (const auto boundary_after : marks)
+            {
+                const Marked symbol{.byte = byte, .boundary_after = boundary_after};
+
+                const auto to{verifier.step(key.state, symbol)};
+
+                if (!to)
+                {
+                    continue;
+                }
+
+                emit(symbol, Reach_key{
+                                     .cut = true,
+                                     .state = *to,
+                                     .reachable = reachable,
+                                     .matched = matched,
+                                     .prefix_fails = key.prefix_fails});
+            }
+        }
+    }};
+
+    const auto expand_before{[&]<typename Emit>(const Reach_key& key, const Emit& emit) {
+        for (const auto byte : alphabet)
+        {
+            const auto matched{head_matched(key.matched, byte)};
+
+            const auto reachable{subset_after(verifier, key.reachable, byte)};
+
+            // The cut after the byte ends the prefix, which lies in the domain when some marking of it is accepted.
+            const auto prefix_fails{!accepts_any(verifier, reachable)};
+
+            for (const auto boundary_after : marks)
+            {
+                const Marked symbol{.byte = byte, .boundary_after = boundary_after};
+
+                const auto to{verifier.step(key.state, symbol)};
+
+                if (!to)
+                {
+                    continue;
+                }
+
+                emit(symbol, Reach_key{
+                                     .cut = false,
+                                     .state = *to,
+                                     .reachable = reachable,
+                                     .matched = matched,
+                                     .prefix_fails = false});
+
+                if (matched != offset)
+                {
+                    continue;
+                }
+
+                emit(symbol, Reach_key{
+                                     .cut = true,
+                                     .state = *to,
+                                     .reachable = restarted,
+                                     .matched = 0,
+                                     .prefix_fails = prefix_fails});
+            }
+        }
+    }};
+
+    const auto expand{[&]<typename Emit>(const Reach_key& key, const Emit& emit) {
+        if (key.cut)
+        {
+            expand_after(key, emit);
+
+            return;
+        }
+
+        expand_before(key, emit);
+
+        if (offset == 0 && key.state == verifier.start())
+        {
+            // The cut at position zero, before any byte: an empty prefix, in the domain exactly when the start accepts.
+            const Reach_key at_zero{
+                    .cut = true,
+                    .state = verifier.start(),
+                    .reachable = restarted,
+                    .matched = 0,
+                    .prefix_fails = !verifier.accepts(verifier.start())};
+
+            expand_after(at_zero, emit);
+        }
+    }};
+
+    const Reach_key start{
+            .cut = false,
+            .state = verifier.start(),
+            .reachable = restarted,
+            .matched = 0,
+            .prefix_fails = false};
+
+    const auto path{shortest_path(start, goal, expand)};
+
+    if (!path)
+    {
+        return std::nullopt;
+    }
+
+    const auto& violating{path->keys.back()};
+
+    const auto at_cut{[&restarted](const Reach_key& key) { return key.cut && key.reachable == restarted; }};
+
+    const auto cut{restart_of(path->keys, at_cut)};
+
+    auto segmentation{marked_string_of(path->symbols)};
+
+    return Modulo_dependence{
+            .segmentation = std::move(segmentation),
+            .occurrence = cut - offset,
+            .cut = cut,
+            .prefix_fails = violating.prefix_fails,
+            .suffix_fails = suffix_fails(violating),
+            .whole_tokens = {},
+            .chunk_tokens = {}};
+}
+
+/**
+ * @brief Returns the kind of a segment as the discarded kinds keep it.
+ * @param kind The segment's kind, std::nullopt where the verifier records none.
+ * @param discarded The discarded kinds.
+ * @return The kind when the segment is kept, std::nullopt when it is discarded or of no recorded kind.
+ */
+[[nodiscard]] std::optional<std::size_t> kept_kind(
+        const std::optional<std::size_t> kind, const std::span<const std::size_t> discarded)
+{
+    if (!kind || std::ranges::contains(discarded, *kind))
+    {
+        return std::nullopt;
+    }
+
+    return kind;
+}
+
+/**
+ * @brief Returns the kept tokens of an accepted marked string: each segment the discarded kinds keep, with its kind and
+ *        its range shifted by an offset.
+ * @param verifier The verifier, which accepts the marked string.
+ * @param marked The marked string.
+ * @param discarded The discarded kinds.
+ * @param shift The offset added to every range, the string's position in a longer one.
+ * @return The kept tokens, in order.
+ */
+[[nodiscard]] std::vector<Kept_token> kept_tokens(
+        const Verifier& verifier, const Marked_string& marked, const std::span<const std::size_t> discarded,
+        const std::size_t shift)
+{
+    const auto& [bytes, boundaries]{marked};
+
+    std::vector<Kept_token> kept{};
+
+    std::size_t begin{0};
+
+    const auto close{[&](const std::optional<std::size_t> kind, const std::size_t end) {
+        if (const auto kept_as{kept_kind(kind, discarded)})
+        {
+            kept.push_back({.kind = *kept_as, .begin = begin + shift, .end = end + shift});
+        }
+
+        begin = end;
+    }};
+
+    auto state{verifier.start()};
+
+    for (std::size_t index{0}; index < bytes.size(); ++index)
+    {
+        const Marked symbol{.byte = static_cast<unsigned char>(bytes[index]), .boundary_after = boundaries[index]};
+
+        if (symbol.boundary_after)
+        {
+            close(verifier.close_kind(state, symbol.byte), index + 1);
+        }
+
+        state = *verifier.step(state, symbol);
+    }
+
+    if (!bytes.empty())
+    {
+        close(verifier.final_kind(state), bytes.size());
+    }
+
+    return kept;
+}
+
+/**
+ * @brief Returns the agreement half of modulo_dependence(): the shortest accepted marked string with an occurrence of
+ *        the window whose prefix before the cut and suffix from it lie in the domain and whose kept tokens differ from
+ *        theirs.
+ * @param verifier The verifier.
+ * @param window The window, nonempty.
+ * @param offset The offset of the cut, a byte index of the window.
+ * @param discarded The discarded kinds.
+ * @return The witness with the kept tokens of the string and of the chunks, or std::nullopt when they agree at every
+ *         occurrence where both sides lie in the domain.
+ */
+[[nodiscard]] std::optional<Modulo_dependence> agreement_refutation(
+        const Verifier& verifier, const std::string_view window, const std::size_t offset,
+        const std::span<const std::size_t> discarded)
+{
+    const auto head{window.substr(0, offset)};
+
+    const auto tail{window.substr(offset)};
+
+    const auto borders{borders_of(head)};
+
+    const auto alphabet{alphabet_of(verifier)};
+
+    const auto start{verifier.start()};
+
+    const auto head_matched{[&head, &borders](const std::size_t matched, const unsigned char byte) {
+        return head.empty() ? 0 : matched_after(head, borders, matched, byte);
+    }};
+
+    const auto closed{[&](const State_t state, const Marked symbol) {
+        const auto kind{symbol.boundary_after ? verifier.close_kind(state, symbol.byte) : std::nullopt};
+
+        return kept_kind(kind, discarded);
+    }};
+
+    // Two closes agree when neither keeps a segment, or both keep one of the same kind begun at the same position.
+    const auto agree{[](const std::optional<std::size_t> one, const std::optional<std::size_t> other,
+                        const bool aligned) { return one == other && (!one || aligned); }};
+
+    const auto goal{[&](const Agreement_key& key) {
+        const auto confirmed{
+                key.cut && key.matched == tail.size() && verifier.accepts(key.whole) && verifier.accepts(key.chunk)};
+
+        if (!confirmed)
+        {
+            return false;
+        }
+
+        const auto whole_last{kept_kind(verifier.final_kind(key.whole), discarded)};
+
+        const auto chunk_last{kept_kind(verifier.final_kind(key.chunk), discarded)};
+
+        return key.differs || !agree(whole_last, chunk_last, key.aligned);
+    }};
+
+    const auto expand_pairs{
+            [&]<typename Emit>(
+                    const Agreement_key& key, const unsigned char byte, const std::size_t matched, const Emit& emit) {
+                for (const auto whole_mark : marks)
+                {
+                    const Marked symbol{.byte = byte, .boundary_after = whole_mark};
+
+                    const auto whole{verifier.step(key.whole, symbol)};
+
+                    if (!whole)
+                    {
+                        continue;
+                    }
+
+                    for (const auto chunk_mark : marks)
+                    {
+                        const Marked chunk_symbol{.byte = byte, .boundary_after = chunk_mark};
+
+                        const auto chunk{verifier.step(key.chunk, chunk_symbol)};
+
+                        if (!chunk)
+                        {
+                            continue;
+                        }
+
+                        const auto whole_closed{closed(key.whole, symbol)};
+
+                        const auto chunk_closed{closed(key.chunk, chunk_symbol)};
+
+                        const auto differs{key.differs || !agree(whole_closed, chunk_closed, key.aligned)};
+
+                        // The next segments begin together where both copies close one or neither does after aligned
+                        // ones.
+                        const auto aligned{whole_mark == chunk_mark && (whole_mark || key.aligned)};
+
+                        emit(symbol, Agreement_key{
+                                             .cut = key.cut,
+                                             .whole = *whole,
+                                             .chunk = *chunk,
+                                             .aligned = aligned,
+                                             .matched = matched,
+                                             .differs = differs});
+                    }
+                }
+            }};
+
+    // The cut after the byte: the chunks' copy reads it without a mark, accepts the prefix, and restarts.
+    const auto expand_cut{[&]<typename Emit>(const Agreement_key& key, const unsigned char byte, const Emit& emit) {
+        const auto ending{verifier.step(key.chunk, {.byte = byte, .boundary_after = false})};
+
+        if (!ending || !verifier.accepts(*ending))
+        {
+            return;
+        }
+
+        const auto chunk_closed{kept_kind(verifier.final_kind(*ending), discarded)};
+
+        for (const auto whole_mark : marks)
+        {
+            const Marked symbol{.byte = byte, .boundary_after = whole_mark};
+
+            const auto whole{verifier.step(key.whole, symbol)};
+
+            if (!whole)
+            {
+                continue;
+            }
+
+            const auto whole_closed{closed(key.whole, symbol)};
+
+            const auto differs{key.differs || !agree(whole_closed, chunk_closed, key.aligned)};
+
+            emit(symbol, Agreement_key{
+                                 .cut = true,
+                                 .whole = *whole,
+                                 .chunk = start,
+                                 .aligned = whole_mark,
+                                 .matched = 0,
+                                 .differs = differs});
+        }
+    }};
+
+    const auto expand_after{[&]<typename Emit>(const Agreement_key& key, const Emit& emit) {
+        for (const auto byte : alphabet)
+        {
+            // The window's remaining bytes follow the cut at once.
+            if (key.matched < tail.size() && byte != static_cast<unsigned char>(tail[key.matched]))
+            {
+                continue;
+            }
+
+            const auto matched{std::min(key.matched + 1, tail.size())};
+
+            expand_pairs(key, byte, matched, emit);
+        }
+    }};
+
+    const auto expand_before{[&]<typename Emit>(const Agreement_key& key, const Emit& emit) {
+        for (const auto byte : alphabet)
+        {
+            const auto matched{head_matched(key.matched, byte)};
+
+            expand_pairs(key, byte, matched, emit);
+
+            if (matched == offset)
+            {
+                expand_cut(key, byte, emit);
+            }
+        }
+    }};
+
+    const Agreement_key
+            root{.cut = false, .whole = start, .chunk = start, .aligned = true, .matched = 0, .differs = false};
+
+    const auto expand{[&]<typename Emit>(const Agreement_key& key, const Emit& emit) {
+        if (key.cut)
+        {
+            expand_after(key, emit);
+
+            return;
+        }
+
+        expand_before(key, emit);
+
+        if (offset == 0 && key == root && verifier.accepts(start))
+        {
+            // The cut at position zero, before any byte, where the empty prefix lies in the domain.
+            const Agreement_key at_zero{
+                    .cut = true,
+                    .whole = start,
+                    .chunk = start,
+                    .aligned = true,
+                    .matched = 0,
+                    .differs = false};
+
+            expand_after(at_zero, emit);
+        }
+    }};
+
+    const auto path{shortest_path(root, goal, expand)};
+
+    if (!path)
+    {
+        return std::nullopt;
+    }
+
+    const auto at_cut{[start](const Agreement_key& key) { return key.cut && key.chunk == start; }};
+
+    const auto cut{restart_of(path->keys, at_cut)};
+
+    auto segmentation{marked_string_of(path->symbols)};
+
+    const std::string_view bytes{segmentation.bytes};
+
+    const auto prefix{accepted_marking(verifier, bytes.substr(0, cut))};
+
+    const auto suffix{accepted_marking(verifier, bytes.substr(cut))};
+
+    auto whole_tokens{kept_tokens(verifier, segmentation, discarded, 0)};
+
+    auto chunk_tokens{kept_tokens(verifier, prefix, discarded, 0)};
+
+    const auto suffix_tokens{kept_tokens(verifier, suffix, discarded, cut)};
+
+    std::ranges::copy(suffix_tokens, std::back_inserter(chunk_tokens));
+
+    return Modulo_dependence{
+            .segmentation = std::move(segmentation),
+            .occurrence = cut - offset,
+            .cut = cut,
+            .prefix_fails = false,
+            .suffix_fails = false,
+            .whole_tokens = std::move(whole_tokens),
+            .chunk_tokens = std::move(chunk_tokens)};
 }
 
 /**
@@ -2554,6 +3135,32 @@ std::optional<Dependence> dependence(const Verifier& verifier, const std::string
             .cut = cut,
             .prefix_fails = violating.prefix_fails,
             .suffix_fails = suffix_fails(violating)};
+}
+
+std::optional<Modulo_dependence> modulo_dependence(
+        const Verifier& verifier, const std::string_view window, const std::size_t offset,
+        const std::span<const std::size_t> discarded)
+{
+    if (window.empty() || offset >= window.size())
+    {
+        throw std::invalid_argument{"modulo_dependence: the window is empty or its offset lies outside it"};
+    }
+
+    auto domain{domain_refutation(verifier, window, offset)};
+
+    auto agreement{agreement_refutation(verifier, window, offset, discarded)};
+
+    if (!domain || !agreement)
+    {
+        return domain ? std::move(domain) : std::move(agreement);
+    }
+
+    const auto domain_length{domain->segmentation.bytes.size()};
+
+    const auto agreement_length{agreement->segmentation.bytes.size()};
+
+    // The shorter witness, the domain half's on a tie.
+    return agreement_length < domain_length ? std::move(agreement) : std::move(domain);
 }
 
 std::optional<Chunk_dependence> chunk_dependence(

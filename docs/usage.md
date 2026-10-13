@@ -560,8 +560,8 @@ maximal-munch scanning over a token set's DFA, `verifier::merge_tower(merges)` o
 verifier of canonical byte-pair encoding over a merge table, `verifier::trie_chain(initial, continuation)` of
 `munch/verifier/trie_chain.hpp` the verifier of WordPiece segmentation over a two-mode vocabulary, and the constructor
 builds one from any transition table, trimming it to the states reachable from the start that can reach acceptance. The
-ten decisions of `munch/verifier/verifier_decisions.hpp` then run on the product of the verifier with a search or on its
-minimal automaton, each with a witness replayable through `Verifier::step()` but `fanout()`, which returns states.
+eleven decisions of `munch/verifier/verifier_decisions.hpp` then run on the product of the verifier with a search or on
+its minimal automaton, each with a witness replayable through `Verifier::step()` but `fanout()`, which returns states.
 `miscovering(verifier, window, origin)` decides the window certificate `(window, origin)`, that the token containing an
 occurrence's final byte begins at the origin at every occurrence in every accepted marked string, and returns the
 shortest accepted marked string that miscovers it; on the armed run this is the exact side of `is_split_window()`, and
@@ -602,6 +602,31 @@ armed run every certified cut is independent, which is the splitting theorem of 
 the certificate from the split for a verifier built from a caller's table, where a scan that carries state across a
 boundary, the mode of a two-mode scan or the length of the input, can certify a cut whose suffix alone leaves the
 domain.
+
+`modulo_dependence(verifier, window, offset, discarded)` asks what a cut needs once the tokens a parser never sees are
+deleted, at any offset of any window, certified or not: at every occurrence of the window in every accepted marked
+string, the prefix before the cut at the offset and the suffix from it each lie in the domain, and the kept segments of
+their segmentations, those whose kind is not discarded, are the string's kept segments with the same kinds at the same
+positions. The cut need not be a boundary, since where it falls inside a discarded segment the chunks may segment the
+bytes around it otherwise. The kinds are what a verifier records beside its marking: `Verifier::close_kind(state, byte)`
+is the kind of the segment a marked step closes and `Verifier::final_kind(state)` the kind of the last segment at an
+accepting state, which `armed_run()` reads off the token the unarmed run's DFA state accepts, so that a kind is a token
+ID, and the constructor takes them as a `Verifier::Kinds` beside a caller's table, which otherwise records none. The
+decision returns the shortest accepted marked string with an occurrence whose cut is not independent, with the
+occurrence, the cut, the side or sides outside the domain and, where both lie in it, the kept tokens of the string and
+of the chunks as `Kept_token`s, by two searches: a product of the verifier with the set of states it can be in under any
+marks, which says whether each side lies in the domain, and a product of two copies of the verifier, one on the string's
+marking and one on the chunks', compared as their kept segments close. Positions are compared, as Theorem 3 of
+[docs/split_points.md](split_points.md) delivers them for a certified byte, because comparing kinds and lengths alone
+certifies a cut at which a kept token changes its text: with ab and b discarded and aab|bba kept, the window aab cut at
+0 occurs in bbaab, which reads bba then ab, while its chunks read b, b and aab. With nothing discarded the cut must be a
+boundary at every occurrence, and a boundary cut of an armed run is independent, so on an armed run with nothing
+discarded the decision certifies a window that occurs exactly where `pinned_cut()` places the byte after the cut at the
+offset, and a window that occurs nowhere vacuously, where `pinned_cut()` returns `Absent_window`. A boundary cut of
+another verifier need not be independent: over the domain of the empty string and ab, segmented a|b, `pinned_cut()`
+places the window b at 0 and the decision refutes the cut before it, since neither a nor b lies in the domain. For one
+byte at offset zero the decision certifies wherever `is_split_point_ignoring()` does. munch-audit's `--windows-modulo`
+decides the same question for every window up to its width.
 
 `chunk_dependence(verifier, inventory)` asks the question parallel scanning needs of an inventory of certified pairs,
 and refuses an inventory with a pair the verifier does not certify: cutting every accepted marked string at every
@@ -683,6 +708,7 @@ verifier::miscovering(verifier, "ab", 1);                    // the marked ab it
 verifier::boundary_gap(verifier);                            // 2, the longest token, since no token grows forever
 verifier::divergence(verifier, verifier::armed_run(other));  // std::nullopt when the two scans segment alike
 verifier::dependence(verifier, "ab", 0);                     // std::nullopt: every certified cut of an armed run splits
+verifier::modulo_dependence(verifier, "ab", 1, {});          // the marked ab itself, the cut inside its token
 
 const std::vector<verifier::Certified_pair> pairs{{.window = "ab", .origin = 0}, {.window = "a", .origin = 0}};
 

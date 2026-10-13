@@ -178,7 +178,8 @@ void dedup(std::vector<T>& values)
 
 /**
  * @brief The armed-run automaton under exploration: the DFA and the bytes it reads, the configuration each state reads
- *        as, the transitions and accepting states found so far, and the interned configurations with their states.
+ *        as, the transitions, accepting states and kinds found so far, and the interned configurations with their
+ *        states.
  *
  * State zero is the unconsumed start, which reads as the configuration of one fresh unarmed run and is not interned; a
  * step reaching that configuration reaches a state of its own.
@@ -214,7 +215,8 @@ private:
     [[nodiscard]] bool is_accepting(dfa::Dfa::State_t state) const;
 
     /**
-     * @brief Reads every marked symbol over the alphabet from one state, interning the configurations reached.
+     * @brief Reads every marked symbol over the alphabet from one state, interning the configurations reached and
+     *        recording the kind of the segment each marked step closes.
      * @param state The state read from.
      */
     void expand(Verifier::State_t state);
@@ -232,7 +234,8 @@ private:
     [[nodiscard]] std::optional<Configuration> successor(const Configuration& from, Marked symbol) const;
 
     /**
-     * @brief Returns the state of a configuration, interning it as a new state when it is first found.
+     * @brief Returns the state of a configuration, interning it as a new state when it is first found, accepting with
+     *        the kind of its unarmed run's token when the configuration accepts.
      * @param configuration The configuration.
      * @return The configuration's state.
      */
@@ -269,6 +272,11 @@ private:
      * @brief The accepting states found so far.
      */
     Verifier::Accept_states_t accept_states_{};
+
+    /**
+     * @brief The kinds found so far.
+     */
+    Verifier::Kinds kinds_{};
 
     /**
      * @brief The interned configurations with their states.
@@ -314,7 +322,7 @@ Verifier Exploration::run() &&
         expand(state);
     }
 
-    return Verifier{0, std::move(transitions_), std::move(accept_states_)};
+    return Verifier{0, std::move(transitions_), std::move(accept_states_), std::move(kinds_)};
 }
 
 void Exploration::expand(const Verifier::State_t state)
@@ -337,7 +345,21 @@ void Exploration::expand(const Verifier::State_t state)
 
             const auto to{intern(std::move(*next))};
 
-            transitions_.emplace(Verifier::Key_t{state, symbol}, to);
+            const Verifier::Key_t key{state, symbol};
+
+            transitions_.emplace(key, to);
+
+            if (!boundary_after)
+            {
+                continue;
+            }
+
+            // The closed segment's run reads the byte from the unarmed state into an accepting one.
+            const auto closed{dfa_.advance(from.unarmed, static_cast<char>(byte))};
+
+            const auto token{dfa_.has_accept_token(*closed)};
+
+            kinds_.closes.emplace(key, token->id());
         }
     }
 }
@@ -402,7 +424,11 @@ Verifier::State_t Exploration::intern(Configuration configuration)
 
     if (is_accepting(configuration))
     {
+        const auto token{dfa_.has_accept_token(configuration.unarmed)};
+
         accept_states_.insert(state);
+
+        kinds_.finals.emplace(state, token->id());
     }
 
     sources_.push_back(std::move(configuration));
@@ -437,8 +463,8 @@ std::size_t Verifier::Hash::operator()(const Key_t& key) const noexcept
 }
 
 /**
- * @brief The parts of a trimmed table: the state count, the transitions and the accepting states, the start numbered
- *        zero.
+ * @brief The parts of a trimmed table: the state count, the transitions, the accepting states and the kinds, the start
+ *        numbered zero.
  */
 struct Verifier::Trimmed
 {
@@ -456,10 +482,15 @@ struct Verifier::Trimmed
      * @brief The kept accepting states, renumbered.
      */
     Accept_states_t accept_states{};
+
+    /**
+     * @brief The kinds of the kept steps and states, renumbered.
+     */
+    Kinds kinds{};
 };
 
-Verifier::Verifier(const State_t start, Transitions_t transitions, Accept_states_t accept_states)
-    : Verifier{trim(start, transitions, accept_states)}
+Verifier::Verifier(const State_t start, Transitions_t transitions, Accept_states_t accept_states, Kinds kinds)
+    : Verifier{trim(start, transitions, accept_states, kinds)}
 {}
 
 Verifier::State_t Verifier::start() const noexcept
@@ -491,6 +522,34 @@ bool Verifier::accepts(const State_t state) const
     return accept_states_.contains(state);
 }
 
+std::optional<std::size_t> Verifier::close_kind(const State_t state, const unsigned char byte) const
+{
+    const auto found{kinds_.closes.find({state, {.byte = byte, .boundary_after = true}})};
+
+    if (found == kinds_.closes.cend())
+    {
+        return std::nullopt;
+    }
+
+    const auto& [key, kind]{*found};
+
+    return kind;
+}
+
+std::optional<std::size_t> Verifier::final_kind(const State_t state) const
+{
+    const auto found{kinds_.finals.find(state)};
+
+    if (found == kinds_.finals.cend())
+    {
+        return std::nullopt;
+    }
+
+    const auto& [key, kind]{*found};
+
+    return kind;
+}
+
 const Verifier::Transitions_t& Verifier::transitions() const noexcept
 {
     return transitions_;
@@ -506,10 +565,11 @@ Verifier::Verifier(Trimmed parts)
     , state_count_{parts.state_count}
     , transitions_{std::move(parts.transitions)}
     , accept_states_{std::move(parts.accept_states)}
+    , kinds_{std::move(parts.kinds)}
 {}
 
 Verifier::Trimmed Verifier::trim(
-        const State_t start, const Transitions_t& transitions, const Accept_states_t& accept_states)
+        const State_t start, const Transitions_t& transitions, const Accept_states_t& accept_states, const Kinds& kinds)
 {
     auto live{coaccessible(transitions, accept_states)};
 
@@ -547,6 +607,9 @@ Verifier::Trimmed Verifier::trim(
 
     Trimmed trimmed{};
 
+    // The copy reads as the start, with its transitions, acceptance and kinds.
+    const auto named{[start, copy](const State_t state) { return state == copy ? start : state; }};
+
     for (std::size_t next{0}; next < order.size(); ++next)
     {
         const auto found{successors.find(order[next])};
@@ -575,16 +638,32 @@ Verifier::Trimmed Verifier::trim(
             }
 
             trimmed.transitions.emplace(Key_t{next, symbol}, number);
+
+            const auto closed{kinds.closes.find({named(from), symbol})};
+
+            if (closed != kinds.closes.cend())
+            {
+                const auto& [step, kind]{*closed};
+
+                trimmed.kinds.closes.emplace(Key_t{next, symbol}, kind);
+            }
         }
     }
 
     for (const auto& [state, number] : renumbered)
     {
-        const auto named{state == copy ? start : state};
-
-        if (accept_states.contains(named))
+        if (accept_states.contains(named(state)))
         {
             trimmed.accept_states.insert(number);
+        }
+
+        const auto recorded{kinds.finals.find(named(state))};
+
+        if (recorded != kinds.finals.cend())
+        {
+            const auto& [accepting, kind]{*recorded};
+
+            trimmed.kinds.finals.emplace(number, kind);
         }
     }
 

@@ -13,8 +13,8 @@
 
 /**
  * @file
- * @brief The ten decisions over a verifier: miscovering(), pinned_cut(), boundary_gap(), realizable(), divergence(),
- *        dependence(), chunk_dependence(), right_context(), fanout() and smallest_fanout().
+ * @brief The eleven decisions over a verifier: miscovering(), pinned_cut(), boundary_gap(), realizable(), divergence(),
+ *        dependence(), modulo_dependence(), chunk_dependence(), right_context(), fanout() and smallest_fanout().
  *
  * Each is a search on a product with the verifier or on its minimal automaton, fanout() two subset runs on the latter,
  * and each witness is replayable through Verifier::step().
@@ -164,6 +164,76 @@ struct Dependence
      * @brief Whether the suffix from the cut, under the segmentation's marks, is not accepted.
      */
     bool suffix_fails{};
+};
+
+/**
+ * @brief A segment of a segmentation whose kind is kept: its kind, and the half-open range of its bytes.
+ */
+struct Kept_token
+{
+    /**
+     * @brief Ordered by the kind, then by the range.
+     */
+    auto operator<=>(const Kept_token&) const = default;
+
+    /**
+     * @brief The kind.
+     */
+    std::size_t kind{};
+
+    /**
+     * @brief The index of the segment's first byte.
+     */
+    std::size_t begin{};
+
+    /**
+     * @brief The index after the segment's last byte.
+     */
+    std::size_t end{};
+};
+
+/**
+ * @brief An accepted marked string with an occurrence of a window whose cut at the offset is not independent modulo
+ *        the discarded kinds, that occurrence, the cut, the side or sides outside the domain, and where both lie in it
+ *        the kept tokens of the string and of the two chunks, which differ.
+ */
+struct Modulo_dependence
+{
+    /**
+     * @brief The accepted marked string, the shortest one.
+     */
+    Marked_string segmentation{};
+
+    /**
+     * @brief The index of the window's first byte at the occurrence whose cut is not independent.
+     */
+    std::size_t occurrence{};
+
+    /**
+     * @brief The cut, the occurrence plus the offset, a boundary of the segmentation or not.
+     */
+    std::size_t cut{};
+
+    /**
+     * @brief Whether the prefix before the cut lies outside the domain.
+     */
+    bool prefix_fails{};
+
+    /**
+     * @brief Whether the suffix from the cut lies outside the domain.
+     */
+    bool suffix_fails{};
+
+    /**
+     * @brief The kept tokens of the segmentation, in order; empty when a side lies outside the domain.
+     */
+    std::vector<Kept_token> whole_tokens{};
+
+    /**
+     * @brief The kept tokens of the prefix's segmentation and then of the suffix's, at their positions in the string;
+     *        empty when a side lies outside the domain.
+     */
+    std::vector<Kept_token> chunk_tokens{};
 };
 
 /**
@@ -508,6 +578,57 @@ struct Smallest_fanout
  */
 [[nodiscard]] std::optional<Dependence> dependence(
         const Verifier& verifier, std::string_view window, std::size_t origin);
+
+/**
+ * @brief Decides whether the cut at an offset of a window is independent modulo discarded kinds: at every occurrence of
+ *        the window in every accepted marked string, the prefix before the cut and the suffix from it each lie in the
+ *        domain, and the kept segments of their segmentations, at their positions in the string, are the kept segments
+ *        of the string's, a segment being kept when its kind is not discarded.
+ *
+ * The cut need not be a boundary. Where it falls inside a discarded segment the chunks may segment the bytes around it
+ * otherwise, and the cut is independent as long as every kept segment comes back with its kind and its position. That
+ * is the one-cut statement of what is_split_point_ignoring() certifies at every occurrence of a byte, whose proof,
+ * Theorem 3 of the report Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens, delivers the same kept
+ * tokens at the same positions, and it is what the cut-independence decision of the report Finitely Verifiable
+ * Segmentation, dependence(), asks once the discarded segments are deleted: with nothing discarded the cut is a
+ * boundary at every occurrence and both sides are segmented alone as the string segments them. Positions are decided
+ * rather than the letter of that report's definition, which compares the kept tokens as (kind, length) pairs, because
+ * the letter certifies a cut at which a kept token keeps its kind and its length and changes its text: under maximal
+ * munch over ab discarded, aab or bba kept and b discarded, the window aab cut at 0 is certified by the letter, and
+ * bbaab reads as bba and ab whole while its chunks read b, b and aab, the kept token moving from bba to aab. A consumer
+ * of the stream wants the tokens it would have seen, so the decision of the letter, a product carrying the delay
+ * between the two outputs through the advance-or-delay valuation of the squaring construction of Béal, Carton, Prieur
+ * and Sakarovitch, is not offered.
+ *
+ * Two breadth-first searches over products of the verifier with the window's progress, the window's first offset bytes
+ * matched before the cut and its remaining bytes confirmed to follow at once after it, and the cut placed after a byte
+ * where the first offset bytes have just been read, or at position zero before any byte when the offset is zero. The
+ * domain half carries the verifier's state on the string's marking and the set of states the verifier can be in under
+ * any marks of the bytes read, restarted from the start at the cut; a side lies in the domain exactly when its set
+ * holds an accepting state, and the prefix's answer is latched at the cut. The agreement half carries two copies of the
+ * verifier, one on the string's marking and one on the chunks', the second accepting at the cut under the byte without
+ * its mark and restarted from the start, with a bit saying whether the two copies' current segments began at the same
+ * position and a flag latched where one copy closes a kept segment and the other does not close one of the same kind
+ * begun at the same position; acceptance asks the same of the last segments. The kept segments are compared as they
+ * close, so no delay arises and no guess of a segment's kind is carried. The first product state admitted that confirms
+ * the occurrence with the string accepted and a side refused, or both sides accepted and the flag raised, gives the
+ * shortest witness of its half, and the shorter of the two is returned, the domain half's on a tie. The domain half has
+ * at most |Q| (offset + 1) 2^|Q| keys before the cut and 2 |Q| (|window| - offset + 1) 2^|Q| after it, exponential
+ * through the set in the worst case as right_context()'s product is, and the agreement half at most
+ * 4 |Q|^2 (|window| + 2), Q the verifier's states.
+ * @param verifier The verifier, functional and well formed, no marked step entering an accepting state, recording the
+ *        kinds of its segments as armed_run() records them; a segment of no recorded kind counts as discarded.
+ * @param window The window, nonempty.
+ * @param offset The offset of the cut, a byte index of the window.
+ * @param discarded The discarded kinds.
+ * @return std::nullopt when every cut at the offset is independent modulo the discarded kinds, which a window that
+ *         occurs in no accepted marked string satisfies vacuously, otherwise the shortest accepted marked string with
+ *         an occurrence whose cut is not, the occurrence, the cut, the sides outside the domain and, where both lie in
+ *         it, the kept tokens of the string and of the chunks.
+ * @throws std::invalid_argument If the window is empty or the offset lies outside it.
+ */
+[[nodiscard]] std::optional<Modulo_dependence> modulo_dependence(
+        const Verifier& verifier, std::string_view window, std::size_t offset, std::span<const std::size_t> discarded);
 
 /**
  * @brief Decides whether an inventory of certified pairs is chunk-independent: in every accepted marked string, cut at

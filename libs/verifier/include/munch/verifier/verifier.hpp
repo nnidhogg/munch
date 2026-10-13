@@ -88,17 +88,51 @@ public:
     using Accept_states_t = std::unordered_set<State_t>;
 
     /**
+     * @brief The kind of the segment each marked step closes, by the state it is read from and its symbol, whose
+     *        boundary bit is set.
+     */
+    using Close_kinds_t = std::unordered_map<Key_t, std::size_t, Hash>;
+
+    /**
+     * @brief The kind of the last segment at each accepting state but the start, where the empty input has no segment.
+     */
+    using Final_kinds_t = std::unordered_map<State_t, std::size_t>;
+
+    /**
+     * @brief The kinds a verifier records: of the segment each marked step closes, and of the last segment at each
+     *        accepting state.
+     *
+     * A kind is a number the policy gives a segment, under armed_run() the token maximal munch emits for it.
+     * modulo_dependence(), which deletes the discarded kinds from the segmentations it compares, reads them; the other
+     * decisions read the marking alone.
+     */
+    struct Kinds
+    {
+        /**
+         * @brief The kind of the segment each marked step closes.
+         */
+        Close_kinds_t closes;
+
+        /**
+         * @brief The kind of the last segment at each accepting state.
+         */
+        Final_kinds_t finals;
+    };
+
+    /**
      * @brief Constructs the trim verifier of the given table.
      *
      * Keeps the states reachable from the start that can reach an accepting state, and the start itself whether or not
      * it can, then renumbers them densely from zero with the start at zero. A transition is kept when both of its ends
      * are, and an accepting state when it is kept. A transition into the start is redirected to a copy of the start,
-     * with the start's transitions and acceptance, so that no kept transition enters the start.
+     * with the start's transitions, acceptance and kinds, so that no kept transition enters the start. The kinds of the
+     * kept steps and states are kept with them; a table given without kinds records none.
      * @param start The start state.
      * @param transitions The transition table.
      * @param accept_states The accepting states.
+     * @param kinds The kinds of the segments the marked steps close and of the last segments at the accepting states.
      */
-    Verifier(State_t start, Transitions_t transitions, Accept_states_t accept_states);
+    Verifier(State_t start, Transitions_t transitions, Accept_states_t accept_states, Kinds kinds = {});
 
     /**
      * @brief Returns the start state, the unconsumed one.
@@ -128,6 +162,22 @@ public:
     [[nodiscard]] bool accepts(State_t state) const;
 
     /**
+     * @brief Returns the kind of the segment that closes when a byte is read from a state with a boundary after it.
+     * @param state The state read from.
+     * @param byte The byte read.
+     * @return The kind, or std::nullopt where the verifier records none for that step or the step does not exist.
+     */
+    [[nodiscard]] std::optional<std::size_t> close_kind(State_t state, unsigned char byte) const;
+
+    /**
+     * @brief Returns the kind of the last segment of an input that ends in a state.
+     * @param state The state, accepting.
+     * @return The kind, or std::nullopt where the verifier records none, as at the start, where the empty input has no
+     *         segment.
+     */
+    [[nodiscard]] std::optional<std::size_t> final_kind(State_t state) const;
+
+    /**
      * @brief Returns the transition table of the trim verifier.
      * @return Reference to the transitions map.
      */
@@ -141,8 +191,8 @@ public:
 
 private:
     /**
-     * @brief The parts of a trimmed table: the state count, the transitions and the accepting states, the start
-     *        numbered zero.
+     * @brief The parts of a trimmed table: the state count, the transitions, the accepting states and the kinds, the
+     *        start numbered zero.
      */
     struct Trimmed;
 
@@ -155,14 +205,15 @@ private:
     /**
      * @brief Trims a table to the start and the states reachable from it that can reach acceptance, renumbered densely
      *        from zero in breadth-first order with the start first and a copy of the start taking its incoming
-     *        transitions.
+     *        transitions, the kept steps and states keeping their kinds.
      * @param start The start state.
      * @param transitions The transition table.
      * @param accept_states The accepting states.
+     * @param kinds The kinds of the table's steps and states.
      * @return The trimmed parts.
      */
     [[nodiscard]] static Trimmed trim(
-            State_t start, const Transitions_t& transitions, const Accept_states_t& accept_states);
+            State_t start, const Transitions_t& transitions, const Accept_states_t& accept_states, const Kinds& kinds);
 
     /**
      * @brief The start state, zero.
@@ -183,6 +234,11 @@ private:
      * @brief The accepting states.
      */
     Accept_states_t accept_states_;
+
+    /**
+     * @brief The kinds of the segments the marked steps close and of the last segments at the accepting states.
+     */
+    Kinds kinds_;
 };
 
 /**
@@ -197,7 +253,10 @@ private:
  *
  * Built by exploration from the start over the bytes the DFA's transitions carry, each configuration interned as it is
  * found, so that the states are the reachable configurations only; the verifier's constructor then trims the result by
- * coaccessibility. The DFA's tokens are not read: "some token accepts" is the DFA state accepting.
+ * coaccessibility. Acceptance reads no token, "some token accepts" being the DFA state accepting, and the kinds read
+ * the tokens: the segment a marked step closes is of the token the unarmed run's DFA state accepts after the byte, and
+ * the last segment at an accepting state of the token its unarmed run's state accepts, which is the token maximal munch
+ * emits for the segment, the start recording none.
  * @param dfa The DFA of the token set, whose initial state does not accept.
  * @return The armed-run verifier.
  * @throws std::invalid_argument If the DFA's initial state accepts.

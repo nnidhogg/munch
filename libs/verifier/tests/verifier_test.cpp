@@ -503,6 +503,89 @@ struct Fanout_check
 };
 
 /**
+ * @brief What the modulo fixture holds, counted as it is checked.
+ */
+struct Modulo_counts
+{
+    /**
+     * @brief The universe lines.
+     */
+    std::size_t universes{0};
+
+    /**
+     * @brief The modulo lines, one per window and cut.
+     */
+    std::size_t pairs{0};
+
+    /**
+     * @brief The modulo lines whose window occurs and whose cut is independent.
+     */
+    std::size_t independent{0};
+
+    /**
+     * @brief The modulo lines whose window occurs in no completely tokenizable input.
+     */
+    std::size_t absent{0};
+
+    /**
+     * @brief The modulo lines whose answer is a dependence.
+     */
+    std::size_t dependent{0};
+
+    /**
+     * @brief The dependences whose prefix is not completely tokenizable.
+     */
+    std::size_t prefix_failures{0};
+
+    /**
+     * @brief The dependences whose suffix is not completely tokenizable.
+     */
+    std::size_t suffix_failures{0};
+
+    /**
+     * @brief The dependences whose chunks are completely tokenizable and whose kept tokens differ from the text's.
+     */
+    std::size_t token_failures{0};
+};
+
+/**
+ * @brief The modulo fixture under check: the current universe's DFA and verifier, the steps and accepting states of its
+ *        DFA read so far, its discarded tokens, the current universe's line, and the counts so far.
+ */
+struct Modulo_check
+{
+    /**
+     * @brief The DFA and verifier the lines are checked on, none while a universe's DFA is still being read.
+     */
+    std::optional<Universe> current{};
+
+    /**
+     * @brief The steps of the universe's DFA read so far, each a state, a byte and the state it leads to.
+     */
+    std::vector<std::tuple<Dfa::State_t, char, Dfa::State_t>> steps{};
+
+    /**
+     * @brief The accepting states of the universe's DFA read so far, each with its token.
+     */
+    std::vector<std::pair<Dfa::State_t, std::size_t>> accepting{};
+
+    /**
+     * @brief The universe's discarded tokens.
+     */
+    std::vector<std::size_t> discarded{};
+
+    /**
+     * @brief The current universe's line, for the failure messages.
+     */
+    std::string universe{};
+
+    /**
+     * @brief The lines checked so far, by kind.
+     */
+    Modulo_counts counts{};
+};
+
+/**
  * @brief The sides of a cut that fail, the prefix then the suffix.
  */
 using Failures_t = std::pair<bool, bool>;
@@ -3341,6 +3424,447 @@ void expect_fanout_fixture_line(Fanout_check& check, const std::string& line)
 }
 
 /**
+ * @brief Returns the kept tokens of the maximal-munch scan of an input, by a reference scan over the DFA: each token
+ *        whose kind is not discarded, with its kind and its range shifted by an offset.
+ * @param dfa The DFA of the token set.
+ * @param input The input.
+ * @param discarded The discarded tokens.
+ * @param shift The offset added to every range, the input's position in a longer one.
+ * @return The kept tokens in order, or std::nullopt when the input is not completely tokenizable.
+ */
+std::optional<std::vector<Kept_token>> kept_munch_tokens(
+        const Dfa& dfa, const std::string_view input, const std::span<const std::size_t> discarded,
+        const std::size_t shift)
+{
+    std::vector<Kept_token> kept{};
+
+    std::size_t begin{0};
+
+    while (begin < input.size())
+    {
+        std::optional<std::pair<std::size_t, std::size_t>> longest{};
+
+        auto state{std::optional{dfa.init_state()}};
+
+        for (auto end{begin}; end < input.size() && state; ++end)
+        {
+            state = dfa.advance(*state, input[end]);
+
+            const auto token{state ? dfa.has_accept_token(*state) : std::nullopt};
+
+            if (token)
+            {
+                longest.emplace(end + 1, token->id());
+            }
+        }
+
+        if (!longest)
+        {
+            return std::nullopt;
+        }
+
+        const auto [end, kind]{*longest};
+
+        if (!std::ranges::contains(discarded, kind))
+        {
+            kept.push_back({.kind = kind, .begin = begin + shift, .end = end + shift});
+        }
+
+        begin = end;
+    }
+
+    return kept;
+}
+
+/**
+ * @brief Returns how the definition of a cut modulo discarded tokens fares on a completely tokenizable text, by
+ *        reference scans: holds, or the side that fails, prefix, suffix or both where a chunk is not completely
+ *        tokenizable and tokens where both are and their kept tokens, at their positions in the text, are not the
+ *        text's.
+ * @param dfa The DFA of the token set.
+ * @param discarded The discarded tokens.
+ * @param text The text, completely tokenizable.
+ * @param cut The cut, at most the text's length.
+ * @return The verdict.
+ */
+std::string modulo_side(
+        const Dfa& dfa, const std::span<const std::size_t> discarded, const std::string_view text,
+        const std::size_t cut)
+{
+    const auto whole{kept_munch_tokens(dfa, text, discarded, 0)};
+
+    const auto prefix{kept_munch_tokens(dfa, text.substr(0, cut), discarded, 0)};
+
+    const auto suffix{kept_munch_tokens(dfa, text.substr(cut), discarded, cut)};
+
+    if (!prefix || !suffix)
+    {
+        return prefix ? "suffix" : (suffix ? "prefix" : "both");
+    }
+
+    auto chunks{*prefix};
+
+    std::ranges::copy(*suffix, std::back_inserter(chunks));
+
+    return chunks == *whole ? "holds" : "tokens";
+}
+
+/**
+ * @brief Checks a dependence modulo discarded tokens by the definition: its marked string is the scan's segmentation of
+ *        its bytes, the window occurs at the occurrence, the cut is the occurrence plus the offset, the definition
+ * fails there on exactly the sides named, and where both chunks tokenize completely the kept tokens given are the
+ *        text's and the chunks', which differ, and none are given otherwise.
+ * @param dfa The DFA of the token set.
+ * @param discarded The discarded tokens.
+ * @param found The dependence.
+ * @param window The window.
+ * @param offset The offset of the cut.
+ * @param context The pair checked, for the failure messages.
+ */
+void expect_modulo_dependence(
+        const Dfa& dfa, const std::span<const std::size_t> discarded, const Modulo_dependence& found,
+        const std::string_view window, const std::size_t offset, const std::string& context)
+{
+    const auto& [segmentation, occurrence, cut, prefix_fails, suffix_fails, whole_tokens, chunk_tokens]{found};
+
+    const auto& [bytes, boundaries]{segmentation};
+
+    EXPECT_EQ(munch_marking(dfa, bytes), std::optional{boundaries}) << context << " on " << bytes;
+    ASSERT_LE(occurrence + window.size(), bytes.size()) << context << " on " << bytes;
+    EXPECT_EQ(std::string_view{bytes}.substr(occurrence, window.size()), window) << context << " on " << bytes;
+    EXPECT_EQ(cut, occurrence + offset) << context << " on " << bytes;
+
+    const auto side{modulo_side(dfa, discarded, bytes, cut)};
+
+    EXPECT_NE(side, "holds") << context << " on " << bytes;
+    EXPECT_EQ(prefix_fails, side == "prefix" || side == "both") << context << " on " << bytes;
+    EXPECT_EQ(suffix_fails, side == "suffix" || side == "both") << context << " on " << bytes;
+
+    if (side != "tokens")
+    {
+        EXPECT_TRUE(whole_tokens.empty() && chunk_tokens.empty()) << context << " on " << bytes;
+
+        return;
+    }
+
+    const auto prefix{kept_munch_tokens(dfa, std::string_view{bytes}.substr(0, cut), discarded, 0)};
+
+    const auto suffix{kept_munch_tokens(dfa, std::string_view{bytes}.substr(cut), discarded, cut)};
+
+    auto chunks{*prefix};
+
+    std::ranges::copy(*suffix, std::back_inserter(chunks));
+
+    EXPECT_EQ(std::optional{whole_tokens}, kept_munch_tokens(dfa, bytes, discarded, 0)) << context << " on " << bytes;
+    EXPECT_EQ(chunk_tokens, chunks) << context << " on " << bytes;
+    EXPECT_NE(whole_tokens, chunk_tokens) << context << " on " << bytes;
+}
+
+/**
+ * @brief Starts a universe line's universe, whose DFA's steps and accepting states and its discarded line follow.
+ * @param check The fixture under check.
+ * @param line The line.
+ */
+void start_modulo_universe(Modulo_check& check, const std::string& line)
+{
+    ++check.counts.universes;
+    check.universe = line;
+    check.current.reset();
+    check.steps.clear();
+    check.accepting.clear();
+    check.discarded.clear();
+}
+
+/**
+ * @brief Builds a DFA from its steps and accepting states, its states numbered densely from zero, the initial one zero.
+ * @param steps The steps, each a state, a byte and the state it leads to.
+ * @param accepting The accepting states, each with its token.
+ * @return The DFA.
+ */
+Dfa table_dfa(
+        const std::vector<std::tuple<Dfa::State_t, char, Dfa::State_t>>& steps,
+        const std::vector<std::pair<Dfa::State_t, std::size_t>>& accepting)
+{
+    Builder builder{};
+
+    std::vector states{builder.init_state()};
+
+    const auto named{[&](const Dfa::State_t state) {
+        while (states.size() <= state)
+        {
+            states.push_back(builder.next_state());
+        }
+
+        return states[state];
+    }};
+
+    for (const auto& [from, byte, to] : steps)
+    {
+        const auto source{named(from)};
+
+        const auto target{named(to)};
+
+        builder.add_transition(source, Label{byte}, target);
+    }
+
+    for (const auto& [state, token] : accepting)
+    {
+        builder.add_accept_state(named(state), Token{token});
+    }
+
+    return std::move(builder).build();
+}
+
+/**
+ * @brief Reads the discarded line of a universe and builds its DFA and the DFA's armed run.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void build_modulo_universe(Modulo_check& check, std::istringstream& fields, const std::string& context)
+{
+    for (std::size_t token{}; fields >> token;)
+    {
+        check.discarded.push_back(token);
+    }
+
+    EXPECT_FALSE(check.current) << context;
+
+    auto dfa{table_dfa(check.steps, check.accepting)};
+
+    auto verifier{armed_run(dfa)};
+
+    check.current.emplace(Universe{.dfa = std::move(dfa), .verifier = std::move(verifier)});
+}
+
+/**
+ * @brief Checks a modulo line: an independent cut answered so, an absent window answered so and absent from the
+ *        verifier's accepted marked strings, and a dependent cut checked with its witness, as long as the reference's,
+ *        both replayed by the definition.
+ * @param check The fixture under check.
+ * @param fields The line after its first word.
+ * @param context The line.
+ */
+void expect_modulo(Modulo_check& check, std::istringstream& fields, const std::string& context)
+{
+    std::string window{};
+    std::size_t offset{};
+    std::string verdict{};
+
+    fields >> window >> offset >> verdict;
+
+    ASSERT_TRUE(check.current) << context;
+
+    const auto& [dfa, verifier]{*check.current};
+
+    ++check.counts.pairs;
+
+    const auto found{modulo_dependence(verifier, window, offset, check.discarded)};
+
+    const auto absent{std::holds_alternative<Absent_window>(pinned_cut(verifier, window, 0))};
+
+    if (verdict == "independent" || verdict == "absent")
+    {
+        ++(verdict == "absent" ? check.counts.absent : check.counts.independent);
+
+        EXPECT_FALSE(found) << context;
+        EXPECT_EQ(absent, verdict == "absent") << context;
+
+        return;
+    }
+
+    ASSERT_TRUE(found) << context;
+
+    std::string text{};
+    std::size_t position{};
+    std::size_t cut{};
+    std::string side{};
+
+    fields >> text >> position >> cut >> side;
+
+    ++check.counts.dependent;
+    check.counts.prefix_failures += found->prefix_fails ? 1 : 0;
+    check.counts.suffix_failures += found->suffix_fails ? 1 : 0;
+    check.counts.token_failures += found->whole_tokens.empty() && found->chunk_tokens.empty() ? 0 : 1;
+
+    EXPECT_FALSE(absent) << context;
+    EXPECT_EQ(found->segmentation.bytes.size(), text.size()) << context;
+
+    expect_modulo_dependence(dfa, check.discarded, *found, window, offset, context);
+
+    EXPECT_EQ(std::string_view{text}.substr(position, window.size()), window) << context;
+    EXPECT_EQ(cut, position + offset) << context;
+    EXPECT_EQ(modulo_side(dfa, check.discarded, text, cut), side) << context;
+}
+
+/**
+ * @brief Checks one modulo fixture line against the decision, a comment or blank line checking nothing.
+ * @param check The fixture under check.
+ * @param line The line.
+ */
+void expect_modulo_fixture_line(Modulo_check& check, const std::string& line)
+{
+    std::istringstream fields{line};
+
+    std::string kind{};
+
+    if (!(fields >> kind) || kind.starts_with('#'))
+    {
+        return;
+    }
+
+    const auto context{std::format("{} | {}", check.universe, line)};
+
+    if (kind == "universe")
+    {
+        start_modulo_universe(check, line);
+    }
+    else if (kind == "step")
+    {
+        Dfa::State_t from{};
+        char byte{};
+        Dfa::State_t to{};
+
+        fields >> from >> byte >> to;
+
+        check.steps.emplace_back(from, byte, to);
+    }
+    else if (kind == "accept")
+    {
+        Dfa::State_t state{};
+        std::size_t token{};
+
+        fields >> state >> token;
+
+        check.accepting.emplace_back(state, token);
+    }
+    else if (kind == "discarded")
+    {
+        build_modulo_universe(check, fields, context);
+    }
+    else if (kind == "modulo")
+    {
+        expect_modulo(check, fields, context);
+    }
+    else
+    {
+        ADD_FAILURE() << "unknown modulo fixture line: " << line;
+    }
+}
+
+/**
+ * @brief Draws a random token DFA over {a, b} with kinds: two to four states, the initial one among them, each byte
+ *        leading from each to a random one of them or nowhere, one of them but the initial accepting and each other but
+ *        the initial accepting with probability one third, each accepting state of one of three tokens drawn at random.
+ * @param sequence The sequence the DFA is drawn from.
+ * @return The DFA.
+ */
+Dfa random_kinded_dfa(std::mt19937& sequence)
+{
+    Builder builder{};
+
+    std::vector<Dfa::State_t> states{builder.init_state()};
+
+    for (std::size_t added{draw(sequence, 3) + 1}; added > 0; --added)
+    {
+        states.push_back(builder.next_state());
+    }
+
+    for (const auto from : states)
+    {
+        for (const auto byte : std::string_view{"ab"})
+        {
+            // One target beyond the states is no transition at all.
+            const auto target{draw(sequence, states.size() + 1)};
+
+            if (target < states.size())
+            {
+                builder.add_transition(from, Label{byte}, states[target]);
+            }
+        }
+    }
+
+    const auto accepting{states[draw(sequence, states.size() - 1) + 1]};
+
+    builder.add_accept_state(accepting, Token{draw(sequence, 3)});
+
+    for (std::size_t index{1}; index < states.size(); ++index)
+    {
+        if (states[index] != accepting && draw(sequence, 3) == 0)
+        {
+            builder.add_accept_state(states[index], Token{draw(sequence, 3)});
+        }
+    }
+
+    return std::move(builder).build();
+}
+
+/**
+ * @brief Returns the length of the shortest completely tokenizable text up to a length with an occurrence of a window
+ *        whose cut at an offset fails the definition modulo discarded tokens, by enumeration.
+ * @param dfa The DFA of the token set.
+ * @param discarded The discarded tokens.
+ * @param texts Every text over the alphabet up to the length, shortest first.
+ * @param window The window.
+ * @param offset The offset of the cut.
+ * @return The length, or std::nullopt when no text up to the length fails.
+ */
+std::optional<std::size_t> shortest_modulo_failure(
+        const Dfa& dfa, const std::span<const std::size_t> discarded, const std::vector<std::string>& texts,
+        const std::string_view window, const std::size_t offset)
+{
+    for (const auto& text : texts)
+    {
+        if (!kept_munch_tokens(dfa, text, discarded, 0))
+        {
+            continue;
+        }
+
+        for (auto at{text.find(window)}; at != std::string::npos; at = text.find(window, at + 1))
+        {
+            if (modulo_side(dfa, discarded, text, at + offset) != "holds")
+            {
+                return text.size();
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief Builds the DFA of the tokens ab, aab|bba and b, at priorities zero, one and two.
+ * @return The DFA.
+ */
+Dfa ab_aab_or_bba_and_b_dfa()
+{
+    Builder builder{};
+
+    const auto q0{builder.init_state()};
+    const auto q1{builder.next_state()};
+    const auto q2{builder.next_state()};
+    const auto q3{builder.next_state()};
+    const auto q4{builder.next_state()};
+    const auto q5{builder.next_state()};
+    const auto q6{builder.next_state()};
+    const auto q7{builder.next_state()};
+
+    builder.add_transition(q0, Label{'a'}, q1);
+    builder.add_transition(q1, Label{'b'}, q2);
+    builder.add_transition(q1, Label{'a'}, q3);
+    builder.add_transition(q3, Label{'b'}, q4);
+    builder.add_transition(q0, Label{'b'}, q5);
+    builder.add_transition(q5, Label{'b'}, q6);
+    builder.add_transition(q6, Label{'a'}, q7);
+    builder.add_accept_state(q2, Token{0});
+    builder.add_accept_state(q4, Token{1});
+    builder.add_accept_state(q7, Token{1});
+    builder.add_accept_state(q5, Token{2});
+
+    return std::move(builder).build();
+}
+
+/**
  * @brief Builds the verifier of the two-mode scan over the initial tokens a and ab and the continuation token b: the
  *        maximal-munch scan whose fresh runs come from the continuation set once a token has closed, so that the
  *        domain is the empty input, a, ab and ab followed by any number of b, each b after ab a token of its own.
@@ -3928,6 +4452,228 @@ TEST(Verifier_test, A_certified_cut_can_fail_on_both_sides)
     EXPECT_TRUE(found->suffix_fails);
 
     expect_dependence(verifier, *found, "a", 0, "a 0");
+}
+
+TEST(Verifier_test, Armed_run_records_the_kind_of_each_segment_a_marked_step_closes_and_of_the_last_segment)
+{
+    const auto verifier{armed_run(literal_dfa({"ab", "a", "b"}))};
+
+    constexpr Marked a{.byte = 'a', .boundary_after = false};
+    constexpr Marked b_closing{.byte = 'b', .boundary_after = true};
+
+    // aba segmented ab|a: the boundary after b closes ab, token 0, and the input ends on a, token 1.
+    const auto after_a{verifier.step(verifier.start(), a)};
+
+    ASSERT_TRUE(after_a);
+
+    const auto after_ab{verifier.step(*after_a, b_closing)};
+
+    ASSERT_TRUE(after_ab);
+
+    const auto after_aba{verifier.step(*after_ab, a)};
+
+    ASSERT_TRUE(after_aba);
+    EXPECT_EQ(verifier.close_kind(*after_a, 'b'), std::optional<std::size_t>{0});
+    EXPECT_EQ(verifier.final_kind(*after_aba), std::optional<std::size_t>{1});
+    EXPECT_EQ(verifier.final_kind(*after_a), std::optional<std::size_t>{1});
+
+    // The empty input has no segment, and no step closes a segment where the verifier has no marked step.
+    EXPECT_FALSE(verifier.final_kind(verifier.start()));
+    EXPECT_FALSE(verifier.close_kind(*after_ab, 'c'));
+}
+
+TEST(Verifier_test, Constructor_keeps_the_kinds_of_a_caller_table_and_gives_the_copy_of_the_start_the_start_kinds)
+{
+    constexpr Marked a_closing{.byte = 'a', .boundary_after = true};
+
+    // A step back into the start is redirected to a copy of it, numbered 2, which closes its segments as the start
+    // does.
+    const Verifier::Kinds kinds{.closes = {{{0, a_closing}, 7}, {{1, a_closing}, 8}}, .finals = {{1, 9}}};
+
+    const Verifier verifier{0, {{{0, a_closing}, 1}, {{1, a_closing}, 0}}, {0, 1}, kinds};
+
+    ASSERT_EQ(verifier.state_count(), 3U);
+    EXPECT_EQ(verifier.step(1, a_closing), std::optional<Verifier::State_t>{2});
+    EXPECT_EQ(verifier.close_kind(0, 'a'), std::optional<std::size_t>{7});
+    EXPECT_EQ(verifier.close_kind(1, 'a'), std::optional<std::size_t>{8});
+    EXPECT_EQ(verifier.close_kind(2, 'a'), std::optional<std::size_t>{7});
+    EXPECT_EQ(verifier.final_kind(1), std::optional<std::size_t>{9});
+    EXPECT_FALSE(verifier.final_kind(2));
+
+    // A table given without kinds records none.
+    const Verifier unkinded{0, {{{0, a_closing}, 1}}, {0, 1}};
+
+    EXPECT_FALSE(unkinded.close_kind(0, 'a'));
+    EXPECT_FALSE(unkinded.final_kind(1));
+}
+
+TEST(Verifier_test, Modulo_dependence_gives_the_reference_answers_on_every_universe_of_the_modulo_fixture)
+{
+    std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/modulo_reference.txt"};
+
+    ASSERT_TRUE(file.is_open());
+
+    Modulo_check check{};
+
+    for (std::string line{}; std::getline(file, line);)
+    {
+        expect_modulo_fixture_line(check, line);
+    }
+
+    EXPECT_EQ(check.counts.universes, 1794U);
+    EXPECT_EQ(check.counts.pairs, 69156U);
+    EXPECT_EQ(check.counts.independent, 11542U);
+    EXPECT_EQ(check.counts.absent, 13866U);
+    EXPECT_EQ(check.counts.dependent, 43748U);
+    EXPECT_EQ(check.counts.prefix_failures, 31000U);
+    EXPECT_EQ(check.counts.suffix_failures, 29963U);
+    EXPECT_EQ(check.counts.token_failures, 6428U);
+}
+
+TEST(Verifier_test, Modulo_dependence_agrees_with_the_definition_over_random_token_sets_with_kinds)
+{
+    // Token DFAs drawn at random over {a, b} with three kinds, one of them discarded. For every window of length one to
+    // three and every cut in it, the answer is held to the definition over every completely tokenizable text up to
+    // length seven: a cut the decision certifies fails on none of them, and a refutation, which replays, is as long as
+    // the shortest text that fails when one that short does.
+    std::mt19937 sequence{0x5EEDU};
+
+    constexpr std::size_t drawn{1000};
+
+    constexpr std::size_t longest{7};
+
+    const auto texts{strings_up_to("ab", longest)};
+
+    std::size_t certified{0};
+
+    std::size_t refused{0};
+
+    std::size_t on_tokens{0};
+
+    for (std::size_t index{0}; index < drawn; ++index)
+    {
+        const auto dfa{random_kinded_dfa(sequence)};
+
+        const std::vector discarded{draw(sequence, 3)};
+
+        const auto verifier{armed_run(dfa)};
+
+        for (const auto& window : strings_up_to("ab", 3) | std::views::drop(1))
+        {
+            for (std::size_t offset{0}; offset < window.size(); ++offset)
+            {
+                const auto name{std::format("token set {} {} {}", index, window, offset)};
+
+                const auto found{modulo_dependence(verifier, window, offset, discarded)};
+
+                const auto failing{shortest_modulo_failure(dfa, discarded, texts, window, offset)};
+
+                if (!found)
+                {
+                    ++certified;
+
+                    EXPECT_FALSE(failing) << name;
+
+                    continue;
+                }
+
+                ++refused;
+
+                on_tokens += found->prefix_fails || found->suffix_fails ? 0 : 1;
+
+                expect_modulo_dependence(dfa, discarded, *found, window, offset, name);
+
+                const auto length{found->segmentation.bytes.size()};
+
+                EXPECT_EQ(failing, length <= longest ? std::optional{length} : std::nullopt) << name;
+            }
+        }
+    }
+
+    EXPECT_GT(certified, 0U);
+    EXPECT_GT(refused, 0U);
+    EXPECT_GT(on_tokens, 0U);
+}
+
+TEST(Verifier_test, The_letter_certifies_a_cut_whose_kept_token_changes_its_text_and_the_positions_refuse_it)
+{
+    // Over ab and b discarded and aab|bba kept, bbaab reads bba then ab, while cut before its aab it reads b, b and
+    // aab: one kept token of the same kind and length on each side, beginning at 0 in the text and at 2 in the chunks.
+    const auto dfa{ab_aab_or_bba_and_b_dfa()};
+
+    const std::vector<std::size_t> discarded{0, 2};
+
+    const auto verifier{armed_run(dfa)};
+
+    const auto found{modulo_dependence(verifier, "aab", 0, discarded)};
+
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->segmentation.bytes, "bbaab");
+    EXPECT_EQ(found->occurrence, 2U);
+    EXPECT_EQ(found->cut, 2U);
+    EXPECT_FALSE(found->prefix_fails);
+    EXPECT_FALSE(found->suffix_fails);
+    EXPECT_EQ(found->whole_tokens, (std::vector<Kept_token>{{.kind = 1, .begin = 0, .end = 3}}));
+    EXPECT_EQ(found->chunk_tokens, (std::vector<Kept_token>{{.kind = 1, .begin = 2, .end = 5}}));
+
+    expect_modulo_dependence(dfa, discarded, *found, "aab", 0, "aab 0");
+}
+
+TEST(Verifier_test, A_cut_inside_a_kept_token_is_refused_with_the_kept_tokens_of_the_text_and_of_its_chunks)
+{
+    // Over a discarded and b and aa kept, aa is one kept token, while its chunks a and a are two discarded ones.
+    const auto dfa{literal_dfa({"a", "b", "aa"})};
+
+    const std::vector<std::size_t> discarded{0};
+
+    const auto verifier{armed_run(dfa)};
+
+    const auto found{modulo_dependence(verifier, "aa", 1, discarded)};
+
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->segmentation.bytes, "aa");
+    EXPECT_EQ(found->cut, 1U);
+    EXPECT_EQ(found->whole_tokens, (std::vector<Kept_token>{{.kind = 2, .begin = 0, .end = 2}}));
+    EXPECT_TRUE(found->chunk_tokens.empty());
+
+    expect_modulo_dependence(dfa, discarded, *found, "aa", 1, "aa 1");
+
+    // A cut before the window's b never falls inside a token, whatever ran before it.
+    EXPECT_FALSE(modulo_dependence(verifier, "ab", 1, discarded));
+}
+
+TEST(Verifier_test, With_nothing_discarded_a_cut_is_independent_exactly_where_the_byte_after_it_is_pinned_there)
+{
+    // Every kept token keeps its position exactly when the cut is a boundary at every occurrence, and a boundary cut of
+    // a maximal-munch scan splits it.
+    for (const auto& tokens :
+         {std::vector<std::string>{"ab", "a", "b"}, std::vector<std::string>{"aa", "a"},
+          std::vector<std::string>{"a", "aab"}})
+    {
+        const auto verifier{armed_run(literal_dfa(tokens))};
+
+        for (const auto& window : strings_up_to("ab", 3) | std::views::drop(1))
+        {
+            for (std::size_t offset{0}; offset < window.size(); ++offset)
+            {
+                const auto pinned{pinned_cut(verifier, window, offset)};
+
+                const auto at_offset{std::holds_alternative<Absent_window>(pinned) || cut_of(pinned) == offset};
+
+                const auto independent{!modulo_dependence(verifier, window, offset, {})};
+
+                EXPECT_EQ(independent, at_offset) << tokens.front() << " " << window << " " << offset;
+            }
+        }
+    }
+}
+
+TEST(Verifier_test, Modulo_dependence_refuses_a_malformed_window)
+{
+    const auto verifier{armed_run(literal_dfa({"a", "b"}))};
+
+    EXPECT_THROW(std::ignore = modulo_dependence(verifier, "", 0, {}), std::invalid_argument);
+    EXPECT_THROW(std::ignore = modulo_dependence(verifier, "ab", 2, {}), std::invalid_argument);
 }
 
 TEST(Verifier_test, Chunk_dependence_gives_the_reference_answers_on_every_universe_of_the_chunk_fixture)
