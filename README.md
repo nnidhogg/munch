@@ -319,41 +319,45 @@ read as their UTF-8 bytes, joined it too, so that a character-level merge table 
 the automaton and the radius, counted in bytes. A third overload of `token_automaton()`, over an encoder's canonical
 tokens and pairs, joined it with `verifier::encoder_divergence()`, so that a window certificate is decided for an
 encoder no merge table reproduces, such as SentencePiece's loop where products share a score, and two encoders are
-compared, with a string of at most 2L - 1 bytes they segment apart when they differ. Three functions over a merge table
-joined it beside them: `verifier::rule_ceilings()`, the ceilings on the table's radii read off its merges and its two
-right radii found exactly by chains of rules; `verifier::chunk_plan()`, which plans an input's chunks for workers that
-each scan or encode their chunk alone, each cut with the evidence that licenses it, a supplied boundary, a certified
-window or the uniform window of the pinned-byte theorem; and `verifier::window_density()`, whether the table's last-byte
-windows are dense, with the density bound or a loop whose powers avoid every certified window. So did the `--repairs`
-option of `munch-audit`, which, where a condition certifies no byte, tries every byte as a visible token of its own and,
-unless it already certifies once the discarded tokens are deleted, as a discarded one, and reports each that certifies
-once added; the `--window-pattern` option of `munch-audit`, which decides whether every window a pattern of bytes and
-wildcards stands for certifies at one origin; the `--windows-modulo` option of `munch-audit`, which, where a condition
-certifies no byte once the discarded tokens are deleted, reports the windows that certify a cut that way and not
-exactly; and the `--obstruction` option of `munch-audit`, an experimental diagnostic which, where a condition certifies
-no byte, names the degree and group of the verifier's relation monoid and the phase the group counts, the parity of a
-run of a's under maximal munch over aa and a, the lack of a relation of rank one being the obstruction proved for prefix
-codes and conjectured beyond them. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of
-Lean's lexical structure with its nested comments and interpolated strings as modes, audited in
-[docs/audit.md](docs/audit.md) and benchmarked on Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
+compared, with a string of at most 2L - 1 bytes they segment apart when they differ. `verifier::piece_set()` joined it
+with `verifier::piece_cut()`, so that the cuts of every segmenter whose tokens are pieces of a finite set, Unigram's
+Viterbi pass among them, are read off the vocabulary alone: a position that no occurrence of a piece straddles is a
+boundary of every segmentation, found in one pass over an input, and a window decides its cut for every string it occurs
+in. Three functions over a merge table joined it beside them: `verifier::rule_ceilings()`, the ceilings on the table's
+radii read off its merges and its two right radii found exactly by chains of rules; `verifier::chunk_plan()`, which
+plans an input's chunks for workers that each scan, encode or segment their chunk alone, each cut with the evidence that
+licenses it, a supplied boundary, a certified window, the uniform window of the pinned-byte theorem or, over a piece
+set, a position no piece straddles; and `verifier::window_density()`, whether the table's last-byte windows are dense,
+with the density bound or a loop whose powers avoid every certified window. So did the `--repairs` option of
+`munch-audit`, which, where a condition certifies no byte, tries every byte as a visible token of its own and, unless it
+already certifies once the discarded tokens are deleted, as a discarded one, and reports each that certifies once added;
+the `--window-pattern` option of `munch-audit`, which decides whether every window a pattern of bytes and wildcards
+stands for certifies at one origin; the `--windows-modulo` option of `munch-audit`, which, where a condition certifies
+no byte once the discarded tokens are deleted, reports the windows that certify a cut that way and not exactly; and the
+`--obstruction` option of `munch-audit`, an experimental diagnostic which, where a condition certifies no byte, names
+the degree and group of the verifier's relation monoid and the phase the group counts, the parity of a run of a's under
+maximal munch over aa and a, the lack of a relation of rank one being the obstruction proved for prefix codes and
+conjectured beyond them. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of Lean's
+lexical structure with its nested comments and interpolated strings as modes, audited in [docs/audit.md](docs/audit.md)
+and benchmarked on Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
 
 3.0.0 is a major version for two moves, which change include paths and namespaces, and for one change outside them, the
 type of the inventory `anchor_free_span()` takes, and nothing else. Two of the verifier's names take the dfa library's
 form as they move. The verifier, its decisions and its constructions are a library of their own, `munch_verifier`, built
 on `munch_dfa`, with their headers under `munch/verifier/` and their names in namespace `munch::verifier`:
-`verifier.hpp`, `verifier_decisions.hpp`, `merge_tower.hpp`, `trie_chain.hpp`, `ripple_radius.hpp` and
-`token_automaton.hpp`. So `munch/dfa/verifier.hpp` becomes `munch/verifier/verifier.hpp`, `dfa::Verifier` becomes
-`verifier::Verifier`, `dfa::merge_tower()` becomes `verifier::merge_tower()`, and so on for every name those headers
-declare, while `libs/dfa` keeps the lexing automata. The pattern parser is a library of its own too, `munch_pattern`,
-built on `munch_regex`, with `parse.hpp` under `munch/pattern/` and `parse()`, `Parse_options`, `Syntax_error` and
-`Definitions_t` in namespace `munch::pattern`, so `munch/regex/parse.hpp` becomes `munch/pattern/parse.hpp` and
-`regex::parse()` becomes `pattern::parse()`, which leaves the regex library the combinators, the lowering to NFAs and
-the UTF-8 encoder the scanner needs. For the moves a user changes the includes and the qualifications, and for those two
-names the uses the next paragraph gives. `munch::munch` links both libraries, so a consumer of the umbrella target
-changes no link line, and one that links the libraries one by one adds `munch::munch_verifier` or
-`munch::munch_pattern`. The release the finitely-verifiable-segmentation report cites, v2.3.0, has the verifier and its
-constructions under `munch/dfa/` in namespace `munch::dfa`, as that report names them, and 3.0.0 moved them to
-`munch/verifier/`.
+`verifier.hpp`, `verifier_decisions.hpp`, `merge_tower.hpp`, `trie_chain.hpp`, `k_copy_scan.hpp`, `ripple_radius.hpp`,
+`token_automaton.hpp`, `piece_set.hpp`, `rule_ceilings.hpp`, `chunk_plan.hpp` and `window_density.hpp`. So
+`munch/dfa/verifier.hpp` becomes `munch/verifier/verifier.hpp`, `dfa::Verifier` becomes `verifier::Verifier`,
+`dfa::merge_tower()` becomes `verifier::merge_tower()`, and so on for every name those headers declare, while `libs/dfa`
+keeps the lexing automata. The pattern parser is a library of its own too, `munch_pattern`, built on `munch_regex`, with
+`parse.hpp` under `munch/pattern/` and `parse()`, `Parse_options`, `Syntax_error` and `Definitions_t` in namespace
+`munch::pattern`, so `munch/regex/parse.hpp` becomes `munch/pattern/parse.hpp` and `regex::parse()` becomes
+`pattern::parse()`, which leaves the regex library the combinators, the lowering to NFAs and the UTF-8 encoder the
+scanner needs. For the moves a user changes the includes and the qualifications, and for those two names the uses the
+next paragraph gives. `munch::munch` links both libraries, so a consumer of the umbrella target changes no link line,
+and one that links the libraries one by one adds `munch::munch_verifier` or `munch::munch_pattern`. The release the
+finitely-verifiable-segmentation report cites, v2.3.0, has the verifier and its constructions under `munch/dfa/` in
+namespace `munch::dfa`, as that report names them, and 3.0.0 moved them to `munch/verifier/`.
 
 The two names that take the dfa library's form give one concept one name and one order. The half a diverging input falls
 in is `verifier::Separation_half`, with `domain` before `boundary` as `dfa::Separation_half` has them, where 2.3.0 named

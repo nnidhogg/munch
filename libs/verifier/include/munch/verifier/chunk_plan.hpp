@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include "munch/verifier/piece_set.hpp"
 #include "munch/verifier/token_automaton.hpp"
 #include "munch/verifier/verifier.hpp"
 
@@ -93,10 +94,22 @@ struct Uniform_window
 };
 
 /**
- * @brief What licenses the cut that ends a chunk: the input's end, a cut the caller supplies, a window certified on
- *        the input, or the uniform window of the pinned-byte theorem.
+ * @brief A position of the input that no occurrence of a piece straddles, a boundary of every segmentation of the input
+ *        into pieces of the set the plan reads, by the cut theorem of Piece_set.
  */
-using Cut_evidence = std::variant<Input_end, Supplied_cut, Certified_window, Uniform_window>;
+struct Straddle_free_cut
+{
+    /**
+     * @brief The cut, the index of the first byte after it.
+     */
+    std::size_t position{};
+};
+
+/**
+ * @brief What licenses the cut that ends a chunk: the input's end, a cut the caller supplies, a window certified on the
+ *        input, the uniform window of the pinned-byte theorem, or a position no occurrence of a piece straddles.
+ */
+using Cut_evidence = std::variant<Input_end, Supplied_cut, Certified_window, Uniform_window, Straddle_free_cut>;
 
 /**
  * @brief One worker's chunk: the bytes it owns, from its first to the cut that ends it, the bytes it reads, and what
@@ -248,6 +261,37 @@ struct Uniform_radii
 [[nodiscard]] Chunk_plan chunk_plan(
         const Token_automaton& automaton, std::string_view input, const Plan_request& request,
         std::optional<Uniform_radii> radii);
+
+/**
+ * @brief Plans the chunks of an input for workers that each segment their chunk alone, over a piece set: each cut a
+ *        position no occurrence of a piece straddles, a boundary of every segmentation of the input into pieces at
+ *        which a worker reads to its cut, or one the caller supplies.
+ *
+ * The cuts are sought as the verifier's plan seeks them, each interior cut the first found at or after the later of its
+ * equal-division target and one past the previous cut, and a target with none at or after it is dropped, so that the
+ * chunk before it is scanned sequentially to the next cut or to the end, the fallback over a stretch with no cut, such
+ * as a run of one byte whose every interior position a piece of that byte straddles. At each position a supplied cut
+ * comes first, as the other routes take it, with its context read past it: a boundary of an exact pre-tokenizer is a
+ * cut that every segmenter over the set keeps when it segments the pre-tokenized text. Then the straddle-free positions
+ * are the cuts; Piece_set::straddle_free() reads the whole input once, so no window is decided and the request's budget
+ * is not read.
+ *
+ * Cut at straddle-free positions, by the cut theorem of Piece_set every segmentation of the input into pieces is a
+ * concatenation of segmentations of the chunks, and every such concatenation is one, so no worker needs a byte past its
+ * cut to emit a segmentation of the input, for every segmenter over the set. Under a score summed over the tokens the
+ * optimal segmentations of the input are exactly the concatenations of optimal segmentations of the chunks, and a
+ * forward Viterbi pass in exact arithmetic that replaces the best path at a position only on a strictly greater score
+ * returns on each chunk alone what it returns on the input, ties included, since every path it compares past a cut
+ * carries the same added constant, the best score at the cut. A segmenter whose path scores round, as SentencePiece's
+ * float32 lattice does on long inputs, may choose between paths of nearly equal score otherwise on the whole input than
+ * on its chunks, so the contract is the exact optimum under that tie rule.
+ * @param set The piece set.
+ * @param input The input.
+ * @param request The chunks aimed for and the supplied cuts; the budget is not read.
+ * @return The chunks with the evidence of each cut, every read end equal to its owned end but at a supplied cut, where
+ *         it lies the cut's context past it, and no window asked or decided.
+ */
+[[nodiscard]] Chunk_plan chunk_plan(const Piece_set& set, std::string_view input, const Plan_request& request);
 
 } // namespace munch::verifier
 

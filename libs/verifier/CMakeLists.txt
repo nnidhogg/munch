@@ -6,6 +6,7 @@ add_library(${PROJECT_NAME}
         src/chunk_plan.cpp
         src/k_copy_scan.cpp
         src/merge_tower.cpp
+        src/piece_set.cpp
         src/ripple_radius.cpp
         src/rule_ceilings.cpp
         src/token_automaton.cpp
@@ -53,6 +54,7 @@ if (MUNCH_BUILD_TESTS)
             tests/chunk_plan_test.cpp
             tests/k_copy_scan_test.cpp
             tests/merge_tower_test.cpp
+            tests/piece_set_test.cpp
             tests/ripple_radius_test.cpp
             tests/rule_ceilings_test.cpp
             tests/token_automaton_test.cpp

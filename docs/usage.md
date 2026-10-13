@@ -1067,14 +1067,57 @@ ceilings.span_radius;     // 2: appending b to aa makes the tokens a|a the one t
 ceilings.start_radius;    // 1, the second a's token beginning at 0 once b is appended
 ```
 
-`verifier::chunk_plan(verifier, input, request)` and `verifier::chunk_plan(automaton, input, request, radii)` of
-`munch/verifier/chunk_plan.hpp` turn these decisions into a worker contract. A plan is a list of chunks, each with the
-byte it begins at, the cut that ends it, below which its worker keeps the tokens, the byte the worker reads to, and the
-evidence that licenses the cut, so that workers that each segment their chunk alone reproduce the whole input's
-segmentation. The automaton is a byte table's, as `token_automaton(merges)` builds it, and one over the characters of an
-alphabet is refused with `std::invalid_argument`. The cuts are sought as `chunk_boundaries()` seeks them, the first at
-or after the later of each equal-division target and one past the previous cut, and a target with no cut after it is
-dropped, its chunk scanned sequentially to the next cut or the end: that is the fallback over a stretch with no cut.
+`verifier::piece_set(pieces)` of `munch/verifier/piece_set.hpp` takes the vocabulary of a segmenter that cuts every
+string it reads into pieces of a finite set, such as the pieces of a SentencePiece Unigram model, and builds the
+Aho-Corasick automaton of the pieces once. The cut theorem it rests on reads no scores: a position of a string that no
+occurrence of a piece straddles, beginning before it and ending after it, is a boundary of every segmentation of the
+string into pieces, since the token holding the byte before the position cannot reach past it. So it holds for every
+segmenter whose tokens are pieces of the set, whatever chooses among the segmentations: Unigram's Viterbi pass, its
+sampled and n-best segmentations, maximal munch over the set, or any other rule. `Piece_set::straddle_free(input)`
+returns every such position of an input in one pass of the automaton. `verifier::piece_cut(set, window, offset)` decides
+the cut offset bytes into a window for every string the window occurs in: it is certified, `std::nullopt`, when no piece
+placed across the cut agrees with the window wherever the two overlap, and otherwise the `Straddling` returned is the
+refutation, the window extended by the bytes of the first such piece that hang past either end, segmented with the piece
+as one token and every other character alone, and the window's start in it. The decision is sound for every set and
+exact when every byte of the window is a piece by itself, or every character of a window over pieces of whole
+characters, and the refutation is then a segmentation into pieces whenever each character it writes alone is a piece, as
+for a window and pieces of whole characters or a window of ASCII. With L - 1 bytes on each side of the cut, 2L - 2 in
+all for L the longest piece, the decision is whether a piece occurs in the window across the cut; at width two it is the
+pair table `Piece_set::has_pair()`, and a pair at the cut that no piece holds certifies at any width. Gigatoken, Marcel
+Rød's Rust tokenizer ([github.com/marcelroed/gigatoken](https://github.com/marcelroed/gigatoken), version 0.9.0 on PyPI,
+in `src/bpe/sentencepiece.rs`), uses the same pair test to certify cuts before eight punctuation bytes, `.`, `,`, `"`,
+`)`, `;`, `:`, `!` and `?`, in SentencePiece models when word splitting is enabled, a sufficient condition, and
+SentencePiece Lite states it as its Character Bigram Co-occurrence Principle (section 6.3 of `lite/README.md` in
+[github.com/google/sentencepiece](https://github.com/google/sentencepiece), first committed on 15 September 2026). The
+set is read in bytes, and what lies outside it is the caller's to map: the cuts are positions of the normalized string
+under a normalizer such as SentencePiece's, a wrapper that also refuses every cut inside a character and every cut
+between two characters without a piece of one character keeps the theorem for the runs of unknown characters
+SentencePiece joins into one token, and byte fallback and user-defined symbols are not read. An empty piece or a piece
+held twice is refused with `std::invalid_argument`, as are an empty window and an offset that does not lie between two
+of its bytes:
+
+```cpp
+#include "munch/verifier/piece_set.hpp"
+
+const std::vector<std::string> pieces{"a", "b", "abba"};
+
+const auto set{verifier::piece_set(pieces)};
+
+set.straddle_free("aabbab");         // {1, 5}: abba straddles 2, 3 and 4
+set.has_pair('b', 'a');              // true, inside abba
+verifier::piece_cut(set, "bb", 1);   // abba, the window at 1 in it: bb may be the middle of abba
+verifier::piece_cut(set, "bbb", 1);  // std::nullopt: abba agrees with bbb at no placement across the cut
+```
+
+`verifier::chunk_plan(verifier, input, request)`, `verifier::chunk_plan(automaton, input, request, radii)` and
+`verifier::chunk_plan(set, input, request)` of `munch/verifier/chunk_plan.hpp` turn these decisions into a worker
+contract. A plan is a list of chunks, each with the byte it begins at, the cut that ends it, below which its worker
+keeps the tokens, the byte the worker reads to, and the evidence that licenses the cut, so that workers that each
+segment their chunk alone reproduce the whole input's segmentation. The automaton is a byte table's, as
+`token_automaton(merges)` builds it, and one over the characters of an alphabet is refused with `std::invalid_argument`.
+The cuts are sought as `chunk_boundaries()` seeks them, the first at or after the later of each equal-division target
+and one past the previous cut, and a target with no cut after it is dropped, its chunk scanned sequentially to the next
+cut or the end: that is the fallback over a stretch with no cut.
 
 From the floor the search walks the input byte by byte and takes, at each byte, the first route that gives a cut at or
 after the floor. A cut the caller supplies in `Plan_request::supplied`, such as a boundary of an exact pre-tokenizer,
@@ -1096,6 +1139,18 @@ windows asked for and the ones decided. On a verifier the prefix side of `depend
 past the cut, so a worker reads to its cut there as on a token automaton, and only a supplied cut makes it read further.
 `munch_planner_bench` measures the plans against the sequential encoding, with the results in
 [docs/benchmarks.md](benchmarks.md).
+
+Over a piece set the cuts are the positions of the input that no occurrence of a piece straddles, sought from the same
+targets with the same fallback, each a boundary of every segmentation of the input into pieces, so a worker reads to its
+cut and no window is decided; the request's budget is not read. Every segmentation of the input is then a concatenation
+of segmentations of its chunks, so under a score summed over the tokens the input's optimal segmentations are the
+concatenations of its chunks' optimal ones, and a Viterbi pass in exact arithmetic that replaces the best path at a
+position only on a strictly greater score returns the same tokens on the chunks as on the whole input, ties included. A
+pass whose scores round, as SentencePiece's float32 lattice does on long inputs, may choose between paths of nearly
+equal score otherwise on the whole input, so the contract is the exact optimum. A supplied cut comes first at its
+position, as on the other routes, with its context read past it, since a boundary of an exact pre-tokenizer is a cut
+that every segmenter over the set keeps when it segments the pre-tokenized text. A stretch whose every position a piece
+straddles, such as a run of one byte under a piece of two of it, is scanned whole by one worker.
 
 ```cpp
 #include "munch/verifier/chunk_plan.hpp"

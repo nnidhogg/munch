@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "munch/verifier/merge_tower.hpp"
+#include "munch/verifier/piece_set.hpp"
 #include "munch/verifier/ripple_radius.hpp"
 #include "munch/verifier/rule_ceilings.hpp"
 #include "munch/verifier/token_automaton.hpp"
@@ -249,6 +250,119 @@ std::vector<std::vector<Merge>> small_tables()
             {{.left = "c", .right = "b"}, {.left = "b", .right = "a"}, {.left = "a", .right = "a"}}};
 }
 
+/**
+ * @brief Returns the segmentation a forward Viterbi pass picks for a text in exact arithmetic: at each position, over
+ *        the pieces in order, a path replaces the best one ending there only on a strictly greater score, a token's
+ *        score summed along the path.
+ * @param pieces The pieces.
+ * @param scores The score of each piece, by its place among the pieces.
+ * @param text The text.
+ * @return The tokens, or std::nullopt when the pieces cannot spell the text.
+ */
+std::optional<std::vector<std::string>> viterbi(
+        const std::vector<std::string>& pieces, const std::vector<long>& scores, const std::string_view text)
+{
+    std::vector<std::optional<long>> best(text.size() + 1);
+    std::vector<std::size_t> last(text.size() + 1, 0);
+
+    best[0] = 0;
+
+    for (std::size_t end{1}; end <= text.size(); ++end)
+    {
+        for (std::size_t piece{0}; piece < pieces.size(); ++piece)
+        {
+            const auto& spelling{pieces[piece]};
+
+            const auto fits{spelling.size() <= end && text.substr(end - spelling.size()).starts_with(spelling)};
+
+            if (!fits || !best[end - spelling.size()])
+            {
+                continue;
+            }
+
+            const auto score{*best[end - spelling.size()] + scores[piece]};
+
+            if (!best[end] || score > *best[end])
+            {
+                best[end] = score;
+                last[end] = piece;
+            }
+        }
+    }
+
+    if (!best[text.size()])
+    {
+        return std::nullopt;
+    }
+
+    std::vector<std::string> tokens{};
+
+    for (auto end{text.size()}; end > 0; end -= tokens.back().size())
+    {
+        tokens.push_back(pieces[last[end]]);
+    }
+
+    std::ranges::reverse(tokens);
+
+    return tokens;
+}
+
+/**
+ * @brief Checks a plan of a text over a piece set: the chunks cover the text in order, each cut a straddle-free
+ *        position of the text read to and no further, its evidence naming it, and each chunk segmented alone by the
+ *        exact Viterbi pass gives the tokens the pass gives the whole text there.
+ * @param pieces The pieces.
+ * @param scores The score of each piece, by its place among the pieces.
+ * @param text The text, which the pieces spell.
+ * @param plan The plan.
+ * @param context The test checked.
+ */
+void expect_optimal_chunks(
+        const std::vector<std::string>& pieces, const std::vector<long>& scores, const std::string& text,
+        const Chunk_plan& plan, const std::string& context)
+{
+    const auto& chunks{plan.chunks};
+
+    ASSERT_FALSE(chunks.empty()) << context;
+    EXPECT_EQ(chunks.front().begin, 0U) << context;
+    EXPECT_EQ(chunks.back().owned_end, text.size()) << context;
+    EXPECT_TRUE(std::holds_alternative<Input_end>(chunks.back().evidence)) << context;
+    EXPECT_EQ(plan.windows_asked, 0U) << context;
+
+    const auto cuts{piece_set(pieces).straddle_free(text)};
+
+    std::vector<std::string> stitched{};
+
+    for (std::size_t index{0}; index < chunks.size(); ++index)
+    {
+        const auto& [begin, owned_end, read_end, evidence]{chunks[index]};
+
+        const auto chunk_context{std::format("{} chunk {} [{}, {})", context, index, begin, owned_end)};
+
+        if (index > 0)
+        {
+            EXPECT_EQ(begin, chunks[index - 1].owned_end) << chunk_context;
+        }
+
+        EXPECT_EQ(read_end, owned_end) << chunk_context;
+
+        if (index + 1 < chunks.size())
+        {
+            ASSERT_TRUE(std::holds_alternative<Straddle_free_cut>(evidence)) << chunk_context;
+            EXPECT_EQ(std::get<Straddle_free_cut>(evidence).position, owned_end) << chunk_context;
+            EXPECT_TRUE(std::ranges::binary_search(cuts, owned_end)) << chunk_context;
+        }
+
+        const auto alone{viterbi(pieces, scores, text.substr(begin, owned_end - begin))};
+
+        ASSERT_TRUE(alone) << chunk_context;
+
+        stitched.insert(stitched.end(), alone->begin(), alone->end());
+    }
+
+    EXPECT_EQ(stitched, viterbi(pieces, scores, text)) << context;
+}
+
 } // namespace
 
 TEST(Chunk_plan_test, An_empty_input_and_a_request_for_no_chunks_give_one_chunk_ending_at_the_input_end)
@@ -472,4 +586,122 @@ TEST(Chunk_plan_test, Refuses_a_token_automaton_over_the_characters_of_an_alphab
     }
 
     EXPECT_TRUE(refusal.contains("chunk_plan: the token automaton reads 2 symbols")) << refusal;
+}
+
+TEST(Chunk_plan_test, Each_chunk_of_a_piece_set_segmented_alone_by_exact_Viterbi_gives_the_whole_input_its_optimum)
+{
+    std::mt19937 sequence{0x5EEDU};
+
+    std::uniform_int_distribution<std::size_t> count{2, 7};
+    std::uniform_int_distribution<std::size_t> length{1, 4};
+    std::uniform_int_distribution<long> score{-6, -1};
+
+    for (std::size_t trial{0}; trial < 200; ++trial)
+    {
+        std::vector<std::string> pieces{"a", "b", "c"};
+
+        const auto wanted{count(sequence)};
+
+        for (std::size_t index{0}; index < wanted; ++index)
+        {
+            auto piece{random_text(sequence, length(sequence))};
+
+            if (!std::ranges::contains(pieces, piece))
+            {
+                pieces.push_back(std::move(piece));
+            }
+        }
+
+        std::ranges::shuffle(pieces, sequence);
+
+        // Scores from a narrow range tie often, and the pass breaks every tie on the whole input as on its chunks.
+        std::vector<long> scores{};
+
+        for (std::size_t piece{0}; piece < pieces.size(); ++piece)
+        {
+            scores.push_back(score(sequence));
+        }
+
+        const auto set{piece_set(pieces)};
+
+        const auto text{random_text(sequence, 60)};
+
+        for (const auto chunks : {std::size_t{3}, std::size_t{8}, text.size()})
+        {
+            const Plan_request request{.chunks = chunks, .budget = 0, .supplied = {}};
+
+            const auto context{std::format("trial {} {} chunks {}", trial, text, chunks)};
+
+            expect_optimal_chunks(pieces, scores, text, chunk_plan(set, text, request), context);
+        }
+    }
+}
+
+TEST(Chunk_plan_test, A_piece_set_cuts_only_where_no_piece_straddles_and_scans_a_stretch_without_a_cut_whole)
+{
+    const std::vector<std::string> pieces{"a", "aa", "b"};
+
+    const auto set{piece_set(pieces)};
+
+    // Every interior position of a run of a's lies inside an occurrence of aa, so the run holds no cut.
+    const std::string run(16, 'a');
+
+    const auto whole{chunk_plan(set, run, {.chunks = 4, .budget = 4, .supplied = {}})};
+
+    ASSERT_EQ(whole.chunks.size(), 1U);
+    EXPECT_EQ(whole.chunks.front().owned_end, 16U);
+
+    // The budget is not read: the cuts are the two sides of the b.
+    const auto plan{chunk_plan(set, "aaaaabaaaa", {.chunks = 4, .budget = 4, .supplied = {}})};
+
+    ASSERT_EQ(plan.chunks.size(), 3U);
+    EXPECT_EQ(plan.chunks[0].owned_end, 5U);
+    EXPECT_EQ(plan.chunks[1].owned_end, 6U);
+    EXPECT_EQ(plan.chunks[2].owned_end, 10U);
+    EXPECT_TRUE(std::holds_alternative<Straddle_free_cut>(plan.chunks[1].evidence));
+}
+
+TEST(Chunk_plan_test, A_supplied_cut_over_a_piece_set_comes_first_at_its_position_with_its_context_read_past_it)
+{
+    const std::vector<std::string> pieces{"a", "aa", "b"};
+
+    const auto set{piece_set(pieces)};
+
+    const std::vector<Supplied_cut> supplied{
+            {.position = 2, .context = 1},
+            {.position = 6, .context = 0},
+            {.position = 8, .context = 3}};
+
+    const auto plan{chunk_plan(set, "aaaaabaaaa", {.chunks = 4, .budget = 0, .supplied = supplied})};
+
+    ASSERT_EQ(plan.chunks.size(), 4U);
+
+    // The targets are 2, 5 and 7: the supplied cut at 2, the straddle-free 5 before the supplied 6, and the supplied 8.
+    const auto& [first_begin, first_end, first_read, first_evidence]{plan.chunks[0]};
+
+    EXPECT_EQ(first_end, 2U);
+    EXPECT_EQ(first_read, 3U);
+    EXPECT_TRUE(std::holds_alternative<Supplied_cut>(first_evidence));
+
+    const auto& [second_begin, second_end, second_read, second_evidence]{plan.chunks[1]};
+
+    EXPECT_EQ(second_end, 5U);
+    EXPECT_EQ(second_read, 5U);
+    EXPECT_TRUE(std::holds_alternative<Straddle_free_cut>(second_evidence));
+
+    const auto& [third_begin, third_end, third_read, third_evidence]{plan.chunks[2]};
+
+    EXPECT_EQ(third_end, 8U);
+    EXPECT_EQ(third_read, 10U);
+    EXPECT_TRUE(std::holds_alternative<Supplied_cut>(third_evidence));
+
+    // At a position both give, the supplied cut is taken.
+    const std::vector<Supplied_cut> at_five{{.position = 5, .context = 2}};
+
+    const auto tied{chunk_plan(set, "aaaaabaaaa", {.chunks = 2, .budget = 0, .supplied = at_five})};
+
+    ASSERT_EQ(tied.chunks.size(), 2U);
+    EXPECT_EQ(tied.chunks[0].owned_end, 5U);
+    EXPECT_EQ(tied.chunks[0].read_end, 7U);
+    EXPECT_TRUE(std::holds_alternative<Supplied_cut>(tied.chunks[0].evidence));
 }

@@ -7,6 +7,7 @@
 #include <map>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -620,6 +621,46 @@ std::optional<std::size_t> Search<Route>::certified_origin(const std::size_t fir
     return origin;
 }
 
+/**
+ * @brief Returns the first cut the caller supplies at or after a floor and inside the input.
+ * @param supplied The supplied cuts, ascending by position.
+ * @param floor The least cut taken.
+ * @param size The input's size.
+ * @return The cut with its context, or std::nullopt when none is supplied there.
+ */
+[[nodiscard]] std::optional<Found_cut> supplied_from(
+        const std::span<const Supplied_cut> supplied, const std::size_t floor, const std::size_t size)
+{
+    const auto found{std::ranges::lower_bound(supplied, floor, {}, &Supplied_cut::position)};
+
+    if (found == supplied.end() || found->position >= size)
+    {
+        return std::nullopt;
+    }
+
+    return Found_cut{.position = found->position, .context = found->context, .evidence = *found};
+}
+
+/**
+ * @brief Returns the first position at or after a floor that no occurrence of a piece straddles.
+ * @param cuts The straddle-free positions of the input, ascending.
+ * @param floor The least cut taken.
+ * @return The cut, which a worker reads to, or std::nullopt when none lies at or after the floor.
+ */
+[[nodiscard]] std::optional<Found_cut> straddle_free_from(const std::vector<std::size_t>& cuts, const std::size_t floor)
+{
+    const auto found{std::ranges::lower_bound(cuts, floor)};
+
+    if (found == cuts.end())
+    {
+        return std::nullopt;
+    }
+
+    const Straddle_free_cut evidence{.position = *found};
+
+    return Found_cut{.position = *found, .context = 0, .evidence = evidence};
+}
+
 } // namespace
 
 Chunk_plan chunk_plan(const Verifier& verifier, const std::string_view input, const Plan_request& request)
@@ -640,6 +681,51 @@ Chunk_plan chunk_plan(
     Search search{route, input, request};
 
     return std::move(search).run();
+}
+
+Chunk_plan chunk_plan(const Piece_set& set, const std::string_view input, const Plan_request& request)
+{
+    const auto cuts{set.straddle_free(input)};
+
+    const auto size{input.size()};
+
+    // A chunk needs at least one byte, so asking for more chunks than bytes adds targets that can find nothing.
+    const auto usable{std::min(request.chunks, size)};
+
+    std::vector<Planned_chunk> chunks{};
+
+    std::size_t begin{0};
+
+    for (std::size_t index{1}; index < usable; ++index)
+    {
+        const auto target{index * (size / usable) + index * (size % usable) / usable};
+
+        const auto floor{std::max(target, begin + 1)};
+
+        const auto supplied{supplied_from(request.supplied, floor, size)};
+        const auto straddle_free{straddle_free_from(cuts, floor)};
+
+        // Every later floor lies at or after this one, so no later target finds a cut either.
+        if (!supplied && !straddle_free)
+        {
+            break;
+        }
+
+        // A supplied cut comes first at its position, as the walk of the other routes takes it.
+        const auto takes_supplied{supplied && (!straddle_free || supplied->position <= straddle_free->position)};
+
+        const auto& [position, context, evidence]{takes_supplied ? *supplied : *straddle_free};
+
+        const auto read_end{std::min(size, position + context)};
+
+        chunks.push_back({.begin = begin, .owned_end = position, .read_end = read_end, .evidence = evidence});
+
+        begin = position;
+    }
+
+    chunks.push_back({.begin = begin, .owned_end = size, .read_end = size, .evidence = Input_end{}});
+
+    return {.chunks = std::move(chunks), .windows_asked = 0, .windows_decided = 0};
 }
 
 } // namespace munch::verifier
