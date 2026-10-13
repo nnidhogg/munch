@@ -5,12 +5,28 @@
 #include <optional>
 #include <span>
 #include <string_view>
-#include <utility>
 
 #include "munch/dfa/simulator.hpp"
 
 namespace munch::dfa
 {
+/**
+ * @brief A pair the token set certifies: a window and the origin, the byte of the window at which the token containing
+ *        an occurrence's final byte begins.
+ */
+struct Certified_pair
+{
+    /**
+     * @brief The window, nonempty.
+     */
+    std::string_view window{};
+
+    /**
+     * @brief The certified origin, a byte index of the window.
+     */
+    std::size_t origin{};
+};
+
 /**
  * @brief Returns the longest run of positions a completely tokenizable input can carry with no certified byte among
  *        them, or nothing when such runs are unbounded.
@@ -53,7 +69,7 @@ namespace munch::dfa
  * @throws std::invalid_argument If the inventory holds a window the simulator does not certify at the stated origin.
  */
 [[nodiscard]] std::optional<std::size_t> anchor_free_span(
-        const Simulator& simulator, std::span<const std::pair<std::string_view, std::size_t>> inventory);
+        const Simulator& simulator, std::span<const Certified_pair> inventory);
 
 } // namespace munch::dfa
 

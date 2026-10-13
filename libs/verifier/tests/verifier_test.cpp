@@ -1157,7 +1157,8 @@ void expect_miscovered(
  * @param context The fixture line checked.
  */
 void expect_diverging(
-        const Universe& a, const Universe& b, const Half half, const std::string& bytes, const std::string& context)
+        const Universe& a, const Universe& b, const Separation_half half, const std::string& bytes,
+        const std::string& context)
 {
     const auto munch_a{munch_marking(a.dfa, bytes)};
     const auto munch_b{munch_marking(b.dfa, bytes)};
@@ -1168,7 +1169,7 @@ void expect_diverging(
     EXPECT_EQ(accepted_markings(a.verifier, bytes), wanted_a) << context << " on " << bytes;
     EXPECT_EQ(accepted_markings(b.verifier, bytes), wanted_b) << context << " on " << bytes;
 
-    if (half == Half::boundary)
+    if (half == Separation_half::boundary)
     {
         EXPECT_TRUE(munch_a && munch_b && *munch_a != *munch_b) << context << " on " << bytes;
 
@@ -1365,16 +1366,16 @@ void expect_divergence(Fixture_check& check, std::istringstream& fields, const s
 
     ASSERT_TRUE(found) << context;
 
-    const auto& [found_half, witness]{*found};
+    const auto& [witness, found_half]{*found};
 
     const auto& [bytes, boundaries]{witness};
 
-    EXPECT_EQ(found_half, half == "boundary" ? Half::boundary : Half::domain) << context;
+    EXPECT_EQ(found_half, half == "boundary" ? Separation_half::boundary : Separation_half::domain) << context;
     EXPECT_EQ(bytes.size(), text_of(text).size()) << context;
 
     const auto a_marking{munch_marking(a.dfa, bytes)};
 
-    const auto& accepting{found_half == Half::boundary || a_marking ? a : b};
+    const auto& accepting{found_half == Separation_half::boundary || a_marking ? a : b};
 
     EXPECT_EQ(std::optional{boundaries}, munch_marking(accepting.dfa, bytes)) << context;
 

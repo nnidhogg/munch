@@ -106,7 +106,7 @@ public:
      * @param inventory The certified windows and their origins.
      * @throws std::invalid_argument If a window is empty or uncertified at its stated origin.
      */
-    Span_walk(const Simulator& simulator, std::span<const std::pair<std::string_view, std::size_t>> inventory);
+    Span_walk(const Simulator& simulator, std::span<const Certified_pair> inventory);
 
     /**
      * @brief Decides the anchor-free span.
@@ -358,8 +358,7 @@ private:
     mutable std::map<std::pair<std::uint32_t, char>, Move> moves_{};
 };
 
-Span_walk::Span_walk(
-        const Simulator& simulator, const std::span<const std::pair<std::string_view, std::size_t>> inventory)
+Span_walk::Span_walk(const Simulator& simulator, const std::span<const Certified_pair> inventory)
 {
     std::set<char> present{};
 
@@ -852,13 +851,13 @@ std::optional<std::size_t> anchor_free_span(const Simulator& simulator)
         }
     }
 
-    std::vector<std::pair<std::string_view, std::size_t>> inventory{};
+    std::vector<Certified_pair> inventory{};
 
     inventory.reserve(bytes.size());
 
     for (const auto& window : bytes)
     {
-        inventory.emplace_back(window, 0);
+        inventory.push_back({.window = window, .origin = 0});
     }
 
     const Span_walk walk{simulator, inventory};
@@ -866,8 +865,7 @@ std::optional<std::size_t> anchor_free_span(const Simulator& simulator)
     return walk.decide(simulator);
 }
 
-std::optional<std::size_t> anchor_free_span(
-        const Simulator& simulator, const std::span<const std::pair<std::string_view, std::size_t>> inventory)
+std::optional<std::size_t> anchor_free_span(const Simulator& simulator, const std::span<const Certified_pair> inventory)
 {
     const Span_walk walk{simulator, inventory};
 

@@ -58,6 +58,7 @@
 #include "grammars.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
+#include "munch/dfa/anchor_free_span.hpp"
 #include "munch/regex/regex.hpp"
 #include "munch/regex/set.hpp"
 #include "munch/tools/audit/report.hpp"
@@ -69,6 +70,7 @@
 namespace
 {
 using munch::core::Lexer;
+using munch::dfa::Certified_pair;
 using munch::tools::audit::Certified_window;
 using munch::tools::audit::Report;
 using munch::tools::probes::byte_count;
@@ -4994,7 +4996,7 @@ template <typename Classify>
 
     const Inventory index{certified_bytes_order};
 
-    std::vector<std::pair<std::string_view, std::size_t>> inventory{};
+    std::vector<Certified_pair> inventory{};
 
     for (const auto& window : certified_expansions)
     {
@@ -5004,7 +5006,7 @@ template <typename Classify>
 
         for (const auto origin : index.origins_of.at(representatives))
         {
-            inventory.emplace_back(window, origin);
+            inventory.push_back({.window = window, .origin = origin});
         }
     }
 

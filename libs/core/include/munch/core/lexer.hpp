@@ -788,7 +788,7 @@ public:
      * @return The exact supremum, or std::nullopt when it is unbounded.
      */
     [[nodiscard]] std::optional<std::size_t> anchor_free_span(
-            const std::span<const std::pair<std::string_view, std::size_t>> inventory) const
+            const std::span<const dfa::Certified_pair> inventory) const
     {
         return dfa::anchor_free_span(simulator_, inventory);
     }

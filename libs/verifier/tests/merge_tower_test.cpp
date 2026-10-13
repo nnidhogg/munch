@@ -671,11 +671,11 @@ void expect_divergence(Fixture_check& check, std::istringstream& fields, const s
     ASSERT_TRUE(found) << context;
     ASSERT_EQ(half, "boundary") << context;
 
-    const auto& [found_half, witness]{*found};
+    const auto& [witness, found_half]{*found};
 
     const auto& [bytes, boundaries]{witness};
 
-    EXPECT_EQ(found_half, Half::boundary) << context;
+    EXPECT_EQ(found_half, Separation_half::boundary) << context;
     EXPECT_EQ(bytes.size(), text_of(text).size()) << context;
     EXPECT_EQ(boundaries, reference_marking(a.merges, bytes)) << context;
 

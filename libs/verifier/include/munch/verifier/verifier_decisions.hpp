@@ -102,17 +102,17 @@ using Mask = std::vector<std::vector<Marked>>;
 /**
  * @brief The half of full equivalence a diverging input falls in.
  */
-enum class Half : std::size_t
+enum class Separation_half : std::size_t
 {
-    /**
-     * @brief Both verifiers accept the input under markings that differ.
-     */
-    boundary,
-
     /**
      * @brief Exactly one verifier accepts the input under some marking.
      */
-    domain
+    domain,
+
+    /**
+     * @brief Both verifiers accept the input under markings that differ.
+     */
+    boundary
 };
 
 /**
@@ -121,15 +121,15 @@ enum class Half : std::size_t
 struct Divergence
 {
     /**
-     * @brief The half the witness falls in.
-     */
-    Half half{};
-
-    /**
      * @brief The diverging input, the shortest one of its half, marked as the first verifier accepts it for the
      *        boundary half and as the accepting verifier accepts it for the domain half.
      */
     Marked_string witness{};
+
+    /**
+     * @brief The half the witness falls in.
+     */
+    Separation_half half{};
 };
 
 /**

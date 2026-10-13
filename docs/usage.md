@@ -410,7 +410,7 @@ lexer.anchor_free_span();                   // std::nullopt: no byte anchors any
 lexer.is_split_window("aab");               // 0: at its own start
 lexer.is_split_window("ba");                // 1: a b only ever ends a token
 
-const std::vector<std::pair<std::string_view, std::size_t>> inventory{{"aab", 0}, {"ba", 1}};
+const std::vector<dfa::Certified_pair> inventory{{.window = "aab", .origin = 0}, {.window = "ba", .origin = 1}};
 
 lexer.anchor_free_span(inventory);          // 2: the interior again, now reached through windows
 ```

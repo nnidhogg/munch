@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "munch/dfa/anchor_free_span.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/tools/audit/expression.hpp"
 
@@ -375,10 +376,10 @@ namespace
     const auto viewed{[](const Certified_window& entry) {
         const auto& [window, origin]{entry};
 
-        return std::pair<std::string_view, std::size_t>{window, origin};
+        return dfa::Certified_pair{.window = window, .origin = origin};
     }};
 
-    std::vector<std::pair<std::string_view, std::size_t>> views{};
+    std::vector<dfa::Certified_pair> views{};
 
     views.reserve(inventory->size());
 

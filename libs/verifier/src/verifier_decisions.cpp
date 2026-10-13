@@ -2400,12 +2400,12 @@ std::optional<Divergence> divergence(const Verifier& a, const Verifier& b)
 
     if (auto witness{boundary_divergence(a, b, common)})
     {
-        return Divergence{.half = Half::boundary, .witness = std::move(*witness)};
+        return Divergence{.witness = std::move(*witness), .half = Separation_half::boundary};
     }
 
     if (auto witness{domain_divergence(a, b, either)})
     {
-        return Divergence{.half = Half::domain, .witness = std::move(*witness)};
+        return Divergence{.witness = std::move(*witness), .half = Separation_half::domain};
     }
 
     return std::nullopt;

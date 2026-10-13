@@ -30,6 +30,7 @@
 #include "munch/core/determinize.hpp"
 #include "munch/core/exceptions/state_limit_error.hpp"
 #include "munch/core/window_planner.hpp"
+#include "munch/dfa/anchor_free_span.hpp"
 #include "munch/dfa/boundary_search.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/tools/graphviz.hpp"
@@ -6251,7 +6252,7 @@ TEST_F(Lexer_test, A_window_inventory_bounds_a_span_no_certified_byte_can)
     ASSERT_EQ(lexer.is_split_window("aab"), std::optional<std::size_t>{0});
     ASSERT_EQ(lexer.is_split_window("ba"), std::optional<std::size_t>{1});
 
-    const std::vector<std::pair<std::string_view, std::size_t>> inventory{{"aab", 0}, {"ba", 1}};
+    const std::vector<dfa::Certified_pair> inventory{{.window = "aab", .origin = 0}, {.window = "ba", .origin = 1}};
 
     const auto span{lexer.anchor_free_span(inventory)};
 
@@ -6284,11 +6285,11 @@ TEST_F(Lexer_test, The_window_span_counts_positions_a_window_reaches_back_to)
     ASSERT_EQ(lexer.is_split_window("bb"), std::optional<std::size_t>{1});
     ASSERT_EQ(lexer.is_split_window("bba"), std::optional<std::size_t>{1});
 
-    const std::vector<std::pair<std::string_view, std::size_t>> inventory{
-            {"aba", 2},
-            {"abb", 2},
-            {"bb", 1},
-            {"bba", 1}};
+    const std::vector<dfa::Certified_pair> inventory{
+            {.window = "aba", .origin = 2},
+            {.window = "abb", .origin = 2},
+            {.window = "bb", .origin = 1},
+            {.window = "bba", .origin = 1}};
 
     const auto span{lexer.anchor_free_span(inventory)};
 
@@ -6326,11 +6327,11 @@ TEST_F(Lexer_test, A_window_longer_than_a_machine_word_is_decided_like_a_short_o
         ASSERT_EQ(lexer.is_split_window("ab"), std::optional<std::size_t>{1});
         ASSERT_EQ(lexer.is_split_window("ba"), std::optional<std::size_t>{1});
 
-        const std::vector<std::pair<std::string_view, std::size_t>> inventory{
-                {as, width - 1},
-                {bs, width - 1},
-                {"ab", 1},
-                {"ba", 1}};
+        const std::vector<dfa::Certified_pair> inventory{
+                {.window = as, .origin = width - 1},
+                {.window = bs, .origin = width - 1},
+                {.window = "ab", .origin = 1},
+                {.window = "ba", .origin = 1}};
 
         const auto span{lexer.anchor_free_span(inventory)};
 
@@ -6361,7 +6362,7 @@ TEST_F(Lexer_test, A_run_token_leaves_the_window_span_unbounded_too)
     ASSERT_FALSE(lexer.is_split_point('b'));
     ASSERT_EQ(lexer.is_split_window("ba"), std::optional<std::size_t>{1});
 
-    const std::vector<std::pair<std::string_view, std::size_t>> inventory{{"ba", 1}};
+    const std::vector<dfa::Certified_pair> inventory{{.window = "ba", .origin = 1}};
 
     EXPECT_FALSE(lexer.anchor_free_span(inventory).has_value());
 }

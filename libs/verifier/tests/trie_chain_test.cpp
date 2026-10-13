@@ -676,7 +676,7 @@ void expect_divergence(Fixture_check& check, std::istringstream& fields, const s
 
     ASSERT_TRUE(found) << context;
 
-    const auto& [found_half, witness]{*found};
+    const auto& [witness, found_half]{*found};
 
     const auto& [bytes, boundaries]{witness};
 
@@ -684,7 +684,7 @@ void expect_divergence(Fixture_check& check, std::istringstream& fields, const s
 
     if (half == "boundary")
     {
-        EXPECT_EQ(found_half, Half::boundary) << context;
+        EXPECT_EQ(found_half, Separation_half::boundary) << context;
         EXPECT_EQ(boundaries, reference_marking(a.vocabulary, bytes)) << context;
 
         expect_diverging(a, b, bytes, context);
@@ -699,7 +699,7 @@ void expect_divergence(Fixture_check& check, std::istringstream& fields, const s
 
     const auto& accepting{is_accepted(a.chain, witness) ? a : b};
 
-    EXPECT_EQ(found_half, Half::domain) << context;
+    EXPECT_EQ(found_half, Separation_half::domain) << context;
     EXPECT_EQ(boundaries, reference_marking(accepting.vocabulary, bytes)) << context;
 
     expect_one_domain(a, b, bytes, context);
