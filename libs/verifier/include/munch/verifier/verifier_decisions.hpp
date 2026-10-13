@@ -13,8 +13,9 @@
 
 /**
  * @file
- * @brief The eleven decisions over a verifier: miscovering(), pinned_cut(), boundary_gap(), realizable(), divergence(),
- *        dependence(), modulo_dependence(), chunk_dependence(), right_context(), fanout() and smallest_fanout().
+ * @brief The twelve decisions over a verifier: miscovering(), pinned_cut(), boundary_gap(), realizable(), divergence(),
+ *        dependence(), modulo_dependence(), modulo_cuts(), chunk_dependence(), right_context(), fanout() and
+ *        smallest_fanout().
  *
  * Each is a search on a product with the verifier or on its minimal automaton, fanout() two subset runs on the latter,
  * and each witness is replayable through Verifier::step().
@@ -234,6 +235,27 @@ struct Modulo_dependence
      *        empty when a side lies outside the domain.
      */
     std::vector<Kept_token> chunk_tokens{};
+};
+
+/**
+ * @brief A cut of a window that modulo_cuts() finds independent modulo the discarded kinds: the window and the offset.
+ */
+struct Modulo_cut
+{
+    /**
+     * @brief Ordered by the window, then by the offset.
+     */
+    auto operator<=>(const Modulo_cut&) const = default;
+
+    /**
+     * @brief The window, nonempty.
+     */
+    std::string window{};
+
+    /**
+     * @brief The offset of the cut, a byte index of the window.
+     */
+    std::size_t offset{};
 };
 
 /**
@@ -629,6 +651,40 @@ struct Smallest_fanout
  */
 [[nodiscard]] std::optional<Modulo_dependence> modulo_dependence(
         const Verifier& verifier, std::string_view window, std::size_t offset, std::span<const std::size_t> discarded);
+
+/**
+ * @brief Decides modulo_dependence() at once for every window over an alphabet up to a width, at every offset, and
+ *        returns the cuts that are independent modulo the discarded kinds, of the windows that occur in some accepted
+ *        marked string.
+ *
+ * The same decision as modulo_dependence(), explored once per verifier rather than once per pair. Any input may precede
+ * a window and follow it, so the products need no matcher: the agreement product's and the domain product's nodes
+ * before the cut are explored once from their roots, the nodes the cut at offset zero places once from those, and the
+ * nodes after the cut from which a refuting end is reachable once by a backward closure. A window's clouds before the
+ * cut are then the images of every node before it under the window's bytes, a cut at offset o places its nodes from the
+ * clouds of the first o bytes, and the cut holds when no node of its clouds past the window's last byte is refuting.
+ * The windows are searched depth first, each extending its prefix's clouds, one per cut, by one byte, and a window
+ * whose agreement cloud before the cut is empty occurs in no accepted marked string, so neither it nor any window
+ * extending it is listed, where modulo_dependence() certifies it vacuously. No witness is built: a refused pair's
+ * shortest witness is modulo_dependence()'s answer for it. The exploration has the products' sizes, on each side of the
+ * cut at most 4 |Q|^2 nodes in the agreement product and 2 |Q| 2^|Q| in the domain product, exponential through the set
+ * in the worst case as modulo_dependence()'s domain half is, each node stepped over the alphabet's 4 |Sigma| marked
+ * pairs, and the search steps |window| + 2 clouds for each window it reaches, at most the sum of |Sigma|^k for k from 1
+ * to the width, Q the verifier's states and Sigma the alphabet. The inputs around a window are read over the alphabet
+ * too, so it holds every byte the verifier reads.
+ * @param verifier The verifier, functional and well formed, recording the kinds of its segments as armed_run() records
+ *        them; a segment of no recorded kind counts as discarded.
+ * @param alphabet The bytes the windows are written over, distinct, in the order the windows are listed in, every byte
+ *        on the verifier's transitions among them.
+ * @param width The widest window.
+ * @param discarded The discarded kinds.
+ * @return The independent cuts, widths ascending, each width's windows in the order the alphabet gives their bytes and
+ *         each window's offsets ascending.
+ * @throws std::invalid_argument If the alphabet holds a byte twice or leaves out a byte on the verifier's transitions.
+ */
+[[nodiscard]] std::vector<Modulo_cut> modulo_cuts(
+        const Verifier& verifier, std::span<const unsigned char> alphabet, std::size_t width,
+        std::span<const std::size_t> discarded);
 
 /**
  * @brief Decides whether an inventory of certified pairs is chunk-independent: in every accepted marked string, cut at

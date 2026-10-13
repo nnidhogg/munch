@@ -69,17 +69,11 @@ struct Windows_modulo
  *
  * A window `W` certifies a cut at offset `o` once the discarded tokens are deleted when, in every input the set
  * tokenizes completely that holds `W` at some offset `t`, cutting at `t + o` leaves two chunks the set tokenizes
- * completely whose token streams, the discarded tokens deleted, concatenate to the whole input's. The decision is
- * is_split_window()'s cloud of hypotheses, a state and where its token began, with a third field saying how the
- * hypothesis crossed the gap before byte `o`: at a boundary, where it began a token there, harmlessly, where it read
- * the byte from a state that passes is_split_point_ignoring()'s test for it, or harmfully. A direct step keeps the
- * field and a fresh hypothesis takes the field of each accepting one it follows, and the window certifies at `o` when
- * the cloud past its last byte is nonempty and each hypothesis began its token at `o` or crossed the gap harmlessly.
- * The test is computed here over the public Simulator interface, a state's accepted token and its steps: the state
- * accepts a discarded token, its successor reaches no kept one, and the successor cannot be told from the initial
- * state's on the byte by any continuation once every discarded token is one colour. With no token discarded the
- * decision is is_split_window() at `o`, and for one byte it is is_split_point_ignoring(). The windows are searched
- * depth first, each extending its prefix's walks, one per cut, by one step.
+ * completely whose kept tokens, at their positions in the input, are the input's. The decision is
+ * verifier::modulo_cuts(), the exact decision of verifier::modulo_dependence() explored once for the set, over the
+ * kinded armed run of the set read over one byte of every class; it lists the cuts of the windows that occur in some
+ * completely tokenizable input, and each window here is at its least. With no token discarded the decision asks that
+ * the cut be a boundary at every occurrence.
  * @param report The set's report, whose byte classes, discarded tokens and window limit the enumeration follows.
  * @param lexer The compiled set.
  * @return The windows, each at its least cut.

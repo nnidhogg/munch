@@ -71,6 +71,7 @@ target_link_libraries(${PROJECT_NAME}
         munch_core
         munch_pattern
         munch_regex
+        munch_verifier
 )
 
 # The command: munch-audit FILE..., the readers and the report behind one program.
@@ -103,6 +104,7 @@ if (MUNCH_BUILD_TESTS)
             tests/report_test.cpp
             tests/supply_test.cpp
             tests/twins_test.cpp
+            tests/window_modulo_test.cpp
     )
 
     target_link_libraries(${PROJECT_NAME}_tests

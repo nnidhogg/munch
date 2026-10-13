@@ -560,7 +560,7 @@ maximal-munch scanning over a token set's DFA, `verifier::merge_tower(merges)` o
 verifier of canonical byte-pair encoding over a merge table, `verifier::trie_chain(initial, continuation)` of
 `munch/verifier/trie_chain.hpp` the verifier of WordPiece segmentation over a two-mode vocabulary, and the constructor
 builds one from any transition table, trimming it to the states reachable from the start that can reach acceptance. The
-eleven decisions of `munch/verifier/verifier_decisions.hpp` then run on the product of the verifier with a search or on
+twelve decisions of `munch/verifier/verifier_decisions.hpp` then run on the product of the verifier with a search or on
 its minimal automaton, each with a witness replayable through `Verifier::step()` but `fanout()`, which returns states.
 `miscovering(verifier, window, origin)` decides the window certificate `(window, origin)`, that the token containing an
 occurrence's final byte begins at the origin at every occurrence in every accepted marked string, and returns the
@@ -625,8 +625,12 @@ discarded the decision certifies a window that occurs exactly where `pinned_cut(
 offset, and a window that occurs nowhere vacuously, where `pinned_cut()` returns `Absent_window`. A boundary cut of
 another verifier need not be independent: over the domain of the empty string and ab, segmented a|b, `pinned_cut()`
 places the window b at 0 and the decision refutes the cut before it, since neither a nor b lies in the domain. For one
-byte at offset zero the decision certifies wherever `is_split_point_ignoring()` does. munch-audit's `--windows-modulo`
-decides the same question for every window up to its width.
+byte at offset zero the decision certifies wherever `is_split_point_ignoring()` does.
+`modulo_cuts(verifier, alphabet, width, discarded)` is the same decision explored once per verifier rather than once per
+pair: it lists every cut that holds of every window up to the width that occurs in some accepted marked string, the
+windows written over the alphabet, which holds every byte the verifier reads, by carrying each window's clouds of the
+two products' nodes, and leaves the witness of a refused pair to `modulo_dependence()`; munch-audit's `--windows-modulo`
+calls it.
 
 `chunk_dependence(verifier, inventory)` asks the question parallel scanning needs of an inventory of certified pairs,
 and refuses an inventory with a pair the verifier does not certify: cutting every accepted marked string at every

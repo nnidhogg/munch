@@ -546,11 +546,17 @@ struct Modulo_counts
      * @brief The dependences whose chunks are completely tokenizable and whose kept tokens differ from the text's.
      */
     std::size_t token_failures{0};
+
+    /**
+     * @brief The cuts modulo_cuts() lists, over every universe.
+     */
+    std::size_t listed{0};
 };
 
 /**
  * @brief The modulo fixture under check: the current universe's DFA and verifier, the steps and accepting states of its
- *        DFA read so far, its discarded tokens, the current universe's line, and the counts so far.
+ *        DFA read so far, its discarded tokens, its alphabet, the cuts modulo_cuts() lists for it, the current
+ *        universe's line, and the counts so far.
  */
 struct Modulo_check
 {
@@ -573,6 +579,16 @@ struct Modulo_check
      * @brief The universe's discarded tokens.
      */
     std::vector<std::size_t> discarded{};
+
+    /**
+     * @brief The universe's alphabet, in the order its windows are written.
+     */
+    std::string alphabet{};
+
+    /**
+     * @brief The cuts modulo_cuts() lists for the universe's windows up to width three.
+     */
+    std::set<std::pair<std::string, std::size_t>> cuts{};
 
     /**
      * @brief The current universe's line, for the failure messages.
@@ -3563,16 +3579,22 @@ void expect_modulo_dependence(
 /**
  * @brief Starts a universe line's universe, whose DFA's steps and accepting states and its discarded line follow.
  * @param check The fixture under check.
+ * @param fields The line after its first word, the universe's index and then its alphabet.
  * @param line The line.
  */
-void start_modulo_universe(Modulo_check& check, const std::string& line)
+void start_modulo_universe(Modulo_check& check, std::istringstream& fields, const std::string& line)
 {
+    std::size_t index{};
+
     ++check.counts.universes;
     check.universe = line;
     check.current.reset();
     check.steps.clear();
     check.accepting.clear();
     check.discarded.clear();
+    check.cuts.clear();
+
+    fields >> index >> check.alphabet;
 }
 
 /**
@@ -3616,7 +3638,8 @@ Dfa table_dfa(
 }
 
 /**
- * @brief Reads the discarded line of a universe and builds its DFA and the DFA's armed run.
+ * @brief Reads the discarded line of a universe, builds its DFA and the DFA's armed run, and lists the cuts
+ *        modulo_cuts() finds for its windows up to width three.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
@@ -3634,13 +3657,22 @@ void build_modulo_universe(Modulo_check& check, std::istringstream& fields, cons
 
     auto verifier{armed_run(dfa)};
 
+    const std::vector<unsigned char> alphabet{check.alphabet.begin(), check.alphabet.end()};
+
+    for (const auto& [window, offset] : modulo_cuts(verifier, alphabet, 3, check.discarded))
+    {
+        check.cuts.emplace(window, offset);
+    }
+
+    check.counts.listed += check.cuts.size();
+
     check.current.emplace(Universe{.dfa = std::move(dfa), .verifier = std::move(verifier)});
 }
 
 /**
- * @brief Checks a modulo line: an independent cut answered so, an absent window answered so and absent from the
- *        verifier's accepted marked strings, and a dependent cut checked with its witness, as long as the reference's,
- *        both replayed by the definition.
+ * @brief Checks a modulo line: an independent cut answered so and listed by modulo_cuts(), an absent window answered
+ *        so, absent from the verifier's accepted marked strings and not listed, and a dependent cut not listed and
+ *        checked with its witness, as long as the reference's, both replayed by the definition.
  * @param check The fixture under check.
  * @param fields The line after its first word.
  * @param context The line.
@@ -3662,6 +3694,8 @@ void expect_modulo(Modulo_check& check, std::istringstream& fields, const std::s
     const auto found{modulo_dependence(verifier, window, offset, check.discarded)};
 
     const auto absent{std::holds_alternative<Absent_window>(pinned_cut(verifier, window, 0))};
+
+    EXPECT_EQ(check.cuts.contains({window, offset}), verdict == "independent") << context;
 
     if (verdict == "independent" || verdict == "absent")
     {
@@ -3717,7 +3751,7 @@ void expect_modulo_fixture_line(Modulo_check& check, const std::string& line)
 
     if (kind == "universe")
     {
-        start_modulo_universe(check, line);
+        start_modulo_universe(check, fields, line);
     }
     else if (kind == "step")
     {
@@ -4507,7 +4541,7 @@ TEST(Verifier_test, Constructor_keeps_the_kinds_of_a_caller_table_and_gives_the_
     EXPECT_FALSE(unkinded.final_kind(1));
 }
 
-TEST(Verifier_test, Modulo_dependence_gives_the_reference_answers_on_every_universe_of_the_modulo_fixture)
+TEST(Verifier_test, Modulo_dependence_and_modulo_cuts_give_the_reference_answers_on_every_universe_of_the_fixture)
 {
     std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/modulo_reference.txt"};
 
@@ -4528,6 +4562,7 @@ TEST(Verifier_test, Modulo_dependence_gives_the_reference_answers_on_every_unive
     EXPECT_EQ(check.counts.prefix_failures, 31000U);
     EXPECT_EQ(check.counts.suffix_failures, 29963U);
     EXPECT_EQ(check.counts.token_failures, 6428U);
+    EXPECT_EQ(check.counts.listed, 11542U);
 }
 
 TEST(Verifier_test, Modulo_dependence_agrees_with_the_definition_over_random_token_sets_with_kinds)
@@ -4674,6 +4709,19 @@ TEST(Verifier_test, Modulo_dependence_refuses_a_malformed_window)
 
     EXPECT_THROW(std::ignore = modulo_dependence(verifier, "", 0, {}), std::invalid_argument);
     EXPECT_THROW(std::ignore = modulo_dependence(verifier, "ab", 2, {}), std::invalid_argument);
+}
+
+TEST(Verifier_test, Modulo_cuts_refuses_an_alphabet_that_leaves_out_a_byte_the_verifier_reads_or_carries_one_twice)
+{
+    const auto verifier{armed_run(literal_dfa({"a", "b", "ca"}))};
+
+    const std::vector<unsigned char> without_c{'a', 'b'};
+    const std::vector<unsigned char> repeated{'a', 'b', 'c', 'a'};
+    const std::vector<unsigned char> complete{'a', 'b', 'c'};
+
+    EXPECT_THROW(std::ignore = modulo_cuts(verifier, without_c, 2, {}), std::invalid_argument);
+    EXPECT_THROW(std::ignore = modulo_cuts(verifier, repeated, 2, {}), std::invalid_argument);
+    EXPECT_NO_THROW(std::ignore = modulo_cuts(verifier, complete, 2, {}));
 }
 
 TEST(Verifier_test, Chunk_dependence_gives_the_reference_answers_on_every_universe_of_the_chunk_fixture)

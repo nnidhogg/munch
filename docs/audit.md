@@ -246,37 +246,43 @@ Row by row:
   byte once the discarded tokens are deleted, the section that does for the certified windows what the certified modulo
   discarded row does for the certified bytes. A window certifies a cut at offset `o` once the discarded tokens are
   deleted when, in every input the condition tokenizes completely that holds the window at some offset `t`, cutting at
-  `t + o` leaves two chunks it tokenizes completely whose token streams, the discarded tokens deleted, concatenate to
-  the whole input's. The offset is a cut and not an origin, since where it falls inside a token the token covering the
-  window's last byte may begin anywhere. The decision is `is_split_window()`'s cloud of hypotheses with one more field,
-  how each crossed the gap before byte `o`: at a boundary, where it began a token there or followed a token that ended
-  there; harmlessly, where it read the byte from a state that passes the test `is_split_point_ignoring()` asks of every
-  state consuming a byte, that the state accepts a discarded token, that no kept token is reachable after the byte, and
-  that no continuation tells the state after the byte from the initial state's after it once every discarded token is
-  one colour; or harmfully. A direct step keeps the field and a fresh hypothesis enters once with the field of each
-  accepting hypothesis it follows, and the window certifies at `o` when the cloud past its last byte is nonempty and
-  each hypothesis began its token at `o` or crossed the gap harmlessly. Lemma 2 of
-  [docs/split_windows.md](split_windows.md), carried with the field, places the true history in the cloud with its true
-  crossing, so at every occurrence the cut is a token boundary, where it is exact as at a certified window's origin, or
-  falls inside a token at a state that passes the test, where the one-cut step of Theorem 3 of
-  [docs/split_points.md](split_points.md) applies with the test in place of its condition: the left chunk ends on the
-  discarded token that state accepts, and the right chunk restarts in a state no continuation tells from the interrupted
-  scan's, so it ends its first token where the whole input's ends and agrees with it from there. The row claims that one
-  cut and no more. The byte certificate cuts at every occurrence at once because each occurrence in each chunk is
-  certified again, while a window speaks only of its occurrences in the whole input, so no planner cuts at these windows
-  and none is given a fan-out. With no token discarded the decision is `is_split_window()` at `o`, and for one byte it
-  is `is_split_point_ignoring()`. A hypothesis that crossed at a boundary and began its covering token past `o` does not
-  count toward the cut, since a boundary at a fixed gap is the exact question `boundary_profile()` already decides. The
+  `t + o` leaves two chunks it tokenizes completely whose kept tokens, at their positions in the input, are the input's:
+  the same tokens at the same positions, which is what Theorem 3 of [docs/split_points.md](split_points.md) delivers for
+  a certified byte. Compared as (kind, length) pairs alone, the letter of that report's definition, the streams would
+  certify a cut at which a kept token keeps its kind and its length and changes its text: with `ab` and `b` discarded
+  and `aab|bba` kept, the window `aab` cut at 0 occurs in `bbaab`, read `bba` then `ab` whole and `b`, `b` and `aab` as
+  chunks. The offset is a cut and not an origin, since where it falls inside a token the token covering the window's
+  last byte may begin anywhere. The decision is exact, the verifier library's `modulo_dependence()` over the condition's
+  armed run read over one byte of every class, its segments carrying their tokens: the domain product, the run on the
+  input's marking beside the states it can be in under any marks, restarted at the cut, says whether both chunks
+  tokenize completely, and the agreement product, a copy of the run on the input's marking beside one on the chunks',
+  compared as their kept tokens close, says whether the kept tokens agree. `modulo_dependence()` searches the products
+  once per pair for the shortest input that refutes it; the audit calls the library's `modulo_cuts()`, the same decision
+  explored once per condition, since any input may precede a window and follow it, which carries each window's clouds of
+  product nodes, one per cut, so that a cut holds when no node of its clouds past the window's last byte reaches a node
+  where an input ends refuted. The row claims that one cut and no more. The byte certificate cuts at every occurrence at
+  once because each occurrence in each chunk is certified again, while a window speaks only of its occurrences in the
+  whole input, so no planner cuts at these windows and none is given a fan-out. With no token discarded the decision
+  asks that the cut be a token boundary at every occurrence, and for one byte it certifies wherever
+  `is_split_point_ignoring()` does, as the tests check over every byte of every bundled grammar, and more: in Lean's
+  block comment mode it certifies the cut before `-` and before `/`, which the byte test, one byte deep, refuses. The
   windows are enumerated over the byte classes up to `--windows` as the certified windows row's are, those
-  `is_split_window()` certifies left out, and are counted and shown the same way, each with its least cut; where the
-  condition discards no token, one row says so. Of the bundled grammars' conditions that certify no byte once the
-  discarded tokens are deleted, Lean's string, interpolation and doc comment modes discard no token, and the four
-  block-comment grammars and Lean's default mode, which do, show no window up to the default width; a block comment's
-  interior accepts nothing, so no cut inside it passes the test. Lean's default mode gains three at width 4,
-  `"\xC2\xBB\n\n"`, `"\xC2\xBB\n "` and `"\xC2\xBB \n"`, each cut at 3, a guillemet's close followed by whitespace with
-  the cut inside the whitespace run, beside the 221 exact windows of that width. The search runs depth first, each
-  window extending its prefix's walks, one per cut, by one step, so its cost grows with the width as the certified
-  windows row's does.
+  `is_split_window()` certifies left out, a window that occurs in no completely tokenizable input left out with every
+  window extending it, and are counted and shown the same way, each with its least cut; where the condition discards no
+  token, one row says so. A walk over `is_split_window()`'s cloud of hypotheses, each saying whether it crossed the gap
+  before byte `o` at a boundary where it began a token, harmlessly at a state that passes the byte test or harmfully, is
+  sound and far from complete: over the 1,794 small token sets the decision is validated on, it certifies 28 of the 833
+  windows the section lists where it is printed, since its cloud holds hypotheses no input realizes, its rule refuses a
+  cut at a boundary when the covering token began elsewhere, and the byte test cannot see a restarted scan rejoin the
+  interrupted one past the next byte. It is faster, 0.2 s against 1.6 s on Lean's default mode at the default width and
+  9 s against 53 s at width 4, and it is not kept as a fast path, since every window's clouds are carried whatever the
+  walk says of it, so a window it certifies saves nothing. Of the bundled grammars' conditions that certify no byte once
+  the discarded tokens are deleted, Lean's string, interpolation and doc comment modes discard no token, and the four
+  block-comment grammars and Lean's default mode, which do, show no window up to the default width. Lean's default mode
+  gains six at width 4, `"\xC2\xBB\n\n"`, `"\xC2\xBB\n\r"`, `"\xC2\xBB\n "`, `"\xC2\xBB\r\n"`, `"\xC2\xBB \n"` and
+  `"\xC2\xBB--"`, each cut at 2, a guillemet's close followed by whitespace or a line comment with the cut between them,
+  beside the 221 exact windows of that width. The search runs depth first, each window extending its prefix's clouds,
+  one per cut, by one class, so its cost grows with the width as the certified windows row's does.
 - **why no byte certifies, read off the verifier's relation monoid**: with `--obstruction`, for a condition that
   certifies no byte, a window certifying or not, an experimental section that names the obstruction where the report
   only says that no byte certifies, labelled a diagnostic because the theory it rests on is proved only in part. The

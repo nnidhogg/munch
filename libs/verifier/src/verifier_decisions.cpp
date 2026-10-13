@@ -4,6 +4,7 @@
 #include <array>
 #include <compare>
 #include <cstddef>
+#include <deque>
 #include <format>
 #include <functional>
 #include <iterator>
@@ -1806,6 +1807,1152 @@ template <typename Key, typename Restarts>
 }
 
 /**
+ * @brief A set of nodes of a product, kept ascending and without duplicates.
+ * @tparam Node The product's node type.
+ */
+template <typename Node>
+using Cloud_t = std::vector<Node>;
+
+/**
+ * @brief A kinded verifier tabulated over an alphabet, each byte numbered by its index there: per state, symbol and
+ *        boundary bit the state a step reaches, per state and symbol the kept kind of the segment a marked step closes,
+ *        and per state whether it accepts and the kept kind of the last segment.
+ *
+ * A kind is kept when it is recorded and not discarded; any other segment reads as no kind at all.
+ */
+class Symbol_run
+{
+public:
+    /**
+     * @brief Tabulates a kinded verifier over an alphabet.
+     * @param verifier The verifier.
+     * @param symbols The alphabet, each byte numbered by its index.
+     * @param discarded The discarded kinds.
+     */
+    Symbol_run(
+            const Verifier& verifier, std::span<const unsigned char> symbols, std::span<const std::size_t> discarded);
+
+    /**
+     * @brief Returns the start state, the unconsumed one.
+     * @return The start state.
+     */
+    [[nodiscard]] State_t start() const noexcept;
+
+    /**
+     * @brief Returns the number of symbols the run is read over.
+     * @return The symbol count.
+     */
+    [[nodiscard]] std::size_t symbol_count() const noexcept;
+
+    /**
+     * @brief Returns the state a symbol leads a state to under a boundary bit.
+     * @param state The state read from.
+     * @param symbol The symbol.
+     * @param boundary_after Whether a boundary follows the byte.
+     * @return The state reached, or std::nullopt where the step is refused.
+     */
+    [[nodiscard]] std::optional<State_t> step(State_t state, std::size_t symbol, bool boundary_after) const;
+
+    /**
+     * @brief Returns the kept kind of the segment a step closes.
+     * @param state The state read from.
+     * @param symbol The symbol.
+     * @param boundary_after Whether a boundary follows the byte, so that the step closes a segment.
+     * @return The kind, or std::nullopt where the step closes no segment or one of a discarded kind.
+     */
+    [[nodiscard]] std::optional<std::size_t> closed(State_t state, std::size_t symbol, bool boundary_after) const;
+
+    /**
+     * @brief Returns whether a state accepts.
+     * @param state The state.
+     * @return True when an input may end there.
+     */
+    [[nodiscard]] bool accepts(State_t state) const;
+
+    /**
+     * @brief Returns the kept kind of the last segment of an input that ends in a state.
+     * @param state The state, accepting.
+     * @return The kind, or std::nullopt where the last segment is discarded or, at the start, absent.
+     */
+    [[nodiscard]] std::optional<std::size_t> last(State_t state) const;
+
+private:
+    /**
+     * @brief The number of symbols.
+     */
+    std::size_t symbol_count_{};
+
+    /**
+     * @brief The state each step reaches, by state, symbol and boundary bit.
+     */
+    std::vector<std::optional<State_t>> steps_{};
+
+    /**
+     * @brief The kept kind of the segment each marked step closes, by state and symbol.
+     */
+    std::vector<std::optional<std::size_t>> closes_{};
+
+    /**
+     * @brief Whether each state accepts.
+     */
+    std::vector<bool> accepting_{};
+
+    /**
+     * @brief The kept kind of the last segment at each state.
+     */
+    std::vector<std::optional<std::size_t>> lasts_{};
+};
+
+Symbol_run::Symbol_run(
+        const Verifier& verifier, const std::span<const unsigned char> symbols,
+        const std::span<const std::size_t> discarded)
+    : symbol_count_{symbols.size()}
+    , steps_(verifier.state_count() * symbols.size() * marks.size())
+    , closes_(verifier.state_count() * symbols.size())
+    , accepting_(verifier.state_count(), false)
+    , lasts_(verifier.state_count())
+{
+    for (State_t state{0}; state < verifier.state_count(); ++state)
+    {
+        accepting_[state] = verifier.accepts(state);
+
+        lasts_[state] = kept_kind(verifier.final_kind(state), discarded);
+
+        for (std::size_t symbol{0}; symbol < symbols.size(); ++symbol)
+        {
+            const auto byte{symbols[symbol]};
+
+            closes_[state * symbol_count_ + symbol] = kept_kind(verifier.close_kind(state, byte), discarded);
+
+            for (const auto boundary_after : marks)
+            {
+                const auto index{(state * symbol_count_ + symbol) * marks.size() + (boundary_after ? 1 : 0)};
+
+                steps_[index] = verifier.step(state, {.byte = byte, .boundary_after = boundary_after});
+            }
+        }
+    }
+}
+
+State_t Symbol_run::start() const noexcept
+{
+    return 0;
+}
+
+std::size_t Symbol_run::symbol_count() const noexcept
+{
+    return symbol_count_;
+}
+
+std::optional<State_t> Symbol_run::step(const State_t state, const std::size_t symbol, const bool boundary_after) const
+{
+    const auto index{(state * symbol_count_ + symbol) * marks.size() + (boundary_after ? 1 : 0)};
+
+    return steps_[index];
+}
+
+std::optional<std::size_t> Symbol_run::closed(
+        const State_t state, const std::size_t symbol, const bool boundary_after) const
+{
+    if (!boundary_after)
+    {
+        return std::nullopt;
+    }
+
+    return closes_[state * symbol_count_ + symbol];
+}
+
+bool Symbol_run::accepts(const State_t state) const
+{
+    return accepting_[state];
+}
+
+std::optional<std::size_t> Symbol_run::last(const State_t state) const
+{
+    return lasts_[state];
+}
+
+/**
+ * @brief The sets of states the run can be in under any marks of the symbols read from its start, each numbered as it
+ *        is found from the start's own set, with the set each symbol leads each to and whether each holds an accepting
+ *        state.
+ *
+ * An input read from the start lies in the domain exactly when its set holds an accepting state: a marking ending in a
+ * boundary reaches no accepting state, and the run accepts one marking per input.
+ */
+class Reach_sets
+{
+public:
+    /**
+     * @brief Explores the sets from the start's own set over every symbol.
+     * @param run The tabulated run.
+     */
+    explicit Reach_sets(const Symbol_run& run);
+
+    /**
+     * @brief Returns the number of the start's own set, before any symbol is read.
+     * @return Zero.
+     */
+    [[nodiscard]] std::size_t start() const noexcept;
+
+    /**
+     * @brief Returns the set a symbol leads a set to.
+     * @param set The set's number.
+     * @param symbol The symbol.
+     * @return The number of the set reached, which may be the empty one.
+     */
+    [[nodiscard]] std::size_t after(std::size_t set, std::size_t symbol) const;
+
+    /**
+     * @brief Returns whether a set holds an accepting state.
+     * @param set The set's number.
+     * @return True when the input read lies in the domain.
+     */
+    [[nodiscard]] bool accepts(std::size_t set) const;
+
+private:
+    /**
+     * @brief The number of symbols.
+     */
+    std::size_t symbol_count_{};
+
+    /**
+     * @brief The set each symbol leads each set to, by set and symbol.
+     */
+    std::vector<std::size_t> next_{};
+
+    /**
+     * @brief Whether each set holds an accepting state.
+     */
+    std::vector<bool> accepting_{};
+};
+
+Reach_sets::Reach_sets(const Symbol_run& run) : symbol_count_{run.symbol_count()}
+{
+    std::map<std::vector<State_t>, std::size_t> numbered{{{run.start()}, 0}};
+
+    std::vector<std::vector<State_t>> sets{{run.start()}};
+
+    for (std::size_t set{0}; set < sets.size(); ++set)
+    {
+        // A copy, since numbering a new set grows the list.
+        const auto states{sets[set]};
+
+        const auto accepting{std::ranges::any_of(states, [&run](const State_t state) { return run.accepts(state); })};
+
+        accepting_.push_back(accepting);
+
+        for (std::size_t symbol{0}; symbol < symbol_count_; ++symbol)
+        {
+            std::vector<State_t> reached{};
+
+            for (const auto state : states)
+            {
+                for (const auto boundary_after : marks)
+                {
+                    if (const auto to{run.step(state, symbol, boundary_after)})
+                    {
+                        reached.push_back(*to);
+                    }
+                }
+            }
+
+            std::ranges::sort(reached);
+
+            const auto repeats{std::ranges::unique(reached)};
+
+            reached.erase(repeats.begin(), repeats.end());
+
+            const auto [entry, inserted]{numbered.try_emplace(reached, sets.size())};
+
+            const auto& [members, number]{*entry};
+
+            if (inserted)
+            {
+                sets.push_back(members);
+            }
+
+            next_.push_back(number);
+        }
+    }
+}
+
+std::size_t Reach_sets::start() const noexcept
+{
+    return 0;
+}
+
+std::size_t Reach_sets::after(const std::size_t set, const std::size_t symbol) const
+{
+    return next_[set * symbol_count_ + symbol];
+}
+
+bool Reach_sets::accepts(const std::size_t set) const
+{
+    return accepting_[set];
+}
+
+/**
+ * @brief A node of the agreement product: the state of the copy on the input's marking, the state of the copy on the
+ *        chunks' marking, restarted at the cut, whether the two copies' current segments began at the same position,
+ *        and whether a kept segment closed on one copy without the same segment closing on the other.
+ */
+struct Pair_node
+{
+    /**
+     * @brief Ordered member by member, so clouds sort and their duplicates meet.
+     */
+    auto operator<=>(const Pair_node&) const = default;
+
+    /**
+     * @brief The state of the copy on the input's marking.
+     */
+    State_t whole{};
+
+    /**
+     * @brief The state of the copy on the chunks' marking.
+     */
+    State_t chunk{};
+
+    /**
+     * @brief Whether the two copies' current segments began at the same position.
+     */
+    bool aligned{};
+
+    /**
+     * @brief Whether a kept segment closed on one copy without the same segment closing on the other.
+     */
+    bool differs{};
+};
+
+/**
+ * @brief Returns whether two closes agree: neither keeps a segment, or both keep one of the same kind begun at the same
+ *        position.
+ * @param one The kept kind one copy closes, std::nullopt for none.
+ * @param other The kept kind the other copy closes, std::nullopt for none.
+ * @param aligned Whether the two copies' current segments began at the same position.
+ * @return True when they agree.
+ */
+[[nodiscard]] bool agree(
+        const std::optional<std::size_t> one, const std::optional<std::size_t> other, const bool aligned)
+{
+    return one == other && (!one || aligned);
+}
+
+/**
+ * @brief The rules of the agreement product of modulo_dependence(): two copies of the run on one input, one on its
+ *        marking and one on the chunks', compared as their kept segments close.
+ */
+struct Pair_rules
+{
+    /**
+     * @brief The product's node type.
+     */
+    using Node = Pair_node;
+
+    /**
+     * @brief Returns the node before any byte: both copies at the start, aligned, nothing differing.
+     * @return The root.
+     */
+    [[nodiscard]] Pair_node root() const;
+
+    /**
+     * @brief Returns the node the cut at position zero places, before any byte, where the empty prefix lies in the
+     *        domain.
+     * @return The node, or std::nullopt when the start does not accept.
+     */
+    [[nodiscard]] std::optional<Pair_node> at_zero() const;
+
+    /**
+     * @brief Reads a symbol into both copies under every pair of boundary bits.
+     * @tparam Emit The callback type.
+     * @param node The node read from.
+     * @param symbol The symbol.
+     * @param emit Called with each node reached.
+     */
+    template <typename Emit>
+    void step(const Pair_node& node, std::size_t symbol, const Emit& emit) const;
+
+    /**
+     * @brief Reads a symbol that ends the prefix: the chunks' copy reads it without a boundary, accepts the prefix and
+     *        restarts, the input's copy reads it under either bit.
+     * @tparam Emit The callback type.
+     * @param node The node read from.
+     * @param symbol The symbol.
+     * @param emit Called with each node reached after the cut.
+     */
+    template <typename Emit>
+    void cut(const Pair_node& node, std::size_t symbol, const Emit& emit) const;
+
+    /**
+     * @brief Returns whether an input may end at a node after the cut with its kept segments differing from the
+     *        chunks': both copies accept, and a close differed or the last segments disagree.
+     * @param node The node.
+     * @return True when the node refutes the cut.
+     */
+    [[nodiscard]] bool refutes(const Pair_node& node) const;
+
+    /**
+     * @brief The tabulated run.
+     */
+    const Symbol_run& run;
+};
+
+Pair_node Pair_rules::root() const
+{
+    return {.whole = run.start(), .chunk = run.start(), .aligned = true, .differs = false};
+}
+
+std::optional<Pair_node> Pair_rules::at_zero() const
+{
+    if (!run.accepts(run.start()))
+    {
+        return std::nullopt;
+    }
+
+    return root();
+}
+
+template <typename Emit>
+void Pair_rules::step(const Pair_node& node, const std::size_t symbol, const Emit& emit) const
+{
+    const auto& [whole, chunk, aligned, differs]{node};
+
+    for (const auto whole_mark : marks)
+    {
+        const auto whole_to{run.step(whole, symbol, whole_mark)};
+
+        if (!whole_to)
+        {
+            continue;
+        }
+
+        const auto whole_closed{run.closed(whole, symbol, whole_mark)};
+
+        for (const auto chunk_mark : marks)
+        {
+            const auto chunk_to{run.step(chunk, symbol, chunk_mark)};
+
+            if (!chunk_to)
+            {
+                continue;
+            }
+
+            const auto chunk_closed{run.closed(chunk, symbol, chunk_mark)};
+
+            const auto differs_to{differs || !agree(whole_closed, chunk_closed, aligned)};
+
+            // The next segments begin together where both copies close one, or neither does after aligned ones.
+            const auto aligned_to{whole_mark == chunk_mark && (whole_mark || aligned)};
+
+            emit(Pair_node{.whole = *whole_to, .chunk = *chunk_to, .aligned = aligned_to, .differs = differs_to});
+        }
+    }
+}
+
+template <typename Emit>
+void Pair_rules::cut(const Pair_node& node, const std::size_t symbol, const Emit& emit) const
+{
+    const auto& [whole, chunk, aligned, differs]{node};
+
+    const auto ending{run.step(chunk, symbol, false)};
+
+    if (!ending || !run.accepts(*ending))
+    {
+        return;
+    }
+
+    const auto chunk_closed{run.last(*ending)};
+
+    for (const auto whole_mark : marks)
+    {
+        const auto whole_to{run.step(whole, symbol, whole_mark)};
+
+        if (!whole_to)
+        {
+            continue;
+        }
+
+        const auto whole_closed{run.closed(whole, symbol, whole_mark)};
+
+        const auto differs_to{differs || !agree(whole_closed, chunk_closed, aligned)};
+
+        emit(Pair_node{.whole = *whole_to, .chunk = run.start(), .aligned = whole_mark, .differs = differs_to});
+    }
+}
+
+bool Pair_rules::refutes(const Pair_node& node) const
+{
+    const auto& [whole, chunk, aligned, differs]{node};
+
+    if (!run.accepts(whole) || !run.accepts(chunk))
+    {
+        return false;
+    }
+
+    return differs || !agree(run.last(whole), run.last(chunk), aligned);
+}
+
+/**
+ * @brief A node of the domain product: the run's state on the input's marking, the number of the set of states it can
+ *        be in under any marks of the symbols read since the start or since the cut, and whether the prefix before
+ *        the cut lies outside the domain.
+ */
+struct Domain_node
+{
+    /**
+     * @brief Ordered member by member, so clouds sort and their duplicates meet.
+     */
+    auto operator<=>(const Domain_node&) const = default;
+
+    /**
+     * @brief The run's state on the input's marking.
+     */
+    State_t state{};
+
+    /**
+     * @brief The number of the set of states the run can be in under any marks of the symbols read since the start or
+     *        since the cut.
+     */
+    std::size_t reachable{};
+
+    /**
+     * @brief Whether the prefix before the cut lies outside the domain.
+     */
+    bool prefix_fails{};
+};
+
+/**
+ * @brief The rules of the domain product of modulo_dependence(): the run on the input's marking beside the set of
+ *        states it can be in under any marks, restarted at the cut.
+ */
+struct Domain_rules
+{
+    /**
+     * @brief The product's node type.
+     */
+    using Node = Domain_node;
+
+    /**
+     * @brief Returns the node before any byte: the run at the start, its set the start's own.
+     * @return The root.
+     */
+    [[nodiscard]] Domain_node root() const;
+
+    /**
+     * @brief Returns the node the cut at position zero places, before any byte: an empty prefix, in the domain exactly
+     *        when the start accepts.
+     * @return The node.
+     */
+    [[nodiscard]] std::optional<Domain_node> at_zero() const;
+
+    /**
+     * @brief Reads a symbol into the run under either boundary bit and into the set.
+     * @tparam Emit The callback type.
+     * @param node The node read from.
+     * @param symbol The symbol.
+     * @param emit Called with each node reached.
+     */
+    template <typename Emit>
+    void step(const Domain_node& node, std::size_t symbol, const Emit& emit) const;
+
+    /**
+     * @brief Reads a symbol that ends the prefix: the run reads it under either bit, the prefix lies outside the domain
+     *        when the set the symbol leads to holds no accepting state, and the set restarts.
+     * @tparam Emit The callback type.
+     * @param node The node read from.
+     * @param symbol The symbol.
+     * @param emit Called with each node reached after the cut.
+     */
+    template <typename Emit>
+    void cut(const Domain_node& node, std::size_t symbol, const Emit& emit) const;
+
+    /**
+     * @brief Returns whether an input may end at a node after the cut with a side outside the domain: the run accepts,
+     *        and the prefix failed or the set holds no accepting state.
+     * @param node The node.
+     * @return True when the node refutes the cut.
+     */
+    [[nodiscard]] bool refutes(const Domain_node& node) const;
+
+    /**
+     * @brief The tabulated run.
+     */
+    const Symbol_run& run;
+
+    /**
+     * @brief The sets of states the run can be in.
+     */
+    const Reach_sets& sets;
+};
+
+Domain_node Domain_rules::root() const
+{
+    return {.state = run.start(), .reachable = sets.start(), .prefix_fails = false};
+}
+
+std::optional<Domain_node> Domain_rules::at_zero() const
+{
+    const auto prefix_fails{!run.accepts(run.start())};
+
+    return Domain_node{.state = run.start(), .reachable = sets.start(), .prefix_fails = prefix_fails};
+}
+
+template <typename Emit>
+void Domain_rules::step(const Domain_node& node, const std::size_t symbol, const Emit& emit) const
+{
+    const auto& [state, reachable, prefix_fails]{node};
+
+    const auto reachable_to{sets.after(reachable, symbol)};
+
+    for (const auto boundary_after : marks)
+    {
+        const auto to{run.step(state, symbol, boundary_after)};
+
+        if (!to)
+        {
+            continue;
+        }
+
+        emit(Domain_node{.state = *to, .reachable = reachable_to, .prefix_fails = prefix_fails});
+    }
+}
+
+template <typename Emit>
+void Domain_rules::cut(const Domain_node& node, const std::size_t symbol, const Emit& emit) const
+{
+    const auto& [state, reachable, prefix_fails]{node};
+
+    const auto ending{sets.after(reachable, symbol)};
+
+    const auto fails{!sets.accepts(ending)};
+
+    for (const auto boundary_after : marks)
+    {
+        const auto to{run.step(state, symbol, boundary_after)};
+
+        if (!to)
+        {
+            continue;
+        }
+
+        emit(Domain_node{.state = *to, .reachable = sets.start(), .prefix_fails = fails});
+    }
+}
+
+bool Domain_rules::refutes(const Domain_node& node) const
+{
+    const auto& [state, reachable, prefix_fails]{node};
+
+    return run.accepts(state) && (prefix_fails || !sets.accepts(reachable));
+}
+
+/**
+ * @brief A product of modulo_dependence() explored once for every window: the nodes before the cut reachable from its
+ *        root, the nodes the cut at offset zero places, and the nodes after the cut from which an input ending at a
+ *        refuting node is reachable; and the images of clouds under a symbol.
+ *
+ * A window holds a cut at offset o when no refuting node is reachable from the nodes the window's last bytes lead the
+ * cut's nodes to. Before the cut any input may precede the window, so the window's first o bytes are read from every
+ * node before the cut, and after it any input may follow, so a refuting node reachable past the window refutes. The
+ * nodes the cut at offset o places are those its byte o - 1 leads every node before it to by a cut, or, at offset zero,
+ * those any byte leads every node before the cut to by a cut together with the cut at position zero.
+ * @tparam Rules The rules of the product.
+ */
+template <typename Rules>
+class Product
+{
+public:
+    /**
+     * @brief The product's node type.
+     */
+    using Node = typename Rules::Node;
+
+    /**
+     * @brief Explores the product: the nodes before the cut, the nodes the cut at offset zero places, the nodes after
+     *        the cut reachable from them, and among those the ones a refuting node is reachable from.
+     * @param rules The rules.
+     */
+    explicit Product(Rules rules);
+
+    /**
+     * @brief Returns the nodes before the cut reachable from the root, the cloud before a window's first byte.
+     * @return The nodes.
+     */
+    [[nodiscard]] const Cloud_t<Node>& before() const noexcept;
+
+    /**
+     * @brief Returns the nodes the cut at offset zero places, the cloud of that cut before a window's first byte.
+     * @return The nodes.
+     */
+    [[nodiscard]] const Cloud_t<Node>& at_zero() const noexcept;
+
+    /**
+     * @brief Returns the nodes a symbol leads a cloud's nodes to, by steps on the same side of the cut.
+     * @param cloud The cloud.
+     * @param symbol The symbol.
+     * @return The cloud reached.
+     */
+    [[nodiscard]] Cloud_t<Node> image(const Cloud_t<Node>& cloud, std::size_t symbol) const;
+
+    /**
+     * @brief Returns the nodes a symbol leads a cloud's nodes before the cut to by a cut after it.
+     * @param cloud The cloud, before the cut.
+     * @param symbol The symbol.
+     * @return The cloud reached, after the cut.
+     */
+    [[nodiscard]] Cloud_t<Node> cut_image(const Cloud_t<Node>& cloud, std::size_t symbol) const;
+
+    /**
+     * @brief Returns whether a cloud after the cut, past a window's last byte, holds the cut: no refuting node is
+     *        reachable from it.
+     * @param cloud The cloud.
+     * @return True when the cut holds.
+     */
+    [[nodiscard]] bool holds(const Cloud_t<Node>& cloud) const;
+
+private:
+    /**
+     * @brief Returns the nodes after the cut from which a refuting node is reachable, by one backward closure over the
+     *        nodes after the cut reachable from the ones the cut at offset zero places.
+     * @return The nodes, ascending.
+     */
+    [[nodiscard]] Cloud_t<Node> refuting_nodes() const;
+
+    /**
+     * @brief The rules.
+     */
+    Rules rules_;
+
+    /**
+     * @brief The nodes before the cut reachable from the root.
+     */
+    Cloud_t<Node> before_{};
+
+    /**
+     * @brief The nodes the cut at offset zero places.
+     */
+    Cloud_t<Node> at_zero_{};
+
+    /**
+     * @brief The nodes after the cut from which a refuting node is reachable.
+     */
+    Cloud_t<Node> refuting_{};
+};
+
+/**
+ * @brief Returns the nodes reachable from some nodes by steps over every symbol, the nodes themselves among them.
+ * @tparam Node The node type.
+ * @tparam Step The step's callable type.
+ * @param from The nodes searched from.
+ * @param symbols The number of symbols.
+ * @param step Calls its third argument with each node a symbol leads a node to.
+ * @return The nodes, ascending.
+ */
+template <typename Node, typename Step>
+[[nodiscard]] Cloud_t<Node> reachable_from(const Cloud_t<Node>& from, const std::size_t symbols, const Step& step)
+{
+    std::set<Node> seen{from.begin(), from.end()};
+
+    std::deque<Node> frontier{from.begin(), from.end()};
+
+    while (!frontier.empty())
+    {
+        const auto node{frontier.front()};
+
+        frontier.pop_front();
+
+        const auto admit{[&](const Node& next) {
+            const auto [entry, inserted]{seen.insert(next)};
+
+            if (inserted)
+            {
+                frontier.push_back(next);
+            }
+        }};
+
+        for (std::size_t symbol{0}; symbol < symbols; ++symbol)
+        {
+            step(node, symbol, admit);
+        }
+    }
+
+    return {seen.begin(), seen.end()};
+}
+
+template <typename Rules>
+Product<Rules>::Product(Rules rules) : rules_{std::move(rules)}
+{
+    const auto symbols{rules_.run.symbol_count()};
+
+    const auto step{[this]<typename Emit>(const Node& node, const std::size_t symbol, const Emit& emit) {
+        rules_.step(node, symbol, emit);
+    }};
+
+    before_ = reachable_from(Cloud_t<Node>{rules_.root()}, symbols, step);
+
+    for (std::size_t symbol{0}; symbol < symbols; ++symbol)
+    {
+        const auto placed{cut_image(before_, symbol)};
+
+        std::ranges::copy(placed, std::back_inserter(at_zero_));
+    }
+
+    if (const auto zero{rules_.at_zero()})
+    {
+        at_zero_.push_back(*zero);
+    }
+
+    dedup(at_zero_);
+
+    refuting_ = refuting_nodes();
+}
+
+template <typename Rules>
+const Cloud_t<typename Product<Rules>::Node>& Product<Rules>::before() const noexcept
+{
+    return before_;
+}
+
+template <typename Rules>
+const Cloud_t<typename Product<Rules>::Node>& Product<Rules>::at_zero() const noexcept
+{
+    return at_zero_;
+}
+
+template <typename Rules>
+Cloud_t<typename Product<Rules>::Node> Product<Rules>::image(const Cloud_t<Node>& cloud, const std::size_t symbol) const
+{
+    Cloud_t<Node> next{};
+
+    const auto collect{[&next](const Node& node) { next.push_back(node); }};
+
+    for (const auto& node : cloud)
+    {
+        rules_.step(node, symbol, collect);
+    }
+
+    dedup(next);
+
+    return next;
+}
+
+template <typename Rules>
+Cloud_t<typename Product<Rules>::Node> Product<Rules>::cut_image(
+        const Cloud_t<Node>& cloud, const std::size_t symbol) const
+{
+    Cloud_t<Node> next{};
+
+    const auto collect{[&next](const Node& node) { next.push_back(node); }};
+
+    for (const auto& node : cloud)
+    {
+        rules_.cut(node, symbol, collect);
+    }
+
+    dedup(next);
+
+    return next;
+}
+
+template <typename Rules>
+bool Product<Rules>::holds(const Cloud_t<Node>& cloud) const
+{
+    const auto refuting{[this](const Node& node) { return std::ranges::binary_search(refuting_, node); }};
+
+    return std::ranges::none_of(cloud, refuting);
+}
+
+template <typename Rules>
+Cloud_t<typename Product<Rules>::Node> Product<Rules>::refuting_nodes() const
+{
+    const auto symbols{rules_.run.symbol_count()};
+
+    const auto step{[this]<typename Emit>(const Node& node, const std::size_t symbol, const Emit& emit) {
+        rules_.step(node, symbol, emit);
+    }};
+
+    const auto after{reachable_from(at_zero_, symbols, step)};
+
+    const auto index_of{[&after](const Node& node) {
+        const auto found{std::ranges::lower_bound(after, node)};
+
+        return static_cast<std::size_t>(std::ranges::distance(after.begin(), found));
+    }};
+
+    std::vector<std::vector<std::size_t>> predecessors(after.size());
+
+    for (std::size_t from{0}; from < after.size(); ++from)
+    {
+        const auto link{[&](const Node& next) { predecessors[index_of(next)].push_back(from); }};
+
+        for (std::size_t symbol{0}; symbol < symbols; ++symbol)
+        {
+            rules_.step(after[from], symbol, link);
+        }
+    }
+
+    std::vector<bool> refutes(after.size(), false);
+
+    std::vector<std::size_t> pending{};
+
+    for (std::size_t node{0}; node < after.size(); ++node)
+    {
+        if (rules_.refutes(after[node]))
+        {
+            refutes[node] = true;
+
+            pending.push_back(node);
+        }
+    }
+
+    while (!pending.empty())
+    {
+        const auto node{pending.back()};
+
+        pending.pop_back();
+
+        for (const auto from : predecessors[node])
+        {
+            if (refutes[from])
+            {
+                continue;
+            }
+
+            refutes[from] = true;
+
+            pending.push_back(from);
+        }
+    }
+
+    Cloud_t<Node> refuting{};
+
+    for (std::size_t node{0}; node < after.size(); ++node)
+    {
+        if (refutes[node])
+        {
+            refuting.push_back(after[node]);
+        }
+    }
+
+    return refuting;
+}
+
+/**
+ * @brief The clouds a window carries: before the cut, and after it for each cut inside the window and the one past its
+ *        last byte, in the agreement product and in the domain product.
+ */
+struct Window_clouds
+{
+    /**
+     * @brief The agreement product's cloud before the cut.
+     */
+    Cloud_t<Pair_node> pairs{};
+
+    /**
+     * @brief The domain product's cloud before the cut.
+     */
+    Cloud_t<Domain_node> domains{};
+
+    /**
+     * @brief The agreement product's cloud after each cut, by offset, the last one's cut past the window.
+     */
+    std::vector<Cloud_t<Pair_node>> pair_cuts{};
+
+    /**
+     * @brief The domain product's cloud after each cut, by offset, the last one's cut past the window.
+     */
+    std::vector<Cloud_t<Domain_node>> domain_cuts{};
+};
+
+/**
+ * @brief The search of modulo_cuts() under way: the alphabet, the two products and the widest window, and the cuts
+ *        found so far, by width.
+ *
+ * The search runs depth first over the windows of the alphabet, and each window carries its clouds, so that a window
+ * extends its prefix's clouds by one symbol each rather than reading again from its first byte. A window whose
+ * agreement cloud before the cut is empty occurs in no accepted marked string, nor does any window extending it, so the
+ * search does not go past it.
+ */
+class Modulo_search
+{
+public:
+    /**
+     * @brief Starts the search, nothing searched yet.
+     * @param alphabet The alphabet.
+     * @param pairs The agreement product.
+     * @param domains The domain product.
+     * @param width The widest window tried.
+     */
+    Modulo_search(
+            std::span<const unsigned char> alphabet, const Product<Pair_rules>& pairs,
+            const Product<Domain_rules>& domains, std::size_t width);
+
+    /**
+     * @brief Searches every window of the alphabet up to the widest for the cuts that hold.
+     * @return The cuts, widths ascending, each width's windows in the order of the alphabet and each window's cuts
+     *         ascending.
+     */
+    [[nodiscard]] std::vector<Modulo_cut> run() &&;
+
+private:
+    /**
+     * @brief Extends a window by every symbol in turn, records each cut of each extension that holds, and searches past
+     *        each extension that occurs.
+     * @param window The window extended, restored before returning.
+     * @param clouds The window's clouds.
+     */
+    void extend(std::string& window, const Window_clouds& clouds);
+
+    /**
+     * @brief The widest window tried.
+     */
+    std::size_t width_{};
+
+    /**
+     * @brief The alphabet.
+     */
+    std::span<const unsigned char> alphabet_;
+
+    /**
+     * @brief The agreement product.
+     */
+    const Product<Pair_rules>& pairs_;
+
+    /**
+     * @brief The domain product.
+     */
+    const Product<Domain_rules>& domains_;
+
+    /**
+     * @brief The cuts found, by width.
+     */
+    std::vector<std::vector<Modulo_cut>> found_{};
+};
+
+Modulo_search::Modulo_search(
+        const std::span<const unsigned char> alphabet, const Product<Pair_rules>& pairs,
+        const Product<Domain_rules>& domains, const std::size_t width)
+    : width_{width}, alphabet_{alphabet}, pairs_{pairs}, domains_{domains}, found_(width + 1)
+{}
+
+std::vector<Modulo_cut> Modulo_search::run() &&
+{
+    const Window_clouds clouds{
+            .pairs = pairs_.before(),
+            .domains = domains_.before(),
+            .pair_cuts = {pairs_.at_zero()},
+            .domain_cuts = {domains_.at_zero()}};
+
+    std::string window{};
+
+    extend(window, clouds);
+
+    std::vector<Modulo_cut> cuts{};
+
+    for (auto& width : found_)
+    {
+        std::ranges::move(width, std::back_inserter(cuts));
+    }
+
+    return cuts;
+}
+
+void Modulo_search::extend(std::string& window, const Window_clouds& clouds)
+{
+    for (std::size_t symbol{0}; symbol < alphabet_.size(); ++symbol)
+    {
+        auto pairs{pairs_.image(clouds.pairs, symbol)};
+
+        if (pairs.empty())
+        {
+            continue;
+        }
+
+        auto domains{domains_.image(clouds.domains, symbol)};
+
+        Window_clouds next{
+                .pairs = std::move(pairs),
+                .domains = std::move(domains),
+                .pair_cuts = {},
+                .domain_cuts = {}};
+
+        // The cuts inside the window so far and the one past it all read the symbol after the cut.
+        for (std::size_t cut{0}; cut < clouds.pair_cuts.size(); ++cut)
+        {
+            auto pair_cut{pairs_.image(clouds.pair_cuts[cut], symbol)};
+
+            auto domain_cut{domains_.image(clouds.domain_cuts[cut], symbol)};
+
+            next.pair_cuts.push_back(std::move(pair_cut));
+
+            next.domain_cuts.push_back(std::move(domain_cut));
+        }
+
+        window.push_back(static_cast<char>(alphabet_[symbol]));
+
+        for (std::size_t offset{0}; offset < window.size(); ++offset)
+        {
+            if (pairs_.holds(next.pair_cuts[offset]) && domains_.holds(next.domain_cuts[offset]))
+            {
+                found_[window.size()].push_back({.window = window, .offset = offset});
+            }
+        }
+
+        if (window.size() < width_)
+        {
+            // The cut past the window is placed by its last symbol from the clouds before the cut.
+            auto pair_cut{pairs_.cut_image(clouds.pairs, symbol)};
+
+            auto domain_cut{domains_.cut_image(clouds.domains, symbol)};
+
+            next.pair_cuts.push_back(std::move(pair_cut));
+
+            next.domain_cuts.push_back(std::move(domain_cut));
+
+            extend(window, next);
+        }
+
+        window.pop_back();
+    }
+}
+
+/**
+ * @brief Returns a byte as a refusal quotes it: a printable ASCII byte as itself, the quote and the backslash escaped,
+ *        and every other byte as `\xHH`.
+ * @param byte The byte.
+ * @return The byte, quoted.
+ */
+[[nodiscard]] std::string quoted(const unsigned char byte)
+{
+    constexpr unsigned char first_printable{0x20};
+    constexpr unsigned char last_printable{0x7E};
+
+    const auto printable{byte >= first_printable && byte <= last_printable};
+
+    const auto character{static_cast<char>(byte)};
+
+    std::string out{'"'};
+
+    if (character == '"' || character == '\\')
+    {
+        out += std::format(R"(\{})", character);
+    }
+    else if (printable)
+    {
+        out += character;
+    }
+    else
+    {
+        out += std::format(R"(\x{:02X})", byte);
+    }
+
+    out += '"';
+
+    return out;
+}
+
+/**
  * @brief Returns whether a position of a text is an anchor of an inventory: some window of it occurs origin bytes
  *        before the position.
  * @param inventory The certified pairs.
@@ -3161,6 +4308,46 @@ std::optional<Modulo_dependence> modulo_dependence(
 
     // The shorter witness, the domain half's on a tie.
     return agreement_length < domain_length ? std::move(agreement) : std::move(domain);
+}
+
+std::vector<Modulo_cut> modulo_cuts(
+        const Verifier& verifier, const std::span<const unsigned char> alphabet, const std::size_t width,
+        const std::span<const std::size_t> discarded)
+{
+    std::vector<unsigned char> carried{alphabet.begin(), alphabet.end()};
+
+    std::ranges::sort(carried);
+
+    if (const auto repeated{std::ranges::adjacent_find(carried)}; repeated != carried.end())
+    {
+        throw std::invalid_argument{std::format("modulo_cuts: the alphabet carries {} twice", quoted(*repeated))};
+    }
+
+    for (const auto byte : alphabet_of(verifier))
+    {
+        if (!std::ranges::binary_search(carried, byte))
+        {
+            throw std::invalid_argument{std::format(
+                    "modulo_cuts: the verifier reads {}, which the alphabet does not carry, so the inputs around a "
+                    "window are not all written over it",
+                    quoted(byte))};
+        }
+    }
+
+    if (width == 0)
+    {
+        return {};
+    }
+
+    const Symbol_run run{verifier, alphabet, discarded};
+
+    const Reach_sets sets{run};
+
+    const Product pairs{Pair_rules{.run = run}};
+
+    const Product domains{Domain_rules{.run = run, .sets = sets}};
+
+    return Modulo_search{alphabet, pairs, domains, width}.run();
 }
 
 std::optional<Chunk_dependence> chunk_dependence(

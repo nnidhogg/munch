@@ -292,8 +292,8 @@ chunk between the anchors of an inventory of certified pairs scans alone, with t
 the failing chunks; `verifier::merge_tower()`, the verifier of canonical byte-pair encoding over a merge table; and
 `verifier::trie_chain()`, the verifier of two-mode WordPiece segmentation over its initial and continuation tokens.
 
-Five more decisions over the verifier joined that surface in 3.0.0, and a decision and a construction over a merge
-table: `pinned_cut()`, the cut a byte of a window pins, the offset at which the token covering the byte begins at every
+Six more decisions over the verifier joined that surface in 3.0.0, and a decision and a construction over a merge table:
+`pinned_cut()`, the cut a byte of a window pins, the offset at which the token covering the byte begins at every
 occurrence, a marked string with an occurrence where it begins elsewhere, or the window's absence; `right_context()`,
 how far past a certified cut a worker must read for its tokens before the cut to be the whole string's, with every
 context that fails, finite with a marked string at each, or unbounded with the threshold and the period from which they
@@ -304,7 +304,8 @@ with the window that attains it and a stem, a loop and a suffix that pump it; `m
 an offset of a window, certified or not, keeps every token of a kind not discarded with its kind at its position when
 the prefix and the suffix scan alone, with the shortest marked string whose cut does not, the sides that fail and the
 kept tokens of the string and of the chunks, read off the kinds of the segments a verifier records, which `armed_run()`
-takes from the DFA's tokens; `verifier::ripple_radius()`, how far a byte prepended to an input can change the tokens
+takes from the DFA's tokens; `modulo_cuts()`, the same decision for every window over an alphabet up to a width at once,
+listing the cuts that hold; `verifier::ripple_radius()`, how far a byte prepended to an input can change the tokens
 canonical byte-pair encoding gives it, finite with the mirrored constant and, for each that is positive, an input
 attaining it, or infinite with the first effective self-pair; and `verifier::token_automaton()`, the token automaton of
 canonical byte-pair encoding over a merge table, built once, on which an overload of `miscovering()` decides a window

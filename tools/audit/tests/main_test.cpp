@@ -540,8 +540,9 @@ TEST(Window_pattern_test, Every_bundled_grammar_prints_the_report_and_the_verdic
 TEST(Windows_modulo_test,
      The_section_follows_the_report_with_each_window_that_certifies_a_cut_once_discarded_tokens_are_deleted)
 {
-    // A bracket holds no two newlines in a row, so a second newline lies inside the discarded run whichever token came
-    // before, while a newline alone may lie inside a bracket and certifies in neither sense.
+    // A bracket holds no two newlines in a row, so the first of two lies in the discarded run whichever token came
+    // before, and a > ends a token wherever it stands, a bracket's close or a byte of its own, while a newline alone
+    // may lie inside a bracket and certifies in neither sense.
     const auto directory{scratch()};
 
     const auto path{(directory / "brackets.l").string()};
@@ -555,14 +556,15 @@ TEST(Windows_modulo_test,
 
     const std::string section{
             "\nwhat deleting the discarded tokens adds to the windows\n"
-            "  windows modulo discarded   1 at width 2, 5 at width 3 over 5 byte classes, 257 once classes expand, the "
-            "exact ones left out\n"
-            "                             \"\\n\\n\" cut at 1\n"
-            "                             \"!\\n\\n\" cut at 2\n"
-            "                             \"\\n\\n\\n\" cut at 2\n"
-            "                             \"<\\n\\n\" cut at 2\n"
-            "                             \">\\n\\n\" cut at 2\n"
-            "                             \"a\\n\\n\" cut at 2\n"};
+            "  windows modulo discarded   1 at width 2, 11 at width 3 over 5 byte classes, 1189 once classes expand, "
+            "the exact ones left out\n"
+            "                             \"><!\" cut at 1\n"
+            "                             \"><<\" cut at 1\n"
+            "                             \"><>\" cut at 1\n"
+            "                             \"><a\" cut at 1\n"
+            "                             \">aa\" cut at 1\n"
+            "                             \"\\n\\n\" cut at 0\n"
+            "                             ... 6 more\n"};
 
     // The section stands after the report and before the blank line that closes the condition.
     const auto report_end{plain_out.rfind("\n\n")};
@@ -576,10 +578,13 @@ TEST(Windows_modulo_test,
 
     const auto [json_status, json_out, json_err]{run({path, "--json", "--windows-modulo"})};
 
-    const std::string member{R"(, "windows_modulo": {"windows": [{"window": "\u000a\u000a", "cut": 1}, )"
-                             R"({"window": "!\u000a\u000a", "cut": 2}, {"window": "\u000a\u000a\u000a", "cut": 2}, )"
-                             R"({"window": "<\u000a\u000a", "cut": 2}, {"window": ">\u000a\u000a", "cut": 2}, )"
-                             R"({"window": "a\u000a\u000a", "cut": 2}], "window_count": 257}})"};
+    const std::string member{
+            R"(, "windows_modulo": {"windows": [{"window": "\u000a\u000a", "cut": 0}, )"
+            R"({"window": "!\u000a\u000a", "cut": 0}, {"window": "\u000a\u000a\u000a", "cut": 0}, )"
+            R"({"window": "<\u000a\u000a", "cut": 0}, {"window": ">\u000a\u000a", "cut": 1}, )"
+            R"({"window": "><!", "cut": 1}, {"window": "><\u000a", "cut": 1}, {"window": "><<", "cut": 1}, )"
+            R"({"window": "><>", "cut": 1}, {"window": "><a", "cut": 1}, {"window": ">aa", "cut": 1}, )"
+            R"({"window": "a\u000a\u000a", "cut": 1}], "window_count": 1189}})"};
 
     EXPECT_EQ(json_status, 0);
     EXPECT_TRUE(json_out.contains(member)) << json_out;
