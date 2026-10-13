@@ -310,11 +310,14 @@ that a character-level merge table such as SentencePiece's has the tower and the
 option of `munch-audit`, which, where a condition certifies no byte, tries every byte as a visible token of its own and,
 unless it already certifies once the discarded tokens are deleted, as a discarded one, and reports each that certifies
 once added; the `--window-pattern` option of `munch-audit`, which decides whether every window a pattern of bytes and
-wildcards stands for certifies at one origin; and the `--windows-modulo` option of `munch-audit`, which, where a
-condition certifies no byte once the discarded tokens are deleted, reports the windows that certify a cut that way and
-not exactly. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of Lean's lexical structure
-with its nested comments and interpolated strings as modes, audited in [docs/audit.md](docs/audit.md) and benchmarked on
-Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
+wildcards stands for certifies at one origin; the `--windows-modulo` option of `munch-audit`, which, where a condition
+certifies no byte once the discarded tokens are deleted, reports the windows that certify a cut that way and not
+exactly; and the `--obstruction` option of `munch-audit`, an experimental diagnostic which, where a condition certifies
+no byte, names the degree and group of the verifier's relation monoid and the phase the group counts, the parity of a
+run of a's under maximal munch over aa and a, the lack of a relation of rank one being the obstruction proved for prefix
+codes and conjectured beyond them. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of
+Lean's lexical structure with its nested comments and interpolated strings as modes, audited in
+[docs/audit.md](docs/audit.md) and benchmarked on Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
 
 3.0.0 is a major version for two moves, which change include paths and namespaces, and for one change outside them, the
 type of the inventory `anchor_free_span()` takes, and nothing else. Two of the verifier's names take the dfa library's

@@ -22,6 +22,7 @@
 #include "munch/tools/audit/expression.hpp"
 #include "munch/tools/audit/file_kind.hpp"
 #include "munch/tools/audit/lexer_spec.hpp"
+#include "munch/tools/audit/obstruction.hpp"
 #include "munch/tools/audit/price.hpp"
 #include "munch/tools/audit/read_antlr.hpp"
 #include "munch/tools/audit/read_flex.hpp"
@@ -108,6 +109,12 @@ struct Condition_outcome
      *        certifies no byte once the discarded tokens are deleted.
      */
     std::optional<Windows_modulo> windows_modulo{};
+
+    /**
+     * @brief What the verifier's relation monoid names as the obstruction, when the command line asked and the report
+     *        certifies no byte.
+     */
+    std::optional<Obstruction> obstruction{};
 
     /**
      * @brief What a token of one byte's own would certify, when the command line asked and the report certifies no
@@ -285,9 +292,9 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
 }
 
 /**
- * @brief Audits one start condition of a scanner, decides the window patterns the command line asks about and the
- *        windows modulo discarded tokens where it asks for them, and measures the report's supply on the input when one
- *        was given.
+ * @brief Audits one start condition of a scanner, decides the window patterns the command line asks about, the windows
+ *        modulo discarded tokens and the obstruction where it asks for them, and measures the report's supply on the
+ *        input when one was given.
  * @param spec The scanner.
  * @param condition The condition's name.
  * @param options The command line.
@@ -329,13 +336,18 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
 
         std::optional<Windows_modulo> gained{};
 
+        std::optional<Obstruction> named{};
+
         std::optional<Supply> measured{};
 
         // Asked for wherever no byte certifies once the discarded tokens are deleted.
         const auto windows_asked{options.windows_modulo && report.modulo.empty()};
 
-        // All three are read off the compiled set, which is compiled only where one of them is asked for.
-        if (!options.window_patterns.empty() || windows_asked || input)
+        // Asked for wherever no byte certifies.
+        const auto obstruction_asked{options.obstruction && report.exact.empty()};
+
+        // All four are read off the compiled set, which is compiled only where one of them is asked for.
+        if (!options.window_patterns.empty() || windows_asked || obstruction_asked || input)
         {
             const auto lexer{compile(set)};
 
@@ -344,6 +356,11 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
             if (windows_asked)
             {
                 gained = windows_modulo(report, lexer);
+            }
+
+            if (obstruction_asked)
+            {
+                named = obstruction(report, lexer);
             }
 
             if (input)
@@ -358,6 +375,7 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
                 .report = std::move(report),
                 .window_patterns = std::move(decided),
                 .windows_modulo = std::move(gained),
+                .obstruction = std::move(named),
                 .repairs = std::move(repaired),
                 .supply = std::move(measured),
                 .rules = rules};
@@ -370,6 +388,7 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
                 .report = std::nullopt,
                 .window_patterns = {},
                 .windows_modulo = std::nullopt,
+                .obstruction = std::nullopt,
                 .repairs = std::nullopt,
                 .supply = std::nullopt,
                 .rules = rules};
@@ -386,7 +405,8 @@ void write_rules(std::ostream& out, const Lexer_spec& spec)
 void write_text(
         std::ostream& out, const Lexer_spec& spec, const Condition_outcome& outcome, const std::string_view input)
 {
-    const auto& [condition, refused, report, window_patterns, windows_modulo, repairs, supply, rules]{outcome};
+    const auto& [condition, refused, report, window_patterns, windows_modulo, obstruction, repairs, supply, rules]{
+            outcome};
 
     out << std::format("-- scanner at line {}, condition {}: {} rule{}\n", spec.line, condition, rules, plural(rules));
 
@@ -412,6 +432,11 @@ void write_text(
         out << windows_modulo_section(*windows_modulo);
     }
 
+    if (obstruction)
+    {
+        out << obstruction_section(*obstruction);
+    }
+
     if (repairs)
     {
         out << repair_section(*repairs);
@@ -426,9 +451,9 @@ void write_text(
 }
 
 /**
- * @brief Writes one condition's outcome as the JSON object of a scanner's condition list, the window patterns and the
- *        windows modulo discarded tokens beside the report when they were asked for, and the supply on the input when
- *        one was measured.
+ * @brief Writes one condition's outcome as the JSON object of a scanner's condition list, the window patterns, the
+ *        windows modulo discarded tokens and the obstruction beside the report when they were asked for, and the supply
+ *        on the input when one was measured.
  * @param out The stream.
  * @param spec The scanner.
  * @param outcome The outcome.
@@ -437,7 +462,8 @@ void write_text(
 void write_json(
         std::ostream& out, const Lexer_spec& spec, const Condition_outcome& outcome, const std::string_view input)
 {
-    const auto& [condition, refused, report, window_patterns, windows_modulo, repairs, supply, rules]{outcome};
+    const auto& [condition, refused, report, window_patterns, windows_modulo, obstruction, repairs, supply, rules]{
+            outcome};
 
     out << std::format(R"({}{{"name": {}, "rules": {}, )", report_indent, json_string(condition), rules);
 
@@ -466,6 +492,11 @@ void write_json(
     if (windows_modulo)
     {
         out << R"(, "windows_modulo": )" << windows_modulo_json(*windows_modulo);
+    }
+
+    if (obstruction)
+    {
+        out << R"(, "obstruction": )" << obstruction_json(*obstruction);
     }
 
     if (repairs)

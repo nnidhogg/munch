@@ -108,6 +108,12 @@ struct Options
     bool windows_modulo{false};
 
     /**
+     * @brief Whether a condition that certifies no byte is told what the verifier's relation monoid names as the
+     *        obstruction.
+     */
+    bool obstruction{false};
+
+    /**
      * @brief Whether a condition that certifies no byte is told what a token of one byte's own would certify.
      */
     bool repairs{false};

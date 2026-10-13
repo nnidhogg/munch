@@ -29,6 +29,7 @@ add_library(${PROJECT_NAME}
         src/logos_pattern.cpp
         src/logos_refusals.cpp
         src/logos_regex.cpp
+        src/obstruction.cpp
         src/pattern_shape.cpp
         src/price.cpp
         src/re2c_actions.cpp

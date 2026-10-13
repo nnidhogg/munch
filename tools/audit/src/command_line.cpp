@@ -189,6 +189,8 @@ would cost.
                         its class, or * for every byte; may repeat
   --windows-modulo      where no byte certifies once discarded tokens are deleted, report the windows that certify a
                         cut that way and not exactly
+  --obstruction         where no byte certifies, name the obstruction the verifier's relation monoid shows, its degree,
+                        the group of its least idempotent and the phase the group counts; a diagnostic
   --price BYTE          price this byte as well, written as a character, \n \t \r \0, or 0xHH; may repeat
   --input FILE          measure the certified-anchor supply on this file: how many positions its certificates cut
                         at, per kibibyte, and the gaps between them
@@ -285,6 +287,10 @@ Options parse_options(const std::span<const std::string_view> arguments)
         else if (argument == "--windows-modulo")
         {
             options.windows_modulo = true;
+        }
+        else if (argument == "--obstruction")
+        {
+            options.obstruction = true;
         }
         else if (argument == "--price")
         {
