@@ -82,6 +82,45 @@ jobs:
           cd build
           ctest --output-on-failure
 
+  build-and-test-strict:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Check GCC version
+        run: g++ --version
+
+      - name: Configure build with CMake
+        env:
+          CC: gcc
+          CXX: g++
+        # CMake compiles C++23 as gnu++23 unless extensions are off, and the GNU dialect accepts code the standard
+        # does not, so this build holds every target to strict C++23 with warnings as errors.
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_EXTENSIONS=OFF -DMUNCH_WERROR=ON
+
+      - name: Build with CMake
+        run: |
+          cd build
+          cmake --build .
+
+      - name: Run tests with CTest
+        run: |
+          cd build
+          ctest --output-on-failure
+
   build-and-test-arm:
     runs-on: ubuntu-24.04-arm
 
