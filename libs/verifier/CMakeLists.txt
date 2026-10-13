@@ -3,6 +3,7 @@ cmake_policy(SET CMP0097 NEW)
 project(munch_verifier)
 
 add_library(${PROJECT_NAME}
+        src/chunk_plan.cpp
         src/merge_tower.cpp
         src/ripple_radius.cpp
         src/rule_ceilings.cpp
@@ -43,6 +44,7 @@ endif ()
 
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
+            tests/chunk_plan_test.cpp
             tests/merge_tower_test.cpp
             tests/ripple_radius_test.cpp
             tests/rule_ceilings_test.cpp

@@ -916,6 +916,53 @@ ceilings.span_radius;     // 2: appending b to aa makes the tokens a|a the one t
 ceilings.start_radius;    // 1, the second a's token beginning at 0 once b is appended
 ```
 
+`verifier::chunk_plan(verifier, input, request)` and `verifier::chunk_plan(automaton, input, request, radii)` of
+`munch/verifier/chunk_plan.hpp` turn these decisions into a worker contract. A plan is a list of chunks, each with the
+byte it begins at, the cut that ends it, below which its worker keeps the tokens, the byte the worker reads to, and the
+evidence that licenses the cut, so that workers that each segment their chunk alone reproduce the whole input's
+segmentation. The automaton is a byte table's, as `token_automaton(merges)` builds it, and one over the characters of an
+alphabet is refused with `std::invalid_argument`. The cuts are sought as `chunk_boundaries()` seeks them, the first at
+or after the later of each equal-division target and one past the previous cut, and a target with no cut after it is
+dropped, its chunk scanned sequentially to the next cut or the end: that is the fallback over a stretch with no cut.
+
+From the floor the search walks the input byte by byte and takes, at each byte, the first route that gives a cut at or
+after the floor. A cut the caller supplies in `Plan_request::supplied`, such as a boundary of an exact pre-tokenizer,
+comes first, with the bytes the caller says a worker reads past it. Then the windows ending at the byte are certified on
+the input, from one byte wide to the request's budget: on a verifier `pinned_cut()` at the window's last byte gives the
+origin and `dependence()` must find every certified cut of the pair independent, the per-cut guarantee a sparse subset
+of an inventory's anchors needs, and the window must begin inside the chunk so that its worker reads it; on a token
+automaton the origin is the start the last byte has in the window's own encoding, `miscovering()` decides it, and the
+canonical adjacency theorem makes every boundary a cut whose two sides are encoded alone, anywhere in the input. Charles
+Xu's parallel tokenizer ([charlesxu.io/parallel-tokenizer](https://charlesxu.io/parallel-tokenizer/), dated 25 November
+2025, its merge-table check since 9 October 2026) cuts where no merge pairs a symbol on the left of the cut with one on
+the right, a static check on the merge table of the same kind. Last, on a token automaton given the origin radius and
+the right start radius, or ceilings on them, the uniform window of the pinned-byte theorem, of width R + Q_s + 1 with
+the byte walked as its byte R, is encoded and its byte's start read off, which always places a cut within the longest
+token's length before the byte, so that, away from the input's ends, each cut lies within that length past its floor.
+The search is monotone: a wider window ending at the same byte occurs wherever a narrower one does and so certifies the
+same cut, so only failing windows are widened, and each distinct window is decided once per plan, the plan counting the
+windows asked for and the ones decided. On a verifier the prefix side of `dependence()` is the right context at no byte
+past the cut, so a worker reads to its cut there as on a token automaton, and only a supplied cut makes it read further.
+`munch_planner_bench` measures the plans against the sequential encoding, with the results in
+[docs/benchmarks.md](benchmarks.md).
+
+```cpp
+#include "munch/verifier/chunk_plan.hpp"
+
+// over the merges (a, b) and (a, ab) of the example above, origin radius 2 and right start radius 1
+const auto automaton{verifier::token_automaton(merges)};
+const verifier::Uniform_radii radii{.radius = 2, .start_radius = 1};
+
+const std::string text(12, 'a');
+const verifier::Plan_request request{.chunks = 3, .budget = 4, .supplied = {}};
+
+verifier::chunk_plan(automaton, text, request, std::nullopt);  // one chunk: no window of a's is certified
+const auto plan{verifier::chunk_plan(automaton, text, request, radii)};
+
+plan.chunks[0];  // [0, 4), read to 4, cut by the uniform window from byte 2 to 6, its byte 2 beginning a token
+plan.chunks[1];  // [4, 8), the same way at byte 8
+```
+
 That certificate is exact and, for the same reason, fragile: one string literal, comment, or whitespace run whose
 interior admits the candidate byte disqualifies it, which is enough to leave a conventional token set certifying
 nothing. Since the tokens responsible are usually the ones a parser throws away, `set_ignored_tokens()` lets a builder

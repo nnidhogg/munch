@@ -389,3 +389,28 @@ if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_verifier_supply
             COMMAND munch_verifier_supply ${CMAKE_CURRENT_BINARY_DIR}/supply-corpus.json)
 endif ()
+
+# What the planner's worker contract is worth for byte-pair encoding: the cuts chunk_plan() finds on actual text against
+# the context budget, their gaps and costs, and workers encoding their chunks alone against the sequential encoding,
+# with exact token agreement on every run asserted. The test runs it on a slice of munch's own sources; a collection
+# passes the whole corpora, twitter.json among them.
+add_executable(munch_planner_bench src/planner_bench.cpp)
+
+add_dependencies(munch_planner_bench munch_provenance)
+
+target_include_directories(munch_planner_bench
+        PRIVATE
+        ${MUNCH_PROVENANCE_DIR}
+)
+
+target_compile_definitions(munch_planner_bench PRIVATE SOURCE_DIR="${MUNCH_SOURCE_DIR}")
+
+target_link_libraries(munch_planner_bench
+        PRIVATE
+        munch_probes
+        munch_verifier
+)
+
+if (MUNCH_BUILD_TESTS)
+    add_test(NAME munch_planner_bench COMMAND munch_planner_bench 16384 1)
+endif ()

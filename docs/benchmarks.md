@@ -123,6 +123,63 @@ toward fewer chunks, never toward an unsafe cut. And the window guarantee is con
 input, so byte planning remains the default everywhere and this section prices the explicit opt-in; see the planner
 documentation for the exact contract.
 
+## **Byte-Pair Chunk Plans**
+
+`munch_planner_bench` measures what `verifier::chunk_plan()` is worth as a worker contract for byte-pair encoding, and
+is written to answer either way. Per table and corpus it plans one chunk per byte at context budgets of 1, 2, 3, 4, 6
+and 8 bytes and prints the cuts found as a share of the sequential encoding's boundaries, the median, 95th percentile
+and longest gap between cuts, the windows decided against those asked, which is the cache's reuse, and the planning
+time; then for two, four and eight chunks at a budget of four it prints the planning time, the time to decide the plan's
+evidence windows again alone, the time of the workers, one thread each, with the stitching, the sequential time, the
+end-to-end speedup, the imbalance and the fallback volume, the bytes scanned past their floors for want of a cut. Before
+any figure is printed it holds its encoder, one pass per merge in rank order, to the leftmost-lowest encoder on a slice
+of each corpus, every cut of every plan to the sequential boundaries, and on every timed run the stitched tokens to the
+sequential encoding token for token, and any failure exits 1. The tables are the first 64 merges of GPT-2, read from the
+token automaton fixture, whose origin radius is infinite; their prefix of 41 merges, the longest of finite radius,
+origin radius 3 and right start radius 2, so its uniform window is six bytes wide; and the merges (a, b), (a, ab) over a
+generated text of runs of a, where no window of a's is certified at its last byte. The merge tower of the 64 merges
+plans the first 2 KiB of each corpus for the price of the verifier route. The corpora are `twitter.json`, simdjson's
+benchmark document at release v3.10.1, 631,515 bytes, as the recovery and splitting campaigns read it, and munch's own
+C++ sources under `libs`. These are raw tables over the whole text, without GPT-2's pre-tokenizer; that pipeline, its
+token ids and its comparison with the production tokenizers belong to the production tokenizers' pre-tokenized
+pipelines, outside this probe.
+
+```
+$ ./build/tools/probes/munch_planner_bench 100000000 5 - twitter.json libs
+...
+corpus twitter.json under gpt2-64: 631515 bytes, 576818 tokens, sequential 28.878 ms
+  windows   budget 4:   576624 cuts, 100.0% of boundaries,   935.0 per KiB, gap median 1 p95 2 longest 4, 1681 decided of 938352 asked (reuse 99.8%), 70.1 ms
+  windows   x8: 8 chunks, plan 0.012 ms, decided 11, evidence alone 0.005 ms, workers and stitching 4.457 ms, sequential 28.878 ms, speedup 6.46x, imbalance 1.00, fallback 1 bytes (0.0%)
+  tower     x8: 8 chunks, plan 159.847 ms, decided 8, evidence alone 176.949 ms, workers and stitching 0.136 ms, sequential 0.089 ms, speedup 0.000554x, imbalance 1.00, fallback 0 bytes (0.0%)
+corpus twitter.json under gpt2-41: 631515 bytes, 592205 tokens, sequential 18.651 ms
+  windows   budget 4:   592184 cuts, 100.0% of boundaries,   960.2 per KiB, gap median 1 p95 2 longest 4, 1358 decided of 905565 asked (reuse 99.9%), 66.0 ms
+  uniform   budget 4:   592204 cuts, 100.0% of boundaries,   960.3 per KiB, gap median 1 p95 2 longest 4, 1358 decided of 903986 asked (reuse 99.8%), 72.5 ms
+corpus libs under gpt2-64: 1675954 bytes, 1306957 tokens, sequential 93.525 ms
+  windows   budget 4:  1298882 cuts,  99.4% of boundaries,   793.6 per KiB, gap median 1 p95 2 longest 4, 4712 decided of 3133831 asked (reuse 99.8%), 256.6 ms
+  windows   x8: 8 chunks, plan 0.020 ms, decided 16, evidence alone 0.006 ms, workers and stitching 14.256 ms, sequential 93.525 ms, speedup 6.55x, imbalance 1.00, fallback 4 bytes (0.0%)
+  tower     x8: 8 chunks, plan 299.502 ms, decided 17, evidence alone 181.848 ms, workers and stitching 0.190 ms, sequential 0.097 ms, speedup 0.000323x, imbalance 1.00, fallback 2 bytes (0.1%)
+corpus generated runs of a under ab-aab: 65536 bytes, 60452 tokens, sequential 0.151 ms
+  windows   budget 4:     5041 cuts,   8.3% of boundaries,    78.8 per KiB, gap median 3 p95 41 longest 46, 12 decided of 271763 asked (reuse 100.0%), 3.9 ms
+  uniform   budget 4:    60450 cuts, 100.0% of boundaries,   944.5 per KiB, gap median 1 p95 1 longest 3, 12 decided of 254442 asked (reuse 100.0%), 6.6 ms
+  windows   x8: 8 chunks, plan 0.015 ms, decided 9, evidence alone 0.009 ms, workers and stitching 0.259 ms, sequential 0.151 ms, speedup 0.549x, imbalance 1.00, fallback 129 bytes (0.2%)
+```
+
+This run was made on the development machine under WSL2 with GCC 13, so its figures compare within it, and its excerpt
+keeps each corpus's rows at a budget of four bytes and at eight chunks; the timings vary from run to run on that
+machine, the counts do not. They show a speedup, and its cause. On raw GPT-2 merges the certified windows are dense on
+actual text although the origin radius of the 64 merges is infinite: at a budget of four bytes they give 576,624 cuts in
+the 576,818 tokens of `twitter.json` and 99.4% of munch's sources, no gap longer than four bytes, from fewer than 5,000
+distinct windows, every other ask answered by the cache. So the supply never limits a plan, an eight-chunk plan costs
+about a hundredth of a millisecond, the imbalance is 1.00 and the fallback a few bytes, and eight workers encode the
+text 6.5 times faster than one; the plan being negligible, the shortfall from eight lies in the workers and the
+stitching themselves, which the probe does not break down. The prefix of 41 merges, whose uniform window cuts at every
+byte, adds the last few boundaries the windows miss and nothing a plan of eight chunks needs. The verifier route does
+not pay: on the merge tower each window costs tens of milliseconds, two searches over the product with its 257 states,
+so the eight-chunk plan of a 2 KiB slice takes longer than encoding all of `twitter.json`; the token automaton decides
+its windows in microseconds. Where windows are scarce the uniform window is what bounds the gap: over the runs of a,
+windows of four bytes cut 8.3% of the boundaries with gaps as long as a run, the uniform window gives 60,450 cuts in the
+60,452 tokens with no gap longer than three bytes; that text is too small for its timing to mean anything.
+
 ## **Lean 4 on Mathlib**
 
 `munch_benchmark_lean4` scans real Lean source with the bundled Lean 4 grammar, `tools/audit/grammars/lean4.g4`, read
