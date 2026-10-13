@@ -4,6 +4,7 @@ project(munch_verifier)
 
 add_library(${PROJECT_NAME}
         src/chunk_plan.cpp
+        src/k_copy_scan.cpp
         src/merge_tower.cpp
         src/ripple_radius.cpp
         src/rule_ceilings.cpp
@@ -27,12 +28,16 @@ target_compile_features(${PROJECT_NAME}
         cxx_std_23
 )
 
+# k_copy_scan() runs its workers on std::jthread.
+find_package(Threads REQUIRED)
+
 target_link_libraries(${PROJECT_NAME}
         PUBLIC
         # The public headers include munch/dfa/dfa.hpp and armed_run() takes a dfa::Dfa, so consumers need the dfa
         # target too.
         munch_dfa
         PRIVATE
+        Threads::Threads
         # Build-interface only: a header-only build dependency a consumer of the installed package never needs.
         $<BUILD_INTERFACE:munch_boost>
 )
@@ -46,6 +51,7 @@ endif ()
 if (MUNCH_BUILD_TESTS)
     add_executable(${PROJECT_NAME}_tests
             tests/chunk_plan_test.cpp
+            tests/k_copy_scan_test.cpp
             tests/merge_tower_test.cpp
             tests/ripple_radius_test.cpp
             tests/rule_ceilings_test.cpp

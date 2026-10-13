@@ -722,6 +722,53 @@ verifier::fanout(verifier, "ab", 0);            // rank 2: a lone a before the c
 verifier::smallest_fanout(verifier);            // degree 1, the window aa at origin 1
 ```
 
+`verifier::k_copy_scan(verifier, input, request)` of `munch/verifier/k_copy_scan.hpp` turns the fan-out into a chunked
+scanner. The input is cut at anchors of the request's inventory, the positions after position zero that a pair's origin
+lands on at an occurrence of its window, sought as `chunk_boundaries()` seeks its cuts, and each chunk is scanned on its
+own thread, the last on the calling thread, by a worker that runs one copy of the scan per configuration its cut can
+carry, those `fanout()` gives every pair anchoring the cut. Each copy reads its chunk under every marking the minimal
+automaton admits and offers one marking per configuration it can end in at the next cut; the stitch begins at the start,
+lets each chunk's exit select the next chunk's copy, keeps every exit a selected copy offers with a back-pointer, and at
+the input's end follows the back-pointers from the one accepting exit. For every inventory, certified or not, and with
+no independence condition, the stitched segmentation is guaranteed identical to the sequential one, by the k-copy chunk
+theorem the header states with its proof, and an input outside the domain gives `std::nullopt`; each chunk reports the
+copies its worker ran and the cut at which the stitch fixed its marking. Selection is pure, every chunk fixed at its own
+end, at a cut that carries one configuration, and under a policy of bounded delay once each worker reads that many bytes
+past its chunk, `Scan_request::lookahead`: maximal munch over a token set whose longest token has l bytes, and two-mode
+WordPiece likewise, need l - 1, and canonical byte-pair encoding over a table of byte merges, `merge_tower(merges)`'s,
+at most Q_s + 1, which is at most max(1, S) for S the lengths of its merges' left parts summed, whatever its origin
+radius. Over characters, `merge_tower(merges, alphabet)`'s, the lookahead counts bytes and the bound does not hold:
+under the one merge (a, U+1F600) over a, U+1F600 and U+1F601, S is 1 and the boundary after a waits on the fourth byte
+past it. Without that lookahead a chunk may resolve only at a later cut or at the input's end, which costs latency and
+not correctness; under backward maximal munch over a and aa, with no lookahead, a run of a's resolves only at its end. A
+window of the inventory that is empty or whose origin lies outside it is refused with `std::invalid_argument`.
+
+Two decisions of the same header help choose the inventory. `shortest_fanout_windows(verifier)` returns, for every rank
+bound from the least rank of a window that occurs to the largest, the shortest pair of rank at most the bound, the least
+by length, then bytes, then origin, decided over two finite families of state sets with no bound on the window's length;
+the least rank can lie below the degree, by a window that occurs a bounded number of times. `relative_fanout(verifier,
+window, origin)` returns the classes of a pair's configurations that the window's remaining bytes do not tell apart,
+configurations of one class giving equal copies on every chunk that holds those bytes, so the relative rank is the
+fewest copies such a chunk needs; under maximal munch over a, b and aa the certified pair (b, 0) has rank 2 and relative
+rank 1.
+
+```cpp
+#include "munch/verifier/k_copy_scan.hpp"
+
+// over the tokens aa and a, with dfa their DFA
+const auto verifier{verifier::armed_run(dfa)};
+const std::array inventory{verifier::Fanout_pair{.window = "a", .origin = 0}};
+
+verifier::shortest_fanout_windows(verifier);  // one window, a at origin 0 of rank 2, at bound 2
+verifier::relative_fanout(verifier, "a", 0);   // relative rank 2: the next a ends a token aa or begins one
+
+const verifier::Scan_request request{.chunks = 5, .inventory = inventory, .lookahead = 0};
+const auto scan{verifier::k_copy_scan(verifier, "aaaaa", request)};
+
+scan->segmentation;  // aa|aa|a, as the sequential scan segments it
+scan->chunks[1];     // [1, 2), two copies, resolved at its own end
+```
+
 `verifier::merge_tower(merges)` takes a byte-pair merge table in rank order, each merge two parts, a byte or the product
 of an earlier merge, whose concatenation is its product, and builds the verifier of canonical byte-pair encoding over
 it, the encoder that applies the lowest-ranked merge present anywhere at its leftmost occurrence until none applies; the

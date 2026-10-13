@@ -292,46 +292,50 @@ chunk between the anchors of an inventory of certified pairs scans alone, with t
 the failing chunks; `verifier::merge_tower()`, the verifier of canonical byte-pair encoding over a merge table; and
 `verifier::trie_chain()`, the verifier of two-mode WordPiece segmentation over its initial and continuation tokens.
 
-Six more decisions over the verifier joined that surface in 3.0.0, and a decision and a construction over a merge table:
-`pinned_cut()`, the cut a byte of a window pins, the offset at which the token covering the byte begins at every
-occurrence, a marked string with an occurrence where it begins elsewhere, or the window's absence; `right_context()`,
-how far past a certified cut a worker must read for its tokens before the cut to be the whole string's, with every
-context that fails, finite with a marked string at each, or unbounded with the threshold and the period from which they
-repeat, a marked string at each below the threshold and a stem, a loop and a suffix pumping each residue that fails;
-`fanout()`, the rank of a pair, how many configurations of the verifier's minimal automaton the cut at its origin can
-carry, with each configuration; `smallest_fanout()`, the degree, the fewest configurations a cut that recurs can carry,
-with the window that attains it and a stem, a loop and a suffix that pump it; `modulo_dependence()`, whether the cut at
-an offset of a window, certified or not, keeps every token of a kind not discarded with its kind at its position when
-the prefix and the suffix scan alone, with the shortest marked string whose cut does not, the sides that fail and the
-kept tokens of the string and of the chunks, read off the kinds of the segments a verifier records, which `armed_run()`
-takes from the DFA's tokens; `modulo_cuts()`, the same decision for every window over an alphabet up to a width at once,
-listing the cuts that hold; `verifier::ripple_radius()`, how far a byte prepended to an input can change the tokens
-canonical byte-pair encoding gives it, finite with the mirrored constant and, for each that is positive, an input
-attaining it, or infinite with the first effective self-pair; and `verifier::token_automaton()`, the token automaton of
-canonical byte-pair encoding over a merge table, built once, on which an overload of `miscovering()` decides a window
-certificate without building the merge tower. An overload of each of `merge_tower()`, `token_automaton()` and
-`ripple_radius()` over an alphabet of characters, read as their UTF-8 bytes, joined it too, so that a character-level
-merge table such as SentencePiece's has the tower, the automaton and the radius, counted in bytes. A third overload of
-`token_automaton()`, over an encoder's canonical tokens and pairs, joined it with `verifier::encoder_divergence()`, so
-that a window certificate is decided for an encoder no merge table reproduces, such as SentencePiece's loop where
-products share a score, and two encoders are compared, with a string of at most 2L - 1 bytes they segment apart when
-they differ. Three functions over a merge table joined it beside them: `verifier::rule_ceilings()`, the ceilings on the
-table's radii read off its merges and its two right radii found exactly by chains of rules; `verifier::chunk_plan()`,
-which plans an input's chunks for workers that each scan or encode their chunk alone, each cut with the evidence that
-licenses it, a supplied boundary, a certified window or the uniform window of the pinned-byte theorem; and
-`verifier::window_density()`, whether the table's last-byte windows are dense, with the density bound or a loop whose
-powers avoid every certified window. So did the `--repairs` option of `munch-audit`, which, where a condition certifies
-no byte, tries every byte as a visible token of its own and, unless it already certifies once the discarded tokens are
-deleted, as a discarded one, and reports each that certifies once added; the `--window-pattern` option of `munch-audit`,
-which decides whether every window a pattern of bytes and wildcards stands for certifies at one origin; the
-`--windows-modulo` option of `munch-audit`, which, where a condition certifies no byte once the discarded tokens are
-deleted, reports the windows that certify a cut that way and not exactly; and the `--obstruction` option of
-`munch-audit`, an experimental diagnostic which, where a condition certifies no byte, names the degree and group of the
-verifier's relation monoid and the phase the group counts, the parity of a run of a's under maximal munch over aa and a,
-the lack of a relation of rank one being the obstruction proved for prefix codes and conjectured beyond them. 3.0.0 also
-bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of Lean's lexical structure with its nested comments
-and interpolated strings as modes, audited in [docs/audit.md](docs/audit.md) and benchmarked on Mathlib in
-[docs/benchmarks.md](docs/benchmarks.md).
+Eight more decisions over the verifier joined that surface in 3.0.0, with a scanner over it, and a decision and a
+construction over a merge table: `pinned_cut()`, the cut a byte of a window pins, the offset at which the token covering
+the byte begins at every occurrence, a marked string with an occurrence where it begins elsewhere, or the window's
+absence; `right_context()`, how far past a certified cut a worker must read for its tokens before the cut to be the
+whole string's, with every context that fails, finite with a marked string at each, or unbounded with the threshold and
+the period from which they repeat, a marked string at each below the threshold and a stem, a loop and a suffix pumping
+each residue that fails; `fanout()`, the rank of a pair, how many configurations of the verifier's minimal automaton the
+cut at its origin can carry, with each configuration; `smallest_fanout()`, the degree, the fewest configurations a cut
+that recurs can carry, with the window that attains it and a stem, a loop and a suffix that pump it;
+`shortest_fanout_windows()`, the shortest window of every rank bound; `relative_fanout()`, the classes of a pair's
+configurations that the window's remaining bytes do not tell apart; `modulo_dependence()`, whether the cut at an offset
+of a window, certified or not, keeps every token of a kind not discarded with its kind at its position when the prefix
+and the suffix scan alone, with the shortest marked string whose cut does not, the sides that fail and the kept tokens
+of the string and of the chunks, read off the kinds of the segments a verifier records, which `armed_run()` takes from
+the DFA's tokens; `modulo_cuts()`, the same decision for every window over an alphabet up to a width at once, listing
+the cuts that hold; `verifier::k_copy_scan()`, which cuts an input at the anchors of any inventory of pairs, runs one
+copy of the scan per configuration each cut can carry and stitches the copies into the input's segmentation, a chunk
+resolved at its own end where the policy's delay allows and at a later cut or the input's end otherwise;
+`verifier::ripple_radius()`, how far a byte prepended to an input can change the tokens canonical byte-pair encoding
+gives it, finite with the mirrored constant and, for each that is positive, an input attaining it, or infinite with the
+first effective self-pair; and `verifier::token_automaton()`, the token automaton of canonical byte-pair encoding over a
+merge table, built once, on which an overload of `miscovering()` decides a window certificate without building the merge
+tower. An overload of each of `merge_tower()`, `token_automaton()` and `ripple_radius()` over an alphabet of characters,
+read as their UTF-8 bytes, joined it too, so that a character-level merge table such as SentencePiece's has the tower,
+the automaton and the radius, counted in bytes. A third overload of `token_automaton()`, over an encoder's canonical
+tokens and pairs, joined it with `verifier::encoder_divergence()`, so that a window certificate is decided for an
+encoder no merge table reproduces, such as SentencePiece's loop where products share a score, and two encoders are
+compared, with a string of at most 2L - 1 bytes they segment apart when they differ. Three functions over a merge table
+joined it beside them: `verifier::rule_ceilings()`, the ceilings on the table's radii read off its merges and its two
+right radii found exactly by chains of rules; `verifier::chunk_plan()`, which plans an input's chunks for workers that
+each scan or encode their chunk alone, each cut with the evidence that licenses it, a supplied boundary, a certified
+window or the uniform window of the pinned-byte theorem; and `verifier::window_density()`, whether the table's last-byte
+windows are dense, with the density bound or a loop whose powers avoid every certified window. So did the `--repairs`
+option of `munch-audit`, which, where a condition certifies no byte, tries every byte as a visible token of its own and,
+unless it already certifies once the discarded tokens are deleted, as a discarded one, and reports each that certifies
+once added; the `--window-pattern` option of `munch-audit`, which decides whether every window a pattern of bytes and
+wildcards stands for certifies at one origin; the `--windows-modulo` option of `munch-audit`, which, where a condition
+certifies no byte once the discarded tokens are deleted, reports the windows that certify a cut that way and not
+exactly; and the `--obstruction` option of `munch-audit`, an experimental diagnostic which, where a condition certifies
+no byte, names the degree and group of the verifier's relation monoid and the phase the group counts, the parity of a
+run of a's under maximal munch over aa and a, the lack of a relation of rank one being the obstruction proved for prefix
+codes and conjectured beyond them. 3.0.0 also bundles a Lean 4 grammar, `tools/audit/grammars/lean4.g4`, the core of
+Lean's lexical structure with its nested comments and interpolated strings as modes, audited in
+[docs/audit.md](docs/audit.md) and benchmarked on Mathlib in [docs/benchmarks.md](docs/benchmarks.md).
 
 3.0.0 is a major version for two moves, which change include paths and namespaces, and for one change outside them, the
 type of the inventory `anchor_free_span()` takes, and nothing else. Two of the verifier's names take the dfa library's
