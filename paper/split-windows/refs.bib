@@ -49,12 +49,12 @@
   doi     = {10.1109/TIT.1983.1056597}
 }
 
-@book{aho2006compilers,
-  author    = {Alfred V. Aho and Monica S. Lam and Ravi Sethi and Jeffrey D. Ullman},
+@book{dragon1986,
+  author    = {Alfred V. Aho and Ravi Sethi and Jeffrey D. Ullman},
   title     = {Compilers: Principles, Techniques, and Tools},
-  edition   = {2nd},
   publisher = {Addison-Wesley},
-  year      = {2006}
+  year      = {1986},
+  note      = {Reprinted with corrections, March 1988}
 }
 
 @inproceedings{shao2026lopt,
@@ -88,7 +88,7 @@
 
 @inproceedings{lester2013boxing,
   author    = {Martin Mariusz Lester},
-  title     = {Position Paper: The Science of Boxing},
+  title     = {Position Paper: The Science of Boxing: Analysing Eval Using Staged Metaprogramming},
   booktitle = {Proceedings of the Eighth {ACM} {SIGPLAN} Workshop on Programming Languages and Analysis for
                Security (PLAS)},
   pages     = {83--88},
@@ -202,6 +202,7 @@
   title   = {Synchronization of Strongly Connected Partial {DFA}s and Prefix Codes},
   journal = {Discrete Mathematics \& Theoretical Computer Science},
   volume  = {28:2},
+  number  = {34},
   year    = {2026},
   doi     = {10.46298/dmtcs.16465},
   note    = {Extended version of the {STACS} 2021 paper, \doi{10.4230/LIPIcs.STACS.2021.12}}
@@ -267,7 +268,8 @@
   author       = {Nicklas Nidh{\"o}gg},
   title        = {Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens},
   year         = {2026},
-  note         = {Preprint, \href{https://arxiv.org/abs/2608.03473}{arXiv:2608.03473} [cs.FL]}
+  note         = {Preprint, \href{https://arxiv.org/abs/2608.03473v2}{arXiv:2608.03473v2} [cs.FL]; the applicability
+                  table cited is that of versions 1 and 2, whose six exact-empty rows version 3 extends to eight}
 }
 
 @inproceedings{fici2025morphisms,
@@ -351,4 +353,50 @@
   pages   = {95--101},
   year    = {1975},
   doi     = {10.1016/0304-3975(75)90015-8}
+}
+
+@misc{lassez1976messages,
+  author = {Jean-Louis Lassez},
+  title  = {Messages parasites et codes synchronisants},
+  year   = {1976},
+  note   = {Groupe d'{\'e}tude d'alg{\`e}bre, tome~1 (1975--1976), expos{\'e} no.~17 of 28 May 1976, pages 17-01 to
+            17-04, \url{https://numdam.org/item/GEA_1975-1976__1__A17_0/}}
+}
+
+@inproceedings{ge2019csv,
+  author    = {Chang Ge and Yinan Li and Eric Eilebrecht and Badrish Chandramouli and Donald Kossmann},
+  title     = {Speculative Distributed {CSV} Data Parsing for Big Data Analytics},
+  booktitle = {ACM SIGMOD International Conference on Management of Data},
+  pages     = {883--899},
+  year      = {2019},
+  doi       = {10.1145/3299869.3319898}
+}
+
+@inproceedings{karttunen1996directed,
+  author    = {Lauri Karttunen},
+  title     = {Directed Replacement},
+  booktitle = {Proceedings of the 34th Annual Meeting of the Association for Computational Linguistics},
+  pages     = {108--115},
+  year      = {1996},
+  doi       = {10.3115/981863.981878}
+}
+
+@article{carpi2017synchronizing,
+  author  = {Arturo Carpi and Flavio D'Alessandro},
+  title   = {On Incomplete and Synchronizing Finite Sets},
+  journal = {Theoretical Computer Science},
+  volume  = {664},
+  pages   = {67--77},
+  year    = {2017},
+  doi     = {10.1016/j.tcs.2015.08.042}
+}
+
+@misc{rod2026gigatoken,
+  author = {Marcel R{\o}d},
+  title  = {{Gigatoken}},
+  year   = {2026},
+  note   = {\url{https://github.com/marcelroed/gigatoken}, revision \texttt{542367a} of 21 July 2026, released on PyPI
+            as version 0.9.0. The vocabulary pair rule is the comment in \texttt{finalize\_speed\_paths} of
+            \texttt{src/bpe/sentencepiece.rs}, and the chunked output is held to the serial encoding by the test
+            \texttt{sp\_parallel\_fragmented\_matches\_serial} of \texttt{src/batch.rs}}
 }

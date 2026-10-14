@@ -21,16 +21,16 @@ repository; this document states the idea precisely, relates it to prior work, a
 
 A certified split point lets a parallel lexer cut unlexed input at a single byte with the serial token stream provably
 preserved, but several conventional token sets in the predecessor's controlled study certify no byte once string,
-comment, or whitespace-run forms are included ([arXiv:2608.03473](https://arxiv.org/abs/2608.03473)). We generalize from
-a byte to a bounded window: a byte string after which the position where the current token began is known, regardless of
-surrounding context. We certify the directly usable form of that recovery: the token covering the window's final byte
-begins at the reported origin. The certificate is conditional on occurrence and may be vacuous; every applicability
-figure counts only windows carrying an asserted completely tokenizable occurrence witness. We give a conservative model
-of a maximal-munch scanner's possible histories across a window, prove it sound, and decide reachability in that model
-exactly by exhausting a finite quotient of its reachable configurations, so every answer of the unbudgeted procedure is
-either a certified window with its origin or a proof that the model admits none. Within the stated flat,
-completely-tokenizable scope, model-positive answers are semantic certificates; negatives are relative to the
-conservative model, which deliberately refuses some windows a greedy scanner would allow. A token set in which some
+comment, or whitespace-run forms are included ([arXiv:2608.03473v2](https://arxiv.org/abs/2608.03473v2)). We generalize
+from a byte to a bounded window: a byte string after which the position where the current token began is known,
+regardless of surrounding context. We certify the directly usable form of that recovery: the token covering the window's
+final byte begins at the reported origin. The certificate is conditional on occurrence and may be vacuous; every
+applicability figure counts only windows carrying an asserted completely tokenizable occurrence witness. We give a
+conservative model of a maximal-munch scanner's possible histories across a window, prove it sound, and decide
+reachability in that model exactly by exhausting a finite quotient of its reachable configurations, so every answer of
+the unbudgeted procedure is either a certified window with its origin or a proof that the model admits none. Within the
+stated flat, completely-tokenizable scope, model-positive answers are semantic certificates; negatives are relative to
+the conservative model, which deliberately refuses some windows a greedy scanner would allow. A token set in which some
 token matches the empty string is decided through its positive-width equivalent, the same automaton entered through a
 start state that does not accept, which changes no scan. In a sample of 400 random token sets, 322 of the 337 sets
 certifying no byte gain a witnessed window, with zero inconclusive searches, and every exact-empty row of the
@@ -361,11 +361,13 @@ prefix of another, and read as a token set it is the setting where the certifica
 nor the cloud's origin bookkeeping: at any boundary at most one codeword begins, so the completely tokenizable inputs
 are exactly `X*`, each with the one factorization the scan computes. Code theory has two notions of a boundary forced by
 bounded context. A *synchronizing pair* of `X` (Berstel, Perrin and Reutenauer, Cambridge University Press 2010) is a
-pair `(x, y) ∈ X* × X*` such that `u x y v ∈ X*` implies `u x ∈ X*` and `y v ∈ X*` for all `u, v ∈ Σ*`; and, in the
-factor formulation of Fici, Romana, Sciortino and Urbina (MFCS 2025), a split `w = w1 w2` of a factor `w` of `X*` is
-*synchronizing* when every occurrence of `w` in a word of `X*` has a factorization boundary between `w1` and `w2`.
-Neither is a certified window as it stands, since neither says which codeword covers the window's final byte, and the
-certificate says nothing about the halves being in `X*`; the exact relation is the following.
+pair `(x, y) ∈ X* × X*` such that `u x y v ∈ X*` implies `u x ∈ X*` and `y v ∈ X*` for all `u, v ∈ Σ*`; and,
+specializing the synchronization pairs of Fici, Romana, Sciortino and Urbina (MFCS 2025, Section 3.3), stated there for
+circular factors of a morphic image, to a morphism `μ` sending the letters of an alphabet `Γ` to the codewords, so that
+`X = μ(Γ)`, and to `L = Γ*`, call a split `w = w1 w2` of a factor `w` of `X*` *synchronizing* when every occurrence of
+`w` in a word of `X*` has a factorization boundary between `w1` and `w2`. Neither is a certified window as it stands,
+since neither says which codeword covers the window's final byte, and the certificate says nothing about the halves
+being in `X*`; the exact relation is the following.
 
 **Proposition 1 (prefix codes).** Let `X` be a prefix code read as a token set, and let `W` be a window occurring in
 some word of `X*`, with origin `o`, split as `W = W_<o W_≥o` at the origin.
@@ -577,32 +579,37 @@ classical special case of boundary recovery is code synchronization, and Proposi
 prefix codes, where left-to-right tokenization realizes the code factorization: the certified windows that occur are the
 synchronizing splits whose right half sits inside one codeword, and a synchronizing pair (Berstel, Perrin and
 Reutenauer, Cambridge University Press 2010) with a nonempty right component yields, on its concatenation, a certified
-window whose origin is the start of the right component's last codeword. An early member of that family is the
-comma-free code of Golomb, Gordon and Welch (Canadian Journal of Mathematics 1958), a block code no codeword of which
-occurs across the boundary of two adjacent codewords, so that every codeword is a certified window with origin 0 for the
-code's own factorization. Finite synchronization delay (Restivo, Theoretical Computer Science 1975) bounds how many
-codewords a synchronizing pair needs, hence a byte bound for a finite code; the `ww`-style resumption argument survives
-into the partial-DFA treatment (Berlinkov, Ferens, Ryzhikov and Szykuła, DMTCS 2026). The explicit modern bounded-window
-form of that special case is the synchronizing morphism: a window of bounded length suffices to detect boundaries
-between codewords (Fici, Romana, Sciortino and Urbina, MFCS 2025), in a morphic code-factorization setting rather than
-among competing prioritized token languages under maximal munch. Uniquely decipherable codes may share prefixes; what
-they guarantee is a unique factorization, with no maximal-munch priority resolving overlaps between competing token
-languages, and that difference is where the origin machinery here earns its existence. The relationship to reset words
-is one-way and stops at length one: a useful certified byte induces a reset-like action on the partial live automaton
-with domain `{q0}`, under the stated re-entrancy qualification, a correspondence that fails under the classical
-complete-DFA reading (Volkov, LATA 2008). It does not extend: a certified window need not be a reset word of the token
-DFA at all, since over `{a, b}` the window `ab` certifies at origin 1 while the action of `ab` on the partial automaton
-is empty, and a rank-one letter need not certify, since over the token language `b*a` the letter `b` can act with rank
-one while `q0` is re-entrant and `b` occurs inside tokens. Certified windows synchronize token-origin information in an
-enriched cloud model; they need not synchronize the raw token DFA. The complexity of the neighborhood is known: checking
-careful synchronizability of a partial automaton, and finding a shortest carefully synchronizing word, are
-PSPACE-complete already over two-letter alphabets (Martyugin, CSR 2010), careful meaning the word stays defined from
-every state and maps all states to one; that is context, not a bound, and no hardness result is claimed for the window
-problem here, whose per-grammar retained-key counts, one footprint indicator rather than a cost model, stayed far below
-the worst case throughout.
+window whose origin is the start of the right component's last codeword. The pair notion is older than the book: Lassez
+defines a pair of words of `X*` as synchronizing when every occurrence of it in a word of `X*` forces a factorization
+cut between its halves, and proves that whether a regular code has a bounded synchronization delay is decidable, through
+the syntactic monoid of `X*` (Lassez, Groupe d'étude d'algèbre 1976, Théorème 2). Carpi and D'Alessandro define
+synchronizing pairs for finite sets that need not be codes and, for a regular synchronizing code, characterize them on
+an unambiguous automaton for `X*` (Carpi and D'Alessandro, Theoretical Computer Science 2017, Definition 2 and Lemma
+2(4)). An early member of that family is the comma-free code of Golomb, Gordon and Welch (Canadian Journal of
+Mathematics 1958), a block code no codeword of which occurs across the boundary of two adjacent codewords, so that every
+codeword is a certified window with origin 0 for the code's own factorization. Finite synchronization delay (Restivo,
+Theoretical Computer Science 1975) bounds how many codewords a synchronizing pair needs, hence a byte bound for a finite
+code; the `ww`-style resumption argument survives into the partial-DFA treatment (Berlinkov, Ferens, Ryzhikov and
+Szykuła, DMTCS 2026). The explicit modern bounded-window form of that special case is the synchronizing morphism: a
+window of bounded length suffices to detect boundaries between codewords (Fici, Romana, Sciortino and Urbina, MFCS
+2025), in a morphic code-factorization setting rather than among competing prioritized token languages under maximal
+munch. Uniquely decipherable codes may share prefixes; what they guarantee is a unique factorization, with no
+maximal-munch priority resolving overlaps between competing token languages, and that difference is where the origin
+machinery here earns its existence. The relationship to reset words is one-way and stops at length one: a useful
+certified byte induces a reset-like action on the partial live automaton with domain `{q0}`, under the stated
+re-entrancy qualification, a correspondence that fails under the classical complete-DFA reading (Volkov, LATA 2008). It
+does not extend: a certified window need not be a reset word of the token DFA at all, since over `{a, b}` the window
+`ab` certifies at origin 1 while the action of `ab` on the partial automaton is empty, and a rank-one letter need not
+certify, since over the token language `b*a` the letter `b` can act with rank one while `q0` is re-entrant and `b`
+occurs inside tokens. Certified windows synchronize token-origin information in an enriched cloud model; they need not
+synchronize the raw token DFA. The complexity of the neighborhood is known: checking careful synchronizability of a
+partial automaton, and finding a shortest carefully synchronizing word, are PSPACE-complete already over two-letter
+alphabets (Martyugin, CSR 2010), careful meaning the word stays defined from every state and maps all states to one;
+that is context, not a bound, and no hardness result is claimed for the window problem here, whose per-grammar
+retained-key counts, one footprint indicator rather than a cost model, stayed far below the worst case throughout.
 
-Two practices are the practical counterparts. Compiler panic-mode recovery discards input to a recovery set (Aho, Lam,
-Sethi and Ullman, Addison-Wesley 2006), which may itself be grammar-derived; the distinction is post-error parser
+Two practices are the practical counterparts. Compiler panic-mode recovery discards input to a recovery set (Aho, Sethi
+and Ullman, Addison-Wesley 1986, Section 4.1), which may itself be grammar-derived; the distinction is post-error parser
 recovery against a pre-input lexical boundary guarantee. Incremental lexing in the style of Wagner and Graham restarts
 from per-token scanner-state snapshots in a versioned token stream, with dynamically maintained lookahead dependencies,
 exact for the text they were cached against (Wagner and Graham, manuscript 1997); a certified window is
@@ -616,8 +623,11 @@ and proves exact recombination of its overlapping windows (Zhang and Cao, arXiv:
 the receiver-view tokenization of one concrete generated stream and triggers a corrective reset when ambiguity occurs
 (Wang, Wang, Pang, Han, Qi, Hu and Chen, arXiv:2604.25486, 2026). Borsotti, Crespi Reghizzi, and Pradella define
 precedence relations over synthesized attributes for a deterministic parser using one-symbol left and right
-neighborhoods (SSRN 2026). None decides occurrence-universal bounded words for competing prioritized token languages
-under maximal munch, nor recovers the origin of the token covering an arbitrary cut.
+neighborhoods (SSRN 2026). Gigatoken certifies cuts before selected punctuation in SentencePiece input where no
+vocabulary piece contains the two symbols at the cut in that order, a sufficient condition argued in a source comment
+and checked by tests (Rød, Gigatoken, 2026), which is a certified window of width two in subword form. None decides
+occurrence-universal bounded words for competing prioritized token languages under maximal munch, nor recovers the
+origin of the token covering an arbitrary cut.
 
 Two formal treatments of tokenization itself address a different question. Kaplan models a language's tokenizing
 conventions as a finite-state transduction and emits output at input-relative pinch-points, positions where all live
@@ -630,24 +640,33 @@ covering maximal-munch token at an arbitrary occurrence.
 Symbolic dynamics comes closest in shape. A resolving block is a block of a factor subshift all of whose admissible
 preimages agree at a selected coordinate (Adler, Coppersmith and Hassner, IEEE Transactions on Information Theory 1983;
 Marcus, IEEE Transactions on Information Theory 1985): an occurrence-universal lift of a local observation to hidden
-state, introduced as a means of resetting an encoding automaton in sliding-block code construction. A certified window
-shares that shape, reading the window as the observable block and the covering token's start as the hidden coordinate;
-the classical theory, however, is stated for factor maps of subshifts, without token priorities, maximal munch, backup,
-or any tokenization semantics, and it neither defines nor decides the lexical instantiation.
+state, which Adler, Coppersmith and Hassner define in their Definition 3.3 and use as a means of resetting an encoding
+automaton in sliding-block code construction (Adler, Coppersmith and Hassner, IEEE Transactions on Information Theory
+1983, Definition 3.3). A certified window shares that shape, reading the window as the observable block and the covering
+token's start as the hidden coordinate; the classical theory, however, is stated for factor maps of subshifts, without
+token priorities, maximal munch, backup, or any tokenization semantics, and it neither defines nor decides the lexical
+instantiation.
 
 Across these areas, definite and local automata, synchronizing words and codes under both the complete and the partial
 reading, resolving blocks, careful synchronization, streaming, verified, and uniform maximal-munch tokenization,
-incremental relexing, the parallel lexing families, and the parallel parsing line above, and beyond the prefix-code and
-code-factorization special case, where synchronizing pairs and bounded windows already recover codeword boundaries
-(Restivo, Theoretical Computer Science 1975; Fici, Romana, Sciortino and Urbina, MFCS 2025), we have not found prior
-work that defines or decides in general, for competing prioritized token languages under maximal munch, a
-grammar-derived bounded word whose every occurrence identifies the origin of the covering token at an arbitrary cut, nor
-prior work instantiating resolving-block or local-decoding machinery for prioritized maximal-munch token origins, nor a
-derivation of this conservative compiled-table cloud model; the closest results decide maximality from a known boundary,
-bound retained memory, assume the boundaries they schedule, recover a state without an origin, or validate a concrete
-overlap or splice after local retokenization. We are likewise not aware of an implementation that derives certified
-windows from a compiled token set and checks them against a running scanner, other than the instruments this paper
-reports and their supported successor in release 1.4.0.
+incremental relexing, the parallel lexing families, and the parallel parsing line above, and beyond two special cases,
+codes, where synchronizing pairs and bounded windows already recover codeword boundaries and bounded delay is decidable
+for a regular code (Lassez, Groupe d'étude d'algèbre 1976; Restivo, Theoretical Computer Science 1975; Fici, Romana,
+Sciortino and Urbina, MFCS 2025), and single formats, where a proved two-character pattern fixes the state of a CSV
+automaton (Ge, Li, Eilebrecht, Chandramouli and Kossmann, SIGMOD 2019), we have not found prior work that defines in
+general, for competing prioritized token languages under maximal munch, a grammar-derived bounded word whose every
+occurrence identifies the origin of the covering token at an arbitrary cut, nor prior work instantiating resolving-block
+or local-decoding machinery for prioritized maximal-munch token origins, nor a derivation of this conservative
+compiled-table cloud model; the closest results decide maximality from a known boundary, bound retained memory, assume
+the boundaries they schedule, recover a state without an origin, or validate a concrete overlap or splice after local
+retokenization. That the exact certificate of a proposed window is decidable is not claimed here: longest-match
+tokenization is a finite-state transduction (Karttunen, ACL 1996), so the property is regular and a proposed window is
+decided by standard closure, and what this paper supplies is the conservative model, its soundness, the finite quotient
+that makes the search terminate and the specializations. We are likewise not aware of an implementation that derives
+certified windows from a compiled maximal-munch token set and checks them against a running scanner, other than the
+instruments this paper reports and their supported successor in release 1.4.0; for a subword vocabulary, Gigatoken
+derives two-symbol cuts before selected punctuation from a SentencePiece vocabulary and checks the chunked output
+against its own serial encoding in its tests (Rød, Gigatoken, 2026).
 
 ## 11 Limitations
 
@@ -708,8 +727,9 @@ general implication extends to longer windows.
 
 ## References
 
-- N. Nidhögg. *Certified Split Points for Parallel Lexing: Exact
-  and Modulo Discarded Tokens.* Preprint, arXiv:2608.03473, 2026.
+- N. Nidhögg. *Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens.* Preprint,
+  arXiv:2608.03473v2, 2026; the applicability table cited is that of versions 1 and 2, whose six exact-empty rows
+  version 3 extends to eight.
 - N. Nidhögg. *munch.* Release tag v1.3.3, archived at doi:10.5281/zenodo.21842344, 2026; a lexical analysis library
   based on automata theory. The artifact evaluated here is that release, with its single-byte decision and a single-byte
   planner this paper does not evaluate; release v1.4.0 added the window decision is_split_window(), which the revised
@@ -726,7 +746,7 @@ general implication extends to longer windows.
 - S. Chassot, V. Kunčak. *Formally Verified Linear-Time Invertible Lexing.* CAV 2026, LNCS 16683, 141-164.
 - A. W. Li, K. Mamouras. *Efficient Algorithms for the Uniform
   Tokenization Problem.* PACMPL 9(OOPSLA1), article 133, 1492-1518, 2025.
-- M. M. Lester. *Position Paper: The Science of Boxing.* PLAS 2013, 83-88.
+- M. M. Lester. *Position Paper: The Science of Boxing: Analysing Eval Using Staged Metaprogramming.* PLAS 2013, 83-88.
 - M. M. Lester, L. Ong, M. Schäfer. *Information Flow Analysis for a Dynamically Typed
   Language with Staged Metaprogramming.* Journal of Computer Security 24(5):541-582, 2016.
 - W. Shao, L. Zheng, P. Wang, P. Zheng, J. Li, Y. Fan. *LoPT: Lossless Parallel Tokenization Acceleration
@@ -742,6 +762,10 @@ general implication extends to longer windows.
   Disambiguation for Generative Linguistic Steganography.* Preprint, arXiv:2604.25486, 2026.
 - A. Borsotti, S. Crespi Reghizzi, M. Pradella. *Attribute-Based Precedence Relations
   for Context-Free Grammars.* Preprint, SSRN, doi:10.2139/ssrn.6890975, 2026.
+- M. Rød. *Gigatoken.* https://github.com/marcelroed/gigatoken, revision 542367a of 21 July 2026, released on PyPI as
+  version 0.9.0. The vocabulary pair rule is the comment in `finalize_speed_paths` of `src/bpe/sentencepiece.rs`, and
+  the chunked output is held to the serial encoding by the test `sp_parallel_fragmented_matches_serial` of
+  `src/batch.rs`.
 - M. Chiari, D. Mandrioli, M. Pradella. *Cyclic operator precedence grammars
   for parallel parsing.* Information and Computation 307:105363, 2025.
 - M. A. Perles, M. O. Rabin, E. Shamir. *The Theory of Definite Automata.*
@@ -749,17 +773,21 @@ general implication extends to longer windows.
 - J. Holub, S. Štekr. *On Parallel Implementations of Deterministic Finite Automata.* CIAA 2009, LNCS 5642, 54-64.
 - J. Berstel, D. Perrin, C. Reutenauer. *Codes and Automata.* Encyclopedia
   of Mathematics and its Applications 129, Cambridge University Press, 2010.
+- J.-L. Lassez. *Messages parasites et codes synchronisants.* Groupe d'étude d'algèbre, tome 1 (1975-1976), exposé no.
+  17 of 28 May 1976, 17-01 to 17-04. https://numdam.org/item/GEA_1975-1976__1__A17_0/
+- A. Carpi, F. D'Alessandro. *On Incomplete and Synchronizing Finite Sets.* Theoretical Computer Science 664:67-77,
+  2017.
 - S. W. Golomb, B. Gordon, L. R. Welch. *Comma-Free Codes.* Canadian Journal of Mathematics 10:202-209, 1958.
 - A. Restivo. *A Combinatorial Property of Codes Having Finite
   Synchronization Delay.* Theoretical Computer Science 1(2):95-101, 1975.
-- M. V. Berlinkov, R. Ferens, A. Ryzhikov, M. Szykuła. *Synchronization of Strongly Connected
-  Partial DFAs and Prefix Codes.* DMTCS 28:2, 2026. Extended version of the STACS 2021 paper.
+- M. V. Berlinkov, R. Ferens, A. Ryzhikov, M. Szykuła. *Synchronization of Strongly Connected Partial DFAs and Prefix
+  Codes.* DMTCS 28:2(34), 2026. Extended version of the STACS 2021 paper.
 - G. Fici, G. Romana, M. Sciortino, C. Urbina. *Morphisms and BWT-Run Sensitivity.* MFCS 2025, LIPIcs 345, 49:1-49:18.
 - M. V. Volkov. *Synchronizing Automata and the Černý Conjecture.* LATA 2008, LNCS 5196, 11-27.
 - P. V. Martyugin. *Complexity of Problems Concerning Carefully Synchronizing
   Words for PFA and Directing Words for NFA.* CSR 2010, LNCS 6072, 288-302.
-- A. V. Aho, M. S. Lam, R. Sethi, J. D. Ullman. *Compilers: Principles,
-  Techniques, and Tools.* 2nd edition, Addison-Wesley, 2006.
+- A. V. Aho, R. Sethi, J. D. Ullman. *Compilers: Principles, Techniques, and Tools.* Addison-Wesley, 1986; reprinted
+  with corrections, March 1988.
 - T. A. Wagner, S. L. Graham. *General Incremental Lexical Analysis.* Manuscript, University of California, Berkeley,
   1997; the circulating build is the December 1999 revision. https://harmonia.cs.berkeley.edu/papers/twagner-lexing.pdf
 - R. M. Kaplan. *A Method for Tokenizing Text.* In Inquiries into Words, Constraints and Contexts:
@@ -768,5 +796,9 @@ general implication extends to longer windows.
 - R. L. Adler, D. Coppersmith, M. Hassner. *Algorithms for Sliding Block Codes: An Application of
   Symbolic Dynamics to Information Theory.* IEEE Transactions on Information Theory 29(1):5-22, 1983.
 - B. H. Marcus. *Sofic Systems and Encoding Data.* IEEE Transactions on Information Theory 31(3):366-377, 1985.
+- C. Ge, Y. Li, E. Eilebrecht, B. Chandramouli, D. Kossmann. *Speculative Distributed CSV Data Parsing for Big Data
+  Analytics.* SIGMOD 2019, 883-899.
+- L. Karttunen. *Directed Replacement.* Proceedings of the 34th Annual Meeting of the Association for Computational
+  Linguistics (ACL 1996), 108-115.
 - T. Bray (Ed.). *The JavaScript Object Notation (JSON) Data
   Interchange Format.* RFC 8259, STD 90, RFC Editor, December 2017.
