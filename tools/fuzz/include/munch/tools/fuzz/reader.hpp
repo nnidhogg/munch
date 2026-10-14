@@ -8,7 +8,7 @@
 #include <string_view>
 
 /**
- * @brief What both fuzz harnesses share: the input read as a byte stream, Reader, and the invariant check, require().
+ * @brief What the fuzz harnesses share: the input read as a byte stream, Reader, and the invariant check, require().
  */
 namespace munch::tools::fuzz
 {

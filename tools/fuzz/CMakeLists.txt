@@ -1,4 +1,4 @@
-# The input reader and the invariant check both harnesses share, its header under include/munch/tools/fuzz.
+# The input reader and the invariant check the harnesses share, its header under include/munch/tools/fuzz.
 add_library(munch_fuzz
         src/reader.cpp
 )
@@ -35,6 +35,22 @@ target_link_libraries(munch_raw_string_fuzzer
 )
 
 target_link_options(munch_raw_string_fuzzer
+        PRIVATE
+        -fsanitize=fuzzer
+)
+
+add_executable(munch_verifier_fuzzer
+        src/verifier_fuzzer.cpp
+)
+
+target_link_libraries(munch_verifier_fuzzer
+        PRIVATE
+        munch_core
+        munch_fuzz
+        munch_verifier
+)
+
+target_link_options(munch_verifier_fuzzer
         PRIVATE
         -fsanitize=fuzzer
 )

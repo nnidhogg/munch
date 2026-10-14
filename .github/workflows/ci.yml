@@ -309,6 +309,14 @@ jobs:
           ./build/tools/fuzz/munch_raw_string_fuzzer raw-string-corpus -max_total_time=60 -timeout=10 \
                 -rss_limit_mb=4096 -print_new_funcs=0
 
+      # The verifier decisions are held to brute force over every short marked string of a three-byte alphabet, so
+      # their corpus decodes as token sets, piece sets and windows and is kept apart from the others.
+      - name: Fuzz the verifier decisions against brute force
+        run: |
+          mkdir verifier-corpus
+          ./build/tools/fuzz/munch_verifier_fuzzer verifier-corpus -max_total_time=60 -timeout=10 \
+                -rss_limit_mb=4096 -print_new_funcs=0
+
   grammars-generate:
     runs-on: ubuntu-24.04
 
