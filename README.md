@@ -356,8 +356,9 @@ keeps the lexing automata. The pattern parser is a library of its own too, `munc
 scanner needs. For the moves a user changes the includes and the qualifications, and for those two names the uses the
 next paragraph gives. `munch::munch` links both libraries, so a consumer of the umbrella target changes no link line,
 and one that links the libraries one by one adds `munch::munch_verifier` or `munch::munch_pattern`. The release the
-finitely-verifiable-segmentation report cites, v2.3.0, has the verifier and its constructions under `munch/dfa/` in
-namespace `munch::dfa`, as that report names them, and 3.0.0 moved them to `munch/verifier/`.
+finitely-verifiable-segmentation report, [arXiv:2610.30168](https://arxiv.org/abs/2610.30168), cites, v2.3.0, has the
+verifier and its constructions under `munch/dfa/` in namespace `munch::dfa`, as that report names them, and 3.0.0 moved
+them to `munch/verifier/`.
 
 The two names that take the dfa library's form give one concept one name and one order. The half a diverging input falls
 in is `verifier::Separation_half`, with `domain` before `boundary` as `dfa::Separation_half` has them, where 2.3.0 named
