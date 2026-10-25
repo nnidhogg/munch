@@ -24,6 +24,8 @@ foreign=(
     30c6ea0dac4a03f0f8bb454a6d15435c424b6f69 # antlr/grammars-v4, the pin of the JSON.g4 the audit page audits
     5045d0056413266e57c625dcd7c365b10e377c52 # leanprover/lean4, the revision the bundled Lean 4 grammar was read from
     2da3ab0a20dc0c66f56a557e37df39f7d36cb953 # leanprover-community/mathlib4, the corpus pin of the Lean 4 benchmark
+    caff92b                                  # hopper, the revision whose JSON lexer the window campaign compiles
+    aaaaabbba                                # not a commit: the split-windows paper's example input over {a, b}
 )
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
