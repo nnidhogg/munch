@@ -17,6 +17,7 @@
 #include <format>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <ranges>
 #include <set>
 #include <string>
@@ -25,6 +26,7 @@
 #include <vector>
 
 #include "grammars.hpp"
+#include "modulo.hpp"
 #include "munch/core/builder.hpp"
 #include "munch/core/lexer.hpp"
 #include "munch/regex/regex.hpp"
@@ -50,6 +52,11 @@ constexpr std::size_t oracle_documents{200};
  * @brief The rows the report states the relaxation moves, eight.
  */
 constexpr int moved_rows{8};
+
+/**
+ * @brief The rows the report states have an exact modulo column, all fifteen.
+ */
+constexpr int exact_column_rows{15};
 
 /**
  * @brief The fewest pieces in a drawn oracle document.
@@ -83,6 +90,22 @@ struct Oracle_verdict
      *        condition genuinely rejects.
      */
     std::string unexercised{};
+};
+
+/**
+ * @brief The bytes the exact decision finds safe modulo a row's ignored kinds.
+ */
+struct Exact_column
+{
+    /**
+     * @brief The bytes safe exactly, the vacuous ones withheld.
+     */
+    std::set<char> safe{};
+
+    /**
+     * @brief The bytes the decision could not settle within its budget, each as `0x..`.
+     */
+    std::vector<std::string> undecided{};
 };
 
 /**
@@ -266,6 +289,109 @@ std::string certified_modulo(const munch::core::Lexer& lexer)
     }
 
     return listed(parts);
+}
+
+/**
+ * @brief Lists the relaxed column as the published condition reads it, from the copy in modulo.hpp, so the table can
+ *        assert that the column is the same under the published condition and under the rule the library ships.
+ * @param lexer The row's lexer.
+ * @param ignored The row's ignored kinds.
+ * @return The bytes the published condition admits.
+ */
+std::set<char> published_modulo(const munch::core::Lexer& lexer, const Kinds_t& ignored)
+{
+    std::set<char> relaxed{};
+
+    for (int value{0}; value < byte_values; ++value)
+    {
+        if (!published_condition(lexer, ignored, static_cast<unsigned char>(value)))
+        {
+            continue;
+        }
+
+        relaxed.insert(static_cast<char>(value));
+    }
+
+    return relaxed;
+}
+
+/**
+ * @brief Lists the relaxed column as the shipped rule reads it.
+ * @param lexer The row's lexer, its ignored tokens set.
+ * @return The bytes the shipped rule admits.
+ */
+std::set<char> shipped_modulo(const munch::core::Lexer& lexer)
+{
+    std::set<char> relaxed{};
+
+    for (int value{0}; value < byte_values; ++value)
+    {
+        const auto byte{static_cast<char>(value)};
+
+        if (!lexer.is_split_point_ignoring(byte))
+        {
+            continue;
+        }
+
+        relaxed.insert(byte);
+    }
+
+    return relaxed;
+}
+
+/**
+ * @brief Decides the bytes safe modulo the ignored kinds exactly, by the decision of modulo.hpp, one decision per class
+ *        of bytes the tables do not tell apart, withholding the vacuous ones as the predicates do.
+ *
+ * A byte the decision cannot settle within its budget is reported as undecided rather than counted either way.
+ * @param lexer The row's lexer.
+ * @param ignored The row's ignored kinds.
+ * @return The bytes safe exactly, and the bytes left undecided.
+ */
+Exact_column exactly_safe_modulo(const munch::core::Lexer& lexer, const Kinds_t& ignored)
+{
+    const auto& simulator{lexer.simulator()};
+
+    std::map<std::vector<int>, std::vector<int>> classes{};
+
+    for (int value{0}; value < byte_values; ++value)
+    {
+        const auto column{transition_column(simulator, static_cast<unsigned char>(value))};
+
+        classes[column].push_back(value);
+    }
+
+    Exact_column decided{};
+
+    for (const auto& [column, members] : classes)
+    {
+        const auto representative{static_cast<unsigned char>(members.front())};
+
+        const auto from_init{simulator.step(simulator.init_state(), representative)};
+
+        // A class the initial state does not consume live is vacuous or never useful, withheld as the predicates do.
+        if (!from_init || !simulator.is_live(*from_init))
+        {
+            continue;
+        }
+
+        const auto verdict{decide_exactly(lexer, ignored, representative)};
+
+        for (const auto value : members)
+        {
+            if (verdict.outcome == Exact_verdict::Outcome::safe)
+            {
+                decided.safe.insert(static_cast<char>(value));
+            }
+
+            if (verdict.outcome == Exact_verdict::Outcome::budget)
+            {
+                decided.undecided.push_back(std::format("{:#04x}", value));
+            }
+        }
+    }
+
+    return decided;
 }
 
 /**
@@ -607,6 +733,12 @@ public:
     void relaxation_count();
 
     /**
+     * @brief Asserts how many rows' relaxed column the exact decision finds exact, which the report states as all
+     *        fifteen, and that it left no byte undecided.
+     */
+    void exact_column_count();
+
+    /**
      * @brief Binds both transcribed benchmark grammars to the grammars the benchmark compiles.
      *
      * Prints both verdicts.
@@ -624,7 +756,10 @@ private:
      * @brief Checks one row's two published columns: what the exact certificate admits, and what it admits once the
      *        caller's discarded tokens are deleted, read from the shipped predicate, which needs no corpus.
      *
-     * Prints the row's verdict and counts a row whose relaxed column moves.
+     * The relaxed column is also judged three more ways: by the published condition, which must give the same column as
+     * the shipped rule, and by the exact decision, which settles whether the column is exact on the row or merely
+     * conservative there. Prints the row's verdict, marking a column that is not exact with the bytes safe beyond it,
+     * and counts a row whose relaxed column moves and a row whose column is exact.
      * @param name The row's name.
      * @param exact The exact cell.
      * @param relaxed The relaxed cell.
@@ -684,6 +819,16 @@ private:
      * @brief The rows whose relaxed column differs from their exact one.
      */
     int changed_{0};
+
+    /**
+     * @brief The rows whose relaxed column the exact decision finds exact.
+     */
+    int exact_rows_{0};
+
+    /**
+     * @brief The bytes the exact decision left undecided, over every row, each as `0x..`.
+     */
+    std::vector<std::string> undecided_{};
 };
 
 void Table_checker::base_rows()
@@ -753,16 +898,55 @@ void Table_checker::check(
         ++changed_;
     }
 
-    const auto agrees{actual_exact == exact && actual_relaxed == relaxed};
+    const auto shipped{shipped_modulo(lexer)};
 
-    record(agrees, name);
+    const auto published{published_modulo(lexer, ignored)};
+
+    const auto both_rules{published == shipped};
+
+    const auto [decided, undecided]{exactly_safe_modulo(lexer, ignored)};
+
+    std::ranges::copy(undecided, std::back_inserter(undecided_));
+
+    const auto column_exact{decided == shipped};
+
+    if (column_exact)
+    {
+        ++exact_rows_;
+    }
+
+    const auto agrees{actual_exact == exact && actual_relaxed == relaxed && both_rules};
+
+    const auto line{std::format("{}{}", name, column_exact ? "" : " (column not exact)")};
+
+    record(agrees, line);
 
     if (!agrees)
     {
         std::cout << std::format(
-                "         certified: {}, cell says {}\n         modulo:    {}, cell says {}\n", actual_exact, exact,
-                actual_relaxed, relaxed);
+                "         certified: {}, cell says {}\n         modulo:    {}, cell says {}\n         the published "
+                "condition and the shipped rule {}\n",
+                actual_exact, exact, actual_relaxed, relaxed, both_rules ? "agree" : "disagree");
     }
+
+    if (column_exact)
+    {
+        return;
+    }
+
+    std::vector<std::string> beyond{};
+
+    for (const auto byte : decided)
+    {
+        if (shipped.contains(byte))
+        {
+            continue;
+        }
+
+        beyond.push_back(std::format("{:#04x}", static_cast<unsigned char>(byte)));
+    }
+
+    std::cout << std::format("         safe exactly beyond the column: {}\n", listed(beyond));
 }
 
 void Table_checker::record(const bool agrees, const std::string_view line)
@@ -1073,6 +1257,29 @@ void Table_checker::relaxation_count()
     }
 }
 
+void Table_checker::exact_column_count()
+{
+    const auto agrees{exact_rows_ == exact_column_rows && undecided_.empty()};
+
+    const auto line{std::format("rows whose modulo column is exact: {}", exact_rows_)};
+
+    record(agrees, line);
+
+    if (agrees)
+    {
+        return;
+    }
+
+    std::cout << "         the report says all fifteen";
+
+    if (!undecided_.empty())
+    {
+        std::cout << std::format(", and these bytes were left undecided: {}", joined(undecided_, " "));
+    }
+
+    std::cout << '\n';
+}
+
 void Table_checker::benchmark_bindings()
 {
     const auto bound{scaling_grammar_matches_the_benchmark()};
@@ -1095,8 +1302,8 @@ int Table_checker::failures() const noexcept
 
 /**
  * @brief Reproduces the applicability table: every row's two columns, the oracle's cross-checks by splitting, the
- *        framing and UTF-8 instances, the count of rows the relaxation moves and the bindings to the benchmark's
- *        grammars, then prints the verdict.
+ *        framing and UTF-8 instances, the count of rows the relaxation moves, the count of rows whose relaxed column is
+ *        exact and the bindings to the benchmark's grammars, then prints the verdict.
  * @return EXIT_SUCCESS when every row reproduces the table, EXIT_FAILURE otherwise.
  */
 int main()
@@ -1122,6 +1329,8 @@ int main()
     checker.utf8_row();
 
     checker.relaxation_count();
+
+    checker.exact_column_count();
 
     checker.benchmark_bindings();
 
