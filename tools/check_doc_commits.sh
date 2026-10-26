@@ -26,6 +26,7 @@ foreign=(
     2da3ab0a20dc0c66f56a557e37df39f7d36cb953 # leanprover-community/mathlib4, the corpus pin of the Lean 4 benchmark
     caff92b                                  # hopper, the revision whose JSON lexer the window campaign compiles
     aaaaabbba                                # not a commit: the split-windows paper's example input over {a, b}
+    abababbab                                # not a commit: the panic-mode paper's example tail over {a, b}
 )
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
