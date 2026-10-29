@@ -193,7 +193,9 @@ The library is documented in `docs/`, one page per subject; the README is the en
   technical reports, mirrored word for word from [arXiv:2608.03473](https://arxiv.org/abs/2608.03473),
   [arXiv:2608.09761](https://arxiv.org/abs/2608.09761), [arXiv:2609.10600](https://arxiv.org/abs/2609.10600) and
   [arXiv:2610.08854](https://arxiv.org/abs/2610.08854), whose theorems the certificates, the window planner, the
-  recovery layer and the verifier implement.
+  recovery layer and the verifier implement. The fifth report, on finitely verifiable segmentation,
+  [arXiv:2610.30168](https://arxiv.org/abs/2610.30168), is deposited with its programs as doi:10.5281/zenodo.23708161
+  rather than mirrored here, and the constructions it names are the verifier's.
 
 ## **Testing**
 

@@ -26,19 +26,18 @@ license: MIT
 version: 3.0.0
 date-released: "2026-10-15"
 doi: "10.5281/zenodo.21752996"
-preferred-citation:
-  type: article
-  title: "Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens"
-  authors:
-    - family-names: "Nidhögg"
-      given-names: "Nicklas"
-      orcid: "https://orcid.org/0009-0006-6161-6150"
-  year: 2026
-  identifiers:
-    - type: other
-      value: "arXiv:2608.03473"
-  url: "https://arxiv.org/abs/2608.03473"
 references:
+  - type: article
+    title: "Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens"
+    authors:
+      - family-names: "Nidhögg"
+        given-names: "Nicklas"
+        orcid: "https://orcid.org/0009-0006-6161-6150"
+    year: 2026
+    identifiers:
+      - type: other
+        value: "arXiv:2608.03473"
+    url: "https://arxiv.org/abs/2608.03473"
   - type: article
     title: "Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies"
     authors:
@@ -72,3 +71,14 @@ references:
       - type: other
         value: "arXiv:2610.08854"
     url: "https://arxiv.org/abs/2610.08854"
+  - type: article
+    title: "Finitely Verifiable Segmentation: Decidability for Every Tokenizer with a Finite-State Verifier"
+    authors:
+      - family-names: "Nidhögg"
+        given-names: "Nicklas"
+        orcid: "https://orcid.org/0009-0006-6161-6150"
+    year: 2026
+    identifiers:
+      - type: other
+        value: "arXiv:2610.30168"
+    url: "https://arxiv.org/abs/2610.30168"
