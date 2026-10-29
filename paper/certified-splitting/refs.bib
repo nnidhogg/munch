@@ -31,7 +31,8 @@
 @misc{yergeau2003utf8,
   author = {Fran{\c{c}}ois Yergeau},
   title  = {{UTF-8}, a transformation format of {ISO} 10646},
-  note   = {RFC 3629, Internet Engineering Task Force},
+  note   = {RFC 3629, STD 63, Internet Engineering Task Force, \doi{10.17487/RFC3629}},
+  month  = nov,
   year   = {2003},
 }
 
@@ -40,7 +41,9 @@
   title     = {Neural Machine Translation of Rare Words with Subword Units},
   booktitle = {Proceedings of the 54th Annual Meeting of the Association for Computational
                Linguistics},
+  pages     = {1715--1725},
   year      = {2016},
+  doi       = {10.18653/v1/P16-1162},
 }
 
 @article{cognetta2025tokenization,
@@ -81,6 +84,7 @@
   volume    = {388},
   pages     = {16--27},
   year      = {2023},
+  doi       = {10.4204/EPTCS.388.4},
   note      = {\href{https://arxiv.org/abs/2309.08715}{arXiv:2309.08715}},
 }
 
@@ -108,7 +112,7 @@
   year         = {2026},
   howpublished = {Public repository, \url{https://github.com/nnidhogg/hopper}},
   note         = {\code{hopper::json::Document} applies the restart principle of Theorem~\ref{thm:edit}, read at
-                  its release \texttt{v1.0.0}, whose archived record is \doi{10.5281/zenodo.22998778} under the concept
+                  its release 1.0.0, whose archived record is \doi{10.5281/zenodo.22998778} under the concept
                   identifier \doi{10.5281/zenodo.22998777}; the repository's \code{docs/design.md} records the probe's
                   figures}
 }
@@ -119,7 +123,7 @@
   year         = {2026},
   howpublished = {Public repository, \url{https://github.com/nnidhogg/munch}},
   note         = {The threaded scanner of Section~\ref{sec:artifact} is this library at the commit
-                  \code{run-artifact.sh} pins, the commit its release \texttt{v2.1.0} tags, whose archived record is
+                  \code{run-artifact.sh} pins, the commit the tag \texttt{v2.1.0} names, whose archived record is
                   \doi{10.5281/zenodo.23026012} under the concept identifier \doi{10.5281/zenodo.21752996}}
 }
 
@@ -127,7 +131,7 @@
   author       = {Nicklas Nidh{\"o}gg},
   title        = {Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens},
   year         = {2026},
-  note         = {Preprint, \href{https://arxiv.org/abs/2608.03473}{arXiv:2608.03473} [cs.FL]}
+  note         = {Preprint, \href{https://arxiv.org/abs/2608.03473v4}{arXiv:2608.03473v4} [cs.FL]}
 }
 
 @misc{nidhogg2026panicmode,
@@ -141,7 +145,9 @@
   author       = {Nicklas Nidh{\"o}gg},
   title        = {Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies},
   year         = {2026},
-  note         = {Preprint, \href{https://arxiv.org/abs/2608.09761}{arXiv:2608.09761} [cs.FL]}
+  note         = {Preprint, \href{https://arxiv.org/abs/2608.09761v2}{arXiv:2608.09761v2} [cs.FL]; version 3,
+                  \href{https://arxiv.org/abs/2608.09761v3}{arXiv:2608.09761v3}, adds the boundary profile, decided
+                  through this paper's verifier, and a supply table over this paper's vocabularies}
 }
 
 @inproceedings{veanes2012sft,
@@ -169,8 +175,8 @@
 @inproceedings{li2026streaming,
   author    = {Li, Angela W. and Yang, Yudi and Mamouras, Konstantinos},
   title     = {Static Analysis for Efficient Streaming Tokenization},
-  booktitle = {ACM International Conference on Architectural Support for Programming Languages and
-               Operating Systems (ASPLOS)},
+  booktitle = {Proceedings of the 31st ACM International Conference on Architectural Support for
+               Programming Languages and Operating Systems, Volume 2 (ASPLOS)},
   pages     = {1880--1896},
   year      = {2026},
   doi       = {10.1145/3779212.3790227},
@@ -447,7 +453,7 @@
 }
 
 @article{lester2016flow,
-  author  = {Martin Mariusz Lester and Luke Ong and Max Sch{\"a}fer},
+  author  = {Martin Lester and Luke Ong and Max Sch{\"a}fer},
   title   = {Information Flow Analysis for a Dynamically Typed Language with Staged Metaprogramming},
   journal = {Journal of Computer Security},
   volume  = {24},
@@ -456,3 +462,21 @@
   year    = {2016},
   doi     = {10.3233/JCS-160557}
 }
+
+@misc{lassez1976messages,
+  author       = {Jean-Louis Lassez},
+  title        = {Messages parasites et codes synchronisants},
+  year         = {1976},
+  howpublished = {Groupe d'{\'e}tude d'alg{\`e}bre, tome~1 (1975--1976), expos{\'e} no.~17, pages 17-01 to 17-04},
+  note         = {Expos{\'e} of 28 May 1976, \url{https://numdam.org/item/GEA_1975-1976__1__A17_0/}},
+}
+
+@misc{rod2026gigatoken,
+  author       = {Marcel R{\o}d},
+  title        = {{Gigatoken}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/marcelroed/gigatoken}},
+  note         = {Revision \texttt{542367a} of 21 July 2026, released on PyPI as version 0.9.0. The vocabulary pair
+                  rule is the comment in \texttt{finalize\_speed\_paths} of \texttt{src/bpe/sentencepiece.rs}},
+}
+
