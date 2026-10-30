@@ -189,13 +189,12 @@ The library is documented in `docs/`, one page per subject; the README is the en
 - [docs/research.md](docs/research.md): munch as a laboratory bench for studying tokenization, and the probe methodology
   that ships with the code.
 - [docs/split_points.md](docs/split_points.md), [docs/split_windows.md](docs/split_windows.md),
-  [docs/panic_mode.md](docs/panic_mode.md) and [docs/certified_splitting.md](docs/certified_splitting.md): the four
-  technical reports, mirrored word for word from [arXiv:2608.03473](https://arxiv.org/abs/2608.03473),
-  [arXiv:2608.09761](https://arxiv.org/abs/2608.09761), [arXiv:2609.10600](https://arxiv.org/abs/2609.10600) and
-  [arXiv:2610.08854](https://arxiv.org/abs/2610.08854), whose theorems the certificates, the window planner, the
-  recovery layer and the verifier implement. The fifth report, on finitely verifiable segmentation,
-  [arXiv:2610.30168](https://arxiv.org/abs/2610.30168), is deposited with its programs as doi:10.5281/zenodo.23708161
-  rather than mirrored here, and the constructions it names are the verifier's.
+  [docs/panic_mode.md](docs/panic_mode.md), [docs/certified_splitting.md](docs/certified_splitting.md) and
+  [docs/finitely_verifiable.md](docs/finitely_verifiable.md): the five technical reports, mirrored word for word from
+  [arXiv:2608.03473](https://arxiv.org/abs/2608.03473), [arXiv:2608.09761](https://arxiv.org/abs/2608.09761),
+  [arXiv:2609.10600](https://arxiv.org/abs/2609.10600), [arXiv:2610.08854](https://arxiv.org/abs/2610.08854) and
+  [arXiv:2610.30168](https://arxiv.org/abs/2610.30168), whose theorems the certificates, the window planner, the
+  recovery layer and the verifier implement.
 
 ## **Testing**
 
@@ -398,14 +397,15 @@ generated Unicode identifier tables derive from the Unicode Character Database a
 v3; the complete notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), installed alongside the package.
 
 The technical reports and their figures, `paper/split-points/split-points.tex`, `paper/split-windows/split-windows.tex`,
-`paper/panic-mode/panic-mode.tex`, `paper/certified-splitting/certified-splitting.tex` and `paper/figures/*.pdf`, are
-licensed under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY
-4.0), matching the licence they carry on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473),
-[arXiv:2608.09761](https://arxiv.org/abs/2608.09761), [arXiv:2609.10600](https://arxiv.org/abs/2609.10600) and
-[arXiv:2610.08854](https://arxiv.org/abs/2610.08854). The benchmark archives under `paper/data/` are released under [CC0
-1.0](https://creativecommons.org/publicdomain/zero/1.0/): they are measurements rather than authorship, and attribution
-on a throughput table serves no one. The programs that generate the figures are source code and are MIT like the rest of
-the tree.
+`paper/panic-mode/panic-mode.tex`, `paper/certified-splitting/certified-splitting.tex`,
+`paper/finitely-verifiable/finitely-verifiable.tex` and `paper/figures/*.pdf`, are licensed under
+[Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0), matching the
+license they carry on arXiv as [arXiv:2608.03473](https://arxiv.org/abs/2608.03473),
+[arXiv:2608.09761](https://arxiv.org/abs/2608.09761), [arXiv:2609.10600](https://arxiv.org/abs/2609.10600),
+[arXiv:2610.08854](https://arxiv.org/abs/2610.08854) and [arXiv:2610.30168](https://arxiv.org/abs/2610.30168). The
+benchmark archives under `paper/data/` are released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/):
+they are measurements rather than authorship, and attribution on a throughput table serves no one. The programs that
+generate the figures are source code and are MIT like the rest of the tree.
 
 ## **Author**
 

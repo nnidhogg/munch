@@ -27,6 +27,7 @@ foreign=(
     caff92b                                  # hopper, the revision whose JSON lexer the window campaign compiles
     aaaaabbba                                # not a commit: the split-windows paper's example input over {a, b}
     abababbab                                # not a commit: the panic-mode paper's example tail over {a, b}
+    aaaaaaab                                 # not a commit: the finitely-verifiable paper's counterexample over {a, b}
 )
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
