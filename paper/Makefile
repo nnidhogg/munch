@@ -5,7 +5,7 @@
 # figures/ and data/ beside them are shared evidence. The bibliographies are deliberately separate sets,
 # independently verified with different artifact pins, and must not be merged.
 
-PAPERS := split-points split-windows panic-mode certified-splitting
+PAPERS := split-points split-windows panic-mode certified-splitting finitely-verifiable
 
 .PHONY: all clean $(PAPERS)
 

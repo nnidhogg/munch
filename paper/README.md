@@ -1,6 +1,6 @@
 # The technical reports in LaTeX
 
-Four sibling reports live here, sharing `figures/` and `data/`.
+Five sibling reports live here, sharing `figures/` and `data/`.
 
 `split-points/split-points.tex` is the formal version of [docs/split_points.md](../docs/split_points.md), published as
 [arXiv:2608.03473](https://arxiv.org/abs/2608.03473): the argument stated over the live subautomaton, with numbered
@@ -34,6 +34,19 @@ two token sets place different boundaries on an input both tokenize. The decisio
 `verifier::Verifier`, `Lexer::shortest_split_window()`, `Lexer::anchor_free_span()`, `Lexer::boundary_profile()` and
 `Lexer::segmentation_difference()`, and the auditor as `munch-audit`.
 
+`finitely-verifiable/finitely-verifiable.tex` is the fifth, published as
+[arXiv:2610.30168](https://arxiv.org/abs/2610.30168) and mirrored by
+[docs/finitely_verifiable.md](../docs/finitely_verifiable.md): segmentation policies whose own segmentations a finite
+automaton over marked strings accepts, with constructive decisions from a supplied verifier for certification, the
+boundary gap, realizability and equivalence, and for whether a certified cut or every cut of an inventory lets each
+piece scan alone, the class placed strictly between the online-scannable policies and those with regular domains and
+shown to be exactly the rational segmentation policies, its closure under composition over a labeled stage, restriction
+to a regular schema, splitting at character-class changes and byte-fallback union of literal policies, the transfer of
+certificates between stages under four laws with an exact stage-local lift, and the masses of the weighted theory solved
+as exact rationals under rational, almost surely stopping finite-state sources. The decisions ship in the library as
+`verifier::Verifier` with `miscovering()`, `boundary_gap()`, `realizable()`, `divergence()`, `dependence()` and
+`chunk_dependence()`, beside the tokenizer verifiers `merge_tower()` and `trie_chain()`.
+
 The markdown reports are the accessible form, linked from the README and kept next to the implementation they describe;
 they carry the same claims but not every formal qualification, so where the two differ this directory is authoritative.
 
@@ -44,8 +57,9 @@ sudo apt-get install -y texlive-latex-recommended texlive-fonts-recommended texl
 make
 ```
 
-The recursive Makefile builds all four reports: `split-points/split-points.pdf`, `split-windows/split-windows.pdf`,
-`panic-mode/panic-mode.pdf` and `certified-splitting/certified-splitting.pdf`.
+The recursive Makefile builds all five reports: `split-points/split-points.pdf`, `split-windows/split-windows.pdf`,
+`panic-mode/panic-mode.pdf`, `certified-splitting/certified-splitting.pdf` and
+`finitely-verifiable/finitely-verifiable.pdf`.
 Building needs no Graphviz and no compiler: the figure PDFs under `figures/` are checked in.
 
 ## Figures

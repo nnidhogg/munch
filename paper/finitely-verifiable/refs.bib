@@ -1,0 +1,832 @@
+@article{reps1998maximal,
+  author  = {Thomas Reps},
+  title   = {``Maximal-Munch'' Tokenization in Linear Time},
+  journal = {ACM Transactions on Programming Languages and Systems},
+  volume  = {20},
+  number  = {2},
+  pages   = {259--273},
+  year    = {1998},
+  doi       = {10.1145/276393.276394}
+}
+
+@inproceedings{karttunen1996directed,
+  author    = {Lauri Karttunen},
+  title     = {Directed Replacement},
+  booktitle = {Proceedings of the 34th Annual Meeting of the Association for Computational Linguistics},
+  pages     = {108--115},
+  year      = {1996},
+  doi       = {10.3115/981863.981878}
+}
+
+@inproceedings{sennrich2016subword,
+  author    = {Rico Sennrich and Barry Haddow and Alexandra Birch},
+  title     = {Neural Machine Translation of Rare Words with Subword Units},
+  booktitle = {Proceedings of the 54th Annual Meeting of the Association for Computational
+               Linguistics (Volume 1: Long Papers)},
+  publisher = {Association for Computational Linguistics},
+  address   = {Berlin, Germany},
+  pages     = {1715--1725},
+  year      = {2016},
+  doi       = {10.18653/v1/P16-1162},
+}
+
+@article{cognetta2025tokenization,
+  author  = {Marco Cognetta and Naoaki Okazaki},
+  title   = {Tokenization as Finite-State Transduction},
+  journal = {Computational Linguistics},
+  volume  = {51},
+  number  = {4},
+  pages   = {1119--1149},
+  year    = {2025},
+  doi     = {10.1162/coli.a.23}
+}
+
+@inproceedings{berglund2024bpedfa,
+  author    = {Martin Berglund and Willeke Martens and Brink van der Merwe},
+  title     = {Constructing a {BPE} Tokenization {DFA}},
+  booktitle = {Implementation and Application of Automata, 28th International Conference, CIAA 2024},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {15015},
+  pages     = {66--78},
+  year      = {2024},
+  publisher = {Springer},
+  doi       = {10.1007/978-3-031-71112-1_5},
+  note      = {Extended version: arXiv:2405.07671v2, 2025, whose Theorem~4 gives the subsequential transducer for proper
+               dictionaries; journal version: Theoretical Computer Science 1083 (2026), article 116131,
+               doi:10.1016/j.tcs.2026.116131}
+}
+
+@misc{kaplan1998tokenizing,
+  author = {Ronald M. Kaplan},
+  title  = {Method and Apparatus for Tokenizing Text},
+  year   = {1998},
+  note   = {US Patent 5,721,939 (US5721939A), filed 3 August 1995, granted 24 February 1998, assigned to Xerox Corporation}
+}
+
+@misc{vonpraun2011speculative,
+  author = {Christoph von Praun},
+  title  = {Speculative Stream Scanning},
+  year   = {2011},
+  note   = {US Patent 8,001,329 (US8001329B2; application No.~12/122,962, published as US~2009/0287725~A1), filed 19 May 2008, granted 16 August 2011, assigned to International Business Machines Corporation}
+}
+
+@misc{pentheroudakis2006tokenizer,
+  author = {Joseph E. Pentheroudakis and David G. Bradlee and Sonja S. Knoll},
+  title  = {Tokenizer for a Natural Language Processing System},
+  year   = {2006},
+  note   = {US Patent 7,092,871 (US7092871B2; application No.~09/822,976), filed 30 March 2001, granted 15 August 2006, assigned to Microsoft Corporation}
+}
+
+@misc{walther2003context,
+  author = {Markus Walther},
+  title  = {Context-Aware Linear Time Tokenizer},
+  year   = {2003},
+  note   = {US Patent Application Publication 2003/0149562 (US20030149562A1; application No.~10/071,934), filed 7 February 2002, published 7 August 2003}
+}
+
+@misc{chiu2014metadfa,
+  author = {Kenneth Chiu},
+  title  = {Parallel {XML} Parsing Using Meta-{DFAs}},
+  year   = {2014},
+  note   = {US Patent 8,782,514 (US8782514B1; application No.~12/636,342), filed 11 December 2009, granted 15 July 2014, assigned to the Research Foundation of the State University of New York}
+}
+
+@misc{vandevanter1998incremental,
+  author = {Michael L. {Van De Vanter}},
+  title  = {Per-Keystroke Incremental Lexing Using a Conventional Batch Lexer},
+  year   = {1998},
+  note   = {US Patent 5,737,608 (US5737608A; application No.~08/676,815), filed 8 July 1996, granted 7 April 1998, assigned to Sun Microsystems, Inc.}
+}
+
+@misc{munch,
+  author       = {Nicklas Nidh{\"o}gg},
+  title        = {munch: a lexical analysis library based on automata theory},
+  year         = {2026},
+  howpublished = {Public repository, \url{https://github.com/nnidhogg/munch}},
+  note         = {The library instance of Section~\ref{sec:instances} is this library at its release 2.3.0, commit
+                  \texttt{fa3f20d}, whose archived record is \doi{10.5281/zenodo.23287096} under the concept identifier
+                  \doi{10.5281/zenodo.21752996}}
+}
+
+@misc{nidhogg2026splitpoints,
+  author = {Nicklas Nidh{\"o}gg},
+  title  = {Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens},
+  year   = {2026},
+  note   = {Preprint, \href{https://arxiv.org/abs/2608.03473}{arXiv:2608.03473} [cs.FL]}
+}
+
+@misc{nidhogg2026panic,
+  author = {Nicklas Nidh{\"o}gg},
+  title  = {Certified Panic Mode: Repair-Invariant Error Recovery for Maximal-Munch Lexing},
+  year   = {2026},
+  note   = {Preprint, \href{https://arxiv.org/abs/2609.10600}{arXiv:2609.10600} [cs.PL]}
+}
+
+@misc{nidhogg2026splitting,
+  author = {Nicklas Nidh{\"o}gg},
+  title  = {Certified Splitting: Decidability and Anchor Supply for Maximal-Munch Tokenization},
+  year   = {2026},
+  note   = {Preprint, \href{https://arxiv.org/abs/2610.08854}{arXiv:2610.08854} [cs.FL]}
+}
+
+@article{schutzenberger1961definition,
+  author  = {M. P. Sch{\"u}tzenberger},
+  title   = {On the Definition of a Family of Automata},
+  journal = {Information and Control},
+  volume  = {4},
+  number  = {2--3},
+  pages   = {245--270},
+  year    = {1961},
+  doi     = {10.1016/S0019-9958(61)80020-X}
+}
+
+@book{droste2009handbook,
+  editor    = {Manfred Droste and Werner Kuich and Heiko Vogler},
+  title     = {Handbook of Weighted Automata},
+  series    = {Monographs in Theoretical Computer Science. An {EATCS} Series},
+  publisher = {Springer},
+  year      = {2009},
+  doi       = {10.1007/978-3-642-01492-5}
+}
+
+@book{kemeny1960finite,
+  author    = {John G. Kemeny and J. Laurie Snell},
+  title     = {Finite Markov Chains},
+  publisher = {Van Nostrand},
+  address   = {Princeton},
+  year      = {1960}
+}
+
+@incollection{khoussainov1995automatic,
+  author    = {Bakhadyr Khoussainov and Anil Nerode},
+  title     = {Automatic Presentations of Structures},
+  booktitle = {Logic and Computational Complexity, International Workshop {LCC}'94, Selected Papers},
+  editor    = {Daniel Leivant},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {960},
+  pages     = {367--392},
+  publisher = {Springer},
+  year      = {1995},
+  doi       = {10.1007/3-540-60178-3_93}
+}
+
+@article{case2013automatic,
+  author  = {John Case and Sanjay Jain and Samuel Seah and Frank Stephan},
+  title   = {Automatic Functions, Linear Time and Learning},
+  journal = {Logical Methods in Computer Science},
+  volume  = {9},
+  number  = {3:19},
+  pages   = {1--26},
+  year    = {2013},
+  doi     = {10.2168/LMCS-9(3:19)2013},
+}
+
+@inproceedings{filiot2016equivalence,
+  author    = {Emmanuel Filiot and Isma{\"e}l Jecker and Christof L{\"o}ding and Sarah Winter},
+  title     = {On Equivalence and Uniformisation Problems for Finite Transducers},
+  booktitle = {43rd International Colloquium on Automata, Languages, and Programming (ICALP 2016)},
+  series    = {LIPIcs},
+  volume    = {55},
+  pages     = {125:1--125:14},
+  year      = {2016},
+  doi       = {10.4230/LIPIcs.ICALP.2016.125}
+}
+
+@book{eilenberg1974automata,
+  author    = {Eilenberg, Samuel},
+  title     = {Automata, Languages, and Machines, Volume A},
+  publisher = {Academic Press},
+  year      = {1974},
+}
+
+@inproceedings{veanes2012sft,
+  author    = {Margus Veanes and Pieter Hooimeijer and Benjamin Livshits and David Molnar and Nikolaj Bj{\o}rner},
+  title     = {Symbolic Finite State Transducers: Algorithms and Applications},
+  booktitle = {Proceedings of the 39th Annual ACM SIGPLAN-SIGACT Symposium on Principles of Programming Languages},
+  series    = {POPL '12},
+  pages     = {137--150},
+  year      = {2012},
+  publisher = {ACM},
+  doi       = {10.1145/2103656.2103674}
+}
+
+@article{blattner1977single,
+  author  = {Meera Blattner and Tom Head},
+  title   = {Single-Valued $a$-Transducers},
+  journal = {Journal of Computer and System Sciences},
+  volume  = {15},
+  number  = {3},
+  pages   = {310--327},
+  year    = {1977},
+  doi     = {10.1016/S0022-0000(77)80033-0}
+}
+
+@article{ramadge1987supervisory,
+  author  = {Peter J. Ramadge and W. Murray Wonham},
+  title   = {Supervisory Control of a Class of Discrete Event Processes},
+  journal = {SIAM Journal on Control and Optimization},
+  volume  = {25},
+  number  = {1},
+  pages   = {206--230},
+  year    = {1987},
+  doi     = {10.1137/0325013}
+}
+
+@inproceedings{abdulla2008rautomata,
+  author    = {Parosh Aziz Abdulla and Pavel Kr{\v c}{\'a}l and Wang Yi},
+  title     = {R-Automata},
+  booktitle = {CONCUR 2008, Concurrency Theory},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {5201},
+  pages     = {67--81},
+  year      = {2008},
+  publisher = {Springer},
+  doi       = {10.1007/978-3-540-85361-9_9}
+}
+
+@article{elgot1965relations,
+  author  = {Calvin C. Elgot and Jorge E. Mezei},
+  title   = {On Relations Defined by Generalized Finite Automata},
+  journal = {IBM Journal of Research and Development},
+  volume  = {9},
+  number  = {1},
+  pages   = {47--68},
+  year    = {1965},
+  doi     = {10.1147/rd.91.0047}
+}
+
+@article{rabin1959finite,
+  author  = {Michael O. Rabin and Dana Scott},
+  title   = {Finite Automata and Their Decision Problems},
+  journal = {IBM Journal of Research and Development},
+  volume  = {3},
+  number  = {2},
+  pages   = {114--125},
+  year    = {1959},
+  doi     = {10.1147/rd.32.0114}
+}
+
+@inproceedings{colange2015bounds,
+  author    = {Maximilien Colange and Dimitri Racordon and Didier Buchs},
+  title     = {Computing Bounds for Counter Automata},
+  booktitle = {Proceedings of the 15th International Workshop on Automated Verification of Critical Systems},
+  series    = {ECEASST},
+  volume    = {72},
+  year      = {2015},
+  doi       = {10.14279/tuj.eceasst.72.1016}
+}
+
+@article{adler1983sliding,
+  author  = {Roy L. Adler and Don Coppersmith and Martin Hassner},
+  title   = {Algorithms for Sliding Block Codes: An Application of Symbolic Dynamics to Information Theory},
+  journal = {IEEE Transactions on Information Theory},
+  volume  = {29},
+  number  = {1},
+  pages   = {5--22},
+  year    = {1983},
+  doi     = {10.1109/TIT.1983.1056597}
+}
+
+@book{berstel2010codes,
+  author    = {Jean Berstel and Dominique Perrin and Christophe Reutenauer},
+  title     = {Codes and Automata},
+  series    = {Encyclopedia of Mathematics and its Applications},
+  volume    = {129},
+  publisher = {Cambridge University Press},
+  year      = {2010},
+  doi       = {10.1017/CBO9781139195768}
+}
+
+@article{restivo1975synchronization,
+  author  = {Antonio Restivo},
+  title   = {A Combinatorial Property of Codes Having Finite Synchronization Delay},
+  journal = {Theoretical Computer Science},
+  volume  = {1},
+  number  = {2},
+  pages   = {95--101},
+  year    = {1975},
+  doi     = {10.1016/0304-3975(75)90015-8}
+}
+
+@misc{nidhogg2026splitwindows,
+  author       = {Nicklas Nidh{\"o}gg},
+  title        = {Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies},
+  year         = {2026},
+  note         = {Preprint, \href{https://arxiv.org/abs/2608.09761}{arXiv:2608.09761} [cs.FL]}
+}
+
+@inproceedings{berglund2023formalizing,
+  author    = {Martin Berglund and Brink van der Merwe},
+  title     = {Formalizing {BPE} Tokenization},
+  booktitle = {Proceedings of the 13th International Workshop on Non-Classical Models of Automata
+               and Applications ({NCMA} 2023)},
+  series    = {EPTCS},
+  volume    = {388},
+  pages     = {16--27},
+  year      = {2023},
+  note      = {\href{https://arxiv.org/abs/2309.08715}{arXiv:2309.08715}},
+  doi       = {10.4204/EPTCS.388.4}
+}
+
+@inproceedings{jiang2026incremental,
+  author    = {Shenghu Jiang and Ruihao Gong},
+  title     = {Incremental {BPE} Tokenization},
+  booktitle = {Proceedings of the 43rd International Conference on Machine Learning ({ICML} 2026)},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {306},
+  pages     = {52312--52342},
+  year      = {2026},
+  note      = {\href{https://proceedings.mlr.press/v306/jiang26l.html}{proceedings.mlr.press/v306/jiang26l.html}},
+}
+
+@inproceedings{li2026streaming,
+  author    = {Li, Angela W. and Yang, Yudi and Mamouras, Konstantinos},
+  title     = {Static Analysis for Efficient Streaming Tokenization},
+  booktitle = {Proceedings of the 31st ACM International Conference on Architectural Support for
+               Programming Languages and Operating Systems, Volume 2},
+  pages     = {1880--1896},
+  year      = {2026},
+  doi       = {10.1145/3779212.3790227},
+}
+
+@inproceedings{shao2026lopt,
+  author    = {Wei Shao and Lingchao Zheng and Pengyu Wang and Peizhen Zheng and Jun Li and
+               Yuwei Fan},
+  title     = {{LoPT}: Lossless Parallel Tokenization Acceleration for Long Context Inference of
+               Large Language Model},
+  booktitle = {Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics
+               (Volume 1: Long Papers)},
+  pages     = {33107--33122},
+  year      = {2026},
+  doi       = {10.18653/v1/2026.acl-long.1529},
+}
+
+@article{mamouras2026bpedelay,
+  author  = {Konstantinos Mamouras and Angela W. Li and Yudi Yang},
+  title   = {An Efficient Algorithm for Streaming {BPE} Tokenization},
+  journal = {Proceedings of the ACM on Programming Languages},
+  volume  = {10},
+  number  = {PLDI},
+  articleno = {252},
+  pages   = {2085--2108},
+  year    = {2026},
+  doi     = {10.1145/3808330}
+}
+
+@misc{you2025blockbpe,
+  author = {Amos You},
+  title  = {{BlockBPE}: Parallel {BPE} Tokenization},
+  year   = {2025},
+  note   = {Preprint, \href{https://arxiv.org/abs/2507.11941}{arXiv:2507.11941}}
+}
+
+@misc{kadamba2026gputok,
+  author = {Venu Gopal Kadamba and Kanishkha Jaisankar},
+  title  = {{GPUTOK}: {GPU} Accelerated Byte Level {BPE} Tokenization},
+  year   = {2026},
+  note   = {Preprint, \href{https://arxiv.org/abs/2603.02597}{arXiv:2603.02597}}
+}
+
+@misc{kovilur2026llbpe,
+  author = {Aditya Kovilur and Varun Chandra Shekar and Ariful Azad},
+  title  = {{LLBPE}: Linked-List Based {GPU}-Parallel {BPE} Tokenizer},
+  year   = {2026},
+  note   = {Preprint, \href{https://arxiv.org/abs/2610.04951}{arXiv:2610.04951}}
+}
+
+@misc{zhang2026toktier,
+  author = {Zhenyu Zhang and Zhichao Cao},
+  title  = {{TokTier}: Exact Stateful {CPU+GPU} Tokenization for Agentic {LLM} Serving},
+  year   = {2026},
+  note   = {Preprint, \href{https://arxiv.org/abs/2607.29678v3}{arXiv:2607.29678}, version 3 of 6 August 2026},
+}
+
+@article{frougny1993synchronized,
+  author  = {Christiane Frougny and Jacques Sakarovitch},
+  title   = {Synchronized Rational Relations of Finite and Infinite Words},
+  journal = {Theoretical Computer Science},
+  volume  = {108},
+  number  = {1},
+  pages   = {45--82},
+  year    = {1993},
+  doi     = {10.1016/0304-3975(93)90230-Q},
+}
+
+@misc{benedikt2014unambiguous,
+  author = {Michael Benedikt and Rastislav Lenhardt and James Worrell},
+  title  = {Model Checking {Markov} Chains Against Unambiguous {B\"uchi} Automata},
+  year   = {2014},
+  note   = {\href{https://arxiv.org/abs/1405.4560}{arXiv:1405.4560}; version 2 of 26 March 2016 withdraws the proof
+            of its infinite-word theorem (Theorem~2)},
+}
+
+@article{baier2023unambiguous,
+  author  = {Christel Baier and Stefan Kiefer and Joachim Klein and David M{\"u}ller and James Worrell},
+  title   = {{Markov} Chains and Unambiguous Automata},
+  journal = {Journal of Computer and System Sciences},
+  volume  = {136},
+  pages   = {113--134},
+  year    = {2023},
+  doi     = {10.1016/j.jcss.2023.03.005},
+}
+
+@inproceedings{eisner2002parameter,
+  author    = {Jason Eisner},
+  title     = {Parameter Estimation for Probabilistic Finite-State Transducers},
+  booktitle = {Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics},
+  pages     = {1--8},
+  year      = {2002},
+  doi       = {10.3115/1073083.1073085},
+}
+
+@inproceedings{koo2024automata,
+  author    = {Terry Koo and Frederick Liu and Luheng He},
+  title     = {Automata-Based Constraints for Language Model Decoding},
+  booktitle = {First Conference on Language Modeling ({COLM} 2024)},
+  year      = {2024},
+  note      = {\href{https://arxiv.org/abs/2407.08103}{arXiv:2407.08103}},
+}
+
+@inproceedings{kiefer2019unambiguous,
+  author    = {Stefan Kiefer and Cas Widdershoven},
+  title     = {Efficient Analysis of Unambiguous Automata Using Matrix Semigroup Techniques},
+  booktitle = {44th International Symposium on Mathematical Foundations of Computer Science ({MFCS} 2019)},
+  series    = {LIPIcs},
+  volume    = {138},
+  pages     = {82:1--82:13},
+  year      = {2019},
+  doi       = {10.4230/LIPIcs.MFCS.2019.82},
+}
+
+@article{choffrut1977sequential,
+  author  = {Christian Choffrut},
+  title   = {Une caract\'erisation des fonctions s\'equentielles et des fonctions sous-s\'equentielles en tant que relations rationnelles},
+  journal = {Theoretical Computer Science},
+  volume  = {5},
+  number  = {3},
+  pages   = {325--337},
+  year    = {1977},
+  doi     = {10.1016/0304-3975(77)90049-4},
+}
+
+@article{beal2002determinization,
+  author  = {Marie-Pierre B\'eal and Olivier Carton},
+  title   = {Determinization of Transducers over Finite and Infinite Words},
+  journal = {Theoretical Computer Science},
+  volume  = {289},
+  number  = {1},
+  pages   = {225--251},
+  year    = {2002},
+  doi     = {10.1016/S0304-3975(01)00271-7},
+}
+
+@article{weber1995economy,
+  author  = {Andreas Weber and Reinhard Klemm},
+  title   = {Economy of Description for Single-Valued Transducers},
+  journal = {Information and Computation},
+  volume  = {118},
+  number  = {2},
+  pages   = {327--340},
+  year    = {1995},
+  doi     = {10.1006/inco.1995.1071},
+}
+
+@article{beal2003squaring,
+  author  = {Marie-Pierre B\'eal and Olivier Carton and Christophe Prieur and Jacques Sakarovitch},
+  title   = {Squaring Transducers: An Efficient Procedure for Deciding Functionality and Sequentiality},
+  journal = {Theoretical Computer Science},
+  volume  = {292},
+  number  = {1},
+  pages   = {45--63},
+  year    = {2003},
+  doi     = {10.1016/S0304-3975(01)00214-6},
+}
+
+@article{frougny1998synchronisation,
+  author  = {Christiane Frougny and Jacques Sakarovitch},
+  title   = {Synchronisation d\'eterministe des automates \`a d\'elai born\'e},
+  journal = {Theoretical Computer Science},
+  volume  = {191},
+  number  = {1--2},
+  pages   = {61--77},
+  year    = {1998},
+  doi     = {10.1016/S0304-3975(96)00305-2},
+}
+
+@inproceedings{loding2013delegators,
+  author    = {Christof L\"oding and Stefan Repke},
+  title     = {Decidability Results on the Existence of Lookahead Delegators for {NFA}},
+  booktitle = {IARCS Annual Conference on Foundations of Software Technology and Theoretical Computer Science, FSTTCS 2013},
+  series    = {LIPIcs},
+  volume    = {24},
+  pages     = {327--338},
+  year      = {2013},
+  publisher = {Schloss Dagstuhl},
+  doi       = {10.4230/LIPIcs.FSTTCS.2013.327},
+}
+
+@misc{loding2023errata,
+  author = {Christof L\"oding},
+  title  = {Errata for: Decidability Results on the Existence of Lookahead Delegators for {NFA}},
+  year   = {2023},
+  note   = {Note of 22 February 2023,
+            \url{https://www.lics.rwth-aachen.de/global/show_document.asp?id=aaaaaaaabwfmhbl}, read 28 October 2026},
+}
+
+@inproceedings{dong2025xgrammar,
+  author    = {Yixin Dong and Charlie F. Ruan and Yaxing Cai and Ruihang Lai and Ziyi Xu and Yilong Zhao and Tianqi Chen},
+  title     = {{XGrammar}: Flexible and Efficient Structured Generation Engine for Large Language Models},
+  booktitle = {Proceedings of Machine Learning and Systems 7, MLSys 2025},
+  year      = {2025},
+  note      = {\href{https://arxiv.org/abs/2411.15100}{arXiv:2411.15100}}
+}
+
+@article{li2026psc,
+  author  = {Yongmin Li and Yihong Dong and Jia Li and Ge Li},
+  title   = {Efficient Grammar-Constrained Decoding via Parser Stack Classification},
+  journal = {Proceedings of the ACM on Software Engineering},
+  volume  = {3},
+  number  = {ISSTA},
+  pages   = {1856--1880},
+  year    = {2026},
+  doi     = {10.1145/3832172},
+  note    = {Preprint \href{https://arxiv.org/abs/2608.03065}{arXiv:2608.03065}}
+}
+
+@unpublished{wagner1997lexing,
+  author = {Tim A. Wagner and Susan L. Graham},
+  title  = {General Incremental Lexical Analysis},
+  note   = {Manuscript, University of California, Berkeley; the circulating build is the December
+            1999 revision. \url{https://harmonia.cs.berkeley.edu/papers/twagner-lexing.pdf}},
+  year   = {1997},
+}
+
+@article{barenghi2015parallel,
+  author  = {Alessandro Barenghi and Stefano Crespi Reghizzi and Dino Mandrioli and Federica Panella and
+             Matteo Pradella},
+  title   = {Parallel parsing made practical},
+  journal = {Science of Computer Programming},
+  volume  = {112},
+  pages   = {195--226},
+  year    = {2015},
+  doi     = {10.1016/j.scico.2015.09.002}
+}
+
+@inproceedings{fici2025morphisms,
+  author    = {Gabriele Fici and Giuseppe Romana and Marinella Sciortino and Cristian Urbina},
+  title     = {Morphisms and {BWT}-Run Sensitivity},
+  booktitle = {50th International Symposium on Mathematical Foundations of Computer Science ({MFCS} 2025)},
+  series    = {LIPIcs},
+  volume    = {345},
+  pages     = {49:1--49:18},
+  year      = {2025},
+  doi       = {10.4230/LIPIcs.MFCS.2025.49}
+}
+
+@misc{wang2026retoksync,
+  author = {Yaofei Wang and Rui Wang and Weilong Pang and JiaLiang Han and Yuan Qi and Donghui Hu and Kejiang
+            Chen},
+  title  = {{ReTokSync}: Self-Synchronizing Tokenization Disambiguation for Generative Linguistic Steganography},
+  year   = {2026},
+  note   = {Preprint, arXiv:2604.25486}
+}
+
+@inproceedings{park2025flexible,
+  author    = {Kanghee Park and Timothy Zhou and Loris D'Antoni},
+  title     = {Flexible and Efficient Grammar-Constrained Decoding},
+  booktitle = {Proceedings of the 42nd International Conference on Machine Learning ({ICML} 2025)},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {267},
+  pages     = {48262--48275},
+  year      = {2025},
+  note      = {\href{https://arxiv.org/abs/2502.05111}{arXiv:2502.05111}}
+}
+
+@article{carpi2017synchronizing,
+  author  = {Arturo Carpi and Flavio D'Alessandro},
+  title   = {On Incomplete and Synchronizing Finite Sets},
+  journal = {Theoretical Computer Science},
+  volume  = {664},
+  pages   = {67--77},
+  year    = {2017},
+  doi     = {10.1016/j.tcs.2015.08.042}
+}
+
+@inproceedings{vieira2025canonical,
+  author    = {Tim Vieira and Tianyu Liu and Clemente Pasti and Yahya Emara and Brian DuSell and Benjamin LeBrun and
+               Mario Giulianelli and Juan Luis Gastaldi and Timothy J. O'Donnell and Ryan Cotterell},
+  title     = {Language Models over Canonical Byte-Pair Encodings},
+  booktitle = {Proceedings of the 42nd International Conference on Machine Learning ({ICML} 2025)},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {267},
+  pages     = {61413--61443},
+  year      = {2025},
+  note      = {\href{https://arxiv.org/abs/2506.07956}{arXiv:2506.07956}}
+}
+
+@article{kirsten2011support,
+  author  = {Daniel Kirsten},
+  title   = {The Support of a Recognizable Series over a Zero-sum Free, Commutative Semiring is Recognizable},
+  journal = {Acta Cybernetica},
+  volume  = {20},
+  number  = {2},
+  pages   = {211--221},
+  year    = {2011},
+  doi     = {10.14232/actacyb.20.2.2011.1}
+}
+
+@article{morita1996prefix,
+  author  = {Hiroyoshi Morita and Adriaan J. van Wijngaarden and A. J. {Han Vinck}},
+  title   = {On the Construction of Maximal Prefix-Synchronized Codes},
+  journal = {IEEE Transactions on Information Theory},
+  volume  = {42},
+  number  = {6},
+  pages   = {2158--2166},
+  year    = {1996},
+  doi     = {10.1109/18.556604}
+}
+
+@article{hodgson1982direct,
+  author  = {Bernard R. Hodgson},
+  title   = {On Direct Products of Automaton Decidable Theories},
+  journal = {Theoretical Computer Science},
+  volume  = {19},
+  number  = {3},
+  pages   = {331--335},
+  year    = {1982},
+  doi     = {10.1016/0304-3975(82)90042-1}
+}
+
+@inproceedings{devlin2019bert,
+  author    = {Jacob Devlin and Ming-Wei Chang and Kenton Lee and Kristina Toutanova},
+  title     = {{BERT}: Pre-training of Deep Bidirectional Transformers for Language Understanding},
+  booktitle = {Proceedings of the 2019 Conference of the North {A}merican Chapter of the Association for Computational
+               Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers)},
+  pages     = {4171--4186},
+  year      = {2019},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/N19-1423}
+}
+
+@misc{bertcode,
+  author       = {{Google Research}},
+  title        = {{BERT} (source repository)},
+  howpublished = {GitHub repository, commit \texttt{d66a146},
+                  \url{https://github.com/google-research/bert/blob/d66a146/tokenization.py}},
+  year         = {2019}
+}
+
+@inproceedings{schuster2012japanese,
+  author    = {Mike Schuster and Kaisuke Nakajima},
+  title     = {Japanese and {K}orean Voice Search},
+  booktitle = {2012 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)},
+  pages     = {5149--5152},
+  year      = {2012},
+  publisher = {IEEE},
+  doi       = {10.1109/ICASSP.2012.6289079}
+}
+
+@inproceedings{song2021fast,
+  author    = {Xinying Song and Alex Salcianu and Yang Song and Dave Dopson and Denny Zhou},
+  title     = {Fast {W}ord{P}iece Tokenization},
+  booktitle = {Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing},
+  pages     = {2089--2103},
+  year      = {2021},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2021.emnlp-main.160}
+}
+
+@inproceedings{uzan2024greed,
+  author    = {Omri Uzan and Craig W. Schmidt and Chris Tanner and Yuval Pinter},
+  title     = {Greed is All You Need: An Evaluation of Tokenizer Inference Methods},
+  booktitle = {Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 2: Short
+               Papers)},
+  pages     = {813--822},
+  year      = {2024},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2024.acl-short.73}
+}
+
+@inproceedings{purason2026teaching,
+  author    = {Taido Purason and Pavel Chizhov and Ivan P. Yamshchikov and Mark Fishel},
+  title     = {Teaching Old Tokenizers New Words: Efficient Tokenizer Adaptation for Pretrained Models},
+  booktitle = {Findings of the Association for Computational Linguistics: {EACL} 2026},
+  pages     = {6492--6516},
+  year      = {2026},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2026.findings-eacl.341}
+}
+
+@misc{smith2026inplace,
+  author = {Jimmy T. H. Smith and Tarek Dakhran and Alberto Cabrera and Simon S. Lee and Paul Pak and Aditya Tadimeti and
+            Tim Seyde and Maxime Labonne and Alexander Amini and Mathias Lechner},
+  title  = {In-Place Tokenizer Expansion for Pre-trained {LLMs}},
+  year   = {2026},
+  note   = {Preprint, \href{https://arxiv.org/abs/2607.15232}{arXiv:2607.15232}}
+}
+
+@misc{herold2025vocabulary,
+  author = {Christian Herold and Michael Kozielski and Nicholas Santavas and Yannick Versley and Shahram Khadivi},
+  title  = {Vocabulary Customization for Efficient Domain-Specific {LLM} Deployment},
+  year   = {2025},
+  note   = {NeurIPS 2025 CCFM Workshop; preprint, \href{https://arxiv.org/abs/2509.26124}{arXiv:2509.26124}}
+}
+
+@inproceedings{mytkowicz2014data,
+  author    = {Todd Mytkowicz and Madanlal Musuvathi and Wolfram Schulte},
+  title     = {Data-Parallel Finite-State Machines},
+  booktitle = {Proceedings of the 19th International Conference on Architectural Support for Programming Languages and
+               Operating Systems ({ASPLOS} '14)},
+  pages     = {529--542},
+  year      = {2014},
+  publisher = {ACM},
+  doi       = {10.1145/2541940.2541988}
+}
+
+@inproceedings{zhao2014challenging,
+  author    = {Zhijia Zhao and Bo Wu and Xipeng Shen},
+  title     = {Challenging the ``Embarrassingly Sequential'': Parallelizing Finite State Machine-Based Computations
+               through Principled Speculation},
+  booktitle = {Proceedings of the 19th International Conference on Architectural Support for Programming Languages and
+               Operating Systems ({ASPLOS} '14)},
+  pages     = {543--558},
+  year      = {2014},
+  publisher = {ACM},
+  doi       = {10.1145/2541940.2541989}
+}
+
+@inproceedings{prabhu2010speculative,
+  author    = {Prakash Prabhu and G. Ramalingam and Kapil Vaswani},
+  title     = {Safe Programmable Speculative Parallelism},
+  booktitle = {Proceedings of the 31st {ACM} {SIGPLAN} Conference on Programming Language Design and Implementation
+               ({PLDI} '10)},
+  pages     = {50--61},
+  year      = {2010},
+  publisher = {ACM},
+  doi       = {10.1145/1806596.1806603}
+}
+
+@inproceedings{lester2013boxing,
+  author    = {Martin Mariusz Lester},
+  title     = {Position Paper: The Science of Boxing},
+  booktitle = {Proceedings of the Eighth {ACM} {SIGPLAN} Workshop on Programming Languages and Analysis for
+               Security (PLAS)},
+  pages     = {83--88},
+  year      = {2013},
+  publisher = {ACM},
+  doi       = {10.1145/2465106.2465120}
+}
+
+@article{lester2016flow,
+  author  = {Martin Lester and Luke Ong and Max Sch{\"a}fer},
+  title   = {Information Flow Analysis for a Dynamically Typed Language with Staged Metaprogramming},
+  journal = {Journal of Computer Security},
+  volume  = {24},
+  number  = {5},
+  pages   = {541--582},
+  year    = {2016},
+  doi     = {10.3233/JCS-160557}
+}
+
+@misc{lassez1976messages,
+  author = {Jean-Louis Lassez},
+  title  = {Messages parasites et codes synchronisants},
+  year   = {1976},
+  note   = {Groupe d'{\'e}tude d'alg{\`e}bre, tome~1 (1975--1976), expos{\'e} no.~17 of 28 May 1976, pages 17-01 to
+            17-04, \url{https://numdam.org/item/GEA_1975-1976__1__A17_0/}}
+}
+
+@misc{melcer2024constrained,
+  author = {Daniel Melcer and Nathan Fulton and Sanjay Krishna Gouda and Haifeng Qian},
+  title  = {Constrained Decoding for Code Language Models via Efficient Left and Right Quotienting of Context-Sensitive
+            Grammars},
+  year   = {2024},
+  note   = {Preprint, \href{https://arxiv.org/abs/2402.17988v1}{arXiv:2402.17988v1}, 28 February 2024}
+}
+
+@misc{rod2026gigatoken,
+  author = {Marcel R{\o}d},
+  title  = {{Gigatoken}},
+  year   = {2026},
+  note   = {\url{https://github.com/marcelroed/gigatoken}, revision \texttt{542367a} of 21 July 2026, released on PyPI
+            as version 0.9.0. The vocabulary pair rule is the comment in \texttt{finalize\_speed\_paths} of
+            \texttt{src/bpe/sentencepiece.rs}}
+}
+
+@misc{sentencepiecelite2026,
+  author = {Taku Kudo},
+  title  = {{SentencePiece Lite} Runtime},
+  year   = {2026},
+  note   = {\url{https://github.com/google/sentencepiece}, file \texttt{lite/README.md} at its initial revision
+            \texttt{a2cb4d8} of 15 September 2026, Section~6.3, ``Safe Boundary Pre-tokenization'', its
+            bullet ``Character Bigram Co-occurrence Principle''}
+}
+
+@misc{xu2026parallel,
+  author = {Charles Xu},
+  title  = {5.5x Faster {HuggingFace} Tokenizers for a Single Sequence},
+  year   = {2025},
+  note   = {\url{https://charlesxu.io/parallel-tokenizer/}, blog dated 25 November 2025; the merge-table check,
+            \texttt{compute\_never\_merges\_across}, is present in commit \texttt{9eecc71} of 9 October 2026 on the
+            branch \texttt{parallel} of \url{https://github.com/cxuu/tokenizers}}
+}

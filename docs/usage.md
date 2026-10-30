@@ -1236,7 +1236,14 @@ mechanism behind `chunk_boundaries_with_windows()`: read it as [arXiv:2608.09761
 Repair-Invariant Error Recovery for Maximal-Munch Lexing* turns the same certificates into resynchronization points for
 input that does not tokenize, the contract behind the Tokenizer's `recover()` family: read it as
 [arXiv:2609.10600](https://arxiv.org/abs/2609.10600), as [docs/panic_mode.md](panic_mode.md), or build it from the same
-directory.
+directory. The fourth report *Certified Splitting: Decidability and Anchor Supply for Maximal-Munch Tokenization*
+decides certification for any regular token set and prices the anchor supply under a declared window budget, the
+decisions behind `window_occurrence()` and `anchor_free_span()`: read it as
+[arXiv:2610.08854](https://arxiv.org/abs/2610.08854), as [docs/certified_splitting.md](certified_splitting.md), or build
+it from the same directory. The fifth report *Finitely Verifiable Segmentation: Decidability for Every Tokenizer with a
+Finite-State Verifier* carries those decisions to every tokenizer with a finite-state verifier, the contract behind
+`munch::verifier::Verifier`: read it as [arXiv:2610.30168](https://arxiv.org/abs/2610.30168), as
+[docs/finitely_verifiable.md](finitely_verifiable.md), or build it from the same directory.
 
 ### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
