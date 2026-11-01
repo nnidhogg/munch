@@ -230,7 +230,7 @@ public:
      * is_split_window() certifies contains it with at least one byte following, which is what lets the planner narrow
      * its candidate windows to occurrences of this string. Empty means no core is proved, because no such state exists
      * or the candidate was refuted by a core-free death word; the planner then keeps its exhaustive walk, and nothing
-     * weakens: the core is an accelerator's licence, never a certificate itself.
+     * weakens: the core is an accelerator's license, never a certificate itself.
      * @return The proved mandatory core, or an empty view.
      */
     [[nodiscard]] std::string_view mandatory_core() const noexcept;
@@ -469,8 +469,8 @@ public:
     }
 
     /**
-     * @brief Number of distinct symbol values a transition can be labelled with, i.e. the size of per-symbol tables;
-     *        the one member of the read-only view above that is a constant rather than a function.
+     * @brief Number of distinct symbol values a transition can be labeled with, i.e. the size of per-symbol tables; the
+     *        one member of the read-only view above that is a constant rather than a function.
      */
     static constexpr std::size_t symbol_count{1U << (sizeof(Label::Symbol_t) * 8U)};
 
@@ -733,9 +733,9 @@ private:
             bool init_reentrant) const;
 
     /**
-     * @brief Returns the right-language classes of the states once every discarded kind shares one colour.
+     * @brief Returns the right-language classes of the states once every discarded kind shares one color.
      *
-     * Moore's refinement with every discarded kind given one colour: two states end up in one class exactly when every
+     * Moore's refinement with every discarded kind given one color: two states end up in one class exactly when every
      * continuation is accepted from both or from neither, and with the same kind wherever that kind is kept. Index
      * `states` stands for the missing transition, a sink that accepts nothing, so a partial table needs no completion.
      * @param accepts_discarded Per state, whether it accepts a token of a discarded kind.
@@ -746,12 +746,12 @@ private:
     /**
      * @brief Derives and proves mandatory_core() from the live tables the constructor has already built.
      *
-     * The planner's accelerator licence. A live state alive on every byte survives any window that lacks its forced
+     * The planner's accelerator license. A live state alive on every byte survives any window that lacks its forced
      * exit, so a window certifying at all must carry that exit: the derivation proposes each such state's shortest exit
      * and keeps the longest one that survives the proof, which exhausts core-avoiding death words over the live tables
      * and refutes the candidate on the first one found. The matcher reads only the live prefix; the killing byte is
      * never fed to it, since a core completing on the killing byte is too late. Refusal leaves the core empty and the
-     * planner exhaustive: the core is an accelerator's licence, never a certificate.
+     * planner exhaustive: the core is an accelerator's license, never a certificate.
      * @param predecessors The reverse index the constructor built for co-accessibility, which the depth search reads.
      */
     void derive_mandatory_core(const std::vector<std::vector<Entry_t>>& predecessors);

@@ -285,7 +285,7 @@ Row by row:
   one per cut, by one class, so its cost grows with the width as the certified windows row's does.
 - **why no byte certifies, read off the verifier's relation monoid**: with `--obstruction`, for a condition that
   certifies no byte, a window certifying or not, an experimental section that names the obstruction where the report
-  only says that no byte certifies, labelled a diagnostic because the theory it rests on is proved only in part. The
+  only says that no byte certifies, labeled a diagnostic because the theory it rests on is proved only in part. The
   verifier is the automaton that accepts a marked input, each byte with whether a token boundary follows it, exactly
   when the marking is the condition's tokenization; it is built over the compiled set as the verifier library's
   `armed_run()` builds it, the run of the current token beside the runs of the tokens that ended earlier, a step refused
@@ -395,7 +395,7 @@ It has no counterpart here, since a run of letters as long as one likes is one t
 
 The grammars above are the study's own. `JSON.g4` from the grammars-v4 collection was written for ANTLR's users, taken
 from *The Definitive ANTLR 4 Reference* as its first line says, and the auditor reads it as it stands. The file carries
-no licence header and is not copied into this repository: it is pinned at grammars-v4 commit
+no license header and is not copied into this repository: it is pinned at grammars-v4 commit
 `30c6ea0dac4a03f0f8bb454a6d15435c424b6f69`, where its SHA-256 is
 `1ec0e422caf2855be3497efaeb5e23f91adc6a65068757e2dcf83467119986f4`, and is fetched and audited with
 
@@ -745,7 +745,7 @@ line that holds it, rather than read it as something else:
   not checked, a name it knows, an alias as good as the canonical name and any other refused as an unrecognized
   configuration, then `=` and a value of the name's kind, a number, a string quoted or bare (a quoted one may hold a
   `;`) or one of the configuration's words, with spaces and tabs around the `=` and the value and nothing else, each
-  refusal in re2c's words, recorded as options and honoured under the canonical name and the `flags:` aliases the
+  refusal in re2c's words, recorded as options and honored under the canonical name and the `flags:` aliases the
   manual's configuration list gives, the case flags and the encoding among them; a configuration governs the whole block
   wherever in it it stands, as re2c scopes it, and of two assignments to one name the last is the one that governs, so
   every pattern of a block is translated under what its configurations leave and a rule standing above an assignment
@@ -893,14 +893,14 @@ line that holds it, rather than read it as something else:
   refused, since it may stand in place of one the runtime calls at every token, an attribute before it, C#'s `[Attr]` or
   C++'s `[[nodiscard]]`, declaring nothing that would hide it, and so is one the class declares, which is defined where
   the reading does not read it, in `definitions` under a spelling the qualified name misses, `Self::nextToken()` through
-  an alias, a macro or a parenthesised declarator, or in another file, while `final` in a C++ class head, `struct Inner
+  an alias, a macro or a parenthesized declarator, or in another file, while `final` in a C++ class head, `struct Inner
   final { ... };`, and an attribute-specifier sequence before its name, `struct [[nodiscard]] Inner` or `struct
   alignas(8) Inner`, leave the type a type whose members are its own, and a macro stands for its replacement in a
   member's initializer only where an action the lexer's header holds defines it, the definitions and the parser's own
   actions defining none there. Refused: `import`, `-> more`, `-> type(EOF)`, which ends the token stream where the rule
   matches, whatever its channel, a command ANTLR has not got or one of its seven given an argument it takes none of or
   none where it takes one, its errors 149, 150 and 151 in its own words at the command's line, a `type` naming what its
-  commands and channels reserve, its error 171, a fragment named otherwise than a lexer rule is, capitalised, its
+  commands and channels reserve, its error 171, a fragment named otherwise than a lexer rule is, capitalized, its
   parser's error 50 in its words, a rule defined twice, its error 51, as is a rule named `T__k` where a combined
   grammar's k-th implicit token is, a parser rule in a lexer grammar, its error 53, a rule named as its commands and
   channels reserve, DEFAULT_MODE, SKIP, MORE, EOF, HIDDEN and the rest, its error 159, a mode or a channel so named, its
@@ -922,7 +922,7 @@ line that holds it, rather than read it as something else:
   `tokens` or `channels` block whose names no commas part or a comma ends, `{ ONE TWO }` and `{ ONE, }`, a channel named
   by another reserved name, `SKIP`, its error 172, by a number beyond its int or by a name nothing declares, its error
   177, and a `channels` block in a combined grammar, its error 164, each in its words, one of the seven with its first
-  letter capitalised, `Skip`, which names a code template of ANTLR's target that the generated lexer runs as an action
+  letter capitalized, `Skip`, which names a code template of ANTLR's target that the generated lexer runs as an action
   and ANTLR's own interpreter leaves out, a parser literal two lexer rules spell, its error 126, a literal holding a
   surrogate on its own or a set holding nothing else, which ANTLR's lexer never matches, a range's end or a negated
   literal ANTLR's error 144 calls multi-character, a pair of escapes or a character beyond the basic multilingual plane

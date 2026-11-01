@@ -24,7 +24,7 @@ namespace
 /**
  * @brief The statements of an action's own tokens and whether they return on every path through them, as
  *        returns_undecided() reads the action: a return, a block ending in one, an `if` whose both branches do, a
- *        labelled statement that does, or such a statement followed by the one jump a stored token allows; and whether
+ *        labeled statement that does, or such a statement followed by the one jump a stored token allows; and whether
  *        they leave by a jump on every path, the statements after one never reached.
  *
  * A loop, a `switch`, a `try` and an `if` without an `else` may fall through, and are out of sight rather than
@@ -136,7 +136,7 @@ private:
     /**
      * @brief Returns whether a statement returns on every path through it: a return of the action's own; a block whose
      *        last statement does, dead code after a return counted as returning still; an `if` with an `else` whose
-     *        both branches do; a labelled statement that does, `done: return 7;`.
+     *        both branches do; a labeled statement that does, `done: return 7;`.
      * @param range The statement.
      * @return True when it returns on every path.
      */
@@ -152,7 +152,7 @@ private:
 
     /**
      * @brief Returns whether a statement leaves by a jump on every path through it: a jump, as is_jump() reads one; a
-     *        block holding a statement that does; an `if` with an `else` whose both branches do; a labelled statement
+     *        block holding a statement that does; an `if` with an `else` whose both branches do; a labeled statement
      *        that does, `next: { continue; }`.
      * @param range The statement.
      * @return True when its end is out of reach.
@@ -246,7 +246,7 @@ private:
 }
 
 /**
- * @brief Returns whether the parenthesised group before a brace is a type, whose braced value ends an expression,
+ * @brief Returns whether the parenthesized group before a brace is a type, whose braced value ends an expression,
  *        rather than a condition, whose brace opens a block and ends none.
  *
  * Which it is the word before the group says: `if (q) { }` and the loops open a block, while anything else opens a
@@ -475,7 +475,7 @@ private:
  * parameter list and the body, and its constraint may be a requires expression, whose own braces are not the body's:
  * `[]<class T>() requires requires { typename T::value_type; } { return 7; }` returns from the lambda in the second
  * group and not the first, so the clause is stepped over whole. The constraint is an expression like any other: names,
- * parenthesised expressions and requires expressions joined by `&&` and `||`, each requires expression stepped over
+ * parenthesized expressions and requires expressions joined by `&&` and `||`, each requires expression stepped over
  * whole, so that `requires true && requires { ... } { ... }` reaches the second group as its body.
  * @param tokens The tokens.
  * @param from The index just past the template parameters, or past the capture list when there are none.
@@ -810,7 +810,7 @@ bool Return_paths::returns(const Range range) const
 
 std::optional<Return_paths::Branches> Return_paths::branches(const Range range) const
 {
-    // Past the condition: the words of `if constexpr` and the parenthesised condition, or `if !consteval` and its kin,
+    // Past the condition: the words of `if constexpr` and the parenthesized condition, or `if !consteval` and its kin,
     // which have none.
     auto at{range.begin + 1};
 

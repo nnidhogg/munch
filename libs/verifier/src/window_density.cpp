@@ -312,9 +312,9 @@ private:
     };
 
     /**
-     * @brief A state's colour in the depth-first search.
+     * @brief A state's color in the depth-first search.
      */
-    enum class Colour : std::uint8_t
+    enum class Color : std::uint8_t
     {
         /**
          * @brief Not reached yet.
@@ -519,7 +519,7 @@ std::vector<std::vector<Avoiding_graph::Edge>> Avoiding_graph::edges_of(const st
 
 std::variant<std::size_t, Avoiding_loop> Avoiding_graph::longest_path(const std::vector<std::vector<Edge>>& edges) const
 {
-    std::vector colour(edges.size(), Colour::unseen);
+    std::vector color(edges.size(), Color::unseen);
 
     std::vector depth(edges.size(), std::size_t{0});
 
@@ -527,14 +527,14 @@ std::variant<std::size_t, Avoiding_loop> Avoiding_graph::longest_path(const std:
 
     for (std::size_t start{0}; start < edges.size(); ++start)
     {
-        if (colour[start] != Colour::unseen)
+        if (color[start] != Color::unseen)
         {
             continue;
         }
 
         std::vector<Frame> path{{.state = start, .next = 0, .best = 0, .entered = 0}};
 
-        colour[start] = Colour::open;
+        color[start] = Color::open;
 
         while (!path.empty())
         {
@@ -542,7 +542,7 @@ std::variant<std::size_t, Avoiding_loop> Avoiding_graph::longest_path(const std:
 
             if (next == edges[state].size())
             {
-                colour[state] = Colour::closed;
+                color[state] = Color::closed;
                 depth[state] = best;
                 longest = std::max(longest, best);
 
@@ -562,16 +562,16 @@ std::variant<std::size_t, Avoiding_loop> Avoiding_graph::longest_path(const std:
 
             ++next;
 
-            if (colour[target] == Colour::closed)
+            if (color[target] == Color::closed)
             {
                 best = std::max(best, depth[target] + 1);
 
                 continue;
             }
 
-            if (colour[target] == Colour::unseen)
+            if (color[target] == Color::unseen)
             {
-                colour[target] = Colour::open;
+                color[target] = Color::open;
 
                 path.push_back({.state = target, .next = 0, .best = 0, .entered = byte});
 

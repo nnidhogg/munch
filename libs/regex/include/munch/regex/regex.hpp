@@ -20,7 +20,7 @@ namespace munch::regex
 /**
  * @brief A regex node.
  *
- * A regex is a sum of the node types it can be, held by value. Nodes carry no behaviour: operations over a regex are
+ * A regex is a sum of the node types it can be, held by value. Nodes carry no behavior: operations over a regex are
  * free functions dispatching on the alternative, so a new operation can be added without touching the node types.
  */
 struct Regex

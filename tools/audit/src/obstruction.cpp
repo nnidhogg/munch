@@ -107,7 +107,7 @@ struct Reached
 };
 
 /**
- * @brief Returns the byte a class is shown by: its first graphic member when it has one, since a reader recognises that
+ * @brief Returns the byte a class is shown by: its first graphic member when it has one, since a reader recognizes that
  *        one, else its lowest; every member steps alike, so the choice is a matter of display alone.
  * @param members The class, ascending.
  * @return The representative.
@@ -378,9 +378,9 @@ bool Exploration::is_accepting(const Configuration& configuration) const
 }
 
 /**
- * @brief Returns the classes of states no marked continuation tells apart, Moore's refinement from the colours that
+ * @brief Returns the classes of states no marked continuation tells apart, Moore's refinement from the colors that
  *        cannot complete, accepting and not accepting, over the states and one more index standing for the absent
- *        state, which shares the first colour.
+ *        state, which shares the first color.
  * @param automaton The verifier as explored.
  * @param completes Which states can complete.
  * @return The class of each state, and at the index of the state count the absent state's.

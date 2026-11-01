@@ -262,7 +262,7 @@ private:
      *        letter under `i`.
      * @param unit The unit.
      * @return The node.
-     * @throws Spec_error For a non-ASCII scalar under `i` in Unicode mode, whose folding is not modelled.
+     * @throws Spec_error For a non-ASCII scalar under `i` in Unicode mode, whose folding is not modeled.
      */
     [[nodiscard]] Node unit_node(Unit unit);
 

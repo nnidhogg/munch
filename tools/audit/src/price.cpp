@@ -396,7 +396,7 @@ void take_from_probe(Token_rule& probed, const Token_rule& rule, const unsigned 
  * shape; the probe gives a narrowed-away byte a token of its own as the steps do, since without a token beginning with
  * the byte no rule is blamed for consuming it.
  * @param set The set as given, whose rules the shapes are read from.
- * @param edited The set normalised, the byte's own token added when no token began with it.
+ * @param edited The set normalized, the byte's own token added when no token began with it.
  * @param before The bytes certified exactly before any edit, ascending.
  * @param byte The byte.
  * @param own The id and the priority the byte's own token takes.

@@ -42,7 +42,7 @@ struct Logos_entry
     std::size_t line{};
 
     /**
-     * @brief Whether the value is a parenthesised group, `skip(...)` or `error(...)`.
+     * @brief Whether the value is a parenthesized group, `skip(...)` or `error(...)`.
      */
     bool group_valued{};
 
@@ -59,7 +59,7 @@ struct Logos_entry
 enum class Value_shape
 {
     /**
-     * @brief A parenthesised group, `skip(...)`.
+     * @brief A parenthesized group, `skip(...)`.
      */
     group,
 
@@ -112,7 +112,7 @@ struct Option_key
     bool assigned{};
 
     /**
-     * @brief Whether the key takes a parenthesised group, `error(...)`.
+     * @brief Whether the key takes a parenthesized group, `error(...)`.
      */
     bool grouped{};
 

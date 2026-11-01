@@ -14,7 +14,7 @@ using munch::regex::Set;
 
 TEST(Expression_test, A_hex_digit_is_a_decimal_digit_or_a_letter_from_a_to_f_in_either_case)
 {
-    // Each byte class at the ends of its ranges, and the neighbours just outside them.
+    // Each byte class at the ends of its ranges, and the neighbors just outside them.
     for (const char byte : {'0', '9', 'a', 'f', 'A', 'F'})
     {
         EXPECT_TRUE(is_hex_digit(byte)) << static_cast<int>(byte);

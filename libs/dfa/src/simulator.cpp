@@ -489,7 +489,7 @@ std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& ac
 {
     const auto states{accept_table_.size()};
 
-    // What colours a state before its token is told apart.
+    // What colors a state before its token is told apart.
     enum class Shade : std::uint8_t
     {
         nonaccepting,
@@ -497,8 +497,8 @@ std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& ac
         kept
     };
 
-    // A pair, so that no kept token ID can collide with the discarded or the nonaccepting colour.
-    const auto colour{[&](const std::size_t state) -> std::pair<Shade, std::size_t> {
+    // A pair, so that no kept token ID can collide with the discarded or the nonaccepting color.
+    const auto color{[&](const std::size_t state) -> std::pair<Shade, std::size_t> {
         if (state == states || !is_accepting(state))
         {
             return {Shade::nonaccepting, 0};
@@ -518,11 +518,11 @@ std::vector<std::size_t> Simulator::observed_classes(const std::vector<bool>& ac
 
     for (std::size_t state{0}; state <= states; ++state)
     {
-        const auto state_colour{colour(state)};
+        const auto state_color{color(state)};
 
-        const auto [found, inserted]{first_classes.try_emplace(state_colour, first_classes.size())};
+        const auto [found, inserted]{first_classes.try_emplace(state_color, first_classes.size())};
 
-        const auto& [known_colour, number]{*found};
+        const auto& [known_color, number]{*found};
 
         current[state] = number;
     }

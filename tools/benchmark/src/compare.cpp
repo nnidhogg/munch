@@ -348,7 +348,7 @@ std::optional<Stream_t> stream_munch_threaded(
  * lexertl is munch's nearest relative in the comparison: a lexer built at run time from rules and compiled to a DFA.
  * Rule identifiers are the harness Token values, so its tally is directly comparable, and keywords precede the
  * identifier rule because lexertl breaks equal-length matches by rule order where munch uses priorities.
- * @return The minimised state machine.
+ * @return The minimized state machine.
  */
 lexertl::state_machine build_lexertl()
 {
@@ -873,7 +873,7 @@ munch::core::Mode_lexer build_mode_lexer()
  * states and a next-state per rule. The general-purpose regex engines have no mode concept at all, so a caller would
  * switch patterns by hand, which measures their per-match cost rather than their mode support and is already what the
  * tables above report.
- * @return The minimised state machine.
+ * @return The minimized state machine.
  */
 lexertl::state_machine build_lexertl_modes()
 {
@@ -1084,7 +1084,7 @@ munch::core::Mode_lexer build_nested_lexer()
 
 /**
  * @brief Builds the same nesting grammar in lexertl, whose start states push with ">" and pop with "<".
- * @return The minimised state machine.
+ * @return The minimized state machine.
  */
 lexertl::state_machine build_lexertl_nested()
 {

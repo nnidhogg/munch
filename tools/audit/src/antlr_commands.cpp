@@ -49,7 +49,7 @@ struct Token_state
     /**
      * @brief Whether a channel command sends the token to a channel a parser does not read.
      */
-    bool channelled{};
+    bool channeled{};
 
     /**
      * @brief Whether a type command sets the type.
@@ -59,10 +59,10 @@ struct Token_state
 
 /**
  * @brief Refuses a command ANTLR has not got, one given an argument it takes none of or none where it takes one, and
- *        one of the seven with its first letter capitalised.
+ *        one of the seven with its first letter capitalized.
  *
  * ANTLR knows seven commands and no other, three taking no argument and four taking one, and rejects a grammar naming
- * anything else as its errors 149, 150 and 151, in its own words. The seven with their first letter capitalised,
+ * anything else as its errors 149, 150 and 151, in its own words. The seven with their first letter capitalized,
  * `Skip`, name the code templates of ANTLR's targets, `LexerSkipCommand`, which ANTLR expands into an action the
  * generated lexer runs and its own interpreter leaves out; they pass its argument checks under their own spelling.
  * @param command The command's name.
@@ -251,7 +251,7 @@ void apply_command(
 
     if (name == "channel")
     {
-        state.channelled = is_hidden(argument, tables.channels, line);
+        state.channeled = is_hidden(argument, tables.channels, line);
 
         return;
     }
@@ -354,7 +354,7 @@ bool is_number(const std::string_view text)
 Commanded_token apply_commands(
         const Alternative& alternative, const Commanded_rule& rule, const Cursor& grammar, Grammar_tables& tables)
 {
-    Token_state state{.type = rule.name, .typed_at = rule.line, .channelled = false, .retyped = false};
+    Token_state state{.type = rule.name, .typed_at = rule.line, .channeled = false, .retyped = false};
 
     const auto [commands, error]{commands_of(alternative.commands)};
 
@@ -387,7 +387,7 @@ Commanded_token apply_commands(
                 state.typed_at};
     }
 
-    return {.token = state.channelled ? std::nullopt : state.type, .retyped = state.retyped};
+    return {.token = state.channeled ? std::nullopt : state.type, .retyped = state.retyped};
 }
 
 Commands commands_of(const std::string_view text)
@@ -438,16 +438,16 @@ Commands commands_of(const std::string_view text)
 
         if (cursor.accept('('))
         {
-            auto parenthesised{command_argument(cursor, name)};
+            auto parenthesized{command_argument(cursor, name)};
 
-            if (!parenthesised)
+            if (!parenthesized)
             {
-                error = std::move(parenthesised.error());
+                error = std::move(parenthesized.error());
 
                 return read;
             }
 
-            argument = std::move(*parenthesised);
+            argument = std::move(*parenthesized);
         }
 
         commands.push_back({.name = name, .argument = std::move(argument), .offset = offset});

@@ -208,7 +208,7 @@ constexpr std::size_t startable_in_every_mode{79};
  *        split-friendliest formulation available to it.
  *
  * Content is matched one byte at a time rather than as a run, since a run token de-certifies its own bytes, and escapes
- * name their permitted characters instead of admitting any byte. This is the formulation most favourable to finding a
+ * name their permitted characters instead of admitting any byte. This is the formulation most favorable to finding a
  * safe cut.
  *
  * @return The five-mode lexer.

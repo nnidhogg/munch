@@ -267,7 +267,7 @@ namespace
  *        of a component matching nothing matches nothing or only the empty word, and one of the empty word is the empty
  *        word.
  * @param repeat The repetition.
- * @return The pattern normalised.
+ * @return The pattern normalized.
  */
 [[nodiscard]] regex::Regex normalized_repeat(const regex::Repeat& repeat)
 {
@@ -280,7 +280,7 @@ namespace
         return normalized(*repeated);
     }
 
-    // What a repetition repeats is normalised too, so `([ \t\n]{1})+` repeats the class `[ \t\n]` and is the run that
+    // What a repetition repeats is normalized too, so `([ \t\n]{1})+` repeats the class `[ \t\n]` and is the run that
     // `[ \t\n]+` is, rather than a repetition of a sequence of one.
     auto inner{normalized(*repeated)};
 
@@ -309,10 +309,10 @@ namespace
 }
 
 /**
- * @brief Returns a choice as the scanner sees it: the alternatives that match something, each normalised, a choice of
+ * @brief Returns a choice as the scanner sees it: the alternatives that match something, each normalized, a choice of
  *        none matching nothing and a choice of one being that one.
  * @param choice The choice.
- * @return The pattern normalised.
+ * @return The pattern normalized.
  */
 [[nodiscard]] regex::Regex normalized_choice(const regex::Choice& choice)
 {
@@ -343,10 +343,10 @@ namespace
 
 /**
  * @brief Returns a sequence as the scanner sees it: one with a part matching nothing matches nothing, its parts are
- *        normalised and the empty words among them dropped, a sequence of none is the empty word and one of one part
+ *        normalized and the empty words among them dropped, a sequence of none is the empty word and one of one part
  *        that part.
  * @param concat The sequence.
- * @return The pattern normalised.
+ * @return The pattern normalized.
  */
 [[nodiscard]] regex::Regex normalized_concat(const regex::Concat& concat)
 {
@@ -357,8 +357,8 @@ namespace
         return {.node = regex::Any_of{.set = {}}};
     }
 
-    // Each part is normalised before it is asked whether it is the empty word, so that `(any_of(""))*`, which is the
-    // empty word once normalised, is no part either; a sequence of no parts left is the empty word itself.
+    // Each part is normalized before it is asked whether it is the empty word, so that `(any_of(""))*`, which is the
+    // empty word once normalized, is no part either; a sequence of no parts left is the empty word itself.
     std::vector<regex::Regex> parts{};
 
     for (const auto& part : sequence)

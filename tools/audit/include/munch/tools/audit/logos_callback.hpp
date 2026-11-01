@@ -229,7 +229,7 @@ private:
         operator_bar,
 
         /**
-         * @brief A parenthesised or bracketed group.
+         * @brief A parenthesized or bracketed group.
          */
         group,
 
@@ -279,7 +279,7 @@ private:
         /**
          * @brief Moves the scan past what it read: a brace group ends the statement where it began at a statement's
          *        start or after a block-like word and nothing continues it, and opens the next, and any other group
-         *        leaves a value, a parenthesised one between a block-like word and its brace, the condition of an `if`,
+         *        leaves a value, a parenthesized one between a block-like word and its brace, the condition of an `if`,
          *        keeping the statement open; a block-like word opening a statement keeps it standing, and a semicolon
          *        ends it.
          * @param scanned What was read.

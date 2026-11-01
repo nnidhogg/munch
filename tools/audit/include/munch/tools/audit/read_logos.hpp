@@ -35,7 +35,7 @@ namespace munch::tools::audit
  * definition, referenced from a pattern as `(?&name)`; and the other keys logos 0.15.1 knows, `crate`, `error`,
  * `export_dir`, `extras`, `source` and `type`, which are recorded as options and say nothing about the token set,
  * `export_dir` among them though the crate takes it only with its `debug` feature on, any other key, a later crate's
- * `utf8` among them, being refused as the crate refuses it, as is an entry after a parenthesised one, `skip(...)` or
+ * `utf8` among them, being refused as the crate refuses it, as is an entry after a parenthesized one, `skip(...)` or
  * `error(...)`, in one attribute, whose comma the crate leaves unread, a bare key, a key with a value of another shape
  * than it takes, `extras(T)` or `skip = "x"`, `extras`, `error`, `source` or the type of one parameter given twice, and
  * `#[logos]` without its parentheses, each in the crate's words. The enum's generics are the crate's too: one lifetime
@@ -70,7 +70,7 @@ namespace munch::tools::audit
  * the scalar stood; a class, the dot and a negated class are the set of scalars they admit, written as one bracket of
  * the ASCII members and the code point ranges of the others, which the parser reads as the encodings of those scalars,
  * surrogates left out; groups of every kind group, the capture being lost as logos loses it; the flags `i`, `s` and `u`
- * are honoured with their scoping, `i` folding case as the regex crate folds it, an ASCII letter to both cases and, in
+ * are honored with their scoping, `i` folding case as the regex crate folds it, an ASCII letter to both cases and, in
  * Unicode mode, `k` and `s` to the Kelvin sign and the long s as well; the postfix operators and the counted forms,
  * their lazy variants refused as logos 0.15.1 refuses them; and `(?&name)` is `{name}`, the definition rewritten the
  * same way, where the reference stands in the definition's own mode under no flag, and otherwise the definition
@@ -89,7 +89,7 @@ namespace munch::tools::audit
  * Unicode mode as the crate's classes, Nd, White_Space and the word class, over the tables of the Unicode version the
  * locked regex-syntax was generated from rather than the library's own pinned one, since the audited language is the
  * scanner's; the version is the first of the scanner's options, `unicode-classes=16.0.0`. Under `(?-u)` the escapes are
- * their ASCII forms beside the `[[:digit:]]` family; a non-ASCII scalar under `i`, whose case folding is not modelled;
+ * their ASCII forms beside the `[[:digit:]]` family; a non-ASCII scalar under `i`, whose case folding is not modeled;
  * the anchors `^`, `$`, `\A`, `\z`, `\b`, `\B` and lookaround, which condition the context a match stands in, as
  * pattern::parse() refuses flex's; the flags `x`, `m`, `U` and `R`; the class operators `&&`, `--` and `~~`; the lazy
  * operators, which logos 0.15.1 refuses as unsupported non-greedy parsing; a `*` or `+` over the dot under `s` or over

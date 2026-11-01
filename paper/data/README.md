@@ -83,7 +83,7 @@ every statistic in both its archives recomputes from the CSV exactly.
 than one run. Each of these files holds exactly one, and `collect.sh` now refuses to write into a directory that already
 contains observations, but the column is the check that does not depend on remembering that.
 
-## Licence
+## License
 
 These archives are released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). They are
 measurements, not authorship, and requiring attribution to quote a throughput number would help nobody. The report

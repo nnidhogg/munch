@@ -238,7 +238,7 @@ struct Sweep
 struct Named
 {
     /**
-     * @brief Orders judgements member by member, so that a named example compares against its expected judgements.
+     * @brief Orders judgments member by member, so that a named example compares against its expected judgments.
      */
     auto operator<=>(const Named&) const = default;
 
@@ -609,7 +609,7 @@ Sweep sweep(const std::size_t rounds, const std::size_t max_length)
 /**
  * @brief Prints what the four judges say of one symbol.
  * @param out The stream.
- * @param named The judgements.
+ * @param named The judgments.
  * @return The stream.
  */
 std::ostream& operator<<(std::ostream& out, const Named& named)
@@ -627,7 +627,7 @@ std::ostream& operator<<(std::ostream& out, const Named& named)
  * @param ignored The ignored kinds.
  * @param letters The letters the oracle's strings are drawn over.
  * @param symbol The symbol.
- * @return The four judgements.
+ * @return The four judgments.
  */
 Named judge(munch::core::Builder& builder, const Kinds_t& ignored, const std::string_view letters, const char symbol)
 {
@@ -660,9 +660,9 @@ Named judge(munch::core::Builder& builder, const Kinds_t& ignored, const std::st
  * safe modulo the ignored kinds: the left piece is a shorter \c ab* and the right is a \c b+, and both are discarded.
  * The published condition refuses because the two scans do not reconverge on one state: advancing on 'b' from inside
  * \c ab* stays in a state accepting \c ab*, while advancing on 'b' from the initial state enters one accepting \c b+,
- * and those accept different tokens so minimization keeps them apart. Once the two ignored kinds share a colour the two
+ * and those accept different tokens so minimization keeps them apart. Once the two ignored kinds share a color the two
  * states have the same future, which is what the shipped rule asks, so it admits 'b'.
- * @return The four judgements at 'b'.
+ * @return The four judgments at 'b'.
  */
 Named gain_witness()
 {
@@ -682,9 +682,9 @@ Named gain_witness()
  *        another, beside a kept \c k.
  *
  * After 'a', consuming 'b' reaches the state accepting \c ab, from the initial state it reaches the one accepting \c b,
- * and the two accept different kinds, so the published condition refuses; with both kinds one colour the two states are
+ * and the two accept different kinds, so the published condition refuses; with both kinds one color the two states are
  * equivalent, and every other clause holds.
- * @return The four judgements at 'b'.
+ * @return The four judgments at 'b'.
  */
 Named coalescing_witness()
 {
@@ -705,7 +705,7 @@ Named coalescing_witness()
  *
  * The state after 'a' can still reach the kept \c ac, so the published condition refuses 'b'; past the 'b' only the
  * discarded \c ab remains, which is all the severed token can become, and the shipped rule asks only that.
- * @return The four judgements at 'b'.
+ * @return The four judgments at 'b'.
  */
 Named edge_witness()
 {
@@ -725,7 +725,7 @@ Named edge_witness()
  * Every input tokenizes completely, kept output comes only from runs of 'k', and no cut before 'b' touches such a run.
  * Yet after 'a', consuming 'b' reaches the non-accepting prefix of \c abc, while from the initial state it reaches the
  * state accepting \c b, and the two differ already on the empty continuation. Only the exact decision admits it.
- * @return The four judgements at 'b'.
+ * @return The four judgments at 'b'.
  */
 Named incompleteness_witness()
 {
@@ -744,7 +744,7 @@ Named incompleteness_witness()
  *
  * Every token containing a 'b' can be cut there on its own, yet \c abc scans as \c ab then \c c while the chunks \c a
  * and \c bc are both discarded, so the kept \c c vanishes with both chunks complete.
- * @return The four judgements at 'b'.
+ * @return The four judgments at 'b'.
  */
 Named swallowed_witness()
 {
@@ -765,7 +765,7 @@ Named swallowed_witness()
  * one. Both local rules refuse it on their clause 2: restarted at 'b' the scan can still reach the kept \c bc, while
  * past \c ab the interrupted one can reach nothing, so the two states are neither equal nor equivalent. Only the exact
  * decision admits it.
- * @return The four judgements at 'b'.
+ * @return The four judgments at 'b'.
  */
 Named moved_origin_witness()
 {
@@ -785,7 +785,7 @@ Named moved_origin_witness()
  * On \c abcd the serial scan keeps \c cd while the chunks \c a and \c bcd keep \c bc, so the kept kind changes and the
  * cut before 'b' is unsafe. The two kinds agree in their low 32 bits, so this holds the output letters to the kinds'
  * full width.
- * @return The four judgements at 'b'.
+ * @return The four judgments at 'b'.
  */
 Named wide_kinds_witness()
 {

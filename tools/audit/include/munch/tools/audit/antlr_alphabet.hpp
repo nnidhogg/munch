@@ -26,8 +26,8 @@ namespace munch::tools::audit
  *
  * ANTLR's option rewrites every character to both of its cases, one code point each, `[äéöüß]` matching `äéöüßÄÉÖÜß`
  * (antlr4/doc/options.md), and the library carries the Unicode property tables but no case mappings, so folding such a
- * character is not something this reading can do; folding its ASCII neighbours alone would analyse another language
- * than the lexer's.
+ * character is not something this reading can do; folding its ASCII neighbors alone would analyze another language than
+ * the lexer's.
  */
 constexpr std::string_view unfoldable{
         "a character beyond ASCII under caseInsensitive needs the Unicode case mappings, which the byte reading has "

@@ -392,7 +392,7 @@ void add_rule(
     spec.line = line;
 
     // Which language the classes were read as: `\d`, `\s` and `\w` are a Unicode version's, so the account of the
-    // scanner names the one this reading modelled, the crate's own.
+    // scanner names the one this reading modeled, the crate's own.
     const auto version{unicode_classes_version()};
 
     const auto option{std::format("unicode-classes={}", version)};

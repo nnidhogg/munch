@@ -169,7 +169,7 @@ void check_verdicts(Assertions& assertions, const Pinned& pinned)
 }
 
 /**
- * @brief Pins the synthesizer's refusal where its licence does not hold: the CSV row and the strict-number row both
+ * @brief Pins the synthesizer's refusal where its license does not hold: the CSV row and the strict-number row both
  *        fail the end-of-input premise, and each refusal prints its reason.
  * @param assertions The probe's assertions.
  * @param pinned The pinned rows' tables.

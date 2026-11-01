@@ -80,7 +80,7 @@ struct User_action_use
  * `->` is a member, a field or a function of the file's own named `input`, and none of them when read and not called,
  * `yylval.input = 1`. A member of `this`, `this->yyinput()` and `(*this).yyinput()`, is the word itself, the call as
  * flex's C++ scanners, whose `yyinput` is a member of the lexer class, write it. A member of the name on anything else,
- * called or parenthesised to be called, `(self->yyinput)()`, is the call too: an alias of `this`, `auto* self = this;
+ * called or parenthesized to be called, `(self->yyinput)()`, is the call too: an alias of `this`, `auto* self = this;
  * self->yyinput();`, is the same call under a name the text does not resolve, so `self->yyinput()` and `s.input()`
  * alike are refused by name. `REJECT` is a whole word in flex's spelling, capitals throughout, since flex takes
  * `reject` and `Reject` as names of the file's own. `BEGIN`, `yy_push_state`, `yy_pop_state` and `yy_top_state` change

@@ -157,7 +157,7 @@ TEST(Minimize_test, Merges_equivalent_interior_states)
 TEST(Minimize_test, Keeps_a_reachable_chain_with_empty_right_language)
 {
     // One of the contract's two documented non-minimal cases, one per direction of trimness, with the next test. Both
-    // pin behaviour the header promises.
+    // pin behavior the header promises.
     Builder builder{};
 
     const auto q0{builder.init_state()};

@@ -1510,7 +1510,7 @@ TEST(Read_flex_test, An_action_emits_a_token_only_where_every_path_through_it_re
     // return 8; }`.
     EXPECT_EQ(token_of("a+     { (void)yyleng; goto emit_token; }\nc      { emit_token: return 8; }"), "line 3: ");
 
-    // A member of the name parenthesised to be called is the call too: the C++ scanner's `(self->yyinput)()` consumes
+    // A member of the name parenthesized to be called is the call too: the C++ scanner's `(self->yyinput)()` consumes
     // the b of "aab" as `self->yyinput()` does.
     EXPECT_EQ(token_of("a+     { auto* self = this; (self->yyinput)(); return 7; }"), "line 3: ");
 

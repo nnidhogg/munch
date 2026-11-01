@@ -1033,7 +1033,7 @@ TEST(Dfa_test, Mandatory_core_is_proved_when_every_death_word_carries_it)
 
     // The confirming shape: q1 consumes every byte, and the only route out of its loop is 'a' into q2, whose sole live
     // byte returns. Every word that kills a scan sitting in q1 must therefore spell 'a' strictly before its killing
-    // byte, which is exactly the licence the accessor reports.
+    // byte, which is exactly the license the accessor reports.
     builder.add_accept_state(q1, token);
 
     builder.add_transition(q0, Label{'s'}, q1);

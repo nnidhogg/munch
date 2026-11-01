@@ -8,7 +8,7 @@
 /**
  * @brief A pattern's shape for a byte it consumes: a run over a class holding the byte, is_run(), a body the byte
  *        terminates, is_terminated(), and a fixed opener before a body holding it, is_delimited(); with the parts of
- *        its top-level sequence, parts_of(), and the normalised form every shape is read off, normalized().
+ *        its top-level sequence, parts_of(), and the normalized form every shape is read off, normalized().
  *
  * Every question is asked of what the pattern matches rather than of how it is written, so that `\n`, `[\n]` and
  * `\n{1}` are one terminator, and a component matching the empty word alone is no part of a sequence.
@@ -51,7 +51,7 @@ namespace munch::tools::audit
 [[nodiscard]] bool is_delimited(const regex::Regex& regex, unsigned char byte);
 
 /**
- * @brief Returns the parts of a pattern's top-level sequence, once it is normalised, none when it is no sequence.
+ * @brief Returns the parts of a pattern's top-level sequence, once it is normalized, none when it is no sequence.
  * @param regex The pattern.
  * @return The parts.
  */
@@ -67,7 +67,7 @@ namespace munch::tools::audit
  *        the one sequence `[ab]"x"`, which every shape and every edit then reads, and `"x"{0} "y"{0}` is the empty word
  *        rather than a sequence of nothing.
  * @param regex The pattern.
- * @return The pattern normalised.
+ * @return The pattern normalized.
  */
 [[nodiscard]] regex::Regex normalized(const regex::Regex& regex);
 

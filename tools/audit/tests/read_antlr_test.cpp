@@ -593,7 +593,7 @@ TEST(Read_antlr_test, What_ANTLR_refuses_of_reserved_and_shared_names_is_refused
 
 TEST(Read_antlr_test, A_fragment_an_inert_alternative_and_a_mode_s_rules_are_read_as_ANTLR_reads_them)
 {
-    // A fragment is named as a lexer rule is, capitalised, else ANTLR's parser refuses it in its words.
+    // A fragment is named as a lexer rule is, capitalized, else ANTLR's parser refuses it in its words.
     EXPECT_EQ(
             refusal_of("lexer grammar A;\nfragment digit : [0-9] ;\nNUMBER : digit+ ;\n"),
             "line 2: syntax error: mismatched input 'digit' expecting TOKEN_REF while matching a lexer rule");
@@ -1318,13 +1318,13 @@ TEST(Read_antlr_test, A_command_ANTLR_has_not_got_is_refused_in_its_words)
     EXPECT_EQ(refusal("-> skip,\n  , type(Y)"), "line 4: " + stray);
     EXPECT_EQ(refusal("-> frob,"), "line 3: " + stray);
 
-    // The seven with their first letter capitalised name the code templates of ANTLR's targets, `LexerSkipCommand`,
+    // The seven with their first letter capitalized name the code templates of ANTLR's targets, `LexerSkipCommand`,
     // which antlr 4.13.2 accepts with no diagnostic, expands into an action the generated lexer runs, `skip();`, and
     // leaves out of its own interpreter, which emits the token: refused by name, after ANTLR's own argument checks
     // under the spelling given. Any other spelling of the seven is its error 149.
-    const auto capitalised{refusal("-> Skip")};
+    const auto capitalized{refusal("-> Skip")};
 
-    EXPECT_TRUE(capitalised.contains("lexer command Skip names a code template")) << capitalised;
+    EXPECT_TRUE(capitalized.contains("lexer command Skip names a code template")) << capitalized;
     EXPECT_TRUE(refusal("-> Type(Y)").contains("lexer command Type names a code template"));
     EXPECT_TRUE(refusal("-> PopMode").contains("lexer command PopMode names a code template"));
     EXPECT_EQ(refusal("-> Skip(Q)"), "line 3: lexer command Skip does not take any arguments");

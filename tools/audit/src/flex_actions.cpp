@@ -228,7 +228,7 @@ std::optional<std::string> stateful_use(const std::string_view action, const boo
 
         const auto called{index + 1 < tokens.size() && tokens[index + 1].text == "("};
 
-        // A member of the name on anything but `this` is the call when called or parenthesised to be called, and none
+        // A member of the name on anything but `this` is the call when called or parenthesized to be called, and none
         // when read and not called.
         const auto through_member{
                 index > 0 && (tokens[index - 1].text == "." || tokens[index - 1].text == "->") &&

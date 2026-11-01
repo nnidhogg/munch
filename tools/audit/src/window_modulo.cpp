@@ -29,7 +29,7 @@ namespace
 constexpr std::size_t shown_examples{6};
 
 /**
- * @brief Returns the byte a class is shown by: its first graphic member when it has one, since a reader recognises that
+ * @brief Returns the byte a class is shown by: its first graphic member when it has one, since a reader recognizes that
  *        one, else its lowest; every member decides alike, so the choice is a matter of display alone.
  * @param members The class, ascending.
  * @return The representative.

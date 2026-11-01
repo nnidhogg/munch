@@ -572,7 +572,7 @@ Grammar_reader::Rule_name Grammar_reader::rule_name()
 
         name = identifier();
 
-        // A fragment is a lexer rule and named as one, capitalised: ANTLR's parser refuses any other name in its own
+        // A fragment is a lexer rule and named as one, capitalized: ANTLR's parser refuses any other name in its own
         // words, its error 50.
         if (name.empty() || !is_capital(name.front()))
         {
@@ -820,7 +820,7 @@ void Grammar_reader::parser_rule()
 
 void Grammar_reader::skip_argument()
 {
-    // No comment is recognised inside an argument block, so a `]` inside what looks like one closes it.
+    // No comment is recognized inside an argument block, so a `]` inside what looks like one closes it.
     skip_bracketed('[', ']', false, "an argument block never closes");
 }
 

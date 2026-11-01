@@ -647,7 +647,7 @@ TEST(Read_logos_test, Refusals_name_the_line_and_the_construct)
     EXPECT_EQ(line_of_attribute(R"rs(#[regex(r"\ba")])rs"), attribute_line);
     EXPECT_EQ(line_of_attribute(R"rs(#[regex(r"a(?=b)")])rs"), attribute_line);
 
-    // The flags and operators not modelled, the arguments logos has not got, and the empty pattern.
+    // The flags and operators not modeled, the arguments logos has not got, and the empty pattern.
     EXPECT_EQ(line_of_attribute(R"rs(#[regex(r"(?x) a b")])rs"), attribute_line);
     EXPECT_EQ(line_of_attribute(R"rs(#[regex(r"[a-z&&[^aeiou]]")])rs"), attribute_line);
     EXPECT_EQ(line_of_attribute(R"rs(#[regex(r"(?-u)[\d-z]")])rs"), attribute_line);
@@ -1412,7 +1412,7 @@ TEST(Read_logos_test, A_callback_s_names_are_read_in_the_scope_its_text_stands_i
             variant_other);
 
     // Which of the two a brace group is depends on where it began: a block that opens a statement ends one, so the `||`
-    // after it opens a closure whether or not the condition it follows is parenthesised, while a block standing where a
+    // after it opens a closure whether or not the condition it follows is parenthesized, while a block standing where a
     // value does is the operator's left operand and the `||` after it is the operator.
     EXPECT_EQ(
             callback_token(
@@ -1442,7 +1442,7 @@ TEST(Read_logos_test, A_callback_s_names_are_read_in_the_scope_its_text_stands_i
             variant_other);
 
     // A closure written in the attribute binds its names nowhere the walk reaches, so a body that binds one is refused
-    // whatever shape it takes: a block, a block one deeper, a parenthesised block or an `if` branch. A body binding
+    // whatever shape it takes: a block, a block one deeper, a parenthesized block or an `if` branch. A body binding
     // nothing is read.
     EXPECT_EQ(callback_refused_at(R"rs(#[token("#", |_| { use T::Other as Skip; Skip })])rs"), callback_line);
     EXPECT_EQ(callback_refused_at(R"rs(#[token("#", |_| { { use T::Other as Skip; Skip } })])rs"), callback_line);
@@ -2680,7 +2680,7 @@ TEST(Read_logos_test, What_the_crate_refuses_around_a_string_pattern_is_refused)
 
     EXPECT_EQ(every_key.front().options.size(), 7U);
 
-    // The crate leaves the comma after a parenthesised entry unread, so an entry after `skip(...)` in one attribute is
+    // The crate leaves the comma after a parenthesized entry unread, so an entry after `skip(...)` in one attribute is
     // an invalid nested attribute to it, while one before it is fine.
     EXPECT_EQ(line_of("#[derive(Logos)]\n#[logos(skip(\"x\"), extras = usize)]\nenum T {\n    V,\n}\n"), 2);
     EXPECT_EQ(line_of("#[derive(Logos)]\n#[logos(skip(\"x\"), skip(\"y\"))]\nenum T {\n    V,\n}\n"), 2);

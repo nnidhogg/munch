@@ -30,7 +30,7 @@ constexpr std::string_view range_dots{".."};
 constexpr std::string_view arrow{"->"};
 
 /**
- * @brief Returns an expression under a suffix, bare where it is atomic and parenthesised where it is not.
+ * @brief Returns an expression under a suffix, bare where it is atomic and parenthesized where it is not.
  * @param expression The expression.
  * @param suffix The suffix, `?`, `*`, `+` or a non-greedy one, or empty for the expression alone as a unit.
  * @return The suffixed expression.
@@ -397,7 +397,7 @@ std::string Expression_reader::lazy_element(
     {
         if (!element.first || element.first->ascii.test(opener))
         {
-            fail("a non-greedy option before a string it could begin is not modelled");
+            fail("a non-greedy option before a string it could begin is not modeled");
         }
 
         if (!element.characters)

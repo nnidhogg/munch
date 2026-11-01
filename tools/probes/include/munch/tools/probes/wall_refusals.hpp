@@ -18,7 +18,7 @@ namespace munch::tools::probes
  *        existence and direction; a budget constant is pinned only where an instance sits at its boundary. The
  *        kernel-closure and member-map checks and the labeling-conflict search have no reachable negative fixture: a
  *        violating shape falls out of the kernel before either check fires, and a byte's action is state-determined, so
- *        subset-dependent behaviour needs a restart asymmetry no small table produces. Every refusal prints its
+ *        subset-dependent behavior needs a restart asymmetry no small table produces. Every refusal prints its
  *        `refused: ` line on standard output.
  * @param assertions The probe's assertions.
  */

@@ -94,7 +94,7 @@ struct Re2c_flags
  *
  * re2c lives inside C: every block opened by a comment beginning `!re2c` or `!rules:re2c` is read, in order, through
  * its close, and the other block kinds, which carry no rules, are skipped along with the code around them. A block is
- * read as Block_reader reads it, as re2c 3.1 does: its close, its `re2c:` configurations, which configure() honours for
+ * read as Block_reader reads it, as re2c 3.1 does: its close, its `re2c:` configurations, which configure() honors for
  * the whole block the last assignment governing, its definitions in either syntax, each binding its name where it
  * stands, so that a name defined twice and one used before its definition are refused as re2c refuses them, and its
  * rules, with their actions, the ranks re2c gives the `<*>` rules and the default rule `*`, and the default rules a

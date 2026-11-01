@@ -560,7 +560,7 @@ TEST(Report_test, The_options_that_governed_the_reading_reach_both_forms_of_the_
     EXPECT_EQ(options_json({}), "[]");
 
     // Several options are one row, comma-separated; what a logos reading notes of the Unicode version its classes came
-    // from is one of them, so the page says which language was analysed.
+    // from is one of them, so the page says which language was analyzed.
     const std::vector<std::string> several{"unicode-classes=16.0.0", "extras=Extras"};
 
     EXPECT_EQ(options_row(several), "options                     unicode-classes=16.0.0, extras=Extras\n");
@@ -1114,7 +1114,7 @@ TEST(Report_test, An_exact_zero_repetition_is_the_empty_word_whatever_it_repeats
 
     EXPECT_EQ(shape_of(parse(R"([cd]{0}[ \t\n]+)"), '\n'), Shape::run);
 
-    // What a repetition repeats is normalised too, so a run written through a repetition of exactly one is the run it
+    // What a repetition repeats is normalized too, so a run written through a repetition of exactly one is the run it
     // matches.
     EXPECT_EQ(shape_of(parse(R"(([ \t\n]{1})+)"), '\n'), Shape::run);
     EXPECT_EQ(shape_of(parse(R"((([ \t\n]{1}){1})+)"), '\n'), Shape::run);

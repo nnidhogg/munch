@@ -3938,7 +3938,7 @@ TEST_F(Lexer_test, Mandatory_core_reports_the_family_verdicts_and_a_long_core_re
     const auto block_comment{block_comment_regex()};
 
     // The block-comment row: the closer is the only exit from an input-total comment interior, so every death word
-    // carries "*/" before its killing byte and the accessor reports the closer. This is the licence the filtered
+    // carries "*/" before its killing byte and the accessor reports the closer. This is the license the filtered
     // planner runs on.
     {
         Builder builder{};
@@ -3952,7 +3952,7 @@ TEST_F(Lexer_test, Mandatory_core_reports_the_family_verdicts_and_a_long_core_re
 
     // The JSON row: the string interior dies on the bytes outside the printable set, so no live state consumes
     // everything and nothing proposes a core. Certified windows exist for this family; the accelerator simply has no
-    // licence, and planning keeps the exhaustive walk.
+    // license, and planning keeps the exhaustive walk.
     {
         Builder builder{};
 
@@ -4110,7 +4110,7 @@ TEST_F(Lexer_test, Three_byte_core_planning_equals_the_walk_when_no_window_certi
 
     // Triple-quote strings sit exactly on the refusal boundary: the core fills all but one byte of the longest window,
     // so the filter must still plan rather than refuse, and every occurrence proposes a single candidate window instead
-    // of a range. The licence is real and the certificates are not: outside a string a bare closer opens a fresh string
+    // of a range. The license is real and the certificates are not: outside a string a bare closer opens a fresh string
     // that swallows the byte after it, so no window ever agrees on an origin under this token set, and both sides must
     // certify their way to the same refusal.
     ASSERT_EQ(lexer.mandatory_core(), R"(""")");
@@ -4208,7 +4208,7 @@ TEST_F(Lexer_test, Single_byte_core_planning_equals_the_walk_over_the_full_lengt
     const auto lexer{builder.build()};
 
     // A single-byte core is the widest case of the candidate algebra: every occurrence proposes windows of all three
-    // lengths, and a repeated closer puts occurrences one byte apart, so neighbouring occurrences propose the same
+    // lengths, and a repeated closer puts occurrences one byte apart, so neighboring occurrences propose the same
     // window and the candidate stream carries duplicates through the heap's ordering.
     ASSERT_EQ(lexer.mandatory_core(), ";");
 
@@ -4416,11 +4416,11 @@ TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_through_duplic
 
     const auto lexer{builder.build()};
 
-    // A doubled-byte closer overlaps itself, so a star run holds occurrences one byte apart and neighbouring
-    // occurrences propose the same length-four window: the candidate stream carries duplicates the committed
-    // block-comment corpus can never produce. Duplicates share their memoized verdict, so no final plan can see whether
-    // the skip fired; what this run pins is that overlap-heavy proposal generation still equals the walk, and that the
-    // skip drops nothing it should keep.
+    // A doubled-byte closer overlaps itself, so a star run holds occurrences one byte apart and neighboring occurrences
+    // propose the same length-four window: the candidate stream carries duplicates the committed block-comment corpus
+    // can never produce. Duplicates share their memoized verdict, so no final plan can see whether the skip fired; what
+    // this run pins is that overlap-heavy proposal generation still equals the walk, and that the skip drops nothing it
+    // should keep.
     ASSERT_EQ(lexer.mandatory_core(), "**");
 
     ASSERT_TRUE(certifies_no_byte(lexer));

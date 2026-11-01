@@ -358,7 +358,7 @@ class Checker:
                         self.literal_first = (tokens, suffix, relative, resumed, missing)
 
         # Pass two: every string the reference scanned is put to munch's own scan. This is not part of
-        # any claim; it guards against the reference modelling a different scan than the library runs.
+        # any claim; it guards against the reference modeling a different scan than the library runs.
         seen = sorted(starts_cache)
         lines = run_probe(tokens, ["T %s" % encode(text) for text in seen])
 
@@ -476,7 +476,7 @@ def mutation_controls(out):
         "  passing run reports 0), and the checked claims raise %s, a corrupted model being the"
         % observed["A claim raised"]
     )
-    out.append("  cross-check's business rather than theirs, so a reference modelling the wrong scan cannot")
+    out.append("  cross-check's business rather than theirs, so a reference modeling the wrong scan cannot")
     out.append("  slip through unnoticed.")
     out.append("- **control B**, the walk's certified start displaced by one before checking, token set {a}:")
     out.append(

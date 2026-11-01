@@ -82,7 +82,7 @@ struct Blame
  * @brief What the library decides about one token set, gathered for a reader who did not write it.
  *
  * Bytes are the certificates a planner cuts at; windows the ones it falls back to, enumerated over one representative
- * per byte class so the count is of distinct behaviours rather than of byte strings; the core is what every window must
+ * per byte class so the count is of distinct behaviors rather than of byte strings; the core is what every window must
  * contain; the spans price the plan; lag and rescue-freeness are the recovery figures; and the blame says, for every
  * byte that could have certified, which token stopped it and how.
  */

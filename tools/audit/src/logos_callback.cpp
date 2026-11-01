@@ -729,7 +729,7 @@ bool Callback_reader::binds_names(const std::string_view inside) const
 
     for (cursor.skip_trivia(); !cursor.done(); cursor.skip_trivia())
     {
-        // A group is entered rather than passed over: a block one deeper, a parenthesised block and an `if` branch bind
+        // A group is entered rather than passed over: a block one deeper, a parenthesized block and an `if` branch bind
         // names as the outermost block does.
         if (is_opening(cursor.peek()))
         {
@@ -771,7 +771,7 @@ Callback_reader::Outcomes_t Callback_reader::of_value(const std::string_view tex
 {
     const auto value{without_blanks(text)};
 
-    // `()` is a value, and a parenthesised value is that value.
+    // `()` is a value, and a parenthesized value is that value.
     if (value.empty())
     {
         return {of_result({})};

@@ -4049,7 +4049,7 @@ void append(std::vector<std::string>& lines, std::vector<std::string> more)
     lines.push_back(std::format(
             "{} | post-hoc ceiling on the same slice: {:.1f} anchors per KiB, longest anchorless stretch {}", name,
             oracle_density, ceiling_stretch));
-    lines.push_back(std::format("{} | frozen supply as a share of the ceiling: {:.1f} per cent", name, share));
+    lines.push_back(std::format("{} | frozen supply as a share of the ceiling: {:.1f} percent", name, share));
 
     if (!fresh_unsettled.empty())
     {
@@ -4113,7 +4113,7 @@ void append(std::vector<std::string>& lines, std::vector<std::string> more)
 
     auto table{closed_table(
             {R"(\begin{tabular}{@{}lrrr@{}})", R"(\toprule)",
-             R"( & \multicolumn{3}{c}{share of the block's ceiling supply retained, per cent} \\)",
+             R"( & \multicolumn{3}{c}{share of the block's ceiling supply retained, percent} \\)",
              R"(\cmidrule(lr){2-4})", R"(Vocabulary & lowest block & upper median & highest block \\)", R"(\midrule)"},
             table_rows)};
 
@@ -5026,6 +5026,19 @@ template <typename Classify>
 }
 
 /**
+ * @brief Returns a campaign row's name as the supply table carries it, the block row named the block-comment row as
+ *        the prose names it.
+ * @param name The row's name.
+ * @return The table's name for the row.
+ */
+[[nodiscard]] std::string table_name_of(const std::string_view name)
+{
+    const auto short_name{short_name_of(name)};
+
+    return short_name == "block" ? std::string{"block-comment"} : std::string{short_name};
+}
+
+/**
  * @brief Returns a corpus over class representatives: every byte replaced by its letter's representative.
  * @param corpus The corpus.
  * @param canonical Each byte's representative.
@@ -5465,7 +5478,7 @@ void check_split_theorem(
             name, corpus.size(), anchors.size(), byte_starts.size()));
 
     auto table_row{std::format(
-            R"({} & {:.1f} & {} & {} & {} & {} \\)", short_name_of(name), per_kibibyte, percentile(gaps, 0.5),
+            R"({} & {:.1f} & {} & {} & {} & {} \\)", table_name_of(name), per_kibibyte, percentile(gaps, 0.5),
             percentile(gaps, 0.9), std::ranges::max(gaps), table_snap)};
 
     auto anchor_lines{anchor_table_lines(row, certified_letters)};

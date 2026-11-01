@@ -54,7 +54,7 @@ constexpr std::uint64_t lcg_increment{1442695040888963407ULL};
 constexpr std::size_t rounds{100};
 
 /**
- * @brief The random code points the range test probes per range, beside its bounds and their neighbours.
+ * @brief The random code points the range test probes per range, beside its bounds and their neighbors.
  */
 constexpr std::size_t probes{25};
 

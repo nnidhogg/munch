@@ -12,7 +12,7 @@
 #include "munch/tools/audit/read_re2c.hpp"
 
 /**
- * @brief A `re2c:` configuration as re2c honours it, configure(): the case flags and the encoding it sets for the whole
+ * @brief A `re2c:` configuration as re2c honors it, configure(): the case flags and the encoding it sets for the whole
  *        block it stands in, with the lines that set the encoding and its policy, Encoding_lines, the API the scanner
  *        advances by, and the names it gives the scan pointers, Pointers_t, with the encodings a reading over bytes
  *        cannot follow refused by their own reasons, unreadable(), and what re2c reads each configuration's value as,
@@ -151,7 +151,7 @@ struct Configuration_syntax
  *        encoding policy, under every name the manual gives it, the API the scanner advances by, and a `define:`
  *        renaming a scan pointer.
  *
- * The flags that change the reading are honoured when set in the file, under every spelling the manual's configuration
+ * The flags that change the reading are honored when set in the file, under every spelling the manual's configuration
  * list gives them. A configuration governs the whole block wherever in it it stands, and the last assignment is the one
  * that governs, so what is set here is what the block leaves and the next pass reads every pattern of it under; nothing
  * here changes this pass. The reading models re2c's default API, where the scanner advances by stepping a pointer an

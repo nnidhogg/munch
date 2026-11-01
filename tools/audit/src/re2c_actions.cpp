@@ -424,7 +424,7 @@ constexpr std::array<std::string_view, 15> type_words{"int",    "char",   "long"
  *        binds a reference to it as `auto&` does: a named cast, `static_cast<const char*&>(cursors[0])` or
  *        `static_cast<R>(cursors[0])` under `using R = const char*&;`, or a C cast, `(const char*&)cursors[0]` or
  *        `(R)cursors[0]`, the second `&` of an rvalue reference ending one as well, a C cast to a type not ending in
- *        `&` taking the pointer only where it stands alone, since `(R)cursors[0][-1]` casts a byte. A parenthesised
+ *        `&` taking the pointer only where it stands alone, since `(R)cursors[0][-1]` casts a byte. A parenthesized
  *        group before an operand is a cast's in any statement the compiler takes unless a value stands before it,
  *        `if (n) cursors[0]` holding a condition.
  * @param words The action's words.
@@ -756,7 +756,7 @@ void reduce(std::vector<Word>& out)
  *        being an int as it is to the compiler, while an expression holding a suffixed one never reaches the reader.
  *
  * The expression is read by precedence climbing: a level reads the operands of its operators at the level below, and
- * the lowest level, a unary sign, a parenthesised expression or a literal, reads a whole expression again inside
+ * the lowest level, a unary sign, a parenthesized expression or a literal, reads a whole expression again inside
  * parentheses.
  */
 class Constant_reader
@@ -785,7 +785,7 @@ private:
     [[nodiscard]] std::optional<long long> level(int depth);
 
     /**
-     * @brief Returns a unary sign and its operand, a parenthesised expression or a decimal literal within an int's
+     * @brief Returns a unary sign and its operand, a parenthesized expression or a decimal literal within an int's
      *        range.
      * @return The value, or std::nullopt when the reading stops.
      */
@@ -964,7 +964,7 @@ public:
      * @brief Returns what the action does to a scan pointer under this way of defining the macros, when it moves one or
      *        hands one on.
      *
-     * The neighbours of the name are read in the same spelling, so the `++` of `++(*in).cur` stands beside `in` as it
+     * The neighbors of the name are read in the same spelling, so the `++` of `++(*in).cur` stands beside `in` as it
      * stands beside `in->cur`. The pointer handed on is judged before the parentheses that wrap the name alone are
      * stepped over, since `advance(cursors[0])` wraps it in a call's; parentheses around the whole name, `(in->cur)++`,
      * change nothing an operator beside them does, so the operators moving it are looked for outside every pair that

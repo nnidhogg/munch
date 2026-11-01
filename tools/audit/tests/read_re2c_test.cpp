@@ -1095,7 +1095,7 @@ TEST(Read_re2c_test, A_non_capturing_group_is_its_body_and_a_backwards_range_spa
 TEST(Read_re2c_test, A_class_difference_becomes_the_bracket_of_the_bytes_left)
 {
     // The forms re2c's own lexer, PHP's and yasm's use: a definition minus a bracket, [^] minus an alternation of
-    // classes and one-byte literals, a parenthesised difference, and a chain; the pattern keeps the operator.
+    // classes and one-byte literals, a parenthesized difference, and a chain; the pattern keeps the operator.
     constexpr std::string_view source{R"(/*!re2c
     any = [\000-\377];
     eol = [\n];
@@ -1878,7 +1878,7 @@ TEST(Read_re2c_test, A_constant_index_is_read_to_its_value_and_any_other_is_out_
 
     // The evaluator reads decimal literals and `+`, `-`, `*`, `/` and `%` alone; a shift, a bitwise operator or a
     // suffixed literal has a width and a type the reading does not model, `~0U >> 31` being 1 under gcc 13 where a
-    // signed reading says 0 and `(1U << 31) << 1` being 0, so each is out of sight. A parenthesised array base,
+    // signed reading says 0 and `(1U << 31) << 1` being 0, so each is out of sight. A parenthesized array base,
     // `(cursors)[1-1]`, and a configured `(cursors)[0]` come down to the name before the index is read, and a run with
     // an earlier index of its own, `slots[0].cursors`, is an array too.
     EXPECT_TRUE(refusal_of(indexed("", "cursors[0]", "~0U >> 31")).contains("indexes cursors by an expression"));

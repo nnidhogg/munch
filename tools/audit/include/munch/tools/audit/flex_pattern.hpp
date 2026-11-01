@@ -21,7 +21,7 @@
 namespace munch::tools::audit
 {
 /**
- * @brief Returns where a pattern ends on a rule line: the first blank outside a quote and a bracket, escapes honoured.
+ * @brief Returns where a pattern ends on a rule line: the first blank outside a quote and a bracket, escapes honored.
  *
  * A bracket expression holds no bracket of its own, so the scan tracks which state of one it stands in rather than a
  * depth: a `]` closes the bracket unless it is its first member, `[]a]` and `[^]a]`, a `^` negates the bracket only

@@ -177,7 +177,7 @@ constexpr std::array<Ascii_class, 14> ascii_classes{
 
     std::vector<Node> merged{};
 
-    // A literal run no capture bounds merges with its neighbours of the same kind.
+    // A literal run no capture bounds merges with its neighbors of the same kind.
     const auto unbounded_bytes{[](const Node& node) {
         return std::holds_alternative<Bytes>(node.kind) && !std::get<Bytes>(node.kind).bounded;
     }};
@@ -576,7 +576,7 @@ Node Pattern_reader::flag_group(const Flags& saved)
         case 'm':
         case 'U':
         case 'R':
-            fail(std::format("the flag '{}' is not modelled", flag));
+            fail(std::format("the flag '{}' is not modeled", flag));
         default:
             fail(std::format("'{}' is not a flag of the regex crate", flag));
         }
@@ -640,12 +640,12 @@ Node Pattern_reader::class_node(Scalar_set admitted, const bool negated)
             return high <= last_ascii || (low == high && (low == long_s || low == kelvin));
         }};
 
-        // The crate folds before it negates; folding is modelled for ASCII and the two scalars that fold to it.
+        // The crate folds before it negates; folding is modeled for ASCII and the two scalars that fold to it.
         const auto foldable{std::ranges::all_of(admitted.ranges(), foldable_run)};
 
         if (flags_.unicode && !foldable)
         {
-            fail("the case folding of a class with non-ASCII members under (?i) is not modelled");
+            fail("the case folding of a class with non-ASCII members under (?i) is not modeled");
         }
     }
 
@@ -733,7 +733,7 @@ Scalar_set Pattern_reader::members()
 
         if (written != class_operators.end())
         {
-            fail(std::format("the class operator '{}' is not modelled", *written));
+            fail(std::format("the class operator '{}' is not modeled", *written));
         }
 
         std::optional<char32_t> low{};
@@ -1129,7 +1129,7 @@ Node Pattern_reader::unit_node(const Unit unit)
 
     if (flags_.insensitive && flags_.unicode && value > last_ascii)
     {
-        fail("the case folding of a non-ASCII scalar under (?i) is not modelled");
+        fail("the case folding of a non-ASCII scalar under (?i) is not modeled");
     }
 
     if (byte)

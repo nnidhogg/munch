@@ -8,7 +8,7 @@ sets that cut no input differently. The ANTLR and logos twins read characters wh
 negated sets admit the UTF-8 encodings alone: the bytes no encoding uses are left out of the byte comparison, and the
 twins part from the flex file only on input they refuse. Every `.l` file says `%option nodefault`, since the study's
 token sets have no default rule and flex's would add a one-byte discarded token for every byte the rules leave out. None
-is taken from another project; when one is, its origin and licence are recorded here beside it.
+is taken from another project; when one is, its origin and license are recorded here beside it.
 
 | Grammar | Mirrors |
 |---|---|

@@ -449,7 +449,7 @@ void check_nullable_synthesis(Assertions& assertions)
 }
 
 /**
- * @brief Checks seven independent string types, an eight-subset, width-eight wall that passes every other licence: the
+ * @brief Checks seven independent string types, an eight-subset, width-eight wall that passes every other license: the
  *        subset-count cap must refuse it before any factorial labeling work, and promptly.
  * @param assertions The probe's assertions.
  */

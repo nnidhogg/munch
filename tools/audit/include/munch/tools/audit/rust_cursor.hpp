@@ -141,7 +141,7 @@ public:
 
 private:
     /**
-     * @brief Returns the offset just past the string literal at the cursor, its prefix, hashes and escapes honoured.
+     * @brief Returns the offset just past the string literal at the cursor, its prefix, hashes and escapes honored.
      * @return The offset, or std::nullopt when no string literal opens here.
      * @throws Spec_error If the literal is left open.
      */

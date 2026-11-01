@@ -425,7 +425,7 @@ template <typename Name>
 
 /**
  * @brief Returns the windows' rows: the count over class representatives, widths ascending, and the first few as
- *        examples, printable windows first, since a reader recognises those.
+ *        examples, printable windows first, since a reader recognizes those.
  * @param report The report.
  * @return The rows.
  */
