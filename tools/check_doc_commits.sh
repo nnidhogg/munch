@@ -28,6 +28,13 @@ foreign=(
     aaaaabbba                                # not a commit: the split-windows paper's example input over {a, b}
     abababbab                                # not a commit: the panic-mode paper's example tail over {a, b}
     aaaaaaab                                 # not a commit: the finitely-verifiable paper's counterexample over {a, b}
+    aaaaabc                                  # not a commit: the bpe-left-ripple paper's example input over {a, b, c}
+    aababaaabaa                              # not a commit: the bpe-left-ripple paper's example input over {a, b}
+    aabaaaabaa                               # not a commit: the bpe-left-ripple paper's example input over {a, b}
+    abbabbba                                 # not a commit: the bpe-left-ripple paper's example input over {a, b}
+    abbaabba                                 # not a commit: the bpe-left-ripple paper's example input over {a, b}
+    abbababbab                               # not a commit: the bpe-left-ripple paper's example input over {a, b}
+    abbacbabbab                              # not a commit: the bpe-left-ripple paper's example input over {a, b, c}
 )
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."

@@ -82,3 +82,14 @@ references:
       - type: other
         value: "arXiv:2610.30168"
     url: "https://arxiv.org/abs/2610.30168"
+  - type: article
+    title: "The Left Ripple of Byte-Pair Encoding: Certified Lookbehind for Every Dictionary"
+    authors:
+      - family-names: "Nidhögg"
+        given-names: "Nicklas"
+        orcid: "https://orcid.org/0009-0006-6161-6150"
+    year: 2026
+    identifiers:
+      - type: other
+        value: "arXiv:2611.13061"
+    url: "https://arxiv.org/abs/2611.13061"

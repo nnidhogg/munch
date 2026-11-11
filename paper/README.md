@@ -1,6 +1,6 @@
 # The technical reports in LaTeX
 
-Five sibling reports live here, sharing `figures/` and `data/`.
+Six sibling reports live here, sharing `figures/` and `data/`.
 
 `split-points/split-points.tex` is the formal version of [docs/split_points.md](../docs/split_points.md), published as
 [arXiv:2608.03473](https://arxiv.org/abs/2608.03473): the argument stated over the live subautomaton, with numbered
@@ -47,6 +47,19 @@ as exact rationals under rational, almost surely stopping finite-state sources. 
 `verifier::Verifier` with `miscovering()`, `boundary_gap()`, `realizable()`, `divergence()`, `dependence()` and
 `chunk_dependence()`, beside the tokenizer verifiers `merge_tower()` and `trie_chain()`.
 
+`bpe-left-ripple/bpe-left-ripple.tex` is the sixth, published as [arXiv:2611.13061](https://arxiv.org/abs/2611.13061)
+and mirrored by [docs/bpe_left_ripple.md](../docs/bpe_left_ripple.md): how far a string prepended on the left can change
+a byte-pair tokenization, with the origin radius decided and computed for every dictionary on a product of two runs of
+the automaton that guesses the final tokens, with radius certificates in both directions, infinite exactly when one
+periodic word has two canonical tilings with no common boundary, and under the ordering condition exactly when some rule
+`(t, t)` is effective at its own stage, the cut that every window of a width read off the radii has when the radius is
+finite, a streaming tokenizer that emits after every symbol exactly the tokens no continuation changes, the label
+measure decided for every dictionary in polynomial time and quadratic in the number of rules under the ordering
+condition, and the merge tables of GPT-2, cl100k_base, o200k_base and Llama 3 measured. The decisions ship in the
+library as `verifier::ripple_radius()`, `verifier::rule_ceilings()`, `verifier::window_density()`,
+`verifier::chunk_plan()` and `verifier::encoder_divergence()`, beside `miscovering()` over a table's token automaton,
+and the streaming encoder ships in matisse as `Stream_encoder`.
+
 The markdown reports are the accessible form, linked from the README and kept next to the implementation they describe;
 they carry the same claims but not every formal qualification, so where the two differ this directory is authoritative.
 
@@ -57,9 +70,9 @@ sudo apt-get install -y texlive-latex-recommended texlive-fonts-recommended texl
 make
 ```
 
-The recursive Makefile builds all five reports: `split-points/split-points.pdf`, `split-windows/split-windows.pdf`,
-`panic-mode/panic-mode.pdf`, `certified-splitting/certified-splitting.pdf` and
-`finitely-verifiable/finitely-verifiable.pdf`.
+The recursive Makefile builds all six reports: `split-points/split-points.pdf`, `split-windows/split-windows.pdf`,
+`panic-mode/panic-mode.pdf`, `certified-splitting/certified-splitting.pdf`,
+`finitely-verifiable/finitely-verifiable.pdf` and `bpe-left-ripple/bpe-left-ripple.pdf`.
 Building needs no Graphviz and no compiler: the figure PDFs under `figures/` are checked in.
 
 ## Figures

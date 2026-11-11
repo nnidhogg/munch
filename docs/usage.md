@@ -1243,7 +1243,12 @@ decisions behind `window_occurrence()` and `anchor_free_span()`: read it as
 it from the same directory. The fifth report *Finitely Verifiable Segmentation: Decidability for Every Tokenizer with a
 Finite-State Verifier* carries those decisions to every tokenizer with a finite-state verifier, the contract behind
 `munch::verifier::Verifier`: read it as [arXiv:2610.30168](https://arxiv.org/abs/2610.30168), as
-[docs/finitely_verifiable.md](finitely_verifiable.md), or build it from the same directory.
+[docs/finitely_verifiable.md](finitely_verifiable.md), or build it from the same directory. The sixth report *The Left
+Ripple of Byte-Pair Encoding: Certified Lookbehind for Every Dictionary* decides for every merge table how far a string
+prepended on the left can change its tokens, the decisions behind `verifier::ripple_radius()`,
+`verifier::rule_ceilings()` and `verifier::window_density()`: read it as
+[arXiv:2611.13061](https://arxiv.org/abs/2611.13061), as [docs/bpe_left_ripple.md](bpe_left_ripple.md), or build it
+from the same directory.
 
 ### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
