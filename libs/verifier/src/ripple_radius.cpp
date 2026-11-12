@@ -72,6 +72,11 @@ struct Stages
     std::vector<std::size_t> useful{};
 
     /**
+     * @brief The rank of each useful merge by its two parts, the merges the encoding applies.
+     */
+    Ranks ranks{};
+
+    /**
      * @brief The rank of the first useful merge with equal parts, the effective self-pair.
      */
     std::optional<std::size_t> self_pair{};
@@ -569,7 +574,7 @@ struct Best
  *        encode the two parts as the two of them, until the first useful merge with equal parts.
  * @param table The resolved merge table.
  * @param spellings The spelling of every token, by token.
- * @return The useful merges before the first effective self-pair, and its rank when there is one.
+ * @return The useful merges before the first effective self-pair, by rank and by parts, and its rank when there is one.
  */
 [[nodiscard]] Stages stages_of(const Table& table, const std::vector<std::string>& spellings)
 {
@@ -578,8 +583,6 @@ struct Best
     std::fill_n(canonical.begin(), table.symbols.size(), true);
 
     Stages stages{};
-
-    Ranks ranks{};
 
     for (std::size_t rank{0}; rank < table.lefts.size(); ++rank)
     {
@@ -595,7 +598,7 @@ struct Best
 
         const auto parts{symbols_of(table, spelling)};
 
-        const auto encoding{encoded(table, ranks, parts)};
+        const auto encoding{encoded(table, stages.ranks, parts)};
 
         if (encoding != std::vector{left, right})
         {
@@ -610,7 +613,7 @@ struct Best
         }
 
         stages.useful.push_back(rank);
-        ranks.emplace(std::pair{left, right}, rank);
+        stages.ranks.emplace(std::pair{left, right}, rank);
         canonical[product_of(table, rank)] = true;
     }
 
@@ -624,11 +627,12 @@ struct Best
  * @param merges The merge table in rank order.
  * @param spellings The spelling of every token, by token.
  * @param useful The ranks of the useful merges, ascending.
+ * @param ranks The rank of each useful merge by its two parts.
  * @return The vocabulary.
  */
 [[nodiscard]] Vocabulary vocabulary_of(
         const Table& table, const std::span<const Merge> merges, std::vector<std::string> spellings,
-        const std::span<const std::size_t> useful)
+        const std::span<const std::size_t> useful, Ranks ranks)
 {
     std::vector<bool> named(table.symbols.size(), false);
 
@@ -644,7 +648,7 @@ struct Best
 
     Vocabulary vocabulary{
             .spellings = std::move(spellings),
-            .ranks = {},
+            .ranks = std::move(ranks),
             .named = {},
             .beginning = std::vector<std::vector<Token_t>>(byte_count)};
 
@@ -666,8 +670,6 @@ struct Best
     for (const auto rank : useful)
     {
         const auto product{product_of(table, rank)};
-
-        vocabulary.ranks.emplace(std::pair{table.lefts[rank], table.rights[rank]}, rank);
 
         const auto first{static_cast<unsigned char>(vocabulary.spellings[product].front())};
 
@@ -1264,14 +1266,14 @@ std::string Exploration::completion(const std::size_t from) const
 
     auto spellings{spellings_of(merges, symbols)};
 
-    const auto [useful, self_pair]{stages_of(table, spellings)};
+    auto [useful, ranks, self_pair]{stages_of(table, spellings)};
 
     if (self_pair)
     {
         return Effective_self_pair{.rank = *self_pair};
     }
 
-    auto vocabulary{vocabulary_of(table, merges, std::move(spellings), useful)};
+    auto vocabulary{vocabulary_of(table, merges, std::move(spellings), useful, std::move(ranks))};
 
     Exploration exploration{std::move(table), std::move(vocabulary)};
 

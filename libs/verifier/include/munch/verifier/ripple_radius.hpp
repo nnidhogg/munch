@@ -112,12 +112,13 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  *
  * With S the total length of the canonical tokens and V their number, the pairs expanded have one copy inside a token
  * and the other inside one or at a token end, O(S^2 + V S) of them, each with at most V steps and a pair of two copies
- * inside tokens with at most one, so the exploration takes O(S^2 + V^2 S) time and space, where the product of the two
- * copies, every pair expanded, has up to (1 + S)^2 pairs and V^4 steps. Each usefulness and each adjacency encodes the
- * spellings of two tokens with the lowest-ranked merge at its leftmost occurrence taken from a heap, in time L log L
- * for L bytes, and the at most V^2 adjacencies spell 2 V S bytes together. S and V are at most twice the table's size,
- * the lengths of its merges' parts summed, so the decision takes time cubic in that size, where the whole product takes
- * quartic.
+ * inside tokens with at most one, so the exploration takes O(S^2 + V^2 S) space and O((S^2 + V^2 S) log S) time, the
+ * logarithm from interning each step's pair in an ordered map, where the product of the two copies, every pair
+ * expanded, has up to (1 + S)^2 pairs and V^4 steps. Each usefulness and each adjacency encodes the spellings of two
+ * tokens with the lowest-ranked merge at its leftmost occurrence taken from a heap, in time L log L for L bytes, and
+ * the at most V^2 adjacencies spell 2 V S bytes together. S and V are at most twice the table's size, the lengths of
+ * its merges' parts summed, so the decision takes time cubic in that size up to a logarithmic factor, where the whole
+ * product takes quartic.
  *
  * The two parts of a useful merge differ, so its pass joins every occurrence of them, and it moves the first byte from
  * which the encodings of x and of ax agree by at most the length of its right part: the radius is at most the total

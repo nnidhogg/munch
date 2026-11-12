@@ -1,0 +1,52 @@
+collected 2026-11-12 20:41 UTC
+Linux 6.18.58.1-microsoft-standard-WSL2
+g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 41
+munch ripple bench
+  commit      0239f914
+  table       50000 merges
+first 41: 41 merges, radius 3, mirrored 3, 0.001 s, peak 8.0 MiB
+first 41 without equal parts: 41 merges, radius 3, mirrored 3, 0.000 s, peak 8.0 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 100
+munch ripple bench
+  commit      0239f914
+  table       50000 merges
+first 100: 100 merges, infinite at rank 41, 0.001 s, peak 8.0 MiB
+first 100 without equal parts: 99 merges, radius 7, mirrored 5, 0.001 s, peak 8.0 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 200
+munch ripple bench
+  commit      0239f914
+  table       50000 merges
+first 200: 200 merges, infinite at rank 41, 0.000 s, peak 8.0 MiB
+first 200 without equal parts: 195 merges, radius 7, mirrored 6, 0.004 s, peak 8.7 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 400
+munch ripple bench
+  commit      0239f914
+  table       50000 merges
+first 400: 400 merges, infinite at rank 41, 0.001 s, peak 8.1 MiB
+first 400 without equal parts: 387 merges, radius 12, mirrored 10, 0.019 s, peak 12.9 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 800
+munch ripple bench
+  commit      0239f914
+  table       50000 merges
+first 800: 800 merges, infinite at rank 41, 0.000 s, peak 8.1 MiB
+first 800 without equal parts: 769 merges, radius 17, mirrored 15, 0.101 s, peak 32.4 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 1600
+munch ripple bench
+  commit      0239f914
+  table       50000 merges
+first 1600: 1600 merges, infinite at rank 41, 0.001 s, peak 8.0 MiB
+first 1600 without equal parts: 1530 merges, radius 27, mirrored 23, 0.475 s, peak 114.7 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 3200
+munch ripple bench
+  commit      0239f914
+  table       50000 merges
+first 3200: 3200 merges, infinite at rank 41, 0.001 s, peak 8.2 MiB
+first 3200 without equal parts: 3058 merges, radius 39, mirrored 35, 2.323 s, peak 454.2 MiB
+exit status 0

@@ -1,0 +1,49 @@
+collected 2026-11-12 20:31 UTC
+Linux 6.18.58.1-microsoft-standard-WSL2
+g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 41
+munch ripple bench
+  commit      e9e5b450
+  table       50000 merges
+first 41: 41 merges, radius 3, mirrored 3, 0.013 s, peak 11.5 MiB
+first 41 without equal parts: 41 merges, radius 3, mirrored 3, 0.012 s, peak 12.7 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 100
+munch ripple bench
+  commit      e9e5b450
+  table       50000 merges
+first 100: 100 merges, infinite at rank 41, 0.000 s, peak 8.0 MiB
+first 100 without equal parts: 99 merges, radius 7, mirrored 5, 0.134 s, peak 46.8 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 200
+munch ripple bench
+  commit      e9e5b450
+  table       50000 merges
+first 200: 200 merges, infinite at rank 41, 0.000 s, peak 8.0 MiB
+first 200 without equal parts: 195 merges, radius 7, mirrored 6, 0.923 s, peak 255.7 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 400
+munch ripple bench
+  commit      e9e5b450
+  table       50000 merges
+first 400: 400 merges, infinite at rank 41, 0.000 s, peak 8.1 MiB
+first 400 without equal parts: 387 merges, radius 12, mirrored 10, 7.067 s, peak 1800.7 MiB
+exit status 0
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 800
+terminate called after throwing an instance of 'std::bad_alloc'
+  what():  std::bad_alloc
+timeout: the monitored command dumped core
+/bin/bash: line 1: 150271 Aborted                 timeout 1800 ./tools/probes/munch_ripple_bench $M $p 2>&1
+exit status 134
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 1600
+terminate called after throwing an instance of 'std::bad_alloc'
+  what():  std::bad_alloc
+timeout: the monitored command dumped core
+/bin/bash: line 1: 150313 Aborted                 timeout 1800 ./tools/probes/munch_ripple_bench $M $p 2>&1
+exit status 134
+$ ulimit -v 12000000; munch_ripple_bench gpt2-merges.txt 3200
+terminate called after throwing an instance of 'std::bad_alloc'
+  what():  std::bad_alloc
+timeout: the monitored command dumped core
+/bin/bash: line 1: 150467 Aborted                 timeout 1800 ./tools/probes/munch_ripple_bench $M $p 2>&1
+exit status 134

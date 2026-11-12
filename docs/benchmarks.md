@@ -180,6 +180,40 @@ its windows in microseconds. Where windows are scarce the uniform window is what
 windows of four bytes cut 8.3% of the boundaries with gaps as long as a run, the uniform window gives 60,450 cuts in the
 60,452 tokens with no gap longer than three bytes; that text is too small for its timing to mean anything.
 
+## **The Origin Radius on GPT-2's Prefixes**
+
+`munch_ripple_bench` times `verifier::ripple_radius()` on prefixes of GPT-2's merge table, read from the release's
+`gpt2-merges.txt` and decoded from its byte-to-unicode spelling to bytes, and prints for each table its merges, the
+verdict, the time of the call and the process's peak resident memory, which only grows, so a collection runs one prefix
+per process. Each prefix is timed twice: as it is, infinite from 42 merges on, the merge at rank 41 an effective
+self-pair that the merges in rank order give before any graph, and without its merges of equal parts and the merges
+built on them, which has no effective self-pair, so its finite radius is read off the overlap graph. Before printing a
+finite answer it replays both witnesses on the encoder that applies the lowest-ranked merge at its leftmost occurrence,
+and a witness that does not attain its value exits 1.
+
+```
+$ ulimit -v 12000000
+$ for n in 41 100 200 400 800 1600 3200; do ./build/tools/probes/munch_ripple_bench gpt2-merges.txt $n; done
+...
+first 400: 400 merges, infinite at rank 41, 0.001 s, peak 8.1 MiB
+first 400 without equal parts: 387 merges, radius 12, mirrored 10, 0.019 s, peak 12.9 MiB
+...
+first 800 without equal parts: 769 merges, radius 17, mirrored 15, 0.101 s, peak 32.4 MiB
+...
+first 1600 without equal parts: 1530 merges, radius 27, mirrored 23, 0.475 s, peak 114.7 MiB
+...
+first 3200: 3200 merges, infinite at rank 41, 0.001 s, peak 8.2 MiB
+first 3200 without equal parts: 3058 merges, radius 39, mirrored 35, 2.323 s, peak 454.2 MiB
+```
+
+This run was made on the development machine under WSL2 with GCC 13 at `0239f914` and is archived whole, with the same
+collection at `e9e5b450`, in `paper/data/ripple-radius-wsl-2026-11/`. The exploration stops at every pair ending both
+copies at a token end, a token boundary the two encodings share, so its time is O((S^2 + V^2 S) log S) and its space
+O(S^2 + V^2 S) in the total length S and the number V of the canonical tokens, and from 769 to 3,058 merges the time
+grows about fivefold per doubling. The product of the two copies expanded whole, as `e9e5b450` explores it, gives the
+same radii and mirrored constants where it finishes, but takes 7.1 s and 1.8 GiB at 387 merges and exhausts the 12 GB
+address space at 769.
+
 ## **Lean 4 on Mathlib**
 
 `munch_benchmark_lean4` scans real Lean source with the bundled Lean 4 grammar, `tools/audit/grammars/lean4.g4`, read

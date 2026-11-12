@@ -108,3 +108,25 @@ per-token figure survives across generations.
 
 `observations.csv` holds every timed pass of the five scenarios behind the two mode tables, which are the rows
 `docs/usage.md` quotes. The other engine rows in `summary.txt` are summaries only.
+
+## `ripple-radius-wsl-2026-11`
+
+Three transcripts of `munch_ripple_bench` on GPT-2's merge table, `gpt2-merges.txt` with sha256
+`1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5`, on the development machine, an Intel machine under
+WSL 2 with GCC 13.3, on 2026-11-12, one prefix of 41, 100, 200, 400, 800, 1,600 and 3,200 merges per process, each under
+`ulimit -v 12000000`. `before.txt` was taken at `e9e5b450`, whose `ripple_radius()` expands every pair of the overlap
+graph, and `after.txt` at `0239f914`, whose `ripple_radius()` stops at every pair ending both copies at a token end,
+both on a clean tree. At `e9e5b450` the runs of 800 merges and more ended in `std::bad_alloc` with their output
+unflushed, so `before-aborts.txt` repeats the runs of 800 and 1,600 with line-buffered output under `/usr/bin/time`,
+which records the time to the abort and the peak resident memory. Backs the figures `docs/benchmarks.md` quotes. The `$`
+lines abbreviate the commands: each ran from the build directory as `./tools/probes/munch_ripple_bench` with the table's
+full path, its errors merged into its output and, in `before.txt` and `after.txt`, under `timeout 1800`, and the line
+after each run is its exit status.
+
+Each prefix is timed twice. GPT-2's own prefixes have an infinite radius from 42 merges on, the merge at rank 41 an
+effective self-pair found from the merges before any graph, and take under a millisecond at both commits. The prefixes
+without their merges of equal parts, and without the merges built on those, have a finite radius read off the graph:
+where both commits finish, at 41 to 400 merges, they give the same radii and mirrored constants, and the probe replays
+every witness on its reference encoder at both. At 387 merges `e9e5b450` takes 7.1 s and 1.8 GiB, and at 769 merges it
+exhausts the address space after 57 s at 7.0 GiB resident; `0239f914` finishes every prefix, in the times and peaks
+`docs/benchmarks.md` quotes.

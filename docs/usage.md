@@ -991,10 +991,15 @@ moves the covering token of every byte. The decision takes the merges in rank or
 `verifier::Effective_self_pair`. Without one it explores the overlap graph, two copies of the automaton that spells the
 canonical tokens reading one input, the second having read the prepended byte first, and returns
 `verifier::Finite_ripple`, the radius and the mirrored constant read off the longest path to a step on which the two
-copies' covering tokens differ, each with a prepended input attaining it when it is not zero. The overlap graph decides
-the radius for any table and a polynomial computation decides it in the number of merges under the ordering condition;
-on the tables munch takes the two answer alike, so one function serves both. It refuses what `merge_tower()` refuses,
-with `std::invalid_argument` naming the merge and its rank:
+copies' covering tokens differ, each with a prepended input attaining it when it is not zero. The exploration stops at
+every pair ending both copies at a token end, a token boundary the two encodings share, past which they agree; every
+other pair has a copy inside its token, so only the other copy branches, and with S the total length of the canonical
+tokens and V their number the decision takes O((S^2 + V^2 S) log S) time, cubic in the table's size up to a logarithmic
+factor, where the product of the two copies expanded whole is quartic, and
+[benchmarks.md](benchmarks.md#the-origin-radius-on-gpt-2s-prefixes) times it on GPT-2's prefixes. The overlap graph
+decides the radius for any table and a polynomial computation decides it in the number of merges under the ordering
+condition; on the tables munch takes the two answer alike, so one function serves both. It refuses what `merge_tower()`
+refuses, with `std::invalid_argument` naming the merge and its rank:
 
 ```cpp
 #include "munch/verifier/ripple_radius.hpp"

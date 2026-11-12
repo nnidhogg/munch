@@ -314,7 +314,8 @@ copy of the scan per configuration each cut can carry and stitches the copies in
 resolved at its own end where the policy's delay allows and at a later cut or the input's end otherwise;
 `verifier::ripple_radius()`, how far a byte prepended to an input can change the tokens canonical byte-pair encoding
 gives it, finite with the mirrored constant and, for each that is positive, an input attaining it, or infinite with the
-first effective self-pair; and `verifier::token_automaton()`, the token automaton of canonical byte-pair encoding over a
+first effective self-pair, the overlap graph stopped at the token boundaries the two encodings share, in O(n^3 log n)
+time, n the table's size; and `verifier::token_automaton()`, the token automaton of canonical byte-pair encoding over a
 merge table, built once, on which an overload of `miscovering()` decides a window certificate without building the merge
 tower. An overload of each of `merge_tower()`, `token_automaton()` and `ripple_radius()` over an alphabet of characters,
 read as their UTF-8 bytes, joined it too, so that a character-level merge table such as SentencePiece's has the tower,

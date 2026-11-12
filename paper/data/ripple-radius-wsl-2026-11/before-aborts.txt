@@ -1,0 +1,20 @@
+$ ulimit -v 12000000; /usr/bin/time -f 'wall %e s, max resident %M KiB' stdbuf -oL munch_ripple_bench gpt2-merges.txt 800
+munch ripple bench
+  commit      e9e5b450
+  table       50000 merges
+first 800: 800 merges, infinite at rank 41, 0.000 s, peak 8.1 MiB
+terminate called after throwing an instance of 'std::bad_alloc'
+  what():  std::bad_alloc
+Command terminated by signal 6
+wall 56.76 s, max resident 7305056 KiB
+exit status 134
+$ ulimit -v 12000000; /usr/bin/time -f 'wall %e s, max resident %M KiB' stdbuf -oL munch_ripple_bench gpt2-merges.txt 1600
+munch ripple bench
+  commit      e9e5b450
+  table       50000 merges
+first 1600: 1600 merges, infinite at rank 41, 0.000 s, peak 8.0 MiB
+terminate called after throwing an instance of 'std::bad_alloc'
+  what():  std::bad_alloc
+Command terminated by signal 6
+wall 67.26 s, max resident 8281652 KiB
+exit status 134

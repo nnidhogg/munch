@@ -10,9 +10,10 @@
 //
 // What it checks. For every finite answer, each witness replayed by the encoder that applies the lowest-ranked merge
 // present at its leftmost occurrence until none applies: the radius witness's origin ripple equal to the radius, and
-// the mirrored witness's mirrored quantity equal to the mirrored constant. Any failure exits 1, as does a table that
-// cannot be read, a line that is not a merge, a prefix that is not a positive whole number and a prefix longer than the
-// table.
+// the mirrored witness's mirrored quantity equal to the mirrored constant. A witness not attained exits 1, as does a
+// table that cannot be read, a line that is not a merge, a prefix that is not a positive whole number and a prefix
+// longer than the table. A prefix too large for an unsigned long long and a table ripple_radius() refuses abort the
+// process on the uncaught exception.
 //
 // What it measures. Per table: its merges, the verdict with the radius and the mirrored constant or the effective
 // self-pair's rank, the time of the one call to ripple_radius(), and the process's peak resident memory after it. The
@@ -376,7 +377,7 @@ double peak_mebibytes()
 }
 
 /**
- * @brief Decides one table, prints its line, and replays the witnesses of a finite answer.
+ * @brief Decides one table, replays the witnesses of a finite answer, and prints its line.
  * @param table The table.
  * @return True when the table is decided and a finite answer's witnesses attain its values.
  */
@@ -405,16 +406,16 @@ bool time_table(const Named_table& table)
 
     const auto& finite{std::get<Finite_ripple>(ripple)};
 
-    std::cout << std::format(
-            "{}: {} merges, radius {}, mirrored {}, {:.3f} s, peak {:.1f} MiB\n", name, merges.size(), finite.radius,
-            finite.mirrored, seconds, peak);
-
     if (!is_attained(merges, finite))
     {
         std::cerr << std::format("munch_ripple_bench: a witness of {} does not attain its value\n", name);
 
         return false;
     }
+
+    std::cout << std::format(
+            "{}: {} merges, radius {}, mirrored {}, {:.3f} s, peak {:.1f} MiB\n", name, merges.size(), finite.radius,
+            finite.mirrored, seconds, peak);
 
     return true;
 }
