@@ -415,6 +415,37 @@ if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_planner_bench COMMAND munch_planner_bench 16384 1)
 endif ()
 
+# The time and peak memory of verifier::ripple_radius() on prefixes of GPT-2's merge table, as it is and without its
+# merges of equal parts, with every finite answer's witnesses replayed on a reference encoder. The test runs it on a
+# small table written here; a collection passes gpt2-merges.txt.
+add_executable(munch_ripple_bench src/ripple_bench.cpp)
+
+add_dependencies(munch_ripple_bench munch_provenance)
+
+target_include_directories(munch_ripple_bench
+        PRIVATE
+        ${MUNCH_PROVENANCE_DIR}
+)
+
+target_link_libraries(munch_ripple_bench
+        PRIVATE
+        munch_probes
+        munch_verifier
+)
+
+if (MUNCH_BUILD_TESTS)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ripple-merges.txt "#version: 0.2\na b\nb c\na bc\nb b\n")
+    add_test(NAME munch_ripple_bench COMMAND munch_ripple_bench ${CMAKE_CURRENT_BINARY_DIR}/ripple-merges.txt 3 4)
+    # A table that is not there, refused by name.
+    add_test(NAME munch_ripple_bench_refuses_missing_table
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_ripple_bench>
+                    "cannot read the table" "" ${CMAKE_CURRENT_BINARY_DIR}/no-such-merges.txt 3)
+    # A prefix longer than the table, refused rather than measured short.
+    add_test(NAME munch_ripple_bench_refuses_a_prefix_past_the_table
+            COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/refuse.sh $<TARGET_FILE:munch_ripple_bench>
+                    "is not a prefix of the table" "" ${CMAKE_CURRENT_BINARY_DIR}/ripple-merges.txt 5)
+endif ()
+
 # Whether the certified windows of byte-pair tables are dense, by verifier::window_density(), beside the pinned-byte
 # guarantee of a finite origin radius, on the small tables of the density results and GPT-2's prefixes. The second test
 # compares the file the first writes with the committed one byte for byte.
