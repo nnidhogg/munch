@@ -1008,6 +1008,53 @@ bool certifies_no_byte(const Lexer& lexer)
     return std::ranges::none_of(std::views::iota(0, byte_count), certifies);
 }
 
+/**
+ * @brief Returns the longest anchor-free stretch over the inputs maximal munch tokenizes completely, computed from the
+ *        literals and the windows themselves rather than by any compiled machine.
+ *
+ * Every occurrence of a window anchors the position its origin names, and the stretch of an input is its longest run of
+ * positions no occurrence anchors.
+ * @param tokens The literals, non-empty and distinct.
+ * @param inventory The windows and their origins.
+ * @param inputs The inputs scanned.
+ * @return The longest stretch, zero when no input tokenizes completely.
+ */
+std::size_t longest_unanchored_run(
+        const std::vector<std::string>& tokens, const std::vector<dfa::Certified_pair>& inventory,
+        const std::vector<std::string>& inputs)
+{
+    std::size_t longest{0};
+
+    for (const auto& input : inputs)
+    {
+        if (!munch_starts(tokens, input))
+        {
+            continue;
+        }
+
+        std::vector<bool> anchored(input.size(), false);
+
+        for (const auto& [window, origin] : inventory)
+        {
+            for (auto at{input.find(window)}; at != std::string::npos; at = input.find(window, at + 1))
+            {
+                anchored[at + origin] = true;
+            }
+        }
+
+        std::size_t run{0};
+
+        for (const auto anchor : anchored)
+        {
+            run = anchor ? 0 : run + 1;
+
+            longest = std::max(longest, run);
+        }
+    }
+
+    return longest;
+}
+
 } // namespace
 
 /**
@@ -6365,6 +6412,106 @@ TEST_F(Lexer_test, A_run_token_leaves_the_window_span_unbounded_too)
     const std::vector<dfa::Certified_pair> inventory{{.window = "ba", .origin = 1}};
 
     EXPECT_FALSE(lexer.anchor_free_span(inventory).has_value());
+}
+
+TEST_F(Lexer_test, The_window_span_equals_the_longest_unanchored_run_over_every_small_literal_set)
+{
+    // Every set of one to three literals over {a, b} of length one to three, against the inventory of every window over
+    // {a, b} of length one to four that is_split_window() certifies and against each of those pairs alone. The oracle
+    // scans every input to length twelve by maximal munch over the literals themselves and takes the longest run of
+    // positions no window occurrence anchors. A bounded span must equal it, and an unbounded one must be met by a run
+    // reaching within a byte of the bound. Most bounded inventories anchor fewer bytes back than their widest window's
+    // width less one, which is where the walk's reach, the most bytes any window runs past its origin, falls short of
+    // that width; the tallies hold the universe to them.
+    constexpr std::size_t bound{12};
+
+    const auto inputs{words("ab", bound)};
+
+    const auto windows{words("ab", 4)};
+
+    std::size_t decided{0};
+
+    std::size_t bounded{0};
+
+    std::size_t short_of_width{0};
+
+    std::size_t longest{0};
+
+    for (const auto& tokens : literal_sets(words("ab", 3), 3))
+    {
+        const auto lexer{literal_lexer(tokens)};
+
+        const auto append_token{[](std::string out, const std::string& token) { return std::move(out) + token + ' '; }};
+
+        const auto name{std::ranges::fold_left(tokens, std::string{}, append_token)};
+
+        std::vector<dfa::Certified_pair> certified{};
+
+        for (const auto& window : windows)
+        {
+            if (const auto origin{lexer.is_split_window(window)})
+            {
+                certified.push_back({.window = window, .origin = *origin});
+            }
+        }
+
+        if (certified.empty())
+        {
+            continue;
+        }
+
+        std::vector<std::vector<dfa::Certified_pair>> inventories{certified};
+
+        for (const auto& pair : certified)
+        {
+            inventories.push_back({pair});
+        }
+
+        const auto last_offset{[](const dfa::Certified_pair& pair) { return pair.window.size() - 1; }};
+
+        const auto age{[](const dfa::Certified_pair& pair) { return pair.window.size() - 1 - pair.origin; }};
+
+        std::size_t index{0};
+
+        for (const auto& inventory : inventories)
+        {
+            ++index;
+
+            const auto span{lexer.anchor_free_span(inventory)};
+
+            const auto run{longest_unanchored_run(tokens, inventory, inputs)};
+
+            ++decided;
+
+            if (!span)
+            {
+                EXPECT_GE(run, bound - 1) << name << " inventory " << index;
+
+                continue;
+            }
+
+            const auto farthest{std::ranges::max(inventory | std::views::transform(last_offset))};
+
+            const auto oldest{std::ranges::max(inventory | std::views::transform(age))};
+
+            ++bounded;
+
+            if (oldest < farthest)
+            {
+                ++short_of_width;
+            }
+
+            longest = std::max(longest, *span);
+
+            EXPECT_EQ(*span, run) << name << " inventory " << index;
+        }
+    }
+
+    // 6139 inventories, 197 of them bounded, 161 of those reaching back less than their width, the longest span four.
+    EXPECT_EQ(decided, 6139U);
+    EXPECT_EQ(bounded, 197U);
+    EXPECT_EQ(short_of_width, 161U);
+    EXPECT_EQ(longest, 4U);
 }
 
 TEST_F(Lexer_test, A_nullable_token_set_leaves_the_anchor_free_span_unbounded)

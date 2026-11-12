@@ -89,10 +89,11 @@ template <typename Successors>
  * The marking is the two-part position the other decisions carry, the run of the segment being read and the runs of
  * segments already closed, kept so that a later accept on one refutes the guessed close. A window anchors a position
  * inside its occurrence, at the origin, rather than at the byte just read, so it is seen only once its last byte
- * arrives, at most the longest window's width less one bytes after the position it anchors. So the walk guesses where
+ * arrives, as many bytes after the position it anchors as the window runs past its origin. So the walk guesses where
  * the stretch begins and ends and refuses any window that anchors a position inside it: it needs to know only how far
- * back the stretch began and ended, both capped at that width, and which windows can still complete, the longest suffix
- * of the input that begins one. No byte is kept. The byte case is this with a width of one.
+ * back the stretch began and ended, both capped at the most bytes any window runs past its origin, and which windows
+ * can still complete, the longest suffix of the input that begins one. No byte is kept. The byte case is this with a
+ * width of one.
  */
 class Span_walk
 {
@@ -337,7 +338,8 @@ private:
     std::vector<std::pair<std::string, std::size_t>> inventory_{};
 
     /**
-     * @brief The longest window's width less one: how far back from its last byte a window can anchor.
+     * @brief The most bytes any window runs past its origin, its width less one less the origin: how far back from its
+     *        last byte a window can anchor.
      */
     std::size_t reach_{0};
 
@@ -376,7 +378,9 @@ Span_walk::Span_walk(const Simulator& simulator, const std::span<const Certified
 
         inventory_.emplace_back(window, origin);
 
-        reach_ = std::max(reach_, window.size() - 1);
+        const auto age{window.size() - 1 - origin};
+
+        reach_ = std::max(reach_, age);
 
         present.insert(window.begin(), window.end());
     }

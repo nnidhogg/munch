@@ -55,8 +55,8 @@ struct Certified_pair
  * A window anchors a position inside its occurrence, at the origin, rather than at the byte just read, so a position's
  * status is only settled once the rest of the window has arrived. The walk therefore guesses the stretch and refuses
  * any window that anchors inside it, carrying only how far back the stretch began and ended and which windows can still
- * complete. Its size grows with the inventory's total length and the longest window's width, not exponentially in
- * either, and no window is too long for it. The byte case is this with windows of width one.
+ * complete. Its size grows with the inventory's total length and with the most bytes any window runs past its origin,
+ * not exponentially in either, and no window is too long for it. The byte case is this with windows of width one.
  *
  * Windows matter here because a grammar that certifies no byte can still certify windows, so this can return a bound
  * where the byte version cannot. It is a question about the supplied inventory: anchors outside it are not counted, and
