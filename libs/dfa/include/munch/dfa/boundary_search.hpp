@@ -13,29 +13,29 @@
  * @file
  * @brief The decisions that ask whether some completely tokenizable input makes an event happen, and the one search
  *        that answers them: rescue(), boundary_difference(), window_occurrence(), window_counterexample(),
- *        boundary_counterexample(), crossing_counterexample() and segmentation_difference().
+ *        boundary_counterexample(), crossing_counterexample(), domain_difference() and segmentation_difference().
  *
  * Each asks after an event, a scan rolling back, two token sets cutting a shared input apart, a window occurring, a
- * certificate being failed, a window occurring with no boundary at a gap, a window occurring with one there, two token
- * sets segmenting an input differently, and all answer it the same way: the input is built byte by byte, breadth first,
- * while guessing where its tokens end, every closed segment's run kept alive because a later accept on it proves the
- * close was not the longest match. The guesses that survive are exactly the maximal-munch segmentation, which is what
- * makes guessing boundaries sound. A witness is therefore a shortest input on which the event happens, and the cap is a
- * ceiling on the states held rather than a budget spent afterwards, so an answer is always one the cap paid for and a
- * search the cap stops settles nothing, which every result reports as exhaustive rather than leaving to be inferred
- * from an empty witness.
+ * certificate being failed, a window occurring with no boundary at a gap, a window occurring with one there, one token
+ * set tokenizing an input completely that the other does not, two token sets segmenting an input differently, and all
+ * answer it the same way: the input is built byte by byte, breadth first, while guessing where its tokens end, every
+ * closed segment's run kept alive because a later accept on it proves the close was not the longest match. The guesses
+ * that survive are exactly the maximal-munch segmentation, which is what makes guessing boundaries sound. A witness is
+ * therefore a shortest input on which the event happens, and the cap is a ceiling on the states held rather than a
+ * budget spent afterwards, so an answer is always one the cap paid for and a search the cap stops settles nothing,
+ * which every result reports as exhaustive rather than leaving to be inferred from an empty witness.
  *
- * They are seven instances of one search over one key, differing only in how many scans they walk, what raises the
+ * They are eight instances of one search over one key, differing only in how many scans they walk, what raises the
  * key's mark and what else a branch's future depends on, which is why they are declared together here and implemented
  * in one unit, boundary_search.cpp: the search, its key and the moves over it are private to that file, and a decision
  * added later joins them there rather than being handed them across a header. The header reads as the tree's classes
  * do, the types first, the caps after them and the functions last, so that the results stand side by side, one shape
- * with Separation adding the half and Gap_verdict pairing two refutations under a verdict, before the seven contracts
- * that produce them, with boundary_profile() beside the two it asks at every gap of a window. The eighth relative,
- * anchor_free_span(), is not here: it walks the compiled machine rather than guessed inputs, building the graph of
- * positions the same guessed marking reaches and taking a longest anchor-free run or a cycle in it, so it has neither
- * witness nor cap and keeps its own header. The recovery queries in recovery.hpp walk the compiled machine over a given
- * tail and guess nothing.
+ * with Exclusion adding the side, Separation the half and Gap_verdict pairing two refutations under a verdict, before
+ * the eight contracts that produce them, with boundary_profile() beside the two it asks at every gap of a window. The
+ * ninth relative, anchor_free_span(), is not here: it walks the compiled machine rather than guessed inputs, building
+ * the graph of positions the same guessed marking reaches and taking a longest anchor-free run or a cycle in it, so it
+ * has neither witness nor cap and keeps its own header. The recovery queries in recovery.hpp walk the compiled machine
+ * over a given tail and guess nothing.
  */
 namespace munch::dfa
 {
@@ -212,6 +212,51 @@ struct Gap_verdict
 };
 
 /**
+ * @brief The token set that tokenizes an input completely where the other does not.
+ */
+enum class Tokenizing_side : std::size_t
+{
+    /**
+     * @brief The token set the comparison starts from tokenizes the input completely, and the scan of the other fails
+     *        on it.
+     */
+    first,
+
+    /**
+     * @brief The token set compared against tokenizes the input completely, and the scan of the one the comparison
+     *        starts from fails on it.
+     */
+    second
+};
+
+/**
+ * @brief What the search for an input exactly one of two token sets tokenizes completely found.
+ */
+struct Exclusion
+{
+    /**
+     * @brief An input one token set tokenizes completely and the other does not, the shortest one; empty when none was
+     *        found.
+     */
+    std::string witness{};
+
+    /**
+     * @brief The token set that tokenizes the witness completely; nothing when there is no witness.
+     */
+    std::optional<Tokenizing_side> side{};
+
+    /**
+     * @brief Whether both searches settled their sides of the question, each by exhausting its state space or by
+     *        finding its witness, rather than one stopping at the cap.
+     *
+     * Reported rather than inferred because an empty witness means two different things: proved the same domain when
+     * the searches exhausted, and undetermined when the cap stopped one. A caller that treats the second as the first
+     * would ship an unchecked assumption, which is the whole failure this decision exists to prevent.
+     */
+    bool exhaustive{};
+};
+
+/**
  * @brief The half of full equivalence a separating input falls in.
  *
  * Full equivalence has two halves, the domains coinciding and the segmentations agreeing on the common domain, and an
@@ -287,6 +332,12 @@ inline constexpr std::size_t counterexample_cap{1U << 20U};
  *        where the worst case is exponential in the state count.
  */
 inline constexpr std::size_t refutation_cap{1U << 20U};
+
+/**
+ * @brief The number of product states each search of domain_difference() holds before giving up unless told otherwise,
+ *        generous for the token sets a lexer carries, where the worst case is exponential in both state counts.
+ */
+inline constexpr std::size_t domain_cap{1U << 20U};
 
 /**
  * @brief The number of search states segmentation_difference() holds before giving up unless told otherwise, generous
@@ -517,6 +568,53 @@ inline constexpr std::size_t segmentation_cap{1U << 20U};
  */
 [[nodiscard]] std::vector<Gap_verdict> boundary_profile(
         const Simulator& simulator, std::string_view window, std::size_t cap = refutation_cap);
+
+/**
+ * @brief Decides whether exactly one of two token sets tokenizes some input completely, returning such an input and the
+ *        side that tokenizes it.
+ *
+ * The domain half of full equivalence, alone: do the two token sets tokenize the same inputs completely, whatever cuts
+ * they place in them? segmentation_difference() decides it together with the boundary half, which boundary_difference()
+ * decides alone, and it is the half a token set extending another asks first, whether every input the old set tokenizes
+ * the new one still does. Over {a} against {a, b} the domains differ at b, which only the second tokenizes, and over
+ * {a} against {a, aa} they coincide, every run of a, though the two cut aa apart.
+ *
+ * Decided by the same boundary-guessing search as rescue() and boundary_difference(), twice, with each set in turn on
+ * each side. One side is the complete scan: the input is built byte by byte, breadth first, with every closed segment's
+ * run kept alive, a closed run that accepts abandoning the branch, so that the surviving markings are the maximal-munch
+ * ones, and the input may end where the segment being read closes. The other is the failed scan, which follows the same
+ * scan until, at a token start, it guesses that no token begins there and reads on with the run of that segment beside
+ * its closed runs, abandoning the branch when either accepts: the segment's run accepting finds a token there after
+ * all, and a closed run accepting makes an earlier close not the longest match against the whole input. The input is a
+ * witness once the failed side has begun to fail and the complete side's last segment closes, the failed scan having
+ * read at least one byte past its last token. Neither side is determinized: a key holds a state and a set of closed
+ * runs per side and two bits, so it takes space linear in the two state counts, and the question is in polynomial
+ * space, by a nondeterministic walk that guesses the input byte by byte and holds one key at a time. The breadth-first
+ * search, which returns a shortest witness, may hold every key, and there are singly exponentially many in the two
+ * state counts, so it takes time singly exponential in them, and a shortest witness can be exponentially long: one
+ * token set beside an extension of it can be built so that the shortest input only the extension tokenizes carries a
+ * shortest word several automata accept together. The witness is the shorter of the two searches' witnesses, the first
+ * set's on a tie, one input never falling on both sides, and it is never empty, the empty input being in every domain.
+ * The cap bounds each search, and a search the cap stops leaves the whole question open, the witness the other search
+ * found included, since a shorter one may lie on the side left open. The searches start at the initial states and reach
+ * every position a scan can stand in, so the accepting states no input reaches never enter them, and a nullable token
+ * set is decided through the positive-width equivalent the simulator compiled, as every decision here is.
+ *
+ * The relation to segmentation_difference(), whose witness is the shortest marked run exactly one side accepts: every
+ * input exactly one set tokenizes is the bytes of such a run, its marking under that set, and so is every input both
+ * tokenize and cut apart, so that witness is as long as the shorter of this decision's and boundary_difference()'s. A
+ * domain witness there is therefore as long as the witness here, and an exhaustive negative there is one here as well,
+ * while a boundary witness there settles nothing here.
+ * @param simulator The compiled token set the comparison starts from.
+ * @param other The token set to compare against, compiled over the same byte alphabet.
+ * @param cap The most product states each search holds at once, a ceiling rather than a budget spent afterwards: a
+ *        state beyond it is never held, and the search gives up instead of admitting it, so an answer is always one the
+ *        cap paid for. Zero holds nothing, not even the state the search starts in, and settles nothing.
+ * @return The witness, the shortest one, the side that tokenizes it, and whether the searches settled the question; an
+ *         empty witness from an exhaustive search proves that the two token sets tokenize the same inputs completely.
+ */
+[[nodiscard]] Exclusion domain_difference(
+        const Simulator& simulator, const Simulator& other, std::size_t cap = domain_cap);
 
 /**
  * @brief Decides whether two token sets are the same segmentation function, returning an input they segment

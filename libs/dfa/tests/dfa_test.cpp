@@ -203,11 +203,13 @@ std::size_t draw(std::mt19937& sequence, const std::size_t below)
 }
 
 /**
- * @brief Lists every word over {a, b} of length one to a bound, shortest first.
+ * @brief Lists every word over an alphabet of length one to a bound, shortest first and in the alphabet's order among
+ *        equally long ones.
+ * @param alphabet The letters, in the order the words take them.
  * @param longest The bound.
  * @return The words.
  */
-std::vector<std::string> ab_words(const std::size_t longest)
+std::vector<std::string> words(const std::string_view alphabet, const std::size_t longest)
 {
     std::vector<std::string> out{};
 
@@ -219,7 +221,7 @@ std::vector<std::string> ab_words(const std::size_t longest)
 
         for (const auto& prefix : layer)
         {
-            for (const auto byte : std::string_view{"ab"})
+            for (const auto byte : alphabet)
             {
                 next.push_back(prefix + byte);
             }
@@ -428,6 +430,304 @@ Simulator six_state_shape()
     builder.add_transition(q4, Label{'a'}, q5);
 
     return Simulator{builder.build()};
+}
+
+/**
+ * @brief A complete automaton over {0, 1}, one of the automata whose intersection paper four's reductions ask about.
+ */
+struct Binary_automaton
+{
+    /**
+     * @brief Each state's successors on 0 and on 1; state zero is the initial one.
+     */
+    std::vector<std::array<std::size_t, 2>> next{};
+
+    /**
+     * @brief Whether each state accepts.
+     */
+    std::vector<bool> accepting{};
+};
+
+/**
+ * @brief Draws a complete automaton over {0, 1}: one to four states, each byte leading from each to a random one of
+ *        them, and each state accepting with probability one half.
+ * @param sequence The sequence the automaton is drawn from.
+ * @return The automaton.
+ */
+Binary_automaton random_binary_automaton(std::mt19937& sequence)
+{
+    const auto states{draw(sequence, 4) + 1};
+
+    Binary_automaton automaton{};
+
+    for (std::size_t state{0}; state < states; ++state)
+    {
+        const auto on_zero{draw(sequence, states)};
+
+        const auto on_one{draw(sequence, states)};
+
+        automaton.next.push_back({on_zero, on_one});
+
+        automaton.accepting.push_back(draw(sequence, 2) == 0);
+    }
+
+    return automaton;
+}
+
+/**
+ * @brief Returns a shortest word over {0, 1} every automaton accepts, by a breadth-first walk of their product.
+ * @param automata The automata.
+ * @return The word, or std::nullopt when their intersection is empty.
+ */
+std::optional<std::string> shortest_common_word(const std::vector<Binary_automaton>& automata)
+{
+    const std::vector<std::size_t> start(automata.size(), 0);
+
+    std::map<std::vector<std::size_t>, std::string> seen{{start, ""}};
+
+    std::vector<std::vector<std::size_t>> frontier{start};
+
+    for (std::size_t at{0}; at < frontier.size(); ++at)
+    {
+        const auto states{frontier[at]};
+
+        const auto word{seen.at(states)};
+
+        const auto accepts{[&](const std::size_t index) { return automata[index].accepting[states[index]]; }};
+
+        const auto accepted{std::ranges::all_of(std::views::iota(std::size_t{0}, automata.size()), accepts)};
+
+        if (accepted)
+        {
+            return word;
+        }
+
+        for (std::size_t bit{0}; bit < 2; ++bit)
+        {
+            std::vector<std::size_t> moved{};
+
+            for (std::size_t index{0}; index < automata.size(); ++index)
+            {
+                moved.push_back(automata[index].next[states[index]][bit]);
+            }
+
+            const auto longer{word + static_cast<char>('0' + bit)};
+
+            const auto [entry, inserted]{seen.try_emplace(moved, longer)};
+
+            if (inserted)
+            {
+                frontier.push_back(moved);
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief Builds one side of paper four's reductions from intersection non-emptiness over automata A_1 to A_m.
+ *
+ * Both sides hold 0, 1, x and the testers x^i y $ for 1 <= i <= m and y a word over {0, 1} that A_i rejects. For the
+ * domain question the extension adds x^m y $ for every y; for the boundary question both sides hold $! as well and the
+ * extension adds the wrappers x^m y $! for every y. The table is a chain of m states for the x, the first accepting, a
+ * copy of every A_i behind its link of the chain, and the states the $ and the ! lead to.
+ * @param automata The automata A_1 to A_m, at least one.
+ * @param boundary Whether the sides are the boundary question's rather than the domain question's.
+ * @param extension Whether the side is the extension, the second token set, rather than the first.
+ * @return The compiled token set.
+ */
+Simulator reduction_side(const std::vector<Binary_automaton>& automata, const bool boundary, const bool extension)
+{
+    Builder builder{};
+
+    const auto root{builder.init_state()};
+
+    const auto digit{builder.next_state()};
+
+    builder.add_accept_state(digit, Token{1});
+    builder.add_transition(root, Label{'0'}, digit);
+    builder.add_transition(root, Label{'1'}, digit);
+
+    std::vector<Dfa::State_t> chain{};
+
+    for (std::size_t link{0}; link < automata.size(); ++link)
+    {
+        chain.push_back(builder.next_state());
+    }
+
+    builder.add_accept_state(chain.front(), Token{2});
+    builder.add_transition(root, Label{'x'}, chain.front());
+
+    for (std::size_t link{1}; link < chain.size(); ++link)
+    {
+        builder.add_transition(chain[link - 1], Label{'x'}, chain[link]);
+    }
+
+    const auto tester{builder.next_state()};
+
+    builder.add_accept_state(tester, Token{3});
+
+    // A wrapper's $ leads to a state accepting the tester and one not, both of which ! takes to the wrapper's end; no
+    // byte reaches them but on the boundary question's extension.
+    const auto wrapper_tester{builder.next_state()};
+
+    const auto wrapper_prefix{builder.next_state()};
+
+    const auto wrapper{builder.next_state()};
+
+    builder.add_accept_state(wrapper_tester, Token{3});
+    builder.add_accept_state(wrapper, Token{4});
+    builder.add_transition(wrapper_tester, Label{'!'}, wrapper);
+    builder.add_transition(wrapper_prefix, Label{'!'}, wrapper);
+
+    if (boundary)
+    {
+        const auto dollar{builder.next_state()};
+
+        const auto bang{builder.next_state()};
+
+        builder.add_accept_state(bang, Token{5});
+        builder.add_transition(root, Label{'$'}, dollar);
+        builder.add_transition(dollar, Label{'!'}, bang);
+    }
+
+    for (std::size_t index{0}; index < automata.size(); ++index)
+    {
+        const auto& [next, accepting]{automata[index]};
+
+        const auto top{extension && index + 1 == automata.size()};
+
+        std::vector<Dfa::State_t> copy{};
+
+        for (std::size_t state{0}; state < next.size(); ++state)
+        {
+            copy.push_back(builder.next_state());
+        }
+
+        // The $ after y ends a tester when A_i rejects y, and on the extension's top link it ends x^m y $ for every y
+        // or, for the boundary question, opens a wrapper.
+        const auto dollar_from{[&](const Dfa::State_t from, const std::size_t state) {
+            const auto rejects{!accepting[state]};
+
+            if (top && boundary)
+            {
+                builder.add_transition(from, Label{'$'}, rejects ? wrapper_tester : wrapper_prefix);
+            }
+            else if (top || rejects)
+            {
+                builder.add_transition(from, Label{'$'}, tester);
+            }
+        }};
+
+        dollar_from(chain[index], 0);
+
+        for (std::size_t bit{0}; bit < 2; ++bit)
+        {
+            const auto symbol{static_cast<char>('0' + bit)};
+
+            builder.add_transition(chain[index], Label{symbol}, copy[next[0][bit]]);
+
+            for (std::size_t state{0}; state < next.size(); ++state)
+            {
+                builder.add_transition(copy[state], Label{symbol}, copy[next[state][bit]]);
+            }
+        }
+
+        for (std::size_t state{0}; state < next.size(); ++state)
+        {
+            dollar_from(copy[state], state);
+        }
+    }
+
+    return Simulator{builder.build()};
+}
+
+/**
+ * @brief Builds the finite token set of the chosen words among a, b, aa, ab, ba and bb, as a trie.
+ * @param chosen One bit per word, in that order.
+ * @return The compiled token set, accepting nothing when no word is chosen.
+ */
+Simulator short_words(const std::size_t chosen)
+{
+    constexpr std::array<std::string_view, 6> candidates{"a", "b", "aa", "ab", "ba", "bb"};
+
+    Builder builder{};
+
+    std::map<std::string, Dfa::State_t, std::less<>> nodes{{"", builder.init_state()}};
+
+    for (std::size_t index{0}; index < candidates.size(); ++index)
+    {
+        if (((chosen >> index) & 1U) == 0)
+        {
+            continue;
+        }
+
+        const auto word{candidates[index]};
+
+        for (std::size_t length{1}; length <= word.size(); ++length)
+        {
+            const auto prefix{std::string{word.substr(0, length)}};
+
+            if (nodes.contains(prefix))
+            {
+                continue;
+            }
+
+            const auto node{builder.next_state()};
+
+            const auto parent{nodes.find(word.substr(0, length - 1))};
+
+            const auto& [parent_prefix, parent_state]{*parent};
+
+            builder.add_transition(parent_state, Label{word[length - 1]}, node);
+
+            nodes.emplace(prefix, node);
+        }
+
+        const auto& [word_prefix, word_state]{*nodes.find(word)};
+
+        builder.add_accept_state(word_state, Token{1});
+    }
+
+    return Simulator{builder.build()};
+}
+
+/**
+ * @brief Returns the length of the shortest input among those given that each token set alone tokenizes completely,
+ *        read off the maximal-munch scans of it under both.
+ * @param simulator The token set the comparison starts from.
+ * @param other The token set compared against.
+ * @param inputs The inputs, none of them empty.
+ * @return The two lengths, the first set's first, zero for a side no input given falls on.
+ */
+std::array<std::size_t, 2> shortest_exclusions(
+        const Simulator& simulator, const Simulator& other, const std::vector<std::string>& inputs)
+{
+    std::array<std::size_t, 2> shortest{};
+
+    for (const auto& input : inputs)
+    {
+        const auto mine{token_starts(simulator, input).has_value()};
+
+        const auto theirs{token_starts(other, input).has_value()};
+
+        if (mine == theirs)
+        {
+            continue;
+        }
+
+        const auto side{mine ? Tokenizing_side::first : Tokenizing_side::second};
+
+        auto& length{shortest[std::to_underlying(side)]};
+
+        if (length == 0 || input.size() < length)
+        {
+            length = input.size();
+        }
+    }
+
+    return shortest;
 }
 
 } // namespace
@@ -2741,9 +3041,9 @@ TEST(Dfa_test, Boundary_profile_over_random_tables_is_absent_everywhere_or_nowhe
     // the window occurs in no input or in one inside the bound, absent is exactly where the oracle saw no occurrence.
     std::mt19937 sequence{0x5EEDU};
 
-    const auto windows{ab_words(3)};
+    const auto windows{words("ab", 3)};
 
-    const auto inputs{ab_words(oracle_bound)};
+    const auto inputs{words("ab", oracle_bound)};
 
     std::map<Gap, std::size_t> tally{};
 
@@ -2990,6 +3290,270 @@ TEST(Dfa_test, Segmentation_difference_separates_two_token_sets_by_domain_or_by_
     EXPECT_FALSE(capped_settled);
     EXPECT_TRUE(capped.empty());
     EXPECT_FALSE(capped_half.has_value());
+}
+
+TEST(Dfa_test,
+     Domain_difference_finds_an_input_one_token_set_tokenizes_and_the_other_does_not_or_proves_the_domains_one)
+{
+    // Finite token sets over {a, b} and one nullable set: {a} and {aa} differ at a, which only {a} tokenizes, {a} and
+    // {a, b} at b, which only {a, b} does, and {a} and {a, aa} not at all, every run of a tokenizing under both, though
+    // the two cut aa apart. The nullable a* is decided through its positive-width equivalent a+, whose domain is {a}'s.
+    const auto single{short_words(0b1U)};
+    const auto letters{short_words(0b11U)};
+    const auto pair{short_words(0b100U)};
+    const auto both{short_words(0b101U)};
+
+    Builder star{};
+
+    const auto q0{star.init_state()};
+
+    star.add_accept_state(q0, Token{1});
+    star.add_transition(q0, Label{'a'}, q0);
+
+    const Simulator nullable{star.build()};
+
+    const auto expect{[](const Exclusion& decided, const std::string_view witness,
+                         const std::optional<Tokenizing_side> side, const std::string_view label) {
+        const auto& [found, found_side, exhaustive]{decided};
+
+        EXPECT_TRUE(exhaustive) << label;
+        EXPECT_EQ(found, witness) << label;
+        EXPECT_EQ(found_side, side) << label;
+    }};
+
+    expect(domain_difference(single, pair), "a", Tokenizing_side::first, "{a} against {aa}");
+    expect(domain_difference(pair, single), "a", Tokenizing_side::second, "{aa} against {a}");
+    expect(domain_difference(single, letters), "b", Tokenizing_side::second, "{a} against {a, b}");
+    expect(domain_difference(single, both), "", std::nullopt, "{a} against {a, aa}");
+    expect(domain_difference(both, both), "", std::nullopt, "{a, aa} against itself");
+    expect(domain_difference(nullable, single), "", std::nullopt, "a* against {a}");
+    expect(domain_difference(nullable, pair), "a", Tokenizing_side::first, "a* against {aa}");
+
+    const auto [cut_apart, cut_apart_settled]{boundary_difference(single, both)};
+
+    EXPECT_TRUE(cut_apart_settled);
+    EXPECT_EQ(cut_apart, "aa");
+
+    // Zero holds nothing, not even the state the search starts in, and settles nothing.
+    const auto [none, no_side, settled]{domain_difference(single, pair, 0)};
+
+    EXPECT_FALSE(settled);
+    EXPECT_TRUE(none.empty());
+    EXPECT_FALSE(no_side.has_value());
+
+    // Under a cap of one the first search finds a on the start's first byte, while the second must admit a key past it:
+    // the witness is withheld, the question left open.
+    const auto [withheld, withheld_side, withheld_settled]{domain_difference(single, pair, 1)};
+
+    EXPECT_FALSE(withheld_settled);
+    EXPECT_TRUE(withheld.empty());
+    EXPECT_FALSE(withheld_side.has_value());
+}
+
+TEST(Dfa_test, Domain_difference_returns_the_shortest_input_one_token_set_tokenizes_as_enumerating_inputs_finds_it)
+{
+    // The decision against an oracle that enumerates every input to a bound and scans each by maximal munch under both
+    // token sets: over every ordered pair of the 64 finite token sets of words among a, b, aa, ab, ba and bb, over
+    // pairs of random tables, and over paper four's two reductions from intersection non-emptiness at m of one to four
+    // automata of one to four states, the second token set extending the first. Wherever the oracle sees a witness
+    // inside its bound the decision returns one as short, on the side the oracle's shortest falls on, the first set's
+    // when both sides have one that short; where it sees none the decision's witness is empty or longer than the bound.
+    // Every witness replays, the side tokenizing it completely and the other's scan failing on it,
+    // segmentation_difference()'s witness is as long as the shorter of this one and boundary_difference()'s, and on the
+    // domain reduction a witness exists exactly when the automata share a word y, as long as x^m y $ for a shortest
+    // one, and only the extension tokenizes it.
+    std::mt19937 sequence{0xD0A1U};
+
+    std::map<std::optional<Tokenizing_side>, std::size_t> tally{};
+
+    std::size_t stopped{0};
+
+    std::size_t inside{0};
+
+    std::array<std::size_t, 2> shared{};
+
+    const auto check{[&](const Simulator& simulator, const Simulator& other, const std::vector<std::string>& inputs,
+                         const std::size_t bound, const std::string& label) {
+        const auto decided{domain_difference(simulator, other)};
+
+        const auto& [witness, side, exhaustive]{decided};
+
+        ++tally[side];
+
+        EXPECT_TRUE(exhaustive) << label;
+        EXPECT_EQ(witness.empty(), !side.has_value()) << label;
+
+        const auto [first_length, second_length]{shortest_exclusions(simulator, other, inputs)};
+
+        if (first_length > 0 || second_length > 0)
+        {
+            ++inside;
+
+            const auto first_wins{first_length > 0 && (second_length == 0 || first_length <= second_length)};
+
+            const auto expected_side{first_wins ? Tokenizing_side::first : Tokenizing_side::second};
+
+            EXPECT_EQ(side, expected_side) << label;
+            EXPECT_EQ(witness.size(), first_wins ? first_length : second_length) << label;
+        }
+        else
+        {
+            EXPECT_TRUE(witness.empty() || witness.size() > bound) << label;
+        }
+
+        if (!witness.empty())
+        {
+            const auto mine{token_starts(simulator, witness).has_value()};
+
+            const auto theirs{token_starts(other, witness).has_value()};
+
+            EXPECT_EQ(mine, side == Tokenizing_side::first) << label;
+            EXPECT_EQ(theirs, side == Tokenizing_side::second) << label;
+        }
+
+        const auto [separating, half, separated]{segmentation_difference(simulator, other)};
+
+        const auto [cut_apart, cut_apart_settled]{boundary_difference(simulator, other)};
+
+        EXPECT_TRUE(separated && cut_apart_settled) << label;
+        EXPECT_EQ(separating.empty(), witness.empty() && cut_apart.empty()) << label;
+
+        // The shortest marked run exactly one side accepts is as long as the shorter witness of the two halves.
+        std::vector<std::size_t> lengths{};
+
+        for (const auto found : {std::string_view{witness}, std::string_view{cut_apart}})
+        {
+            if (!found.empty())
+            {
+                lengths.push_back(found.size());
+            }
+        }
+
+        if (!separating.empty() && !lengths.empty())
+        {
+            EXPECT_EQ(separating.size(), std::ranges::min(lengths)) << label;
+        }
+
+        if (half == Separation_half::domain)
+        {
+            EXPECT_EQ(witness.size(), separating.size()) << label;
+        }
+
+        return decided;
+    }};
+
+    // A search a small cap stops settles nothing, and one it does not stop answers as the uncapped search does.
+    const auto check_capped{[&](const Simulator& simulator, const Simulator& other, const Exclusion& decided,
+                                const std::string& label) {
+        constexpr std::size_t largest_small_cap{32};
+
+        const auto cap{draw(sequence, largest_small_cap) + 1};
+
+        const auto [witness, side, exhaustive]{domain_difference(simulator, other, cap)};
+
+        if (!exhaustive)
+        {
+            ++stopped;
+
+            EXPECT_TRUE(witness.empty()) << label << " cap " << cap;
+            EXPECT_FALSE(side.has_value()) << label << " cap " << cap;
+
+            return;
+        }
+
+        EXPECT_EQ(witness, decided.witness) << label << " cap " << cap;
+        EXPECT_EQ(side, decided.side) << label << " cap " << cap;
+    }};
+
+    const auto ab_inputs{words("ab", oracle_bound)};
+
+    constexpr std::size_t short_word_sets{64};
+
+    for (std::size_t mine{0}; mine < short_word_sets; ++mine)
+    {
+        const auto simulator{short_words(mine)};
+
+        for (std::size_t theirs{0}; theirs < short_word_sets; ++theirs)
+        {
+            std::ignore = check(
+                    simulator, short_words(theirs), ab_inputs, oracle_bound, std::format("words {} {}", mine, theirs));
+        }
+    }
+
+    constexpr std::size_t random_pairs{1000};
+
+    for (std::size_t pair{0}; pair < random_pairs; ++pair)
+    {
+        const auto simulator{random_table(sequence)};
+
+        const auto other{random_table(sequence)};
+
+        const auto label{std::format("tables {}", pair)};
+
+        const auto decided{check(simulator, other, ab_inputs, oracle_bound, label)};
+
+        check_capped(simulator, other, decided, label);
+    }
+
+    constexpr std::size_t reduction_bound{6};
+
+    const auto domain_inputs{words("01x$", reduction_bound)};
+
+    const auto boundary_inputs{words("01x!$", reduction_bound - 1)};
+
+    constexpr std::size_t instances{400};
+
+    for (std::size_t instance{0}; instance < instances; ++instance)
+    {
+        std::vector<Binary_automaton> automata(draw(sequence, 4) + 1);
+
+        for (auto& automaton : automata)
+        {
+            automaton = random_binary_automaton(sequence);
+        }
+
+        const auto common{shortest_common_word(automata)};
+
+        ++shared[common ? 1 : 0];
+
+        const auto label{std::format("reduction {}", instance)};
+
+        const auto domain_first{reduction_side(automata, false, false)};
+
+        const auto domain_extension{reduction_side(automata, false, true)};
+
+        const auto [witness, side, exhaustive]{
+                check(domain_first, domain_extension, domain_inputs, reduction_bound, label + " domain")};
+
+        EXPECT_EQ(!witness.empty(), common.has_value()) << label;
+
+        if (common)
+        {
+            EXPECT_EQ(witness.size(), automata.size() + common->size() + 1) << label;
+            EXPECT_EQ(side, Tokenizing_side::second) << label;
+        }
+
+        const auto boundary_first{reduction_side(automata, true, false)};
+
+        const auto boundary_extension{reduction_side(automata, true, true)};
+
+        std::ignore =
+                check(boundary_first, boundary_extension, boundary_inputs, reduction_bound - 1, label + " boundary");
+    }
+
+    // Both sides and none reached, the oracle's bound reached by some witness, reductions over automata sharing a word
+    // and over automata sharing none, and some search stopped by a small cap.
+    for (const auto side :
+         {std::optional{Tokenizing_side::first}, std::optional{Tokenizing_side::second},
+          std::optional<Tokenizing_side>{}})
+    {
+        EXPECT_GT(tally[side], 0U);
+    }
+
+    EXPECT_GT(inside, 0U);
+    EXPECT_GT(shared[0], 0U);
+    EXPECT_GT(shared[1], 0U);
+    EXPECT_GT(stopped, 0U);
 }
 
 TEST(Dfa_test, Has_split_points_ignoring_holds_wherever_the_exact_test_does_and_on_the_sets_the_relaxation_rescues)

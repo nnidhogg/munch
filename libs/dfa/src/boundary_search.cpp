@@ -66,10 +66,11 @@ struct Position
  * branch once the whole window has been read; window_counterexample() walks the same matcher and marks a branch once
  * the whole window has been read with the covering token beginning elsewhere than the origin; boundary_counterexample()
  * and crossing_counterexample() walk it too and mark a branch once the gap has been settled with no boundary there, or
- * with one; segmentation_difference() walks two scans over one guessed marking, either of them dead, and marks nothing,
- * its event ending the input where it happens. The matcher's progress and the origin bit are the two things besides the
- * scans a future depends on, so they are in the key, zero and clear for the decisions that match nothing or ask no
- * origin.
+ * with one; domain_difference() walks two, the second guessed to fail, with the origin bit recording whether that scan
+ * stands at a token start, where it may begin to fail, and marks a branch once it has; segmentation_difference() walks
+ * two scans over one guessed marking, either of them dead, and marks nothing, its event ending the input where it
+ * happens. The matcher's progress and the origin bit are the two things besides the scans a future depends on, so they
+ * are in the key, zero and clear for the decisions that match nothing or ask no origin.
  */
 struct Key
 {
@@ -90,7 +91,7 @@ struct Key
 
     /**
      * @brief The origin bit: whether the latest token start sits at the origin, or for a gap claim whether the gap is a
-     *        boundary.
+     *        boundary, or for domain_difference() whether the scan guessed to fail stands at a token start.
      */
     bool at_origin{};
 
@@ -214,6 +215,42 @@ void dedup(std::vector<State_t>& states)
 }
 
 /**
+ * @brief Advances the closed runs of a position by one byte.
+ * @param simulator The compiled token set the position scans.
+ * @param closed The closed runs, advanced in place.
+ * @param byte The byte read.
+ * @return False abandons the branch: a closed run accepted and the marking is not the greedy one. True leaves in closed
+ *         exactly the runs that survived the byte.
+ */
+[[nodiscard]] bool advance_closed(const Simulator& simulator, std::vector<State_t>& closed, const unsigned char byte)
+{
+    std::vector<State_t> survived{};
+
+    for (const auto state : closed)
+    {
+        const auto moved{simulator.step(state, byte)};
+
+        if (!moved)
+        {
+            continue;
+        }
+
+        if (simulator.is_accepting(*moved))
+        {
+            return false;
+        }
+
+        survived.push_back(static_cast<State_t>(*moved));
+    }
+
+    dedup(survived);
+
+    closed = std::move(survived);
+
+    return true;
+}
+
+/**
  * @brief Advances a position by one byte.
  * @param simulator The compiled token set the position scans.
  * @param position The position, advanced in place.
@@ -233,30 +270,7 @@ void dedup(std::vector<State_t>& states)
 
     position.reading = *next;
 
-    std::vector<State_t> survived{};
-
-    for (const auto state : position.closed)
-    {
-        const auto moved{simulator.step(state, byte)};
-
-        if (!moved)
-        {
-            continue;
-        }
-
-        if (simulator.is_accepting(*moved))
-        {
-            return false;
-        }
-
-        survived.push_back(static_cast<State_t>(*moved));
-    }
-
-    dedup(survived);
-
-    position.closed = std::move(survived);
-
-    return true;
+    return advance_closed(simulator, position.closed, byte);
 }
 
 /**
@@ -284,6 +298,37 @@ void dedup(std::vector<State_t>& states)
 [[nodiscard]] Position initial(const Simulator& simulator)
 {
     return {.reading = simulator.init_state(), .closed = {}};
+}
+
+/**
+ * @brief Advances by one byte the position of a scan guessed to fail: the closed runs as advance() moves them, and the
+ *        run of the segment at which the scan finds no token, which may die and then stands in the state one past the
+ *        table, where it stays.
+ * @param simulator The compiled token set the position scans.
+ * @param position The position, advanced in place.
+ * @param byte The byte read.
+ * @return False abandons the branch: either the failing segment's run accepted, so the scan finds a token there after
+ *         all, or a closed run accepted and the marking is not the greedy one. True leaves in closed exactly the runs
+ *         that survived the byte.
+ */
+[[nodiscard]] bool fail(const Simulator& simulator, Position& position, const unsigned char byte)
+{
+    // The dead run stands in the state one past the table, as a dead side of the marked-language product does.
+    const auto nowhere{simulator.state_count()};
+
+    if (position.reading != nowhere)
+    {
+        const auto next{simulator.step(position.reading, byte)};
+
+        if (next && simulator.is_accepting(*next))
+        {
+            return false;
+        }
+
+        position.reading = next.value_or(nowhere);
+    }
+
+    return advance_closed(simulator, position.closed, byte);
 }
 
 /**
@@ -659,6 +704,95 @@ template <typename Result>
     return Gap::may;
 }
 
+/**
+ * @brief Runs the search domain_difference() asks in each order: an input one token set tokenizes completely and the
+ *        scan of the other fails on.
+ *
+ * The key holds two scans, the complete side's first, the origin bit recording whether the failed side stands at a
+ * token start, set at the input's start and at each of its closes, and the mark whether the failed side has begun to
+ * fail. The complete side is the scan of rescue() and boundary_difference(), closing where its segment accepts. Before
+ * its mark the failed side is the same scan, and at a token start it may also begin to fail, reading on from there with
+ * fail(), whose run of the failing segment starts at the initial state the token start stands in; after its mark it
+ * fails on. The input may end once the failed side has begun to fail and the complete side's segment closes on the
+ * byte, the closed runs of both sides still alive never having accepted, as every kept branch requires.
+ * @param complete The token set that tokenizes the witness completely.
+ * @param failed The token set whose scan fails on the witness.
+ * @param cap The most search states to hold at once, as search() reads it.
+ * @return The witness, the shortest input the one tokenizes completely and the other does not, and whether the search
+ *         settled the question.
+ */
+[[nodiscard]] Outcome exclusion_search(const Simulator& complete, const Simulator& failed, const std::size_t cap)
+{
+    // The input's start is a token start of the failed side, which may fail from its first byte.
+    const Key start{.scans = {initial(complete), initial(failed)}, .matched = 0, .at_origin = true, .marked = false};
+
+    // One buffer for the whole search: cleared per byte, handed back as the step's view.
+    std::vector<Key> successors{};
+
+    const auto expand{[&](const Key& at, const unsigned char byte) -> Step {
+        successors.clear();
+
+        auto whole{at.scans[0]};
+
+        if (!advance(complete, whole, byte))
+        {
+            return {.successors = successors, .ends = false};
+        }
+
+        const auto whole_closes{complete.is_accepting(whole.reading)};
+
+        // Each failed-side move goes beside the complete side, without a close and, where it may close, with one.
+        const auto beside{[&](const Position& theirs, const bool at_start, const bool marked) {
+            successors.push_back(Key{.scans = {whole, theirs}, .matched = 0, .at_origin = at_start, .marked = marked});
+
+            if (whole_closes)
+            {
+                const auto closed{close(complete, whole)};
+
+                successors.push_back(
+                        Key{.scans = {closed, theirs}, .matched = 0, .at_origin = at_start, .marked = marked});
+            }
+        }};
+
+        // A side that has begun to fail fails on, and one standing at a token start may begin to here.
+        auto failing{at.scans[1]};
+
+        if ((at.marked || at.at_origin) && fail(failed, failing, byte))
+        {
+            if (whole_closes)
+            {
+                return {.successors = successors, .ends = true};
+            }
+
+            beside(failing, false, true);
+        }
+
+        if (at.marked)
+        {
+            return {.successors = successors, .ends = false};
+        }
+
+        // A side that has not begun to fail scans on, without a close and, where its segment accepts, with one.
+        auto going{at.scans[1]};
+
+        if (!advance(failed, going, byte))
+        {
+            return {.successors = successors, .ends = false};
+        }
+
+        beside(going, false, false);
+
+        if (failed.is_accepting(going.reading))
+        {
+            beside(close(failed, going), true, false);
+        }
+
+        return {.successors = successors, .ends = false};
+    }};
+
+    return search(start, cap, expand);
+}
+
 } // namespace
 
 Rescue rescue(const Simulator& simulator, const std::size_t cap)
@@ -881,6 +1015,42 @@ std::vector<Gap_verdict> boundary_profile(
     }
 
     return profile;
+}
+
+Exclusion domain_difference(const Simulator& simulator, const Simulator& other, const std::size_t cap)
+{
+    // One search per side: the inputs the first set tokenizes completely and the second fails on, then the reverse. A
+    // search the cap stops leaves the question open, a shorter witness possibly lying on its side.
+    const Exclusion unsettled{.witness = {}, .side = std::nullopt, .exhaustive = false};
+
+    auto [first, first_settled]{exclusion_search(simulator, other, cap)};
+
+    if (!first_settled)
+    {
+        return unsettled;
+    }
+
+    auto [second, second_settled]{exclusion_search(other, simulator, cap)};
+
+    if (!second_settled)
+    {
+        return unsettled;
+    }
+
+    if (first.empty() && second.empty())
+    {
+        return {.witness = {}, .side = std::nullopt, .exhaustive = true};
+    }
+
+    // The shorter witness, the first set's on a tie; no input is a witness on both sides.
+    const auto first_wins{second.empty() || (!first.empty() && first.size() <= second.size())};
+
+    if (first_wins)
+    {
+        return {.witness = std::move(first), .side = Tokenizing_side::first, .exhaustive = true};
+    }
+
+    return {.witness = std::move(second), .side = Tokenizing_side::second, .exhaustive = true};
 }
 
 Separation segmentation_difference(const Simulator& simulator, const Simulator& other, const std::size_t cap)

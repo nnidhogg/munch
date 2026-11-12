@@ -523,6 +523,29 @@ else if (difference.witness.empty()) { /* proved: the two cut every shared input
 else { /* difference.witness is an input they cut differently */ }
 ```
 
+`domain_difference(other)` asks about the inputs alone, whatever cuts the two token sets place in them: does every input
+one set tokenizes completely also tokenize under the other? It is the question a token set extending another asks first,
+and it is decided without determinizing either side. The same boundary-guessing search runs twice, each set's complete
+scan beside the other's scan guessed to fail, which follows the scan until, at a token start, it guesses that no token
+begins there and reads on, abandoning the guess if the run from there ever accepts, its closed runs still held to
+maximal munch against the whole input. A search state holds a state and a set of closed runs per side and two bits, so
+the question is in polynomial space; the breadth-first search, which returns a shortest witness, takes time singly
+exponential in the two state counts, and a shortest witness can be exponentially long. The witness comes with the side
+that tokenizes it: over `{a}` against `{a, b}` it is `b`, which only the second tokenizes, and over `{a}` against `{a,
+aa}` there is none, every run of `a` tokenizing under both, though `boundary_difference()` returns `aa`.
+`segmentation_difference()` below decides this question and `boundary_difference()`'s together, and its witness is as
+long as the shorter of their two witnesses. The cap bounds each of the two searches, and one it stops leaves the
+question open:
+
+```cpp
+const auto [witness, side, exhaustive]{old_lexer.domain_difference(new_lexer)};
+
+if (!exhaustive) { /* a search hit its cap: undetermined, not the same domain */ }
+else if (witness.empty()) { /* proved: the two tokenize the same inputs completely */ }
+else if (side == dfa::Tokenizing_side::first) { /* old_lexer tokenizes the witness, new_lexer fails on it */ }
+else { /* new_lexer tokenizes the witness, old_lexer fails on it */ }
+```
+
 `segmentation_difference(other)` asks the whole question: are the two token sets the same segmentation function, the
 same inputs tokenized completely and every one of them cut alike? A token set's segmentation function is the set of
 marked runs its scan accepts, an input's bytes each with or without a boundary after it, one marking per input of the
@@ -544,9 +567,9 @@ else if (half == dfa::Separation_half::domain) { /* one set tokenizes the witnes
 else { /* both tokenize the witness and cut it differently */ }
 ```
 
-These six decisions and `rescue()` under Error Recovery are declared together in `munch/dfa/boundary_search.hpp`, seven
-instances of one search over guessed token boundaries, with `boundary_profile()` beside the two it asks at every gap,
-and each is forwarded by `core::Lexer`.
+These seven decisions and `rescue()` under Error Recovery are declared together in `munch/dfa/boundary_search.hpp`,
+eight instances of one search over guessed token boundaries, with `boundary_profile()` beside the two it asks at every
+gap, and each is forwarded by `core::Lexer`.
 
 The searches above decide questions about one token set's scan. `munch/verifier/verifier.hpp` states the object they are
 questions about, so that the same decisions can be made about any segmentation a finite automaton recognizes.

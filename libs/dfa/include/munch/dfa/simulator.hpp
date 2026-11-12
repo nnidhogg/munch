@@ -63,7 +63,7 @@ namespace munch::dfa
  * Beside the scan, the class carries what construction derives: the byte certificates and the mandatory window core.
  * The decisions built on the compiled machine live beside it as free functions over its read-only view, state_count()
  * through is_live(): is_split_window() in split_window.hpp, the recovery decisions in recovery.hpp, anchor_free_span()
- * in the header of its name and the five boundary-guessing decisions, rescue() through segmentation_difference(), in
+ * in the header of its name and the boundary-guessing decisions, rescue() through segmentation_difference(), in
  * boundary_search.hpp, so that the machine and each decision can be read on their own and a new decision adds nothing
  * here.
  */

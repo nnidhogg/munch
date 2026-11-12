@@ -810,6 +810,27 @@ public:
     }
 
     /**
+     * @brief Decides whether exactly one of the two token sets tokenizes some input completely, with a witness and the
+     *        side that tokenizes it.
+     *
+     * The domain half of full equivalence, alone, the half a token set extending another asks first: does every input
+     * the old set tokenizes still tokenize under the new one, and the reverse? Decided without determinizing either
+     * side, by the same boundary-guessing search as boundary_difference() run twice, each set's complete scan beside
+     * the other's scan guessed to fail, so the question is in polynomial space and the search takes time singly
+     * exponential in the two state counts, and a shortest witness can be exponentially long. Over {a} against {a, b}
+     * the witness is b, which only the second tokenizes; over {a} against {a, aa} there is none, though the two cut aa
+     * apart. The derivation is dfa::domain_difference()'s.
+     * @param other The lexer to compare against.
+     * @param cap The largest number of product states each search holds before giving up, dfa::domain_cap unless told.
+     * @return The witness, the side that tokenizes it, and whether the searches settled the question; an empty witness
+     *         from an exhaustive search proves that the two token sets tokenize the same inputs completely.
+     */
+    [[nodiscard]] dfa::Exclusion domain_difference(const Lexer& other, const std::size_t cap = dfa::domain_cap) const
+    {
+        return dfa::domain_difference(simulator_, other.simulator_, cap);
+    }
+
+    /**
      * @brief Decides whether another token set is a different segmentation function, with an input the two segment
      *        differently and the half it falls in.
      *

@@ -5976,6 +5976,67 @@ TEST_F(Lexer_test, Segmentation_difference_separates_token_sets_where_boundary_d
     EXPECT_EQ(keyword_cut, "ab");
 }
 
+TEST_F(Lexer_test, Domain_difference_finds_an_input_one_token_set_tokenizes_where_the_other_fails_and_names_that_side)
+{
+    enum class Token_kind : std::uint8_t
+    {
+        first,
+        second
+    };
+
+    // {a} against {a, b}: b is tokenized by the second alone. {a} against {aa}: a by the first alone. {a} against {a,
+    // aa}: every run of a tokenizes under both, so the domains are one, though the two cut aa apart.
+    Builder singles{};
+
+    singles.add_token(text("a"), Token_kind::first, 1);
+
+    const auto single{singles.build()};
+
+    Builder letters{};
+
+    letters.add_token(text("a"), Token_kind::first, 1);
+    letters.add_token(text("b"), Token_kind::second, 1);
+
+    const auto letter{letters.build()};
+
+    Builder pairs{};
+
+    pairs.add_token(concat(text("a"), text("a")), Token_kind::first, 1);
+
+    const auto pair{pairs.build()};
+
+    Builder runs{};
+
+    runs.add_token(text("a"), Token_kind::first, 1);
+    runs.add_token(concat(text("a"), text("a")), Token_kind::second, 1);
+
+    const auto run{runs.build()};
+
+    const auto [letter_witness, letter_side, letter_settled]{single.domain_difference(letter)};
+
+    EXPECT_TRUE(letter_settled);
+    EXPECT_EQ(letter_witness, "b");
+    EXPECT_EQ(letter_side, dfa::Tokenizing_side::second);
+    EXPECT_TRUE(separates(single, letter, letter_witness, dfa::Separation_half::domain));
+
+    const auto [pair_witness, pair_side, pair_settled]{single.domain_difference(pair)};
+
+    EXPECT_TRUE(pair_settled);
+    EXPECT_EQ(pair_witness, "a");
+    EXPECT_EQ(pair_side, dfa::Tokenizing_side::first);
+    EXPECT_TRUE(separates(single, pair, pair_witness, dfa::Separation_half::domain));
+
+    const auto [none, no_side, settled]{single.domain_difference(run)};
+
+    EXPECT_TRUE(settled);
+    EXPECT_TRUE(none.empty());
+    EXPECT_FALSE(no_side.has_value());
+
+    const auto [cut_apart, cut_apart_settled]{single.boundary_difference(run)};
+
+    EXPECT_EQ(cut_apart, "aa");
+}
+
 TEST_F(Lexer_test, The_segmentation_cap_is_a_ceiling_on_the_states_the_search_holds)
 {
     enum class Token_kind : std::uint8_t
