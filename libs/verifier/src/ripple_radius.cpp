@@ -1,11 +1,14 @@
 #include "munch/verifier/ripple_radius.hpp"
 
 #include <algorithm>
+#include <boost/container_hash/hash.hpp>
 #include <compare>
 #include <cstddef>
 #include <format>
+#include <functional>
 #include <map>
 #include <optional>
+#include <queue>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -24,6 +27,11 @@ namespace
  *        product by its merge's rank past the symbols.
  */
 using Token_t = std::size_t;
+
+/**
+ * @brief The rank of each merge an encoding applies, by its two parts.
+ */
+using Ranks = std::unordered_map<std::pair<Token_t, Token_t>, std::size_t, boost::hash<std::pair<Token_t, Token_t>>>;
 
 /**
  * @brief The number of bytes, the symbols of the byte alphabet.
@@ -80,9 +88,9 @@ struct Vocabulary
     std::vector<std::string> spellings{};
 
     /**
-     * @brief The ranks of the useful merges, ascending, the passes of the encoding.
+     * @brief The rank of each useful merge by its two parts, the merges the encoding applies.
      */
-    std::vector<std::size_t> passes{};
+    Ranks ranks{};
 
     /**
      * @brief The symbols the table names, ascending.
@@ -93,11 +101,6 @@ struct Vocabulary
      * @brief The canonical tokens beginning with each byte, by byte, ascending.
      */
     std::vector<std::vector<Token_t>> beginning{};
-
-    /**
-     * @brief The bytes of the symbols the table names, ascending.
-     */
-    std::vector<unsigned char> bytes{};
 };
 
 /**
@@ -460,46 +463,105 @@ struct Best
 }
 
 /**
- * @brief Encodes a token sequence by one left-to-right pass per merge, in rank order, each joining every occurrence of
- *        the merge's parts it reaches into the product.
+ * @brief Encodes a token sequence with the merges given: at every step the lowest-ranked of them present anywhere,
+ *        applied at its leftmost occurrence, until none applies.
  *
- * Under the ordering condition this is the encoder's segmentation, the merges that never apply left out.
+ * The occurrences wait in a heap on their rank and their place, the index of their left part in the sequence given, so
+ * the least is the lowest-ranked merge at its leftmost occurrence. A merge looks up the two pairs it makes and pushes
+ * them, and an occurrence a merge has since taken a part of is dropped when it is popped, so a sequence of L tokens
+ * costs O(L log L) whatever the number of merges. Under the ordering condition this is the encoder's segmentation, the
+ * merges that never apply left out.
  * @param table The resolved merge table.
- * @param passes The ranks of the merges to apply, ascending.
+ * @param ranks The rank of each merge to apply, by its two parts.
  * @param tokens The sequence, the symbols of a text or tokens of its encoding.
  * @return The encoded sequence.
  */
-[[nodiscard]] std::vector<Token_t> encoded(
-        const Table& table, const std::span<const std::size_t> passes, std::vector<Token_t> tokens)
+[[nodiscard]] std::vector<Token_t> encoded(const Table& table, const Ranks& ranks, std::vector<Token_t> tokens)
 {
-    for (const auto rank : passes)
+    const auto end{tokens.size()};
+
+    // The place of the token after and of the token before each place, the end standing for none.
+    std::vector<std::size_t> after(end);
+    std::vector<std::size_t> before(end);
+    std::vector<bool> held(end, true);
+
+    for (std::size_t place{0}; place < end; ++place)
     {
-        const auto left{table.lefts[rank]};
-        const auto right{table.rights[rank]};
-
-        std::vector<Token_t> joined{};
-
-        for (std::size_t index{0}; index < tokens.size(); ++index)
-        {
-            const auto has_next{index + 1 < tokens.size()};
-
-            const auto joins{has_next && tokens[index] == left && tokens[index + 1] == right};
-
-            if (joins)
-            {
-                joined.push_back(product_of(table, rank));
-                ++index;
-
-                continue;
-            }
-
-            joined.push_back(tokens[index]);
-        }
-
-        tokens = std::move(joined);
+        after[place] = place + 1;
+        before[place] = place == 0 ? end : place - 1;
     }
 
-    return tokens;
+    const auto rank_at{[&](const std::size_t place) -> std::optional<std::size_t> {
+        if (place == end || after[place] == end)
+        {
+            return std::nullopt;
+        }
+
+        const auto found{ranks.find({tokens[place], tokens[after[place]]})};
+
+        if (found == ranks.cend())
+        {
+            return std::nullopt;
+        }
+
+        const auto& [parts, rank]{*found};
+
+        return rank;
+    }};
+
+    // An occurrence is a merge's rank and the place of its left part.
+    using Occurrence = std::pair<std::size_t, std::size_t>;
+
+    std::priority_queue<Occurrence, std::vector<Occurrence>, std::greater<>> occurrences{};
+
+    const auto push{[&](const std::size_t place) {
+        const auto rank{rank_at(place)};
+
+        if (rank)
+        {
+            occurrences.emplace(*rank, place);
+        }
+    }};
+
+    for (std::size_t place{0}; place < end; ++place)
+    {
+        push(place);
+    }
+
+    while (!occurrences.empty())
+    {
+        const auto [rank, place]{occurrences.top()};
+
+        occurrences.pop();
+
+        if (!held[place] || rank_at(place) != rank)
+        {
+            continue;
+        }
+
+        const auto right{after[place]};
+
+        tokens[place] = product_of(table, rank);
+        held[right] = false;
+        after[place] = after[right];
+
+        if (after[place] != end)
+        {
+            before[after[place]] = place;
+        }
+
+        push(before[place]);
+        push(place);
+    }
+
+    std::vector<Token_t> encoding{};
+
+    for (std::size_t place{0}; place != end; place = after[place])
+    {
+        encoding.push_back(tokens[place]);
+    }
+
+    return encoding;
 }
 
 /**
@@ -517,6 +579,8 @@ struct Best
 
     Stages stages{};
 
+    Ranks ranks{};
+
     for (std::size_t rank{0}; rank < table.lefts.size(); ++rank)
     {
         const auto left{table.lefts[rank]};
@@ -531,7 +595,7 @@ struct Best
 
         const auto parts{symbols_of(table, spelling)};
 
-        const auto encoding{encoded(table, stages.useful, parts)};
+        const auto encoding{encoded(table, ranks, parts)};
 
         if (encoding != std::vector{left, right})
         {
@@ -546,6 +610,7 @@ struct Best
         }
 
         stages.useful.push_back(rank);
+        ranks.emplace(std::pair{left, right}, rank);
         canonical[product_of(table, rank)] = true;
     }
 
@@ -563,7 +628,7 @@ struct Best
  */
 [[nodiscard]] Vocabulary vocabulary_of(
         const Table& table, const std::span<const Merge> merges, std::vector<std::string> spellings,
-        std::vector<std::size_t> useful)
+        const std::span<const std::size_t> useful)
 {
     std::vector<bool> named(table.symbols.size(), false);
 
@@ -579,12 +644,9 @@ struct Best
 
     Vocabulary vocabulary{
             .spellings = std::move(spellings),
-            .passes = std::move(useful),
+            .ranks = {},
             .named = {},
-            .beginning = std::vector<std::vector<Token_t>>(byte_count),
-            .bytes = {}};
-
-    std::vector<bool> spelled(byte_count, false);
+            .beginning = std::vector<std::vector<Token_t>>(byte_count)};
 
     for (Token_t symbol{0}; symbol < named.size(); ++symbol)
     {
@@ -599,24 +661,13 @@ struct Best
 
         vocabulary.named.push_back(symbol);
         vocabulary.beginning[first].push_back(symbol);
-
-        for (const auto byte : spelling)
-        {
-            spelled[static_cast<unsigned char>(byte)] = true;
-        }
     }
 
-    for (std::size_t byte{0}; byte < byte_count; ++byte)
-    {
-        if (spelled[byte])
-        {
-            vocabulary.bytes.push_back(static_cast<unsigned char>(byte));
-        }
-    }
-
-    for (const auto rank : vocabulary.passes)
+    for (const auto rank : useful)
     {
         const auto product{product_of(table, rank)};
+
+        vocabulary.ranks.emplace(std::pair{table.lefts[rank], table.rights[rank]}, rank);
 
         const auto first{static_cast<unsigned char>(vocabulary.spellings[product].front())};
 
@@ -667,9 +718,9 @@ struct Best
 }
 
 /**
- * @brief The overlap graph under exploration: the resolved merge table and its vocabulary, the pair each node reads as,
- *        the interned pairs with their nodes, each node's steps, the nodes ending both copies, and the adjacencies
- *        decided so far.
+ * @brief The overlap graph under exploration, up to the token boundaries the two copies share: the resolved merge table
+ *        and its vocabulary, the pair each node reads as, the interned pairs with their nodes, each node's steps, the
+ *        nodes ending both copies, and the adjacencies decided so far.
  */
 class Exploration
 {
@@ -682,8 +733,9 @@ public:
     Exploration(Table table, Vocabulary vocabulary);
 
     /**
-     * @brief Explores the overlap graph from every node pairing the start with a canonical token, and returns the
-     *        radius and the mirrored constant read off it, each with a prepended input attaining it.
+     * @brief Explores the overlap graph from every node pairing the start with a canonical token, a node ending both
+     *        copies a leaf, and returns the radius and the mirrored constant read off it, each with a prepended input
+     *        attaining it.
      * @return The finite ripple.
      */
     [[nodiscard]] Finite_ripple run() &&;
@@ -704,9 +756,9 @@ private:
     [[nodiscard]] bool is_at_end(const Position& position) const;
 
     /**
-     * @brief Reads every byte of the symbols the table names from one node, both copies reading it, interning the
-     *        pairs reached.
-     * @param node The node read from.
+     * @brief Reads the one byte a node can read, the next byte of a copy inside its token, both copies reading it,
+     *        interning the pairs reached; the node is not one ending both copies, so one copy is inside its token.
+     * @param node The node read from, one copy inside its token.
      */
     void expand(std::size_t node);
 
@@ -837,6 +889,12 @@ Finite_ripple Exploration::run() &&
 
     for (std::size_t node{0}; node < pairs_.size(); ++node)
     {
+        // A node ending both copies is a common token boundary, past which the two encodings agree, so it is a leaf.
+        if (accepting_[node])
+        {
+            continue;
+        }
+
         expand(node);
     }
 
@@ -892,21 +950,23 @@ void Exploration::expand(const std::size_t node)
     // The node's pair, read from a copy while interning grows the pairs.
     const auto [base, prepended]{pairs_[node]};
 
-    for (const auto byte : vocabulary_.bytes)
+    // A copy inside its token reads that token's next byte, the one byte the node reads.
+    const auto& [token, read]{is_at_end(base) ? prepended : base};
+
+    const auto byte{static_cast<unsigned char>(vocabulary_.spellings[*token][read])};
+
+    const auto base_readings{readings(base, byte)};
+    const auto prepended_readings{readings(prepended, byte)};
+
+    for (const auto& [base_next, base_offset, base_length] : base_readings)
     {
-        const auto base_readings{readings(base, byte)};
-        const auto prepended_readings{readings(prepended, byte)};
-
-        for (const auto& [base_next, base_offset, base_length] : base_readings)
+        for (const auto& [prepended_next, prepended_offset, prepended_length] : prepended_readings)
         {
-            for (const auto& [prepended_next, prepended_offset, prepended_length] : prepended_readings)
-            {
-                const auto target{intern({.base = base_next, .prepended = prepended_next})};
+            const auto target{intern({.base = base_next, .prepended = prepended_next})};
 
-                const auto marked{base_offset != prepended_offset || base_length != prepended_length};
+            const auto marked{base_offset != prepended_offset || base_length != prepended_length};
 
-                steps_[node].push_back({.target = target, .byte = byte, .offset = base_offset, .marked = marked});
-            }
+            steps_[node].push_back({.target = target, .byte = byte, .offset = base_offset, .marked = marked});
         }
     }
 }
@@ -959,7 +1019,7 @@ bool Exploration::is_adjacent(const Token_t first, const Token_t second)
 
     const auto parts{symbols_of(table_, spelling)};
 
-    const auto encoding{encoded(table_, vocabulary_.passes, parts)};
+    const auto encoding{encoded(table_, vocabulary_.ranks, parts)};
 
     const auto adjacent{encoding == std::vector{first, second}};
 
@@ -1204,14 +1264,14 @@ std::string Exploration::completion(const std::size_t from) const
 
     auto spellings{spellings_of(merges, symbols)};
 
-    auto [useful, self_pair]{stages_of(table, spellings)};
+    const auto [useful, self_pair]{stages_of(table, spellings)};
 
     if (self_pair)
     {
         return Effective_self_pair{.rank = *self_pair};
     }
 
-    auto vocabulary{vocabulary_of(table, merges, std::move(spellings), std::move(useful))};
+    auto vocabulary{vocabulary_of(table, merges, std::move(spellings), useful)};
 
     Exploration exploration{std::move(table), std::move(vocabulary)};
 

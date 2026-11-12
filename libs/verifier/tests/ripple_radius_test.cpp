@@ -8,12 +8,15 @@
 #include <cstdint>
 #include <format>
 #include <fstream>
+#include <map>
 #include <optional>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -137,6 +140,122 @@ struct Ripple
      * @brief One past the start of the last token of the input's encoding whose span changes, zero when none does.
      */
     std::size_t mirrored{0};
+};
+
+/**
+ * @brief Where one copy of the spelling automaton is in the oracle's product: the token it has guessed, by its place in
+ *        the canonical vocabulary, and how many of its bytes it has read, or the start, no token guessed.
+ */
+struct Copy_position
+{
+    /**
+     * @brief Ordered member by member, so pairs key the map of interned ones.
+     */
+    auto operator<=>(const Copy_position&) const = default;
+
+    /**
+     * @brief The guessed token, none at the start.
+     */
+    std::optional<std::size_t> token{};
+
+    /**
+     * @brief The bytes of the token read, from one to its length.
+     */
+    std::size_t read{};
+};
+
+/**
+ * @brief A node of the oracle's product: the copy reading the input alone and the copy that read the prepended symbol
+ *        first.
+ */
+struct Copy_pair
+{
+    /**
+     * @brief Ordered member by member, so pairs key the map of interned ones.
+     */
+    auto operator<=>(const Copy_pair&) const = default;
+
+    /**
+     * @brief The copy reading the input alone.
+     */
+    Copy_position base{};
+
+    /**
+     * @brief The copy that read the prepended symbol as the first symbol of its first token.
+     */
+    Copy_position prepended{};
+};
+
+/**
+ * @brief A step of the oracle's product: the node it reaches, the byte read, the byte's offset in the base copy's
+ *        token, and whether the two copies' tokens covering the byte differ.
+ */
+struct Product_step
+{
+    /**
+     * @brief The node reached.
+     */
+    std::size_t target{};
+
+    /**
+     * @brief The byte read.
+     */
+    char byte{};
+
+    /**
+     * @brief The byte's offset in the base copy's token.
+     */
+    std::size_t offset{};
+
+    /**
+     * @brief Whether the two copies' tokens covering the byte differ in offset or length.
+     */
+    bool marked{};
+};
+
+/**
+ * @brief A step of the oracle's product named by the node it leaves and its index among that node's steps.
+ */
+struct Product_arrival
+{
+    /**
+     * @brief The node the step leaves.
+     */
+    std::size_t node{};
+
+    /**
+     * @brief The step's index among the node's steps.
+     */
+    std::size_t step{};
+};
+
+/**
+ * @brief The overlap graph as Theorem 3 of the report defines it, the full product: every pair reached from the sources
+ *        expanded, a pair ending both copies at a token end included, over the canonical tokens the reference encoder
+ *        gives.
+ */
+struct Full_product
+{
+    /**
+     * @brief The canonical tokens: the symbols the table names in alphabet order, then the products whose spelling the
+     *        reference encoder encodes as themselves, in rank order.
+     */
+    std::vector<std::string> tokens{};
+
+    /**
+     * @brief The pair each node reads as, by node.
+     */
+    std::vector<Copy_pair> pairs{};
+
+    /**
+     * @brief The steps of each node, by node.
+     */
+    std::vector<std::vector<Product_step>> steps{};
+
+    /**
+     * @brief Whether each node ends both copies at a token end, by node.
+     */
+    std::vector<bool> accepting{};
 };
 
 /**
@@ -794,6 +913,595 @@ std::vector<Merge> fibonacci_merges(const std::string& first, const std::string&
     return merges;
 }
 
+/**
+ * @brief Returns the symbols of an alphabet as a reading takes them: the 256 bytes in order over the bytes, and the
+ *        alphabet's characters in order over the characters.
+ * @param reading How the texts are read.
+ * @param alphabet The alphabet, UTF-8, read over the characters only.
+ * @return The symbols, each spelled by its bytes.
+ */
+std::vector<std::string> alphabet_symbols(const Reading reading, const std::string_view alphabet)
+{
+    if (reading == Reading::characters)
+    {
+        return characters_of(alphabet);
+    }
+
+    constexpr std::size_t byte_count{256};
+
+    std::vector<std::string> symbols{};
+
+    for (std::size_t byte{0}; byte < byte_count; ++byte)
+    {
+        symbols.push_back(std::string{static_cast<char>(byte)});
+    }
+
+    return symbols;
+}
+
+/**
+ * @brief Returns the canonical tokens of a table: the symbols its merges name, in alphabet order, then each product the
+ *        reference encoder encodes as itself, in rank order.
+ * @param merges The merge table in rank order.
+ * @param reading How the texts are read.
+ * @param symbols The alphabet's symbols in order.
+ * @return The tokens.
+ */
+std::vector<std::string> canonical_tokens(
+        const std::vector<Merge>& merges, const Reading reading, const std::vector<std::string>& symbols)
+{
+    std::vector<std::string> named{};
+
+    for (const auto& [left, right] : merges)
+    {
+        const auto parts{symbols_of(reading, left + right)};
+
+        named.insert(named.end(), parts.begin(), parts.end());
+    }
+
+    std::vector<std::string> tokens{};
+
+    for (const auto& symbol : symbols)
+    {
+        if (std::ranges::contains(named, symbol))
+        {
+            tokens.push_back(symbol);
+        }
+    }
+
+    for (const auto& [left, right] : merges)
+    {
+        const auto product{left + right};
+
+        const auto encoding{reference_tokens(merges, symbols_of(reading, product))};
+
+        if (encoding == std::vector{product})
+        {
+            tokens.push_back(product);
+        }
+    }
+
+    return tokens;
+}
+
+/**
+ * @brief Builds the full product of the overlap graph: from every source, the start paired with a canonical token
+ *        beginning with a named symbol of which the second copy has read that symbol, every pair reached is expanded by
+ *        every byte, a copy inside its token reading the token's next byte and a copy at a token end beginning every
+ *        canonical token the reference encoder lets follow the one it ended.
+ * @param merges The merge table in rank order.
+ * @param reading How the texts are read.
+ * @param symbols The alphabet's symbols in order.
+ * @return The product.
+ */
+Full_product full_product(
+        const std::vector<Merge>& merges, const Reading reading, const std::vector<std::string>& symbols)
+{
+    Full_product product{.tokens = canonical_tokens(merges, reading, symbols)};
+
+    const auto& tokens{product.tokens};
+
+    std::map<Copy_pair, std::size_t> interned{};
+
+    std::map<std::pair<std::size_t, std::size_t>, bool> adjacencies{};
+
+    const auto at_end{[&tokens](const Copy_position& position) {
+        return !position.token || position.read == tokens[*position.token].size();
+    }};
+
+    const auto intern{[&](const Copy_pair& pair) {
+        const auto [entry, inserted]{interned.try_emplace(pair, product.pairs.size())};
+
+        const auto& [key, node]{*entry};
+
+        if (inserted)
+        {
+            product.pairs.push_back(pair);
+            product.steps.emplace_back();
+            product.accepting.push_back(at_end(pair.base) && at_end(pair.prepended));
+        }
+
+        return node;
+    }};
+
+    const auto adjacent{[&](const std::size_t first, const std::size_t second) {
+        const auto [entry, inserted]{adjacencies.try_emplace({first, second}, false)};
+
+        auto& [key, is_adjacent]{*entry};
+
+        if (inserted)
+        {
+            const auto encoding{reference_tokens(merges, symbols_of(reading, tokens[first] + tokens[second]))};
+
+            is_adjacent = encoding == std::vector{tokens[first], tokens[second]};
+        }
+
+        return is_adjacent;
+    }};
+
+    // Each reading is the position after the byte, the byte's offset in its token and the token's length.
+    const auto readings{[&](const Copy_position& position, const char byte) {
+        std::vector<std::tuple<Copy_position, std::size_t, std::size_t>> found{};
+
+        const auto& [token, read]{position};
+
+        if (!at_end(position))
+        {
+            const auto& spelling{tokens[*token]};
+
+            if (spelling[read] == byte)
+            {
+                found.emplace_back(Copy_position{.token = token, .read = read + 1}, read, spelling.size());
+            }
+
+            return found;
+        }
+
+        for (std::size_t next{0}; next < tokens.size(); ++next)
+        {
+            const auto& spelling{tokens[next]};
+
+            if (spelling.front() != byte || (token && !adjacent(*token, next)))
+            {
+                continue;
+            }
+
+            found.emplace_back(Copy_position{.token = next, .read = 1}, 0, spelling.size());
+        }
+
+        return found;
+    }};
+
+    for (const auto& symbol : symbols)
+    {
+        if (!std::ranges::contains(tokens, symbol))
+        {
+            continue;
+        }
+
+        for (std::size_t token{0}; token < tokens.size(); ++token)
+        {
+            if (tokens[token].starts_with(symbol))
+            {
+                std::ignore = intern({.base = {}, .prepended = {.token = token, .read = symbol.size()}});
+            }
+        }
+    }
+
+    constexpr std::size_t byte_count{256};
+
+    for (std::size_t node{0}; node < product.pairs.size(); ++node)
+    {
+        const auto [base, prepended]{product.pairs[node]};
+
+        for (std::size_t value{0}; value < byte_count; ++value)
+        {
+            const auto byte{static_cast<char>(value)};
+
+            for (const auto& [base_next, base_offset, base_length] : readings(base, byte))
+            {
+                for (const auto& [prepended_next, prepended_offset, prepended_length] : readings(prepended, byte))
+                {
+                    const auto target{intern({.base = base_next, .prepended = prepended_next})};
+
+                    const auto marked{base_offset != prepended_offset || base_length != prepended_length};
+
+                    product.steps[node].push_back(
+                            {.target = target, .byte = byte, .offset = base_offset, .marked = marked});
+                }
+            }
+        }
+    }
+
+    return product;
+}
+
+/**
+ * @brief Returns the nodes of the product from which a path leads to the given ones, the given ones included.
+ * @param product The product.
+ * @param given Whether each node is given, by node.
+ * @return Whether each node leads to a given one, by node.
+ */
+std::vector<bool> reaching(const Full_product& product, std::vector<bool> given)
+{
+    for (auto grown{true}; grown;)
+    {
+        grown = false;
+
+        for (std::size_t node{0}; node < product.steps.size(); ++node)
+        {
+            const auto leads{[&given](const Product_step& step) { return given[step.target]; }};
+
+            if (given[node] || !std::ranges::any_of(product.steps[node], leads))
+            {
+                continue;
+            }
+
+            given[node] = true;
+            grown = true;
+        }
+    }
+
+    return given;
+}
+
+/**
+ * @brief Returns the bytes of a shortest path in the product from a node to a node ending both copies, the steps tried
+ *        breadth first in their order.
+ * @param product The product.
+ * @param from The node, which leads to a node ending both copies.
+ * @return The bytes read on the path.
+ */
+std::string product_completion(const Full_product& product, const std::size_t from)
+{
+    std::vector<std::optional<Product_arrival>> arrivals(product.steps.size());
+    std::vector<bool> seen(product.steps.size(), false);
+    std::vector<std::size_t> frontier{from};
+
+    seen[from] = true;
+
+    auto end{from};
+
+    for (std::size_t head{0}; !product.accepting[end]; ++head)
+    {
+        const auto node{frontier[head]};
+
+        const auto& steps{product.steps[node]};
+
+        for (std::size_t index{0}; index < steps.size() && !product.accepting[end]; ++index)
+        {
+            const auto target{steps[index].target};
+
+            if (seen[target])
+            {
+                continue;
+            }
+
+            seen[target] = true;
+            arrivals[target] = Product_arrival{.node = node, .step = index};
+            frontier.push_back(target);
+            end = target;
+        }
+    }
+
+    std::string bytes{};
+
+    for (auto node{end}; node != from;)
+    {
+        const auto [previous, index]{*arrivals[node]};
+
+        bytes += product.steps[previous][index].byte;
+        node = previous;
+    }
+
+    std::ranges::reverse(bytes);
+
+    return bytes;
+}
+
+/**
+ * @brief Returns what the full product decides: none when its marked part, the nodes leading to a marked step into a
+ *        node leading to one ending both copies, holds a cycle, and otherwise the radius and the mirrored constant read
+ *        off the longest paths from the sources inside it, each with the prepended input the first step attaining it in
+ *        node order gives, along the longest path found first and a shortest completion.
+ * @param product The product.
+ * @return The finite ripple, none when the radius is infinite.
+ */
+std::optional<Finite_ripple> product_decision(const Full_product& product)
+{
+    const auto node_count{product.steps.size()};
+
+    const auto live{reaching(product, product.accepting)};
+
+    std::vector<bool> marked(node_count, false);
+
+    for (std::size_t node{0}; node < node_count; ++node)
+    {
+        const auto into_live{[&live](const Product_step& step) { return step.marked && live[step.target]; }};
+
+        marked[node] = std::ranges::any_of(product.steps[node], into_live);
+    }
+
+    const auto marked_part{reaching(product, marked)};
+
+    std::vector<std::size_t> incoming(node_count, 0);
+
+    for (std::size_t node{0}; node < node_count; ++node)
+    {
+        for (const auto& [target, byte, offset, step_marked] : product.steps[node])
+        {
+            if (marked_part[node] && marked_part[target])
+            {
+                ++incoming[target];
+            }
+        }
+    }
+
+    std::vector<std::size_t> ready{};
+
+    for (std::size_t node{0}; node < node_count; ++node)
+    {
+        if (marked_part[node] && !product.pairs[node].base.token)
+        {
+            ready.push_back(node);
+        }
+    }
+
+    std::vector<std::size_t> depths(node_count, 0);
+    std::vector<std::optional<Product_arrival>> arrivals(node_count);
+
+    for (std::size_t head{0}; head < ready.size(); ++head)
+    {
+        const auto node{ready[head]};
+
+        const auto& steps{product.steps[node]};
+
+        for (std::size_t index{0}; index < steps.size(); ++index)
+        {
+            const auto target{steps[index].target};
+
+            if (!marked_part[target])
+            {
+                continue;
+            }
+
+            if (depths[node] + 1 > depths[target])
+            {
+                depths[target] = depths[node] + 1;
+                arrivals[target] = Product_arrival{.node = node, .step = index};
+            }
+
+            --incoming[target];
+
+            if (incoming[target] == 0)
+            {
+                ready.push_back(target);
+            }
+        }
+    }
+
+    if (ready.size() != static_cast<std::size_t>(std::ranges::count(marked_part, true)))
+    {
+        return std::nullopt;
+    }
+
+    std::optional<Product_arrival> radius_step{};
+    std::optional<Product_arrival> mirrored_step{};
+
+    Finite_ripple finite{};
+
+    for (std::size_t node{0}; node < node_count; ++node)
+    {
+        const auto& steps{product.steps[node]};
+
+        for (std::size_t index{0}; index < steps.size() && marked_part[node]; ++index)
+        {
+            const auto& [target, byte, offset, step_marked]{steps[index]};
+
+            if (!step_marked || !live[target])
+            {
+                continue;
+            }
+
+            const auto reach{depths[node] + 1};
+
+            if (reach > finite.radius)
+            {
+                finite.radius = reach;
+                radius_step = Product_arrival{.node = node, .step = index};
+            }
+
+            if (reach - offset > finite.mirrored)
+            {
+                finite.mirrored = reach - offset;
+                mirrored_step = Product_arrival{.node = node, .step = index};
+            }
+        }
+    }
+
+    const auto witness{[&](const std::optional<Product_arrival>& attaining) -> std::optional<Prepended_input> {
+        if (!attaining)
+        {
+            return std::nullopt;
+        }
+
+        const auto& [node, index]{*attaining};
+
+        const auto& step{product.steps[node][index]};
+
+        std::string bytes{step.byte};
+
+        auto source{node};
+
+        for (auto arrival{arrivals[source]}; arrival; arrival = arrivals[source])
+        {
+            const auto [previous, previous_step]{*arrival};
+
+            bytes += product.steps[previous][previous_step].byte;
+            source = previous;
+        }
+
+        std::ranges::reverse(bytes);
+
+        bytes += product_completion(product, step.target);
+
+        const auto& [token, read]{product.pairs[source].prepended};
+
+        return Prepended_input{.symbol = product.tokens[*token].substr(0, read), .input = bytes};
+    }};
+
+    finite.radius_witness = witness(radius_step);
+    finite.mirrored_witness = witness(mirrored_step);
+
+    return finite;
+}
+
+/**
+ * @brief Checks a table's decision against the full product: an infinite radius exactly when the product's marked part
+ *        holds a cycle, with the first effective self-pair replayed and pumped, and otherwise every value and witness
+ *        equal to the product's to the byte, both witnesses replayed against the reference encoder.
+ * @param merges The merge table in rank order, admissible.
+ * @param reading How the texts are read.
+ * @param alphabet The alphabet, UTF-8, read over the characters only.
+ * @param context The table checked, for the failure messages.
+ * @return True when the product finds the radius finite.
+ */
+bool expect_decided_as_the_full_product(
+        const std::vector<Merge>& merges, const Reading reading, const std::string_view alphabet,
+        const std::string& context)
+{
+    const auto product{full_product(merges, reading, alphabet_symbols(reading, alphabet))};
+
+    const auto oracle{product_decision(product)};
+
+    const auto found{reading == Reading::characters ? ripple_radius(merges, alphabet) : ripple_radius(merges)};
+
+    if (!oracle)
+    {
+        const auto* const self_pair{std::get_if<Effective_self_pair>(&found)};
+
+        EXPECT_TRUE(self_pair) << context << ": " << written(found);
+
+        if (self_pair)
+        {
+            expect_effective_self_pair(merges, reading, self_pair->rank, context);
+        }
+
+        return false;
+    }
+
+    EXPECT_EQ(written(found), written(*oracle)) << context;
+
+    if (const auto* const finite{std::get_if<Finite_ripple>(&found)})
+    {
+        expect_attained(merges, reading, *finite, context);
+    }
+
+    return true;
+}
+
+/**
+ * @brief Returns a table written out as its merges, for the failure messages.
+ * @param merges The merge table in rank order.
+ * @return The text.
+ */
+std::string table_text(const std::vector<Merge>& merges)
+{
+    std::string text{};
+
+    for (const auto& [left, right] : merges)
+    {
+        text += std::format("({}, {}) ", left, right);
+    }
+
+    return text;
+}
+
+/**
+ * @brief Returns every admissible table of one to a number of merges over symbols: each merge's parts tokens the
+ *        symbols or the merges before it carry, and its product one they do not.
+ * @param symbols The symbols.
+ * @param depth The largest number of merges.
+ * @return The tables.
+ */
+std::vector<std::vector<Merge>> admissible_tables(const std::vector<std::string>& symbols, const std::size_t depth)
+{
+    std::vector<std::vector<Merge>> tables{};
+
+    std::vector<std::vector<Merge>> layer{{}};
+
+    for (std::size_t count{1}; count <= depth; ++count)
+    {
+        std::vector<std::vector<Merge>> next{};
+
+        for (const auto& table : layer)
+        {
+            auto vocabulary{symbols};
+
+            for (const auto& [left, right] : table)
+            {
+                vocabulary.push_back(left + right);
+            }
+
+            for (const auto& left : vocabulary)
+            {
+                for (const auto& right : vocabulary)
+                {
+                    if (std::ranges::contains(vocabulary, left + right))
+                    {
+                        continue;
+                    }
+
+                    auto longer{table};
+
+                    longer.push_back({.left = left, .right = right});
+                    next.push_back(std::move(longer));
+                }
+            }
+        }
+
+        tables.insert(tables.end(), next.begin(), next.end());
+        layer = std::move(next);
+    }
+
+    return tables;
+}
+
+/**
+ * @brief Draws an admissible table of a number of merges over symbols with no merge of equal parts, so of finite
+ *        radius: each merge's parts drawn from the tokens the symbols and the merges before it carry, again while the
+ *        parts are equal or their product is carried.
+ * @param sequence The random sequence.
+ * @param symbols The symbols.
+ * @param count The number of merges.
+ * @return The table.
+ */
+std::vector<Merge> random_table(
+        std::mt19937& sequence, const std::vector<std::string>& symbols, const std::size_t count)
+{
+    auto vocabulary{symbols};
+
+    std::vector<Merge> merges{};
+
+    while (merges.size() < count)
+    {
+        std::uniform_int_distribution<std::size_t> draw{0, vocabulary.size() - 1};
+
+        const auto left{vocabulary[draw(sequence)]};
+        const auto right{vocabulary[draw(sequence)]};
+
+        if (left == right || std::ranges::contains(vocabulary, left + right))
+        {
+            continue;
+        }
+
+        merges.push_back({.left = left, .right = right});
+        vocabulary.push_back(left + right);
+    }
+
+    return merges;
+}
+
 } // namespace
 
 TEST(Ripple_radius_test, One_merge_over_a_is_infinite_at_its_own_rank)
@@ -1168,4 +1876,73 @@ TEST(Ripple_radius_test, Over_the_characters_of_ascii_every_universe_of_the_fixt
 
     EXPECT_EQ(check.counts.universes, 810U);
     EXPECT_EQ(refused, 80U);
+}
+
+TEST(Ripple_radius_test,
+     Every_table_of_up_to_four_merges_over_two_bytes_or_three_over_three_is_decided_as_the_full_product)
+{
+    std::size_t tables{0};
+    std::size_t finite{0};
+
+    const std::vector<std::pair<std::vector<std::string>, std::size_t>> universes{
+            {{"a", "b"}, 4},
+            {{"a", "b", "c"}, 3}};
+
+    for (const auto& [symbols, depth] : universes)
+    {
+        for (const auto& merges : admissible_tables(symbols, depth))
+        {
+            const auto context{table_text(merges)};
+
+            ++tables;
+
+            if (expect_decided_as_the_full_product(merges, Reading::bytes, {}, context))
+            {
+                ++finite;
+            }
+        }
+    }
+
+    EXPECT_EQ(tables, 13303U);
+    EXPECT_EQ(finite, 3158U);
+}
+
+TEST(Ripple_radius_test, Random_tables_over_bytes_and_over_characters_are_decided_as_the_full_product)
+{
+    constexpr std::size_t draws{300};
+
+    std::mt19937 sequence{0x5EEDU};
+
+    std::uniform_int_distribution<std::size_t> count{5, 12};
+
+    const std::vector<std::string> bytes{"a", "b", "c", "d"};
+
+    constexpr std::string_view alphabet{"aé中😀"};
+
+    const auto characters{characters_of(alphabet)};
+
+    std::size_t finite{0};
+
+    for (std::size_t drawn{0}; drawn < draws; ++drawn)
+    {
+        const auto over_bytes{random_table(sequence, bytes, count(sequence))};
+
+        const auto over_characters{random_table(sequence, characters, count(sequence))};
+
+        const auto byte_context{std::format("draw {} over bytes: {}", drawn, table_text(over_bytes))};
+
+        const auto character_context{std::format("draw {} over characters: {}", drawn, table_text(over_characters))};
+
+        if (expect_decided_as_the_full_product(over_bytes, Reading::bytes, {}, byte_context))
+        {
+            ++finite;
+        }
+
+        if (expect_decided_as_the_full_product(over_characters, Reading::characters, alphabet, character_context))
+        {
+            ++finite;
+        }
+    }
+
+    EXPECT_EQ(finite, 2 * draws);
 }

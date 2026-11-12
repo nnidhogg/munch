@@ -102,13 +102,22 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  * products, the encoding is one left-to-right pass per useful merge in rank order, and a token sequence is an encoding
  * exactly when each adjacent pair encodes as itself. The graph runs two copies of the automaton that guesses those
  * tokens over one input, the second having read the prepended byte as the first byte of a token, and marks a step where
- * the two copies' tokens covering the byte differ in offset or length. Explored from every prepended byte over the
- * bytes the table names, since a byte no merge names is a token no merge crosses, it is trimmed to the pairs that can
- * end both copies at a token end; the pairs from which a marked step leads to such a pair form an acyclic graph, and
- * the longest path to a marked step, plus one, is the radius, less the step's offset in the first copy's token the
- * mirrored constant, the path completed to a pair ending both copies spelling the attaining input. With T the total
- * length of the canonical tokens the graph has at most (1 + T)^2 pairs, and each usefulness and each adjacency encodes
- * the spellings of two tokens by one pass per useful merge.
+ * the two copies' tokens covering the byte differ in offset or length. It is explored from every prepended byte the
+ * table names, since a byte no merge names is a token no merge crosses, and stops at every pair ending both copies at a
+ * token end: such a pair is a token boundary the two encodings share, past which they agree, so no marked step lies
+ * beyond it. Every other pair has a copy inside its token, whose next byte is the one byte the pair reads, so only a
+ * copy at a token end branches. The pairs from which a marked step leads to a pair ending both copies form an acyclic
+ * graph, and the longest path to a marked step, plus one, is the radius, less the step's offset in the first copy's
+ * token the mirrored constant, the path completed to a pair ending both copies spelling the attaining input.
+ *
+ * With S the total length of the canonical tokens and V their number, the pairs expanded have one copy inside a token
+ * and the other inside one or at a token end, O(S^2 + V S) of them, each with at most V steps and a pair of two copies
+ * inside tokens with at most one, so the exploration takes O(S^2 + V^2 S) time and space, where the product of the two
+ * copies, every pair expanded, has up to (1 + S)^2 pairs and V^4 steps. Each usefulness and each adjacency encodes the
+ * spellings of two tokens with the lowest-ranked merge at its leftmost occurrence taken from a heap, in time L log L
+ * for L bytes, and the at most V^2 adjacencies spell 2 V S bytes together. S and V are at most twice the table's size,
+ * the lengths of its merges' parts summed, so the decision takes time cubic in that size, where the whole product takes
+ * quartic.
  *
  * The two parts of a useful merge differ, so its pass joins every occurrence of them, and it moves the first byte from
  * which the encodings of x and of ax agree by at most the length of its right part: the radius is at most the total
