@@ -1309,9 +1309,9 @@ template <typename Result>
 
         const auto kept{keep == Keep::kept};
 
-        const Word_t emitted{kept ? Word_t{length_letter} : Word_t{}};
+        Word_t emitted{kept ? Word_t{length_letter} : Word_t{}};
 
-        out.push_back(Kept_move{.scan = {.position = position, .keep = keep}, .emitted = emitted});
+        out.push_back(Kept_move{.scan = {.position = position, .keep = keep}, .emitted = std::move(emitted)});
 
         const auto closes_as_guessed{accepting && (letter != no_letter) == kept};
 
@@ -1320,12 +1320,7 @@ template <typename Result>
             continue;
         }
 
-        auto closing{emitted};
-
-        if (kept)
-        {
-            closing.push_back(letter);
-        }
+        Word_t closing{kept ? Word_t{length_letter, letter} : Word_t{}};
 
         const Kept_scan closed{.position = close(simulator, position), .keep = Keep::none};
 

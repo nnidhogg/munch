@@ -88,16 +88,6 @@ regex::Regex random_regex(std::uint32_t& seed, const std::size_t depth)
 {
     using namespace regex;
 
-    // Draws the left operand before the right, so a seed yields one grammar whichever order the compiler evaluates
-    // arguments in.
-    const auto operands{[&seed, depth] {
-        auto left{random_regex(seed, depth - 1)};
-
-        auto right{random_regex(seed, depth - 1)};
-
-        return std::pair{std::move(left), std::move(right)};
-    }};
-
     if (depth == 0 || next_draw(seed) % 3U == 0)
     {
         constexpr std::array<std::string_view, 6> atoms{"a", "b", "c", "ab", "bc", "ca"};
@@ -109,18 +99,24 @@ regex::Regex random_regex(std::uint32_t& seed, const std::size_t depth)
 
     const auto kind{next_draw(seed) % 4U};
 
+    // A concatenation or a choice draws its left operand before the right, in statements of their own, so a seed yields
+    // one grammar whichever order the compiler evaluates arguments in.
     switch (kind)
     {
     case 0:
     {
-        auto [left, right]{operands()};
+        auto left{random_regex(seed, depth - 1)};
+
+        auto right{random_regex(seed, depth - 1)};
 
         return concat(std::move(left), std::move(right));
     }
 
     case 1:
     {
-        auto [left, right]{operands()};
+        auto left{random_regex(seed, depth - 1)};
+
+        auto right{random_regex(seed, depth - 1)};
 
         return choice(std::move(left), std::move(right));
     }

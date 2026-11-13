@@ -72,10 +72,8 @@ std::vector<std::vector<Flag>> reachability(const Subset_graph& graph)
 {
     const auto count{graph.subsets.size()};
 
-    std::vector<std::vector<Flag>> reaches(count, std::vector<Flag>(count, Flag::off));
-
-    const auto walk_from{[&graph, &reaches](const std::size_t from) {
-        auto& reached{reaches[from]};
+    const auto reached_from{[&graph, count](const std::size_t from) {
+        std::vector reached(count, Flag::off);
 
         std::deque<std::size_t> pending{from};
 
@@ -97,11 +95,17 @@ std::vector<std::vector<Flag>> reachability(const Subset_graph& graph)
                 pending.push_back(to);
             }
         }
+
+        return reached;
     }};
+
+    std::vector<std::vector<Flag>> reaches{};
+
+    reaches.reserve(count);
 
     for (std::size_t from{0}; from < count; ++from)
     {
-        walk_from(from);
+        reaches.push_back(reached_from(from));
     }
 
     return reaches;

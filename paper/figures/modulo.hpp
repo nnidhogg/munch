@@ -572,9 +572,9 @@ public:
 
         for (const auto keep : guesses)
         {
-            const Word_t emitted{keep == guess_kept ? Word_t{z} : Word_t{}};
+            Word_t emitted{keep == guess_kept ? Word_t{z} : Word_t{}};
 
-            result.emplace_back(Output{.obligations = *obligations, .current = to, .keep = keep}, emitted);
+            result.emplace_back(Output{.obligations = *obligations, .current = to, .keep = keep}, std::move(emitted));
 
             if (!accepting_[state] || ends_as != keep)
             {
@@ -585,12 +585,7 @@ public:
 
             committed.set(state);
 
-            auto output{emitted};
-
-            if (keep == guess_kept)
-            {
-                output.push_back(kind_[state] + first_kind_letter);
-            }
+            Word_t output{keep == guess_kept ? Word_t{z, kind_[state] + first_kind_letter} : Word_t{}};
 
             result.emplace_back(Output{.obligations = committed, .current = fresh, .keep = no_guess}, output);
         }

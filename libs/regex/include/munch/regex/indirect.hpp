@@ -20,10 +20,10 @@ class Indirect
 {
 public:
     /**
-     * @brief Boxes a value.
+     * @brief Boxes a value, moving it into the box.
      * @param value The value to own.
      */
-    explicit Indirect(T value) : value_{std::make_unique<T>(std::move(value))} {}
+    explicit Indirect(T&& value) : value_{std::make_unique<T>(std::move(value))} {}
 
     /**
      * @brief Copies the boxed value into a box of its own; a valueless source yields a valueless copy.
