@@ -10,6 +10,7 @@ add_library(${PROJECT_NAME}
         src/label.cpp
         src/minimize.cpp
         src/recovery.cpp
+        src/separator.cpp
         src/simulator.cpp
         src/split_window.cpp
         src/unroll_start.cpp

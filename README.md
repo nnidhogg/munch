@@ -384,8 +384,8 @@ The automata layers underneath (`munch::nfa`, `munch::dfa`) remain public for in
 and Graphviz export, but they exist to serve the pipeline and may evolve in minor releases: depend on them for tooling,
 not for stability. The regex node types are likewise inspectable, but constructing them directly rather than through the
 combinators is outside the stable surface. The result types of the decisions `core::Lexer` forwards, declared in
-`munch/dfa/boundary_search.hpp` and `munch/dfa/split_window.hpp`, are on the stable surface, as are
-`dfa::Certified_pair`, the entry of the inventory `anchor_free_span()` takes, declared in
+`munch/dfa/boundary_search.hpp`, `munch/dfa/separator.hpp` and `munch/dfa/split_window.hpp`, are on the stable surface,
+as are `dfa::Certified_pair`, the entry of the inventory `anchor_free_span()` takes, declared in
 `munch/dfa/anchor_free_span.hpp`, and `dfa::Dfa` as the argument of `verifier::armed_run()`, and the rest of
 `munch::dfa` is not. The benchmark tools, the grammars bundled under `tools/audit/grammars/`, which are examples for the
 audit tool, and the prose in `docs/` carry no compatibility promise, and performance numbers are measurements, not

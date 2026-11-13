@@ -24,6 +24,7 @@
 #include "munch/dfa/boundary_search.hpp"
 #include "munch/dfa/dfa.hpp"
 #include "munch/dfa/recovery.hpp"
+#include "munch/dfa/separator.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/split_window.hpp"
 
@@ -884,6 +885,33 @@ public:
             const std::size_t cap = dfa::modulo_cap) const
     {
         return dfa::modulo_counterexample(simulator_, symbol, ignored, cap);
+    }
+
+    /**
+     * @brief Decides whether the symbol is a separator modulo the discarded kinds, so that the spellings of any kept
+     *        tokens joined by single copies of it scan as those tokens, with the clause it fails and the words that
+     *        show it.
+     *
+     * Three clauses a decoder inserting the symbol between tokens relies on, generalizing the condition the
+     * constrained-decoding paper states for its JSON lexers: the symbol alone is a token of a discarded kind, no token
+     * spelling begins with a kept spelling followed by it, and no token spelling begins with it followed by the first
+     * byte of a kept spelling, a kept spelling being a byte string the scan reads as one token of a kind not discarded.
+     * Under the three, every sequence of kept kinds that have spellings is realizable, their spellings joined by the
+     * symbol scanning as exactly that sequence once the discarded tokens are deleted, so a grammar-side failure where
+     * the lexer cannot realize a terminal sequence never occurs; every white-space byte of a JSON lexer skipping white
+     * space passes. The condition is sufficient and not necessary. Over the kept a and aa with # and a# discarded, #
+     * fails the second clause on a#, and no byte string scans as a followed by a. The discarded kinds are given here
+     * rather than read from the builder, as for modulo_counterexample(). Decided on the compiled machine by
+     * reachability, in time linear in the table's size, the token spelling a shortest one its clause forbids. The
+     * derivation is dfa::separator_failure()'s.
+     * @param symbol The byte the kept tokens are joined by.
+     * @param ignored The IDs of the tokens the caller discards before the stream is used.
+     * @return The first clause the symbol fails with the words that show it, or no clause when it is a separator.
+     */
+    [[nodiscard]] dfa::Separator_failure separator_failure(
+            const char symbol, const std::span<const std::size_t> ignored) const
+    {
+        return dfa::separator_failure(simulator_, symbol, ignored);
     }
 
 private:

@@ -25,6 +25,7 @@
 #include "munch/dfa/boundary_search.hpp"
 #include "munch/dfa/builder.hpp"
 #include "munch/dfa/recovery.hpp"
+#include "munch/dfa/separator.hpp"
 #include "munch/dfa/simulator.hpp"
 #include "munch/dfa/split_window.hpp"
 #include "munch/dfa/unroll_start.hpp"
@@ -1363,6 +1364,264 @@ Dfa exponential_family(const std::size_t k)
     builder.add_transition(body, Label{'!'}, closed);
 
     return builder.build();
+}
+
+/**
+ * @brief Draws a random table over a, b and #: the shape random_kinded_table() draws over a and b, a state the byte #
+ *        leads to from the initial one accepting the discarded kind, and every other # transition drawn rarely, so that
+ *        the byte # passes the separator condition on some tables and fails each of its clauses on others.
+ *
+ * Beside them an island no transition reaches accepts a kept kind and steps on # into the separator's state, so a walk
+ * that admitted unreachable states would fail the second clause there. The initial state accepts on one draw in four,
+ * so that some tables are nullable and decided through the positive-width equivalent the simulator unrolls.
+ * @param sequence The sequence the table is drawn from.
+ * @return The table.
+ */
+Dfa random_separated_table(std::mt19937& sequence)
+{
+    Builder builder{};
+
+    std::vector<Dfa::State_t> states{builder.init_state()};
+
+    for (std::size_t added{draw(sequence, 3) + 2}; added > 0; --added)
+    {
+        states.push_back(builder.next_state());
+    }
+
+    const auto separator{builder.next_state()};
+
+    const auto sink{builder.next_state()};
+
+    const auto island{builder.next_state()};
+
+    // One target beyond the states is the sink, and one more is no transition at all.
+    const auto connect{[&](const Dfa::State_t from, const char byte) {
+        const auto target{draw(sequence, states.size() + 2)};
+
+        if (target < states.size())
+        {
+            builder.add_transition(from, Label{byte}, states[target]);
+        }
+        else if (target == states.size())
+        {
+            builder.add_transition(from, Label{byte}, sink);
+        }
+    }};
+
+    for (const auto from : states)
+    {
+        connect(from, 'a');
+        connect(from, 'b');
+
+        if (from != states.front() && draw(sequence, 6) == 0)
+        {
+            connect(from, '#');
+        }
+    }
+
+    builder.add_transition(states.front(), Label{'#'}, separator);
+    builder.add_accept_state(separator, Token{discarded_kind});
+
+    for (const auto byte : std::string_view{"ab#"})
+    {
+        if (draw(sequence, 6) == 0)
+        {
+            connect(separator, byte);
+        }
+    }
+
+    for (const auto byte : std::string_view{"ab#"})
+    {
+        builder.add_transition(sink, Label{byte}, sink);
+    }
+
+    builder.add_transition(island, Label{'#'}, separator);
+    builder.add_accept_state(island, Token{7});
+
+    const auto accepting{states[draw(sequence, states.size() - 1) + 1]};
+
+    builder.add_accept_state(accepting, Token{draw(sequence, 3) + 1});
+
+    for (std::size_t index{2}; index < states.size(); ++index)
+    {
+        if (draw(sequence, 3) == 0)
+        {
+            builder.add_accept_state(states[index], Token{draw(sequence, 3) + 1});
+        }
+    }
+
+    if (draw(sequence, 4) == 0)
+    {
+        builder.add_accept_state(states.front(), Token{draw(sequence, 3) + 1});
+    }
+
+    return builder.build();
+}
+
+/**
+ * @brief Draws a random literal token set over a, b and #: two to five distinct words of one to three bytes, each of a
+ *        kind drawn among one, two and three, and the word # of the discarded kind on three draws in four.
+ * @param sequence The sequence the set is drawn from.
+ * @return The token set.
+ */
+Dfa random_separated_literals(std::mt19937& sequence)
+{
+    constexpr std::string_view alphabet{"ab#"};
+
+    std::vector<std::pair<std::string, std::size_t>> drawn{};
+
+    const auto add{[&](std::string word, const std::size_t kind) {
+        const auto same{[&](const std::pair<std::string, std::size_t>& entry) { return entry.first == word; }};
+
+        if (!std::ranges::any_of(drawn, same))
+        {
+            drawn.emplace_back(std::move(word), kind);
+        }
+    }};
+
+    if (draw(sequence, 4) != 0)
+    {
+        add("#", discarded_kind);
+    }
+
+    for (std::size_t count{draw(sequence, 4) + 2}; count > 0; --count)
+    {
+        std::string word{};
+
+        for (std::size_t length{draw(sequence, 3) + 1}; length > 0; --length)
+        {
+            word.push_back(alphabet[draw(sequence, alphabet.size())]);
+        }
+
+        add(std::move(word), draw(sequence, 3) + 1);
+    }
+
+    std::vector<std::pair<std::string_view, std::size_t>> tokens{};
+
+    for (const auto& [word, kind] : drawn)
+    {
+        tokens.emplace_back(word, kind);
+    }
+
+    return literal_tokens(tokens);
+}
+
+/**
+ * @brief What enumerating the words to a bound shows of the separator condition: the shortest token spelling each
+ *        clause forbids among them, and the kept spellings among them.
+ */
+struct Separator_census
+{
+    /**
+     * @brief Whether the byte alone is a token of a discarded kind.
+     */
+    bool discarded_alone{};
+
+    /**
+     * @brief The length of a shortest enumerated token spelling beginning with an enumerated kept spelling and the
+     *        byte, nothing when none does.
+     */
+    std::optional<std::size_t> after_kept{};
+
+    /**
+     * @brief The length of a shortest enumerated token spelling beginning with the byte and the first byte of an
+     *        enumerated kept spelling, nothing when none does.
+     */
+    std::optional<std::size_t> before_kept{};
+
+    /**
+     * @brief The enumerated kept spellings, shortest first.
+     */
+    std::vector<std::string> kept{};
+};
+
+/**
+ * @brief Returns whether a word is a token spelling: the scan reads it whole as one token.
+ * @param simulator The table.
+ * @param word The word.
+ * @return True when the longest match of the word is all of it.
+ */
+bool spells_token(const Simulator& simulator, const std::string_view word)
+{
+    const auto [token, length]{simulator.run(word)};
+
+    return token.has_value() && length == word.size();
+}
+
+/**
+ * @brief Returns whether a word is a kept spelling: the scan reads it whole as one token of a kind not discarded.
+ * @param simulator The table.
+ * @param ignored The IDs of the discarded tokens.
+ * @param word The word.
+ * @return True when the word is a token spelling whose kind is kept.
+ */
+bool spells_kept(const Simulator& simulator, const std::vector<std::size_t>& ignored, const std::string_view word)
+{
+    const auto [token, length]{simulator.run(word)};
+
+    return token.has_value() && length == word.size() && !std::ranges::contains(ignored, token->id());
+}
+
+/**
+ * @brief Reads the separator condition's three clauses off the token spellings among the given words, by enumeration.
+ * @param simulator The table.
+ * @param ignored The IDs of the discarded tokens.
+ * @param symbol The byte the kept tokens are joined by.
+ * @param inputs The words, shortest first.
+ * @return What the words show.
+ */
+Separator_census separator_census(
+        const Simulator& simulator, const std::vector<std::size_t>& ignored, const char symbol,
+        const std::vector<std::string>& inputs)
+{
+    Separator_census census{};
+
+    const auto [alone, alone_length]{simulator.run(std::string{symbol})};
+
+    census.discarded_alone = alone.has_value() && alone_length == 1 && std::ranges::contains(ignored, alone->id());
+
+    std::set<char> first_bytes{};
+
+    for (const auto& word : inputs)
+    {
+        if (spells_kept(simulator, ignored, word))
+        {
+            census.kept.push_back(word);
+
+            first_bytes.insert(word.front());
+        }
+    }
+
+    const auto shorter{[](std::optional<std::size_t>& shortest, const std::size_t length) {
+        if (!shortest || length < *shortest)
+        {
+            shortest = length;
+        }
+    }};
+
+    for (const auto& word : inputs)
+    {
+        if (!spells_token(simulator, word))
+        {
+            continue;
+        }
+
+        const auto extends{[&](const std::string& kept) {
+            return kept.size() < word.size() && word.starts_with(kept) && word[kept.size()] == symbol;
+        }};
+
+        if (std::ranges::any_of(census.kept, extends))
+        {
+            shorter(census.after_kept, word.size());
+        }
+
+        if (word.size() >= 2 && word.front() == symbol && first_bytes.contains(word[1]))
+        {
+            shorter(census.before_kept, word.size());
+        }
+    }
+
+    return census;
 }
 
 } // namespace
@@ -4603,6 +4862,305 @@ TEST(Dfa_test, Modulo_counterexample_finds_a_cut_exactly_where_the_automata_of_t
     // Instances whose automata share a word and instances whose automata share none.
     EXPECT_GT(shared[0], 0U);
     EXPECT_GT(shared[1], 0U);
+}
+
+TEST(Dfa_test, Separator_failure_names_the_clause_a_byte_fails_and_the_words_that_show_it)
+{
+    const std::vector<std::size_t> discarded{discarded_kind};
+
+    const std::vector<std::size_t> none{};
+
+    const auto expect{[](const Separator_failure& decided, const std::optional<Separator_clause> clause,
+                         const std::string_view kept, const std::string_view spelling, const std::string_view label) {
+        const auto& [found_clause, found_kept, found_spelling]{decided};
+
+        EXPECT_EQ(found_clause, clause) << label;
+        EXPECT_EQ(found_kept, kept) << label;
+        EXPECT_EQ(found_spelling, spelling) << label;
+    }};
+
+    const auto tokens_of{
+            [](const Simulator& simulator, const std::string_view input) { return kept_scan(simulator, {}, input); }};
+
+    // The constrained-decoding paper's counterexample: the kept a and aa of two kinds and # and a# discarded. The byte
+    // # fails the second clause on a#, and a#a scans as a# and a, so no byte string scans as a followed by a.
+    const Simulator joined{literal_tokens({{"a", 1}, {"aa", 3}, {"#", discarded_kind}, {"a#", discarded_kind}})};
+
+    expect(separator_failure(joined, '#', discarded), Separator_clause::after_kept, "a", "a#", "# over a, aa, #, a#");
+    EXPECT_EQ(tokens_of(joined, "a#a"), (Kept_t{{{discarded_kind, 2}, {1, 1}}}));
+
+    // Without a# the byte # is a separator, and kept spellings joined by it scan as their sequence.
+    const Simulator separated{literal_tokens({{"a", 1}, {"aa", 3}, {"#", discarded_kind}})};
+
+    expect(separator_failure(separated, '#', discarded), std::nullopt, "", "", "# over a, aa, #");
+    EXPECT_EQ(
+            tokens_of(separated, "a#a#aa"),
+            (Kept_t{{{1, 1}, {discarded_kind, 1}, {1, 1}, {discarded_kind, 1}, {3, 2}}}));
+
+    // The first clause: a byte that is no token, and with nothing discarded a byte that is a kept token.
+    expect(separator_failure(separated, 'b', discarded), Separator_clause::not_discarded, "", "b", "b, no token");
+    expect(separator_failure(separated, '#', none), Separator_clause::not_discarded, "", "#", "#, kept");
+
+    // The third clause: over the kept ab with # and #ac discarded, #ac begins with # and a. The condition is sufficient
+    // and not necessary: ab joined by # still scans as ab every time, the scan from # dying at the b.
+    const Simulator reaching{literal_tokens({{"ab", 1}, {"#", discarded_kind}, {"#ac", discarded_kind}})};
+
+    expect(separator_failure(reaching, '#', discarded), Separator_clause::before_kept, "ab", "#ac",
+           "# over ab, #, #ac");
+    EXPECT_EQ(
+            tokens_of(reaching, "ab#ab#ab"),
+            (Kept_t{{{1, 2}, {discarded_kind, 1}, {1, 2}, {discarded_kind, 1}, {1, 2}}}));
+
+    // A spelling is a shortest one its clause forbids: over the kept a and b with #, a#bb and b#a discarded, the second
+    // clause fails on both a#bb and b#a, and b#a is the shorter.
+    const Simulator shortest{literal_tokens(
+            {{"a", 1}, {"b", 1}, {"#", discarded_kind}, {"a#bb", discarded_kind}, {"b#a", discarded_kind}})};
+
+    expect(separator_failure(shortest, '#', discarded), Separator_clause::after_kept, "b", "b#a",
+           "the shorter spelling");
+
+    // On a tie the second clause names the spelling leaving the first state: over the kept b and a, b's state first,
+    // with #, a#a and b#b discarded, both spellings are three bytes long and b#b is named.
+    const Simulator after_tie{literal_tokens(
+            {{"b", 1}, {"a", 1}, {"#", discarded_kind}, {"a#a", discarded_kind}, {"b#b", discarded_kind}})};
+
+    expect(separator_failure(after_tie, '#', discarded), Separator_clause::after_kept, "b", "b#b",
+           "the first state on a tie");
+
+    // On a tie the third clause names the spelling through the lowest byte: over the kept a and b with #, #b and #a
+    // discarded, both spellings are two bytes long and #a is named.
+    const Simulator before_tie{literal_tokens(
+            {{"a", 1}, {"b", 1}, {"#", discarded_kind}, {"#b", discarded_kind}, {"#a", discarded_kind}})};
+
+    expect(separator_failure(before_tie, '#', discarded), Separator_clause::before_kept, "a", "#a",
+           "the lowest byte on a tie");
+
+    // A dead state the byte leads into extends no spelling: over the kept a and # discarded, with a# leading into a
+    // dead sink, # is a separator.
+    Builder dead{};
+
+    const auto root{dead.init_state()};
+    const auto letter{dead.next_state()};
+    const auto hash{dead.next_state()};
+    const auto sink{dead.next_state()};
+
+    dead.add_accept_state(letter, Token{1});
+    dead.add_accept_state(hash, Token{discarded_kind});
+    dead.add_transition(root, Label{'a'}, letter);
+    dead.add_transition(root, Label{'#'}, hash);
+    dead.add_transition(letter, Label{'#'}, sink);
+    dead.add_transition(sink, Label{'#'}, sink);
+
+    const Simulator sinking{dead.build()};
+
+    expect(separator_failure(sinking, '#', discarded), std::nullopt, "", "", "# over a, #, and a dead a#");
+
+    // A state no input reaches extends no spelling: an island accepting a kept kind steps on # into the state of #.
+    Builder islanded{};
+
+    const auto origin{islanded.init_state()};
+    const auto mark{islanded.next_state()};
+    const auto island{islanded.next_state()};
+
+    islanded.add_accept_state(mark, Token{discarded_kind});
+    islanded.add_accept_state(island, Token{1});
+    islanded.add_transition(origin, Label{'#'}, mark);
+    islanded.add_transition(island, Label{'#'}, mark);
+
+    const Simulator unreached{islanded.build()};
+
+    expect(separator_failure(unreached, '#', discarded), std::nullopt, "", "", "# beside an island");
+
+    // The nullable a* beside # is decided through its positive-width equivalent a+, whose runs # separates.
+    Builder star{};
+
+    const auto start{star.init_state()};
+    const auto run{star.next_state()};
+    const auto bar{star.next_state()};
+
+    star.add_accept_state(start, Token{1});
+    star.add_accept_state(run, Token{1});
+    star.add_accept_state(bar, Token{discarded_kind});
+    star.add_transition(start, Label{'a'}, run);
+    star.add_transition(run, Label{'a'}, run);
+    star.add_transition(start, Label{'#'}, bar);
+
+    const Simulator nullable{star.build()};
+
+    expect(separator_failure(nullable, '#', discarded), std::nullopt, "", "", "# over a* and #");
+
+    // One state looping on a and stepping on # also accepts a#, as the discarded kind, so # fails the second clause.
+    Builder looped{};
+
+    const auto loop{looped.init_state()};
+    const auto after{looped.next_state()};
+
+    looped.add_accept_state(loop, Token{1});
+    looped.add_accept_state(after, Token{discarded_kind});
+    looped.add_transition(loop, Label{'a'}, loop);
+    looped.add_transition(loop, Label{'#'}, after);
+
+    const Simulator extended{looped.build()};
+
+    expect(separator_failure(extended, '#', discarded), Separator_clause::after_kept, "a", "a#", "# after a looped a*");
+
+    // The empty token set has no token at all, so no byte is a token of a discarded kind.
+    const Simulator empty{literal_tokens({})};
+
+    expect(separator_failure(empty, '#', discarded), Separator_clause::not_discarded, "", "#", "the empty token set");
+}
+
+TEST(Dfa_test, Separator_failure_agrees_with_enumeration_and_its_separators_join_kept_spellings_into_their_sequence)
+{
+    // The decision against an oracle that enumerates every word over a, b and # to a bound and reads the three clauses
+    // off the token spellings among them, over random tables, some with an accepting initial state, and random literal
+    // sets, each asked of every byte with kind 2 discarded and with nothing discarded. A clause the decision passes the
+    // oracle sees no word failing; the clause it names fails on its witness, which replays, its spelling as short as
+    // the oracle's shortest, and every earlier clause passes the oracle. Where the decision finds a separator, random
+    // sequences of the enumerated kept spellings joined by single copies of the byte scan by maximal munch as exactly
+    // those tokens and the separators.
+    std::mt19937 sequence{0x5E9U};
+
+    std::map<std::optional<Separator_clause>, std::size_t> tally{};
+
+    std::size_t joins{0};
+
+    const std::vector<std::size_t> discarded{discarded_kind};
+
+    const std::vector<std::size_t> none{};
+
+    constexpr std::size_t bound{7};
+
+    const auto inputs{words("ab#", bound)};
+
+    const auto check{[&](const Simulator& simulator, const std::vector<std::size_t>& ignored, const char symbol,
+                         const std::string& label) {
+        const auto [clause, kept, spelling]{separator_failure(simulator, symbol, ignored)};
+
+        ++tally[clause];
+
+        const auto census{separator_census(simulator, ignored, symbol, inputs)};
+
+        // Per clause in order, whether some enumerated word fails it.
+        const std::array failing{
+                !census.discarded_alone, census.after_kept.has_value(), census.before_kept.has_value()};
+
+        for (const auto earlier :
+             {Separator_clause::not_discarded, Separator_clause::after_kept, Separator_clause::before_kept})
+        {
+            if (clause == earlier)
+            {
+                break;
+            }
+
+            EXPECT_FALSE(failing[std::to_underlying(earlier)]) << label;
+        }
+
+        if (!clause)
+        {
+            EXPECT_TRUE(kept.empty()) << label;
+            EXPECT_TRUE(spelling.empty()) << label;
+
+            const auto [separator_token, separator_length]{simulator.run(std::string{symbol})};
+
+            for (std::size_t join{0}; join < 20 && !census.kept.empty(); ++join)
+            {
+                std::string input{};
+
+                std::vector<std::pair<std::size_t, std::size_t>> expected{};
+
+                for (std::size_t count{draw(sequence, 5) + 1}; count > 0; --count)
+                {
+                    const auto& word{census.kept[draw(sequence, census.kept.size())]};
+
+                    if (!input.empty())
+                    {
+                        input.push_back(symbol);
+
+                        expected.emplace_back(separator_token->id(), separator_length);
+                    }
+
+                    input += word;
+
+                    const auto [token, length]{simulator.run(word)};
+
+                    expected.emplace_back(token->id(), length);
+                }
+
+                ++joins;
+
+                EXPECT_EQ(kept_scan(simulator, {}, input), Kept_t{expected}) << label << " " << input;
+            }
+
+            return;
+        }
+
+        switch (*clause)
+        {
+        case Separator_clause::not_discarded:
+            EXPECT_TRUE(failing[std::to_underlying(*clause)]) << label;
+            EXPECT_TRUE(kept.empty()) << label;
+            EXPECT_EQ(spelling, std::string{symbol}) << label;
+            break;
+        case Separator_clause::after_kept:
+            EXPECT_TRUE(spells_kept(simulator, ignored, kept)) << label;
+            EXPECT_TRUE(spells_token(simulator, spelling)) << label;
+            EXPECT_TRUE(spelling.starts_with(kept + symbol)) << label;
+            EXPECT_EQ(spelling.size(), census.after_kept.value_or(spelling.size())) << label;
+            EXPECT_EQ(spelling.size() <= bound, census.after_kept.has_value()) << label;
+            break;
+        case Separator_clause::before_kept:
+            EXPECT_TRUE(spells_kept(simulator, ignored, kept)) << label;
+            EXPECT_TRUE(spells_token(simulator, spelling)) << label;
+            ASSERT_GE(spelling.size(), 2U) << label;
+            EXPECT_EQ(spelling.front(), symbol) << label;
+            EXPECT_EQ(spelling[1], kept.front()) << label;
+            EXPECT_EQ(spelling.size(), census.before_kept.value_or(spelling.size())) << label;
+            EXPECT_TRUE(spelling.size() > bound || kept.size() > bound || census.before_kept.has_value()) << label;
+            break;
+        }
+    }};
+
+    std::size_t nullable{0};
+
+    constexpr std::size_t drawn{1000};
+
+    for (std::size_t index{0}; index < drawn; ++index)
+    {
+        const auto definition{random_separated_table(sequence)};
+
+        const auto start{definition.has_accept_token(definition.init_state())};
+
+        if (start)
+        {
+            ++nullable;
+        }
+
+        const Simulator table{definition};
+
+        const Simulator literals{random_separated_literals(sequence)};
+
+        for (const auto& ignored : {discarded, none})
+        {
+            for (const auto symbol : std::string_view{"ab#"})
+            {
+                check(table, ignored, symbol, std::format("table {} {} discarded {}", index, symbol, ignored.size()));
+                check(literals, ignored, symbol,
+                      std::format("literals {} {} discarded {}", index, symbol, ignored.size()));
+            }
+        }
+    }
+
+    // Every outcome reached, kept spellings joined wherever a separator was found, and some table nullable.
+    for (const auto clause :
+         {std::optional{Separator_clause::not_discarded}, std::optional{Separator_clause::after_kept},
+          std::optional{Separator_clause::before_kept}, std::optional<Separator_clause>{}})
+    {
+        EXPECT_GT(tally[clause], 0U);
+    }
+
+    EXPECT_GT(joins, 0U);
+    EXPECT_GT(nullable, 0U);
 }
 
 TEST(Dfa_test, Has_split_points_ignoring_holds_wherever_the_exact_test_does_and_on_the_sets_the_relaxation_rescues)

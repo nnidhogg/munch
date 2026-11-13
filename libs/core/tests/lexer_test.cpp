@@ -15,7 +15,9 @@
 #include <iterator>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <optional>
+#include <random>
 #include <ranges>
 #include <sstream>
 #include <stdexcept>
@@ -1053,6 +1055,194 @@ std::size_t longest_unanchored_run(
     }
 
     return longest;
+}
+
+/**
+ * @brief The token kind of white space in the lexers json_lexer() builds, the kind they discard.
+ */
+constexpr std::size_t json_white_space{11};
+
+/**
+ * @brief The token kind of the first literal json_lexer() is given, each later one taking the next.
+ */
+constexpr std::size_t json_first_literal{12};
+
+/**
+ * @brief Builds the RFC 8259 JSON token set of the constrained-decoding paper's feasibility measurement, with white
+ *        space skipped and each given literal added as its own kind at a priority above the string token.
+ *
+ * The string's interior is any well-formed UTF-8 code point from the space on but the quote and the backslash, or an
+ * escape; the kinds are the string 0, the number 1, true, false and null 2 to 4, the six structural bytes 5 to 10,
+ * white space json_white_space and the literals from json_first_literal on, in the order given.
+ * @param literals The literals, each a quoted key or value.
+ * @return The lexer.
+ */
+Lexer json_lexer(const std::vector<std::string>& literals)
+{
+    Builder builder{};
+
+    for (std::size_t index{0}; index < literals.size(); ++index)
+    {
+        builder.add_token(text(literals[index]), json_first_literal + index, 1);
+    }
+
+    const auto hex{any_of(Set::digits() + Set::range('a', 'f') + Set::range('A', 'F'))};
+
+    const auto escape{concat(
+            text(R"(\)"),
+            choice(any_of(Set{'"', '\\', '/', 'b', 'f', 'n', 'r', 't'}), concat(text("u"), hex, hex, hex, hex)))};
+
+    const auto ascii{any_of(Set::range(0x20, 0x7F) - '"' - '\\')};
+
+    const auto code_point{choice(ascii, utf8::range(0x80, 0x10FFFF))};
+
+    builder.add_token(concat(text(R"(")"), kleene(choice(code_point, escape)), text(R"(")")), std::size_t{0}, 2);
+
+    const auto digits{plus(any_of(Set::digits()))};
+
+    const auto integer{choice(text("0"), concat(any_of(Set::range('1', '9')), kleene(any_of(Set::digits()))))};
+
+    const auto fraction{optional(concat(text("."), digits))};
+
+    const auto exponent{optional(concat(any_of(Set{'e', 'E'}), optional(any_of(Set{'+', '-'})), digits))};
+
+    builder.add_token(concat(optional(text("-")), integer, fraction, exponent), std::size_t{1}, 2);
+
+    std::size_t kind{2};
+
+    for (const std::string_view word : {"true", "false", "null", "{", "}", "[", "]", ":", ","})
+    {
+        builder.add_token(text(word), kind, 2);
+
+        ++kind;
+    }
+
+    builder.add_token(plus(any_of(Set{' ', '\t', '\n', '\r'})), json_white_space, 2);
+    builder.set_ignored_tokens(std::vector{json_white_space});
+
+    return builder.build();
+}
+
+/**
+ * @brief Returns the literals of the constrained-decoding paper's typed record of a given number of keys: its keys,
+ *        drawn in order from a fixed list, and the values of its enumeration, active, inactive and pending, each quoted
+ *        and listed once.
+ *
+ * Every record of 5, 20 and 60 keys holds an enumerated field, the fourth key's, so every one carries the three values.
+ * @param keys The number of keys, at most sixty.
+ * @return The literals, the keys first.
+ */
+std::vector<std::string> record_literals(const std::size_t keys)
+{
+    constexpr std::array<std::string_view, 60> names{
+            "id",       "name",     "email",     "age",      "active",     "tags",   "score",    "status",   "created",
+            "updated",  "title",    "summary",   "count",    "verified",   "labels", "rating",   "kind",     "owner",
+            "language", "version",  "priority",  "enabled",  "aliases",    "weight", "category", "region",   "currency",
+            "amount",   "approved", "notes",     "latitude", "level",      "source", "target",   "timezone", "quantity",
+            "archived", "keywords", "longitude", "phase",    "country",    "city",   "street",   "postcode", "primary",
+            "phones",   "floor",    "unit",      "company",  "department", "role",   "salary",   "remote",   "skills",
+            "years",    "grade",    "manager",   "office",   "building",   "badge"};
+
+    std::vector<std::string> literals{};
+
+    const auto add{[&](const std::string_view word) {
+        const auto quoted{std::format(R"("{}")", word)};
+
+        if (!std::ranges::contains(literals, quoted))
+        {
+            literals.push_back(quoted);
+        }
+    }};
+
+    for (const auto name : names | std::views::take(keys))
+    {
+        add(name);
+    }
+
+    for (const std::string_view value : {"active", "inactive", "pending"})
+    {
+        add(value);
+    }
+
+    return literals;
+}
+
+/**
+ * @brief A literal of a random token set, with the kind it is registered as and the priority it is registered at.
+ */
+struct Ranked_literal
+{
+    /**
+     * @brief The literal.
+     */
+    std::string word{};
+
+    /**
+     * @brief The ID of its kind.
+     */
+    std::size_t kind{};
+
+    /**
+     * @brief The priority it is registered at, lower winning, no two literals of the set at the same one.
+     */
+    std::size_t priority{};
+};
+
+/**
+ * @brief Draws a random literal token set over a, b and # whose words recur: the word # of the discarded kind 2 on
+ *        three draws in four, and two to seven literals of one to three bytes, each of a kind drawn among one, two and
+ *        three, one in three repeating an earlier word, each literal at a priority of its own in a random order.
+ * @param sequence The sequence the set is drawn from.
+ * @return The literals.
+ */
+std::vector<Ranked_literal> ranked_literals(std::mt19937& sequence)
+{
+    const auto draw{[&](const std::size_t below) {
+        std::uniform_int_distribution<std::size_t> distribution{0, below - 1};
+
+        return distribution(sequence);
+    }};
+
+    constexpr std::string_view alphabet{"ab#"};
+
+    const auto fresh{[&] {
+        std::string word{};
+
+        for (std::size_t length{draw(3) + 1}; length > 0; --length)
+        {
+            word.push_back(alphabet[draw(alphabet.size())]);
+        }
+
+        return word;
+    }};
+
+    std::vector<Ranked_literal> literals{};
+
+    if (draw(4) != 0)
+    {
+        literals.push_back(Ranked_literal{.word = "#", .kind = 2, .priority = 0});
+    }
+
+    for (std::size_t count{draw(6) + 2}; count > 0; --count)
+    {
+        const auto repeats{!literals.empty() && draw(3) == 0};
+
+        auto word{repeats ? literals[draw(literals.size())].word : fresh()};
+
+        literals.push_back(Ranked_literal{.word = std::move(word), .kind = draw(3) + 1, .priority = 0});
+    }
+
+    std::vector<std::size_t> order(literals.size());
+
+    std::ranges::iota(order, std::size_t{1});
+    std::ranges::shuffle(order, sequence);
+
+    for (std::size_t index{0}; index < literals.size(); ++index)
+    {
+        literals[index].priority = order[index];
+    }
+
+    return literals;
 }
 
 } // namespace
@@ -6092,6 +6282,345 @@ TEST_F(Lexer_test, Modulo_counterexample_decides_safety_modulo_the_discarded_kin
 
     // Zero holds nothing and settles nothing.
     EXPECT_FALSE(pair.modulo_counterexample('b', ignored, 0).exhaustive);
+}
+
+TEST_F(Lexer_test, Separator_failure_names_the_clause_a_byte_fails_and_passes_white_space_in_json_and_typed_records)
+{
+    enum class Token_kind : std::uint8_t
+    {
+        single,
+        skipped,
+        doubled
+    };
+
+    // The constrained-decoding paper's counterexample: the kept a and aa and a skipped token spelled # or a#. The byte
+    // # fails the second clause on a#, and a#a scans as the skipped token and one a; without a# it is a separator.
+    Builder builder{};
+
+    builder.add_token(text("a"), Token_kind::single, 1);
+    builder.add_token(text("aa"), Token_kind::doubled, 1);
+    builder.add_token(choice(text("#"), text("a#")), Token_kind::skipped, 1);
+    builder.set_ignored_tokens({Token_kind::skipped});
+
+    const auto lexer{builder.build()};
+
+    const std::vector<std::size_t> ignored{std::to_underlying(Token_kind::skipped)};
+
+    const auto [clause, kept, spelling]{lexer.separator_failure('#', ignored)};
+
+    EXPECT_EQ(clause, dfa::Separator_clause::after_kept);
+    EXPECT_EQ(kept, "a");
+    EXPECT_EQ(spelling, "a#");
+
+    const auto [tokens, consumed]{per_token_stream<Token_kind>(lexer, "a#a")};
+
+    EXPECT_EQ(consumed, 3U);
+    EXPECT_EQ(
+            tokens,
+            (std::vector<std::pair<Token_kind, std::size_t>>{{Token_kind::skipped, 2}, {Token_kind::single, 1}}));
+
+    Builder separated{};
+
+    separated.add_token(text("a"), Token_kind::single, 1);
+    separated.add_token(text("aa"), Token_kind::doubled, 1);
+    separated.add_token(text("#"), Token_kind::skipped, 1);
+
+    EXPECT_EQ(separated.build().separator_failure('#', ignored).clause, std::nullopt);
+
+    // The feasibility measurement's lexers: JSON and the typed records of 5, 20 and 60 keys, white space skipped and
+    // each key literal at a priority above the string. Every white-space byte is a separator, and spellings of every
+    // kept kind joined by one scan as their sequence and the white space between them.
+    std::mt19937 sequence{0x15EU};
+
+    const auto draw{[&](const std::size_t below) {
+        std::uniform_int_distribution<std::size_t> distribution{0, below - 1};
+
+        return distribution(sequence);
+    }};
+
+    const std::vector<std::size_t> skipped{json_white_space};
+
+    const std::vector<std::string> spellings{
+            "{",
+            "}",
+            "[",
+            "]",
+            ":",
+            ",",
+            "true",
+            "false",
+            "null",
+            "0",
+            "12",
+            "-0.5e+7",
+            R"("")",
+            R"("x\u00e9\n")",
+            "\"\xC3\xA9\xF0\x9F\x98\x80\""};
+
+    for (const std::size_t keys : {0U, 5U, 20U, 60U})
+    {
+        const auto literals{keys == 0 ? std::vector<std::string>{} : record_literals(keys)};
+
+        const auto json{json_lexer(literals)};
+
+        std::vector<std::string> kept{spellings};
+
+        kept.insert(kept.end(), literals.begin(), literals.end());
+
+        for (const auto white : std::string_view{" \t\n\r"})
+        {
+            const auto [failed, failed_kept, failed_spelling]{json.separator_failure(white, skipped)};
+
+            EXPECT_EQ(failed, std::nullopt) << keys << " keys, byte " << static_cast<int>(white);
+            EXPECT_TRUE(failed_kept.empty());
+            EXPECT_TRUE(failed_spelling.empty());
+
+            for (std::size_t join{0}; join < 200; ++join)
+            {
+                std::string input{};
+
+                std::vector<std::pair<std::size_t, std::size_t>> expected{};
+
+                for (std::size_t count{draw(8) + 1}; count > 0; --count)
+                {
+                    const auto& word{kept[draw(kept.size())]};
+
+                    if (!input.empty())
+                    {
+                        input.push_back(white);
+
+                        expected.emplace_back(json_white_space, 1);
+                    }
+
+                    input += word;
+
+                    const auto [token, length]{json.tokenize<std::size_t>(word)};
+
+                    ASSERT_EQ(length, word.size()) << word;
+
+                    expected.emplace_back(*token, length);
+                }
+
+                const auto [joined, joined_consumed]{per_token_stream<std::size_t>(json, input)};
+
+                EXPECT_EQ(joined_consumed, input.size()) << input;
+                EXPECT_EQ(joined, expected) << input;
+            }
+        }
+    }
+}
+
+TEST_F(Lexer_test, Separator_failure_reads_each_word_as_the_kind_its_best_priority_gives_over_random_literal_sets)
+{
+    // Random literal sets over a, b and # whose words recur under several kinds at distinct priorities, each byte asked
+    // with kind 2 discarded. The oracle reads the token spellings off the literals alone, each word of the kind its
+    // literal at the best priority gives, and over a finite set it is exact: the decision names the first clause the
+    // oracle sees fail, with a spelling as short as the oracle's shortest, and where it finds a separator, random
+    // sequences of kept spellings joined by single copies of the byte scan as exactly those tokens and the separators.
+    std::mt19937 sequence{0x5EAU};
+
+    const auto draw{[&](const std::size_t below) {
+        std::uniform_int_distribution<std::size_t> distribution{0, below - 1};
+
+        return distribution(sequence);
+    }};
+
+    constexpr std::size_t discarded{2};
+
+    const std::vector<std::size_t> ignored{discarded};
+
+    std::map<std::optional<dfa::Separator_clause>, std::size_t> tally{};
+
+    std::size_t overruled{0};
+
+    std::size_t joins{0};
+
+    for (std::size_t index{0}; index < 1000; ++index)
+    {
+        const auto literals{ranked_literals(sequence)};
+
+        Builder builder{};
+
+        std::map<std::string, Ranked_literal> best{};
+
+        for (const auto& literal : literals)
+        {
+            const auto& [word, kind, priority]{literal};
+
+            builder.add_token(text(word), kind, priority);
+
+            const auto known{best.find(word)};
+
+            if (known == best.end() || priority < known->second.priority)
+            {
+                best.insert_or_assign(word, literal);
+            }
+        }
+
+        const auto lexer{builder.build()};
+
+        const auto kind_of{[&](const std::string& word) { return best.at(word).kind; }};
+
+        std::vector<std::string> kept_words{};
+
+        for (const auto& [word, literal] : best)
+        {
+            if (literal.kind != discarded)
+            {
+                kept_words.push_back(word);
+            }
+        }
+
+        const auto mixed{[&](const Ranked_literal& literal) {
+            const auto sibling{[&](const Ranked_literal& other) {
+                return other.word == literal.word && (other.kind == discarded) != (literal.kind == discarded);
+            }};
+
+            return std::ranges::any_of(literals, sibling);
+        }};
+
+        if (std::ranges::any_of(literals, mixed))
+        {
+            ++overruled;
+        }
+
+        for (const auto symbol : std::string_view{"ab#"})
+        {
+            const auto label{std::format("set {} byte {}", index, symbol)};
+
+            const auto [clause, kept, spelling]{lexer.separator_failure(symbol, ignored)};
+
+            ++tally[clause];
+
+            const std::string alone{symbol};
+
+            const auto discarded_alone{best.contains(alone) && kind_of(alone) == discarded};
+
+            std::optional<std::size_t> after{};
+
+            std::optional<std::size_t> before{};
+
+            const auto shorter{[](std::optional<std::size_t>& shortest, const std::size_t length) {
+                if (!shortest || length < *shortest)
+                {
+                    shortest = length;
+                }
+            }};
+
+            for (const auto& word : std::views::keys(best))
+            {
+                const auto extends{[&](const std::string& prefix) { return word.starts_with(prefix + symbol); }};
+
+                const auto leads{[&](const std::string& next) { return word.size() >= 2 && word[1] == next.front(); }};
+
+                if (std::ranges::any_of(kept_words, extends))
+                {
+                    shorter(after, word.size());
+                }
+
+                if (word.front() == symbol && std::ranges::any_of(kept_words, leads))
+                {
+                    shorter(before, word.size());
+                }
+            }
+
+            const auto expected{[&]() -> std::optional<dfa::Separator_clause> {
+                if (!discarded_alone)
+                {
+                    return dfa::Separator_clause::not_discarded;
+                }
+
+                if (after)
+                {
+                    return dfa::Separator_clause::after_kept;
+                }
+
+                if (before)
+                {
+                    return dfa::Separator_clause::before_kept;
+                }
+
+                return std::nullopt;
+            }()};
+
+            ASSERT_EQ(clause, expected) << label;
+
+            if (clause == dfa::Separator_clause::not_discarded)
+            {
+                EXPECT_TRUE(kept.empty()) << label;
+                EXPECT_EQ(spelling, alone) << label;
+
+                continue;
+            }
+
+            if (clause == dfa::Separator_clause::after_kept)
+            {
+                EXPECT_TRUE(std::ranges::contains(kept_words, kept)) << label;
+                EXPECT_TRUE(best.contains(spelling)) << label;
+                EXPECT_TRUE(spelling.starts_with(kept + symbol)) << label;
+                EXPECT_EQ(spelling.size(), after) << label;
+
+                continue;
+            }
+
+            if (clause == dfa::Separator_clause::before_kept)
+            {
+                EXPECT_TRUE(std::ranges::contains(kept_words, kept)) << label;
+                EXPECT_TRUE(best.contains(spelling)) << label;
+                ASSERT_GE(spelling.size(), 2U) << label;
+                EXPECT_EQ(spelling.front(), symbol) << label;
+                EXPECT_EQ(spelling[1], kept.front()) << label;
+                EXPECT_EQ(spelling.size(), before) << label;
+
+                continue;
+            }
+
+            EXPECT_TRUE(kept.empty()) << label;
+            EXPECT_TRUE(spelling.empty()) << label;
+
+            for (std::size_t join{0}; join < 20 && !kept_words.empty(); ++join)
+            {
+                std::string input{};
+
+                std::vector<std::pair<std::size_t, std::size_t>> stream{};
+
+                for (std::size_t count{draw(5) + 1}; count > 0; --count)
+                {
+                    const auto& word{kept_words[draw(kept_words.size())]};
+
+                    if (!input.empty())
+                    {
+                        input.push_back(symbol);
+
+                        stream.emplace_back(discarded, 1);
+                    }
+
+                    input += word;
+
+                    stream.emplace_back(kind_of(word), word.size());
+                }
+
+                ++joins;
+
+                const auto [tokens, consumed]{per_token_stream<std::size_t>(lexer, input)};
+
+                EXPECT_EQ(consumed, input.size()) << label << " " << input;
+                EXPECT_EQ(tokens, stream) << label << " " << input;
+            }
+        }
+    }
+
+    // Every outcome reached, some set whose words a priority turns between a kept and the discarded kind, and kept
+    // spellings joined wherever a separator was found.
+    for (const auto clause :
+         {std::optional{dfa::Separator_clause::not_discarded}, std::optional{dfa::Separator_clause::after_kept},
+          std::optional{dfa::Separator_clause::before_kept}, std::optional<dfa::Separator_clause>{}})
+    {
+        EXPECT_GT(tally[clause], 0U);
+    }
+
+    EXPECT_GT(overruled, 0U);
+    EXPECT_GT(joins, 0U);
 }
 
 TEST_F(Lexer_test, The_segmentation_cap_is_a_ceiling_on_the_states_the_search_holds)

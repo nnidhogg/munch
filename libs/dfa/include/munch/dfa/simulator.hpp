@@ -63,9 +63,9 @@ namespace munch::dfa
  * Beside the scan, the class carries what construction derives: the byte certificates and the mandatory window core.
  * The decisions built on the compiled machine live beside it as free functions over its read-only view, state_count()
  * through is_live(): is_split_window() in split_window.hpp, the recovery decisions in recovery.hpp, anchor_free_span()
- * in the header of its name and the boundary-guessing decisions, rescue() through modulo_counterexample(), in
- * boundary_search.hpp, so that the machine and each decision can be read on their own and a new decision adds nothing
- * here.
+ * in the header of its name, the boundary-guessing decisions, rescue() through modulo_counterexample(), in
+ * boundary_search.hpp and separator_failure() in separator.hpp, so that the machine and each decision can be read on
+ * their own and a new decision adds nothing here.
  */
 class Simulator
 {
@@ -397,8 +397,9 @@ public:
      * @brief Returns the number of states the tables hold a column for, one past the highest state identifier.
      *
      * With init_state(), init_reentrant(), step(), is_accepting(), is_live(), accepted() and symbol_count, the view of
-     * the compiled machine that the decisions in split_window.hpp, recovery.hpp, anchor_free_span.hpp and
-     * boundary_search.hpp are written over, so that a new decision needs nothing this class keeps private.
+     * the compiled machine that the decisions in split_window.hpp, recovery.hpp, anchor_free_span.hpp,
+     * boundary_search.hpp and separator.hpp are written over, so that a new decision needs nothing this class keeps
+     * private.
      * @return That count.
      */
     [[nodiscard]] std::size_t state_count() const noexcept { return flags_.size(); }

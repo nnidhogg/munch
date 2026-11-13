@@ -1313,6 +1313,36 @@ prepended on the left can change its tokens, the decisions behind `verifier::rip
 [arXiv:2611.13061](https://arxiv.org/abs/2611.13061), as [docs/bpe_left_ripple.md](bpe_left_ripple.md), or build it
 from the same directory.
 
+`separator_failure(symbol, ignored)` asks what a constrained decoder needs before it puts a byte between tokens: do the
+spellings of any kept tokens, joined by single copies of the symbol, scan as exactly those tokens? It checks three
+clauses under which they do, generalizing the condition the constrained-decoding paper states for its JSON lexers: the
+symbol alone is a token of a discarded kind, no token spelling begins with a kept spelling followed by the symbol, and
+no token spelling begins with the symbol followed by the first byte of a kept spelling, a kept spelling being a byte
+string the scan reads as one token of a kind not discarded. When the three hold, every sequence of kept kinds that have
+spellings is realizable, so a decoder separating tokens by the symbol never meets a grammar-side failure where the lexer
+cannot realize a terminal sequence; every white-space byte passes for a JSON lexer that skips white space, with or
+without key literals above the string token. The third clause covers the separator's own kind as well: over the kept `a`
+and one discarded kind spelled `#` or `#a`, only that kind begins with `#`, yet `a#a` scans as `a` and `#a`, and `#`
+fails the third clause on `#a`. The condition is sufficient and not necessary. A byte that fails it comes with the first
+clause it fails and the words that show it, a kept spelling and a shortest token spelling the clause forbids, and the
+discarded kinds are passed in as for `modulo_counterexample()`. The decision runs on the compiled machine by
+reachability, in time linear in the table's size, with no cap. Over the kept `a` and `aa` with `#` and `a#` discarded,
+no byte string scans as `a` followed by `a`:
+
+```cpp
+builder.add_token(text("a"), Token::Identifier, 1);
+builder.add_token(text("aa"), Token::Keyword, 1);
+builder.add_token(choice(text("#"), text("a#")), Token::Trivia, 1);
+builder.set_ignored_tokens({Token::Trivia});
+
+const auto lexer{builder.build()};
+
+const std::vector<std::size_t> ignored{std::to_underlying(Token::Trivia)};
+
+lexer.separator_failure('#', ignored);  // {after_kept, "a", "a#"}: a#a scans as a# and a
+lexer.separator_failure('b', ignored);  // {not_discarded, "", "b"}: b is no token
+```
+
 ### **2. Tokenizer API (`munch::tools::tokenizer::Tokenizer`)**
 
 The Tokenizer owns the input and a reading position, and reports each read as a `Result`: a token, the end of the
