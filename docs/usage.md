@@ -567,9 +567,9 @@ else if (half == dfa::Separation_half::domain) { /* one set tokenizes the witnes
 else { /* both tokenize the witness and cut it differently */ }
 ```
 
-These seven decisions and `rescue()` under Error Recovery are declared together in `munch/dfa/boundary_search.hpp`,
-eight instances of one search over guessed token boundaries, with `boundary_profile()` beside the two it asks at every
-gap, and each is forwarded by `core::Lexer`.
+These seven decisions, `rescue()` under Error Recovery and `modulo_counterexample()` beside the relaxed certificate
+below are declared together in `munch/dfa/boundary_search.hpp`, nine instances of one search over guessed token
+boundaries, with `boundary_profile()` beside the two it asks at every gap, and each is forwarded by `core::Lexer`.
 
 The searches above decide questions about one token set's scan. `munch/verifier/verifier.hpp` states the object they are
 questions about, so that the same decisions can be made about any segmentation a finite automaton recognizes.
@@ -1249,6 +1249,41 @@ const auto lexer{builder.build()};
 
 lexer.is_split_point('\n');           // false: a whitespace run can contain it
 lexer.is_split_point_ignoring('\n');  // true: both halves of the split run are discarded
+```
+
+`modulo_counterexample(symbol, ignored)` decides that question exactly, where `is_split_point_ignoring()` answers it
+soundly and not completely: does every cut before the symbol, in every completely tokenizable input, leave two chunks
+the scan consumes, whose kept tokens follow one another as the whole input's do, kinds and lengths alike? The discarded
+kinds are passed in, so a set other than the builder's can be asked, and an empty one asks exact safety. It is the
+split-points paper's exact decision: the boundary-guessing search of `domain_difference()` runs once per chunk, the
+whole input's scan beside the chunk's scan guessed to fail, and where neither chunk fails, a product of two scans
+emitting their kept tokens as words, the whole input's and the one restarted at the cut, compares the words on its
+finite graph. The question is decided in polynomial space, the decision takes time singly exponential in the state count
+in the worst case, and the cap bounds each of its three searches. An unsafe symbol comes with a witness, the first cut
+at which it fails and how: the chunk before the cut does not scan, the chunk from it does not, or the kept streams
+differ. A chunk that does not scan is found first, and its witness is a shortest one. A byte no completely tokenizable
+input holds past its first offset is safe vacuously, with no witness, where `is_split_point_ignoring()` answers false.
+Over the discarded `a`, `b`, `c` and `abc` and the kept `k` and `kk` the kept tokens come only from runs of `k`, which a
+cut before `b` leaves whole, so every such cut is safe, though the relaxed certificate refuses `b`:
+
+```cpp
+for (const std::string_view word : {"a", "b", "c", "abc"})
+{
+    builder.add_token(text(word), Token::Trivia, 1);
+}
+
+builder.add_token(text("k"), Token::Keyword, 1);
+builder.add_token(text("kk"), Token::Keyword, 1);
+builder.set_ignored_tokens({Token::Trivia});
+
+const auto lexer{builder.build()};
+
+const std::vector<std::size_t> ignored{std::to_underlying(Token::Trivia)};
+
+lexer.is_split_point_ignoring('b');         // false: after a, b leads into abc rather than to the token b
+lexer.modulo_counterexample('b', ignored);  // {"", 0, std::nullopt, true}: every cut before b is safe
+lexer.modulo_counterexample('b', {});       // {"abc", 1, streams_differ, true}: abc against a, b and c
+lexer.modulo_counterexample('k', ignored);  // {"kk", 1, streams_differ, true}: kk against two k
 ```
 
 Since 2.2 the weaker test asks less than the report's: the restart after the cut need not reach the very state the

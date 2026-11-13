@@ -210,7 +210,8 @@ public:
      * kinds are removed from both, so a caller that keeps them must use is_split_point(). The completeness condition is
      * not decoration: past the offset where the serial scan first fails, a chunk cut here can emit kept tokens that
      * scan never reaches. Note also that chunk_boundaries() and tokenize_all_parallel() plan with the exact
-     * certificate, so acting on this answer means planning boundaries yourself. The derivation is
+     * certificate, so acting on this answer means planning boundaries yourself. The test is sound and not complete, and
+     * modulo_counterexample() decides the same question exactly. The derivation is
      * dfa::Simulator::is_split_point_ignoring()'s.
      * @param symbol The symbol to test.
      * @return True if the symbol can begin a token and every occurrence is safe under that weaker equivalence; symbols
@@ -853,6 +854,36 @@ public:
             const Lexer& other, const std::size_t cap = dfa::segmentation_cap) const
     {
         return dfa::segmentation_difference(simulator_, other.simulator_, cap);
+    }
+
+    /**
+     * @brief Decides whether the symbol is safe modulo the discarded kinds, with a completely tokenizable input and a
+     *        cut before the symbol that is not safe, and how it fails.
+     *
+     * The exact question behind is_split_point_ignoring(), which answers it soundly and not completely: at every offset
+     * past the first holding the symbol, in every completely tokenizable input, the scan consumes both chunks the cut
+     * before it leaves and their kept tokens follow one another as the whole input's do, kinds and lengths alike, so
+     * that chunks cut there reproduce the serial stream once the discarded tokens are deleted from both. The discarded
+     * kinds are given here rather than read from the builder, so a caller may ask about another set than the one
+     * is_split_point_ignoring() was compiled for, and an empty set asks exact safety. Over the discarded a, b, c and
+     * abc and the kept k and kk the byte b is safe, while is_split_point_ignoring() refuses it; over ab discarded alone
+     * the cut before b leaves two chunks neither of which scans. Decided by the same boundary-guessing search as
+     * domain_difference(), once per chunk, and where neither chunk fails, by the product of two scans emitting their
+     * kept tokens as words, compared on its finite graph; the question is decided in polynomial space, and the decision
+     * takes time singly exponential in the state count in the worst case. A symbol no completely tokenizable input
+     * holds past its first offset is safe vacuously and reported so, with no witness, where is_split_point_ignoring()
+     * answers false. The derivation is dfa::modulo_counterexample()'s.
+     * @param symbol The byte the cuts stand before.
+     * @param ignored The IDs of the tokens the caller discards before the stream is used.
+     * @param cap The largest number of search states each search holds before giving up, dfa::modulo_cap unless told.
+     * @return The witness, its cut and how it fails, and whether the searches settled the question; an empty witness
+     *         from exhaustive searches proves the symbol safe modulo the discarded kinds.
+     */
+    [[nodiscard]] dfa::Unsafe_cut modulo_counterexample(
+            const char symbol, const std::span<const std::size_t> ignored,
+            const std::size_t cap = dfa::modulo_cap) const
+    {
+        return dfa::modulo_counterexample(simulator_, symbol, ignored, cap);
     }
 
 private:

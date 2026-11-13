@@ -6037,6 +6037,63 @@ TEST_F(Lexer_test, Domain_difference_finds_an_input_one_token_set_tokenizes_wher
     EXPECT_EQ(cut_apart, "aa");
 }
 
+TEST_F(Lexer_test, Modulo_counterexample_decides_safety_modulo_the_discarded_kinds_the_relaxed_certificate_refuses)
+{
+    enum class Token_kind : std::uint8_t
+    {
+        discarded,
+        kept
+    };
+
+    // The split-points paper's example: over the discarded a, b, c and abc and the kept k and kk, every cut before b is
+    // safe, while the relaxed certificate refuses b; with nothing discarded, b lies inside the token abc, so the cut
+    // before it severs one. Over ab discarded alone, the cut before b leaves two chunks neither of which scans.
+    Builder builder{};
+
+    for (const std::string_view word : {"a", "b", "c", "abc"})
+    {
+        builder.add_token(text(word), Token_kind::discarded, 1);
+    }
+
+    builder.add_token(text("k"), Token_kind::kept, 1);
+    builder.add_token(text("kk"), Token_kind::kept, 1);
+    builder.set_ignored_tokens({Token_kind::discarded});
+
+    const auto lexer{builder.build()};
+
+    const std::vector<std::size_t> ignored{std::to_underlying(Token_kind::discarded)};
+
+    EXPECT_FALSE(lexer.is_split_point_ignoring('b'));
+
+    const auto [none, no_cut, no_failure, settled]{lexer.modulo_counterexample('b', ignored)};
+
+    EXPECT_TRUE(settled);
+    EXPECT_TRUE(none.empty());
+    EXPECT_FALSE(no_failure.has_value());
+
+    const auto [severed, severed_cut, severed_failure, severed_settled]{lexer.modulo_counterexample('b', {})};
+
+    EXPECT_TRUE(severed_settled);
+    EXPECT_EQ(severed_failure, dfa::Cut_failure::streams_differ);
+    EXPECT_EQ(severed.substr(severed_cut, 1), "b");
+
+    Builder joined{};
+
+    joined.add_token(text("ab"), Token_kind::discarded, 1);
+
+    const auto pair{joined.build()};
+
+    const auto [witness, cut, failure, exhaustive]{pair.modulo_counterexample('b', ignored)};
+
+    EXPECT_TRUE(exhaustive);
+    EXPECT_EQ(witness, "ab");
+    EXPECT_EQ(cut, 1U);
+    EXPECT_EQ(failure, dfa::Cut_failure::left_incomplete);
+
+    // Zero holds nothing and settles nothing.
+    EXPECT_FALSE(pair.modulo_counterexample('b', ignored, 0).exhaustive);
+}
+
 TEST_F(Lexer_test, The_segmentation_cap_is_a_ceiling_on_the_states_the_search_holds)
 {
     enum class Token_kind : std::uint8_t

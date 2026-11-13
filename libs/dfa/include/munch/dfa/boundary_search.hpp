@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,29 +14,33 @@
  * @file
  * @brief The decisions that ask whether some completely tokenizable input makes an event happen, and the one search
  *        that answers them: rescue(), boundary_difference(), window_occurrence(), window_counterexample(),
- *        boundary_counterexample(), crossing_counterexample(), domain_difference() and segmentation_difference().
+ *        boundary_counterexample(), crossing_counterexample(), domain_difference(), segmentation_difference() and
+ *        modulo_counterexample().
  *
  * Each asks after an event, a scan rolling back, two token sets cutting a shared input apart, a window occurring, a
  * certificate being failed, a window occurring with no boundary at a gap, a window occurring with one there, one token
- * set tokenizing an input completely that the other does not, two token sets segmenting an input differently, and all
- * answer it the same way: the input is built byte by byte, breadth first, while guessing where its tokens end, every
- * closed segment's run kept alive because a later accept on it proves the close was not the longest match. The guesses
- * that survive are exactly the maximal-munch segmentation, which is what makes guessing boundaries sound. A witness is
- * therefore a shortest input on which the event happens, and the cap is a ceiling on the states held rather than a
- * budget spent afterwards, so an answer is always one the cap paid for and a search the cap stops settles nothing,
- * which every result reports as exhaustive rather than leaving to be inferred from an empty witness.
+ * set tokenizing an input completely that the other does not, two token sets segmenting an input differently, a cut
+ * before a byte leaving a chunk the scan does not consume, and all answer it the same way: the input is built byte by
+ * byte, breadth first, while guessing where its tokens end, every closed segment's run kept alive because a later
+ * accept on it proves the close was not the longest match. The guesses that survive are exactly the maximal-munch
+ * segmentation, which is what makes guessing boundaries sound. A witness is therefore a shortest input on which the
+ * event happens, and the cap is a ceiling on the states held rather than a budget spent afterwards, so an answer is
+ * always one the cap paid for and a search the cap stops settles nothing, which every result reports as exhaustive
+ * rather than leaving to be inferred from an empty witness.
  *
- * They are eight instances of one search over one key, differing only in how many scans they walk, what raises the
- * key's mark and what else a branch's future depends on, which is why they are declared together here and implemented
- * in one unit, boundary_search.cpp: the search, its key and the moves over it are private to that file, and a decision
- * added later joins them there rather than being handed them across a header. The header reads as the tree's classes
- * do, the types first, the caps after them and the functions last, so that the results stand side by side, one shape
- * with Exclusion adding the side, Separation the half and Gap_verdict pairing two refutations under a verdict, before
- * the eight contracts that produce them, with boundary_profile() beside the two it asks at every gap of a window. The
- * ninth relative, anchor_free_span(), is not here: it walks the compiled machine rather than guessed inputs, building
- * the graph of positions the same guessed marking reaches and taking a longest anchor-free run or a cycle in it, so it
- * has neither witness nor cap and keeps its own header. The recovery queries in recovery.hpp walk the compiled machine
- * over a given tail and guess nothing.
+ * They are nine instances of one search over one key, differing only in how many scans they walk, what raises the key's
+ * mark and what else a branch's future depends on, which is why they are declared together here and implemented in one
+ * unit, boundary_search.cpp: the search, its key and the moves over it are private to that file, and a decision added
+ * later joins them there rather than being handed them across a header. One event no branch shows alone, a cut changing
+ * the kept tokens, compares two outputs along the whole input, so modulo_counterexample() builds the product of the
+ * same moves whole for it and compares the outputs on that finite graph. The header reads as the tree's classes do, the
+ * types first, the caps after them and the functions last, so that the results stand side by side, one shape with
+ * Exclusion adding the side, Separation the half, Unsafe_cut the cut and its failure and Gap_verdict pairing two
+ * refutations under a verdict, before the nine contracts that produce them, with boundary_profile() beside the two it
+ * asks at every gap of a window. The tenth relative, anchor_free_span(), is not here: it walks the compiled machine
+ * rather than guessed inputs, building the graph of positions the same guessed marking reaches and taking a longest
+ * anchor-free run or a cycle in it, so it has neither witness nor cap and keeps its own header. The recovery queries in
+ * recovery.hpp walk the compiled machine over a given tail and guess nothing.
  */
 namespace munch::dfa
 {
@@ -303,6 +308,64 @@ struct Separation
 };
 
 /**
+ * @brief How a cut before a byte fails safety modulo the discarded kinds.
+ *
+ * A cut before a byte of a completely tokenizable input is safe when the scan consumes both chunks it leaves and their
+ * kept tokens, those of the kinds not discarded, follow one another as the whole input's do, kinds and lengths alike. A
+ * cut that is not safe fails in one of three ways, read in this order off the scans of the input's two chunks.
+ */
+enum class Cut_failure : std::size_t
+{
+    /**
+     * @brief The scan of the chunk before the cut does not consume it.
+     */
+    left_incomplete,
+
+    /**
+     * @brief The scan consumes the chunk before the cut and not the chunk from it.
+     */
+    right_incomplete,
+
+    /**
+     * @brief The scan consumes both chunks, and their kept tokens differ from the whole input's.
+     */
+    streams_differ
+};
+
+/**
+ * @brief What the search for a cut before a byte that is not safe modulo the discarded kinds found.
+ */
+struct Unsafe_cut
+{
+    /**
+     * @brief A completely tokenizable input with a cut before the byte that is not safe, empty when none was found.
+     */
+    std::string witness{};
+
+    /**
+     * @brief The first offset of the witness past its first byte that holds the byte and has a cut before it that is
+     *        not safe; zero when there is no witness.
+     */
+    std::size_t cut{};
+
+    /**
+     * @brief How the cut fails; nothing when there is no witness.
+     */
+    std::optional<Cut_failure> failure{};
+
+    /**
+     * @brief Whether the searches settled the question, each by exhausting its state space or by finding its witness,
+     *        rather than one stopping at the cap.
+     *
+     * Reported rather than inferred because an empty witness means two different things: proved safe when the searches
+     * exhausted, and undetermined when the cap stopped one. A caller that treats the second as the first would cut
+     * where a chunk may not scan or a kept token may change, which is the whole failure this decision exists to
+     * exclude.
+     */
+    bool exhaustive{};
+};
+
+/**
  * @brief The number of search states rescue() holds before giving up unless told otherwise, generous for the token sets
  *        a lexer carries, where the worst case is exponential in the state count.
  */
@@ -344,6 +407,13 @@ inline constexpr std::size_t domain_cap{1U << 20U};
  *        for the token sets a lexer carries, where the worst case is exponential in both state counts.
  */
 inline constexpr std::size_t segmentation_cap{1U << 20U};
+
+/**
+ * @brief The number of search states each search of modulo_counterexample() holds before giving up unless told
+ *        otherwise, its product of kept outputs among them, generous for the token sets a lexer carries, where the
+ *        worst case is exponential in the state count.
+ */
+inline constexpr std::size_t modulo_cap{1U << 20U};
 
 /**
  * @brief Decides whether some completely tokenizable input makes the scan roll back, returning one that does.
@@ -660,6 +730,60 @@ inline constexpr std::size_t segmentation_cap{1U << 20U};
  */
 [[nodiscard]] Separation segmentation_difference(
         const Simulator& simulator, const Simulator& other, std::size_t cap = segmentation_cap);
+
+/**
+ * @brief Decides whether a byte is safe modulo the discarded kinds, returning a completely tokenizable input with a cut
+ *        before the byte that is not safe.
+ *
+ * The exact question behind is_split_point_ignoring(), which answers it soundly and not completely: the byte is safe
+ * when at every offset past the first holding it, in every completely tokenizable input, the scan consumes both chunks
+ * the cut before it leaves and their kept tokens, those of the kinds not discarded, follow one another as the whole
+ * input's do, kinds and lengths alike. A planner cutting only there reproduces the serial stream on every completely
+ * tokenizable input once the discarded tokens are deleted from both, and with no kind discarded the question is exact
+ * safety, every token coming back. Over the discarded literals a, b, c and abc and the kept k and kk the byte b is
+ * safe, the kept tokens coming only from runs of k, which a cut before b leaves whole, while is_split_point_ignoring()
+ * refuses it, the state after a reaching on b the prefix of abc where the initial state reaches the token b; over ab
+ * discarded alone the cut before b leaves two chunks neither of which scans, so b is not safe though every kept stream
+ * is empty.
+ *
+ * Decided as the exact-decision theorem of the split-points paper constructs it. The chunks are asked first, by the
+ * search domain_difference() runs with the one token set on both sides: the whole input's complete scan beside one
+ * chunk's scan guessed to fail, once for the chunk before the cut, which must have begun to fail when the cut comes,
+ * and once for the chunk from it, which begins at the cut, the cut guessed before a byte holding the symbol past the
+ * first. When neither chunk fails anywhere, the kept tokens are compared on the product of two scans that emit them as
+ * words, the whole input's and the one restarted at the cut, each guessing at a token's first byte whether its kind is
+ * kept, checked where the token closes, and emitting z for each byte of a kept token and its kind's letter at its end,
+ * so that equal words are equal kept streams. Every accepting path of the product is an input and a cut both of whose
+ * chunks scan, and whether all of them carry equal words is decided on the finite graph by the delays, the reduced
+ * free-group word between the two outputs along a shortest path into each vertex, which agree along every edge exactly
+ * when every accepting path's outputs do.
+ *
+ * A search state holds a state and a set of closed runs per scan, so it takes space polynomial in the state count, and
+ * the question is decided in polynomial space. The searches and the product, which may hold every state, take time and
+ * space singly exponential in the state count in the worst case, and the cap bounds each of the three. The witness is a
+ * shortest input with a cut a chunk of which the scan does not consume when there is one, the shorter of the two chunk
+ * searches' witnesses and the left chunk's on a tie; otherwise an input with unequal kept streams of fewer bytes than
+ * twice the product's states, not necessarily a shortest one. The cut and the failure are facts about the witness, read
+ * off the scans of its chunks: the first offset past the first holding the symbol at which a cut is not safe, and the
+ * first of Cut_failure's three ways it fails there. A search the cap stops leaves the whole question open, a witness
+ * another search found included, since a shorter one may lie where the cap stopped. A byte no completely tokenizable
+ * input holds past its first offset is safe vacuously and reported so, with no witness, where is_split_point_ignoring()
+ * answers false. The searches start at the initial state and reach every position a scan can stand in, so the accepting
+ * states no input reaches never enter them, and a nullable token set is decided through the positive-width equivalent
+ * the simulator compiled, as every decision here is. verifier::modulo_dependence() decides a stronger contract for a
+ * window's cut over a verifier, every kept token returned at its position, where this one compares kinds and lengths as
+ * the split-points paper's definition does.
+ * @param simulator The compiled token set.
+ * @param symbol The byte the cuts stand before.
+ * @param ignored The IDs of the tokens the caller discards before the stream is used; empty asks exact safety.
+ * @param cap The most search states each search holds at once, a ceiling rather than a budget spent afterwards: a state
+ *        beyond it is never held, and the search gives up instead of admitting it, so an answer is always one the cap
+ *        paid for. Zero holds nothing, not even the state a search starts in, and settles nothing.
+ * @return The witness, its cut and how it fails, and whether the searches settled the question; an empty witness from
+ *         exhaustive searches proves the byte safe modulo the discarded kinds.
+ */
+[[nodiscard]] Unsafe_cut modulo_counterexample(
+        const Simulator& simulator, char symbol, std::span<const std::size_t> ignored, std::size_t cap = modulo_cap);
 
 } // namespace munch::dfa
 

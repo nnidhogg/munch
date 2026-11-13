@@ -7,11 +7,11 @@ tag `v1.2.0`, archived at doi:10.5281/zenodo.21752997. It names release 2.2.0 as
 test of Section 5.1, the rule behind `Lexer::is_split_point_ignoring()`. And its applicability section notes that the
 pinned v1.2.0 probe carries the construction-cost grammar's transcription "verified by eye only", a binding later
 releases add mechanically. The exact decision of Section 5.2 is a figure program beside the library,
-`paper/figures/modulo.hpp`, not part of it. The scaling measurements in the evaluation were taken on an earlier tree,
-preserved by the `benchmark/split-points-2026-08` tag; the composition and validation figures are asserted from the
-release tree under CI, and the certificate figures' DOT sources are regenerated there and byte-compared against the
-committed copies. The tables below are produced mechanically from the paper's own tabular sources, never transcribed by
-hand.
+`paper/figures/modulo.hpp`, and the library decides the same question as `Lexer::modulo_counterexample()`. The scaling
+measurements in the evaluation were taken on an earlier tree, preserved by the `benchmark/split-points-2026-08` tag; the
+composition and validation figures are asserted from the release tree under CI, and the certificate figures' DOT sources
+are regenerated there and byte-compared against the committed copies. The tables below are produced mechanically from
+the paper's own tabular sources, never transcribed by hand.
 
 *A technical report on the mechanism behind `Lexer::is_split_point()`, `is_split_point_ignoring()`,
 `chunk_boundaries()`, and `tokenize_all_parallel()`. The implementation, tests, and benchmarks live in this repository;

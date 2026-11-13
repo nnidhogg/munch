@@ -730,6 +730,641 @@ std::array<std::size_t, 2> shortest_exclusions(
     return shortest;
 }
 
+/**
+ * @brief The ID of the discarded kind in the token sets the modulo tests build, beside the kept kinds 1 and 3.
+ */
+constexpr std::size_t discarded_kind{2};
+
+/**
+ * @brief Builds a finite token set of literals, each of its own kind, as a trie.
+ * @param tokens Each literal, nonempty and distinct, with the ID of its kind.
+ * @return The token set, accepting nothing when there is no literal.
+ */
+Dfa literal_tokens(const std::vector<std::pair<std::string_view, std::size_t>>& tokens)
+{
+    Builder builder{};
+
+    std::map<std::string, Dfa::State_t, std::less<>> nodes{{"", builder.init_state()}};
+
+    for (const auto& [word, kind] : tokens)
+    {
+        for (std::size_t length{1}; length <= word.size(); ++length)
+        {
+            const auto prefix{std::string{word.substr(0, length)}};
+
+            if (nodes.contains(prefix))
+            {
+                continue;
+            }
+
+            const auto node{builder.next_state()};
+
+            const auto parent{nodes.find(word.substr(0, length - 1))};
+
+            const auto& [parent_prefix, parent_state]{*parent};
+
+            builder.add_transition(parent_state, Label{word[length - 1]}, node);
+
+            nodes.emplace(prefix, node);
+        }
+
+        const auto& [word_prefix, word_state]{*nodes.find(word)};
+
+        builder.add_accept_state(word_state, Token{kind});
+    }
+
+    return builder.build();
+}
+
+/**
+ * @brief Builds a finite token set of words among a, b, aa, ab, ba and bb, each absent, kept or discarded.
+ * @param choice One base-three digit per word, in that order: zero leaves it out, one makes it a token of the kept kind
+ *        1 and two of the discarded kind.
+ * @return The token set, accepting nothing when every word is left out.
+ */
+Dfa kinded_words(const std::size_t choice)
+{
+    constexpr std::array<std::string_view, 6> candidates{"a", "b", "aa", "ab", "ba", "bb"};
+
+    std::vector<std::pair<std::string_view, std::size_t>> tokens{};
+
+    for (std::size_t index{0}, digits{choice}; index < candidates.size(); ++index, digits /= 3)
+    {
+        const auto kind{digits % 3};
+
+        if (kind != 0)
+        {
+            tokens.emplace_back(candidates[index], kind);
+        }
+    }
+
+    return literal_tokens(tokens);
+}
+
+/**
+ * @brief Draws a random table as random_table() does, each accepting state of a kind drawn among one, two and three.
+ * @param sequence The sequence the table is drawn from.
+ * @return The table.
+ */
+Dfa random_kinded_table(std::mt19937& sequence)
+{
+    Builder builder{};
+
+    std::vector<Dfa::State_t> states{builder.init_state()};
+
+    for (std::size_t added{draw(sequence, 3) + 2}; added > 0; --added)
+    {
+        states.push_back(builder.next_state());
+    }
+
+    const auto sink{builder.next_state()};
+
+    const auto island{builder.next_state()};
+
+    for (const auto from : states)
+    {
+        for (const auto byte : std::string_view{"ab"})
+        {
+            // One target beyond the states is the sink, and one more is no transition at all.
+            const auto target{draw(sequence, states.size() + 2)};
+
+            if (target < states.size())
+            {
+                builder.add_transition(from, Label{byte}, states[target]);
+            }
+            else if (target == states.size())
+            {
+                builder.add_transition(from, Label{byte}, sink);
+            }
+        }
+    }
+
+    builder.add_transition(sink, Label{'a'}, sink);
+    builder.add_transition(sink, Label{'b'}, sink);
+    builder.add_transition(island, Label{'a'}, states.front());
+    builder.add_transition(island, Label{'b'}, island);
+    builder.add_accept_state(island, Token{7});
+
+    const auto accepting{states[draw(sequence, states.size() - 1) + 1]};
+
+    builder.add_accept_state(accepting, Token{draw(sequence, 3) + 1});
+
+    for (std::size_t index{2}; index < states.size(); ++index)
+    {
+        if (draw(sequence, 3) == 0)
+        {
+            builder.add_accept_state(states[index], Token{draw(sequence, 3) + 1});
+        }
+    }
+
+    return builder.build();
+}
+
+/**
+ * @brief The kept tokens of a scan, each one's ID and length, or nothing when the scan does not consume the input.
+ */
+using Kept_t = std::optional<std::vector<std::pair<std::size_t, std::size_t>>>;
+
+/**
+ * @brief Scans an input by maximal munch from every token boundary and returns its kept tokens.
+ * @param simulator The table.
+ * @param ignored The IDs of the discarded tokens.
+ * @param input The input.
+ * @return The kept tokens, or std::nullopt when the scan does not consume every byte.
+ */
+Kept_t kept_scan(const Simulator& simulator, const std::vector<std::size_t>& ignored, const std::string_view input)
+{
+    std::vector<std::pair<std::size_t, std::size_t>> kept{};
+
+    for (std::size_t at{0}; at < input.size();)
+    {
+        const auto [token, length]{simulator.run(input.substr(at))};
+
+        if (!token || length == 0)
+        {
+            return std::nullopt;
+        }
+
+        if (!std::ranges::contains(ignored, token->id()))
+        {
+            kept.emplace_back(token->id(), length);
+        }
+
+        at += length;
+    }
+
+    return kept;
+}
+
+/**
+ * @brief Returns the first cut before a byte holding the symbol, past the first, at which a completely tokenizable
+ *        input is not safe modulo the discarded kinds, as the split-points paper's definition reads, and how it fails:
+ *        the chunk before the cut not scanning, else the chunk from it not scanning, else their kept tokens differing.
+ * @param simulator The table.
+ * @param ignored The IDs of the discarded tokens.
+ * @param symbol The byte the cuts stand before.
+ * @param input The input.
+ * @return The cut and its failure, or std::nullopt when the input does not scan or every cut is safe.
+ */
+std::optional<std::pair<std::size_t, Cut_failure>> first_unsafe_cut(
+        const Simulator& simulator, const std::vector<std::size_t>& ignored, const char symbol,
+        const std::string_view input)
+{
+    const auto whole{kept_scan(simulator, ignored, input)};
+
+    if (!whole)
+    {
+        return std::nullopt;
+    }
+
+    for (std::size_t cut{1}; cut < input.size(); ++cut)
+    {
+        if (input[cut] != symbol)
+        {
+            continue;
+        }
+
+        const auto left{kept_scan(simulator, ignored, input.substr(0, cut))};
+
+        if (!left)
+        {
+            return std::pair{cut, Cut_failure::left_incomplete};
+        }
+
+        const auto right{kept_scan(simulator, ignored, input.substr(cut))};
+
+        if (!right)
+        {
+            return std::pair{cut, Cut_failure::right_incomplete};
+        }
+
+        auto spliced{*left};
+
+        spliced.insert(spliced.end(), right->begin(), right->end());
+
+        if (spliced != *whole)
+        {
+            return std::pair{cut, Cut_failure::streams_differ};
+        }
+    }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief What enumerating inputs finds of the cuts before a byte: the shortest input with such a cut whose chunk before
+ *        it does not scan, the shortest with one whose chunk from it does not, and the shortest with one that is not
+ *        safe in any way, zero where no input enumerated has one.
+ */
+struct Cut_census
+{
+    /**
+     * @brief The shortest with a cut whose chunk before it does not scan.
+     */
+    std::size_t left{};
+
+    /**
+     * @brief The shortest with a cut whose chunk from it does not scan.
+     */
+    std::size_t right{};
+
+    /**
+     * @brief The shortest with a cut that is not safe.
+     */
+    std::size_t unsafe{};
+};
+
+/**
+ * @brief Enumerates every cut before a byte holding the symbol, past the first, of every completely tokenizable input
+ *        given, each chunk scanned by maximal munch.
+ * @param simulator The table.
+ * @param ignored The IDs of the discarded tokens.
+ * @param symbol The byte the cuts stand before.
+ * @param inputs The inputs, shortest first.
+ * @return The census.
+ */
+Cut_census cut_census(
+        const Simulator& simulator, const std::vector<std::size_t>& ignored, const char symbol,
+        const std::vector<std::string>& inputs)
+{
+    // Every chunk is scanned once: the views name bytes of the inputs, which outlive the map.
+    std::map<std::string_view, Kept_t> scans{};
+
+    const auto scanned{[&](const std::string_view input) -> const Kept_t& {
+        const auto found{scans.find(input)};
+
+        if (found != scans.end())
+        {
+            return found->second;
+        }
+
+        const auto [entry, inserted]{scans.emplace(input, kept_scan(simulator, ignored, input))};
+
+        return entry->second;
+    }};
+
+    Cut_census census{};
+
+    const auto note_length{[](std::size_t& shortest, const std::size_t length) {
+        if (shortest == 0)
+        {
+            shortest = length;
+        }
+    }};
+
+    for (const auto& input : inputs)
+    {
+        const auto& whole{scanned(input)};
+
+        if (!whole)
+        {
+            continue;
+        }
+
+        const std::string_view view{input};
+
+        for (std::size_t cut{1}; cut < view.size(); ++cut)
+        {
+            if (view[cut] != symbol)
+            {
+                continue;
+            }
+
+            const auto& left{scanned(view.substr(0, cut))};
+
+            const auto& right{scanned(view.substr(cut))};
+
+            if (!left)
+            {
+                note_length(census.left, view.size());
+            }
+
+            if (!right)
+            {
+                note_length(census.right, view.size());
+            }
+
+            if (!left || !right)
+            {
+                note_length(census.unsafe, view.size());
+
+                continue;
+            }
+
+            auto spliced{*left};
+
+            spliced.insert(spliced.end(), right->begin(), right->end());
+
+            if (spliced != *whole)
+            {
+                note_length(census.unsafe, view.size());
+            }
+        }
+    }
+
+    return census;
+}
+
+/**
+ * @brief Builds the token set of the reduction from intersection non-emptiness over the complete automata A_1 to A_k on
+ *        {0, 1}, over the six symbols 0, 1, x, $, [ and #.
+ *
+ * The discarded kind holds the single symbols 0, 1, x, # and [, the testers x^i y $ for y a word A_i rejects, and the
+ * wrapper [ # x^k {0, 1}* $ with exactly k x's; the kept kind, the single $. The table is the chain of the x's, its
+ * first link the single x and its i-th link the start of a copy of A_i, beside the wrapper's states and the state every
+ * token ending in $ but the kept one shares. Every input is completely tokenizable, and # is safe modulo the discarded
+ * kind exactly when no word lies in every A_i: a common word y makes the chunk from the cut of [ # x^k y $ expose the
+ * kept $, which the whole input's one wrapper hides. Without the kept $ there is one kind, discarded, and the chunk
+ * from that cut does not scan at all.
+ * @param automata The automata A_1 to A_k, at least one.
+ * @param kept Whether the single $ is a token of the kept kind.
+ * @return The table.
+ */
+Simulator hardness_tokens(const std::vector<Binary_automaton>& automata, const bool kept)
+{
+    Builder builder{};
+
+    const auto root{builder.init_state()};
+
+    const auto single{builder.next_state()};
+
+    const auto bracket{builder.next_state()};
+
+    const auto end{builder.next_state()};
+
+    for (const auto state : {single, bracket, end})
+    {
+        builder.add_accept_state(state, Token{discarded_kind});
+    }
+
+    for (const auto symbol : std::string_view{"01#"})
+    {
+        builder.add_transition(root, Label{symbol}, single);
+    }
+
+    builder.add_transition(root, Label{'['}, bracket);
+
+    if (kept)
+    {
+        const auto dollar{builder.next_state()};
+
+        builder.add_accept_state(dollar, Token{1});
+        builder.add_transition(root, Label{'$'}, dollar);
+    }
+
+    // The wrapper: [ then # then exactly k x's, then any bits, closed by $.
+    std::vector<Dfa::State_t> wrapper{builder.next_state()};
+
+    builder.add_transition(bracket, Label{'#'}, wrapper.front());
+
+    for (std::size_t link{0}; link < automata.size(); ++link)
+    {
+        wrapper.push_back(builder.next_state());
+
+        builder.add_transition(wrapper[link], Label{'x'}, wrapper.back());
+    }
+
+    builder.add_transition(wrapper.back(), Label{'0'}, wrapper.back());
+    builder.add_transition(wrapper.back(), Label{'1'}, wrapper.back());
+    builder.add_transition(wrapper.back(), Label{'$'}, end);
+
+    std::vector<Dfa::State_t> chain{};
+
+    for (std::size_t link{0}; link < automata.size(); ++link)
+    {
+        chain.push_back(builder.next_state());
+
+        builder.add_transition(link == 0 ? root : chain[link - 1], Label{'x'}, chain.back());
+    }
+
+    builder.add_accept_state(chain.front(), Token{discarded_kind});
+
+    for (std::size_t index{0}; index < automata.size(); ++index)
+    {
+        const auto& [next, accepting]{automata[index]};
+
+        std::vector<Dfa::State_t> copy{};
+
+        for (std::size_t state{0}; state < next.size(); ++state)
+        {
+            copy.push_back(builder.next_state());
+        }
+
+        for (std::size_t bit{0}; bit < 2; ++bit)
+        {
+            const auto symbol{static_cast<char>('0' + bit)};
+
+            builder.add_transition(chain[index], Label{symbol}, copy[next[0][bit]]);
+
+            for (std::size_t state{0}; state < next.size(); ++state)
+            {
+                builder.add_transition(copy[state], Label{symbol}, copy[next[state][bit]]);
+            }
+        }
+
+        // The $ after y ends a tester when A_i rejects y, the empty y read at the chain's link itself.
+        if (!accepting[0])
+        {
+            builder.add_transition(chain[index], Label{'$'}, end);
+        }
+
+        for (std::size_t state{0}; state < next.size(); ++state)
+        {
+            if (!accepting[state])
+            {
+                builder.add_transition(copy[state], Label{'$'}, end);
+            }
+        }
+    }
+
+    return Simulator{builder.build()};
+}
+
+/**
+ * @brief Builds the same reduction over the three symbols 0, 1 and #, each of the six coded by a word no other's is a
+ *        prefix of: # as #, $ as 1, and 0, 1, x and [ as 000, 001, 010 and 011, with the single 0 a further discarded
+ *        token.
+ *
+ * Each transition of the six-symbol table becomes a path spelling its symbol's code, the paths out of one state sharing
+ * their common prefixes, so the coded scan of a coded input reads the coded tokens of the scan of the input.
+ * @param automata The automata A_1 to A_k, at least one.
+ * @param kept Whether the coded $ is a token of the kept kind.
+ * @return The table.
+ */
+Simulator coded_hardness_tokens(const std::vector<Binary_automaton>& automata, const bool kept)
+{
+    Builder builder{};
+
+    // The intermediate states of the paths out of each state, by that state and the prefix spelled so far.
+    std::map<std::pair<Dfa::State_t, std::string>, Dfa::State_t> along{};
+
+    const auto path{[&](const Dfa::State_t from, const std::string_view code, const Dfa::State_t to) {
+        auto at{from};
+
+        for (std::size_t length{1}; length < code.size(); ++length)
+        {
+            const auto prefix{std::string{code.substr(0, length)}};
+
+            const auto [entry, inserted]{along.try_emplace(std::pair{from, prefix}, Dfa::State_t{})};
+
+            auto& [key, state]{*entry};
+
+            if (inserted)
+            {
+                state = builder.next_state();
+
+                builder.add_transition(at, Label{code[length - 1]}, state);
+            }
+
+            at = state;
+        }
+
+        builder.add_transition(at, Label{code.back()}, to);
+    }};
+
+    const auto code_of_bit{[](const std::size_t bit) { return bit == 0 ? std::string_view{"000"} : "001"; }};
+
+    const auto root{builder.init_state()};
+
+    const auto single{builder.next_state()};
+
+    const auto bracket{builder.next_state()};
+
+    const auto end{builder.next_state()};
+
+    for (const auto state : {single, bracket, end})
+    {
+        builder.add_accept_state(state, Token{discarded_kind});
+    }
+
+    if (kept)
+    {
+        const auto dollar{builder.next_state()};
+
+        builder.add_accept_state(dollar, Token{1});
+
+        path(root, "1", dollar);
+    }
+
+    path(root, "#", single);
+    path(root, "000", single);
+    path(root, "001", single);
+
+    // The state the coded 0, 1 and x pass through after their first 0 is the single symbol 0, discarded.
+    builder.add_accept_state(along.at(std::pair{root, std::string{"0"}}), Token{discarded_kind});
+
+    path(root, "011", bracket);
+
+    std::vector<Dfa::State_t> wrapper{builder.next_state()};
+
+    path(bracket, "#", wrapper.front());
+
+    for (std::size_t link{0}; link < automata.size(); ++link)
+    {
+        wrapper.push_back(builder.next_state());
+
+        path(wrapper[link], "010", wrapper.back());
+    }
+
+    path(wrapper.back(), "000", wrapper.back());
+    path(wrapper.back(), "001", wrapper.back());
+    path(wrapper.back(), "1", end);
+
+    std::vector<Dfa::State_t> chain{};
+
+    for (std::size_t link{0}; link < automata.size(); ++link)
+    {
+        chain.push_back(builder.next_state());
+
+        path(link == 0 ? root : chain[link - 1], "010", chain.back());
+    }
+
+    builder.add_accept_state(chain.front(), Token{discarded_kind});
+
+    for (std::size_t index{0}; index < automata.size(); ++index)
+    {
+        const auto& [next, accepting]{automata[index]};
+
+        std::vector<Dfa::State_t> copy{};
+
+        for (std::size_t state{0}; state < next.size(); ++state)
+        {
+            copy.push_back(builder.next_state());
+        }
+
+        for (std::size_t bit{0}; bit < 2; ++bit)
+        {
+            path(chain[index], code_of_bit(bit), copy[next[0][bit]]);
+
+            for (std::size_t state{0}; state < next.size(); ++state)
+            {
+                path(copy[state], code_of_bit(bit), copy[next[state][bit]]);
+            }
+        }
+
+        if (!accepting[0])
+        {
+            path(chain[index], "1", end);
+        }
+
+        for (std::size_t state{0}; state < next.size(); ++state)
+        {
+            if (!accepting[state])
+            {
+                path(copy[state], "1", end);
+            }
+        }
+    }
+
+    return Simulator{builder.build()};
+}
+
+/**
+ * @brief Builds the split-points paper's family whose complete scans need exponentially many states: over a, b and !,
+ *        the tokens a, b, !! and a {a, b}^(k-1) b {a, b}^* !, every one of one kind.
+ *
+ * u v !! for u and v of length k tokenizes completely exactly when no position j has u_j = a and v_j = b, which no
+ * automaton of fewer than 2^k states tells apart, so the products of the decision grow with k.
+ * @param k The offset of the b the long tokens require, at least one.
+ * @return The table, k + 4 live states.
+ */
+Dfa exponential_family(const std::size_t k)
+{
+    Builder builder{};
+
+    const auto root{builder.init_state()};
+
+    const auto bang{builder.next_state()};
+
+    const auto closed{builder.next_state()};
+
+    const auto body{builder.next_state()};
+
+    std::vector<Dfa::State_t> stems{builder.next_state()};
+
+    builder.add_accept_state(closed, Token{discarded_kind});
+    builder.add_accept_state(stems.front(), Token{discarded_kind});
+    builder.add_transition(root, Label{'a'}, stems.front());
+    builder.add_transition(root, Label{'b'}, closed);
+    builder.add_transition(root, Label{'!'}, bang);
+    builder.add_transition(bang, Label{'!'}, closed);
+
+    for (std::size_t length{1}; length < k; ++length)
+    {
+        stems.push_back(builder.next_state());
+
+        builder.add_transition(stems[length - 1], Label{'a'}, stems.back());
+        builder.add_transition(stems[length - 1], Label{'b'}, stems.back());
+    }
+
+    builder.add_transition(stems.back(), Label{'b'}, body);
+    builder.add_transition(body, Label{'a'}, body);
+    builder.add_transition(body, Label{'b'}, body);
+    builder.add_transition(body, Label{'!'}, closed);
+
+    return builder.build();
+}
+
 } // namespace
 
 TEST(Dfa_test, Empty_dfa_matches_nothing)
@@ -3554,6 +4189,420 @@ TEST(Dfa_test, Domain_difference_returns_the_shortest_input_one_token_set_tokeni
     EXPECT_GT(shared[0], 0U);
     EXPECT_GT(shared[1], 0U);
     EXPECT_GT(stopped, 0U);
+}
+
+TEST(Dfa_test, Modulo_counterexample_decides_the_split_points_papers_examples_and_names_the_cut_and_how_it_fails)
+{
+    // The split-points paper's examples. Over the discarded a, b, c and abc and the kept k and kk, b is safe, though
+    // the relaxed certificate refuses it: after a the scan reaches on b the prefix of abc, where the initial state
+    // reaches the token b. Over ab discarded alone the cut before b leaves two chunks neither of which scans; over a
+    // and ab, the chunk a scans and b does not; over a and aa, both scan and the kept streams differ.
+    const std::vector<std::size_t> discarded{discarded_kind};
+
+    const std::vector<std::size_t> none{};
+
+    const auto expect{[](const Unsafe_cut& decided, const std::string_view witness, const std::size_t cut,
+                         const std::optional<Cut_failure> failure, const std::string_view label) {
+        const auto& [found, found_cut, found_failure, exhaustive]{decided};
+
+        EXPECT_TRUE(exhaustive) << label;
+        EXPECT_EQ(found, witness) << label;
+        EXPECT_EQ(found_cut, cut) << label;
+        EXPECT_EQ(found_failure, failure) << label;
+    }};
+
+    const auto rejoining{literal_tokens(
+            {{"a", discarded_kind},
+             {"b", discarded_kind},
+             {"c", discarded_kind},
+             {"abc", discarded_kind},
+             {"k", 1},
+             {"kk", 1}})};
+
+    const Simulator safe_beyond{rejoining, discarded};
+
+    expect(modulo_counterexample(safe_beyond, 'b', discarded), "", 0, std::nullopt, "b over a, b, c, abc, k, kk");
+    EXPECT_FALSE(safe_beyond.is_split_point_ignoring('b'));
+
+    const auto kk{modulo_counterexample(safe_beyond, 'k', discarded)};
+
+    EXPECT_EQ(kk.failure, Cut_failure::streams_differ);
+    EXPECT_EQ(
+            first_unsafe_cut(safe_beyond, discarded, 'k', kk.witness), std::pair(kk.cut, Cut_failure::streams_differ));
+
+    const Simulator joined{literal_tokens({{"ab", discarded_kind}}), discarded};
+
+    expect(modulo_counterexample(joined, 'b', discarded), "ab", 1, Cut_failure::left_incomplete, "b over ab");
+
+    const Simulator prefixed{literal_tokens({{"a", 1}, {"ab", 1}})};
+
+    expect(modulo_counterexample(prefixed, 'b', none), "ab", 1, Cut_failure::right_incomplete, "b over a and ab");
+
+    const Simulator doubled{literal_tokens({{"a", 1}, {"aa", 1}})};
+
+    const auto pair{modulo_counterexample(doubled, 'a', none)};
+
+    EXPECT_TRUE(pair.exhaustive);
+    EXPECT_EQ(pair.failure, Cut_failure::streams_differ);
+    EXPECT_EQ(first_unsafe_cut(doubled, none, 'a', pair.witness), std::pair(pair.cut, Cut_failure::streams_differ));
+
+    // Over the discarded x, xb, b and z and the kept by and yz of two kinds, xbyz scans whole as xb and yz and in its
+    // chunks as x, by and z: the kept streams agree in length and differ only in kind.
+    const Simulator kinds{literal_tokens(
+            {{"x", discarded_kind},
+             {"xb", discarded_kind},
+             {"b", discarded_kind},
+             {"by", 3},
+             {"yz", 1},
+             {"z", discarded_kind}})};
+
+    expect(modulo_counterexample(kinds, 'b', discarded), "xbyz", 1, Cut_failure::streams_differ, "b over by and yz");
+
+    // Runs of a kept and runs of space and newline discarded: newline is safe once the runs are discarded, as the
+    // relaxed certificate already says, and not while they are kept, two newlines making one token; z occurs in no
+    // input and is safe vacuously.
+    Builder runs{};
+
+    const auto q0{runs.init_state()};
+    const auto letters{runs.next_state()};
+    const auto blank{runs.next_state()};
+
+    runs.add_accept_state(letters, Token{1});
+    runs.add_accept_state(blank, Token{discarded_kind});
+    runs.add_transition(q0, Label{'a'}, letters);
+    runs.add_transition(letters, Label{'a'}, letters);
+
+    for (const auto space : std::string_view{" \n"})
+    {
+        runs.add_transition(q0, Label{space}, blank);
+        runs.add_transition(blank, Label{space}, blank);
+    }
+
+    const Simulator lines{runs.build(), discarded};
+
+    EXPECT_TRUE(lines.is_split_point_ignoring('\n'));
+    expect(modulo_counterexample(lines, '\n', discarded), "", 0, std::nullopt, "newline, runs discarded");
+    expect(modulo_counterexample(lines, 'z', discarded), "", 0, std::nullopt, "z, in no input");
+
+    const auto kept_runs{modulo_counterexample(lines, '\n', none)};
+
+    EXPECT_TRUE(kept_runs.exhaustive);
+    EXPECT_EQ(kept_runs.failure, Cut_failure::streams_differ);
+    EXPECT_EQ(
+            first_unsafe_cut(lines, none, '\n', kept_runs.witness),
+            std::pair(kept_runs.cut, Cut_failure::streams_differ));
+
+    // The nullable a* is decided through its positive-width equivalent a+: aa is one token and its chunks two, so a is
+    // unsafe kept and safe discarded.
+    Builder star{};
+
+    const auto start{star.init_state()};
+
+    star.add_accept_state(start, Token{1});
+    star.add_transition(start, Label{'a'}, start);
+
+    const Simulator nullable{star.build()};
+
+    EXPECT_EQ(modulo_counterexample(nullable, 'a', none).failure, Cut_failure::streams_differ);
+    expect(modulo_counterexample(nullable, 'a', std::vector<std::size_t>{1}), "", 0, std::nullopt, "a* discarded");
+
+    // The empty token set holds no input past its first byte, so every byte is safe vacuously.
+    const Simulator empty{literal_tokens({})};
+
+    expect(modulo_counterexample(empty, 'a', none), "", 0, std::nullopt, "the empty token set");
+
+    // Zero holds nothing, not even the state a search starts in, and settles nothing.
+    const auto [capped, capped_cut, capped_failure, capped_settled]{modulo_counterexample(joined, 'b', discarded, 0)};
+
+    EXPECT_FALSE(capped_settled);
+    EXPECT_TRUE(capped.empty());
+    EXPECT_EQ(capped_cut, 0U);
+    EXPECT_FALSE(capped_failure.has_value());
+}
+
+TEST(Dfa_test, Modulo_counterexample_finds_the_shortest_chunk_that_does_not_scan_as_enumerating_inputs_finds_it)
+{
+    // The decision against an oracle that enumerates every input to a bound, scans it and both chunks of every cut
+    // before the symbol by maximal munch, and compares the kept tokens: over the 729 token sets of words among a, b,
+    // aa, ab, ba and bb, each absent, kept as kind 1 or discarded as kind 2, over random tables of kinds 1 to 3, and
+    // over the split-points paper's family whose complete scans need exponentially many states, the random tables and
+    // the family asked with kind 2 discarded and with nothing discarded. Wherever the oracle sees a chunk that does not
+    // scan the decision returns a witness as short; wherever it sees an unsafe cut the decision returns one; where it
+    // sees none the witness is empty or longer than the bound. Every witness replays, its cut the first unsafe one and
+    // its failure the oracle's there, and a byte either certificate admits is safe, by their soundness theorems.
+    std::mt19937 sequence{0xC07U};
+
+    std::map<std::optional<Cut_failure>, std::size_t> tally{};
+
+    std::size_t stopped{0};
+
+    const std::vector<std::size_t> discarded{discarded_kind};
+
+    const std::vector<std::size_t> none{};
+
+    const auto check{[&](const Simulator& simulator, const std::vector<std::size_t>& ignored, const char symbol,
+                         const std::vector<std::string>& inputs, const std::size_t bound, const std::string& label) {
+        const auto decided{modulo_counterexample(simulator, symbol, ignored)};
+
+        const auto& [witness, cut, failure, exhaustive]{decided};
+
+        ++tally[failure];
+
+        EXPECT_TRUE(exhaustive) << label;
+        EXPECT_EQ(witness.empty(), !failure.has_value()) << label;
+
+        const auto [left, right, unsafe]{cut_census(simulator, ignored, symbol, inputs)};
+
+        // A chunk that does not scan is found first, the shorter of the two chunks' shortest witnesses.
+        std::vector<std::size_t> lengths{};
+
+        for (const auto length : {left, right})
+        {
+            if (length > 0)
+            {
+                lengths.push_back(length);
+            }
+        }
+
+        if (!lengths.empty())
+        {
+            EXPECT_EQ(witness.size(), std::ranges::min(lengths)) << label;
+        }
+
+        if (unsafe > 0)
+        {
+            EXPECT_FALSE(witness.empty()) << label;
+        }
+        else
+        {
+            EXPECT_TRUE(witness.empty() || witness.size() > bound) << label;
+        }
+
+        if (!witness.empty())
+        {
+            EXPECT_EQ(first_unsafe_cut(simulator, ignored, symbol, witness), std::pair(cut, *failure)) << label;
+        }
+
+        // Every table here is compiled with kind 2 discarded, the set the relaxed certificate speaks about.
+        const auto relaxed{ignored == discarded && simulator.is_split_point_ignoring(symbol)};
+
+        if (simulator.is_split_point(symbol) || relaxed)
+        {
+            EXPECT_TRUE(witness.empty()) << label;
+        }
+
+        return decided;
+    }};
+
+    // A search a small cap stops settles nothing, and one it does not stop answers as the uncapped search does.
+    const auto check_capped{[&](const Simulator& simulator, const std::vector<std::size_t>& ignored, const char symbol,
+                                const Unsafe_cut& decided, const std::string& label) {
+        constexpr std::size_t largest_small_cap{32};
+
+        const auto cap{draw(sequence, largest_small_cap) + 1};
+
+        const auto [witness, cut, failure, exhaustive]{modulo_counterexample(simulator, symbol, ignored, cap)};
+
+        if (!exhaustive)
+        {
+            ++stopped;
+
+            EXPECT_TRUE(witness.empty()) << label << " cap " << cap;
+            EXPECT_FALSE(failure.has_value()) << label << " cap " << cap;
+
+            return;
+        }
+
+        EXPECT_EQ(witness, decided.witness) << label << " cap " << cap;
+        EXPECT_EQ(cut, decided.cut) << label << " cap " << cap;
+        EXPECT_EQ(failure, decided.failure) << label << " cap " << cap;
+    }};
+
+    constexpr std::size_t word_bound{6};
+
+    const auto ab_inputs{words("ab", word_bound)};
+
+    constexpr std::size_t kinded_sets{729};
+
+    for (std::size_t choice{0}; choice < kinded_sets; ++choice)
+    {
+        const Simulator simulator{kinded_words(choice), discarded};
+
+        for (const auto symbol : std::string_view{"ab"})
+        {
+            std::ignore = check(simulator, discarded, symbol, ab_inputs, word_bound, std::format("words {}", choice));
+        }
+    }
+
+    const auto table_inputs{words("ab", oracle_bound)};
+
+    constexpr std::size_t tables{300};
+
+    for (std::size_t table{0}; table < tables; ++table)
+    {
+        const Simulator simulator{random_kinded_table(sequence), discarded};
+
+        for (const auto& ignored : {discarded, none})
+        {
+            for (const auto symbol : std::string_view{"ab"})
+            {
+                const auto label{std::format("table {} {} discarded {}", table, symbol, ignored.size())};
+
+                const auto decided{check(simulator, ignored, symbol, table_inputs, oracle_bound, label)};
+
+                check_capped(simulator, ignored, symbol, decided, label);
+            }
+        }
+    }
+
+    constexpr std::size_t family_bound{8};
+
+    const auto family_inputs{words("ab!", family_bound)};
+
+    for (std::size_t k{1}; k <= 3; ++k)
+    {
+        const Simulator simulator{exponential_family(k), discarded};
+
+        for (const auto& ignored : {discarded, none})
+        {
+            for (const auto symbol : std::string_view{"ab!"})
+            {
+                const auto label{std::format("family {} {} discarded {}", k, symbol, ignored.size())};
+
+                std::ignore = check(simulator, ignored, symbol, family_inputs, family_bound, label);
+            }
+        }
+    }
+
+    // Every outcome reached, and some search stopped by a small cap.
+    for (const auto failure :
+         {std::optional{Cut_failure::left_incomplete}, std::optional{Cut_failure::right_incomplete},
+          std::optional{Cut_failure::streams_differ}, std::optional<Cut_failure>{}})
+    {
+        EXPECT_GT(tally[failure], 0U);
+    }
+
+    EXPECT_GT(stopped, 0U);
+}
+
+TEST(Dfa_test, Modulo_counterexample_finds_a_cut_exactly_where_the_automata_of_the_hardness_reduction_share_a_word)
+{
+    // The reduction from intersection non-emptiness of binary DFAs at k of one to three automata of one to four states,
+    // over six symbols and over their coding by three, with the kept $ and without it: # is safe modulo the discarded
+    // kind exactly when no word lies in every automaton, and otherwise the kept streams differ, or without the kept $
+    // the chunk from the cut does not scan. The proof's own witness [ # x^k y $ for a shortest common word y shows it.
+    // On the first instances the decision is held against the oracle enumerating every input to a bound, which every
+    // input of both codings is in the domain of.
+    std::mt19937 sequence{0x5AFEU};
+
+    std::array<std::size_t, 2> shared{};
+
+    const std::vector<std::size_t> discarded{discarded_kind};
+
+    constexpr std::size_t six_bound{6};
+
+    constexpr std::size_t three_bound{9};
+
+    const auto six_inputs{words("01x$[#", six_bound)};
+
+    const auto three_inputs{words("01#", three_bound)};
+
+    // The six symbols and their codes over three.
+    constexpr std::string_view symbols{"#$01x["};
+
+    constexpr std::array<std::string_view, 6> codes{"#", "1", "000", "001", "010", "011"};
+
+    const auto coded{[&](const std::string_view input) {
+        std::string out{};
+
+        for (const auto symbol : input)
+        {
+            out += codes[symbols.find(symbol)];
+        }
+
+        return out;
+    }};
+
+    // The decision on one coding; on the first instances also the oracle, which every input of a coding with the kept $
+    // is in the domain of.
+    const auto check{[&](const Simulator& simulator, const bool kept, const bool common, const std::string& canonical,
+                         const std::vector<std::string>& inputs, const std::size_t bound, const bool enumerate,
+                         const std::string& label) {
+        const auto [witness, cut, failure, exhaustive]{modulo_counterexample(simulator, '#', discarded)};
+
+        EXPECT_TRUE(exhaustive) << label;
+        EXPECT_EQ(witness.empty(), !common) << label;
+
+        if (common)
+        {
+            const auto expected{kept ? Cut_failure::streams_differ : Cut_failure::right_incomplete};
+
+            EXPECT_EQ(failure, expected) << label;
+            EXPECT_EQ(first_unsafe_cut(simulator, discarded, '#', witness), std::pair(cut, expected)) << label;
+            EXPECT_EQ(first_unsafe_cut(simulator, discarded, '#', canonical), std::pair(canonical.find('#'), expected))
+                    << label;
+        }
+
+        if (!enumerate)
+        {
+            return;
+        }
+
+        const auto in_domain{[&](const std::string& input) { return token_starts(simulator, input).has_value(); }};
+
+        if (kept)
+        {
+            EXPECT_TRUE(std::ranges::all_of(inputs, in_domain)) << label;
+        }
+
+        const auto [left, right, unsafe]{cut_census(simulator, discarded, '#', inputs)};
+
+        EXPECT_EQ(left, 0U) << label;
+        EXPECT_TRUE(unsafe == 0 || !witness.empty()) << label;
+        EXPECT_TRUE(witness.empty() || witness.size() > bound || unsafe > 0) << label;
+
+        if (right > 0)
+        {
+            EXPECT_EQ(witness.size(), right) << label;
+        }
+    }};
+
+    constexpr std::size_t instances{24};
+
+    constexpr std::size_t enumerated{6};
+
+    for (std::size_t instance{0}; instance < instances; ++instance)
+    {
+        std::vector<Binary_automaton> automata(draw(sequence, 3) + 1);
+
+        for (auto& automaton : automata)
+        {
+            automaton = random_binary_automaton(sequence);
+        }
+
+        const auto common{shortest_common_word(automata)};
+
+        ++shared[common ? 1 : 0];
+
+        const auto canonical{std::format("[#{}{}$", std::string(automata.size(), 'x'), common.value_or(""))};
+
+        const auto enumerate{instance < enumerated};
+
+        for (const auto kept : {true, false})
+        {
+            const auto label{std::format("reduction {} kept {}", instance, kept)};
+
+            check(hardness_tokens(automata, kept), kept, common.has_value(), canonical, six_inputs, six_bound,
+                  enumerate, label + " six symbols");
+
+            check(coded_hardness_tokens(automata, kept), kept, common.has_value(), coded(canonical), three_inputs,
+                  three_bound, enumerate, label + " three symbols");
+        }
+    }
+
+    // Instances whose automata share a word and instances whose automata share none.
+    EXPECT_GT(shared[0], 0U);
+    EXPECT_GT(shared[1], 0U);
 }
 
 TEST(Dfa_test, Has_split_points_ignoring_holds_wherever_the_exact_test_does_and_on_the_sets_the_relaxation_rescues)
