@@ -122,23 +122,24 @@ std::map<std::uint32_t, char> byte_map()
  */
 std::optional<std::string> decoded(const std::map<std::uint32_t, char>& byte_of, const std::string_view field)
 {
-    constexpr std::uint32_t two_byte_lead{0xC0};
-    constexpr std::uint32_t lead_mask{0xE0};
-    constexpr std::uint32_t lead_bits{0x1F};
-    constexpr std::uint32_t tail_bits{0x3F};
-    constexpr std::uint32_t tail_width{6};
-
     std::string bytes{};
 
     for (std::size_t at{0}; at < field.size();)
     {
         std::uint32_t point{static_cast<unsigned char>(field[at])};
 
+        constexpr std::uint32_t two_byte_lead{0xC0};
+        constexpr std::uint32_t lead_mask{0xE0};
+
         const auto paired{(point & lead_mask) == two_byte_lead && at + 1 < field.size()};
 
         if (paired)
         {
             const std::uint32_t tail{static_cast<unsigned char>(field[at + 1])};
+
+            constexpr std::uint32_t lead_bits{0x1F};
+            constexpr std::uint32_t tail_bits{0x3F};
+            constexpr std::uint32_t tail_width{6};
 
             point = ((point & lead_bits) << tail_width) | (tail & tail_bits);
         }
@@ -202,6 +203,32 @@ std::optional<std::vector<Merge>> merges_of(const std::string_view text)
 }
 
 /**
+ * @brief Reads a prefix length from an argument that is wholly a positive whole number.
+ * @param argument The argument.
+ * @return The length, std::nullopt when the argument is not one.
+ */
+std::optional<std::size_t> prefix_of(const std::string_view argument)
+{
+    const auto is_digit{[](const char c) { return c >= '0' && c <= '9'; }};
+
+    const auto digits{!argument.empty() && std::ranges::all_of(argument, is_digit)};
+
+    if (!digits)
+    {
+        return std::nullopt;
+    }
+
+    const auto value{std::stoull(std::string{argument})};
+
+    if (value == 0)
+    {
+        return std::nullopt;
+    }
+
+    return value;
+}
+
+/**
  * @brief Returns a table without its merges of equal parts and without every merge naming a part that only a left-out
  *        merge makes, so with no effective self-pair.
  * @param merges The merge table in rank order.
@@ -232,6 +259,21 @@ std::vector<Merge> without_equal_parts(const std::vector<Merge>& merges)
     }
 
     return kept;
+}
+
+/**
+ * @brief Returns the peak resident memory of the process so far.
+ * @return The peak, in mebibytes.
+ */
+double peak_mebibytes()
+{
+    rusage usage{};
+
+    std::ignore = getrusage(RUSAGE_SELF, &usage);
+
+    constexpr double kibibytes_per_mebibyte{1024.0};
+
+    return static_cast<double>(usage.ru_maxrss) / kibibytes_per_mebibyte;
 }
 
 /**
@@ -316,9 +358,15 @@ Ripple ripple_of(const std::vector<Merge>& merges, const munch::verifier::Prepen
 
     const auto shift{static_cast<std::ptrdiff_t>(symbol.size())};
 
-    const auto base{covering_spans(reference_tokens(merges, input), 0)};
+    const auto base_tokens{reference_tokens(merges, input)};
 
-    const auto whole{covering_spans(reference_tokens(merges, symbol + input), -shift)};
+    const auto base{covering_spans(base_tokens, 0)};
+
+    const auto whole_text{symbol + input};
+
+    const auto whole_tokens{reference_tokens(merges, whole_text)};
+
+    const auto whole{covering_spans(whole_tokens, -shift)};
 
     Ripple ripple{};
 
@@ -359,21 +407,6 @@ bool is_attained(const std::vector<Merge>& merges, const Finite_ripple& finite)
     const auto mirrored_attained{!mirrored_witness || ripple_of(merges, *mirrored_witness).mirrored == mirrored};
 
     return radius_attained && mirrored_attained;
-}
-
-/**
- * @brief Returns the peak resident memory of the process so far.
- * @return The peak, in mebibytes.
- */
-double peak_mebibytes()
-{
-    constexpr double kibibytes_per_mebibyte{1024.0};
-
-    rusage usage{};
-
-    std::ignore = getrusage(RUSAGE_SELF, &usage);
-
-    return static_cast<double>(usage.ru_maxrss) / kibibytes_per_mebibyte;
 }
 
 /**
@@ -418,32 +451,6 @@ bool time_table(const Named_table& table)
             finite.mirrored, seconds, peak);
 
     return true;
-}
-
-/**
- * @brief Reads a prefix length from an argument that is wholly a positive whole number.
- * @param argument The argument.
- * @return The length, std::nullopt when the argument is not one.
- */
-std::optional<std::size_t> prefix_of(const std::string_view argument)
-{
-    const auto is_digit{[](const char c) { return c >= '0' && c <= '9'; }};
-
-    const auto digits{!argument.empty() && std::ranges::all_of(argument, is_digit)};
-
-    if (!digits)
-    {
-        return std::nullopt;
-    }
-
-    const auto value{std::stoull(std::string{argument})};
-
-    if (value == 0)
-    {
-        return std::nullopt;
-    }
-
-    return value;
 }
 
 } // namespace

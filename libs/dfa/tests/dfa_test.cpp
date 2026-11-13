@@ -46,9 +46,88 @@ namespace
 using Shortest_t = std::map<std::tuple<std::string_view, std::size_t, bool>, std::size_t>;
 
 /**
+ * @brief A complete automaton over {0, 1}, one of the automata whose intersection the certified-splitting paper's
+ *        reductions ask about.
+ */
+struct Binary_automaton
+{
+    /**
+     * @brief Each state's successors on 0 and on 1; state zero is the initial one.
+     */
+    std::vector<std::array<std::size_t, 2>> next{};
+
+    /**
+     * @brief Whether each state accepts.
+     */
+    std::vector<bool> accepting{};
+};
+
+/**
+ * @brief The kept tokens of a scan, each one's ID and length, or nothing when the scan does not consume the input.
+ */
+using Kept_t = std::optional<std::vector<std::pair<std::size_t, std::size_t>>>;
+
+/**
+ * @brief What enumerating inputs finds of the cuts before a byte: the shortest input with such a cut whose chunk before
+ *        it does not scan, the shortest with one whose chunk from it does not, and the shortest with one that is not
+ *        safe in any way, zero where no input enumerated has one.
+ */
+struct Cut_census
+{
+    /**
+     * @brief The shortest with a cut whose chunk before it does not scan.
+     */
+    std::size_t left{};
+
+    /**
+     * @brief The shortest with a cut whose chunk from it does not scan.
+     */
+    std::size_t right{};
+
+    /**
+     * @brief The shortest with a cut that is not safe.
+     */
+    std::size_t unsafe{};
+};
+
+/**
+ * @brief What enumerating the words to a bound shows of the separator condition: the shortest token spelling each
+ *        clause forbids among them, and the kept spellings among them.
+ */
+struct Separator_census
+{
+    /**
+     * @brief Whether the byte alone is a token of a discarded kind.
+     */
+    bool discarded_alone{};
+
+    /**
+     * @brief The length of a shortest enumerated token spelling beginning with an enumerated kept spelling and the
+     *        byte, nothing when none does.
+     */
+    std::optional<std::size_t> after_kept{};
+
+    /**
+     * @brief The length of a shortest enumerated token spelling beginning with the byte and the first byte of an
+     *        enumerated kept spelling, nothing when none does.
+     */
+    std::optional<std::size_t> before_kept{};
+
+    /**
+     * @brief The enumerated kept spellings, shortest first.
+     */
+    std::vector<std::string> kept{};
+};
+
+/**
  * @brief The longest input the brute-force oracle of the random-table profile test reads.
  */
 constexpr std::size_t oracle_bound{8};
+
+/**
+ * @brief The ID of the discarded kind in the token sets the modulo tests build, beside the kept kinds 1 and 3.
+ */
+constexpr std::size_t discarded_kind{2};
 
 /**
  * @brief The match of a scan that matched nothing.
@@ -434,22 +513,6 @@ Simulator six_state_shape()
 }
 
 /**
- * @brief A complete automaton over {0, 1}, one of the automata whose intersection paper four's reductions ask about.
- */
-struct Binary_automaton
-{
-    /**
-     * @brief Each state's successors on 0 and on 1; state zero is the initial one.
-     */
-    std::vector<std::array<std::size_t, 2>> next{};
-
-    /**
-     * @brief Whether each state accepts.
-     */
-    std::vector<bool> accepting{};
-};
-
-/**
  * @brief Draws a complete automaton over {0, 1}: one to four states, each byte leading from each to a random one of
  *        them, and each state accepting with probability one half.
  * @param sequence The sequence the automaton is drawn from.
@@ -527,7 +590,8 @@ std::optional<std::string> shortest_common_word(const std::vector<Binary_automat
 }
 
 /**
- * @brief Builds one side of paper four's reductions from intersection non-emptiness over automata A_1 to A_m.
+ * @brief Builds one side of the certified-splitting paper's reductions from intersection non-emptiness over automata
+ *        A_1 to A_m.
  *
  * Both sides hold 0, 1, x and the testers x^i y $ for 1 <= i <= m and y a word over {0, 1} that A_i rejects. For the
  * domain question the extension adds x^m y $ for every y; for the boundary question both sides hold $! as well and the
@@ -606,8 +670,7 @@ Simulator reduction_side(const std::vector<Binary_automaton>& automata, const bo
             copy.push_back(builder.next_state());
         }
 
-        // The $ after y ends a tester when A_i rejects y, and on the extension's top link it ends x^m y $ for every y
-        // or, for the boundary question, opens a wrapper.
+        // The $ after y ends a tester when A_i rejects y or on the top link, where for boundaries it opens a wrapper.
         const auto dollar_from{[&](const Dfa::State_t from, const std::size_t state) {
             const auto rejects{!accepting[state]};
 
@@ -651,11 +714,11 @@ Simulator reduction_side(const std::vector<Binary_automaton>& automata, const bo
  */
 Simulator short_words(const std::size_t chosen)
 {
-    constexpr std::array<std::string_view, 6> candidates{"a", "b", "aa", "ab", "ba", "bb"};
-
     Builder builder{};
 
     std::map<std::string, Dfa::State_t, std::less<>> nodes{{"", builder.init_state()}};
+
+    constexpr std::array<std::string_view, 6> candidates{"a", "b", "aa", "ab", "ba", "bb"};
 
     for (std::size_t index{0}; index < candidates.size(); ++index)
     {
@@ -732,11 +795,6 @@ std::array<std::size_t, 2> shortest_exclusions(
 }
 
 /**
- * @brief The ID of the discarded kind in the token sets the modulo tests build, beside the kept kinds 1 and 3.
- */
-constexpr std::size_t discarded_kind{2};
-
-/**
  * @brief Builds a finite token set of literals, each of its own kind, as a trie.
  * @param tokens Each literal, nonempty and distinct, with the ID of its kind.
  * @return The token set, accepting nothing when there is no literal.
@@ -785,9 +843,9 @@ Dfa literal_tokens(const std::vector<std::pair<std::string_view, std::size_t>>& 
  */
 Dfa kinded_words(const std::size_t choice)
 {
-    constexpr std::array<std::string_view, 6> candidates{"a", "b", "aa", "ab", "ba", "bb"};
-
     std::vector<std::pair<std::string_view, std::size_t>> tokens{};
+
+    constexpr std::array<std::string_view, 6> candidates{"a", "b", "aa", "ab", "ba", "bb"};
 
     for (std::size_t index{0}, digits{choice}; index < candidates.size(); ++index, digits /= 3)
     {
@@ -860,11 +918,6 @@ Dfa random_kinded_table(std::mt19937& sequence)
 
     return builder.build();
 }
-
-/**
- * @brief The kept tokens of a scan, each one's ID and length, or nothing when the scan does not consume the input.
- */
-using Kept_t = std::optional<std::vector<std::pair<std::size_t, std::size_t>>>;
 
 /**
  * @brief Scans an input by maximal munch from every token boundary and returns its kept tokens.
@@ -953,29 +1006,6 @@ std::optional<std::pair<std::size_t, Cut_failure>> first_unsafe_cut(
 }
 
 /**
- * @brief What enumerating inputs finds of the cuts before a byte: the shortest input with such a cut whose chunk before
- *        it does not scan, the shortest with one whose chunk from it does not, and the shortest with one that is not
- *        safe in any way, zero where no input enumerated has one.
- */
-struct Cut_census
-{
-    /**
-     * @brief The shortest with a cut whose chunk before it does not scan.
-     */
-    std::size_t left{};
-
-    /**
-     * @brief The shortest with a cut whose chunk from it does not scan.
-     */
-    std::size_t right{};
-
-    /**
-     * @brief The shortest with a cut that is not safe.
-     */
-    std::size_t unsafe{};
-};
-
-/**
  * @brief Enumerates every cut before a byte holding the symbol, past the first, of every completely tokenizable input
  *        given, each chunk scanned by maximal munch.
  * @param simulator The table.
@@ -996,12 +1026,16 @@ Cut_census cut_census(
 
         if (found != scans.end())
         {
-            return found->second;
+            const auto& [known_chunk, known_kept]{*found};
+
+            return known_kept;
         }
 
         const auto [entry, inserted]{scans.emplace(input, kept_scan(simulator, ignored, input))};
 
-        return entry->second;
+        const auto& [chunk, kept]{*entry};
+
+        return kept;
     }};
 
     Cut_census census{};
@@ -1252,7 +1286,9 @@ Simulator coded_hardness_tokens(const std::vector<Binary_automaton>& automata, c
     path(root, "001", single);
 
     // The state the coded 0, 1 and x pass through after their first 0 is the single symbol 0, discarded.
-    builder.add_accept_state(along.at(std::pair{root, std::string{"0"}}), Token{discarded_kind});
+    const auto after_zero{along.at(std::pair{root, std::string{"0"}})};
+
+    builder.add_accept_state(after_zero, Token{discarded_kind});
 
     path(root, "011", bracket);
 
@@ -1466,14 +1502,10 @@ Dfa random_separated_table(std::mt19937& sequence)
  */
 Dfa random_separated_literals(std::mt19937& sequence)
 {
-    constexpr std::string_view alphabet{"ab#"};
-
     std::vector<std::pair<std::string, std::size_t>> drawn{};
 
     const auto add{[&](std::string word, const std::size_t kind) {
-        const auto same{[&](const std::pair<std::string, std::size_t>& entry) { return entry.first == word; }};
-
-        if (!std::ranges::any_of(drawn, same))
+        if (!std::ranges::contains(drawn | std::views::keys, word))
         {
             drawn.emplace_back(std::move(word), kind);
         }
@@ -1483,6 +1515,8 @@ Dfa random_separated_literals(std::mt19937& sequence)
     {
         add("#", discarded_kind);
     }
+
+    constexpr std::string_view alphabet{"ab#"};
 
     for (std::size_t count{draw(sequence, 4) + 2}; count > 0; --count)
     {
@@ -1505,35 +1539,6 @@ Dfa random_separated_literals(std::mt19937& sequence)
 
     return literal_tokens(tokens);
 }
-
-/**
- * @brief What enumerating the words to a bound shows of the separator condition: the shortest token spelling each
- *        clause forbids among them, and the kept spellings among them.
- */
-struct Separator_census
-{
-    /**
-     * @brief Whether the byte alone is a token of a discarded kind.
-     */
-    bool discarded_alone{};
-
-    /**
-     * @brief The length of a shortest enumerated token spelling beginning with an enumerated kept spelling and the
-     *        byte, nothing when none does.
-     */
-    std::optional<std::size_t> after_kept{};
-
-    /**
-     * @brief The length of a shortest enumerated token spelling beginning with the byte and the first byte of an
-     *        enumerated kept spelling, nothing when none does.
-     */
-    std::optional<std::size_t> before_kept{};
-
-    /**
-     * @brief The enumerated kept spellings, shortest first.
-     */
-    std::vector<std::string> kept{};
-};
 
 /**
  * @brief Returns whether a word is a token spelling: the scan reads it whole as one token.
@@ -4248,11 +4253,11 @@ TEST(Dfa_test, Domain_difference_returns_the_shortest_input_one_token_set_tokeni
 {
     // The decision against an oracle that enumerates every input to a bound and scans each by maximal munch under both
     // token sets: over every ordered pair of the 64 finite token sets of words among a, b, aa, ab, ba and bb, over
-    // pairs of random tables, and over paper four's two reductions from intersection non-emptiness at m of one to four
-    // automata of one to four states, the second token set extending the first. Wherever the oracle sees a witness
-    // inside its bound the decision returns one as short, on the side the oracle's shortest falls on, the first set's
-    // when both sides have one that short; where it sees none the decision's witness is empty or longer than the bound.
-    // Every witness replays, the side tokenizing it completely and the other's scan failing on it,
+    // pairs of random tables, and over the certified-splitting paper's two reductions from intersection non-emptiness
+    // at m of one to four automata of one to four states, the second token set extending the first. Wherever the oracle
+    // sees a witness inside its bound the decision returns one as short, on the side the oracle's shortest falls on,
+    // the first set's when both sides have one that short; where it sees none the decision's witness is empty or longer
+    // than the bound. Every witness replays, the side tokenizing it completely and the other's scan failing on it,
     // segmentation_difference()'s witness is as long as the shorter of this one and boundary_difference()'s, and on the
     // domain reduction a witness exists exactly when the automata share a word y, as long as x^m y $ for a shortest
     // one, and only the extension tokenizes it.
@@ -4483,11 +4488,10 @@ TEST(Dfa_test, Modulo_counterexample_decides_the_split_points_papers_examples_an
     expect(modulo_counterexample(safe_beyond, 'b', discarded), "", 0, std::nullopt, "b over a, b, c, abc, k, kk");
     EXPECT_FALSE(safe_beyond.is_split_point_ignoring('b'));
 
-    const auto kk{modulo_counterexample(safe_beyond, 'k', discarded)};
+    const auto [kk, kk_cut, kk_failure, kk_settled]{modulo_counterexample(safe_beyond, 'k', discarded)};
 
-    EXPECT_EQ(kk.failure, Cut_failure::streams_differ);
-    EXPECT_EQ(
-            first_unsafe_cut(safe_beyond, discarded, 'k', kk.witness), std::pair(kk.cut, Cut_failure::streams_differ));
+    EXPECT_EQ(kk_failure, Cut_failure::streams_differ);
+    EXPECT_EQ(first_unsafe_cut(safe_beyond, discarded, 'k', kk), std::pair(kk_cut, Cut_failure::streams_differ));
 
     const Simulator joined{literal_tokens({{"ab", discarded_kind}}), discarded};
 
@@ -4499,11 +4503,11 @@ TEST(Dfa_test, Modulo_counterexample_decides_the_split_points_papers_examples_an
 
     const Simulator doubled{literal_tokens({{"a", 1}, {"aa", 1}})};
 
-    const auto pair{modulo_counterexample(doubled, 'a', none)};
+    const auto [pair, pair_cut, pair_failure, pair_settled]{modulo_counterexample(doubled, 'a', none)};
 
-    EXPECT_TRUE(pair.exhaustive);
-    EXPECT_EQ(pair.failure, Cut_failure::streams_differ);
-    EXPECT_EQ(first_unsafe_cut(doubled, none, 'a', pair.witness), std::pair(pair.cut, Cut_failure::streams_differ));
+    EXPECT_TRUE(pair_settled);
+    EXPECT_EQ(pair_failure, Cut_failure::streams_differ);
+    EXPECT_EQ(first_unsafe_cut(doubled, none, 'a', pair), std::pair(pair_cut, Cut_failure::streams_differ));
 
     // Over the discarded x, xb, b and z and the kept by and yz of two kinds, xbyz scans whole as xb and yz and in its
     // chunks as x, by and z: the kept streams agree in length and differ only in kind.
@@ -4543,13 +4547,12 @@ TEST(Dfa_test, Modulo_counterexample_decides_the_split_points_papers_examples_an
     expect(modulo_counterexample(lines, '\n', discarded), "", 0, std::nullopt, "newline, runs discarded");
     expect(modulo_counterexample(lines, 'z', discarded), "", 0, std::nullopt, "z, in no input");
 
-    const auto kept_runs{modulo_counterexample(lines, '\n', none)};
+    const auto [kept_runs, kept_runs_cut, kept_runs_failure, kept_runs_settled]{
+            modulo_counterexample(lines, '\n', none)};
 
-    EXPECT_TRUE(kept_runs.exhaustive);
-    EXPECT_EQ(kept_runs.failure, Cut_failure::streams_differ);
-    EXPECT_EQ(
-            first_unsafe_cut(lines, none, '\n', kept_runs.witness),
-            std::pair(kept_runs.cut, Cut_failure::streams_differ));
+    EXPECT_TRUE(kept_runs_settled);
+    EXPECT_EQ(kept_runs_failure, Cut_failure::streams_differ);
+    EXPECT_EQ(first_unsafe_cut(lines, none, '\n', kept_runs), std::pair(kept_runs_cut, Cut_failure::streams_differ));
 
     // The nullable a* is decided through its positive-width equivalent a+: aa is one token and its chunks two, so a is
     // unsafe kept and safe discarded.
@@ -4562,7 +4565,10 @@ TEST(Dfa_test, Modulo_counterexample_decides_the_split_points_papers_examples_an
 
     const Simulator nullable{star.build()};
 
-    EXPECT_EQ(modulo_counterexample(nullable, 'a', none).failure, Cut_failure::streams_differ);
+    const auto [nullable_kept, nullable_kept_cut, nullable_kept_failure, nullable_kept_settled]{
+            modulo_counterexample(nullable, 'a', none)};
+
+    EXPECT_EQ(nullable_kept_failure, Cut_failure::streams_differ);
     expect(modulo_counterexample(nullable, 'a', std::vector<std::size_t>{1}), "", 0, std::nullopt, "a* discarded");
 
     // The empty token set holds no input past its first byte, so every byte is safe vacuously.
@@ -4782,8 +4788,7 @@ TEST(Dfa_test, Modulo_counterexample_finds_a_cut_exactly_where_the_automata_of_t
         return out;
     }};
 
-    // The decision on one coding; on the first instances also the oracle, which every input of a coding with the kept $
-    // is in the domain of.
+    // The decision on one coding, and on the first instances the oracle, every input in the domain when $ is kept.
     const auto check{[&](const Simulator& simulator, const bool kept, const bool common, const std::string& canonical,
                          const std::vector<std::string>& inputs, const std::size_t bound, const bool enumerate,
                          const std::string& label) {
@@ -4843,7 +4848,9 @@ TEST(Dfa_test, Modulo_counterexample_finds_a_cut_exactly_where_the_automata_of_t
 
         ++shared[common ? 1 : 0];
 
-        const auto canonical{std::format("[#{}{}$", std::string(automata.size(), 'x'), common.value_or(""))};
+        const auto links{std::string(automata.size(), 'x')};
+
+        const auto canonical{std::format("[#{}{}$", links, common.value_or(""))};
 
         const auto enumerate{instance < enumerated};
 
@@ -4851,11 +4858,17 @@ TEST(Dfa_test, Modulo_counterexample_finds_a_cut_exactly_where_the_automata_of_t
         {
             const auto label{std::format("reduction {} kept {}", instance, kept)};
 
-            check(hardness_tokens(automata, kept), kept, common.has_value(), canonical, six_inputs, six_bound,
-                  enumerate, label + " six symbols");
+            const auto six_symbol_table{hardness_tokens(automata, kept)};
 
-            check(coded_hardness_tokens(automata, kept), kept, common.has_value(), coded(canonical), three_inputs,
-                  three_bound, enumerate, label + " three symbols");
+            check(six_symbol_table, kept, common.has_value(), canonical, six_inputs, six_bound, enumerate,
+                  label + " six symbols");
+
+            const auto three_symbol_table{coded_hardness_tokens(automata, kept)};
+
+            const auto coded_canonical{coded(canonical)};
+
+            check(three_symbol_table, kept, common.has_value(), coded_canonical, three_inputs, three_bound, enumerate,
+                  label + " three symbols");
         }
     }
 
@@ -5039,11 +5052,11 @@ TEST(Dfa_test, Separator_failure_agrees_with_enumeration_and_its_separators_join
 
         ++tally[clause];
 
-        const auto census{separator_census(simulator, ignored, symbol, inputs)};
+        const auto [discarded_alone, after_kept, before_kept, kept_spellings]{
+                separator_census(simulator, ignored, symbol, inputs)};
 
         // Per clause in order, whether some enumerated word fails it.
-        const std::array failing{
-                !census.discarded_alone, census.after_kept.has_value(), census.before_kept.has_value()};
+        const std::array failing{!discarded_alone, after_kept.has_value(), before_kept.has_value()};
 
         for (const auto earlier :
              {Separator_clause::not_discarded, Separator_clause::after_kept, Separator_clause::before_kept})
@@ -5056,68 +5069,68 @@ TEST(Dfa_test, Separator_failure_agrees_with_enumeration_and_its_separators_join
             EXPECT_FALSE(failing[std::to_underlying(earlier)]) << label;
         }
 
-        if (!clause)
+        if (clause)
         {
-            EXPECT_TRUE(kept.empty()) << label;
-            EXPECT_TRUE(spelling.empty()) << label;
-
-            const auto [separator_token, separator_length]{simulator.run(std::string{symbol})};
-
-            for (std::size_t join{0}; join < 20 && !census.kept.empty(); ++join)
+            switch (*clause)
             {
-                std::string input{};
-
-                std::vector<std::pair<std::size_t, std::size_t>> expected{};
-
-                for (std::size_t count{draw(sequence, 5) + 1}; count > 0; --count)
-                {
-                    const auto& word{census.kept[draw(sequence, census.kept.size())]};
-
-                    if (!input.empty())
-                    {
-                        input.push_back(symbol);
-
-                        expected.emplace_back(separator_token->id(), separator_length);
-                    }
-
-                    input += word;
-
-                    const auto [token, length]{simulator.run(word)};
-
-                    expected.emplace_back(token->id(), length);
-                }
-
-                ++joins;
-
-                EXPECT_EQ(kept_scan(simulator, {}, input), Kept_t{expected}) << label << " " << input;
+            case Separator_clause::not_discarded:
+                EXPECT_TRUE(failing[std::to_underlying(*clause)]) << label;
+                EXPECT_TRUE(kept.empty()) << label;
+                EXPECT_EQ(spelling, std::string{symbol}) << label;
+                break;
+            case Separator_clause::after_kept:
+                EXPECT_TRUE(spells_kept(simulator, ignored, kept)) << label;
+                EXPECT_TRUE(spells_token(simulator, spelling)) << label;
+                EXPECT_TRUE(spelling.starts_with(kept + symbol)) << label;
+                EXPECT_EQ(spelling.size(), after_kept.value_or(spelling.size())) << label;
+                EXPECT_EQ(spelling.size() <= bound, after_kept.has_value()) << label;
+                break;
+            case Separator_clause::before_kept:
+                EXPECT_TRUE(spells_kept(simulator, ignored, kept)) << label;
+                EXPECT_TRUE(spells_token(simulator, spelling)) << label;
+                ASSERT_GE(spelling.size(), 2U) << label;
+                EXPECT_EQ(spelling.front(), symbol) << label;
+                EXPECT_EQ(spelling[1], kept.front()) << label;
+                EXPECT_EQ(spelling.size(), before_kept.value_or(spelling.size())) << label;
+                EXPECT_TRUE(spelling.size() > bound || kept.size() > bound || before_kept.has_value()) << label;
+                break;
             }
 
             return;
         }
 
-        switch (*clause)
+        EXPECT_TRUE(kept.empty()) << label;
+        EXPECT_TRUE(spelling.empty()) << label;
+
+        const auto [separator_token, separator_length]{simulator.run(std::string{symbol})};
+
+        for (std::size_t join{0}; join < 20 && !kept_spellings.empty(); ++join)
         {
-        case Separator_clause::not_discarded:
-            EXPECT_TRUE(failing[std::to_underlying(*clause)]) << label;
-            EXPECT_TRUE(kept.empty()) << label;
-            EXPECT_EQ(spelling, std::string{symbol}) << label;
-            break;
-        case Separator_clause::after_kept:
-            EXPECT_TRUE(spells_kept(simulator, ignored, kept)) << label;
-            EXPECT_TRUE(spells_token(simulator, spelling)) << label;
-            EXPECT_TRUE(spelling.starts_with(kept + symbol)) << label;
-            EXPECT_EQ(spelling.size(), census.after_kept.value_or(spelling.size())) << label;
-            EXPECT_EQ(spelling.size() <= bound, census.after_kept.has_value()) << label;
-            break;
-        case Separator_clause::before_kept:
-            EXPECT_TRUE(spells_kept(simulator, ignored, kept)) << label;
-            EXPECT_TRUE(spells_token(simulator, spelling)) << label;
-            ASSERT_GE(spelling.size(), 2U) << label;
-            EXPECT_EQ(spelling.front(), symbol) << label;
-            EXPECT_EQ(spelling[1], kept.front()) << label;
-            EXPECT_EQ(spelling.size(), census.before_kept.value_or(spelling.size())) << label;
-            EXPECT_TRUE(spelling.size() > bound || kept.size() > bound || census.before_kept.has_value()) << label;
-            break;
+            std::string input{};
+
+            std::vector<std::pair<std::size_t, std::size_t>> expected{};
+
+            for (std::size_t count{draw(sequence, 5) + 1}; count > 0; --count)
+            {
+                const auto& word{kept_spellings[draw(sequence, kept_spellings.size())]};
+
+                if (!input.empty())
+                {
+                    input.push_back(symbol);
+
+                    expected.emplace_back(separator_token->id(), separator_length);
+                }
+
+                input += word;
+
+                const auto [token, length]{simulator.run(word)};
+
+                expected.emplace_back(token->id(), length);
+            }
+
+            ++joins;
+
+            EXPECT_EQ(kept_scan(simulator, {}, input), Kept_t{expected}) << label << " " << input;
         }
     }};
 

@@ -647,7 +647,9 @@ private:
 
             const auto [slot, inserted]{kept_kinds.try_emplace(token->id(), next)};
 
-            kind_[state] = slot->second;
+            const auto& [id, number]{*slot};
+
+            kind_[state] = number;
         }
     }
 
@@ -675,9 +677,11 @@ private:
 
             const auto [slot, inserted]{classes.try_emplace(column, symbol)};
 
+            auto& [key, representative]{*slot};
+
             if (symbol == candidate)
             {
-                slot->second = candidate;
+                representative = candidate;
             }
         }
 
@@ -922,9 +926,13 @@ inline std::optional<Witness> incomplete_chunk(
     const auto labels_to{[&parents](const std::size_t vertex) {
         std::vector<int> labels{};
 
-        for (auto id{vertex}; id != 0; id = parents[id].first)
+        for (auto id{vertex}; id != 0;)
         {
-            labels.push_back(parents[id].second);
+            const auto& [from, label]{parents[id]};
+
+            labels.push_back(label);
+
+            id = from;
         }
 
         std::ranges::reverse(labels);
@@ -1126,7 +1134,7 @@ inline Output_graph output_product(
             graph.accepting.push_back(false);
         }
 
-        const auto target{slot->second};
+        const auto& [key, target]{*slot};
 
         const auto edge{graph.edges.size()};
 
@@ -1190,39 +1198,6 @@ inline Output_graph output_product(
     }
 
     return graph;
-}
-
-/**
- * @brief Returns the delay of two outputs A, B, the reduced group word A^{-1} B, after one more edge.
- * @param delay The delay before the edge.
- * @param edge The edge.
- * @return The delay after it, reduced.
- */
-inline Scan_machines::Word_t delayed(const Scan_machines::Word_t& delay, const Output_edge& edge)
-{
-    Scan_machines::Word_t result{};
-
-    const auto push{[&result](const int letter) {
-        if (!result.empty() && result.back() == -letter)
-        {
-            result.pop_back();
-
-            return;
-        }
-
-        result.push_back(letter);
-    }};
-
-    for (const auto letter : edge.h | std::views::reverse)
-    {
-        push(-letter);
-    }
-
-    std::ranges::for_each(delay, push);
-
-    std::ranges::for_each(edge.g, push);
-
-    return result;
 }
 
 /**
@@ -1297,6 +1272,39 @@ inline Accepting_suffixes accepting_suffixes(const Output_graph& graph)
     }
 
     return suffixes;
+}
+
+/**
+ * @brief Returns the delay of two outputs A, B, the reduced group word A^{-1} B, after one more edge.
+ * @param delay The delay before the edge.
+ * @param edge The edge.
+ * @return The delay after it, reduced.
+ */
+inline Scan_machines::Word_t delayed(const Scan_machines::Word_t& delay, const Output_edge& edge)
+{
+    Scan_machines::Word_t result{};
+
+    const auto push{[&result](const int letter) {
+        if (!result.empty() && result.back() == -letter)
+        {
+            result.pop_back();
+
+            return;
+        }
+
+        result.push_back(letter);
+    }};
+
+    for (const auto letter : edge.h | std::views::reverse)
+    {
+        push(-letter);
+    }
+
+    std::ranges::for_each(delay, push);
+
+    std::ranges::for_each(edge.g, push);
+
+    return result;
 }
 
 /**

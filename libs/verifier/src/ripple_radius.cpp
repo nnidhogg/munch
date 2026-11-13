@@ -31,7 +31,7 @@ using Token_t = std::size_t;
 /**
  * @brief The rank of each merge an encoding applies, by its two parts.
  */
-using Ranks = std::unordered_map<std::pair<Token_t, Token_t>, std::size_t, boost::hash<std::pair<Token_t, Token_t>>>;
+using Ranks_t = std::unordered_map<std::pair<Token_t, Token_t>, std::size_t, boost::hash<std::pair<Token_t, Token_t>>>;
 
 /**
  * @brief The number of bytes, the symbols of the byte alphabet.
@@ -74,7 +74,7 @@ struct Stages
     /**
      * @brief The rank of each useful merge by its two parts, the merges the encoding applies.
      */
-    Ranks ranks{};
+    Ranks_t ranks{};
 
     /**
      * @brief The rank of the first useful merge with equal parts, the effective self-pair.
@@ -95,7 +95,7 @@ struct Vocabulary
     /**
      * @brief The rank of each useful merge by its two parts, the merges the encoding applies.
      */
-    Ranks ranks{};
+    Ranks_t ranks{};
 
     /**
      * @brief The symbols the table names, ascending.
@@ -481,7 +481,7 @@ struct Best
  * @param tokens The sequence, the symbols of a text or tokens of its encoding.
  * @return The encoded sequence.
  */
-[[nodiscard]] std::vector<Token_t> encoded(const Table& table, const Ranks& ranks, std::vector<Token_t> tokens)
+[[nodiscard]] std::vector<Token_t> encoded(const Table& table, const Ranks_t& ranks, std::vector<Token_t> tokens)
 {
     const auto end{tokens.size()};
 
@@ -632,7 +632,7 @@ struct Best
  */
 [[nodiscard]] Vocabulary vocabulary_of(
         const Table& table, const std::span<const Merge> merges, std::vector<std::string> spellings,
-        const std::span<const std::size_t> useful, Ranks ranks)
+        const std::span<const std::size_t> useful, Ranks_t ranks)
 {
     std::vector<bool> named(table.symbols.size(), false);
 

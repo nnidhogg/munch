@@ -1373,7 +1373,9 @@ template <typename Result>
 
         if (found != numbers.end())
         {
-            return found->second;
+            const auto& [known_vertex, number]{*found};
+
+            return number;
         }
 
         if (numbers.size() >= cap)
@@ -1484,39 +1486,6 @@ template <typename Result>
 }
 
 /**
- * @brief Returns the delay of two outputs A and B, the reduced group word A^-1 B, after one more edge.
- * @param delay The delay before the edge.
- * @param edge The edge, whose whole-input word extends A and whose chunks' word extends B.
- * @return The delay after it, reduced.
- */
-[[nodiscard]] Word_t delayed(const Word_t& delay, const Kept_edge& edge)
-{
-    Word_t result{};
-
-    const auto push{[&result](const Letter_t letter) {
-        if (!result.empty() && result.back() == -letter)
-        {
-            result.pop_back();
-
-            return;
-        }
-
-        result.push_back(letter);
-    }};
-
-    for (const auto letter : edge.whole | std::views::reverse)
-    {
-        push(-letter);
-    }
-
-    std::ranges::for_each(delay, push);
-
-    std::ranges::for_each(edge.split, push);
-
-    return result;
-}
-
-/**
  * @brief Finds the shortest accepting suffixes of the kept-output product, breadth first backwards from its accepting
  *        vertices.
  * @param graph The graph.
@@ -1568,6 +1537,39 @@ template <typename Result>
     }
 
     return suffixes;
+}
+
+/**
+ * @brief Returns the delay of two outputs A and B, the reduced group word A^-1 B, after one more edge.
+ * @param delay The delay before the edge.
+ * @param edge The edge, whose whole-input word extends A and whose chunks' word extends B.
+ * @return The delay after it, reduced.
+ */
+[[nodiscard]] Word_t delayed(const Word_t& delay, const Kept_edge& edge)
+{
+    Word_t result{};
+
+    const auto push{[&result](const Letter_t letter) {
+        if (!result.empty() && result.back() == -letter)
+        {
+            result.pop_back();
+
+            return;
+        }
+
+        result.push_back(letter);
+    }};
+
+    for (const auto letter : edge.whole | std::views::reverse)
+    {
+        push(-letter);
+    }
+
+    std::ranges::for_each(delay, push);
+
+    std::ranges::for_each(edge.split, push);
+
+    return result;
 }
 
 /**

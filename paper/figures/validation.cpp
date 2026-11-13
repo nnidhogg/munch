@@ -509,18 +509,19 @@ Sweep sweep(const std::size_t rounds, const std::size_t max_length)
                 ++totals.shipped_lost;
             }
 
-            const auto exact{decide_exactly(lexer, ignored, static_cast<unsigned char>(symbol))};
+            const auto [outcome, reason, witness, witness_cut, vertices]{
+                    decide_exactly(lexer, ignored, static_cast<unsigned char>(symbol))};
 
-            if (exact.outcome == Exact_verdict::Outcome::budget)
+            if (outcome == Exact_verdict::Outcome::budget)
             {
                 ++totals.exact_undecided;
 
                 continue;
             }
 
-            const auto exact_safe{exact.outcome == Exact_verdict::Outcome::safe};
+            const auto exact_safe{outcome == Exact_verdict::Outcome::safe};
 
-            const auto witness_length{exact.text.size()};
+            const auto witness_length{witness.size()};
 
             // The oracle refutes with a string of at most max_length bytes, so the decision may not answer safe where
             // the oracle refutes, and a replayed witness is a refutation the oracle misses only for its length.
@@ -560,9 +561,9 @@ Sweep sweep(const std::size_t rounds, const std::size_t max_length)
 
             totals.longest_witness = witness_length;
 
-            totals.longest_witness_text = exact.text;
+            totals.longest_witness_text = witness;
 
-            totals.longest_witness_cut = exact.cut;
+            totals.longest_witness_cut = witness_cut;
         }
     }};
 
@@ -645,9 +646,9 @@ Named judge(munch::core::Builder& builder, const Kinds_t& ignored, const std::st
 
     const auto shipped{lexer.is_split_point_ignoring(symbol)};
 
-    const auto exact{decide_exactly(lexer, ignored, byte)};
+    const auto [outcome, reason, witness, witness_cut, vertices]{decide_exactly(lexer, ignored, byte)};
 
-    const auto exact_safe{exact.outcome == Exact_verdict::Outcome::safe};
+    const auto exact_safe{outcome == Exact_verdict::Outcome::safe};
 
     return {.published = published, .shipped = shipped, .exact_safe = exact_safe, .oracle_safe = exercised && safe};
 }

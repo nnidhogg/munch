@@ -292,30 +292,6 @@ std::string certified_modulo(const munch::core::Lexer& lexer)
 }
 
 /**
- * @brief Lists the relaxed column as the published condition reads it, from the copy in modulo.hpp, so the table can
- *        assert that the column is the same under the published condition and under the rule the library ships.
- * @param lexer The row's lexer.
- * @param ignored The row's ignored kinds.
- * @return The bytes the published condition admits.
- */
-std::set<char> published_modulo(const munch::core::Lexer& lexer, const Kinds_t& ignored)
-{
-    std::set<char> relaxed{};
-
-    for (int value{0}; value < byte_values; ++value)
-    {
-        if (!published_condition(lexer, ignored, static_cast<unsigned char>(value)))
-        {
-            continue;
-        }
-
-        relaxed.insert(static_cast<char>(value));
-    }
-
-    return relaxed;
-}
-
-/**
  * @brief Lists the relaxed column as the shipped rule reads it.
  * @param lexer The row's lexer, its ignored tokens set.
  * @return The bytes the shipped rule admits.
@@ -334,6 +310,30 @@ std::set<char> shipped_modulo(const munch::core::Lexer& lexer)
         }
 
         relaxed.insert(byte);
+    }
+
+    return relaxed;
+}
+
+/**
+ * @brief Lists the relaxed column as the published condition reads it, from the copy in modulo.hpp, so the table can
+ *        assert that the column is the same under the published condition and under the rule the library ships.
+ * @param lexer The row's lexer.
+ * @param ignored The row's ignored kinds.
+ * @return The bytes the published condition admits.
+ */
+std::set<char> published_modulo(const munch::core::Lexer& lexer, const Kinds_t& ignored)
+{
+    std::set<char> relaxed{};
+
+    for (int value{0}; value < byte_values; ++value)
+    {
+        if (!published_condition(lexer, ignored, static_cast<unsigned char>(value)))
+        {
+            continue;
+        }
+
+        relaxed.insert(static_cast<char>(value));
     }
 
     return relaxed;
@@ -375,16 +375,16 @@ Exact_column exactly_safe_modulo(const munch::core::Lexer& lexer, const Kinds_t&
             continue;
         }
 
-        const auto verdict{decide_exactly(lexer, ignored, representative)};
+        const auto [outcome, reason, witness, witness_cut, vertices]{decide_exactly(lexer, ignored, representative)};
 
         for (const auto value : members)
         {
-            if (verdict.outcome == Exact_verdict::Outcome::safe)
+            if (outcome == Exact_verdict::Outcome::safe)
             {
                 decided.safe.insert(static_cast<char>(value));
             }
 
-            if (verdict.outcome == Exact_verdict::Outcome::budget)
+            if (outcome == Exact_verdict::Outcome::budget)
             {
                 decided.undecided.push_back(std::format("{:#04x}", value));
             }

@@ -477,7 +477,8 @@ void expect_effective_self_pair(
 
     const std::vector<Merge> before{merges.begin(), merges.begin() + static_cast<std::ptrdiff_t>(rank)};
 
-    const auto encoding{reference_tokens(before, symbols_of(reading, left + right))};
+    const auto pair_text{left + right};
+    const auto encoding{reference_tokens(before, symbols_of(reading, pair_text))};
 
     EXPECT_EQ(encoding, (std::vector{left, right})) << context;
 
@@ -741,8 +742,8 @@ void expect_infinite(Fixture_check& check, std::istringstream& fields, const std
 }
 
 /**
- * @brief Checks a characters line: the decision's radius in bytes between the radius r counted in characters times
- *        the shortest and times the longest of the characters the table names, and over characters of one length k the
+ * @brief Checks a characters line: the decision's radius in bytes between the radius r counted in characters times the
+ *        shortest and times the longest of the characters the table names, and over characters of one length k the
  *        radius k r and a mirrored constant m > 0 counted in characters k (m - 1) + 1 in bytes.
  * @param check The fixture under check.
  * @param fields The line after its first word.
@@ -997,7 +998,11 @@ std::vector<std::string> canonical_tokens(
 Full_product full_product(
         const std::vector<Merge>& merges, const Reading reading, const std::vector<std::string>& symbols)
 {
-    Full_product product{.tokens = canonical_tokens(merges, reading, symbols)};
+    Full_product product{
+            .tokens = canonical_tokens(merges, reading, symbols),
+            .pairs = {},
+            .steps = {},
+            .accepting = {}};
 
     const auto& tokens{product.tokens};
 
@@ -1031,7 +1036,9 @@ Full_product full_product(
 
         if (inserted)
         {
-            const auto encoding{reference_tokens(merges, symbols_of(reading, tokens[first] + tokens[second]))};
+            const auto pair_text{tokens[first] + tokens[second]};
+
+            const auto encoding{reference_tokens(merges, symbols_of(reading, pair_text))};
 
             is_adjacent = encoding == std::vector{tokens[first], tokens[second]};
         }
@@ -1327,9 +1334,9 @@ std::optional<Finite_ripple> product_decision(const Full_product& product)
 
         const auto& [node, index]{*attaining};
 
-        const auto& step{product.steps[node][index]};
+        const auto& [target, byte, offset, step_marked]{product.steps[node][index]};
 
-        std::string bytes{step.byte};
+        std::string bytes{byte};
 
         auto source{node};
 
@@ -1343,7 +1350,7 @@ std::optional<Finite_ripple> product_decision(const Full_product& product)
 
         std::ranges::reverse(bytes);
 
-        bytes += product_completion(product, step.target);
+        bytes += product_completion(product, target);
 
         const auto& [token, read]{product.pairs[source].prepended};
 
@@ -1909,8 +1916,6 @@ TEST(Ripple_radius_test,
 
 TEST(Ripple_radius_test, Random_tables_over_bytes_and_over_characters_are_decided_as_the_full_product)
 {
-    constexpr std::size_t draws{300};
-
     std::mt19937 sequence{0x5EEDU};
 
     std::uniform_int_distribution<std::size_t> count{5, 12};
@@ -1922,6 +1927,8 @@ TEST(Ripple_radius_test, Random_tables_over_bytes_and_over_characters_are_decide
     const auto characters{characters_of(alphabet)};
 
     std::size_t finite{0};
+
+    constexpr std::size_t draws{300};
 
     for (std::size_t drawn{0}; drawn < draws; ++drawn)
     {

@@ -1,18 +1,18 @@
 /*
  * The smaller searches of paper/split-windows/split-windows.tex, run over the same token sets as the window gate whose
- * retained keys the paper's window table quotes, so the new columns of that table are computed beside the old one
- * rather than transcribed. Three things are decided here, and every figure the paper quotes is asserted:
+ * retained keys the paper's window table quotes, so the two columns of that table this program pins are computed beside
+ * the gate's rather than transcribed. Three things are decided here, and every figure the paper quotes is asserted:
  *
  *   1. The three-status quotient of the cloud: a live state is empty, single (exactly one in-window origin) or blocked
  *      (the pre-window origin or two in-window origins). Its breadth-first search retains the keys this program counts,
  *      under the gate's own stopping discipline, and its shortest length must equal the gate's.
- *   2. The chosen-origin search, the search munch 2.2 ships as shortest_split_window(): one origin is followed from its
+ *   2. The chosen-origin search, the search munch ships as shortest_split_window(): one origin is followed from its
  *      birth beside the support of every other hypothesis, and a window is certified when that origin outlives them
- *      all. The nodes it holds when its shortest window appears are the table's other new column.
+ *      all. The nodes it holds when its shortest window appears are the other column of the table this program pins.
  *   3. The long-window family of the paper's complexity section: m cycle sources of lengths 1 to m behind the
- *      reduction's header, whose shortest certified window is lcm(1..m) + m + 2 bytes long. The minima and the
- *      nodes the search holds when each appears are asserted, and each window is replayed through the plain cloud at
- *      the claimed origin and scanned by maximal munch to show that it is its own completely tokenizable occurrence.
+ *      reduction's header, whose shortest certified window is lcm(1..m) + m + 2 bytes long. The minima and the nodes
+ *      the search holds when each appears are asserted, and each window is replayed through the plain cloud at the
+ *      claimed origin and scanned by maximal munch to show that it is its own completely tokenizable occurrence.
  *
  * A fourth check decides the greedy-agreement class of the paper's structural section on its examples: {a, ab} and ab*
  * lie in the class, {a, ab, bb} does not, and the obstruction the test returns is replayed through the scan.
@@ -1268,28 +1268,27 @@ bool run(const Row& row, const Dfa& dfa)
 {
     const auto live{live_of(dfa)};
 
-    const auto quotient{three_status(live)};
+    const auto [quotient_shortest, keys, quotient_window, quotient_origin]{three_status(live)};
 
-    const auto chosen{chosen_origin(live)};
+    const auto [chosen_shortest, nodes, window, origin]{chosen_origin(live)};
 
-    const auto exhausted{chosen.shortest == 0};
+    const auto exhausted{chosen_shortest == 0};
 
-    const auto replayed{exhausted ? std::nullopt : cloud_origin(live, chosen.window)};
+    const auto replayed{exhausted ? std::nullopt : cloud_origin(live, window)};
 
-    const auto lengths_agree{quotient.shortest == row.shortest && chosen.shortest == row.shortest};
+    const auto lengths_agree{quotient_shortest == row.shortest && chosen_shortest == row.shortest};
 
-    const auto counts_agree{quotient.held == row.keys && chosen.held == row.nodes};
+    const auto counts_agree{keys == row.keys && nodes == row.nodes};
 
-    const auto replays{exhausted || replayed == std::optional{chosen.origin}};
+    const auto replays{exhausted || replayed == std::optional{origin}};
 
     const auto ok{lengths_agree && counts_agree && replays};
 
-    const auto shown{
-            exhausted ? std::string{"exhausted"} : std::format("{} at {}", escaped(chosen.window), chosen.origin)};
+    const auto shown{exhausted ? std::string{"exhausted"} : std::format("{} at {}", escaped(window), origin)};
 
     std::cout << std::format(
             "  {:<32} n {:>3}  shortest {} / {}  three-status keys {:>4}  chosen-origin nodes {:>4}  {}{}\n", row.name,
-            live.n, quotient.shortest, chosen.shortest, quotient.held, chosen.held, shown, ok ? "" : moved_marker);
+            live.n, quotient_shortest, chosen_shortest, keys, nodes, shown, ok ? "" : moved_marker);
 
     return ok;
 }
@@ -1340,7 +1339,7 @@ Dfa lcm_family(const std::size_t m)
     }
 
     const auto edge{[&builder](const State_t from, const char symbol, const State_t to) {
-        const munch::dfa::Label label(symbol);
+        const munch::dfa::Label label{symbol};
 
         builder.add_transition(from, label, to);
     }};
@@ -1551,7 +1550,7 @@ bool long_window_rows()
 
         const auto live{live_of(family)};
 
-        const auto found{chosen_origin(live)};
+        const auto [shortest, held, window, origin]{chosen_origin(live)};
 
         std::size_t lcm{1};
 
@@ -1560,20 +1559,19 @@ bool long_window_rows()
             lcm = std::lcm(lcm, i);
         }
 
-        const auto starts{token_starts(live, found.window)};
+        const auto starts{token_starts(live, window)};
 
-        const auto replayed{cloud_origin(live, found.window)};
+        const auto replayed{cloud_origin(live, window)};
 
-        const auto shortest_agrees{found.shortest == minima[m - 1] && found.shortest == lcm + m + 2};
+        const auto shortest_agrees{shortest == minima[m - 1] && shortest == lcm + m + 2};
 
-        const auto held_agrees{found.held == nodes_held[m - 1]};
+        const auto held_agrees{held == nodes_held[m - 1]};
 
         const auto states_agree{live.n == (m * m + 5 * m + 12) / 2};
 
-        const auto origin_agrees{found.origin == found.shortest - 1 && replayed == std::optional{found.origin}};
+        const auto origin_agrees{origin == shortest - 1 && replayed == std::optional{origin}};
 
-        const auto two_tokens{
-                starts && !starts->empty() && starts->size() == 2 && starts->back() == found.shortest - 1};
+        const auto two_tokens{starts && !starts->empty() && starts->size() == 2 && starts->back() == shortest - 1};
 
         const auto row_ok{shortest_agrees && held_agrees && states_agree && origin_agrees && two_tokens};
 
@@ -1581,7 +1579,7 @@ bool long_window_rows()
 
         std::cout << std::format(
                 "  m {}  states {:>3}  lcm {:>4}  shortest window {:>4} at {:>4}  nodes held {:>7}  tokens {}{}\n", m,
-                live.n, lcm, found.shortest, found.origin, found.held, tokens, row_ok ? "" : moved_marker);
+                live.n, lcm, shortest, origin, held, tokens, row_ok ? "" : moved_marker);
 
         ok = row_ok && ok;
     }
@@ -1627,15 +1625,23 @@ bool greedy_row(const std::string_view name, const Dfa& dfa, const bool expected
 
     const auto row_ok{obstruction.has_value() != expected_in && replay_ok};
 
-    const auto verdict{obstruction ? "out, obstruction " : "in"};
+    const auto marker{row_ok ? "" : moved_marker};
 
-    const auto shown{
-            obstruction ?
-                    std::format(
-                            "{} with first factor {}", escaped(obstruction->word), escaped(obstruction->first_factor)) :
-                    std::string{}};
+    if (!obstruction)
+    {
+        std::cout << std::format("  {:<20} in{}\n", name, marker);
 
-    std::cout << std::format("  {:<20} {}{}{}\n", name, verdict, shown, row_ok ? "" : moved_marker);
+        return row_ok;
+    }
+
+    const auto& [first_factor, word]{*obstruction};
+
+    const auto shown_word{escaped(word)};
+
+    const auto shown_factor{escaped(first_factor)};
+
+    std::cout << std::format(
+            "  {:<20} out, obstruction {} with first factor {}{}\n", name, shown_word, shown_factor, marker);
 
     return row_ok;
 }

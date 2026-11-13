@@ -5026,8 +5026,8 @@ template <typename Classify>
 }
 
 /**
- * @brief Returns a campaign row's name as the supply table carries it, the block row named the block-comment row as
- *        the prose names it.
+ * @brief Returns a campaign row's name as the supply table carries it, the block row named the block-comment row as the
+ *        prose names it.
  * @param name The row's name.
  * @return The table's name for the row.
  */

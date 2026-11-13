@@ -240,6 +240,27 @@ struct Char_convertible_iterator
 static_assert(std::random_access_iterator<Char_convertible_iterator>);
 
 /**
+ * @brief A literal of a random token set, with the kind it is registered as and the priority it is registered at.
+ */
+struct Ranked_literal
+{
+    /**
+     * @brief The literal.
+     */
+    std::string word{};
+
+    /**
+     * @brief The ID of its kind.
+     */
+    std::size_t kind{};
+
+    /**
+     * @brief The priority it is registered at, lower winning, no two literals of the set at the same one.
+     */
+    std::size_t priority{};
+};
+
+/**
  * @brief Whether the tests export their NFA and DFA graphs in Graphviz DOT format, for debugging.
  */
 constexpr bool debug_dot{false};
@@ -263,6 +284,16 @@ constexpr char32_t first_surrogate{0xD800};
  * @brief The last surrogate code point.
  */
 constexpr char32_t last_surrogate{0xDFFF};
+
+/**
+ * @brief The token kind of white space in the lexers json_lexer() builds, the kind they discard.
+ */
+constexpr std::size_t json_white_space{11};
+
+/**
+ * @brief The token kind of the first literal json_lexer() is given, each later one taking the next.
+ */
+constexpr std::size_t json_first_literal{12};
 
 /**
  * @brief The match of a scan that matched nothing.
@@ -1058,16 +1089,6 @@ std::size_t longest_unanchored_run(
 }
 
 /**
- * @brief The token kind of white space in the lexers json_lexer() builds, the kind they discard.
- */
-constexpr std::size_t json_white_space{11};
-
-/**
- * @brief The token kind of the first literal json_lexer() is given, each later one taking the next.
- */
-constexpr std::size_t json_first_literal{12};
-
-/**
  * @brief Builds the RFC 8259 JSON token set of the constrained-decoding paper's feasibility measurement, with white
  *        space skipped and each given literal added as its own kind at a priority above the string token.
  *
@@ -1134,15 +1155,6 @@ Lexer json_lexer(const std::vector<std::string>& literals)
  */
 std::vector<std::string> record_literals(const std::size_t keys)
 {
-    constexpr std::array<std::string_view, 60> names{
-            "id",       "name",     "email",     "age",      "active",     "tags",   "score",    "status",   "created",
-            "updated",  "title",    "summary",   "count",    "verified",   "labels", "rating",   "kind",     "owner",
-            "language", "version",  "priority",  "enabled",  "aliases",    "weight", "category", "region",   "currency",
-            "amount",   "approved", "notes",     "latitude", "level",      "source", "target",   "timezone", "quantity",
-            "archived", "keywords", "longitude", "phase",    "country",    "city",   "street",   "postcode", "primary",
-            "phones",   "floor",    "unit",      "company",  "department", "role",   "salary",   "remote",   "skills",
-            "years",    "grade",    "manager",   "office",   "building",   "badge"};
-
     std::vector<std::string> literals{};
 
     const auto add{[&](const std::string_view word) {
@@ -1153,6 +1165,15 @@ std::vector<std::string> record_literals(const std::size_t keys)
             literals.push_back(quoted);
         }
     }};
+
+    constexpr std::array<std::string_view, 60> names{
+            "id",       "name",     "email",     "age",      "active",     "tags",   "score",    "status",   "created",
+            "updated",  "title",    "summary",   "count",    "verified",   "labels", "rating",   "kind",     "owner",
+            "language", "version",  "priority",  "enabled",  "aliases",    "weight", "category", "region",   "currency",
+            "amount",   "approved", "notes",     "latitude", "level",      "source", "target",   "timezone", "quantity",
+            "archived", "keywords", "longitude", "phase",    "country",    "city",   "street",   "postcode", "primary",
+            "phones",   "floor",    "unit",      "company",  "department", "role",   "salary",   "remote",   "skills",
+            "years",    "grade",    "manager",   "office",   "building",   "badge"};
 
     for (const auto name : names | std::views::take(keys))
     {
@@ -1166,27 +1187,6 @@ std::vector<std::string> record_literals(const std::size_t keys)
 
     return literals;
 }
-
-/**
- * @brief A literal of a random token set, with the kind it is registered as and the priority it is registered at.
- */
-struct Ranked_literal
-{
-    /**
-     * @brief The literal.
-     */
-    std::string word{};
-
-    /**
-     * @brief The ID of its kind.
-     */
-    std::size_t kind{};
-
-    /**
-     * @brief The priority it is registered at, lower winning, no two literals of the set at the same one.
-     */
-    std::size_t priority{};
-};
 
 /**
  * @brief Draws a random literal token set over a, b and # whose words recur: the word # of the discarded kind 2 on
@@ -6281,7 +6281,9 @@ TEST_F(Lexer_test, Modulo_counterexample_decides_safety_modulo_the_discarded_kin
     EXPECT_EQ(failure, dfa::Cut_failure::left_incomplete);
 
     // Zero holds nothing and settles nothing.
-    EXPECT_FALSE(pair.modulo_counterexample('b', ignored, 0).exhaustive);
+    const auto [capped, capped_cut, capped_failure, capped_settled]{pair.modulo_counterexample('b', ignored, 0)};
+
+    EXPECT_FALSE(capped_settled);
 }
 
 TEST_F(Lexer_test, Separator_failure_names_the_clause_a_byte_fails_and_passes_white_space_in_json_and_typed_records)
@@ -6325,7 +6327,11 @@ TEST_F(Lexer_test, Separator_failure_names_the_clause_a_byte_fails_and_passes_wh
     separated.add_token(text("aa"), Token_kind::doubled, 1);
     separated.add_token(text("#"), Token_kind::skipped, 1);
 
-    EXPECT_EQ(separated.build().separator_failure('#', ignored).clause, std::nullopt);
+    const auto apart{separated.build()};
+
+    const auto [apart_clause, apart_kept, apart_spelling]{apart.separator_failure('#', ignored)};
+
+    EXPECT_EQ(apart_clause, std::nullopt);
 
     // The feasibility measurement's lexers: JSON and the typed records of 5, 20 and 60 keys, white space skipped and
     // each key literal at a priority above the string. Every white-space byte is a separator, and spellings of every
@@ -6449,23 +6455,31 @@ TEST_F(Lexer_test, Separator_failure_reads_each_word_as_the_kind_its_best_priori
 
             builder.add_token(text(word), kind, priority);
 
-            const auto known{best.find(word)};
+            const auto [entry, inserted]{best.try_emplace(word, literal)};
 
-            if (known == best.end() || priority < known->second.priority)
+            auto& [held_word, held]{*entry};
+
+            if (!inserted && priority < held.priority)
             {
-                best.insert_or_assign(word, literal);
+                held = literal;
             }
         }
 
         const auto lexer{builder.build()};
 
-        const auto kind_of{[&](const std::string& word) { return best.at(word).kind; }};
+        const auto kind_of{[&](const std::string& word) {
+            const auto& [spelling, kind, priority]{best.at(word)};
+
+            return kind;
+        }};
 
         std::vector<std::string> kept_words{};
 
         for (const auto& [word, literal] : best)
         {
-            if (literal.kind != discarded)
+            const auto& [spelling, kind, priority]{literal};
+
+            if (kind != discarded)
             {
                 kept_words.push_back(word);
             }
