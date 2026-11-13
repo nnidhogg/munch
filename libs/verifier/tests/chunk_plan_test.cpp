@@ -251,6 +251,48 @@ std::vector<std::vector<Merge>> small_tables()
 }
 
 /**
+ * @brief Draws a merge table over {a, b, c} from a sequence: up to five merges, each of two tokens the table already
+ *        has, a byte or an earlier merge's product, into a product it does not have yet of at most six bytes.
+ * @param sequence The sequence, advanced by the draw.
+ * @return The merge table in rank order.
+ */
+std::vector<Merge> random_table(std::mt19937& sequence)
+{
+    std::uniform_int_distribution<std::size_t> count{0, 5};
+
+    std::vector<std::string> tokens{"a", "b", "c"};
+
+    std::vector<Merge> merges{};
+
+    for (auto wanted{count(sequence)}; wanted > 0; --wanted)
+    {
+        std::vector<Merge> choices{};
+
+        for (const auto& left : tokens)
+        {
+            for (const auto& right : tokens)
+            {
+                const auto product{left + right};
+
+                if (product.size() <= 6 && !std::ranges::contains(tokens, product))
+                {
+                    choices.push_back({.left = left, .right = right});
+                }
+            }
+        }
+
+        std::uniform_int_distribution<std::size_t> place{0, choices.size() - 1};
+
+        const auto& chosen{choices[place(sequence)]};
+
+        merges.push_back(chosen);
+        tokens.push_back(chosen.left + chosen.right);
+    }
+
+    return merges;
+}
+
+/**
  * @brief Returns the segmentation a forward Viterbi pass picks for a text in exact arithmetic: at each position, over
  *        the pieces in order, a path replaces the best one ending there only on a strictly greater score, a token's
  *        score summed along the path.
@@ -412,6 +454,78 @@ TEST(Chunk_plan_test, Every_cut_on_the_token_automaton_is_a_boundary_and_every_w
             }
         }
     }
+}
+
+TEST(Chunk_plan_test, Over_random_merge_tables_every_worker_encodes_its_chunk_as_the_canonical_encoding_does)
+{
+    // Tables of up to five merges drawn at random over {a, b, c}, and texts of up to 64 bytes with a third of the
+    // boundaries of their canonical encoding supplied as cuts with no context, each planned on the token automaton with
+    // no budget, a budget of four, and a budget of four with the uniform radii where the origin radius is finite. Every
+    // plan is held to the reference encoder: each cut a boundary, and the workers' encodings stitched the text's.
+    std::mt19937 sequence{0x5EEDU};
+
+    std::uniform_int_distribution<std::size_t> length{0, 64};
+    std::uniform_int_distribution<std::size_t> chunks{0, 9};
+    std::uniform_int_distribution<std::size_t> supply{0, 2};
+
+    std::size_t certified{0};
+
+    std::size_t uniform{0};
+
+    std::size_t given{0};
+
+    for (std::size_t table{0}; table < 180; ++table)
+    {
+        const auto merges{random_table(sequence)};
+
+        const auto automaton{token_automaton(merges)};
+
+        const auto radii{radii_of(merges)};
+
+        for (std::size_t trial{0}; trial < 18; ++trial)
+        {
+            const auto text{random_text(sequence, length(sequence))};
+
+            const auto boundaries{boundaries_of(reference_tokens(merges, text))};
+
+            std::vector<Supplied_cut> supplied{};
+
+            for (const auto boundary : boundaries)
+            {
+                if (boundary < text.size() && supply(sequence) == 0)
+                {
+                    supplied.push_back({.position = boundary, .context = 0});
+                }
+            }
+
+            const std::vector<std::tuple<std::size_t, std::optional<Uniform_radii>>> routes{
+                    {0, std::nullopt},
+                    {4, std::nullopt},
+                    {4, radii}};
+
+            for (const auto& [budget, route_radii] : routes)
+            {
+                const Plan_request request{.chunks = chunks(sequence), .budget = budget, .supplied = supplied};
+
+                const auto plan{chunk_plan(automaton, text, request, route_radii)};
+
+                const auto context{std::format("table {} {} budget {} chunks {}", table, text, budget, request.chunks)};
+
+                expect_true_cuts(merges, text, plan, budget, context);
+
+                for (const auto& [begin, owned_end, read_end, evidence] : plan.chunks)
+                {
+                    certified += std::holds_alternative<Certified_window>(evidence) ? 1 : 0;
+                    uniform += std::holds_alternative<Uniform_window>(evidence) ? 1 : 0;
+                    given += std::holds_alternative<Supplied_cut>(evidence) ? 1 : 0;
+                }
+            }
+        }
+    }
+
+    EXPECT_GT(certified, 0U);
+    EXPECT_GT(uniform, 0U);
+    EXPECT_GT(given, 0U);
 }
 
 TEST(Chunk_plan_test, Every_cut_on_the_merge_tower_is_a_boundary_with_its_window_inside_its_chunk)
@@ -635,6 +749,67 @@ TEST(Chunk_plan_test, Each_chunk_of_a_piece_set_segmented_alone_by_exact_Viterbi
             expect_optimal_chunks(pieces, scores, text, chunk_plan(set, text, request), context);
         }
     }
+}
+
+TEST(Chunk_plan_test, Exact_Viterbi_on_each_chunk_alone_gives_the_whole_input_its_optimum_under_scores_of_either_sign)
+{
+    // Scores of either sign and zero from a narrow range tie often and make a path of more tokens score higher as well
+    // as lower; the pass breaks every tie on the whole input as on its chunks.
+    std::mt19937 sequence{0x5EEDU};
+
+    std::uniform_int_distribution<std::size_t> count{2, 7};
+    std::uniform_int_distribution<std::size_t> length{1, 4};
+    std::uniform_int_distribution<long> score{-3, 3};
+
+    std::size_t cuts{0};
+
+    for (std::size_t trial{0}; trial < 400; ++trial)
+    {
+        std::vector<std::string> pieces{"a", "b", "c"};
+
+        const auto wanted{count(sequence)};
+
+        for (std::size_t index{0}; index < wanted; ++index)
+        {
+            auto piece{random_text(sequence, length(sequence))};
+
+            if (!std::ranges::contains(pieces, piece))
+            {
+                pieces.push_back(std::move(piece));
+            }
+        }
+
+        std::ranges::shuffle(pieces, sequence);
+
+        std::vector<long> scores{};
+
+        for (std::size_t piece{0}; piece < pieces.size(); ++piece)
+        {
+            scores.push_back(score(sequence));
+        }
+
+        const auto set{piece_set(pieces)};
+
+        for (std::size_t text_index{0}; text_index < 4; ++text_index)
+        {
+            const auto text{random_text(sequence, 60)};
+
+            for (const auto chunks : {std::size_t{3}, std::size_t{8}, text.size()})
+            {
+                const Plan_request request{.chunks = chunks, .budget = 0, .supplied = {}};
+
+                const auto context{std::format("trial {} {} chunks {}", trial, text, chunks)};
+
+                const auto plan{chunk_plan(set, text, request)};
+
+                expect_optimal_chunks(pieces, scores, text, plan, context);
+
+                cuts += plan.chunks.size() - 1;
+            }
+        }
+    }
+
+    EXPECT_GT(cuts, 0U);
 }
 
 TEST(Chunk_plan_test, A_piece_set_cuts_only_where_no_piece_straddles_and_scans_a_stretch_without_a_cut_whole)
