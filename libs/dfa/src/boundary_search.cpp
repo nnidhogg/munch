@@ -1623,13 +1623,14 @@ template <typename Result>
  * @brief Decides whether every accepting path of the kept-output product carries equal outputs, by the delays of
  *        shortest stems, returning one that does not.
  *
- * Every path into a live vertex carries one delay exactly when every accepting path carries equal outputs: a common
- * accepting suffix fixes the delay of every path into its vertex, and with one delay per vertex an accepting path's,
- * empty at an accepting vertex, is its outputs' equality. So the test is that the delay along every edge between live
- * vertices carries the stem's delay at its source to the stem's at its target, and that the stem of every accepting
- * vertex carries none. Where an edge does not, of the two paths through its target that share a shortest accepting
- * suffix, the stem of the target and the stem of the source with the edge, one carries unequal outputs, each of fewer
- * edges than twice the vertices.
+ * Every accepting path carries equal outputs exactly when every path into a live vertex carries one delay and every
+ * accepting vertex's delay is empty: an accepting suffix leaves equal outputs from at most one delay at its first
+ * vertex, so equal outputs fix the delay of every path into a live vertex and leave the empty one at an accepting
+ * vertex, and with one delay per vertex an accepting path's is its accepting vertex's, empty exactly when its outputs
+ * are equal. So the test is that the delay along every edge between live vertices carries the stem's delay at its
+ * source to the stem's at its target, and that the stem of every accepting vertex carries none. Where an edge does not,
+ * of the two paths through its target that share a shortest accepting suffix, the stem of the target and the stem of
+ * the source with the edge, one carries unequal outputs, each of fewer edges than twice the vertices.
  * @param graph The graph.
  * @return The edges of an accepting path with unequal outputs, or std::nullopt when every one carries equal outputs.
  */

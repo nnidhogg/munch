@@ -815,13 +815,13 @@ public:
      * @brief Decides whether exactly one of the two token sets tokenizes some input completely, with a witness and the
      *        side that tokenizes it.
      *
-     * The domain half of full equivalence, alone, the half a token set extending another asks first: does every input
-     * the old set tokenizes still tokenize under the new one, and the reverse? Decided without determinizing either
-     * side, by the same boundary-guessing search as boundary_difference() run twice, each set's complete scan beside
-     * the other's scan guessed to fail, so the question is in polynomial space and the search takes time singly
-     * exponential in the two state counts, and a shortest witness can be exponentially long. Over {a} against {a, b}
-     * the witness is b, which only the second tokenizes; over {a} against {a, aa} there is none, though the two cut aa
-     * apart. The derivation is dfa::domain_difference()'s.
+     * The domain half of full equivalence, alone: do the two token sets tokenize the same inputs completely, each every
+     * input the other does? Decided without determinizing either side, by the same boundary-guessing search as
+     * boundary_difference() run twice, each set's complete scan beside the other's scan guessed to fail, so the
+     * question is in polynomial space and the search takes time singly exponential in the two state counts, and a
+     * shortest witness can be exponentially long. Over {a} against {a, b} the witness is b, which only the second
+     * tokenizes; over {a} against {a, aa} there is none, though the two cut aa apart. The derivation is
+     * dfa::domain_difference()'s.
      * @param other The lexer to compare against.
      * @param cap The largest number of product states each search holds before giving up, dfa::domain_cap unless told.
      * @return The witness, the side that tokenizes it, and whether the searches settled the question; an empty witness
@@ -843,9 +843,11 @@ public:
      * search as boundary_difference() with one guessed marking fed to both scans at once, the witness the bytes of the
      * shortest marked run exactly one side accepts. The half is a fact about the witness: a domain witness one set
      * tokenizes completely and the other does not, a boundary witness both do and cut apart, and a boundary witness
-     * here is a boundary_difference() witness, while an exhaustive negative here is one there too. The witnesses need
-     * not agree: over {a} against {aa} the shortest marked run only one side accepts is a, the domain witness, where
-     * boundary_difference() returns aa, one token against two. The derivation is dfa::segmentation_difference()'s.
+     * here is a boundary_difference() witness, while an exhaustive negative here proves the lexers cut every shared
+     * input alike, which a separate boundary_difference() call, under its own cap, may still leave undetermined. The
+     * witnesses need not agree: over {a} against {aa} the shortest marked run only one side accepts is a, the domain
+     * witness, where boundary_difference() returns aa, one token against two. The derivation is
+     * dfa::segmentation_difference()'s.
      * @param other The lexer to compare against.
      * @param cap The largest number of product states to hold before giving up, dfa::segmentation_cap unless told.
      * @return The witness, the half it falls in, and whether the search settled the question; an empty witness from an
@@ -870,10 +872,10 @@ public:
      * abc and the kept k and kk the byte b is safe, while is_split_point_ignoring() refuses it; over ab discarded alone
      * the cut before b leaves two chunks neither of which scans. Decided by the same boundary-guessing search as
      * domain_difference(), once per chunk, and where neither chunk fails, by the product of two scans emitting their
-     * kept tokens as words, compared on its finite graph; the question is decided in polynomial space, and the decision
-     * takes time singly exponential in the state count in the worst case. A symbol no completely tokenizable input
-     * holds past its first offset is safe vacuously and reported so, with no witness, where is_split_point_ignoring()
-     * answers false. The derivation is dfa::modulo_counterexample()'s.
+     * kept tokens as words, compared on its finite graph. The problem is in PSPACE; the explicit implementation may use
+     * singly exponential time and space. A symbol no completely tokenizable input holds past its first offset is safe
+     * vacuously and, on an exhaustive result, reported so with no witness, where is_split_point_ignoring() answers
+     * false. The derivation is dfa::modulo_counterexample()'s.
      * @param symbol The byte the cuts stand before.
      * @param ignored The IDs of the tokens the caller discards before the stream is used.
      * @param cap The largest number of search states each search holds before giving up, dfa::modulo_cap unless told.
@@ -898,12 +900,14 @@ public:
      * byte of a kept spelling, a kept spelling being a byte string the scan reads as one token of a kind not discarded.
      * Under the three, every sequence of kept kinds that have spellings is realizable, their spellings joined by the
      * symbol scanning as exactly that sequence once the discarded tokens are deleted, so a grammar-side failure where
-     * the lexer cannot realize a terminal sequence never occurs; every white-space byte of a JSON lexer skipping white
-     * space passes. The condition is sufficient and not necessary. Over the kept a and aa with # and a# discarded, #
-     * fails the second clause on a#, and no byte string scans as a followed by a. The discarded kinds are given here
-     * rather than read from the builder, as for modulo_counterexample(). Decided on the compiled machine by
-     * reachability, in time linear in the table's size, the token spelling a shortest one its clause forbids. The
-     * derivation is dfa::separator_failure()'s.
+     * the lexer cannot realize a terminal sequence never occurs; the four white-space bytes pass in the tested JSON
+     * grammars, a lexer skipping white space. The condition is sufficient and not necessary. Over the kept a and aa
+     * with # and a# discarded, # fails the second clause on a#, and no byte string scans as a followed by a. The
+     * discarded kinds are given here rather than read from the builder, as for modulo_counterexample(). Decided on the
+     * compiled machine by reachability, the walks in time linear in the table's size and the classification of the
+     * accepting states against the ignored IDs in time proportional to their product, the token spelling a shortest one
+     * its clause forbids for the second and third clauses and the symbol alone for the first. The derivation is
+     * dfa::separator_failure()'s.
      * @param symbol The byte the kept tokens are joined by.
      * @param ignored The IDs of the tokens the caller discards before the stream is used.
      * @return The first clause the symbol fails with the words that show it, or no clause when it is a separator.

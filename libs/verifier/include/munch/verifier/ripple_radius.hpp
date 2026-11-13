@@ -104,21 +104,23 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  * tokens over one input, the second having read the prepended byte as the first byte of a token, and marks a step where
  * the two copies' tokens covering the byte differ in offset or length. It is explored from every prepended byte the
  * table names, since a byte no merge names is a token no merge crosses, and stops at every pair ending both copies at a
- * token end: such a pair is a token boundary the two encodings share, past which they agree, so no marked step lies
- * beyond it. Every other pair has a copy inside its token, whose next byte is the one byte the pair reads, so only a
- * copy at a token end branches. The pairs from which a marked step leads to a pair ending both copies form an acyclic
- * graph, and the longest path to a marked step, plus one, is the radius, less the step's offset in the first copy's
- * token the mirrored constant, the path completed to a pair ending both copies spelling the attaining input.
+ * token end: such a pair is a token boundary the two encodings share, past which they agree, so no marked step on an
+ * accepting path lies beyond it. Every other pair has a copy inside its token, whose next byte is the one byte the pair
+ * reads, so only a copy at a token end branches. The pairs from which a marked step leads to a pair ending both copies
+ * form an acyclic graph, and the longest path to a marked step, plus one, is the radius, less the step's offset in the
+ * first copy's token the mirrored constant, the path completed to a pair ending both copies spelling the attaining
+ * input.
  *
  * With S the total length of the canonical tokens and V their number, the pairs expanded have one copy inside a token
  * and the other inside one or at a token end, O(S^2 + V S) of them, each with at most V steps and a pair of two copies
- * inside tokens with at most one, so the exploration takes O(S^2 + V^2 S) space and O((S^2 + V^2 S) log S) time, the
- * logarithm from interning each step's pair in an ordered map, where the product of the two copies, every pair
- * expanded, has up to (1 + S)^2 pairs and V^4 steps. Each usefulness and each adjacency encodes the spellings of two
- * tokens with the lowest-ranked merge at its leftmost occurrence taken from a heap, in time L log L for L bytes, and
- * the at most V^2 adjacencies spell 2 V S bytes together. S and V are at most twice the table's size, the lengths of
- * its merges' parts summed, so the decision takes time cubic in that size up to a logarithmic factor, where the whole
- * product takes quartic.
+ * inside tokens with at most one, so the exploration takes O(S^2 + V^2 S) space and O((S^2 + V^2 S) log(S + 2)) time,
+ * the logarithm from interning each step's pair in an ordered map, where the product of the two copies, every pair
+ * expanded, has up to (1 + S)^2 pairs and O(S^2 + V^2 S + V^4) steps. Each usefulness and each adjacency encodes the
+ * spellings of two tokens with the lowest-ranked merge at its leftmost occurrence taken from a heap, in time L log L
+ * for L bytes, and the at most V^2 adjacencies spell 2 V S bytes together. S and V are at most twice the table's size
+ * T, the lengths of its merges' parts summed. The whole call takes expected time cubic in T up to a logarithmic factor,
+ * O(T + (S^2 + V^2 S) log(S + 2)), its hash lookups taking constant time on average, and space O(T + S^2 + V^2 S),
+ * where the whole product takes quartic time.
  *
  * The two parts of a useful merge differ, so its pass joins every occurrence of them, and it moves the first byte from
  * which the encodings of x and of ax agree by at most the length of its right part: the radius is at most the total
@@ -146,8 +148,8 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  * past the last byte of the input whose covering token changes, the mirrored constant one past the first byte of the
  * last changed token, and the prepended input spells its character by its UTF-8 bytes. No token begins or ends inside a
  * character, so the bytes of a character share their covering token and the radius ends where a character ends. The
- * bounds the byte overload states on lengths hold with every length in bytes, and its Fibonacci bound counts
- * characters, not bytes.
+ * bounds the byte overload states on lengths hold with every length in bytes and with T counting the alphabet's bytes
+ * as well, and its Fibonacci bound counts characters, not bytes.
  *
  * The radius counted in characters, one past the last character of the input whose covering token changes, is finite
  * exactly when this one is, but it is not this radius divided by a length, since this one weighs each character by its

@@ -96,8 +96,10 @@ The name is pronounced /mʌntʃ/, like the English *munch*, after the maximal mu
   first reports in 19. GCC 13 has no native `<mdspan>`, which `external/mdspan` (the Kokkos reference implementation)
   supplies via `FetchContent`.
 - CMake 3.20.6+.
-- python3 at test time only: two probe tests under `tools/probes` run the recovery cross-check scripts with it, and
-  `ctest` reports those two as failed without it; the library and every other target build and test without python.
+- python3 at test time only: three tests invoke it, the two recovery cross-checks under `tools/probes` and the
+  repair-profile generator under `paper/panic-mode/checks`. Without it CTest cannot run the three, skips the four
+  comparisons that depend on the generator's setup, and lists all seven as failed in its summary; the library and every
+  other target build and test without python.
 - Everything else (`boost.config`/`describe`/`mp11`/`container_hash`, `mdspan`, `googletest`) is fetched by CMake at
   configure time; there is nothing to install manually. Pass `-DUSE_SYSTEM_BOOST=ON` / `-DUSE_SYSTEM_GTEST=ON` to use
   system packages instead.
@@ -191,11 +193,12 @@ The library is documented in `docs/`, one page per subject; the README is the en
 - [docs/split_points.md](docs/split_points.md), [docs/split_windows.md](docs/split_windows.md),
   [docs/panic_mode.md](docs/panic_mode.md), [docs/certified_splitting.md](docs/certified_splitting.md),
   [docs/finitely_verifiable.md](docs/finitely_verifiable.md) and [docs/bpe_left_ripple.md](docs/bpe_left_ripple.md): the
-  six technical reports, mirrored word for word from [arXiv:2608.03473](https://arxiv.org/abs/2608.03473),
+  six technical reports, whose theorems the certificates, the window planner, the recovery layer and the verifier
+  implement. Each mirrors its posted version word for word, [arXiv:2608.03473](https://arxiv.org/abs/2608.03473),
   [arXiv:2608.09761](https://arxiv.org/abs/2608.09761), [arXiv:2609.10600](https://arxiv.org/abs/2609.10600),
   [arXiv:2610.08854](https://arxiv.org/abs/2610.08854), [arXiv:2610.30168](https://arxiv.org/abs/2610.30168) and
-  [arXiv:2611.13061](https://arxiv.org/abs/2611.13061), whose theorems the certificates, the window planner, the
-  recovery layer and the verifier implement.
+  [arXiv:2611.13061](https://arxiv.org/abs/2611.13061), after a preface of its own, and the split-windows mirror adds
+  the two parts its preface names as its own.
 
 ## **Testing**
 

@@ -208,11 +208,11 @@ first 3200 without equal parts: 3058 merges, radius 39, mirrored 35, 2.323 s, pe
 
 This run was made on the development machine under WSL2 with GCC 13 at `0239f914` and is archived whole, with the same
 collection at `e9e5b450`, in `paper/data/ripple-radius-wsl-2026-11/`. The exploration stops at every pair ending both
-copies at a token end, a token boundary the two encodings share, so its time is O((S^2 + V^2 S) log S) and its space
-O(S^2 + V^2 S) in the total length S and the number V of the canonical tokens, and from 769 to 3,058 merges the time
-grows about fivefold per doubling. The product of the two copies expanded whole, as `e9e5b450` explores it, gives the
-same radii and mirrored constants where it finishes, but takes 7.1 s and 1.8 GiB at 387 merges and exhausts the 12 GB
-address space at 769.
+copies at a token end, a token boundary the two encodings share, so it takes O(T + (S^2 + V^2 S) log(S + 2)) expected
+time, its hash lookups taking constant time on average, and O(T + S^2 + V^2 S) space in the total length S and the
+number V of the canonical tokens and the table's size T, and from 769 to 3,058 merges the time grows about fivefold per
+doubling. The product of the two copies expanded whole, as `e9e5b450` explores it, gives the same radii and mirrored
+constants where it finishes, but takes 7.1 s and 1.8 GiB at 387 merges and exhausts the 12 GB address space at 769.
 
 ## **Lean 4 on Mathlib**
 

@@ -7168,7 +7168,7 @@ TEST_F(Lexer_test, The_window_span_equals_the_longest_unanchored_run_over_every_
         }
     }
 
-    // 6139 inventories, 197 of them bounded, 161 of those reaching back less than their width, the longest span four.
+    // 6139 inventories, 197 bounded, 161 of those capped below the longest width less one, the longest span four.
     EXPECT_EQ(decided, 6139U);
     EXPECT_EQ(bounded, 197U);
     EXPECT_EQ(short_of_width, 161U);

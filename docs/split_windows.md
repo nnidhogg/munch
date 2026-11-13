@@ -1,10 +1,10 @@
 # Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies
 
-**Nicklas Nidhögg**, August 10, 2026. Mirrors `paper/split-windows/split-windows.tex` as it now stands, revised beyond
-the source published as [arXiv:2608.09761](https://arxiv.org/abs/2608.09761). The paper evaluates munch at the v1.3.3
-release, where the window machinery is a probe: the paper's principle is that the certificate's formulation should
-freeze there before becoming a public contract. The supported API arrived in release 1.4.0, two days before the paper's
-submission: `Lexer::is_split_window()`, which the revised sweep cross-checks against its model, and
+**Nicklas Nidhögg**, August 10, 2026. Mirrors `paper/split-windows/split-windows.tex`, the source posted as v3 of
+[arXiv:2608.09761](https://arxiv.org/abs/2608.09761). The paper evaluates munch at the v1.3.3 release, where the window
+machinery is a probe: the paper's principle is that the certificate's formulation should freeze there before becoming a
+public contract. The supported API arrived in release 1.4.0, two days before the paper's submission:
+`Lexer::is_split_window()`, which the revised sweep cross-checks against its model, and
 `chunk_boundaries_with_windows()`, which lies outside the paper's evaluation. The paper makes three later version
 statements. Release 2.1.0 decides the boundary profile of Section 11 exactly within its search cap, as
 `boundary_profile()` and the two searches it asks at every gap. Release 2.2.0 ships the chosen-origin search of Section

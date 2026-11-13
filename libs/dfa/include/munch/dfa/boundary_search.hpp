@@ -23,10 +23,10 @@
  * before a byte leaving a chunk the scan does not consume, and all answer it the same way: the input is built byte by
  * byte, breadth first, while guessing where its tokens end, every closed segment's run kept alive because a later
  * accept on it proves the close was not the longest match. The guesses that survive are exactly the maximal-munch
- * segmentation, which is what makes guessing boundaries sound. A witness is therefore a shortest input on which the
- * event happens, and the cap is a ceiling on the states held rather than a budget spent afterwards, so an answer is
- * always one the cap paid for and a search the cap stops settles nothing, which every result reports as exhaustive
- * rather than leaving to be inferred from an empty witness.
+ * segmentation, which is what makes guessing boundaries sound. A witness of a breadth-first search is therefore a
+ * shortest input on which the event happens, and the cap is a ceiling on the states held rather than a budget spent
+ * afterwards, so an answer is always one the cap paid for and a search the cap stops settles nothing, which every
+ * result reports as exhaustive rather than leaving to be inferred from an empty witness.
  *
  * They are nine instances of one search over one key, differing only in how many scans they walk, what raises the key's
  * mark and what else a branch's future depends on, which is why they are declared together here and implemented in one
@@ -645,9 +645,10 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  *
  * The domain half of full equivalence, alone: do the two token sets tokenize the same inputs completely, whatever cuts
  * they place in them? segmentation_difference() decides it together with the boundary half, which boundary_difference()
- * decides alone, and it is the half a token set extending another asks first, whether every input the old set tokenizes
- * the new one still does. Over {a} against {a, b} the domains differ at b, which only the second tokenizes, and over
- * {a} against {a, aa} they coincide, every run of a, though the two cut aa apart.
+ * decides alone. It asks whether the domains are equal, each set tokenizing every input the other does, so an extension
+ * that keeps every input the old set tokenizes and adds one still differs at that one. Over {a} against {a, b} the
+ * domains differ at b, which only the second tokenizes, and over {a} against {a, aa} they coincide, every run of a,
+ * though the two cut aa apart.
  *
  * Decided by the same boundary-guessing search as rescue() and boundary_difference(), twice, with each set in turn on
  * each side. One side is the complete scan: the input is built byte by byte, breadth first, with every closed segment's
@@ -672,9 +673,10 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  *
  * The relation to segmentation_difference(), whose witness is the shortest marked run exactly one side accepts: every
  * input exactly one set tokenizes is the bytes of such a run, its marking under that set, and so is every input both
- * tokenize and cut apart, so that witness is as long as the shorter of this decision's and boundary_difference()'s. A
- * domain witness there is therefore as long as the witness here, and an exhaustive negative there is one here as well,
- * while a boundary witness there settles nothing here.
+ * tokenize and cut apart, so that witness, when settled, is as long as the shortest existing witness of this decision
+ * and boundary_difference(). A domain witness there is therefore as long as the witness here when this call settles,
+ * and an exhaustive negative there proves the property decided here, which this call, under its own cap, may still
+ * leave undetermined, while a boundary witness there settles nothing here.
  * @param simulator The compiled token set the comparison starts from.
  * @param other The token set to compare against, compiled over the same byte alphabet.
  * @param cap The most product states each search holds at once, a ceiling rather than a budget spent afterwards: a
@@ -704,12 +706,12 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  * boundary witness both do and cut apart.
  *
  * The relation to boundary_difference(), which decides the boundary half alone: an exhaustive negative here proves the
- * two sets cut every shared input alike, so it is an exhaustive negative there as well, and a boundary witness here is
- * an input both tokenize and cut apart, so it is a witness there. The witnesses need not agree: the two-half route, the
- * boundary half through boundary_difference() and the domain half beside it, may return another input in another half
- * than the shortest marked run only one side accepts. Over {a} against {aa} the shortest such run is a with no
- * boundary, which {a} accepts and {aa} does not, the domain witness a, while boundary_difference() returns aa, one
- * token against two.
+ * two sets cut every shared input alike, the property decided there, which that call, under its own cap, may still
+ * leave undetermined, and a boundary witness here is an input both tokenize and cut apart, so it is a witness there.
+ * The witnesses need not agree: the two-half route, the boundary half through boundary_difference() and the domain half
+ * beside it, may return another input in another half than the shortest marked run only one side accepts. Over {a}
+ * against {aa} the shortest such run is a with no boundary, which {a} accepts and {aa} does not, the domain witness a,
+ * while boundary_difference() returns aa, one token against two.
  *
  * Decided by the same boundary-guessing search as rescue(), boundary_difference(), window_occurrence(),
  * window_counterexample(), boundary_counterexample() and crossing_counterexample(): the input is built byte by byte,
@@ -755,8 +757,9 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  * kept, checked where the token closes, and emitting z for each byte of a kept token and its kind's letter at its end,
  * so that equal words are equal kept streams. Every accepting path of the product is an input and a cut both of whose
  * chunks scan, and whether all of them carry equal words is decided on the finite graph by the delays, the reduced
- * free-group word between the two outputs along a shortest path into each vertex, which agree along every edge exactly
- * when every accepting path's outputs do.
+ * free-group word between the two outputs along a shortest path into each vertex from which acceptance is reachable,
+ * which agree along every edge between such vertices and are empty at every accepting vertex exactly when every
+ * accepting path's outputs are equal.
  *
  * A search state holds a state and a set of closed runs per scan, so it takes space polynomial in the state count, and
  * the question is decided in polynomial space. The searches and the product, which may hold every state, take time and
@@ -767,12 +770,12 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  * off the scans of its chunks: the first offset past the first holding the symbol at which a cut is not safe, and the
  * first of Cut_failure's three ways it fails there. A search the cap stops leaves the whole question open, a witness
  * another search found included, since a shorter one may lie where the cap stopped. A byte no completely tokenizable
- * input holds past its first offset is safe vacuously and reported so, with no witness, where is_split_point_ignoring()
- * answers false. The searches start at the initial state and reach every position a scan can stand in, so the accepting
- * states no input reaches never enter them, and a nullable token set is decided through the positive-width equivalent
- * the simulator compiled, as every decision here is. verifier::modulo_dependence() decides a stronger contract for a
- * window's cut over a verifier, every kept token returned at its position, where this one compares kinds and lengths as
- * the split-points paper's definition does.
+ * input holds past its first offset is safe vacuously and, on an exhaustive result, reported so with no witness, where
+ * is_split_point_ignoring() answers false. The searches start at the initial state and reach every position a scan can
+ * stand in, so the accepting states no input reaches never enter them, and a nullable token set is decided through the
+ * positive-width equivalent the simulator compiled, as every decision here is. verifier::modulo_dependence() decides a
+ * stronger contract for a window's cut over a verifier, every kept token returned at its position, where this one
+ * compares kinds and lengths as the split-points paper's definition does.
  * @param simulator The compiled token set.
  * @param symbol The byte the cuts stand before.
  * @param ignored The IDs of the tokens the caller discards before the stream is used; empty asks exact safety.

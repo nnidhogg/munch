@@ -90,11 +90,12 @@ struct Separator_failure
  * which acceptance is reachable, and the third whether the state the byte leads to steps on some byte b into one, b
  * being a byte whose state from the initial one reaches a state accepting a kept kind. One breadth-first walk forward
  * from the initial state gives every state its shortest access word, and two backward, from the accepting states and
- * from those accepting a kept kind, give every state its shortest completion, so the decision takes time linear in the
- * table's size and the token spelling is a shortest one its clause forbids, on a tie the one leaving the first state
- * for the second clause and the one through the lowest byte for the third. A state no input reaches ends no kept
- * spelling, and a nullable token set is decided through the positive-width equivalent the simulator compiled, as every
- * decision over it is.
+ * from those accepting a kept kind, give every state its shortest completion, so the walks take time linear in the
+ * table's size, classifying the accepting states against the I ignored IDs adds O(A I) for A accepting states, and for
+ * the second and third clauses the token spelling is a shortest one its clause forbids, on a tie the one leaving the
+ * first state for the second clause and the one through the lowest byte for the third. A state no input reaches ends no
+ * kept spelling, and a nullable token set is decided through the positive-width equivalent the simulator compiled, as
+ * every decision over it is.
  * @param simulator The compiled token set.
  * @param symbol The byte the kept tokens are joined by.
  * @param ignored The IDs of the tokens the caller discards before the stream is used; empty keeps every kind, so the

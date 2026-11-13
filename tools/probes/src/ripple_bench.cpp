@@ -11,9 +11,10 @@
 // What it checks. For every finite answer, each witness replayed by the encoder that applies the lowest-ranked merge
 // present at its leftmost occurrence until none applies: the radius witness's origin ripple equal to the radius, and
 // the mirrored witness's mirrored quantity equal to the mirrored constant. A witness not attained exits 1, as does a
-// table that cannot be read, a line that is not a merge, a prefix that is not a positive whole number and a prefix
-// longer than the table. A prefix too large for an unsigned long long and a table ripple_radius() refuses abort the
-// process on the uncaught exception.
+// table that cannot be read, a nonempty line after the header that does not hold exactly one space or holds a part it
+// cannot decode, a prefix that is not a positive whole number and a prefix longer than the table. A prefix too large
+// for an unsigned long long and a table ripple_radius() refuses, among them one with an empty part or a part that is
+// neither a byte nor an earlier merge's product, abort the process on the uncaught exception.
 //
 // What it measures. Per table: its merges, the verdict with the radius and the mirrored constant or the effective
 // self-pair's rank, the time of the one call to ripple_radius(), and the process's peak resident memory after it. The
@@ -115,7 +116,8 @@ std::map<std::uint32_t, char> byte_map()
 }
 
 /**
- * @brief Decodes a part of a merge from its byte-to-unicode spelling, UTF-8 of code points below U+0800, to bytes.
+ * @brief Decodes a part of a merge from its byte-to-unicode spelling, UTF-8 of code points below U+0800, to bytes, a
+ *        byte that leads no two-byte sequence read as a code point by itself.
  * @param byte_of The byte each code point stands for.
  * @param field The part as the file spells it.
  * @return The bytes, std::nullopt when a code point is outside the map.
@@ -162,9 +164,10 @@ std::optional<std::string> decoded(const std::map<std::uint32_t, char>& byte_of,
 
 /**
  * @brief Reads a merge table in the format of gpt2-merges.txt: a header line, then one merge per line, its two parts
- *        separated by one space, each decoded to bytes.
+ *        separated by one space, each decoded to bytes, blank lines skipped.
  * @param text The file's text.
- * @return The merges in rank order, std::nullopt when a line is not a merge.
+ * @return The merges in rank order, std::nullopt when a nonempty line does not hold exactly one space or holds a part
+ *         it cannot decode; an empty part is read as the empty string, which ripple_radius() refuses.
  */
 std::optional<std::vector<Merge>> merges_of(const std::string_view text)
 {

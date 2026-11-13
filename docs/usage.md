@@ -443,8 +443,8 @@ window `is_split_window()` certifies, with its origin, or proves that the model 
 one origin from where a token may begin, beside the states every other hypothesis occupies, so it never tries
 candidates, and a shortest window can be far longer than the state count: on a family of 69 states it is 2,531 bytes,
 and over that family it grows faster than any polynomial in the states. The search holds at most (n + 2) 2^(n - 1) nodes
-over n live states, a shortest window is shorter than that, and whether the question is hard is open, so the search
-takes a budget of nodes and reports running out as such. A grammar whose shortest window is longer than
+over n live states, a shortest window is shorter than that, and whether a certified window exists is PSPACE-complete, so
+the search takes a budget of nodes and reports running out as such. A grammar whose shortest window is longer than
 `chunk_boundaries_with_windows()` tries, four bytes, gains nothing from that planner, and this is how to tell.
 
 `window_counterexample(window, origin)` holds the certificate itself against every completely tokenizable input. A
@@ -523,19 +523,18 @@ else if (difference.witness.empty()) { /* proved: the two cut every shared input
 else { /* difference.witness is an input they cut differently */ }
 ```
 
-`domain_difference(other)` asks about the inputs alone, whatever cuts the two token sets place in them: does every input
-one set tokenizes completely also tokenize under the other? It is the question a token set extending another asks first,
-and it is decided without determinizing either side. The same boundary-guessing search runs twice, each set's complete
-scan beside the other's scan guessed to fail, which follows the scan until, at a token start, it guesses that no token
-begins there and reads on, abandoning the guess if the run from there ever accepts, its closed runs still held to
-maximal munch against the whole input. A search state holds a state and a set of closed runs per side and two bits, so
-the question is in polynomial space; the breadth-first search, which returns a shortest witness, takes time singly
-exponential in the two state counts, and a shortest witness can be exponentially long. The witness comes with the side
-that tokenizes it: over `{a}` against `{a, b}` it is `b`, which only the second tokenizes, and over `{a}` against `{a,
-aa}` there is none, every run of `a` tokenizing under both, though `boundary_difference()` returns `aa`.
-`segmentation_difference()` below decides this question and `boundary_difference()`'s together, and its witness is as
-long as the shorter of their two witnesses. The cap bounds each of the two searches, and one it stops leaves the
-question open:
+`domain_difference(other)` asks about the inputs alone, whatever cuts the two token sets place in them: do the two sets
+tokenize the same inputs completely, each every input the other does? It is decided without determinizing either side.
+The same boundary-guessing search runs twice, each set's complete scan beside the other's scan guessed to fail, which
+follows the scan until, at a token start, it guesses that no token begins there and reads on, abandoning the guess if
+the run from there ever accepts, its closed runs still held to maximal munch against the whole input. A search state
+holds a state and a set of closed runs per side and two bits, so the question is in polynomial space; the breadth-first
+search, which returns a shortest witness, takes time singly exponential in the two state counts, and a shortest witness
+can be exponentially long. The witness comes with the side that tokenizes it: over `{a}` against `{a, b}` it is `b`,
+which only the second tokenizes, and over `{a}` against `{a, aa}` there is none, every run of `a` tokenizing under both,
+though `boundary_difference()` returns `aa`. `segmentation_difference()` below decides this question and
+`boundary_difference()`'s together, and its witness, when settled, is as long as the shortest existing witness of either
+kind. The cap bounds each of the two searches, and one it stops leaves the question open:
 
 ```cpp
 const auto [witness, side, exhaustive]{old_lexer.domain_difference(new_lexer)};
@@ -554,8 +553,9 @@ equality: the same boundary-guessing search as `boundary_difference()` with one 
 once, the witness the bytes of the shortest marked run only one side accepts. The half the witness falls in is a fact
 about it, read off the two scans: a domain witness one set tokenizes completely and the other does not, a boundary
 witness both do and cut apart, which makes it a `boundary_difference()` witness too, while an exhaustive negative here
-is one there as well. The two routes need not agree on the witness: over `{a}` against `{aa}` the shortest marked run
-only one side accepts is `a`, the domain witness, where `boundary_difference()` returns `aa`, one token against two.
+proves the lexers cut every shared input alike, which a separate `boundary_difference()` call, under its own cap, may
+still leave undetermined. The two routes need not agree on the witness: over `{a}` against `{aa}` the shortest marked
+run only one side accepts is `a`, the domain witness, where `boundary_difference()` returns `aa`, one token against two.
 The cap is the same ceiling:
 
 ```cpp
@@ -571,8 +571,8 @@ These seven decisions, `rescue()` under Error Recovery and `modulo_counterexampl
 below are declared together in `munch/dfa/boundary_search.hpp`, nine instances of one search over guessed token
 boundaries, with `boundary_profile()` beside the two it asks at every gap, and each is forwarded by `core::Lexer`.
 
-The searches above decide questions about one token set's scan. `munch/verifier/verifier.hpp` states the object they are
-questions about, so that the same decisions can be made about any segmentation a finite automaton recognizes.
+The searches above decide questions about scans of compiled token sets. `munch/verifier/verifier.hpp` states the object
+they are questions about, so that the same decisions can be made about any segmentation a finite automaton recognizes.
 `verifier::Verifier` is a deterministic, trim automaton over marked symbols, a byte together with the bit saying whether
 a token boundary follows it, and it accepts exactly the marked strings of a policy: an input with its boundaries, one
 marking per input the policy segments. Every position, length, origin, cut and context the decisions take or return
@@ -1017,8 +1017,9 @@ canonical tokens reading one input, the second having read the prepended byte fi
 copies' covering tokens differ, each with a prepended input attaining it when it is not zero. The exploration stops at
 every pair ending both copies at a token end, a token boundary the two encodings share, past which they agree; every
 other pair has a copy inside its token, so only the other copy branches, and with S the total length of the canonical
-tokens and V their number the decision takes O((S^2 + V^2 S) log S) time, cubic in the table's size up to a logarithmic
-factor, where the product of the two copies expanded whole is quartic, and
+tokens, V their number and T the size of the table and of the character alphabet when one is supplied, the whole call
+takes O(T + (S^2 + V^2 S) log(S + 2)) expected time, its hash lookups taking constant time on average, cubic in the
+table's size up to a logarithmic factor, where the product of the two copies expanded whole is quartic, and
 [benchmarks.md](benchmarks.md#the-origin-radius-on-gpt-2s-prefixes) times it on GPT-2's prefixes. The overlap graph
 decides the radius for any table and a polynomial computation decides it in the number of merges under the ordering
 condition; on the tables munch takes the two answer alike, so one function serves both. It refuses what `merge_tower()`
@@ -1258,13 +1259,13 @@ kinds are passed in, so a set other than the builder's can be asked, and an empt
 split-points paper's exact decision: the boundary-guessing search of `domain_difference()` runs once per chunk, the
 whole input's scan beside the chunk's scan guessed to fail, and where neither chunk fails, a product of two scans
 emitting their kept tokens as words, the whole input's and the one restarted at the cut, compares the words on its
-finite graph. The question is decided in polynomial space, the decision takes time singly exponential in the state count
-in the worst case, and the cap bounds each of its three searches. An unsafe symbol comes with a witness, the first cut
-at which it fails and how: the chunk before the cut does not scan, the chunk from it does not, or the kept streams
-differ. A chunk that does not scan is found first, and its witness is a shortest one. A byte no completely tokenizable
-input holds past its first offset is safe vacuously, with no witness, where `is_split_point_ignoring()` answers false.
-Over the discarded `a`, `b`, `c` and `abc` and the kept `k` and `kk` the kept tokens come only from runs of `k`, which a
-cut before `b` leaves whole, so every such cut is safe, though the relaxed certificate refuses `b`:
+finite graph. The problem is in PSPACE; the explicit implementation may use singly exponential time and space, and the
+cap bounds each of its three searches. An unsafe symbol comes with a witness, the first cut at which it fails and how:
+the chunk before the cut does not scan, the chunk from it does not, or the kept streams differ. A chunk that does not
+scan is found first, and its witness is a shortest one. A byte no completely tokenizable input holds past its first
+offset is safe vacuously and, on an exhaustive result, comes back with no witness, where `is_split_point_ignoring()`
+answers false. Over the discarded `a`, `b`, `c` and `abc` and the kept `k` and `kk` the kept tokens come only from runs
+of `k`, which a cut before `b` leaves whole, so every such cut is safe, though the relaxed certificate refuses `b`:
 
 ```cpp
 for (const std::string_view word : {"a", "b", "c", "abc"})
@@ -1320,14 +1321,15 @@ symbol alone is a token of a discarded kind, no token spelling begins with a kep
 no token spelling begins with the symbol followed by the first byte of a kept spelling, a kept spelling being a byte
 string the scan reads as one token of a kind not discarded. When the three hold, every sequence of kept kinds that have
 spellings is realizable, so a decoder separating tokens by the symbol never meets a grammar-side failure where the lexer
-cannot realize a terminal sequence; every white-space byte passes for a JSON lexer that skips white space, with or
-without key literals above the string token. The third clause covers the separator's own kind as well: over the kept `a`
-and one discarded kind spelled `#` or `#a`, only that kind begins with `#`, yet `a#a` scans as `a` and `#a`, and `#`
-fails the third clause on `#a`. The condition is sufficient and not necessary. A byte that fails it comes with the first
-clause it fails and the words that show it, a kept spelling and a shortest token spelling the clause forbids, and the
-discarded kinds are passed in as for `modulo_counterexample()`. The decision runs on the compiled machine by
-reachability, in time linear in the table's size, with no cap. Over the kept `a` and `aa` with `#` and `a#` discarded,
-no byte string scans as `a` followed by `a`:
+cannot realize a terminal sequence; the four white-space bytes pass in the tested JSON grammars, a lexer that skips
+white space, with or without key literals above the string token. The third clause covers the separator's own kind as
+well: over the kept `a` and one discarded kind spelled `#` or `#a`, only that kind begins with `#`, yet `a#a` scans as
+`a` and `#a`, and `#` fails the third clause on `#a`. The condition is sufficient and not necessary. A byte that fails
+it comes with the first clause it fails and the words that show it, for the second and third clauses a kept spelling and
+a shortest token spelling the clause forbids and for the first the byte alone, and the discarded kinds are passed in as
+for `modulo_counterexample()`. The decision runs on the compiled machine by reachability, with no cap: the walks take
+time linear in the table's size, and classifying the accepting states against the ignored IDs adds time proportional to
+their product. Over the kept `a` and `aa` with `#` and `a#` discarded, no byte string scans as `a` followed by `a`:
 
 ```cpp
 builder.add_token(text("a"), Token::Identifier, 1);

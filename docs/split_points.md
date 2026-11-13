@@ -1,17 +1,17 @@
 # Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens
 
-**Nicklas Nidhögg**, August 4, 2026. Mirrors `paper/split-points/split-points.tex` as it now stands, revised beyond the
-arXiv v3 source of [arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The paper describes munch at the v1.2.0
-release, with one later rule beside it. It makes three version statements of its own. It cites the library at release
-tag `v1.2.0`, archived at doi:10.5281/zenodo.21752997. It names release 2.2.0 as the release that ships the coalesced
-test of Section 5.1, the rule behind `Lexer::is_split_point_ignoring()`. And its applicability section notes that the
-pinned v1.2.0 probe carries the construction-cost grammar's transcription "verified by eye only", a binding later
-releases add mechanically. The exact decision of Section 5.2 is a figure program beside the library,
-`paper/figures/modulo.hpp`, and the library decides the same question as `Lexer::modulo_counterexample()`. The scaling
-measurements in the evaluation were taken on an earlier tree, preserved by the `benchmark/split-points-2026-08` tag; the
-composition and validation figures are asserted from the release tree under CI, and the certificate figures' DOT sources
-are regenerated there and byte-compared against the committed copies. The tables below are produced mechanically from
-the paper's own tabular sources, never transcribed by hand.
+**Nicklas Nidhögg**, August 4, 2026. Mirrors `paper/split-points/split-points.tex`, the source posted as v4 of
+[arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The paper describes munch at the v1.2.0 release, with one later
+rule beside it. It makes three version statements of its own. It cites the library at release tag `v1.2.0`, archived at
+doi:10.5281/zenodo.21752997. It names release 2.2.0 as the release that ships the coalesced test of Section 5.1, the
+rule behind `Lexer::is_split_point_ignoring()`. And its applicability section notes that the pinned v1.2.0 probe carries
+the construction-cost grammar's transcription "verified by eye only", a binding later releases add mechanically. The
+exact decision of Section 5.2 is a figure program beside the library, `paper/figures/modulo.hpp`, and the library
+decides the same question as `Lexer::modulo_counterexample()`. The scaling measurements in the evaluation were taken on
+an earlier tree, preserved by the `benchmark/split-points-2026-08` tag; the composition and validation figures are
+asserted from the release tree under CI, and the certificate figures' DOT sources are regenerated there and
+byte-compared against the committed copies. The tables below are produced mechanically from the paper's own tabular
+sources, never transcribed by hand.
 
 *A technical report on the mechanism behind `Lexer::is_split_point()`, `is_split_point_ignoring()`,
 `chunk_boundaries()`, and `tokenize_all_parallel()`. The implementation, tests, and benchmarks live in this repository;
