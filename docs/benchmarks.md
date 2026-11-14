@@ -187,9 +187,10 @@ windows of four bytes cut 8.3% of the boundaries with gaps as long as a run, the
 verdict, the time of the call and the process's peak resident memory, which only grows, so a collection runs one prefix
 per process. Each prefix is timed twice: as it is, infinite from 42 merges on, the merge at rank 41 an effective
 self-pair that the merges in rank order give before any graph, and without its merges of equal parts and the merges
-built on them, which has no effective self-pair, so its finite radius is read off the overlap graph. Before printing a
-finite answer it replays both witnesses on the encoder that applies the lowest-ranked merge at its leftmost occurrence,
-and a witness that does not attain its value exits 1.
+built on them, which has no effective self-pair, so its finite radius is read off the overlap graph. The call explores
+the live graph, its default, and with `--stopped` the stopped graph whole, and the output's header names the graph.
+Before printing a finite answer it replays both witnesses on the encoder that applies the lowest-ranked merge at its
+leftmost occurrence, and a witness that does not attain its value exits 1.
 
 ```
 $ ulimit -v 12000000
@@ -207,12 +208,13 @@ first 3200 without equal parts: 3058 merges, radius 39, mirrored 35, 2.323 s, pe
 ```
 
 This run was made on the development machine under WSL2 with GCC 13 at `0239f914` and is archived whole, with the same
-collection at `e9e5b450`, in `paper/data/ripple-radius-wsl-2026-11/`. The exploration stops at every pair ending both
-copies at a token end, a token boundary the two encodings share, so it takes O(T + (S^2 + V^2 S) log(S + 2)) expected
-time, its hash lookups taking constant time on average, and O(T + S^2 + V^2 S) space in the total length S and the
-number V of the canonical tokens and the table's size T, and from 769 to 3,058 merges the time grows about fivefold per
-doubling. The product of the two copies expanded whole, as `e9e5b450` explores it, gives the same radii and mirrored
-constants where it finishes, but takes 7.1 s and 1.8 GiB at 387 merges and exhausts the 12 GB address space at 769.
+collection at `e9e5b450`, in `paper/data/ripple-radius-wsl-2026-11/`. It explored the stopped graph whole, the graph
+`--stopped` explores, which stops at every pair ending both copies at a token end, a token boundary the two encodings
+share, so it takes O(T + (S^2 + V^2 S) log(S + 2)) expected time, its hash lookups taking constant time on average, and
+O(T + S^2 + V^2 S) space in the total length S and the number V of the canonical tokens and the table's size T, and from
+769 to 3,058 merges the time grows about fivefold per doubling. The product of the two copies expanded whole, as
+`e9e5b450` explores it, gives the same radii and mirrored constants where it finishes, but takes 7.1 s and 1.8 GiB at
+387 merges and exhausts the 12 GB address space at 769.
 
 ## **Lean 4 on Mathlib**
 

@@ -18,10 +18,11 @@
 //
 // What it measures. Per table: its merges, the verdict with the radius and the mirrored constant or the effective
 // self-pair's rank, the time of the one call to ripple_radius(), and the process's peak resident memory after it. The
-// peak only grows, so a collection runs one prefix per process. Every number printed is run-local: the output carries
-// commit and dirty-state provenance, and a figure is quoted with the machine it ran on.
+// call explores the live graph, its default, or with --stopped the stopped graph whole, and the output's header names
+// the graph. The peak only grows, so a collection runs one prefix per process. Every number printed is run-local: the
+// output carries commit and dirty-state provenance, and a figure is quoted with the machine it ran on.
 //
-// Usage: munch_ripple_bench <gpt2-merges.txt> <prefix>...
+// Usage: munch_ripple_bench [--stopped] <gpt2-merges.txt> <prefix>...
 
 #include <sys/resource.h>
 
@@ -54,6 +55,7 @@ namespace
 using munch::verifier::Effective_self_pair;
 using munch::verifier::Finite_ripple;
 using munch::verifier::Merge;
+using munch::verifier::Overlap_graph;
 
 /**
  * @brief The number of bytes, the tokens before any merge.
@@ -415,15 +417,16 @@ bool is_attained(const std::vector<Merge>& merges, const Finite_ripple& finite)
 /**
  * @brief Decides one table, replays the witnesses of a finite answer, and prints its line.
  * @param table The table.
+ * @param graph The part of the overlap graph the decision explores.
  * @return True when the table is decided and a finite answer's witnesses attain its values.
  */
-bool time_table(const Named_table& table)
+bool time_table(const Named_table& table, const Overlap_graph graph)
 {
     const auto& [name, merges]{table};
 
     const auto started{std::chrono::steady_clock::now()};
 
-    const auto ripple{munch::verifier::ripple_radius(merges)};
+    const auto ripple{munch::verifier::ripple_radius(merges, graph)};
 
     const auto stopped{std::chrono::steady_clock::now()};
 
@@ -462,19 +465,27 @@ bool time_table(const Named_table& table)
  * @brief Times ripple_radius() on each prefix asked of a merge table and on the prefix without its merges of equal
  *        parts, printing a line per table after the provenance.
  * @param argc The argument count.
- * @param argv The table file, then the prefix lengths.
+ * @param argv Optionally --stopped, then the table file, then the prefix lengths.
  * @return EXIT_SUCCESS, or EXIT_FAILURE when an argument or the table is refused or a witness is not attained.
  */
 int main(const int argc, char** argv)
 {
-    if (argc < 3)
+    const std::span command_line{argv + 1, static_cast<std::size_t>(argc - 1)};
+
+    const auto stopped{!command_line.empty() && std::string_view{command_line.front()} == "--stopped"};
+
+    const auto operands{command_line.subspan(stopped ? 1 : 0)};
+
+    if (operands.size() < 2)
     {
-        std::cerr << "usage: munch_ripple_bench <gpt2-merges.txt> <prefix>...\n";
+        std::cerr << "usage: munch_ripple_bench [--stopped] <gpt2-merges.txt> <prefix>...\n";
 
         return EXIT_FAILURE;
     }
 
-    const std::string path{argv[1]};
+    const auto graph{stopped ? Overlap_graph::stopped : Overlap_graph::live};
+
+    const std::string path{operands.front()};
 
     const auto text{munch::tools::probes::read_bytes(path)};
 
@@ -499,8 +510,9 @@ int main(const int argc, char** argv)
     std::cout << "munch ripple bench\n";
     std::cout << std::format("  commit      {}{}\n", munch::tools::benchmark::commit, dirty_note);
     std::cout << std::format("  table       {} merges\n", merges->size());
+    std::cout << std::format("  graph       {}\n", stopped ? "stopped" : "live");
 
-    const std::span arguments{argv + 2, static_cast<std::size_t>(argc - 2)};
+    const auto arguments{operands.subspan(1)};
 
     for (const std::string_view argument : arguments)
     {
@@ -521,7 +533,7 @@ int main(const int argc, char** argv)
                 .name = std::format("first {} without equal parts", *prefix),
                 .merges = without_equal_parts(first)};
 
-        if (!time_table(own) || !time_table(finite))
+        if (!time_table(own, graph) || !time_table(finite, graph))
         {
             return EXIT_FAILURE;
         }
