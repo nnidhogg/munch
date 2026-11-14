@@ -259,6 +259,28 @@ struct Full_product
 };
 
 /**
+ * @brief The size of the stopped graph some sources reach in the full product, no step followed out of a node ending
+ *        both copies: its nodes, its steps, and its live steps, those into a node that leads to one ending both copies.
+ */
+struct Stopped_count
+{
+    /**
+     * @brief The nodes reached.
+     */
+    std::size_t nodes{};
+
+    /**
+     * @brief The steps out of the nodes reached.
+     */
+    std::size_t steps{};
+
+    /**
+     * @brief The steps into a node that leads to a node ending both copies.
+     */
+    std::size_t live_steps{};
+};
+
+/**
  * @brief Returns the bytes of a text, each a symbol spelled by itself.
  * @param text The text.
  * @return The bytes, in order.
@@ -1364,9 +1386,105 @@ std::optional<Finite_ripple> product_decision(const Full_product& product)
 }
 
 /**
- * @brief Checks a table's decision against the full product: an infinite radius exactly when the product's marked part
- *        holds a cycle, with the first effective self-pair replayed and pumped, and otherwise every value and witness
- *        equal to the product's to the byte, both witnesses replayed against the reference encoder.
+ * @brief Returns the size of the stopped graph some sources reach in the full product: from them, every node reached
+ *        that does not end both copies followed by each of its steps.
+ * @param product The full product.
+ * @param sources Whether each node is a source the graph is explored from, by node.
+ * @return The nodes, the steps and the live steps.
+ */
+Stopped_count stopped_count(const Full_product& product, const std::vector<bool>& sources)
+{
+    const auto live{reaching(product, product.accepting)};
+
+    auto seen{sources};
+
+    std::vector<std::size_t> frontier{};
+
+    for (std::size_t node{0}; node < sources.size(); ++node)
+    {
+        if (sources[node])
+        {
+            frontier.push_back(node);
+        }
+    }
+
+    Stopped_count count{};
+
+    for (std::size_t head{0}; head < frontier.size(); ++head)
+    {
+        const auto node{frontier[head]};
+
+        ++count.nodes;
+
+        if (product.accepting[node])
+        {
+            continue;
+        }
+
+        for (const auto& [target, byte, offset, marked] : product.steps[node])
+        {
+            ++count.steps;
+
+            if (live[target])
+            {
+                ++count.live_steps;
+            }
+
+            if (!seen[target])
+            {
+                seen[target] = true;
+                frontier.push_back(target);
+            }
+        }
+    }
+
+    return count;
+}
+
+/**
+ * @brief Returns the decision on a table over a part of the overlap graph: over the alphabet when the texts are read as
+ *        characters, and over the bytes otherwise.
+ * @param merges The merge table in rank order.
+ * @param reading How the texts are read.
+ * @param alphabet The alphabet, UTF-8, read over the characters only.
+ * @param graph The part of the overlap graph explored.
+ * @return The decision.
+ */
+Ripple_radius decided_over(
+        const std::vector<Merge>& merges, const Reading reading, const std::string_view alphabet,
+        const Overlap_graph graph)
+{
+    if (reading == Reading::characters)
+    {
+        return ripple_radius(merges, alphabet, graph);
+    }
+
+    return ripple_radius(merges, graph);
+}
+
+/**
+ * @brief Checks that the live and the stopped graph decide a table alike, every value and witness to the byte.
+ * @param merges The merge table in rank order, admissible.
+ * @param reading How the texts are read.
+ * @param alphabet The alphabet, UTF-8, read over the characters only.
+ * @param context The table checked, for the failure messages.
+ */
+void expect_graphs_alike(
+        const std::vector<Merge>& merges, const Reading reading, const std::string_view alphabet,
+        const std::string& context)
+{
+    const auto live{decided_over(merges, reading, alphabet, Overlap_graph::live)};
+
+    const auto stopped{decided_over(merges, reading, alphabet, Overlap_graph::stopped)};
+
+    EXPECT_EQ(written(live), written(stopped)) << context;
+}
+
+/**
+ * @brief Checks a table's decision over the live and the stopped graph against the full product: the two alike, an
+ *        infinite radius exactly when the product's marked part holds a cycle, with the first effective self-pair
+ *        replayed and pumped, and otherwise every value and witness equal to the product's to the byte, both witnesses
+ *        replayed against the reference encoder.
  * @param merges The merge table in rank order, admissible.
  * @param reading How the texts are read.
  * @param alphabet The alphabet, UTF-8, read over the characters only.
@@ -1381,7 +1499,9 @@ bool expect_decided_as_the_full_product(
 
     const auto oracle{product_decision(product)};
 
-    const auto found{reading == Reading::characters ? ripple_radius(merges, alphabet) : ripple_radius(merges)};
+    expect_graphs_alike(merges, reading, alphabet, context);
+
+    const auto found{decided_over(merges, reading, alphabet, Overlap_graph::live)};
 
     if (!oracle)
     {
@@ -1507,6 +1627,79 @@ std::vector<Merge> random_table(
     }
 
     return merges;
+}
+
+/**
+ * @brief Returns the table of 4m merges whose stopped graph under the one prepended byte a has m^3 + 2m^2 + 4m steps,
+ *        2m^2 + 4m of them live: the merges (a, z_k), then (a z_k, g), then (c, x_i), then (g, c x_i), for k and i from
+ *        1 to m, each z_k a capital letter and each x_i a small one from h on.
+ * @param m The number of merges of each of the four kinds, from 1 to 12.
+ * @return The merge table in rank order, of size 12m + 3.
+ */
+std::vector<Merge> cubic_family(const std::size_t m)
+{
+    std::vector<std::string> z{};
+    std::vector<std::string> x{};
+
+    for (std::size_t index{0}; index < m; ++index)
+    {
+        z.push_back(std::string{static_cast<char>('A' + index)});
+        x.push_back(std::string{static_cast<char>('h' + index)});
+    }
+
+    std::vector<Merge> merges{};
+
+    for (const auto& letter : z)
+    {
+        merges.push_back({.left = "a", .right = letter});
+    }
+
+    for (const auto& letter : z)
+    {
+        merges.push_back({.left = "a" + letter, .right = "g"});
+    }
+
+    for (const auto& letter : x)
+    {
+        merges.push_back({.left = "c", .right = letter});
+    }
+
+    for (const auto& letter : x)
+    {
+        merges.push_back({.left = "g", .right = "c" + letter});
+    }
+
+    return merges;
+}
+
+/**
+ * @brief Returns the count the live steps of the stopped graph stay within, (S - V)^2 + V^2 + 10 S^2 with S the total
+ *        length of the canonical tokens and V their number.
+ *
+ * The pairs of two copies inside tokens have one step each and number at most (S - V)^2, and the at most V sources have
+ * at most V steps each. A live step from a pair with one copy inside a token t, its first bytes P read and the bytes R
+ * still to read, and the other at the end of a token u, beginning a token v, has u and P one a suffix of the other and
+ * v and R one a prefix of the other, and over the four orders of |u| against |P| and of |v| against |R| such triples
+ * number at most 5 S^2 for either copy inside.
+ * @param tokens The canonical tokens.
+ * @return The count.
+ */
+std::size_t quadratic_count(const std::vector<std::string>& tokens)
+{
+    std::size_t total{0};
+
+    for (const auto& token : tokens)
+    {
+        total += token.size();
+    }
+
+    const auto number{tokens.size()};
+
+    const auto inside{total - number};
+
+    constexpr std::size_t per_copy_inside{5};
+
+    return inside * inside + number * number + 2 * per_copy_inside * total * total;
 }
 
 } // namespace
@@ -1885,8 +2078,103 @@ TEST(Ripple_radius_test, Over_the_characters_of_ascii_every_universe_of_the_fixt
     EXPECT_EQ(refused, 80U);
 }
 
+TEST(Ripple_radius_test, On_every_universe_of_both_fixtures_the_live_graph_decides_as_the_stopped_graph)
+{
+    const std::vector<std::pair<std::string, Reading>> fixtures{
+            {"ripple_reference.txt", Reading::bytes},
+            {"ripple_character_reference.txt", Reading::characters}};
+
+    std::size_t decided{0};
+
+    for (const auto& [name, reading] : fixtures)
+    {
+        std::ifstream file{std::string{SOURCE_DIR} + "/libs/verifier/tests/data/" + name};
+
+        ASSERT_TRUE(file.is_open()) << name;
+
+        Fixture_check check{.reading = reading};
+
+        for (std::string line{}; std::getline(file, line);)
+        {
+            std::istringstream fields{line};
+
+            std::string kind{};
+
+            if (!(fields >> kind) || kind != "universe")
+            {
+                continue;
+            }
+
+            start_universe(check, fields, line);
+
+            const auto over_characters{reading == Reading::characters};
+
+            const auto refusal{over_characters ? refusal_over(check.merges, check.alphabet) : refusal_of(check.merges)};
+
+            if (!refusal.empty())
+            {
+                continue;
+            }
+
+            ++decided;
+
+            expect_graphs_alike(check.merges, reading, check.alphabet, line);
+        }
+    }
+
+    EXPECT_EQ(decided, 5174U);
+}
+
+TEST(Ripple_radius_test, The_tables_these_tests_name_are_decided_alike_over_the_live_and_the_stopped_graph)
+{
+    const std::vector<std::vector<Merge>> over_bytes{
+            {},
+            {{.left = "a", .right = "a"}},
+            {{.left = "a", .right = "b"}, {.left = "ab", .right = "ab"}},
+            {{.left = "a", .right = "b"}, {.left = "b", .right = "a"}, {.left = "ba", .right = "ba"}},
+            {{.left = "b", .right = "c"}, {.left = "a", .right = "bc"}}};
+
+    for (const auto& merges : over_bytes)
+    {
+        expect_graphs_alike(merges, Reading::bytes, {}, table_text(merges));
+    }
+
+    for (std::size_t count{1}; count <= 8; ++count)
+    {
+        const auto merges{fibonacci_merges("a", "b", count)};
+
+        expect_graphs_alike(merges, Reading::bytes, {}, table_text(merges));
+    }
+
+    auto without_self_pair{sentencepiece_merges()};
+
+    const auto is_self_pair{[](const Merge& merge) { return merge.left == merge.right; }};
+
+    std::erase_if(without_self_pair, is_self_pair);
+
+    const std::vector<Merge> accented{{.left = "é", .right = "t"}, {.left = "▁", .right = "ét"}};
+
+    expect_graphs_alike(accented, Reading::characters, "▁ét", table_text(accented));
+    expect_graphs_alike(sentencepiece_merges(), Reading::characters, sentencepiece_alphabet, "SentencePiece-style");
+    expect_graphs_alike(without_self_pair, Reading::characters, sentencepiece_alphabet, "without its self-pair");
+    expect_graphs_alike({}, Reading::characters, "", "the empty table over the empty alphabet");
+
+    constexpr std::size_t character_count{300};
+
+    std::string alphabet{};
+
+    for (std::size_t offset{0}; offset < character_count; ++offset)
+    {
+        alphabet += ideograph(offset);
+    }
+
+    const auto ideographs{fibonacci_merges(ideograph(0), ideograph(character_count - 1), 8)};
+
+    expect_graphs_alike(ideographs, Reading::characters, alphabet, "the Fibonacci table over two ideographs");
+}
+
 TEST(Ripple_radius_test,
-     Every_table_of_up_to_four_merges_over_two_bytes_or_three_over_three_is_decided_as_the_full_product)
+     Every_table_of_up_to_four_merges_over_two_bytes_or_three_over_three_is_decided_over_both_graphs_as_the_full_product)
 {
     std::size_t tables{0};
     std::size_t finite{0};
@@ -1914,7 +2202,7 @@ TEST(Ripple_radius_test,
     EXPECT_EQ(finite, 3158U);
 }
 
-TEST(Ripple_radius_test, Random_tables_over_bytes_and_over_characters_are_decided_as_the_full_product)
+TEST(Ripple_radius_test, Random_tables_over_bytes_and_over_characters_are_decided_over_both_graphs_as_the_full_product)
 {
     std::mt19937 sequence{0x5EEDU};
 
@@ -1952,4 +2240,87 @@ TEST(Ripple_radius_test, Random_tables_over_bytes_and_over_characters_are_decide
     }
 
     EXPECT_EQ(finite, 2 * draws);
+}
+
+TEST(Ripple_radius_test, The_family_of_4m_merges_has_cubic_stopped_steps_under_a_and_quadratic_live_ones_up_to_m_12)
+{
+    for (std::size_t m{1}; m <= 12; ++m)
+    {
+        const auto merges{cubic_family(m)};
+
+        const auto context{std::format("the family at m = {}", m)};
+
+        EXPECT_TRUE(expect_decided_as_the_full_product(merges, Reading::bytes, {}, context));
+
+        const auto product{full_product(merges, Reading::bytes, alphabet_symbols(Reading::bytes, {}))};
+
+        std::vector<bool> sources_of_a(product.pairs.size(), false);
+
+        for (std::size_t node{0}; node < product.pairs.size(); ++node)
+        {
+            const auto& [base, prepended]{product.pairs[node]};
+
+            const auto& [token, read]{prepended};
+
+            sources_of_a[node] = !base.token && product.tokens[*token].substr(0, read) == "a";
+        }
+
+        const auto [nodes, steps, live_steps]{stopped_count(product, sources_of_a)};
+
+        EXPECT_EQ(nodes, 2 * m * m + 7 * m + 1) << context;
+        EXPECT_EQ(steps, m * m * m + 2 * m * m + 4 * m) << context;
+        EXPECT_EQ(live_steps, 2 * m * m + 4 * m) << context;
+    }
+}
+
+TEST(Ripple_radius_test, Every_enumerated_and_random_table_keeps_the_live_steps_of_its_stopped_graph_quadratic)
+{
+    std::vector<std::vector<Merge>> tables{};
+
+    const std::vector<std::pair<std::vector<std::string>, std::size_t>> universes{
+            {{"a", "b"}, 4},
+            {{"a", "b", "c"}, 3}};
+
+    for (const auto& [symbols, depth] : universes)
+    {
+        const auto admissible{admissible_tables(symbols, depth)};
+
+        tables.insert(tables.end(), admissible.begin(), admissible.end());
+    }
+
+    std::mt19937 sequence{0x5EEDU};
+
+    std::uniform_int_distribution<std::size_t> count{5, 12};
+
+    const std::vector<std::string> bytes{"a", "b", "c", "d"};
+
+    constexpr std::size_t draws{300};
+
+    for (std::size_t drawn{0}; drawn < draws; ++drawn)
+    {
+        tables.push_back(random_table(sequence, bytes, count(sequence)));
+    }
+
+    std::size_t largest{0};
+
+    for (const auto& merges : tables)
+    {
+        const auto product{full_product(merges, Reading::bytes, alphabet_symbols(Reading::bytes, {}))};
+
+        std::vector<bool> sources(product.pairs.size(), false);
+
+        for (std::size_t node{0}; node < product.pairs.size(); ++node)
+        {
+            sources[node] = !product.pairs[node].base.token;
+        }
+
+        const auto [nodes, steps, live_steps]{stopped_count(product, sources)};
+
+        EXPECT_LE(live_steps, quadratic_count(product.tokens)) << table_text(merges);
+
+        largest = std::max(largest, live_steps);
+    }
+
+    EXPECT_EQ(tables.size(), 13303U + draws);
+    EXPECT_EQ(largest, 157U);
 }

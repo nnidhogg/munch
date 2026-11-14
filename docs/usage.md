@@ -1016,10 +1016,14 @@ canonical tokens reading one input, the second having read the prepended byte fi
 `verifier::Finite_ripple`, the radius and the mirrored constant read off the longest path to a step on which the two
 copies' covering tokens differ, each with a prepended input attaining it when it is not zero. The exploration stops at
 every pair ending both copies at a token end, a token boundary the two encodings share, past which they agree; every
-other pair has a copy inside its token, so only the other copy branches, and with S the total length of the canonical
-tokens, V their number and T the size of the table and of the character alphabet when one is supplied, the whole call
-takes O(T + (S^2 + V^2 S) log(S + 2)) expected time, its hash lookups taking constant time on average, cubic in the
-table's size up to a logarithmic factor, where the product of the two copies expanded whole is quartic, and
+other pair has a copy inside its token, so only the other copy branches, and it begins only a token whose spelling and
+the bytes the inside copy has still to read are one a prefix of the other, as every step on the way to a shared boundary
+does. With S the total length of the canonical tokens, V their number and T the size of the table and of the character
+alphabet when one is supplied, that live graph has O(S^2) steps and the whole call takes O(T + S^2 log(S + 2)) expected
+time, its hash lookups taking constant time on average, quadratic in the table's size up to a logarithmic factor.
+`verifier::Overlap_graph::stopped` as the last argument explores the stopped graph whole, every token beginning with the
+byte read, with the same decision to the byte in O(T + (S^2 + V^2 S) log(S + 2)), cubic; the part of the product of the
+two copies that the sources reach is cubic as well, and the product expanded whole is quartic.
 [benchmarks.md](benchmarks.md#the-origin-radius-on-gpt-2s-prefixes) times it on GPT-2's prefixes. The overlap graph
 decides the radius for any table and a polynomial computation decides it in the number of merges under the ordering
 condition; on the tables munch takes the two answer alike, so one function serves both. It refuses what `merge_tower()`
@@ -1037,6 +1041,8 @@ const auto& finite{std::get<verifier::Finite_ripple>(ripple)};
 finite.radius;                                       // 2, both bytes of bc covered anew
 finite.mirrored;                                     // 1, the changed token bc beginning at 0
 verifier::ripple_radius(doubled);                    // the effective self-pair at rank 1: (a,b) leaves abab as ab|ab
+
+verifier::ripple_radius(merges, verifier::Overlap_graph::stopped);  // the same, over the stopped graph whole
 ```
 
 `verifier::ripple_radius(merges, alphabet)` decides the radius over an alphabet of characters, as `merge_tower(merges,

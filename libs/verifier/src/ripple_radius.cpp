@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <format>
 #include <functional>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <queue>
@@ -83,6 +84,33 @@ struct Stages
 };
 
 /**
+ * @brief A node of the trie of the canonical tokens: its children by byte, the token it spells, and every token whose
+ *        spelling begins with what it spells.
+ */
+struct Trie_node
+{
+    /**
+     * @brief The children, by the byte read to each.
+     */
+    std::map<unsigned char, std::size_t> children{};
+
+    /**
+     * @brief The token the bytes read to the node spell, none when they spell no canonical token.
+     */
+    std::optional<Token_t> token{};
+
+    /**
+     * @brief The tokens whose spelling begins with the bytes read to the node, ascending, none at the root.
+     */
+    std::vector<Token_t> below{};
+};
+
+/**
+ * @brief The trie of the canonical tokens, the root first.
+ */
+using Trie = std::vector<Trie_node>;
+
+/**
  * @brief The canonical tokens of a table with no effective self-pair, with what the encoding and the graph read.
  */
 struct Vocabulary
@@ -103,9 +131,9 @@ struct Vocabulary
     std::vector<Token_t> named{};
 
     /**
-     * @brief The canonical tokens beginning with each byte, by byte, ascending.
+     * @brief The trie of the canonical tokens' spellings.
      */
-    std::vector<std::vector<Token_t>> beginning{};
+    Trie trie{};
 };
 
 /**
@@ -621,8 +649,38 @@ struct Best
 }
 
 /**
+ * @brief Adds a canonical token to a trie, a node per byte of its spelling past the nodes already there, and lists the
+ *        token below every node on the way.
+ * @param trie The trie, extended in place.
+ * @param spelling The token's spelling.
+ * @param token The token, past every token added before it.
+ */
+void add_token(Trie& trie, const std::string_view spelling, const Token_t token)
+{
+    std::size_t node{0};
+
+    for (const auto byte : spelling)
+    {
+        const auto [edge, inserted]{trie[node].children.try_emplace(static_cast<unsigned char>(byte), trie.size())};
+
+        // The child copied out before a new node can move the map it sits in.
+        const auto [label, child]{*edge};
+
+        if (inserted)
+        {
+            trie.emplace_back();
+        }
+
+        node = child;
+        trie[node].below.push_back(token);
+    }
+
+    trie[node].token = token;
+}
+
+/**
  * @brief Returns the canonical tokens of a table with no effective self-pair: the symbols the table names and the
- *        useful products, grouped by their first byte.
+ *        useful products, in a trie of their spellings.
  * @param table The resolved merge table.
  * @param merges The merge table in rank order.
  * @param spellings The spelling of every token, by token.
@@ -646,11 +704,7 @@ struct Best
         }
     }
 
-    Vocabulary vocabulary{
-            .spellings = std::move(spellings),
-            .ranks = std::move(ranks),
-            .named = {},
-            .beginning = std::vector<std::vector<Token_t>>(byte_count)};
+    Vocabulary vocabulary{.spellings = std::move(spellings), .ranks = std::move(ranks), .named = {}, .trie = Trie(1)};
 
     for (Token_t symbol{0}; symbol < named.size(); ++symbol)
     {
@@ -659,24 +713,106 @@ struct Best
             continue;
         }
 
-        const auto& spelling{vocabulary.spellings[symbol]};
-
-        const auto first{static_cast<unsigned char>(spelling.front())};
-
         vocabulary.named.push_back(symbol);
-        vocabulary.beginning[first].push_back(symbol);
+        add_token(vocabulary.trie, vocabulary.spellings[symbol], symbol);
     }
 
     for (const auto rank : useful)
     {
         const auto product{product_of(table, rank)};
 
-        const auto first{static_cast<unsigned char>(vocabulary.spellings[product].front())};
-
-        vocabulary.beginning[first].push_back(product);
+        add_token(vocabulary.trie, vocabulary.spellings[product], product);
     }
 
     return vocabulary;
+}
+
+/**
+ * @brief Returns the child of a trie node on a byte.
+ * @param node The node.
+ * @param byte The byte.
+ * @return The child, or std::nullopt when the node has none on the byte.
+ */
+[[nodiscard]] std::optional<std::size_t> child_of(const Trie_node& node, const unsigned char byte)
+{
+    const auto found{node.children.find(byte)};
+
+    if (found == node.children.cend())
+    {
+        return std::nullopt;
+    }
+
+    const auto& [label, child]{*found};
+
+    return child;
+}
+
+/**
+ * @brief Returns the canonical tokens whose spelling begins with a text, ascending.
+ * @param trie The trie of the canonical tokens.
+ * @param text The text, nonempty.
+ * @return The tokens, none when no token begins with the text.
+ */
+[[nodiscard]] std::span<const Token_t> beginning_with(const Trie& trie, const std::string_view text)
+{
+    std::size_t node{0};
+
+    for (const auto byte : text)
+    {
+        const auto child{child_of(trie[node], static_cast<unsigned char>(byte))};
+
+        if (!child)
+        {
+            return {};
+        }
+
+        node = *child;
+    }
+
+    return trie[node].below;
+}
+
+/**
+ * @brief Returns the canonical tokens one of whose spelling and a text is a prefix of the other, ascending: the tokens
+ *        spelled on the path that reads the text short of its last byte, and those beginning with the whole text.
+ * @param trie The trie of the canonical tokens.
+ * @param text The text, nonempty.
+ * @return The tokens.
+ */
+[[nodiscard]] std::vector<Token_t> comparable_to(const Trie& trie, const std::string_view text)
+{
+    std::vector<Token_t> shorter{};
+
+    std::size_t node{0};
+
+    for (const auto byte : text.substr(0, text.size() - 1))
+    {
+        const auto child{child_of(trie[node], static_cast<unsigned char>(byte))};
+
+        if (!child)
+        {
+            break;
+        }
+
+        node = *child;
+
+        const auto& token{trie[node].token};
+
+        if (token)
+        {
+            shorter.push_back(*token);
+        }
+    }
+
+    std::ranges::sort(shorter);
+
+    const auto longer{beginning_with(trie, text)};
+
+    std::vector<Token_t> tokens{};
+
+    std::ranges::merge(shorter, longer, std::back_inserter(tokens));
+
+    return tokens;
 }
 
 /**
@@ -721,18 +857,20 @@ struct Best
 
 /**
  * @brief The overlap graph under exploration, up to the token boundaries the two copies share: the resolved merge table
- *        and its vocabulary, the pair each node reads as, the interned pairs with their nodes, each node's steps, the
- *        nodes ending both copies, and the adjacencies decided so far.
+ *        and its vocabulary, the part of the graph explored, the pair each node reads as, the interned pairs with their
+ *        nodes, each node's steps, the nodes ending both copies, and the adjacencies and the comparable tokens decided
+ *        so far.
  */
 class Exploration
 {
 public:
     /**
-     * @brief Takes the resolved merge table and its vocabulary, nothing explored yet.
+     * @brief Takes the resolved merge table, its vocabulary and the part of the graph to explore, nothing explored yet.
      * @param table The resolved merge table.
      * @param vocabulary The canonical tokens of the table, which has no effective self-pair.
+     * @param graph The part of the overlap graph to explore.
      */
-    Exploration(Table table, Vocabulary vocabulary);
+    Exploration(Table table, Vocabulary vocabulary, Overlap_graph graph);
 
     /**
      * @brief Explores the overlap graph from every node pairing the start with a canonical token, a node ending both
@@ -765,13 +903,25 @@ private:
     void expand(std::size_t node);
 
     /**
+     * @brief Returns the tokens a copy at a token end may begin beside a copy inside its token, before adjacency:
+     *        in the live graph those one of whose spelling and the bytes the inside copy has still to read is a prefix
+     *        of the other, deciding them once per position, and in the stopped graph those beginning with its next
+     *        byte.
+     * @param inside The position of the copy inside its token.
+     * @return The tokens, ascending.
+     */
+    [[nodiscard]] std::span<const Token_t> choices(const Position& inside);
+
+    /**
      * @brief Returns one copy's readings of a byte: inside its token the token's next byte, and at a token end the
-     *        first byte of every canonical token that may follow the token just ended.
+     *        first byte of every choice that may follow the token just ended.
      * @param position The copy's position.
      * @param byte The byte read.
+     * @param choices The tokens a copy at a token end may begin, ascending, each beginning with the byte.
      * @return The readings, none when the copy cannot read the byte.
      */
-    [[nodiscard]] std::vector<Reading> readings(const Position& position, unsigned char byte);
+    [[nodiscard]] std::vector<Reading> readings(
+            const Position& position, unsigned char byte, std::span<const Token_t> choices);
 
     /**
      * @brief Returns whether the encoding of two tokens' spellings together is the two tokens, deciding it once per
@@ -841,6 +991,11 @@ private:
     Vocabulary vocabulary_{};
 
     /**
+     * @brief The part of the overlap graph explored.
+     */
+    Overlap_graph graph_{};
+
+    /**
      * @brief The pair each node reads as, by node.
      */
     std::vector<Pair> pairs_{};
@@ -864,10 +1019,15 @@ private:
      * @brief Whether the encoding of each pair of tokens asked so far is the two tokens.
      */
     std::map<std::pair<Token_t, Token_t>, bool> adjacencies_{};
+
+    /**
+     * @brief The live graph's choices beside each position inside a token asked so far.
+     */
+    std::map<Position, std::vector<Token_t>> comparable_{};
 };
 
-Exploration::Exploration(Table table, Vocabulary vocabulary)
-    : table_{std::move(table)}, vocabulary_{std::move(vocabulary)}
+Exploration::Exploration(Table table, Vocabulary vocabulary, const Overlap_graph graph)
+    : table_{std::move(table)}, vocabulary_{std::move(vocabulary)}, graph_{graph}
 {}
 
 Finite_ripple Exploration::run() &&
@@ -876,15 +1036,8 @@ Finite_ripple Exploration::run() &&
     {
         const auto& spelling{vocabulary_.spellings[symbol]};
 
-        const auto first{static_cast<unsigned char>(spelling.front())};
-
-        for (const auto token : vocabulary_.beginning[first])
+        for (const auto token : beginning_with(vocabulary_.trie, spelling))
         {
-            if (!vocabulary_.spellings[token].starts_with(spelling))
-            {
-                continue;
-            }
-
             std::ignore = intern({.base = {}, .prepended = {.token = token, .read = spelling.size()}});
         }
     }
@@ -953,12 +1106,16 @@ void Exploration::expand(const std::size_t node)
     const auto [base, prepended]{pairs_[node]};
 
     // A copy inside its token reads that token's next byte, the one byte the node reads.
-    const auto& [token, read]{is_at_end(base) ? prepended : base};
+    const auto& inside{is_at_end(base) ? prepended : base};
+
+    const auto& [token, read]{inside};
 
     const auto byte{static_cast<unsigned char>(vocabulary_.spellings[*token][read])};
 
-    const auto base_readings{readings(base, byte)};
-    const auto prepended_readings{readings(prepended, byte)};
+    const auto choices_beside{choices(inside)};
+
+    const auto base_readings{readings(base, byte, choices_beside)};
+    const auto prepended_readings{readings(prepended, byte, choices_beside)};
 
     for (const auto& [base_next, base_offset, base_length] : base_readings)
     {
@@ -973,7 +1130,33 @@ void Exploration::expand(const std::size_t node)
     }
 }
 
-std::vector<Reading> Exploration::readings(const Position& position, const unsigned char byte)
+std::span<const Token_t> Exploration::choices(const Position& inside)
+{
+    const auto& [token, read]{inside};
+
+    const std::string_view spelling{vocabulary_.spellings[*token]};
+
+    const auto unread{spelling.substr(read)};
+
+    if (graph_ == Overlap_graph::stopped)
+    {
+        return beginning_with(vocabulary_.trie, unread.substr(0, 1));
+    }
+
+    const auto [entry, inserted]{comparable_.try_emplace(inside)};
+
+    auto& [position, tokens]{*entry};
+
+    if (inserted)
+    {
+        tokens = comparable_to(vocabulary_.trie, unread);
+    }
+
+    return tokens;
+}
+
+std::vector<Reading> Exploration::readings(
+        const Position& position, const unsigned char byte, const std::span<const Token_t> choices)
 {
     const auto& [token, read]{position};
 
@@ -991,7 +1174,7 @@ std::vector<Reading> Exploration::readings(const Position& position, const unsig
 
     std::vector<Reading> found{};
 
-    for (const auto next : vocabulary_.beginning[byte])
+    for (const auto next : choices)
     {
         if (token && !is_adjacent(*token, next))
         {
@@ -1256,11 +1439,13 @@ std::string Exploration::completion(const std::size_t from) const
  *        gives.
  * @param merges The merge table in rank order.
  * @param symbols The alphabet's symbols, each spelled by its bytes, numbered in order.
+ * @param graph The part of the overlap graph explored.
  * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair.
  * @throws std::invalid_argument If the alphabet holds a symbol twice, or a merge names a part the vocabulary so far
  *         does not carry, or a product it already carries.
  */
-[[nodiscard]] Ripple_radius radius_over(const std::span<const Merge> merges, const std::span<const std::string> symbols)
+[[nodiscard]] Ripple_radius radius_over(
+        const std::span<const Merge> merges, const std::span<const std::string> symbols, const Overlap_graph graph)
 {
     auto table{table_of(merges, symbols)};
 
@@ -1275,25 +1460,26 @@ std::string Exploration::completion(const std::size_t from) const
 
     auto vocabulary{vocabulary_of(table, merges, std::move(spellings), useful, std::move(ranks))};
 
-    Exploration exploration{std::move(table), std::move(vocabulary)};
+    Exploration exploration{std::move(table), std::move(vocabulary), graph};
 
     return std::move(exploration).run();
 }
 
 } // namespace
 
-Ripple_radius ripple_radius(const std::span<const Merge> merges)
+Ripple_radius ripple_radius(const std::span<const Merge> merges, const Overlap_graph graph)
 {
     const auto symbols{byte_alphabet()};
 
-    return radius_over(merges, symbols);
+    return radius_over(merges, symbols, graph);
 }
 
-Ripple_radius ripple_radius(const std::span<const Merge> merges, const std::string_view alphabet)
+Ripple_radius ripple_radius(
+        const std::span<const Merge> merges, const std::string_view alphabet, const Overlap_graph graph)
 {
     const auto symbols{characters_of(alphabet)};
 
-    return radius_over(merges, symbols);
+    return radius_over(merges, symbols, graph);
 }
 
 } // namespace munch::verifier

@@ -74,6 +74,25 @@ struct Effective_self_pair
 using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
 
 /**
+ * @brief The part of the overlap graph ripple_radius() explores, both giving the same decision to the byte.
+ */
+enum class Overlap_graph : std::size_t
+{
+    /**
+     * @brief The steps that agree with the bytes still to read, as every step leading to a pair ending both copies
+     *        does: a copy at a token end begins only a token whose spelling and the bytes the other copy's token has
+     *        still to read are one a prefix of the other, in O(S^2) steps.
+     */
+    live,
+
+    /**
+     * @brief The graph stopped at the pairs ending both copies, whole: a copy at a token end begins every token that
+     *        begins with the byte read, in O(S^2 + V^2 S) steps.
+     */
+    stopped
+};
+
+/**
  * @brief Decides the origin radius of a byte-pair table, the lookbehind of canonical byte-pair encoding: how far a byte
  *        prepended to an input can change the tokens of the input.
  *
@@ -106,21 +125,36 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  * table names, since a byte no merge names is a token no merge crosses, and stops at every pair ending both copies at a
  * token end: such a pair is a token boundary the two encodings share, past which they agree, so no marked step on an
  * accepting path lies beyond it. Every other pair has a copy inside its token, whose next byte is the one byte the pair
- * reads, so only a copy at a token end branches. The pairs from which a marked step leads to a pair ending both copies
- * form an acyclic graph, and the longest path to a marked step, plus one, is the radius, less the step's offset in the
- * first copy's token the mirrored constant, the path completed to a pair ending both copies spelling the attaining
- * input.
+ * reads, so only a copy at a token end branches. On a step that leads on to a pair ending both copies the token it
+ * begins and the bytes the other copy's token has still to read are one a prefix of the other, since both copies spell
+ * the bytes that follow and end their tokens on them, so the live graph, explored by default, begins only those tokens
+ * and the stopped graph every token beginning with the byte read. The pairs from which a marked step leads to a pair
+ * ending both copies are the same in both and form an acyclic graph, and the longest path to a marked step, plus one,
+ * is the radius, less the step's offset in the first copy's token the mirrored constant, the path completed to a pair
+ * ending both copies spelling the attaining input.
  *
- * With S the total length of the canonical tokens and V their number, the pairs expanded have one copy inside a token
- * and the other inside one or at a token end, O(S^2 + V S) of them, each with at most V steps and a pair of two copies
- * inside tokens with at most one, so the exploration takes O(S^2 + V^2 S) space and O((S^2 + V^2 S) log(S + 2)) time,
- * the logarithm from interning each step's pair in an ordered map, where the product of the two copies, every pair
- * expanded, has up to (1 + S)^2 pairs and O(S^2 + V^2 S + V^4) steps. Each usefulness and each adjacency encodes the
+ * With S the total length of the canonical tokens and V their number, the pairs the stopped graph expands have one copy
+ * inside a token and the other inside one or at a token end, O(S^2 + V S) of them, each with at most V steps and a pair
+ * of two copies inside tokens with at most one, so it has O(S^2 + V^2 S) steps, where the product of the two copies,
+ * every pair expanded, has up to (1 + S)^2 pairs and O(S^2 + V^2 S + V^4) steps. The part of the product the sources
+ * reach has O(S^2 + V^2 S) steps as well, since a pair ending both copies that they reach ends them in two tokens one a
+ * suffix of the other, at most 2 S such pairs with at most V^2 steps each, so stopping is sufficient for cubic time and
+ * not necessary. The live graph has O(S^2) steps. Take a step from a pair with one copy inside a token t, its first
+ * bytes P read and the bytes R still to read, and the other at the end of a token u, beginning a token v: u and P are
+ * one a suffix of the other on every pair the sources reach, both suffixes of what the second copy has read, and v and
+ * R one a prefix of the other on every step of the live graph. Over the four orders of |u| against |P| and of |v|
+ * against |R| the triples of t with |P|, u and v number at most 5 S^2 for either copy inside; the pairs of two copies
+ * inside tokens number at most (S - V)^2 with one step each, and the sources at most V with at most V steps each. The
+ * tokens one of whose spelling and R is a prefix of the other are read once per t and |P| off a trie of the canonical
+ * tokens, the shorter on the path that spells R and the longer listed at its end. So the live graph is explored in
+ * O(S^2) space and O(S^2 log(S + 2)) time and the stopped graph in O(S^2 + V^2 S) space and O((S^2 + V^2 S) log(S + 2))
+ * time, the logarithm from interning each step's pair in an ordered map. Each usefulness and each adjacency encodes the
  * spellings of two tokens with the lowest-ranked merge at its leftmost occurrence taken from a heap, in time L log L
  * for L bytes, and the at most V^2 adjacencies spell 2 V S bytes together. S and V are at most twice the table's size
- * T, the lengths of its merges' parts summed. The whole call takes expected time cubic in T up to a logarithmic factor,
- * O(T + (S^2 + V^2 S) log(S + 2)), its hash lookups taking constant time on average, and space O(T + S^2 + V^2 S),
- * where the whole product takes quartic time.
+ * T, the lengths of its merges' parts summed. The whole call takes expected time quadratic in T up to a logarithmic
+ * factor, O(T + S^2 log(S + 2)), its hash lookups taking constant time on average, and space O(T + S^2); over the
+ * stopped graph it takes time cubic in T up to the same factor, O(T + (S^2 + V^2 S) log(S + 2)), and space O(T + S^2 +
+ * V^2 S), where the whole product takes quartic time.
  *
  * The two parts of a useful merge differ, so its pass joins every occurrence of them, and it moves the first byte from
  * which the encodings of x and of ax agree by at most the length of its right part: the radius is at most the total
@@ -128,12 +162,13 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  * numbers from F(1) = F(2) = 1, since at most one part of a useful merge is the product of the useful merge just before
  * it, and the table whose every merge joins the token before the latest to the latest, from a and b, attains it.
  * @param merges The admissible merge table in rank order, each part a byte or the product of an earlier merge.
+ * @param graph The part of the overlap graph explored, the live graph unless the stopped one is asked for.
  * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair.
  * @throws std::invalid_argument If a merge names a part that neither the alphabet nor an earlier merge carries, or a
  *         product that the alphabet or an earlier merge already carries; the message names the merge and its rank,
  *         each spelling quoted, a byte outside printable ASCII written `\xHH` and the quote and the backslash escaped.
  */
-[[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges);
+[[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges, Overlap_graph graph = Overlap_graph::live);
 
 /**
  * @brief Decides the origin radius of a merge table over an alphabet of characters, reading each character as its
@@ -161,13 +196,15 @@ using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
  * what the byte overload returns on the same table, to the byte.
  * @param merges The admissible merge table in rank order, each part a character or the product of an earlier merge.
  * @param alphabet The alphabet, UTF-8 text whose characters are the tokens before any merge, each once.
+ * @param graph The part of the overlap graph explored, the live graph unless the stopped one is asked for.
  * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair.
  * @throws std::invalid_argument If the alphabet holds a character twice, or a merge names a part that neither the
  *         alphabet nor an earlier merge carries, or a product that the alphabet or an earlier merge already carries;
  *         the message names the character, or the merge and its rank, each spelling quoted, a byte outside printable
  *         ASCII written `\xHH` and the quote and the backslash escaped.
  */
-[[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges, std::string_view alphabet);
+[[nodiscard]] Ripple_radius ripple_radius(
+        std::span<const Merge> merges, std::string_view alphabet, Overlap_graph graph = Overlap_graph::live);
 
 } // namespace munch::verifier
 
