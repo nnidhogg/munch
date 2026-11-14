@@ -23,8 +23,8 @@ authors:
 repository-code: "https://github.com/nnidhogg/munch"
 url: "https://github.com/nnidhogg/munch"
 license: MIT
-version: 3.0.0
-date-released: "2026-10-15"
+version: 3.1.0
+date-released: "2026-11-14"
 doi: "10.5281/zenodo.21752996"
 references:
   - type: article
