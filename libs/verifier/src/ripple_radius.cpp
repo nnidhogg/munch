@@ -2,14 +2,12 @@
 
 #include <algorithm>
 #include <boost/container_hash/hash.hpp>
-#include <compare>
 #include <cstddef>
 #include <format>
-#include <functional>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <optional>
-#include <queue>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -40,6 +38,11 @@ using Ranks_t = std::unordered_map<std::pair<Token_t, Token_t>, std::size_t, boo
 constexpr std::size_t byte_count{256};
 
 /**
+ * @brief The rank standing for no merge, past the rank of every merge.
+ */
+constexpr std::size_t no_merge{std::numeric_limits<std::size_t>::max()};
+
+/**
  * @brief The merge table resolved to tokens over an alphabet: the token of each symbol, and each merge's parts by rank,
  *        the product of rank r being the token r past the symbols.
  */
@@ -62,8 +65,36 @@ struct Table
 };
 
 /**
- * @brief The merges taken in rank order: the useful ones before the first effective self-pair, and that self-pair's
- *        rank when there is one.
+ * @brief A place in a run on the spelling of canonical tokens: the first and the last token of the tokens the run has
+ *        reached, and the rank of its next merge.
+ */
+struct Trace_place
+{
+    /**
+     * @brief The first token.
+     */
+    Token_t first{};
+
+    /**
+     * @brief The last token.
+     */
+    Token_t last{};
+
+    /**
+     * @brief The rank of the run's next merge, no_merge where the run ends.
+     */
+    std::size_t next{};
+};
+
+/**
+ * @brief The places of a run, one per merge and one more: the trace of a canonical token is the run on the token alone,
+ *        from its symbols to the token, and a token that is not canonical has none.
+ */
+using Trace = std::vector<Trace_place>;
+
+/**
+ * @brief The merges taken in rank order: the useful ones before the first effective self-pair, the trace of every
+ *        canonical token, and that self-pair's rank when there is one.
  */
 struct Stages
 {
@@ -78,14 +109,19 @@ struct Stages
     Ranks_t ranks{};
 
     /**
+     * @brief The trace of each token, by token, empty for a token that is not canonical.
+     */
+    std::vector<Trace> traces{};
+
+    /**
      * @brief The rank of the first useful merge with equal parts, the effective self-pair.
      */
     std::optional<std::size_t> self_pair{};
 };
 
 /**
- * @brief A node of the trie of the canonical tokens: its children by byte, the token it spells, and every token whose
- *        spelling begins with what it spells.
+ * @brief A node of the trie of the canonical tokens: its children by byte, the token it spells, every token whose
+ *        spelling begins with what it spells, and every token spelled on the path to it.
  */
 struct Trie_node
 {
@@ -103,6 +139,11 @@ struct Trie_node
      * @brief The tokens whose spelling begins with the bytes read to the node, ascending, none at the root.
      */
     std::vector<Token_t> below{};
+
+    /**
+     * @brief The tokens whose spelling the bytes read to the node begin with, ascending, none at the root.
+     */
+    std::vector<Token_t> above{};
 };
 
 /**
@@ -126,6 +167,11 @@ struct Vocabulary
     Ranks_t ranks{};
 
     /**
+     * @brief The trace of each token, by token, empty for a token that is not canonical.
+     */
+    std::vector<Trace> traces{};
+
+    /**
      * @brief The symbols the table names, ascending.
      */
     std::vector<Token_t> named{};
@@ -143,9 +189,9 @@ struct Vocabulary
 struct Position
 {
     /**
-     * @brief Ordered member by member, so pairs key the map of interned ones.
+     * @brief Equal when the token and the bytes read match.
      */
-    auto operator<=>(const Position&) const = default;
+    bool operator==(const Position&) const = default;
 
     /**
      * @brief The guessed token, none at the start.
@@ -165,9 +211,9 @@ struct Position
 struct Pair
 {
     /**
-     * @brief Ordered member by member, so pairs key the map of interned ones.
+     * @brief Equal when both copies' positions match.
      */
-    auto operator<=>(const Pair&) const = default;
+    bool operator==(const Pair&) const = default;
 
     /**
      * @brief The copy reading the input alone, at the start before the first byte.
@@ -178,6 +224,48 @@ struct Pair
      * @brief The copy that read the prepended symbol as the first symbol of its first token.
      */
     Position prepended{};
+};
+
+/**
+ * @brief Hashes a position for the live graph's choices beside it.
+ */
+struct Position_hash
+{
+    /**
+     * @brief Combines the hashes of the token and of the bytes read.
+     * @param position The position hashed.
+     * @return Its hash.
+     */
+    std::size_t operator()(const Position& position) const noexcept
+    {
+        auto seed{boost::hash_value(position.token)};
+
+        boost::hash_combine(seed, position.read);
+
+        return seed;
+    }
+};
+
+/**
+ * @brief Hashes a pair for the map of interned ones.
+ */
+struct Pair_hash
+{
+    /**
+     * @brief Combines the hashes of the two copies' positions.
+     * @param pair The pair hashed.
+     * @return Its hash.
+     */
+    std::size_t operator()(const Pair& pair) const noexcept
+    {
+        auto seed{Position_hash{}(pair.base)};
+
+        const auto prepended_hash{Position_hash{}(pair.prepended)};
+
+        boost::hash_combine(seed, prepended_hash);
+
+        return seed;
+    }
 };
 
 /**
@@ -496,45 +584,31 @@ struct Best
 }
 
 /**
- * @brief Encodes a token sequence with the merges given: at every step the lowest-ranked of them present anywhere,
- *        applied at its leftmost occurrence, until none applies.
+ * @brief Follows the run on the spelling of two canonical tokens together by their traces, as the trace lemma of the
+ *        report The Left Ripple of Byte-Pair Encoding does, until a merge crosses the join of the two or the run ends.
  *
- * The occurrences wait in a heap on their rank and their place, the index of their left part in the sequence given, so
- * the least is the lowest-ranked merge at its leftmost occurrence. A merge looks up the two pairs it makes and pushes
- * them, and an occurrence a merge has since taken a part of is dropped when it is popped, so a sequence of L tokens
- * costs O(L log L) whatever the number of merges. Under the ordering condition this is the encoder's segmentation, the
- * merges that never apply left out.
- * @param table The resolved merge table.
+ * While no merge has crossed the join, the merges inside each token are, by the projection lemma, the beginning of the
+ * run on that token alone, so the run stands at one place in each trace. Its next merge is the lowest-ranked of three:
+ * the next merge of the left trace, the merge of the left token's last token with the right token's first, and the next
+ * merge of the right trace. A rank names one merge, so equal ranks are one merge at two places, and the run takes the
+ * leftmost: the left trace before the join and the join before the right trace. A merge across the join is never
+ * undone, so the run ends in the two tokens exactly when both traces end with no merge joining them. Each step moves on
+ * in a trace or stops, at most |u| + |v| - 1 steps for tokens u and v, each with one lookup of the merges' ranks, and
+ * nothing here assumes the merges' order.
+ * @param left The trace of the left token.
+ * @param right The trace of the right token.
  * @param ranks The rank of each merge to apply, by its two parts.
- * @param tokens The sequence, the symbols of a text or tokens of its encoding.
- * @return The encoded sequence.
+ * @return The places of the run on the two tokens' spelling, the last at the two tokens with no merge next, or
+ *         std::nullopt when a merge crosses the join.
  */
-[[nodiscard]] std::vector<Token_t> encoded(const Table& table, const Ranks_t& ranks, std::vector<Token_t> tokens)
+[[nodiscard]] std::optional<Trace> joined(const Trace& left, const Trace& right, const Ranks_t& ranks)
 {
-    const auto end{tokens.size()};
-
-    // The place of the token after and of the token before each place, the end standing for none.
-    std::vector<std::size_t> after(end);
-    std::vector<std::size_t> before(end);
-    std::vector<bool> held(end, true);
-
-    for (std::size_t place{0}; place < end; ++place)
-    {
-        after[place] = place + 1;
-        before[place] = place == 0 ? end : place - 1;
-    }
-
-    const auto rank_at{[&](const std::size_t place) -> std::optional<std::size_t> {
-        if (place == end || after[place] == end)
-        {
-            return std::nullopt;
-        }
-
-        const auto found{ranks.find({tokens[place], tokens[after[place]]})};
+    const auto rank_of{[&ranks](const Token_t first, const Token_t second) {
+        const auto found{ranks.find({first, second})};
 
         if (found == ranks.cend())
         {
-            return std::nullopt;
+            return no_merge;
         }
 
         const auto& [parts, rank]{*found};
@@ -542,93 +616,89 @@ struct Best
         return rank;
     }};
 
-    // An occurrence is a merge's rank and the place of its left part.
-    using Occurrence = std::pair<std::size_t, std::size_t>;
+    std::size_t in_left{0};
+    std::size_t in_right{0};
 
-    std::priority_queue<Occurrence, std::vector<Occurrence>, std::greater<>> occurrences{};
+    Trace places{{.first = left.front().first, .last = right.front().last, .next = no_merge}};
 
-    const auto push{[&](const std::size_t place) {
-        const auto rank{rank_at(place)};
-
-        if (rank)
-        {
-            occurrences.emplace(*rank, place);
-        }
-    }};
-
-    for (std::size_t place{0}; place < end; ++place)
+    for (;;)
     {
-        push(place);
-    }
+        const auto& [left_first, left_last, left_next]{left[in_left]};
+        const auto& [right_first, right_last, right_next]{right[in_right]};
 
-    while (!occurrences.empty())
-    {
-        const auto [rank, place]{occurrences.top()};
+        const auto across{rank_of(left_last, right_first)};
 
-        occurrences.pop();
+        const auto takes_left{left_next != no_merge && left_next <= across && left_next <= right_next};
 
-        if (!held[place] || rank_at(place) != rank)
+        if (!takes_left && across != no_merge && across <= right_next)
         {
-            continue;
+            return std::nullopt;
         }
 
-        const auto right{after[place]};
-
-        tokens[place] = product_of(table, rank);
-        held[right] = false;
-        after[place] = after[right];
-
-        if (after[place] != end)
+        if (!takes_left && right_next == no_merge)
         {
-            before[after[place]] = place;
+            return places;
         }
 
-        push(before[place]);
-        push(place);
+        places.back().next = takes_left ? left_next : right_next;
+
+        if (takes_left)
+        {
+            ++in_left;
+        }
+        else
+        {
+            ++in_right;
+        }
+
+        places.push_back({.first = left[in_left].first, .last = right[in_right].last, .next = no_merge});
     }
-
-    std::vector<Token_t> encoding{};
-
-    for (std::size_t place{0}; place != end; place = after[place])
-    {
-        encoding.push_back(tokens[place]);
-    }
-
-    return encoding;
 }
 
 /**
  * @brief Takes the merges in rank order, each useful when both parts are canonical and the useful merges before it
- *        encode the two parts as the two of them, until the first useful merge with equal parts.
+ *        encode the two parts as the two of them, until the first useful merge with equal parts, recording the trace of
+ *        every canonical token.
+ *
+ * A symbol's trace is its one place. A useful merge's product is canonical, and its trace is the run on its two parts
+ * together under the useful merges before it, followed by the merge itself. Every merge of that run ranks below the
+ * merge and every later useful merge above it, so no later merge is taken before the run ends, and the trace is also
+ * the run under every useful merge.
  * @param table The resolved merge table.
- * @param spellings The spelling of every token, by token.
- * @return The useful merges before the first effective self-pair, by rank and by parts, and its rank when there is one.
+ * @return The useful merges before the first effective self-pair, by rank and by parts, the traces of the canonical
+ *         tokens, and the self-pair's rank when there is one.
  */
-[[nodiscard]] Stages stages_of(const Table& table, const std::vector<std::string>& spellings)
+[[nodiscard]] Stages stages_of(const Table& table)
 {
-    std::vector<bool> canonical(spellings.size(), false);
+    const auto symbol_count{table.symbols.size()};
 
-    std::fill_n(canonical.begin(), table.symbols.size(), true);
+    Stages stages{
+            .useful = {},
+            .ranks = {},
+            .traces = std::vector<Trace>(symbol_count + table.lefts.size()),
+            .self_pair = std::nullopt};
 
-    Stages stages{};
+    for (Token_t symbol{0}; symbol < symbol_count; ++symbol)
+    {
+        stages.traces[symbol] = {{.first = symbol, .last = symbol, .next = no_merge}};
+    }
 
     for (std::size_t rank{0}; rank < table.lefts.size(); ++rank)
     {
         const auto left{table.lefts[rank]};
         const auto right{table.rights[rank]};
 
-        if (!canonical[left] || !canonical[right])
+        const auto& left_trace{stages.traces[left]};
+        const auto& right_trace{stages.traces[right]};
+
+        if (left_trace.empty() || right_trace.empty())
         {
             continue;
         }
 
-        const auto spelling{spellings[left] + spellings[right]};
+        auto places{joined(left_trace, right_trace, stages.ranks)};
 
-        const auto parts{symbols_of(table, spelling)};
-
-        const auto encoding{encoded(table, stages.ranks, parts)};
-
-        if (encoding != std::vector{left, right})
+        if (!places)
         {
             continue;
         }
@@ -640,9 +710,14 @@ struct Best
             return stages;
         }
 
+        const auto product{product_of(table, rank)};
+
+        places->back().next = rank;
+        places->push_back({.first = product, .last = product, .next = no_merge});
+
         stages.useful.push_back(rank);
         stages.ranks.emplace(std::pair{left, right}, rank);
-        canonical[product_of(table, rank)] = true;
+        stages.traces[product] = std::move(*places);
     }
 
     return stages;
@@ -679,18 +754,48 @@ void add_token(Trie& trie, const std::string_view spelling, const Token_t token)
 }
 
 /**
+ * @brief Lists at every node of a trie the tokens spelled on the path to it: its parent's list with the node's own
+ *        token, each node numbered after its parent.
+ * @param trie The trie, every token added.
+ */
+void list_prefixes(Trie& trie)
+{
+    for (std::size_t node{0}; node < trie.size(); ++node)
+    {
+        for (const auto& [label, child] : trie[node].children)
+        {
+            auto& above{trie[child].above};
+
+            above = trie[node].above;
+
+            const auto& token{trie[child].token};
+
+            if (!token)
+            {
+                continue;
+            }
+
+            const auto place{std::ranges::upper_bound(above, *token)};
+
+            above.insert(place, *token);
+        }
+    }
+}
+
+/**
  * @brief Returns the canonical tokens of a table with no effective self-pair: the symbols the table names and the
- *        useful products, in a trie of their spellings.
+ *        useful products, with their traces, in a trie of their spellings.
  * @param table The resolved merge table.
  * @param merges The merge table in rank order.
  * @param spellings The spelling of every token, by token.
  * @param useful The ranks of the useful merges, ascending.
  * @param ranks The rank of each useful merge by its two parts.
+ * @param traces The trace of each token, by token, empty for a token that is not canonical.
  * @return The vocabulary.
  */
 [[nodiscard]] Vocabulary vocabulary_of(
         const Table& table, const std::span<const Merge> merges, std::vector<std::string> spellings,
-        const std::span<const std::size_t> useful, Ranks_t ranks)
+        const std::span<const std::size_t> useful, Ranks_t ranks, std::vector<Trace> traces)
 {
     std::vector<bool> named(table.symbols.size(), false);
 
@@ -704,7 +809,12 @@ void add_token(Trie& trie, const std::string_view spelling, const Token_t token)
         }
     }
 
-    Vocabulary vocabulary{.spellings = std::move(spellings), .ranks = std::move(ranks), .named = {}, .trie = Trie(1)};
+    Vocabulary vocabulary{
+            .spellings = std::move(spellings),
+            .ranks = std::move(ranks),
+            .traces = std::move(traces),
+            .named = {},
+            .trie = Trie(1)};
 
     for (Token_t symbol{0}; symbol < named.size(); ++symbol)
     {
@@ -723,6 +833,8 @@ void add_token(Trie& trie, const std::string_view spelling, const Token_t token)
 
         add_token(vocabulary.trie, vocabulary.spellings[product], product);
     }
+
+    list_prefixes(vocabulary.trie);
 
     return vocabulary;
 }
@@ -781,8 +893,6 @@ void add_token(Trie& trie, const std::string_view spelling, const Token_t token)
  */
 [[nodiscard]] std::vector<Token_t> comparable_to(const Trie& trie, const std::string_view text)
 {
-    std::vector<Token_t> shorter{};
-
     std::size_t node{0};
 
     for (const auto byte : text.substr(0, text.size() - 1))
@@ -795,16 +905,9 @@ void add_token(Trie& trie, const std::string_view spelling, const Token_t token)
         }
 
         node = *child;
-
-        const auto& token{trie[node].token};
-
-        if (token)
-        {
-            shorter.push_back(*token);
-        }
     }
 
-    std::ranges::sort(shorter);
+    const auto& shorter{trie[node].above};
 
     const auto longer{beginning_with(trie, text)};
 
@@ -856,21 +959,19 @@ void add_token(Trie& trie, const std::string_view spelling, const Token_t token)
 }
 
 /**
- * @brief The overlap graph under exploration, up to the token boundaries the two copies share: the resolved merge table
- *        and its vocabulary, the part of the graph explored, the pair each node reads as, the interned pairs with their
- *        nodes, each node's steps, the nodes ending both copies, and the adjacencies and the comparable tokens decided
- *        so far.
+ * @brief The overlap graph under exploration, up to the token boundaries the two copies share: the vocabulary of the
+ *        merge table, the part of the graph explored, the pair each node reads as, the interned pairs with their nodes,
+ *        each node's steps, the nodes ending both copies, and the adjacencies and the comparable tokens decided so far.
  */
 class Exploration
 {
 public:
     /**
-     * @brief Takes the resolved merge table, its vocabulary and the part of the graph to explore, nothing explored yet.
-     * @param table The resolved merge table.
+     * @brief Takes the vocabulary of a merge table and the part of the graph to explore, nothing explored yet.
      * @param vocabulary The canonical tokens of the table, which has no effective self-pair.
      * @param graph The part of the overlap graph to explore.
      */
-    Exploration(Table table, Vocabulary vocabulary, Overlap_graph graph);
+    Exploration(Vocabulary vocabulary, Overlap_graph graph);
 
     /**
      * @brief Explores the overlap graph from every node pairing the start with a canonical token, a node ending both
@@ -924,8 +1025,8 @@ private:
             const Position& position, unsigned char byte, std::span<const Token_t> choices);
 
     /**
-     * @brief Returns whether the encoding of two tokens' spellings together is the two tokens, deciding it once per
-     *        pair.
+     * @brief Returns whether the encoding of two tokens' spellings together is the two tokens, read off their traces
+     *        once per pair.
      * @param first The first token.
      * @param second The second token.
      * @return True when the second token may follow the first in an encoding.
@@ -981,11 +1082,6 @@ private:
     [[nodiscard]] std::string completion(std::size_t from) const;
 
     /**
-     * @brief The resolved merge table.
-     */
-    Table table_{};
-
-    /**
      * @brief The canonical tokens of the table.
      */
     Vocabulary vocabulary_{};
@@ -1008,7 +1104,7 @@ private:
     /**
      * @brief The interned pairs with their nodes.
      */
-    std::map<Pair, std::size_t> interned_{};
+    std::unordered_map<Pair, std::size_t, Pair_hash> interned_{};
 
     /**
      * @brief The steps found so far, by node.
@@ -1018,16 +1114,16 @@ private:
     /**
      * @brief Whether the encoding of each pair of tokens asked so far is the two tokens.
      */
-    std::map<std::pair<Token_t, Token_t>, bool> adjacencies_{};
+    std::unordered_map<std::pair<Token_t, Token_t>, bool, boost::hash<std::pair<Token_t, Token_t>>> adjacencies_{};
 
     /**
      * @brief The live graph's choices beside each position inside a token asked so far.
      */
-    std::map<Position, std::vector<Token_t>> comparable_{};
+    std::unordered_map<Position, std::vector<Token_t>, Position_hash> comparable_{};
 };
 
-Exploration::Exploration(Table table, Vocabulary vocabulary, const Overlap_graph graph)
-    : table_{std::move(table)}, vocabulary_{std::move(vocabulary)}, graph_{graph}
+Exploration::Exploration(Vocabulary vocabulary, const Overlap_graph graph)
+    : vocabulary_{std::move(vocabulary)}, graph_{graph}
 {}
 
 Finite_ripple Exploration::run() &&
@@ -1200,13 +1296,11 @@ bool Exploration::is_adjacent(const Token_t first, const Token_t second)
         return adjacent;
     }
 
-    const auto spelling{vocabulary_.spellings[first] + vocabulary_.spellings[second]};
+    const auto& traces{vocabulary_.traces};
 
-    const auto parts{symbols_of(table_, spelling)};
+    const auto places{joined(traces[first], traces[second], vocabulary_.ranks)};
 
-    const auto encoding{encoded(table_, vocabulary_.ranks, parts)};
-
-    const auto adjacent{encoding == std::vector{first, second}};
+    const auto adjacent{places.has_value()};
 
     adjacencies_.emplace(std::pair{first, second}, adjacent);
 
@@ -1447,20 +1541,20 @@ std::string Exploration::completion(const std::size_t from) const
 [[nodiscard]] Ripple_radius radius_over(
         const std::span<const Merge> merges, const std::span<const std::string> symbols, const Overlap_graph graph)
 {
-    auto table{table_of(merges, symbols)};
+    const auto table{table_of(merges, symbols)};
 
-    auto spellings{spellings_of(merges, symbols)};
-
-    auto [useful, ranks, self_pair]{stages_of(table, spellings)};
+    auto [useful, ranks, traces, self_pair]{stages_of(table)};
 
     if (self_pair)
     {
         return Effective_self_pair{.rank = *self_pair};
     }
 
-    auto vocabulary{vocabulary_of(table, merges, std::move(spellings), useful, std::move(ranks))};
+    auto spellings{spellings_of(merges, symbols)};
 
-    Exploration exploration{std::move(table), std::move(vocabulary), graph};
+    auto vocabulary{vocabulary_of(table, merges, std::move(spellings), useful, std::move(ranks), std::move(traces))};
+
+    Exploration exploration{std::move(vocabulary), graph};
 
     return std::move(exploration).run();
 }

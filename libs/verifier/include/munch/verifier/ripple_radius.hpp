@@ -119,19 +119,24 @@ enum class Overlap_graph : std::size_t
  * useful merge, and the useful merges before it encode the two parts as the two of them; the first useful merge with
  * equal parts is the effective self-pair. Without one the canonical tokens are the bytes the table names and the useful
  * products, the encoding is one left-to-right pass per useful merge in rank order, and a token sequence is an encoding
- * exactly when each adjacent pair encodes as itself. The graph runs two copies of the automaton that guesses those
- * tokens over one input, the second having read the prepended byte as the first byte of a token, and marks a step where
- * the two copies' tokens covering the byte differ in offset or length. It is explored from every prepended byte the
- * table names, since a byte no merge names is a token no merge crosses, and stops at every pair ending both copies at a
- * token end: such a pair is a token boundary the two encodings share, past which they agree, so no marked step on an
- * accepting path lies beyond it. Every other pair has a copy inside its token, whose next byte is the one byte the pair
- * reads, so only a copy at a token end branches. On a step that leads on to a pair ending both copies the token it
- * begins and the bytes the other copy's token has still to read are one a prefix of the other, since both copies spell
- * the bytes that follow and end their tokens on them, so the live graph, explored by default, begins only those tokens
- * and the stopped graph every token beginning with the byte read. The pairs from which a marked step leads to a pair
- * ending both copies are the same in both and form an acyclic graph, and the longest path to a marked step, plus one,
- * is the radius, less the step's offset in the first copy's token the mirrored constant, the path completed to a pair
- * ending both copies spelling the attaining input.
+ * exactly when each adjacent pair encodes as itself. Both tests read the encoding of two canonical tokens together off
+ * their traces, the ranks of the merges of the run on each token alone with the first and the last token after each,
+ * recorded as the useful merges are found: until a merge crosses the join, the run on the two is the two runs
+ * interleaved, its next merge the lowest-ranked of the next merge inside the left token, the merge across the join and
+ * the next merge inside the right token, the leftmost first between equal ranks, so the two encode as themselves
+ * exactly when both traces end with no merge across, after at most |u| + |v| - 1 steps for tokens u and v. The graph
+ * runs two copies of the automaton that guesses those tokens over one input, the second having read the prepended byte
+ * as the first byte of a token, and marks a step where the two copies' tokens covering the byte differ in offset or
+ * length. It is explored from every prepended byte the table names, since a byte no merge names is a token no merge
+ * crosses, and stops at every pair ending both copies at a token end: such a pair is a token boundary the two encodings
+ * share, past which they agree, so no marked step on an accepting path lies beyond it. Every other pair has a copy
+ * inside its token, whose next byte is the one byte the pair reads, so only a copy at a token end branches. On a step
+ * that leads on to a pair ending both copies the token it begins and the bytes the other copy's token has still to read
+ * are one a prefix of the other, since both copies spell the bytes that follow and end their tokens on them, so the
+ * live graph, explored by default, begins only those tokens and the stopped graph every token beginning with the byte
+ * read. The pairs from which a marked step leads to a pair ending both copies are the same in both and form an acyclic
+ * graph, and the longest path to a marked step, plus one, is the radius, less the step's offset in the first copy's
+ * token the mirrored constant, the path completed to a pair ending both copies spelling the attaining input.
  *
  * With S the total length of the canonical tokens and V their number, the pairs the stopped graph expands have one copy
  * inside a token and the other inside one or at a token end, O(S^2 + V S) of them, each with at most V steps and a pair
@@ -146,15 +151,16 @@ enum class Overlap_graph : std::size_t
  * against |R| the triples of t with |P|, u and v number at most 5 S^2 for either copy inside; the pairs of two copies
  * inside tokens number at most (S - V)^2 with one step each, and the sources at most V with at most V steps each. The
  * tokens one of whose spelling and R is a prefix of the other are read once per t and |P| off a trie of the canonical
- * tokens, the shorter on the path that spells R and the longer listed at its end. So the live graph is explored in
- * O(S^2) space and O(S^2 log(S + 2)) time and the stopped graph in O(S^2 + V^2 S) space and O((S^2 + V^2 S) log(S + 2))
- * time, the logarithm from interning each step's pair in an ordered map. Each usefulness and each adjacency encodes the
- * spellings of two tokens with the lowest-ranked merge at its leftmost occurrence taken from a heap, in time L log L
- * for L bytes, and the at most V^2 adjacencies spell 2 V S bytes together. S and V are at most twice the table's size
- * T, the lengths of its merges' parts summed. The whole call takes expected time quadratic in T up to a logarithmic
- * factor, O(T + S^2 log(S + 2)), its hash lookups taking constant time on average, and space O(T + S^2); over the
- * stopped graph it takes time cubic in T up to the same factor, O(T + (S^2 + V^2 S) log(S + 2)), and space O(T + S^2 +
- * V^2 S), where the whole product takes quartic time.
+ * tokens, in |R| steps and their number: the shorter are listed, ascending, at the node the path that spells R reaches
+ * short of its last byte, and the longer at its end, and the lists of the tokens spelled on each node's path hold at
+ * most L S tokens together, L the longest token's length. Each usefulness and each adjacency takes at most as many
+ * steps of the traces as its two tokens have bytes, less one, so the usefulnesses take O(T) steps together and the at
+ * most V^2 adjacencies fewer than 2 V S. With each step's pair, each adjacency and the choices beside each position
+ * kept in a hash map, the live graph is explored in O(S^2) space and expected time and the stopped graph in O(S^2 + V^2
+ * S), the hash lookups taking constant time on average. S and V are at most twice the table's size T, the lengths of
+ * its merges' parts summed. The whole call takes expected time quadratic in T, O(T + S^2), and space O(T + S^2); over
+ * the stopped graph it takes expected time cubic in T, O(T + S^2 + V^2 S), and space the same, where the whole product
+ * takes quartic time.
  *
  * The two parts of a useful merge differ, so its pass joins every occurrence of them, and it moves the first byte from
  * which the encodings of x and of ax agree by at most the length of its right part: the radius is at most the total

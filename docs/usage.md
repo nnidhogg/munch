@@ -1019,11 +1019,12 @@ every pair ending both copies at a token end, a token boundary the two encodings
 other pair has a copy inside its token, so only the other copy branches, and it begins only a token whose spelling and
 the bytes the inside copy has still to read are one a prefix of the other, as every step on the way to a shared boundary
 does. With S the total length of the canonical tokens, V their number and T the size of the table and of the character
-alphabet when one is supplied, that live graph has O(S^2) steps and the whole call takes O(T + S^2 log(S + 2)) expected
-time, its hash lookups taking constant time on average, quadratic in the table's size up to a logarithmic factor.
+alphabet when one is supplied, that live graph has O(S^2) steps and the whole call takes O(T + S^2) expected time, its
+hash lookups taking constant time on average, quadratic in the table's size, since its pairs are hashed and whether two
+canonical tokens encode as themselves is read off the merges of each one's own run in fewer steps than they have bytes.
 `verifier::Overlap_graph::stopped` as the last argument explores the stopped graph whole, every token beginning with the
-byte read, with the same decision to the byte in O(T + (S^2 + V^2 S) log(S + 2)), cubic; the part of the product of the
-two copies that the sources reach is cubic as well, and the product expanded whole is quartic.
+byte read, with the same decision to the byte in O(T + S^2 + V^2 S), cubic; the part of the product of the two copies
+that the sources reach is cubic as well, and the product expanded whole is quartic.
 [benchmarks.md](benchmarks.md#the-origin-radius-on-gpt-2s-prefixes) times it on GPT-2's prefixes. The overlap graph
 decides the radius for any table and a polynomial computation decides it in the number of merges under the ordering
 condition; on the tables munch takes the two answer alike, so one function serves both. It refuses what `merge_tower()`

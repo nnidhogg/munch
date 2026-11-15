@@ -1764,6 +1764,25 @@ TEST(Ripple_radius_test, A_self_pair_whose_copies_never_meet_at_its_stage_leaves
     expect_attained(merges, Reading::bytes, finite, "ab, ba, ba+ba");
 }
 
+TEST(Ripple_radius_test, Pairs_meeting_one_merge_at_two_places_each_are_adjacent_as_the_reference_encoder_has_them)
+{
+    const std::vector<Merge> merges{
+            {.left = "a", .right = "b"},
+            {.left = "ab", .right = "a"},
+            {.left = "b", .right = "ab"}};
+
+    for (const std::string token : {"ab", "aba", "bab"})
+    {
+        EXPECT_EQ(reference_tokens(merges, bytes_of(token)), std::vector{token}) << token;
+    }
+
+    // abab spells (ab, ab), (aba, b) and (a, bab), each with (a, b) at two places: inside both tokens, inside aba and
+    // across the join, and across the join and inside bab.
+    EXPECT_EQ(reference_tokens(merges, bytes_of("abab")), (std::vector<std::string>{"ab", "ab"}));
+
+    EXPECT_TRUE(expect_decided_as_the_full_product(merges, Reading::bytes, {}, table_text(merges)));
+}
+
 TEST(Ripple_radius_test, The_mirrored_constant_lies_below_the_radius_when_the_last_changed_token_begins_early)
 {
     const std::vector<Merge> merges{{.left = "b", .right = "c"}, {.left = "a", .right = "bc"}};
