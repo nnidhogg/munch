@@ -1312,13 +1312,17 @@ kinds are passed in, so a set other than the builder's can be asked, and an empt
 split-points paper's exact decision: the boundary-guessing search of `domain_difference()` runs once per chunk, the
 whole input's scan beside the chunk's scan guessed to fail, and where neither chunk fails, a product of two scans
 emitting their kept tokens as words, the whole input's and the one restarted at the cut, compares the words on its
-finite graph. The problem is in PSPACE; the explicit implementation may use singly exponential time and space, and the
-cap bounds each of its three searches. An unsafe symbol comes with a witness, the first cut at which it fails and how:
-the chunk before the cut does not scan, the chunk from it does not, or the kept streams differ. A chunk that does not
-scan is found first, and its witness is a shortest one. A byte no completely tokenizable input holds past its first
-offset is safe vacuously and, on an exhaustive result, comes back with no witness, where `is_split_point_ignoring()`
-answers false. Over the discarded `a`, `b`, `c` and `abc` and the kept `k` and `kk` the kept tokens come only from runs
-of `k`, which a cut before `b` leaves whole, so every such cut is safe, though the relaxed certificate refuses `b`:
+finite graph. By Theorem 6 of [arXiv:2608.03473v5](https://arxiv.org/abs/2608.03473v5), deciding whether a symbol is
+safe modulo the discarded kinds, given the token automaton, the discarded kinds and the symbol, is PSPACE-complete, and
+it remains PSPACE-hard for token automata over three symbols with one kept and one discarded kind for which every input
+over the three symbols is completely tokenizable, and for token automata over three symbols with a single kind, which is
+discarded. The explicit implementation may use singly exponential time and space, and the cap bounds each of its three
+searches. An unsafe symbol comes with a witness, the first cut at which it fails and how: the chunk before the cut does
+not scan, the chunk from it does not, or the kept streams differ. A chunk that does not scan is found first, and its
+witness is a shortest one. A byte no completely tokenizable input holds past its first offset is safe vacuously and, on
+an exhaustive result, comes back with no witness, where `is_split_point_ignoring()` answers false. Over the discarded
+`a`, `b`, `c` and `abc` and the kept `k` and `kk` the kept tokens come only from runs of `k`, which a cut before `b`
+leaves whole, so every such cut is safe, though the relaxed certificate refuses `b`:
 
 ```cpp
 for (const std::string_view word : {"a", "b", "c", "abc"})

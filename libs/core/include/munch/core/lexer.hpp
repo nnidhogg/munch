@@ -917,10 +917,11 @@ public:
      * abc and the kept k and kk the byte b is safe, while is_split_point_ignoring() refuses it; over ab discarded alone
      * the cut before b leaves two chunks neither of which scans. Decided by the same boundary-guessing search as
      * domain_difference(), once per chunk, and where neither chunk fails, by the product of two scans emitting their
-     * kept tokens as words, compared on its finite graph. The problem is in PSPACE; the explicit implementation may use
-     * singly exponential time and space. A symbol no completely tokenizable input holds past its first offset is safe
-     * vacuously and, on an exhaustive result, reported so with no witness, where is_split_point_ignoring() answers
-     * false. The derivation is dfa::modulo_counterexample()'s.
+     * kept tokens as words, compared on its finite graph. The problem is PSPACE-complete, and PSPACE-hard already over
+     * three symbols, by Theorem 6 of arXiv:2608.03473v5; the explicit implementation may use singly exponential time
+     * and space. A symbol no completely tokenizable input holds past its first offset is safe vacuously and, on an
+     * exhaustive result, reported so with no witness, where is_split_point_ignoring() answers false. The derivation is
+     * dfa::modulo_counterexample()'s.
      * @param symbol The byte the cuts stand before.
      * @param ignored The IDs of the tokens the caller discards before the stream is used.
      * @param cap The largest number of search states each search holds before giving up, dfa::modulo_cap unless told.

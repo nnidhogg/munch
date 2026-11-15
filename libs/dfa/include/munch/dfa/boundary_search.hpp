@@ -762,15 +762,19 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  * accepting path's outputs are equal.
  *
  * A search state holds a state and a set of closed runs per scan, so it takes space polynomial in the state count, and
- * the question is decided in polynomial space. The searches and the product, which may hold every state, take time and
- * space singly exponential in the state count in the worst case, and the cap bounds each of the three. The witness is a
- * shortest input with a cut a chunk of which the scan does not consume when there is one, the shorter of the two chunk
- * searches' witnesses and the left chunk's on a tie; otherwise an input with unequal kept streams of fewer bytes than
- * twice the product's states, not necessarily a shortest one. The cut and the failure are facts about the witness, read
- * off the scans of its chunks: the first offset past the first holding the symbol at which a cut is not safe, and the
- * first of Cut_failure's three ways it fails there. A search the cap stops leaves the whole question open, a witness
- * another search found included, since a shorter one may lie where the cap stopped. A byte no completely tokenizable
- * input holds past its first offset is safe vacuously and, on an exhaustive result, reported so with no witness, where
+ * the question is decided in polynomial space. It is PSPACE-complete, by Theorem 6 of arXiv:2608.03473v5: deciding
+ * whether a byte is safe modulo the discarded kinds, given the token automaton, the discarded kinds and the byte, is
+ * PSPACE-hard already for token automata over three symbols with one kept and one discarded kind for which every input
+ * over the three symbols is completely tokenizable, and for token automata over three symbols with a single kind, which
+ * is discarded. The searches and the product, which may hold every state, take time and space singly exponential in the
+ * state count in the worst case, and the cap bounds each of the three. The witness is a shortest input with a cut a
+ * chunk of which the scan does not consume when there is one, the shorter of the two chunk searches' witnesses and the
+ * left chunk's on a tie; otherwise an input with unequal kept streams of fewer bytes than twice the product's states,
+ * not necessarily a shortest one. The cut and the failure are facts about the witness, read off the scans of its
+ * chunks: the first offset past the first holding the symbol at which a cut is not safe, and the first of Cut_failure's
+ * three ways it fails there. A search the cap stops leaves the whole question open, a witness another search found
+ * included, since a shorter one may lie where the cap stopped. A byte no completely tokenizable input holds past its
+ * first offset is safe vacuously and, on an exhaustive result, reported so with no witness, where
  * is_split_point_ignoring() answers false. The searches start at the initial state and reach every position a scan can
  * stand in, so the accepting states no input reaches never enter them, and a nullable token set is decided through the
  * positive-width equivalent the simulator compiled, as every decision here is. verifier::modulo_dependence() decides a
